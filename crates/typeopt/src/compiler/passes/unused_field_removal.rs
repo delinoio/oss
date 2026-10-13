@@ -37,7 +37,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::Result;
-use ts_goport::prelude::*;
 
 use super::{
     super::{
@@ -50,6 +49,7 @@ use super::{
     },
 };
 use crate::{
+    compiler::api::*,
     passes::{PassId, PassSet},
     plan::{Candidate, FileEdit, Plan, Reason},
 };
@@ -162,7 +162,7 @@ fn class_fields(
         }
         if has_syntactic_modifier(
             field,
-            ModifierFlags::AMBIENT | ModifierFlags::ABSTRACT | ModifierFlags::ACCESSOR,
+            ModifierFlags::Ambient | ModifierFlags::Abstract | ModifierFlags::Accessor,
         ) {
             results.push(skip(ctx, Reason::UnsupportedSyntax));
             continue;
@@ -359,7 +359,7 @@ fn class_boundary(
     }
     let file = ctx.file_of_node(class)?;
     let exported_here =
-        has_syntactic_modifier(class, ModifierFlags::EXPORT) && exposure.observed(file);
+        has_syntactic_modifier(class, ModifierFlags::Export) && exposure.observed(file);
     let reexported = ctx.refs(symbol).iter().any(|r| {
         matches!(r.kind, RefKind::Alias | RefKind::Declaration)
             && r.node.parent().kind() == SyntaxKind::ExportSpecifier
@@ -381,8 +381,8 @@ fn object_properties(
         || literal.kind() != SyntaxKind::ObjectLiteralExpression
         || declaration.name().kind() != SyntaxKind::Identifier
         || declaration.type_().is_some()
-        || !declaration.parent().flags().intersects(NodeFlags::CONST)
-        || (declaration.parent().flags() & NodeFlags::BLOCK_SCOPED) != NodeFlags::CONST
+        || !declaration.parent().flags().intersects(NodeFlags::Const)
+        || (declaration.parent().flags() & NodeFlags::BlockScoped) != NodeFlags::Const
     {
         return Vec::new();
     }
@@ -419,7 +419,7 @@ fn object_properties(
         return Vec::new();
     }
     let statement = declaration.parent().parent();
-    if has_syntactic_modifier(statement, ModifierFlags::EXPORT) && exposure.observed(file) {
+    if has_syntactic_modifier(statement, ModifierFlags::Export) && exposure.observed(file) {
         return Vec::new();
     }
     // An unreferenced binding is left whole to residual-dependency-removal.

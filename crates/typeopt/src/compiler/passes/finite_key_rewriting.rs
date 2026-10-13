@@ -36,13 +36,13 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use anyhow::Result;
-use ts_goport::prelude::*;
 
 use super::super::{
     analysis::{Ctx, RefKind, skip_outer},
     flow::SPECIAL_NAMES,
 };
 use crate::{
+    compiler::api::*,
     passes::{PassId, PassSet},
     plan::{Candidate, FileEdit, Plan, Reason},
 };
@@ -145,7 +145,7 @@ fn cyclic_modules(ctx: &mut Ctx) -> HashSet<usize> {
             if type_only || specifier.is_nil() {
                 continue;
             }
-            let module = ctx.checker.get_symbol_at_location(specifier, true);
+            let module = ctx.checker.get_symbol_at_location(specifier);
             if module.is_nil() {
                 continue;
             }
@@ -218,8 +218,8 @@ fn cyclic_modules(ctx: &mut Ctx) -> HashSet<usize> {
 /// A top-level statement that runs no user code and reads no binding that
 /// could be uninitialized.
 fn inert(ctx: &mut Ctx, statement: Node) -> bool {
-    if statement.flags().intersects(NodeFlags::AMBIENT)
-        || has_syntactic_modifier(statement, ModifierFlags::AMBIENT)
+    if statement.flags().intersects(NodeFlags::Ambient)
+        || has_syntactic_modifier(statement, ModifierFlags::Ambient)
     {
         return true;
     }
@@ -265,8 +265,8 @@ fn key_binding(ctx: &mut Ctx, cyclic: &HashSet<usize>, symbol: SymbolId) -> Opti
     let declaration = *declaration;
     if declaration.kind() != SyntaxKind::VariableDeclaration
         || declaration.name().kind() != SyntaxKind::Identifier
-        || !declaration.parent().flags().intersects(NodeFlags::CONST)
-        || declaration.flags().intersects(NodeFlags::AMBIENT)
+        || !declaration.parent().flags().intersects(NodeFlags::Const)
+        || declaration.flags().intersects(NodeFlags::Ambient)
         || declaration.initializer().is_nil()
         || declaration.type_().is_some()
     {
@@ -324,7 +324,7 @@ fn owned_property(ctx: &mut Ctx, receiver: Node, name: &str) -> Result<(), Reaso
         return Err(Reason::UnprovenRuntimeFact);
     }
     let flags = ctx.checker.ty(ty).flags();
-    if flags.intersects(TypeFlags::ANY | TypeFlags::UNKNOWN) {
+    if flags.intersects(TypeFlags::Any | TypeFlags::Unknown) {
         return Err(Reason::ExternalBoundary);
     }
     let apparent = ctx.checker.get_apparent_type(ty);
@@ -340,11 +340,11 @@ fn owned_property(ctx: &mut Ctx, receiver: Node, name: &str) -> Result<(), Reaso
         let application = ctx
             .file_of_node(declaration)
             .is_some_and(|file| !ctx.files[file].js);
-        if !application || declaration.flags().intersects(NodeFlags::AMBIENT) {
+        if !application || declaration.flags().intersects(NodeFlags::Ambient) {
             return Err(Reason::ExternalBoundary);
         }
         if get_combined_modifier_flags(declaration)
-            .intersects(ModifierFlags::PRIVATE | ModifierFlags::PROTECTED)
+            .intersects(ModifierFlags::Private | ModifierFlags::Protected)
             || (declaration.name().is_some()
                 && declaration.name().kind() == SyntaxKind::PrivateIdentifier)
         {
@@ -381,7 +381,7 @@ fn literal_set(ctx: &mut Ctx, symbol: SymbolId) -> bool {
     }
     let declarations = ctx.checker.sym(symbol).declarations.to_vec();
     matches!(declarations.as_slice(), [d] if d.kind() == SyntaxKind::VariableDeclaration
-        && d.parent().flags().intersects(NodeFlags::CONST)
+        && d.parent().flags().intersects(NodeFlags::Const)
         && d.initializer().is_some()
         && literals(d.initializer()))
 }
@@ -394,15 +394,15 @@ fn finite_type(ctx: &mut Ctx, key: Node) -> bool {
         return false;
     }
     let flags = ctx.checker.ty(ty).flags();
-    if flags.intersects(TypeFlags::STRING_LITERAL) {
+    if flags.intersects(TypeFlags::StringLiteral) {
         return true;
     }
-    flags.intersects(TypeFlags::UNION)
+    flags.intersects(TypeFlags::Union)
         && ctx.checker.ty(ty).types_list().iter().all(|&member| {
             ctx.checker
                 .ty(member)
                 .flags()
-                .intersects(TypeFlags::STRING_LITERAL)
+                .intersects(TypeFlags::StringLiteral)
         })
 }
 
@@ -531,7 +531,7 @@ pub(in crate::compiler) fn plan(ctx: &mut Ctx, enabled: &PassSet, out: &mut Plan
             && ctx.is_internal(symbol)
             && statement.kind() == SyntaxKind::VariableStatement
             && statement.declaration_list().declarations().nodes().len() == 1
-            && !has_syntactic_modifier(statement, ModifierFlags::EXPORT)
+            && !has_syntactic_modifier(statement, ModifierFlags::Export)
             && matches!(
                 statement.parent().kind(),
                 SyntaxKind::SourceFile | SyntaxKind::Block

@@ -4,9 +4,8 @@
 //! program text; nothing is cached across rounds.
 use std::collections::{BTreeSet, HashSet};
 
-use ts_goport::prelude::*;
-
 use super::super::analysis::{Ctx, skip_outer};
+use crate::compiler::api::*;
 
 /// The nearest enclosing node that delimits when code runs: a function-like
 /// declaration, a class static block or field initializer, or the source
@@ -222,7 +221,7 @@ impl ModuleGraph {
             if specifier.is_nil() {
                 continue;
             }
-            let symbol = ctx.checker.get_symbol_at_location(specifier, true);
+            let symbol = ctx.checker.get_symbol_at_location(specifier);
             if symbol.is_nil() {
                 continue;
             }

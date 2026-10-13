@@ -11,9 +11,8 @@
 //! counts as running application code.
 use std::collections::HashSet;
 
-use ts_goport::prelude::*;
-
 use super::super::analysis::Ctx;
+use crate::compiler::api::*;
 
 pub(super) struct InitCheck<'a, 'c> {
     pub ctx: &'a mut Ctx<'c>,
@@ -45,8 +44,8 @@ impl<'a, 'c> InitCheck<'a, 'c> {
     /// module initializes. Static imports are hoisted and handled by the
     /// import graph, so they never count here.
     pub fn statement_runs_app_code(&mut self, statement: Node) -> bool {
-        if statement.flags().intersects(NodeFlags::AMBIENT)
-            || has_syntactic_modifier(statement, ModifierFlags::AMBIENT)
+        if statement.flags().intersects(NodeFlags::Ambient)
+            || has_syntactic_modifier(statement, ModifierFlags::Ambient)
         {
             return false;
         }
@@ -334,7 +333,7 @@ impl<'a, 'c> InitCheck<'a, 'c> {
                 };
                 if declaration.is_nil()
                     || declaration.kind() != SyntaxKind::VariableDeclaration
-                    || !declaration.parent().flags().intersects(NodeFlags::CONST)
+                    || !declaration.parent().flags().intersects(NodeFlags::Const)
                     || declaration.initializer().is_nil()
                     || !self.visiting.insert(symbol)
                 {

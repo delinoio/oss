@@ -16,7 +16,15 @@ mod plan;
 mod report;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 fn main() {
-    app::main();
+    // tsrs recursively checks complex types on a 512 MiB stack, as its native
+    // CLI does.
+    std::thread::Builder::new()
+        .name("typeopt-compiler".into())
+        .stack_size(512 << 20)
+        .spawn(app::main)
+        .expect("cannot start compiler thread")
+        .join()
+        .expect("compiler thread failed");
 }
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
 fn main() {
@@ -41,8 +49,8 @@ mod app {
     };
 
     /// Upstream compiler revision recorded in reports. It must match the
-    /// `ts_goport` pin in Cargo.toml; a unit test enforces this.
-    pub(crate) const COMPILER_REVISION: &str = "a1dc8be88dfb837b4fb199d4355fa0a4d9eced96";
+    /// `tsrs` pin in Cargo.toml; a unit test enforces this.
+    pub(crate) const COMPILER_REVISION: &str = "00f16261082fbb2465f0603c667b450d5aa6694b";
 
     pub(crate) static CANCELLED: AtomicBool = AtomicBool::new(false);
     pub(crate) static VERBOSE: AtomicBool = AtomicBool::new(false);
@@ -138,9 +146,9 @@ mod app {
                 tracing::Level::INFO
             })
             .init();
-        std::panic::set_hook(Box::new(|_| {
+        std::panic::set_hook(Box::new(|info| {
             // Panic payloads can contain input text; never print them.
-            tracing::error!("internal compiler failure; no output will be published");
+            tracing::error!(location = %info.location().map(|l| l.to_string()).unwrap_or_default(), "internal compiler failure; no output will be published");
         }));
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(args)))
             .unwrap_or_else(|_| {
@@ -162,15 +170,10 @@ mod app {
     fn run(args: Args) -> Result<()> {
         let started = Instant::now();
         ctrlc::set_handler(|| CANCELLED.store(true, Ordering::Relaxed))?;
-        // Every round rebuilds the program from in-memory texts. As in
-        // `tsc --watch`, parses of files that an earlier program published
-        // become freeable file versions that own their nodes, so a released
-        // program frees its parse. `GOPORT_FREE_FILE_VERSIONS=0` and
-        // `GOPORT_OWNED_NODES=0` still turn this off.
-        ts_goport::ast::set_watch_process();
         tracing::debug!(
-            free_file_versions = ts_goport::ast::free_file_versions(),
-            "compiler memory release configured"
+            compiler = "tsrs",
+            single_threaded = true,
+            "compiler memory regions configured"
         );
         if let Some(path) = &args.out_dir {
             ensure!(
@@ -349,12 +352,17 @@ mod app {
         fn compiler_revision_matches_cargo_pin() {
             let manifest = include_str!("../Cargo.toml");
             let pin = format!("rev = \"{}\"", super::COMPILER_REVISION);
-            assert!(
-                manifest
-                    .lines()
-                    .any(|line| line.starts_with("ts_goport ") && line.contains(&pin)),
-                "report compiler_revision must match the ts_goport pin"
-            );
+            let dependencies: Vec<_> = manifest
+                .lines()
+                .filter(|line| line.starts_with("tsrs_"))
+                .collect();
+            assert!(!dependencies.is_empty(), "tsrs dependencies must be pinned");
+            for dependency in dependencies {
+                assert!(
+                    dependency.contains(&pin),
+                    "report compiler_revision must match every tsrs dependency: {dependency}"
+                );
+            }
         }
     }
 }

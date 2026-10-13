@@ -8,15 +8,12 @@ use std::{
 };
 
 use anyhow::{Context as _, Result, bail, ensure};
-use ts_goport::{
-    frontend::{
-        bundled,
-        compiler::{ProgramOptions, new_compiler_host, new_program},
-        tsoptions::{ParseConfigHost, ParsedCommandLine, get_parsed_command_line_of_config_file},
-        vfs::{Fs, Replacements, osvfs_fs, wrapvfs_wrap},
-    },
-    prelude::*,
-};
+use api::*;
+use tsrs_compiler::{ProgramOptions, new_compiler_host, new_program};
+use tsrs_core::P;
+use tsrs_tsoptions::{ParseConfigHost, ParsedCommandLine, get_parsed_command_line_of_config_file};
+use tsrs_vfs::{FS as Fs, bundled, wrapvfs::Replacements};
+mod api;
 
 use crate::{
     passes::PassSet,
@@ -28,16 +25,16 @@ mod flow;
 mod passes;
 
 struct Host {
-    fs: Rc<dyn Fs>,
+    fs: Arc<dyn Fs>,
     cwd: String,
 }
 impl ParseConfigHost for Host {
-    fn fs(&self) -> Rc<dyn Fs> {
-        self.fs.clone()
+    fn fs(&self) -> &dyn Fs {
+        &*self.fs
     }
 
-    fn get_current_directory(&self) -> String {
-        self.cwd.clone()
+    fn get_current_directory(&self) -> &str {
+        &self.cwd
     }
 }
 
@@ -67,12 +64,13 @@ pub struct Snapshot {
 }
 
 pub struct Project {
-    config: Rc<ParsedCommandLine>,
+    // Configurations and their parse hosts outlive every program built from them.
+    config: P<ParsedCommandLine>,
     /// SHA-256 of every file the compiler read, by path.
-    reads: Rc<std::cell::RefCell<BTreeMap<String, String>>>,
-    fs: Rc<dyn Fs>,
+    reads: Arc<Mutex<BTreeMap<String, String>>>,
+    fs: Arc<dyn Fs>,
     cwd: String,
-    version: &'static GoProgram,
+    version: Rc<CompilerProgram>,
     entries: Vec<String>,
     config_files: Vec<String>,
     size_options: CompilerOptions,
@@ -83,17 +81,12 @@ pub struct Project {
     /// types may be wrong, so only diagnostics that an edit adds count as
     /// failures.
     semantic_baseline: std::cell::RefCell<BTreeMap<String, Vec<String>>>,
+    // Drop after every program, which can retain configuration pointers.
+    region: tsrs_core::arena::Region,
 }
 
-fn deny_write() -> ts_goport::frontend::vfs::FsError {
-    ts_goport::frontend::vfs::FsError::path(
-        "write",
-        "",
-        std::io::Error::new(
-            std::io::ErrorKind::PermissionDenied,
-            "typeopt compiler filesystem is read-only",
-        ),
-    )
+fn deny_write() -> String {
+    "typeopt compiler filesystem is read-only".into()
 }
 
 impl Project {
@@ -103,25 +96,30 @@ impl Project {
 
     /// Loads the program rooted at `entries`, `roots` and declaration files.
     fn load_rooted(path: &str, entries: Vec<String>, extra_roots: Vec<String>) -> Result<Self> {
+        let region = tsrs_core::arena::Region::new(1 << 20);
+        let region_scope = region.enter();
         let cwd = std::env::current_dir()?.to_string_lossy().into_owned();
         // Every file the compiler reads, including module-resolution
         // metadata such as package manifests, is part of the analysis
         // snapshot that consumers validate.
-        let base = bundled::wrap_fs(osvfs_fs());
-        let reads = Rc::new(std::cell::RefCell::new(BTreeMap::<String, String>::new()));
+        let base: Arc<dyn Fs> = Arc::new(bundled::wrap_fs(tsrs_vfs::osvfs::fs()));
+        let reads = Arc::new(Mutex::new(BTreeMap::<String, String>::new()));
         let (reader, recorded) = (base.clone(), reads.clone());
         let fs = wrapvfs_wrap(
             base,
             Replacements {
                 read_file: Some(Box::new(move |path| {
-                    let (text, ok) = reader.read_file(path);
-                    if ok && !path.starts_with("bundled:") {
+                    let text = reader.read_file(path);
+                    if let Some(text) = &text
+                        && !path.starts_with("bundled:")
+                    {
                         recorded
-                            .borrow_mut()
+                            .lock()
+                            .expect("compiler read log")
                             .entry(path.to_owned())
                             .or_insert_with(|| sha256_hex(text.as_bytes()));
                     }
-                    (text, ok)
+                    text
                 })),
                 write_file: Some(Box::new(|_, _| Err(deny_write()))),
                 append_file: Some(Box::new(|_, _| Err(deny_write()))),
@@ -130,21 +128,17 @@ impl Project {
                 ..Default::default()
             },
         );
-        let host = Host {
+        let host = P::new(Host {
             fs: fs.clone(),
             cwd: cwd.clone(),
-        };
+        });
         let (config, errors) =
-            get_parsed_command_line_of_config_file(path, None, None, &host, None);
+            get_parsed_command_line_of_config_file(path, None, None, host.get(), None);
         check_diagnostics(&errors)?;
         let config = config.ok_or_else(|| anyhow::anyhow!("cannot parse tsconfig"))?;
         check_diagnostics(&config.errors)?;
         ensure!(
-            config
-                .parsed_config
-                .project_references
-                .as_ref()
-                .is_none_or(Vec::is_empty),
+            config.parsed_config.project_references.is_empty(),
             "project references are unsupported; supply a single application tsconfig"
         );
         ensure!(
@@ -155,7 +149,7 @@ impl Project {
         config_files.extend(config.extended_source_files().iter().cloned());
         config_files.sort();
         config_files.dedup();
-        let mut options = (**config.compiler_options()).clone();
+        let mut options = config.compiler_options().unwrap().get().clone();
         ensure!(
             !options.no_check.is_true() && !options.no_resolve.is_true(),
             "noCheck and noResolve are unsupported; full checking and resolution are required"
@@ -172,17 +166,17 @@ impl Project {
         ensure!(
             matches!(
                 options.module,
-                ModuleKind::ES_NEXT
+                ModuleKind::ESNext
                     | ModuleKind::ES2022
                     | ModuleKind::ES2020
                     | ModuleKind::ES2015
-                    | ModuleKind::PRESERVE
+                    | ModuleKind::Preserve
             ),
             "set compilerOptions.module to an ESM mode (ESNext, ES2022, ES2020, ES2015 or \
              Preserve)"
         );
         ensure!(
-            !matches!(options.jsx, JsxEmit::PRESERVE | JsxEmit::REACT_NATIVE),
+            !matches!(options.jsx, JsxEmit::Preserve | JsxEmit::ReactNative),
             "JSX preservation is unsupported; select react-jsx or react"
         );
         // These are output controls owned by the CLI, not resolution or runtime
@@ -217,10 +211,12 @@ impl Project {
         roots.sort();
         roots.dedup();
         let mut config = config.with_file_names(roots);
-        config.set_compiler_options(Rc::new(options));
-        let config = Rc::new(config);
+        config.set_compiler_options(P::new(options));
+        let config = P::new(config);
         let version = build(config.clone(), fs.clone(), &cwd);
+        drop(region_scope);
         Ok(Self {
+            region,
             config,
             reads,
             fs,
@@ -361,7 +357,7 @@ impl Project {
     /// classic scripts and chunks with `eval`, `with` or `importScripts`.
     /// Publication leaves them byte-for-byte unchanged.
     pub fn bundle_boundaries(&self) -> Paths {
-        let _scope = enter_program(Some(self.version));
+        let _scope = enter_program(Some(&self.version));
         source_files()
             .into_iter()
             .filter(|&file| is_application(file))
@@ -380,7 +376,7 @@ impl Project {
     /// libraries: a chunk import resolved to a sibling file, a package or a
     /// declaration elsewhere. The bundle is not a closed program then.
     fn application_file_outside(&self, dir: &std::path::Path) -> Option<String> {
-        let _scope = enter_program(Some(self.version));
+        let _scope = enter_program(Some(&self.version));
         source_files()
             .into_iter()
             .map(|file| source_file_info(file).file_name.clone())
@@ -394,7 +390,7 @@ impl Project {
     /// The compiler cannot link such a specifier to the chunk, so those
     /// chunks are public: what the importer reads stays unseen.
     fn bundle_imported(&self, dir: &std::path::Path) -> BundleImports {
-        let _scope = enter_program(Some(self.version));
+        let _scope = enter_program(Some(&self.version));
         let (mut imported, mut public) = (Paths::new(), Paths::new());
         let mut edges = BTreeMap::<String, Paths>::new();
         let mut computed = false;
@@ -532,7 +528,7 @@ impl Project {
 
     /// Checks the original program and records the analysis snapshot.
     pub fn snapshot(&self) -> Result<Snapshot> {
-        let _scope = enter_program(Some(self.version));
+        let _scope = enter_program(Some(&self.version));
         check_diagnostics(&get_config_file_parsing_diagnostics())?;
         check_diagnostics(&get_program_diagnostics())?;
         check_diagnostics(&get_global_diagnostics())?;
@@ -625,7 +621,7 @@ impl Project {
             .chain(inputs.iter().map(|i| &i.path))
             .cloned()
             .collect();
-        for (path, sha256) in self.reads.borrow().iter() {
+        for (path, sha256) in self.reads.lock().expect("compiler read log").iter() {
             if !known.contains(path) {
                 inputs.push(Input {
                     path: path.clone(),
@@ -639,24 +635,22 @@ impl Project {
         Ok(Snapshot { sources, inputs })
     }
 
-    fn build_with(&self, texts: &BTreeMap<String, String>) -> &'static GoProgram {
+    fn build_with(&self, texts: &BTreeMap<String, String>) -> Rc<CompilerProgram> {
         self.build_with_config(self.config.clone(), texts)
     }
 
     fn build_with_config(
         &self,
-        config: Rc<ParsedCommandLine>,
+        config: P<ParsedCommandLine>,
         texts: &BTreeMap<String, String>,
-    ) -> &'static GoProgram {
+    ) -> Rc<CompilerProgram> {
         let base = self.fs.clone();
         let texts = texts.clone();
         let fs = wrapvfs_wrap(
             self.fs.clone(),
             Replacements {
                 read_file: Some(Box::new(move |path| {
-                    texts
-                        .get(path)
-                        .map_or_else(|| base.read_file(path), |s| (s.clone(), true))
+                    texts.get(path).cloned().or_else(|| base.read_file(path))
                 })),
                 ..Default::default()
             },
@@ -673,9 +667,10 @@ impl Project {
         // Root every original application module: a transformation may
         // remove the last import of a module whose initialization was
         // proven unobservable, and that module must still be emitted.
+        let _config_scope = self.region.enter();
         let mut roots = self.config.file_names().to_vec();
         {
-            let _scope = enter_program(Some(self.version));
+            let _scope = enter_program(Some(&self.version));
             roots.extend(
                 source_files()
                     .into_iter()
@@ -685,9 +680,9 @@ impl Project {
         }
         roots.sort();
         roots.dedup();
-        let version = self.build_with_config(Rc::new(self.config.with_file_names(roots)), changed);
+        let version = self.build_with_config(P::new(self.config.with_file_names(roots)), changed);
         let result = (|| {
-            let _scope = enter_program(Some(version));
+            let _scope = enter_program(Some(&version));
             // Recheck transformed files before publishing anything.
             check_diagnostics(&get_program_diagnostics())?;
             check_diagnostics(&get_global_diagnostics())?;
@@ -699,29 +694,33 @@ impl Project {
             tracing::debug!("emitting checked transformed program");
             let outputs = Arc::new(Mutex::new(BTreeMap::<String, (String, String)>::new()));
             let writes = outputs.clone();
-            let result = ts_goport::emitter::program_emit::emit(
-                ts_goport::emitter::program_emit::EmitOptions {
+            let result = version.program.emit(
+                &tsrs_core::context::Context::background(),
+                &tsrs_compiler::EmitOptions {
                     target_source_files: Some(
                         source_files()
                             .into_iter()
                             .filter(|f| is_application(*f) && !is_js(*f))
+                            .map(|f| f.raw().as_source_file_p())
                             .collect(),
                     ),
-                    write_file: Some(Arc::new(move |name, text, data| {
-                        crate::app::check_cancelled().map_err(|e| e.to_string())?;
-                        if data.source_file.is_nil() {
-                            return Err("emitter omitted source identity".into());
-                        }
-                        let source = source_file_info(data.source_file).file_name.clone();
-                        let mut guard = writes.lock().map_err(|_| "output lock poisoned")?;
-                        let entry = guard.entry(source).or_default();
-                        if name.ends_with(".map") {
-                            entry.1 = text.to_owned();
-                        } else {
-                            entry.0 = text.to_owned();
-                        }
-                        Ok(())
-                    })),
+                    write_file: Some(
+                        &move |name: &str, text: &str, data: &mut tsrs_compiler::WriteFileData| {
+                            crate::app::check_cancelled().map_err(|e| e.to_string())?;
+                            if data.source_file.is_none() {
+                                return Err("emitter omitted source identity".into());
+                            }
+                            let source = data.source_file.unwrap().file_name().to_owned();
+                            let mut guard = writes.lock().map_err(|_| "output lock poisoned")?;
+                            let entry = guard.entry(source).or_default();
+                            if name.ends_with(".map") {
+                                entry.1 = text.to_owned();
+                            } else {
+                                entry.0 = text.to_owned();
+                            }
+                            Ok(())
+                        },
+                    ),
                     ..Default::default()
                 },
             );
@@ -733,13 +732,8 @@ impl Project {
                 .clone();
             Ok(outputs)
         })();
-        release_program(version);
+        drop(version);
         result
-    }
-}
-impl Drop for Project {
-    fn drop(&mut self) {
-        release_program(self.version);
     }
 }
 
@@ -755,7 +749,7 @@ fn texts_key(texts: &BTreeMap<String, String>) -> u64 {
 pub struct Backend<'a> {
     project: &'a Project,
     original: u64,
-    checked: Option<(u64, &'static GoProgram)>,
+    checked: Option<(u64, Rc<CompilerProgram>)>,
     sizes: HashMap<(String, u64), crate::pipeline::Emitted>,
 }
 
@@ -769,22 +763,22 @@ impl<'a> Backend<'a> {
         }
     }
 
-    fn program_for(&mut self, texts: &BTreeMap<String, String>) -> (&'static GoProgram, bool) {
+    fn program_for(&mut self, texts: &BTreeMap<String, String>) -> (Rc<CompilerProgram>, bool) {
         let key = texts_key(texts);
         if key == self.original {
-            return (self.project.version, false);
+            return (self.project.version.clone(), false);
         }
-        if let Some((cached, version)) = self.checked
-            && cached == key
+        if let Some((cached, version)) = &self.checked
+            && *cached == key
         {
-            return (version, false);
+            return (version.clone(), false);
         }
         (self.project.build_with(texts), true)
     }
 
-    fn retain(&mut self, key: u64, version: &'static GoProgram) {
+    fn retain(&mut self, key: u64, version: Rc<CompilerProgram>) {
         if let Some((_, old)) = self.checked.replace((key, version)) {
-            release_program(old);
+            drop(old);
         }
     }
 
@@ -800,16 +794,8 @@ impl<'a> Backend<'a> {
                 self.checked = Some((cached, old));
             } else {
                 tracing::debug!("released the program of the previous check before the rebuild");
-                release_program(old);
+                drop(old);
             }
-        }
-    }
-}
-
-impl Drop for Backend<'_> {
-    fn drop(&mut self) {
-        if let Some((_, version)) = self.checked.take() {
-            release_program(version);
         }
     }
 }
@@ -823,7 +809,7 @@ impl crate::pipeline::Backend for Backend<'_> {
     ) -> Result<Plan> {
         let (version, fresh) = self.program_for(texts);
         let result = (|| {
-            let _scope = enter_program(Some(version));
+            let _scope = enter_program(Some(&version));
             let (files, externals): (Vec<Node>, Vec<Node>) =
                 source_files().into_iter().partition(|&f| is_application(f));
             let Some(&first) = files.first() else {
@@ -839,7 +825,7 @@ impl crate::pipeline::Backend for Backend<'_> {
             })
         })();
         if fresh {
-            release_program(version);
+            drop(version);
         }
         result
     }
@@ -848,7 +834,7 @@ impl crate::pipeline::Backend for Backend<'_> {
         self.release_stale(texts);
         let (version, fresh) = self.program_for(texts);
         let result = (|| {
-            let _scope = enter_program(Some(version));
+            let _scope = enter_program(Some(&version));
             check_diagnostics(&get_program_diagnostics())?;
             let mut failing = Vec::new();
             for file in source_files() {
@@ -882,7 +868,7 @@ impl crate::pipeline::Backend for Backend<'_> {
         })();
         match (&result, fresh) {
             (Ok(failing), true) if failing.is_empty() => self.retain(texts_key(texts), version),
-            (_, true) => release_program(version),
+            (_, true) => drop(version),
             _ => {}
         }
         result
@@ -912,25 +898,17 @@ impl crate::pipeline::Backend for Backend<'_> {
                 imports: crate::pipeline::static_imports(text),
             });
         }
-        let output = ts_goport::transpile::transpile_module(
-            &ts_goport::gostd::context::background(),
+        let output = tsrs_api::transpile::transpile(
             text,
-            ts_goport::transpile::Options {
-                compiler_options: Some(self.project.size_options.clone()),
-                file_name: file.to_owned(),
-                report_diagnostics: true,
-            },
+            Some(&self.project.size_options),
+            file,
+            true,
+            false,
         )
-        .context("size evaluation was cancelled")?;
-        let syntax: Vec<_> = output
-            .diagnostics
-            .iter()
-            .filter(|d| d.category == ts_goport::diagnostics::Category::Error)
-            .collect();
+        .map_err(|_| anyhow::anyhow!("transpilation failed"))?;
         ensure!(
-            syntax.is_empty(),
-            "transformed module has syntax errors (TS{})",
-            syntax[0].code
+            output.diagnostics.is_empty(),
+            "transformed module has syntax errors"
         );
         let emitted = crate::pipeline::Emitted {
             size: output.output_text.len(),
@@ -941,23 +919,82 @@ impl crate::pipeline::Backend for Backend<'_> {
     }
 }
 
-fn build(config: Rc<ParsedCommandLine>, fs: Rc<dyn Fs>, cwd: &str) -> &'static GoProgram {
-    let _scope = enter_program(None);
-    let np = Rc::new(new_program(ProgramOptions {
-        host: new_compiler_host(cwd, fs, &bundled::lib_path(), None, None, None),
+fn build(config: P<ParsedCommandLine>, fs: Arc<dyn Fs>, cwd: &str) -> Rc<CompilerProgram> {
+    let region = tsrs_core::arena::Region::new(1 << 20);
+    let scope = region.enter();
+    let mut options = ProgramOptions::new(
         config,
-        single_threaded: Tristate::True,
-        use_source_of_project_reference: false,
-        typings_location: String::new(),
-        project_name: String::new(),
-        create_module_resolver: None,
-        skip_module_resolution: false,
-    }));
-    // A parse of a file that an earlier program published gets a freeable
-    // file version, which `release_program` frees with its last holder.
-    // Without it, every rebuild leaks the parse of every file.
-    mark_freeable_parses(&np);
-    new_program_version(&np, None)
+        new_compiler_host(cwd, fs, &bundled::lib_path(), None, None, None),
+    );
+    options.single_threaded = Tristate::True;
+    options.leaf_files = tsrs_compiler::LeafMode::Off;
+    options.checker_recycling = false;
+    let program = new_program(options);
+    drop(scope);
+    Rc::new(CompilerProgram { program, region })
+}
+
+// Own overlays rather than borrowing an arena-allocated Arc: failed checks and
+// candidate rebuilds must release their source buffers with their program.
+struct OverlayFs {
+    base: Arc<dyn Fs>,
+    replacements: Replacements,
+}
+impl Fs for OverlayFs {
+    fn use_case_sensitive_file_names(&self) -> bool {
+        self.base.use_case_sensitive_file_names()
+    }
+
+    fn file_exists(&self, path: &str) -> bool {
+        self.base.file_exists(path)
+    }
+
+    fn read_file(&self, path: &str) -> Option<String> {
+        self.replacements
+            .read_file
+            .as_ref()
+            .map_or_else(|| self.base.read_file(path), |f| f(path))
+    }
+
+    fn directory_exists(&self, path: &str) -> bool {
+        self.base.directory_exists(path)
+    }
+
+    fn get_accessible_entries(&self, path: &str) -> tsrs_vfs::Entries {
+        self.base.get_accessible_entries(path)
+    }
+
+    fn stat(&self, path: &str) -> Option<tsrs_vfs::FileInfo> {
+        self.base.stat(path)
+    }
+
+    fn realpath(&self, path: &str) -> String {
+        self.base.realpath(path)
+    }
+
+    fn write_file(&self, _path: &str, _text: &str) -> Result<(), String> {
+        Err(deny_write())
+    }
+
+    fn append_file(&self, _path: &str, _text: &str) -> Result<(), String> {
+        Err(deny_write())
+    }
+
+    fn remove(&self, _path: &str) -> Result<(), String> {
+        Err(deny_write())
+    }
+
+    fn chtimes(
+        &self,
+        _path: &str,
+        _a: std::time::SystemTime,
+        _m: std::time::SystemTime,
+    ) -> Result<(), String> {
+        Err(deny_write())
+    }
+}
+fn wrapvfs_wrap(base: Arc<dyn Fs>, replacements: Replacements) -> Arc<dyn Fs> {
+    Arc::new(OverlayFs { base, replacements })
 }
 
 pub fn sha256_hex(bytes: &[u8]) -> String {
@@ -968,7 +1005,7 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
         .collect()
 }
 
-fn check_diagnostics(diagnostics: &[Diagnostic]) -> Result<()> {
+fn check_diagnostics(diagnostics: &[P<tsrs_ast::Diagnostic>]) -> Result<()> {
     if diagnostics.is_empty() {
         return Ok(());
     }
@@ -976,12 +1013,14 @@ fn check_diagnostics(diagnostics: &[Diagnostic]) -> Result<()> {
         .iter()
         .take(20)
         .map(|d| {
-            let location = if d.file.is_some() {
-                let (line, column) =
-                    get_ecma_line_and_utf16_character_of_position(d.file, d.loc().pos());
+            let location = if d.file().is_some() {
+                let (line, column) = tsrs_scanner::get_ecma_line_and_utf16_character_of_position(
+                    d.file().unwrap().get(),
+                    d.pos().unwrap_or(0),
+                );
                 format!(
                     "{}:{}:{}: ",
-                    source_file_info(d.file).file_name,
+                    d.file().unwrap().file_name(),
                     line + 1,
                     column + 1
                 )
@@ -989,9 +1028,9 @@ fn check_diagnostics(diagnostics: &[Diagnostic]) -> Result<()> {
                 String::new()
             };
             if crate::app::VERBOSE.load(std::sync::atomic::Ordering::Relaxed) {
-                format!("{location}TS{}: {}", d.code, redacted_message(d))
+                format!("{location}TS{}: {}", d.code(), redacted_message(d))
             } else {
-                format!("{location}TS{} (use --verbose for details)", d.code)
+                format!("{location}TS{} (use --verbose for details)", d.code())
             }
         })
         .collect();
@@ -1004,14 +1043,19 @@ const REDACTED_ARGUMENT: &str = "<redacted>";
 
 /// Renders the diagnostic template without source-derived arguments, so verbose
 /// output never copies literals or other source text into logs.
-fn redacted_message(d: &Diagnostic) -> String {
-    if !d.message_text.is_empty() {
-        // Pre-rendered external text has no template to keep.
-        return REDACTED_ARGUMENT.to_owned();
-    }
-    let mut template = d.clone();
-    template.message_args = vec![REDACTED_ARGUMENT.to_owned(); d.message_args.len()];
-    template.localize(&ts_goport::locale::DEFAULT)
+fn redacted_message(d: &P<tsrs_ast::Diagnostic>) -> String {
+    d.message().map_or_else(
+        || REDACTED_ARGUMENT.to_owned(),
+        |m| {
+            let args = vec![REDACTED_ARGUMENT.to_owned(); d.message_args().len()];
+            m.format(
+                &args
+                    .iter()
+                    .map(|s| s as &dyn std::fmt::Display)
+                    .collect::<Vec<_>>(),
+            )
+        },
+    )
 }
 /// JavaScript chunks of a bundler output directory, sorted, as canonical
 /// paths. Classic scripts, including `importScripts` workers, belong to the
@@ -1278,13 +1322,13 @@ fn html_scripts(dir: &std::path::Path) -> Result<HtmlScripts> {
 /// the source text at the diagnostic. Positions move with every edit, so
 /// they are not part of the identity; a new diagnostic that reuses an old
 /// code at different code still differs.
-fn diagnostic_identities(diagnostics: &[Diagnostic]) -> Vec<String> {
+fn diagnostic_identities(diagnostics: &[P<tsrs_ast::Diagnostic>]) -> Vec<String> {
     let mut identities: Vec<String> = diagnostics
         .iter()
         .map(|d| {
-            let snippet = if d.file.is_some() {
-                let text = source_file_text(d.file);
-                let (pos, end) = (d.loc().pos() as usize, d.loc().end() as usize);
+            let snippet = if d.file().is_some() {
+                let text = d.file().unwrap().text();
+                let (pos, end) = (d.pos().unwrap_or(0) as usize, d.end().unwrap_or(0) as usize);
                 text.get(pos.min(text.len())..end.min(text.len()))
                     .unwrap_or_default()
                     .trim()
@@ -1292,11 +1336,7 @@ fn diagnostic_identities(diagnostics: &[Diagnostic]) -> Vec<String> {
             } else {
                 String::new()
             };
-            format!(
-                "{}\0{}\0{snippet}",
-                d.code,
-                d.localize(&ts_goport::locale::DEFAULT)
-            )
+            format!("{}\0{}\0{snippet}", d.code(), d.localize())
         })
         .collect();
     identities.sort();
@@ -1365,7 +1405,7 @@ pub(crate) fn has_esm_statements(file: Node) -> bool {
             SyntaxKind::ImportDeclaration
                 | SyntaxKind::ExportDeclaration
                 | SyntaxKind::ExportAssignment
-        ) || has_syntactic_modifier(statement, ModifierFlags::EXPORT)
+        ) || has_syntactic_modifier(statement, ModifierFlags::Export)
     })
 }
 
@@ -1401,6 +1441,9 @@ fn collect(node: Node, nodes: &mut Vec<Node>) {
 
 /// Start of the node's first token, excluding leading trivia.
 fn token_start(node: Node) -> usize {
-    ts_goport::scanner_util::get_token_pos_of_node(node, get_source_file_of_node(node), false)
-        as usize
+    tsrs_scanner::get_token_pos_of_node(
+        node.raw(),
+        get_source_file_of_node(node).raw().as_source_file_p(),
+        false,
+    ) as usize
 }

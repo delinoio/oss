@@ -535,6 +535,29 @@ export class Kept {
     assert!(!dep.contains("removable"), "{dep}");
 }
 
+#[test]
+fn empty_mapped_types_preserve_members_across_imprecise_flows() {
+    let (temp, report) = run(
+        &[
+            (
+                "main.ts",
+                r#"import { Kept } from "./dep.ts";
+const value: Record<never, never> = new Kept();
+const key = ["obser", "vable"].join("");
+console.log((value as any)[key]());
+"#,
+            ),
+            (
+                "dep.ts",
+                "export class Kept { observable() { return 42; } }",
+            ),
+        ],
+        &[METHOD],
+    );
+    assert_eq!(applied(&report, METHOD), 0, "{report:#}");
+    assert!(emitted_or_source(temp.path(), "dep.ts").contains("observable()"));
+}
+
 // ---------------------------------------------------------------------------
 // unused-field-removal
 

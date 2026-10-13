@@ -35,7 +35,6 @@
 use std::collections::HashSet;
 
 use anyhow::Result;
-use ts_goport::prelude::*;
 
 use super::{
     super::analysis::{Ctx, skip_outer},
@@ -47,6 +46,7 @@ use super::{
     },
 };
 use crate::{
+    compiler::api::*,
     passes::{PassId, PassSet},
     plan::{Candidate, FileEdit, Plan, Reason},
 };
@@ -174,11 +174,11 @@ fn literal_value(ctx: &mut Ctx, file: usize, node: Node) -> Option<String> {
 fn plan_object(ctx: &mut Ctx, shared: &Shared, file: usize, declaration: Node, out: &mut Plan) {
     let list = declaration.parent();
     let statement = list.parent();
-    if !list.flags().intersects(NodeFlags::CONST)
-        || list.flags().intersects(NodeFlags::USING)
+    if !list.flags().intersects(NodeFlags::Const)
+        || list.flags().intersects(NodeFlags::Using)
         || statement.kind() != SyntaxKind::VariableStatement
-        || statement.flags().intersects(NodeFlags::AMBIENT)
-        || has_syntactic_modifier(statement, ModifierFlags::AMBIENT)
+        || statement.flags().intersects(NodeFlags::Ambient)
+        || has_syntactic_modifier(statement, ModifierFlags::Ambient)
     {
         return;
     }
@@ -492,8 +492,8 @@ fn site_initialized(ctx: &mut Ctx, shared: &Shared, declared: &Declared, access:
 }
 
 fn plan_class(ctx: &mut Ctx, shared: &Shared, file: usize, class: Node, out: &mut Plan) {
-    if class.flags().intersects(NodeFlags::AMBIENT)
-        || has_syntactic_modifier(class, ModifierFlags::AMBIENT | ModifierFlags::ABSTRACT)
+    if class.flags().intersects(NodeFlags::Ambient)
+        || has_syntactic_modifier(class, ModifierFlags::Ambient | ModifierFlags::Abstract)
     {
         return;
     }
@@ -504,7 +504,7 @@ fn plan_class(ctx: &mut Ctx, shared: &Shared, file: usize, class: Node, out: &mu
             || member.initializer().is_nil()
             || has_syntactic_modifier(
                 member,
-                ModifierFlags::AMBIENT | ModifierFlags::ABSTRACT | ModifierFlags::ACCESSOR,
+                ModifierFlags::Ambient | ModifierFlags::Abstract | ModifierFlags::Accessor,
             )
             || !matches!(
                 member.name().kind(),
@@ -561,7 +561,7 @@ fn plan_class(ctx: &mut Ctx, shared: &Shared, file: usize, class: Node, out: &mu
             .checker
             .sym(symbol)
             .flags
-            .intersects(SymbolFlags::INTERFACE | SymbolFlags::VALUE_MODULE)
+            .intersects(SymbolFlags::Interface | SymbolFlags::ValueModule)
     {
         out.skips.push(skip(ctx, Reason::DeclarationMerging));
         return;

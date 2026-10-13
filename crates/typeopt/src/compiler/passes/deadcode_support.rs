@@ -7,12 +7,11 @@
 //! Everything here is recomputed from the current program in every round.
 use std::collections::{HashMap, HashSet};
 
-use ts_goport::prelude::*;
-
 use super::super::{
     analysis::{Ctx, RefKind, skip_outer, walk_up_outer},
     token_start,
 };
+use crate::compiler::api::*;
 
 /// Property names that runtimes and libraries probe by convention without
 /// necessarily declaring them in a type: thenables, serialization, coercion,
@@ -110,7 +109,7 @@ pub(super) fn module_index(ctx: &mut Ctx, specifier: Node) -> Option<usize> {
     if specifier.is_nil() {
         return None;
     }
-    let symbol = ctx.checker.get_symbol_at_location(specifier, true);
+    let symbol = ctx.checker.get_symbol_at_location(specifier);
     if symbol.is_nil() {
         return None;
     }
@@ -354,18 +353,18 @@ pub(super) fn imprecise(ctx: &mut Ctx, ty: TypeId, depth: usize) -> bool {
         return true;
     }
     let flags = ctx.checker.ty(ty).flags();
-    if flags.intersects(TypeFlags::ANY_OR_UNKNOWN | TypeFlags::NON_PRIMITIVE) {
+    if flags.intersects(TypeFlags::AnyOrUnknown | TypeFlags::NonPrimitive) {
         return true;
     }
-    if flags.intersects(TypeFlags::UNION) {
+    if flags.intersects(TypeFlags::Union) {
         let members = ctx.checker.ty(ty).types_list();
         return members.iter().any(|&m| imprecise(ctx, m, depth + 1));
     }
-    if flags.intersects(TypeFlags::INSTANTIABLE) {
+    if flags.intersects(TypeFlags::Instantiable) {
         let constraint = ctx.checker.get_base_constraint_of_type(ty);
         return constraint.is_nil() || constraint == ty || imprecise(ctx, constraint, depth + 1);
     }
-    flags.intersects(TypeFlags::OBJECT) && ctx.checker.is_empty_object_type(ty)
+    flags.intersects(TypeFlags::Object) && ctx.checker.is_empty_object_type(ty)
 }
 
 /// Value flows between static types of the application: a value of the
@@ -544,11 +543,11 @@ fn holds(ctx: &mut Ctx, types: &HashSet<TypeId>, ty: TypeId, depth: usize) -> bo
         return true;
     }
     let flags = ctx.checker.ty(ty).flags();
-    if flags.intersects(TypeFlags::UNION_OR_INTERSECTION) {
+    if flags.intersects(TypeFlags::UnionOrIntersection) {
         let members = ctx.checker.ty(ty).types_list();
         return members.iter().any(|&m| holds(ctx, types, m, depth + 1));
     }
-    if flags.intersects(TypeFlags::INSTANTIABLE) {
+    if flags.intersects(TypeFlags::Instantiable) {
         let constraint = ctx.checker.get_base_constraint_of_type(ty);
         return constraint.is_some()
             && constraint != ty
@@ -599,7 +598,7 @@ fn flows_of(ctx: &mut Ctx, node: Node) -> Vec<(TypeId, TypeId)> {
     }
     let mut flows = Vec::new();
     let source = ctx.checker.get_type_at_location(node);
-    let target = ctx.checker.get_contextual_type(node, ContextFlags::NONE);
+    let target = ctx.checker.get_contextual_type(node, ContextFlags::None);
     if target.is_some() {
         flows.push((source, target));
         flows.extend(callback_flows(ctx, source, target));
@@ -621,13 +620,13 @@ fn callback_flows(ctx: &mut Ctx, source: TypeId, target: TypeId) -> Vec<(TypeId,
     let mut flows = Vec::new();
     let sources = ctx
         .checker
-        .get_signatures_of_type(source, SignatureKind::CALL);
+        .get_signatures_of_type(source, SignatureKind::Call);
     if sources.is_empty() {
         return flows;
     }
     let targets = ctx
         .checker
-        .get_signatures_of_type(target, SignatureKind::CALL);
+        .get_signatures_of_type(target, SignatureKind::Call);
     for &own in sources.iter() {
         for &context in targets.iter() {
             let count = ctx
@@ -1403,7 +1402,7 @@ impl Proof<'_> {
             SyntaxKind::VariableDeclaration
                 if parent.initializer() == outer
                     && parent.name().kind() == SyntaxKind::Identifier
-                    && (parent.parent().flags() & NodeFlags::BLOCK_SCOPED) == NodeFlags::CONST =>
+                    && (parent.parent().flags() & NodeFlags::BlockScoped) == NodeFlags::Const =>
             {
                 let binding = ctx.resolve(parent.name());
                 if binding.is_nil()

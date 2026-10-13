@@ -25,7 +25,6 @@
 //! checker type, or occur where only `ToBoolean` or string conversion of the
 //! value is observed.
 use anyhow::Result;
-use ts_goport::prelude::*;
 
 use super::{
     super::analysis::{Ctx, skip_outer, walk_up_outer},
@@ -36,6 +35,7 @@ use super::{
     },
 };
 use crate::{
+    compiler::api::*,
     passes::{PassId, PassSet},
     plan::{Candidate, FileEdit, Plan, Reason},
 };
@@ -229,7 +229,7 @@ impl Planner<'_> {
                     let text = format!("\"\" + {}", operand(ctx, file, value, 13));
                     let text = replace_expr(node, &text, 12);
                     self.emit(ctx, file, "string", node, text);
-                } else if type_all(ctx, value, TypeFlags::STRING_LIKE) {
+                } else if type_all(ctx, value, TypeFlags::StringLike) {
                     self.skip(ctx, file, "string", node, unproven(&fact));
                 }
             }
@@ -240,7 +240,7 @@ impl Planner<'_> {
                     let text = format!("+{}", operand(ctx, file, value, 15));
                     let text = replace_expr(node, &text, 15);
                     self.emit(ctx, file, "number", node, text);
-                } else if type_all(ctx, value, TypeFlags::NUMBER_LIKE) {
+                } else if type_all(ctx, value, TypeFlags::NumberLike) {
                     self.skip(ctx, file, "number", node, unproven(&fact));
                 }
             }
@@ -281,7 +281,7 @@ impl Planner<'_> {
                         _ => continue,
                     };
                     if !self.facts.expr(ctx, value).is(Kinds::BOOLEAN)
-                        || !type_all(ctx, value, TypeFlags::BOOLEAN_LIKE)
+                        || !type_all(ctx, value, TypeFlags::BooleanLike)
                     {
                         continue;
                     }
@@ -386,17 +386,17 @@ fn boolean_typed_negation(ctx: &mut Ctx, value: Node) -> bool {
     let mut maybe_falsy = false;
     for c in type_constituents(ctx, t) {
         let flags = ctx.checker.ty(c).flags();
-        if flags.intersects(TypeFlags::ANY | TypeFlags::UNKNOWN) {
+        if flags.intersects(TypeFlags::Any | TypeFlags::Unknown) {
             return true;
         }
-        if flags.intersects(TypeFlags::INSTANTIABLE) {
+        if flags.intersects(TypeFlags::Instantiable) {
             return false;
         }
-        if flags.intersects(TypeFlags::NULL | TypeFlags::UNDEFINED | TypeFlags::VOID) {
+        if flags.intersects(TypeFlags::Null | TypeFlags::Undefined | TypeFlags::Void) {
             maybe_falsy = true;
-        } else if flags.intersects(TypeFlags::LITERAL) {
+        } else if flags.intersects(TypeFlags::Literal) {
             let truthy = match ctx.checker.ty(c).as_literal_type().value() {
-                Some(LiteralValue::Bool(b)) => *b,
+                Some(LiteralValue::Boolean(b)) => b,
                 Some(LiteralValue::String(s)) => !s.is_empty(),
                 Some(LiteralValue::Number(n)) => n.0 != 0.0 && !n.0.is_nan(),
                 _ => return false,
@@ -407,7 +407,7 @@ fn boolean_typed_negation(ctx: &mut Ctx, value: Node) -> bool {
                 maybe_falsy = true;
             }
         } else if flags.intersects(
-            TypeFlags::STRING | TypeFlags::NUMBER | TypeFlags::BIG_INT | TypeFlags::BOOLEAN,
+            TypeFlags::String | TypeFlags::Number | TypeFlags::BigInt | TypeFlags::Boolean,
         ) {
             maybe_truthy = true;
             maybe_falsy = true;
@@ -431,7 +431,7 @@ fn literal_context(ctx: &mut Ctx, node: Node, result: &Lit) -> bool {
         SyntaxKind::VariableDeclaration => {
             parent.initializer() == outer
                 && (parent.type_().is_some()
-                    || !parent.parent().flags().intersects(NodeFlags::CONST))
+                    || !parent.parent().flags().intersects(NodeFlags::Const))
         }
         SyntaxKind::PropertyAssignment => parent.initializer() == outer,
         SyntaxKind::ArrayLiteralExpression => true,

@@ -10,7 +10,7 @@ Reduce application JavaScript size in two stages: eighteen conservative type-awa
 
 ## Domain Ownership Map
 
-- `crates/typeopt`: experimental Rust CLI, private analysis and compiler adapter, optimization passes and pipeline, fixtures, Vite example and benchmark tooling.
+- `crates/typeopt`: experimental Rust CLI, private analysis and tsrs compiler adapter, optimization passes and pipeline, fixtures, Vite example and benchmark tooling.
 
 ## Domain Contract Documents
 

@@ -10,10 +10,11 @@
 //! set of call sites is known.
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use ts_goport::prelude::*;
-
 use super::super::analysis::{Ctx, Ref, RefKind, skip_outer, walk_up_outer};
-use crate::plan::{Edit, FileEdit, Reason};
+use crate::{
+    compiler::api::*,
+    plan::{Edit, FileEdit, Reason},
+};
 
 /// A named function binding that a closed call graph may own.
 pub(super) struct Function {
@@ -76,7 +77,7 @@ pub(super) fn functions(ctx: &mut Ctx) -> Vec<Function> {
                         || node.type_().is_some()
                         || node.exclamation_token().is_some()
                         || list.kind() != SyntaxKind::VariableDeclarationList
-                        || !list.flags().intersects(NodeFlags::CONST)
+                        || !list.flags().intersects(NodeFlags::Const)
                         || list.parent().kind() != SyntaxKind::VariableStatement
                     {
                         continue;
@@ -93,7 +94,7 @@ pub(super) fn functions(ctx: &mut Ctx) -> Vec<Function> {
             if symbol.is_nil() {
                 continue;
             }
-            let exported = has_syntactic_modifier(statement, ModifierFlags::EXPORT)
+            let exported = has_syntactic_modifier(statement, ModifierFlags::Export)
                 || ctx.refs(symbol).iter().any(is_alias);
             result.push(Function {
                 file,
@@ -249,7 +250,7 @@ pub(super) fn target_module(ctx: &mut Ctx, specifier: Node) -> Option<usize> {
     if specifier.is_nil() {
         return None;
     }
-    let symbol = ctx.checker.get_symbol_at_location(specifier, true);
+    let symbol = ctx.checker.get_symbol_at_location(specifier);
     if symbol.is_nil() {
         return None;
     }
@@ -297,8 +298,8 @@ pub(super) fn closure(
     if ctx.checker.sym(symbol).declarations.len() != 1 {
         return Err(Reason::DeclarationMerging);
     }
-    if function.statement.flags().intersects(NodeFlags::AMBIENT)
-        || has_syntactic_modifier(function.statement, ModifierFlags::AMBIENT)
+    if function.statement.flags().intersects(NodeFlags::Ambient)
+        || has_syntactic_modifier(function.statement, ModifierFlags::Ambient)
     {
         return Err(Reason::DeclarationMerging);
     }

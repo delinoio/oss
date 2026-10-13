@@ -39,13 +39,15 @@
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 
 use anyhow::Result;
-use ts_goport::prelude::*;
 
 use super::{
     analysis::{Ctx, RefKind, skip_outer, walk_up_outer},
     token_start,
 };
-use crate::optimizer::{Object, Occurrence, Preservation, Property};
+use crate::{
+    compiler::api::*,
+    optimizer::{Object, Occurrence, Preservation, Property},
+};
 
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Options {
@@ -592,7 +594,7 @@ impl Builder<'_, '_> {
         if !is_external_module(file) || in_namespace(node) || node.body().is_nil() {
             return Err(FunctionBoundary::Scope);
         }
-        if get_combined_modifier_flags(node).intersects(ModifierFlags::ASYNC)
+        if get_combined_modifier_flags(node).intersects(ModifierFlags::Async)
             || node.asterisk_token().is_some()
         {
             return Err(FunctionBoundary::AsyncOrGenerator);
@@ -989,7 +991,7 @@ impl Builder<'_, '_> {
                             && node.parent().kind() == SyntaxKind::VariableDeclaration
                             && node.parent().initializer() == node
                             && node.parent().name().kind() == SyntaxKind::Identifier
-                            && node.parent().parent().flags().intersects(NodeFlags::CONST)
+                            && node.parent().parent().flags().intersects(NodeFlags::Const)
                             && node.parent().type_().is_nil() =>
                     {
                         node.parent().name()
@@ -1981,7 +1983,7 @@ fn exposed_exports(ctx: &mut Ctx) -> HashSet<SymbolId> {
             let specifier = node.arguments().first();
             match specifier {
                 Some(specifier) if specifier.kind() == SyntaxKind::StringLiteral => {
-                    let module = ctx.checker.get_symbol_at_location(specifier, true);
+                    let module = ctx.checker.get_symbol_at_location(specifier);
                     if module.is_some() {
                         modules.push(module);
                     }
@@ -2019,7 +2021,7 @@ fn exposed_exports(ctx: &mut Ctx) -> HashSet<SymbolId> {
             .checker
             .sym(symbol)
             .flags
-            .intersects(SymbolFlags::VALUE_MODULE)
+            .intersects(SymbolFlags::ValueModule)
         {
             modules.push(symbol);
         }
@@ -2029,7 +2031,7 @@ fn exposed_exports(ctx: &mut Ctx) -> HashSet<SymbolId> {
             .checker
             .sym(symbol)
             .flags
-            .intersects(SymbolFlags::VALUE_MODULE)
+            .intersects(SymbolFlags::ValueModule)
         {
             continue;
         }
@@ -2055,7 +2057,7 @@ fn exposed_exports(ctx: &mut Ctx) -> HashSet<SymbolId> {
                 .checker
                 .sym(module)
                 .flags
-                .intersects(SymbolFlags::VALUE_MODULE)
+                .intersects(SymbolFlags::ValueModule)
         {
             continue;
         }
@@ -2067,7 +2069,7 @@ fn exposed_exports(ctx: &mut Ctx) -> HashSet<SymbolId> {
                 .checker
                 .sym(target)
                 .flags
-                .intersects(SymbolFlags::VALUE_MODULE)
+                .intersects(SymbolFlags::ValueModule)
             {
                 modules.push(target);
             }

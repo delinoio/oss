@@ -9,10 +9,12 @@
 use std::collections::{HashMap, HashSet};
 
 use anyhow::Result;
-use ts_goport::prelude::*;
 
 use super::{collect, is_js, token_start};
-use crate::plan::{ImportSite, Location, Reason, Skip};
+use crate::{
+    compiler::api::*,
+    plan::{ImportSite, Location, Reason, Skip},
+};
 
 pub(crate) struct SourceInfo {
     pub node: Node,
@@ -243,7 +245,7 @@ impl<'c> Ctx<'c> {
                 self.checker
                     .get_export_specifier_local_target_symbol(parent)
             } else {
-                self.checker.get_symbol_at_location(node, true)
+                self.checker.get_symbol_at_location(node)
             };
         if symbol.is_nil() {
             return symbol;
@@ -257,7 +259,7 @@ impl<'c> Ctx<'c> {
                 .checker
                 .sym(symbol)
                 .flags
-                .intersects(SymbolFlags::ALIAS)
+                .intersects(SymbolFlags::Alias)
         {
             return symbol;
         }
@@ -286,7 +288,7 @@ impl<'c> Ctx<'c> {
         !declarations.is_empty()
             && declarations.iter().all(|&d| {
                 let file = get_source_file_of_node(d);
-                !d.flags().intersects(NodeFlags::AMBIENT)
+                !d.flags().intersects(NodeFlags::Ambient)
                     && self
                         .file_of(&source_file_info(file).file_name)
                         .is_some_and(|i| !self.files[i].js)
@@ -394,7 +396,7 @@ impl<'c> Ctx<'c> {
                     return false;
                 }
                 let flags = self.checker.sym(symbol).flags;
-                if flags.intersects(SymbolFlags::FUNCTION) {
+                if flags.intersects(SymbolFlags::Function) {
                     return true;
                 }
                 let declaration = self.checker.sym(symbol).value_declaration;
@@ -407,7 +409,7 @@ impl<'c> Ctx<'c> {
                         let list = declaration.parent();
                         let block_scoped = list
                             .flags()
-                            .intersects(NodeFlags::LET | NodeFlags::CONST | NodeFlags::USING);
+                            .intersects(NodeFlags::Let | NodeFlags::Const | NodeFlags::Using);
                         // Declared earlier in the same file and not inside
                         // a loop body that could re-enter the TDZ.
                         !block_scoped
@@ -471,7 +473,7 @@ impl<'c> Ctx<'c> {
     /// for external, JavaScript or unresolved modules. JSON is reported as
     /// `Some(None)`: it initializes without effects.
     fn target_module(&mut self, specifier: Node) -> Option<Option<usize>> {
-        let symbol = self.checker.get_symbol_at_location(specifier, true);
+        let symbol = self.checker.get_symbol_at_location(specifier);
         if symbol.is_nil() {
             return None;
         }
@@ -505,8 +507,8 @@ impl<'c> Ctx<'c> {
     }
 
     fn statement_pure(&mut self, statement: Node) -> bool {
-        if statement.flags().intersects(NodeFlags::AMBIENT)
-            || has_syntactic_modifier(statement, ModifierFlags::AMBIENT)
+        if statement.flags().intersects(NodeFlags::Ambient)
+            || has_syntactic_modifier(statement, ModifierFlags::Ambient)
         {
             return true;
         }
@@ -647,7 +649,7 @@ impl<'c> Ctx<'c> {
         if node.kind() != SyntaxKind::Identifier || node.text() != "undefined" {
             return false;
         }
-        let symbol = self.checker.get_symbol_at_location(node, true);
+        let symbol = self.checker.get_symbol_at_location(node);
         symbol.is_some() && self.checker.is_undefined_symbol(symbol)
     }
 
@@ -682,8 +684,8 @@ impl<'c> Ctx<'c> {
         let declaration = self.checker.sym(symbol).value_declaration;
         if declaration.is_nil()
             || declaration.kind() != SyntaxKind::ClassDeclaration
-            || declaration.flags().intersects(NodeFlags::AMBIENT)
-            || has_syntactic_modifier(declaration, ModifierFlags::AMBIENT)
+            || declaration.flags().intersects(NodeFlags::Ambient)
+            || has_syntactic_modifier(declaration, ModifierFlags::Ambient)
         {
             return false;
         }

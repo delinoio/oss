@@ -1313,7 +1313,7 @@ dependencies = [
  "imbl",
  "libc",
  "regex",
- "signal-hook 0.3.18",
+ "signal-hook",
  "tempfile",
  "tracing",
  "windows-sys 0.61.2",
@@ -1335,7 +1335,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "signal-hook 0.3.18",
+ "signal-hook",
  "tempfile",
  "tokio",
  "tokio-util",
@@ -1367,7 +1367,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "signal-hook 0.3.18",
+ "signal-hook",
  "signal-hook-registry",
  "tempfile",
  "tracing",
@@ -1390,7 +1390,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "signal-hook 0.3.18",
+ "signal-hook",
  "tempfile",
  "tracing",
  "windows-sys 0.61.2",
@@ -2588,6 +2588,12 @@ source = "git+https://github.com/tauri-apps/winit-gtk4?branch=master#3d7c7cd19d3
 dependencies = [
  "serde",
 ]
+
+[[package]]
+name = "dragonbox_ecma"
+version = "0.1.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fd8e701084c37e7ef62d3f9e453b618130cbc0ef3573847785952a3ac3f746bf"
 
 [[package]]
 name = "dtoa"
@@ -4106,56 +4112,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "goport_core"
-version = "7.0.0-dev"
-source = "git+https://github.com/kdy1/ts-rust?rev=a1dc8be88dfb837b4fb199d4355fa0a4d9eced96#a1dc8be88dfb837b4fb199d4355fa0a4d9eced96"
-dependencies = [
- "bumpalo",
- "flate2",
- "goport_util",
- "indexmap 2.14.0",
- "jiff",
- "memchr",
- "miow",
- "nix",
- "rustc-hash",
- "rustix",
- "same-file",
- "signal-hook 0.4.4",
- "smallvec 1.15.1",
- "xxhash-rust",
-]
-
-[[package]]
-name = "goport_lsproto"
-version = "7.0.0-dev"
-source = "git+https://github.com/kdy1/ts-rust?rev=a1dc8be88dfb837b4fb199d4355fa0a4d9eced96#a1dc8be88dfb837b4fb199d4355fa0a4d9eced96"
-dependencies = [
- "goport_util",
- "indexmap 2.14.0",
- "rustc-hash",
-]
-
-[[package]]
-name = "goport_util"
-version = "7.0.0-dev"
-source = "git+https://github.com/kdy1/ts-rust?rev=a1dc8be88dfb837b4fb199d4355fa0a4d9eced96#a1dc8be88dfb837b4fb199d4355fa0a4d9eced96"
-dependencies = [
- "indexmap 2.14.0",
- "lzma-rust2",
- "memchr",
- "name-to-handle-at",
- "nix",
- "notify",
- "num-bigint",
- "num-traits",
- "rustc-hash",
- "rustix",
- "ryu-js",
- "unicode-normalization",
-]
-
-[[package]]
 name = "graphene-rs"
 version = "0.22.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5617,12 +5573,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
 
 [[package]]
-name = "lzma-rust2"
-version = "0.21.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fde178a3caf126c440fa15628147772d8ee590a39477d711353fbe2e58a73a5b"
-
-[[package]]
 name = "lzma-sys"
 version = "0.1.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5824,15 +5774,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "miow"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "536bfad37a309d62069485248eeaba1e8d9853aaf951caaeaed0585a95346f08"
-dependencies = [
- "windows-sys 0.61.2",
-]
-
-[[package]]
 name = "moka"
 version = "0.12.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5879,15 +5820,6 @@ dependencies = [
  "serde",
  "thiserror 2.0.18",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "name-to-handle-at"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6e13544470bcbc798dc9f927b418e85f44d9e72d8e1456f884107e9850dfb22d"
-dependencies = [
- "libc",
 ]
 
 [[package]]
@@ -8502,12 +8434,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
-name = "ryu-js"
-version = "1.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd29631678d6fb0903b69223673e122c32e9ae559d0960a38d574695ebc0ea15"
-
-[[package]]
 name = "safe_arch"
 version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9028,16 +8954,6 @@ name = "signal-hook"
 version = "0.3.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d881a16cf4426aa584979d30bd82cb33429027e42122b169753d6ef1085ed6e2"
-dependencies = [
- "libc",
- "signal-hook-registry",
-]
-
-[[package]]
-name = "signal-hook"
-version = "0.4.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2a0c28ca5908dbdbcd52e6fdaa00358ab88637f8ab33e1f188dd510eb44b53d"
 dependencies = [
  "libc",
  "signal-hook-registry",
@@ -10603,26 +10519,408 @@ dependencies = [
 ]
 
 [[package]]
-name = "ts_goport"
-version = "7.0.0-dev"
-source = "git+https://github.com/kdy1/ts-rust?rev=a1dc8be88dfb837b4fb199d4355fa0a4d9eced96#a1dc8be88dfb837b4fb199d4355fa0a4d9eced96"
+name = "tsrs_api"
+version = "0.14.0"
+source = "git+https://github.com/maschwenk/tsrs?rev=00f16261082fbb2465f0603c667b450d5aa6694b#00f16261082fbb2465f0603c667b450d5aa6694b"
 dependencies = [
- "bumpalo",
- "flate2",
- "goport_core",
- "goport_lsproto",
- "goport_util",
- "indexmap 2.14.0",
- "jiff",
+ "rustc-hash",
+ "tsrs_api_codec",
+ "tsrs_api_transport",
+ "tsrs_ast",
+ "tsrs_astnav",
+ "tsrs_checker",
+ "tsrs_compiler",
+ "tsrs_core",
+ "tsrs_diagnostics",
+ "tsrs_ls",
+ "tsrs_lsproto",
+ "tsrs_module",
+ "tsrs_printer",
+ "tsrs_project",
+ "tsrs_scanner",
+ "tsrs_tsoptions",
+ "tsrs_vfs",
+]
+
+[[package]]
+name = "tsrs_api_codec"
+version = "0.14.0"
+source = "git+https://github.com/maschwenk/tsrs?rev=00f16261082fbb2465f0603c667b450d5aa6694b#00f16261082fbb2465f0603c667b450d5aa6694b"
+dependencies = [
+ "rustc-hash",
+ "tsrs_ast",
+ "tsrs_core",
+]
+
+[[package]]
+name = "tsrs_api_transport"
+version = "0.14.0"
+source = "git+https://github.com/maschwenk/tsrs?rev=00f16261082fbb2465f0603c667b450d5aa6694b#00f16261082fbb2465f0603c667b450d5aa6694b"
+dependencies = [
+ "rustc-hash",
+ "serde",
+ "serde_json",
+ "tsrs_core",
+ "tsrs_vfs",
+]
+
+[[package]]
+name = "tsrs_ast"
+version = "0.14.0"
+source = "git+https://github.com/maschwenk/tsrs?rev=00f16261082fbb2465f0603c667b450d5aa6694b#00f16261082fbb2465f0603c667b450d5aa6694b"
+dependencies = [
+ "bitflags 2.11.0",
+ "hashbrown 0.17.1",
  "memchr",
- "miow",
- "nix",
+ "rustc-hash",
+ "tsrs_core",
+ "tsrs_diagnostics",
+ "tsrs_spanmap",
+]
+
+[[package]]
+name = "tsrs_astnav"
+version = "0.14.0"
+source = "git+https://github.com/maschwenk/tsrs?rev=00f16261082fbb2465f0603c667b450d5aa6694b#00f16261082fbb2465f0603c667b450d5aa6694b"
+dependencies = [
+ "tsrs_ast",
+ "tsrs_core",
+ "tsrs_scanner",
+]
+
+[[package]]
+name = "tsrs_binder"
+version = "0.14.0"
+source = "git+https://github.com/maschwenk/tsrs?rev=00f16261082fbb2465f0603c667b450d5aa6694b#00f16261082fbb2465f0603c667b450d5aa6694b"
+dependencies = [
+ "bitflags 2.11.0",
+ "rustc-hash",
+ "tsrs_ast",
+ "tsrs_core",
+ "tsrs_diagnostics",
+ "tsrs_scanner",
+]
+
+[[package]]
+name = "tsrs_checker"
+version = "0.14.0"
+source = "git+https://github.com/maschwenk/tsrs?rev=00f16261082fbb2465f0603c667b450d5aa6694b#00f16261082fbb2465f0603c667b450d5aa6694b"
+dependencies = [
+ "bitflags 2.11.0",
+ "hashbrown 0.17.1",
+ "rustc-hash",
+ "tsrs_ast",
+ "tsrs_astnav",
+ "tsrs_binder",
+ "tsrs_core",
+ "tsrs_diagnostics",
+ "tsrs_module",
+ "tsrs_modulespecifiers",
+ "tsrs_parser",
+ "tsrs_printer",
+ "tsrs_pseudochecker",
+ "tsrs_scanner",
+ "tsrs_tsoptions",
+ "xxhash-rust",
+]
+
+[[package]]
+name = "tsrs_compiler"
+version = "0.14.0"
+source = "git+https://github.com/maschwenk/tsrs?rev=00f16261082fbb2465f0603c667b450d5aa6694b#00f16261082fbb2465f0603c667b450d5aa6694b"
+dependencies = [
+ "rayon",
+ "rustc-hash",
+ "tsrs_ast",
+ "tsrs_binder",
+ "tsrs_checker",
+ "tsrs_contentmapper",
+ "tsrs_core",
+ "tsrs_declarations",
+ "tsrs_diagnostics",
+ "tsrs_module",
+ "tsrs_modulespecifiers",
+ "tsrs_parser",
+ "tsrs_printer",
+ "tsrs_scanner",
+ "tsrs_sourcemap",
+ "tsrs_spanmap",
+ "tsrs_transformers",
+ "tsrs_tsoptions",
+ "tsrs_vfs",
+]
+
+[[package]]
+name = "tsrs_contentmapper"
+version = "0.14.0"
+source = "git+https://github.com/maschwenk/tsrs?rev=00f16261082fbb2465f0603c667b450d5aa6694b#00f16261082fbb2465f0603c667b450d5aa6694b"
+dependencies = [
+ "rustc-hash",
+ "tsrs_ast",
+ "tsrs_core",
+ "tsrs_diagnostics",
+ "tsrs_ipc",
+ "tsrs_parser",
+ "tsrs_spanmap",
+ "tsrs_tsoptions",
+ "xxhash-rust",
+]
+
+[[package]]
+name = "tsrs_core"
+version = "0.14.0"
+source = "git+https://github.com/maschwenk/tsrs?rev=00f16261082fbb2465f0603c667b450d5aa6694b#00f16261082fbb2465f0603c667b450d5aa6694b"
+dependencies = [
+ "dragonbox_ecma",
+ "hashbrown 0.17.1",
+ "indexmap 2.14.0",
+ "libc",
+ "memchr",
+ "rustc-hash",
+ "simdutf8",
+ "unicode-id-start",
+]
+
+[[package]]
+name = "tsrs_declarations"
+version = "0.14.0"
+source = "git+https://github.com/maschwenk/tsrs?rev=00f16261082fbb2465f0603c667b450d5aa6694b#00f16261082fbb2465f0603c667b450d5aa6694b"
+dependencies = [
+ "rustc-hash",
+ "tsrs_ast",
+ "tsrs_checker",
+ "tsrs_core",
+ "tsrs_diagnostics",
+ "tsrs_modulespecifiers",
+ "tsrs_printer",
+ "tsrs_scanner",
+ "tsrs_transformers",
+ "tsrs_tsoptions",
+]
+
+[[package]]
+name = "tsrs_diagnostics"
+version = "0.14.0"
+source = "git+https://github.com/maschwenk/tsrs?rev=00f16261082fbb2465f0603c667b450d5aa6694b#00f16261082fbb2465f0603c667b450d5aa6694b"
+dependencies = [
+ "rustc-hash",
+]
+
+[[package]]
+name = "tsrs_ipc"
+version = "0.14.0"
+source = "git+https://github.com/maschwenk/tsrs?rev=00f16261082fbb2465f0603c667b450d5aa6694b#00f16261082fbb2465f0603c667b450d5aa6694b"
+dependencies = [
+ "rustc-hash",
+ "tsrs_core",
+]
+
+[[package]]
+name = "tsrs_ls"
+version = "0.14.0"
+source = "git+https://github.com/maschwenk/tsrs?rev=00f16261082fbb2465f0603c667b450d5aa6694b#00f16261082fbb2465f0603c667b450d5aa6694b"
+dependencies = [
+ "bitflags 2.11.0",
+ "indexmap 2.14.0",
+ "rustc-hash",
+ "tsrs_ast",
+ "tsrs_astnav",
+ "tsrs_binder",
+ "tsrs_checker",
+ "tsrs_compiler",
+ "tsrs_core",
+ "tsrs_diagnostics",
+ "tsrs_lsproto",
+ "tsrs_module",
+ "tsrs_modulespecifiers",
+ "tsrs_parser",
+ "tsrs_printer",
+ "tsrs_projectutil",
+ "tsrs_scanner",
+ "tsrs_sourcemap",
+ "tsrs_spanmap",
+ "tsrs_tsoptions",
+ "tsrs_vfs",
+]
+
+[[package]]
+name = "tsrs_lsproto"
+version = "0.14.0"
+source = "git+https://github.com/maschwenk/tsrs?rev=00f16261082fbb2465f0603c667b450d5aa6694b#00f16261082fbb2465f0603c667b450d5aa6694b"
+dependencies = [
+ "rustc-hash",
+ "tsrs_core",
+ "tsrs_vfs",
+]
+
+[[package]]
+name = "tsrs_module"
+version = "0.14.0"
+source = "git+https://github.com/maschwenk/tsrs?rev=00f16261082fbb2465f0603c667b450d5aa6694b#00f16261082fbb2465f0603c667b450d5aa6694b"
+dependencies = [
+ "bitflags 2.11.0",
+ "rustc-hash",
+ "tsrs_ast",
+ "tsrs_core",
+ "tsrs_diagnostics",
+ "tsrs_vfs",
+]
+
+[[package]]
+name = "tsrs_modulespecifiers"
+version = "0.14.0"
+source = "git+https://github.com/maschwenk/tsrs?rev=00f16261082fbb2465f0603c667b450d5aa6694b#00f16261082fbb2465f0603c667b450d5aa6694b"
+dependencies = [
+ "regex",
+ "rustc-hash",
+ "tsrs_ast",
+ "tsrs_core",
+ "tsrs_module",
+ "tsrs_tsoptions",
+]
+
+[[package]]
+name = "tsrs_parser"
+version = "0.14.0"
+source = "git+https://github.com/maschwenk/tsrs?rev=00f16261082fbb2465f0603c667b450d5aa6694b#00f16261082fbb2465f0603c667b450d5aa6694b"
+dependencies = [
+ "bitflags 2.11.0",
+ "rustc-hash",
+ "tsrs_ast",
+ "tsrs_core",
+ "tsrs_diagnostics",
+ "tsrs_scanner",
+]
+
+[[package]]
+name = "tsrs_printer"
+version = "0.14.0"
+source = "git+https://github.com/maschwenk/tsrs?rev=00f16261082fbb2465f0603c667b450d5aa6694b#00f16261082fbb2465f0603c667b450d5aa6694b"
+dependencies = [
+ "bitflags 2.11.0",
+ "rustc-hash",
+ "tsrs_ast",
+ "tsrs_core",
+ "tsrs_scanner",
+ "tsrs_sourcemap",
+]
+
+[[package]]
+name = "tsrs_project"
+version = "0.14.0"
+source = "git+https://github.com/maschwenk/tsrs?rev=00f16261082fbb2465f0603c667b450d5aa6694b#00f16261082fbb2465f0603c667b450d5aa6694b"
+dependencies = [
+ "rustc-hash",
+ "tsrs_ast",
+ "tsrs_binder",
+ "tsrs_checker",
+ "tsrs_compiler",
+ "tsrs_contentmapper",
+ "tsrs_core",
+ "tsrs_diagnostics",
+ "tsrs_ls",
+ "tsrs_lsproto",
+ "tsrs_module",
+ "tsrs_parser",
+ "tsrs_projectutil",
+ "tsrs_tsoptions",
+ "tsrs_vfs",
+ "xxhash-rust",
+]
+
+[[package]]
+name = "tsrs_projectutil"
+version = "0.14.0"
+source = "git+https://github.com/maschwenk/tsrs?rev=00f16261082fbb2465f0603c667b450d5aa6694b#00f16261082fbb2465f0603c667b450d5aa6694b"
+dependencies = [
+ "rustc-hash",
+ "tsrs_core",
+]
+
+[[package]]
+name = "tsrs_pseudochecker"
+version = "0.14.0"
+source = "git+https://github.com/maschwenk/tsrs?rev=00f16261082fbb2465f0603c667b450d5aa6694b#00f16261082fbb2465f0603c667b450d5aa6694b"
+dependencies = [
+ "tsrs_ast",
+ "tsrs_core",
+]
+
+[[package]]
+name = "tsrs_scanner"
+version = "0.14.0"
+source = "git+https://github.com/maschwenk/tsrs?rev=00f16261082fbb2465f0603c667b450d5aa6694b#00f16261082fbb2465f0603c667b450d5aa6694b"
+dependencies = [
+ "bitflags 2.11.0",
+ "memchr",
+ "rustc-hash",
+ "tsrs_ast",
+ "tsrs_core",
+ "tsrs_diagnostics",
+]
+
+[[package]]
+name = "tsrs_sourcemap"
+version = "0.14.0"
+source = "git+https://github.com/maschwenk/tsrs?rev=00f16261082fbb2465f0603c667b450d5aa6694b#00f16261082fbb2465f0603c667b450d5aa6694b"
+dependencies = [
+ "rustc-hash",
+ "tsrs_ast",
+ "tsrs_core",
+ "tsrs_scanner",
+]
+
+[[package]]
+name = "tsrs_spanmap"
+version = "0.14.0"
+source = "git+https://github.com/maschwenk/tsrs?rev=00f16261082fbb2465f0603c667b450d5aa6694b#00f16261082fbb2465f0603c667b450d5aa6694b"
+dependencies = [
+ "bitflags 2.11.0",
+ "tsrs_core",
+]
+
+[[package]]
+name = "tsrs_transformers"
+version = "0.14.0"
+source = "git+https://github.com/maschwenk/tsrs?rev=00f16261082fbb2465f0603c667b450d5aa6694b#00f16261082fbb2465f0603c667b450d5aa6694b"
+dependencies = [
+ "bitflags 2.11.0",
+ "rustc-hash",
+ "tsrs_ast",
+ "tsrs_binder",
+ "tsrs_checker",
+ "tsrs_core",
+ "tsrs_printer",
+ "tsrs_scanner",
+ "tsrs_tsoptions",
+]
+
+[[package]]
+name = "tsrs_tsoptions"
+version = "0.14.0"
+source = "git+https://github.com/maschwenk/tsrs?rev=00f16261082fbb2465f0603c667b450d5aa6694b#00f16261082fbb2465f0603c667b450d5aa6694b"
+dependencies = [
+ "rustc-hash",
+ "tsrs_ast",
+ "tsrs_core",
+ "tsrs_diagnostics",
+ "tsrs_module",
+ "tsrs_parser",
+ "tsrs_scanner",
+ "tsrs_vfs",
+ "xxhash-rust",
+]
+
+[[package]]
+name = "tsrs_vfs"
+version = "0.14.0"
+source = "git+https://github.com/maschwenk/tsrs?rev=00f16261082fbb2465f0603c667b450d5aa6694b#00f16261082fbb2465f0603c667b450d5aa6694b"
+dependencies = [
+ "bitflags 2.11.0",
+ "rayon",
  "rustc-hash",
  "rustix",
- "same-file",
- "signal-hook 0.4.4",
- "smallvec 1.15.1",
- "xxhash-rust",
+ "tsrs_core",
 ]
 
 [[package]]
@@ -10673,7 +10971,15 @@ dependencies = [
  "tempfile",
  "tracing",
  "tracing-subscriber",
- "ts_goport",
+ "tsrs_api",
+ "tsrs_ast",
+ "tsrs_checker",
+ "tsrs_compiler",
+ "tsrs_core",
+ "tsrs_diagnostics",
+ "tsrs_scanner",
+ "tsrs_tsoptions",
+ "tsrs_vfs",
  "url",
 ]
 
@@ -10711,9 +11017,9 @@ checksum = "5c1cb5db39152898a79168971543b1cb5020dff7fe43c8dc468b0885f5e29df5"
 
 [[package]]
 name = "unicode-id-start"
-version = "1.5.0"
+version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0825d2e09dcae814a4273c1e1435979d414ede25b2ee235b1545da6682483765"
+checksum = "b8f73150333cb58412db36f2aca8f2875b013049705cc77b94ded70a1ab1f5da"
 
 [[package]]
 name = "unicode-ident"

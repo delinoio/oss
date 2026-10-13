@@ -29,7 +29,6 @@
 use std::collections::{BTreeMap, HashMap};
 
 use anyhow::Result;
-use ts_goport::prelude::*;
 
 use super::{
     super::{
@@ -42,6 +41,7 @@ use super::{
     },
 };
 use crate::{
+    compiler::api::*,
     passes::{PassId, PassSet},
     plan::{Candidate, FileEdit, Plan, Reason},
 };
@@ -178,7 +178,7 @@ fn boundary_of_members(members: &[Node], class: Node) -> Option<Reason> {
     }
     if members
         .iter()
-        .any(|&m| has_syntactic_modifier(m, ModifierFlags::ABSTRACT | ModifierFlags::AMBIENT))
+        .any(|&m| has_syntactic_modifier(m, ModifierFlags::Abstract | ModifierFlags::Ambient))
     {
         return Some(Reason::Inheritance);
     }
@@ -226,7 +226,7 @@ fn class_boundary(
         class.parent().parent().parent()
     };
     let exported_here =
-        has_syntactic_modifier(statement, ModifierFlags::EXPORT) && exposure.observed(file);
+        has_syntactic_modifier(statement, ModifierFlags::Export) && exposure.observed(file);
     let reexported = ctx.refs(symbol).iter().any(|r| {
         matches!(r.kind, RefKind::Alias | RefKind::Declaration)
             && r.node.parent().kind() == SyntaxKind::ExportSpecifier

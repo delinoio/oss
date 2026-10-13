@@ -26,7 +26,6 @@
 //! - `?.` is removed only when the receiver is proven not `undefined`/`null` at
 //!   runtime and its checker type is non-nullable.
 use anyhow::Result;
-use ts_goport::prelude::*;
 
 use super::{
     super::analysis::{Ctx, skip_outer, walk_up_outer},
@@ -38,6 +37,7 @@ use super::{
     },
 };
 use crate::{
+    compiler::api::*,
     passes::{PassId, PassSet},
     plan::{Candidate, FileEdit, Plan, Reason},
 };
@@ -531,7 +531,7 @@ fn joinable(statement: Node) -> bool {
         SyntaxKind::VariableStatement => !statement
             .declaration_list()
             .flags()
-            .intersects(NodeFlags::BLOCK_SCOPED),
+            .intersects(NodeFlags::BlockScoped),
         SyntaxKind::FunctionDeclaration
         | SyntaxKind::ClassDeclaration
         | SyntaxKind::EnumDeclaration

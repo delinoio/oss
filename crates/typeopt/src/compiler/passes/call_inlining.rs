@@ -41,13 +41,13 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
-use ts_goport::prelude::*;
 
 use super::{
     super::analysis::{Ctx, RefKind, skip_outer},
     calls_support::{self as support, Facts},
 };
 use crate::{
+    compiler::api::*,
     passes::{PassId, PassSet},
     plan::{Candidate, FileEdit, Plan, Reason},
 };
@@ -227,7 +227,7 @@ impl Target {
         let function = shape.function;
         let reject = |reason| Err((reason, shape.name));
         if function.asterisk_token().is_some()
-            || function.modifier_flags().intersects(ModifierFlags::ASYNC)
+            || function.modifier_flags().intersects(ModifierFlags::Async)
             || !function.type_parameters().is_empty()
             || !function.decorators().is_empty()
         {
@@ -251,8 +251,8 @@ impl Target {
         let statement = match shape.declaration.kind() {
             SyntaxKind::VariableDeclaration => {
                 let list = shape.declaration.parent();
-                if !list.flags().intersects(NodeFlags::CONST)
-                    || list.flags().intersects(NodeFlags::USING)
+                if !list.flags().intersects(NodeFlags::Const)
+                    || list.flags().intersects(NodeFlags::Using)
                     || shape.declaration.type_().is_some()
                 {
                     return reject(Reason::Mutation);
@@ -382,9 +382,9 @@ fn type_names(ctx: &mut Ctx, node: Node, out: &mut Vec<FreeName>) -> bool {
             SyntaxKind::Identifier if support::scope_reference(item) => {
                 let parent = item.parent();
                 let meaning = if parent.kind() == SyntaxKind::QualifiedName {
-                    SymbolFlags::NAMESPACE
+                    SymbolFlags::Namespace
                 } else if parent.kind() == SyntaxKind::TypeReference {
-                    SymbolFlags::TYPE
+                    SymbolFlags::Type
                 } else {
                     return false;
                 };
@@ -428,7 +428,7 @@ impl Walker<'_, '_, '_> {
         if name == "arguments" {
             return Err((Reason::ObservableArity, node));
         }
-        let raw = self.ctx.checker.get_symbol_at_location(node, true);
+        let raw = self.ctx.checker.get_symbol_at_location(node);
         let local = if shorthand {
             self.ctx
                 .checker
@@ -454,7 +454,7 @@ impl Walker<'_, '_, '_> {
             ));
             return Ok(());
         }
-        let symbol = support::resolve_at(self.ctx, name, node, SymbolFlags::VALUE);
+        let symbol = support::resolve_at(self.ctx, name, node, SymbolFlags::Value);
         if symbol.is_nil() {
             return Err((Reason::UnresolvedCall, node));
         }
@@ -469,7 +469,7 @@ impl Walker<'_, '_, '_> {
         }
         self.free.push(FreeName {
             name: name.to_owned(),
-            meaning: SymbolFlags::VALUE,
+            meaning: SymbolFlags::Value,
             symbol,
         });
         if !self.facts.stable_binding(self.ctx, node) {
@@ -488,8 +488,8 @@ impl Walker<'_, '_, '_> {
     fn walk(&mut self, node: Node, conditional: bool) -> Result<(), Rejection> {
         // Inside an optional chain everything after its base is
         // conditional.
-        let chained = conditional || node.flags().intersects(NodeFlags::OPTIONAL_CHAIN);
-        if node.flags().intersects(NodeFlags::OPTIONAL_CHAIN)
+        let chained = conditional || node.flags().intersects(NodeFlags::OptionalChain);
+        if node.flags().intersects(NodeFlags::OptionalChain)
             || node.kind() == SyntaxKind::ConditionalExpression
             || (node.kind() == SyntaxKind::BinaryExpression
                 && matches!(
@@ -791,7 +791,7 @@ fn plan_target(
         } else {
             target.shape.declaration
         },
-        ModifierFlags::EXPORT,
+        ModifierFlags::Export,
     );
     if removable
         && enabled.contains(PassId::ResidualDependencyRemoval)
@@ -954,7 +954,7 @@ fn site(
     call: Node,
 ) -> Result<(String, Vec<(Node, String)>), Reason> {
     if call.kind() != SyntaxKind::CallExpression
-        || call.flags().intersects(NodeFlags::OPTIONAL_CHAIN)
+        || call.flags().intersects(NodeFlags::OptionalChain)
         || call.question_dot_token().is_some()
     {
         return Err(Reason::UnsupportedSyntax);
@@ -1009,7 +1009,7 @@ fn site(
     let mut imports: Vec<(Node, String)> = Vec::new();
     for free in &target.free {
         if support::resolve_at(ctx, &free.name, call, free.meaning) != free.symbol
-            || (free.meaning == SymbolFlags::VALUE
+            || (free.meaning == SymbolFlags::Value
                 && support::type_only_alias_at(ctx, &free.name, call))
         {
             let addition = import_for(ctx, facts, file, free).ok_or(Reason::UnsupportedSyntax)?;
@@ -1207,7 +1207,7 @@ fn import_for(
         }
         let module = ctx
             .checker
-            .get_symbol_at_location(statement.module_specifier(), true);
+            .get_symbol_at_location(statement.module_specifier());
         if module.is_nil() {
             continue;
         }
@@ -1216,7 +1216,7 @@ fn import_for(
         if exported.is_nil() || support::norm(ctx, exported) != free.symbol {
             continue;
         }
-        let value = free.meaning == SymbolFlags::VALUE;
+        let value = free.meaning == SymbolFlags::Value;
         if value {
             // Only an import that already evaluates its module at runtime.
             if clause.is_type_only() || !support::runtime_dependency(ctx, file, statement) {
