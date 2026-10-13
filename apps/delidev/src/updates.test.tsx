@@ -32,6 +32,7 @@ function fixture(
   revision = 1n,
   id = newRequestId(),
   hasCandidate = true,
+  rootReady?: boolean,
 ) {
   const resource = create(ResourceSchema, {
     id,
@@ -61,15 +62,17 @@ function fixture(
   const check = vi.fn((_request: unknown) => ({
     update: hasCandidate ? resource : undefined,
   }));
+  const getUpdate = vi.fn(() => ({ update: resource }));
   const transport = createRouterTransport((r) => {
     r.service(SystemService, {
       getStatus: () => ({
         capabilities: supported ? [SystemCapability.SIGNED_UPDATES_V1] : [],
+        productionRootReady: rootReady,
       }),
     });
     r.service(InstallationService, {
       checkUpdate: check,
-      getUpdate: () => ({ update: resource }),
+      getUpdate,
     });
   });
   render(
@@ -99,7 +102,7 @@ function fixture(
       </QueryClientProvider>
     </TransportProvider>,
   );
-  return { control, check, id };
+  return { control, check, getUpdate, id };
 }
 it("gates all update effects on negotiated support", async () => {
   const f = fixture(false);
@@ -426,4 +429,68 @@ it("retains the exact failed-check request for explicit retry and never claims c
   expect(f.check).toHaveBeenCalledTimes(2);
   expect(f.check.mock.calls[1][0]).toEqual(f.check.mock.calls[0][0]);
   expect(f.control).not.toHaveBeenCalled();
+});
+
+it("disables only fresh desktop checks and explains an unavailable production root without failure presentation", async () => {
+  const f = fixture(true, 1n, newRequestId(), true, false);
+  const status = await screen.findByText(
+    "Signed updates are unavailable in this build.",
+  );
+  const help = screen.getByText(/has no production update-signing key/);
+  expect(status.getAttribute("role")).toBe("status");
+  const check = screen.getByRole<HTMLButtonElement>("button", {
+    name: "Check for updates",
+  });
+  expect(check.disabled).toBe(true);
+  expect(check.getAttribute("aria-describedby")).toBe(
+    `${status.id} ${help.id}`,
+  );
+  fireEvent.click(check);
+  expect(document.activeElement).not.toBe(check);
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.queryByText("The update operation failed.")).toBeNull();
+  expect(screen.getByText("Update recovery").closest("details")!.open).toBe(
+    false,
+  );
+  await act(async () => {});
+  expect(f.check).not.toHaveBeenCalled();
+  expect(f.getUpdate).not.toHaveBeenCalled();
+  expect(f.control).not.toHaveBeenCalled();
+});
+
+it("keeps explicit checks for ready and legacy status responses", async () => {
+  for (const rootReady of [true, undefined]) {
+    cleanup();
+    const f = fixture(true, 1n, newRequestId(), false, rootReady);
+    await screen.findByText("Updates have not been checked yet.");
+    expect(
+      screen.queryByText("Signed updates are unavailable in this build."),
+    ).toBeNull();
+    const check = screen.getByRole<HTMLButtonElement>("button", {
+      name: "Check for updates",
+    });
+    await vi.waitFor(() => expect(check.disabled).toBe(false));
+    expect(check.getAttribute("aria-describedby")).toBeNull();
+    fireEvent.click(check);
+    await screen.findByText("No newer signed update was found.");
+    expect(f.check).toHaveBeenCalledTimes(1);
+  }
+});
+
+it("keeps original-ID inspection usable when production root readiness is false", async () => {
+  const f = fixture(true, 1n, newRequestId(), true, false);
+  await screen.findByText("Signed updates are unavailable in this build.");
+  const recovery = screen.getByText("Update recovery").closest("details")!;
+  fireEvent.click(within(recovery).getByText("Update recovery"));
+  const input = within(recovery).getByLabelText("Original update ID");
+  fireEvent.change(input, { target: { value: f.id } });
+  fireEvent.click(
+    within(recovery).getByRole("button", { name: "Inspect original update" }),
+  );
+  await vi.waitFor(() => expect(f.getUpdate).toHaveBeenCalled());
+  expect(f.check).not.toHaveBeenCalled();
+  expect(
+    screen.getByRole<HTMLButtonElement>("button", { name: "Check for updates" })
+      .disabled,
+  ).toBe(true);
 });

@@ -14708,6 +14708,28 @@
       "newDeclaration": true
     },
     {
+      "issue": 2248,
+      "kind": "enum",
+      "declaration": "RequestDiagnosticAttribution",
+      "member": "REQUEST_DIAGNOSTIC_ATTRIBUTION_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2248,
+      "kind": "enum",
+      "declaration": "RequestDiagnosticAttribution",
+      "member": "REQUEST_DIAGNOSTIC_ATTRIBUTION_CODEX_REVIEWER",
+      "number": 1
+    },
+    {
+      "issue": 2248,
+      "kind": "message",
+      "declaration": "RequestDiagnostic",
+      "member": "attribution",
+      "number": 34
+    },
+    {
       "issue": 2970,
       "kind": "enum",
       "declaration": "SystemCapability",
@@ -14720,6 +14742,13 @@
       "kind": "message",
       "member": "observed_at_unix_ms",
       "number": 12
+    },
+    {
+      "issue": 3069,
+      "kind": "message",
+      "declaration": "GetStatusResponse",
+      "member": "production_root_ready",
+      "number": 9
     }
   ],
   "rpcReservations": [

@@ -17,6 +17,8 @@ export enum EntranceMotion {
   Y2 = "y2",
   // 120ms translateX(4px).
   X4 = "x4",
+  // 120ms translateY(4px).
+  Y4Short = "y4-short",
 }
 /**
  * Which element of an opted-in surface receives the entrance. `Surface` moves
@@ -32,6 +34,7 @@ const entranceAnimationNames: Record<EntranceMotion, string> = {
   [EntranceMotion.Y4]: "entrance-y4",
   [EntranceMotion.Y2]: "entrance-y2",
   [EntranceMotion.X4]: "entrance-x4",
+  [EntranceMotion.Y4Short]: "entrance-y4-short",
 };
 // Dispatched on an animated ancestor when a native dialog mounts beneath it.
 const ENTRANCE_SETTLE_EVENT = "delidev-entrance-settle";

@@ -219,7 +219,9 @@ does not copy personal DeliDev configuration or account material.
 
 Listen only on numeric IPv4 loopback. Each Go server allows only its own QA origin.
 The QA host validates Host and Origin, rejects cross-origin control, and uses
-no-store responses. Bootstrap exposes only the separately revocable paired
+no-store responses. Static responses use `script-src 'self' 'wasm-unsafe-eval'`
+(no `unsafe-eval`, inline script or wildcard) so the emitted same-origin Ghostty
+WASM asset can compile, and serve `.wasm` files as `application/wasm`. Bootstrap exposes only the separately revocable paired
 client credential, never owner authority. Keep client/Worker proof credentials
 in request-local memory, outside URL parameters, browser storage, query caches,
 build output, run manifests and logs. No arbitrary path or command HTTP interface
