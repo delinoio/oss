@@ -27,6 +27,7 @@ import {
   type SearchConversationsResponse,
 } from "@delinoio/delidev-api-client";
 import { document, text } from "./documents";
+import { SearchOpenStatus } from "./search-session-routing";
 import { Failure } from "./ui";
 import { ResourceChoice } from "./configuration-fields";
 import {
@@ -85,9 +86,15 @@ const emptySearch: SearchFilters = {
 export function Search({
   active,
   open,
+  opening,
+  submitted,
 }: {
   active: boolean;
   open: (id: string) => void;
+  opening?: { id: string; status: SearchOpenStatus };
+  // Called when a submission replaces the result set, so an opening started
+  // from the previous results cannot navigate or report on unrelated rows.
+  submitted?: () => void;
 }) {
   const productLabel = useProductLabels();
   useLocale();
@@ -243,6 +250,7 @@ export function Search({
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (!draft.query.trim()) return;
+    submitted?.();
     const next = { ...draft, query: draft.query.trim() };
     if (JSON.stringify(query) === JSON.stringify(next)) result.reload();
     else setQuery(next);
@@ -372,6 +380,14 @@ export function Search({
           <p>{copy("views.chooseASearchTermAndFilters_99f204")}</p>
         ) : null}
         <Failure failure={result.error?.failure} />
+        {opening?.status === SearchOpenStatus.Pending ? (
+          <p role="status">{copy("views.openingTheConversation_4c1a7e")}</p>
+        ) : null}
+        {opening?.status === SearchOpenStatus.Unavailable ? (
+          <p className="notice" role="alert">
+            {copy("views.theConversationParentCouldNotBe_9d2b53")}
+          </p>
+        ) : null}
         {query && !result.loaded && result.loading ? (
           <p role="status">{copy("views.searching_c31723")}</p>
         ) : null}

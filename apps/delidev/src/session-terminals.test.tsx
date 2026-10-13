@@ -855,6 +855,19 @@ it("keeps every existing terminal picker keyboard reachable in the single-pane w
     second = screen.getByRole("button", { name: /Terminal 2/ });
   expect(first.tabIndex).toBe(0);
   expect(second.tabIndex).toBe(0);
+  // The shared tab presentation never converts the tabbed group into ARIA tabs.
+  const strip = first.parentElement!;
+  expect(strip.getAttribute("role")).toBe("group");
+  expect(strip.classList.contains("tab-strip")).toBe(true);
+  expect(
+    [first, second].every(
+      (button) =>
+        button.classList.contains("tab-item") &&
+        button.classList.contains("tab-label") &&
+        button.getAttribute("role") === null &&
+        button.getAttribute("aria-selected") === null,
+    ),
+  ).toBe(true);
   first.focus();
   expect(fireEvent.keyDown(first, { key: "ArrowRight" })).toBe(true);
   expect(open).not.toHaveBeenCalled();

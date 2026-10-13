@@ -37,7 +37,9 @@ import {
 } from "./usage-filters";
 import { UsageCharts } from "./usage-chart";
 import type { AccountingDisclosures } from "./usage-accounting-source";
+import "./tab-strip.css";
 import "./usage.css";
+import { revealTabItem } from "./tab-strip";
 import { GrokAccounting } from "./grok-accounting";
 import { NativeAccounting } from "./native-accounting";
 import { UsageOverview } from "./usage-overview";
@@ -548,7 +550,7 @@ export function Usage({
         aria-busy={result.isFetching}
       >
         <div
-          className="usage-tabs"
+          className="tab-strip usage-tabs"
           role="tablist"
           aria-label={copy("usage.analysisTabs")}
         >
@@ -558,11 +560,13 @@ export function Usage({
               ref={value === UsageTab.Prices ? pricesTab : undefined}
               type="button"
               role="tab"
+              className={`tab-item tab-label${tab === value ? " is-selected" : ""}`}
               id={`${tabId}-${value}-tab`}
               aria-controls={`${tabId}-${value}-panel`}
               aria-selected={tab === value}
               tabIndex={tab === value ? 0 : -1}
               onClick={() => setTab(value)}
+              onFocus={(event) => revealTabItem(event.currentTarget)}
               onKeyDown={(event) => {
                 const next =
                   event.key === "ArrowRight"

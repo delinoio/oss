@@ -1,6 +1,7 @@
 import { ProductIdentityProvider } from "./product-identity-labels";
 import { DraftEditGenerations } from "./draft-edit-generations";
 import { SessionInboxReadBoundary } from "./session-inbox-read";
+import { SubscriptionQuotaAutoRefresh } from "./subscription-quota-refresh";
 import { InboxBadgePresentation } from "./inbox-badge";
 import { SessionNameEditorProvider } from "./session-name-editor";
 import {
@@ -53,6 +54,11 @@ import {
 import { document, text } from "./documents";
 import { SettingsCategory } from "./settings-category";
 import { SessionView } from "./session";
+import {
+  resolveSearchSession,
+  SearchOpenStatus,
+  SearchSessionRoute,
+} from "./search-session-routing";
 import { Search, Settings, Surface } from "./views";
 import { NewSession, NewSessionKind } from "./new-session";
 import { Inbox } from "./inbox";
@@ -140,7 +146,7 @@ function Shell({
     [queryClient],
   );
   useLocale();
-  const [surface, setSurface] = useState(Surface.Sessions);
+  const [surface, setSurfaceState] = useState(Surface.Sessions);
   useShortcutSurface(surface);
   const openHelp = useShortcutHelp();
   const holdHelp = useHeldShortcutHelp();
@@ -181,6 +187,50 @@ function Shell({
     return true;
   };
 
+  const searchIntent = useRef(0);
+  const searchAbort = useRef<AbortController>(undefined);
+  const searchMounted = useRef(false);
+  // Invalidates the latest opening intent and cancels its in-flight read so a
+  // superseded GetResource cannot linger, accumulate or run after reconnection.
+  const supersedeSearchOpening = () => {
+    searchIntent.current += 1;
+    searchAbort.current?.abort();
+    searchAbort.current = undefined;
+  };
+  const [searchOpening, setSearchOpening] = useState<{
+    id: string;
+    status: SearchOpenStatus;
+  }>();
+  useEffect(() => {
+    searchMounted.current = true;
+    return () => {
+      searchMounted.current = false;
+      supersedeSearchOpening();
+    };
+  }, []);
+  // Leaving Search supersedes a pending result opening synchronously, in the
+  // navigation path itself: a read can settle after the new surface commits but
+  // before passive effects flush, and must not override the chosen destination.
+  const setSurface = (next: Surface) => {
+    if (next !== Surface.Search) supersedeSearchOpening();
+    setSurfaceState(next);
+  };
+  useEffect(() => {
+    if (surface === Surface.Search) return;
+    supersedeSearchOpening();
+    setSearchOpening(undefined);
+  }, [surface]);
+  // A new search replaces the result set, so an opening chosen from the
+  // previous results is cancelled and its pending or unavailable status cleared.
+  const resetSearchOpening = () => {
+    supersedeSearchOpening();
+    setSearchOpening(undefined);
+  };
+  // A same-identity reconnect keeps this shell but replaces the transport that
+  // owns the pending read, which would otherwise leave its status stuck.
+  useLayoutEffect(() => {
+    resetSearchOpening();
+  }, [transport]);
   const [selected, setSelected] = useState("");
   const [sessionNavigationActivation, setSessionNavigationActivation] =
     useState(0);
@@ -287,7 +337,7 @@ function Shell({
     setSettingsEntry(undefined);
     if (destination !== surface) setProjectCreation(undefined);
   };
-  const open = (id: string, originalParent?: string, name?: string) => {
+  const openSession = (id: string, originalParent?: string, name?: string) => {
     setSessionNavigationActivation((value) => value + 1);
     const parent = tabs.parent(id) ?? originalParent;
     if (parent) {
@@ -309,6 +359,52 @@ function Shell({
     setSelected(id);
     setSurface(Surface.Sessions);
     setDrawerOpen(false);
+  };
+  const openSessionRef = useRef(openSession);
+  useLayoutEffect(() => {
+    openSessionRef.current = openSession;
+  });
+  // Any deliberate navigation supersedes a pending Search-result resolution.
+  const open = (id: string, originalParent?: string, name?: string) => {
+    supersedeSearchOpening();
+    openSession(id, originalParent, name);
+  };
+  // A never-visited Sidechat result carries only its child ID, so its original
+  // parent is read from retained metadata before the host is chosen.
+  const openSearchResult = (id: string) => {
+    if (tabs.parent(id)) {
+      open(id);
+      return;
+    }
+    supersedeSearchOpening();
+    const token = searchIntent.current;
+    const controller = new AbortController();
+    searchAbort.current = controller;
+    const owner = transport;
+    setSearchOpening({ id, status: SearchOpenStatus.Pending });
+    void resolveSearchSession(queryClient, owner, id, controller.signal).then(
+      (resolution) => {
+        if (searchAbort.current === controller) searchAbort.current = undefined;
+        if (
+          !searchMounted.current ||
+          searchIntent.current !== token ||
+          latestTransport.current !== owner
+        ) {
+          console.info("delidev.search.session_route_discarded", {
+            sessionId: id,
+          });
+          return;
+        }
+        if (resolution.route === SearchSessionRoute.Unavailable) {
+          setSearchOpening({ id, status: SearchOpenStatus.Unavailable });
+          return;
+        }
+        setSearchOpening(undefined);
+        if (resolution.route === SearchSessionRoute.Sidechat)
+          openSessionRef.current(id, resolution.parent, resolution.name);
+        else openSessionRef.current(id);
+      },
+    );
   };
   const navigateTray = (destination: TrayDestination, inboxId?: string) => {
     if (destination === TrayDestination.Settings) {
@@ -762,7 +858,12 @@ function Shell({
                           created={sessionCreated}
                         />
                       ) : null}
-                      <Search active={surface === Surface.Search} open={open} />
+                      <Search
+                        active={surface === Surface.Search}
+                        open={openSearchResult}
+                        opening={searchOpening}
+                        submitted={resetSearchOpening}
+                      />
                       <div
                         className="inbox-container"
                         hidden={surface !== Surface.Inbox}
@@ -877,6 +978,7 @@ export function App({
           <ProductIdentityProvider>
             <NotificationProvider>
               <MutationIntents>
+                <SubscriptionQuotaAutoRefresh ready={connectionReady} />
                 <SessionTabsProvider>
                   <SessionSubmissionsProvider>
                     <ImageDraftProvider>

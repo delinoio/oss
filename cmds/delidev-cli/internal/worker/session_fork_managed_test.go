@@ -357,7 +357,7 @@ func TestManagedSidechatWorkerOriginalForkAuthentication(t *testing.T) {
 }
 
 func TestManagedIndependentForkWorkerOriginalAuthenticationAndTools(t *testing.T) {
-	for _, fault := range []string{"success", "finish-response-loss", "native-response-loss", "cleanup", "helper-retirement", "changed-tool-prefix"} {
+	for _, fault := range []string{"success", "large-function-output", "finish-response-loss", "native-response-loss", "cleanup", "helper-retirement", "changed-tool-prefix"} {
 		t.Run(fault, func(t *testing.T) {
 			f := newCheckpointFixture(t)
 			ctx := context.Background()
@@ -412,6 +412,14 @@ func TestManagedIndependentForkWorkerOriginalAuthenticationAndTools(t *testing.T
 			thread := map[string]any{"id": string(checkpoint.Native.ThreadID), "sessionId": string(checkpoint.Native.SessionID), "cliVersion": codex.SupportedVersion, "cwd": manifest.PrimaryPath, "modelProvider": "openai", "createdAt": 1, "updatedAt": 1, "ephemeral": false, "preview": "", "projectId": nil, "source": "appServer", "status": map[string]any{"type": "idle"}, "turns": []any{}, "historyMode": "legacy", "extra": nil, "canAcceptDirectInput": true, "path": rollout}
 			turn := map[string]any{"id": string(checkpoint.Native.TurnID), "items": []any{map[string]any{"type": "userMessage", "id": "fixture-user", "clientId": string(checkpoint.Native.Inputs[0].ID), "content": []any{map[string]any{"type": "text", "text": f.input.Input.Prompt, "text_elements": []any{}}}}}, "itemsView": "full", "status": "completed", "startedAt": nil, "completedAt": nil, "durationMs": nil, "error": nil}
 			turn["items"] = append(turn["items"].([]any), map[string]any{"type": "commandExecution", "id": "settled-command", "status": "completed", "command": "true", "cwd": manifest.PrimaryPath, "source": "agent", "commandActions": []any{}, "exitCode": 0}, map[string]any{"type": "fileChange", "id": "settled-patch", "status": "completed", "changes": []any{}})
+			if fault == "large-function-output" {
+				// The native history carries one private function output above the
+				// 1 MiB public document limit but inside the 4 MiB history bound.
+				// Both the source inspection and the child verification must read it
+				// through the real Worker's Fork client configuration.
+				const field = 700 << 10
+				turn["items"] = append(turn["items"].([]any), map[string]any{"type": "functionCallOutput", "id": "large-output", "name": "tool", "output": []any{map[string]any{"type": "input_image", "image_url": strings.Repeat("a", field)}, map[string]any{"type": "encrypted_content", "encrypted_content": strings.Repeat("b", field)}}})
+			}
 			if err = os.WriteFile(filepath.Join(f.root, "managed-sidechat-fixture.json"), mustForkJSON(managedSidechatProcess{Thread: thread, Turn: turn, Fault: fault}), 0600); err != nil {
 				t.Fatal(err)
 			}
@@ -432,7 +440,7 @@ func TestManagedIndependentForkWorkerOriginalAuthenticationAndTools(t *testing.T
 			if auth.takes != 1 || auth.finishes != 1 {
 				t.Fatalf("protected original claim counts take=%d finish=%d error=%v", auth.takes, auth.finishes, err)
 			}
-			if fault == "success" {
+			if fault == "success" || fault == "large-function-output" {
 				var result domain.ForkJobResult
 				if err != nil || domain.Decode(output, &result) != nil || result.ValidateIdentity(input) != nil || !result.CleanupVerified || result.ManagedFinish != domain.ID(auth.finish.Mutation.RequestId) {
 					t.Fatal("lost protected Finish before paused-child result", err)
@@ -457,7 +465,7 @@ func TestManagedIndependentForkWorkerOriginalAuthenticationAndTools(t *testing.T
 					t.Fatal("joined helper retirement failure skipped independent authentication removal", e)
 				}
 			}
-			if fault != "success" && fault != "changed-tool-prefix" {
+			if fault != "success" && fault != "large-function-output" && fault != "changed-tool-prefix" {
 				var uncertainty *managedExecutionUncertain
 				if err == nil || len(output) != 0 || !errors.As(err, &uncertainty) {
 					t.Fatal("uncertain child published", err)
@@ -468,7 +476,7 @@ func TestManagedIndependentForkWorkerOriginalAuthenticationAndTools(t *testing.T
 			if retryErr == nil || len(again) != 0 || auth.takes != takes || auth.finishes != finishes {
 				t.Fatal("retained original child permitted replacement claim/publication", retryErr)
 			}
-			if fault == "success" || fault == "finish-response-loss" {
+			if fault == "success" || fault == "large-function-output" || fault == "finish-response-loss" {
 				if _, e := os.Stat(filepath.Join(auth.home, "auth.json")); !os.IsNotExist(e) {
 					t.Fatal("original protected authentication retained", e)
 				}
@@ -478,5 +486,23 @@ func TestManagedIndependentForkWorkerOriginalAuthenticationAndTools(t *testing.T
 				clear(auth.finish.Bundle)
 			}
 		})
+	}
+}
+
+func TestForkFrameProfileIsExplicitForManagedIndependentForkOnly(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		subscription bool
+		purpose      domain.ForkPurpose
+		expected     codex.FrameProfile
+	}{
+		{"managed-independent", true, domain.IndependentFork, codex.ForkHistoryFrameProfile},
+		{"api-independent", false, domain.IndependentFork, codex.DefaultFrameProfile},
+		{"managed-sidechat", true, domain.SidechatFork, codex.DefaultFrameProfile},
+		{"api-sidechat", false, domain.SidechatFork, codex.DefaultFrameProfile},
+	} {
+		if forkFrameProfile(test.subscription, test.purpose) != test.expected {
+			t.Fatal("unexpected Fork frame profile", test.name)
+		}
 	}
 }

@@ -25,6 +25,7 @@ type threadFixture struct {
 	steerCount             int
 	history                json.RawMessage
 	historyChangeAfterRead bool
+	historyCursorPad       int
 	historyNotification    *fixtureHistoryNotification
 	sidechatDrift          string
 	reverted               bool

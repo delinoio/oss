@@ -14,14 +14,35 @@ const (
 	credentialUnknown credentialFraming = iota
 	credentialOrdinary
 	credentialSSE
+	// Opaque bodies (diffs, plain text, binary) are never JSON-decoded. The
+	// independent literal/Base64 body guard still covers their wire bytes.
+	credentialOpaque
 )
 
 // Select framing from the response media type when available. Otherwise retain
 // only a bounded initial line while checking typeless SSE syntax. Metadata never
 // enters the JSON decoder; the body literal guard still sees it.
 func (g *credentialJSONGuard) frame(b byte, offset int64) {
+	if g.framing == credentialOpaque {
+		return
+	}
 	if g.framing == credentialOrdinary {
+		if g.sequence && b == credentialRecordSeparator {
+			g.resetRecord()
+			return
+		}
 		g.feed(b, offset)
+		return
+	}
+	// An unframed body whose first byte is RS is an RFC 7464 JSON text sequence:
+	// neither JSON nor a useful SSE field can start with it, and a request that
+	// accepts application/json-seq parses it as such whatever label the response
+	// carries (including none or text/event-stream). Commit to sequence framing so
+	// every record is decoded as an independent JSON text.
+	if g.framing == credentialUnknown && len(g.probe) == 0 && offset == 0 && b == credentialRecordSeparator {
+		g.framing = credentialOrdinary
+		g.sequence = true
+		g.sse.probeLeadingWhitespace = false
 		return
 	}
 	// An optional initial UTF-8 BOM belongs to framing, not a field name.
@@ -162,6 +183,20 @@ func (g *credentialJSONGuard) flushProbe(offset int64) {
 	g.probe = g.probe[:0]
 }
 
+// RFC 7464 starts every JSON text of an application/json-seq body with RS. A
+// conforming reader recovers from a malformed text at the next RS, so each
+// separator ends the previous record and starts independent decoder state.
+const credentialRecordSeparator byte = 0x1e
+
+// Settle the right boundary of any retained candidate, then drop JSON string
+// and escape state so one record cannot change how the next one is decoded.
+func (g *credentialJSONGuard) resetRecord() {
+	g.finish()
+	clear(g.escape)
+	g.escape = nil
+	g.resetString()
+}
+
 type credentialSSEField uint8
 
 const (
@@ -190,10 +225,7 @@ func (g *credentialJSONGuard) frameSSE(b byte, offset int64) {
 		if !s.linePresent {
 			// Every record has independent JSON string/escape state. Finishing
 			// also settles the right boundary of a retained short candidate.
-			g.finish()
-			clear(g.escape)
-			g.escape = nil
-			g.resetString()
+			g.resetRecord()
 		} else if s.field == credentialSSEData || s.field == credentialSSEName && s.nameLength == len("data") {
 			// SSE joins data values with LF, irrespective of wire line endings.
 			// Valid JSON cannot split a string across this literal newline.
