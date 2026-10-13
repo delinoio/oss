@@ -564,7 +564,9 @@ function NativeSessionBrowser({
     ? inventoryKnown && !inventoryFailure
     : discovery === ProfileDiscovery.Absent;
   // Re-reads profiles from the first page only; no mutation is repeated.
-  const restartDiscovery = (phase: "discovery_retry" | "discovery_reactivated") => {
+  const restartDiscovery = (
+    phase: "discovery_retry" | "discovery_reactivated",
+  ) => {
     console.info("delidev.browser_profiles", { phase });
     setFailure(undefined);
     setProof(undefined);
