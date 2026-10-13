@@ -696,7 +696,10 @@ test("captured output stops waiting for a held write at the bound and keeps the 
   `);
   assert.equal(result.code, 7, result.stderr);
   assert.ok(result.elapsed < 5_000, `exit took ${result.elapsed}ms`);
-  assert.equal(readFileSync(`${file}.incomplete`, "utf8"), "output-drain-timeout");
+  assert.equal(
+    readFileSync(`${file}.incomplete`, "utf8"),
+    "output-drain-timeout",
+  );
 });
 
 test("captured output does not complete before a below-watermark write callback", async () => {
