@@ -237,7 +237,9 @@ it("plays the entrance for a targeted Git Profiles entry", () => {
     ),
   );
   expect(column().getAttribute("data-entrance")).toBe("y4");
-  expect(screen.getByRole("button", { name: "New GitHub profile" })).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "New GitHub profile" }),
+  ).toBeTruthy();
   dispatchAnimation(column());
   expect(column().getAttribute("data-entrance")).toBeNull();
 });
