@@ -49,20 +49,68 @@ type ServerOptions struct {
 }
 
 // CaptureServerOptions resolves new relative TLS references in the original
-// installing/server process, never later in a native user manager's cwd. It
-// preserves references only; it neither reads nor copies credential bytes.
+// installing/server process, never later in a native user manager's cwd. The
+// original cwd is resolved to its physical path once, so retargeting a symlink
+// spelling (for example PWD) cannot change the stored references. Absolute
+// references are preserved unchanged, and Windows rooted (`\cert.pem`) or
+// drive-relative (`C:cert.pem`) forms keep their Windows meaning instead of
+// being joined blindly to the cwd. It preserves references only; it neither
+// reads nor copies credential bytes.
 func CaptureServerOptions(options ServerOptions) (ServerOptions, error) {
+	var physicalCwd string
 	for _, path := range []*string{&options.TLSCertificate, &options.TLSKey} {
 		if *path == "" || filepath.IsAbs(*path) {
 			continue
 		}
-		absolute, err := filepath.Abs(*path)
+		if physicalCwd == "" {
+			resolved, err := physicalWorkingDirectory()
+			if err != nil {
+				return ServerOptions{}, domain.Fail(domain.InvalidArgument, "The original TLS references could not be resolved.", "Inspect the installing process directory and reinstall with explicit absolute references.")
+			}
+			physicalCwd = resolved
+		}
+		anchored, err := anchorReference(physicalCwd, *path)
 		if err != nil {
+			slog.Warn("userservice tls reference anchor failed", "component", "userservice", "operation", "capture_server_options", "error", err)
 			return ServerOptions{}, domain.Fail(domain.InvalidArgument, "The original TLS references could not be resolved.", "Inspect the installing process directory and reinstall with explicit absolute references.")
 		}
-		*path = absolute
+		*path = anchored
 	}
 	return options, nil
+}
+
+// anchorReference resolves one non-absolute reference against the physical cwd
+// while preserving platform path semantics. On Windows, a rooted reference such
+// as `\cert.pem` is relative to the cwd drive only, and a drive-relative one such
+// as `C:cert.pem` is relative to that drive's current directory; joining either
+// to the cwd would change its meaning. Both volume and rooted checks are no-ops
+// on platforms where every rooted path is already absolute.
+func anchorReference(physicalCwd, path string) (string, error) {
+	volume := filepath.VolumeName(path)
+	rest := path[len(volume):]
+	rooted := rest != "" && os.IsPathSeparator(rest[0])
+	switch {
+	case volume == "" && !rooted:
+		return filepath.Join(physicalCwd, path), nil
+	case volume == "":
+		return filepath.Clean(filepath.VolumeName(physicalCwd) + path), nil
+	case !rooted && strings.EqualFold(volume, filepath.VolumeName(physicalCwd)):
+		return filepath.Join(physicalCwd, rest), nil
+	default:
+		// A drive-relative reference on another drive depends on that drive's
+		// per-drive current directory, which only the operating system knows.
+		return filepath.Abs(path)
+	}
+}
+
+// physicalWorkingDirectory returns the current directory with every symlink
+// resolved. os.Getwd may return a symlink spelling taken from PWD.
+func physicalWorkingDirectory() (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(cwd)
 }
 
 func (options ServerOptions) requireAbsoluteTLS() error {
