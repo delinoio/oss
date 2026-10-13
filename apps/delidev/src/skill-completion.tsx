@@ -455,14 +455,7 @@ export function useSkillCompletion({
     // need a localized update even when the completion panel is dismissed.
     if (count > 0 || (previous !== undefined && previous > 0))
       setAnnouncement({ scope, transport, locale, count });
-  }, [
-    scope,
-    transport,
-    locale,
-    inventoryKnown,
-    composition,
-    unavailableCount,
-  ]);
+  }, [scope, transport, locale, inventoryKnown, composition, unavailableCount]);
   const announcedCount =
     inventoryKnown &&
     !composition &&

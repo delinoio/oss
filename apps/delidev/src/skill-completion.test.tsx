@@ -838,9 +838,9 @@ it(
     expect(countStatus(view).textContent).toBe(
       "256 skill tokens are unavailable in this scope.",
     );
-    expect(view.container.querySelector(".skill-text-overlay")!.textContent).toBe(
-      exact + "\u200b",
-    );
+    expect(
+      view.container.querySelector(".skill-text-overlay")!.textContent,
+    ).toBe(exact + "\u200b");
     expect(
       view.container.querySelectorAll(".skill-text-overlay span").length,
     ).toBeLessThanOrEqual(512);
