@@ -271,3 +271,18 @@ it("settles the Home entrance before positioning the New project tooltip", async
   expect(document.querySelector(".sidebar-action-tooltip")).not.toBeNull();
   expect(homeEntering()).toBeNull();
 });
+
+it("settles the Home entrance before measuring a focused session hover card", async () => {
+  mountSidebar();
+  const group = await screen.findByRole("button", { name: "Entrance project" });
+  fireEvent.click(group);
+  const sessionRow = await screen.findByRole("button", {
+    name: /Entrance session/,
+  });
+  expect(homeEntering()).toBe("y4");
+  fireEvent.focus(sessionRow);
+  await waitFor(() =>
+    expect(document.querySelector(".sidebar-session-tooltip")).not.toBeNull(),
+  );
+  expect(homeEntering()).toBeNull();
+});
