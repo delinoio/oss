@@ -3,7 +3,6 @@
 - Follow the root instruction-update policy and the nearest parent instructions.
 - This file covers `cmds/delidev-cli/internal/harness/codex/` and its descendants unless a more specific instruction file applies.
 - Read the owning contracts below before changing behavior, including affected cross-domain consumers.
-- Admit `functionCallOutput` only through the shared decoder in `function_output.go`: recover media-free notifications from the owning thread's full history, keep locator and encrypted bytes out of public records and logs, and never fetch, decrypt or replay them.
 
 ## Owning contracts
 
