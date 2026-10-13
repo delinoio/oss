@@ -44,7 +44,7 @@ const confirmLabel = "Disconnect and delete account";
 function fixture(
   connected = true,
   service: "chatgpt" | "claude" = "chatgpt",
-  failedLogin = false,
+  failedLogin: boolean | "pending-credentials" | "terminal-logout" = false,
 ) {
   const machine = newRequestId(),
     profile = newRequestId(),
@@ -69,19 +69,39 @@ function fixture(
       ...preferences,
       health: failedLogin ? "failed" : connected ? "ready" : "disconnected",
       quota: [],
-      ...(failedLogin
-        ? {
-            subscription: {
-              recovery_required: true,
-              server_operation: {
-                id: newRequestId(),
-                action: "login",
-                state: "recovery-required",
-                native_started: false,
+      ...(failedLogin === "terminal-logout"
+        ? (() => {
+            const id = newRequestId();
+            return {
+              subscription: {
+                recovery_required: true,
+                pending: { id, action: "logout", phase: "queued" },
+                server_operation: {
+                  id,
+                  action: "logout",
+                  state: "recovery-required",
+                  generation: newRequestId(),
+                  native_started: false,
+                },
               },
-            },
-          }
-        : {}),
+            };
+          })()
+        : failedLogin
+          ? {
+              subscription: {
+                recovery_required: true,
+                server_operation: {
+                  id: newRequestId(),
+                  action: "login",
+                  state: "recovery-required",
+                  native_started: false,
+                  ...(failedLogin === "pending-credentials"
+                    ? { cleanup_phase: "native-confirmed" }
+                    : {}),
+                },
+              },
+            }
+          : {}),
       ...(connected
         ? {
             connection: { id: connection },
@@ -130,6 +150,7 @@ function fixture(
       SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,
       SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1,
       SystemCapability.CLAUDE_SUBSCRIPTIONS_V1,
+      SystemCapability.SUBSCRIPTION_CLEANUP_RECOVERY_V1,
     ],
   }));
   const logout = vi.fn(async (request: RequestSubscriptionRequest) => ({
@@ -1338,4 +1359,156 @@ it("subscription details retains its proven revision floor after stale inventory
   ).toBeNull();
   expect(value.logout).not.toHaveBeenCalled();
   expect(value.remove).not.toHaveBeenCalled();
+});
+
+const cleanupLabel = "Clean up and delete";
+const confirmationRequired = () =>
+  new ConnectError(
+    "Credential access was not confirmed.",
+    Code.FailedPrecondition,
+    undefined,
+    [
+      {
+        desc: ErrorDetailSchema,
+        value: {
+          code: "confirmation_required",
+          guidance: "Authorize the original credential owner's store.",
+        },
+      },
+    ],
+  );
+
+it.each(["terminal-logout", "pending-credentials"] as const)(
+  "shows the clean up before deleting confirmation for %s",
+  async (kind) => {
+    const value = fixture(false, "chatgpt", kind);
+    render(<value.Harness />);
+    await screen.findByRole("button", { name: cleanupLabel });
+    // StrictMode may repeat the effect; a fresh read always precedes enablement.
+    expect(value.read).toHaveBeenCalled();
+    expect(
+      screen.getByRole("heading", { name: "Clean up before deleting" }),
+    ).toBeTruthy();
+    expect(screen.getByText("Credential access needs confirmation")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "DeliDev will clean up this account's credentials, then delete the account.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Deletion completes only after cleanup is confirmed."),
+    ).toBeTruthy();
+    const details = screen.getByText("Technical details").closest("details")!;
+    expect(details.open).toBe(false);
+    expect(screen.getByRole("button", { name: "Keep account" })).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: confirmLabel }),
+    ).toBeNull();
+    expect(value.remove).not.toHaveBeenCalled();
+    const confirmButton = screen.getByRole("button", { name: cleanupLabel });
+    fireEvent.click(confirmButton);
+    fireEvent.click(confirmButton);
+    await waitFor(() => expect(value.deleted).toHaveBeenCalledTimes(1));
+    // Duplicate clicks and later renders never submit a second mutation.
+    expect(value.remove).toHaveBeenCalledTimes(1);
+    expect(value.logout).not.toHaveBeenCalled();
+    expect(value.progress).not.toHaveBeenCalled();
+    expect(value.remove.mock.calls[0][0].mutation!.expectedRevision).toBe(
+      value.initial.revision,
+    );
+  },
+);
+
+it("keeps cleanup confirmation disabled until a fresh exact account read completes", async () => {
+  const value = fixture(false, "chatgpt", "terminal-logout");
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const read = value.read.getMockImplementation()!;
+  value.read.mockImplementation(async () => {
+    await gate;
+    return read();
+  });
+  render(<value.Harness />);
+  await screen.findByText("Checking the current account before cleanup...");
+  expect(screen.queryByRole("button", { name: cleanupLabel })).toBeNull();
+  await act(async () => release());
+  await screen.findByRole("button", { name: cleanupLabel });
+  expect(value.remove).not.toHaveBeenCalled();
+});
+
+it("requires review when the account changed before cleanup confirmation", async () => {
+  const value = fixture(false, "chatgpt", "terminal-logout");
+  value.patch({ alias });
+  render(<value.Harness />);
+  await screen.findByText(
+    "The account changed since it was listed. Review it before confirming.",
+  );
+  fireEvent.click(screen.getByRole("button", { name: cleanupLabel }));
+  await waitFor(() => expect(value.deleted).toHaveBeenCalledTimes(1));
+  expect(value.remove.mock.calls[0][0].mutation!.expectedRevision).toBe(
+    value.current.revision,
+  );
+});
+
+it("shows update guidance without an expanded request on servers lacking cleanup recovery", async () => {
+  const value = fixture(false, "chatgpt", "terminal-logout");
+  value.status.mockResolvedValue({
+    capabilities: [SystemCapability.FAILED_SUBSCRIPTION_CLEANUP_V1],
+  });
+  render(<value.Harness />);
+  await screen.findByText("This server cannot clean up this account yet.");
+  expect(screen.queryByRole("button", { name: cleanupLabel })).toBeNull();
+  expect(screen.getByRole("button", { name: "Keep account" })).toBeTruthy();
+  expect(value.remove).not.toHaveBeenCalled();
+  expect(value.logout).not.toHaveBeenCalled();
+});
+
+it("keeps the account after denied credential authorization and needs a new confirmation", async () => {
+  const value = fixture(false, "chatgpt", "terminal-logout");
+  value.remove.mockRejectedValueOnce(confirmationRequired());
+  render(<value.Harness />);
+  fireEvent.click(await screen.findByRole("button", { name: cleanupLabel }));
+  await screen.findByText("Account deletion paused.");
+  expect(
+    screen.getByText(/On macOS, approve the system keychain prompt/),
+  ).toBeTruthy();
+  // A definite terminal failure never offers the same wire request again.
+  expect(screen.queryByRole("button", { name: "Retry the same deletion" })).toBeNull();
+  expect(value.deleted).not.toHaveBeenCalled();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Refresh account for confirmation" }),
+  );
+  fireEvent.click(await screen.findByRole("button", { name: cleanupLabel }));
+  await waitFor(() => expect(value.deleted).toHaveBeenCalledTimes(1));
+  expect(value.remove).toHaveBeenCalledTimes(2);
+  expect(value.remove.mock.calls[1][0].mutation!.requestId).not.toBe(
+    value.remove.mock.calls[0][0].mutation!.requestId,
+  );
+});
+
+it("retries only the original cleanup request after an uncertain response", async () => {
+  const value = fixture(false, "chatgpt", "terminal-logout");
+  value.remove.mockRejectedValueOnce(
+    new ConnectError("Response unavailable.", Code.Unavailable),
+  );
+  render(<value.Harness />);
+  fireEvent.click(await screen.findByRole("button", { name: cleanupLabel }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Retry the same deletion" }),
+  );
+  await waitFor(() => expect(value.deleted).toHaveBeenCalledTimes(1));
+  expect(value.remove.mock.calls[1][0]).toEqual(value.remove.mock.calls[0][0]);
+});
+
+it("dismisses the cleanup dialog through the task close button and Escape", async () => {
+  for (const method of ["X", "Escape"] as const) {
+    const value = fixture(false, "chatgpt", "terminal-logout");
+    const view = render(<value.Harness task />);
+    await screen.findByRole("button", { name: cleanupLabel });
+    dismissTask(method);
+    expect(value.remove).not.toHaveBeenCalled();
+    view.unmount();
+  }
 });
