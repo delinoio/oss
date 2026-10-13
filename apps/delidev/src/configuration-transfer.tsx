@@ -273,6 +273,10 @@ export function ConfigurationTransfer({
   // Only a stage surface that appears for this request plays its entrance;
   // derived or asynchronous stage changes stay immediate.
   const [requestedStage, setRequestedStage] = useState<TransferStage>();
+  // Counts explicit Load requests. A repeated Load replaces `loaded` within one
+  // event batch, so the Map surface never leaves the screen and visibility alone
+  // cannot expose a new activation.
+  const [loadRequests, setLoadRequests] = useState(0);
   const formattedPreview = useMemo(
     () =>
       preview
@@ -464,6 +468,7 @@ export function ConfigurationTransfer({
   };
   const load = (raw: string) => {
     invalidate();
+    setLoadRequests((count) => count + 1);
     setRequestedStage(TransferStage.Map);
     setLoaded(undefined);
     try {
@@ -560,7 +565,7 @@ export function ConfigurationTransfer({
     }
   };
   const mapEntrance = useEntranceActivation(
-    String(useActivationCount(loaded !== undefined)),
+    String(loadRequests),
     requestedStage === TransferStage.Map,
   );
   const reviewEntrance = useEntranceActivation(

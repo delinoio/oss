@@ -386,6 +386,15 @@ it("animates the Map and Review stage surfaces only for explicit user requests",
   expect(map.getAttribute("data-entrance")).toBe("y4");
   dispatch(map);
   expect(map.getAttribute("data-entrance")).toBeNull();
+  // Loading again while a document is already mapped is a new explicit Load
+  // request even though the Map surface never leaves the screen.
+  fireEvent.click(
+    screen.getByRole("button", { name: "Load configuration document" }),
+  );
+  expect(mapping()).toBe(map);
+  expect(map.getAttribute("data-entrance")).toBe("y4");
+  dispatch(map);
+  expect(map.getAttribute("data-entrance")).toBeNull();
   fireEvent.click(
     screen.getByRole("button", { name: "Preview configuration changes" }),
   );
