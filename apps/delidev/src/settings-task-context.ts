@@ -23,7 +23,8 @@ export enum SettingsDialogFocus {
 export interface SettingsTaskPresentation {
   title: string;
   subtitle?: string;
-  size: SettingsDialogSize;
+  /** Omitted by nested steps that inherit the enclosing task window size. */
+  size?: SettingsDialogSize;
   focus?: SettingsDialogFocus;
 }
 export interface SettingsTaskContextValue {

@@ -33,7 +33,6 @@ import {
   SettingsTaskDialog,
   SettingsTaskActions,
   SettingsDialogFocus,
-  SettingsDialogSize,
 } from "./settings-task";
 
 interface CreditConfirmation {
@@ -521,7 +520,6 @@ export function SubscriptionQuotaControls({
     return (
       <SettingsTaskDialog
         title={copy("subscription-quota.automaticConfirmTitle")}
-        size={SettingsDialogSize.Form}
         focus={SettingsDialogFocus.Heading}
         close={closeConsent}
         onDismiss={() => setConsentConfirmation(undefined)}
