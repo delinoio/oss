@@ -65,6 +65,39 @@ func nativeReviewMayIgnoreMetadata(event codex.Event, threadID, turnID domain.ID
 	}
 }
 
+type nativeReviewProofKind int
+
+const (
+	nativeReviewRejectedProofKind nativeReviewProofKind = iota + 1
+	nativeReviewStaleProofKind
+)
+
+// nativeReviewTerminalProof converts a joined failure into a typed terminal
+// proof. Without a native send, joined cleanup proves the original review was
+// rejected. After a completed review, only a Conflict from the post-callback
+// target comparison proves the target drifted; every other failure after a send
+// stays an uncertain problem. Neither proof authorizes a second native send.
+func nativeReviewTerminalProof(action domain.ID, failure error, nativeSent, reviewCompleted, cleanupJoined bool) (json.RawMessage, nativeReviewProofKind, bool) {
+	if failure == nil || !cleanupJoined {
+		return nil, 0, false
+	}
+	var proof any
+	var kind nativeReviewProofKind
+	switch {
+	case !nativeSent:
+		proof, kind = domain.NativeCodeReviewRejectedProof{Version: 1, ActionID: action, NoSend: true, CleanupVerified: true}, nativeReviewRejectedProofKind
+	case reviewCompleted && domain.SafeError(failure).Code == domain.Conflict:
+		proof, kind = domain.NativeCodeReviewStaleProof{Version: 1, ActionID: action, Stale: true, CleanupVerified: true}, nativeReviewStaleProofKind
+	default:
+		return nil, 0, false
+	}
+	raw, err := json.Marshal(proof)
+	if err != nil {
+		return nil, 0, false
+	}
+	return raw, kind, true
+}
+
 func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID, job domain.Job) (output json.RawMessage, returned error) {
 	c := config.execution
 	var input domain.NativeCodeReviewInput
@@ -77,12 +110,16 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 	}
 	logger = logger.With("job_id", owner, "action_id", input.ActionID, "session_id", input.Source.SessionID, "target_kind", input.Target.Kind)
 	nativeSent, nativeJoined, workspaceJoined, authJoined := false, true, true, true
+	// reviewCompleted is set only after the original native turn finished and
+	// its native owner was joined inside the workspace callback.
+	reviewCompleted := false
+	// This deferred function is registered first so it runs after every cleanup
+	// defer and sees the final joined state.
 	defer func() {
-		if returned != nil && !nativeSent && nativeJoined && workspaceJoined && authJoined {
-			proof := domain.NativeCodeReviewRejectedProof{Version: 1, ActionID: input.ActionID, NoSend: true, CleanupVerified: true}
-			raw, err := json.Marshal(proof)
-			if err == nil {
-				output, returned = raw, nil
+		if proof, kind, ok := nativeReviewTerminalProof(input.ActionID, returned, nativeSent, reviewCompleted, nativeJoined && workspaceJoined && authJoined); ok {
+			output, returned = proof, nil
+			if kind == nativeReviewStaleProofKind {
+				logger.WarnContext(ctx, "native_code_review_stale_cleanup_verified", "cleanup_verified", true)
 			}
 		}
 	}()
@@ -418,6 +455,7 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 				for index, usage := range usages {
 					result.UsageRecords = append(result.UsageRecords, domain.ResponseUsageRecord{ContextRevision: input.ContextRevision, Purpose: domain.NativeCodeReviewUsage, SessionID: input.Source.SessionID, ProjectID: domain.ID(c.Assignment.ProjectId), ExecutionID: input.ActionID, AccountID: input.Source.AccountID, ConnectionID: input.Source.ConnectionID, ProviderID: input.Source.Configuration.ProviderID, SubscriptionService: input.Source.Configuration.SubscriptionService, ModelID: input.Source.Configuration.ModelID, Harness: domain.Codex, Version: installation.Version, ThreadID: string(result.ThreadID), TurnID: string(result.TurnID), Sequence: uint64(index + 1), Usage: usage})
 				}
+				reviewCompleted = true
 				return nil
 			case codex.ToolStartedEvent, codex.ToolCompletedEvent:
 				if event.Tool == nil || event.Tool.Kind != codex.CommandTool && event.Tool.Kind != codex.ImageViewTool {

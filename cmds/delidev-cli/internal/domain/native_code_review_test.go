@@ -187,3 +187,34 @@ func TestNativeCodeReviewResultLimitIncludesUsageRecords(t *testing.T) {
 		t.Fatalf("usage records did not count against the ceiling: %v", err)
 	}
 }
+
+func TestNativeCodeReviewStaleProofIsClosedAndDistinctFromRejectedProof(t *testing.T) {
+	action := NewID()
+	valid := NativeCodeReviewStaleProof{Version: 1, ActionID: action, Stale: true, CleanupVerified: true}
+	if valid.Validate() != nil {
+		t.Fatal("verified stale proof rejected")
+	}
+	for name, proof := range map[string]NativeCodeReviewStaleProof{
+		"version":            {Version: 2, ActionID: action, Stale: true, CleanupVerified: true},
+		"action":             {Version: 1, ActionID: "not-an-id", Stale: true, CleanupVerified: true},
+		"not stale":          {Version: 1, ActionID: action, CleanupVerified: true},
+		"cleanup unverified": {Version: 1, ActionID: action, Stale: true},
+	} {
+		if proof.Validate() == nil {
+			t.Errorf("%s proof was accepted", name)
+		}
+	}
+	raw, err := json.Marshal(valid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rejected NativeCodeReviewRejectedProof
+	if Decode(raw, &rejected) == nil && rejected.Validate() == nil {
+		t.Fatal("stale proof decoded as a no-send proof")
+	}
+	rejectedRaw, _ := json.Marshal(NativeCodeReviewRejectedProof{Version: 1, ActionID: action, NoSend: true, CleanupVerified: true})
+	var stale NativeCodeReviewStaleProof
+	if Decode(rejectedRaw, &stale) == nil && stale.Validate() == nil {
+		t.Fatal("no-send proof decoded as a stale proof")
+	}
+}
