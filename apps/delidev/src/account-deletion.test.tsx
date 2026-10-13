@@ -1142,6 +1142,38 @@ it("logs a server-token Claude account out through the server without a Runner D
   });
 });
 
+it("waits for server-token Claude credential cleanup before deleting the account", async () => {
+  const value = fixture(true, "claude-server");
+  await start(value);
+  value.complete();
+  const operation = () =>
+    object(object(document(value.current).subscription).server_operation);
+  // The logout settled but the retired vault reference is still being deleted.
+  value.patch({
+    subscription: {
+      ...object(document(value.current).subscription),
+      server_operation: {
+        ...operation(),
+        cleanup_phase: "credentials-pending",
+      },
+    },
+  });
+  await tick();
+  expect(value.remove).not.toHaveBeenCalled();
+  expect(screen.queryByText("Account deletion paused.")).toBeNull();
+  // Once the server confirms deletion of the reference the original deletion runs.
+  value.patch({
+    subscription: {
+      ...object(document(value.current).subscription),
+      server_operation: { ...operation(), cleanup_phase: undefined },
+    },
+  });
+  await waitFor(() => expect(value.remove).toHaveBeenCalledTimes(1), {
+    timeout: 4000,
+  });
+  expect(value.logout).toHaveBeenCalledTimes(1);
+}, 15000);
+
 it("keeps Claude configuration while the original Runner cleanup is uncertain", async () => {
   const value = fixture(true, "claude");
   await start(value);

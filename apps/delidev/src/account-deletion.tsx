@@ -188,10 +188,20 @@ function terminalServerLogout(resource: Resource) {
 }
 const cleanupRecovery = (resource: Resource) =>
   pendingCredentialCleanup(resource) || terminalServerLogout(resource);
+// A settled server-token Claude login or logout records this checkpoint until
+// the server confirms that retired vault references were deleted. The server
+// rejects account deletion while any reference remains.
+function credentialCleanupPending(resource: Resource) {
+  return (
+    object(object(document(resource).subscription).server_operation)
+      .cleanup_phase === "credentials-pending"
+  );
+}
 function cleared(resource: Resource) {
   const data = document(resource),
     state = object(data.subscription);
   return (
+    !credentialCleanupPending(resource) &&
     data.health === "disconnected" &&
     !data.connection &&
     !data.removal &&
@@ -531,6 +541,18 @@ export function ChatGPTAccountDeletion({
         object(document(result.resource).subscription),
       );
       if (
+        unchanged(result.resource, p) &&
+        credentialCleanupPending(result.resource) &&
+        operation.id === p.operation &&
+        operation.action === "logout" &&
+        operation.state === "succeeded"
+      ) {
+        // The settled logout still owes protected vault cleanup. Keep waiting for
+        // the server's retry; deletion is never submitted before it is confirmed.
+        setView({ stage: Stage.Logout });
+        return;
+      }
+      if (
         !unchanged(result.resource, p) ||
         !cleared(result.resource) ||
         operation.id !== p.operation ||
@@ -623,7 +645,11 @@ export function ChatGPTAccountDeletion({
         state = object(data.subscription),
         operation = operationOf(state),
         pendingOperation = object(state.pending);
-      if (state.recovery_required || data.removal) {
+      if (
+        state.recovery_required ||
+        data.removal ||
+        credentialCleanupPending(current)
+      ) {
         pause(
           p,
           copy("account-deletion.extra.775c54df4fb5"),
