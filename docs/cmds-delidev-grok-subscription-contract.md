@@ -4,7 +4,7 @@
 
 This contract owns the Grok Build subscription lifecycle in `cmds/delidev-cli`,
 its Connect interface and the desktop AI Subscription flow. Implementation is
-partial; only System 39 (server-owned login) is advertised. Implemented: the protocol identifiers below
+partial; System 39 (server-owned login) is advertised only behind the explicit login switch. Implemented: the protocol identifiers below
 (declared only), the bound credential bundle library, the protected-vault
 generations, the protected Take/Finish lease handlers on the server, the
 Worker-side credential custody described under Storage, the fixed xAI OAuth
@@ -16,10 +16,15 @@ device-code login described under
 [Server-owned device login](#server-owned-device-login) and the server-owned
 refresh (the `refresh_token` grant under the account lease with a durable claim,
 described under [Server-owned refresh](#server-owned-refresh)) together with the
-Worker-side confinement of a native refresh. System 39 is advertised because
-both login methods are implemented (decision D1: one capability for browser and
-device login together). The advertisement claims no real-account acceptance: the
-opt-in real-account run was not performed. Not activated: logout, Worker-side
+Worker-side confinement of a native refresh. System 39 covers both login
+methods (decision D1: one capability for browser and device login together) and
+is advertised only when the server enables Grok subscription login
+(`server.Config.GrokSubscriptionLogin`, default off). The implementation is
+complete without the switch, but no client can start a Grok login yet, and a
+client that sees the capability expects to reach the flow, so the switch stays
+off until a product entry point (the desktop AI Subscription flow) can start
+both methods; no entry point sets it yet. The advertisement claims no
+real-account acceptance: the opt-in real-account run was not performed. Not activated: logout, Worker-side
 watch dispatch, the native process execution that produces a native refresh, and
 Grok execution (System 40, Worker 21).
 The subscription profile declares `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) as its minimum SemVer baseline. `domain.GrokSubscriptionVersionAllowed` admits a valid SemVer at or above it (prereleases of the baseline are below it) and gates protected Take admission of a Grok lease; no capability, discovery or execution path references it. Newer releases are validated natively, not rejected by number. The API and history baseline stays `domain.GrokProtocolVersion` (`1.0.41`); Grok Build 1.0.52 inspection is accepted when its optional `experiments` inventory is an empty array (see `cmds-delidev-harness-contract.md`), which does not change these baselines. Reservation support is separate
@@ -40,7 +45,8 @@ private runtime. Separate accounts can run independently.
 ## Interfaces and Contracts
 
 These allocations are declared in the protos and generated bindings. GetStatus
-advertises System 39 (browser and device login together); it never lists System
+advertises System 39 (browser and device login together) only when
+`server.Config.GrokSubscriptionLogin` is set; it never lists System
 40, and AttachWorker never lists Worker 21, the Worker does not report 21 and
 the server rejects it as an unknown capability. GetSubscriptionProgress
 populates `grok_diagnostic` only for a failed or uncertain server-owned Grok
@@ -74,6 +80,18 @@ Remote desktop callbacks retain the same original address and use a trusted
 native receiver plus authenticated Connect forwarding. Device authorization
 honors RFC 8628 pending, slow-down, denial and expiry; see
 [Server-owned device login](#server-owned-device-login).
+
+### Capability advertisement table
+
+Each capability has one switch and one default. A switch is set only by a product
+entry point that can actually reach the feature; no entry point sets any of them
+yet. Tests pin every row in `grok_reservations_test.go`.
+
+| Capability                                                                 | Switch                                | Default                                               | Advertised when   |
+| -------------------------------------------------------------------------- | ------------------------------------- | ----------------------------------------------------- | ----------------- |
+| System 39 `GROK_SUBSCRIPTION_LOGIN_V1` (browser and device login together) | `server.Config.GrokSubscriptionLogin` | off                                                   | the switch is set |
+| System 40 `GROK_SUBSCRIPTION_EXECUTION_V1`                                 | none in this contract revision        | never advertised                                      | never             |
+| Worker 21                                                                  | none in this contract revision        | never advertised, rejected as unknown by AttachWorker | never             |
 
 ### Server-owned browser login
 
@@ -298,7 +316,7 @@ compaction are excluded.
 
 ### Project requirements
 
-- DeliDev Grok Build subscription support follows `cmds-delidev-grok-subscription-contract.md`. System 39 (server-owned browser and device login) is advertised; System 40 and Worker 21 are declared but unadvertised until the owning feature activates them; the server-owned browser login, device login and refresh and progress field 10 (failed login or refresh only) are implemented. Declarations grant no native execution or migration. Preserve existing capability ownership, server-owned OAuth/protected credentials, original account leases and same-account/Worker history; verify the subscription profile at or above `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) by native validation before activation.
+- DeliDev Grok Build subscription support follows `cmds-delidev-grok-subscription-contract.md`. System 39 (server-owned browser and device login) is advertised only behind `server.Config.GrokSubscriptionLogin`; System 40 and Worker 21 are declared but unadvertised until the owning feature activates them; the server-owned browser login, device login and refresh and progress field 10 (failed login or refresh only) are implemented. Declarations grant no native execution or migration. Preserve existing capability ownership, server-owned OAuth/protected credentials, original account leases and same-account/Worker history; verify the subscription profile at or above `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) by native validation before activation.
 
 ## Storage
 
