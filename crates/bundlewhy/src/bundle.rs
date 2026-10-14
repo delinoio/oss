@@ -419,7 +419,15 @@ fn is_unverifiable_asset(source: &SourceFile, live: &[u8]) -> bool {
     as_text(live).is_none() && is_binary_asset_path(&source.path)
 }
 
-/// Marks sources whose current project file differs from the saved hash.
+/// Marks sources whose current project file differs from the saved hash and
+/// reconciles the `BW_SOURCE_STALE` warning with the result.
+///
+/// The call is idempotent: every earlier `BW_SOURCE_STALE` problem (including
+/// the build-time "changed after the build read them" warning) is replaced by
+/// at most one warning that carries the current count, and no warning remains
+/// when nothing is stale. Other problems keep their order. When the project
+/// root cannot be verified, no check is possible, so saved flags and warnings
+/// are left untouched.
 pub fn mark_stale(bundle: &mut ResultBundle) {
     let root = PathBuf::from(&bundle.project_root);
     if bundle.project_root.is_empty() || !root.is_absolute() {
@@ -476,6 +484,12 @@ pub fn mark_stale(bundle: &mut ResultBundle) {
     for summary in &mut bundle.analysis.sources {
         summary.stale = stale_ids.contains(&summary.id);
     }
+    let stale_code = ErrorCode::SourceStale.as_str();
+    bundle
+        .analysis
+        .problems
+        .retain(|entry| entry.code != stale_code);
+    tracing::debug!(stale, "reconciled stale source warning");
     if stale > 0 {
         bundle.analysis.problems.push(problem(
             ErrorCode::SourceStale,
@@ -603,6 +617,141 @@ mod tests {
         std::fs::remove_file(project.join("src/big.js")).unwrap();
         mark_stale(&mut saved);
         assert!(saved.sources[0].stale);
+    }
+
+    fn stale_count(bundle: &ResultBundle) -> usize {
+        bundle
+            .analysis
+            .problems
+            .iter()
+            .filter(|entry| entry.code == "BW_SOURCE_STALE")
+            .count()
+    }
+
+    fn stale_fixture(dir: &Path, saved_text: &str) -> ResultBundle {
+        let project = dir.join("project");
+        std::fs::create_dir_all(project.join("src")).unwrap();
+        std::fs::write(project.join("src/a.js"), saved_text).unwrap();
+        let mut saved = bundle();
+        saved.project_root = project.to_string_lossy().into_owned();
+        saved.sources[0].sha256 = sha256_hex(saved_text.as_bytes());
+        saved.analysis.sources = vec![crate::model::SourceFileSummary {
+            id: "src-0123456789abcdef".to_owned(),
+            ..crate::model::SourceFileSummary::default()
+        }];
+        saved
+            .project_relative
+            .insert("src-0123456789abcdef".to_owned(), "src/a.js".to_owned());
+        saved
+    }
+
+    #[test]
+    fn mark_stale_is_idempotent_and_replaces_the_build_time_warning() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut saved = stale_fixture(dir.path(), "original");
+        std::fs::write(dir.path().join("project/src/a.js"), "changed").unwrap();
+        saved.analysis.problems.push(problem(
+            ErrorCode::SourceUnreadable,
+            ProblemSeverity::Warning,
+            "unreadable",
+            "recover",
+        ));
+        saved.analysis.problems.push(problem(
+            ErrorCode::SourceStale,
+            ProblemSeverity::Warning,
+            "9 source file(s) changed after the build read them",
+            "build-time",
+        ));
+        saved.analysis.problems.push(problem(
+            ErrorCode::RunInterrupted,
+            ProblemSeverity::Error,
+            "interrupted",
+            "recover",
+        ));
+        for _ in 0..3 {
+            mark_stale(&mut saved);
+            assert_eq!(stale_count(&saved), 1);
+        }
+        let codes: Vec<_> = saved
+            .analysis
+            .problems
+            .iter()
+            .map(|entry| entry.code.as_str())
+            .collect();
+        assert_eq!(
+            codes,
+            [
+                "BW_SOURCE_UNREADABLE",
+                "BW_RUN_INTERRUPTED",
+                "BW_SOURCE_STALE"
+            ]
+        );
+        let warning = saved.analysis.problems.last().unwrap();
+        assert_eq!(
+            warning.message,
+            "1 source file(s) changed or were removed since this analysis"
+        );
+        assert!(saved.sources[0].stale && saved.analysis.sources[0].stale);
+    }
+
+    #[test]
+    fn restoring_a_changed_file_clears_the_warning_but_keeps_other_problems() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut saved = stale_fixture(dir.path(), "original");
+        saved.analysis.problems.push(problem(
+            ErrorCode::RunInterrupted,
+            ProblemSeverity::Error,
+            "interrupted",
+            "recover",
+        ));
+        let file = dir.path().join("project/src/a.js");
+        std::fs::write(&file, "changed").unwrap();
+        save(dir.path(), &saved).unwrap();
+        let loaded = load(dir.path()).unwrap();
+        assert_eq!(stale_count(&loaded), 1);
+        assert!(loaded.sources[0].stale && loaded.analysis.sources[0].stale);
+
+        std::fs::remove_file(&file).unwrap();
+        let removed = load(dir.path()).unwrap();
+        assert_eq!(stale_count(&removed), 1);
+        assert!(removed.sources[0].stale);
+
+        std::fs::write(&file, "original").unwrap();
+        let restored = load(dir.path()).unwrap();
+        assert_eq!(stale_count(&restored), 0);
+        assert!(!restored.sources[0].stale && !restored.analysis.sources[0].stale);
+        assert_eq!(restored.analysis.problems.len(), 1);
+        assert_eq!(restored.analysis.problems[0].code, "BW_RUN_INTERRUPTED");
+    }
+
+    #[test]
+    fn a_saved_build_time_warning_is_dropped_when_the_checked_source_is_unchanged() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut saved = stale_fixture(dir.path(), "original");
+        saved.analysis.problems.push(problem(
+            ErrorCode::SourceStale,
+            ProblemSeverity::Warning,
+            "1 source file(s) changed after the build read them",
+            "build-time",
+        ));
+        mark_stale(&mut saved);
+        assert_eq!(stale_count(&saved), 0);
+    }
+
+    #[test]
+    fn an_unverifiable_project_root_leaves_saved_flags_and_warnings_untouched() {
+        let mut saved = bundle();
+        saved.project_root = "relative/root".to_owned();
+        saved.sources[0].stale = true;
+        saved.analysis.problems.push(problem(
+            ErrorCode::SourceStale,
+            ProblemSeverity::Warning,
+            "build-time",
+            "recover",
+        ));
+        mark_stale(&mut saved);
+        assert!(saved.sources[0].stale);
+        assert_eq!(stale_count(&saved), 1);
     }
 
     #[test]
