@@ -446,6 +446,10 @@ func TestSidechatQuestionRetryRecoveryOfOlderGenerationKeepsNewerForkOwner(t *te
 	if !after.Execution.CleanupVerified || !after.SidechatRetries[0].Completed || after.SidechatCurrentAnswer != executionA {
 		t.Fatal("older generation recovery lost its own answer")
 	}
+	current = child.refresh(t)
+	if _, err := sessionClient(child.accountFixture).RecoverSessionExecution(context.Background(), ownerRequest(child.identity, &pb.RecoverSessionExecutionRequest{Mutation: &pb.Mutation{Id: string(current.ID), RequestId: string(domain.NewID()), ExpectedRevision: current.Revision}, ExpectedExecutionId: string(executionA)})); err == nil {
+		t.Fatal("cleanup-verified older generation recovery was admitted again")
+	}
 	view := retryViewFixture(t, child, "")
 	if view.Eligible || view.ObservedGeneration != generationB.ID || view.Phase != domain.JobUncertain {
 		t.Fatal("newer owner is no longer observed as active", view.Phase)
