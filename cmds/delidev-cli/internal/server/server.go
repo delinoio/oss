@@ -129,6 +129,9 @@ type Service struct {
 	// the per-account runner acquires the gate.
 	afterFailedSubscriptionDeleteObserve func(context.Context)
 	beforeFailedCleanupAccountGate       func(context.Context, domain.ID)
+	// Set only by isolated subscription tests: pauses after the server operation
+	// watcher starts and before credential access begins.
+	beforeServerSubscriptionCredentials func()
 	// Set before stream admission in isolated tests; production uses 100 ms.
 	terminalWatchInterval time.Duration
 	terminalOutputs       map[domain.ID]*terminalOutputRing
