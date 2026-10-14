@@ -29,10 +29,16 @@ import {
   type PullRequestNavigation,
 } from "./github-items";
 import { ItemKind, ItemState, QueryOperation } from "./github-query-model";
+import { i18n } from "./localization";
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
 
 it("retains list/scroll while lazily reading all four tabs with independent commit counts", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(Date.parse("2026-10-11T00:18:12Z"));
   const profile = newRequestId(),
     generation = newRequestId(),
     selected = create(ResourceSchema, {
@@ -264,6 +270,53 @@ it("retains list/scroll while lazily reading all four tabs with independent comm
     screen.getByRole("button", { name: /#102 Complete original title 102/ }),
   );
   await screen.findByRole("heading", { name: "Readable heading" });
+  // Detail presentation: toolbar actions, status line, relative Updated label.
+  const header = view.container.querySelector(".pr-detail-header")!;
+  const toolbar = view.container.querySelector(".pr-detail-toolbar")!;
+  expect(toolbar.firstElementChild).toBe(
+    screen.getByRole("button", { name: "Back to results" }),
+  );
+  const toolbarEnd = toolbar.querySelector(".pr-detail-toolbar-end")!;
+  expect(
+    [...toolbarEnd.querySelectorAll("button")].map((b) =>
+      b.getAttribute("aria-label"),
+    ),
+  ).toEqual(["Refresh GitHub results", "Open on GitHub"]);
+  const openAction = screen.getByRole("button", { name: "Open on GitHub" });
+  expect((openAction as HTMLButtonElement).disabled).toBe(true);
+  const notice = screen.getByText(/Browser opening is available/);
+  expect(
+    toolbar.compareDocumentPosition(notice) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(header.querySelector(".pr-detail-status")?.textContent).toMatch(
+    /^Open.*#102$/,
+  );
+  expect(header.querySelector("h3")?.textContent).toBe(
+    "Complete original title 102",
+  );
+  expect(header.querySelector(".pr-detail-branches code")?.textContent).toMatch(
+    / → /,
+  );
+  const updated = header.querySelector(".pr-detail-meta time")!;
+  expect(updated.textContent).toBe("18 minutes ago");
+  expect(header.querySelector(".pr-detail-meta")?.textContent).toContain(
+    "Updated 18 minutes ago",
+  );
+  expect(updated.getAttribute("datetime")).toBe("2026-10-11T00:00:00Z");
+  expect(updated.getAttribute("title")).toBe("2026-10-11T00:00:00Z");
+  expect(updated.getAttribute("aria-description")).toBe("2026-10-11T00:00:00Z");
+  await act(() => i18n.changeLanguage("ko"));
+  expect(header.querySelector(".pr-detail-meta")?.textContent).toContain(
+    "18분 전 업데이트",
+  );
+  await act(() => i18n.changeLanguage("en"));
+  // A clock tick recomputes the label without another GitHub read.
+  const readsBeforeTick = legacy.mock.calls.length;
+  act(() => vi.setSystemTime(Date.parse("2026-10-11T00:19:12Z")));
+  fireEvent.focus(window);
+  expect(updated.textContent).toBe("19 minutes ago");
+  expect(legacy.mock.calls.length).toBe(readsBeforeTick);
   expect(view.container.querySelector("script")).toBeNull();
   expect(view.container.querySelector('img[src^="https:"]')).toBeNull();
   const description = screen.getByRole("tab", { name: "Description" });

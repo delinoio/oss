@@ -122,33 +122,106 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.pr-workspace-detail header {
+/* The detail owns its insets so the prompt and list keep their own padding.
+ * Header and tabs scroll with the body; nothing here is sticky or elevated. */
+.pr-workspace-selected:has(> .pr-workspace-detail) {
+  padding: 0;
+}
+.pr-workspace-detail {
+  --pr-detail-inset: 16px;
+  padding: 16px var(--pr-detail-inset) 32px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.65;
+}
+.pr-workspace[data-wide="true"] .pr-workspace-detail {
+  --pr-detail-inset: 28px;
+  padding-block-start: 20px;
+}
+.pr-detail-toolbar,
+.pr-detail-toolbar-end,
+.pr-detail-status,
+.pr-detail-meta,
+.pr-detail-branches {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.pr-detail-toolbar {
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-block-end: 16px;
+}
+.pr-detail-toolbar-end {
+  gap: 8px;
+  margin-inline-start: auto;
+}
+.pr-detail-header {
   display: block;
 }
+.pr-detail-status {
+  gap: 4px 12px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+.pr-detail-state {
+  font-weight: 600;
+  color: var(--text);
+}
+.pr-detail-number {
+  font-variant-numeric: tabular-nums;
+}
 .pr-workspace-detail h3 {
-  font-size: 20px;
+  margin: 8px 0 12px;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.pr-detail-meta {
+  gap: 4px 12px;
+  margin: 0 0 8px;
+}
+.pr-detail-branches {
+  justify-content: space-between;
+  gap: 4px 16px;
+  margin: 0;
+  color: var(--muted);
+}
+.pr-detail-branches code {
+  font-family: monospace;
+  font-size: 14px;
   line-height: 1.5;
+}
+.pr-detail-branches .pr-counts,
+.pr-detail-branches > span {
+  margin-inline-start: auto;
 }
 .pr-workspace-tabs {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
   border-block-end: 1px solid var(--border);
-  margin-block: 20px;
+  margin-block: 24px;
 }
 .pr-workspace-tabs button {
   border: 0;
+  border-block-end: 2px solid transparent;
   border-radius: 0;
   background: transparent;
+  color: var(--muted);
   min-height: 40px;
   padding: 8px 12px;
+  margin-block-end: -1px;
 }
 .pr-workspace-tabs button[aria-selected="true"] {
-  border-block-end: 2px solid var(--focus);
+  border-block-end-color: var(--focus);
+  color: var(--text);
   font-weight: 600;
 }
 .pr-readable-markdown {
-  line-height: 1.7;
+  line-height: 1.65;
 }
 .pr-readable-markdown [role="heading"] {
   font-weight: 600;
