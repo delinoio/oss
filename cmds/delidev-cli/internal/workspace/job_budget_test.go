@@ -104,3 +104,24 @@ func TestMaxManifestBytesReservesUnresolvedReferenceMaximum(t *testing.T) {
 		t.Fatalf("bound %d is below the manifest with maximum resolved references %d", bound, len(raw))
 	}
 }
+
+// The Worker root repeats in the primary path and every repository path and
+// source, so its JSON-escaped size must stay inside the admission bound.
+func TestMaxManifestBytesReservesEscapedWorkerRoot(t *testing.T) {
+	request := budgetRequest(40, "https://github.com/fixture/repo.git", domain.Worktree)
+	bound, err := request.MaxManifestBytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, root := range map[string]string{
+		"html sensitive": strings.Repeat("<", ManifestWorkerRootReserveBytes/6),
+		"ampersand":      strings.Repeat("&", ManifestWorkerRootReserveBytes/6),
+		"windows":        strings.Repeat(`\`, ManifestWorkerRootReserveBytes/2),
+		"plain":          strings.Repeat("r", 512),
+	} {
+		raw, _ := json.Marshal(realisticManifest(request, root))
+		if bound < len(raw) {
+			t.Fatalf("%s root: bound %d is below the published manifest %d", name, bound, len(raw))
+		}
+	}
+}

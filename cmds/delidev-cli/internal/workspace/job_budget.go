@@ -9,10 +9,13 @@ import (
 )
 
 const (
-	// ManifestWorkerRootReserveBytes is the assumed length of the Worker data
-	// root that prefixes every prepared path. The server cannot observe it before
-	// preparation; the dispatch-time recheck of the real bytes stays authoritative.
-	ManifestWorkerRootReserveBytes = 512
+	// ManifestWorkerRootReserveBytes is the JSON-encoded length reserved for the
+	// Worker data root that prefixes every prepared path. The server cannot
+	// observe the root before preparation; the dispatch-time recheck of the real
+	// bytes stays authoritative. The reserve is an encoded length, not a
+	// character count: it covers a root of up to 1,536 plain bytes, 768 Windows
+	// separators (two bytes each) or 256 '<', '>' or '&' bytes (six bytes each).
+	ManifestWorkerRootReserveBytes = 1536
 	// UnresolvedReferenceNameReserveBytes is the accepted maximum of a Git
 	// reference name the Worker may resolve (default branch) when the accepted
 	// request left it unspecified.
