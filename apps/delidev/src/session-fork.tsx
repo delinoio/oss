@@ -288,11 +288,13 @@ export function SessionForkProvider({
   openSession,
   openSidechat,
   readLocalWorker,
+  sessionNavigationGeneration,
 }: {
   children: ReactNode;
   openSession: (id: string) => void;
   openSidechat?: (parent: string, child: Resource) => void;
   readLocalWorker?: ReadLocalWorkerProof;
+  sessionNavigationGeneration?: Readonly<{ current: number }>;
 }) {
   const productLabel = useProductLabels();
   useLocale();
@@ -399,8 +401,8 @@ export function SessionForkProvider({
     setChecking(false);
   };
   // Reopening routes to the original parent first, then selects the original
-  // pending descriptor. Focus is deferred and fenced by a token so a later
-  // navigation or another reopen gesture cannot be overtaken by a stale callback.
+  // pending descriptor. The reopen token fences newer gestures and disposal;
+  // the App navigation generation also fences a departure followed by return.
   const reopenToken = useRef(0);
   useEffect(
     () => () => {
@@ -420,6 +422,7 @@ export function SessionForkProvider({
       phase: "reopen",
     });
     openSession(retained.parent);
+    const navigationGeneration = sessionNavigationGeneration?.current;
     tabs.open(retained.parent, {
       kind: SessionTabKind.PendingSidechat,
       requestId: retained.requestId,
@@ -427,6 +430,7 @@ export function SessionForkProvider({
     });
     requestAnimationFrame(() => {
       if (reopenToken.current !== token) return;
+      if (sessionNavigationGeneration?.current !== navigationGeneration) return;
       if (tabs.snapshot(retained.parent).selected !== key) return;
       const input = globalThis.document.getElementById(
         `pending-sidechat-${retained.requestId}`,

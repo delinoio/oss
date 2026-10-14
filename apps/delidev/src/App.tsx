@@ -252,6 +252,7 @@ function Shell({
   const [selected, setSelected] = useState("");
   const [sessionNavigationActivation, setSessionNavigationActivation] =
     useState(0);
+  const sessionNavigationGeneration = useRef(0);
   const [visited, setVisited] = useState<readonly string[]>([]);
   const tabs = useSessionTabsStore();
   const selectedTabs = useSessionTabs(selected);
@@ -356,6 +357,7 @@ function Shell({
     if (destination !== surface) setProjectCreation(undefined);
   };
   const openSession = (id: string, originalParent?: string, name?: string) => {
+    sessionNavigationGeneration.current += 1;
     setSessionNavigationActivation((value) => value + 1);
     const parent = tabs.parent(id) ?? originalParent;
     if (parent) {
@@ -644,6 +646,7 @@ function Shell({
           <SessionControlProvider>
             <SessionForkProvider
               openSession={open}
+              sessionNavigationGeneration={sessionNavigationGeneration}
               readLocalWorker={readLocalWorker}
             >
               <SessionStorageProvider>
