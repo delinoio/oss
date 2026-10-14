@@ -403,7 +403,12 @@ impl SourceStore {
             // not expected to equal the file.
             (Some(snapshot), LiveRead::Bytes(_)) if derived => {
                 tracing::debug!(path = %classified.display, "derived module is not content-checked");
-                (Some(snapshot.clone()), String::new(), false, true)
+                (
+                    Some(snapshot.clone()),
+                    sha256_hex(snapshot.as_bytes()),
+                    false,
+                    true,
+                )
             }
             // A text snapshot that is not an asset module is compared with
             // the live bytes. A live file that is no longer text is a
@@ -1464,5 +1469,27 @@ mod tests {
             assert!(files[0].content_included);
             assert_eq!(files[0].sha256, sha256_hex(b"export const a = 1;"));
         }
+    }
+
+    #[test]
+    fn derived_module_keeps_the_snapshot_hash() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("a.js");
+        let snapshot = "export const value = 1;";
+        std::fs::write(&file, snapshot).unwrap();
+        let queried = dir.path().join("a.js?v=1");
+        let mut store = SourceStore::new(true);
+        store
+            .snapshots
+            .insert(normalize(&queried), snapshot.to_owned());
+
+        store.add_file(dir.path(), &queried).unwrap();
+        let source = store.into_files().pop().unwrap();
+        assert_eq!(
+            source.revision_evidence,
+            SourceRevisionEvidence::BuildSnapshot
+        );
+        assert!(source.content_included);
+        assert_eq!(source.sha256, sha256_hex(snapshot.as_bytes()));
     }
 }
