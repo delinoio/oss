@@ -274,6 +274,9 @@ fn list_runs(out_dir: &Path, active: &str) -> Vec<RunSummary> {
     // directories before reading anything inside them.
     let mut names: Vec<String> = entries
         .filter_map(Result::ok)
+        // A UUID-named symlink could point outside the output directory;
+        // list only real directories.
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
         .map(|entry| entry.file_name().to_string_lossy().into_owned())
         .filter(|name| uuid::Uuid::parse_str(name).is_ok())
         .collect();
@@ -746,6 +749,31 @@ mod tests {
             .is_err()
         );
         assert!(authorize(Some("127.0.0.1:4000"), Some(origin), None, origin, &token).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_listing_skips_symlinked_run_directories() {
+        let out = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let id = uuid::Uuid::now_v7().to_string();
+        std::fs::write(
+            outside.path().join(bundle::SUMMARY_FILE),
+            r#"{"status":"RUN_STATUS_COMPLETE","projectName":"outside"}"#,
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(outside.path(), out.path().join(&id)).unwrap();
+        assert!(list_runs(out.path(), "").is_empty());
+        let real = uuid::Uuid::now_v7().to_string();
+        std::fs::create_dir(out.path().join(&real)).unwrap();
+        std::fs::write(
+            out.path().join(&real).join(bundle::SUMMARY_FILE),
+            r#"{"status":"RUN_STATUS_COMPLETE","projectName":"inside"}"#,
+        )
+        .unwrap();
+        let runs = list_runs(out.path(), "");
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].project_name, "inside");
     }
 
     #[cfg(unix)]
