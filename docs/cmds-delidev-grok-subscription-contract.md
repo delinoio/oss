@@ -452,11 +452,11 @@ makes the actual-profile verification above repeatable. It is interactive by
 design (the account owner approves each device-code login in their own browser),
 never runs in CI and is skipped unless both gates are set:
 
-| Variable | Meaning |
-| --- | --- |
-| `DELIDEV_NATIVE_GROK_ACCOUNT=1` | Opt in to the real-account test. |
-| `DELIDEV_NATIVE_GROK_EXECUTABLE` | Absolute path of the Grok Build CLI under test (for example `$HOME/.grok/bin/grok`). |
-| `DELIDEV_NATIVE_GROK_APPROVAL_TIMEOUT` | Optional Go duration, `10s` to `30m`. Default: 5 minutes for the owner to approve. |
+| Variable                               | Meaning                                                                              |
+| -------------------------------------- | ------------------------------------------------------------------------------------ |
+| `DELIDEV_NATIVE_GROK_ACCOUNT=1`        | Opt in to the real-account test.                                                     |
+| `DELIDEV_NATIVE_GROK_EXECUTABLE`       | Absolute path of the Grok Build CLI under test (for example `$HOME/.grok/bin/grok`). |
+| `DELIDEV_NATIVE_GROK_APPROVAL_TIMEOUT` | Optional Go duration, `10s` to `30m`. Default: 5 minutes for the owner to approve.   |
 
 Run it from an interactive terminal (the approval details are written only to
 the controlling terminal, `/dev/tty` or `CONOUT$`; the run fails without one):
