@@ -134,6 +134,7 @@ func (s *Service) admitRepositoryIntegration(ctx context.Context, id domain.ID, 
 		// Keep replay denied before removing its pending foreground priority.
 		if displaced != nil && !foregroundReadStarted && displaced.replayFailed != nil {
 			displaced.replayFailed.Store(true)
+			s.logger.Warn("repository_integration_displacement_failed", "profile_id", profileID, "error_code", domain.Unavailable)
 		}
 	}()
 	// A resumed attempt shares the frozen active deadline for its queue wait; only

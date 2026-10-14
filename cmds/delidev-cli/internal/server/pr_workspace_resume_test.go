@@ -34,6 +34,18 @@ func (c *countingPATs) Get(ctx context.Context, ref credentials.PATRef) ([]byte,
 	return c.integrationSecrets.Get(ctx, ref)
 }
 
+type failAfterPATs struct {
+	*countingPATs
+	calls atomic.Int32
+}
+
+func (f *failAfterPATs) Get(ctx context.Context, ref credentials.PATRef) ([]byte, error) {
+	if f.calls.Add(1) == 2 {
+		return nil, domain.Fail(domain.Unavailable, "The fixture token store failed.", "Retry the request.")
+	}
+	return f.countingPATs.Get(ctx, ref)
+}
+
 type workspaceProviderFunc func(ctx context.Context, call int, token []byte, budget *gh.WorkspaceBudget) (gh.WorkspaceObservation, error)
 
 type scriptedWorkspaces struct {
@@ -467,6 +479,33 @@ func TestWorkspaceFailedForegroundJoinCannotReplay(t *testing.T) {
 				t.Fatal("queue counters leaked", queued, foreground)
 			}
 		})
+	}
+}
+
+func TestWorkspaceFailureAfterForegroundJoinLogsDisplacementFailure(t *testing.T) {
+	entered := make(chan struct{})
+	h := newWorkspaceHarness(t, func(ctx context.Context, _ int, _ []byte, _ *gh.WorkspaceBudget) (gh.WorkspaceObservation, error) {
+		close(entered)
+		<-ctx.Done()
+		return observation("interrupted"), ctx.Err()
+	})
+	h.f.service.integrationSecrets = &failAfterPATs{countingPATs: h.tokens}
+	pending := h.start(h.ctx)
+	waitFor(t, "workspace provider", entered)
+	foreground := h.foreground("detail", nil, nil)
+	if err := <-foreground; domain.SafeError(err).Code != domain.Unavailable {
+		t.Fatalf("foreground token failure had unexpected code: %v", err)
+	}
+	r := h.await(pending)
+	if r.response != nil || connect.CodeOf(r.err) != connect.CodeUnavailable || h.provider.calls.Load() != 1 {
+		t.Fatal("failed foreground caller replayed or published workspace", r.err, h.provider.calls.Load())
+	}
+	if len(h.events.snapshot()) != 0 {
+		t.Fatal("foreground read started after token acquisition failed", h.events.snapshot())
+	}
+	records := h.logs.records(t, "repository_integration_displacement_failed")
+	if len(records) != 1 || records[0]["error_code"] != string(domain.Unavailable) {
+		t.Fatal("failed displacement was not logged with its terminal code", records)
 	}
 }
 
