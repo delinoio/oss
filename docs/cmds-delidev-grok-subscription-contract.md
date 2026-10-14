@@ -112,7 +112,7 @@ migration). A bundle holds exactly one native `$GROK_HOME/auth.json` scope entry
 for issuer `https://auth.x.ai` and client `b1a00492-073a-47ea-816f-4c329264a828`
 (key `<issuer>::<client-id>`) with `auth_mode` `oidc`. `ParseGrokAuthFile`
 rejects, with the single stable value-free `GrokBundleInvalid` error: input above
-64 KiB, duplicate or unknown fields, any other scope key or multiple entries, an
+63 KiB (`MaxGrokAuthFile`), duplicate or unknown fields, any other scope key or multiple entries, an
 empty `key` or `refresh_token`, empty `user_id`, `principal_type` or
 `principal_id`, unparsable RFC 3339 `create_time` or `expires_at`, an expiry not
 after creation, and an `oidc_issuer` or `oidc_client_id` that differs from the
@@ -129,9 +129,15 @@ The canonical encoding is compact JSON without HTML escaping, so `<`, `>` and `&
 stay one byte, and the same encoder is used for the sealed envelope. The input
 bound alone does not bound the re-encoding (U+2028 and U+2029 always expand to
 six-byte escapes), so `ParseGrokAuthFile` also rejects, with the same stable
-error, any file whose canonical encoding exceeds 64 KiB. A bundle the parser
+error, any file whose canonical encoding exceeds 63 KiB. A bundle the parser
 accepts can therefore always be re-emitted by `AuthFile` and sealed within the
-envelope bound.
+envelope bound. The envelope bound (`MaxGrokBundleEnvelope`, 64 KiB) equals the
+protected vault's per-secret limit (`credentials.MaxSecretBytes`) because the
+vault stores the exact sealed envelope, and the 1 KiB left between the two
+bounds is reserved for the envelope members (version, kind and the three
+identifiers, under 200 bytes). The largest accepted bundle therefore always
+stays storable, so an accepted login or refresh is never fenced for recovery by
+the vault's independent limit.
 
 The vault object is the versioned envelope (`version` 1, kind
 `grok-auth-bundle`) bound to server, account and generation by `SealGrokBundle`

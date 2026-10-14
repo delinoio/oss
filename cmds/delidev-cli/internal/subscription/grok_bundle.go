@@ -24,10 +24,18 @@ const (
 	// GrokScopeKey is the single native auth.json key: "<issuer>::<client-id>".
 	GrokScopeKey = GrokIssuer + "::" + GrokClientID
 
-	// MaxGrokAuthFile bounds one native auth.json document.
-	MaxGrokAuthFile = 64 << 10
-	// MaxGrokBundleEnvelope bounds the vault object that wraps one auth.json.
-	MaxGrokBundleEnvelope = MaxGrokAuthFile + 1<<10
+	// MaxGrokBundleEnvelope bounds the vault object that wraps one auth.json. It
+	// must not exceed the protected store's per-secret limit, because the exact
+	// sealed envelope is what the vault stores.
+	MaxGrokBundleEnvelope = 64 << 10
+	// grokEnvelopeReserve is the room kept below MaxGrokBundleEnvelope for the
+	// envelope members around the embedded document (version, kind and three
+	// canonical identifiers, about 190 bytes in all).
+	grokEnvelopeReserve = 1 << 10
+	// MaxGrokAuthFile bounds one native auth.json document, including its
+	// canonical re-encoding, so that a sealed envelope never exceeds
+	// MaxGrokBundleEnvelope.
+	MaxGrokAuthFile = MaxGrokBundleEnvelope - grokEnvelopeReserve
 
 	grokBundleVersion     = 1
 	grokBundleKind        = "grok-auth-bundle"

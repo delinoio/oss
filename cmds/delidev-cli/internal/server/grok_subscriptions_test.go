@@ -512,3 +512,65 @@ func (f *grokFixture) start2(action pb.SubscriptionAction) (*pb.RequestSubscript
 	}
 	return response.Msg, nil
 }
+
+// grokLargestBundle returns a bundle whose canonical native file is exactly the
+// accepted maximum. U+2028 always expands to a six-byte escape, so it makes the
+// sealed envelope as large as an accepted bundle can be.
+func grokLargestBundle(t *testing.T) subscription.GrokBundle {
+	t.Helper()
+	build := func(pad int) []byte {
+		raw, err := json.Marshal(map[string]any{subscription.GrokScopeKey: map[string]any{
+			"key": strings.Repeat(" ", 8192), "auth_mode": "oidc", "create_time": "2026-10-14T00:00:00Z", "expires_at": "2026-10-14T06:00:00Z",
+			"user_id": "synthetic-user", "principal_type": "user", "principal_id": "synthetic-principal-1", "refresh_token": strings.Repeat("a", pad),
+			"oidc_issuer": subscription.GrokIssuer, "oidc_client_id": subscription.GrokClientID,
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return raw
+	}
+	pad := 1 + subscription.MaxGrokAuthFile - len(build(1))
+	raw := build(pad)
+	if len(raw) != subscription.MaxGrokAuthFile {
+		t.Fatalf("fixture is %d bytes, want %d", len(raw), subscription.MaxGrokAuthFile)
+	}
+	bundle, err := subscription.ParseGrokAuthFile(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return bundle
+}
+
+// The server stores the exact sealed envelope in the protected vault, whose
+// per-secret limit is independent of the native file bound. The largest
+// accepted bundle must stay storable, so an accepted login is never fenced for
+// recovery only because its envelope metadata crossed the vault limit.
+func TestGrokFinishStoresLargestAcceptedBundleWithinVaultLimit(t *testing.T) {
+	if subscription.MaxGrokBundleEnvelope > credentials.MaxSecretBytes {
+		t.Fatal("the Grok envelope bound exceeds the vault secret limit")
+	}
+	f := newGrokFixture(t)
+	lease, err := f.take(f.queue(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN), pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	generation := domain.NewID()
+	sealed, err := subscription.SealGrokBundle(f.service.Identity.ServerID, f.input.AccountID, generation, grokLargestBundle(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sealed) > credentials.MaxSecretBytes {
+		t.Fatalf("sealed envelope is %d bytes, above the vault limit %d", len(sealed), credentials.MaxSecretBytes)
+	}
+	if _, err := f.finishWith(lease, generation, bytes.Clone(sealed), true, false, true); err != nil {
+		t.Fatal("the largest accepted bundle could not be finished")
+	}
+	_, a := f.record()
+	if a.Subscription.RecoveryRequired || a.Subscription.Generation != generation || a.Subscription.Lease != nil {
+		t.Fatal("the largest accepted bundle fenced the account or kept the lease")
+	}
+	stored, err := f.secrets.Get(context.Background(), credentials.Ref{Owner: f.input.AccountID, ID: generation, Purpose: credentials.AccountLogin})
+	if err != nil || !bytes.Equal(stored, sealed) {
+		t.Fatal("the vault does not hold the exact sealed envelope")
+	}
+}

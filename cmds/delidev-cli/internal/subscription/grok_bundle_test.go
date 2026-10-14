@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
@@ -552,5 +553,56 @@ func TestGrokBundleRejectsAliasedMemberSpellings(t *testing.T) {
 		if _, err := OpenGrokBundle(aliased, server, account, generation); err == nil {
 			t.Fatalf("aliased envelope member %s was accepted", pair[1])
 		}
+	}
+}
+
+// grokMaxCanonicalFile builds a native file whose canonical encoding is exactly
+// size bytes: U+2028 always expands to a six-byte escape, so the key alone takes
+// most of the bound, and the refresh token is padded to land on size.
+func grokMaxCanonicalFile(t *testing.T, size int) []byte {
+	t.Helper()
+	build := func(pad int) []byte {
+		return grokFixtureFile(t, func(e map[string]any) {
+			e["key"] = strings.Repeat(" ", maxGrokSecretField/3)
+			e["refresh_token"] = strings.Repeat("a", pad)
+		})
+	}
+	base := len(build(1))
+	pad := 1 + size - base
+	if pad < 1 || pad > maxGrokSecretField {
+		t.Fatalf("cannot reach %d bytes with one padded field", size)
+	}
+	raw := build(pad)
+	if len(raw) != size {
+		t.Fatalf("fixture is %d bytes, want %d", len(raw), size)
+	}
+	return raw
+}
+
+// The sealed envelope is stored by the protected vault, which refuses secrets
+// above its own limit. Every accepted native file, including one at the exact
+// bound made of maximally expanding characters, must therefore seal into a
+// vault-storable envelope; a file one byte over is refused at parse time.
+func TestGrokBundleAcceptedAtBoundSealsWithinVaultLimit(t *testing.T) {
+	if MaxGrokBundleEnvelope > credentials.MaxSecretBytes {
+		t.Fatal("the envelope bound exceeds the vault secret limit")
+	}
+	bundle, err := ParseGrokAuthFile(grokMaxCanonicalFile(t, MaxGrokAuthFile))
+	if err != nil {
+		t.Fatal("a file at the exact bound was rejected")
+	}
+	server, account, generation := grokBundleIDs()
+	sealed, err := SealGrokBundle(server, account, generation, bundle)
+	if err != nil {
+		t.Fatal("a file at the exact bound could not be sealed")
+	}
+	if len(sealed) > credentials.MaxSecretBytes {
+		t.Fatalf("sealed envelope is %d bytes, above the vault limit %d", len(sealed), credentials.MaxSecretBytes)
+	}
+	if _, err := OpenGrokBundle(sealed, server, account, generation); err != nil {
+		t.Fatal("the sealed envelope does not reopen")
+	}
+	if _, err := ParseGrokAuthFile(grokMaxCanonicalFile(t, MaxGrokAuthFile+1)); err == nil {
+		t.Fatal("a file above the bound was accepted")
 	}
 }
