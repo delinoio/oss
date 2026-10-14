@@ -3061,17 +3061,63 @@ Profile events use the structured fields `profile_id`, `owner`, `harness`,
 `referenced`, `deleted`, `delete_blocked`, `create_rolled_back`, `migration_verified`,
 `migration_settled`). Logs never contain secrets, native contents or paths.
 
-### OpenCode execution-family status
+### OpenCode execution family
 
 OpenCode discovery and protocol probes use the persistent accountless
-`discovery` profile. OpenCode execution, continuation, compaction and Fork still
-keep their immutable per-execution runtimes (`runtimes/<id>`), because their
-native checkpoints digest the complete runtime tree and copy the database
-forward into an empty, different runtime. Moving them to persistent profiles
-requires an in-place resume profile and a retained-configuration inspection
-verified against the pinned native; neither is part of the migrated paths. These
-runtimes remain legacy evidence: they are never auto-pruned, and session
-deletion still removes them with the session.
+`discovery` profile. OpenCode execution, continuation, compaction and Fork use
+persistent conversation profiles too: a first execution acquires the session's
+`conversation` profile, a continuation or compaction resumes the profile that
+retains the newest checkpoint, and a Fork child owns a `fork` profile. Every
+execution, action and Fork-runtime identifier of the history is bound to its
+profile, and the original history identifier of a continuation is bound as well.
+The per-operation `runtimes/<id>` directory is only the fresh operation journal.
+The profile root is the native runtime root (`<profile>/opencode`), so native
+state never mixes with the owner record.
+
+**In-place resume.** A native checkpoint digests the complete runtime tree, and
+resuming it no longer copies the database into a different runtime. When the
+runtime that retains the checkpoint is the runtime that runs next
+(`OpenResumedAPI` with the profile root as both), the harness runs this order:
+
+1. verify the retained files against the checkpoint (`InspectCheckpoint`) and the
+   effective settings against the checkpoint digest;
+2. durably record the once-only resume claim;
+3. rebuild the native snapshot repository from the verified self-contained
+   archive when the checkpoint carries snapshot evidence (the repository depends
+   on workspace objects that may have changed);
+4. retire only DeliDev's per-run files: `instructions.txt`,
+   `opencode/opencode.json`, the exported `snapshot-checkpoint` archive and the
+   `tmp` scratch contents. Native history, caches, logs and helper files stay;
+   links are refused, never followed;
+5. write the new instructions and workspace references and launch.
+
+A new native history in a persistent profile retires the same per-run files but
+never adopts retained history: a profile that still holds a native database
+refuses a new session. An unsent first-execution retry is the only exception:
+its abandoned session carries no history, so `ResetUnsentHistory` clears the
+`data/opencode` history directory (and the per-run files) before the retry.
+
+**Latest checkpoint only.** A run advances its profile, so only the newest
+checkpoint of a profile still matches its files; an older one stays readable as
+metadata evidence (`InspectCheckpointMetadata`, `InspectReplacementMetadata`,
+`InspectCompactionCheckpointInPlace`) but is no longer a resume or Fork source
+and fails closed when launch-time verification runs. A compaction action advances
+the profile, so the ordinary checkpoint it compacted is read as metadata. A
+failure after the in-place claim but before the native input is accepted leaves a
+profile that no longer matches its checkpoint; later continuations of that
+conversation fail closed with `recovery_required` and the user starts a new
+session. This is a known limitation of the in-place model; the old copy-forward
+model survived such failures at the cost of one runtime copy per turn.
+
+A Fork reads its source profile without changing it (the source checkpoint is
+verified again afterwards) and copies the history into the child's own profile.
+Legacy histories register in place: an execution or action identifier from before
+persistent profiles resolves to its verified `runtimes/<id>` directory, and a
+legacy Fork child resolves its `native` subdirectory. Continuations resolve the
+profile by the identifier that owns the newest checkpoint (the last compaction
+action when one ran, otherwise the checkpoint's execution), because legacy
+histories kept one runtime per turn. Legacy runtimes are never auto-pruned, and
+session deletion removes the session's profiles and journals with the session.
 
 ## Native version admission baselines
 
