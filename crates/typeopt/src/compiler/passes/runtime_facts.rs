@@ -1950,6 +1950,17 @@ fn imports_external_runtime(ctx: &mut Ctx) -> bool {
                                     | SyntaxKind::NoSubstitutionTemplateLiteral
                             ) =>
                         {
+                            if created_loader
+                                && (argument.text().starts_with("./")
+                                    || argument.text().starts_with("../"))
+                            {
+                                tracing::debug!(
+                                    file = %ctx.files[index].name,
+                                    specifier = argument.text(),
+                                    "createdRequire loader may resolve relative code outside the importer"
+                                );
+                                return true;
+                            }
                             argument
                         }
                         // A computed specifier may load any package.

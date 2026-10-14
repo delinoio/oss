@@ -1088,6 +1088,34 @@ fn exported_created_loader_bracket_namespace_guard_propagates_across_application
     assert_slice_preserved(&files, "[9]\n");
 }
 
+#[test]
+fn created_loader_relative_specifier_uses_creation_module_base() {
+    let files = [
+        (
+            "main.ts",
+            "import \"./consumer.mjs\";\nconsole.log(JSON.stringify([1].slice()));\n",
+        ),
+        (
+            "consumer.mjs",
+            "import { load } from \"./subdir/loader.mjs\";\nload(\"./patcher.cjs\");\n",
+        ),
+        (
+            "subdir/loader.mjs",
+            "import { createRequire } from \"node:module\";\nexport const load = \
+             createRequire(import.meta.url);\n",
+        ),
+        (
+            "subdir/patcher.cjs",
+            "Array.prototype.slice = function () { return [9]; };\n",
+        ),
+        ("patcher.cjs", "module.exports = {};\n"),
+    ];
+    let temp = project(&files);
+    let report = optimize(temp.path(), &args(&only(&[IS])));
+    assert_eq!(applied(&report, IS), 0, "{report:#}");
+    assert!(emitted(temp.path(), "main.ts").contains(".slice()"));
+}
+
 fn with_packages<'a>(
     files: &'a [(&'a str, &'a str)],
     packages: &'a [(String, String)],
