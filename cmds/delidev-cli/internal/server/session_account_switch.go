@@ -74,7 +74,9 @@ func (s *Service) SwitchSessionAccount(ctx context.Context, req *connect.Request
 			return nil, err
 		}
 		candidate := continuationAssignment(session, assignment, completion, digest, domain.ContinueExplicitly, accountID, account.Connection.ID)
-		if _, err := checkedExecutionAssignment(tx, sr, session, machine, candidate); err != nil {
+		// Validation only: the later resume measures the document it publishes, so a
+		// predecessor input from before the size limit must not block selection.
+		if _, err := checkedExecutionAssignmentUnsized(tx, sr, session, machine, candidate); err != nil {
 			return nil, err
 		}
 		if len(session.AccountChanges) >= 1024 {

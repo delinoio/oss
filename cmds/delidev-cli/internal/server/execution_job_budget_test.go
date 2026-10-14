@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -246,6 +247,86 @@ func TestQueueContinuationRechecksInstalledPrompt(t *testing.T) {
 	})
 	if domain.SafeError(err).Code != domain.ResourceExhausted {
 		t.Fatal("oversized queued continuation prompt reached job publication", err)
+	}
+}
+
+// A completed execution accepted before the size limit may carry an input that
+// no longer fits beside the Job wrapper. The queued continuation replaces that
+// input, so a small follow-up must still be admitted.
+func TestQueueContinuationAllowsSmallPromptAfterLegacyLargePredecessor(t *testing.T) {
+	c := newContinuationFixture(t, domain.ExecutionSucceeded)
+	legacy := strings.Repeat("<", 174000)
+	_, err := c.service.Store.Mutate(context.Background(), domain.NewID(), "session.dispatch.execution", c.input.SessionID, func(tx *store.Tx) (any, error) {
+		return nil, legacyLargePredecessor(tx, c.input.SessionID, legacy)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.enqueue(t, "small", domain.ExecuteMode)
+	record := c.refresh(t)
+	_, err = c.service.Store.Mutate(context.Background(), domain.NewID(), "session.dispatch.execution", record.ID, func(tx *store.Tx) (any, error) {
+		sr, session, err := sessionRecord(tx, record.ID)
+		if err != nil {
+			return nil, err
+		}
+		_, err = queueContinuation(tx, sr, session, false)
+		return nil, err
+	})
+	if err != nil {
+		t.Fatal("small continuation after a legacy large predecessor input was rejected", err)
+	}
+}
+
+func legacyLargePredecessor(tx *store.Tx, sessionID domain.ID, legacy string) error {
+	{
+		sr, session, err := sessionRecord(tx, sessionID)
+		if err != nil {
+			return err
+		}
+		jr, err := tx.SessionExecutionJob(sr.ID, session.ExecutionSelection().ID)
+		if err != nil {
+			return err
+		}
+		job, err := store.Decode[domain.Job](jr)
+		if err != nil {
+			return err
+		}
+		var assignment domain.ExecutionJobInput
+		if err := domain.Decode(job.Input, &assignment); err != nil {
+			return err
+		}
+		oldDigest := domain.BindSessionInput(assignment.InputID, assignment.Input).PromptDigest
+		assignment.Input.Prompt = legacy
+		newDigest := domain.BindSessionInput(assignment.InputID, assignment.Input).PromptDigest
+		// The completion and the session progress bind the original prompt digest.
+		job.Output = bytes.ReplaceAll(job.Output, []byte(oldDigest), []byte(newDigest))
+		rawSession, err := json.Marshal(session)
+		if err != nil {
+			return err
+		}
+		if err := json.Unmarshal(bytes.ReplaceAll(rawSession, []byte(oldDigest), []byte(newDigest)), &session); err != nil {
+			return err
+		}
+		if _, err := tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session); err != nil {
+			return err
+		}
+		if job.Input, err = json.Marshal(assignment); err != nil {
+			return err
+		}
+		if _, err := tx.Put(domain.JobKind, jr.ID, jr.Revision, jr.SessionID, jr.ProjectID, job); err != nil {
+			return err
+		}
+		qr, err := tx.Get(domain.QueueKind, assignment.InputID)
+		if err != nil {
+			return err
+		}
+		queued, err := store.Decode[domain.QueuedInput](qr)
+		if err != nil {
+			return err
+		}
+		queued.Prompt = legacy
+		_, err = tx.Put(domain.QueueKind, qr.ID, qr.Revision, qr.SessionID, qr.ProjectID, queued)
+		return err
 	}
 }
 

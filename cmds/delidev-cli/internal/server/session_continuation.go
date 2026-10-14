@@ -69,7 +69,9 @@ func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, ex
 	if session.Compaction != nil && session.Compaction.ExecutionID == assignment.ExecutionID {
 		candidate.Continuation.Compaction = session.Compaction
 	}
-	input, err := checkedExecutionAssignment(tx, sr, session, machine, candidate)
+	// The candidate still holds the predecessor's input; the size of the queued
+	// document is measured below, once that input is replaced.
+	input, err := checkedExecutionAssignmentUnsized(tx, sr, session, machine, candidate)
 	if err != nil {
 		return store.Record{}, err
 	}
