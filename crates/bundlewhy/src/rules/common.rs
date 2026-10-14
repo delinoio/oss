@@ -994,6 +994,9 @@ fn named_function_is_expression(code: &str, start: usize) -> bool {
     let prefix = code[..start].trim_end();
     let prefix = prefix.strip_suffix("async").unwrap_or(prefix).trim_end();
     let preceding = prefix.as_bytes().last().copied();
+    if preceding == Some(b':') && is_case_label(prefix) {
+        return false;
+    }
     if preceding.is_some_and(|byte| b"=([,:?!+-*/%&|^~".contains(&byte)) {
         return true;
     }
@@ -1003,6 +1006,18 @@ fn named_function_is_expression(code: &str, start: usize) -> bool {
             .next(),
         Some("return" | "throw" | "yield" | "await" | "void")
     )
+}
+
+fn is_case_label(prefix: &str) -> bool {
+    let label = prefix.strip_suffix(':').unwrap_or(prefix);
+    let statement = label
+        .rsplit_once(['{', '}', ';', '\n'])
+        .map_or(label, |(_, rest)| rest)
+        .trim();
+    statement == "default"
+        || statement
+            .strip_prefix("case")
+            .is_some_and(|rest| rest.chars().next().is_some_and(char::is_whitespace))
 }
 
 fn direct_eval_line(source: &str) -> Option<(u32, u32)> {
@@ -1445,6 +1460,16 @@ y=/process.env.F/.test(z),process.env.G"#;
     fn function_bodies_skip_typescript_return_annotations() {
         let source = "function run(): void { var eval = helper; } eval(code);";
         assert!(direct_eval_line(source).is_some());
+    }
+
+    #[test]
+    fn switch_case_function_declarations_keep_their_declaration_scope() {
+        for source in [
+            "switch (value) { case 0: function eval(x) { return x; } eval(code); }",
+            "switch (value) { default: function eval(x) { return x; } eval(code); }",
+        ] {
+            assert_eq!(direct_eval_line(source), None);
+        }
     }
 
     #[test]
