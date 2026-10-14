@@ -618,6 +618,12 @@ func bindPRFixAssignment(tx *store.Tx, attempt store.Record, job store.Record, o
 	if err != nil {
 		return err
 	}
+	// The dispatch-time size check ran before the remediation was installed.
+	// Recheck the final serialized assignment so an over-limit result is a
+	// stable ResourceExhausted error that rolls back the claim.
+	if err := domain.RequireExecutionJobInput(value.Input, nil); err != nil {
+		return err
+	}
 	if _, err := tx.PutJob(job.ID, job.Revision, job.SessionID, job.ProjectID, value); err != nil {
 		return err
 	}
