@@ -3,14 +3,11 @@ package server
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 )
 
@@ -48,7 +45,7 @@ func (s *Service) reconcileRetainedServerQuotas(ctx context.Context) error {
 		bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
 		var err error
 		if !owner.Operation.CleanupConfirmed {
-			err = reconcileServerQuotaRuntime(bounded, s.Store.Root(), owner.Operation)
+			err = s.reconcileServerQuotaRuntime(bounded, owner.Account, owner.Operation)
 		}
 		if err != nil {
 			cancel()
@@ -96,7 +93,11 @@ func (s *Service) reconcileRetainedServerQuotas(ctx context.Context) error {
 				_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
 				return struct{}{}, err
 			})
-			return err
+			if err != nil {
+				return err
+			}
+			// The terminal receipt step is recorded only after the single settlement.
+			return markLegacyAccessOnlySettled(bounded, s.scopeFor(owner.Account), legacyQuota(owner.Account, owner.Operation))
 		}()
 		cancel()
 		if err != nil {
@@ -107,37 +108,15 @@ func (s *Service) reconcileRetainedServerQuotas(ctx context.Context) error {
 	}
 	return s.reconcilePendingServerQuotaRetirements(ctx)
 }
-func reconcileServerQuotaRuntime(ctx context.Context, root string, o domain.ServerQuotaOperation) error {
+func (s *Service) reconcileServerQuotaRuntime(ctx context.Context, account domain.ID, o domain.ServerQuotaOperation) error {
 	if o.Validate() != nil || !o.AccessOnly || o.Phase != domain.SubscriptionObservationUncertain {
 		return subscriptionDenied()
 	}
-	return reconcileAccessOnlyRuntime(ctx, root, "quota", o.ID)
+	return reconcileAccessOnlyRuntime(ctx, s.scopeFor(account), legacyQuota(account, o))
 }
 
-// reconcileAccessOnlyRuntime joins one retained prior-epoch access-only native
-// owner and removes its private runtime. kind selects the quota or credit root.
-func reconcileAccessOnlyRuntime(ctx context.Context, root, kind string, owner domain.ID) error {
-	runtimeRoot := filepath.Join(root, "subscription-runtime")
-	processRoot := filepath.Join(runtimeRoot, "processes")
-	if owner.Validate() != nil || security.CheckPrivateDir(runtimeRoot) != nil || security.CheckPrivateDir(processRoot) != nil {
-		return subscriptionDenied()
-	}
-	// A missing index cannot prove no send. Require the original retained index
-	// and independently exclude a still-live controller before process recovery.
-	if err := lockFailedServerLoginControllers(ctx, processRoot, owner); err != nil {
-		return err
-	}
-	if err := process.ReconcileOwnerContext(ctx, processRoot, owner); err != nil {
-		return err
-	}
-	if err := cleanupFailedServerLoginProbes(ctx, runtimeRoot, owner, true); err != nil {
-		return err
-	}
-	home := accessOnlyRuntimeDirectory(root, kind, owner)
-	if _, err := os.Lstat(filepath.Join(home, "codex", "auth.json")); !os.IsNotExist(err) {
-		return subscriptionDenied()
-	}
-	return cleanupFailedServerLoginDirectory(home)
+func legacyQuota(account domain.ID, o domain.ServerQuotaOperation) legacyAccessOnly {
+	return legacyAccessOnly{Kind: nativeprofile.ReceiptLegacyQuota, Directory: "quota", Purpose: nativeprofile.PurposeQuota, Account: account, Connection: o.ConnectionID, Generation: o.Generation, Operation: o.ID}
 }
 
 // generationHeld reports whether another live owner still depends on the

@@ -9,8 +9,10 @@ backup image retains them as quarantined evidence under a recovery fence that
 never grants a credential. Worker `managed-auth/<lease>.json` journals
 gain an optional `owner_lease`, and a version 2 Claude Worker checkpoint gains an
 optional `profile_version`; both are omitted for historical records. Session-private
-Claude history lives in the session's own `runtimes/<execution>/claude`
-directory; only the canonical `native-claude/<server>/<account>/<profile>/claude`
+Claude history lives in the `claude` directory of the session's persistent
+conversation profile (resolved through the native profile registry; a history
+that predates persistent profiles resolves to its registered legacy
+`runtimes/<execution>` directory); only the canonical `native-claude/<server>/<account>/<profile>/claude`
 directory is the secure-storage namespace. Backup, deletion and Doctor treat the
 whole owner/member set as live ownership. See the
 [subscription contract](cmds-delidev-subscription-contract.md#shared-account-owner-and-execution-members).
@@ -1641,3 +1643,18 @@ Resource document_json always excludes this key. Native assignments, closed
 progress attempts, checkpoints and digests do not include display timing.
 Legacy omission receives no backfill; replacement jobs retain independent current
 identity and original deletion ownership. No schema or migration is added.
+
+## Persistent native profile storage
+
+Each owner root (the server data root and every Worker root) keeps a private
+`native-profiles/` tree: `registry.json` and `registry.lock`, `locks/`,
+`migrations/` receipts and `p/<profile-id>/`. The registry, owner records and
+receipts are versioned private state; an incompatible version is rejected
+without being rewritten. Profiles retain native history, caches and
+native-created helper files and are deleted only by explicit session, account or
+storage deletion. Session deletion removes the session's conversation, fork,
+sidechat, title and review profiles together with its `runtimes/<id>` and
+`title-runtimes/<job>` journals and proves their absence on replay; a referenced
+or active profile keeps the deletion pending. Backup and restore treat the tree
+as owner-local state that is never imported across owners. See the
+[harness contract](cmds-delidev-harness-contract.md#persistent-native-profiles).

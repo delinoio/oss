@@ -41,8 +41,12 @@ func readClaudeContinuation(ctx context.Context, root string, credential Credent
 		return nil, err
 	}
 	config.Process.OwnerID = c.Previous.JobID
-	config.Process.Cwd = filepath.Join(root, "runtimes", string(c.HistoryExecutionID))
-	config.Home = filepath.Join(config.Process.Cwd, "claude")
+	historyRoot, err := historyNativeRoot(ctx, root, input.MachineID, domain.ClaudeCode, historyAccount(input), c.HistoryExecutionID)
+	if err != nil {
+		return nil, err
+	}
+	config.Process.Cwd = historyRoot
+	config.Home = filepath.Join(historyRoot, "claude")
 	if config.Subscription != nil && config.Subscription.SecureStorageHome != "" {
 		// A version 2 history is the previous session's private directory; only the
 		// canonical secure-storage namespace stays shared.

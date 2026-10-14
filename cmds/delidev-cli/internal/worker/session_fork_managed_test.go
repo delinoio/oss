@@ -20,6 +20,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
@@ -60,9 +61,16 @@ type managedSidechatProcess struct {
 // The original test executable acts as a bounded native protocol process. Its
 // marker is confined to this fixture's private Worker scope, never a real account.
 func runManagedSidechatProcess(home string) bool {
-	root := filepath.Dir(filepath.Dir(filepath.Dir(home)))
-	raw, err := os.ReadFile(filepath.Join(root, "managed-sidechat-fixture.json"))
-	if err != nil {
+	// The fixture marker lives in the Worker root, an ancestor of the persistent
+	// or legacy native home.
+	var raw []byte
+	for candidate, depth := filepath.Dir(home), 0; depth < 8; candidate, depth = filepath.Dir(candidate), depth+1 {
+		if data, err := os.ReadFile(filepath.Join(candidate, "managed-sidechat-fixture.json")); err == nil {
+			raw = data
+			break
+		}
+	}
+	if raw == nil {
 		return false
 	}
 	var f managedSidechatProcess
@@ -312,7 +320,7 @@ func TestManagedSidechatWorkerOriginalForkAuthentication(t *testing.T) {
 			}
 			owner, instance := domain.NewID(), domain.NewID()
 			job := domain.Job{Type: domain.ForkSessionJob, State: domain.JobClaimed, MachineID: f.input.MachineID, InstanceID: instance, Input: mustForkJSON(input)}
-			auth := &managedSidechatRPC{generation: input.SubscriptionGeneration, home: filepath.Join(f.root, "runtimes", string(input.RuntimeID), "codex"), loss: fault == "finish-response-loss", t: t}
+			auth := &managedSidechatRPC{generation: input.SubscriptionGeneration, home: forkProfileNativeHome(t, f.root, f.input.MachineID, f.input.AccountID, input.RuntimeID), loss: fault == "finish-response-loss", t: t}
 			_, handler := delidevv1connect.NewSubscriptionServiceHandler(auth)
 			server := httptest.NewServer(handler)
 			defer server.Close()
@@ -453,7 +461,7 @@ func TestManagedIndependentForkWorkerOriginalAuthenticationAndTools(t *testing.T
 			}
 			owner, instance := domain.NewID(), domain.NewID()
 			job := domain.Job{Type: domain.ForkSessionJob, State: domain.JobClaimed, MachineID: f.input.MachineID, InstanceID: instance, Input: mustForkJSON(input)}
-			auth := &managedSidechatRPC{generation: input.SubscriptionGeneration, home: filepath.Join(f.root, "runtimes", string(input.RuntimeID), "codex"), loss: fault == "finish-response-loss", t: t}
+			auth := &managedSidechatRPC{generation: input.SubscriptionGeneration, home: forkProfileNativeHome(t, f.root, f.input.MachineID, f.input.AccountID, input.RuntimeID), loss: fault == "finish-response-loss", t: t}
 			_, handler := delidevv1connect.NewSubscriptionServiceHandler(auth)
 			server := httptest.NewServer(handler)
 			defer server.Close()
@@ -529,4 +537,16 @@ func TestForkFrameProfileIsExplicitForManagedIndependentForkOnly(t *testing.T) {
 			t.Fatal("unexpected Fork frame profile", test.name)
 		}
 	}
+}
+
+// forkProfileNativeHome resolves the persistent native home of a Fork child,
+// creating its profile when it does not exist yet.
+func forkProfileNativeHome(t *testing.T, root string, machine, account, runtime domain.ID) string {
+	t.Helper()
+	lease, err := conversationProfile(context.Background(), Config{Root: root}, machine, nativeprofile.Key{Harness: domain.Codex, Purpose: nativeprofile.PurposeFork, Account: account, Conversation: runtime}, runtime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lease.Close()
+	return filepath.Join(lease.Root, "codex")
 }

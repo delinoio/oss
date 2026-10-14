@@ -160,7 +160,8 @@ history directory and the canonical secure-storage directory independently, and
 the Worker checkpoint records `profile_version = 2` (omitted for version 1, so
 version 1 bytes are unchanged). A fresh session of a negotiated Worker is
 version 2; a continuation keeps the version of its predecessor and binds the
-previous session's private directory. A foreign owner, history directory or
+previous session's private history profile, resolved through the native profile
+registry. A foreign owner, history directory or
 digest fails closed.
 
 **Codex Worker activation.** A negotiated managed Codex owner launches one
@@ -955,6 +956,35 @@ The server runs the installed, verified Claude Code (SemVer precedence at or abo
 The token is sealed in a closed, versioned envelope bound to server, account and generation in the existing `AccountLogin` vault ownership and published through its staging receipts. Its keyed commitment proves possession of that credential and is not a human identity. A Worker advertising capability 41 receives the envelope only in the protected Take response of one exclusive original execution lease; a legacy-only Worker never does. A replayed Take receipt never redistributes it; when the exact original lease is still unfinished, the replay fences it as recovery-required so the original Worker can confirm cleanup, and a replay after joined cleanup changes nothing. The Worker sets `CLAUDE_CODE_OAUTH_TOKEN` only in the supervised Claude child, uses a fresh private configuration directory, never passes `--bare`, and clears its buffers after joined termination. Finish with joined cleanup releases the lease; unconfirmed cleanup, restart or lost ownership fences the account until the original Worker confirms cleanup. The Worker journals its claim before the Take request, so a response lost after the lease committed (or whose fields could not be persisted) leaves a pre-delivery journal with no generation or lease revision and no started execution; the original Worker's recovery accepts exactly that claim under the server lease's identity and generation, and any journal field that contradicts the lease, operation or instance still fails closed.
 
 An expired or rejected token ends the execution explicitly with no API fallback, no other account or Runner and no automatic login. Disconnect revokes DeliDev readiness at acceptance, cancels admitted work, waits for the original Worker lease and cleanup to clear, then settles the logout together with a durable credential-cleanup checkpoint in the same transaction and only afterwards removes the vault generation, clearing the checkpoint once deletion is confirmed; an offline Worker or uncertain cleanup retains the fence. A logout accepted behind a lease keeps readiness revoked when that lease clears. Its 15-minute operation window restarts when the original lease clears rather than at acceptance, moving the operation's start time together with its deadline so the persisted window never exceeds 15 minutes, and progress does not report it expired while it is still queued behind the lease. If a server restart fenced the logout as recovery-required, the original Worker's cleanup releases only the lease and the recovery fence stays, so the restart scanner completes the old-epoch logout and vault removal instead of stranding it. A settled login records the same checkpoint for obsolete vault references. If the login's metadata commit returns an ambiguous error after the sealed token was staged, the server reads the stored account before touching the vault: a generation already published as the connected, succeeded login keeps its token and continues normal retirement of obsolete references, an account that did not publish removes only the staged token, and an unreadable account deletes nothing so the checkpoint or recovery scan settles it. Finishing any server-owned Claude operation also clears its unconsumed single-use approval code and presentation from server memory. A failed or interrupted deletion never rewrites the settled state: the checkpoint alone selects the account for a bounded retry that preserves the settled generation, and a stale checkpoint deletes nothing. A database restore clears a server-token account's connection but retains its historical generation, operation and recovery fence while the vault is outside the image; that generation is never authorized again. The restart scanner selects such an account (no connection, a retained generation, recovery required and no lease), deletes every vault reference of the account including the historical generation and any checkpoint obligation, and settles it as a logged-out account without relaunching a login, so reconnecting means connecting a new account. If the restored image still carries an execution lease, the original Worker's cleanup releases only the lease and keeps the disconnected health and recovery fence for that scan. Worker cleanup that crosses a recovery fence never restores readiness on its own: the server first re-opens the settled generation's vault envelope for this server and account, and only a positive result returns the account to ready. A missing, malformed, foreign or unreadable credential (for example after a Take whose credential load failed) releases the lease and fence but leaves the account failed, so no later session is admitted only to repeat the failed Take; the account can still be disconnected and reconnected. Local deletion makes no claim about provider-side token revocation, quota or reset credits. The token expires, has no Remote Control or claude.ai connector access and is not renewed automatically. No provider relay or SQLite migration is added.
+
+## Persistent account profiles
+
+Server and Worker login, authentication refresh, logout, quota and credit
+operations resolve permanent per-account profiles (`auth`, `quota`, `credit`,
+`subscription_probe`) instead of `subscription-runtime/<kind>/<operation>` or
+`managed-auth/<lease>` homes. Access-only quota and credit profiles never contain
+managed `auth.json`; the managed `auth` profile holds it only between a written
+bundle and its joined cleanup. Cleanup retires only transient credential files;
+native-created helper links, caches and history are retained and never block a
+later Refresh. A surviving credential file, live process or invalid owner blocks
+with a closed cause. Historical per-operation runtimes are never deleted by
+completion: the historical access-only quota shape settles once as failed through
+an idempotent migration receipt that leaves the directory and helper links
+untouched, retires only the eligible obsolete credential reference and never
+replays the request (see the
+[harness contract](cmds-delidev-harness-contract.md#legacy-access-only-quota-migration)).
+The Claude device-profile directory is registered in place and removed only by
+its logout.
+
+Explicit deletion of a server account removes every server-owned profile of that
+account (`auth`, `quota`, `credit`, `subscription_probe` with their native
+caches) in the same locked admission step that checks credential references and
+before the account record is deleted; a busy, referenced or unremovable profile
+rejects the deletion so the same request can be retried, and a logout alone
+still retains the profiles. Transient credential files include the
+target-attributed temporary files of an interrupted credential write
+(`.pending-<target>-*`): they block reuse as `credential_file_present` and are
+retired with the credential files, including during account deletion.
 
 ## Claude native version admission and diagnostics
 

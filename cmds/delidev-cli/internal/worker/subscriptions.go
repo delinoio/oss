@@ -18,6 +18,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
@@ -416,24 +417,34 @@ func runManagedAccount(ctx context.Context, config Config, client delidevv1conne
 	if err != nil || executable != installation.ResolvedPath || !filepath.IsAbs(executable) {
 		return subscription.Invalid()
 	}
-	home := filepath.Join(config.Root, "managed-auth", lease.response.LeaseId)
-	if _, err := os.Lstat(home); !errors.Is(err, os.ErrNotExist) {
-		return subscription.Invalid()
+	profiles, err := nativeProfiles(config, credential.MachineID)
+	if err != nil {
+		return err
+	}
+	profile, err := profiles.Acquire(ctx, nativeprofile.Key{Harness: domain.Codex, Purpose: nativeprofile.PurposeAuth, Account: account})
+	if err != nil {
+		return err
+	}
+	// The permanent account profile is retained after every outcome; only the
+	// transient credential file is retired once the native tree is joined.
+	defer profile.Close()
+	home := profile.Root
+	// A surviving credential file from an earlier operation blocks with a
+	// specific cause until its reconciliation retires it.
+	if present, presentErr := subscription.CredentialFilePresent(home); presentErr != nil || present {
+		nativeprofile.Log(config.Logger, "native_profile_blocked", profile.Key, profile.ID, nativeprofile.ReasonCredentialPresent, "operation_id", op.ID)
+		return nativeprofile.Failure(domain.RecoveryRequired, nativeprofile.ReasonCredentialPresent, "A transient credential file remains in the retained native profile.", "Reconcile the original operation before retrying.")
 	}
 	env, err := harness.PrivateRuntimeEnvironment(home)
 	if err != nil {
 		return domain.SafeError(err)
-	}
-	homeInfo, err := security.StableStat(home)
-	if err != nil {
-		return subscription.Invalid()
 	}
 	nativeHome := filepath.Join(home, "codex")
 	if len(lease.response.Bundle) > 0 {
 		if _, _, err := subscription.Parse(lease.response.Bundle); err != nil {
 			return err
 		}
-		if err := security.WriteAtomic(filepath.Join(nativeHome, "auth.json"), lease.response.Bundle); err != nil {
+		if err := subscription.WriteCredentialFile(filepath.Join(nativeHome, "auth.json"), lease.response.Bundle); err != nil {
 			return subscription.Invalid()
 		}
 	}
@@ -442,7 +453,7 @@ func runManagedAccount(ctx context.Context, config Config, client delidevv1conne
 		// Open reports recovery-required if its independently joined cleanup
 		// could not be proved. Never release that lease on an optimistic unlink.
 		if domain.SafeError(nativeErr).Code != domain.RecoveryRequired {
-			cleanup = cleanupManagedHome(home, homeInfo) == nil
+			cleanup = retireManagedCredentials(config, profile, op.ID) == nil
 		}
 		return nativeErr
 	}
@@ -462,7 +473,7 @@ func runManagedAccount(ctx context.Context, config Config, client delidevv1conne
 				clear(closed)
 			}
 		}
-		cleanup = cleanupManagedHome(home, homeInfo) == nil
+		cleanup = retireManagedCredentials(config, profile, op.ID) == nil
 		if !cleanup {
 			returned = subscription.Invalid()
 		}
@@ -527,8 +538,17 @@ func runManagedAccount(ctx context.Context, config Config, client delidevv1conne
 	return observationErr
 }
 
-func cleanupManagedHome(home string, original os.FileInfo) error {
-	return subscription.CleanupRuntime(home, original)
+// retireManagedCredentials removes only the transient auth file of a retained
+// profile after the native tree was joined. History, caches and native-created
+// helper files stay so ordinary retained data never blocks a later operation.
+func retireManagedCredentials(config Config, profile *nativeprofile.Lease, operation domain.ID) error {
+	err := subscription.RetireCredentialFiles(profile.Root)
+	reason := nativeprofile.ReasonCredentialCleaned
+	if err != nil {
+		reason = nativeprofile.ReasonCredentialBlocked
+	}
+	nativeprofile.Log(config.Logger, "native_profile_credential_cleanup", profile.Key, profile.ID, reason, "operation_id", operation)
+	return err
 }
 
 // Only the caller's pre-native barrier permits an unpublished auth destination.
@@ -573,7 +593,6 @@ const (
 	executionAuthFilesystem executionAuthenticationReason = "filesystem-failure"
 	executionAuthBundle     executionAuthenticationReason = "bundle-mismatch"
 	executionAuthIdentity   executionAuthenticationReason = "identity-changed"
-	executionAuthLink       executionAuthenticationReason = "symlink"
 	executionAuthPending    executionAuthenticationReason = "pending-file"
 	executionAuthSpecial    executionAuthenticationReason = "non-regular-file"
 	executionAuthLimit      executionAuthenticationReason = "inventory-limit"
@@ -675,7 +694,10 @@ func scanExecutionAuthentication(home string, latest, original []byte) error {
 			return fail(executionAuthFilesystem)
 		}
 		if entry.Type()&os.ModeSymlink != 0 {
-			return fail(executionAuthLink)
+			// Native-created helper links are ordinary retained profile data. They
+			// are never followed and never read for token matching, and they do not
+			// block cleanup of the transient credential file.
+			return nil
 		}
 		// WriteAtomic owns this temporary namespace. A failed write/removal can
 		// retain only a token prefix or no bytes, so token matching cannot prove
@@ -748,35 +770,32 @@ func slicesContainManagedCapability(values []domain.WorkerCapability) bool {
 
 // Capability probing is a read-only empty-home handshake. It neither starts a
 // login nor reads host credentials and does not establish real-account support.
-func verifyManagedSubscriptionProfile(ctx context.Context, config Config, executable, version string) (bool, error) {
-	root := filepath.Join(config.Root, "managed-auth")
-	if err := security.PrivateDir(root); err != nil {
-		return false, domain.SafeError(err)
-	}
-	home, err := os.MkdirTemp(root, "probe-")
+func verifyManagedSubscriptionProfile(ctx context.Context, config Config, machine domain.ID, executable, version string) (bool, error) {
+	profiles, err := nativeProfiles(config, machine)
 	if err != nil {
 		return false, domain.SafeError(err)
 	}
+	lease, err := profiles.AcquireWait(ctx, nativeprofile.Key{Harness: domain.Codex, Purpose: nativeprofile.PurposeDiscovery}, 30*time.Second)
+	if err != nil {
+		return false, domain.SafeError(err)
+	}
+	defer lease.Close()
+	home := lease.Root
 	env, err := harness.PrivateRuntimeEnvironment(home)
 	if err != nil {
 		return false, domain.SafeError(err)
 	}
-	info, err := security.StableStat(home)
-	if err != nil {
-		return false, subscription.Invalid()
-	}
 	client, err := codex.Open(ctx, codex.Config{Version: version, Mode: codex.SubscriptionProtocol, ManagedAuthentication: true, Home: filepath.Join(home, "codex"), Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: domain.NewID(), Executable: executable, Cwd: home, Env: env, Logger: config.Logger}})
 	if err != nil {
-		if domain.SafeError(err).Code != domain.RecoveryRequired {
-			_ = cleanupManagedHome(home, info)
-		}
 		return false, err
 	}
 	if err := client.Close(); err != nil {
 		return false, domain.SafeError(err)
 	}
-	if err := cleanupManagedHome(home, info); err != nil {
-		return false, err
+	// The probe profile never receives credentials; a surviving auth file would
+	// contradict that and keeps the probe unsupported.
+	if present, _ := subscription.CredentialFilePresent(home); present {
+		return false, subscription.Invalid()
 	}
 	return true, nil
 }

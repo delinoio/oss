@@ -2,14 +2,19 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
@@ -92,13 +97,11 @@ func TestServerQuotaRuntimeCleanupAcceptsOnlyRetiredHelpers(t *testing.T) {
 	}
 }
 
-// A historical retained quota runtime has the original aliases and an empty
-// original process index but no in-memory startup proof. Restart reconciliation
-// must keep the obligation fenced and unlink nothing.
-func TestServerQuotaRestartKeepsHistoricalHelperAliasesFenced(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Unix helper aliases are not created on Windows")
-	}
+// historicalQuotaFixture prepares the reported historical access-only quota
+// shape: a prior-epoch uncertain operation, an empty original process index, no
+// auth or probe files and the native helper aliases left in its retained runtime.
+func historicalQuotaFixture(t *testing.T, aliases bool) (*subscriptionFixture, *serverQuotaFixture, domain.ID, string, string) {
+	t.Helper()
 	f, n := newServerQuotaFixture(t)
 	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
 	if _, err := f.client.RequestSubscriptionObservation(context.Background(), subscriptionRequest(f.service.Identity.Token, requestServerQuota(f))); err != nil {
@@ -127,18 +130,120 @@ func TestServerQuotaRestartKeepsHistoricalHelperAliasesFenced(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	directory := writeQuotaHelperRuntime(t, home, true)
+	return f, n, op, home, writeQuotaHelperRuntime(t, home, aliases)
+}
+
+func restartServerQuotas(t *testing.T, f *subscriptionFixture) {
+	t.Helper()
+	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
 	if err := f.service.initializeServerQuotas(ctx); err != nil {
 		t.Fatal(err)
 	}
 	f.service.runServerQuota(ctx, f.input.AccountID)
+}
+
+// A historical retained quota runtime has the original aliases and an empty
+// original process index. Restart reconciliation settles the uncertain attempt
+// exactly once as failed without unlinking or following the helper aliases,
+// without replaying the old request, and without changing identity.
+func TestServerQuotaRestartSettlesHistoricalHelperAliasesOnce(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix helper aliases are not created on Windows")
+	}
+	f, n, op, home, directory := historicalQuotaFixture(t, true)
+	_, before := f.record()
+	var logs bytes.Buffer
+	f.service.logger = slog.New(slog.NewJSONHandler(&logs, nil))
+	restartServerQuotas(t, f)
 	_, a := f.record()
-	if n.reads.Load() != 0 || a.Subscription.ServerQuota.CleanupConfirmed || a.Subscription.ServerQuota.Phase != domain.SubscriptionObservationUncertain {
-		t.Fatal("historical helper aliases released the cleanup obligation")
+	o := a.Subscription.ServerQuota
+	if n.reads.Load() != 0 {
+		t.Fatal("the historical request was replayed")
+	}
+	if !o.CleanupConfirmed || o.Phase != domain.SubscriptionObservationFailed || o.ErrorCode != domain.Canceled {
+		t.Fatalf("historical shape was not settled once as failed: %+v", o)
+	}
+	b := before.Subscription.ServerQuota
+	if o.ID != op || o.ConnectionID != b.ConnectionID || o.Generation != b.Generation || a.Subscription.Generation != before.Subscription.Generation || !o.RequestedAt.Equal(b.RequestedAt) {
+		t.Fatal("settlement changed the operation, connection or generation identity")
+	}
+	if !reflect.DeepEqual(a.Subscription.QuotaObservedAt, before.Subscription.QuotaObservedAt) {
+		t.Fatal("settlement invented or changed a quota observation")
 	}
 	for _, alias := range quotaHelperAliasNames {
 		if info, statErr := os.Lstat(filepath.Join(directory, alias)); statErr != nil || info.Mode()&os.ModeSymlink == 0 {
-			t.Fatal("restart reconciliation inferred removal authority for", alias, statErr)
+			t.Fatal("migration unlinked or replaced alias", alias, statErr)
 		}
+	}
+	if _, err := os.Stat(home); err != nil {
+		t.Fatal("migration removed the retained directory")
+	}
+	receipt, ok, err := f.service.nativeProfilesMust(t).ReadReceipt(context.Background(), nativeprofile.ReceiptLegacyQuota, op)
+	if err != nil || !ok || receipt.Step != nativeprofile.ReceiptSettled || receipt.Account != f.input.AccountID || receipt.Connection != o.ConnectionID || receipt.Generation != o.Generation {
+		t.Fatalf("receipt: %+v %v", receipt, err)
+	}
+	// A second restart changes nothing and logs only closed fields.
+	f.service.logger = slog.New(slog.NewJSONHandler(&logs, nil))
+	restartServerQuotas(t, f)
+	_, again := f.record()
+	if !reflect.DeepEqual(again.Subscription.ServerQuota, o) || n.reads.Load() != 0 {
+		t.Fatal("a second restart changed the settled operation")
+	}
+	for _, forbidden := range []string{home, f.service.Store.Root(), "verified-native"} {
+		if strings.Contains(logs.String(), forbidden) {
+			t.Fatal("migration logs exposed a personal path", forbidden)
+		}
+	}
+}
+
+// Missing or contradicting proof keeps the original fence and unlinks nothing.
+func TestServerQuotaHistoricalShapeKeepsFenceWithoutProof(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix helper aliases are not created on Windows")
+	}
+	cases := []struct {
+		name   string
+		mutate func(t *testing.T, f *subscriptionFixture, op domain.ID, home string)
+	}{
+		{"missing-process-index", func(t *testing.T, f *subscriptionFixture, op domain.ID, _ string) {
+			if err := os.Remove(filepath.Join(f.service.Store.Root(), "subscription-runtime", "processes", string(op))); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"auth-file-remnant", func(t *testing.T, f *subscriptionFixture, _ domain.ID, home string) {
+			if err := security.PrivateDir(filepath.Join(home, "codex")); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(home, "codex", "auth.json"), []byte("{}"), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"token-remnant", func(t *testing.T, f *subscriptionFixture, _ domain.ID, home string) {
+			if err := os.WriteFile(filepath.Join(home, "codex", "log.txt"), []byte(`{"refresh_token":"synthetic"}`), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"changed-operation-identity", func(t *testing.T, f *subscriptionFixture, op domain.ID, _ string) {
+			err := f.service.nativeProfilesMust(t).WriteReceipt(context.Background(), nativeprofile.Receipt{Kind: nativeprofile.ReceiptLegacyQuota, Operation: op, Account: f.input.AccountID, Connection: domain.NewID(), Generation: domain.NewID(), Step: nativeprofile.ReceiptVerified, RetainedPath: "subscription-runtime/quota/" + string(op)})
+			if err != nil {
+				t.Fatal(err)
+			}
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f, n, op, home, directory := historicalQuotaFixture(t, true)
+			c.mutate(t, f, op, home)
+			restartServerQuotas(t, f)
+			_, a := f.record()
+			if n.reads.Load() != 0 || a.Subscription.ServerQuota.CleanupConfirmed || a.Subscription.ServerQuota.Phase != domain.SubscriptionObservationUncertain {
+				t.Fatal("missing or contradicting proof released the cleanup obligation")
+			}
+			for _, alias := range quotaHelperAliasNames {
+				if info, statErr := os.Lstat(filepath.Join(directory, alias)); statErr != nil || info.Mode()&os.ModeSymlink == 0 {
+					t.Fatal("reconciliation inferred removal authority for", alias, statErr)
+				}
+			}
+		})
 	}
 }

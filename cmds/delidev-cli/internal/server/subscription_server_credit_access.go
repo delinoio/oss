@@ -250,7 +250,7 @@ func (s *Service) runAccessCredit(parent context.Context, id domain.ID) {
 			if opener == nil {
 				opener = openServerCreditAccess
 			}
-			native, openErr := opener(ctx, s.Store.Root(), original.AttemptID, auth, s.logger)
+			native, openErr := opener(ctx, s.scopeFor(id), original.AttemptID, auth, s.logger)
 			consumeErr = openErr
 			if native == nil {
 				cleanup = openErr != nil && domain.SafeError(openErr).Code != domain.RecoveryRequired

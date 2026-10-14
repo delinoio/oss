@@ -38,8 +38,28 @@ export enum BrowserPreferenceOperation {
 export enum BrowserSaveResult {
   Saved = "saved",
   NotInstalled = "not-installed",
+  DiscoveryFailed = "discovery-failed",
+  InvalidSelection = "invalid-selection",
   Failed = "failed",
 }
+
+enum BrowserUpdateRejection {
+  Unavailable = "browser-unavailable",
+  DiscoveryFailed = "browser-discovery-failed",
+  InvalidInput = "invalid-input",
+}
+const preWriteSaveResult = (error: unknown): BrowserSaveResult | undefined => {
+  switch (error) {
+    case BrowserUpdateRejection.Unavailable:
+      return BrowserSaveResult.NotInstalled;
+    case BrowserUpdateRejection.DiscoveryFailed:
+      return BrowserSaveResult.DiscoveryFailed;
+    case BrowserUpdateRejection.InvalidInput:
+      return BrowserSaveResult.InvalidSelection;
+    default:
+      return undefined;
+  }
+};
 export interface BrowserPreferenceSnapshot {
   revision: number;
   choices: BrowserChoices;
@@ -265,32 +285,43 @@ export function BrowserPreferenceProvider({
   const run = async <T,>(
     kind: BrowserPreferenceOperation,
     action: () => Promise<unknown>,
-    onError: (error: unknown) => T,
+    onError: (error: unknown, actionRejected: boolean) => T,
     onSuccess: () => T,
   ): Promise<T> => {
-    if (running.current) return onError(undefined);
+    if (running.current) return onError(undefined, false);
     const owned = generation.current;
+    let actionRejected = false;
     running.current = true;
     setOperation(kind);
     try {
       if (!subscription.current && !(await subscribe(owned)))
-        return onError(undefined);
-      const result = await action();
-      if (generation.current !== owned) return onError(undefined);
+        return onError(undefined, false);
+      let result: unknown;
+      try {
+        result = await action();
+      } catch (error) {
+        actionRejected = true;
+        throw error;
+      }
+      if (generation.current !== owned) return onError(undefined, false);
       accept(result);
       return onSuccess();
     } catch (error) {
       if (generation.current === owned) {
-        // A rejected unavailable-browser selection never reached storage and
-        // leaves the verified snapshot untouched.
-        if (error !== "browser-unavailable")
+        // Only an explicit native save rejection before store.update proves
+        // that the last verified preference snapshot is still current.
+        if (!(
+          kind === BrowserPreferenceOperation.Saving &&
+          actionRejected &&
+          preWriteSaveResult(error) !== undefined
+        ))
           failed(
             kind === BrowserPreferenceOperation.Reading
               ? BrowserPreferenceProblem.ReadFailed
               : BrowserPreferenceProblem.OutcomeUnknown,
           );
       }
-      return onError(error);
+      return onError(error, actionRejected);
     } finally {
       if (generation.current === owned) {
         running.current = false;
@@ -312,9 +343,9 @@ export function BrowserPreferenceProvider({
           return run(
             BrowserPreferenceOperation.Saving,
             () => bridge.update(structuredClone(choices), revision),
-            (error) =>
-              error === "browser-unavailable"
-                ? BrowserSaveResult.NotInstalled
+            (error, actionRejected) =>
+              actionRejected
+                ? (preWriteSaveResult(error) ?? BrowserSaveResult.Failed)
                 : BrowserSaveResult.Failed,
             () =>
               current.current.problem

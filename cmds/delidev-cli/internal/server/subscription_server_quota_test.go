@@ -73,10 +73,10 @@ func newServerQuotaFixtureBundle(t *testing.T, bundle []byte) (*subscriptionFixt
 	now := time.Now().UTC()
 	primary, secondary := 0.2, 0.8
 	n := &serverQuotaFixture{serverLoginFixture: login, observed: domain.SubscriptionQuotaObservation{ObservedAt: now, Windows: []domain.SubscriptionQuotaWindow{{ID: "codex:primary", Remaining: &primary}, {ID: "codex:secondary", Remaining: &secondary}}}}
-	f.service.subscriptionOpen = func(context.Context, string, domain.ID, []byte, *slog.Logger) (serverSubscriptionNative, error) {
+	f.service.subscriptionOpen = func(context.Context, nativeScope, domain.ID, []byte, *slog.Logger) (serverSubscriptionNative, error) {
 		return n, nil
 	}
-	f.service.quotaOpen = func(context.Context, string, domain.ID, codex.QuotaAuthentication, *slog.Logger) (serverQuotaNative, error) {
+	f.service.quotaOpen = func(context.Context, nativeScope, domain.ID, codex.QuotaAuthentication, *slog.Logger) (serverQuotaNative, error) {
 		return quotaNativeFixture{n}, nil
 	}
 	return f, n

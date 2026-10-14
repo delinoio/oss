@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
@@ -27,7 +28,11 @@ func importCodexV1History(ctx context.Context, root string, ref ExecutionCheckpo
 	if err != nil || checkpoint.Version != 1 || !ref.Subscription {
 		return CodexExecutionCheckpoint{}, "", executionCheckpointUncertain()
 	}
-	legacyHome := filepath.Join(root, "runtimes", string(ref.HistoryExecutionID), "codex")
+	historyRoot, err := peekHistoryNativeRoot(root, ref.MachineID, domain.Codex, ref.HistoryExecutionID)
+	if err != nil {
+		return CodexExecutionCheckpoint{}, "", executionCheckpointUncertain()
+	}
+	legacyHome := filepath.Join(historyRoot, "codex")
 	exactPath := ""
 	if checkpoint.Native.Context != nil {
 		exactPath = checkpoint.Native.Context.RolloutPath

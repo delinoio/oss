@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -46,15 +45,20 @@ func executeManagedSessionTitle(ctx context.Context, config Config, jobID domain
 	if err != nil || resolved != input.Executable || !filepath.IsAbs(input.Executable) {
 		return nil, domain.Fail(domain.RecoveryRequired, "The frozen Codex executable identity changed after profile verification.", "Preserve the title operation and refresh native installation evidence before another session.")
 	}
-	runtimeRoot := filepath.Join(config.Root, "title-runtimes")
-	if err := security.PrivateDir(runtimeRoot); err != nil {
-		return nil, err
-	}
-	home, err := os.MkdirTemp(runtimeRoot, string(jobID)+"-")
+	journal, err := createTitleJournal(config.Root, jobID)
 	if err != nil {
 		return nil, err
 	}
-	cleanup := newTitleFinalizer(home, jobID, config.Logger)
+	profile, err := titleProfile(ctx, config, input)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := profile.Close(); err != nil && returned == nil {
+			output, returned = nil, publicationUncertain()
+		}
+	}()
+	cleanup := newTitleFinalizer(journal, jobID, config.Logger)
 	var (
 		managed                                       *managedSubscriptionLease
 		closeManagedRPC                               func()
@@ -98,18 +102,7 @@ func executeManagedSessionTitle(ctx context.Context, config Config, jobID domain
 			config.Logger.InfoContext(ctx, "managed automatic title protected finish", "job_id", jobID, "cleanup_confirmed", managedCleanup, "authentication_captured", managedSuccess, "unused_original", managedUnused)
 		}
 	}()
-	if err := security.PrivateDir(home); err != nil {
-		return nil, err
-	}
-	home, err = filepath.EvalSymlinks(home)
-	if err != nil {
-		return nil, err
-	}
-	home, err = filepath.Abs(home)
-	if err != nil {
-		return nil, err
-	}
-	cleanup.home = home
+	home := profile.Root
 	processRoot := filepath.Join(config.Root, "processes")
 	workdir := filepath.Join(home, "work")
 	if err := security.PrivateDir(workdir); err != nil {
@@ -126,7 +119,7 @@ func executeManagedSessionTitle(ctx context.Context, config Config, jobID domain
 	}
 	intent := managedTitleIntent{Version: 1, JobID: jobID, OperationID: input.OperationID, ThreadRequestID: domain.NewID(), InputID: domain.NewID(), TurnRequestID: domain.NewID()}
 	intentBytes, err := json.Marshal(intent)
-	if err != nil || security.WriteAtomic(filepath.Join(home, "title-intent.json"), intentBytes) != nil {
+	if err != nil || security.WriteAtomic(filepath.Join(journal, "title-intent.json"), intentBytes) != nil {
 		return nil, publicationUncertain()
 	}
 	client, closeRPC, err := subscriptionRPC(ctx, config, connection.Credential)
@@ -144,7 +137,7 @@ func executeManagedSessionTitle(ctx context.Context, config Config, jobID domain
 	// Install pre-native cleanup before the atomic write: even a synchronization
 	// error may leave the owned plaintext file committed.
 	managedPreNative = true
-	if err := security.WriteAtomic(filepath.Join(nativeHome, "auth.json"), managed.response.Bundle); err != nil {
+	if err := subscription.WriteCredentialFile(filepath.Join(nativeHome, "auth.json"), managed.response.Bundle); err != nil {
 		return nil, subscription.Invalid()
 	}
 	nativeConfig := codex.Config{
