@@ -9,8 +9,10 @@ import { expect, it } from "vitest";
 import { encode } from "./documents";
 import { installationVersionAllowed } from "./harness-version";
 import {
+  OpenCodeInstallationCause,
   claudeRunnerObservation,
   installationObservation,
+  openCodeInstallationCause,
   validRunnerObservation,
 } from "./runner-observation";
 const installation = {
@@ -246,3 +248,100 @@ it("keeps Codex and Grok installation classification protocol-only", () => {
   expect(installationVersionAllowed("claude-code")?.("2.1.235")).toBe(false);
   expect(installationVersionAllowed("claude-code")?.("2.1.236")).toBe(true);
 });
+
+// Record shapes mirror the Go discovery output for OpenCode (see the harness
+// discovery tests). Each row is a path that leaves the installation unusable.
+it.each([
+  {
+    path: "relative explicit path, non-regular executable, Windows shell wrapper, unrunnable executable or unparseable version output",
+    record: { state: "incompatible" },
+    cause: OpenCodeInstallationCause.InvalidInstallation,
+    observation: { cause: "version" },
+  },
+  {
+    path: "detected version under the minimum",
+    record: {
+      state: "detected",
+      version: "1.18.31",
+      protocol_verified: false,
+      protocol: { state: "unsupported" },
+    },
+    cause: OpenCodeInstallationCause.BelowBaseline,
+    observation: { cause: "version", detectedVersion: "1.18.31" },
+  },
+  {
+    path: "prerelease of the minimum",
+    record: {
+      state: "detected",
+      version: "1.18.32-rc.1",
+      protocol_verified: false,
+      protocol: { state: "unsupported" },
+    },
+    cause: OpenCodeInstallationCause.BelowBaseline,
+    observation: { cause: "version", detectedVersion: "1.18.32-rc.1" },
+  },
+  {
+    path: "protocol profile mismatch at the minimum",
+    record: {
+      state: "detected",
+      version: "1.18.32",
+      protocol_verified: false,
+      protocol: { state: "unsupported" },
+    },
+    cause: OpenCodeInstallationCause.ProtocolProfileMismatch,
+    observation: { cause: "protocolUnsupported", detectedVersion: "1.18.32" },
+  },
+  {
+    path: "protocol profile mismatch at a newer version",
+    record: {
+      state: "detected",
+      version: "1.19.0",
+      protocol_verified: false,
+      protocol: { state: "unsupported" },
+    },
+    cause: OpenCodeInstallationCause.ProtocolProfileMismatch,
+    observation: { cause: "protocolUnsupported", detectedVersion: "1.19.0" },
+  },
+  {
+    path: "failed protocol validation",
+    record: {
+      state: "detected",
+      version: "1.19.0",
+      protocol_verified: false,
+      protocol: { state: "failed" },
+    },
+    cause: OpenCodeInstallationCause.Other,
+    observation: { cause: "protocolFailed", detectedVersion: "1.19.0" },
+  },
+  {
+    path: "missing executable",
+    record: { state: "missing" },
+    cause: OpenCodeInstallationCause.Other,
+    observation: { cause: "missing" },
+  },
+  {
+    path: "verified installation",
+    record: {
+      state: "detected",
+      version: "1.19.0",
+      protocol_verified: true,
+      protocol: { state: "verified" },
+    },
+    cause: undefined,
+    observation: { detectedVersion: "1.19.0" },
+  },
+])(
+  "maps the OpenCode discovery path $path to one remedy cause",
+  ({ record, cause, observation }) => {
+    const result = installationObservation(
+      { harness: "opencode", ...record },
+      installationVersionAllowed("opencode"),
+    );
+    expect(result).toEqual(observation);
+    if (result.cause)
+      expect(
+        openCodeInstallationCause(result.cause, result.detectedVersion),
+      ).toBe(cause);
+    else expect(cause).toBeUndefined();
+  },
+);

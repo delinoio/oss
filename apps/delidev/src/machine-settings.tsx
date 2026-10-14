@@ -45,7 +45,11 @@ import {
 } from "@delinoio/delidev-api-client";
 import { document, encode, items, object, text } from "./documents";
 import { installationVersionAllowed } from "./harness-version";
-import type { RunnerExclusion } from "./runner-observation";
+import {
+  OpenCodeInstallationCause,
+  openCodeInstallationCause,
+  type RunnerExclusion,
+} from "./runner-observation";
 import { Harness, TextField } from "./configuration-fields";
 import { ObservedJob, useJobObservation } from "./jobs";
 import { useRetainedMutation } from "./mutation";
@@ -305,20 +309,29 @@ export function useMachineSettingsController(
 }
 /**
  * Copy key for an installation exclusion cause. Claude and OpenCode have
- * harness-specific update guidance; every other harness keeps the shared copy.
- * No key names a numeric version baseline.
+ * harness-specific guidance; every other harness keeps the shared copy. OpenCode
+ * update guidance applies only to a detected under-baseline version, and a
+ * protocol profile mismatch never asks for an update. No key names a numeric
+ * version baseline.
  */
 export function installationCauseCopyKey(
   harness: string,
   cause: RunnerExclusion,
+  detectedVersion?: string,
 ): MessageKey {
   if (harness === Harness.Claude)
     return `claude-subscription.excluded.${cause}`;
-  if (
-    harness === Harness.OpenCode &&
-    (cause === "version" || cause === "protocolUnsupported")
-  )
-    return `machine-settings.opencode.excluded.${cause}`;
+  if (harness === Harness.OpenCode) {
+    switch (openCodeInstallationCause(cause, detectedVersion)) {
+      case OpenCodeInstallationCause.BelowBaseline:
+        return "machine-settings.opencode.excluded.version";
+      case OpenCodeInstallationCause.ProtocolProfileMismatch:
+        return "machine-settings.opencode.excluded.protocolUnsupported";
+      case OpenCodeInstallationCause.InvalidInstallation:
+      case OpenCodeInstallationCause.Other:
+        break;
+    }
+  }
   return `machine-settings.excluded.${cause}`;
 }
 export type MachineSettingsController = ReturnType<
@@ -515,7 +528,11 @@ export function MachineSettingsView({
                 {observation.cause ? (
                   <InlineRemediation
                     summary={copy(
-                      installationCauseCopyKey(harness, observation.cause),
+                      installationCauseCopyKey(
+                        harness,
+                        observation.cause,
+                        observation.detectedVersion,
+                      ),
                     )}
                   />
                 ) : (

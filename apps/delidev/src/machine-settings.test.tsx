@@ -367,38 +367,56 @@ it("retains the accepted observation while the same connection replaces its tran
 });
 
 it.each([
-  ["opencode", "version", "machine-settings.opencode.excluded.version"],
+  // [harness, cause, detectedVersion, key]
+  [
+    "opencode",
+    "version",
+    "1.18.20",
+    "machine-settings.opencode.excluded.version",
+  ],
+  ["opencode", "version", undefined, "machine-settings.excluded.version"],
   [
     "opencode",
     "protocolUnsupported",
+    "1.18.33",
     "machine-settings.opencode.excluded.protocolUnsupported",
   ],
-  ["opencode", "missing", "machine-settings.excluded.missing"],
-  ["opencode", "protocolFailed", "machine-settings.excluded.protocolFailed"],
-  ["claude-code", "version", "claude-subscription.excluded.version"],
-  ["codex", "version", "machine-settings.excluded.version"],
+  ["opencode", "missing", undefined, "machine-settings.excluded.missing"],
+  [
+    "opencode",
+    "protocolFailed",
+    "1.18.33",
+    "machine-settings.excluded.protocolFailed",
+  ],
+  ["claude-code", "version", undefined, "claude-subscription.excluded.version"],
+  ["codex", "version", undefined, "machine-settings.excluded.version"],
   [
     "codex",
     "protocolUnsupported",
+    "0.151.0",
     "machine-settings.excluded.protocolUnsupported",
   ],
-  ["grok-build", "version", "machine-settings.excluded.version"],
+  ["grok-build", "version", undefined, "machine-settings.excluded.version"],
 ] as const)(
-  "selects installation copy for %s cause %s",
-  (harness, cause, key) => {
-    expect(installationCauseCopyKey(harness, cause)).toBe(key);
+  "selects installation copy for %s cause %s (detected %s)",
+  (harness, cause, detectedVersion, key) => {
+    expect(installationCauseCopyKey(harness, cause, detectedVersion)).toBe(key);
   },
 );
 
-it("keeps OpenCode update guidance free of numeric baselines in both languages", async () => {
+it("keeps OpenCode guidance free of numeric baselines and scopes the update instruction to old versions", async () => {
   for (const locale of ["en", "ko"]) {
     const messages = (await import(`./locales/${locale}/machine-settings.json`))
       .default as Record<string, string>;
-    for (const cause of ["version", "protocolUnsupported"]) {
-      const message = messages[`machine-settings.opencode.excluded.${cause}`];
-      expect(message).toContain("opencode upgrade");
+    const outdated = messages["machine-settings.opencode.excluded.version"];
+    const mismatch =
+      messages["machine-settings.opencode.excluded.protocolUnsupported"];
+    expect(outdated).toContain("opencode upgrade");
+    // A profile mismatch of an admitted version must not ask for an update.
+    expect(mismatch).not.toContain("opencode upgrade");
+    expect(mismatch).not.toMatch(/update|업데이트|upgrade/i);
+    for (const message of [outdated, mismatch])
       expect(message).not.toMatch(/\d+\.\d+/);
-    }
   }
 });
 
@@ -409,7 +427,7 @@ function Observed({ resource }: { resource: Resource }) {
   );
 }
 
-it("renders the detected version and OpenCode update guidance for an under-baseline installation", async () => {
+function renderInstallations(installations: unknown[]) {
   const resource = create(ResourceSchema, {
     id: newRequestId(),
     kind: EntityKind.MACHINE,
@@ -418,22 +436,7 @@ it("renders the detected version and OpenCode update guidance for an under-basel
     documentJson: encode({
       name: "Runner",
       last_seen: earlier,
-      installations: [
-        {
-          harness: "opencode",
-          state: "detected",
-          version: "1.18.20",
-          protocol_verified: true,
-          protocol: { state: "verified" },
-        },
-        {
-          harness: "codex",
-          state: "detected",
-          version: "0.1.0",
-          protocol_verified: true,
-          protocol: { state: "verified" },
-        },
-      ],
+      installations,
     }),
   });
   const transport = createRouterTransport((router) => {
@@ -441,7 +444,7 @@ it("renders the detected version and OpenCode update guidance for an under-basel
       getResource: async () => ({ resource }),
     });
   });
-  render(
+  return render(
     <TransportProvider transport={transport}>
       <QueryClientProvider client={new QueryClient()}>
         <MutationIntents>
@@ -450,9 +453,76 @@ it("renders the detected version and OpenCode update guidance for an under-basel
       </QueryClientProvider>
     </TransportProvider>,
   );
-  expect(await screen.findByText("Detected version: 1.18.20")).toBeTruthy();
-  expect(screen.getByText(/Update OpenCode on this Runner/)).toBeTruthy();
-  expect(screen.queryByText(/did not provide a supported version/)).toBeNull();
-  // Codex keeps protocol-only classification and the verified message.
-  expect(screen.getByText("Detected version: 0.1.0")).toBeTruthy();
-});
+}
+
+// Record shapes mirror the Go discovery output. Every `incompatible` state
+// (relative explicit path, non-regular or unrunnable executable, Windows shell
+// wrapper, unparseable version response) carries no version; only a detected
+// version under the minimum is an outdated OpenCode.
+it.each([
+  {
+    name: "an under-baseline detected version",
+    record: {
+      state: "detected",
+      version: "1.18.20",
+      protocol_verified: false,
+      protocol: { state: "unsupported" },
+    },
+    detected: "Detected version: 1.18.20",
+    guidance: /Update OpenCode on this Runner/,
+    asksForUpdate: true,
+  },
+  {
+    name: "an incompatible installation without a version",
+    record: { state: "incompatible" },
+    detected: undefined,
+    guidance: /did not provide a supported version/,
+    asksForUpdate: false,
+  },
+  {
+    name: "a protocol profile mismatch at an admitted version",
+    record: {
+      state: "detected",
+      version: "1.18.33",
+      protocol_verified: false,
+      protocol: { state: "unsupported" },
+    },
+    detected: "Detected version: 1.18.33",
+    guidance: /does not match the native protocol profile/,
+    asksForUpdate: false,
+  },
+  {
+    name: "a failed protocol validation at a newer version",
+    record: {
+      state: "detected",
+      version: "1.19.0",
+      protocol_verified: false,
+      protocol: { state: "failed" },
+    },
+    detected: "Detected version: 1.19.0",
+    guidance: /Native protocol verification failed/,
+    asksForUpdate: false,
+  },
+])(
+  "renders the OpenCode guidance for $name",
+  async ({ record, detected, guidance, asksForUpdate }) => {
+    renderInstallations([
+      { harness: "opencode", ...record },
+      {
+        harness: "codex",
+        state: "detected",
+        version: "0.1.0",
+        protocol_verified: true,
+        protocol: { state: "verified" },
+      },
+    ]);
+    expect(await screen.findByText(guidance)).toBeTruthy();
+    if (detected) expect(screen.getByText(detected)).toBeTruthy();
+    // Only an under-baseline version asks for an OpenCode update.
+    expect(Boolean(screen.queryByText(/Update OpenCode on this Runner/))).toBe(
+      asksForUpdate,
+    );
+    // Codex keeps protocol-only classification and the verified message.
+    expect(screen.getByText("Detected version: 0.1.0")).toBeTruthy();
+  },
+);
