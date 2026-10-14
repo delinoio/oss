@@ -1741,6 +1741,60 @@ it("keeps 50 selectable with the capability and resets to one page-one request w
   expect(value.query).toHaveBeenCalledTimes(count);
 });
 
+it("never sends a 50-item refresh to a same-identity reconnect peer that lacks the capability", async () => {
+  const old = fixture();
+  old.capabilities([SystemCapability.PULL_REQUEST_PAGING_50_V1]);
+  const replacement = fixture(old.rows);
+  replacement.capabilities([]);
+  const identity = {
+    currentDeviceId: newRequestId(),
+    pairingAuthority: {
+      endpoint: "http://127.0.0.1:46310",
+      serverId: newRequestId(),
+    },
+  };
+  const view = render(
+    <App transport={old.transport} {...identity} connectionEpoch={0} />,
+  );
+  const pane = await open();
+  await choose(old.rows[0]);
+  const select = pane.getByLabelText("PR page size") as HTMLSelectElement;
+  await waitFor(() => expect(select.options[2].disabled).toBe(false));
+  fireEvent.change(select, { target: { value: "50" } });
+  await waitFor(() =>
+    expect(
+      old.query.mock.calls.some(
+        ([request]) =>
+          JSON.parse(new TextDecoder().decode(request.queryJson)).page_size ===
+          50,
+      ),
+    ).toBe(true),
+  );
+  // The same server/device identity keeps the query client and its cached
+  // capability while a downgraded peer replaces the transport.
+  view.rerender(
+    <App transport={replacement.transport} {...identity} connectionEpoch={1} />,
+  );
+  await waitFor(() => expect(replacement.query).toHaveBeenCalled());
+  await waitFor(() => expect(select.value).toBe("20"));
+  await waitFor(() => expect(select.options[2].disabled).toBe(true));
+  await pane.findByText(pagingNote);
+  expect(
+    replacement.query.mock.calls.every(
+      ([request]) =>
+        JSON.parse(new TextDecoder().decode(request.queryJson)).page_size !==
+        50,
+    ),
+  ).toBe(true);
+  expect(
+    replacement.query.mock.calls.some(
+      ([request]) =>
+        JSON.parse(new TextDecoder().decode(request.queryJson)).page_size ===
+        20,
+    ),
+  ).toBe(true);
+});
+
 it("reports accepted progress in the header, guidance while another page exists and a distinct exhausted state", async () => {
   const value = fixture();
   const read = value.query.getMockImplementation()!;

@@ -22,7 +22,13 @@ import {
 } from "./github-scroll";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { useEffect, useId, useRef, useState } from "react";
-import { useQuery } from "@connectrpc/connect-query";
+import {
+  createQueryOptions,
+  useQuery,
+  useTransport,
+} from "@connectrpc/connect-query";
+import { useQuery as useBusinessQuery } from "@tanstack/react-query";
+import { type Transport } from "@connectrpc/connect";
 import {
   EntranceMotion,
   useActivationCount,
@@ -473,6 +479,17 @@ function PendingPRActions() {
   );
 }
 
+const transportIdentities = new WeakMap<Transport, string>();
+/** Stable opaque identity for one transport object, used only in query keys. */
+function transportIdentity(transport: Transport): string {
+  let identity = transportIdentities.get(transport);
+  if (!identity) {
+    identity = newRequestId();
+    transportIdentities.set(transport, identity);
+  }
+  return identity;
+}
+
 export function PullRequests({
   active,
   openSettings,
@@ -505,19 +522,35 @@ export function PullRequests({
   const [appliedSearch, setAppliedSearch] = useState("");
   const [composing, setComposing] = useState(false);
   const [pageSize, setPageSize] = useState<number>(PullRequestPageSize.Twenty);
-  // The same cached GetStatus read serves the workspace capability gate.
-  const status = useQuery(
+  // The capability gate trusts only a GetStatus observation made through the
+  // current transport. A same-identity reconnect preserves the query client, so
+  // the observation is keyed by transport: after a downgrade or peer
+  // replacement the previous peer's capabilities are unavailable in the same
+  // render and no 50-item request can reach the new peer before it answers.
+  const transport = useTransport();
+  const statusOptions = createQueryOptions(
     SystemQuery.getStatus,
     {},
-    {
-      retry: false,
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      gcTime: 0,
-      staleTime: Infinity,
-      enabled: active,
-    },
+    { transport },
   );
+  const status = useBusinessQuery({
+    ...statusOptions,
+    queryKey: [
+      ...statusOptions.queryKey,
+      { pageSizeCapabilityTransport: transportIdentity(transport) },
+    ],
+    queryFn: (context) =>
+      statusOptions.queryFn!({
+        ...context,
+        queryKey: statusOptions.queryKey,
+      } as never),
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    gcTime: 0,
+    staleTime: Infinity,
+    enabled: active,
+  });
   const statusSettled = Boolean(status.data) || Boolean(status.error);
   const pagingSupported = Boolean(
     status.data?.capabilities.includes(
@@ -1050,7 +1083,13 @@ export function PullRequests({
             key={loaded.scopeKey}
             selected={selected!}
             navigation={navigation}
-            active={active}
+            // A retained 50-item scope pauses until the current transport
+            // confirms the capability, so a replaced peer never receives it.
+            // This follows the loaded scope, which lags the page-size choice.
+            active={
+              active &&
+              (loaded.pageSize !== PullRequestPageSize.Fifty || pagingSupported)
+            }
             changeNavigation={setNavigation}
             pending={<PendingPRActions />}
           />
