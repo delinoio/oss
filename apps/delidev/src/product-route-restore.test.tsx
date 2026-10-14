@@ -242,10 +242,7 @@ describe("route mirroring", () => {
     render(<App transport={value.transport} />);
     await screen.findByRole("button", { name: "New session" });
     expect(search().get("screen")).toBe(Surface.Sessions);
-    const visit = async (
-      open: () => void | Promise<void>,
-      expected: Surface,
-    ) => {
+    const visit = async (open: () => unknown, expected: Surface) => {
       await open();
       await waitFor(() => expect(search().get("screen")).toBe(expected));
       expect(search().get("native")).toBe("1");
