@@ -63,6 +63,20 @@ function fixture() {
     source_session_id: session.id,
     sidechat_parent_snapshot: { revision: "1" },
   });
+  // A Sidechat of another parent, and a Session with malformed provenance
+  // (no workspace), to cover every row of the restore decision tables.
+  const foreignSidechat = retainedSession("Foreign side question", {
+    source_session_id: other.id,
+    sidechat_parent_snapshot: { revision: "1" },
+  });
+  const malformed = create(ResourceSchema, {
+    ...retainedSession("Malformed session"),
+    documentJson: encode({
+      name: "Malformed session",
+      outcome: "stopped",
+      archive: "active",
+    }),
+  });
   const repository = create(ResourceSchema, {
     id: newRequestId(),
     kind: EntityKind.REPOSITORY,
@@ -128,7 +142,15 @@ function fixture() {
   };
   const { entry: inboxEntry, view: inboxView } = inboxOf(session);
   const { entry: otherInboxEntry, view: otherInboxView } = inboxOf(other);
-  const resources = [session, other, sidechat, repository, otherRepository];
+  const resources = [
+    session,
+    other,
+    sidechat,
+    foreignSidechat,
+    malformed,
+    repository,
+    otherRepository,
+  ];
   // Reads of a held ID wait until `hold` releases them, so a test can answer a
   // restore read after the user acted.
   const held = new Map<string, Promise<void>>();
@@ -290,6 +312,8 @@ function fixture() {
     session,
     other,
     sidechat,
+    foreignSidechat,
+    malformed,
     repository,
     otherRepository,
     schedule,
@@ -547,6 +571,48 @@ describe("route fallbacks", () => {
       await waitFor(() => expect(search().has("item")).toBe(false));
     },
   );
+
+  it("clears a Sidechat ID placed in the top-level session slot without trusting its retained parent", async () => {
+    const value = fixture();
+    route(`?screen=sessions&session=${value.sidechat.id}`);
+    render(<App transport={value.transport} />);
+    expect(
+      await screen.findByText("Your sessions, in one place"),
+    ).toBeTruthy();
+    await waitFor(() => expect(search().has("session")).toBe(false));
+    expect(search().has("sidechat")).toBe(false);
+    expect(screen.queryByRole("tab", { name: /Side question/ })).toBeNull();
+    // The Sidechat's retained parent is never opened or even read.
+    const read = value.reads.resource.mock.calls.map(
+      ([request]) => request.id,
+    );
+    expect(read).not.toContain(value.session.id);
+    expect(value.mutated).not.toHaveBeenCalled();
+  });
+
+  it("clears a Sidechat ID in the session slot even with a valid sidechat selection", async () => {
+    const value = fixture();
+    route(
+      `?screen=sessions&session=${value.foreignSidechat.id}&sidechat=${value.sidechat.id}`,
+    );
+    render(<App transport={value.transport} />);
+    expect(
+      await screen.findByText("Your sessions, in one place"),
+    ).toBeTruthy();
+    await waitFor(() => expect(search().has("session")).toBe(false));
+    expect(search().has("sidechat")).toBe(false);
+    expect(screen.queryByRole("tab", { name: /Side question/ })).toBeNull();
+  });
+
+  it("clears a Session whose provenance is malformed", async () => {
+    const value = fixture();
+    route(`?screen=sessions&session=${value.malformed.id}`);
+    render(<App transport={value.transport} />);
+    expect(
+      await screen.findByText("Your sessions, in one place"),
+    ).toBeTruthy();
+    await waitFor(() => expect(search().has("session")).toBe(false));
+  });
 
   it("clears a deleted Session selection and shows Sessions Home", async () => {
     const value = fixture();

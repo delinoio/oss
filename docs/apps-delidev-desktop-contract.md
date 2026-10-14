@@ -475,17 +475,38 @@ Failure codes are classified once, for every restored kind, by
 retryable (retain). A retryable read failure
 reopens the Session or repository so its own mounted retry and error state shows; a
 Schedule needs the fresh resource, so it is cleared and the list's own retry applies.
-`readRouteSession` classifies the nested Session reads in one place: a definitive
-rejection of the parent clears the selection; a definitive rejection of the Sidechat
-(missing, denied, not a child of the parent) opens the verified parent only; a
-retryable failure of the Sidechat read, or of the parent read, retains the requested
-Sidechat (the child tab is mounted under the requested parent so its own retry and
-error state runs, and the URL keeps the `sidechat` ID) instead of dropping it. A
-Sidechat tab opened without a verified name never shows its internal ID in its text,
-`title` or accessible name: it carries a localized product-identity label (the
-Session presentation label) and is marked provisional. When the child's own pane
-loads the Session, the descriptor takes the verified name; if the loaded Session is
-not a Sidechat of that parent, the placeholder tab ends.
+`readRouteSession` restores a Session selection strictly from two typed decision
+tables in `product-route-restore.ts` (`sessionSlotTable`, `sidechatSlotTable`).
+Each read is classified once relative to the requested parent: `TopLevel` (a
+Session that is not a Sidechat: work Session, General Chat or Fork),
+`SidechatOfRequestedParent`, `SidechatOfOtherParent`, `Rejected` (not found,
+denied, unauthenticated, an ID of another entity kind, a resource of the wrong kind,
+an invalid envelope, or malformed or unknown provenance such as a missing workspace
+or invalid Fork metadata) and `Transient` (any retryable failure). A Sidechat is
+valid only in the `sidechat` slot under a parent that this restore itself read as
+`TopLevel`; its retained original parent is never trusted unread.
+
+| `session` slot read | `session` only | with `sidechat` |
+| --- | --- | --- |
+| TopLevel | open the Session | read the `sidechat` slot (below) |
+| SidechatOfRequestedParent / SidechatOfOtherParent | clear | clear (child not read) |
+| Rejected | clear | clear (child not read) |
+| Transient | open the Session unverified (its own retry state shows) | open the requested Sidechat under the requested parent with a placeholder name |
+
+| `sidechat` slot read (parent verified `TopLevel`) | result |
+| --- | --- |
+| SidechatOfRequestedParent | open the Sidechat with its verified name |
+| TopLevel, SidechatOfOtherParent or Rejected | open the verified parent only; the `sidechat` ID leaves the URL |
+| Transient | retain the requested Sidechat under the parent (placeholder name) |
+
+"Clear" opens nothing and removes the selection from the URL, so the requested
+screen's list shows. A retained Sidechat is mounted under the requested parent so its
+own retry and error state runs, and the URL keeps the `sidechat` ID. A Sidechat tab
+opened without a verified name never shows its internal ID in its text, `title` or
+accessible name: it carries a localized product-identity label (the Session
+presentation label) and is marked provisional. When the child's own pane loads the
+Session, the descriptor takes the verified name; if the loaded Session is not a
+Sidechat of that parent, the placeholder tab ends and its `sidechat` ID leaves the URL.
 
 Restore supersession uses one monotonic navigation-intent token owned by `Shell`
 (`navigationIntent`, a ref). Every handler that actually changes the surface, the
@@ -525,6 +546,8 @@ focused external Browser ownership and the English/Korean copy are unchanged. No
 native, server, RPC, storage or migration change is involved. Regression coverage:
 `product-route.test.ts` (parse, serialize, hash and history, pure identity read and
 commit),
+`product-route-restore-table.test.tsx` (both decision tables row by row, and every
+slot by resource kind by read outcome by parent outcome through `readRouteSession`),
 `product-route-restore.test.tsx` (mirroring, restore per screen, fallbacks, pending
 routes, reload-shortcut remount, envelope validation per kind, slow-read supersession
 per kind, same-tick supersession per restore kind and for New schedule and surface

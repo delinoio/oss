@@ -16,6 +16,7 @@ import {
   SearchSessionRoute,
   inaccessibleFailure,
   resolveSearchSession,
+  type SearchSessionResolution,
 } from "./search-session-routing";
 
 /** Closed outcome of verifying one route selection with a fresh read. */
@@ -187,11 +188,147 @@ export type RouteSessionRead =
     };
 
 /**
- * Verifies a Session selection and its Sidechat with fresh reads and
- * classifies every nested read in one place: a definitive rejection of the
- * parent clears the selection, a definitive rejection of the child falls back
- * to the verified parent, and a transient failure of either read retains the
- * deepest requested selection so it is never lost to a temporary outage.
+ * Closed classification of one Session-slot or Sidechat-slot read, relative to
+ * the Session the route requested as parent (when there is one).
+ */
+export enum SessionReadKind {
+  /** A Session that is not a Sidechat (work Session, General Chat, Fork). */
+  TopLevel = "top-level",
+  /** A Sidechat whose retained original parent is the requested parent. */
+  SidechatOfRequestedParent = "sidechat-of-requested-parent",
+  /** A Sidechat whose retained original parent is another Session. */
+  SidechatOfOtherParent = "sidechat-of-other-parent",
+  /**
+   * A definitive rejection: deleted, denied, another connection's ID, an ID of
+   * another entity kind, malformed or unknown provenance (missing workspace,
+   * invalid Fork metadata) or an invalid envelope.
+   */
+  Rejected = "rejected",
+  /** The read failed and may succeed on retry. */
+  Transient = "transient",
+}
+
+/** What route restoration does for one row of the decision tables. */
+export enum SessionRestoreAction {
+  /** Open nothing and clear the selection from the URL. */
+  Clear = "clear",
+  /** Open the verified top-level Session only. */
+  OpenSession = "open-session",
+  /** Session slot only: the parent is verified, so read the Sidechat slot. */
+  VerifySidechat = "verify-sidechat",
+  /** Open the verified Sidechat under its verified parent. */
+  OpenSidechat = "open-sidechat",
+  /** Retryable parent failure, no Sidechat: open the Session unverified. */
+  RetainSession = "retain-session",
+  /**
+   * Retryable failure: open the requested Sidechat under the requested parent
+   * with a placeholder name; the pane verifies it or discards the placeholder.
+   */
+  RetainSidechat = "retain-sidechat",
+}
+
+/**
+ * Decision table for the top-level `session` slot, one row per read. A Sidechat
+ * is never a valid top-level selection, whatever parent it retains: that parent
+ * was never read here, so trusting it would mount an unverified Session. Only a
+ * Sidechat in the `sidechat` slot, under a parent verified as top-level, is
+ * valid. `alone` applies without a `sidechat` selection, `withSidechat` with one.
+ *
+ * | Session-slot read           | alone          | with sidechat     |
+ * | --------------------------- | -------------- | ----------------- |
+ * | TopLevel                    | OpenSession    | VerifySidechat    |
+ * | SidechatOfRequestedParent   | Clear          | Clear             |
+ * | SidechatOfOtherParent       | Clear          | Clear             |
+ * | Rejected                    | Clear          | Clear             |
+ * | Transient                   | RetainSession  | RetainSidechat    |
+ */
+export const sessionSlotTable: Readonly<
+  Record<
+    SessionReadKind,
+    {
+      alone: SessionRestoreAction;
+      withSidechat: SessionRestoreAction;
+    }
+  >
+> = {
+  [SessionReadKind.TopLevel]: {
+    alone: SessionRestoreAction.OpenSession,
+    withSidechat: SessionRestoreAction.VerifySidechat,
+  },
+  [SessionReadKind.SidechatOfRequestedParent]: {
+    alone: SessionRestoreAction.Clear,
+    withSidechat: SessionRestoreAction.Clear,
+  },
+  [SessionReadKind.SidechatOfOtherParent]: {
+    alone: SessionRestoreAction.Clear,
+    withSidechat: SessionRestoreAction.Clear,
+  },
+  [SessionReadKind.Rejected]: {
+    alone: SessionRestoreAction.Clear,
+    withSidechat: SessionRestoreAction.Clear,
+  },
+  [SessionReadKind.Transient]: {
+    alone: SessionRestoreAction.RetainSession,
+    withSidechat: SessionRestoreAction.RetainSidechat,
+  },
+};
+
+/**
+ * Decision table for the `sidechat` slot. It is consulted only after the parent
+ * was read as a top-level Session (the parent rows above decide every other
+ * parent outcome, and the child is not read then). Anything that is not
+ * positively a Sidechat of the requested parent falls back to the verified
+ * parent; a retryable failure retains the requested Sidechat.
+ *
+ * | Sidechat-slot read          | action          |
+ * | --------------------------- | --------------- |
+ * | TopLevel                    | OpenSession     |
+ * | SidechatOfRequestedParent   | OpenSidechat    |
+ * | SidechatOfOtherParent       | OpenSession     |
+ * | Rejected                    | OpenSession     |
+ * | Transient                   | RetainSidechat  |
+ */
+export const sidechatSlotTable: Readonly<
+  Record<SessionReadKind, SessionRestoreAction>
+> = {
+  [SessionReadKind.TopLevel]: SessionRestoreAction.OpenSession,
+  [SessionReadKind.SidechatOfRequestedParent]:
+    SessionRestoreAction.OpenSidechat,
+  [SessionReadKind.SidechatOfOtherParent]: SessionRestoreAction.OpenSession,
+  [SessionReadKind.Rejected]: SessionRestoreAction.OpenSession,
+  [SessionReadKind.Transient]: SessionRestoreAction.RetainSidechat,
+};
+
+/**
+ * Classifies one Session read relative to the requested parent. Without a
+ * requested parent (the `session` slot) every Sidechat is of another parent.
+ */
+export function classifySessionRead(
+  resolution: SearchSessionResolution,
+  requestedParent?: string,
+): SessionReadKind {
+  switch (resolution.route) {
+    case SearchSessionRoute.TopLevel:
+      return SessionReadKind.TopLevel;
+    case SearchSessionRoute.Sidechat:
+      return requestedParent !== undefined &&
+        resolution.parent === requestedParent
+        ? SessionReadKind.SidechatOfRequestedParent
+        : SessionReadKind.SidechatOfOtherParent;
+    case SearchSessionRoute.Unavailable:
+      return resolution.transient
+        ? SessionReadKind.Transient
+        : SessionReadKind.Rejected;
+  }
+}
+
+/**
+ * Verifies a Session selection and its Sidechat with fresh reads, strictly from
+ * `sessionSlotTable` and `sidechatSlotTable`: a definitive rejection of the
+ * parent, or a Sidechat in the top-level slot, clears the selection; a
+ * Sidechat that is not positively a child of the verified parent falls back to
+ * that parent; a transient failure of either read retains the deepest requested
+ * selection so it is never lost to a temporary outage.
  */
 export async function readRouteSession(
   client: QueryClient,
@@ -199,49 +336,56 @@ export async function readRouteSession(
   selection: { id: string; sidechat?: string },
   signal?: AbortSignal,
 ): Promise<RouteSessionRead> {
-  const top = await resolveSearchSession(
-    client,
-    transport,
-    selection.id,
-    signal,
+  const parentRead = classifySessionRead(
+    await resolveSearchSession(client, transport, selection.id, signal),
   );
-  if (top.route === SearchSessionRoute.Sidechat)
-    return {
-      outcome: RouteReadOutcome.Found,
-      open: { id: selection.id, parent: top.parent, name: top.name },
-    };
-  if (top.route === SearchSessionRoute.Unavailable) {
-    if (!top.transient) return missing;
-    // The parent could not be verified yet, so neither could its Sidechat:
-    // retain both and let the mounted views own the retry and error state.
-    return {
-      outcome: RouteReadOutcome.Failed,
-      open: selection.sidechat
-        ? { id: selection.sidechat, parent: selection.id }
-        : { id: selection.id },
-    };
+  const parentRow = sessionSlotTable[parentRead];
+  let action = selection.sidechat ? parentRow.withSidechat : parentRow.alone;
+  let child: SearchSessionResolution | undefined;
+  if (action === SessionRestoreAction.VerifySidechat) {
+    if (signal?.aborted) action = SessionRestoreAction.OpenSession;
+    else {
+      child = await resolveSearchSession(
+        client,
+        transport,
+        selection.sidechat!,
+        signal,
+      );
+      action = sidechatSlotTable[classifySessionRead(child, selection.id)];
+    }
   }
-  if (!selection.sidechat || signal?.aborted)
-    return { outcome: RouteReadOutcome.Found, open: { id: selection.id } };
-  const child = await resolveSearchSession(
-    client,
-    transport,
-    selection.sidechat,
-    signal,
-  );
-  if (
-    child.route === SearchSessionRoute.Sidechat &&
-    child.parent === selection.id
-  )
-    return {
-      outcome: RouteReadOutcome.Found,
-      open: { id: selection.sidechat, parent: child.parent, name: child.name },
-    };
-  if (child.route === SearchSessionRoute.Unavailable && child.transient)
-    return {
-      outcome: RouteReadOutcome.Failed,
-      open: { id: selection.sidechat, parent: selection.id },
-    };
-  // Definitively not a Sidechat of this Session: open the verified parent only.
-  return { outcome: RouteReadOutcome.Found, open: { id: selection.id } };
+  switch (action) {
+    case SessionRestoreAction.Clear:
+      return missing;
+    case SessionRestoreAction.OpenSession:
+      return {
+        outcome: RouteReadOutcome.Found,
+        open: { id: selection.id },
+      };
+    case SessionRestoreAction.RetainSession:
+      return {
+        outcome: RouteReadOutcome.Failed,
+        open: { id: selection.id },
+      };
+    case SessionRestoreAction.RetainSidechat:
+      return {
+        outcome: RouteReadOutcome.Failed,
+        open: { id: selection.sidechat!, parent: selection.id },
+      };
+    case SessionRestoreAction.OpenSidechat:
+      return {
+        outcome: RouteReadOutcome.Found,
+        open: {
+          id: selection.sidechat!,
+          parent: selection.id,
+          name:
+            child?.route === SearchSessionRoute.Sidechat
+              ? child.name
+              : undefined,
+        },
+      };
+    case SessionRestoreAction.VerifySidechat:
+      // Unreachable: resolved above. Fail closed rather than trust anything.
+      return missing;
+  }
 }
