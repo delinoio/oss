@@ -22,12 +22,14 @@ document. The [subscription contract](cmds-delidev-subscription-contract.md) own
 the behavior.
 
 The owner/member change activates both capabilities on the server and the
-device-owned Claude Worker: the server records 67 and 68 from the Worker attach and
+device-owned Claude and managed Codex Workers: the server records 67 and 68 from the Worker attach and
 echoes them in `supported_worker_capabilities`, accepts `finish_scope` and
 populates `owner_lease_id` on joined members. A Claude Worker advertises 68 only
-for a verified native Claude lane after observing that echo. No Worker advertises
-67 yet: the managed Codex Worker activation (shared app-server) is a separate,
-unimplemented change, so managed Codex execution stays exclusive per account.
+for a verified native Claude lane after observing that echo. A managed Codex
+Worker advertises 67 only after the server echoes it, its managed installation
+is verified and parallel sessions are negotiated. Older peers retain exclusive
+Codex execution; supported thread profiles use the account-scoped app-server
+described by the [subscription contract](cmds-delidev-subscription-contract.md).
 
 ## Parallel session dispatch negotiation
 

@@ -102,7 +102,12 @@ func takeManagedSubscription(ctx context.Context, config Config, client delidevv
 // registered the granted lease locally and calls the returned release. A waiting
 // retry never holds it, so a finishing sibling can still retire the owner. The
 // returned release is always safe to call.
-func takeManagedSubscriptionAdmitted(ctx context.Context, config Config, client delidevv1connect.SubscriptionServiceClient, credential Credential, instance, account, operation domain.ID, revision uint64, action pb.SubscriptionAction, gate *claudeAccountGate) (*managedSubscriptionLease, func(), error) {
+type subscriptionAdmissionGate interface {
+	acquire(context.Context) error
+	release()
+}
+
+func takeManagedSubscriptionAdmitted(ctx context.Context, config Config, client delidevv1connect.SubscriptionServiceClient, credential Credential, instance, account, operation domain.ID, revision uint64, action pb.SubscriptionAction, gate subscriptionAdmissionGate) (*managedSubscriptionLease, func(), error) {
 	held := false
 	release := func() {
 		if held {
@@ -623,6 +628,16 @@ func logExecutionAuthenticationCleanup(logger *slog.Logger, owner domain.ID, err
 }
 
 func cleanupExecutionAuthentication(home string, latest, original []byte) error {
+	return cleanupExecutionAuthenticationMode(home, latest, original, false)
+}
+
+// Shared account history accumulates across owner lifetimes. Scan it with
+// bounded memory, without treating ordinary history growth as failed cleanup.
+func cleanupSharedExecutionAuthentication(home string, latest, original []byte) error {
+	return cleanupExecutionAuthenticationMode(home, latest, original, true)
+}
+
+func cleanupExecutionAuthenticationMode(home string, latest, original []byte, shared bool) error {
 	if err := security.CheckPrivateDir(home); err != nil {
 		return &executionAuthenticationFailure{stage: executionAuthFile, reason: executionAuthFilesystem}
 	}
@@ -642,10 +657,14 @@ func cleanupExecutionAuthentication(home string, latest, original []byte) error 
 	if err := security.SyncParent(filepath.Join(home, "auth.json")); err != nil {
 		return &executionAuthenticationFailure{stage: executionAuthFile, reason: executionAuthFilesystem}
 	}
-	return scanExecutionAuthentication(home, latest, original)
+	return scanExecutionAuthenticationMode(home, latest, original, shared)
 }
 
 func scanExecutionAuthentication(home string, latest, original []byte) error {
+	return scanExecutionAuthenticationMode(home, latest, original, false)
+}
+
+func scanExecutionAuthenticationMode(home string, latest, original []byte, shared bool) error {
 	count, total := 0, int64(0)
 	fail := func(reason executionAuthenticationReason) error {
 		return &executionAuthenticationFailure{stage: executionAuthScan, reason: reason, count: count, bytes: total}
@@ -711,27 +730,38 @@ func scanExecutionAuthentication(home string, latest, original []byte) error {
 		if !info.Mode().IsRegular() {
 			return fail(executionAuthSpecial)
 		}
-		if count > 2048 || info.Size() > 16<<20 {
+		if !shared && (count > 2048 || info.Size() > 16<<20) {
 			return fail(executionAuthLimit)
 		}
 		total += info.Size()
-		if total > 64<<20 {
+		if !shared && total > 64<<20 {
 			return fail(executionAuthLimit)
 		}
 		file, err := root.Open(path)
 		if err != nil {
 			return fail(executionAuthFilesystem)
 		}
-		raw, err := io.ReadAll(io.LimitReader(file, (16<<20)+1))
-		closeErr := file.Close()
-		if err != nil || closeErr != nil || len(raw) > 16<<20 {
-			clear(raw)
-			return fail(executionAuthFilesystem)
-		}
-		defer clear(raw)
-		for _, needle := range needles {
-			if bytes.Contains(raw, needle) {
+		if shared {
+			found, scanErr := scanAuthenticationStream(file, needles)
+			closeErr := file.Close()
+			if scanErr != nil || closeErr != nil {
+				return fail(executionAuthFilesystem)
+			}
+			if found {
 				return fail(executionAuthRemnant)
+			}
+		} else {
+			raw, readErr := io.ReadAll(io.LimitReader(file, (16<<20)+1))
+			closeErr := file.Close()
+			if readErr != nil || closeErr != nil || len(raw) > 16<<20 {
+				clear(raw)
+				return fail(executionAuthFilesystem)
+			}
+			defer clear(raw)
+			for _, needle := range needles {
+				if bytes.Contains(raw, needle) {
+					return fail(executionAuthRemnant)
+				}
 			}
 		}
 		return nil
@@ -744,6 +774,37 @@ func scanExecutionAuthentication(home string, latest, original []byte) error {
 		return fail(executionAuthIdentity)
 	}
 	return nil
+}
+
+func scanAuthenticationStream(file *os.File, needles [][]byte) (bool, error) {
+	maxNeedle := 0
+	for _, needle := range needles {
+		maxNeedle = max(maxNeedle, len(needle))
+	}
+	const chunkSize = 64 << 10
+	buffer := make([]byte, chunkSize+maxNeedle)
+	defer clear(buffer)
+	overlap := 0
+	for {
+		n, err := file.Read(buffer[overlap : overlap+chunkSize])
+		window := buffer[:overlap+n]
+		for _, needle := range needles {
+			if bytes.Contains(window, needle) {
+				return true, nil
+			}
+		}
+		if err == io.EOF {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		if n == 0 {
+			return false, io.ErrNoProgress
+		}
+		overlap = min(len(window), max(0, maxNeedle-1))
+		copy(buffer[:overlap], window[len(window)-overlap:])
+	}
 }
 
 func managedSubscriptionCapability(resource *pb.Resource) bool {

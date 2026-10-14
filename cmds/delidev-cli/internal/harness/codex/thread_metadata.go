@@ -40,7 +40,13 @@ func (c *Client) observeThreadLifecycleLocked(native nativewire.Event) (Event, e
 		return privateNative(native), nil
 	}
 	switch native.Method {
-	case "thread/archived", "thread/deleted", "thread/closed":
+	case "thread/closed":
+		if !c.unsubscribing || c.threadClosed {
+			return c.threadObservationLost()
+		}
+		c.threadClosed = true
+		return Event{Kind: ThreadClosedEvent, ThreadID: c.thread}, nil
+	case "thread/archived", "thread/deleted":
 		// This adapter has no thread archive/delete/close send owner. Closing the
 		// original process remains independently reconciled by Client.Close.
 		return c.threadObservationLost()
