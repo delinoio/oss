@@ -80,8 +80,8 @@ callback, claim, settlement). No native Grok process takes part in login.
 
 - **Profile.** Issuer `https://auth.x.ai`, public client
   `b1a00492-073a-47ea-816f-4c329264a828`, scopes `openid profile email
-  offline_access grok-cli:access api:access conversations:read
-  conversations:write workspaces:read workspaces:write`, `referrer=grok-build`.
+offline_access grok-cli:access api:access conversations:read
+conversations:write workspaces:read workspaces:write`, `referrer=grok-build`.
   Endpoints come from OIDC discovery and must live on the issuer origin
   (`issuer` equal to the constant, https, host `auth.x.ai`, no credentials,
   query or fragment); a metadata list that contradicts S256, the `none` token
@@ -229,8 +229,9 @@ checkpoint. Preserve older records without granting continuation authority.
 
 ### Grok bundle
 
-`internal/subscription` owns the `GrokBundle` library (no network, RPC or
-migration). A bundle holds exactly one native `$GROK_HOME/auth.json` scope entry
+`internal/subscription` owns the `GrokBundle` library (`grok_bundle.go` makes no
+network or RPC call and needs no migration; the OAuth client in `grok_oauth.go`
+performs its calls only through a transport the caller supplies). A bundle holds exactly one native `$GROK_HOME/auth.json` scope entry
 for issuer `https://auth.x.ai` and client `b1a00492-073a-47ea-816f-4c329264a828`
 (key `<issuer>::<client-id>`) with `auth_mode` `oidc`. `ParseGrokAuthFile`
 rejects, with the single stable value-free `GrokBundleInvalid` error: input above
