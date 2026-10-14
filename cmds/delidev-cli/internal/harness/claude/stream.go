@@ -564,19 +564,13 @@ func (s *Stream) receive(raw []byte) error {
 }
 
 func (s *Stream) receiveResponse(raw []byte) error {
-	var message struct {
-		Type     string `json:"type"`
-		Response *struct {
-			Subtype   string          `json:"subtype"`
-			RequestID string          `json:"request_id"`
-			Response  json.RawMessage `json:"response,omitempty"`
-			Error     json.RawMessage `json:"error,omitempty"`
-		} `json:"response"`
-	}
-	if domain.Decode(raw, &message) != nil || message.Response == nil || domain.Text(message.Response.RequestID, "native response identity", 128, true) != nil {
+	// Exact keys, the pending-list placement and a non-null envelope are checked
+	// by the shared control-response decoder.
+	body, err := decodeControlResponse(raw)
+	if err != nil || domain.Text(body.RequestID, "native response identity", 128, true) != nil {
 		return streamIncompatible()
 	}
-	r := message.Response
+	r := &body
 	response := StreamResponse{Result: r.Response}
 	switch r.Subtype {
 	case "success":

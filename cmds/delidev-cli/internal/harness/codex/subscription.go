@@ -97,7 +97,7 @@ func (c *Client) managedCall(ctx context.Context, method string, input any, outp
 	if c.managedHome == "" && !(c.accessOnlyMode() && method == "config/read") {
 		return incompatible()
 	}
-	r, err := c.wire.Call(ctx, domain.NewID(), method, input)
+	r, err := c.call(ctx, domain.NewID(), method, input)
 	if err != nil {
 		return err
 	}

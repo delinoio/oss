@@ -102,7 +102,7 @@ func (c *Client) noForkWorkLocked(ctx context.Context, thread domain.ID) error {
 	// Ordinary Fork still requires the original native read; do not infer an
 	// empty goal from a failed read or apply this exception to other profiles.
 	if c.sidechat == "" {
-		goal, err := c.wire.Call(ctx, domain.NewID(), "thread/goal/get", struct {
+		goal, err := c.call(ctx, domain.NewID(), "thread/goal/get", struct {
 			Thread domain.ID `json:"threadId"`
 		}{thread})
 		if err != nil {
@@ -115,7 +115,7 @@ func (c *Client) noForkWorkLocked(ctx context.Context, thread domain.ID) error {
 			return unsupportedFork()
 		}
 	}
-	queue, err := c.wire.Call(ctx, domain.NewID(), "thread/queue/list", struct {
+	queue, err := c.call(ctx, domain.NewID(), "thread/queue/list", struct {
 		Thread domain.ID `json:"threadId"`
 		Limit  int       `json:"limit"`
 	}{thread, 1})
@@ -147,7 +147,7 @@ func (c *Client) forkTurnsLocked(ctx context.Context, thread domain.ID) ([]json.
 	seen := map[string]bool{}
 	bytes := 0
 	for {
-		response, err := c.wire.Call(ctx, domain.NewID(), "thread/turns/list", struct {
+		response, err := c.call(ctx, domain.NewID(), "thread/turns/list", struct {
 			Thread    domain.ID `json:"threadId"`
 			Limit     int       `json:"limit"`
 			Direction string    `json:"sortDirection"`
@@ -316,7 +316,7 @@ func (c *Client) ForkThread(ctx context.Context, requestID domain.ID, source *Fo
 		Exclude      bool           `json:"excludeTurns"`
 		DeferGoal    bool           `json:"deferGoalContinuation"`
 	}{source.checkpoint.ThreadID, source.checkpoint.TurnID, source.path, params.Model, params.ModelProvider, params.Cwd, params.WorkspaceRoots, params.DeveloperInstructions, params.ApprovalPolicy, params.ApprovalsReviewer, params.Sandbox, params.ServiceTier, params.Config, true, true}
-	response, err := c.wire.Call(ctx, requestID, string(forkThread), request)
+	response, err := c.call(ctx, requestID, string(forkThread), request)
 	if err != nil {
 		c.problem = threadUncertain()
 		if c.logger != nil {
