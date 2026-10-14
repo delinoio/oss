@@ -639,4 +639,63 @@ mod tests {
                 .any(|entry| entry.code == "BW_SOURCE_STALE")
         );
     }
+
+    #[test]
+    fn reopened_bundles_do_not_mark_non_text_assets_stale() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(project.join("src")).unwrap();
+        std::fs::write(
+            project.join("src/logo.png"),
+            [0x89, b'P', b'N', b'G', 0, 0xff],
+        )
+        .unwrap();
+        std::fs::write(project.join("src/a.js"), "export const a = 1;").unwrap();
+        let canonical = std::fs::canonicalize(&project).unwrap();
+        let mut store = crate::sources::SourceStore::new(true);
+        for (name, snapshot) in [
+            ("src/logo.png", "export default \"__VITE_ASSET__abc__\""),
+            ("src/a.js", "export const a = 1;"),
+        ] {
+            store.snapshots.insert(
+                crate::sources::normalize(&canonical.join(name)),
+                snapshot.to_owned(),
+            );
+            store.add_file(&canonical, &canonical.join(name)).unwrap();
+        }
+        assert!(store.changed_since_build.is_empty());
+        let project_relative = store.project_relative.clone();
+        let mut saved = bundle();
+        saved.project_root = canonical.to_string_lossy().into_owned();
+        saved.sources = store.into_files();
+        saved.project_relative = project_relative;
+        assert_eq!(saved.sources.len(), 2);
+        assert_eq!(saved.project_relative.len(), 1);
+        save(dir.path(), &saved).unwrap();
+        let loaded = load(dir.path()).unwrap();
+        assert!(loaded.sources.iter().all(|source| !source.stale));
+        assert!(
+            !loaded
+                .analysis
+                .problems
+                .iter()
+                .any(|entry| entry.code == "BW_SOURCE_STALE")
+        );
+
+        // A text source edited after the analysis is still reported once.
+        std::fs::write(project.join("src/a.js"), "export const a = 2;").unwrap();
+        let loaded = load(dir.path()).unwrap();
+        let stale: Vec<_> = loaded.sources.iter().filter(|s| s.stale).collect();
+        assert_eq!(stale.len(), 1);
+        assert_eq!(stale[0].path, "src/a.js");
+        assert_eq!(
+            loaded
+                .analysis
+                .problems
+                .iter()
+                .filter(|entry| entry.code == "BW_SOURCE_STALE")
+                .count(),
+            1
+        );
+    }
 }

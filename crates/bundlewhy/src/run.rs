@@ -339,7 +339,10 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
                 .iter()
                 .filter_map(|source| {
                     let path = selection.project_root.join(&source.path);
+                    // Non-text sources (imported images) are absent from the
+                    // analysis map: their stored hash is not a live file hash.
                     (source.origin == crate::model::SourceOrigin::Project
+                        && output.project_relative.contains_key(&source.id)
                         && path.starts_with(&selection.project_root))
                     .then(|| {
                         crate::sources::safe_project_relative(&source.path)

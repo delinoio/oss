@@ -138,9 +138,26 @@ pub struct SourceStore {
 /// Largest live source file read.
 pub const MAX_SOURCE_BYTES: u64 = 16 * 1024 * 1024;
 
+/// Prefix of the JavaScript stub Vite emits for an imported asset (for
+/// example a PNG). Its `sourcesContent` is generated code, not the file text.
+const VITE_ASSET_STUB_PREFIX: &str = "export default \"__VITE_ASSET__";
+
+fn is_asset_stub(snapshot: &str) -> bool {
+    snapshot.trim_start().starts_with(VITE_ASSET_STUB_PREFIX)
+}
+
+/// Returns the text of `bytes` when they are valid UTF-8 without NUL bytes.
+fn as_text(bytes: &[u8]) -> Option<&str> {
+    if bytes.contains(&0) {
+        return None;
+    }
+    std::str::from_utf8(bytes).ok()
+}
+
 /// Live read outcome for one source path.
 enum LiveRead {
-    Content(String),
+    /// Raw bytes; they may not be text (for example an imported image).
+    Bytes(Vec<u8>),
     /// Not vetted for reading (outside the project and not a module path,
     /// special file, or too large); never treated as a change.
     NotPermitted,
@@ -155,21 +172,59 @@ impl SourceStore {
         }
     }
 
-    /// Adds a file from disk and returns its source ID and content.
-    pub fn add_file(&mut self, project_root: &Path, path: &Path) -> Option<(String, String)> {
+    /// Adds a file from disk and returns its source ID and text.
+    ///
+    /// The text is `None` for a non-text source (an imported image or a
+    /// bundler-generated asset stub): it keeps its path and ID for
+    /// attribution but has no content, no snippet source and no freshness
+    /// check.
+    pub fn add_file(
+        &mut self,
+        project_root: &Path,
+        path: &Path,
+    ) -> Option<(String, Option<String>)> {
         let classified = classify(project_root, path);
         // Key by the resolved path: distinct installed copies (for example two
         // pnpm versions) can share the shortened display path.
         let key = normalize(path).to_string_lossy().into_owned();
         if let Some(existing) = self.files.get(&key) {
-            return Some((existing.id.clone(), existing.content.clone()));
+            return Some((
+                existing.id.clone(),
+                existing.content_included.then(|| existing.content.clone()),
+            ));
         }
         let live = self.read_live(project_root, path);
-        let (content, stale) = match (self.snapshots.get(&normalize(path)), live) {
-            (Some(snapshot), LiveRead::Content(live)) => (snapshot.clone(), *snapshot != live),
-            (Some(snapshot), LiveRead::Unreadable(_)) => (snapshot.clone(), true),
-            (Some(snapshot), LiveRead::NotPermitted) => (snapshot.clone(), false),
-            (None, LiveRead::Content(live)) => (live, false),
+        let snapshot = self.snapshots.get(&normalize(path));
+        let stub = snapshot.is_some_and(|snapshot| is_asset_stub(snapshot));
+        let (text, sha256, stale): (Option<String>, String, bool) = match (snapshot, live) {
+            // The live file is not text, or the snapshot is a generated asset
+            // stub: the two cannot be compared, so the source is unverifiable
+            // and never stale.
+            (_, LiveRead::Bytes(bytes)) if stub || as_text(&bytes).is_none() => {
+                tracing::debug!(path = %classified.display, "non-text source is not freshness-checked");
+                (None, sha256_hex(&bytes), false)
+            }
+            (Some(snapshot), LiveRead::Bytes(bytes)) => (
+                Some(snapshot.clone()),
+                sha256_hex(snapshot.as_bytes()),
+                as_text(&bytes) != Some(snapshot.as_str()),
+            ),
+            (Some(_), LiveRead::Unreadable(_)) if stub => (None, sha256_hex(b""), true),
+            (Some(_), LiveRead::NotPermitted) if stub => (None, sha256_hex(b""), false),
+            (Some(snapshot), LiveRead::Unreadable(_)) => (
+                Some(snapshot.clone()),
+                sha256_hex(snapshot.as_bytes()),
+                true,
+            ),
+            (Some(snapshot), LiveRead::NotPermitted) => (
+                Some(snapshot.clone()),
+                sha256_hex(snapshot.as_bytes()),
+                false,
+            ),
+            (None, LiveRead::Bytes(bytes)) => match as_text(&bytes) {
+                Some(live) => (Some(live.to_owned()), sha256_hex(&bytes), false),
+                None => (None, sha256_hex(&bytes), false),
+            },
             (None, LiveRead::NotPermitted) => {
                 tracing::debug!(path = %classified.display, "source not vetted for live reading");
                 self.unreadable.push(classified.display);
@@ -186,20 +241,23 @@ impl SourceStore {
             self.changed_since_build.push(classified.display.clone());
         }
         let id = source_id(&key);
+        let verifiable = text.is_some();
         let file = SourceFile {
             id: id.clone(),
             path: classified.display.clone(),
             origin: classified.origin,
-            sha256: sha256_hex(content.as_bytes()),
-            content: content.clone(),
-            content_included: true,
+            sha256,
+            content: text.clone().unwrap_or_default(),
+            content_included: verifiable,
             stale,
         };
-        if let Some(relative) = classified.project_relative {
+        // Only text sources are re-hashed against the live file when a saved
+        // bundle is reopened.
+        if let (true, Some(relative)) = (verifiable, classified.project_relative) {
             self.project_relative.insert(id.clone(), relative);
         }
         self.files.insert(key, file);
-        Some((id, content))
+        Some((id, text))
     }
 
     /// Reads a live source only when it is a regular file of at most
@@ -233,9 +291,7 @@ impl SourceStore {
             )
         });
         match read {
-            Ok(_) if bytes.len() as u64 <= MAX_SOURCE_BYTES => {
-                LiveRead::Content(String::from_utf8_lossy(&bytes).into_owned())
-            }
+            Ok(_) if bytes.len() as u64 <= MAX_SOURCE_BYTES => LiveRead::Bytes(bytes),
             Ok(_) => LiveRead::NotPermitted,
             Err(error) => LiveRead::Unreadable(error),
         }
@@ -313,7 +369,7 @@ mod tests {
         let first = store.add_file(dir.path(), &paths[0]).unwrap();
         let second = store.add_file(dir.path(), &paths[1]).unwrap();
         assert_ne!(first.0, second.0);
-        assert_eq!(second.1, "export const v = 2;");
+        assert_eq!(second.1.as_deref(), Some("export const v = 2;"));
         let files = store.into_files();
         assert_eq!(files.len(), 2);
         assert!(
@@ -333,7 +389,7 @@ mod tests {
             .snapshots
             .insert(normalize(&file), "what the build read".to_owned());
         let (_, content) = store.add_file(dir.path(), &file).unwrap();
-        assert_eq!(content, "what the build read");
+        assert_eq!(content.as_deref(), Some("what the build read"));
         assert_eq!(store.changed_since_build, vec!["a.js".to_owned()]);
         let files = store.into_files();
         assert!(files[0].stale);
@@ -362,8 +418,12 @@ mod tests {
         std::fs::write(&module, "export {}").unwrap();
         store.allowed.insert(normalize(&module));
         assert_eq!(
-            store.add_file(project.path(), &module).unwrap().1,
-            "export {}"
+            store
+                .add_file(project.path(), &module)
+                .unwrap()
+                .1
+                .as_deref(),
+            Some("export {}")
         );
     }
 
@@ -379,5 +439,111 @@ mod tests {
         assert!(files[0].content.is_empty());
         assert!(!files[0].content_included);
         assert_eq!(files[0].sha256, sha256_hex(b"export const a = 1;"));
+    }
+
+    const PNG_BYTES: &[u8] = &[
+        0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0xff, 0xfe,
+    ];
+    const VITE_STUB: &str = "export default \"__VITE_ASSET__abc123__\"";
+
+    #[test]
+    fn unchanged_png_with_a_vite_stub_snapshot_is_not_stale() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("src/logo.png");
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(&file, PNG_BYTES).unwrap();
+        let mut store = SourceStore::new(true);
+        store
+            .snapshots
+            .insert(normalize(&file), VITE_STUB.to_owned());
+        let (id, text) = store.add_file(dir.path(), &file).unwrap();
+        // No snippet source, but a stable ID and the asset path remain.
+        assert_eq!(text, None);
+        assert_eq!(id, source_id(&normalize(&file).to_string_lossy()));
+        // Looking it up again keeps the same answer.
+        assert_eq!(
+            store.add_file(dir.path(), &file).unwrap(),
+            (id.clone(), None)
+        );
+        assert!(store.changed_since_build.is_empty());
+        // Saved-run reload re-hashes only sources listed here.
+        assert!(store.project_relative.is_empty());
+        let files = store.into_files();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].id, id);
+        assert_eq!(files[0].path, "src/logo.png");
+        assert!(!files[0].stale);
+        assert!(!files[0].content_included);
+        assert!(files[0].content.is_empty());
+        assert_eq!(files[0].sha256, sha256_hex(PNG_BYTES));
+    }
+
+    #[test]
+    fn binary_files_without_a_snapshot_are_not_text_sources() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("logo.png");
+        std::fs::write(&file, PNG_BYTES).unwrap();
+        let mut store = SourceStore::new(true);
+        let (_, text) = store.add_file(dir.path(), &file).unwrap();
+        assert_eq!(text, None);
+        assert!(store.changed_since_build.is_empty());
+        assert!(store.project_relative.is_empty());
+        assert!(!store.into_files()[0].stale);
+    }
+
+    #[test]
+    fn text_asset_stub_snapshots_are_not_compared_with_live_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("icon.svg");
+        std::fs::write(&file, "<svg xmlns=\"http://www.w3.org/2000/svg\"/>").unwrap();
+        let mut store = SourceStore::new(true);
+        store
+            .snapshots
+            .insert(normalize(&file), VITE_STUB.to_owned());
+        assert_eq!(store.add_file(dir.path(), &file).unwrap().1, None);
+        assert!(store.changed_since_build.is_empty());
+        assert!(store.project_relative.is_empty());
+    }
+
+    #[test]
+    fn removed_asset_stub_sources_are_still_stale() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("gone.png");
+        let mut store = SourceStore::new(true);
+        store
+            .snapshots
+            .insert(normalize(&file), VITE_STUB.to_owned());
+        assert_eq!(store.add_file(dir.path(), &file).unwrap().1, None);
+        assert_eq!(store.changed_since_build, vec!["gone.png".to_owned()]);
+        let files = store.into_files();
+        assert!(files[0].stale);
+        assert!(files[0].content.is_empty());
+    }
+
+    #[test]
+    fn changed_removed_and_unchanged_text_sources_keep_their_stale_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let changed = dir.path().join("changed.js");
+        let same = dir.path().join("same.js");
+        let removed = dir.path().join("removed.js");
+        std::fs::write(&changed, "edited").unwrap();
+        std::fs::write(&same, "export const same = 1;").unwrap();
+        let mut store = SourceStore::new(true);
+        for (path, snapshot) in [
+            (&changed, "built"),
+            (&same, "export const same = 1;"),
+            (&removed, "built"),
+        ] {
+            store.snapshots.insert(normalize(path), snapshot.to_owned());
+        }
+        for path in [&changed, &same, &removed] {
+            assert!(store.add_file(dir.path(), path).unwrap().1.is_some());
+        }
+        assert_eq!(
+            store.changed_since_build,
+            vec!["changed.js".to_owned(), "removed.js".to_owned()]
+        );
+        // Text sources stay in the saved-run stale check.
+        assert_eq!(store.project_relative.len(), 3);
     }
 }
