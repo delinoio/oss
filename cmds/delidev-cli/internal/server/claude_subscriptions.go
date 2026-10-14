@@ -63,7 +63,7 @@ func claudeSubscriptionInstallation(tx *store.Tx, machine domain.ID) (domain.Ins
 			found = &m.Installations[i]
 		}
 	}
-	if found == nil || found.Version != domain.ClaudeProtocolVersion || found.State != domain.InstallationDetected || !found.ProtocolVerified || found.Protocol == nil || found.Protocol.Protocol != domain.ProtocolFor(domain.ClaudeCode) || found.Protocol.State != domain.ProtocolVerified || found.Protocol.Problem != nil || found.Problem != nil || found.ResolvedPath == "" || found.ObservedAt == nil || found.ObservedAt.IsZero() || found.ObservedAt.After(time.Now().UTC().Add(time.Second)) {
+	if found == nil || !domain.HarnessVersionAllowed(domain.ClaudeCode, found.Version) || found.State != domain.InstallationDetected || !found.ProtocolVerified || found.Protocol == nil || found.Protocol.Protocol != domain.ProtocolFor(domain.ClaudeCode) || found.Protocol.State != domain.ProtocolVerified || found.Protocol.Problem != nil || found.Problem != nil || found.ResolvedPath == "" || found.ObservedAt == nil || found.ObservedAt.IsZero() || found.ObservedAt.After(time.Now().UTC().Add(time.Second)) {
 		return domain.Installation{}, domain.Fail(domain.Unsupported, "Claude subscription authentication requires verified Claude Code 2.1.236.", "Discover the original installed CLI on the selected Runner Device.")
 	}
 	return *found, nil

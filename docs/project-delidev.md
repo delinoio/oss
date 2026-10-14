@@ -320,7 +320,7 @@ their original ownership and alone grant no support.
 The originating change established System 38, Worker 20 and the complete protocol declaration
 closure on main before implementation. The extension composes the existing
 subscription, desktop, harness, protocol and storage owners. Claude Code
-`2.1.236` owns login/status/logout and execution in an original account-specific
+at or above the pinned `2.1.236` SemVer baseline owns login/status/logout and execution in an original account-specific
 profile on the explicitly selected local or remote Runner. The server retains
 only opaque profile/owner/generation/operation metadata and a keyed identity
 commitment; native credentials never transfer. One exclusive lease serializes
