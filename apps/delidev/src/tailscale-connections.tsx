@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import {
   DeviceType,
@@ -88,8 +88,9 @@ function approvalLabel(state: ApprovalState) {
   return copy(keys[state] ?? "tailscale.uncertain");
 }
 
-// This controller stays with the original Local connection. Page departure
-// disposes discovery while exact accepted requests and approvals remain owned.
+// This controller stays with the original Local connection. The Runner Devices
+// presentation supplies the access and devices slots; leaving it disposes
+// discovery while exact accepted requests and approvals remain owned.
 export function TailscaleConnections({
   current,
   target,
@@ -100,6 +101,7 @@ export function TailscaleConnections({
   onPaired: () => void;
 }) {
   useLocale();
+  const accessHeading = useId();
   const status = useQuery(SystemQuery.getStatus, {});
   const supported =
     status.data?.capabilities.includes(
@@ -148,10 +150,8 @@ export function TailscaleConnections({
     <>
       <PersistentConnectionView target={current} hidden>
         {supported ? (
-          <section
-            className="tailscale-access"
-            aria-label={copy("tailscale.access")}
-          >
+          <section className="tailscale-access" aria-labelledby={accessHeading}>
+            <h2 id={accessHeading}>{copy("tailscale.access")}</h2>
             <p role="status">
               {copy("tailscale.access")}:{" "}
               {access?.state === "ready"
