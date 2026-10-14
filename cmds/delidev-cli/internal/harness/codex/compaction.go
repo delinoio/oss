@@ -461,8 +461,7 @@ func (c *Client) contextTurnPagesLocked(ctx context.Context, direction string, c
 					return nil, compactionUncertain()
 				}
 			}
-			size += len(raw)
-			if len(turns) >= maxForkTurns || size > c.historyAggregateLimit() {
+			if len(turns) >= maxForkTurns {
 				return nil, compactionUncertain()
 			}
 			var value any
@@ -472,6 +471,12 @@ func (c *Client) contextTurnPagesLocked(ctx context.Context, direction string, c
 				return nil, compactionUncertain()
 			}
 			normal, _ := json.Marshal(value)
+			// Budget the normalized bytes: json.Marshal HTML-escapes <, > and &, so
+			// the retained form can be larger than the native encoding.
+			size += len(normal)
+			if size > c.historyAggregateLimit() {
+				return nil, compactionUncertain()
+			}
 			turns = append(turns, normal)
 		}
 		if page.Next == nil {
