@@ -2097,6 +2097,34 @@ fn resolves_explicit_runtime_import_before_declaration_substitution() {
     assert_eq!(out(temp.path(), "dep.js"), original);
 }
 
+/// An extensionless runtime import must prefer its chunk over a sibling
+/// declaration file when TypeScript resolves the declaration first.
+#[test]
+fn resolves_extensionless_runtime_import_before_declaration_substitution() {
+    let temp = bundle(&[
+        (
+            "index.js",
+            r#"import{make}from"./dep";console.log(make(3).verticalSpacing);"#,
+        ),
+        (
+            "dep.js",
+            "export function make(n){return{verticalSpacing:n,horizontalSpacing:n*2}}",
+        ),
+        (
+            "dep.d.ts",
+            "export declare function make(n:number): {verticalSpacing:number};",
+        ),
+    ]);
+    let original = fs::read_to_string(temp.path().join("dist/dep.js")).unwrap();
+    let output = run_typeopt(temp.path(), &["--bundle-exclude", "index.js"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(out(temp.path(), "dep.js"), original);
+}
+
 /// A syntax error in a file reached only through a dynamic package boundary
 /// must not block analysis of the closed application bundle.
 #[test]

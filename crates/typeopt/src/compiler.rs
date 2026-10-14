@@ -643,10 +643,16 @@ impl Project {
                         })
                         .or_else(|| resolve_module_path(&candidate))
                 } else {
-                    with_type_checker_for_file(file, |checker| {
-                        resolved_module_file(checker, specifier)
-                    })
-                    .or_else(|| resolve_module_path(&candidate))
+                    // Bundle edges represent runtime chunks. Prefer a runtime
+                    // candidate before TypeScript's declaration-first result,
+                    // which can otherwise link `dep.d.ts` instead of `dep.js`.
+                    resolve_runtime_module_path(&candidate)
+                        .or_else(|| {
+                            with_type_checker_for_file(file, |checker| {
+                                resolved_module_file(checker, specifier)
+                            })
+                        })
+                        .or_else(|| resolve_module_path(&candidate))
                 };
                 if let Some(resolved) = resolved {
                     if path != text {
@@ -1489,6 +1495,25 @@ fn resolve_module_path(path: &std::path::Path) -> Option<String> {
         path.join("index.ts"),
         path.join("index.tsx"),
         path.join("index.d.ts"),
+        path.join("index.js"),
+        path.join("index.jsx"),
+        path.join("index.mjs"),
+        path.join("index.cjs"),
+    ];
+    candidates
+        .into_iter()
+        .find(|candidate| candidate.is_file())
+        .and_then(|candidate| candidate.canonicalize().ok())
+        .map(|candidate| candidate.to_string_lossy().into_owned())
+}
+
+fn resolve_runtime_module_path(path: &std::path::Path) -> Option<String> {
+    let candidates = [
+        path.to_path_buf(),
+        path.with_extension("js"),
+        path.with_extension("jsx"),
+        path.with_extension("mjs"),
+        path.with_extension("cjs"),
         path.join("index.js"),
         path.join("index.jsx"),
         path.join("index.mjs"),
