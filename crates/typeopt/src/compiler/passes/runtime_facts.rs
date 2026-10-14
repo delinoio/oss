@@ -1780,8 +1780,59 @@ fn module_require_call(ctx: &Ctx, callee: Node, loaders: &HashSet<String>) -> bo
 /// and re-exports are erased and exempt. The scan reads syntax and resolves
 /// specifiers through the checker; it never executes or reads dependencies.
 fn imports_external_runtime(ctx: &mut Ctx) -> bool {
+    let local_loaders: Vec<HashSet<String>> = ctx
+        .files
+        .iter()
+        .map(|file| created_require_loaders(&file.nodes))
+        .collect();
+    let mut loader_symbols = HashSet::new();
     for index in 0..ctx.files.len() {
-        let loaders = created_require_loaders(&ctx.files[index].nodes);
+        let nodes = ctx.files[index].nodes.clone();
+        for node in nodes {
+            if node.kind() != SyntaxKind::VariableDeclaration
+                || node.name().kind() != SyntaxKind::Identifier
+                || !local_loaders[index].contains(node.name().text())
+            {
+                continue;
+            }
+            let symbol = ctx.resolve(node.name());
+            if !symbol.is_nil() {
+                loader_symbols.insert(symbol);
+            }
+        }
+    }
+    // Preserve loader identity through application aliases. `resolve` skips
+    // import/export aliases, while this loop also covers local forwarding
+    // bindings such as `const exported = importedLoader`.
+    loop {
+        let mut changed = false;
+        for index in 0..ctx.files.len() {
+            let nodes = ctx.files[index].nodes.clone();
+            for node in nodes {
+                if node.kind() != SyntaxKind::VariableDeclaration
+                    || node.name().kind() != SyntaxKind::Identifier
+                {
+                    continue;
+                }
+                let init = skip_outer(node.initializer());
+                let from_loader = init.kind() == SyntaxKind::Identifier
+                    && loader_symbols.contains(&ctx.resolve(init));
+                if !local_loaders[index].contains(node.name().text()) && !from_loader {
+                    continue;
+                }
+                let symbol = ctx.resolve(node.name());
+                if !symbol.is_nil() && loader_symbols.insert(symbol) {
+                    changed = true;
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+
+    for index in 0..ctx.files.len() {
+        let loaders = &local_loaders[index];
         for position in 0..ctx.files[index].nodes.len() {
             let node = ctx.files[index].nodes[position];
             let specifier = match node.kind() {
@@ -1804,12 +1855,13 @@ fn imports_external_runtime(ctx: &mut Ctx) -> bool {
                     let require = callee.kind() == SyntaxKind::Identifier
                         && callee.text() == "require"
                         && ctx.files[index].js;
-                    let created_loader =
-                        callee.kind() == SyntaxKind::Identifier && loaders.contains(callee.text());
+                    let created_loader = callee.kind() == SyntaxKind::Identifier
+                        && (loaders.contains(callee.text())
+                            || loader_symbols.contains(&ctx.resolve(callee)));
                     if !dynamic
                         && !require
                         && !created_loader
-                        && !(ctx.files[index].js && module_require_call(ctx, callee, &loaders))
+                        && !(ctx.files[index].js && module_require_call(ctx, callee, loaders))
                     {
                         continue;
                     }
