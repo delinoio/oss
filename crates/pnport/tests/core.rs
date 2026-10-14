@@ -668,6 +668,79 @@ fn native_zip_named_directories_stay_native_in_inline_and_split_views() {
     }
 }
 
+#[test]
+fn nested_zip_archive_beneath_native_zip_directory_in_inline_and_split_views() {
+    for split in [false, true] {
+        for unpacked in [false, true] {
+            let root = fixture();
+            let root_path = fs::canonicalize(root.path()).unwrap();
+            let assets = root_path.join("assets.zip");
+            fs::create_dir(&assets).unwrap();
+            let archive_path = assets.join("cache.zip");
+            fs::rename(root_path.join("cache.zip"), &archive_path).unwrap();
+            if unpacked {
+                fs::remove_file(&archive_path).unwrap();
+                fs::create_dir_all(archive_path.join("node_modules/dep")).unwrap();
+                fs::write(
+                    archive_path.join("node_modules/dep/file.txt"),
+                    b"unpacked bytes",
+                )
+                .unwrap();
+            }
+            let native_file = assets.join("native.txt");
+            fs::write(&native_file, b"native bytes").unwrap();
+
+            let mut graph_data = data();
+            graph_data["packageRegistryData"][2][1][0][1]["packageLocation"] =
+                json!("./assets.zip/cache.zip/node_modules/dep/");
+            graph_data["packageRegistryData"][3][1][0][1]["packageLocation"] =
+                json!("./assets.zip/cache.zip/node_modules/@scope/pkg/");
+            if split {
+                fs::write(
+                    root_path.join(".pnp.cjs"),
+                    "const pnpDataFilepath = path.resolve(__dirname, \".pnp.data.json\");\n",
+                )
+                .unwrap();
+                fs::write(
+                    root_path.join(".pnp.data.json"),
+                    serde_json::to_vec(&graph_data).unwrap(),
+                )
+                .unwrap();
+            } else {
+                inline(&root_path, &graph_data);
+            }
+
+            let cache_root = tempfile::tempdir().unwrap();
+            let session = tempfile::tempdir().unwrap();
+            let mut view = View::new(
+                Graph::load(&root_path.join(".pnp.cjs")).unwrap(),
+                Cache::open(cache_root.path().join("cache")).unwrap(),
+                session.path().to_owned(),
+            );
+            let expected = if unpacked {
+                b"unpacked bytes".as_slice()
+            } else {
+                b"package bytes".as_slice()
+            };
+            for logical in [
+                archive_path.join("node_modules/dep/file.txt"),
+                root_path.join("node_modules/dep/file.txt"),
+            ] {
+                let dependency = view.translate(&logical).unwrap();
+                assert_eq!(fs::read(&dependency.physical).unwrap(), expected);
+                assert!(dependency.readonly, "split={split}, unpacked={unpacked}");
+            }
+            assert_eq!(session.path().join("active").is_dir(), !unpacked);
+
+            let native = view.translate(&native_file).unwrap();
+            assert_eq!(native.physical, native_file);
+            assert!(!native.readonly, "split={split}, unpacked={unpacked}");
+            fs::write(&native.physical, b"changed").unwrap();
+            assert_eq!(fs::read(&native_file).unwrap(), b"changed");
+        }
+    }
+}
+
 #[cfg(unix)]
 #[test]
 fn unregistered_zip_file_child_keeps_native_enotdir() {
