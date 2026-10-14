@@ -7,18 +7,26 @@ import { describe, expect, it } from "vitest";
 
 const WORKSPACE_CSS = readFileSync("src/pr-workspace.css", "utf8");
 const CARDS_CSS = readFileSync("src/pr-list-cards.css", "utf8");
+const SHELL_CSS = readFileSync("src/styles.css", "utf8");
 
 enum RuleSelector {
+  Shell = ".app",
+  VisibleMain = 'main:has(> .page.pull-requests-page[data-list-layout="true"]:not([hidden]))',
+  MainSiblings = 'main:has(> .page.pull-requests-page[data-list-layout="true"]:not([hidden])) > :not(.pull-requests-page)',
   PageLayout = '.page.pull-requests-page[data-list-layout="true"]',
   Workspace = ".pr-workspace",
   WideWorkspace = '.pr-workspace[data-wide="true"]',
-  Panes = ".pr-workspace-list,\n.pr-workspace-selected",
+  Panes = ".pr-workspace-list, .pr-workspace-selected",
 }
 
 // Returns the declaration block of the first rule whose selector list matches
-// exactly, so comments and unrelated rules never satisfy an assertion.
+// exactly after whitespace normalization, so comments, formatting and unrelated
+// rules never satisfy or break an assertion.
 function declarations(css: string, selector: RuleSelector): string {
-  const stripped = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  const stripped = css
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\s+/g, " ")
+    .replace(/\( /g, "(");
   const start = stripped.indexOf(`${selector} {`);
   if (start < 0) throw new Error(`rule not found: ${selector}`);
   const open = stripped.indexOf("{", start);
@@ -34,7 +42,7 @@ describe("pull request workspace height contract", () => {
 
   it("grows the workspace into the remaining page height with a 320px floor", () => {
     const rule = declarations(WORKSPACE_CSS, RuleSelector.Workspace);
-    expect(rule).toMatch(/flex\s*:\s*1 1 auto/);
+    expect(rule).toMatch(/flex\s*:\s*1 1 0px/);
     expect(rule).toMatch(/min-height\s*:\s*320px/);
     expect(rule).toMatch(/grid-template-rows\s*:\s*minmax\(0,\s*1fr\)/);
   });
@@ -55,12 +63,45 @@ describe("pull request workspace height contract", () => {
     expect(rule).not.toMatch(/(^|\s)height\s*:/);
   });
 
-  it("makes the page a column that fills main and keeps its 32px padding", () => {
+  it("makes the page a column that grows into the height left in main", () => {
     const rule = declarations(CARDS_CSS, RuleSelector.PageLayout);
     expect(rule).toMatch(/display\s*:\s*flex/);
     expect(rule).toMatch(/flex-direction\s*:\s*column/);
-    expect(rule).toMatch(/min-height\s*:\s*100%/);
+    expect(rule).toMatch(/flex\s*:\s*1 0 auto/);
     expect(rule).toMatch(/box-sizing\s*:\s*border-box/);
     expect(rule).toMatch(/padding\s*:\s*32px/);
+  });
+
+  it("never sizes the page from the full main height", () => {
+    // A percentage minimum height would ignore the compact context trigger and
+    // the sidebar preference notice that precede the page inside main.
+    const rule = declarations(CARDS_CSS, RuleSelector.PageLayout);
+    expect(rule).not.toMatch(/(^|\s)(min-|max-)?height\s*:/);
+    expect(CARDS_CSS).not.toMatch(/min-height\s*:\s*100%/);
+  });
+
+  it("lets main share its height between preceding siblings and the page", () => {
+    const main = declarations(CARDS_CSS, RuleSelector.VisibleMain);
+    expect(main).toMatch(/display\s*:\s*flex/);
+    expect(main).toMatch(/flex-direction\s*:\s*column/);
+    expect(main).not.toMatch(/(^|\s)(min-|max-)?height\s*:/);
+    const siblings = declarations(CARDS_CSS, RuleSelector.MainSiblings);
+    expect(siblings).toMatch(/flex-shrink\s*:\s*0/);
+  });
+
+  it("keeps the chain from the app shell to the workspace definite", () => {
+    // .app owns the viewport height; main, the page and the workspace then
+    // only distribute it, so no container between them has its own height.
+    const shell = declarations(SHELL_CSS, RuleSelector.Shell);
+    expect(shell).toMatch(/height\s*:\s*100dvh/);
+    const chain = [
+      declarations(CARDS_CSS, RuleSelector.VisibleMain),
+      declarations(CARDS_CSS, RuleSelector.PageLayout),
+      declarations(WORKSPACE_CSS, RuleSelector.Workspace),
+    ];
+    for (const rule of chain) {
+      expect(rule).not.toMatch(/(^|[\s;])height\s*:/);
+      expect(rule).not.toMatch(/\d+(vh|dvh|svh|lvh)/);
+    }
   });
 });

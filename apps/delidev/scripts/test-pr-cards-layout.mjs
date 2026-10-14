@@ -112,6 +112,7 @@ try {
         [1440, 900],
         [1100, 768],
         [960, 640],
+        [640, 1000],
         [640, 480],
         [720, 450],
       ]) {
@@ -213,6 +214,8 @@ try {
         );
         // Vertical fill: the workspace takes the height left in the page, down
         // to the page bottom padding, and never drops below 320 CSS pixels.
+        // Above that floor main must not scroll, including in compact widths
+        // where the context trigger precedes the page.
         const vertical = await page
           .locator(".pull-requests-page")
           .evaluate((node) => {
@@ -233,7 +236,10 @@ try {
               workspaceHeight: box.height,
               gapToPageContent: pageRect.bottom - paddingBottom - box.bottom,
               paddingBottom,
-              pageFillsMain: pageRect.height >= mainRect.height - 1,
+              // The page takes the height left after the context trigger and
+              // notices, so it reaches the bottom of main without exceeding it
+              // while the workspace is above its 320px floor.
+              pageReachesMainBottom: pageRect.bottom >= mainRect.bottom - 1,
               mainFits: main.scrollHeight <= main.clientHeight + 1,
               paneGaps: panes.map((pane) => Math.abs(pane.bottom - box.bottom)),
             };
@@ -241,7 +247,8 @@ try {
         assert(
           vertical.workspaceHeight >= 319 &&
             Math.abs(vertical.gapToPageContent) <= 1 &&
-            vertical.pageFillsMain &&
+            vertical.pageReachesMainBottom &&
+            (vertical.workspaceHeight <= 321 || vertical.mainFits) &&
             vertical.paneGaps.every((gap) => gap <= 1) &&
             vertical.paddingBottom === (width < 760 ? 24 : 32),
           `${context}: vertical fill ${JSON.stringify(vertical)}`,

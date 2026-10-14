@@ -3,15 +3,18 @@
   max-width: none;
 }
 /* The workspace fills the height left in the page after the header, notices and
- * pending actions. The page is a column flex container, so the workspace grows
- * with flex instead of a viewport-relative cap. The 320 CSS pixel minimum lets
- * main scroll on short windows. Panes size from grid tracks, not percentage
- * heights, because the page height is only a minimum and would be indefinite. */
+ * pending actions. main and the page are column flex containers, so the page
+ * takes the height left in main after its preceding siblings and the workspace
+ * grows into the page with flex instead of a viewport-relative cap. The zero
+ * flex basis keeps the workspace content height out of the page content size,
+ * so a long list scrolls inside its pane and the 320 CSS pixel minimum is what
+ * lets main scroll on short windows. Panes size from grid tracks, not
+ * percentage heights. */
 .pr-workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
-  flex: 1 1 auto;
+  flex: 1 1 0px;
   min-width: 0;
   width: 100%;
   min-height: 320px;

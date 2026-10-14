@@ -1,9 +1,20 @@
 /* SPDX-License-Identifier: Apache-2.0 */
+/* main becomes a column while the list-layout page is visible, so the page takes
+ * the height left after the sidebar-preference notice and compact context
+ * trigger instead of a full main height that those siblings would overflow. */
+main:has(> .page.pull-requests-page[data-list-layout="true"]:not([hidden])) {
+  display: flex;
+  flex-direction: column;
+}
+main:has(> .page.pull-requests-page[data-list-layout="true"]:not([hidden]))
+  > :not(.pull-requests-page) {
+  flex-shrink: 0;
+}
 .page.pull-requests-page[data-list-layout="true"] {
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  min-height: 100%;
+  flex: 1 0 auto;
   width: 100%;
   max-width: 1120px;
   padding: 32px;
