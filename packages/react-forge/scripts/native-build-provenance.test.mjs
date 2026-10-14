@@ -7,6 +7,7 @@ import test from "node:test";
 import {
   bindingFilename,
   readNativeBuildProvenance,
+  sourceRevision,
   writeNativeBuildProvenance,
 } from "./native-build-provenance.mjs";
 
@@ -33,6 +34,7 @@ for (const profile of ["dev", "release"]) {
         bindingFile: bindingFilename(host),
         profile,
         sha256: createHash("sha256").update(binary).digest("hex"),
+        sourceRevision: sourceRevision(),
       });
       assert.equal(await readNativeBuildProvenance(directory, host), profile);
     });
@@ -69,6 +71,7 @@ test("missing or malformed provenance rejects before benchmark sampling", async 
       JSON.stringify({ ...valid, bindingFile: "other.node" }),
       JSON.stringify({ ...valid, profile: "fast" }),
       JSON.stringify({ ...valid, sha256: "not a digest" }),
+      JSON.stringify({ ...valid, sourceRevision: "not a revision" }),
       JSON.stringify({ ...valid, unexpected: true }),
     ]) {
       await writeFile(metadataPath, invalid);
