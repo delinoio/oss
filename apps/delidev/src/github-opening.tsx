@@ -10,6 +10,10 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import {
+  NativeOpenError,
+  selectedBrowserFailureMessage,
+} from "./external-links";
+import {
   GitHubTokenAccess,
   GitHubTokenKind,
   IntegrationQuery,
@@ -108,6 +112,17 @@ export function githubDraftTokenFormURL(
   return `https://github.com${path}?${q}`;
 }
 
+// The native host validates the GitHub destination, then opens it in the
+// browser selected for general links. Native failure codes survive the wider
+// try blocks below so they can point at the browser selection.
+async function openGitHubNative(url: string) {
+  try {
+    await invoke("open_github", { url });
+  } catch (error) {
+    throw new NativeOpenError(error);
+  }
+}
+
 export function OpenGitHub({
   url,
   disabled = false,
@@ -125,10 +140,15 @@ export function OpenGitHub({
     setBusy(true);
     setStatus("");
     try {
-      await invoke("open_github", { url });
+      await openGitHubNative(url);
       setStatus(ownedMessage("github-opening.extra.96dce755f727"));
-    } catch {
-      setStatus(ownedMessage("github-opening.extra.45a2c8995dcd"));
+    } catch (error) {
+      const selection = selectedBrowserFailureMessage(error);
+      setStatus(
+        selection
+          ? ownedMessage(selection)
+          : ownedMessage("github-opening.extra.45a2c8995dcd"),
+      );
     } finally {
       setBusy(false);
     }
@@ -198,12 +218,17 @@ export function GitHubTokenForm({
           : undefined;
       if (!url) throw new Error("Invalid form");
       if (epoch.current !== original) return;
-      await invoke("open_github", { url });
+      await openGitHubNative(url);
       if (epoch.current === original)
         setStatus(ownedMessage("github-opening.extra.783701cedcbe"));
-    } catch {
+    } catch (error) {
+      const selection = selectedBrowserFailureMessage(error);
       if (epoch.current === original)
-        setStatus(ownedMessage("github-opening.extra.f2427e02d7bb"));
+        setStatus(
+          selection
+            ? ownedMessage(selection)
+            : ownedMessage("github-opening.extra.f2427e02d7bb"),
+        );
     } finally {
       if (epoch.current === original) setBusy(false);
     }
@@ -296,6 +321,10 @@ export function GitHubDraftTokenForm({
   const epoch = useRef(0),
     working = useRef(false),
     mounted = useRef(false);
+  // The epoch tracks the action's lifetime only (departure, a replaced
+  // Settings opening, unmount). `disabled` gates new clicks and also flips
+  // during routine capability status polls, so it must not retire an already
+  // admitted opening; `working` keeps the buttons locked until it settles.
   useLayoutEffect(() => {
     mounted.current = true;
     epoch.current++;
@@ -304,7 +333,7 @@ export function GitHubDraftTokenForm({
       mounted.current = false;
       epoch.current++;
     };
-  }, [active, disabled, opening]);
+  }, [active, opening]);
   const options = {
     enabled: false,
     retry: false,
@@ -369,10 +398,16 @@ export function GitHubDraftTokenForm({
       )
         throw new Error("Invalid draft form");
       if (!live()) return;
-      await invoke("open_github", { url: expected });
+      await openGitHubNative(expected);
       if (live()) setStatus(ownedMessage("github-opening.extra.783701cedcbe"));
-    } catch {
-      if (live()) setStatus(ownedMessage("github-opening.draft.failure"));
+    } catch (error) {
+      const selection = selectedBrowserFailureMessage(error);
+      if (live())
+        setStatus(
+          selection
+            ? ownedMessage(selection)
+            : ownedMessage("github-opening.draft.failure"),
+        );
     } finally {
       working.current = false;
       if (mounted.current) setBusy(false);

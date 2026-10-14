@@ -19,8 +19,13 @@ func (s *Service) rpcMux() *http.ServeMux {
 	mux.Handle(delidevv1connect.NewInstallationServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewSystemServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewResourceServiceHandler(s, append(options, connect.WithConditionalHandlerOptions(func(spec connect.Spec) []connect.HandlerOption {
-		if spec.Procedure == delidevv1connect.ResourceServiceGetResourceProcedure {
+		switch spec.Procedure {
+		case delidevv1connect.ResourceServiceGetResourceProcedure:
 			return []connect.HandlerOption{connect.WithSendMaxBytes(2 * domain.MaxRepositoryBranchesJobBytes)}
+		case delidevv1connect.ResourceServiceGetSnapshotProcedure:
+			// Only snapshots may carry typed large Job documents; GetSnapshot
+			// enforces its own 4 MiB or 8 MiB budget before this transport limit.
+			return []connect.HandlerOption{connect.WithSendMaxBytes(domain.MaxLargeJobSnapshotBytes)}
 		}
 		return nil
 	}))...))

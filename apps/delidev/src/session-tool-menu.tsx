@@ -30,12 +30,27 @@ const enabledControls = (root: ParentNode | null | undefined) => [
  */
 export function SessionToolMenu({
   children,
-  active,
+  active: surfaceActive,
+  ready = true,
+  recoveryFocus,
 }: {
   children: ReactNode;
+  /** Whether the Session is the selected, visible Sessions surface. */
   active: boolean;
+  /**
+   * Whether the connection is ready. Losing readiness retires the presentation
+   * like Session departure; regaining it never reopens the dialog.
+   */
+  ready?: boolean;
+  /**
+   * Safe recovery control that receives focus when readiness is lost while the
+   * Session stays selected. A modal close natively restores focus to the
+   * opener, which is unavailable during recovery.
+   */
+  recoveryFocus?: () => HTMLElement | null | undefined;
 }) {
   useLocale();
+  const active = surfaceActive && ready;
   const id = useId(),
     trigger = useRef<HTMLButtonElement>(null),
     dialog = useRef<HTMLDialogElement>(null),
@@ -79,7 +94,22 @@ export function SessionToolMenu({
     const node = dialog.current;
     if (!active || !open || !node) {
       node?.close();
-      if (!active && open) setOpen(false);
+      if (!active && open) {
+        setOpen(false);
+        // The previous cleanup's modal close made the browser restore focus to
+        // the opener, which is unavailable while readiness is lost. Hand focus
+        // to a recovery control; Session departure never refocuses hidden content.
+        if (surfaceActive && !ready) {
+          const target = recoveryFocus?.();
+          if (availableShortcutTarget(target ?? null))
+            target?.focus({ preventScroll: true });
+          else if (
+            document.activeElement === trigger.current ||
+            document.activeElement === opener.current
+          )
+            (document.activeElement as HTMLElement).blur();
+        }
+      }
       return;
     }
     node.showModal();

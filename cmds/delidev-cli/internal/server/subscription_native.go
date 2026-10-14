@@ -209,11 +209,41 @@ func (r *serverQuotaRuntime) Close() error {
 	return subscription.CleanupRuntime(r.home, r.original)
 }
 
-func openServerQuota(ctx context.Context, root string, owner domain.ID, auth codex.QuotaAuthentication, logger *slog.Logger) (returned serverQuotaNative, err error) {
+func openServerQuota(ctx context.Context, root string, owner domain.ID, auth codex.QuotaAuthentication, logger *slog.Logger) (serverQuotaNative, error) {
+	runtime, err := openAccessOnlyRuntime(ctx, root, "quota", codex.QuotaProtocol, owner, auth, logger)
+	if err != nil {
+		return nil, err
+	}
+	return &serverQuotaRuntime{Client: runtime.Client, home: runtime.home, original: runtime.original, owner: owner, logger: logger}, nil
+}
+
+// Credit runtimes use the distinct access-only credit profile. They hold no
+// managed auth file and can neither renew tokens nor write credentials back.
+type serverCreditNative interface {
+	ConsumeExternalResetCredit(context.Context, domain.ServerCreditOperation, codex.QuotaAuthentication, func(domain.SubscriptionResetOutcome) error) (domain.SubscriptionResetOutcome, domain.SubscriptionQuotaObservation, error, error)
+	Close() error
+}
+type serverCreditOpener func(context.Context, string, domain.ID, codex.QuotaAuthentication, *slog.Logger) (serverCreditNative, error)
+type serverCreditRuntime struct{ *serverQuotaRuntime }
+
+func openServerCreditAccess(ctx context.Context, root string, owner domain.ID, auth codex.QuotaAuthentication, logger *slog.Logger) (serverCreditNative, error) {
+	runtime, err := openAccessOnlyRuntime(ctx, root, "credit", codex.CreditProtocol, owner, auth, logger)
+	if err != nil {
+		return nil, err
+	}
+	return &serverCreditRuntime{&serverQuotaRuntime{Client: runtime.Client, home: runtime.home, original: runtime.original, owner: owner, logger: logger}}, nil
+}
+
+// accessOnlyRuntimeDirectory is the private runtime root of one access-only owner.
+func accessOnlyRuntimeDirectory(root, kind string, owner domain.ID) string {
+	return filepath.Join(root, "subscription-runtime", kind, string(owner))
+}
+
+func openAccessOnlyRuntime(ctx context.Context, root, kind string, mode codex.ProtocolMode, owner domain.ID, auth codex.QuotaAuthentication, logger *slog.Logger) (returned *serverQuotaRuntime, err error) {
 	version, phase := "", domain.CodexRuntime
 	defer func() { err = domain.WithCodexDiagnostic(version, phase, err) }()
 	runtimeRoot := filepath.Join(root, "subscription-runtime")
-	home := filepath.Join(runtimeRoot, "quota", string(owner))
+	home := accessOnlyRuntimeDirectory(root, kind, owner)
 	if _, e := os.Lstat(home); !errors.Is(e, os.ErrNotExist) {
 		return nil, subscriptionDenied()
 	}
@@ -261,7 +291,7 @@ func openServerQuota(ctx context.Context, root string, owner domain.ID, auth cod
 		return nil, subscriptionDenied()
 	}
 	nativeHome := filepath.Join(home, "codex")
-	native, e := codex.Open(ctx, codex.Config{Version: installation.Version, Mode: codex.QuotaProtocol, Home: nativeHome, Process: process.Config{Directory: filepath.Join(runtimeRoot, "processes"), OwnerID: owner, Executable: installation.ResolvedPath, Cwd: home, Env: env, ProtectedValues: []string{auth.Access}, Logger: logger}})
+	native, e := codex.Open(ctx, codex.Config{Version: installation.Version, Mode: mode, Home: nativeHome, Process: process.Config{Directory: filepath.Join(runtimeRoot, "processes"), OwnerID: owner, Executable: installation.ResolvedPath, Cwd: home, Env: env, ProtectedValues: []string{auth.Access}, Logger: logger}})
 	if e != nil {
 		return nil, e
 	}

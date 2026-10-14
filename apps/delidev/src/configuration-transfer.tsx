@@ -3,6 +3,7 @@ import {
   PresentationKind,
   productMetadataJSON,
   generatedIdentityFields,
+  configurationPreviewPaths,
 } from "./product-identity-labels";
 import "./wizard-presentation.css";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
@@ -20,6 +21,7 @@ import {
   useLocale,
 } from "./localization";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useActivationCount, useEntranceActivation } from "./entrance-motion";
 import { useMutation, useQuery } from "@connectrpc/connect-query";
 import {
   ConfigurationQuery,
@@ -268,6 +270,14 @@ export function ConfigurationTransfer({
   const [paths, setPaths] = useState<Record<string, string>>({});
   const [preview, setPreview] = useState<Preview>();
   const [report, setReport] = useState<Document>();
+  // The stage the user explicitly asked for (Load document, Preview changes).
+  // Only a stage surface that appears for this request plays its entrance;
+  // derived or asynchronous stage changes stay immediate.
+  const [requestedStage, setRequestedStage] = useState<TransferStage>();
+  // Counts explicit Load requests. A repeated Load replaces `loaded` within one
+  // event batch, so the Map surface never leaves the screen and visibility alone
+  // cannot expose a new activation.
+  const [loadRequests, setLoadRequests] = useState(0);
   const formattedPreview = useMemo(
     () =>
       preview
@@ -276,6 +286,7 @@ export function ConfigurationTransfer({
               decoder.decode(preview.bytes),
               generatedIdentityFields,
               productLabel,
+              configurationPreviewPaths,
             ),
           )
         : "",
@@ -455,9 +466,12 @@ export function ConfigurationTransfer({
     setPreview(undefined);
     setProblem("");
     setExportFailure(undefined);
+    setRequestedStage(undefined);
   };
   const load = (raw: string) => {
     invalidate();
+    setLoadRequests((count) => count + 1);
+    setRequestedStage(TransferStage.Map);
     setLoaded(undefined);
     try {
       const bundle = readBundle(raw);
@@ -509,6 +523,7 @@ export function ConfigurationTransfer({
     gate.current = true;
     setProblem("");
     setPreview(undefined);
+    setRequestedStage(TransferStage.Review);
     const original = generation.current;
     try {
       const selectedBindings = loaded.bundle.entries.flatMap((entry) => {
@@ -551,6 +566,21 @@ export function ConfigurationTransfer({
       gate.current = false;
     }
   };
+  const mapEntrance = useEntranceActivation(
+    String(loadRequests),
+    requestedStage === TransferStage.Map,
+  );
+  const reviewEntrance = useEntranceActivation(
+    String(useActivationCount(preview !== undefined)),
+    requestedStage === TransferStage.Review,
+  );
+  useEffect(() => {
+    if (
+      (requestedStage === TransferStage.Map && loaded) ||
+      (requestedStage === TransferStage.Review && preview)
+    )
+      setRequestedStage(undefined);
+  }, [requestedStage, loaded, preview]);
   const stage =
     preview || report || mutation.uncertain
       ? TransferStage.Review
@@ -664,7 +694,7 @@ export function ConfigurationTransfer({
             </li>
           ))}
         </ol>
-        <fieldset disabled={blocked}>
+        <fieldset className="transfer-input-fieldset" disabled={blocked}>
           <legend className="transfer-input-legend">
             {copy("configuration-transfer.chooseAnExport_270d3d")}
           </legend>
@@ -788,6 +818,8 @@ export function ConfigurationTransfer({
         <fieldset
           className="transfer-panel transfer-mapping"
           disabled={blocked}
+          ref={mapEntrance.ref}
+          data-entrance={mapEntrance["data-entrance"]}
         >
           <legend>
             {copy("configuration-transfer.mapImportedConfiguration_d0218d")}
@@ -986,6 +1018,8 @@ export function ConfigurationTransfer({
       {preview ? (
         <section
           className="transfer-panel"
+          ref={reviewEntrance.ref}
+          data-entrance={reviewEntrance["data-entrance"]}
           aria-label={copy(
             "configuration-transfer.configurationChangePreview_226628",
           )}

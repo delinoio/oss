@@ -138,6 +138,9 @@ function SavedConnectionTask({
 }) {
   const [target, setTarget] = useState<HTMLDivElement | null>(null);
   const [presented, setPresented] = useState(true);
+  // Counts explicit Continue requests. Together with the task generation it is
+  // the only presentation request; slot movement never changes it.
+  const [resumes, setResumes] = useState(0);
   const resume = useRef<HTMLButtonElement>(null);
   useLayoutEffect(() => {
     if (!inline || !visible || presented) return;
@@ -155,16 +158,22 @@ function SavedConnectionTask({
   useEffect(() => {
     setPresented(true);
   }, [presentationGeneration]);
+  // Dismissal is retained for every host: the fallback dialog keeps the body
+  // hidden behind the same Continue action. A fresh fallback task starts
+  // presented, so its initial Add form stays available without an Add click.
   // Escape/Close releases presentation only. Explicit Discard/Keep controls
   // remain the original owner's decision, including after an uncertain write.
   return (
     <>
-      {inline && visible && !presented ? (
+      {visible && !presented ? (
         <SettingsActionButton
           icon={SettingsActionIcon.Next}
           type="button"
           ref={resume}
-          onClick={() => setPresented(true)}
+          onClick={() => {
+            setResumes((count) => count + 1);
+            setPresented(true);
+          }}
         >
           {copy("settings.connections.continue", { title })}
         </SettingsActionButton>
@@ -175,12 +184,14 @@ function SavedConnectionTask({
         close={() => setPresented(false)}
         focusClose
         trapFocus
+        headingEntrance
+        presentationRequest={`${presentationGeneration}.${resumes}`}
       >
         <div ref={setTarget} />
       </Modal>
       <PersistentConnectionView
         target={inline ? (target ?? undefined) : undefined}
-        hidden={inline && (!visible || !presented)}
+        hidden={!presented || (inline && !visible)}
       >
         {children}
       </PersistentConnectionView>
@@ -314,6 +325,9 @@ export function SavedConnections({
       setGrant("");
       setName("");
       setAdding(false);
+      // A completed Add must not leave a dismissed presentation behind for the
+      // next host; the next fallback Add form starts presented.
+      setAddPresentationGeneration((generation) => generation + 1);
       setMessage(ownedMessage("saved-connections.extra.2c160a020769"));
       await refresh();
     } catch (error) {

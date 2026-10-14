@@ -36,7 +36,7 @@ export enum AppearanceProblem {
   OutcomeUnknown = "outcome-unknown",
   Changed = "changed",
 }
-enum AppearanceOperation {
+export enum AppearanceOperation {
   Reading = "reading",
   Saving = "saving",
 }
@@ -124,6 +124,9 @@ export function parseAppearance(value: unknown): AppearanceSnapshot {
 
 interface AppearanceController {
   snapshot: AppearanceSnapshot;
+  /** True once the initial native read has settled (success or failure), so
+   * consumers can tell a legitimate default from a not-yet-loaded placeholder. */
+  ready: boolean;
   operation?: AppearanceOperation;
   select: (theme: Theme) => void;
   reload: () => void;
@@ -131,6 +134,8 @@ interface AppearanceController {
 }
 const AppearanceContext = createContext<AppearanceController>({
   snapshot: defaultSnapshot,
+  // Without a provider there is no native read to wait for.
+  ready: true,
   select: () => {},
   reload: () => {},
   update: () => {},
@@ -145,6 +150,7 @@ export function AppearanceProvider({
 }) {
   useLocale();
   const [snapshot, setSnapshot] = useState(defaultSnapshot);
+  const [ready, setReady] = useState(false);
   const current = useRef(defaultSnapshot);
   const [operation, setOperation] = useState<AppearanceOperation | undefined>(
     AppearanceOperation.Reading,
@@ -241,6 +247,7 @@ export function AppearanceProvider({
         if (generation.current === owned) {
           running.current = false;
           setOperation(undefined);
+          setReady(true);
         }
       }
     })();
@@ -315,6 +322,7 @@ export function AppearanceProvider({
     <AppearanceContext.Provider
       value={{
         snapshot,
+        ready,
         operation,
         select: (theme) => {
           void run(theme);
@@ -413,4 +421,9 @@ export function useAppearance() {
 }
 export function useAppearancePreferences() {
   return useAppearance().snapshot.preferences ?? defaultPreferences();
+}
+/** False only until the initial native read settles; a failed read still
+ * settles with compatibility defaults. */
+export function useAppearanceReady() {
+  return useAppearance().ready;
 }

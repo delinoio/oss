@@ -18,6 +18,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeforward"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
@@ -258,6 +259,7 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 		nativeConfig.Sidechat = codex.ReadOnlySidechatV1
 	}
 	var proxy *nativeproxy.Proxy
+	var forwarder *nativeforward.Forwarder
 	if managed != nil {
 		nativeConfig.API = nil
 		nativeConfig.ManagedAuthentication = true
@@ -279,6 +281,23 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 					proxyClosed = true
 				}
 			}()
+		} else {
+			forwarder, err = openCodexNativeForwarder(nativeCtx, config, i.ActionID, token, false)
+			if err != nil {
+				return nil, err
+			}
+			if forwarder != nil {
+				proxyClosed = false
+				nativeConfig.API.ForwarderOrigin = forwarder.NativeOrigin()
+				defer func() {
+					if err := forwarder.Close(); err != nil {
+						cleanupFailed = true
+						output, returned = nil, err
+					} else {
+						proxyClosed = true
+					}
+				}()
+			}
 		}
 	}
 	phase = compactionLaunch
@@ -354,7 +373,14 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 	var retained codex.CompactedCheckpoint
 	usages := []domain.NativeResponseUsage{}
 	if i.Revert != nil {
-		target := codex.HistoricalInput{ID: i.Revert.InputID, PromptDigest: i.Revert.Prompt.InputDigest()}
+		// The expected selected-skill digest comes only from the original retained
+		// target proof. A missing proof for a skilled target is rejected here,
+		// before the native claim and before any wire send.
+		target, err := resolveRevertTarget(config.Root, source, i, logger)
+		if err != nil {
+			preSendFailure = err
+			return nil, err
+		}
 		retained, err = native.RevertThread(ctx, i.ActionID, source.Native, target, domain.ID(i.Revert.NativeTurnID), func(intent codex.RevertIntent) error {
 			// Callback entry is the uncertainty fence, even if durable writing
 			// fails. Never downgrade a partially persisted claim to no-send.
@@ -407,6 +433,12 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 	}
 	if proxy != nil {
 		if err := proxy.Close(); err != nil {
+			return nil, err
+		}
+		proxyClosed = true
+	}
+	if forwarder != nil {
+		if err := forwarder.Close(); err != nil {
 			return nil, err
 		}
 		proxyClosed = true
@@ -489,7 +521,7 @@ func readCodexSessionCompactionCheckpoint(ctx context.Context, root string, cred
 		expected := revertResult(p.JobID, p.Input, p.Native, ref.CheckpointDigest, ref.NativeDigest)
 		expectedRaw, _ := json.Marshal(expected)
 		actualRaw, _ := json.Marshal(result)
-		if !bytes.Equal(expectedRaw, actualRaw) || verifyRetainedRevertIntent(root, p) != nil {
+		if !bytes.Equal(expectedRaw, actualRaw) || verifyRetainedRevertIntent(root, source, p, slog.Default()) != nil {
 			return empty, domain.CompactionUncertain()
 		}
 		if p.Input.Revert == nil || result.Version != 4 || result.Revert == nil || result.Revert.HistoryDigest != p.Native.HistoryDigest || result.Revert.NativeThreadID != domain.NativeIdentity(source.Native.ThreadID) || p.Native.Revert.ActionID != ref.ActionID || result.Revert.Target.NativeTurnID != domain.NativeIdentity(p.Native.Revert.BeforeTurnID) {

@@ -48,7 +48,7 @@ Servers without token-onboarding capability 34 retain the original create flow. 
 
 With capability 34, token-first creation verifies a transient write-only PAT before the profile confirmation step. The first step focuses the password input and provides a static Create a token on GitHub section with exactly two buttons, Classic then Fine grained. It has no token-kind, resource-owner or Classic-access input and no disclosure. A deliberate button click chooses the confirmation step's token kind and prepares the matching official form; it does not declare an owner. Confirmation still requires the explicit fine-grained owner, retains optional Classic owner and editable profile name, and preserves exact save/replacement retries and owned token-buffer clearing. Identity verification does not establish repository access.
 
-A creation opening pins the first admitted token-first or metadata-first controller until disposal. Failed status refreshes display a sanitized read failure and an explicit read-only retry without replacing its controller, draft or exact submitted request. Successful later capability changes also cannot replace admitted work. New token inspection and a new Save and connect require a completed valid capability-34 observation; a pending, failed or unsupported read grants no new token authority. An already authorized save sequence and explicit original metadata retry retain their original identity and bytes, with erased-token reentry rules unchanged. Initial unsupported/malformed status and initial read failure keep metadata-first fallback. Same-identity reconnect retains the opening; dialog/category/Settings departure and true connection identity replacement dispose it under the current Settings contract without restoring abandoned requests.
+A creation opening pins the first admitted token-first or metadata-first controller until disposal. Failed status refreshes display a sanitized read failure and an explicit read-only retry without replacing its controller, draft or exact submitted request. Successful later capability changes also cannot replace admitted work. New token inspection and a new Save and connect require a completed valid capability-34 observation; a pending, failed or unsupported read grants no new token authority. An already authorized save sequence and explicit original metadata retry retain their original identity and bytes, with erased-token reentry rules unchanged. Initial unsupported/malformed status and initial read failure keep metadata-first fallback. When a fallback opening later reads a valid capability-34 inventory, the editor keeps its controller, draft and any save uncertainty and shows localized recovered-support guidance (`integrations.onboardingSupportRecovered`) to close and reopen the form for token-first onboarding; the recovered guidance stays through later in-flight fetches and clears only when a settled read errors or returns an unsupported or malformed inventory, which then keeps the existing truthful messages, and loss of support after a token-first admission keeps `integrations.onboardingSupportChanged`. A capability status poll that toggles the new-click gate never retires an already admitted Classic or Fine grained form opening. Same-identity reconnect retains the opening; dialog/category/Settings departure and true connection identity replacement dispose it under the current Settings contract without restoring abandoned requests.
 
 Manage separates Connect a token, identity validation and confirmed deletion. The password input is empty, autocomplete-off, spellcheck-off and bounded to 512 visible ASCII characters; an empty/invalid value cannot submit. Stored tokens are never rendered, recovered or revealed. The complete verified official-form guidance appears in an informational native disclosure, initially expanded without a connection and collapsed with a connection. Collapsing preserves its current Classic selection/status; only the existing explicit official-form button requests its revision-bound URL. Preserve all repository-selection, owner, permission, expiry, organization-approval and broad Classic-scope caveats.
 
@@ -76,7 +76,7 @@ Fine-grained profiles require `selected-repositories` and use the fixed DeliDev 
 
 `integration token-form --id ID --revision N --access selected-repositories|public-repositories|private-repositories [--open]` prints the validated form and guidance; `--open` additionally dispatches it on the invoking computer. `github pr|issue open --repository-id ID --number N` makes the ordinary fresh, fully validated selected-profile detail query before local presentation. These commands never open a remote server's browser. Opening is OS infrastructure; business authorization remains in the shared Connect reads.
 
-Desktop form opening refetches the revision-bound form only after an explicit click, verifies the exact response and canonical URL, and suppresses late actions after panel closure/inactivation/replacement. No form query retries automatically. Registered Local product windows (`main`/`local-*`) and independently profile/server-bound Saved windows (`server-*`) may invoke the narrow `open_github` command. Local calls retain exact native Local role/instance admission, trusted-document checks and original authority rechecks; Saved calls retain their independent binding. The native host passes bounded untrusted URL bytes to its credential-free Go sidecar through stdin; only Go-validated destinations become OS arguments. There is no arbitrary opener, shell command, browser credential access, renderer navigation, new CSP authority or returned token.
+Desktop form opening refetches the revision-bound form only after an explicit click, verifies the exact response and canonical URL, and suppresses late actions after panel closure/inactivation/replacement. No form query retries automatically. Registered Local product windows (`main`/`local-*`) and independently profile/server-bound Saved windows (`server-*`) may invoke the narrow `open_github` command. Local calls retain exact native Local role/instance admission, trusted-document checks and original authority rechecks; Saved calls retain their independent binding. The native host passes bounded untrusted URL bytes to its credential-free Go sidecar through stdin; only Go-validated destinations become OS arguments. With the system-default general browser destination the sidecar's `presentation open-github` launches the destination as before. When the device-local general destination selects an installed browser, the host asks the sidecar for validation only (`presentation validate-github --url-stdin`, which launches nothing and returns `{"validated":true}`) and then launches exactly that browser natively with one argv URL value, reporting `browser-unavailable`, `browser-launch-failed` or `storage-unavailable` without fallback, retry or a second launch. The standalone CLI never reads the desktop preference and keeps its default-browser behavior. See [Browser destinations for external links](apps-delidev-desktop-contract.md#browser-destinations-for-external-links). There is no arbitrary opener, shell command, browser credential access, renderer navigation, new CSP authority or returned token.
 
 The shared presentation validator accepts only exact HTTPS `github.com` official form URLs with closed prefills, or canonical owner/repository PR/issue addresses with positive uint64 decimal numbers. Userinfo, explicit ports, fragments, path escapes/normalization, unexpected query parameters, duplicate parameters, write-permission additions and external/file schemes fail before OS dispatch. macOS uses `/usr/bin/open`, Linux `/usr/bin/xdg-open` and Windows a short-lived clean-environment helper with STA `ShellExecuteW`; no command shell interprets the URL. Launchers receive only bounded OS/session environment, never inherited provider/PAT variables, arbitrary browser commands or caller output pipes. Each launch is joined with a ten-second deadline. A timeout or failure remains uncertain and is never automatically retried. A successful acknowledgment means only OS dispatch, not a rendered page, authenticated browser, created token or API access. Platform runtime acceptance is recorded separately from unit tests and cross-compilation.
 
@@ -555,6 +555,10 @@ its original accepted requests and recovery semantics are unchanged. Available
 body widths of at least 900 CSS pixels use independently scrolling 40/60 list
 and detail panes. Compact Back restores the retained list position and row focus.
 Repository, applied-filter or connection replacement disposes the selection.
+Enrichment whose profile generation or numeric repository identity differs from
+the selected PR's retained scope also disposes the selection and clears the
+avatar cache before new observations render; same-scope enrichment keeps it, and
+a change of the provider repository node ID alone never disposes it.
 
 System capability `PULL_REQUEST_WORKSPACE_V1` negotiates three independent reads:
 `GetPullRequestWorkspace`, `ListPullRequestCommits` and `ReadPullRequestAvatar`.
@@ -563,11 +567,19 @@ remediation operations remain unchanged. Unsupported peers retain a flat list,
 Description/Diff/Reviews and explicit unsupported stacks/Commits notices.
 
 Workspace requests bind the original local repository revision and at most 20
-accepted-page PR numbers. The adapter validates numeric GitHub repository and PR
+accepted-page PR numbers. Repository scope comes only from the authenticated
+identity and numeric repository metadata reads, which fail the request when
+unavailable or invalid; every accepted seed, including the first, is then read as
+an ordinary detail, so an unreadable seed in any position leaves a readable
+workspace incomplete (`seed_unavailable`, `access_unavailable`) instead of failing it. The adapter validates numeric GitHub repository and PR
 identities, exact head-repository identity and base/head branch relationships in
 all states. Context rows are labeled and never increase filtered match counts.
-Each component renders once under its earliest accepted matching seed, parents
-before children and numeric sibling ties. Discovery retains at most 100 PRs,
+Each component renders once under its earliest resident matching seed (a seed
+whose page is still inside the three-page payload window; an evicted earlier
+seed never hides a component that still has a resident seed; ownership is computed
+across all resident pages, so matching seeds on two resident pages still render
+the component once), parents before
+children and numeric sibling ties. Components keep the accepted seed order. Discovery retains at most 100 PRs,
 depth 20 and 40 provider-page reads under the original query deadline. The graph
 rechecks every discovered relationship page, including empty boundaries, original PR refs and numeric repository identity before complete claims. Desktop enrichment and tabs must also match the retained original profile generation and numeric repository scope. Limits, missing source repositories, access
 failures and relationship drift remain incomplete; cycles and competing parents
@@ -576,6 +588,14 @@ no same-repository graph relationship; a PR whose head repository has a valid
 numeric identity different from the selected repository remains a complete flat
 node with no reason, while a missing head repository identity remains incomplete
 (`head_repository_unavailable`).
+
+Workspace nodes are body-free graph projections: the adapter validates each
+pull request description against its 128 KiB Detail limit but never retains it,
+so the 1 MiB response cap covers structure rather than up to 20 maximum-size
+descriptions. `PRWorkspace.Validate` and the desktop `validWorkspaceItem` accept
+only nodes without a `body` field and reject a node that carries one. The
+selected pull request's description still comes from its own Detail read with
+its existing limit and error handling.
 
 Each observed PR retains its own provider-reported additions/deletions, bound to
 its exact repository/PR/base/head. Commit counts come independently from commit
@@ -606,7 +626,9 @@ is introduced.
 
 Opaque avatar references retain their original actor, local repository revision,
 selected profile generation and numeric author in a bounded 64-entry memory
-cache. The authenticated byte read denies foreign, revoked and evicted scope.
+cache. The authenticated byte read denies foreign, revoked and evicted scope,
+including a reference evicted while the uncached network fetch is in flight: the
+fetched bytes are discarded and published only while the same cache entry remains.
 Only exact HTTPS `avatars.githubusercontent.com/u/<numeric actor>` locators with
 bounded known query fields are fetched through the selected outbound route. No
 PAT, client bearer, cookies or origin Authorization is attached, and redirects
@@ -618,7 +640,40 @@ The desktop remote-image CSP is unchanged.
 The shared per-profile read owner serializes foreground reads and bounded queued
 background work while retaining eight active global inspections. Foreground
 selection/tab work displaces and joins a running enrichment owner and precedes
-queued background work. Interrupted enrichment requires explicit retry. Original
-post-read authorization, repository revision, profile generation, cancellation,
-response limits and safe structured logs remain authoritative. Fixtures and CI
-builds do not establish real-account or packaged native acceptance.
+queued background work. Original post-read authorization, repository revision,
+profile generation, cancellation, response limits and safe structured logs remain
+authoritative. Fixtures and CI builds do not establish real-account or packaged
+native acceptance.
+
+`GetPullRequestWorkspace` keeps its original RPC pending and automatically resumes
+a workspace read that foreground work displaced. Only scheduler displacement sets
+the internal typed cancellation cause `errForegroundPreempted`; it is never set by
+parent cancellation, shutdown, profile cleanup, deadlines or provider failures,
+and avatar/commit/detail reads are never resumed. The interrupted attempt first
+finishes completely (token cleared, completion signal closed). The foreground
+read then runs and releases the profile before the resumed attempt is admitted
+behind every pending same-profile foreground read, so exactly one read owns the
+profile at a time. Each resumed attempt reauthorizes the original actor and
+verifies the original repository revision, profile and token generation before
+reading; any change, revocation, shutdown, parent cancellation, provider
+failure, malformed observation or exhausted limit terminates the request without
+replay or stale publication. A resumed attempt restarts the complete observation
+from the original seeds; partial graph and avatar observations of interrupted
+attempts are discarded and never merged, and only the final fresh observation is
+published.
+
+Limits are shared by all attempts of one request: the 35-second queue bound
+applies to first admission, the 35-second active deadline is frozen at first
+activation (resumed queue waits and attempts end by it and by the caller deadline),
+the adapter's 30-second deadline is frozen at the first provider attempt, and one
+cumulative 40-provider-read budget (three initial reads per attempt plus page
+reads, including those of interrupted attempts) covers the request. An attempt
+that cannot afford its initial reads fails with `resource_exhausted` instead of
+starting. The 64-queued-per-profile, eight-global-active, one-active-per-profile
+and 100-node/depth-20 graph limits are unchanged; a resumed attempt that meets
+one of them terminates the request. No public RPC, schema, capability or
+persistent data is added. Content-free structured logs record
+`repository_integration_read_preempted`, `pull_request_workspace_requeued`,
+`pull_request_workspace_resumed` and `pull_request_workspace_finished`, each with
+the original `correlation_id` and `attempt_count` (the final log also carries
+`outcome` and `error_code`).

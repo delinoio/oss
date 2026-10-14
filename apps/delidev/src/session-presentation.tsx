@@ -13,7 +13,14 @@ import {
   failureCause,
 } from "@delinoio/delidev-api-client";
 import { Disclosure, DisclosureSummary } from "./disclosure";
-import { copy, useLocale } from "./localization";
+import { settleEnclosingEntrances } from "./entrance-motion";
+import {
+  copy,
+  i18n,
+  SupportedLanguage,
+  useLocale,
+  type MessageKey,
+} from "./localization";
 
 export enum SessionIconKind {
   Diff = "diff",
@@ -89,6 +96,13 @@ export enum SessionNoticeSeverity {
   Error = "error",
 }
 
+/** True when the text equals this catalog entry in any supported locale, independent of the active one. */
+function matchesCatalogCopy(value: string, key: MessageKey): boolean {
+  return Object.values(SupportedLanguage).some(
+    (lng) => i18n.t(key, { lng }) === value,
+  );
+}
+
 /** Presentation only: callers retain actions, confirmations and request identity. */
 export function SessionProblemNotice({
   code,
@@ -125,10 +139,28 @@ export function SessionProblemNotice({
             : (fallbackTitle ?? copy("session.attentionRequired"));
   return (
     <SessionNotice title={title} details={details}>
-      <p>{quota ? copy("session.quotaExplanation") : message}</p>
-      {quota || guidance ? (
-        <p>{quota ? copy("session.quotaGuidance") : guidance}</p>
-      ) : null}
+      {quota ? (
+        <>
+          <p>{copy("session.quotaExplanation")}</p>
+          <p>{copy("session.quotaGuidance")}</p>
+          {/* Original safe evidence stays exact and visible after the localized catalog copy.
+              Catalog-identical originals are skipped in every supported locale so the
+              paragraph count never depends on the active display language. */}
+          {message &&
+          !matchesCatalogCopy(message, "session.quotaExplanation") ? (
+            <p>{message}</p>
+          ) : null}
+          {guidance &&
+          !matchesCatalogCopy(guidance, "session.quotaGuidance") ? (
+            <p>{guidance}</p>
+          ) : null}
+        </>
+      ) : (
+        <>
+          <p>{message}</p>
+          {guidance ? <p>{guidance}</p> : null}
+        </>
+      )}
       {children}
       <Disclosure>
         <DisclosureSummary>{copy("ui.technicalDetails")}</DisclosureSummary>
@@ -196,10 +228,14 @@ export function SessionActions({ children }: { children: ReactNode }) {
   const trigger = useRef<HTMLButtonElement>(null);
   const body = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
-    if (open)
-      body.current
-        ?.querySelector<HTMLButtonElement>("button:not(:disabled)")
-        ?.focus();
+    if (!open) return;
+    // An animated ancestor is a stacking context that would cap this popup's
+    // z-index beneath later siblings, so the opening settles any in-flight
+    // entrance in the same commit. Focus never waits for the motion.
+    settleEnclosingEntrances(root.current);
+    body.current
+      ?.querySelector<HTMLButtonElement>("button:not(:disabled)")
+      ?.focus();
   }, [open]);
   useEffect(() => {
     if (!open) return;

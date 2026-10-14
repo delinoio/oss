@@ -30,7 +30,7 @@ try {
         await page.setViewportSize({ width, height: 640 });
         await page.emulateMedia({ colorScheme });
         await page.setContent(
-          `<html${theme === "system" ? "" : ` data-theme="${theme}"`}><head><style>${themes}\n${styles}</style></head><body><main class="app"><aside class="sidebar"><div class="sidebar-rail"></div><dialog class="sidebar-pane-dialog"><div class="sidebar-pane is-home"><button class="sidebar-new-session">New session</button><button class="sidebar-new-general-chat">New general chat</button></div></dialog></aside></main></body></html>`,
+          `<html${theme === "system" ? "" : ` data-theme="${theme}"`}><head><style>${themes}\n${styles}</style></head><body><main class="app"><aside class="sidebar"><div class="sidebar-rail"></div><dialog class="sidebar-pane-dialog"><div class="sidebar-pane is-home"><button class="sidebar-new-session">New session</button><button class="sidebar-new-general-chat">New general chat</button><div class="sidebar-project-sessions"><button class="sidebar-session-row">First session</button><button class="sidebar-session-row">Second session</button></div></div></dialog></aside></main></body></html>`,
         );
         await page.evaluate(() => {
           const dialog = document.querySelector("dialog");
@@ -96,6 +96,46 @@ try {
             );
           cases++;
         }
+        // The current Home session row draws an inset selected-border cue without
+        // moving or resizing the row; unselected rows draw no cue.
+        const rows = await page.evaluate(() => {
+          const token = (name) => {
+            const probe = document.createElement("span");
+            probe.style.color = `var(--${name})`;
+            document.body.append(probe);
+            const value = getComputedStyle(probe).color;
+            probe.remove();
+            return value;
+          };
+          const measure = () =>
+            [...document.querySelectorAll(".sidebar-session-row")].map(
+              (row) => {
+                const box = row.getBoundingClientRect();
+                return {
+                  geometry: [box.x, box.y, box.width, box.height],
+                  shadow: getComputedStyle(row).boxShadow,
+                };
+              },
+            );
+          const rows = [...document.querySelectorAll(".sidebar-session-row")];
+          rows[0].setAttribute("aria-current", "true");
+          const current = measure();
+          rows[0].removeAttribute("aria-current");
+          const idle = measure();
+          return { current, idle, border: token("selected-border") };
+        });
+        assert.deepEqual(
+          rows.current.map((row) => row.geometry),
+          rows.idle.map((row) => row.geometry),
+          JSON.stringify({ theme, colorScheme, width, geometry: "row" }),
+        );
+        assert.equal(
+          rows.current[0].shadow,
+          `${rows.border} 0px 0px 0px 1px inset`,
+        );
+        assert.equal(rows.current[1].shadow, "none");
+        assert.equal(rows.idle[0].shadow, "none");
+        cases++;
         // Keyboard focus has its own outline and cannot confer current-page state.
         await page.locator(".sidebar-new-session").focus();
         await page.keyboard.press("Tab");

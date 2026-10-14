@@ -490,8 +490,21 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 		if state == nil || state.RecoveryRequired {
 			return nil, subscriptionDenied()
 		}
-		if state.ExclusiveServerObservationActive() || state.Lease != nil || state.ServerOperation != nil && state.ServerOperation.NativeStarted {
-			return nil, domain.Fail(domain.ResourceExhausted, "The selected account is exclusively leased.", "Wait for its original cleanup; never switch accounts automatically.")
+		// Execution, quota and reset-credit Take keep contention first. A fresh
+		// lifecycle Take instead proves its queued original is still admissible
+		// after the Worker fences and before contention, so a definitely unadmitted
+		// claim is retired locally rather than retried behind an unrelated lease.
+		lifecycle := action != domain.SubscriptionExecute && action != domain.SubscriptionQuota && action != domain.SubscriptionResetCredit
+		accountBusy := func() error {
+			if state.ExclusiveServerObservationActive() || state.Lease != nil || state.ServerOperation != nil && state.ServerOperation.NativeStarted {
+				return domain.Fail(domain.ResourceExhausted, "The selected account is exclusively leased.", "Wait for its original cleanup; never switch accounts automatically.")
+			}
+			return nil
+		}
+		if !lifecycle {
+			if err := accountBusy(); err != nil {
+				return nil, err
+			}
 		}
 		if err := currentInstance(tx, input.Machine, input.Instance); err != nil {
 			return nil, err
@@ -591,11 +604,22 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 			if err := tx.WorkerUpdateAdmission(input.Machine); err != nil {
 				return nil, err
 			}
-			if op != nil && (op.Action != action || op.MachineID != input.Machine || op.Phase != domain.SubscriptionQueued) {
-				return nil, subscriptionDenied()
-			}
-			if op == nil || op.ID != input.Operation || op.Canceled {
+			// A missing or replaced original is classified before any field of the
+			// current Pending operation, which belongs to someone else's claim.
+			if op == nil || op.ID != input.Operation {
 				return nil, subscriptionTakeNotAdmitted()
+			}
+			original := op.Action == action && op.MachineID == input.Machine && op.Phase == domain.SubscriptionQueued
+			if original && op.Canceled {
+				return nil, subscriptionTakeNotAdmitted()
+			}
+			// A matching claim that fails its original fields keeps the existing
+			// contention-first outcome and never carries the no-grant proof.
+			if err := accountBusy(); err != nil {
+				return nil, err
+			}
+			if !original {
+				return nil, subscriptionDenied()
 			}
 			if err := subscriptionActorValid(tx, op.Actor); err != nil {
 				return nil, err
@@ -875,7 +899,7 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 			} else if lease.Action == domain.SubscriptionLogout {
 				keep = ""
 			}
-			if err := cleanupSubscriptionReferences(ctx, vault, input.Account, keep, quotaProtectedGeneration(original.Subscription)); err != nil {
+			if err := cleanupSubscriptionReferences(ctx, vault, input.Account, keep, protectedGenerations(original.Subscription)...); err != nil {
 				return nil, rpc.Error(err, c)
 			}
 		}
@@ -920,6 +944,14 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 					state.Pending = nil
 				}
 				if usable && lease.Action != domain.SubscriptionLogout {
+					// The original lease's first successful Finish is the only
+					// generation that can continue an already-frozen server-owned
+					// automatic claim. It is recorded only while the exact consent
+					// snapshot is still current, so a revoked or replaced consent
+					// and any later rotation cannot adopt the claim.
+					if episode := state.AutomaticCreditEpisode; lease.Action == domain.SubscriptionExecute && episode != nil && episode.ServerProof != nil && episode.ServerFinishGeneration == "" && episode.ServerProof.LeaseID == lease.ID && state.AutomaticCreditConsent != nil && *state.AutomaticCreditConsent == episode.ServerProof.Consent && state.Generation == episode.ServerProof.Consent.Generation {
+						episode.ServerFinishGeneration = domain.ID(m.RequestId)
+					}
 					state.AutomaticCreditConsent = nil
 					state.Generation = domain.ID(m.RequestId)
 					state.PaidCredits = nil
@@ -1008,7 +1040,7 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 			if lease.Action == domain.SubscriptionLogout {
 				keep = ""
 			}
-			if err := cleanupSubscriptionReferences(ctx, vault, input.Account, keep, quotaProtectedGeneration(original.Subscription)); err != nil {
+			if err := cleanupSubscriptionReferences(ctx, vault, input.Account, keep, protectedGenerations(original.Subscription)...); err != nil {
 				// The owned-error defer records recovery after releasing accountGate.
 				return nil, rpc.Error(err, c)
 			}
@@ -1190,23 +1222,29 @@ func managedSidechatLease(tx *store.Tx, lease domain.SubscriptionLease) (*domain
 	return &fork, nil
 }
 
-// A quota reader owns its captured reference independently of the writer's
-// current generation. Rotation may retire it only after joined observer cleanup.
-func quotaProtectedGeneration(st *domain.SubscriptionState) domain.ID {
-	if st != nil && st.ServerQuota != nil && st.ServerQuota.Active() {
-		return st.ServerQuota.Generation
+// Access-only quota and credit readers own their captured references
+// independently of the writer's current generation. Rotation may retire them
+// only after joined observer cleanup and checked obsolete-reference retirement.
+func protectedGenerations(st *domain.SubscriptionState) []domain.ID {
+	var protected []domain.ID
+	if st != nil && st.ServerQuota != nil && (st.ServerQuota.Active() || st.ServerQuota.ReferenceRetirementPending) {
+		protected = append(protected, st.ServerQuota.Generation)
 	}
-	return ""
+	if st != nil && st.ServerCredit != nil && st.ServerCredit.AccessOnly && st.ServerCredit.Active() {
+		protected = append(protected, st.ServerCredit.Generation)
+	}
+	return protected
 }
 
 // compactionLeaseCapabilities reports whether a Worker advertises the exact
 // capability set for the validated compaction context-input kind. Revert
-// (version 4) is an independent operation gated only by CodexSessionRevertV1;
-// every other kind keeps the original native/Codex compaction pair. Neither
+// (version 4) is an independent operation gated by CodexSessionRevertV1, plus
+// CodexSessionRevertTargetProofV1 when the target selected skills or freezes a
+// retained checkpoint reference; every other kind keeps the original native/Codex compaction pair. Neither
 // set authorizes the other operation.
 func compactionLeaseCapabilities(capabilities []domain.WorkerCapability, compact domain.SessionCompactionInput) bool {
 	if compact.Revert != nil {
-		return compact.Version == 4 && machineCapabilityContains(capabilities, domain.CodexSessionRevertV1)
+		return compact.Version == 4 && machineCapabilityContains(capabilities, domain.CodexSessionRevertV1) && (!compact.Revert.RequiresProofCapability() || machineCapabilityContains(capabilities, domain.CodexSessionRevertTargetProofV1))
 	}
 	return machineCapabilityContains(capabilities, domain.NativeSessionCompactionV1) && machineCapabilityContains(capabilities, domain.CodexSessionCompactionV1)
 }

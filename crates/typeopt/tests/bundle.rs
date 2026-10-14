@@ -1992,3 +1992,453 @@ fn escape_causes_see_through_indirect_calls_and_exposed_exports() {
     assert_eq!(report["escape_sinks"]["external_binding"], 2, "{report:#}");
     assert!(report["escape_sinks"].get("call_argument_other").is_none());
 }
+
+// ---------------------------------------------------------------------------
+// Boundary closure: chunks that a boundary chunk can import
+// ---------------------------------------------------------------------------
+
+/// The entry reaches the stateful `shared` chunk statically and through the
+/// lazily imported `vendor` chunk, which the operator excludes.
+const SHARED_STATE: [(&str, &str); 4] = [
+    (
+        "index.html",
+        r#"<script type="module" src="/assets/index-AAAAAAAA.js"></script>"#,
+    ),
+    (
+        "assets/index-AAAAAAAA.js",
+        r#"import{bump as b,count as c}from"./shared-BBBBBBBB.js";const o=b();console.log(o.verticalSpacing+o.horizontalSpacing,c());import("./vendor-DDDDDDDD.js").then(v=>console.log(v.read(),c()));"#,
+    ),
+    (
+        "assets/vendor-DDDDDDDD.js",
+        r#"import{bump as b,count as c}from"./shared-BBBBBBBB.js";function read(){b();return c()}export{read};"#,
+    ),
+    (
+        "assets/shared-BBBBBBBB.js",
+        r#"let n=0;function bump(){n++;return{verticalSpacing:n,horizontalSpacing:n*2}}function count(){return n}function unusedHelperThatIsNeverCalled(x){return x.toString(36).repeat(3)}export{bump,count,unusedHelperThatIsNeverCalled as u};"#,
+    ),
+];
+
+fn asset_file(dir: &Path, prefix: &str) -> String {
+    listing(&dir.join("assets"))
+        .into_iter()
+        .find(|a| a.starts_with(prefix) && a.ends_with(".js"))
+        .unwrap_or_else(|| panic!("no {prefix} chunk in {dir:?}"))
+}
+
+fn run_asset(dir: &Path, prefix: &str) -> std::process::Output {
+    let output = node(&dir.join("assets").join(asset_file(dir, prefix)));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    output
+}
+
+/// A chunk that a boundary chunk imports keeps its name and content, so the
+/// module has one instance: the excluded chunk and the entry share its state.
+#[test]
+fn keeps_chunks_that_excluded_chunks_import() {
+    let temp = bundle(&SHARED_STATE);
+    let output = run_typeopt(temp.path(), &["--bundle-exclude", "vendor-"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("chunks that a boundary chunk can import stay unchanged")
+            && stderr.contains("vendor-DDDDDDDD.js"),
+        "the causing boundary is logged: {stderr}"
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let (dist, out_dir) = (temp.path().join("dist"), temp.path().join("out"));
+    // The shared chunk and the excluded chunk are byte-for-byte unchanged and
+    // no second copy of the shared module exists.
+    for chunk in ["shared-BBBBBBBB.js", "vendor-DDDDDDDD.js"] {
+        assert_eq!(
+            fs::read(out_dir.join("assets").join(chunk)).unwrap(),
+            fs::read(dist.join("assets").join(chunk)).unwrap(),
+            "{chunk}"
+        );
+    }
+    let assets = listing(&out_dir.join("assets"));
+    assert_eq!(
+        assets.iter().filter(|a| a.starts_with("shared-")).count(),
+        1,
+        "{assets:?}"
+    );
+    assert_eq!(report["size"]["retained"], 0, "{report:#}");
+    let frozen = report["frozen_chunks"].as_array().unwrap();
+    assert_eq!(frozen.len(), 1, "{report:#}");
+    assert_eq!(frozen[0]["reason"], "boundary_reachable");
+    assert!(
+        frozen[0]["file"]
+            .as_str()
+            .unwrap()
+            .ends_with("shared-BBBBBBBB.js")
+    );
+    assert!(
+        frozen[0]["boundary"]
+            .as_str()
+            .unwrap()
+            .ends_with("vendor-DDDDDDDD.js")
+    );
+    // One state instance: the entry and the lazy chunk count the same state.
+    let before = node(&dist.join("assets/index-AAAAAAAA.js"));
+    let after = run_asset(&out_dir, "index-");
+    assert_eq!(before.stdout, after.stdout);
+    assert_eq!(String::from_utf8_lossy(&after.stdout), "3 1\n2 2\n");
+    // Deterministic: a second run publishes the same files.
+    let again = bundle(&SHARED_STATE);
+    optimize(again.path(), &["--bundle-exclude", "vendor-"]);
+    let names = listing(&out_dir.join("assets"));
+    assert_eq!(names, listing(&again.path().join("out/assets")));
+    for name in names {
+        assert_eq!(
+            fs::read(out_dir.join("assets").join(&name)).unwrap(),
+            fs::read(again.path().join("out/assets").join(&name)).unwrap()
+        );
+    }
+}
+
+/// Without the exclusion the same graph is optimized and renamed.
+#[test]
+fn renames_the_same_graph_without_exclusion() {
+    let temp = bundle(&SHARED_STATE);
+    let report = optimize(temp.path(), &[]);
+    let assets = listing(&temp.path().join("out/assets"));
+    assert!(!assets.iter().any(|a| a.contains("BBBBBBBB")), "{assets:?}");
+    assert_eq!(
+        assets.iter().filter(|a| a.starts_with("shared-")).count(),
+        1,
+        "{assets:?}"
+    );
+    assert!(saved(&report) > 0, "{report:#}");
+    assert_eq!(report["size"]["retained"], 0, "{report:#}");
+    assert!(report.get("frozen_chunks").is_none(), "{report:#}");
+    let before = node(&temp.path().join("dist/assets/index-AAAAAAAA.js"));
+    let after = run_asset(&temp.path().join("out"), "index-");
+    assert_eq!(before.stdout, after.stdout);
+}
+
+/// Everything a boundary chunk reaches transitively stays unchanged, while a
+/// chunk it does not reach is still optimized.
+#[test]
+fn freezes_chunks_transitively_and_optimizes_unreached_chunks() {
+    let temp = bundle(&[
+        (
+            "index.html",
+            r#"<script type="module" src="/assets/index-AAAAAAAA.js"></script>"#,
+        ),
+        (
+            "assets/index-AAAAAAAA.js",
+            r#"import"./vendor-DDDDDDDD.js";import{m}from"./settings-BBBBBBBB.js";console.log(m(2).verticalSpacing);"#,
+        ),
+        (
+            "assets/vendor-DDDDDDDD.js",
+            r#"import"./middle-EEEEEEEE.js";"#,
+        ),
+        (
+            "assets/middle-EEEEEEEE.js",
+            r#"import{p}from"./plain-CCCCCCCC.js";console.log(p());"#,
+        ),
+        (
+            "assets/plain-CCCCCCCC.js",
+            r#"function p(){return"plain"}function unusedPlainHelper(n){return n.toString(36).repeat(4)}export{p,unusedPlainHelper};"#,
+        ),
+        (
+            "assets/settings-BBBBBBBB.js",
+            r#"function m(n){return{verticalSpacing:n,horizontalSpacing:n*2}}export{m};"#,
+        ),
+    ]);
+    let report = optimize(temp.path(), &["--bundle-exclude", "vendor-"]);
+    let assets = listing(&temp.path().join("out/assets"));
+    for kept in [
+        "vendor-DDDDDDDD.js",
+        "middle-EEEEEEEE.js",
+        "plain-CCCCCCCC.js",
+    ] {
+        assert_eq!(
+            fs::read(temp.path().join("out/assets").join(kept)).unwrap(),
+            fs::read(temp.path().join("dist/assets").join(kept)).unwrap(),
+            "{kept}"
+        );
+    }
+    assert!(!assets.iter().any(|a| a.contains("BBBBBBBB")), "{assets:?}");
+    assert_eq!(report["frozen_chunks"].as_array().unwrap().len(), 2);
+    assert_eq!(report["size"]["retained"], 0);
+    let before = node(&temp.path().join("dist/assets/index-AAAAAAAA.js"));
+    let after = run_asset(&temp.path().join("out"), "index-");
+    assert_eq!(before.stdout, after.stdout);
+}
+
+/// A page whose entry chunk is a boundary and that preloads the chunks it
+/// imports.
+const FROZEN_ENTRY: [(&str, &str); 4] = [
+    (
+        "index.html",
+        r#"<link rel="modulepreload" href="/assets/settings-BBBBBBBB.js"><link rel="modulepreload" href="/assets/plain-CCCCCCCC.js"><script type="module" src="/assets/index-AAAAAAAA.js"></script>"#,
+    ),
+    HASHED[1],
+    HASHED[2],
+    HASHED[3],
+];
+
+/// Chunk file names that `entry` imports directly or through other chunks.
+fn executed_graph(assets: &Path, entry: &str) -> Vec<String> {
+    let mut seen = vec![entry.to_owned()];
+    let mut next = 0;
+    while next < seen.len() {
+        let text = fs::read_to_string(assets.join(&seen[next])).unwrap();
+        next += 1;
+        for part in text.split("\"./").skip(1) {
+            let name = part.split('"').next().unwrap().to_owned();
+            if !seen.contains(&name) {
+                seen.push(name);
+            }
+        }
+    }
+    seen
+}
+
+fn modulepreloads(dir: &Path) -> Vec<String> {
+    let html = fs::read_to_string(dir.join("index.html")).unwrap();
+    html.split("rel=\"modulepreload\" href=\"/assets/")
+        .skip(1)
+        .map(|part| part.split('"').next().unwrap().to_owned())
+        .collect()
+}
+
+#[test]
+fn keeps_preloads_consistent_with_a_frozen_entry() {
+    let temp = bundle(&FROZEN_ENTRY);
+    let output = run_typeopt(temp.path(), &["--bundle-exclude", "index-"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("HTML entry chunk imports chunks that therefore cannot be optimized"),
+        "{stderr}"
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let out_dir = temp.path().join("out");
+    // Every file is published as it was: no renamed chunk that no page loads.
+    assert_eq!(
+        listing(&out_dir.join("assets")),
+        listing(&temp.path().join("dist/assets"))
+    );
+    let graph = executed_graph(&out_dir.join("assets"), "index-AAAAAAAA.js");
+    let preloads = modulepreloads(&out_dir);
+    assert_eq!(preloads.len(), 2);
+    for preload in preloads {
+        assert!(
+            graph.contains(&preload),
+            "{preload} is not loaded: {graph:?}"
+        );
+    }
+    // The report counts no saving and discloses no retained originals.
+    assert_eq!(saved(&report), 0, "{report:#}");
+    assert_eq!(report["size"]["retained"], 0, "{report:#}");
+    let frozen: Vec<&str> = report["frozen_chunks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["file"].as_str().unwrap())
+        .collect();
+    assert_eq!(frozen.len(), 2, "{report:#}");
+    assert!(frozen.iter().any(|f| f.ends_with("settings-BBBBBBBB.js")));
+    assert!(frozen.iter().any(|f| f.ends_with("plain-CCCCCCCC.js")));
+    let before = node(&temp.path().join("dist/assets/index-AAAAAAAA.js"));
+    let after = run_asset(&out_dir, "index-");
+    assert_eq!(before.stdout, after.stdout);
+}
+
+/// The same page with an entry that is not a boundary: the imported chunks
+/// are optimized and the preloads follow the new names.
+#[test]
+fn renames_preloads_with_a_non_frozen_entry() {
+    let temp = bundle(&FROZEN_ENTRY);
+    let report = optimize(temp.path(), &[]);
+    let out_dir = temp.path().join("out");
+    assert!(saved(&report) > 0, "{report:#}");
+    assert_eq!(report["size"]["retained"], 0, "{report:#}");
+    assert!(report.get("frozen_chunks").is_none(), "{report:#}");
+    let entry = asset_file(&out_dir, "index-");
+    let graph = executed_graph(&out_dir.join("assets"), &entry);
+    let preloads = modulepreloads(&out_dir);
+    assert_eq!(preloads.len(), 2);
+    for preload in &preloads {
+        assert!(
+            graph.contains(preload),
+            "{preload} is not loaded: {graph:?}"
+        );
+    }
+    assert!(
+        !preloads.iter().any(|p| p.contains("BBBBBBBB")),
+        "{preloads:?}"
+    );
+    let before = node(&temp.path().join("dist/assets/index-AAAAAAAA.js"));
+    let after = run_asset(&out_dir, "index-");
+    assert_eq!(before.stdout, after.stdout);
+}
+
+/// An HTML entry that is a boundary imports another boundary, which imports
+/// an ordinary chunk. The entry is the first boundary in path order that
+/// reaches the chunk, so it is the one that gets the credit and the warning.
+#[test]
+fn credits_the_first_boundary_through_nested_boundaries() {
+    let temp = bundle(&[
+        (
+            "index.html",
+            r#"<script type="module" src="/assets/a-AAAAAAAA.js"></script>"#,
+        ),
+        (
+            "assets/a-AAAAAAAA.js",
+            r#"import"./b-BBBBBBBB.js";console.log("a");"#,
+        ),
+        (
+            "assets/b-BBBBBBBB.js",
+            r#"import{p}from"./plain-CCCCCCCC.js";console.log(p());"#,
+        ),
+        (
+            "assets/plain-CCCCCCCC.js",
+            r#"function p(){return"plain"}function unusedPlainHelper(n){return n.toString(36).repeat(4)}export{p,unusedPlainHelper};"#,
+        ),
+    ]);
+    let output = run_typeopt(
+        temp.path(),
+        &[
+            "--bundle-exclude",
+            "a-AAAAAAAA",
+            "--bundle-exclude",
+            "b-BBBBBBBB",
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("HTML entry chunk imports chunks that therefore cannot be optimized"),
+        "{stderr}"
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let frozen = report["frozen_chunks"].as_array().unwrap();
+    assert_eq!(frozen.len(), 1, "{report:#}");
+    assert!(
+        frozen[0]["file"]
+            .as_str()
+            .unwrap()
+            .ends_with("plain-CCCCCCCC.js")
+    );
+    assert!(
+        frozen[0]["boundary"]
+            .as_str()
+            .unwrap()
+            .ends_with("a-AAAAAAAA.js")
+    );
+    assert_eq!(
+        fs::read(temp.path().join("out/assets/plain-CCCCCCCC.js")).unwrap(),
+        fs::read(temp.path().join("dist/assets/plain-CCCCCCCC.js")).unwrap()
+    );
+}
+
+/// A classic `<script src>` with a literal dynamic import is a boundary that a
+/// page loads: the chunks it imports stay unchanged and the log warns.
+#[test]
+fn warns_when_a_classic_html_script_freezes_chunks() {
+    let temp = bundle(&[
+        (
+            "index.html",
+            r#"<script src="/assets/app-AAAAAAAA.js"></script>"#,
+        ),
+        (
+            "assets/app-AAAAAAAA.js",
+            r#"import("./lazy-BBBBBBBB.js").then(m=>console.log(m.v()));"#,
+        ),
+        (
+            "assets/lazy-BBBBBBBB.js",
+            r#"function v(){return"lazy"}function unusedLazyHelper(n){return n.toString(36).repeat(4)}export{v,unusedLazyHelper};"#,
+        ),
+    ]);
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("HTML entry chunk imports chunks that therefore cannot be optimized")
+            && stderr.contains("app-AAAAAAAA.js"),
+        "{stderr}"
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let frozen = report["frozen_chunks"].as_array().unwrap();
+    assert_eq!(frozen.len(), 1, "{report:#}");
+    assert!(
+        frozen[0]["file"]
+            .as_str()
+            .unwrap()
+            .ends_with("lazy-BBBBBBBB.js")
+    );
+    assert!(
+        frozen[0]["boundary"]
+            .as_str()
+            .unwrap()
+            .ends_with("app-AAAAAAAA.js")
+    );
+}
+
+/// A chunk in another directory with the same content-hashed file name as a
+/// frozen chunk is frozen too: references name only the file name, so an
+/// edited copy could not be renamed and would be published under the old hash.
+#[test]
+fn freezes_same_named_chunks_in_other_directories() {
+    let shared = SHARED_STATE[3].1;
+    let temp = bundle(&[
+        (
+            "index.html",
+            r#"<script type="module" src="/assets/index-AAAAAAAA.js"></script>"#,
+        ),
+        (
+            "assets/index-AAAAAAAA.js",
+            r#"import{bump as b,count as c}from"./other/shared-BBBBBBBB.js";const o=b();console.log(o.verticalSpacing+o.horizontalSpacing,c());import("./vendor-DDDDDDDD.js").then(v=>console.log(v.read()));"#,
+        ),
+        SHARED_STATE[2],
+        ("assets/shared-BBBBBBBB.js", shared),
+        ("assets/other/shared-BBBBBBBB.js", shared),
+    ]);
+    let output = run_typeopt(temp.path(), &["--bundle-exclude", "vendor-"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let (dist, out_dir) = (temp.path().join("dist"), temp.path().join("out"));
+    // Neither copy is edited or renamed, so no cache can hold the old hash
+    // for new content.
+    for chunk in ["shared-BBBBBBBB.js", "other/shared-BBBBBBBB.js"] {
+        assert_eq!(
+            fs::read(out_dir.join("assets").join(chunk)).unwrap(),
+            fs::read(dist.join("assets").join(chunk)).unwrap(),
+            "{chunk}"
+        );
+    }
+    assert_eq!(
+        report["frozen_chunks"].as_array().unwrap().len(),
+        2,
+        "{report:#}"
+    );
+    let before = node(&dist.join("assets/index-AAAAAAAA.js"));
+    let after = run_asset(&out_dir, "index-");
+    assert_eq!(before.stdout, after.stdout);
+}

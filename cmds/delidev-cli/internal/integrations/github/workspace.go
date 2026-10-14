@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"sort"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -62,19 +63,105 @@ func retainAvatar(raw []byte, actor *domain.RepositoryActor, avatars map[string]
 		avatars[actor.ID] = value
 	}
 }
+
+const (
+	// workspaceDeadline bounds one workspace observation, including every resumed attempt.
+	workspaceDeadline = 30 * time.Second
+	// workspaceProviderReads is the cumulative provider read cap across attempts.
+	workspaceProviderReads = 40
+	// workspaceInitialReads is charged when an attempt begins: the identity and
+	// repository metadata reads that establish the scope. Every seed detail read,
+	// including the first, is charged individually as it is issued.
+	workspaceInitialReads = 2
+)
+
+// WorkspaceBudget carries the fixed adapter deadline and cumulative provider
+// read count across the attempts of one workspace observation. The deadline is
+// frozen when the first attempt begins; interrupted attempts keep the reads
+// they issued, so resumption never enlarges either limit.
+type WorkspaceBudget struct {
+	mu       sync.Mutex
+	started  bool
+	deadline time.Time
+	reads    int
+	attempts int
+	now      func() time.Time
+}
+
+// NewWorkspaceBudget returns an unstarted budget for one workspace request.
+func NewWorkspaceBudget() *WorkspaceBudget { return &WorkspaceBudget{now: time.Now} }
+
+// begin starts one attempt: it freezes the deadline on first use and charges
+// the initial reads. It reports false when the cumulative budget cannot afford
+// another attempt.
+func (b *WorkspaceBudget) begin() (time.Time, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if !b.started {
+		b.started = true
+		b.deadline = b.now().Add(workspaceDeadline)
+	}
+	if b.reads+workspaceInitialReads > workspaceProviderReads {
+		return b.deadline, false
+	}
+	b.reads += workspaceInitialReads
+	b.attempts++
+	return b.deadline, true
+}
+
+// take charges one provider page read and reports false once the cap is reached.
+func (b *WorkspaceBudget) take() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.reads >= workspaceProviderReads {
+		return false
+	}
+	b.reads++
+	return true
+}
+
+// Reads reports the cumulative provider reads charged so far.
+func (b *WorkspaceBudget) Reads() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.reads
+}
+
+// Attempts reports how many attempts began against this budget.
+func (b *WorkspaceBudget) Attempts() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.attempts
+}
+
+// Workspace performs one complete observation with a fresh budget.
 func (c *Client) Workspace(ctx context.Context, token []byte, owner, name string, seeds []string) (WorkspaceObservation, error) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	return c.WorkspaceWithBudget(ctx, token, owner, name, seeds, NewWorkspaceBudget())
+}
+
+// WorkspaceWithBudget performs one complete observation from the original
+// seeds. Nothing is retained between calls except the shared budget.
+func (c *Client) WorkspaceWithBudget(ctx context.Context, token []byte, owner, name string, seeds []string, budget *WorkspaceBudget) (WorkspaceObservation, error) {
+	if budget == nil {
+		budget = NewWorkspaceBudget()
+	}
+	deadline, affordable := budget.begin()
+	if !affordable {
+		return WorkspaceObservation{}, domain.Fail(domain.ResourceExhausted, "The pull request workspace provider read budget is exhausted.", "Retry the original repository workspace explicitly.")
+	}
+	ctx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
 	result := WorkspaceObservation{Nodes: []domain.PRWorkspaceNode{}, Edges: []domain.PRWorkspaceEdge{}, Reasons: []string{}, State: domain.PRWorkspaceComplete, Avatars: map[string]string{}}
 	if len(seeds) == 0 || len(seeds) > 20 {
 		return result, queryUnavailable()
 	}
-	first, err := c.QueryRepository(ctx, token, owner, name, domain.RepositoryQuery{Kind: domain.RepositoryPullRequest, Operation: domain.RepositoryDetail, Number: seeds[0]})
+	// Scope comes from identity and repository metadata only, so an unreadable
+	// first seed is incomplete evidence like any other seed, never an RPC error.
+	identity, repository, err := c.repositoryScope(ctx, token, owner, name)
 	if err != nil {
 		return result, err
 	}
-	result.Identity, result.Repository = first.Identity, first.Repository
-	reads := 3
+	result.Identity, result.Repository = identity, *repository
 	seenSeeds := map[string]bool{}
 	for _, n := range seeds {
 		if !domain.PositiveDecimal(n) || seenSeeds[n] {
@@ -94,11 +181,10 @@ func (c *Client) Workspace(ctx context.Context, token []byte, owner, name string
 		}
 	}
 	read := func(path string) (readResult, bool) {
-		if reads >= 40 || ctx.Err() != nil {
+		if ctx.Err() != nil || !budget.take() {
 			reason("read_limit")
 			return readResult{}, false
 		}
-		reads++
 		v := c.readRepositoryJSON(ctx, token, path)
 		if v.state != domain.IntegrationAccessAvailable {
 			reason("access_unavailable")
@@ -151,6 +237,10 @@ func (c *Client) Workspace(ctx context.Context, token []byte, owner, name string
 			reason("identity_unavailable")
 			return domain.PRWorkspaceNode{}, false
 		}
+		// The description is validated by parseItem but never retained: graph nodes
+		// stay body-free so the response cap covers structure, not up to 128 KiB
+		// per pull request. Selecting a pull request reads its body separately.
+		item.Body = nil
 		fields, _ := jsonObject(v.raw)
 		retainAvatar(fields["user"], item.Author, result.Avatars)
 		return domain.PRWorkspaceNode{Item: item, Counts: parseCounts(fields), Seed: seenSeeds[number]}, true

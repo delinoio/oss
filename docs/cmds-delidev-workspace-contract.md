@@ -2,13 +2,13 @@
 
 ## Frozen repository checkout names
 
-New Worktree session and Schedule acceptance freezes each registered Repository name as optional `directory_name` in the version-1 RepositorySpec. PreparedRepository must preserve that exact field. The primary checkout and initial terminal/agent cwd use `workspaces/<session UUID>/<directory_name>`. Repository UUIDs retain identity and snapshot indexing. Omitted historical fields retain UUID paths, serialized omission and original digests. Accepted requests and independent Forks never consult later registration names; Fork inherits each original frozen field. Local, General Chat and Sidechat keep their original path and ownership rules.
+New Worktree session and Schedule acceptance freezes each registered Repository name as optional `directory_name` in the version-1 RepositorySpec. PreparedRepository must preserve that exact field. The primary checkout and initial terminal/agent cwd use `workspaces/<session UUID>/<directory_name>`. Repository UUIDs retain identity and snapshot indexing. Omitted historical fields retain UUID paths, serialized omission and original digests. Accepted requests (including a Wait schedule occurrence, which retains its frozen names until release) and independent Forks never consult later registration names; Fork inherits each original frozen field. Local, General Chat and Sidechat keep their original path and ownership rules.
 
-Go trims surrounding whitespace, normalizes NFC, replaces each control or `< > : " / \ | ? *` character with `_`, strips trailing dots/whitespace, and truncates at a UTF-8 boundary to 255 bytes. It strips trailing dots/whitespace again after truncation, uses `repository` for an empty result, and prefixes `_` for a reserved device stem while retaining the byte bound. The final component must pass the portable repository folder validator. Ordinary valid names retain casing. No UUID suffix is added.
+Go trims surrounding whitespace, normalizes NFC, replaces each control or `< > : " / \ | ? *` character with `_`, strips trailing dots/whitespace, and truncates at a UTF-8 boundary to 255 bytes. It strips trailing dots/whitespace again after truncation, uses `repository` for an empty result, and prefixes `_` for a reserved Windows device stem while retaining the byte bound. The reserved set is one shared predicate (`domain.IsWindowsReservedDeviceName`, also used by workspace file paths): `CON`, `PRN`, `AUX`, `NUL`, `CONIN$`, `CONOUT$`, `COM0`-`COM9`, `LPT0`-`LPT9` and `COM¹`/`COM²`/`COM³`/`LPT¹`/`LPT²`/`LPT³`, compared case-insensitively on the text before the first `.` after trimming trailing spaces. The final component must pass the portable repository folder validator, which uses that same predicate. Fresh admission (server Worktree and Schedule acceptance, Repository Clone intake and the desktop clone-folder validator) applies the complete set. Names already frozen by earlier releases (recovery, restore, delete, snapshot replay, queued Clone jobs and Worker Prepare replay) use the historical validator, whose reserved set is only `CON`, `PRN`, `AUX`, `NUL`, `COM1`-`COM9` and `LPT1`-`LPT9`, so they are never rewritten or newly rejected. Ordinary valid names retain casing. No UUID suffix is added.
 
 Acceptance and Worker validation reject NFC/default Unicode case-fold collisions, including `manifest.json`, before Git or repository directory creation. Fresh preparation checks all occupied destinations before Git. Exclusive native creation, original inode commitments and no-replace publication remain required; a foreign destination cannot be adopted or overwritten. Result publication, partial recovery, execution, joined cleanup, permanent deletion and restoration derive the live path from the immutable name with UUID fallback for omission. Name/path tampering never grants authority.
 
-Worker `NAMED_WORKSPACE_DIRECTORIES_V1 = 53` separately negotiates this layout. New named acceptance, assignment, native execution, recovery, storage/restoration and independent Fork require current original Worker support. Worker 19 retains remote clone ownership. Unsupported peers receive an Unsupported outcome without named native side effects or UUID fallback. The terminal owner refreshes its copied configuration after attachment so the original negotiated name support reaches terminal creation. Structured outcome logs contain only safe codes, counts and original IDs.
+Worker `NAMED_WORKSPACE_DIRECTORIES_V1 = 53` separately negotiates this layout. New named acceptance, assignment, native execution, recovery, storage/restoration and independent Fork require current original Worker support. Worker 19 retains remote clone ownership. Unsupported peers receive an Unsupported outcome without named native side effects or UUID fallback; a new named Wait schedule occurrence receives that outcome at acceptance instead of waiting. The terminal owner refreshes its copied configuration after attachment so the original negotiated name support reaches terminal creation. Structured outcome logs contain only safe codes, counts and original IDs.
 
 ## Direct startup retry claims
 
@@ -160,7 +160,7 @@ weakens the complete original manifest or primary-directory checks.
 
 - The feature remote starting branches uses System 51 / Worker 27 under the workspace, desktop and protocol contracts. Freeze configured source and project/repository/machine revisions; only the original authenticated selected Worker owns read-only native Git discovery. Retain complete 10,000-branch/8 MiB inventory bounds with feature-only job/journal/receipt/transport headroom, protected native Git credentials, safe logs and joined process cleanup. Discovery grants no checkout/preparation/execution authority or migration. Creation preserves saved/manual starting references, independent overrides, comparison base, Local proof and exact uncertain retries; older peers retain manual flows.
 
-- Repository saves check unused global identity and permanent tombstones at expected-zero admission and final validation. Known identity conflicts settle the original parent failure with valid child success in one report transaction; unexpected storage failures remain rollback/retryable. Follow the workspace contract.
+- Repository saves check unused global identity and permanent tombstones at expected-zero admission and final validation. Known identity conflicts settle the original parent failure with valid child success in one report transaction; unexpected storage failures remain rollback/retryable. This applies to every final-validation step (identity/tombstone query, relationship and machine checks): only unexpected storage-class failures (internal, unavailable, canceled, or a storage-caused resource-exhausted/permission-denied) return from the report transaction, so the child success and parent state stay uncommitted and the exact original report retries to a single publication. Known terminal outcomes (used/deleted identity or revision mismatch conflict, deleted-target not-found, validation invalid-argument, disabled machine) still settle the parent failure with the child success committed. Follow the workspace contract.
 
 ### cmds/delidev-cli/internal/store constraints
 
@@ -571,7 +571,7 @@ inventory to 8 MiB and 10,000 branches; overflow fails instead of publishing a
 partial list. This job alone has 9 MiB JSON/journal envelope headroom. Its report
 receipt, bounded transport and single-resource reader support the complete result;
 other job inputs/outputs, page/event bounds and native Git output limits remain
-unchanged. A dedicated branch reader must not widen the general document parser.
+unchanged. A dedicated branch reader must not widen the general document parser. The allowance covers live branch Job reads and writes only: backup restore decodes `discover-repository-branches` history under the ordinary 1 MiB document bound and rejects larger documents before publication.
 
 ## Project behavior settings
 
@@ -618,6 +618,29 @@ reflogs and nonstandard refs retain their exact bytes. The detached child HEAD
 is the immutable selected fork-point commit; setting it does not append or
 replace the copied history. Git configuration relocates only the child's
 worktree location and retained remote URL. Original repositories are unchanged.
+Every traversal of that Git copy (initial administration inspection, common
+store copy, selected administration overlay, copied-Git validation and both
+source rechecks) uses the 100,000-entry Fork bound; the shared aggregate
+allowance still bounds the total. Ordinary snapshot Git copies keep the
+8,192-entry bound.
+
+The copied `config` and `config.worktree` are excluded from the file-digest
+comparison because normalization rewrites them, so they are proven against an
+expected-config proof instead. The proof is built from the frozen source config
+files read at inspection time (each must match its inventory digest) as ordered
+`git config --list -z` records, plus the accepted RepositorySpec remote
+selection (`RemoteURL`, `PreferredRemote` defaulting to `origin`). Before Ready
+and across the native Fork boundary the child must equal that proof: every
+setting other than `core.bare=false`, `core.worktree=..` (in `config`, and in
+`config.worktree` only when the source has one) and the single selected
+`remote.<name>.url` is unchanged and in its original file and relative order;
+`config.worktree` presence follows the source. Because Git reads `config.worktree`
+after `config`, preparation removes every `remote.<name>.url` record of the
+selected remote from a retained `config.worktree`, and the proof requires that
+layer to hold none, so the child exposes only the selected URL. That rewrite
+replaces `config.worktree`, so preparation synchronizes the rewritten file along
+with `config` and the Git directory before Ready publication. Any other difference returns the
+Fork snapshot Conflict. Config values and remote URLs are never logged.
 
 Fresh child root and Git-directory identities are journaled before copying.
 Each copied regular file has independent storage and synchronized publication;
@@ -636,7 +659,11 @@ Repository saves check server-wide same-kind name uniqueness at admission and af
 
 Dedicated review holds one joined read-only observation of the original prepared workspace and selected repository. Its bounded admission/capture verifies manifest, continuation identity, working-tree diff revision, exact HEAD/reference commit and tracked/untracked content digest. The native operation retains its own joined lifetime; ordinary read deadlines do not detach it. Recheck the same complete selection after native completion and cleanup. Drift prevents result publication. No workspace claim, predecessor advance, file write, clone, checkout adoption or original Local deletion authority is added.
 
-Native review starts with exactly the selected proven repository as its sole `runtimeWorkspaceRoots` entry and cwd. Other prepared session repositories are not review inputs. The native adapter rejects omitted, additional or different roots before thread creation. The original preparation remains unchanged.
+Review capture records tracked and untracked symlinks instead of rejecting them. The scanner uses a symlink policy enum: Fork, snapshot-inventory and every other tree-scan caller keep the `reject` policy, so any link still makes those operations unsupported. Only read-only review capture uses `record`, which never copies a tree. Under `record` a link is inspected with `Lstat` and `Readlink` through the opened root only; it is never opened or followed, so a dangling or outside-pointing link reads nothing beyond its own text. The content digest binds the entry path, the entry kind `symlink` and the exact link text, and omits platform-defined link permission bits. Link text and the entry path must be valid UTF-8, and link text is at most 4,096 bytes; a non-UTF-8 symlink path or link text is unsupported because JSON encoding would map distinct invalid bytes to one digest input. A link counts against the same entry bound, and the Git administration marker and identity checks are unchanged. A link target change between the pre-review and post-review capture yields the stale `Conflict` and no findings are published.
+
+Native review selections carry Git object names in the repository's own object format: canonical lowercase hex of exactly 40 characters (SHA-1) or 64 characters (SHA-256). `head_commit`, `base_commit` and a commit-target `reference` share this rule; a base-branch selection requires both commits to use the same width, and a commit-target selection requires its `reference` and `head_commit` to use the same width. Uppercase, non-hex, odd-length or other-length names are rejected. The 64-character lowercase hex `diff_revision`, `content_digest` and rollout digests are SHA-256 integrity digests, independent of the repository object format, and stay exact.
+
+Native review starts with exactly the selected proven repository as its sole `runtimeWorkspaceRoots` entry and cwd. Other prepared session repositories are not review inputs. The native adapter rejects omitted, additional or different roots before thread creation. The original preparation remains unchanged. The Worker's native review workspace manager carries the negotiated `NAMED_WORKSPACE_DIRECTORIES_V1` capability like every other Worker workspace path: a frozen named repository directory reaches capture when negotiated, and otherwise yields Unsupported before capture and settles as the existing no-send rejected proof. Unnamed reviews are unchanged.
 
 ## Workspace preparation group timing
 

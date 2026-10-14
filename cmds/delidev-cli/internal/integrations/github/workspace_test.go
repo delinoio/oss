@@ -11,7 +11,9 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
@@ -112,7 +114,8 @@ func TestWorkspaceAmbiguityAndDrift(t *testing.T) {
 		})
 	}
 	c := workspaceFixture(t, map[int][2]string{1: {"main", "feature"}}, func(n int, item map[string]any) {
-		if n >= 3 {
+		// The first read is the traversal; the second is the final reobservation.
+		if n >= 2 {
 			item["head"].(map[string]any)["sha"] = strings.Repeat("c", 40)
 		}
 	})
@@ -357,5 +360,255 @@ func TestWorkspaceRejectsRepositoryIdentityDrift(t *testing.T) {
 	}
 	if result.State == domain.PRWorkspaceComplete {
 		t.Fatal("replaced numeric repository acquired complete context")
+	}
+}
+
+func chainRefs(count int) map[int][2]string {
+	refs := map[int][2]string{}
+	for n := 1; n <= count; n++ {
+		refs[n] = [2]string{"s" + strconv.Itoa(n-1), "s" + strconv.Itoa(n)}
+	}
+	return refs
+}
+
+// The provider read budget is cumulative: reads issued by an interrupted attempt
+// stay charged, and an exhausted budget admits no further attempt.
+func TestWorkspaceBudgetIsCumulativeAcrossInterruptedAttempts(t *testing.T) {
+	c := workspaceFixture(t, chainRefs(30), nil)
+	base := c.http.Transport
+	var mu sync.Mutex
+	calls := 0
+	interrupt := func() {}
+	c.http.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
+		mu.Lock()
+		calls++
+		n := calls
+		cancel := interrupt
+		mu.Unlock()
+		if n == 20 {
+			cancel()
+		}
+		return base.RoundTrip(r)
+	})
+	budget := NewWorkspaceBudget()
+	first, cancel := context.WithCancel(context.Background())
+	mu.Lock()
+	interrupt = cancel
+	mu.Unlock()
+	_, e := c.WorkspaceWithBudget(first, []byte("private-fixture-pat"), "fixture-owner", "repo", []string{"1"}, budget)
+	if e == nil {
+		t.Fatal("interrupted attempt returned an observation")
+	}
+	afterFirst := budget.Reads()
+	if afterFirst < 19 || afterFirst > 22 {
+		t.Fatal("interrupted attempt reads were not retained", afterFirst)
+	}
+	value, e := c.WorkspaceWithBudget(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", []string{"1"}, budget)
+	mu.Lock()
+	total := calls
+	mu.Unlock()
+	if e != nil || value.State == domain.PRWorkspaceComplete || total > 40 || budget.Reads() > 40 {
+		t.Fatal("resumed attempt exceeded the cumulative page budget", total, budget.Reads(), e, value.State)
+	}
+	if !contains(value.Reasons, "read_limit") {
+		t.Fatal("exhaustion was not reported", value.Reasons)
+	}
+	before := total
+	_, e = c.WorkspaceWithBudget(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", []string{"1"}, budget)
+	mu.Lock()
+	after := calls
+	mu.Unlock()
+	if domain.SafeError(e).Code != domain.ResourceExhausted || after != before {
+		t.Fatal("exhausted budget admitted another attempt", e, before, after)
+	}
+	if budget.Attempts() != 2 {
+		t.Fatal("exhausted attempt was counted", budget.Attempts())
+	}
+}
+
+func contains(values []string, want string) bool {
+	for _, v := range values {
+		if v == want {
+			return true
+		}
+	}
+	return false
+}
+
+// The adapter deadline is frozen when the first attempt begins; later attempts
+// share it instead of receiving a new 30-second window.
+func TestWorkspaceDeadlineIsFrozenAtFirstAttempt(t *testing.T) {
+	c := workspaceFixture(t, map[int][2]string{1: {"main", "feature"}}, nil)
+	base := c.http.Transport
+	var mu sync.Mutex
+	var deadlines []time.Time
+	c.http.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
+		if deadline, ok := r.Context().Deadline(); ok {
+			mu.Lock()
+			deadlines = append(deadlines, deadline)
+			mu.Unlock()
+		}
+		return base.RoundTrip(r)
+	})
+	started := time.Now()
+	budget := NewWorkspaceBudget()
+	for range 2 {
+		if _, e := c.WorkspaceWithBudget(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", []string{"1"}, budget); e != nil {
+			t.Fatal(e)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(deadlines) < 2 {
+		t.Fatal("no deadline observed")
+	}
+	frozen := budget.deadline
+	if frozen.Before(started.Add(workspaceDeadline)) || frozen.After(started.Add(workspaceDeadline+5*time.Second)) {
+		t.Fatal("deadline is not 30 seconds from the first attempt", frozen.Sub(started))
+	}
+	// Later attempts start after the first one and must still end by the frozen
+	// deadline; a fresh window would end later.
+	for _, deadline := range deadlines {
+		if deadline.After(frozen) {
+			t.Fatal("an attempt outlived the frozen deadline", deadline.Sub(frozen))
+		}
+	}
+	if budget.Attempts() != 2 {
+		t.Fatal("attempts were not counted", budget.Attempts())
+	}
+}
+
+// failPaths wraps the fixture transport so the listed request paths answer with
+// the given status and an empty JSON object.
+func failPaths(c *Client, status int, paths ...string) {
+	original := c.http.Transport
+	c.http.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
+		for _, p := range paths {
+			if r.URL.Path == p {
+				return &http.Response{StatusCode: status, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("{}"))}, nil
+			}
+		}
+		return original.RoundTrip(r)
+	})
+}
+
+func TestWorkspaceUnreadableSeedRemainsIncompleteRegardlessOfOrder(t *testing.T) {
+	for _, status := range []int{404, 403} {
+		for _, seeds := range [][]string{{"1", "2"}, {"2", "1"}} {
+			t.Run(strconv.Itoa(status)+"-"+strings.Join(seeds, ","), func(t *testing.T) {
+				c := workspaceFixture(t, map[int][2]string{1: {"main", "a"}, 2: {"main", "b"}}, nil)
+				failPaths(c, status, "/repos/fixture-owner/repo/pulls/1")
+				value, e := c.Workspace(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", seeds)
+				if e != nil {
+					t.Fatal("unreadable seed aborted the observation", e)
+				}
+				if value.State != domain.PRWorkspaceIncomplete || !contains(value.Reasons, "seed_unavailable") || !contains(value.Reasons, "access_unavailable") {
+					t.Fatal("unreadable seed was not reported as incomplete", value.State, value.Reasons)
+				}
+				if len(value.Nodes) != 1 || value.Nodes[0].Item.Number != "2" || !value.Nodes[0].Seed {
+					t.Fatal("readable seed did not survive", value.Nodes)
+				}
+				if value.Repository.ID != "37" || value.Identity.ID != "17" {
+					t.Fatal("scope was not established", value.Repository, value.Identity)
+				}
+			})
+		}
+	}
+}
+
+func TestWorkspaceScopeFailuresStillAbortWithoutFabricatedScope(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		path string
+	}{{"identity", "/user"}, {"repository metadata", "/repos/fixture-owner/repo"}} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := workspaceFixture(t, map[int][2]string{1: {"main", "a"}, 2: {"main", "b"}}, nil)
+			failPaths(c, 404, tc.path)
+			value, e := c.Workspace(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", []string{"1", "2"})
+			if e == nil {
+				t.Fatal("scope failure returned an observation")
+			}
+			if len(value.Nodes) != 0 || value.Repository.ID != "" || value.Identity.ID != "" {
+				t.Fatal("scope was fabricated", value)
+			}
+		})
+	}
+	c := workspaceFixture(t, map[int][2]string{1: {"main", "a"}}, nil)
+	original := c.http.Transport
+	c.http.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path == "/repos/fixture-owner/repo" {
+			return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"id":"not-numeric"}`))}, nil
+		}
+		return original.RoundTrip(r)
+	})
+	if _, e := c.Workspace(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", []string{"1"}); e == nil {
+		t.Fatal("invalid repository metadata returned an observation")
+	}
+}
+
+func TestWorkspaceReadableSeedsInAnyOrderStayComplete(t *testing.T) {
+	for _, seeds := range [][]string{{"1", "2"}, {"2", "1"}} {
+		c := workspaceFixture(t, map[int][2]string{1: {"main", "a"}, 2: {"main", "b"}}, nil)
+		value, e := c.Workspace(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", seeds)
+		if e != nil || value.State != domain.PRWorkspaceComplete || len(value.Reasons) != 0 || len(value.Nodes) != 2 {
+			t.Fatal("readable seeds were not complete", seeds, e, value.State, value.Reasons)
+		}
+		if value.Repository.ID != "37" || value.Repository.Owner != "fixture-owner" || value.Repository.Name != "repo" {
+			t.Fatal("repository metadata changed", value.Repository)
+		}
+	}
+}
+
+func TestWorkspaceNodesOmitBodiesAndStayUnderResponseCap(t *testing.T) {
+	refs := map[int][2]string{}
+	for n := 1; n <= 8; n++ {
+		refs[n] = [2]string{"base" + strconv.Itoa(n), "head" + strconv.Itoa(n)}
+	}
+	body := strings.Repeat("x", 128<<10)
+	// Foreign forks are complete flat nodes, so the eight seeds fit the provider
+	// read budget without relationship pages.
+	c := workspaceFixture(t, refs, func(n int, item map[string]any) {
+		item["body"] = body
+		item["head"].(map[string]any)["repo"] = map[string]any{"id": 99, "node_id": "R_99", "name": "fork", "full_name": "fork-owner/fork", "owner": map[string]any{"login": "fork-owner"}, "private": true, "default_branch": "main", "clone_url": "https://github.com/fork-owner/fork.git", "ssh_url": "git@github.com:fork-owner/fork.git"}
+	})
+	seeds := []string{"1", "2", "3", "4", "5", "6", "7", "8"}
+	value, e := c.Workspace(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", seeds)
+	if e != nil || value.State != domain.PRWorkspaceComplete || len(value.Nodes) != 8 {
+		t.Fatal("graph with maximum-size bodies failed", e, value.State, value.Reasons)
+	}
+	workspace := domain.PRWorkspace{PRReadScope: domain.PRReadScope{RepositoryID: domain.NewID(), RepositoryRevision: "1", ProfileID: domain.NewID(), GenerationID: domain.NewID(), ObservedAt: time.Now().UTC(), Repository: value.Repository}, State: value.State, Reasons: value.Reasons, Seeds: seeds, Nodes: value.Nodes, Edges: value.Edges}
+	if !workspace.Validate() {
+		t.Fatal("body-free workspace rejected by domain validation")
+	}
+	raw, err := json.Marshal(workspace)
+	if err != nil || len(raw) >= 1<<20 {
+		t.Fatal("workspace not under the response cap", len(raw), err)
+	}
+	for _, node := range value.Nodes {
+		if node.Item.Body != nil {
+			t.Fatal("node retained a body")
+		}
+	}
+	var decoded struct {
+		Nodes []struct {
+			Item map[string]json.RawMessage `json:"item"`
+		} `json:"nodes"`
+	}
+	if json.Unmarshal(raw, &decoded) != nil || len(decoded.Nodes) != 8 {
+		t.Fatal("workspace did not round trip")
+	}
+	for _, node := range decoded.Nodes {
+		if _, present := node.Item["body"]; present {
+			t.Fatal("marshaled node contains a body field")
+		}
+	}
+}
+
+func TestWorkspaceStillRejectsOversizeProviderBody(t *testing.T) {
+	c := workspaceFixture(t, map[int][2]string{1: {"main", "a"}}, func(_ int, item map[string]any) { item["body"] = strings.Repeat("x", 128<<10+1) })
+	value, e := c.Workspace(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", []string{"1"})
+	if e != nil || len(value.Nodes) != 0 || value.State == domain.PRWorkspaceComplete {
+		t.Fatal("oversize body admitted as a node", e, value.State)
 	}
 }

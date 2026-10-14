@@ -9613,6 +9613,13 @@
       "number": 38
     },
     {
+      "issue": 2324,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_BRANCH_PREFIX_EXACT_QUOTE_V1",
+      "number": 65
+    },
+    {
       "issue": 1980,
       "kind": "enum",
       "declaration": "SystemCapability",
@@ -13466,6 +13473,13 @@
       "number": 63
     },
     {
+      "issue": 2279,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_CODEX_SESSION_REVERT_TARGET_PROOF_V1",
+      "number": 64
+    },
+    {
       "declaration": "NativeCodeReviewTargetKind",
       "issue": 2019,
       "kind": "enum",
@@ -14706,6 +14720,56 @@
       "member": "png",
       "number": 1,
       "newDeclaration": true
+    },
+    {
+      "issue": 2248,
+      "kind": "enum",
+      "declaration": "RequestDiagnosticAttribution",
+      "member": "REQUEST_DIAGNOSTIC_ATTRIBUTION_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2248,
+      "kind": "enum",
+      "declaration": "RequestDiagnosticAttribution",
+      "member": "REQUEST_DIAGNOSTIC_ATTRIBUTION_CODEX_REVIEWER",
+      "number": 1
+    },
+    {
+      "issue": 2248,
+      "kind": "message",
+      "declaration": "RequestDiagnostic",
+      "member": "attribution",
+      "number": 34
+    },
+    {
+      "issue": 2970,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_RESET_CREDITS_V2",
+      "number": 101
+    },
+    {
+      "issue": 3143,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_SUBSCRIPTION_CLEANUP_RECOVERY_V1",
+      "number": 64
+    },
+    {
+      "declaration": "NativeCodeReviewResponseUsage",
+      "issue": 3331,
+      "kind": "message",
+      "member": "observed_at_unix_ms",
+      "number": 12
+    },
+    {
+      "issue": 3069,
+      "kind": "message",
+      "declaration": "GetStatusResponse",
+      "member": "production_root_ready",
+      "number": 9
     }
   ],
   "rpcReservations": [

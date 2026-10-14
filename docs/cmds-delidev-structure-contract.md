@@ -586,3 +586,7 @@ private approval/outgoing journals and existing pairing integration.
 Follow the [connections contract](cmds-delidev-connections-contract.md#tailscale-connections).
 The existing SSH installer and detached outbound Worker controller retain their
 independent ownership. No empty migration or new native binding is required.
+
+### Server reset credits V2 allocation closure
+
+System 101 `SERVER_SUBSCRIPTION_RESET_CREDITS_V2` is recorded with its complete feature implementation under the [allocation workflow](#allocation-workflow). It adds no RPC, Worker capability or migration and preserves System 19/49/50 and Worker 52. Fixtures and builds never substitute for installed-native, real-account, remote-server or platform acceptance.

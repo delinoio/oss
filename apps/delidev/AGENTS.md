@@ -3,6 +3,7 @@
 - Follow the root instruction-update policy and the nearest parent instructions.
 - This file covers `apps/delidev/` and its descendants unless a more specific instruction file applies.
 - Read the owning contracts below before changing behavior, including affected cross-domain consumers.
+- Open external HTTP(S) links only through the native `open_external_url` command or the closed Provider guidance, App information and GitHub openers so the device-local General/Local browser destinations apply; never navigate the webview, accept renderer-supplied executables, or route OAuth/subscription authorization through those destinations. See [Browser destinations for external links](../../docs/apps-delidev-desktop-contract.md#browser-destinations-for-external-links).
 
 ## Owning contracts
 

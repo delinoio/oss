@@ -98,6 +98,23 @@ than 16 pages. Capability loading, unsupported and removal-pending guidance, the
 original exact registration retry, and safe failure text never create a fallback
 page.
 
+Admission follows the read-only enumeration state. Open page stays disabled, and
+submission returns without sending anything, while the `ListBrowserProfiles`
+walk is loading, paginating (a next page token is outstanding), failed or
+invalid (a read error, more than one matching profile across the walk, a repeated token or a
+next page token returned by page 64). A matching profile is only a candidate while a
+next page token is outstanding: the walk continues, and the profile is admitted
+only after the terminal page confirms it is the sole match. A confirmed absence
+(a settled terminal page with no matching profile on any page) can also admit a
+new page; absence permits exactly one registration at explicit submission. A found
+profile additionally needs one successfully observed current-profile inventory,
+so an unread or unreadable inventory is never treated as empty. A later inventory read failure revokes that proof
+until a retry read succeeds. The dialog shows
+localized read-only guidance for pending states and, for a failed profile or
+inventory read, a retry that re-reads only that state (profiles from the first
+page with cached pages bypassed, or the inventory) and never repeats any accepted or uncertain mutation.
+A session that becomes active again while the walk has no profile restarts it the same way, from the first page with cached pages bypassed, so a partial refetch of the current page never combines with pages read before the session was inactive.
+
 Only explicit submission may change the inventory. It reuses the original
 capability/account/session/revision checks and exact registration recovery: an
 existing profile (found by the read-only `ListBrowserProfiles` page walk) is
@@ -172,6 +189,18 @@ close is a fresh explicit operation. Closing an inactive page never presents it 
 another native page. This resource Close is the one browser-specific exception to
 the presentation-only dismissal other tools use, and it remains separate from the
 16-page gate and from profile/account removal.
+
+An acknowledged close is profile-scoped, so its cleanup is not limited to the
+initiating Session: when the original Close is observed complete, or an
+observation without an original receipt proves the page is gone, the exact
+profile/page descriptor is removed from every Session snapshot in the shared tab
+store, including inactive and retained Sessions that are not polling. Each
+affected Session applies the same selection rule only when its own selected
+descriptor was removed (left neighbor, then Conversation after the last page);
+unrelated selections, ordering, the same page id under another profile and other
+pages are untouched. Repeated acknowledgment is idempotent, and pending, failed
+or uncertain closes retain the descriptor in every Session. The cleanup is
+store-level only and issues no extra native close.
 
 Other windows and sessions of the same account observe the inventory read-only
 and align their descriptors (append newly listed pages in inventory order,
@@ -249,6 +278,25 @@ profiles and pending-creation guards. Failed unmapping never permits directory p
 Removal unmaps and close requests run outside native state. Close requests after
 tab replacement also run outside native state; pending old creation callbacks
 remain generation-guarded.
+Raw child closure is child-only. The raw child's life-span handler owns
+`do_close` for non-popup children: on macOS and Windows it returns 1 and completes
+destruction of exactly that child's own native host on the UI loop (removing its
+`NSView` from its superview, or `DestroyWindow` on its `HWND`), so CEF never
+sends its default parent-window close (`performClose:` / `WM_CLOSE`) to the
+containing product window and `on_before_close` still fires once per child. On
+Linux `do_close` keeps CEF's default (0), and popups keep the default. The
+handler binds the exact Browser identifier at creation; destruction is claimed
+at most once and only for that identifier, so duplicate or late close callbacks
+cannot destroy a replacement child or product views, and `child_closed` keeps
+its generation filter. New Tab, selected-tab replacement, tab close and panel
+disposal therefore never hide, close or minimize the product window; explicit
+product-window close still hides to the tray through `CloseRequested`, and Quit
+still joins. Close diagnostics are structured `browser_view` tracing events
+(`close_requested`, `destroyed`, `destroy_failed`) carrying only the platform,
+popup flag, numeric browser identifier and outcome, never URLs, credentials or
+page content. Fixture and build results prove only the disposition, identity and
+idempotency rules; macOS, Windows and Linux native acceptance is recorded
+separately.
 Only successful native geometry updates become the panel's last applied bounds;
 a failed resize clears that cache so later callbacks retry identical geometry
 for the current presentation.
@@ -511,3 +559,7 @@ Instruction-file updates in this requirement apply only to changes in developmen
 ## Resident desktop runtime protection
 
 All protected Local and Saved browser profiles reject the desktop main process's current private loopback port and its loopback aliases, including WebSocket aliases. Adding this port preserves each profile's separate selected product origin and loopback-port exclusion. Legacy ordinary CLI and frontend development ports remain protected. Browser cleanup reads share the resident version-2 CLI; their bounded final discovery precedes host shutdown, and post-shutdown acknowledgments retain durable intents without spawning another CLI. See the [desktop lifetime boundary](apps-delidev-desktop-contract.md#app-owned-sidecar-shutdown).
+
+## External link browser destinations
+
+The protected account/session browser is unrelated to the user's installed browsers. Opening an ordinary external HTTP(S) link in an installed browser (message and terminal links, Provider guidance, App information and GitHub forms) is a separate device-local native preference with independent General and Local destinations. It never uses, reads or modifies protected-profile paths, CEF request contexts or per-account cleanup obligations, and the Browser settings category does not select the embedded protected browser. External webview navigation and popups remain denied; the renderer only asks the native host to open a validated URL. OAuth and subscription authorization links keep the system default browser. The owning contract is [Browser destinations for external links](apps-delidev-desktop-contract.md#browser-destinations-for-external-links); installed-browser discovery and launch acceptance on macOS, Windows and Linux is recorded separately from fixtures.

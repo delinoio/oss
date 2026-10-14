@@ -46,7 +46,6 @@ function reference(snapshot: unknown) {
     /[\u0000-\u001f\u007f\uD800-\uDFFF]/u.test(location) ||
     location.startsWith("/") ||
     location.startsWith("\\\\") ||
-    /^[a-z]:[\\/]/i.test(location) ||
     location.includes("://") ||
     location.split("/").some((part) => !part || part === "." || part === "..")
   )

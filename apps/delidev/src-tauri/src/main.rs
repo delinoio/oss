@@ -5,6 +5,7 @@ use tauri_runtime_cef::{CefRuntime, WebviewCefExt};
 mod appearance_host;
 mod badge_host;
 mod browser_host;
+mod browser_preferences_host;
 mod date_format_host;
 mod notification_host;
 mod oauth_host;
@@ -54,6 +55,10 @@ impl Drop for DesktopLifetime {
 }
 
 use appearance_host::{read_appearance, update_appearance};
+use browser_preferences_host::{
+    open_external_url, read_browser_inventory, read_browser_preferences, reset_browser_preferences,
+    update_browser_preferences,
+};
 use date_format_host::{read_date_format, update_date_format};
 use session_creation_preferences_host::{
     read_runner_device_preferences, read_session_creation_preferences,
@@ -311,6 +316,7 @@ async fn open_github(
     window: WebviewWindow<CefRuntime>,
     windows: tauri::State<'_, Arc<ProductWindows>>,
     connector: tauri::State<'_, Arc<Connector>>,
+    browsers: tauri::State<'_, Arc<delidev_desktop::browser_preferences::BrowserStore>>,
     url: String,
 ) -> Result<(), NativeFailure> {
     let response_window = window.clone();
@@ -322,9 +328,11 @@ async fn open_github(
             saved_binding(&window, &windows)?;
         }
         let connector = Arc::clone(connector.inner());
-        let result = tauri::async_runtime::spawn_blocking(move || connector.open_github(&url))
-            .await
-            .map_err(|_| NativeFailure::SidecarFailed)?;
+        let browsers = Arc::clone(browsers.inner());
+        let result =
+            tauri::async_runtime::spawn_blocking(move || connector.open_github(&browsers, &url))
+                .await
+                .map_err(|_| NativeFailure::SidecarFailed)?;
         if let Err(code) = result {
             tracing::warn!(operation = "github_open", ?code);
         }
@@ -341,6 +349,7 @@ async fn open_provider_guidance(
     window: WebviewWindow<CefRuntime>,
     windows: tauri::State<'_, Arc<ProductWindows>>,
     connector: tauri::State<'_, Arc<Connector>>,
+    browsers: tauri::State<'_, Arc<delidev_desktop::browser_preferences::BrowserStore>>,
     preset: String,
     action: delidev_desktop::provider_guidance::GuidanceAction,
 ) -> Result<(), NativeFailure> {
@@ -356,8 +365,9 @@ async fn open_provider_guidance(
         // Capture authority on the native loop; dispatch runs on a bounded
         // worker.
         let connector = Arc::clone(connector.inner());
+        let browsers = Arc::clone(browsers.inner());
         let result = tauri::async_runtime::spawn_blocking(move || {
-            connector.open_provider_guidance(&preset, action)
+            connector.open_provider_guidance(&browsers, &preset, action)
         })
         .await
         .map_err(|_| NativeFailure::SidecarFailed)?;
@@ -382,6 +392,7 @@ async fn open_app_information_link(
     window: WebviewWindow<CefRuntime>,
     windows: tauri::State<'_, Arc<ProductWindows>>,
     connector: tauri::State<'_, Arc<Connector>>,
+    browsers: tauri::State<'_, Arc<delidev_desktop::browser_preferences::BrowserStore>>,
     action: delidev_desktop::app_information::AppInformationLink,
 ) -> Result<(), NativeFailure> {
     let response_window = window.clone();
@@ -396,8 +407,9 @@ async fn open_app_information_link(
         // Capture authority on the native loop; dispatch runs on a bounded
         // worker.
         let connector = Arc::clone(connector.inner());
+        let browsers = Arc::clone(browsers.inner());
         let result = tauri::async_runtime::spawn_blocking(move || {
-            connector.open_app_information_link(action)
+            connector.open_app_information_link(&browsers, action)
         })
         .await
         .map_err(|_| NativeFailure::SidecarFailed)?;
@@ -2124,6 +2136,10 @@ fn run() -> Result<(), NativeFailure> {
              protection at rest."
         );
     }
+    // Replay any native update outcome a previous process could not publish to
+    // its original Installing journal before fresh installation is admitted.
+    let update_host = Arc::new(UpdateHost::default());
+    update_host.begin_launch_reconcile(Arc::clone(&connector));
     let app = tauri::Builder::<CefRuntime>::new()
         // Windows is an approved unsandboxed exception until upstream supports
         // Chromium's broker for executable hosts. Auto warns about that limit;
@@ -2142,7 +2158,7 @@ fn run() -> Result<(), NativeFailure> {
                 })
                 .root_cache_path(browser.cache_root()),
         )
-        .manage(Arc::new(UpdateHost::default()))
+        .manage(Arc::clone(&update_host))
         .manage(Arc::new(quit_host::QuitHost::default()))
         .manage(Arc::clone(&browser))
         .manage(Arc::new(ProductWindows::default()))
@@ -2174,6 +2190,11 @@ fn run() -> Result<(), NativeFailure> {
                 export_generated_image,
                 read_generated_image_export,
                 read_appearance,
+                read_browser_preferences,
+                update_browser_preferences,
+                reset_browser_preferences,
+                read_browser_inventory,
+                open_external_url,
                 read_shortcut_preferences,
                 update_shortcut_preferences,
                 read_sidebar_preference,
@@ -2359,14 +2380,22 @@ fn run() -> Result<(), NativeFailure> {
                     app.path().app_config_dir().ok(),
                 ),
             ));
-            app.manage(Arc::new(delidev_desktop::appearance::AppearanceStore::new(
+            // Inspect the saved presentation in the native startup lifecycle,
+            // before any window or the tray can be created or admitted, so the
+            // first tray status never projects placeholder default colors.
+            let appearance = Arc::new(delidev_desktop::appearance::AppearanceStore::new(
                 config_dir.clone(),
-            )));
+            ));
+            appearance.initialize();
+            app.manage(appearance);
             app.manage(Arc::new(
                 delidev_desktop::date_format::DateFormatStore::new(config_dir.clone()),
             ));
             app.manage(Arc::new(
                 delidev_desktop::shortcut_preferences::ShortcutStore::new(config_dir.clone()),
+            ));
+            app.manage(Arc::new(
+                delidev_desktop::browser_preferences::BrowserStore::new(config_dir.clone()),
             ));
             app.manage(Arc::new(
                 delidev_desktop::sidebar_preference::SidebarStore::new(config_dir.clone()),
@@ -3031,6 +3060,144 @@ mod product_window_tests {
         forged.entry.role = Role::Local;
         forged.saved = None;
         assert!(recheck_record(&windows, &forged).is_err());
+    }
+
+    fn local(windows: &ProductWindows) -> WindowAuthority {
+        let mut registry = windows.registry.lock().unwrap();
+        let entry = registry.reserve(Role::Local, true).unwrap();
+        registry.ready(&entry).unwrap();
+        WindowAuthority {
+            entry,
+            local_revision: registry.local_revision,
+            saved: None,
+        }
+    }
+
+    // The retained updater worker takes only these retained native owners: no
+    // window handle exists to reach a CEF URL getter or the UI loop.
+    #[test]
+    fn retained_updater_authority_accepts_only_the_exact_original_saved_scope() {
+        let oauth = delidev_desktop::oauth::OAuthHost::default();
+        let windows = ProductWindows::default();
+        let original = saved(&windows, "profile");
+        let label = original.entry.label.clone();
+        let epoch = oauth.window_epoch(&label).unwrap();
+        let check = || updater_host::retained_authority(&oauth, &windows, &label, &original, epoch);
+        assert!(check().is_ok());
+
+        // A same-profile sibling remains independent of the original window.
+        let _sibling = saved(&windows, "profile");
+        assert!(check().is_ok());
+
+        windows
+            .bindings
+            .lock()
+            .unwrap()
+            .get_mut(&label)
+            .unwrap()
+            .profile
+            .device_id = "replacement".into();
+        assert_eq!(check(), Err(NativeFailure::InvalidEvidence));
+    }
+
+    #[test]
+    fn retained_updater_authority_rejects_changed_epoch_instance_barrier_and_departure() {
+        let oauth = delidev_desktop::oauth::OAuthHost::default();
+        let windows = ProductWindows::default();
+        let original = saved(&windows, "profile");
+        let label = original.entry.label.clone();
+        let epoch = oauth.window_epoch(&label).unwrap();
+
+        // Removal barrier for the saved profile.
+        windows.removals.lock().unwrap().insert(
+            "profile".into(),
+            SavedBinding {
+                profile: original.saved.clone().unwrap(),
+                instance: "removal".into(),
+                closing: true,
+            },
+        );
+        assert_eq!(
+            updater_host::retained_authority(&oauth, &windows, &label, &original, epoch),
+            Err(NativeFailure::InvalidEvidence)
+        );
+        windows.removals.lock().unwrap().clear();
+        assert!(
+            updater_host::retained_authority(&oauth, &windows, &label, &original, epoch).is_ok()
+        );
+
+        // Changed window instance.
+        let mut replaced = original.clone();
+        replaced.entry.instance = "other-instance".into();
+        assert_eq!(
+            updater_host::retained_authority(&oauth, &windows, &label, &replaced, epoch),
+            Err(NativeFailure::InvalidEvidence)
+        );
+
+        // Changed role.
+        let mut forged = original.clone();
+        forged.entry.role = Role::Local;
+        forged.saved = None;
+        assert_eq!(
+            updater_host::retained_authority(&oauth, &windows, &label, &forged, epoch),
+            Err(NativeFailure::InvalidEvidence)
+        );
+
+        // OAuth window epoch advanced after begin.
+        oauth.close_window(&label).unwrap();
+        assert_eq!(
+            updater_host::retained_authority(&oauth, &windows, &label, &original, epoch),
+            Err(NativeFailure::InvalidEvidence)
+        );
+        let epoch = oauth.window_epoch(&label).unwrap();
+        assert!(
+            updater_host::retained_authority(&oauth, &windows, &label, &original, epoch).is_ok()
+        );
+
+        // A closing or removed window is a definitive permission failure.
+        windows
+            .registry
+            .lock()
+            .unwrap()
+            .begin_close(&label, false)
+            .unwrap();
+        assert_eq!(
+            updater_host::retained_authority(&oauth, &windows, &label, &original, epoch),
+            Err(NativeFailure::PermissionDenied)
+        );
+        windows
+            .registry
+            .lock()
+            .unwrap()
+            .remove(&label, &original.entry.instance);
+        assert_eq!(
+            updater_host::retained_authority(&oauth, &windows, &label, &original, epoch),
+            Err(NativeFailure::PermissionDenied)
+        );
+    }
+
+    #[test]
+    fn retained_updater_authority_rejects_changed_local_revision_and_role() {
+        let oauth = delidev_desktop::oauth::OAuthHost::default();
+        let windows = ProductWindows::default();
+        let original = local(&windows);
+        let label = original.entry.label.clone();
+        let epoch = oauth.window_epoch(&label).unwrap();
+        assert!(
+            updater_host::retained_authority(&oauth, &windows, &label, &original, epoch).is_ok()
+        );
+        windows.registry.lock().unwrap().local_revision += 1;
+        assert_eq!(
+            updater_host::retained_authority(&oauth, &windows, &label, &original, epoch),
+            Err(NativeFailure::InvalidEvidence)
+        );
+        let mut forged = original;
+        forged.local_revision = windows.registry.lock().unwrap().local_revision;
+        forged.entry.role = Role::Saved("profile".into());
+        assert_eq!(
+            updater_host::retained_authority(&oauth, &windows, &label, &forged, epoch),
+            Err(NativeFailure::InvalidEvidence)
+        );
     }
 
     fn staged_tabs() -> (

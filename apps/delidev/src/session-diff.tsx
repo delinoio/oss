@@ -1,11 +1,26 @@
 import { useShortcuts } from "./shortcut-provider";
 import { ShortcutId, ShortcutInput } from "./shortcuts";
 import { Surface } from "./surface";
-import { copy, useLocale } from "./localization";
+import { copy, LocalizedText, useLocale } from "./localization";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  EntranceMotion,
+  useEntranceActivation,
+  type EntranceProps,
+} from "./entrance-motion";
 import { Code, ConnectError } from "@connectrpc/connect";
-import { useQuery } from "@connectrpc/connect-query";
-import { SessionQuery } from "@delinoio/delidev-api-client";
+import {
+  createQueryOptions,
+  useQuery,
+  useTransport,
+} from "@connectrpc/connect-query";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  SessionQuery,
+  clientFailure,
+  newRequestId,
+  type ClientFailure,
+} from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
 import {
   Comparison,
@@ -19,10 +34,11 @@ import {
 } from "./session-diff-model";
 import { readReviewContext, type ReviewFile } from "./local-review-model";
 import { workspaceReadOptions } from "./session-files";
-import { Problem } from "./ui";
+import { Failure, Problem } from "./ui";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { LocalReviewRecovery, LocalReviews } from "./local-reviews";
 import { useRetainedMutationIntents } from "./mutation";
+import { useDiffBaseTrust } from "./session-diff-trust";
 import "./session-diff.css";
 
 export type ComparisonDescriptor = {
@@ -30,7 +46,22 @@ export type ComparisonDescriptor = {
   comparison: Comparison;
   path: string;
   base_ref?: BaseReference;
+  /**
+   * The invalidated explicit base that a base-free tab dropped. The tab owns
+   * it, so it is neither part of the tab identity nor kept after it closes.
+   */
+  dropped_base?: BaseReference;
 };
+
+/**
+ * Called when an explicit Base control selection restores trust for one
+ * reference, so the owner of the retained comparison tabs can end the
+ * `dropped_base` records that named the invalidation that just ended.
+ */
+export type RestoreBase = (
+  repository: string,
+  reference: BaseReference,
+) => void;
 
 function comparisonOriginKey(value: ComparisonDescriptor) {
   return JSON.stringify([
@@ -49,14 +80,28 @@ export function SessionDiff({
   close,
   selected,
   openComparison,
+  restoreBase,
 }: {
   sessionId: string;
   worktree: boolean;
   close: () => void;
   selected?: ComparisonDescriptor;
-  openComparison?: (value: ComparisonDescriptor) => void;
+  openComparison?: (
+    value: ComparisonDescriptor,
+    options?: { inheritDropped?: boolean },
+  ) => void;
+  restoreBase?: RestoreBase;
 }) {
   useLocale();
+  // SessionDiff is mounted only while a Diff or Comparison tab is selected, so
+  // a mount is one explicit Diff activation. The hook lives here, not in
+  // RepositoryDiff, because RepositoryDiff is remounted per repository and
+  // Diff/Comparison tab moves reuse this instance; neither replays the motion.
+  const headerEntrance = useEntranceActivation(
+    `${sessionId}:diff`,
+    true,
+    EntranceMotion.Y2,
+  );
   const panelRoot = useRef<HTMLElement>(null);
   const shortcuts = useShortcuts([
     {
@@ -98,6 +143,20 @@ export function SessionDiff({
     repository ??
     available?.find((root) => root.primary)?.repository_id ??
     available?.[0]?.repository_id;
+  // The header remounts with `key={selectedRepository}`, and a fresh node that
+  // carries the entrance attribute would start the animation again. Only the
+  // repository whose header first mounted may carry this activation's entrance;
+  // any later repository change (even back to the first one) consumes it.
+  const [entranceRepository, setEntranceRepository] = useState<
+    string | null | undefined
+  >();
+  let entranceOwner = entranceRepository;
+  if (entranceOwner === undefined && selectedRepository)
+    entranceOwner = selectedRepository;
+  else if (entranceOwner && entranceOwner !== selectedRepository)
+    entranceOwner = null;
+  if (entranceOwner !== entranceRepository)
+    setEntranceRepository(entranceOwner);
   const chooseRepository = (value: string) => {
     setRepository(value);
     if (!openComparison) return;
@@ -150,10 +209,14 @@ export function SessionDiff({
               : selected
           }
           openComparison={openComparison}
+          restoreBase={restoreBase}
           onNegotiated={pending ? openNegotiated : undefined}
           worktree={worktree}
           acceptedDeletionId={acceptedDeletionId}
           close={close}
+          entrance={
+            entranceOwner === selectedRepository ? headerEntrance : undefined
+          }
           repositoryControl={
             <label className="diff-select">
               <span className="diff-control-label">
@@ -198,16 +261,22 @@ export function RepositoryDiff({
   acceptedDeletionId,
   initial,
   openComparison,
+  restoreBase,
   onNegotiated,
   close,
   repositoryControl,
+  entrance,
 }: {
   sessionId: string;
   repository: string;
   worktree: boolean;
   acceptedDeletionId?: string;
   initial?: Omit<ComparisonDescriptor, "repository">;
-  openComparison?: (value: ComparisonDescriptor) => void;
+  openComparison?: (
+    value: ComparisonDescriptor,
+    options?: { inheritDropped?: boolean },
+  ) => void;
+  restoreBase?: RestoreBase;
   /**
    * Set while a repository selection awaits its own negotiated base. Called at
    * most once per base with the exact typed descriptor of the displayed branch
@@ -217,6 +286,8 @@ export function RepositoryDiff({
   onNegotiated?: (value: ComparisonDescriptor) => void;
   close?: () => void;
   repositoryControl?: ReactNode;
+  /** The owner's Y2 entrance props for the heading and toolbar only. */
+  entrance?: EntranceProps;
 }) {
   useLocale();
   const heading = useRef<HTMLHeadingElement>(null);
@@ -229,22 +300,21 @@ export function RepositoryDiff({
   const [menu, setMenu] = useState(false);
   const menuTrigger = useRef<HTMLButtonElement>(null),
     pathInput = useRef<HTMLInputElement>(null);
-  const options = useQuery(
-    SessionQuery.readSessionWorkspace,
-    {
-      sessionId,
-      queryJson: encode({
-        operation: "git-diff-options",
-        repository_id: repository,
-        path: ".",
-      }),
-    },
-    {
-      ...workspaceReadOptions,
-      enabled: comparison === Comparison.Branch,
-      select: (response) => readDiffOptions(response.documentJson, repository),
-    },
-  );
+  const transport = useTransport(),
+    queryClient = useQueryClient();
+  const optionsInput = {
+    sessionId,
+    queryJson: encode({
+      operation: "git-diff-options",
+      repository_id: repository,
+      path: ".",
+    }),
+  };
+  const options = useQuery(SessionQuery.readSessionWorkspace, optionsInput, {
+    ...workspaceReadOptions,
+    enabled: comparison === Comparison.Branch,
+    select: (response) => readDiffOptions(response.documentJson, repository),
+  });
   useEffect(() => {
     heading.current?.focus({ preventScroll: true });
   }, []);
@@ -255,7 +325,10 @@ export function RepositoryDiff({
     if (initial) {
       setComparison(initial.comparison);
       setPath(initial.path);
-      setPathDraft(initial.path);
+      // A descriptor that keeps the applied path (for example the one a
+      // negotiation or an explicit base selection publishes) must not discard
+      // a draft the user typed for later submission.
+      setPathDraft((draft) => (initial.path === path ? draft : initial.path));
       setBaseRef(initial.base_ref);
     }
   }, [
@@ -266,9 +339,42 @@ export function RepositoryDiff({
     initial?.base_ref?.remote,
   ]);
   const chosenBase = baseRef ?? options.data?.default;
+  // An explicit base that a successful accepted inventory reported absent or
+  // unavailable stays invalidated, even if the same reference reappears in a
+  // later inventory, until the Base control explicitly selects a reference.
+  // The record is bound to the session and repository that observed it, so
+  // refresh, path submission and comparison round trips never restore trust.
+  // Every invalidated reference is retained, and the record outlives this
+  // panel's mount, so switching retained Branch comparisons, leaving the Diff
+  // presentation or changing repositories never restores trust either.
+  const optionsOwner = [sessionId, repository].join("\u0000");
+  const trust = useDiffBaseTrust();
+  // The chosen reference is checked even when it came from the inventory
+  // default, so an invalidated reference that later becomes the default is
+  // never trusted again without an explicit Base control selection.
+  const chosenBaseInvalidated = Boolean(
+    chosenBase && trust.isInvalidated(optionsOwner, chosenBase),
+  );
+  const explicitBaseKey = baseRef ? referenceKey(baseRef) : undefined;
+  useEffect(() => {
+    if (comparison !== Comparison.Branch || !options.data || !baseRef) return;
+    if (
+      options.data.choices.some(
+        (choice) =>
+          choice.available && sameReference(choice.reference, baseRef),
+      )
+    )
+      return;
+    console.debug("delidev.diff.explicit_base_invalidated", {
+      sessionId,
+      repository,
+    });
+    trust.invalidate(optionsOwner, baseRef);
+  }, [options.data, explicitBaseKey, comparison, optionsOwner]);
   const supportedBase = Boolean(
     options.data &&
     chosenBase &&
+    !chosenBaseInvalidated &&
     options.data.choices.some(
       (choice) =>
         choice.available && sameReference(choice.reference, chosenBase),
@@ -296,10 +402,34 @@ export function RepositoryDiff({
   }, [negotiatedKey]);
   // A failed explicit options refresh keeps the previous inventory (and any
   // diff derived from it) only as a stale observation.
+  // The explicit refresh reads through a disposable query, so its failure is
+  // recorded here, bound to the session and repository that issued it.
+  // The failure also remembers the accepted options query's update position,
+  // so any later accepted response (the explicit refresh, or an active-query
+  // refetch such as a reconnect invalidation) ends the stale observation.
+  const [refreshFailure, setRefreshFailure] = useState<
+    | {
+        owner: string;
+        failure: ClientFailure;
+        code: Code;
+        updateCount: number;
+        updatedAt: number;
+      }
+    | undefined
+  >();
+  const optionsState = queryClient.getQueryState(
+    createQueryOptions(SessionQuery.readSessionWorkspace, optionsInput, {
+      transport,
+    }).queryKey,
+  );
+  const refreshFailed =
+    refreshFailure?.owner === optionsOwner &&
+    (optionsState?.dataUpdateCount ?? 0) <= refreshFailure.updateCount &&
+    (optionsState?.dataUpdatedAt ?? 0) <= refreshFailure.updatedAt;
   const optionsStale =
     comparison === Comparison.Branch &&
-    options.isError &&
-    Boolean(options.data);
+    Boolean(options.data) &&
+    (options.isError || refreshFailed);
   const [refreshing, setRefreshing] = useState(false);
   const scope = [
     sessionId,
@@ -308,15 +438,42 @@ export function RepositoryDiff({
     path,
     chosenBase ? referenceKey(chosenBase) : "",
   ].join("\u0000");
-  const scopeRef = useRef(scope),
-    mounted = useRef(true);
-  scopeRef.current = scope;
+  // Every distinct scope receives a monotonically increasing generation, so a
+  // request issued under one scope can never be revived by returning to an
+  // equal scope later (ABA). A replaced transport (a same-identity reconnect
+  // keeps the query client) ends the scope the same way: the active options
+  // query is re-read through the replacement, so a response that was issued
+  // through the old transport must never overwrite it.
+  const scopeGeneration = useRef(0),
+    observedScope = useRef(scope),
+    observedTransport = useRef(transport),
+    mounted = useRef(true),
+    activeRefresh = useRef<readonly unknown[] | undefined>(undefined);
+  if (
+    observedScope.current !== scope ||
+    observedTransport.current !== transport
+  ) {
+    observedScope.current = scope;
+    observedTransport.current = transport;
+    scopeGeneration.current += 1;
+  }
+  const cancelRefresh = () => {
+    const key = activeRefresh.current;
+    if (!key) return;
+    activeRefresh.current = undefined;
+    void queryClient.cancelQueries({ queryKey: key, exact: true });
+    queryClient.removeQueries({ queryKey: key, exact: true });
+  };
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
     };
   }, []);
+  // Changing the scope or transport, or closing the view, cancels the
+  // outstanding disposable options read; the generation fence still guards
+  // any response that races.
+  useEffect(() => cancelRefresh, [scope, transport]);
   const query = {
     operation: "git-diff",
     repository_id: repository,
@@ -349,18 +506,55 @@ export function RepositoryDiff({
       void result.refetch();
       return;
     }
-    const token = scope,
+    const token = scopeGeneration.current,
       wasEnabled = enabled,
       previousBase = chosenBase;
     setRefreshing(true);
+    // The explicit read uses a refresh-scoped disposable query identity, so a
+    // late response never reaches the accepted options inventory unless the
+    // originating scope still owns it when the response arrives.
+    const accepted = createQueryOptions(
+      SessionQuery.readSessionWorkspace,
+      optionsInput,
+      { transport },
+    );
+    const disposableKey = [
+      ...accepted.queryKey,
+      { optionsRefresh: newRequestId() },
+    ];
+    activeRefresh.current = disposableKey;
     try {
-      const fresh = await options.refetch();
-      if (!mounted.current || scopeRef.current !== token) return;
-      if (fresh.isError || !fresh.data) return;
-      const nextBase = baseRef ?? fresh.data.default;
+      let response: { documentJson: Uint8Array };
+      try {
+        response = await queryClient.fetchQuery({
+          queryKey: disposableKey,
+          retry: false,
+          gcTime: 0,
+          staleTime: 0,
+          queryFn: (context) =>
+            accepted.queryFn({ ...context, queryKey: accepted.queryKey }),
+        });
+      } finally {
+        if (activeRefresh.current === disposableKey)
+          activeRefresh.current = undefined;
+        queryClient.removeQueries({ queryKey: disposableKey, exact: true });
+      }
+      if (!mounted.current || scopeGeneration.current !== token) {
+        console.debug("delidev.diff.options_refresh_retired", {
+          sessionId,
+          repository,
+          reason: mounted.current ? "scope-changed" : "disposed",
+        });
+        return;
+      }
+      const fresh = readDiffOptions(response.documentJson, repository);
+      queryClient.setQueryData(accepted.queryKey, response);
+      // Only an accepted in-scope inventory ends the stale observation.
+      setRefreshFailure(undefined);
+      const nextBase = baseRef ?? fresh.default;
       const available =
         nextBase !== undefined &&
-        fresh.data.choices.some(
+        fresh.choices.some(
           (choice) =>
             choice.available && sameReference(choice.reference, nextBase),
         );
@@ -373,6 +567,22 @@ export function RepositoryDiff({
         sameReference(previousBase, nextBase)
       )
         await result.refetch();
+    } catch (error) {
+      if (mounted.current && scopeGeneration.current === token) {
+        const failure = clientFailure(error);
+        console.warn("delidev.diff.options_refresh_failed", {
+          operation: "git-diff-options",
+          classification: failure.code,
+        });
+        const state = queryClient.getQueryState(accepted.queryKey);
+        setRefreshFailure({
+          owner: optionsOwner,
+          failure,
+          code: ConnectError.from(error).code,
+          updateCount: state?.dataUpdateCount ?? 0,
+          updatedAt: state?.dataUpdatedAt ?? 0,
+        });
+      }
     } finally {
       if (mounted.current) setRefreshing(false);
     }
@@ -385,37 +595,123 @@ export function RepositoryDiff({
   useEffect(() => {
     if (pendingReviews && reviews.current) reviews.current.open = true;
   }, [pendingReviews]);
-  const choose = (next: Comparison, nextPath = path, nextBase = chosenBase) => {
-    const value = {
+  const choose = (
+    next: Comparison,
+    nextPath = path,
+    nextBase = chosenBase,
+    explicit = false,
+  ) => {
+    // A non-branch descriptor carries no base, which clears the local explicit
+    // selection. Returning to Branch must re-publish the invalidated selection
+    // itself, never the inventory default, until the Base control explicitly
+    // selects a reference. The base-free tab owns the base it dropped on its
+    // descriptor, so unrelated tabs never consume it, closing the tab ends it
+    // and it never depends on the options cache.
+    const droppedBase = initial?.dropped_base,
+      inheritDropped =
+        !baseRef &&
+        comparison !== Comparison.Branch &&
+        next !== Comparison.Branch;
+    // Dropping an invalidated explicit base records it on the base-free tab. A
+    // base-free tab opening another base-free tab shares its own record, which
+    // an already open destination keeps in preference.
+    const dropped =
+      next === Comparison.Branch
+        ? undefined
+        : baseRef
+          ? trust.isInvalidated(optionsOwner, baseRef)
+            ? baseRef
+            : undefined
+          : inheritDropped && droppedBase
+            ? droppedBase
+            : undefined;
+    // The record stays with the retained base-free tab, so every later return
+    // to Branch republishes the same invalidated selection until it is
+    // explicitly reselected.
+    const retained =
+      !explicit &&
+      !baseRef &&
+      next === Comparison.Branch &&
+      droppedBase &&
+      trust.isInvalidated(optionsOwner, droppedBase)
+        ? droppedBase
+        : undefined;
+    const base = retained ?? nextBase;
+    const value: ComparisonDescriptor = {
       repository,
       comparison: next,
       path: nextPath,
-      ...(next === Comparison.Branch && options.data && nextBase
-        ? { base_ref: nextBase }
+      ...(next === Comparison.Branch && base && (retained || options.data)
+        ? { base_ref: base }
         : {}),
+      ...(dropped ? { dropped_base: dropped } : {}),
     };
-    if (openComparison) openComparison(value);
-    else {
+    if (openComparison) {
+      if (inheritDropped) openComparison(value, { inheritDropped });
+      else openComparison(value);
+    } else {
       setComparison(next);
       setPath(nextPath);
-      setBaseRef(nextBase);
+      setBaseRef(base);
     }
   };
-  const failureMessage = (error: unknown) =>
-    error instanceof ConnectError && error.code === Code.PermissionDenied
+  // A branch path is admitted only against a successfully negotiated, available
+  // base whose inventory is not being renewed or stale. A background refetch
+  // (for example a connection-level invalidation) keeps the previous data
+  // observable, so it renews the inventory just like an explicit Refresh.
+  // Other comparisons are base-free and stay immediately submittable.
+  const pathAdmitted =
+    comparison !== Comparison.Branch ||
+    (supportedBase && !refreshing && !options.isFetching && !optionsStale);
+  // Returns whether the submission was admitted; a denied submission keeps the
+  // typed draft and publishes no tab and no read.
+  const submitPath = (): boolean => {
+    if (!pathAdmitted || (comparison === Comparison.Branch && !chosenBase)) {
+      console.debug("delidev.diff.path_submission_denied", {
+        sessionId,
+        repository,
+        comparison,
+        optionsPending: options.isPending,
+        optionsFailed: options.isError,
+        optionsRefreshing: refreshing,
+        optionsFetching: options.isFetching,
+        optionsStale,
+      });
+      return false;
+    }
+    if (comparison === Comparison.Branch && onNegotiated && chosenBase) {
+      // The selection still awaits its own negotiation: publish through the
+      // current-owner callback so pending cleanup stays authoritative.
+      onNegotiated({
+        repository,
+        comparison,
+        path: pathDraft,
+        base_ref: chosenBase,
+      });
+    } else choose(comparison, pathDraft);
+    return true;
+  };
+  const failureCodeMessage = (code?: Code) =>
+    code === Code.PermissionDenied
       ? copy("session-diff.permissionFailure")
-      : error instanceof ConnectError && error.code === Code.ResourceExhausted
+      : code === Code.ResourceExhausted
         ? copy("session-diff.oversizedResult")
-        : error instanceof ConnectError && error.code === Code.Aborted
+        : code === Code.Aborted
           ? copy("session-diff.changedComparison")
           : copy("session-diff.unavailableComparison");
+  const failureMessage = (error: unknown) =>
+    failureCodeMessage(error instanceof ConnectError ? error.code : undefined);
+  const optionsFailureMessage = (code: Code) =>
+    [Code.InvalidArgument, Code.Unimplemented].includes(code)
+      ? copy("session-diff.optionsUnavailable")
+      : failureCodeMessage(code);
   const closeMenu = () => {
     setMenu(false);
     menuTrigger.current?.focus();
   };
   return (
     <>
-      <header className="diff-navbar">
+      <header className="diff-navbar" {...entrance}>
         <h2 ref={heading} tabIndex={-1}>
           {copy("session-diff.gitDiff_fa5e4e")}
         </h2>
@@ -453,12 +749,24 @@ export function RepositoryDiff({
             <select
               aria-label={copy("session-diff.base_7b4736")}
               disabled={!options.data}
-              value={chosenBase ? referenceKey(chosenBase) : ""}
+              value={
+                chosenBase && !chosenBaseInvalidated
+                  ? referenceKey(chosenBase)
+                  : ""
+              }
               onChange={(event) => {
                 const choice = options.data?.choices.find(
                   (item) => referenceKey(item.reference) === event.target.value,
                 );
-                if (choice) choose(Comparison.Branch, path, choice.reference);
+                if (!choice?.available) return;
+                // Only this explicit selection restores trust, including
+                // reselecting the recreated reference itself.
+                trust.reselect(optionsOwner, choice.reference);
+                // Retained base-free tabs that dropped this reference belong to
+                // the invalidation that just ended, so they must not bind a
+                // later, independent invalidation of the same reference.
+                restoreBase?.(repository, choice.reference);
+                choose(Comparison.Branch, path, choice.reference, true);
               }}
             >
               <option value="" disabled>
@@ -519,8 +827,7 @@ export function RepositoryDiff({
           <form
             onSubmit={(event) => {
               event.preventDefault();
-              choose(comparison, pathDraft);
-              closeMenu();
+              if (submitPath()) closeMenu();
             }}
           >
             <label>
@@ -533,7 +840,9 @@ export function RepositoryDiff({
                 spellCheck={false}
               />
             </label>
-            <button>{copy("session-diff.comparePath_31d172")}</button>
+            <button disabled={!pathAdmitted}>
+              {copy("session-diff.comparePath_31d172")}
+            </button>
           </form>
           <button type="button" onClick={closeMenu}>
             {copy("session-diff.closeOptions")}
@@ -553,17 +862,30 @@ export function RepositoryDiff({
       {comparison === Comparison.Branch && options.isPending ? (
         <p role="status">{copy("session-diff.loadingOptions")}</p>
       ) : null}
-      {comparison === Comparison.Branch && options.error ? (
+      {comparison === Comparison.Branch && options.error && !refreshFailed ? (
         <>
           <Problem error={options.error} />
           <p role="alert">
-            {options.error instanceof ConnectError &&
-            [Code.InvalidArgument, Code.Unimplemented].includes(
-              options.error.code,
-            )
-              ? copy("session-diff.optionsUnavailable")
+            {options.error instanceof ConnectError
+              ? optionsFailureMessage(options.error.code)
               : failureMessage(options.error)}
           </p>
+        </>
+      ) : null}
+      {comparison === Comparison.Branch && refreshFailure && refreshFailed ? (
+        <>
+          <Failure failure={refreshFailure.failure} />
+          {refreshFailure.failure.correlationId ? (
+            <p>
+              <LocalizedText
+                id="ui.reference_0eac07"
+                components={{
+                  s0: <code>{refreshFailure.failure.correlationId}</code>,
+                }}
+              />
+            </p>
+          ) : null}
+          <p role="alert">{optionsFailureMessage(refreshFailure.code)}</p>
         </>
       ) : null}
       {comparison === Comparison.Branch && options.data && !supportedBase ? (
@@ -666,6 +988,7 @@ export function RepositoryDiff({
             sessionId={sessionId}
             diff={result.data}
             reading={
+              refreshing ||
               result.isFetching ||
               Boolean(result.error) ||
               optionsStale ||

@@ -149,7 +149,10 @@ Retain typed `model/verification` values, including `trustedAccessForCyber`,
 without granting account readiness, model eligibility or permissions. Required
 empty verification arrays retain their existing discarded-metadata representation.
 `model/safetyBuffering/updated` retains the original model, ordered use cases and
-reasons, buffering UI flag and required nullable faster-model descriptor.
+reasons, buffering UI flag and required nullable faster-model descriptor. The
+buffering `model` must equal the selected execution model exactly; any other value
+is rejected as incompatible and is neither retained nor published as passive
+evidence. The faster-model descriptor is never compared with or adopted as a model.
 `turn/moderationMetadata` retains bounded JSONValue, including objects, arrays,
 scalars and explicit null. These private observations emit no product prompt,
 response, tool or input mutation. Neither buffering nor verification selects a
@@ -159,12 +162,22 @@ model; original usage and effective settings remain authoritative.
 and closed `highRiskCyberActivity` reason. Retain the safety decision without
 reversing it or adopting a faster-model descriptor. An actual model change pauses
 fresh sends and prevents selected-model success publication. Keep the first
-problem when earlier uncertainty exists. Original native terminal evidence remains
+problem when earlier uncertainty exists. The model-change latch and recovery problem
+are independent of evidence retention: when the aggregate evidence caps are full, an
+actual model change still latches them, and the overflowed evidence is neither
+retained nor counted. Overflow by non-reroute evidence keeps the generic
+incompatible rejection. Original native terminal evidence remains
 available for reconciliation and independent cleanup; neither terminal completion
 nor passive observations clears the pause or replays input.
 
 Reject unknown enums, malformed or ambiguous fields and unowned root turns.
-Foreign threads and server requests retain their existing private boundaries.
+Foreign threads and server requests retain their existing private boundaries:
+a foreign-thread safety notification is validated only for the 64 KiB envelope
+bound, the exact native field set and valid thread/turn identity. Closed
+verification and reroute enums and descriptor text bounds apply only to the owned
+root thread, so an unsupported foreign descriptor stays a private native extension
+and cannot pause the execution or alter safety evidence, model selection,
+completion or account authority.
 After terminal completion, accept only an exact previously retained observation
 as late private evidence; changed or unseen late observations fail validation.
 Deep-copy retained payloads. Bound each notification to 64 KiB, string descriptors
@@ -1142,7 +1155,7 @@ Ordinary subprocess fixtures exercise checkpoint mismatch, effective-default dri
 
 ### Codex API execution configuration
 
-An explicit private `APIConfig` accepts the already-paired server origin and a registered execution token in memory only. It is available in thread mode, never a discovery probe. The adapter validates the token format and HTTPS/loopback origin, appends the fixed `/api-proxy/v1` path, and selects the closed `delidev_api` Responses provider. It passes the token through one explicit `DELIDEV_EXECUTION_TOKEN` environment entry; argv contains only its variable name. Neither the upstream account key nor raw token belongs in config files, serialized settings or ownership journals. Ordinary child shell environments exclude that token, and explicit native setters cannot reintroduce it.
+An explicit private `APIConfig` accepts the already-paired server origin and a registered execution token in memory only. It is available in thread mode, never a discovery probe. The adapter validates the token format and HTTPS/loopback origin, appends the fixed `/api-proxy/v1` path, and selects the closed `delidev_api` Responses provider. It passes the token through one explicit `DELIDEV_EXECUTION_TOKEN` environment entry; argv contains only its variable name. Neither the upstream account key nor raw token belongs in config files, serialized settings or ownership journals. Ordinary child shell environments exclude that token, and explicit native setters cannot reintroduce it. An optional `ForwarderOrigin` replaces only the native base origin for a fixed Local desktop Worker that follows a relocated runtime: it must be a canonical `http://127.0.0.1:<port>` origin owned by the Worker's execution forwarder, cannot combine with the owned upstream proxy, and leaves the provider shape, execution-token environment, shell exclusion and native retry settings unchanged. Effective-configuration verification requires the exact forwarder endpoint, so the retired pairing address can never pass.
 
 Native session flags override user/project provider selections without modifying those files. Legacy managed policy can outrank session flags, so `config/read` verifies the effective configuration at process readiness and again for the exact primary directory before thread start/resume. The selected provider, endpoint, environment-key name, protocol, ephemeral auth store and transport capabilities must match. The pinned native response serializes absent optional fields as null; only absent/null command authentication, literal bearer credentials, AWS authority, extra query/headers and other unsupported provider overrides are accepted. Populated authority or unknown provider fields fail before sending input. Native retry behavior remains native; the adapter does not force retry limits, and the DeliDev relay still never retries.
 
@@ -2596,8 +2609,17 @@ A nonempty sample list, positive extra count or failed scan can emit the existin
 generic native-warning notice on the original process and active known
 nonterminal turn. An empty successful scan emits no notice. Deduplicate each of
 three warning classifications (world-writable paths, failed scan, or both) for
-the lifetime of that original execution process. Replays and observations in
-paused, failed or completed contexts become validated discarded metadata. They
+the lifetime of that original execution process. Every valid nonempty
+classification observed on the bound original process records its class in that
+process-local registry, including observations between turns, while paused, in
+failed or completed contexts, with a recovery problem, or with an unknown or
+absent active turn. Those observations, and replays of an already-recorded
+class, become validated discarded metadata, so replaying the same class on a
+later eligible active turn in that process is also discarded metadata. A first
+observation of a different class on an eligible turn emits exactly one notice,
+and a fresh original process starts with an empty registry. Empty successful
+scans, malformed payloads, foreign or unbound process contexts, server requests
+and setup completions never write the registry. Discarded observations
 do not create a new current turn or change settings, approvals, account/provider,
 readiness, input delivery, response receipts, recovery or cleanup ownership.
 
@@ -2634,7 +2656,7 @@ The closed Codex `imageView` item retains the original native call ID and path i
 
 The Worker binds an opaque observation ID to the original tool record, authenticated machine, exact immutable preparation/manifest digest and canonical root-relative location. Both Worker and server validate the accepted prepared-root metadata; completion must preserve the original reference exactly. This proves ownership of the native observation, not ownership or unchanged contents of a live file. Lexical scope validation performs no filesystem read, link traversal, URL fetch or native call. A symlink's current target and later file changes cannot provide byte or deletion authority. The original private path is not published.
 
-Preparation and image observations share the original Worker OS path grammar. Windows UNC paths retain their complete authority/share prefix for exact root matching; slash normalization never removes that identity. Reject malformed shares, device namespaces, alternate streams, traversal and sibling roots. Linux and macOS retain literal colon and backslash filename characters in the inert relative observation. Portable metadata rejects absolute paths and URLs; server revalidation applies the original Worker OS before accepting the exact reference again.
+Preparation and image observations share the original Worker OS path grammar. Windows UNC paths retain their complete authority/share prefix for exact root matching; slash normalization never removes that identity. Root matching uses one component-boundary scope rule: the POSIX filesystem root `/` scopes `/image.png` to `image.png` and never builds a `//` prefix, the longest matching root wins, and Windows drive roots such as `C:/` stay outside preparation admission. Windows drive and UNC roots (server, share and path) compare ASCII letters case-insensitively against the prepared root, while Linux and macOS compare exactly so `/Repo` and `/repo` remain distinct roots; the relative observation always keeps the observed spelling and the matched root identity. Reject malformed shares, device namespaces, alternate streams, traversal and sibling roots. Linux and macOS retain literal colon and backslash filename characters in the inert relative observation. Portable metadata rejects absolute paths and URLs; server revalidation applies the original Worker OS before accepting the exact reference again.
 
 The existing synchronized outbox, atomic native-item index, original account/execution/thread/turn, sequence and receipt checks own publication and replay. Archive and history retain one original observation. Replay never reads the location. Full native history validation accepts only the closed image-view metadata while preserving original rollout/checkpoint digests; it does not replay the tool. Lost acknowledgments, unsupported older peers, foreign generations or changed references retain recovery without input resend. No RPC, capability allocation or migration is added.
 
@@ -2690,6 +2712,12 @@ System `NATIVE_CODEX_REVIEW_V1 = 96` and Worker `NATIVE_CODEX_REVIEW_V1 = 58` ow
 The native profile follows official Codex `rust-v0.162.0`, source revision `c1382380de69521303b416720a52f42d51af6248`: [review targets](https://github.com/openai/codex/blob/c1382380de69521303b416720a52f42d51af6248/codex-rs/app-server-protocol/src/protocol/v2/review.rs) and [structured review events](https://github.com/openai/codex/blob/c1382380de69521303b416720a52f42d51af6248/codex-rs/protocol/src/protocol.rs). It freezes uncommitted, base-branch, commit or custom selection before native sending. Base references resolve to an exact commit; custom instructions retain the original selected repository snapshot. Public entered/exited states bind the original root, turn and distinct completed item IDs. Typed findings come only from the original private rollout's matching structured entered/exited events, with stable file identity/digest and protected-content checks. Rendered review prose never supplies findings. Relative finding locations cannot escape the selected repository.
 
 The original request and private intent are retained before side effects. Unknown send, acknowledgment, completion, history or cleanup prohibits a second send. Only explicit positive no-send plus joined workspace/native/auth cleanup permits a rejected result. Terminal findings require the original native completion and independent cleanup; target drift produces a stale result without applying findings. Native children, original process owners, proxy, managed authentication and workspace observation join before result publication. Ordinary conversation history, execution outcome, continuation predecessor and feedback commands remain unchanged. Real installed-native, account and platform acceptance remain separate from source and fixture coverage.
+
+The complete encoded `NativeCodeReviewResult`, including every `usage_records` entry, must fit the 1 MiB `domain.MaxWorkerJobOutputBytes` Worker job output ceiling. `NativeCodeReviewResult.Validate` marshals the result and counts encoded JSON bytes (an escaped character counts at its encoded size, not its raw string length), so a result larger than the ceiling is rejected with `resource_exhausted` after the per-field bounds. The Worker applies the same check after joined cleanup and before `review-result.json` is written or any successful output is returned. The over-limit path keeps the native send classification (no no-send proof is produced), never truncates findings and returns a typed problem so `ReportWork` settles the job as uncertain; response usage receipts were already published during the review and stay retained. The generic job output ceiling is unchanged.
+
+When the generic job journal of a native review is still `started` after a Worker crash, recovery first consults the private `jobs/<job>/review-result.json` written atomically with the completed result. The file is reused only when it is within the Worker output ceiling, is byte-identical to the canonical encoding of a decoded `NativeCodeReviewResult` that passes `Validate` (including `cleanup_verified: true`), carries the original action ID and selected target, and every usage record binds to the original source session, project, account, connection, provider/subscription service, model, context revision and contiguous sequence. A verified file settles the journal as finished with those exact bytes as output and no problem, keeps the original report identity and never calls the native adapter, so no second `review/start` is possible and the terminal report is published once through the normal observation replay. A missing, malformed, oversized, non-canonical, action/target/usage-mismatched or cleanup-unverified file keeps the `recovery_required` problem without fabricating success. Other job types and already finished or reported journals do not consult the file.
+
+When the original review completes and the post-callback target comparison then finds drift (`Conflict`), the Worker reports a typed stale-cleanup proof (`NativeCodeReviewStaleProof`: `version` 1, the original `action_id`, `stale: true`, `cleanup_verified: true`) as output, not as a bare problem. It is emitted only after the native child, workspace observation and managed authentication are joined; every other post-send failure stays an uncertain problem. Before the Worker returns the proof it atomically retains the exact canonical bytes in the private `jobs/<job>/review-stale-proof.json`; when retention fails the proof is not used and the uncertain problem stands. If the generic job journal is still `started` after a crash and no `review-result.json` exists, recovery reuses that file under the same rules as a retained result (within the output ceiling, byte-identical to the canonical encoding of a valid `NativeCodeReviewStaleProof`, bound to the original action ID) and settles the journal as finished with those bytes and no problem, so the accepted Archive settles without any native call; a missing or unverifiable file keeps `recovery_required`. A verified stale settlement logs only `native_code_review_stale_cleanup_verified`, never `native_code_review_unconfirmed`. The server accepts the proof only for the same action and only after the Exited lifecycle was published. It stores the job as `failed` with a `Conflict` problem and the proof as retained output, so `GetNativeCodeReview` reports `stale`, no findings are published, and the proof is never a successful result. That verified cleanup settles an accepted pending Archive to Archived without changing the original Archive control receipt. A bare `Conflict` problem, `RecoveryRequired` and `Uncertain` outcomes carry no proof and keep Archive pending. No outcome authorizes a second native send. Rolling upgrade: deploy the server before Workers; an older Worker keeps reporting a bare `Conflict`, which leaves Archive pending as before.
 
 Stop, Archive and account disconnection fence new Ready admission and inference. Exact already-observed entered/exited lifecycle and response usage remain publishable under the original frozen assignment, source, job revision, device, instance and server epoch. Their bounded publication lifetime is independent of canceled native work. Receipt recovery reuses the exact observed bytes and original request ID; it never sends native input.
 
@@ -2769,6 +2797,13 @@ only response is `success: false` and one `inputText` item containing
 `This dynamic tool is unavailable in DeliDev.` No handler, registry, arbitrary
 tool backend, automatic input replay or automatic resend is introduced.
 
+A dynamic tool shares the Worker's native item identity space and the 10,000
+retained-item bound with messages, tools, artifacts, image generations and
+function outputs. A retained dynamic native ID cannot start any other item
+family, and a new item of any family is rejected as publication-uncertain at the
+bound without emitting an event. Updates to an already retained dynamic tool
+remain admitted at the bound and do not change the count.
+
 The first wire-request uniqueness claim atomically publishes a complete private
 original owner document. A missing or partial later call journal preserves that
 inspectable owner and never permits another send.
@@ -2794,3 +2829,9 @@ for a negotiated root Codex Worker. Legacy and restricted assignments grant no
 live dynamic responder. A failed/interrupted root with unresolved tool evidence
 can retain its terminal and verified cleanup in a version-1 completion; it cannot
 produce a continuation checkpoint or later input authority.
+
+## Server access-only reset-credit profile
+
+The separate `CreditProtocol` profile is available only to the server-owned System 101 credit lane. It shares the [quota-only external authentication](#quota-only-external-chatgpt-authentication--issue-1854) boundary: experimental API support, disabled plugins, ephemeral credentials, the verified official OpenAI provider, configuration verified before credentials, and only an access token, account and plan supplied to one external `account/login/start`. The once-only closed login completion is validated and discarded, every `account/chatgptAuthTokens/refresh` request is refused with the fixed safe error, and no managed auth file, ID or refresh token, authentication renewal or credential write-back exists. Native readiness, the configured Direct route and the executable digest are verified for the actual server process; an unsupported profile fails without a Worker fallback.
+
+`ConsumeExternalResetCredit` requires the server's durable send claim and sends one official `account/rateLimitResetCredit/consume` request with the original UUIDv7 `idempotencyKey` and the immutable credit or count-only selection. A valid closed outcome is checkpointed through the server callback before one separate omitted-params `account/rateLimits/read`; a checkpoint or read failure returns the outcome with an independent read error, so it cannot erase consumption. The quota-only `QuotaProtocol` profile stays read-only and rejects consumption. The client is single use and joins its notification reader before cleanup. Independent original-process and private-file cleanup remain required.

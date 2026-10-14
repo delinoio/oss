@@ -2593,6 +2593,34 @@ it("refreshes reads after recovery without replacing the connection's session dr
   expect(value.enqueues).not.toHaveBeenCalled();
 });
 
+it("closes an open Open tool dialog when readiness is lost and keeps it closed after same-identity recovery", async () => {
+  const value = fixture();
+  const view = render(<App transport={value.transport} connectionReady />);
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: /General Chat Retained session/,
+    }),
+  );
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  fireEvent.change(composer, { target: { value: "Keep this draft" } });
+  const trigger = screen.getByRole("button", { name: "Open tool" });
+  fireEvent.click(trigger);
+  const dialog = () => document.querySelector("dialog.session-tool-dialog")!;
+  expect((dialog() as HTMLDialogElement).open).toBe(true);
+  view.rerender(<App transport={value.transport} connectionReady={false} />);
+  expect((dialog() as HTMLDialogElement).open).toBe(false);
+  fireEvent.click(trigger);
+  expect((dialog() as HTMLDialogElement).open).toBe(false);
+  view.rerender(
+    <App transport={value.transport} connectionReady connectionEpoch={1} />,
+  );
+  expect((dialog() as HTMLDialogElement).open).toBe(false);
+  expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
+  expect((composer as HTMLTextAreaElement).value).toBe("Keep this draft");
+  fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+  expect((dialog() as HTMLDialogElement).open).toBe(true);
+});
+
 it("retries the exact accepted message identity after uncertainty instead of sending a new message", async () => {
   const value = fixture();
   value.enqueues.mockRejectedValueOnce(
@@ -4078,6 +4106,141 @@ it(
 );
 
 it.each([
+  { collapsed: false, label: "Expanded" },
+  { collapsed: true, label: "Collapsed" },
+])(
+  "moves focus from the closed compact opener to visible navigation when widening ($label)",
+  async ({ collapsed }) => {
+    const resize = viewport();
+    const value = fixture();
+    const { bridge, readStarted } = startingSidebarBridge();
+    const update = vi.spyOn(bridge, "update");
+    render(
+      <SidebarProvider bridge={bridge}>
+        <App transport={value.transport} />
+      </SidebarProvider>,
+    );
+    await waitForSidebarRead(readStarted);
+    const pane = document.querySelector<HTMLDialogElement>(
+      ".sidebar-pane-dialog",
+    )!;
+    if (collapsed) {
+      fireEvent.keyDown(document.body, { key: "b", ctrlKey: true });
+      await waitFor(() =>
+        expect(document.querySelector(".app.sidebar-collapsed")).toBeTruthy(),
+      );
+      await waitFor(() => expect(pane.hidden).toBe(true));
+    }
+    act(() => resize(true));
+    const opener = document.querySelector<HTMLButtonElement>(
+      ".sidebar-context-trigger",
+    )!;
+    opener.focus();
+    expect(document.activeElement).toBe(opener);
+    const writes = update.mock.calls.length;
+    act(() => resize(false));
+    const focused = document.activeElement as HTMLElement;
+    expect(focused).not.toBe(opener);
+    expect(focused).not.toBe(document.body);
+    expect(focused.getAttribute("aria-current")).toBe("page");
+    expect(focused.closest("[inert], [hidden]")).toBeNull();
+    if (collapsed)
+      expect(focused.classList.contains("sidebar-rail-button")).toBe(true);
+    expect(update.mock.calls.length).toBe(writes);
+    expect(document.querySelector(".app.sidebar-collapsed") !== null).toBe(
+      collapsed,
+    );
+    expectNoNavigationWrites(value);
+  },
+  fullShellTimeoutMs,
+);
+
+it(
+  "moves focus from the closed compact opener to the selected session row when widening",
+  async () => {
+    const resize = viewport();
+    const value = fixture();
+    render(<App transport={value.transport} />);
+    const row = await screen.findByRole("button", {
+      name: /General Chat Retained session/,
+    });
+    fireEvent.click(row);
+    await screen.findByRole("heading", { name: "Retained session" });
+    act(() => resize(true));
+    const opener = document.querySelector<HTMLButtonElement>(
+      ".sidebar-context-trigger",
+    )!;
+    opener.focus();
+    expect(document.activeElement).toBe(opener);
+    act(() => resize(false));
+    const focused = document.activeElement as HTMLElement;
+    expect(focused.classList.contains("sidebar-session-row")).toBe(true);
+    expect(focused.getAttribute("aria-current")).toBe("true");
+    expect(focused.closest("[inert], [hidden]")).toBeNull();
+    expectNoNavigationWrites(value);
+  },
+  fullShellTimeoutMs,
+);
+
+it(
+  "skips the hidden retained session row when widening from compact on Settings",
+  async () => {
+    const resize = viewport();
+    const value = fixture();
+    render(<App transport={value.transport} />);
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: /General Chat Retained session/,
+      }),
+    );
+    await screen.findByRole("heading", { name: "Retained session" });
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    const retained = document.querySelector<HTMLElement>(
+      ".sidebar-session-row[aria-current='true']",
+    );
+    expect(retained?.closest("[hidden]")).not.toBeNull();
+    act(() => resize(true));
+    const opener = document.querySelector<HTMLButtonElement>(
+      ".sidebar-context-trigger",
+    )!;
+    opener.focus();
+    expect(document.activeElement).toBe(opener);
+    act(() => resize(false));
+    const focused = document.activeElement as HTMLElement;
+    expect(focused).not.toBe(opener);
+    expect(focused).not.toBe(document.body);
+    expect(focused).not.toBe(retained);
+    expect(focused.closest("[inert], [hidden]")).toBeNull();
+    expect(focused.getAttribute("aria-current")).toBe("page");
+    expectNoNavigationWrites(value);
+  },
+  fullShellTimeoutMs,
+);
+
+it(
+  "keeps focus and selection on a composer input across both breakpoint directions",
+  async () => {
+    const resize = viewport();
+    const value = fixture();
+    render(<App transport={value.transport} />);
+    fireEvent.click(await screen.findByRole("button", { name: "New session" }));
+    const input = await screen.findByRole<HTMLInputElement>("textbox", {
+      name: "First message",
+    });
+    fireEvent.change(input, { target: { value: "draft message" } });
+    input.focus();
+    input.setSelectionRange(2, 7);
+    act(() => resize(true));
+    expect(document.activeElement).toBe(input);
+    act(() => resize(false));
+    expect(document.activeElement).toBe(input);
+    expect([input.selectionStart, input.selectionEnd]).toEqual([2, 7]);
+    expectNoNavigationWrites(value);
+  },
+  fullShellTimeoutMs,
+);
+
+it.each([
   ["MacIntel", false],
   ["Win32", false],
   ["Linux x86_64", false],
@@ -4279,6 +4442,76 @@ it("preserves first Search autofocus after a hidden wide activation", async () =
   fireEvent.click(headerAction("Search"));
   flushFrames();
   expect(document.activeElement).toBe(input);
+  expectNoNavigationWrites(value);
+});
+
+it("focuses retained Search once when a compact drawer opens after a hidden wide activation", async () => {
+  const resize = viewport();
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  const flushFrames = animationFrames();
+  const value = fixture();
+  render(
+    <SidebarProvider bridge={memorySidebarBridge()}>
+      <App transport={value.transport} />
+    </SidebarProvider>,
+  );
+  await act(async () => {});
+  fireEvent.keyDown(document.body, { key: "b", ctrlKey: true });
+  await waitFor(() =>
+    expect(document.querySelector(".app.sidebar-collapsed")).toBeTruthy(),
+  );
+  fireEvent.keyDown(document.body, { key: "k", ctrlKey: true });
+  const menu = await screen.findByRole("dialog", { name: "Command menu" });
+  fireEvent.click(within(menu).getByRole("option", { name: "Search" }));
+  const input = document.querySelector<HTMLInputElement>(
+    ".sidebar-pane-dialog input",
+  )!;
+  flushFrames();
+  expect(document.activeElement).not.toBe(input);
+
+  // Resize below the compact breakpoint without leaving Search.
+  act(() => resize(true));
+  flushFrames();
+  const opener = await screen.findByRole("button", {
+    name: "Open search filters",
+  });
+  // Closed compact content never receives focus.
+  expect(document.activeElement).not.toBe(input);
+  const focused = vi.fn();
+  input.addEventListener("focus", focused);
+
+  fireEvent.click(opener);
+  flushFrames();
+  expect(document.activeElement).toBe(input);
+  expect(focused).toHaveBeenCalledTimes(1);
+
+  // Reopening an already focused drawer must not replay initial autofocus.
+  fireEvent(
+    document.querySelector(".sidebar-pane-dialog")!,
+    new Event("cancel", { cancelable: true }),
+  );
+  opener.focus();
+  fireEvent.click(opener);
+  flushFrames();
+  expect(focused).toHaveBeenCalledTimes(1);
+
+  // The explicit SearchFocus shortcut still focuses the query input.
+  fireEvent(
+    document.querySelector(".sidebar-pane-dialog")!,
+    new Event("cancel", { cancelable: true }),
+  );
+  fireEvent.keyDown(document.body, { key: "i", ctrlKey: true });
+  await waitFor(() => {
+    flushFrames();
+    expect(document.activeElement).toBe(input);
+  });
   expectNoNavigationWrites(value);
 });
 

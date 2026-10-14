@@ -15,8 +15,15 @@ import { RetainedImages, imageEntryHandlers } from "./image-attachments";
 import { imageDigest } from "./image-input";
 import * as appearance from "./appearance";
 import { defaultPreferences } from "./appearance-preferences";
+import { Theme, type AppearanceBridge } from "./appearance";
+const bridge = vi.hoisted(() => ({ tauri: true }));
+vi.mock("@tauri-apps/api/core", () => ({
+  isTauri: () => bridge.tauri,
+  invoke: vi.fn(),
+}));
 const bytes = new Uint8Array([1, 2, 3]);
 beforeEach(() => {
+  bridge.tauri = true;
   vi.stubGlobal("crypto", webcrypto);
   const BaseURL = URL;
   vi.stubGlobal(
@@ -525,5 +532,152 @@ it("shows exact creation constraints locally in each language and preserves tool
     await act(async () => {
       await i18n.changeLanguage("en");
     });
+  }
+});
+
+function delayedAppearance(inline_images: boolean) {
+  let resolve!: (value: unknown) => void;
+  const promise = new Promise<unknown>((yes) => {
+    resolve = yes;
+  });
+  const bridge: AppearanceBridge = {
+    read: vi.fn(() => promise),
+    update: vi.fn(),
+    subscribe: vi.fn(async () => () => {}),
+  };
+  return {
+    bridge,
+    settle: () =>
+      act(async () =>
+        resolve({
+          revision: 1,
+          theme: Theme.System,
+          problem: null,
+          preferences: { ...defaultPreferences(), inline_images },
+        }),
+      ),
+  };
+}
+async function retainedFixture() {
+  const read = vi.fn(async () => ({
+    data: bytes,
+    sha256: await imageDigest(bytes),
+    complete: true,
+  }));
+  const transport = createRouterTransport((router) =>
+    router.service(AttachmentService, { readAttachment: read }),
+  );
+  const value = [
+    {
+      id: newRequestId(),
+      machine_id: newRequestId(),
+      media_type: "image/png",
+      byte_length: bytes.length,
+      sha256: await imageDigest(bytes),
+    },
+  ];
+  return { read, transport, value };
+}
+it("makes no attachment request before a delayed inline-images Off snapshot and keeps explicit reveal", async () => {
+  const { read, transport, value } = await retainedFixture();
+  const delayed = delayedAppearance(false);
+  render(
+    <appearance.AppearanceProvider bridge={delayed.bridge}>
+      <TransportProvider transport={transport}>
+        <RetainedImages value={value} sessionId={newRequestId()} />
+      </TransportProvider>
+    </appearance.AppearanceProvider>,
+  );
+  await waitFor(() => expect(delayed.bridge.read).toHaveBeenCalled());
+  expect(read).not.toHaveBeenCalled();
+  expect(screen.queryByRole("img")).toBeNull();
+  await delayed.settle();
+  expect(read).not.toHaveBeenCalled();
+  expect(screen.queryByRole("img")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Reveal image 1" }));
+  await screen.findByRole("img", { name: "Image 1" });
+  expect(read).toHaveBeenCalledOnce();
+});
+it("starts the original bounded readback only after readiness when inline images are on", async () => {
+  const { read, transport, value } = await retainedFixture();
+  const delayed = delayedAppearance(true);
+  const mounted = render(
+    <appearance.AppearanceProvider bridge={delayed.bridge}>
+      <TransportProvider transport={transport}>
+        <RetainedImages value={value} sessionId={newRequestId()} />
+      </TransportProvider>
+    </appearance.AppearanceProvider>,
+  );
+  await waitFor(() => expect(delayed.bridge.read).toHaveBeenCalled());
+  expect(read).not.toHaveBeenCalled();
+  await delayed.settle();
+  await screen.findByRole("img", { name: "Image 1" });
+  expect(read).toHaveBeenCalledOnce();
+  mounted.unmount();
+  await waitFor(() =>
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:verified"),
+  );
+});
+it("draft images follow the same readiness rule", async () => {
+  const { ImageAttachmentInput } = await import("./image-attachments");
+  const delayed = delayedAppearance(false);
+  const draft = {
+    images: [{ key: "original", preview: "blob:draft", ready: false }],
+    busy: false,
+    cleanupPending: 0,
+    controller: { remove: vi.fn(), retryCleanup: vi.fn(), add: vi.fn() },
+  } as unknown as Parameters<typeof ImageAttachmentInput>[0]["draft"];
+  render(
+    <appearance.AppearanceProvider bridge={delayed.bridge}>
+      <ImageAttachmentInput
+        draft={draft}
+        disabled={false}
+        available
+        routeReady
+        routeLoading={false}
+        machineId="original"
+      />
+    </appearance.AppearanceProvider>,
+  );
+  await waitFor(() => expect(delayed.bridge.read).toHaveBeenCalled());
+  expect(screen.queryByRole("img")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Reveal image 1" })).toBeNull();
+  await delayed.settle();
+  expect(screen.queryByRole("img")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Reveal image 1" }));
+  expect(screen.getByRole("img", { name: "Image 1" })).toBeTruthy();
+});
+it("never offers generated-image export for non-exportable retained user images", async () => {
+  const read = vi.fn(async () => ({
+    data: bytes,
+    sha256: await imageDigest(bytes),
+    complete: true,
+  }));
+  const transport = createRouterTransport((router) =>
+    router.service(AttachmentService, { readAttachment: read }),
+  );
+  const value = [
+    {
+      id: newRequestId(),
+      machine_id: newRequestId(),
+      media_type: "image/png",
+      byte_length: bytes.length,
+      sha256: await imageDigest(bytes),
+    },
+  ];
+  for (const tauri of [true, false]) {
+    bridge.tauri = tauri;
+    const mounted = render(
+      <TransportProvider transport={transport}>
+        <RetainedImages value={value} sessionId={newRequestId()} />
+      </TransportProvider>,
+    );
+    await screen.findByRole("img");
+    expect(screen.queryByRole("link")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /Export original/ }),
+    ).toBeNull();
+    expect(mounted.container.querySelector("[download]")).toBeNull();
+    mounted.unmount();
   }
 });

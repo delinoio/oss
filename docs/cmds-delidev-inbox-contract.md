@@ -56,7 +56,7 @@ A joined server observer scans registered Workers in bounded pages every ten sec
 
 An original Schedule occurrence publishes once for selection or confirmed preparation failure before execution, or a retained server-offline/Worker-offline skip. Waiting overlaps, capacity, pause, deletion, explicit Stop and post-start execution failures do not become start-failure alerts. Each operational Inbox entry retains a closed kind, source sequence, observation time and opaque original source references. Publication shares the source transaction. Activation reads the original Inbox and target again: Worker diagnostics, the original subscription account or the retained occurrence. Deleted, revoked or replaced authority produces a safe unavailable view. Activation never runs, retries, answers or changes Inbox read state.
 
-The native connection lane runs only within trusted retained original connection authority. Status cadence is 30 seconds with a ten-second total read deadline. A matching authenticated status establishes a fresh process baseline; two consecutive raw client-generated Connect Unavailable/DeadlineExceeded failures establish loss, and one fresh matching authenticated status establishes restoration. Server-returned failures, mapped diagnostics, authentication/permission/protocol errors, stopping and replacement do not count. A successful status still proves restoration when its subsequent preference refresh loses raw transport; only the previous acknowledged preference cache remains usable. The observer stores no endpoint, token, alias or source content in its ledger. The protected cache binds the original connection identity and preference generation. Missing cache suppresses presentation. Newly enabled restoration starts after its acknowledged preference generation; that same status success cannot replay a prior loss. Loss and restoration choices remain independent. A changed loss preference cannot suppress an enabled restoration.
+The native connection lane runs only within trusted retained original connection authority. Status cadence is 30 seconds with a ten-second total read deadline. A matching authenticated status establishes a fresh process baseline; two consecutive raw client-generated Connect Unavailable/DeadlineExceeded failures establish loss, and one fresh matching authenticated status establishes restoration. Server-returned failures, mapped diagnostics, authentication/permission/protocol errors, stopping and replacement do not count. A successful status still proves restoration when its subsequent preference refresh loses raw transport; only the previous acknowledged preference cache remains usable. The observer stores no endpoint, token, alias or source content in its ledger. The protected cache binds the original connection identity and preference generation. Missing cache suppresses presentation. Newly enabled restoration starts after its acknowledged preference generation; that same status success cannot replay a prior loss. Loss and restoration choices remain independent. A changed loss preference cannot suppress an enabled restoration. A transient or unconfirmed observation (a failed Go status read or a failed blocking join) while the original renderer authority is still valid is logged as `unconfirmed` and retried on the next 30-second tick: it never disposes the connection's native scopes, so later distinct candidates keep a valid scope. Scopes and the observer entry are disposed only for verified authority loss or replacement, stopping or Quit, cancellation by scope removal, or a local ledger/transition state error; the join log carries that closed reason (`authority_lost`, `stopping`, `canceled`, `local_state_error`). An already-claimed display is never replayed.
 
 Native connection edges reserve an immutable private local ledger record before OS submission, shared by all windows of the same original connection. They create no fake Inbox ID and perform no server claim/report while disconnected. Fresh restart establishes a baseline without replaying ledger records. Revocation/replacement disposes the scope; hidden windows retain observation. Quit cancels and joins the original bounded read and presentation tasks. Permission is observed without an automatic OS prompt; denied, failed and uncertain presentation never retries. Connection activation opens the closed Connection & diagnostics destination.
 
@@ -88,7 +88,7 @@ CLI individual controls are `notification configure --revision N` with any of `-
 
 ## Storage
 
-Schema v17 adds per-client preference revisions and client/inbox-unique delivery reservations. It stores only opaque IDs, closed kinds/states and booleans, with inbox deletion cascading to that inbox's reservations. Migration from v1-v16 retains a synchronized pre-migration backup, preserves original resources/receipts/history and starts with no invented delivery evidence or preferences. Existing conflicting tables fail migration atomically; they are never adopted or overwritten. Reopening preserves reservations, including claimed-but-unreported uncertainty. Ordinary preference and delivery writes do not create inbox resource revisions/events.
+Schema v17 adds per-client preference revisions and client/inbox-unique delivery reservations. It stores only opaque IDs, closed kinds/states and booleans, with inbox deletion cascading to that inbox's reservations. Migration from v1-v16 retains a synchronized pre-migration backup, preserves original resources/receipts/history and starts with no invented delivery evidence or preferences. Existing conflicting tables fail migration atomically; they are never adopted or overwritten. Reopening preserves reservations, including claimed-but-unreported uncertainty. Ordinary preference and delivery writes do not create inbox resource revisions/events. Typed version-1 delivery metadata is keyed by inbox ID rather than cascaded, so both ordinary Inbox deletion and permanent Session purge remove every `notification-delivery-v1:INBOX_ID:CLIENT_ID` key owned by each purged Inbox entry in the same transaction, leaving other inboxes' keys untouched; repeated purge and restart replay stay idempotent.
 
 Schema v10 adds unique source-kind/source-ID ownership and read-state/session indexes over `inbox` entities. Creation, source publication, state/events and request receipts are atomic. Source IDs are interaction UUIDs or execution UUIDs; every terminal record also binds its original queue input. Existing source records remain authoritative and are never rewritten by inbox backfill or read-state changes.
 
@@ -161,7 +161,13 @@ The authenticated owner or paired client is part of durable operation
 or changing its revision. One SQLite transaction defines the acknowledgment instant
 and processes all current unread entries belonging to that session in internal pages
 of at most 200. Query rows close before source validation and ordinary entry updates.
-Each changed entry retains its own revision and event. Other sessions and unscoped
+Each changed entry retains its own revision and event. Before marking an
+interaction-source entry read, the server decodes and validates the retained
+interaction document with the same checks as Inbox entry creation (native binding,
+payload type, execution/thread/turn identities, sequence bounds and a closure of
+open, native-closed or turn-ended). A malformed or contradictory document rejects
+the whole acknowledgment with a safe `recovery_required` error that carries no
+native content; source documents are never rewritten. Other sessions and unscoped
 operational/subscription-recovery alerts remain unchanged.
 
 The read changes and compact original session/count/UTC-time receipt commit together.
@@ -178,7 +184,13 @@ successful loading. Re-renders, polling, reconnects, pagination and newly arrivi
 alerts do not start another acknowledgment within that activation. The connection
 mutation registry retains exact original bytes across navigation. Failed or uncertain
 outcomes permit only original receipt reconciliation/retry on a later qualifying
-activation and never fabricate a replacement request. Accepted results invalidate the
+activation and never fabricate a replacement request. A qualifying visit that begins
+while an earlier acknowledgment for the same session and connection is still busy
+sends nothing and stays eligible; when that request settles, the visit is evaluated
+again against every gate. A positive settlement then admits one fresh request, and an
+uncertain settlement reconciles only the original retained bytes. A visit that no
+longer qualifies by then (session, connection, focus, capability or loaded state)
+sends nothing. Accepted results invalidate the
 original connection's Inbox and unread-count queries even after the sender leaves.
 The authoritative aggregate controls the existing badge; the client never decrements
 it locally. Native selection, freshness and publication fences, zero clearing, 99+

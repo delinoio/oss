@@ -656,6 +656,15 @@ func validateConfigurationPlan(tx *store.Tx, plan domain.ConfigurationImportPlan
 	}
 	for _, change := range plan.Changes {
 		if change.Action == domain.ConfigurationReuse {
+			// Reuse publishes nothing, so legacy databases may already hold
+			// equivalent Project or Repository names. Validate the reused name
+			// against the complete prospective namespace without renaming.
+			if change.Kind == domain.ProjectKind || change.Kind == domain.RepositoryKind {
+				overlay.self = change.ID
+				if err = store.ValidateConfigurationName(overlay, change.Kind, change.ID, change.After); err != nil {
+					return err
+				}
+			}
 			continue
 		}
 		value, err := portableValue(change.Kind, change.After, true)

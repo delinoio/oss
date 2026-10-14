@@ -55,6 +55,11 @@ func (m ExecutionMessage) SearchText() string {
 			add(value.Command.AggregatedOutput)
 		}
 		changes(value.Changes)
+		// Only the visible relative location is searchable; reference, machine,
+		// repository and manifest identities stay private metadata.
+		if value.Kind == ImageViewTool && value.ImageView != nil {
+			parts = append(parts, value.ImageView.Location)
+		}
 	}
 	if m.FunctionOutput != nil {
 		add(m.FunctionOutput.Text)

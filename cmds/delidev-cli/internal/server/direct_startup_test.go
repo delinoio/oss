@@ -314,7 +314,7 @@ func TestDirectStartupExplicitRetryRetainsOriginalSelectionAndReceipt(t *testing
 }
 
 func TestImageRejectionReportBindsOriginalClaimAndReadyProcess(t *testing.T) {
-	for _, scenario := range []string{"valid", "text", "no-thread", "changed-input", "changed-process", "acknowledged"} {
+	for _, scenario := range []string{"valid", "text", "no-thread", "changed-input", "changed-mode", "changed-skills", "changed-process", "acknowledged"} {
 		t.Run(scenario, func(t *testing.T) {
 			f := directStartupFixture(t, func(i *domain.ExecutionJobInput) {
 				if scenario != "text" {
@@ -339,7 +339,7 @@ func TestImageRejectionReportBindsOriginalClaimAndReadyProcess(t *testing.T) {
 				if scenario == "acknowledged" {
 					session.Execution.NativeTurnID = string(domain.NewID())
 				}
-				if scenario == "changed-input" {
+				if scenario == "changed-input" || scenario == "changed-mode" || scenario == "changed-skills" {
 					qr, err := tx.Get(domain.QueueKind, f.input.InputID)
 					if err != nil {
 						return nil, err
@@ -348,7 +348,20 @@ func TestImageRejectionReportBindsOriginalClaimAndReadyProcess(t *testing.T) {
 					if err != nil {
 						return nil, err
 					}
-					q.Prompt += " changed"
+					switch scenario {
+					case "changed-input":
+						q.Prompt += " changed"
+					case "changed-mode":
+						// Mode is outside InputDigest, so only full input equality catches it.
+						if q.Mode == domain.PlanMode {
+							q.Mode = domain.ExecuteMode
+						} else {
+							q.Mode = domain.PlanMode
+						}
+					case "changed-skills":
+						// Skills are outside InputDigest, so only full input equality catches them.
+						q.Skills = []domain.SkillBinding{{WorkerDeviceID: domain.NewID(), InventoryID: domain.NewID(), SkillID: domain.NewID(), ContentRevision: "revision", SnapshotID: domain.NewID()}}
+					}
 					if _, err = tx.Put(domain.QueueKind, qr.ID, qr.Revision, qr.SessionID, "", q); err != nil {
 						return nil, err
 					}
@@ -372,6 +385,21 @@ func TestImageRejectionReportBindsOriginalClaimAndReadyProcess(t *testing.T) {
 			if scenario != "valid" {
 				if err == nil {
 					t.Fatal("foreign or mixed image report accepted")
+				}
+				if readErr := f.service.Store.Read(context.Background(), func(tx *store.Tx) error {
+					_, session, err := sessionRecord(tx, f.input.SessionID)
+					if err != nil {
+						return err
+					}
+					if session.Startup.Failure != nil {
+						t.Fatal("rejected image report stored a startup failure")
+					}
+					if session.Problem != nil && session.Problem.Message == domain.UnsupportedImageInput().Message {
+						t.Fatal("rejected image report changed the session problem")
+					}
+					return nil
+				}); readErr != nil {
+					t.Fatal(readErr)
 				}
 				return
 			}
@@ -454,4 +482,143 @@ func TestImageRejectionReportBindsOriginalClaimAndReadyProcess(t *testing.T) {
 
 		})
 	}
+}
+
+func startupSessionOf(t *testing.T, f *authorityFixture) domain.Session {
+	t.Helper()
+	record, err := f.service.Store.Get(context.Background(), domain.SessionKind, f.input.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := store.Decode[domain.Session](record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return session
+}
+
+func failedStartupObservation(f *authorityFixture) domain.ExecutionStartupObservation {
+	return domain.ExecutionStartupObservation{State: domain.StartupFailed, Phase: domain.StartupResolve, Harness: domain.Codex, ProblemCode: domain.NotFound, CorrelationID: f.job, InputDelivery: domain.StartupNotSent, Cleanup: domain.StartupCleanupConfirmed}
+}
+
+func uncertainStartupObservation(f *authorityFixture) domain.ExecutionStartupObservation {
+	return domain.ExecutionStartupObservation{State: domain.StartupUncertain, Phase: domain.StartupExecution, Harness: domain.Codex, ProblemCode: domain.Unsupported, CorrelationID: f.job, InputDelivery: domain.StartupDeliveryUncertain, Cleanup: domain.StartupCleanupUncertain}
+}
+
+func TestDirectStartupFailureRejectsPreviousServerEpoch(t *testing.T) {
+	for name, observation := range map[string]func(*authorityFixture) domain.ExecutionStartupObservation{"failed": failedStartupObservation, "uncertain": uncertainStartupObservation} {
+		t.Run(name, func(t *testing.T) {
+			f := directStartupFixture(t)
+			f.registerGrant(t)
+			original := f.service.executionAuthority.epoch
+			// A restarted server creates a fresh authority epoch for the same claimed job.
+			f.service.executionAuthority.epoch = domain.NewID()
+			request := startupRequest(f, observation(f))
+			if _, err := f.client.ReportExecutionStartup(context.Background(), request); err == nil {
+				t.Fatal("previous-epoch startup observation was accepted")
+			} else if connect.CodeOf(err) != connect.CodePermissionDenied {
+				t.Fatalf("previous-epoch denial code = %v", connect.CodeOf(err))
+			}
+			if session := startupSessionOf(t, f); session.Startup != nil && session.Startup.Failure != nil || session.Problem != nil {
+				t.Fatal("denied previous-epoch observation mutated the session")
+			}
+			// The same observation under the original epoch remains accepted and replays exactly.
+			f.service.executionAuthority.epoch = original
+			request = startupRequest(f, observation(f))
+			first, err := f.client.ReportExecutionStartup(context.Background(), request)
+			if err != nil || first.Msg.Replayed {
+				t.Fatalf("same-epoch original observation: %v", err)
+			}
+			second, err := f.client.ReportExecutionStartup(context.Background(), request)
+			if err != nil || !second.Msg.Replayed {
+				t.Fatalf("same-epoch exact replay: %v", err)
+			}
+			if session := startupSessionOf(t, f); session.Startup == nil || session.Startup.Failure == nil {
+				t.Fatal("same-epoch observation was not recorded")
+			}
+		})
+	}
+}
+
+func TestDirectStartupFailureRejectsChangedGrantOwnership(t *testing.T) {
+	for _, change := range []string{"device", "instance", "execution"} {
+		t.Run(change, func(t *testing.T) {
+			f := directStartupFixture(t)
+			// A grant owned by another Worker identity must not authenticate this claim.
+			grant := store.ExecutionGrant{JobID: f.job, Digest: bytes32(), ExecutionID: f.input.ExecutionID, MachineID: f.input.MachineID, InstanceID: f.instance, DeviceID: f.device, ServerEpoch: f.service.executionAuthority.epoch}
+			switch change {
+			case "device":
+				grant.DeviceID = domain.NewID()
+			case "instance":
+				grant.InstanceID = domain.NewID()
+			case "execution":
+				grant.ExecutionID = domain.NewID()
+			}
+			if _, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.foreign-grant", nil, func(tx *store.Tx) (any, error) { return nil, tx.PutExecutionGrant(grant) }); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := f.client.ReportExecutionStartup(context.Background(), startupRequest(f, failedStartupObservation(f))); err == nil {
+				t.Fatal("changed grant ownership was accepted")
+			}
+			if session := startupSessionOf(t, f); session.Startup != nil && session.Startup.Failure != nil {
+				t.Fatal("denied observation mutated the session")
+			}
+		})
+	}
+}
+
+func bytes32() []byte {
+	digest := make([]byte, 32)
+	digest[0] = 1
+	return digest
+}
+
+func TestDirectStartupPreGrantFailureBindsProgressEpoch(t *testing.T) {
+	setProgress := func(t *testing.T, f *authorityFixture, mutate func(*domain.StartupProgressAttempt)) {
+		t.Helper()
+		_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.startup-progress", nil, func(tx *store.Tx) (any, error) {
+			r, session, err := sessionRecord(tx, f.input.SessionID)
+			if err != nil {
+				return nil, err
+			}
+			attempt := &domain.StartupProgressAttempt{JobID: f.job, ExecutionID: f.input.ExecutionID, AssignmentRevision: 1, MachineID: f.input.MachineID, InstanceID: f.instance, DeviceID: f.device, ServerEpoch: f.service.executionAuthority.epoch}
+			mutate(attempt)
+			session.StartupProgress = &domain.SessionStartupProgress{Native: attempt}
+			return tx.Put(domain.SessionKind, r.ID, r.Revision, r.ID, r.ProjectID, session)
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Run("no grant and no progress is accepted", func(t *testing.T) {
+		f := directStartupFixture(t)
+		f.service.executionAuthority.epoch = domain.NewID()
+		if _, err := f.client.ReportExecutionStartup(context.Background(), startupRequest(f, failedStartupObservation(f))); err != nil {
+			t.Fatalf("pre-registration failure without epoch evidence regressed: %v", err)
+		}
+	})
+	t.Run("same epoch progress is accepted", func(t *testing.T) {
+		f := directStartupFixture(t)
+		setProgress(t, f, func(*domain.StartupProgressAttempt) {})
+		if _, err := f.client.ReportExecutionStartup(context.Background(), startupRequest(f, failedStartupObservation(f))); err != nil {
+			t.Fatalf("pre-registration failure with matching progress: %v", err)
+		}
+	})
+	t.Run("previous epoch progress is denied", func(t *testing.T) {
+		f := directStartupFixture(t)
+		setProgress(t, f, func(a *domain.StartupProgressAttempt) { a.ServerEpoch = domain.NewID() })
+		if _, err := f.client.ReportExecutionStartup(context.Background(), startupRequest(f, failedStartupObservation(f))); err == nil {
+			t.Fatal("previous-epoch pre-grant failure was accepted")
+		}
+		if session := startupSessionOf(t, f); session.Startup != nil && session.Startup.Failure != nil {
+			t.Fatal("denied observation mutated the session")
+		}
+	})
+	t.Run("changed progress instance is denied", func(t *testing.T) {
+		f := directStartupFixture(t)
+		setProgress(t, f, func(a *domain.StartupProgressAttempt) { a.InstanceID = domain.NewID() })
+		if _, err := f.client.ReportExecutionStartup(context.Background(), startupRequest(f, failedStartupObservation(f))); err == nil {
+			t.Fatal("changed-instance pre-grant failure was accepted")
+		}
+	})
 }

@@ -7,6 +7,7 @@ import { createClient } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -662,16 +663,31 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   change("IANA timezone", "Asia/Seoul");
   fireEvent.click(screen.getByRole("button", { name: "Next" }));
   fireEvent.click(screen.getByRole("button", { name: "Create schedule" }));
-  fireEvent.click(
-    await screen.findByRole("button", { name: "Resume future runs" }),
-  );
-  fireEvent.click(
-    await screen.findByRole("button", { name: "Pause future runs" }),
-  );
+  // The schedule controls are disabled while a mutation is in flight, and a click
+  // on a disabled button is silently dropped. Click only once a control is enabled.
+  const clickEnabled = async (name: string) => {
+    const button = await screen.findByRole("button", { name });
+    await waitFor(() =>
+      expect((button as HTMLButtonElement).disabled).toBe(false),
+    );
+    fireEvent.click(button);
+  };
+  // A schedule mutation carries the revision the detail view last read. Reread
+  // the active schedule queries so the next mutation is not stale.
+  const settleScheduleReads = () =>
+    act(async () => {
+      await scheduleClient.refetchQueries({ type: "active" });
+    });
+  await clickEnabled("Resume future runs");
+  await clickEnabled("Pause future runs");
   await screen.findByRole("button", { name: "Resume future runs" });
-  fireEvent.click(screen.getByRole("button", { name: "Run now" }));
-  fireEvent.click(screen.getByRole("button", { name: "Confirm Run now" }));
+  await settleScheduleReads();
+  await clickEnabled("Run now");
+  await clickEnabled("Confirm Run now");
   await screen.findByText("Run now accepted");
+  // Run now appends the occurrence and advances the schedule revision on the
+  // server, so the detail view must reread it before Delete can be accepted.
+  await settleScheduleReads();
   const schedules = await createClient(
     ScheduleService,
     transport,
@@ -688,10 +704,9 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
       })
     ).occurrences,
   ).toHaveLength(1);
-  fireEvent.click(screen.getByRole("button", { name: "Delete schedule" }));
-  fireEvent.click(
-    screen.getByRole("button", { name: "Confirm schedule deletion" }),
-  );
+  await settleScheduleReads();
+  await clickEnabled("Delete schedule");
+  await clickEnabled("Confirm schedule deletion");
   // A real durable Go mutation can outlast Testing Library's one-second default
   // under concurrent CI shards. Wait for its receipt, never resend the deletion.
   await screen.findByText(

@@ -2,7 +2,7 @@
 package domain
 
 import (
-	"encoding/hex"
+	"encoding/json"
 	"math"
 )
 
@@ -42,8 +42,7 @@ func (t NativeCodeReviewTarget) Validate() error {
 			return NativeCodeReviewUnavailable()
 		}
 	case ReviewCommit:
-		raw, err := hex.DecodeString(t.Reference)
-		if err != nil || len(raw) != 20 || hex.EncodeToString(raw) != t.Reference || t.Instructions != "" {
+		if !reviewObjectID(t.Reference) || t.Instructions != "" {
 			return NativeCodeReviewUnavailable()
 		}
 	case ReviewCustom:
@@ -71,18 +70,23 @@ func (s NativeCodeReviewSelection) Validate() error {
 		return NativeCodeReviewUnavailable()
 	}
 	if s.Target.Kind == ReviewBaseBranch {
-		if !reviewObjectID(s.BaseCommit) {
+		// Both commits come from one repository, so they share its object format.
+		if !reviewObjectID(s.BaseCommit) || len(s.BaseCommit) != len(s.HeadCommit) {
 			return NativeCodeReviewUnavailable()
 		}
 	} else if s.BaseCommit != "" {
 		return NativeCodeReviewUnavailable()
 	}
+	if s.Target.Kind == ReviewCommit && len(s.Target.Reference) != len(s.HeadCommit) {
+		// The selected commit and the resolved head come from one repository.
+		return NativeCodeReviewUnavailable()
+	}
 	return nil
 }
-func reviewObjectID(s string) bool {
-	raw, err := hex.DecodeString(s)
-	return err == nil && len(raw) == 20 && hex.EncodeToString(raw) == s
-}
+
+// reviewObjectID accepts only canonical lowercase Git object names in either
+// repository object format (SHA-1: 40 hex characters, SHA-256: 64).
+func reviewObjectID(s string) bool { return gitObjectID(s) }
 
 type NativeCodeReviewFinding struct {
 	Title      string  `json:"title"`
@@ -158,6 +162,27 @@ type NativeCodeReviewResult struct {
 	CleanupVerified bool                      `json:"cleanup_verified"`
 }
 
+// NativeCodeReviewResultTooLarge reports a completed review whose encoded
+// result cannot be carried by the generic Worker job output document. The
+// original review remains retained; the result is never truncated.
+func NativeCodeReviewResultTooLarge() *Error {
+	return Fail(ResourceExhausted, "The completed native review result exceeds the supported output size.", "Retain the original review and its recorded usage; do not truncate findings or retry the native review.")
+}
+
+// EncodedWithinOutputLimit applies the Worker job output ceiling to the exact
+// JSON bytes that would be written and reported, so escaped characters count at
+// their encoded size and usage records are included.
+func (r NativeCodeReviewResult) EncodedWithinOutputLimit() error {
+	encoded, err := json.Marshal(r)
+	if err != nil {
+		return NativeCodeReviewUnavailable()
+	}
+	if len(encoded) > MaxWorkerJobOutputBytes {
+		return NativeCodeReviewResultTooLarge()
+	}
+	return nil
+}
+
 func (r NativeCodeReviewResult) Validate() error {
 	if r.Version != 1 || r.ActionID.Validate() != nil || r.Selection.Validate() != nil || r.ThreadID.Validate(Codex, NativeThreadIdentity) != nil || r.TurnID.Validate(Codex, NativeTurnIdentity) != nil || Text(r.EnteredItemID, "entered review item", 256, true) != nil || Text(r.ExitedItemID, "exited review item", 256, true) != nil || r.EnteredItemID == r.ExitedItemID || r.Findings == nil || len(r.Findings) > 64 || Text(r.Explanation, "native review explanation", 8192, false) != nil || (r.Correctness != "patch is correct" && r.Correctness != "patch is incorrect") || math.IsNaN(r.Confidence) || math.IsInf(r.Confidence, 0) || r.Confidence < 0 || r.Confidence > 1 || !reviewDigest(r.RolloutDigest) || !r.CleanupVerified {
 		return NativeCodeReviewUnavailable()
@@ -175,7 +200,7 @@ func (r NativeCodeReviewResult) Validate() error {
 			return NativeCodeReviewUnavailable()
 		}
 	}
-	return nil
+	return r.EncodedWithinOutputLimit()
 }
 
 // Operational stages never become execution or recovery authority.
@@ -240,6 +265,25 @@ type NativeCodeReviewRejectedProof struct {
 
 func (p NativeCodeReviewRejectedProof) Validate() error {
 	if p.Version != 1 || p.ActionID.Validate() != nil || !p.NoSend || !p.CleanupVerified {
+		return NativeCodeReviewUnavailable()
+	}
+	return nil
+}
+
+// NativeCodeReviewStaleProof reports that the one original native send finished
+// and its selected target then drifted. It carries no findings, so they cannot
+// be mistaken for a current review result. Joined native, workspace and
+// authentication cleanup is the only fact it proves; it never authorizes a
+// second native send.
+type NativeCodeReviewStaleProof struct {
+	Version         uint32 `json:"version"`
+	ActionID        ID     `json:"action_id"`
+	Stale           bool   `json:"stale"`
+	CleanupVerified bool   `json:"cleanup_verified"`
+}
+
+func (p NativeCodeReviewStaleProof) Validate() error {
+	if p.Version != 1 || p.ActionID.Validate() != nil || !p.Stale || !p.CleanupVerified {
 		return NativeCodeReviewUnavailable()
 	}
 	return nil

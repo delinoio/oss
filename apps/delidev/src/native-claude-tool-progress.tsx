@@ -101,10 +101,10 @@ export function NativeClaudeToolProgress({ value }: { value: unknown }) {
             <dd>{v.task_id as string}</dd>
           </>
         ) : null}
-        <dt>
+        <dt data-time-observation>
           {copy("native-claude-tool-progress.reportedElapsedSeconds_b10c17")}
         </dt>
-        <dd>{v.elapsed_time_seconds as string}</dd>
+        <dd data-time-observation>{v.elapsed_time_seconds as string}</dd>
         <dt>{copy("native-claude-tool-progress.heartbeat_9df894")}</dt>
         <dd>
           {v.heartbeat === null

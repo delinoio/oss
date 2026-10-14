@@ -49,6 +49,11 @@ import {
   type CreationPreferenceScope,
 } from "./session-creation-preferences";
 import { BudgetFields, budgetInput, emptyBudget } from "./session-budget";
+import {
+  EntranceMotion,
+  useActivationCount,
+  useEntranceActivation,
+} from "./entrance-motion";
 import { useProjectSessionPlacement } from "./project-session-placement";
 import { useGeneralChatPlacement } from "./general-chat-placement";
 import {
@@ -70,6 +75,21 @@ import { Problem } from "./ui";
 import { Surface } from "./surface";
 import { useShortcuts } from "./shortcut-provider";
 import { ShortcutExecution, ShortcutId, ShortcutInput } from "./shortcuts";
+
+// An enabled first read that is paused (for example while offline) reports
+// isFetching false with a pending status, so it must still count as unsettled.
+// Disabled queries stay idle and are never treated as pending.
+function readUnsettled(query: {
+  isFetching: boolean;
+  isPending: boolean;
+  fetchStatus: string;
+  error: unknown;
+}) {
+  return (
+    query.isFetching ||
+    (query.isPending && query.fetchStatus === "paused" && !query.error)
+  );
+}
 
 // A failed connection cannot prove that an existing choice became ineligible.
 // Explicit denial/missing responses can; successful reads validate the resource.
@@ -142,6 +162,31 @@ export function NewSession({
   );
   const placement = generalChat ? generalPlacement : projectPlacement;
   const idPrefix = generalChat ? "new-general-chat" : "new-session";
+  // Explicit activation of this destination (a New session or New Chat action,
+  // or returning from another surface to the retained page) owns one 160ms Y4
+  // entrance on the page root. Typing, Options, mode, attachments, Project and
+  // Runner Device changes, reads and refetches never replay it, and nothing
+  // (focus, navigation, creation, disposal) waits for it to finish.
+  const entryCount = useActivationCount(active);
+  const pageEntrance = useEntranceActivation(
+    `${idPrefix}:${entryCount}:${activation}`,
+    active,
+    EntranceMotion.Y4,
+  );
+  const placementPage = placement.page;
+  const entranceRef = pageEntrance.ref;
+  // The placement hook measures through this ref, so both owners attach here.
+  const pageRef = useCallback(
+    (node: HTMLElement | null) => {
+      placementPage.current = node;
+      const cleanup = entranceRef?.(node);
+      return () => {
+        if (placementPage.current === node) placementPage.current = null;
+        if (typeof cleanup === "function") cleanup();
+      };
+    },
+    [placementPage, entranceRef],
+  );
   const images = useImageDraft(idPrefix);
   const local = useLocalWorkerProof(readLocalWorker);
   const transport = useTransport();
@@ -446,17 +491,18 @@ export function NewSession({
   ]);
   // Offer Agent Worker creation only after the creation preference read and the
   // retained Agent's exact read and eligibility have settled. Read errors settle
-  // the wait so they never block ordinary creation.
+  // the wait so they never block ordinary creation. A manual edit stops every
+  // automatic restoration, so it releases both waits.
   const agentRestorationPending =
-    preferences.reading ||
-    Boolean(
-      preferences.pair?.agent_id &&
-      !touched.current &&
-      !restoration.current.agent &&
-      (rememberedAgent.isFetching ||
-        (project && selectedProject.isFetching) ||
-        agentEligible),
-    );
+    !touched.current &&
+    (preferences.reading ||
+      Boolean(
+        preferences.pair?.agent_id &&
+        !restoration.current.agent &&
+        (readUnsettled(rememberedAgent) ||
+          (project && readUnsettled(selectedProject)) ||
+          agentEligible),
+      ));
   const editAgent = (id: string) => {
     touched.current = true;
     restoration.current.agent = false;
@@ -1006,7 +1052,8 @@ export function NewSession({
 
   return (
     <section
-      ref={placement.page}
+      ref={pageRef}
+      data-entrance={pageEntrance["data-entrance"]}
       hidden={!active}
       className={`new-session-page${generalChat ? " new-general-chat-page" : " new-project-session-page"}`}
       aria-labelledby={`${idPrefix}-heading`}

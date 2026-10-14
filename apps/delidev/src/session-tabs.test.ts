@@ -7,7 +7,107 @@ import {
   SessionTabKind,
   sessionTabKey,
 } from "./session-tabs";
-import { Comparison } from "./session-diff-model";
+import { Comparison, type BaseReference } from "./session-diff-model";
+describe("comparison tab dropped bases", () => {
+  const a: BaseReference = { type: "local-branch", name: "a" },
+    b: BaseReference = { type: "local-branch", name: "b" },
+    tab = (comparison: Comparison, dropped_base?: BaseReference) => ({
+      kind: SessionTabKind.Comparison as const,
+      repository: "repo",
+      comparison,
+      path: ".",
+      ...(dropped_base ? { dropped_base } : {}),
+    });
+  const dropped = (store: SessionTabsStore, comparison: Comparison) =>
+    store
+      .snapshot("s")
+      .tabs.find(
+        (value) =>
+          value.kind === SessionTabKind.Comparison &&
+          value.comparison === comparison,
+      ) as { dropped_base?: unknown } | undefined;
+  it("keeps the record out of the tab identity", () => {
+    const store = new SessionTabsStore();
+    store.open("s", tab(Comparison.Staged, a));
+    store.open("s", tab(Comparison.Staged));
+    expect(store.snapshot("s").tabs).toHaveLength(2);
+  });
+  it("replaces the record on an ordinary open and ends it with the tab", () => {
+    const store = new SessionTabsStore();
+    store.open("s", tab(Comparison.Staged, a));
+    store.open("s", tab(Comparison.Staged, b));
+    expect(dropped(store, Comparison.Staged)?.dropped_base).toEqual(b);
+    store.open("s", tab(Comparison.Staged));
+    expect(dropped(store, Comparison.Staged)?.dropped_base).toBeUndefined();
+    store.open("s", tab(Comparison.Staged, a));
+    store.close("s", sessionTabKey(tab(Comparison.Staged)));
+    store.open("s", tab(Comparison.Staged));
+    expect(dropped(store, Comparison.Staged)?.dropped_base).toBeUndefined();
+  });
+  it("never overwrites the record an open destination owns when inheriting", () => {
+    const store = new SessionTabsStore();
+    store.open("s", tab(Comparison.WorkingTree, b));
+    store.openComparison("s", tab(Comparison.WorkingTree, a), true);
+    expect(dropped(store, Comparison.WorkingTree)?.dropped_base).toEqual(b);
+    store.openComparison("s", tab(Comparison.Creation, a), true);
+    expect(dropped(store, Comparison.Creation)?.dropped_base).toEqual(a);
+    store.openComparison("s", tab(Comparison.Creation), true);
+    expect(dropped(store, Comparison.Creation)?.dropped_base).toEqual(a);
+  });
+});
+describe("clearing dropped bases on explicit reselection", () => {
+  const a: BaseReference = { type: "local-branch", name: "a" },
+    b: BaseReference = { type: "local-branch", name: "b" },
+    comparison = (
+      repository: string,
+      kind: Comparison,
+      dropped_base?: BaseReference,
+    ) => ({
+      kind: SessionTabKind.Comparison as const,
+      repository,
+      comparison: kind,
+      path: ".",
+      ...(dropped_base ? { dropped_base } : {}),
+    });
+  const records = (store: SessionTabsStore) =>
+    store
+      .snapshot("s")
+      .tabs.map((value) =>
+        value.kind === SessionTabKind.Comparison
+          ? [value.repository, value.comparison, value.dropped_base?.name]
+          : [value.kind],
+      );
+  it("ends only the matching records of the same repository and keeps order and selection", () => {
+    const store = new SessionTabsStore();
+    store.open("s", comparison("repo", Comparison.Staged, a));
+    store.open("s", comparison("repo", Comparison.WorkingTree, b));
+    store.open("s", comparison("other", Comparison.Staged, a));
+    store.open("s", comparison("repo", Comparison.Creation));
+    store.select(
+      "s",
+      sessionTabKey(comparison("repo", Comparison.WorkingTree)),
+    );
+    const before = store.snapshot("s");
+    store.clearDroppedBase("s", "repo", a);
+    expect(records(store)).toEqual([
+      [SessionTabKind.Conversation],
+      ["repo", Comparison.Staged, undefined],
+      ["repo", Comparison.WorkingTree, "b"],
+      ["other", Comparison.Staged, "a"],
+      ["repo", Comparison.Creation, undefined],
+    ]);
+    expect(store.snapshot("s").selected).toBe(before.selected);
+  });
+  it("matches the exact reference and publishes nothing without a match", () => {
+    const store = new SessionTabsStore();
+    store.open("s", comparison("repo", Comparison.Staged, a));
+    const before = store.snapshot("s");
+    store.clearDroppedBase("s", "repo", b);
+    store.clearDroppedBase("s", "other", a);
+    store.clearDroppedBase("missing", "repo", a);
+    expect(store.snapshot("s")).toBe(before);
+  });
+});
 describe("connection session tab descriptors", () => {
   it("pins Conversation and preserves append order with exact resource identities", () => {
     const store = new SessionTabsStore();
@@ -117,6 +217,39 @@ it("keeps inactive terminal dismissal selection and uses inventory only without 
   );
 });
 
+it("dismissal skips tombstoned terminal tabs and liveTerminals excludes them", () => {
+  const store = new SessionTabsStore();
+  const exited = (id: string) =>
+    create(ResourceSchema, {
+      id,
+      sessionId: "session",
+      kind: EntityKind.TERMINAL,
+      schemaVersion: 1,
+      revision: 5n,
+      documentJson: encode({ state: "exited", cleanup_verified: true }),
+    });
+  for (const id of ["a", "b", "c"])
+    store.open("session", { kind: SessionTabKind.Terminal, id });
+  store.select(
+    "session",
+    sessionTabKey({ kind: SessionTabKind.Terminal, id: "c" }),
+  );
+  // C and B exit in one refresh while C is selected: A is the live survivor.
+  store.terminalPresentation("session").observe("session", exited("c"));
+  store.terminalPresentation("session").observe("session", exited("b"));
+  expect(store.liveTerminals("session")).toEqual(["a"]);
+  store.dismissTerminal("session", "c", "inventory");
+  expect(store.snapshot("session").selected).toBe(
+    sessionTabKey({ kind: SessionTabKind.Terminal, id: "a" }),
+  );
+  store.dismissTerminal("session", "b");
+  expect(store.snapshot("session").selected).toBe(
+    sessionTabKey({ kind: SessionTabKind.Terminal, id: "a" }),
+  );
+  expect(store.liveTerminals("session")).toEqual(["a"]);
+  expect(store.liveTerminals("other")).toEqual([]);
+});
+
 it("late original creation receipts cannot reopen a dismissed content tab", () => {
   const store = new SessionTabsStore();
   store.terminalPresentation("session").observe(
@@ -222,6 +355,76 @@ describe("shared Page descriptors follow native browser pages", () => {
     store.open("s", { kind: SessionTabKind.Diagnostics });
     store.closePage("s", "p1", "a");
     expect(store.snapshot("s").selected).toBe(SessionTabKind.Diagnostics);
+  });
+  describe("closing an acknowledged page in every session", () => {
+    const keysOf = (store: SessionTabsStore, id: string) =>
+      store.snapshot(id).tabs.map(sessionTabKey);
+    const populate = () => {
+      const store = new SessionTabsStore();
+      // Active session: the closed page is selected, so its left neighbor wins.
+      store.open("active", page("p1", "w"));
+      store.open("active", page("p1", "x"));
+      // Inactive session: the closed page is the last page and is selected.
+      store.open("inactive", page("p1", "x"));
+      // Retained session: another tab is selected and foreign pages exist.
+      store.open("retained", page("p1", "x"));
+      store.open("retained", page("p2", "x"));
+      store.open("retained", page("p1", "y"));
+      store.open("retained", { kind: SessionTabKind.Diagnostics });
+      return store;
+    };
+    it("removes the exact descriptor from every session and applies each selection rule", () => {
+      const store = populate();
+      const retainedBefore = store.snapshot("retained");
+      store.closePageEverywhere("p1", "x");
+      for (const id of ["active", "inactive", "retained"])
+        expect(keysOf(store, id)).not.toContain(sessionTabKey(page("p1", "x")));
+      expect(store.snapshot("active").selected).toBe(
+        sessionTabKey(page("p1", "w")),
+      );
+      expect(store.snapshot("inactive").selected).toBe(
+        SessionTabKind.Conversation,
+      );
+      expect(store.snapshot("retained").selected).toBe(retainedBefore.selected);
+      expect(keysOf(store, "retained")).toEqual([
+        SessionTabKind.Conversation,
+        sessionTabKey(page("p2", "x")),
+        sessionTabKey(page("p1", "y")),
+        SessionTabKind.Diagnostics,
+      ]);
+    });
+    it("leaves the same page id under another profile and other pages untouched", () => {
+      const store = populate();
+      store.closePageEverywhere("p1", "x");
+      expect(keysOf(store, "retained")).toContain(
+        sessionTabKey(page("p2", "x")),
+      );
+      expect(keysOf(store, "retained")).toContain(
+        sessionTabKey(page("p1", "y")),
+      );
+      expect(keysOf(store, "active")).toContain(sessionTabKey(page("p1", "w")));
+    });
+    it("is idempotent and publishes nothing for sessions without the descriptor", () => {
+      const store = populate();
+      store.closePageEverywhere("p1", "x");
+      const snapshots = ["active", "inactive", "retained"].map((id) =>
+        store.snapshot(id),
+      );
+      let notified = 0;
+      const unsubscribe = store.subscribe(() => (notified += 1));
+      store.closePageEverywhere("p1", "x");
+      store.closePageEverywhere("p9", "x");
+      unsubscribe();
+      expect(notified).toBe(0);
+      expect(
+        ["active", "inactive", "retained"].map((id) => store.snapshot(id)),
+      ).toEqual(snapshots);
+      snapshots.forEach((snapshot, at) =>
+        expect(store.snapshot(["active", "inactive", "retained"][at]!)).toBe(
+          snapshot,
+        ),
+      );
+    });
   });
   describe("restoring a native inventory", () => {
     const listed = (id: string, label = `https://${id}.test/`) => ({
@@ -417,5 +620,48 @@ describe("terminal presentation numbers", () => {
       expect(store.parent("root")).toBeUndefined();
       expect(store.snapshot("child").tabs).toHaveLength(1);
     });
+  });
+  describe("navigation generation", () => {
+    it("increments only when the selected tab changes and counts away-and-back moves", () => {
+      const store = new SessionTabsStore();
+      const terminal = { kind: SessionTabKind.Terminal as const, id: "t" };
+      expect(store.navigation("s")).toBe(0);
+      store.open("s", terminal);
+      expect(store.navigation("s")).toBe(1);
+      // Reopening or reselecting the selected tab is not navigation.
+      store.open("s", terminal);
+      store.select("s", sessionTabKey(terminal));
+      expect(store.navigation("s")).toBe(1);
+      store.open("s", { kind: SessionTabKind.Files });
+      store.open("s", terminal);
+      expect(store.snapshot("s").selected).toBe(sessionTabKey(terminal));
+      expect(store.navigation("s")).toBe(3);
+      store.close("s", sessionTabKey(terminal));
+      expect(store.navigation("s")).toBe(4);
+      // Sessions count independently.
+      expect(store.navigation("other")).toBe(0);
+    });
+  });
+});
+
+describe("automatic Sidechat publication", () => {
+  const child = {
+    kind: SessionTabKind.Sidechat as const,
+    id: "child",
+    name: "Child",
+  };
+  const draft = { text: "", start: 0, end: 0, focus: false };
+  it("marks a published Sidechat automatic until the user opens it", () => {
+    const store = new SessionTabsStore();
+    expect(store.automaticSidechat("child")).toBe(false);
+    expect(store.publishSidechat("parent", "request", child, draft)).toBe(true);
+    expect(store.automaticSidechat("child")).toBe(true);
+    store.open("parent", child);
+    expect(store.automaticSidechat("child")).toBe(false);
+  });
+  it("treats a Sidechat opened before it was ever published as explicit", () => {
+    const store = new SessionTabsStore();
+    store.open("never-visited-parent", child);
+    expect(store.automaticSidechat("child")).toBe(false);
   });
 });

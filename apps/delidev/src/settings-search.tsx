@@ -33,6 +33,8 @@ export enum SettingsSearchTarget {
   AppearanceDisplay = "display",
   AppearanceImages = "images",
   Language = "language",
+  BrowserGeneral = "browser-general",
+  BrowserLocal = "browser-local",
   DateFormat = "date-format",
   AccountRouting = "account-routing",
   DefaultRouting = "default-routing",
@@ -193,6 +195,18 @@ export const settingsSearchTargets: Partial<
       SettingsSearchTarget.DateFormat,
       "date-format.title",
       "date-format.scope",
+    ),
+  ],
+  [Category.Browser]: [
+    target(
+      SettingsSearchTarget.BrowserGeneral,
+      "browser-settings.generalLabel",
+      "browser-settings.generalHelp",
+    ),
+    target(
+      SettingsSearchTarget.BrowserLocal,
+      "browser-settings.localLabel",
+      "browser-settings.localHelp",
     ),
   ],
   [Category.ServerPreferences]: [

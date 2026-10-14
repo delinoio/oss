@@ -195,6 +195,19 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 	if proxy != nil {
 		nativeConfig.API.LoopbackProxyURL = proxy.NativeURL()
 		nativeConfig.Process.ProtectedValues = proxy.ProtectedValues()
+	} else {
+		// The title profile follows the same relocated Local runtime as the
+		// conversation; the forwarder and proxy are mutually exclusive.
+		forwarder, err := openCodexNativeForwarder(ctx, config, input.OriginalExecutionID, token, true)
+		if forwarder != nil {
+			cleanup.closeProxy = forwarder.Close
+		}
+		if err != nil {
+			return nil, err
+		}
+		if forwarder != nil {
+			nativeConfig.API.ForwarderOrigin = forwarder.NativeOrigin()
+		}
 	}
 	client, err := codex.Open(ctx, nativeConfig)
 	if client != nil {

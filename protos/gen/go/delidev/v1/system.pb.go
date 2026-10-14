@@ -55,23 +55,29 @@ const (
 	SystemCapability_SYSTEM_CAPABILITY_NATIVE_IMAGE_GENERATION_V1           SystemCapability = 61
 	SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_QUOTA_V1         SystemCapability = 46
 	SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_RESET_CREDITS_V1 SystemCapability = 49
+	// Server-owned access-only reset-credit consumption beside Execute, without a Runner.
+	SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_RESET_CREDITS_V2 SystemCapability = 101
 	SystemCapability_SYSTEM_CAPABILITY_CLAUDE_SUBSCRIPTIONS_V1              SystemCapability = 38
 	SystemCapability_SYSTEM_CAPABILITY_FAILED_SUBSCRIPTION_CLEANUP_V1       SystemCapability = 41
-	SystemCapability_SYSTEM_CAPABILITY_EXECUTION_STARTUP_V1                 SystemCapability = 43
-	SystemCapability_SYSTEM_CAPABILITY_GITHUB_TOKEN_ONBOARDING_V1           SystemCapability = 34
-	SystemCapability_SYSTEM_CAPABILITY_REPOSITORY_CLONE_V1                  SystemCapability = 31
-	SystemCapability_SYSTEM_CAPABILITY_REMOTE_REPOSITORIES_V1               SystemCapability = 37
-	SystemCapability_SYSTEM_CAPABILITY_GITHUB_REPOSITORY_PICKER_V1          SystemCapability = 32
-	SystemCapability_SYSTEM_CAPABILITY_SIGNED_UPDATES_V1                    SystemCapability = 28
-	SystemCapability_SYSTEM_CAPABILITY_SSH_WORKER_SETUP_V1                  SystemCapability = 29
-	SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_LOGIN_V1         SystemCapability = 30
-	SystemCapability_SYSTEM_CAPABILITY_AGENT_WORKER_WIZARD_V1               SystemCapability = 33
-	SystemCapability_SYSTEM_CAPABILITY_AGENT_WORKER_SOURCE_ROUTES_V1        SystemCapability = 36
-	SystemCapability_SYSTEM_CAPABILITY_KNOWN_SUBSCRIPTION_MODELS_V1         SystemCapability = 35
-	SystemCapability_SYSTEM_CAPABILITY_NATIVE_SIDECHAT_V1                   SystemCapability = 27
-	SystemCapability_SYSTEM_CAPABILITY_NATIVE_SESSION_COMPACTION_V1         SystemCapability = 15
-	SystemCapability_SYSTEM_CAPABILITY_CODEX_SESSION_COMPACTION_V1          SystemCapability = 24
-	SystemCapability_SYSTEM_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1       SystemCapability = 25
+	// Explicit DeleteConfiguration cleanup of a terminal original server ChatGPT
+	// LOGOUT account whose only remaining blocker is protected credential cleanup.
+	// Capability 41 keeps its failed-initial-LOGIN meaning.
+	SystemCapability_SYSTEM_CAPABILITY_SUBSCRIPTION_CLEANUP_RECOVERY_V1 SystemCapability = 64
+	SystemCapability_SYSTEM_CAPABILITY_EXECUTION_STARTUP_V1             SystemCapability = 43
+	SystemCapability_SYSTEM_CAPABILITY_GITHUB_TOKEN_ONBOARDING_V1       SystemCapability = 34
+	SystemCapability_SYSTEM_CAPABILITY_REPOSITORY_CLONE_V1              SystemCapability = 31
+	SystemCapability_SYSTEM_CAPABILITY_REMOTE_REPOSITORIES_V1           SystemCapability = 37
+	SystemCapability_SYSTEM_CAPABILITY_GITHUB_REPOSITORY_PICKER_V1      SystemCapability = 32
+	SystemCapability_SYSTEM_CAPABILITY_SIGNED_UPDATES_V1                SystemCapability = 28
+	SystemCapability_SYSTEM_CAPABILITY_SSH_WORKER_SETUP_V1              SystemCapability = 29
+	SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_LOGIN_V1     SystemCapability = 30
+	SystemCapability_SYSTEM_CAPABILITY_AGENT_WORKER_WIZARD_V1           SystemCapability = 33
+	SystemCapability_SYSTEM_CAPABILITY_AGENT_WORKER_SOURCE_ROUTES_V1    SystemCapability = 36
+	SystemCapability_SYSTEM_CAPABILITY_KNOWN_SUBSCRIPTION_MODELS_V1     SystemCapability = 35
+	SystemCapability_SYSTEM_CAPABILITY_NATIVE_SIDECHAT_V1               SystemCapability = 27
+	SystemCapability_SYSTEM_CAPABILITY_NATIVE_SESSION_COMPACTION_V1     SystemCapability = 15
+	SystemCapability_SYSTEM_CAPABILITY_CODEX_SESSION_COMPACTION_V1      SystemCapability = 24
+	SystemCapability_SYSTEM_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1   SystemCapability = 25
 	// Independently negotiated pinned Unix plain-text General Chat fork profile.
 	SystemCapability_SYSTEM_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1    SystemCapability = 26
 	SystemCapability_SYSTEM_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1  SystemCapability = 22
@@ -135,8 +141,10 @@ var (
 		61:  "SYSTEM_CAPABILITY_NATIVE_IMAGE_GENERATION_V1",
 		46:  "SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_QUOTA_V1",
 		49:  "SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_RESET_CREDITS_V1",
+		101: "SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_RESET_CREDITS_V2",
 		38:  "SYSTEM_CAPABILITY_CLAUDE_SUBSCRIPTIONS_V1",
 		41:  "SYSTEM_CAPABILITY_FAILED_SUBSCRIPTION_CLEANUP_V1",
+		64:  "SYSTEM_CAPABILITY_SUBSCRIPTION_CLEANUP_RECOVERY_V1",
 		43:  "SYSTEM_CAPABILITY_EXECUTION_STARTUP_V1",
 		34:  "SYSTEM_CAPABILITY_GITHUB_TOKEN_ONBOARDING_V1",
 		31:  "SYSTEM_CAPABILITY_REPOSITORY_CLONE_V1",
@@ -207,8 +215,10 @@ var (
 		"SYSTEM_CAPABILITY_NATIVE_IMAGE_GENERATION_V1":           61,
 		"SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_QUOTA_V1":         46,
 		"SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_RESET_CREDITS_V1": 49,
+		"SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_RESET_CREDITS_V2": 101,
 		"SYSTEM_CAPABILITY_CLAUDE_SUBSCRIPTIONS_V1":              38,
 		"SYSTEM_CAPABILITY_FAILED_SUBSCRIPTION_CLEANUP_V1":       41,
+		"SYSTEM_CAPABILITY_SUBSCRIPTION_CLEANUP_RECOVERY_V1":     64,
 		"SYSTEM_CAPABILITY_EXECUTION_STARTUP_V1":                 43,
 		"SYSTEM_CAPABILITY_GITHUB_TOKEN_ONBOARDING_V1":           34,
 		"SYSTEM_CAPABILITY_REPOSITORY_CLONE_V1":                  31,
@@ -776,8 +786,11 @@ type GetStatusResponse struct {
 	StartedAt       string                 `protobuf:"bytes,6,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
 	Stopping        bool                   `protobuf:"varint,7,opt,name=stopping,proto3" json:"stopping,omitempty"`
 	Capabilities    []SystemCapability     `protobuf:"varint,8,rep,packed,name=capabilities,proto3,enum=delidev.v1.SystemCapability" json:"capabilities,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Presence-bearing readiness of the compiled production update-signing root.
+	// Absent means a legacy server that does not report readiness.
+	ProductionRootReady *bool `protobuf:"varint,9,opt,name=production_root_ready,json=productionRootReady,proto3,oneof" json:"production_root_ready,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *GetStatusResponse) Reset() {
@@ -864,6 +877,13 @@ func (x *GetStatusResponse) GetCapabilities() []SystemCapability {
 		return x.Capabilities
 	}
 	return nil
+}
+
+func (x *GetStatusResponse) GetProductionRootReady() bool {
+	if x != nil && x.ProductionRootReady != nil {
+		return *x.ProductionRootReady
+	}
+	return false
 }
 
 type StopServerRequest struct {
@@ -2852,7 +2872,7 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"\x12registered_workers\x18\x04 \x01(\x04R\x11registeredWorkers\x12+\n" +
 	"\x11connected_workers\x18\x05 \x01(\x04R\x10connectedWorkers\x12+\n" +
 	"\x12today_from_unix_ms\x18\x06 \x01(\x03R\x0ftodayFromUnixMs\x12-\n" +
-	"\x13today_until_unix_ms\x18\a \x01(\x03R\x10todayUntilUnixMs\"\xb5\x02\n" +
+	"\x13today_until_unix_ms\x18\a \x01(\x03R\x10todayUntilUnixMs\"\x88\x03\n" +
 	"\x11GetStatusResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12)\n" +
 	"\x10protocol_version\x18\x02 \x01(\rR\x0fprotocolVersion\x12%\n" +
@@ -2862,7 +2882,9 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"\n" +
 	"started_at\x18\x06 \x01(\tR\tstartedAt\x12\x1a\n" +
 	"\bstopping\x18\a \x01(\bR\bstopping\x12@\n" +
-	"\fcapabilities\x18\b \x03(\x0e2\x1c.delidev.v1.SystemCapabilityR\fcapabilities\"2\n" +
+	"\fcapabilities\x18\b \x03(\x0e2\x1c.delidev.v1.SystemCapabilityR\fcapabilities\x127\n" +
+	"\x15production_root_ready\x18\t \x01(\bH\x00R\x13productionRootReady\x88\x01\x01B\x18\n" +
+	"\x16_production_root_ready\"2\n" +
 	"\x11StopServerRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\"3\n" +
@@ -3011,7 +3033,7 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\"V\n" +
 	"\x18GetBackupRestoreResponse\x12:\n" +
-	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\xd1\x1a\n" +
+	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\xc5\x1b\n" +
 	"\x10SystemCapability\x12!\n" +
 	"\x1dSYSTEM_CAPABILITY_UNSPECIFIED\x10\x00\x12/\n" +
 	"+SYSTEM_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1\x10\\\x12,\n" +
@@ -3042,9 +3064,11 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"!SYSTEM_CAPABILITY_IMAGE_INPUTS_V1\x10-\x120\n" +
 	",SYSTEM_CAPABILITY_NATIVE_IMAGE_GENERATION_V1\x10=\x122\n" +
 	".SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_QUOTA_V1\x10.\x12:\n" +
-	"6SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_RESET_CREDITS_V1\x101\x12-\n" +
+	"6SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_RESET_CREDITS_V1\x101\x12:\n" +
+	"6SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_RESET_CREDITS_V2\x10e\x12-\n" +
 	")SYSTEM_CAPABILITY_CLAUDE_SUBSCRIPTIONS_V1\x10&\x124\n" +
-	"0SYSTEM_CAPABILITY_FAILED_SUBSCRIPTION_CLEANUP_V1\x10)\x12*\n" +
+	"0SYSTEM_CAPABILITY_FAILED_SUBSCRIPTION_CLEANUP_V1\x10)\x126\n" +
+	"2SYSTEM_CAPABILITY_SUBSCRIPTION_CLEANUP_RECOVERY_V1\x10@\x12*\n" +
 	"&SYSTEM_CAPABILITY_EXECUTION_STARTUP_V1\x10+\x120\n" +
 	",SYSTEM_CAPABILITY_GITHUB_TOKEN_ONBOARDING_V1\x10\"\x12)\n" +
 	"%SYSTEM_CAPABILITY_REPOSITORY_CLONE_V1\x10\x1f\x12,\n" +
@@ -3270,6 +3294,7 @@ func file_delidev_v1_system_proto_init() {
 	if File_delidev_v1_system_proto != nil {
 		return
 	}
+	file_delidev_v1_system_proto_msgTypes[3].OneofWrappers = []any{}
 	file_delidev_v1_system_proto_msgTypes[35].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

@@ -72,7 +72,7 @@ made available by localization. A disclosure contains only original details alre
 admitted by the owning diagnostic contract. A translation never replaces original
 evidence or creates retry permission.
 
-The Appearance category retains all 19 categories, theme choices,
+The Appearance category retains all 20 categories, theme choices,
 colors, navigation and visit lifetime. A divider below Theme introduces Language.
 Use an editable search combobox at most 320 CSS pixels wide and at least 40 pixels
 tall, with 8-pixel corners and full available width below 640 pixels. Keep System
@@ -179,7 +179,7 @@ Run app-local `pnpm test`, root `cargo test`, native compilation, widget fixture
 `pnpm ci:contracts`, `pnpm ci:workflows` and changed-dependency security checks.
 Test System resolution, restart, new/multiple windows, delayed events, conflict,
 failed/uncertain writes, malformed-file preservation and retained drafts/focus/
-operations without added product RPCs. Inspect every screen and all 19 categories
+operations without added product RPCs. Inspect every screen and all 20 categories
 in both languages; verify widget sizes, selection, offline/stale/storage failures.
 `test-settings-layout.mjs` checks both catalogs across all existing categories,
 forms, themes and effective 200% viewports, then primary surfaces and an Appearance
@@ -312,5 +312,16 @@ quota-specific complete-exhaustion explanation and supported waiting/configurati
 guidance. Safe arbitrary server/provider evidence stays exact and visible in
 these cards. Only secondary codes, versions and opaque references are disclosed.
 The closed quota pair selects localized copy; translated or raw message text
-cannot establish the cause. Locale changes retain the original Session,
+cannot establish the cause. The quota card renders the localized explanation and
+guidance first, then the supplied safe message and guidance as exact inert text
+in that order, skipping an empty original or one identical to the catalog copy
+of any supported locale, independent of the active display language, so no empty
+or duplicate paragraph appears and the paragraph count never depends on the
+active locale. Locale changes retain the original Session,
 composer, Info and operation identities without replay or focus movement.
+
+## Browser destination copy
+
+The `browser-settings` and `external-link` catalogs localize the Settings > Browser category and link-opening failures in English and Korean. The selector labels are `General URL destination` / `일반 URL 열기 대상` and `Local URL destination` / `로컬 URL 열기 대상`; the default option is `System default browser` / `시스템 기본 브라우저`. Native browser identities and display names come from the operating system and are shown unchanged; the unavailable-saved-browser suffix is localized. Selector option values are structural identities, never copy, and catalog text is never used to match or select a browser. Failure copy for a missing browser, a failed launch, unreadable browser settings, an unsupported address and unclassified failures points at Settings > Browser and is shared by message links, terminal links, Provider guidance, App information and GitHub opening. Success copy for those openers says the link was sent to the user's browser rather than the default browser. Locale changes re-render without replaying a pending launch.
+
+The `server-preferences` catalog also owns the unavailable Project defaults states in English and Korean: the region accessible name and the status sentence for an unsupported schema, unreadable or unsupported policy values, and an incomplete or multi-document read are complete catalog entries that take only the localized section label as a named slot, so Korean never shows an English sentence around a Korean label. The three distinctions, the Settings product-label rows (never raw IDs) and the closed, non-editable behavior are unchanged. Locale changes re-render the mounted state without refetching, replaying a mutation or admitting an editor.

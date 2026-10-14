@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { settleEnclosingEntrances } from "./entrance-motion";
 import { copy, useLocale } from "./localization";
 import { formatPaidCreditBalance } from "./paid-credit-format";
 export { formatPaidCreditBalance } from "./paid-credit-format";
@@ -147,6 +148,10 @@ function ExactDisclosureOverlay({
     const element = node.current,
       source = anchor.current;
     if (!element || !source) return;
+    // The overlay is a fixed positioning host: an in-flight category entrance
+    // above it settles first (focus and interaction never wait for it) and the
+    // anchor is measured again once the untransformed layout has committed.
+    settleEnclosingEntrances(element);
     // The manual top layer escapes parent overflow without becoming modal or
     // moving focus; the element stays a DOM child of its owning parent so
     // outside-pointer and Escape ownership checks keep treating it as inside.
@@ -176,6 +181,10 @@ function ExactDisclosureOverlay({
       element.dataset.placement = next.placement;
     };
     place();
+    const settled =
+      typeof requestAnimationFrame === "function"
+        ? requestAnimationFrame(place)
+        : undefined;
     const observer =
       typeof ResizeObserver === "function"
         ? new ResizeObserver(place)
@@ -186,6 +195,7 @@ function ExactDisclosureOverlay({
     // Capture also sees scrolling of any ancestor container.
     window.addEventListener("scroll", place, true);
     return () => {
+      if (settled !== undefined) cancelAnimationFrame(settled);
       observer?.disconnect();
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);

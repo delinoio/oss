@@ -17,6 +17,7 @@ import { RepositoryRow } from "./repository-list";
 import { AgentWorkerRow } from "./agent-worker-row";
 import { SettingsTaskActions } from "./settings-task";
 import { copy, i18n, useLocale } from "./localization";
+import { useEntranceActivation } from "./entrance-motion";
 import { encode } from "./documents";
 
 it("keeps native form association, ref, disabled guard and one original callback", () => {
@@ -212,4 +213,27 @@ it("replaces an explicitly decorative text prefix visually while retaining its o
   const button = screen.getByRole("button", { name: "+ Add account source" });
   expect(button.textContent).toBe("Add account source");
   expect(button.querySelectorAll("svg")).toHaveLength(1);
+});
+
+it("settles an enclosing page entrance before measuring the action tooltip", () => {
+  function Page() {
+    const entrance = useEntranceActivation("page:1");
+    return (
+      <section data-testid="page" {...entrance}>
+        <SettingsActionScope>
+          <SettingsActionButton
+            icon={SettingsActionIcon.Edit}
+            presentation={SettingsActionPresentation.Icon}
+            type="button"
+          >
+            Edit project
+          </SettingsActionButton>
+        </SettingsActionScope>
+      </section>
+    );
+  }
+  render(<Page />);
+  expect(screen.getByTestId("page").getAttribute("data-entrance")).toBe("y4");
+  fireEvent.pointerEnter(screen.getByRole("button", { name: "Edit project" }));
+  expect(screen.getByTestId("page").hasAttribute("data-entrance")).toBe(false);
 });

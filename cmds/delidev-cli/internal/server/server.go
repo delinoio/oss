@@ -110,12 +110,19 @@ type Service struct {
 	ownedPAT              *credentials.PATStore
 	github                githubIdentity
 	githubQueries         githubRepositoryQueries
+	githubWorkspaces      githubPullRequestWorkspaces
+	githubAvatars         githubAvatarFetcher
 	githubRepositories    githubRepositoryInventory
 	terminalOutputMu      sync.Mutex
 	terminalOutputChanged chan struct{}
 	// Set only by isolated tests: runs after the account deletion replay check
 	// misses and before failed-subscription cleanup is admitted or observed.
 	afterAccountDeleteReplay func(context.Context)
+	// Test hooks bounding the failed-login deletion completion race: one after a
+	// deletion releases the account gate and before its cleanup run, one before
+	// the per-account runner acquires the gate.
+	afterFailedSubscriptionDeleteObserve func(context.Context)
+	beforeFailedCleanupAccountGate       func(context.Context, domain.ID)
 	// Set before stream admission in isolated tests; production uses 100 ms.
 	terminalWatchInterval         time.Duration
 	terminalOutputs               map[domain.ID]*terminalOutputRing
@@ -123,6 +130,7 @@ type Service struct {
 	prFixRequests                 prFixRequestTracker
 	subscriptionOpen              serverSubscriptionOpener
 	quotaOpen                     serverQuotaOpener
+	creditOpen                    serverCreditOpener
 	subscriptionCallbackTransport http.RoundTripper
 	subscriptionOnce              sync.Once
 	subscriptionEpoch             domain.ID

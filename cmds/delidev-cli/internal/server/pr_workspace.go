@@ -17,6 +17,16 @@ import (
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
+// githubPullRequestWorkspaces reads one complete workspace observation; tests
+// replace it, production uses the GitHub adapter.
+type githubPullRequestWorkspaces interface {
+	WorkspaceWithBudget(context.Context, []byte, string, string, []string, *gh.WorkspaceBudget) (gh.WorkspaceObservation, error)
+}
+
+// githubAvatarFetcher reads one sanitized avatar PNG; tests replace it,
+// production uses the GitHub adapter through the selected outbound route.
+type githubAvatarFetcher func(ctx context.Context, locator, actorID string) ([]byte, error)
+
 type prAvatarEntry struct {
 	actor               domain.Principal
 	repository          domain.ID
@@ -88,12 +98,22 @@ func (s *Service) GetPullRequestWorkspace(ctx context.Context, req *connect.Requ
 	}
 	var observed gh.WorkspaceObservation
 	id := domain.ID(req.Msg.RepositoryId)
-	selected, e := s.withRepositoryIntegration(ctx, id, "workspace", correlation, func(ctx context.Context, token []byte, sel repositoryIntegrationSelection) error {
+	// One budget spans every attempt of this request: the adapter deadline is
+	// frozen at the first provider attempt and provider reads are cumulative.
+	budget := gh.NewWorkspaceBudget()
+	selected, _, e := s.readResumablePullRequestWorkspace(ctx, id, correlation, func(ctx context.Context, token []byte, sel repositoryIntegrationSelection) error {
+		// A resumed attempt restarts from the original seeds; nothing observed by an
+		// interrupted attempt, including avatar locators, survives.
+		observed = gh.WorkspaceObservation{}
 		if e := prRevision(sel, req.Msg.ExpectedRevision); e != nil {
 			return e
 		}
+		client := s.githubWorkspaces
+		if client == nil {
+			client = gh.New(s.outboundResolver())
+		}
 		var e error
-		observed, e = gh.New(s.outboundResolver()).Workspace(ctx, token, sel.repository.GitHubOwner, sel.repository.GitHubName, req.Msg.SeedNumbers)
+		observed, e = client.WorkspaceWithBudget(ctx, token, sel.repository.GitHubOwner, sel.repository.GitHubName, req.Msg.SeedNumbers, budget)
 		return e
 	})
 	if e != nil {
@@ -225,15 +245,25 @@ func (s *Service) ReadPullRequestAvatar(ctx context.Context, req *connect.Reques
 			return nil
 		}
 		var e error
-		png, e = gh.New(s.outboundResolver()).Avatar(ctx, locator, actorID)
+		fetch := s.githubAvatars
+		if fetch == nil {
+			fetch = gh.New(s.outboundResolver()).Avatar
+		}
+		fetched, e := fetch(ctx, locator, actorID)
 		if e != nil {
 			return e
 		}
+		// The reference may have been evicted while the network fetch ran without
+		// the lock. Bytes are returned only while the same entry still holds the
+		// reference, so an evicted scope never yields image bytes.
 		s.prAvatarMu.Lock()
-		if s.prAvatars[req.Msg.Reference] == entry {
-			entry.png = append([]byte{}, png...)
+		defer s.prAvatarMu.Unlock()
+		if s.prAvatars[req.Msg.Reference] != entry {
+			s.logger.Warn("pull_request_avatar_evicted_during_fetch", "repository_id", id, "correlation_id", correlation)
+			return domain.Fail(domain.PermissionDenied, "The avatar reference no longer belongs to this observation.", "Reload the selected workspace; no locator supplied by a client is fetched.")
 		}
-		s.prAvatarMu.Unlock()
+		entry.png = append([]byte{}, fetched...)
+		png = fetched
 		return nil
 	})
 	if e != nil {

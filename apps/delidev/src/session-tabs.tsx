@@ -10,7 +10,11 @@ import {
   terminalFallback,
   TerminalPresentation,
 } from "./terminal-presentation";
-import { Comparison, type BaseReference } from "./session-diff-model";
+import {
+  Comparison,
+  sameReference,
+  type BaseReference,
+} from "./session-diff-model";
 
 export enum SessionTabKind {
   Conversation = "conversation",
@@ -39,6 +43,12 @@ export type SessionTab =
       comparison: Comparison;
       path: string;
       base_ref?: BaseReference;
+      /**
+       * The invalidated explicit base that this base-free tab dropped. It is
+       * owned by the tab (not part of its identity), so closing the tab ends
+       * it and a recreated tab starts without it.
+       */
+      dropped_base?: BaseReference;
     }
   | { kind: SessionTabKind.Terminal; id: string }
   | {
@@ -87,6 +97,7 @@ const initial: SessionTabsSnapshot = {
   selected: SessionTabKind.Conversation,
 };
 type SidechatTab = Extract<SessionTab, { kind: SessionTabKind.Sidechat }>;
+type ComparisonTab = Extract<SessionTab, { kind: SessionTabKind.Comparison }>;
 
 /** Connection-owned descriptors contain no resource bodies, preview bytes or requests. */
 export class SessionTabsStore {
@@ -100,6 +111,10 @@ export class SessionTabsStore {
     return value;
   }
   private parents = new Map<string, string>();
+  // Sidechat children whose latest tab publication was automatic (a pending
+  // tab promoted or published in the background) rather than a user `open`.
+  private automatic = new Set<string>();
+  automaticSidechat = (id: string) => this.automatic.has(id);
   private children = new Map<string, Map<string, SidechatTab>>();
   private sessions = new Map<string, SessionTabsSnapshot>();
   private listeners = new Set<() => void>();
@@ -110,7 +125,14 @@ export class SessionTabsStore {
     };
   };
   snapshot = (id: string) => this.sessions.get(id) ?? initial;
+  // Monotonic per-Session navigation generation: bumped whenever a publish
+  // changes the selected tab, so a pending acknowledgment can tell that the
+  // user navigated after sending even when the same key is selected again.
+  private navigations = new Map<string, number>();
+  navigation = (id: string) => this.navigations.get(id) ?? 0;
   private publish(id: string, value: SessionTabsSnapshot) {
+    if (value.selected !== this.snapshot(id).selected)
+      this.navigations.set(id, this.navigation(id) + 1);
     this.sessions.set(id, value);
     for (const callback of this.listeners) callback();
   }
@@ -141,6 +163,7 @@ export class SessionTabsStore {
     if (tab.kind === SessionTabKind.Terminal)
       this.terminalPresentation(id).number(tab.id);
     if (tab.kind === SessionTabKind.Sidechat) {
+      this.automatic.delete(tab.id);
       this.parents.set(tab.id, id);
       const children = this.children.get(id) ?? new Map<string, SidechatTab>();
       children.set(tab.id, tab);
@@ -155,6 +178,52 @@ export class SessionTabsStore {
     if (found < 0) tabs.push(tab);
     else tabs[found] = tab;
     this.publish(id, { tabs, selected: key });
+  }
+  /**
+   * Opens a Comparison tab. With `inheritDropped`, the `dropped_base` that an
+   * already open destination owns is kept and the incoming one only fills a
+   * destination without a record. Otherwise the incoming `dropped_base` (or
+   * its absence) replaces the destination's.
+   */
+  openComparison(id: string, tab: ComparisonTab, inheritDropped = false) {
+    const key = sessionTabKey(tab),
+      existing = this.snapshot(id).tabs.find(
+        (value) => sessionTabKey(value) === key,
+      );
+    this.open(
+      id,
+      inheritDropped &&
+        existing?.kind === SessionTabKind.Comparison &&
+        existing.dropped_base
+        ? { ...tab, dropped_base: existing.dropped_base }
+        : tab,
+    );
+  }
+  /**
+   * Ends every `dropped_base` record of one repository's Comparison tabs that
+   * names the reference an explicit Base control selection just restored. The
+   * invalidation those records belong to is over, so a later invalidation of
+   * the same reference never binds a tab that did not take part in it. Tab
+   * order, selection and identity are untouched, and nothing publishes when no
+   * record matches.
+   */
+  clearDroppedBase(id: string, repository: string, reference: BaseReference) {
+    const previous = this.snapshot(id);
+    let changed = false;
+    const tabs = previous.tabs.map((tab) => {
+      if (
+        tab.kind !== SessionTabKind.Comparison ||
+        tab.repository !== repository ||
+        !tab.dropped_base ||
+        !sameReference(tab.dropped_base, reference)
+      )
+        return tab;
+      changed = true;
+      const ended: ComparisonTab = { ...tab };
+      delete ended.dropped_base;
+      return ended;
+    });
+    if (changed) this.publish(id, { ...previous, tabs });
   }
   select(id: string, key: string) {
     const previous = this.snapshot(id);
@@ -209,6 +278,29 @@ export class SessionTabsStore {
         1;
     this.close(id, key);
     if (last) this.select(id, SessionTabKind.Conversation);
+  }
+  /**
+   * Removes one acknowledged Page descriptor from every Session snapshot that
+   * still holds it, including inactive and retained Sessions. The native close
+   * is profile-scoped, so the descriptor is dead everywhere once it is
+   * acknowledged. Each affected Session follows the `closePage` selection rule
+   * only when its selected descriptor was removed; Sessions without the exact
+   * profile/page descriptor publish nothing, which keeps repeated
+   * acknowledgment idempotent. No native operation is issued.
+   */
+  closePageEverywhere(profile: string, pageId: string) {
+    const key = sessionTabKey({
+      kind: SessionTabKind.Page,
+      profile,
+      id: pageId,
+      title: "",
+    });
+    const holders = [...this.sessions.entries()]
+      .filter(([, snapshot]) =>
+        snapshot.tabs.some((tab) => sessionTabKey(tab) === key),
+      )
+      .map(([id]) => id);
+    for (const id of holders) this.closePage(id, profile, pageId);
   }
   /**
    * Aligns the Page descriptors with one native inventory of the admitted
@@ -268,6 +360,15 @@ export class SessionTabsStore {
           : previous.selected,
     });
   }
+  /** Opened Terminal content tabs that are not presentation tombstoned. */
+  liveTerminals(id: string) {
+    const presentation = this.terminalPresentation(id);
+    return this.snapshot(id).tabs.flatMap((tab) =>
+      tab.kind === SessionTabKind.Terminal && !presentation.hidden(tab.id)
+        ? [tab.id]
+        : [],
+    );
+  }
   dismissTerminal(id: string, terminalId: string, inventoryFallback = "") {
     const key = sessionTabKey({
       kind: SessionTabKind.Terminal,
@@ -275,10 +376,16 @@ export class SessionTabsStore {
     });
     const previous = this.snapshot(id);
     const selected = previous.selected === key;
+    // A tombstoned terminal tab (dismissed earlier in the same observation
+    // batch) is never a fallback target; only live opened terminals qualify.
+    const presentation = this.terminalPresentation(id);
     const next = selected
       ? terminalFallback(
           previous.tabs.flatMap((tab) =>
-            tab.kind === SessionTabKind.Terminal ? [tab.id] : [],
+            tab.kind === SessionTabKind.Terminal &&
+            (tab.id === terminalId || !presentation.hidden(tab.id))
+              ? [tab.id]
+              : [],
           ),
           terminalId,
         ) || inventoryFallback
@@ -316,6 +423,7 @@ export class SessionTabsStore {
       (value) => sessionTabKey(value) === key,
     );
     this.childDrafts.set(tab.id, draft);
+    this.automatic.add(tab.id);
     this.parents.set(tab.id, parent);
     const children =
       this.children.get(parent) ?? new Map<string, SidechatTab>();

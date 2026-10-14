@@ -120,7 +120,7 @@ Only server selection affects catalog, credential validation, inference relay an
 
 ## Logging
 
-Structured `network_profile_saved`, `network_profile_deleted` and `network_route_selected` metadata includes opaque profile/machine IDs, selected profile revision, closed mode for profile saves and replay classification. Publication recovery emits `network_save_cleanup_pending` and `network_save_cleanup_completed` with only opaque profile/request IDs and a stable error code for pending cleanup. Deletion recovery emits `network_delete_cleanup_pending` and `network_delete_cleanup_completed` with the same metadata limits. No credentials, endpoint host/URLs, bypass entries, raw network errors or export authentication values enter logs.
+Structured `network_profile_saved`, `network_profile_deleted` and `network_route_selected` metadata includes opaque profile/machine IDs, selected profile revision, closed mode for profile saves and replay classification. Publication recovery emits `network_save_cleanup_pending` and `network_save_cleanup_completed` with only opaque profile/request IDs and a stable error code for pending cleanup. Deletion recovery emits `network_delete_cleanup_pending` and `network_delete_cleanup_completed` with the same metadata limits. Rejected Worker native-route reports emit `worker_native_route_rejected` with a stable error code and, only when each is a canonical ID, the opaque job and execution IDs; a malformed request-supplied ID is omitted entirely (no raw value, truncation, hash or excerpt). No credentials, endpoint host/URLs, bypass entries, raw network errors or export authentication values enter logs.
 
 ## Build and Test
 
@@ -180,6 +180,8 @@ Forwarding control and traffic use the same protected route resolver and joined 
 ## Local desktop execution relocation
 
 Local registration endpoints remain immutable authority. Only a validated fixed Local Worker pairing may resolve a same-server private desktop execution target; every bearer request proves its generation first. Wrap the existing selected outbound transport for both proof and business requests without route fallback or ambient proxy discovery. Retired/missing authority after the durable opt-in marker fails closed; Saved/remote endpoints and execution eligibility remain unchanged.
+
+Native Codex API traffic follows the same rule. When a fixed Local desktop Worker currently follows an app-owned runtime (a current runtime record, an injected native-closed target, or the durable follow marker) and its selected route is Direct, the Worker opens an execution-owned private `127.0.0.1` forwarder in `internal/nativeforward` and gives Codex only that origin. Every forwarded request goes through the Worker's selected outbound transport and `desktopruntime` generation proof before the execution bearer is wrapped and sent; a missing, foreign, retired or invalid proof is a classified `server_unavailable` failure with no saved-address fallback, so neither the immutable pairing address nor an unrelated listener on its old port receives the request or token. An unchanged Local address (no runtime record and no marker), Saved/remote Workers and configured-proxy routes keep the original native endpoint and owned-proxy behavior. The forwarder is joined with the native process (Stop, native exit or failure) before cleanup success is reported, never replays the original input and never changes pairing credential bytes. The desktop proof secret is never passed to Codex.
 
 ## Provider reference token prices
 

@@ -577,3 +577,98 @@ func TestSessionDeletionOwnsCurrentAndRetiredSkillSnapshots(t *testing.T) {
 		t.Fatal("original snapshot identity lost")
 	}
 }
+
+func TestSessionPurgeRemovesTypedNotificationDeliveriesOwnedByDeletedInbox(t *testing.T) {
+	s, _ := openTest(t)
+	owner := notificationOwner()
+	server := domain.NewID()
+	if e := s.BindIdentity(owner, server); e != nil {
+		t.Fatal(e)
+	}
+	client := domain.Principal{Type: domain.ClientDevice, DeviceID: domain.NewID()}
+	clientCtx := domain.WithPrincipal(context.Background(), client)
+	if _, e := s.Mutate(owner, domain.NewID(), "fixture.delivery-client", nil, func(tx *Tx) (any, error) {
+		return tx.Put(domain.DeviceKind, client.DeviceID, 0, "", "", domain.Device{Type: domain.ClientDevice, Name: "delivery fixture"})
+	}); e != nil {
+		t.Fatal(e)
+	}
+	claim := func(ctx context.Context, inbox domain.ID) {
+		t.Helper()
+		request := domain.NewID()
+		if _, e := s.Mutate(ctx, request, "fixture.claim", nil, func(tx *Tx) (any, error) {
+			v, fresh, e := tx.ClaimNotification(inbox, request)
+			if e == nil && (!fresh || v.State != domain.NotificationClaimed) {
+				t.Fatal("missing fresh durable claim", v, fresh)
+			}
+			return v, e
+		}); e != nil {
+			t.Fatal(e)
+		}
+	}
+	deliveryKeys := func(inbox domain.ID) []string {
+		t.Helper()
+		rows, e := s.db.Query("SELECT key FROM metadata WHERE key LIKE ? ORDER BY key", notificationDeliveryPrefix+string(inbox)+":%")
+		if e != nil {
+			t.Fatal(e)
+		}
+		defer rows.Close()
+		keys := []string{}
+		for rows.Next() {
+			var key string
+			if e := rows.Scan(&key); e != nil {
+				t.Fatal(e)
+			}
+			keys = append(keys, key)
+		}
+		if e := rows.Err(); e != nil {
+			t.Fatal(e)
+		}
+		return keys
+	}
+	target, control := notificationFixture(t, s, "pending"), notificationFixture(t, s, "pending")
+	// Typed delivery keys exist only for question/approval requests under situation preferences.
+	if _, e := s.db.Exec("UPDATE entities SET body=CAST(json_set(body,'$.type','user-question') AS BLOB) WHERE kind='interaction'"); e != nil {
+		t.Fatal(e)
+	}
+	for _, ctx := range []context.Context{owner, clientCtx} {
+		if e := s.EnsureSituationNotificationPreferences(ctx); e != nil {
+			t.Fatal(e)
+		}
+		claim(ctx, target)
+		claim(ctx, control)
+	}
+	if len(deliveryKeys(target)) != 2 || len(deliveryKeys(control)) != 2 {
+		t.Fatal("fixture did not create typed delivery keys", deliveryKeys(target), deliveryKeys(control))
+	}
+	targetInbox, e := s.Get(owner, domain.InboxKind, target)
+	if e != nil {
+		t.Fatal(e)
+	}
+	session, e := s.Get(owner, domain.SessionKind, targetInbox.SessionID)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, _, e := s.DeleteSession(owner, domain.NewID(), session.ID, server, session.Revision); e != nil {
+		t.Fatal(e)
+	}
+	v, e := s.PurgeDeletedSession(owner, session.ID)
+	if e != nil || !v.DatabaseRemoved {
+		t.Fatal(v, e)
+	}
+	if keys := deliveryKeys(target); len(keys) != 0 {
+		t.Fatal("purge retained typed delivery keys", keys)
+	}
+	if keys := deliveryKeys(control); len(keys) != 2 {
+		t.Fatal("purge removed control delivery keys", keys)
+	}
+	// Repeating purge and restart replay stays idempotent.
+	if v, e = s.PurgeDeletedSession(owner, session.ID); e != nil || !v.DatabaseRemoved {
+		t.Fatal(v, e)
+	}
+	if e := s.RestoreSessionDeletionIntents(owner, server); e != nil {
+		t.Fatal(e)
+	}
+	if len(deliveryKeys(target)) != 0 || len(deliveryKeys(control)) != 2 {
+		t.Fatal("replay changed delivery keys", deliveryKeys(target), deliveryKeys(control))
+	}
+}

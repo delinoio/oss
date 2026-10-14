@@ -1,3 +1,4 @@
+import { LinkedPre } from "./external-link-text";
 import {
   useProductLabels,
   productResourceName,
@@ -9,13 +10,23 @@ import { WaitingQueue } from "./waiting-queue";
 
 import { FlatDisclosureScope } from "./disclosure";
 import { useSessionNameEditor } from "./session-name-editor";
+import {
+  EntranceMotion,
+  useActivationCount,
+  useEntranceActivation,
+} from "./entrance-motion";
 import { SessionToolMenu } from "./session-tool-menu";
 import { NativeAutoReview } from "./native-auto-review";
 import { useSessionRevert } from "./session-revert";
 import { isImageStartupRejectedInput } from "./startup-rejection";
 import { SessionActivityProvider } from "./session-activity";
 import { SessionTabBar } from "./session-tab-bar";
-import { useSessionTabs, SessionTabKind, sessionTabKey } from "./session-tabs";
+import {
+  useSessionTabs,
+  useSessionTabsStore,
+  SessionTabKind,
+  sessionTabKey,
+} from "./session-tabs";
 import {
   initialExecutionPending,
   initialSessionStartup,
@@ -39,7 +50,7 @@ import {
   StartupObservedOperation,
   RetainedStartupTimes,
 } from "./session-progress-status";
-import { currentTurn } from "./turn-timing";
+import { currentTurn, turnTimingConfirmed } from "./turn-timing";
 import { ToolTurnTranscript } from "./tool-turn-transcript";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { NativeImageView } from "./native-image-view";
@@ -221,7 +232,11 @@ import {
 } from "./queue";
 import { StartupRejection } from "./startup-rejection";
 
-function useSessionStream(id: string, active: boolean) {
+function useSessionStream(
+  id: string,
+  active: boolean,
+  presentation: InteractionPresentationStore,
+) {
   const transport = useTransport();
   const [resources, setResources] = useState<ReadonlyMap<string, Resource>>(
     new Map(),
@@ -300,6 +315,11 @@ function useSessionStream(id: string, active: boolean) {
           );
         } else if (change.kind === SyncKind.Remove) {
           known.delete(change.id);
+          // Only confirmed interaction removals reach the durable fence, and it
+          // must exist before any following Snapshot clears the stream-scoped
+          // tombstones below.
+          if (change.entityKind === EntityKind.INTERACTION)
+            presentation.remove(change.id);
           setNewMessageIds((current) =>
             current.filter((id) => id !== change.id),
           );
@@ -333,7 +353,7 @@ function useSessionStream(id: string, active: boolean) {
       }
     });
     return () => controller.abort();
-  }, [id, transport, restart, active, readOwner]);
+  }, [id, transport, restart, active, readOwner, presentation]);
   return {
     currentSnapshot: snapshotOwner === readOwner,
     resources,
@@ -640,7 +660,15 @@ export const TranscriptItem = memo(function TranscriptItem({
           <small>{statusLabel(text(data.state))}</small>
         </header>
       )}
-      {text(data.text) ? <pre>{text(data.text)}</pre> : null}
+      {text(data.text) ? (
+        // Only plain user and assistant text is link-activatable; every other
+        // role or evidence-bearing record keeps inert preformatted text.
+        roleClass ? (
+          <LinkedPre text={text(data.text)} />
+        ) : (
+          <pre>{text(data.text)}</pre>
+        )
+      ) : null}
       {Number(data.context_revision ?? 0) < contextRevision ? (
         <small>{copy("session.previousContext")}</small>
       ) : null}
@@ -892,7 +920,9 @@ export function SessionView({
   initialSkills,
   changeSkills,
   active = true,
+  connectionReady = true,
   embedded = false,
+  activateOnMount = !embedded,
 }: {
   id: string;
   draft: string;
@@ -905,7 +935,13 @@ export function SessionView({
   initialSkills?: SkillTokenBinding[];
   changeSkills?: (bindings: SkillTokenBinding[]) => void;
   active?: boolean;
+  connectionReady?: boolean;
   embedded?: boolean;
+  /**
+   * Whether a mount that starts active is an explicit activation. Embedded
+   * panes default to false so automatic publication never animates.
+   */
+  activateOnMount?: boolean;
   openRunnerSettings?: () => void;
 }) {
   const productLabel = useProductLabels();
@@ -915,12 +951,18 @@ export function SessionView({
     active && (embedded || tabs.tab.kind === SessionTabKind.Conversation);
   // Session metadata owns account and native presentation authority even when
   // a resource pane hides the conversation. Only transcript reads pause there.
+  // The presentation store outlives stream snapshots and receives authoritative
+  // interaction removals from the stream before any following Snapshot.
+  const [interactionPresentation] = useState(
+    () => new InteractionPresentationStore(),
+  );
   const live = useSessionStream(
     id,
     active &&
       ![SessionTabKind.Sidechat, SessionTabKind.PendingSidechat].includes(
         tabs.tab.kind,
       ),
+    interactionPresentation,
   );
   const submissions = useSessionSubmissions();
   const [submissionError, setSubmissionError] = useState<unknown>();
@@ -1022,6 +1064,23 @@ export function SessionView({
   const information = useRef<HTMLElement>(null);
   const sessionHeading = useRef<HTMLHeadingElement>(null);
   const [startupInfoHidden, setStartupInfoHidden] = useState(false);
+  // Explicit session activation (selection, or returning to a retained session)
+  // owns one 120ms Y2 header entrance. Reads, streaming, edits and preference
+  // changes never restart it, and nothing waits for it to finish. An embedded
+  // Sidechat pane plays the same entrance on its own header for each rising
+  // edge of its tab selection. Its mount counts only when the owner marks it
+  // explicit (`activateOnMount`): a pane that mounts selected because its
+  // pending tab was promoted, or one that is published in the background,
+  // must not animate until a later explicit re-selection.
+  const sessionActivations = useActivationCount(active, activateOnMount);
+  const headerEntrance = useEntranceActivation(
+    `${id}:${sessionActivations}`,
+    active && sessionActivations > 0,
+    EntranceMotion.Y2,
+  );
+  // Only an explicit Info reveal (Show details or a recovery/budget entry)
+  // counts as opening; Info itself stays mounted and persistent.
+  const [infoOpenings, setInfoOpenings] = useState(0);
   const [prEmpty, setPREmpty] = useState(false),
     [subagentsEmpty, setSubagentsEmpty] = useState(false);
   const [diagnosticsTarget, setDiagnosticsTarget] =
@@ -1074,9 +1133,6 @@ export function SessionView({
     useState(false);
   const queueDrafts = useConversationDrafts<QueuedInputDraft>();
   const requestDrafts = useConversationDrafts<InboxInteractionDraft>();
-  const [interactionPresentation] = useState(
-    () => new InteractionPresentationStore(),
-  );
   const [responseResources, setResponseResources] = useState<
     ReadonlyMap<string, Resource>
   >(new Map());
@@ -1636,10 +1692,15 @@ export function SessionView({
     target?.scrollIntoView?.({ block: "nearest" });
     setRevealSubmission(undefined);
   }, [revealSubmission, active]);
+  // Stream-scoped removals plus the durable fence that survives Snapshots.
+  const removedInteractions = new Set([
+    ...live.removed,
+    ...interactionPresentation.removed(),
+  ]);
   const requests = interactionRows(
     interactions.data?.resources ?? [],
     latestInteractions,
-    live.removed,
+    removedInteractions,
     live.newInteractionIds,
     id,
     !!interactions.data && !interactions.data.nextPageToken,
@@ -1664,7 +1725,7 @@ export function SessionView({
   const missingQuestionReceipts = selectMissingQuestionReceipts(
     interactionPresentation.entries(),
     new Set(requests.map((row) => row.id)),
-    live.removed,
+    removedInteractions,
     pendingQuestionKeys,
   );
   // Receipts render at their original reached page and row position, including
@@ -1841,18 +1902,30 @@ export function SessionView({
   };
   const closePanel = () => closeTab(tabs.selected);
   const closeTerminal = closePanel;
+  // Tab-bar DOM ids are positional, so focus waits for the tab bar to commit
+  // and re-resolves the captured selection by key. A changed selection or a
+  // removed target suppresses focus.
+  const focusSelectedTabAfterCommit = (target: string) =>
+    requestAnimationFrame(() => {
+      const current = tabs.store.snapshot(id);
+      if (current.selected !== target) return;
+      const index = current.tabs.findIndex(
+        (tab) => sessionTabKey(tab) === target,
+      );
+      if (index < 0) return;
+      document
+        .getElementById(`session-tab-${id}-${index}`)
+        ?.focus({ preventScroll: true });
+    });
   const hideEmptyTerminals = () => {
+    // Final dismissal never closes a live terminal content tab, including one
+    // that is absent from the current inventory; only tombstoned tabs close.
+    if (tabs.store.liveTerminals(id).length) return;
     for (const tab of tabs.store.snapshot(id).tabs) {
       if (tab.kind === SessionTabKind.Terminal)
         tabs.store.close(id, sessionTabKey(tab));
     }
-    const current = tabs.store.snapshot(id);
-    const index = current.tabs.findIndex(
-      (tab) => sessionTabKey(tab) === current.selected,
-    );
-    document
-      .getElementById(`session-tab-${id}-${index}`)
-      ?.focus({ preventScroll: true });
+    focusSelectedTabAfterCommit(tabs.store.snapshot(id).selected);
   };
   const togglePanel = (next: Exclude<SessionPanel, SessionPanel.Closed>) => {
     if (next === SessionPanel.Files) setFilesOpened(true);
@@ -1903,6 +1976,7 @@ export function SessionView({
   };
   // Revealing Info preserves the selected resource and its original controller.
   const showInfo = (_opener: HTMLButtonElement, target = InfoTarget.Status) => {
+    setInfoOpenings((count) => count + 1);
     setInfoReveal({ target });
   };
   const problem = object(data.problem);
@@ -1987,16 +2061,17 @@ export function SessionView({
       progressRevision.current.revision = session.revision;
   }, [id, session]);
   const timing = currentTurn(session, id);
-  const timingConfirmed =
-    live.state === ConnectionState.Live &&
-    !live.error &&
-    !messages.error &&
-    !queue.error &&
-    !interactions.error &&
-    !control.uncertain &&
-    !control.error &&
-    data.recovery !== "required" &&
-    !Number(object(data.execution).unconfirmed_responses);
+  // Only loss of synchronization of the owning Session resource unconfirms
+  // timing. Definitive control rejections and unrelated queue/interaction read
+  // failures stay visible through their own surfaces without freezing the clock.
+  const timingConfirmed = turnTimingConfirmed({
+    liveLive: live.state === ConnectionState.Live,
+    liveFailed: Boolean(live.error),
+    messagesFailed: Boolean(messages.error),
+    controlUncertain: Boolean(control.uncertain),
+    recoveryRequired: data.recovery === "required",
+    unconfirmedResponses: Number(object(data.execution).unconfirmed_responses),
+  });
   const observedProgress = sessionProgress({
     session,
     sessionId: id,
@@ -2179,6 +2254,11 @@ export function SessionView({
       tabs.tab.kind,
     ) ||
     (hideStartupInfo && startupInfoHidden);
+  const infoEntrance = useEntranceActivation(
+    `${id}:info:${infoOpenings}`,
+    infoOpenings > 0 && !infoHidden,
+    EntranceMotion.X4,
+  );
   return (
     <SessionActivityProvider
       active={
@@ -2221,89 +2301,91 @@ export function SessionView({
         }}
       >
         <header className="session-header">
-          <div className="session-heading">
-            <SessionHarness resource={session}>
-              <div className="session-heading-line">
-                <h2
-                  ref={sessionHeading}
-                  tabIndex={-1}
-                  onDoubleClick={(event) => {
-                    if (session) editName?.(session.id, event.currentTarget);
-                  }}
-                >
-                  {productResourceName(productLabel, session)}
-                </h2>
-                <p
-                  className={`connection${live.state === ConnectionState.Live ? " is-live" : ""}`}
-                  role="status"
-                >
-                  {connectionLabel}
-                </p>
-              </div>
-            </SessionHarness>
-          </div>
-          <div
-            className="session-controls"
-            hidden={
-              !embedded &&
-              [
-                SessionTabKind.Sidechat,
-                SessionTabKind.PendingSidechat,
-              ].includes(tabs.tab.kind)
-            }
-            inert={
-              !embedded &&
-              [
-                SessionTabKind.Sidechat,
-                SessionTabKind.PendingSidechat,
-              ].includes(tabs.tab.kind)
-            }
-          >
-            <button
-              type="button"
-              disabled={!session || control.busy || control.uncertain}
-              onClick={() => action(SessionAction.STOP)}
-            >
-              {copy("session.stop_cae7d5")}
-            </button>
-            <button
-              type="button"
-              disabled={
-                !session ||
-                control.busy ||
-                control.uncertain ||
-                runnerRemediationPending ||
-                !sessionControlEligibility(session, budgetBlocked).resume
+          <div className="session-header-entrance" {...headerEntrance}>
+            <div className="session-heading">
+              <SessionHarness resource={session}>
+                <div className="session-heading-line">
+                  <h2
+                    ref={sessionHeading}
+                    tabIndex={-1}
+                    onDoubleClick={(event) => {
+                      if (session) editName?.(session.id, event.currentTarget);
+                    }}
+                  >
+                    {productResourceName(productLabel, session)}
+                  </h2>
+                  <p
+                    className={`connection${live.state === ConnectionState.Live ? " is-live" : ""}`}
+                    role="status"
+                  >
+                    {connectionLabel}
+                  </p>
+                </div>
+              </SessionHarness>
+            </div>
+            <div
+              className="session-controls"
+              hidden={
+                !embedded &&
+                [
+                  SessionTabKind.Sidechat,
+                  SessionTabKind.PendingSidechat,
+                ].includes(tabs.tab.kind)
               }
-              onClick={() => action(SessionAction.RESUME)}
+              inert={
+                !embedded &&
+                [
+                  SessionTabKind.Sidechat,
+                  SessionTabKind.PendingSidechat,
+                ].includes(tabs.tab.kind)
+              }
             >
-              {startupRetry
-                ? copy("session.startupRetry")
-                : copy("session.resume_d640c7")}
-            </button>
-            <SessionActions>
-              {session ? (
-                <SessionForkAction
-                  source={session}
-                  disabled={control.busy || control.uncertain}
-                />
-              ) : null}
               <button
                 type="button"
                 disabled={!session || control.busy || control.uncertain}
-                onClick={() =>
-                  action(
-                    text(data.archive) === "archived"
-                      ? SessionAction.RESTORE
-                      : SessionAction.ARCHIVE,
-                  )
-                }
+                onClick={() => action(SessionAction.STOP)}
               >
-                {text(data.archive) === "archived"
-                  ? copy("session.restore_a76e13")
-                  : copy("session.archive_66f480")}
+                {copy("session.stop_cae7d5")}
               </button>
-            </SessionActions>
+              <button
+                type="button"
+                disabled={
+                  !session ||
+                  control.busy ||
+                  control.uncertain ||
+                  runnerRemediationPending ||
+                  !sessionControlEligibility(session, budgetBlocked).resume
+                }
+                onClick={() => action(SessionAction.RESUME)}
+              >
+                {startupRetry
+                  ? copy("session.startupRetry")
+                  : copy("session.resume_d640c7")}
+              </button>
+              <SessionActions>
+                {session ? (
+                  <SessionForkAction
+                    source={session}
+                    disabled={control.busy || control.uncertain}
+                  />
+                ) : null}
+                <button
+                  type="button"
+                  disabled={!session || control.busy || control.uncertain}
+                  onClick={() =>
+                    action(
+                      text(data.archive) === "archived"
+                        ? SessionAction.RESTORE
+                        : SessionAction.ARCHIVE,
+                    )
+                  }
+                >
+                  {text(data.archive) === "archived"
+                    ? copy("session.restore_a76e13")
+                    : copy("session.archive_66f480")}
+                </button>
+              </SessionActions>
+            </div>
           </div>
         </header>
         {!embedded ? (
@@ -2317,7 +2399,12 @@ export function SessionView({
               newPage={() => setBrowserDialog(true)}
               closeAria={shortcuts.aria(ShortcutId.SessionCloseTab)}
             />
-            <SessionToolMenu key={id} active={active}>
+            <SessionToolMenu
+              key={id}
+              active={active}
+              ready={connectionReady}
+              recoveryFocus={() => sessionHeading.current}
+            >
               {tools.map((tool) => (
                 <button
                   role="menuitem"
@@ -2686,7 +2773,7 @@ export function SessionView({
                                   ? interactionRows(
                                       payload,
                                       latestInteractions,
-                                      live.removed,
+                                      removedInteractions,
                                       [],
                                       id,
                                       false,
@@ -3168,11 +3255,15 @@ export function SessionView({
                         ? tabs.tab
                         : undefined
                     }
-                    openComparison={(value) =>
-                      tabs.store.open(id, {
-                        kind: SessionTabKind.Comparison,
-                        ...value,
-                      })
+                    openComparison={(value, options) =>
+                      tabs.store.openComparison(
+                        id,
+                        { kind: SessionTabKind.Comparison, ...value },
+                        options?.inheritDropped,
+                      )
+                    }
+                    restoreBase={(repository, reference) =>
+                      tabs.store.clearDroppedBase(id, repository, reference)
                     }
                   />
                 </div>
@@ -3185,6 +3276,7 @@ export function SessionView({
                 >
                   <SessionFiles
                     active={active && panel === SessionPanel.Files}
+                    previewing={tabs.tab.kind === SessionTabKind.File}
                     sessionId={id}
                     close={closePanel}
                     openFile={(repository, path) =>
@@ -3259,17 +3351,7 @@ export function SessionView({
                         terminalId,
                         fallback,
                       );
-                      if (selected)
-                        requestAnimationFrame(() => {
-                          const current = tabs.store.snapshot(id);
-                          if (current.selected !== target) return;
-                          const index = current.tabs.findIndex(
-                            (tab) => sessionTabKey(tab) === target,
-                          );
-                          document
-                            .getElementById(`session-tab-${id}-${index}`)
-                            ?.focus({ preventScroll: true });
-                        });
+                      if (selected) focusSelectedTabAfterCommit(target);
                     }}
                     active={active && tabs.tab.kind === SessionTabKind.Terminal}
                   />
@@ -3317,7 +3399,7 @@ export function SessionView({
             className="session-information"
             aria-labelledby={`info-title-${id}`}
           >
-            <header>
+            <header {...infoEntrance}>
               <h2 ref={infoHeading} tabIndex={-1} id={`info-title-${id}`}>
                 {copy("session.sessionInformation")}
               </h2>
@@ -3410,6 +3492,11 @@ export function SessionView({
 }
 
 function SidechatPane({ id, active }: { id: string; active: boolean }) {
+  const store = useSessionTabsStore();
+  // Decided once at mount: a Sidechat that `publishSidechat` promoted or
+  // published automatically does not animate on mount, while one the user
+  // opened (`open`, for example from a Search result) does.
+  const [activateOnMount] = useState(() => !store.automaticSidechat(id));
   return (
     <SidechatAuthoring id={id} active={active}>
       {({ draft, setDraft, bindings, setBindings }) => (
@@ -3418,6 +3505,7 @@ function SidechatPane({ id, active }: { id: string; active: boolean }) {
             id={id}
             active={active}
             embedded
+            activateOnMount={activateOnMount}
             draft={draft}
             setDraft={setDraft}
             initialSkills={bindings}

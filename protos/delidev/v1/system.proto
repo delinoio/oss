@@ -47,6 +47,9 @@ message GetStatusResponse {
   string started_at = 6;
   bool stopping = 7;
   repeated SystemCapability capabilities = 8;
+  // Presence-bearing readiness of the compiled production update-signing root.
+  // Absent means a legacy server that does not report readiness.
+  optional bool production_root_ready = 9;
 }
 
 enum SystemCapability {
@@ -91,8 +94,14 @@ enum SystemCapability {
   SYSTEM_CAPABILITY_NATIVE_IMAGE_GENERATION_V1 = 61;
   SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_QUOTA_V1 = 46;
   SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_RESET_CREDITS_V1 = 49;
+  // Server-owned access-only reset-credit consumption beside Execute, without a Runner.
+  SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_RESET_CREDITS_V2 = 101;
   SYSTEM_CAPABILITY_CLAUDE_SUBSCRIPTIONS_V1 = 38;
   SYSTEM_CAPABILITY_FAILED_SUBSCRIPTION_CLEANUP_V1 = 41;
+  // Explicit DeleteConfiguration cleanup of a terminal original server ChatGPT
+  // LOGOUT account whose only remaining blocker is protected credential cleanup.
+  // Capability 41 keeps its failed-initial-LOGIN meaning.
+  SYSTEM_CAPABILITY_SUBSCRIPTION_CLEANUP_RECOVERY_V1 = 64;
   SYSTEM_CAPABILITY_EXECUTION_STARTUP_V1 = 43;
   SYSTEM_CAPABILITY_GITHUB_TOKEN_ONBOARDING_V1 = 34;
   SYSTEM_CAPABILITY_REPOSITORY_CLONE_V1 = 31;

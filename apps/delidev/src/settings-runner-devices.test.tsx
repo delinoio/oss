@@ -102,7 +102,7 @@ function fixture(rows: Resource[] = []) {
       </TransportProvider>
     </StrictMode>
   );
-  return { list, get, view, transport };
+  return { list, get, view, transport, client };
 }
 function open(value: ReturnType<typeof fixture>, control?: ControlLocalWorker) {
   render(value.view(<Settings controlLocalWorker={control} />));
@@ -269,7 +269,7 @@ it("retains original order, parser fallback, full IDs and schema-gated inspect a
   const inventory = screen.getByRole("region", {
     name: "Saved runner devices",
   });
-  await within(inventory).findByText("Zulu");
+  await within(inventory).findByRole("heading", { name: "Zulu" });
   expect(
     Array.from(
       inventory.querySelectorAll("article h3"),
@@ -292,6 +292,53 @@ it("retains original order, parser fallback, full IDs and schema-gated inspect a
   expect(
     screen.getByText("Configure these entries through the DeliDev CLI."),
   ).toBeTruthy();
+});
+it("numbers nameless saved Runner rows with the Runner noun in heading and identity line", async () => {
+  const unnamed = () =>
+    create(ResourceSchema, {
+      id: newRequestId(),
+      kind: EntityKind.MACHINE,
+      revision: 7n,
+      schemaVersion: 1,
+      documentJson: encode({ health: "Observed health" }),
+    });
+  const rows = [unnamed(), machine("Named"), unnamed()],
+    value = fixture(rows);
+  open(value, async () => status());
+  const inventory = screen.getByRole("region", {
+    name: "Saved runner devices",
+  });
+  await within(inventory).findByRole("heading", { name: "Named" });
+  const lines = () =>
+    Array.from(inventory.querySelectorAll("article")).map((article) => ({
+      heading: article.querySelector("h3")?.textContent,
+      identity: article.querySelector("small")?.textContent,
+    }));
+  const first = lines();
+  expect(first[0].heading).toMatch(/^Runner unavailable · \d+$/);
+  expect(first[0].identity).toBe(first[0].heading);
+  expect(first[1].identity).toBe("Named");
+  expect(first[2].heading).toMatch(/^Runner unavailable · \d+$/);
+  expect(first[2].identity).toBe(first[2].heading);
+  expect(first[2].heading).not.toBe(first[0].heading);
+  expect(inventory.textContent).not.toContain("Resource unavailable");
+  // Reordering and refetching keep each original machine ID bound to its number.
+  value.list.mockResolvedValue({ resources: [...rows].reverse() });
+  await act(async () => {
+    await value.client.invalidateQueries();
+  });
+  await waitFor(() => expect(lines()[0].heading).toBe(first[2].heading));
+  expect(lines().map((line) => line.identity)).toEqual([
+    first[2].identity,
+    "Named",
+    first[0].identity,
+  ]);
+  fireEvent.click(
+    within(inventory).getAllByRole("button", {
+      name: "Inspect installed harnesses",
+    })[0],
+  );
+  await waitFor(() => expect(value.get).toHaveBeenCalledWith(rows[2].id));
 });
 it("hides pages only for successful empty first pages without continuation", async () => {
   const value = fixture();
@@ -352,7 +399,9 @@ it.each([false, true])(
       current = status(),
       control = vi.fn(async (_action: LocalWorkerAction) => current);
     open(value, control);
-    await screen.findByText(empty ? "No saved entries." : "Retained machine");
+    await screen.findByText(empty ? "No saved entries." : "Retained machine", {
+      selector: empty ? "*" : "h3",
+    });
     await screen.findByText("Exit unconfirmed");
     const calls = control.mock.calls.length,
       pending = deferred<Page>(),
@@ -360,14 +409,18 @@ it.each([false, true])(
     value.list.mockReturnValue(pending.promise);
     fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
     expect(
-      screen.getByText(empty ? "No saved entries." : "Retained machine"),
+      screen.getByText(empty ? "No saved entries." : "Retained machine", {
+        selector: empty ? "*" : "h3",
+      }),
     ).toBeTruthy();
     await act(async () => pending.reject(problem.error));
     await screen.findByText(
       "Refresh failed. Showing the last successfully loaded results.",
     );
     expect(
-      screen.getByText(empty ? "No saved entries." : "Retained machine"),
+      screen.getByText(empty ? "No saved entries." : "Retained machine", {
+        selector: empty ? "*" : "h3",
+      }),
     ).toBeTruthy();
     expect(screen.getByRole("alert").textContent).not.toContain(
       problem.correlationId,

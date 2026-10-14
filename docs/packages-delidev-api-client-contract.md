@@ -8,7 +8,7 @@ Generated AccountQuery and AccountService expose StartAccountOAuth, CompleteAcco
 
 ## Request diagnostic client
 
-Generated `SessionQuery.listRequestDiagnostics` and `SystemCapability.REQUEST_DIAGNOSTICS_V1` expose the previous feature metadata read. Preserve native-input versus proxy-HTTP enum provenance, optional unavailable observations, exact bigint revisions/latency and original session/execution/page selection. The client performs no matching by time/model, usage ingestion, request reconstruction or receipt-driven HTTP retry. Follow the [diagnostics contract](cmds-delidev-diagnostics-contract.md); bindings remain tool-generated.
+Generated `SessionQuery.listRequestDiagnostics` and `SystemCapability.REQUEST_DIAGNOSTICS_V1` expose the previous feature metadata read. Preserve native-input versus proxy-HTTP enum provenance, the closed `RequestDiagnosticAttribution` (a builtin reviewer record has no catalog `model`), optional unavailable observations, exact bigint revisions/latency and original session/execution/page selection. The client performs no matching by time/model, usage ingestion, request reconstruction or receipt-driven HTTP retry. Follow the [diagnostics contract](cmds-delidev-diagnostics-contract.md); bindings remain tool-generated.
 
 Buf generates service-specific modules. The normal protocol generation command
 also runs `scripts/delidev/proto-compat.mjs` to remove retired historical aggregate
@@ -175,7 +175,7 @@ Canceling a read cannot close or recreate the native terminal.
 
 - The feature remote starting branches uses System 51 / Worker 27 under the workspace, desktop and protocol contracts. Freeze configured source and project/repository/machine revisions; only the original authenticated selected Worker owns read-only native Git discovery. Retain complete 10,000-branch/8 MiB inventory bounds with feature-only job/journal/receipt/transport headroom, protected native Git credentials, safe logs and joined process cleanup. Discovery grants no checkout/preparation/execution authority or migration. Creation preserves saved/manual starting references, independent overrides, comparison base, Local proof and exact uncertain retries; older peers retain manual flows.
 
-- `decodeResourceDocument` in `configuration-identity.ts` owns shared document/schema reads: ordinary resources retain 1 MiB, with only schema-1 `compact-session` Jobs and `workspace-storage` Jobs whose input action is `recover` bounded to 4 MiB. Desktop/receipt and synchronization consumers share this rule without changing aggregate cache limits or original identity checks. Decoding grants no operation or native authority; follow the client, compaction and storage contracts.
+- `decodeResourceDocument` in `configuration-identity.ts` owns shared document/schema reads: ordinary resources retain 1 MiB, with only schema-1 `compact-session` Jobs and `workspace-storage` Jobs whose input action is `recover` bounded to 4 MiB. Desktop/receipt and synchronization consumers share this rule without changing aggregate cache limits or original identity checks. The server grants a scope containing such a Job over 1 MiB an 8 MiB complete `GetSnapshot` budget (see `protos-delidev-v1-contract.md`); `synchronizeResources` consumers that expect it, such as the desktop session, must pass `maxDocumentBytes` of 8 MiB because the helper's 4 MiB default would reject the snapshot. Decoding grants no operation or native authority; follow the client, compaction and storage contracts.
 
 - Project behavior settings follow `cmds-delidev-catalog-contract.md#project-behavior-settings-issue-1965`: System 52, schema-2 Project/Settings and portable v5 preserve continuous typed inheritance, explicit project context, source-route/Agent and repository precedence, all three fetch gates, immutable snapshots and first-publication durable plan response decisions. Previously pending plans stay manual; uncertainty never permits resend. Preserve v1–4 imports and reject destructive legacy writes. No SQLite migration or Worker capability is added.
 
@@ -402,7 +402,7 @@ catalog results grant no execution readiness. Follow the desktop/catalog contrac
 
 ## Failed subscription cleanup client
 
-The existing cleanup RPC also includes fully disconnected subscription configurations across services. Individual failed initial ChatGPT deletion uses the existing configuration deletion RPC; generated request/response declarations and capability numbers remain unchanged.
+The existing cleanup RPC also includes fully disconnected subscription configurations across services. Individual failed initial ChatGPT deletion uses the existing configuration deletion RPC; generated request/response declarations remain unchanged. The generated `SystemCapability.SUBSCRIPTION_CLEANUP_RECOVERY_V1 = 64` gates the same deletion RPC for a terminal original server LOGOUT blocked on protected cleanup; clients without it send no expanded request.
 
 Generated SubscriptionQuery exports cleanupFailedSubscriptions and getFailedSubscriptionCleanup plus the closed batch state, outcome and reason enums. Capability 41 was reserved on main in the originating change; preserve Claude 38/Grok 39/40 and their independent support. Exact request UUIDs bind uncertain admission retries; accepted work is read by original job ID, with bigint revisions and fixed 50-result pages. Validate identity, monotonic counts/revision, closed state/outcome/reasons and complete page bounds before accepting status. Metadata-only status may use category-scoped Connect Query; neither generated bindings nor a read grant native/login/callback/deletion authority. See the subscription/Settings contracts.
 
@@ -528,3 +528,7 @@ Typed event JSON keeps original item status, nullable success/duration, inert
 text/media commitments and independent reply/resolution metadata. Native wire
 request numbers remain decimal strings across JavaScript readers. These facts
 grant no dispatch, media retrieval, reply retry or continuation authority.
+
+## Server reset credits V2 negotiation
+
+The generated System enum includes `SERVER_SUBSCRIPTION_RESET_CREDITS_V2 = 101`. Clients require it before a new omitted-machine reset-credit consumption and never send a Runner selector with that request. Servers without it receive existing update guidance. Historical System 19 and 49 capabilities remain only for reconciling operations already accepted on those lanes. Regenerate both bindings from the reconciled schema; no new RPC or Worker capability exists.

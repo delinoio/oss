@@ -186,6 +186,15 @@ it("does not automatically repeat an uncertain native open", async () => {
   expect(screen.queryByText("private diagnostic")).toBeNull();
 });
 
+it("points a missing browser at Settings > Browser without fallback or a second launch", async () => {
+  native.invoke.mockClear();
+  native.invoke.mockRejectedValueOnce("browser-unavailable");
+  render(<OpenGitHub url="https://github.com/owner/repo/pull/1" />);
+  fireEvent.click(screen.getByRole("button", { name: "Open on GitHub" }));
+  await screen.findByText(/selected browser is not installed/);
+  expect(native.invoke).toHaveBeenCalledTimes(1);
+});
+
 function draftFixture() {
   native.invoke.mockClear();
   const changeKind = vi.fn();
@@ -320,7 +329,49 @@ it.each(["url", "requestId", "resourceOwner", "tokenKind", "access"])(
     expect(native.invoke).not.toHaveBeenCalled();
   },
 );
-it.each(["disabled", "departure", "unmount"])(
+it("keeps an admitted draft opening alive through a transient disabled flip", async () => {
+  const f = draftFixture(),
+    original = f.form.getMockImplementation()!;
+  let release!: () => void;
+  f.form.mockImplementationOnce(async (r) => {
+    await new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return original(r);
+  });
+  const view = render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Classic" }));
+  await waitFor(() => expect(f.form).toHaveBeenCalledTimes(1));
+  // Simulate a capability status poll toggling the new-click gate.
+  view.rerender(f.view(true, true));
+  view.rerender(f.view(true, false));
+  const classic = screen.getByRole("button", { name: "Classic" });
+  const fine = screen.getByRole("button", { name: "Fine grained" });
+  expect((classic as HTMLButtonElement).disabled).toBe(true);
+  expect((fine as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(fine);
+  expect(f.form).toHaveBeenCalledTimes(1);
+  release();
+  await screen.findByText(/Sent to your browser/);
+  expect(native.invoke).toHaveBeenCalledTimes(1);
+  expect(f.form).toHaveBeenCalledTimes(1);
+  await waitFor(() =>
+    expect((classic as HTMLButtonElement).disabled).toBe(false),
+  );
+});
+it("keeps new draft openings disabled while the gate is closed", async () => {
+  const f = draftFixture();
+  render(f.view(true, true));
+  const classic = screen.getByRole("button", { name: "Classic" });
+  const fine = screen.getByRole("button", { name: "Fine grained" });
+  expect((classic as HTMLButtonElement).disabled).toBe(true);
+  expect((fine as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(classic);
+  fireEvent.click(fine);
+  expect(f.form).not.toHaveBeenCalled();
+  expect(native.invoke).not.toHaveBeenCalled();
+});
+it.each(["departure", "unmount"])(
   "discards a delayed draft form after %s",
   async (change) => {
     const f = draftFixture(),
@@ -335,8 +386,7 @@ it.each(["disabled", "departure", "unmount"])(
     const view = render(f.view());
     fireEvent.click(screen.getByRole("button", { name: "Fine grained" }));
     await waitFor(() => expect(f.form).toHaveBeenCalledTimes(1));
-    if (change === "disabled") view.rerender(f.view(true, true));
-    else if (change === "unmount") view.unmount();
+    if (change === "unmount") view.unmount();
     else view.rerender(f.view(false));
     release();
     await waitFor(() => expect(f.client.isFetching()).toBe(0));
@@ -372,7 +422,7 @@ it("locks both buttons through preparation and native dispatch without duplicate
   fireEvent.click(classic);
   expect(f.form).toHaveBeenCalledTimes(1);
   dispatched();
-  await screen.findByText(/Sent to your default browser/);
+  await screen.findByText(/Sent to your browser/);
   await waitFor(() =>
     expect((classic as HTMLButtonElement).disabled).toBe(false),
   );
@@ -414,7 +464,7 @@ it("translates a pending draft without repeating preparation or changing its cho
     expect(f.form).toHaveBeenCalledTimes(1);
     expect(f.changeKind).toHaveBeenCalledTimes(1);
     release();
-    await screen.findByText(/기본 브라우저로 전달했습니다/);
+    await screen.findByText(/브라우저로 전달했습니다/);
     expect(native.invoke).toHaveBeenCalledTimes(1);
     expect(f.form).toHaveBeenCalledTimes(1);
   } finally {
