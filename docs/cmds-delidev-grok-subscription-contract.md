@@ -602,6 +602,11 @@ before the request, so an unparsed response is never a published success and nev
 a definitive rejection that would release the claim. The table is pinned by
 `TestGrokTokenResponseTable`, which runs every row against both grants.
 
+The identity evidence of a grant is held to the same rule: an ID-token payload
+or a userinfo response that repeats a claim name is refused (exact comparison, as
+claim names are case-sensitive), because the decoder would keep the last
+occurrence (`TestGrokIdentityEvidenceRejectsRepeatedClaims`).
+
 | Status                                                     | Body                                                                                  | Reason                     | Settlement after the claim         |
 | ---------------------------------------------------------- | ------------------------------------------------------------------------------------- | -------------------------- | ---------------------------------- |
 | 200                                                        | one valid token object (trailing whitespace allowed)                                  | success                    | publish                            |

@@ -416,12 +416,13 @@ type grokTokenBody struct {
 }
 
 // grokStrictObject reports whether raw is exactly one JSON object whose
-// top-level members are unique (compared case-insensitively, as encoding/json
-// matches struct fields) and that is followed by nothing but whitespace.
+// top-level members are unique and that is followed by nothing but whitespace.
+// Member names are compared case-insensitively when fold is set (as
+// encoding/json matches struct fields) and exactly otherwise (a claim set).
 // encoding/json keeps the last of duplicate members, and implementations
 // disagree about duplicates, so a body that repeats a member is ambiguous and is
 // never trusted.
-func grokStrictObject(raw []byte) bool {
+func grokStrictObject(raw []byte, fold bool) bool {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	if open, err := decoder.Token(); err != nil || open != json.Delim('{') {
 		return false
@@ -433,11 +434,13 @@ func grokStrictObject(raw []byte) bool {
 		if err != nil || !isString {
 			return false
 		}
-		folded := strings.ToLower(name)
-		if seen[folded] {
+		if fold {
+			name = strings.ToLower(name)
+		}
+		if seen[name] {
 			return false
 		}
-		seen[folded] = true
+		seen[name] = true
 		var value json.RawMessage
 		if decoder.Decode(&value) != nil {
 			return false
@@ -457,7 +460,7 @@ func grokStrictObject(raw []byte) bool {
 // uncertain, never as a published success and never as a definitive rejection
 // that would release the claim.
 func parseGrokTokenBody(raw []byte) (grokTokenBody, bool) {
-	if !grokStrictObject(raw) {
+	if !grokStrictObject(raw, true) {
 		return grokTokenBody{}, false
 	}
 	var body grokTokenBody
@@ -601,7 +604,7 @@ func (c GrokOAuthClient) validateIDToken(ctx context.Context, endpoints GrokEndp
 	}
 	defer clear(payload)
 	var fields map[string]json.RawMessage
-	if json.Unmarshal(payload, &fields) != nil {
+	if !grokStrictObject(payload, false) || json.Unmarshal(payload, &fields) != nil {
 		return GrokClaims{}, invalid
 	}
 	now := c.now()
@@ -675,7 +678,7 @@ func (c GrokOAuthClient) userInfo(ctx context.Context, endpoints GrokEndpoints, 
 		return GrokUserInfo{}, "", grokFailure(GrokReasonUserInfo)
 	}
 	var fields map[string]json.RawMessage
-	if json.Unmarshal(raw, &fields) != nil {
+	if !grokStrictObject(raw, false) || json.Unmarshal(raw, &fields) != nil {
 		return GrokUserInfo{}, "", grokFailure(GrokReasonUserInfo)
 	}
 	subject := grokClaimString(fields, "sub")
