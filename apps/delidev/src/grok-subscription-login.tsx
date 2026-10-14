@@ -660,13 +660,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
   };
   const cancel = () => {
     const p = pending.current;
-    if (
-      !p ||
-      !live(p) ||
-      !p.operation ||
-      p.terminal ||
-      p.cancelAcknowledged
-    )
+    if (!p || !live(p) || !p.operation || p.terminal || p.cancelAcknowledged)
       return;
     let request:
       Parameters<typeof clients.subscription.cancelSubscription>[0] | undefined;

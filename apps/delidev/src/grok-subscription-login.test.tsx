@@ -310,7 +310,9 @@ it("creates one account and one browser login despite double click, Strict Mode 
   expect(actions(f, OAuthNativeAction.Take).length).toBeGreaterThan(0);
   // The browser opened: the guidance may say so.
   expect(screen.getByText(copy("grok-subscription.help.waiting"))).toBeTruthy();
-  expect(screen.queryByText(copy("grok-subscription.help.waitingLink"))).toBeNull();
+  expect(
+    screen.queryByText(copy("grok-subscription.help.waitingLink")),
+  ).toBeNull();
   // Progress holds the sign-in link: it never reaches the shared query cache.
   expect(
     f.client
@@ -552,7 +554,9 @@ it("refuses a malformed original authorization without opening a browser", async
   ).toBeNull();
   // Nothing opened and no link is offered, so no waiting guidance claims either.
   expect(screen.queryByText(copy("grok-subscription.help.waiting"))).toBeNull();
-  expect(screen.queryByText(copy("grok-subscription.help.waitingLink"))).toBeNull();
+  expect(
+    screen.queryByText(copy("grok-subscription.help.waitingLink")),
+  ).toBeNull();
 });
 
 it("presents the receiver's Incompatible refusal for remote desktops and keeps the link copyable", async () => {
@@ -575,7 +579,9 @@ it("presents the receiver's Incompatible refusal for remote desktops and keeps t
   // The closed refusal leaves no native binding, so reopening is never offered,
   // not even after later polls observe the same waiting login. The guidance
   // does not claim a browser opened; it points at the copyable link.
-  expect(screen.getByText(copy("grok-subscription.help.waitingLink"))).toBeTruthy();
+  expect(
+    screen.getByText(copy("grok-subscription.help.waitingLink")),
+  ).toBeTruthy();
   expect(screen.queryByText(copy("grok-subscription.help.waiting"))).toBeNull();
   expect(
     screen.queryByRole("button", {
@@ -645,7 +651,10 @@ it("sends one cancel mutation, keeps polling and hides every login action once t
       "grok-subscription.copyLink",
       "grok-subscription.retryOriginal",
     ] as const)
-      expect(screen.queryByRole("button", { name: copy(name) }), name).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: copy(name) }),
+        name,
+      ).toBeNull();
   };
   hidden();
   // The server still reports the login as waiting: polling continues but a
@@ -754,7 +763,9 @@ it("shows a generic browser failure and recovers through Open browser again", as
     { timeout: 3000 },
   );
   // The open failed: the guidance points at the link instead of claiming it opened.
-  expect(screen.getByText(copy("grok-subscription.help.waitingLink"))).toBeTruthy();
+  expect(
+    screen.getByText(copy("grok-subscription.help.waitingLink")),
+  ).toBeTruthy();
   expect(screen.queryByText(copy("grok-subscription.help.waiting"))).toBeNull();
   fireEvent.click(
     screen.getByRole("button", { name: copy("grok-subscription.openBrowser") }),
@@ -767,7 +778,9 @@ it("shows a generic browser failure and recovers through Open browser again", as
   expect(actions(f, OAuthNativeAction.GrokSubscriptionOpen)).toHaveLength(1);
   // A successful reopen is the first time the browser opened.
   await screen.findByText(copy("grok-subscription.help.waiting"));
-  expect(screen.queryByText(copy("grok-subscription.help.waitingLink"))).toBeNull();
+  expect(
+    screen.queryByText(copy("grok-subscription.help.waitingLink")),
+  ).toBeNull();
 });
 
 it("forwards one native callback and never sends it again", async () => {
@@ -899,10 +912,7 @@ it("keeps the Grok row unchanged without capability 39 and enables Add account w
   present.client.clear();
 });
 
-it.each([
-  [SupportedLanguage.English],
-  [SupportedLanguage.Korean],
-] as const)(
+it.each([[SupportedLanguage.English], [SupportedLanguage.Korean]] as const)(
   "names the real Claude and Grok sign-in state in the connect notice (%s)",
   async (language) => {
     await i18n.changeLanguage(language);
@@ -913,16 +923,38 @@ it.each([
       string,
       SystemCapability[],
       boolean,
-      | "claude-subscription.availability"
-      | "claude-subscription.availabilityGrokAvailable"
-      | "claude-subscription.serverUpdateRequired"
-      | "claude-subscription.serverUpdateRequiredGrokAvailable",
+      (
+        | "claude-subscription.availability"
+        | "claude-subscription.availabilityGrokAvailable"
+        | "claude-subscription.serverUpdateRequired"
+        | "claude-subscription.serverUpdateRequiredGrokAvailable"
+      ),
     ][] = [
-      ["claude+grok+native", [claude, grok], true, "claude-subscription.availabilityGrokAvailable"],
-      ["claude+grok, no native", [claude, grok], false, "claude-subscription.availability"],
+      [
+        "claude+grok+native",
+        [claude, grok],
+        true,
+        "claude-subscription.availabilityGrokAvailable",
+      ],
+      [
+        "claude+grok, no native",
+        [claude, grok],
+        false,
+        "claude-subscription.availability",
+      ],
       ["claude only", [claude], true, "claude-subscription.availability"],
-      ["grok only", [grok], true, "claude-subscription.serverUpdateRequiredGrokAvailable"],
-      ["grok only, no native", [grok], false, "claude-subscription.serverUpdateRequired"],
+      [
+        "grok only",
+        [grok],
+        true,
+        "claude-subscription.serverUpdateRequiredGrokAvailable",
+      ],
+      [
+        "grok only, no native",
+        [grok],
+        false,
+        "claude-subscription.serverUpdateRequired",
+      ],
       ["neither", [], true, "claude-subscription.serverUpdateRequired"],
     ];
     for (const [name, extra, withNative, key] of cells) {
@@ -974,7 +1006,11 @@ it.each([
       expect(notice.className, name).toBe("subscription-unavailable");
       const grokReady = key.endsWith("GrokAvailable");
       expect(
-        copy(key).includes(language === SupportedLanguage.English ? "not available yet" : "아직 지원하지"),
+        copy(key).includes(
+          language === SupportedLanguage.English
+            ? "not available yet"
+            : "아직 지원하지",
+        ),
         name,
       ).toBe(!grokReady);
       view.unmount();
@@ -985,13 +1021,13 @@ it.each([
 
 it("keeps the Claude-only update notice free of Grok state in English and Korean", () => {
   for (const catalog of [englishClaude, koreanClaude]) {
-    expect(catalog["claude-subscription.serverUpdateRequiredClaudeOnly"]).not.toMatch(
-      /Grok/,
-    );
-    // The two Grok-aware notices extend the Claude-only sentence.
-    expect(catalog["claude-subscription.serverUpdateRequiredGrokAvailable"]).toContain(
+    expect(
       catalog["claude-subscription.serverUpdateRequiredClaudeOnly"],
-    );
+    ).not.toMatch(/Grok/);
+    // The two Grok-aware notices extend the Claude-only sentence.
+    expect(
+      catalog["claude-subscription.serverUpdateRequiredGrokAvailable"],
+    ).toContain(catalog["claude-subscription.serverUpdateRequiredClaudeOnly"]);
     expect(catalog["claude-subscription.serverUpdateRequired"]).toContain(
       catalog["claude-subscription.serverUpdateRequiredClaudeOnly"],
     );
