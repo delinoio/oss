@@ -74,7 +74,7 @@ Codex native flows use a common minimum SemVer `0.151.0` with no upper bound und
 
 `delidev`; the Go component is `delidev-cli` and its executable is `delidev`.
 
-Repositories use required remote URLs with optional Local folder connections under the [workspace contract](cmds-delidev-workspace-contract.md). System 37 and Worker 19 are active main allocations established by the originating change; System 31/32 and Worker 18 keep the separate immediate Local Clone and GitHub metadata boundary. Desktop registration, CLI/configuration transfer and session/schedule preparation share this source authority; independent managed clones preserve Fork, Sidechat and storage/deletion lifetimes without rewriting accepted history.
+Repositories use required remote URLs with optional Local folder connections under the [workspace contract](cmds-delidev-workspace-contract.md). System 37 and Worker 19 are main allocations established by the originating change, with support established only by active schema and runtime capability advertisements rather than ledger presence; System 31/32 and Worker 18 keep the separate immediate Local Clone and GitHub metadata boundary. Desktop registration, CLI/configuration transfer and session/schedule preparation share this source authority; independent managed clones preserve Fork, Sidechat and storage/deletion lifetimes without rewriting accepted history.
 
 ## Domain Ownership Map
 
