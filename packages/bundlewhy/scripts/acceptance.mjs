@@ -80,121 +80,138 @@ const binary = path.join(
   "target/debug",
   process.platform === "win32" ? "bundlewhy.exe" : "bundlewhy",
 );
-if (!args.includes("--skip-build")) {
-  run("pnpm", ["--filter", "bundlewhy-web", "build"], {
-    shell: process.platform === "win32",
-  });
-  run("cargo", ["build", "-p", "bundlewhy"]);
-}
-
-const targets = option("--project")
-  ? [
-      {
-        bundler: option("--bundler"),
-        project: path.resolve(option("--project")),
-        expected: [],
-      },
-    ]
-  : [
-      {
-        bundler: "vite",
-        project: path.join(packageRoot, "fixtures/vite-app"),
-        expected: EXPECTED.vite,
-      },
-      {
-        bundler: "rspack",
-        project: path.join(packageRoot, "fixtures/rspack-app"),
-        expected: EXPECTED.rspack,
-      },
-    ];
-
-const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "bundlewhy-acceptance-"));
-const records = [];
+let outDir;
 let failed = false;
-for (const target of targets) {
-  const before = treeDigest(target.project);
-  const started = Date.now();
-  const timeTool =
-    process.platform === "darwin"
-      ? ["/usr/bin/time", ["-l"]]
-      : process.platform === "linux"
-        ? ["/usr/bin/time", ["-v"]]
-        : null;
-  const commandArgs = [
-    "--no-color",
-    "analyze",
-    "--project",
-    target.project,
-    "--out-dir",
-    outDir,
-    "--no-serve",
-    ...(target.bundler ? ["--bundler", target.bundler] : []),
-  ];
-  const result =
-    timeTool && fs.existsSync(timeTool[0])
-      ? run(timeTool[0], [...timeTool[1], binary, ...commandArgs], {
-          allowFailure: true,
-        })
-      : run(binary, commandArgs, { allowFailure: true });
-  const durationMs = Date.now() - started;
-  const memory =
-    /(\d+)\s+maximum resident set size/.exec(result.stderr) ??
-    /Maximum resident set size \(kbytes\): (\d+)/.exec(result.stderr);
-  const peakBytes = memory
-    ? Number(memory[1]) * (process.platform === "darwin" ? 1 : 1024)
-    : null;
-  const runId = /bundlewhy run ([0-9a-f-]{36})/.exec(result.stderr)?.[1];
-  const after = treeDigest(target.project);
-  const problems = [];
-  if (result.status !== 0) problems.push(`exit ${result.status}`);
-  if (before !== after) problems.push("project files changed");
-  let analysis = null;
-  if (runId) {
-    analysis = JSON.parse(
-      fs.readFileSync(path.join(outDir, runId, "analysis.json"), "utf8"),
-    ).analysis;
-    if (analysis.status !== "RUN_STATUS_COMPLETE")
-      problems.push(`status ${analysis.status}`);
-    const rules = new Set(
-      analysis.diagnostics.map((diagnostic) => diagnostic.rule),
-    );
-    for (const rule of target.expected)
-      if (!rules.has(rule)) problems.push(`missing ${rule}`);
-    const report = path.join(outDir, `${runId}.html`);
-    run(binary, [
-      "--no-color",
-      "export",
-      path.join(outDir, runId),
-      "--output",
-      report,
-    ]);
-    const html = fs.readFileSync(report, "utf8");
-    if (
-      !html.includes('id="bundlewhy-report"') ||
-      /<(script|link)[^>]+(src|href)=["']https?:/i.test(html)
-    )
-      problems.push("export is not self-contained");
-  } else {
-    problems.push("no run id");
+let abortError;
+try {
+  if (!args.includes("--skip-build")) {
+    run("pnpm", ["--filter", "bundlewhy-web", "build"], {
+      shell: process.platform === "win32",
+    });
+    run("cargo", ["build", "-p", "bundlewhy"]);
   }
-  records.push({
-    bundler: target.bundler,
-    project: path.relative(repoRoot, target.project),
-    durationMs,
-    peakMemoryBytes: peakBytes,
-    diagnostics: analysis?.diagnostics.length ?? null,
-    status: analysis?.status ?? null,
-    problems,
-  });
-  failed ||= problems.length > 0;
-}
 
-process.stdout.write(
-  `${JSON.stringify({ platform: `${process.platform}-${process.arch}`, node: process.version, records }, null, 2)}\n`,
-);
-fs.rmSync(outDir, { recursive: true, force: true });
-fs.rmSync(path.join(repoRoot, "apps/bundlewhy-web/dist"), {
-  recursive: true,
-  force: true,
-});
+  const targets = option("--project")
+    ? [
+        {
+          bundler: option("--bundler"),
+          project: path.resolve(option("--project")),
+          expected: [],
+        },
+      ]
+    : [
+        {
+          bundler: "vite",
+          project: path.join(packageRoot, "fixtures/vite-app"),
+          expected: EXPECTED.vite,
+        },
+        {
+          bundler: "rspack",
+          project: path.join(packageRoot, "fixtures/rspack-app"),
+          expected: EXPECTED.rspack,
+        },
+      ];
+
+  outDir = fs.mkdtempSync(path.join(os.tmpdir(), "bundlewhy-acceptance-"));
+  const records = [];
+  for (const target of targets) {
+    const before = treeDigest(target.project);
+    const started = Date.now();
+    const timeTool =
+      process.platform === "darwin"
+        ? ["/usr/bin/time", ["-l"]]
+        : process.platform === "linux"
+          ? ["/usr/bin/time", ["-v"]]
+          : null;
+    const commandArgs = [
+      "--no-color",
+      "analyze",
+      "--project",
+      target.project,
+      "--out-dir",
+      outDir,
+      "--no-serve",
+      ...(target.bundler ? ["--bundler", target.bundler] : []),
+    ];
+    const result =
+      timeTool && fs.existsSync(timeTool[0])
+        ? run(timeTool[0], [...timeTool[1], binary, ...commandArgs], {
+            allowFailure: true,
+          })
+        : run(binary, commandArgs, { allowFailure: true });
+    const durationMs = Date.now() - started;
+    const memory =
+      /(\d+)\s+maximum resident set size/.exec(result.stderr) ??
+      /Maximum resident set size \(kbytes\): (\d+)/.exec(result.stderr);
+    const peakBytes = memory
+      ? Number(memory[1]) * (process.platform === "darwin" ? 1 : 1024)
+      : null;
+    const runId = /bundlewhy run ([0-9a-f-]{36})/.exec(result.stderr)?.[1];
+    const after = treeDigest(target.project);
+    const problems = [];
+    if (result.status !== 0) problems.push(`exit ${result.status}`);
+    if (before !== after) problems.push("project files changed");
+    let analysis = null;
+    if (runId) {
+      analysis = JSON.parse(
+        fs.readFileSync(path.join(outDir, runId, "analysis.json"), "utf8"),
+      ).analysis;
+      if (analysis.status !== "RUN_STATUS_COMPLETE")
+        problems.push(`status ${analysis.status}`);
+      const rules = new Set(
+        analysis.diagnostics.map((diagnostic) => diagnostic.rule),
+      );
+      for (const rule of target.expected)
+        if (!rules.has(rule)) problems.push(`missing ${rule}`);
+      const report = path.join(outDir, `${runId}.html`);
+      run(binary, [
+        "--no-color",
+        "export",
+        path.join(outDir, runId),
+        "--output",
+        report,
+      ]);
+      const html = fs.readFileSync(report, "utf8");
+      if (
+        !html.includes('id="bundlewhy-report"') ||
+        /<(script|link)[^>]+(src|href)=["']https?:/i.test(html)
+      )
+        problems.push("export is not self-contained");
+    } else {
+      problems.push("no run id");
+    }
+    records.push({
+      bundler: target.bundler,
+      project: path.relative(repoRoot, target.project),
+      durationMs,
+      peakMemoryBytes: peakBytes,
+      diagnostics: analysis?.diagnostics.length ?? null,
+      status: analysis?.status ?? null,
+      problems,
+    });
+    failed ||= problems.length > 0;
+  }
+
+  process.stdout.write(
+    `${JSON.stringify({ platform: `${process.platform}-${process.arch}`, node: process.version, records }, null, 2)}\n`,
+  );
+} catch (error) {
+  abortError = error;
+} finally {
+  // A cleanup failure must not hide the original acceptance failure.
+  for (const directory of [
+    outDir,
+    path.join(repoRoot, "apps/bundlewhy-web/dist"),
+  ]) {
+    if (!directory) continue;
+    try {
+      fs.rmSync(directory, { recursive: true, force: true });
+    } catch (error) {
+      if (abortError)
+        process.stderr.write(`Cleanup failed for ${directory}: ${error}\n`);
+      else abortError = error;
+    }
+  }
+}
+if (abortError) throw abortError;
 process.exitCode = failed ? 1 : 0;
