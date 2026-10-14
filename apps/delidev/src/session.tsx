@@ -183,7 +183,11 @@ import {
   Workspace,
 } from "./documents";
 import { ConversationKind } from "./home-navigation";
-import { loadedSessionProvenance } from "./search-session-routing";
+import {
+  loadedSessionProvenance,
+  RouteFailureDisposition,
+  routeFailureDispositions,
+} from "./search-session-routing";
 import {
   useRetainedMutation,
   useRetainedMutationNotifications,
@@ -940,6 +944,7 @@ export function SessionView({
   embedded = false,
   activateOnMount = !embedded,
   verifyRestored,
+  parentVerifying = false,
 }: {
   id: string;
   draft: string;
@@ -967,6 +972,12 @@ export function SessionView({
    * malformed), so the Shell can clear an invalid restored selection.
    */
   verifyRestored?: (valid: boolean) => void;
+  /**
+   * Embedded Sidechat only: the parent Session was restored without
+   * verification and is still being judged, so this pane must not settle or
+   * discard its provisional descriptor from its own metadata alone.
+   */
+  parentVerifying?: boolean;
 }) {
   const productLabel = useProductLabels();
   const navigationIntent = useNavigationIntent();
@@ -981,12 +992,17 @@ export function SessionView({
   const [interactionPresentation] = useState(
     () => new InteractionPresentationStore(),
   );
+  // A top-level Session restored without verification keeps its metadata read
+  // active until the Shell has judged it, whichever tab is selected: a selected
+  // Sidechat tab would otherwise pause the stream that verifies its parent.
+  const verifyingRestore = !embedded && Boolean(verifyRestored);
   const live = useSessionStream(
     id,
-    active &&
-      ![SessionTabKind.Sidechat, SessionTabKind.PendingSidechat].includes(
-        tabs.tab.kind,
-      ),
+    verifyingRestore ||
+      (active &&
+        ![SessionTabKind.Sidechat, SessionTabKind.PendingSidechat].includes(
+          tabs.tab.kind,
+        )),
     interactionPresentation,
   );
   const submissions = useSessionSubmissions();
@@ -1314,40 +1330,67 @@ export function SessionView({
         tabs.tab.kind,
       ),
   );
+  // A definitive failure of this Session's own metadata read (deleted, denied,
+  // wrong kind) is a rejection; a retryable one proves nothing.
+  const restoreFailure = live.error?.code;
+  const definitiveFailure =
+    restoreFailure !== undefined &&
+    routeFailureDispositions[restoreFailure] === RouteFailureDisposition.Clear;
   // A Sidechat restored before its Session could be verified carries a
   // placeholder name. Once the pane reads the Session, the descriptor takes its
   // verified name, or ends if the Session is not a Sidechat of that parent
-  // (including malformed provenance).
+  // (including malformed provenance) or no longer exists. Only an acceptance
+  // waits while the parent is itself unverified: a child's own metadata cannot
+  // prove that the requested parent is a top-level Session.
   useEffect(() => {
-    if (!embedded || session?.id !== id) return;
+    if (!embedded) return;
     const parent = tabs.store.parent(id);
     if (!parent || !tabs.store.provisionalSidechat(parent, id)) return;
+    if (session?.id !== id) {
+      if (definitiveFailure) tabs.store.discardProvisionalSidechat(parent, id);
+      return;
+    }
     const provenance = loadedSessionProvenance(session, id);
     // Malformed provenance (missing workspace, invalid Fork metadata) or an
     // invalid envelope proves the loaded Session is not a valid Sidechat of the
     // requested parent, exactly as other nonmatching provenance does, so the
     // placeholder ends.
     if (
-      provenance.conversationKind === ConversationKind.Sidechat &&
-      provenance.sidechatParent === parent
+      provenance.conversationKind !== ConversationKind.Sidechat ||
+      provenance.sidechatParent !== parent
     )
+      tabs.store.discardProvisionalSidechat(parent, id);
+    else if (!parentVerifying)
       tabs.store.settleSidechat(
         parent,
         id,
         productResourceName(productLabel, session),
       );
-    else tabs.store.discardProvisionalSidechat(parent, id);
-  }, [embedded, id, session, tabs.store, productLabel]);
+  }, [
+    embedded,
+    parentVerifying,
+    definitiveFailure,
+    id,
+    session,
+    tabs.store,
+    productLabel,
+  ]);
   // A top-level Session restored while its verification read failed transiently
   // is judged here once it loads: a Sidechat belongs only under its verified
-  // parent, and malformed provenance is never a valid selection.
+  // parent, and malformed provenance is never a valid selection. A definitive
+  // failure of its own metadata read is judged the same way, so a restored
+  // parent that no longer exists does not stay selected with a placeholder
+  // Sidechat under it.
   useEffect(() => {
-    if (embedded || !verifyRestored || session?.id !== id) return;
-    const kind = loadedSessionProvenance(session, id).conversationKind;
-    verifyRestored(
-      kind !== ConversationKind.Sidechat && kind !== ConversationKind.Unknown,
-    );
-  }, [embedded, id, session, verifyRestored]);
+    if (embedded || !verifyRestored) return;
+    if (session?.id === id) {
+      const kind = loadedSessionProvenance(session, id).conversationKind;
+      verifyRestored(
+        kind !== ConversationKind.Sidechat &&
+          kind !== ConversationKind.Unknown,
+      );
+    } else if (definitiveFailure) verifyRestored(false);
+  }, [embedded, id, session, verifyRestored, definitiveFailure]);
   useSessionInboxRead(
     id,
     conversationActive && !embedded,
@@ -3520,6 +3563,7 @@ export function SessionView({
                     <SidechatPane
                       id={tab.id}
                       active={active && tabs.selected === sessionTabKey(tab)}
+                      parentVerifying={Boolean(verifyRestored)}
                     />
                   </div>
                 ) : null,
@@ -3626,7 +3670,15 @@ export function SessionView({
   );
 }
 
-function SidechatPane({ id, active }: { id: string; active: boolean }) {
+function SidechatPane({
+  id,
+  active,
+  parentVerifying,
+}: {
+  id: string;
+  active: boolean;
+  parentVerifying: boolean;
+}) {
   const store = useSessionTabsStore();
   // Decided once at mount: a Sidechat that `publishSidechat` promoted or
   // published automatically does not animate on mount, while one the user
@@ -3640,6 +3692,7 @@ function SidechatPane({ id, active }: { id: string; active: boolean }) {
             id={id}
             active={active}
             embedded
+            parentVerifying={parentVerifying}
             activateOnMount={activateOnMount}
             draft={draft}
             setDraft={setDraft}

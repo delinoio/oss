@@ -575,16 +575,17 @@ function Shell({
     openSessionRef.current = openSession;
     showSessionRef.current = showSession;
   });
-  // The top-level Session a retryable failure restored without verification,
-  // and the navigation-intent token at that moment. The mounted pane reports
-  // the loaded Session; an invalid one (a Sidechat, or malformed provenance) is
-  // cleared unless the user navigated since, so a malformed URL cannot leave an
-  // unverified Session selected.
-  const unverifiedRestore = useRef<{
-    id: string;
-    sidechat?: string;
-    intent: number;
-  }>(undefined);
+  // The top-level Session (and optional Sidechat under it) a retryable failure
+  // restored without verification. The mounted top-level pane judges it through
+  // `verifyRestored`; that pane keeps its metadata read active for as long as
+  // the restore is unverified, whichever tab is selected, and the Sidechat's own
+  // pane defers its judgment until this verification settles. An invalid
+  // top-level Session (a Sidechat, malformed provenance, a definitively
+  // rejected read) ends the whole provisional pair, so a malformed URL cannot
+  // leave an unverified Session or Sidechat selected.
+  const unverifiedRestore = useRef<{ id: string; sidechat?: string }>(
+    undefined,
+  );
   const [unverifiedRestoreId, setUnverifiedRestoreId] = useState("");
   const verifyRestoredSession = useCallback(
     (valid: boolean) => {
@@ -593,11 +594,12 @@ function Shell({
       unverifiedRestore.current = undefined;
       setUnverifiedRestoreId("");
       if (valid) return;
-      if (navigationIntent.current !== pending.intent) return;
       console.warn("delidev.product_route.restore_rejected", {
         surface: Surface.Sessions,
         reason: "unverified-session-invalid",
       });
+      // The provisional pair is the restore's own state, so it ends whatever
+      // the user did since; only a different selection is left alone.
       if (pending.sidechat)
         tabs.discardProvisionalSidechat(pending.id, pending.sidechat);
       setVisited((previous) => previous.filter((id) => id !== pending.id));
@@ -658,7 +660,6 @@ function Shell({
             unverifiedRestore.current = {
               id: top,
               sidechat: read.open.parent ? read.open.id : undefined,
-              intent,
             };
             setUnverifiedRestoreId(top);
           }
@@ -744,7 +745,6 @@ function Shell({
     selectedTabs.tab.kind === SessionTabKind.Sidechat
       ? selectedTabs.tab.id
       : undefined;
-  useEffect(() => {
   const mirrorRestore = pendingSelection
     ? MirrorRestoreState.Pending
     : unverifiedRestoreId
@@ -753,6 +753,7 @@ function Shell({
   const mirrorSchedules = notificationOccurrence
     ? SchedulesMode.OccurrenceReview
     : SchedulesMode.Workspace;
+  useEffect(() => {
     const route = deriveProductRoute({
       surface,
       restore: mirrorRestore,

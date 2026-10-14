@@ -77,6 +77,19 @@ function fixture() {
       archive: "active",
     }),
   });
+  // Children whose own retained metadata names a parent that is not itself a
+  // valid top-level Session: a Sidechat, a Session with malformed provenance
+  // and a Session that no longer exists.
+  const sidechatOf = (parent: string, name: string) =>
+    retainedSession(name, {
+      source_session_id: parent,
+      sidechat_parent_snapshot: { revision: "1" },
+    });
+  const nestedSidechat = sidechatOf(foreignSidechat.id, "Nested side question");
+  const malformedChild = sidechatOf(malformed.id, "Malformed parent child");
+  const ghost = retainedSession("Deleted session");
+  const ghostChild = sidechatOf(ghost.id, "Deleted parent child");
+  const deleted = new Set<string>([ghost.id]);
   const repository = create(ResourceSchema, {
     id: newRequestId(),
     kind: EntityKind.REPOSITORY,
@@ -140,19 +153,6 @@ function fixture() {
     });
     return { entry, view };
   };
-  const { entry: inboxEntry, view: inboxView } = inboxOf(session);
-  const { entry: otherInboxEntry, view: otherInboxView } = inboxOf(other);
-  const resources = [
-    session,
-    other,
-    sidechat,
-    foreignSidechat,
-    malformed,
-    repository,
-    otherRepository,
-  ];
-  // Reads of a held ID wait until `hold` releases them, so a test can answer a
-  // restore read after the user acted.
   // An operational notification about an occurrence of the *other* Schedule.
   const occurrence = create(ResourceSchema, {
     id: newRequestId(),
@@ -197,6 +197,22 @@ function fixture() {
     entry: operationalEntry,
     occurrence,
   });
+  const { entry: inboxEntry, view: inboxView } = inboxOf(session);
+  const { entry: otherInboxEntry, view: otherInboxView } = inboxOf(other);
+  const resources = [
+    session,
+    other,
+    sidechat,
+    foreignSidechat,
+    malformed,
+    nestedSidechat,
+    malformedChild,
+    ghostChild,
+    repository,
+    otherRepository,
+  ];
+  // Reads of a held ID wait until `hold` releases them, so a test can answer a
+  // restore read after the user acted.
   const held = new Map<string, Promise<void>>();
   const hold = (id: string) => {
     let release = () => {};
@@ -208,8 +224,21 @@ function fixture() {
     );
     return release;
   };
+  // Snapshot reads (the mounted pane's own load) of a held Session wait too.
+  const snapshotHeld = new Map<string, Promise<void>>();
+  const holdSnapshot = (id: string) => {
+    let release = () => {};
+    snapshotHeld.set(
+      id,
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    );
+    return release;
+  };
   const mutated = vi.fn();
   const reads = {
+    snapshot: vi.fn(),
     resource: vi.fn(),
     schedule: vi.fn(),
     inbox: vi.fn(),
@@ -226,6 +255,7 @@ function fixture() {
     [otherSchedule.id, EntityKind.SCHEDULE],
     [inboxEntry.id, EntityKind.INBOX],
     [otherInboxEntry.id, EntityKind.INBOX],
+    [operationalEntry.id, EntityKind.INBOX],
   ]);
   const rejectWrongKind = (id: string, kind: EntityKind) => {
     const actual = kindOf.get(id);
@@ -255,7 +285,6 @@ function fixture() {
       createSession: (request) => {
         mutated("createSession", request);
         throw new ConnectError("unexpected", Code.Internal);
-    [operationalEntry.id, EntityKind.INBOX],
       },
       controlSession: (request) => {
         mutated("controlSession", request);
@@ -275,13 +304,20 @@ function fixture() {
           ),
         };
       },
-      getSnapshot: (request) => ({
-        resources: [
-          resources.find((row) => row.id === request.filter?.sessionId) ??
-            session,
-        ],
-        cursor: "snapshot",
-      }),
+      getSnapshot: async (request) => {
+        reads.snapshot(request);
+        await snapshotHeld.get(request.filter?.sessionId ?? "");
+        // A Session that no longer exists has no snapshot to synchronize.
+        if (deleted.has(request.filter?.sessionId ?? ""))
+          throw new ConnectError("session deleted", Code.NotFound);
+        return {
+          resources: [
+            resources.find((row) => row.id === request.filter?.sessionId) ??
+              session,
+          ],
+          cursor: "snapshot",
+        };
+      },
       listResources: (request) => ({
         resources:
           request.filter?.kind === EntityKind.REPOSITORY
@@ -352,6 +388,7 @@ function fixture() {
         return { schedule: found };
       },
       listScheduleOccurrences: () => ({ occurrences: [] }),
+      getScheduleOccurrence: () => ({ occurrence }),
     });
   });
   return {
@@ -361,6 +398,10 @@ function fixture() {
     sidechat,
     foreignSidechat,
     malformed,
+    nestedSidechat,
+    malformedChild,
+    ghost,
+    ghostChild,
     repository,
     otherRepository,
     schedule,
@@ -368,7 +409,10 @@ function fixture() {
     inboxEntry,
     inboxView,
     otherInboxEntry,
+    operationalEntry,
     hold,
+    deleted,
+    holdSnapshot,
     mutated,
     reads,
     failure,
@@ -388,7 +432,6 @@ const search = () => new URLSearchParams(window.location.search);
 const newDocument = () => resetProductRouteClaim();
 
 afterEach(() => {
-      getScheduleOccurrence: () => ({ occurrence }),
   vi.restoreAllMocks();
 });
 
@@ -409,7 +452,6 @@ describe("route mirroring", () => {
     };
     const home = () =>
       fireEvent.click(rail().getByRole("button", { name: "Sessions" }));
-    operationalEntry,
     await visit(
       () => fireEvent.click(screen.getByRole("button", { name: "Search" })),
       Surface.Search,
@@ -456,47 +498,6 @@ describe("route mirroring", () => {
   });
 });
 
-describe("route restore after a document reload", () => {
-  it("reopens the selected Session from a fresh read without flashing Home", async () => {
-    const value = fixture();
-    route(`?screen=sessions&session=${value.session.id}`);
-    render(<App transport={value.transport} />);
-    // The pending route never renders the Home welcome content.
-    expect(screen.queryByText("Your sessions, in one place")).toBeNull();
-    await waitFor(() =>
-      expect(screen.getAllByText("Retained session").length).toBeGreaterThan(0),
-    );
-    expect(screen.queryByText("Your sessions, in one place")).toBeNull();
-    expect(value.reads.resource).toHaveBeenCalled();
-    await waitFor(() => expect(search().get("session")).toBe(value.session.id));
-    expect(value.mutated).not.toHaveBeenCalled();
-  });
-
-  it("reopens a Sidechat tab under its original parent", async () => {
-    const value = fixture();
-    route(
-      `?screen=sessions&session=${value.session.id}&sidechat=${value.sidechat.id}`,
-    );
-    render(<App transport={value.transport} />);
-    const tab = await screen.findByRole("tab", { name: /Side question/ });
-    await waitFor(() => expect(tab.getAttribute("aria-selected")).toBe("true"));
-    expect(tab.id.startsWith(`session-tab-${value.session.id}-`)).toBe(true);
-    await waitFor(() =>
-      expect(search().get("sidechat")).toBe(value.sidechat.id),
-    );
-    expect(search().get("session")).toBe(value.session.id);
-  });
-
-  it("opens the parent only when the Sidechat is not its child", async () => {
-    const value = fixture();
-    route(
-      `?screen=sessions&session=${value.session.id}&sidechat=${value.other.id}`,
-    );
-    render(<App transport={value.transport} />);
-    await waitFor(() =>
-      expect(screen.getAllByText("Retained session").length).toBeGreaterThan(0),
-    );
-    expect(screen.queryByRole("tab", { name: /Side question/ })).toBeNull();
 describe("route mirror derives from the visible destination only", () => {
   it("omits the Schedule retained behind an operational occurrence review, so a reload does not reopen it", async () => {
     const value = fixture();
@@ -564,6 +565,47 @@ describe("route mirror derives from the visible destination only", () => {
   });
 });
 
+describe("route restore after a document reload", () => {
+  it("reopens the selected Session from a fresh read without flashing Home", async () => {
+    const value = fixture();
+    route(`?screen=sessions&session=${value.session.id}`);
+    render(<App transport={value.transport} />);
+    // The pending route never renders the Home welcome content.
+    expect(screen.queryByText("Your sessions, in one place")).toBeNull();
+    await waitFor(() =>
+      expect(screen.getAllByText("Retained session").length).toBeGreaterThan(0),
+    );
+    expect(screen.queryByText("Your sessions, in one place")).toBeNull();
+    expect(value.reads.resource).toHaveBeenCalled();
+    await waitFor(() => expect(search().get("session")).toBe(value.session.id));
+    expect(value.mutated).not.toHaveBeenCalled();
+  });
+
+  it("reopens a Sidechat tab under its original parent", async () => {
+    const value = fixture();
+    route(
+      `?screen=sessions&session=${value.session.id}&sidechat=${value.sidechat.id}`,
+    );
+    render(<App transport={value.transport} />);
+    const tab = await screen.findByRole("tab", { name: /Side question/ });
+    await waitFor(() => expect(tab.getAttribute("aria-selected")).toBe("true"));
+    expect(tab.id.startsWith(`session-tab-${value.session.id}-`)).toBe(true);
+    await waitFor(() =>
+      expect(search().get("sidechat")).toBe(value.sidechat.id),
+    );
+    expect(search().get("session")).toBe(value.session.id);
+  });
+
+  it("opens the parent only when the Sidechat is not its child", async () => {
+    const value = fixture();
+    route(
+      `?screen=sessions&session=${value.session.id}&sidechat=${value.other.id}`,
+    );
+    render(<App transport={value.transport} />);
+    await waitFor(() =>
+      expect(screen.getAllByText("Retained session").length).toBeGreaterThan(0),
+    );
+    expect(screen.queryByRole("tab", { name: /Side question/ })).toBeNull();
     await waitFor(() => expect(search().has("sidechat")).toBe(false));
     expect(search().get("session")).toBe(value.session.id);
   });
@@ -1037,6 +1079,160 @@ describe("route failure classification", () => {
     ).toHaveLength(0);
     expect(search().get("session")).toBe(value.session.id);
     expect(value.mutated).not.toHaveBeenCalled();
+  });
+
+  // The parent read fails transiently, so the Sidechat tab is selected under a
+  // parent nothing has verified. The child's own retained metadata names that
+  // parent, so only the parent's own verification can reject the pair: it must
+  // run although a Sidechat tab is selected, and the child must not be
+  // accepted before it settles.
+  describe("a provisional Sidechat whose requested parent cannot be verified", () => {
+    const cases = [
+      ["is itself a Sidechat", "foreignSidechat", "nestedSidechat"],
+      ["has malformed provenance", "malformed", "malformedChild"],
+      ["was deleted", "ghost", "ghostChild"],
+    ] as const;
+    it.each(cases)(
+      "ends the whole pair when the parent %s",
+      async (_name, parentKey, childKey) => {
+        const value = fixture();
+        value.failure.code = Code.Unavailable;
+        value.failure.id = value[parentKey].id;
+        const parent = value[parentKey];
+        const child = value[childKey];
+        route(`?screen=sessions&session=${parent.id}&sidechat=${child.id}`);
+        // Every tab label of the whole run: the child is never accepted.
+        const seen = new Set<string>();
+        const collect = () => {
+          for (const tab of screen.queryAllByRole("tab"))
+            seen.add(tab.textContent ?? "");
+        };
+        const observer = new MutationObserver(collect);
+        observer.observe(window.document.body, {
+          subtree: true,
+          childList: true,
+          attributes: true,
+          characterData: true,
+        });
+        render(<App transport={value.transport} />);
+        await waitFor(() =>
+          expect(
+            value.reads.resource.mock.calls.map(([request]) => request.id),
+          ).toContain(parent.id),
+        );
+        expect(
+          await screen.findByText("Your sessions, in one place"),
+        ).toBeTruthy();
+        await waitFor(() => expect(search().has("session")).toBe(false));
+        expect(search().has("sidechat")).toBe(false);
+        collect();
+        observer.disconnect();
+        for (const label of seen) {
+          expect(label).not.toContain("Nested side question");
+          expect(label).not.toContain("Malformed parent child");
+          expect(label).not.toContain("Deleted parent child");
+        }
+        expect(
+          screen
+            .queryAllByRole("tab")
+            .filter((tab) => !/Conversation/.test(tab.textContent ?? "")),
+        ).toHaveLength(0);
+        expect(value.mutated).not.toHaveBeenCalled();
+      },
+    );
+
+    it("does not accept the child from its own metadata before the parent is verified", async () => {
+      const value = fixture();
+      value.failure.code = Code.Unavailable;
+      value.failure.id = value.foreignSidechat.id;
+      // The parent's own load is slow; the child's loads first and names the
+      // requested parent, which is itself a Sidechat.
+      const releaseParent = value.holdSnapshot(value.foreignSidechat.id);
+      route(
+        `?screen=sessions&session=${value.foreignSidechat.id}&sidechat=${value.nestedSidechat.id}`,
+      );
+      render(<App transport={value.transport} />);
+      await waitFor(() =>
+        expect(
+          value.reads.snapshot.mock.calls.map(
+            ([request]) => request.filter?.sessionId,
+          ),
+        ).toEqual(
+          expect.arrayContaining([
+            value.foreignSidechat.id,
+            value.nestedSidechat.id,
+          ]),
+        ),
+      );
+      // Give the child's pane time to load and judge itself.
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(screen.queryByRole("tab", { name: /Nested side question/ })).toBeNull();
+      expect(search().get("sidechat")).toBe(value.nestedSidechat.id);
+      releaseParent();
+      expect(
+        await screen.findByText("Your sessions, in one place"),
+      ).toBeTruthy();
+      await waitFor(() => expect(search().has("sidechat")).toBe(false));
+      expect(screen.queryByRole("tab", { name: /Nested side question/ })).toBeNull();
+    });
+
+    it("ends only the placeholder when the Sidechat itself was deleted under a transiently unreadable parent", async () => {
+      const value = fixture();
+      value.failure.code = Code.Unavailable;
+      value.failure.id = value.session.id;
+      value.deleted.add(value.sidechat.id);
+      route(
+        `?screen=sessions&session=${value.session.id}&sidechat=${value.sidechat.id}`,
+      );
+      render(<App transport={value.transport} />);
+      await waitFor(() => expect(search().has("sidechat")).toBe(false));
+      expect(search().get("session")).toBe(value.session.id);
+      expect(
+        screen
+          .queryAllByRole("tab")
+          .filter((tab) => !/Conversation/.test(tab.textContent ?? "")),
+      ).toHaveLength(0);
+      expect(value.mutated).not.toHaveBeenCalled();
+    });
+
+    it("ends the pair even after the user selected the Sidechat tab", async () => {
+      const value = fixture();
+      value.failure.code = Code.Unavailable;
+      value.failure.id = value.foreignSidechat.id;
+      route(
+        `?screen=sessions&session=${value.foreignSidechat.id}&sidechat=${value.nestedSidechat.id}`,
+      );
+      render(<App transport={value.transport} />);
+      await waitFor(() =>
+        expect(search().get("sidechat")).toBe(value.nestedSidechat.id),
+      );
+      // Selecting the tab is a navigation; the provisional pair still ends.
+      const tab = screen.queryAllByRole("tab").find(
+        (candidate) => !/Conversation/.test(candidate.textContent ?? ""),
+      );
+      if (tab) fireEvent.click(tab);
+      expect(
+        await screen.findByText("Your sessions, in one place"),
+      ).toBeTruthy();
+      await waitFor(() => expect(search().has("session")).toBe(false));
+      expect(search().has("sidechat")).toBe(false);
+    });
+
+    it("names a valid child once its transiently unreadable parent is verified", async () => {
+      const value = fixture();
+      value.failure.code = Code.Unavailable;
+      value.failure.id = value.session.id;
+      route(
+        `?screen=sessions&session=${value.session.id}&sidechat=${value.sidechat.id}`,
+      );
+      render(<App transport={value.transport} />);
+      expect(
+        await screen.findByRole("tab", { name: /Side question/ }),
+      ).toBeTruthy();
+      expect(search().get("session")).toBe(value.session.id);
+      expect(search().get("sidechat")).toBe(value.sidechat.id);
+      expect(value.mutated).not.toHaveBeenCalled();
+    });
   });
 
   it.each([
