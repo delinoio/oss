@@ -591,23 +591,26 @@ pending native-started operation.
 ### Token endpoint response table
 
 The authorization-code exchange and the refresh grant share one response parser
-(`parseGrokTokenBody`). A body is parsed only when it is exactly one JSON object:
-another JSON value, a stray comma or any other non-whitespace byte after the first
-object makes the response unparsed, whatever its status. Both grants are claimed
+(`parseGrokTokenBody`). A body is parsed only when it is exactly one JSON object
+whose top-level members are unique (compared case-insensitively, as the decoder
+matches fields): another JSON value, a stray comma, any other non-whitespace byte
+after the first object or a repeated member (the decoder would silently keep the
+last one, and implementations disagree) makes the response unparsed, whatever its
+status. Both grants are claimed
 before the request, so an unparsed response is never a published success and never
 a definitive rejection that would release the claim. The table is pinned by
 `TestGrokTokenResponseTable`, which runs every row against both grants.
 
-| Status                                                     | Body                                                          | Reason                     | Settlement after the claim         |
-| ---------------------------------------------------------- | ------------------------------------------------------------- | -------------------------- | ---------------------------------- |
-| 200                                                        | one valid token object (trailing whitespace allowed)          | success                    | publish                            |
-| 200                                                        | token object followed by another JSON value or any other byte | `GrokReasonTokenResponse`  | `RECOVERY_REQUIRED`                |
-| 200                                                        | missing or invalid member, not JSON                           | `GrokReasonTokenResponse`  | `RECOVERY_REQUIRED`                |
-| 400, 401                                                   | exactly one object with a non-empty `error`                   | `GrokReasonTokenRejected`  | `FAILED`, the token did not rotate |
-| 400, 401                                                   | an `error` object followed by any other byte or JSON value    | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
-| 400, 401                                                   | no `error` member or not JSON                                 | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
-| other 4xx, 5xx, redirect                                   | any body                                                      | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
-| transport error, cancellation, truncated or oversized body | none                                                          | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
+| Status                                                     | Body                                                                                  | Reason                     | Settlement after the claim         |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------- | -------------------------- | ---------------------------------- |
+| 200                                                        | one valid token object (trailing whitespace allowed)                                  | success                    | publish                            |
+| 200                                                        | token object followed by another JSON value or any other byte, or a repeated member   | `GrokReasonTokenResponse`  | `RECOVERY_REQUIRED`                |
+| 200                                                        | missing or invalid member, not JSON                                                   | `GrokReasonTokenResponse`  | `RECOVERY_REQUIRED`                |
+| 400, 401                                                   | exactly one object with a non-empty `error`                                           | `GrokReasonTokenRejected`  | `FAILED`, the token did not rotate |
+| 400, 401                                                   | an `error` object followed by any other byte or JSON value, or with a repeated member | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
+| 400, 401                                                   | no `error` member or not JSON                                                         | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
+| other 4xx, 5xx, redirect                                   | any body                                                                              | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
+| transport error, cancellation, truncated or oversized body | none                                                                                  | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
 
 ### Native refresh confinement
 
