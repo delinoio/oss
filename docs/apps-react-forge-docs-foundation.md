@@ -18,6 +18,7 @@ The former format routes `/pptx`, `/docx`, `/xlsx`, `/pdf`, `/figma`, `/sfx`, `/
 - Installation and getting started cover Node.js 24, six local-document host combinations, optional native packages, fonts, and an executable TSX task.
 - Sessions and format guides cover the public React/session APIs, all four local document models, explicit exports, Office preservation, font/layout limits, and the absence of PDF import or Office conversion.
 - GLB and FBX guides separately identify the unreleased animation API (joints/skin/morphs, samplers, callback baking, clip/time bounds and FBX sampling limits) while preserving the released generation-only SceneSession API, registered binary assets, world-space bounds, Blender 4.5 material profile, resource limits, and exclusions. They state availability from npm `0.2.0`; hosted-platform and arbitrary FBX application results are not implied by the documented checks.
+- The GLB guide explains polygon-efficient static authoring with exact low/dense grid counts, painted opaque and genuinely transparent texture examples, normals versus silhouette detail, physical backs/seams, instance triangle cost, and byte-size versus triangle-count limits. The FBX and troubleshooting guides link to that workflow. The examples use only the released static API and keep generated images and models out of source control.
 - SFX documents offline procedural WAV generation, bounded layers, timing and seeded variation with a zombie-game gunshot example. State availability from npm `0.2.0`; keep the absence of game-engine listening evaluation clear.
 - Sprite documents source-backed pixel drawing and animation, the revision-pinned `.sprite.zip` archive, bounds, and generation-only limits. State availability from npm `0.2.0`; do not imply engine importer compatibility.
 - Figma explains its narrower macOS Keychain authentication boundary, official MCP connection, explicit remote publication, complete/partial/unknown receipts, and recovery without blind retries. Receipts may omit a file locator after ambiguous creation; guide readers to establish the remote file's identity before reopening or repeating any write.
@@ -29,6 +30,8 @@ Every route appears in the Rspress sidebar and the shared selector identifies `/
 ## Build and validation
 
 Use the consolidated `pnpm dev:public-docs` loopback server on port `46302` and the existing Cloudflare Pages publication. Run `pnpm test` from `apps/public-docs`. Rendered validation checks all 18 artifacts, headings and guide links, sidebar entries, exact selector state, repository links, clean routes, the nine format redirects, and prohibited credential/internal-path content. Validate that the GLB, FBX, SFX and Sprite article introductions identify availability from npm `0.2.0` and do not describe those formats as unreleased. Keep public examples aligned with compiled source examples and exported types; no live Figma write is part of documentation validation. Changes to this contract alone select and force `node-public-docs-test`.
+
+For the static polygon example, also typecheck package examples, run its deterministic geometry/PNG tests, and run the local GLB/FBX structure verifier. Retain the distinction between structural checks and unperformed viewer or application inspection.
 
 ## Change policy
 

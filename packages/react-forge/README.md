@@ -196,6 +196,8 @@ Test renderers are not runtime dependencies. Direct Microsoft Office validation 
 
 See the [GLB guide](https://oss.delino.io/react-forge/formats/glb/), [FBX guide](https://oss.delino.io/react-forge/formats/fbx/), and original [AURA product example](examples/audio-studio-assets/README.md). The CLI/MCP exports `.glb`/`.fbx` in npm `0.2.0` and later.
 
+For deliberate triangle counts and texture-carried artwork, see [polygon-efficient static authoring](https://oss.delino.io/react-forge/formats/glb/#polygon-efficient-static-authoring) and the [portable source example](examples/polygon-efficient.tsx). It compares 192 and 2,400 triangle curved sheets with opaque painted and transparent two-triangle quads. Its PNGs are generated in memory; copy both example source files for an installed CLI task.
+
 ## Sprite authoring (available in npm 0.2.0)
 
 `Format.Sprite` and `@delino/react-forge/sprite` are available in npm `0.2.0`. See the [Sprite guide](https://oss.delino.io/react-forge/formats/sprite/) for the workflow and limits.
