@@ -2692,3 +2692,20 @@ fn keeps_calls_whose_body_writes_an_argument_binding() {
     ]);
     assert!(out(temp.path(), "lib.js").contains("reset(n)"));
 }
+
+/// A written binding imported at the site is read-only there, so a function
+/// that writes its own module binding is not inlined into an importer.
+#[test]
+fn keeps_calls_that_write_a_binding_imported_at_the_site() {
+    let (temp, _) = run(&[
+        (
+            "index.js",
+            r#"import{n,tick}from"./lib.js";console.log(tick(),tick(),n);"#,
+        ),
+        (
+            "lib.js",
+            r#"let n=0;function tick(){return n++}export{n,tick};"#,
+        ),
+    ]);
+    assert!(out(temp.path(), "index.js").contains("tick()"));
+}

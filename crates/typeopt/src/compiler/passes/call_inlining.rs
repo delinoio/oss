@@ -237,6 +237,8 @@ struct Target {
     /// A function-local `const` whose temporal dead zone is checked per
     /// call site.
     local: bool,
+    /// Free bindings that the expression assigns or updates.
+    writes: Vec<SymbolId>,
 }
 
 type Rejection = (Reason, Node);
@@ -373,6 +375,7 @@ impl Target {
             free: Vec::new(),
             uses: Vec::new(),
             branching: false,
+            writes: Vec::new(),
         };
         walker.walk(shape.expression, false)?;
         let Walker {
@@ -380,6 +383,7 @@ impl Target {
             free,
             uses,
             branching,
+            writes,
             ..
         } = walker;
         for (param, value) in uses {
@@ -421,6 +425,7 @@ impl Target {
             branching,
             retype,
             return_names,
+            writes,
             statement,
             local,
         })
@@ -474,6 +479,7 @@ struct Walker<'a, 'b, 'c> {
     free: Vec<FreeName>,
     uses: Vec<(usize, Use)>,
     branching: bool,
+    writes: Vec<SymbolId>,
 }
 
 impl Walker<'_, '_, '_> {
@@ -576,6 +582,9 @@ impl Walker<'_, '_, '_> {
                     ));
                 }
                 self.identifier(target, conditional, false)?;
+                if let Some(free) = self.free.last() {
+                    self.writes.push(free.symbol);
+                }
             }
             _ => {
                 return Err((
@@ -1180,6 +1189,15 @@ fn site(
     for &extra in arguments.get(target.params.len()..).unwrap_or_default() {
         if !facts.movable(ctx, extra, false) {
             return Err(detail(Reason::SideEffects, "site:extra-argument-effect"));
+        }
+    }
+    // A written binding must be the site module's own: an import of it (an
+    // existing one, or one the hygiene step below would add) is read-only,
+    // so the assignment would throw where the function wrote its binding.
+    for &written in &target.writes {
+        let declaration = ctx.checker.sym(written).value_declaration;
+        if declaration.is_nil() || ctx.file_of_node(declaration) != Some(file) {
+            return Err(detail(Reason::Mutation, "site:write-to-imported-binding"));
         }
     }
     // Hygiene: every free name means the same binding here, or a module
