@@ -36,9 +36,9 @@ use anyhow::Result;
 use super::{
     super::{
         analysis::{Ctx, RefKind},
-        token_start,
+        token_start, token_start_in,
     },
-    deadcode_support::{Exposure, Keys, list_removals, module_index, removal_start, within},
+    deadcode_support::{Exposure, Keys, list_removals, module_index, removal_start},
 };
 use crate::{
     compiler::api::*,
@@ -334,8 +334,87 @@ fn runtime_used(ctx: &Ctx, unit: &Unit) -> bool {
         matches!(
             effective_kind(r),
             RefKind::Read | RefKind::Call | RefKind::New | RefKind::Write
-        ) && !(r.file == unit.file && unit.extents.iter().any(|&e| within(r.node, e)))
+        ) && !(r.file == unit.file
+            && contains_any(
+                &unit.extents,
+                token_start_in(r.node, ctx.files[r.file].node),
+            ))
     })
+}
+
+fn contains_any(extents: &[(usize, usize)], at: usize) -> bool {
+    extents.iter().any(|&(start, end)| at >= start && at < end)
+}
+
+/// Stabbing index over the extents of one file's units. Unit extents are
+/// statement and declarator ranges, which nest or are disjoint, so a query
+/// walks the nesting tree instead of testing every unit of the file. A file
+/// whose extents partially overlap falls back to a linear scan.
+struct ExtentIndex {
+    /// `(start, end, unit)`, sorted by start, then by descending end.
+    extents: Vec<(usize, usize, usize)>,
+    /// Nearest enclosing extent of each extent.
+    parent: Vec<Option<usize>>,
+    nested: bool,
+}
+
+impl ExtentIndex {
+    fn new(units: &[Unit], members: &[usize]) -> Self {
+        let mut extents: Vec<(usize, usize, usize)> = members
+            .iter()
+            .flat_map(|&unit| units[unit].extents.iter().map(move |&(s, e)| (s, e, unit)))
+            .collect();
+        extents.sort_by(|a, b| a.0.cmp(&b.0).then(b.1.cmp(&a.1)).then(a.2.cmp(&b.2)));
+        let mut parent = vec![None; extents.len()];
+        let mut stack: Vec<usize> = Vec::new();
+        let mut nested = true;
+        for index in 0..extents.len() {
+            let (start, end, _) = extents[index];
+            while stack.last().is_some_and(|&top| extents[top].1 <= start) {
+                stack.pop();
+            }
+            if let Some(&top) = stack.last() {
+                if extents[top].1 < end {
+                    nested = false;
+                    break;
+                }
+                parent[index] = Some(top);
+            }
+            stack.push(index);
+        }
+        Self {
+            extents,
+            parent,
+            nested,
+        }
+    }
+
+    /// Units with an extent that contains `at`.
+    fn containing(&self, at: usize) -> Vec<usize> {
+        if !self.nested {
+            return self
+                .extents
+                .iter()
+                .filter(|e| e.0 <= at && at < e.1)
+                .map(|e| e.2)
+                .collect();
+        }
+        // Every extent that contains `at` encloses the last extent that
+        // starts at or before it.
+        let mut next = self.extents.partition_point(|e| e.0 <= at).checked_sub(1);
+        while let Some(index) = next {
+            if at < self.extents[index].1 {
+                break;
+            }
+            next = self.parent[index];
+        }
+        let mut units = Vec::new();
+        while let Some(index) = next {
+            units.push(self.extents[index].2);
+            next = self.parent[index];
+        }
+        units
+    }
 }
 
 /// Greatest fixed point of removable units: a unit stays removable while
@@ -347,6 +426,21 @@ fn solve(ctx: &mut Ctx, exposure: &Exposure, units: &[Unit], out: &mut Plan) -> 
     for (index, unit) in units.iter().enumerate() {
         by_file.entry(unit.file).or_default().push(index);
     }
+    let indexes: BTreeMap<usize, ExtentIndex> = by_file
+        .iter()
+        .map(|(&file, members)| (file, ExtentIndex::new(units, members)))
+        .collect();
+    // Reference positions do not change during the fixed point; compute each
+    // once instead of once per probe.
+    let positions: Vec<Vec<usize>> = units
+        .iter()
+        .map(|unit| {
+            ctx.refs(unit.symbol)
+                .iter()
+                .map(|r| token_start_in(r.node, ctx.files[r.file].node))
+                .collect()
+        })
+        .collect();
     let mut blockers: Vec<Option<Reason>> = vec![None; units.len()];
     let mut edges: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); units.len()];
     let mut changed = true;
@@ -359,8 +453,8 @@ fn solve(ctx: &mut Ctx, exposure: &Exposure, units: &[Unit], out: &mut Plan) -> 
             edges[index].clear();
             let unit = &units[index];
             let mut blocked = None;
-            for r in ctx.refs(unit.symbol) {
-                if r.file == unit.file && unit.extents.iter().any(|&e| within(r.node, e)) {
+            for (r, &at) in ctx.refs(unit.symbol).iter().zip(&positions[index]) {
+                if r.file == unit.file && contains_any(&unit.extents, at) {
                     continue;
                 }
                 match effective_kind(r) {
@@ -381,12 +475,14 @@ fn solve(ctx: &mut Ctx, exposure: &Exposure, units: &[Unit], out: &mut Plan) -> 
                         break;
                     }
                     kind => {
-                        let container = by_file.get(&r.file).and_then(|candidates| {
-                            candidates.iter().copied().find(|&other| {
-                                other != index
-                                    && alive[other]
-                                    && units[other].extents.iter().any(|&e| within(r.node, e))
-                            })
+                        // The first live unit in index order that contains
+                        // the reference.
+                        let container = indexes.get(&r.file).and_then(|extents| {
+                            extents
+                                .containing(at)
+                                .into_iter()
+                                .filter(|&other| other != index && alive[other])
+                                .min()
                         });
                         match container {
                             Some(other) => {
@@ -440,7 +536,13 @@ fn solve(ctx: &mut Ctx, exposure: &Exposure, units: &[Unit], out: &mut Plan) -> 
             parent[a.max(b)] = a.min(b);
         }
         let unit = &units[index];
-        for &other in &by_file[&unit.file] {
+        // A unit encloses this one only through an extent that contains the
+        // start of this unit's first extent.
+        let enclosing = match unit.extents.first() {
+            Some(&(start, end)) if start < end => indexes[&unit.file].containing(start),
+            _ => by_file[&unit.file].clone(),
+        };
+        for other in enclosing {
             if other != index
                 && alive[other]
                 && units[other]

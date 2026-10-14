@@ -136,6 +136,77 @@ func sendNative(t *testing.T, f *nativeforward.Forwarder) (int, string) {
 	return response.StatusCode, string(body)
 }
 
+func TestNativeRouteSnapshotSurvivesDirectToProxySynchronization(t *testing.T) {
+	var retiredCalls atomic.Int32
+	retired := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		retiredCalls.Add(1)
+		if r.Header.Get("Authorization") != "" {
+			t.Error("execution bearer reached the retired pairing listener")
+		}
+	}))
+	defer retired.Close()
+	f := newForwardFixture(t, retired.URL, false)
+	if err := desktopruntime.Publish(f.target); err != nil {
+		t.Fatal(err)
+	}
+	config := f.config()
+	config.network = &workerNetworkRuntime{snapshot: networkSnapshot{bundle: workernetwork.Bundle{
+		Route: domain.NetworkRoute{Profile: domain.NetworkProfile{ProxyDefinition: domain.ProxyDefinition{Name: "Direct", Mode: domain.ProxyDirect}}},
+	}}}
+	ownerRoute := captureNativeRoute(config)
+	proxy, err := openCodexNativeProxy(context.Background(), config, domain.NewID(), ownerRoute)
+	if proxy != nil || err != nil {
+		t.Fatal("the original Direct route selected a native proxy", err)
+	}
+	// Force the legal synchronization interleaving between the two path
+	// decisions, then retain the new generation while this owner sends twice.
+	configured := outboundtest.Connect(t, "127.0.0.1:1", false)
+	config.network.mu.Lock()
+	config.network.snapshot = networkSnapshot{bundle: workernetwork.Bundle{
+		Route:      domain.NetworkRoute{Profile: configured.Profile},
+		Credential: &domain.ProxyCredential{Username: outboundtest.Username, Password: outboundtest.Password},
+	}}
+	config.network.mu.Unlock()
+	forwarder, err := openCodexNativeForwarder(context.Background(), config, domain.NewID(), forwardFixtureToken(), false, ownerRoute)
+	if err != nil || forwarder == nil {
+		t.Fatal("the original Direct owner lost its forwarder", err)
+	}
+	defer forwarder.Close()
+	for range 2 {
+		if status, body := sendNative(t, forwarder); status != http.StatusOK || !strings.Contains(body, "scripted first response") {
+			t.Fatalf("pinned forwarder response %d %q logs=%s", status, body, f.logs.String())
+		}
+	}
+	if f.received.Load() != 2 || retiredCalls.Load() != 0 || configured.Calls.Load() != 0 {
+		t.Fatal("an active owner changed route or contacted the retired listener")
+	}
+	newRoute := captureNativeRoute(config)
+	if newRoute.bundle.Route.Profile.Mode == domain.ProxyDirect {
+		t.Fatal("a new owner did not observe the synchronized route")
+	}
+	other, err := openCodexNativeForwarder(context.Background(), config, domain.NewID(), forwardFixtureToken(), false, newRoute)
+	if other != nil || err != nil {
+		t.Fatal("a configured-proxy owner opened a Direct forwarder", err)
+	}
+}
+
+func TestNativeRouteSnapshotCopiesCredentialAndBypass(t *testing.T) {
+	profile := domain.NetworkProfile{ProxyDefinition: domain.ProxyDefinition{
+		Name: "Pinned", Mode: domain.ProxyHTTP, Host: "proxy.example", Port: 8080,
+		Bypass: []domain.ProxyBypass{{Host: "127.0.0.1"}},
+	}, CredentialGeneration: domain.NewID()}
+	credential := &domain.ProxyCredential{Username: "original", Password: "original-secret"}
+	config := Config{network: &workerNetworkRuntime{snapshot: networkSnapshot{bundle: workernetwork.Bundle{
+		Route: domain.NetworkRoute{Profile: profile}, Credential: credential,
+	}}}}
+	owner := captureNativeRoute(config)
+	credential.Password = "later-secret"
+	config.network.snapshot.bundle.Route.Profile.Bypass[0].Host = "localhost"
+	if owner.bundle.Credential.Password != "original-secret" || owner.bundle.Route.Profile.Bypass[0].Host != "127.0.0.1" {
+		t.Fatal("a later route or credential edit changed the native owner's snapshot")
+	}
+}
+
 func TestLocalCodexAPIFollowsRelocatedRuntimeAndNeverTouchesRetiredOrigin(t *testing.T) {
 	for _, occupied := range []bool{false, true} {
 		name := "closed original listener"
@@ -161,7 +232,7 @@ func TestLocalCodexAPIFollowsRelocatedRuntimeAndNeverTouchesRetiredOrigin(t *tes
 			}
 			pairingBefore, _ := os.ReadFile(filepath.Join(f.root, "local-pairing.json"))
 			execution := domain.NewID()
-			forwarder, err := openCodexNativeForwarder(context.Background(), f.config(), execution, forwardFixtureToken(), false)
+			forwarder, err := openCodexNativeForwarder(context.Background(), f.config(), execution, forwardFixtureToken(), false, captureNativeRoute(f.config()))
 			if err != nil || forwarder == nil {
 				t.Fatal("relocated Local Worker did not receive a forwarder", err)
 			}
@@ -193,7 +264,7 @@ func TestLocalCodexAPIRetiredRuntimeFailsClosedWithoutSavedAddressFallback(t *te
 	if err := desktopruntime.Publish(f.target); err != nil {
 		t.Fatal(err)
 	}
-	forwarder, err := openCodexNativeForwarder(context.Background(), f.config(), domain.NewID(), forwardFixtureToken(), false)
+	forwarder, err := openCodexNativeForwarder(context.Background(), f.config(), domain.NewID(), forwardFixtureToken(), false, captureNativeRoute(f.config()))
 	if err != nil || forwarder == nil {
 		t.Fatal(err)
 	}
@@ -214,7 +285,7 @@ func TestCodexAPIKeepsOriginalRoutingOutsideRelocatedLocalDirect(t *testing.T) {
 	origin := deadOrigin(t)
 	t.Run("unchanged Local address", func(t *testing.T) {
 		f := newForwardFixture(t, origin, false)
-		forwarder, err := openCodexNativeForwarder(context.Background(), f.config(), domain.NewID(), forwardFixtureToken(), false)
+		forwarder, err := openCodexNativeForwarder(context.Background(), f.config(), domain.NewID(), forwardFixtureToken(), false, captureNativeRoute(f.config()))
 		if forwarder != nil || err != nil {
 			t.Fatal("an unchanged Local address gained a forwarder", err)
 		}
@@ -227,7 +298,7 @@ func TestCodexAPIKeepsOriginalRoutingOutsideRelocatedLocalDirect(t *testing.T) {
 		if err := security.WriteAtomic(filepath.Join(f.owner, "desktop-runtime.json"), raw); err != nil {
 			t.Fatal(err)
 		}
-		forwarder, err := openCodexNativeForwarder(context.Background(), f.config(), domain.NewID(), forwardFixtureToken(), false)
+		forwarder, err := openCodexNativeForwarder(context.Background(), f.config(), domain.NewID(), forwardFixtureToken(), false, captureNativeRoute(f.config()))
 		if forwarder != nil || err != nil {
 			t.Fatal("a saved connection Worker gained desktop-runtime authority", err)
 		}
@@ -237,13 +308,13 @@ func TestCodexAPIKeepsOriginalRoutingOutsideRelocatedLocalDirect(t *testing.T) {
 		if err := os.Remove(filepath.Join(f.root, "local-pairing.json")); err != nil {
 			t.Fatal(err)
 		}
-		forwarder, err := openCodexNativeForwarder(context.Background(), f.config(), domain.NewID(), forwardFixtureToken(), false)
+		forwarder, err := openCodexNativeForwarder(context.Background(), f.config(), domain.NewID(), forwardFixtureToken(), false, captureNativeRoute(f.config()))
 		if forwarder != nil || err != nil {
 			t.Fatal("a remote Worker gained a forwarder", err)
 		}
 	})
 	t.Run("no execution connection", func(t *testing.T) {
-		forwarder, err := openCodexNativeForwarder(context.Background(), Config{}, domain.NewID(), forwardFixtureToken(), false)
+		forwarder, err := openCodexNativeForwarder(context.Background(), Config{}, domain.NewID(), forwardFixtureToken(), false, captureNativeRoute(Config{}))
 		if forwarder != nil || err != nil {
 			t.Fatal("a connectionless config gained a forwarder")
 		}
@@ -256,7 +327,7 @@ func TestCodexAPIKeepsOriginalRoutingOutsideRelocatedLocalDirect(t *testing.T) {
 		fixture := outboundtest.Connect(t, "127.0.0.1:1", false)
 		config := f.config()
 		config.network = &workerNetworkRuntime{snapshot: networkSnapshot{bundle: workernetwork.Bundle{Route: domain.NetworkRoute{Profile: fixture.Profile}, Credential: &domain.ProxyCredential{Username: outboundtest.Username, Password: outboundtest.Password}}}}
-		forwarder, err := openCodexNativeForwarder(context.Background(), config, domain.NewID(), forwardFixtureToken(), false)
+		forwarder, err := openCodexNativeForwarder(context.Background(), config, domain.NewID(), forwardFixtureToken(), false, captureNativeRoute(config))
 		if forwarder != nil || err != nil {
 			t.Fatal("a configured-proxy route gained a Direct forwarder", err)
 		}
@@ -266,7 +337,7 @@ func TestCodexAPIKeepsOriginalRoutingOutsideRelocatedLocalDirect(t *testing.T) {
 		if err := security.WriteAtomic(filepath.Join(f.root, "local-pairing.json"), []byte(`{"request_id":"x"}`)); err != nil {
 			t.Fatal(err)
 		}
-		forwarder, err := openCodexNativeForwarder(context.Background(), f.config(), domain.NewID(), forwardFixtureToken(), false)
+		forwarder, err := openCodexNativeForwarder(context.Background(), f.config(), domain.NewID(), forwardFixtureToken(), false, captureNativeRoute(f.config()))
 		if forwarder != nil || err == nil {
 			t.Fatal("corrupt pairing authority was accepted")
 		}
@@ -279,7 +350,7 @@ func TestCodexAPIForwarderFollowsInjectedNativeClosedTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := desktopruntime.WithTarget(context.Background(), &f.target)
-	forwarder, err := openCodexNativeForwarder(ctx, f.config(), domain.NewID(), forwardFixtureToken(), false)
+	forwarder, err := openCodexNativeForwarder(ctx, f.config(), domain.NewID(), forwardFixtureToken(), false, captureNativeRoute(f.config()))
 	if err != nil || forwarder == nil {
 		t.Fatal("injected runtime was not followed", err)
 	}
@@ -294,7 +365,7 @@ func TestCodexAPITitleForwarderUsesTitleBodyLimit(t *testing.T) {
 	if err := desktopruntime.Publish(f.target); err != nil {
 		t.Fatal(err)
 	}
-	forwarder, err := openCodexNativeForwarder(context.Background(), f.config(), domain.NewID(), forwardFixtureToken(), true)
+	forwarder, err := openCodexNativeForwarder(context.Background(), f.config(), domain.NewID(), forwardFixtureToken(), true, captureNativeRoute(f.config()))
 	if err != nil || forwarder == nil {
 		t.Fatal(err)
 	}

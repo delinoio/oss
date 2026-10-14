@@ -68,24 +68,48 @@
   border-end-start-radius: 7px;
   border-end-end-radius: 7px;
 }
-/* Scoped above the shared Settings button border-color rule and the shared
-   40px card control minimum so the flat dividers keep the semantic group
-   border token and Related information rows keep their 56px minimum. */
+/* This Settings scope outranks the shared button radius and control rules.
+   Keep only the outside row corners rounded and the row minimum at 56px. */
 .settings-content[aria-label]
   .settings-content-column
+  .app-information-card
   .app-information-links
   .app-information-link {
   min-height: 56px;
   border-color: var(--border);
+  border-radius: 0;
+}
+.settings-content[aria-label]
+  .settings-content-column
+  .app-information-card
+  .app-information-links
+  .app-information-link:first-child {
+  border-start-start-radius: 7px;
+  border-start-end-radius: 7px;
+}
+.settings-content[aria-label]
+  .settings-content-column
+  .app-information-card
+  .app-information-links
+  .app-information-link:last-child {
+  border-end-start-radius: 7px;
+  border-end-end-radius: 7px;
 }
 .app-information-link + .app-information-link {
   border-top: 1px solid var(--border);
 }
-.app-information-links + .app-information-help {
+.settings-content[aria-label]
+  .settings-content-column
+  .app-information-links
+  + .app-information-help {
   margin-top: 0;
+  font-size: 12px;
 }
 .app-information-link:enabled:hover {
   background: var(--surface-subtle);
+}
+.app-information-link:disabled:hover {
+  background: transparent;
 }
 .app-information-link-label {
   flex: 1 1 auto;

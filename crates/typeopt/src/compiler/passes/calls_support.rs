@@ -194,12 +194,32 @@ impl Facts {
     /// code. No code can then hold a reference to the binding before it is
     /// initialized.
     pub fn initialized_early(&mut self, ctx: &mut Ctx, symbol: SymbolId) -> bool {
+        self.initialized_early_declaration(ctx, symbol, false)
+    }
+
+    /// [`Self::initialized_early`] for a `let` or `var` binding as well. The
+    /// caller proves that nothing writes the binding; only the ordering
+    /// argument applies then, and it is the same for every declaration kind
+    /// (a top-level `var` is read as `undefined` before its initializer, a
+    /// `let` or `const` throws).
+    pub fn initialized_early_unwritten(&mut self, ctx: &mut Ctx, symbol: SymbolId) -> bool {
+        self.initialized_early_declaration(ctx, symbol, true)
+    }
+
+    fn initialized_early_declaration(
+        &mut self,
+        ctx: &mut Ctx,
+        symbol: SymbolId,
+        any_kind: bool,
+    ) -> bool {
         let declaration = ctx.checker.sym(symbol).value_declaration;
         if declaration.is_nil() || declaration.kind() != SyntaxKind::VariableDeclaration {
             return false;
         }
         let list = declaration.parent();
-        if !list.flags().intersects(NodeFlags::Const) || list.flags().intersects(NodeFlags::Using) {
+        if (!any_kind && !list.flags().intersects(NodeFlags::Const))
+            || list.flags().intersects(NodeFlags::Using)
+        {
             return false;
         }
         let statement = list.parent();
