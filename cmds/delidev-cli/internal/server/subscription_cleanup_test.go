@@ -84,7 +84,7 @@ func TestFailedServerLoginCleanupAllowsDeletion(t *testing.T) {
 				done = f.serverRun(n)
 			} else {
 				want = domain.SubscriptionCanceled
-				f.service.subscriptionOpen = func(context.Context, string, domain.ID, []byte, *slog.Logger) (serverSubscriptionNative, error) {
+				f.service.subscriptionOpen = func(context.Context, nativeScope, domain.ID, []byte, *slog.Logger) (serverSubscriptionNative, error) {
 					return n, nil
 				}
 				ctx, stop := context.WithCancel(failedLoginContext())
@@ -173,7 +173,10 @@ func prepareFailedLoginRuntime(t *testing.T, f *subscriptionFixture, owner domai
 	if err := security.PrivateDir(home); err != nil {
 		t.Fatal(err)
 	}
-	if err := security.WriteAtomic(filepath.Join(home, "auth.json"), []byte("synthetic-private-login-token")); err != nil {
+	if err := security.PrivateDir(filepath.Join(home, "codex")); err != nil {
+		t.Fatal(err)
+	}
+	if err := security.WriteAtomic(filepath.Join(home, "codex", "auth.json"), []byte("synthetic-private-login-token")); err != nil {
 		t.Fatal(err)
 	}
 	probe := filepath.Join(root, "subscription-runtime", "probes", string(owner)+"-12345")
@@ -214,8 +217,19 @@ func TestLegacyFailedServerLoginCleanupPreservesOtherOwnership(t *testing.T) {
 			if err := f.service.recoverFailedServerLogin(failedLoginContext(), f.input.AccountID, operation); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := os.Lstat(home); !os.IsNotExist(err) {
-				t.Fatal("private runtime retained")
+			// The historical per-operation runtime is retained as ordinary data; only
+			// its transient credential file is retired under the original ownership.
+			if removed {
+				if _, err := os.Lstat(home); !os.IsNotExist(err) {
+					t.Fatal("previously removed runtime reappeared")
+				}
+			} else {
+				if _, err := os.Stat(home); err != nil {
+					t.Fatal("recovery removed the retained runtime directory")
+				}
+				if _, err := os.Lstat(filepath.Join(home, "codex", "auth.json")); !os.IsNotExist(err) {
+					t.Fatal("transient credential file was retained")
+				}
 			}
 			if _, err := os.Stat(foreign); err != nil {
 				t.Fatal("unrelated probe was removed", err)
@@ -254,8 +268,8 @@ func TestFailedServerLoginCleanupCheckpointSurvivesRestart(t *testing.T) {
 	if a.Subscription.ServerOperation.CleanupPhase != domain.SubscriptionNativeCleanupConfirmed || !a.Subscription.RecoveryRequired || a.Subscription.Pending == nil || a.Health != domain.AccountFailed {
 		t.Fatal("native cleanup checkpoint or credential fence was lost")
 	}
-	if _, err := os.Lstat(home); !os.IsNotExist(err) {
-		t.Fatal("native runtime was not removed")
+	if _, err := os.Lstat(filepath.Join(home, "codex", "auth.json")); !os.IsNotExist(err) {
+		t.Fatal("transient native credential file was not retired")
 	}
 	if err := f.deleteFailedLogin(f.failedLoginDeletion()); err == nil {
 		t.Fatal("native cleanup alone permitted deletion")

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/executionenv"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"os"
@@ -147,11 +148,26 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	if _, err := os.Lstat(home); !errors.Is(err, os.ErrNotExist) {
 		return nil, executionCheckpointUncertain()
 	}
+	if err := security.CreatePrivateDirExclusive(home); err != nil {
+		return nil, executionCheckpointUncertain()
+	}
 	var ordinaryTools executionenv.Ordinary
 	if input.Purpose != domain.SidechatFork {
 		ordinaryTools = ordinaryExecutionTools(config.Logger)
 	}
-	env, err := harness.PrivateRuntimeEnvironment(home)
+	// The child's native history lives in its own persistent profile; the fork
+	// runtime directory above is only the operation journal.
+	childProfile, err := conversationProfile(ctx, config, job.MachineID, nativeprofile.Key{Harness: domain.Codex, Purpose: nativeprofile.PurposeFork, Account: assignment.AccountID, Conversation: input.RuntimeID}, input.RuntimeID)
+	if err != nil {
+		return nil, executionCheckpointUncertain()
+	}
+	defer func() {
+		if err := childProfile.Close(); err != nil && returned == nil {
+			output, returned = nil, executionCheckpointUncertain()
+		}
+	}()
+	childHome := filepath.Join(childProfile.Root, "codex")
+	env, err := harness.PrivateRuntimeEnvironment(childProfile.Root)
 	if err != nil {
 		return nil, executionCheckpointUncertain()
 	}
@@ -179,7 +195,16 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 			logger.InfoContext(ctx, "session_fork_failure_ownership", "job_id", owner, "runtime_phase", phase, "code", domain.SafeError(returned).Code)
 		}
 	}()
-	sourceHome := filepath.Join(root, string(historyID), "codex")
+	sourceProfile, err := continuationProfile(ctx, config, job.MachineID, domain.Codex, historyAccount(assignment), historyID)
+	if err != nil {
+		return nil, executionCheckpointUncertain()
+	}
+	defer func() {
+		if err := sourceProfile.Close(); err != nil && returned == nil {
+			output, returned = nil, executionCheckpointUncertain()
+		}
+	}()
+	sourceHome := filepath.Join(sourceProfile.Root, "codex")
 	sourceEnv, err := replaceCodexHome(append([]string(nil), env...), sourceHome)
 	if err != nil {
 		return nil, err
@@ -217,7 +242,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	if inspectErr != nil {
 		return nil, inspectErr
 	}
-	source, err = source.RehomeSkills(ctx, filepath.Join(home, "codex"))
+	source, err = source.RehomeSkills(ctx, childHome)
 	if err != nil {
 		return nil, err
 	}
@@ -294,7 +319,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	// From this attempt onward the runtime may contain native child state. Even
 	// an Open failure cannot justify deleting it through pre-native rollback.
 	phase = forkChildNativePossible
-	nativeConfig := codex.Config{RevertHistory: checkpoint.Native.PaginatedHistory, ManagedForkHistory: assignment.Configuration.Subscription && input.Purpose == domain.IndependentFork, FrameProfile: forkFrameProfile(assignment.Configuration.Subscription, input.Purpose), ImageRoot: config.Root, ImageMachineID: job.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: filepath.Join(home, "codex"), API: &codex.APIConfig{ServerOrigin: config.execution.Credential.Endpoint, Token: apiproxy.TokenPrefix + rawToken}, Process: processConfig}
+	nativeConfig := codex.Config{RevertHistory: checkpoint.Native.PaginatedHistory, ManagedForkHistory: assignment.Configuration.Subscription && input.Purpose == domain.IndependentFork, FrameProfile: forkFrameProfile(assignment.Configuration.Subscription, input.Purpose), ImageRoot: config.Root, ImageMachineID: job.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: childHome, API: &codex.APIConfig{ServerOrigin: config.execution.Credential.Endpoint, Token: apiproxy.TokenPrefix + rawToken}, Process: processConfig}
 	if input.Purpose != domain.SidechatFork {
 		nativeConfig.OrdinaryTools = ordinaryTools
 	}
@@ -357,7 +382,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 			return nil, err
 		}
 		preNative = true
-		if err := security.WriteAtomic(filepath.Join(nativeConfig.Home, "auth.json"), managed.response.Bundle); err != nil {
+		if err := subscription.WriteCredentialFile(filepath.Join(nativeConfig.Home, "auth.json"), managed.response.Bundle); err != nil {
 			return nil, subscription.Invalid()
 		}
 		nativeConfig.API, nativeConfig.ManagedAuthentication = nil, true

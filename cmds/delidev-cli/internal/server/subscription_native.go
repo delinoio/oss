@@ -16,6 +16,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
@@ -34,46 +35,77 @@ type serverSubscriptionNative interface {
 	Close([]byte) error
 }
 
-// A non-recovery opener error proves joined native and private-file cleanup.
-// A recovery error retains the original operation and runtime for inspection.
-type serverSubscriptionOpener func(context.Context, string, domain.ID, []byte, *slog.Logger) (serverSubscriptionNative, error)
+// A non-recovery opener error proves joined native and transient credential
+// cleanup. A recovery error retains the original operation for inspection; the
+// persistent profile is never removed by either outcome.
+type serverSubscriptionOpener func(context.Context, nativeScope, domain.ID, []byte, *slog.Logger) (serverSubscriptionNative, error)
 
 type serverCodexRuntime struct {
 	*codex.Client
 	home      string
-	original  os.FileInfo
+	lease     *nativeprofile.Lease
 	owner     domain.ID
 	logger    *slog.Logger
 	guard     *http.Server
 	guardDone chan struct{}
 }
 
-func openServerSubscription(ctx context.Context, root string, owner domain.ID, bundle []byte, logger *slog.Logger) (returned serverSubscriptionNative, err error) {
+// acquireAccountProfile resolves the permanent account profile for one purpose.
+// A busy or invalid profile blocks with its closed profile cause; it is never
+// replaced by a temporary home.
+func acquireAccountProfile(ctx context.Context, scope nativeScope, harnessKind domain.Harness, purpose nativeprofile.Purpose) (*nativeprofile.Lease, error) {
+	if scope.Profiles == nil || scope.Account.Validate() != nil {
+		return nil, subscriptionDenied()
+	}
+	return scope.Profiles.Acquire(ctx, nativeprofile.Key{Harness: harnessKind, Purpose: purpose, Account: scope.Account})
+}
+
+// profileCredentialBlock proves that no transient credential file survives in a
+// retained profile before a new operation may write its own.
+func profileCredentialBlock(scope nativeScope, lease *nativeprofile.Lease, owner domain.ID, logger *slog.Logger, forbidManaged bool) error {
+	present, err := subscription.CredentialFilePresent(lease.Root)
+	if err != nil || present && forbidManaged {
+		nativeprofile.Log(logger, "native_profile_blocked", lease.Key, lease.ID, nativeprofile.ReasonCredentialPresent, "operation_id", owner)
+		return nativeprofile.Failure(domain.RecoveryRequired, nativeprofile.ReasonCredentialPresent, "A transient credential file remains in the retained native profile.", "Reconcile the original operation before retrying.")
+	}
+	return nil
+}
+
+func openServerSubscription(ctx context.Context, scope nativeScope, owner domain.ID, bundle []byte, logger *slog.Logger) (returned serverSubscriptionNative, err error) {
 	version, phase := "", domain.CodexRuntime
 	defer func() { err = domain.WithCodexDiagnostic(version, phase, err) }()
-	runtimeRoot := filepath.Join(root, "subscription-runtime")
-	home := filepath.Join(runtimeRoot, "auth", string(owner))
-	if _, e := os.Lstat(home); !errors.Is(e, os.ErrNotExist) {
-		return nil, subscriptionDenied()
+	runtimeRoot := filepath.Join(scope.Root, "subscription-runtime")
+	lease, e := acquireAccountProfile(ctx, scope, domain.Codex, nativeprofile.PurposeAuth)
+	if e != nil {
+		return nil, e
+	}
+	home := lease.Root
+	released := false
+	defer func() {
+		if err != nil && !released {
+			// Retire only the transient credential file this operation may have
+			// written. The profile, its history and caches stay.
+			if domain.SafeError(err).Code != domain.RecoveryRequired {
+				if cleanupErr := subscription.RetireCredentialFiles(home); cleanupErr != nil {
+					logSubscriptionRuntimeCleanup(logger, owner, cleanupErr)
+					nativeprofile.Log(logger, "native_profile_credential_cleanup", lease.Key, lease.ID, nativeprofile.ReasonCredentialBlocked, "operation_id", owner)
+					err = domain.CodexRecoveryFailure(version, phase, err, subscriptionDenied())
+				}
+			}
+			_ = lease.Close()
+		}
+	}()
+	// A surviving transient credential file from an earlier operation blocks
+	// with a specific cause until that operation's reconciliation retires it.
+	if e := profileCredentialBlock(scope, lease, owner, logger, true); e != nil {
+		return nil, e
 	}
 	env, e := harness.PrivateRuntimeEnvironment(home)
 	if e != nil {
 		return nil, subscriptionDenied()
 	}
-	info, e := security.StableStat(home)
-	if e != nil {
-		return nil, subscriptionDenied()
-	}
-	defer func() {
-		if err != nil && domain.SafeError(err).Code != domain.RecoveryRequired {
-			if cleanupErr := subscription.CleanupRuntime(home, info); cleanupErr != nil {
-				logSubscriptionRuntimeCleanup(logger, owner, cleanupErr)
-				err = domain.CodexRecoveryFailure(version, phase, err, subscriptionDenied())
-			}
-		}
-	}()
 	phase = domain.CodexDiscovery
-	installation, e := harness.DiscoverCodex(ctx, harness.DiscoveryConfig{Root: runtimeRoot, OwnerID: owner, Logger: logger})
+	installation, e := harness.DiscoverCodex(ctx, harness.DiscoveryConfig{Root: runtimeRoot, OwnerID: owner, Logger: logger, Profiles: scope.Profiles})
 	if e != nil {
 		return nil, e
 	}
@@ -104,7 +136,7 @@ func openServerSubscription(ctx context.Context, root string, owner domain.ID, b
 		if _, _, e := subscription.Parse(bundle); e != nil {
 			return nil, e
 		}
-		if e := security.WriteAtomic(filepath.Join(nativeHome, "auth.json"), bundle); e != nil {
+		if e := subscription.WriteCredentialFile(filepath.Join(nativeHome, "auth.json"), bundle); e != nil {
 			return nil, subscriptionDenied()
 		}
 	}
@@ -112,7 +144,8 @@ func openServerSubscription(ctx context.Context, root string, owner domain.ID, b
 	if e != nil {
 		return nil, e
 	}
-	return &serverCodexRuntime{Client: native, home: home, original: info, owner: owner, logger: logger}, nil
+	released = true
+	return &serverCodexRuntime{Client: native, home: home, lease: lease, owner: owner, logger: logger}, nil
 }
 
 func (r *serverCodexRuntime) StartManagedLogin(ctx context.Context, device bool) (codex.ManagedLoginProgress, error) {
@@ -142,15 +175,24 @@ func (r *serverCodexRuntime) Close(latest []byte) error {
 		_ = r.guard.Close()
 		<-r.guardDone
 	}
+	defer r.lease.Close()
 	if err != nil {
 		logSubscriptionCleanup(r.logger, r.owner, subscription.CleanupNativeProcess, subscription.CleanupUnconfirmed, 0, 0)
 		return subscriptionDenied()
 	}
-	return cleanupServerSubscriptionRuntime(r.home, r.original, r.owner, r.logger, latest)
+	err = cleanupServerSubscriptionRuntime(r.home, r.owner, r.logger, latest)
+	reason := nativeprofile.ReasonCredentialCleaned
+	if err != nil {
+		reason = nativeprofile.ReasonCredentialBlocked
+	}
+	nativeprofile.Log(r.logger, "native_profile_credential_cleanup", r.lease.Key, r.lease.ID, reason, "operation_id", r.owner)
+	return err
 }
 
 // The caller has already joined the original native process and descendants.
-func cleanupServerSubscriptionRuntime(home string, original os.FileInfo, owner domain.ID, logger *slog.Logger, latest []byte) error {
+// Cleanup verifies and retires only the transient credential file; the
+// persistent profile, native history, caches and helper files are retained.
+func cleanupServerSubscriptionRuntime(home string, owner domain.ID, logger *slog.Logger, latest []byte) error {
 	if len(latest) > 0 {
 		closed, readErr := security.ReadPrivate(filepath.Join(home, "codex", "auth.json"), subscription.MaxBundle)
 		equal := readErr == nil && bytes.Equal(closed, latest)
@@ -164,9 +206,12 @@ func cleanupServerSubscriptionRuntime(home string, original os.FileInfo, owner d
 			return subscriptionDenied()
 		}
 	}
-	err := subscription.CleanupRuntime(home, original)
+	err := subscription.RetireCredentialFiles(home)
 	logSubscriptionRuntimeCleanup(logger, owner, err)
-	return err
+	if err != nil {
+		return subscriptionDenied()
+	}
+	return nil
 }
 
 func logSubscriptionRuntimeCleanup(logger *slog.Logger, owner domain.ID, err error) {
@@ -190,31 +235,45 @@ type serverQuotaNative interface {
 	ReadExternalQuota(context.Context, domain.ID, codex.QuotaAuthentication) (domain.SubscriptionQuotaObservation, error)
 	Close() error
 }
-type serverQuotaOpener func(context.Context, string, domain.ID, codex.QuotaAuthentication, *slog.Logger) (serverQuotaNative, error)
+type serverQuotaOpener func(context.Context, nativeScope, domain.ID, codex.QuotaAuthentication, *slog.Logger) (serverQuotaNative, error)
 type serverQuotaRuntime struct {
 	*codex.Client
-	home     string
-	original os.FileInfo
-	owner    domain.ID
-	logger   *slog.Logger
+	home   string
+	lease  *nativeprofile.Lease
+	owner  domain.ID
+	logger *slog.Logger
 }
 
+// Close joins the native client and proves the access-only profile still holds
+// no managed auth.json. The permanent profile is retained, including any
+// native-created helper links, so ordinary retained data never blocks the next
+// eligible operation. Only a process or credential uncertainty does.
 func (r *serverQuotaRuntime) Close() error {
-	if err := r.Client.Close(); err != nil {
+	defer r.lease.Close()
+	nativeErr, helperErr := r.Client.CloseWithExecutionHelpers()
+	if nativeErr != nil {
+		nativeprofile.Log(r.logger, "native_profile_blocked", r.lease.Key, r.lease.ID, nativeprofile.ReasonProcessUncertain, "operation_id", r.owner)
 		return subscriptionDenied()
+	}
+	if helperErr != nil {
+		// A joined native tree that left its temporary helper aliases behind has
+		// produced ordinary retained profile data. It neither blocks this
+		// operation nor the next one; only process and credential state do.
+		nativeprofile.Log(r.logger, "native_profile_retained_data", r.lease.Key, r.lease.ID, nativeprofile.ReasonHelperRetained, "operation_id", r.owner)
 	}
 	if _, err := os.Lstat(filepath.Join(r.home, "codex", "auth.json")); !os.IsNotExist(err) {
+		nativeprofile.Log(r.logger, "native_profile_blocked", r.lease.Key, r.lease.ID, nativeprofile.ReasonCredentialPresent, "operation_id", r.owner)
 		return subscriptionDenied()
 	}
-	return subscription.CleanupRuntime(r.home, r.original)
+	return nil
 }
 
-func openServerQuota(ctx context.Context, root string, owner domain.ID, auth codex.QuotaAuthentication, logger *slog.Logger) (serverQuotaNative, error) {
-	runtime, err := openAccessOnlyRuntime(ctx, root, "quota", codex.QuotaProtocol, owner, auth, logger)
+func openServerQuota(ctx context.Context, scope nativeScope, owner domain.ID, auth codex.QuotaAuthentication, logger *slog.Logger) (serverQuotaNative, error) {
+	runtime, err := openAccessOnlyRuntime(ctx, scope, nativeprofile.PurposeQuota, codex.QuotaProtocol, owner, auth, logger)
 	if err != nil {
 		return nil, err
 	}
-	return &serverQuotaRuntime{Client: runtime.Client, home: runtime.home, original: runtime.original, owner: owner, logger: logger}, nil
+	return &serverQuotaRuntime{Client: runtime.Client, home: runtime.home, lease: runtime.lease, owner: owner, logger: logger}, nil
 }
 
 // Credit runtimes use the distinct access-only credit profile. They hold no
@@ -223,48 +282,49 @@ type serverCreditNative interface {
 	ConsumeExternalResetCredit(context.Context, domain.ServerCreditOperation, codex.QuotaAuthentication, func(domain.SubscriptionResetOutcome) error) (domain.SubscriptionResetOutcome, domain.SubscriptionQuotaObservation, error, error)
 	Close() error
 }
-type serverCreditOpener func(context.Context, string, domain.ID, codex.QuotaAuthentication, *slog.Logger) (serverCreditNative, error)
+type serverCreditOpener func(context.Context, nativeScope, domain.ID, codex.QuotaAuthentication, *slog.Logger) (serverCreditNative, error)
 type serverCreditRuntime struct{ *serverQuotaRuntime }
 
-func openServerCreditAccess(ctx context.Context, root string, owner domain.ID, auth codex.QuotaAuthentication, logger *slog.Logger) (serverCreditNative, error) {
-	runtime, err := openAccessOnlyRuntime(ctx, root, "credit", codex.CreditProtocol, owner, auth, logger)
+func openServerCreditAccess(ctx context.Context, scope nativeScope, owner domain.ID, auth codex.QuotaAuthentication, logger *slog.Logger) (serverCreditNative, error) {
+	runtime, err := openAccessOnlyRuntime(ctx, scope, nativeprofile.PurposeCredit, codex.CreditProtocol, owner, auth, logger)
 	if err != nil {
 		return nil, err
 	}
-	return &serverCreditRuntime{&serverQuotaRuntime{Client: runtime.Client, home: runtime.home, original: runtime.original, owner: owner, logger: logger}}, nil
+	return &serverCreditRuntime{&serverQuotaRuntime{Client: runtime.Client, home: runtime.home, lease: runtime.lease, owner: owner, logger: logger}}, nil
 }
 
-// accessOnlyRuntimeDirectory is the private runtime root of one access-only owner.
-func accessOnlyRuntimeDirectory(root, kind string, owner domain.ID) string {
+// legacyAccessOnlyDirectory is the historical per-operation runtime of one
+// access-only owner. New operations never create it; reconciliation only
+// inspects it without following links.
+func legacyAccessOnlyDirectory(root, kind string, owner domain.ID) string {
 	return filepath.Join(root, "subscription-runtime", kind, string(owner))
 }
 
-func openAccessOnlyRuntime(ctx context.Context, root, kind string, mode codex.ProtocolMode, owner domain.ID, auth codex.QuotaAuthentication, logger *slog.Logger) (returned *serverQuotaRuntime, err error) {
+func openAccessOnlyRuntime(ctx context.Context, scope nativeScope, purpose nativeprofile.Purpose, mode codex.ProtocolMode, owner domain.ID, auth codex.QuotaAuthentication, logger *slog.Logger) (returned *serverQuotaRuntime, err error) {
 	version, phase := "", domain.CodexRuntime
 	defer func() { err = domain.WithCodexDiagnostic(version, phase, err) }()
-	runtimeRoot := filepath.Join(root, "subscription-runtime")
-	home := accessOnlyRuntimeDirectory(root, kind, owner)
-	if _, e := os.Lstat(home); !errors.Is(e, os.ErrNotExist) {
-		return nil, subscriptionDenied()
+	runtimeRoot := filepath.Join(scope.Root, "subscription-runtime")
+	lease, e := acquireAccountProfile(ctx, scope, domain.Codex, purpose)
+	if e != nil {
+		return nil, e
+	}
+	home := lease.Root
+	defer func() {
+		if err != nil {
+			_ = lease.Close()
+		}
+	}()
+	// Access-only profiles never contain managed authentication.
+	if present, _ := subscription.CredentialFilePresent(home); present {
+		nativeprofile.Log(logger, "native_profile_blocked", lease.Key, lease.ID, nativeprofile.ReasonCredentialPresent, "operation_id", owner)
+		return nil, nativeprofile.Failure(domain.RecoveryRequired, nativeprofile.ReasonCredentialPresent, "A managed credential file is present in an access-only native profile.", "Reconcile the original operation before retrying.")
 	}
 	env, e := harness.PrivateRuntimeEnvironment(home)
 	if e != nil {
 		return nil, subscriptionDenied()
 	}
-	info, e := security.StableStat(home)
-	if e != nil {
-		return nil, subscriptionDenied()
-	}
-	defer func() {
-		if err != nil && domain.SafeError(err).Code != domain.RecoveryRequired {
-			if cleanupErr := subscription.CleanupRuntime(home, info); cleanupErr != nil {
-				logSubscriptionRuntimeCleanup(logger, owner, cleanupErr)
-				err = domain.CodexRecoveryFailure(version, phase, err, subscriptionDenied())
-			}
-		}
-	}()
 	phase = domain.CodexDiscovery
-	installation, e := harness.DiscoverCodex(ctx, harness.DiscoveryConfig{Root: runtimeRoot, OwnerID: owner, Logger: logger})
+	installation, e := harness.DiscoverCodex(ctx, harness.DiscoveryConfig{Root: runtimeRoot, OwnerID: owner, Logger: logger, Profiles: scope.Profiles})
 	if e != nil {
 		return nil, e
 	}
@@ -295,5 +355,5 @@ func openAccessOnlyRuntime(ctx context.Context, root, kind string, mode codex.Pr
 	if e != nil {
 		return nil, e
 	}
-	return &serverQuotaRuntime{Client: native, home: home, original: info, owner: owner, logger: logger}, nil
+	return &serverQuotaRuntime{Client: native, home: home, lease: lease, owner: owner, logger: logger}, nil
 }

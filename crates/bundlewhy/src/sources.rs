@@ -49,12 +49,22 @@ pub struct Classified {
 }
 
 /// Classifies an absolute module path relative to the project root.
+///
+/// Paths under `node_modules` keep their full root-relative ancestry (for
+/// example `node_modules/a/node_modules/b/index.js` or a pnpm store path), so
+/// distinct installed copies of the same package get distinct display paths.
+/// Paths outside the project root fall back to a `..`-relative display so no
+/// absolute prefix is exposed.
 pub fn classify(project_root: &Path, path: &Path) -> Classified {
     let normalized = normalize(path);
     let slash = normalized.to_string_lossy().replace('\\', "/");
-    if let Some(index) = slash.rfind("/node_modules/") {
+    if slash.contains("/node_modules/") || slash.starts_with("node_modules/") {
+        let display = match normalized.strip_prefix(project_root) {
+            Ok(relative) => to_slash(relative),
+            Err(_) => relative_display(project_root, &normalized),
+        };
         return Classified {
-            display: format!("node_modules/{}", &slash[index + "/node_modules/".len()..]),
+            display,
             origin: SourceOrigin::Dependency,
             project_relative: None,
         };
@@ -184,8 +194,7 @@ impl SourceStore {
         path: &Path,
     ) -> Option<(String, Option<String>)> {
         let classified = classify(project_root, path);
-        // Key by the resolved path: distinct installed copies (for example two
-        // pnpm versions) can share the shortened display path.
+        // Key by the resolved path rather than the display path.
         let key = normalize(path).to_string_lossy().into_owned();
         if let Some(existing) = self.files.get(&key) {
             return Some((
@@ -328,13 +337,67 @@ mod tests {
             root,
             Path::new("/work/app/node_modules/.pnpm/lodash@4/node_modules/lodash/index.js"),
         );
-        assert_eq!(dependency.display, "node_modules/lodash/index.js");
+        assert_eq!(
+            dependency.display,
+            "node_modules/.pnpm/lodash@4/node_modules/lodash/index.js"
+        );
         assert_eq!(dependency.origin, SourceOrigin::Dependency);
         assert!(dependency.project_relative.is_none());
 
         let external = classify(root, Path::new("/work/shared/util.js"));
         assert_eq!(external.display, "../shared/util.js");
         assert!(external.project_relative.is_none());
+    }
+
+    #[test]
+    fn nested_node_modules_copies_get_distinct_safe_displays() {
+        let root = Path::new("/work/app");
+        let top = classify(
+            root,
+            Path::new("/work/app/node_modules/@dnd-kit/sortable/dist/sortable.esm.js"),
+        );
+        let nested = classify(
+            root,
+            Path::new(
+                "/work/app/node_modules/@douyinfe/semi-ui/node_modules/@dnd-kit/sortable/dist/\
+                 sortable.esm.js",
+            ),
+        );
+        assert_eq!(
+            top.display,
+            "node_modules/@dnd-kit/sortable/dist/sortable.esm.js"
+        );
+        assert_eq!(
+            nested.display,
+            "node_modules/@douyinfe/semi-ui/node_modules/@dnd-kit/sortable/dist/sortable.esm.js"
+        );
+        for classified in [&top, &nested] {
+            assert_eq!(classified.origin, SourceOrigin::Dependency);
+            assert!(classified.project_relative.is_none());
+            assert!(!classified.display.starts_with('/'));
+            assert!(!classified.display.contains("/work/app"));
+        }
+    }
+
+    #[test]
+    fn node_modules_outside_the_project_root_stay_relative() {
+        let root = Path::new("/work/repo/app");
+        let hoisted = classify(
+            root,
+            Path::new("/work/repo/node_modules/.pnpm/pkg@1/node_modules/pkg/index.js"),
+        );
+        assert_eq!(
+            hoisted.display,
+            "../node_modules/.pnpm/pkg@1/node_modules/pkg/index.js"
+        );
+        assert_eq!(hoisted.origin, SourceOrigin::Dependency);
+        assert!(hoisted.project_relative.is_none());
+        let workspace = classify(
+            root,
+            Path::new("/work/repo/app/packages/a/node_modules/x/i.js"),
+        );
+        assert_eq!(workspace.display, "packages/a/node_modules/x/i.js");
+        assert_eq!(workspace.origin, SourceOrigin::Dependency);
     }
 
     #[test]
@@ -349,7 +412,7 @@ mod tests {
     }
 
     #[test]
-    fn distinct_copies_with_the_same_display_path_stay_distinct() {
+    fn distinct_pnpm_copies_have_distinct_displays_and_ids() {
         let dir = tempfile::tempdir().unwrap();
         let mut paths = Vec::new();
         for (version, body) in [
@@ -372,10 +435,14 @@ mod tests {
         assert_eq!(second.1.as_deref(), Some("export const v = 2;"));
         let files = store.into_files();
         assert_eq!(files.len(), 2);
-        assert!(
-            files
-                .iter()
-                .all(|file| file.path == "node_modules/pkg/index.js")
+        let mut displays: Vec<&str> = files.iter().map(|file| file.path.as_str()).collect();
+        displays.sort_unstable();
+        assert_eq!(
+            displays,
+            vec![
+                "node_modules/.pnpm/pkg@1/node_modules/pkg/index.js",
+                "node_modules/.pnpm/pkg@2/node_modules/pkg/index.js",
+            ]
         );
     }
 
