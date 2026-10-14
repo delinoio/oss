@@ -282,6 +282,12 @@ type grokProgress struct {
 	Canceled   bool
 	Diagnostic *domain.GrokDiagnostic
 	Generation domain.ID
+	// Provisional marks the one refusal that a later claim can still supersede:
+	// an unsupported record whose original operation is still queued and
+	// claimable. Clients keep polling a provisional response and treat every
+	// other response as final. The wire carries it as `unsupported` together with
+	// the Grok diagnostic, which is served only while the response is provisional.
+	Provisional bool
 }
 
 // grokProgressView maps the account's operation records to the progress the
@@ -297,6 +303,7 @@ type grokProgress struct {
 //	claimed, no record                -> waiting
 //	queued or claimed, canceled flag  -> unchanged state with canceled=true
 //	take refused (unsupported record) -> unsupported with the original diagnostic
+//	                                     (provisional: the queued operation stays claimable)
 //	finished (succeeded/failed/...)   -> the record's state and diagnostic
 //	canceled record                   -> canceled, never a failure diagnostic
 //	expired (record past its window)  -> expired
@@ -336,6 +343,16 @@ func grokProgressView(st *domain.SubscriptionState, operation string, connected 
 	if o.State != domain.SubscriptionCanceled {
 		view.Diagnostic = o.GrokDiagnostic
 	}
+	// An unsupported response is provisional only while its original operation is
+	// still queued, uncanceled and claimable. Any other unsupported record has no
+	// claim left to supersede it, so it is served as final without the diagnostic
+	// that clients read as the provisional marker.
+	if state == domain.SubscriptionUnsupported {
+		view.Provisional = pending != nil && pending.Phase == domain.SubscriptionQueued && !pending.Canceled
+		if !view.Provisional {
+			view.Diagnostic = nil
+		}
+	}
 	// A succeeded login or refresh reports the generation its Finish committed,
 	// so the client can name the connected account. Grok produces no suggested
 	// name, and the generation is withheld unless the account still references it.
@@ -361,6 +378,7 @@ func (s *Service) grokSubscriptionProgress(ctx context.Context, req *connect.Req
 	}
 	defer unlock()
 	response := &pb.GetSubscriptionProgressResponse{}
+	provisional := false
 	err = s.Store.Read(ctx, func(tx *store.Tx) error {
 		_, a, err := grokSubscriptionAccount(tx, domain.ID(req.Msg.AccountId), 0)
 		if err != nil {
@@ -377,11 +395,12 @@ func (s *Service) grokSubscriptionProgress(ctx context.Context, req *connect.Req
 		response.Canceled = view.Canceled
 		response.GrokDiagnostic = grokDiagnosticMessage(view.Diagnostic)
 		response.Generation = string(view.Generation)
+		provisional = view.Provisional
 		return nil
 	})
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
-	s.logger.InfoContext(ctx, "grok_subscription_progress_observed", "operation_id", req.Msg.OperationId, "state", response.State, "diagnostic_reported", response.GrokDiagnostic != nil)
+	s.logger.InfoContext(ctx, "grok_subscription_progress_observed", "operation_id", req.Msg.OperationId, "state", response.State, "diagnostic_reported", response.GrokDiagnostic != nil, "provisional", provisional)
 	return connect.NewResponse(response), nil
 }

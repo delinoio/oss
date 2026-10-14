@@ -51,7 +51,8 @@ func TestGrokDiagnosticMessageOmitsInvalidMetadata(t *testing.T) {
 	}
 }
 
-// seedGrokOperation stores one settled Grok server operation carrying diagnostic.
+// seedGrokOperation stores one Grok server operation carrying diagnostic (an
+// unsupported one also keeps its original operation queued).
 func (f *grokFixture) seedGrokOperation(diagnostic *domain.GrokDiagnostic, state domain.SubscriptionLoginState) domain.ID {
 	f.t.Helper()
 	op := domain.NewID()
@@ -65,6 +66,11 @@ func (f *grokFixture) seedGrokOperation(diagnostic *domain.GrokDiagnostic, state
 		d := *diagnostic
 		d.CorrelationID = string(op)
 		a.Subscription = &domain.SubscriptionState{ServerOperation: &domain.ServerSubscriptionOperation{ID: op, Action: domain.SubscriptionLogin, Epoch: f.service.subscriptionServerEpoch(), FinishID: domain.NewID(), Actor: owner, State: state, StartedAt: now, ExpiresAt: now.Add(15 * time.Minute), GrokDiagnostic: &d}}
+		if state == domain.SubscriptionUnsupported {
+			// An unsupported record is a refused Take, which leaves its original
+			// operation queued; progress serves the diagnostic only while it is.
+			a.Subscription.Pending = &domain.SubscriptionOperation{ID: op, Action: domain.SubscriptionLogin, MachineID: f.input.MachineID, Actor: owner, Phase: domain.SubscriptionQueued}
+		}
 		return tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
 	})
 	if err != nil {

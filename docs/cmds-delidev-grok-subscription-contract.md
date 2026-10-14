@@ -533,16 +533,17 @@ owner's active operation:
 `GetSubscriptionProgress` (`grokProgressView`) maps every state of one original
 operation, so polling never fails merely because the operation has not settled:
 
-| Account record                                    | Progress state                                             |
-| ------------------------------------------------- | ---------------------------------------------------------- |
-| queued Pending, no `ServerOperation`              | `preparing`                                                |
-| claimed Pending, no `ServerOperation`             | `waiting` (`canceled=true` once cancellation is requested) |
-| refused Take (`unsupported` record, still queued) | `unsupported` with the admission diagnostic                |
-| settled `succeeded` / `failed`                    | the record's state, diagnostic and committed generation    |
-| settled `canceled`                                | `canceled`; a canceled record never carries a diagnostic   |
-| active record past its window                     | `expired`                                                  |
-| account recovery fence                            | `recovery-required`                                        |
-| any other operation ID, actor or no operation     | access denied                                              |
+| Account record                                                                                           | Progress state                                             |
+| -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| queued Pending, no `ServerOperation`                                                                     | `preparing`                                                |
+| claimed Pending, no `ServerOperation`                                                                    | `waiting` (`canceled=true` once cancellation is requested) |
+| refused Take (`unsupported` record, still queued)                                                        | `unsupported` with the admission diagnostic (provisional)  |
+| `unsupported` record whose operation is no longer queued and uncanceled (defensive; never written today) | `unsupported` without a diagnostic (final)                 |
+| settled `succeeded` / `failed`                                                                           | the record's state, diagnostic and committed generation    |
+| settled `canceled`                                                                                       | `canceled`; a canceled record never carries a diagnostic   |
+| active record past its window                                                                            | `expired`                                                  |
+| account recovery fence                                                                                   | `recovery-required`                                        |
+| any other operation ID, actor or no operation                                                            | access denied                                              |
 
 Finish against the Worker's reported outcome (`S` native success, `R` refresh
 confirmation, `C` native cleanup confirmation):
@@ -584,6 +585,44 @@ refusal error returned to the Worker is the same in every row):
 | an original whose lifecycle shape is not admitted (for example login on a connected account) | nothing                                        | `preparing`                  |
 | a claimed original (lease held)                                                              | nothing                                        | `waiting`                    |
 | any Take while the account is fenced for recovery                                            | nothing                                        | `recovery-required`          |
+
+Client classification of a progress response. A refused Take is the only
+response a later claim can still supersede, so it is the only provisional one.
+`grokProgressView` sets `Provisional` for exactly that row and serves the Grok
+diagnostic with `unsupported` only while it is provisional; the wire therefore
+marks a provisional response as `unsupported` plus `grok_diagnostic` (field 10),
+and a final `unsupported` (Codex or Claude, or a Grok record with no queued
+operation left) never carries it. The desktop classifies by that wire signal
+(`progressDisposition` in `apps/delidev/src/subscription-progress.ts`): a
+provisional response keeps polling and keeps the original sign-in alive, adopts
+whatever the server reports next (state, diagnostics and committed generation),
+and clears its stale diagnostic and message; a final response stops polling and
+disposes. Inspect refreshes only the diagnostics of the state on screen, and a
+different state is adopted by the next poll. Grok progress carries no URL or
+user code, so observing a claimed Grok operation never enters the browser path
+(`drivesBrowserLogin`). Every Codex, Claude and Grok row is listed, with the Go
+test that asserts the server half and the vitest case that asserts the client
+half:
+
+| Account record (server)                                   | Progress state                      | Provisional | Client disposition and polling                                                  | Go test (`internal/server`)                                                         | TypeScript test                                                                                                      |
+| --------------------------------------------------------- | ----------------------------------- | ----------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| queued Pending, no record                                 | `preparing`                         | no          | active: keep polling                                                            | `TestGrokProgressViewClassifiesEveryOperationState` (queued)                        | `subscription-progress.test.ts` (preparing)                                                                          |
+| claimed Pending, no record                                | `waiting`                           | no          | active: keep polling; no browser path for Grok                                  | same (claimed)                                                                      | `subscription-progress.test.ts` (waiting, service drives the browser)                                                |
+| refused Take, original queued and uncanceled              | `unsupported` + `grok_diagnostic`   | yes         | provisional: keep polling, adopt the next response                              | same (take refused, past the record window)                                         | `subscription-progress.test.ts`; `subscription-login.test.tsx` (provisional refusal then success, then failure)      |
+| refused Take, original claimed, canceled or gone          | `unsupported`, no diagnostic        | no          | terminal: stop polling, dispose                                                 | same (claimed, canceled flag, no pending)                                           | `subscription-progress.test.ts` (unsupported); `subscription-login.test.tsx` (unsupported without a Grok diagnostic) |
+| settled `succeeded`                                       | `succeeded` + generation            | no          | success: verify, name the account, stop polling                                 | same (finished succeeded)                                                           | `subscription-progress.test.ts` (succeeded); `subscription-login.test.tsx` (provisional refusal then success)        |
+| settled `failed` (diagnostic)                             | `failed` + `grok_diagnostic`        | no          | terminal, even though it carries a Grok diagnostic                              | same (finished failed)                                                              | `subscription-progress.test.ts` and `subscription-login.test.tsx` (failed with a Grok diagnostic)                    |
+| settled `canceled`                                        | `canceled`, never a diagnostic      | no          | terminal                                                                        | same (finished canceled, stale diagnostic)                                          | `subscription-login.test.tsx` (canceled)                                                                             |
+| active record past its window                             | `expired`                           | no          | terminal                                                                        | same (active record after expiry)                                                   | `subscription-login.test.tsx` (expired)                                                                              |
+| account recovery fence (any record, including a refusal)  | `recovery-required`                 | no          | terminal                                                                        | same (queued during recovery, settled under recovery, take refused during recovery) | `subscription-login.test.tsx` (recovery required)                                                                    |
+| any other operation ID, actor or no operation             | access denied                       | n/a         | not a response: the poll reports the original sign-in as unverified and retries | same (another operation, no operation, no subscription)                             | `subscription-login.test.tsx` (unverified status checks)                                                             |
+| Codex or Claude `unsupported` (native diagnostic or none) | `unsupported`, no `grok_diagnostic` | no          | terminal                                                                        | n/a (not a Grok record)                                                             | `subscription-progress.test.ts`; `claude-server-login.test.tsx` (unsupported)                                        |
+
+Other readers of progress never poll a Grok operation: account deletion
+(`account-deletion.tsx`) serves ChatGPT and Claude accounts only and routes a
+Grok account to the plain configuration delete, and the CLI `login-progress`
+operation prints one read without classifying it. Adding a new Grok progress
+reader requires a row in this table and a test in both languages.
 
 A succeeded operation's progress response carries `generation` (the generation
 the account still references) so the onboarding controller can name the account;

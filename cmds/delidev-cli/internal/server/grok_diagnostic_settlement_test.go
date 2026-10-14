@@ -75,6 +75,11 @@ func TestGrokTakeRefusalIsServedByProgressAndSupersededByAClaim(t *testing.T) {
 	if a := f.assertGrokOperationValid(t); a.Subscription.ServerOperation != nil {
 		t.Fatal("a claim kept the provisional refusal record")
 	}
+	// The provisional response is replaced by the claimed operation's own state,
+	// which is what a client that kept polling adopts.
+	if p := f.progressFor(op.OperationId); p.State != pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_WAITING || p.GrokDiagnostic != nil {
+		t.Fatalf("a claim did not supersede the provisional refusal: %v", p)
+	}
 	generation := domain.NewID()
 	if _, err := f.finishWith(lease, generation, f.sealed(t, f.input.AccountID, generation, "synthetic-principal-1"), true, false, true); err != nil {
 		t.Fatal(err)
