@@ -446,7 +446,13 @@ func queueManagedSessionTitle(tx *store.Tx, sr store.Record, session *domain.Ses
 	}
 	raw, err := json.Marshal(titleInput)
 	if err != nil || len(raw) > 1<<20 {
-		return domain.Fail(domain.ResourceExhausted, "The immutable title assignment exceeds its storage bound.", "Retain the placeholder and the original conversation result.")
+		// The title is optional and runs inside the transaction that commits the
+		// already-successful original execution. A prompt that passes its own bound
+		// can still expand beyond the encoded assignment bound (JSON escaping), and
+		// returning an error here would abort that completion and leave the
+		// execution claimed. Settle the title as unsupported and keep the result.
+		session.TitleState, session.TitleReason = domain.TitleUnsupported, domain.TitleReasonUnsupportedAgent
+		return nil
 	}
 	jobID := domain.NewID()
 	job := domain.Job{Type: domain.GenerateSessionTitleJob, State: domain.JobQueued, MachineID: input.MachineID, ParentID: sourceRecord.ID, Input: raw, AcceptedAt: time.Now().UTC()}

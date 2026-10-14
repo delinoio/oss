@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -307,5 +308,48 @@ func TestManagedTitleQueuedLogoutRetiresTitle(t *testing.T) {
 	session := f.session(t)
 	if session.TitleState != domain.TitleSkipped || session.TitleReason != domain.TitleReasonAuthorityLost || session.Name != "New session" {
 		t.Fatalf("logout did not settle the session title state: %+v", session)
+	}
+}
+
+// The managed title is optional and queues inside the transaction that commits
+// the already-successful original execution. A first prompt that passes its own
+// byte bound but expands past the encoded assignment bound (JSON escaping of
+// `<`) must settle the title as unsupported instead of failing that completion.
+func TestManagedTitleOversizedEncodedAssignmentKeepsCompletion(t *testing.T) {
+	f := newManagedTitleFixture(t, managedTitleOptions{})
+	// The queued input document fits its 1 MiB bound, but the title assignment
+	// adds the frozen account, model and Worker identity around the same prompt.
+	prompt := strings.Repeat("<", (1<<20-500)/6)
+	f.mutate(t, "oversized-prompt", func(tx *store.Tx) error {
+		qr, err := tx.Get(domain.QueueKind, f.original.InputID)
+		if err != nil {
+			return err
+		}
+		queued, err := store.Decode[domain.QueuedInput](qr)
+		if err != nil {
+			return err
+		}
+		queued.Prompt = prompt
+		if _, err := tx.Put(qr.Kind, qr.ID, qr.Revision, qr.SessionID, qr.ProjectID, queued); err != nil {
+			return err
+		}
+		sr, session, err := sessionRecord(tx, f.original.SessionID)
+		if err != nil {
+			return err
+		}
+		jr, err := tx.Get(domain.JobKind, f.job)
+		if err != nil {
+			return err
+		}
+		session.TitleState, session.TitleReason, session.TitleOperationID, session.TitleJobID = domain.TitleWaiting, domain.TitleReasonNone, "", ""
+		if err := queueAutomaticSessionTitle(tx, sr, &session, jr, f.original, true); err != nil {
+			return err
+		}
+		_, err = tx.Put(sr.Kind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session)
+		return err
+	})
+	session := f.session(t)
+	if session.TitleState != domain.TitleUnsupported || session.TitleJobID != "" {
+		t.Fatalf("an oversized encoded assignment did not settle the optional title: %+v", session)
 	}
 }
