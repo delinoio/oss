@@ -135,6 +135,59 @@ func TestZshPromptHonorsAccountZdotdirAndUnrecognizedPrompts(t *testing.T) {
 	requireLine(t, out, "z[unset]")
 }
 
+func TestZshPromptPreservesAccountHistoryChoice(t *testing.T) {
+	// Isolate the account's startup choice from system zshrc history defaults,
+	// which differ across the Unix test hosts.
+	t.Run("unset history", func(t *testing.T) {
+		f := newPromptShellFixture(t, "zsh")
+		if err := os.WriteFile(filepath.Join(f.home, ".zshenv"), []byte("unsetopt GLOBAL_RCS\nunset HISTFILE\nSAVEHIST=20\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		rc := "if [[ -z ${HISTFILE+x} ]]; then marker=unset; else marker=set; fi\nPROMPT='%~ > '\n"
+		if err := os.WriteFile(filepath.Join(f.home, ".zshrc"), []byte(rc), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		out, _ := f.run(t, "print -r -- \"history[${HISTFILE-unset}]\"\nprint -r -- \"marker[$marker]\"\nprint -r -- \"savehist[$SAVEHIST]\"\nprint -r -- \"prompt[$PROMPT]\"\nexit\n")
+		for _, want := range []string{"history[unset]", "marker[unset]", "savehist[20]", "prompt[chat > ]"} {
+			requireLine(t, out, want)
+		}
+	})
+	t.Run("explicit history and ZDOTDIR", func(t *testing.T) {
+		f := newPromptShellFixture(t, "zsh")
+		zdot := filepath.Join(f.home, "zdot")
+		if err := os.MkdirAll(zdot, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		custom := filepath.Join(f.home, "custom-history")
+		env := "unsetopt GLOBAL_RCS\nZDOTDIR=" + zdot + "\nHISTFILE=" + custom + "\n"
+		if err := os.WriteFile(filepath.Join(f.home, ".zshenv"), []byte(env), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(zdot, ".zshrc"), []byte("PROMPT='%~ > '\nmarker=zdot\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		out, _ := f.run(t, "print -r -- \"history[$HISTFILE]\"\nprint -r -- \"marker[$marker]\"\nprint -r -- \"prompt[$PROMPT]\"\nexit\n")
+		for _, want := range []string{"history[" + custom + "]", "marker[zdot]", "prompt[chat > ]"} {
+			requireLine(t, out, want)
+		}
+	})
+	t.Run("conditional rc default", func(t *testing.T) {
+		f := newPromptShellFixture(t, "zsh")
+		if err := os.WriteFile(filepath.Join(f.home, ".zshenv"), []byte("unsetopt GLOBAL_RCS\nunset HISTFILE\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		custom := filepath.Join(f.home, "rc-history")
+		rc := "if [[ -z ${HISTFILE+x} ]]; then HISTFILE=" + custom + "; marker=defaulted; fi\nPROMPT='%~ > '\n"
+		if err := os.WriteFile(filepath.Join(f.home, ".zshrc"), []byte(rc), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		out, _ := f.run(t, "print -r -- \"history[$HISTFILE]\"\nprint -r -- \"marker[$marker]\"\nprint -r -- \"prompt[$PROMPT]\"\nexit\n")
+		for _, want := range []string{"history[" + custom + "]", "marker[defaulted]", "prompt[chat > ]"} {
+			requireLine(t, out, want)
+		}
+	})
+}
+
 func TestBashPromptShortensOnlyAtOriginalDirectory(t *testing.T) {
 	f := newPromptShellFixture(t, "bash")
 	rc := "unset HISTFILE\nPS1='\\[\\e[36m\\]\\w \\\\w ❯\\[\\e[0m\\] '\nUSER_RC_RAN=yes\n"
@@ -177,4 +230,80 @@ func TestFishPromptPwdShortensOnlyAtOriginalDirectory(t *testing.T) {
 		t.Fatalf("a different directory must use the ordinary prompt_pwd:\n%s", out)
 	}
 	requireLine(t, out, "C[chat]")
+}
+
+func TestFishPromptHandoffFileIsPrivate(t *testing.T) {
+	root, chat := t.TempDir(), t.TempDir()
+	got := PreparePromptIntegration(root, domain.NewID(), "/usr/bin/fish", chat, []string{"-i"}, []string{"HOME=/h"})
+	if got.Outcome != PromptApplied {
+		t.Fatal("fish handoff was not prepared")
+	}
+	defer got.Cleanup()
+	for _, path := range []string{got.dir, filepath.Join(got.dir, "chat-directory"), filepath.Join(got.dir, "init.fish")} {
+		info, err := os.Stat(path)
+		if err != nil || info.Mode().Perm()&0o077 != 0 {
+			t.Fatalf("fish handoff is not private: %v", err)
+		}
+	}
+}
+
+func TestFishPromptStartupChildrenDoNotInheritDirectory(t *testing.T) {
+	f := newPromptShellFixture(t, "fish")
+	configDir := filepath.Join(f.home, ".config", "fish")
+	confDir := filepath.Join(configDir, "conf.d")
+	if err := os.MkdirAll(confDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	configEnv := filepath.Join(f.root, "config-child.env")
+	confEnv := filepath.Join(f.root, "conf-child.env")
+	laterEnv := filepath.Join(f.root, "later-child.env")
+	quotedConfigEnv, ok := fishQuote(configEnv)
+	if !ok {
+		t.Fatal("cannot quote config capture path")
+	}
+	quotedConfEnv, ok := fishQuote(confEnv)
+	if !ok {
+		t.Fatal("cannot quote conf.d capture path")
+	}
+	quotedLaterEnv, ok := fishQuote(laterEnv)
+	if !ok {
+		t.Fatal("cannot quote later capture path")
+	}
+	config := "if functions -q __delidev_native_prompt_pwd\n    set -g wrapper_seen_early yes\nelse\n    set -g wrapper_seen_early no\nend\nenv > " + quotedConfigEnv + "\n"
+	if err := os.WriteFile(filepath.Join(configDir, "config.fish"), []byte(config), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	childScript := filepath.Join(f.root, "capture-env.sh")
+	if err := os.WriteFile(childScript, []byte("#!/bin/sh\nsleep 1\nenv > \"$1\"\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	quotedChildScript, ok := fishQuote(childScript)
+	if !ok {
+		t.Fatal("cannot quote child script path")
+	}
+	conf := quotedChildScript + " " + quotedConfEnv + " >/dev/null 2>&1 &\n"
+	if err := os.WriteFile(filepath.Join(confDir, "capture.fish"), []byte(conf), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, _ := f.run(t, "echo \"early[$wrapper_seen_early]\"\necho \"prompt[\"(prompt_pwd)\"]\"\nenv > "+quotedLaterEnv+"\nexit\n")
+	requireLine(t, out, "early[no]")
+	requireLine(t, out, "prompt[chat]")
+	for _, path := range []string{configEnv, confEnv, laterEnv} {
+		var contents []byte
+		var err error
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			contents, err = os.ReadFile(path)
+			if err == nil {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		if err != nil {
+			t.Fatalf("startup child did not capture its environment: %v", err)
+		}
+		if strings.Contains(string(contents), ChatDirectoryEnvironment+"=") || strings.Contains(string(contents), "__delidev_chat_dir=") {
+			t.Fatal("fish child inherited the private directory")
+		}
+	}
 }
