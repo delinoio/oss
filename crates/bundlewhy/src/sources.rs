@@ -148,16 +148,92 @@ pub struct SourceStore {
 /// Largest live source file read.
 pub const MAX_SOURCE_BYTES: u64 = 16 * 1024 * 1024;
 
-/// Prefix of the JavaScript stub Vite emits for an imported asset (for
-/// example a PNG). Its `sourcesContent` is generated code, not the file text.
-const VITE_ASSET_STUB_PREFIX: &str = "export default \"__VITE_ASSET__";
+/// Marker Vite writes into the stub of an imported asset (for example a PNG)
+/// in builds before the Rolldown-based releases.
+const VITE_ASSET_STUB_PREFIX: &str = "__VITE_ASSET__";
 
-fn is_asset_stub(snapshot: &str) -> bool {
-    snapshot.trim_start().starts_with(VITE_ASSET_STUB_PREFIX)
+/// Prefix of the file URL placeholder Rolldown-based Vite releases write into
+/// the stub of an emitted asset: `export default
+/// import.meta.ROLLDOWN_FILE_URL_<id>`.
+const ROLLDOWN_FILE_URL_PREFIX: &str = "import.meta.ROLLDOWN_FILE_URL_";
+
+/// Extensions of files that hold JavaScript-family source. A string-only
+/// default export in such a file is ordinary code, not a generated module.
+const SCRIPT_EXTENSIONS: &[&str] = &[
+    "js", "jsx", "mjs", "cjs", "ts", "tsx", "mts", "cts", "vue", "svelte", "astro",
+];
+
+/// Extensions of binary files a bundler emits as assets. Such a file is never
+/// the text a bundler read as source.
+const BINARY_ASSET_EXTENSIONS: &[&str] = &[
+    "png", "jpg", "jpeg", "gif", "webp", "avif", "ico", "bmp", "tiff", "woff", "woff2", "ttf",
+    "otf", "eot", "mp3", "mp4", "webm", "ogg", "wav", "flac", "aac", "pdf",
+];
+
+/// Returns the lowercase extension of the file name of `path`, ignoring any
+/// `?query` suffix, and whether the path carried a query.
+fn extension_of(path: &str) -> (Option<String>, bool) {
+    let (clean, has_query) = match path.split_once('?') {
+        Some((clean, _)) => (clean, true),
+        None => (path, false),
+    };
+    let name = clean.rsplit(['/', '\\']).next().unwrap_or(clean);
+    let extension = name
+        .rsplit_once('.')
+        .filter(|(stem, _)| !stem.is_empty())
+        .map(|(_, extension)| extension.to_ascii_lowercase());
+    (extension, has_query)
+}
+
+/// True when `path` names a binary asset file (for example `logo.png`).
+pub fn is_binary_asset_path(path: &str) -> bool {
+    extension_of(path)
+        .0
+        .is_some_and(|extension| BINARY_ASSET_EXTENSIONS.contains(&extension.as_str()))
+}
+
+/// True when `snapshot` is the module code a bundler generated for an imported
+/// asset instead of the text of the file at `path`.
+///
+/// Recognized shapes, all of the form `export default <expression>`:
+/// - the `__VITE_ASSET__` marker string and the
+///   `import.meta.ROLLDOWN_FILE_URL_` placeholder, which stand for an emitted
+///   asset file;
+/// - a single string literal (an inlined `data:` URL, a `?url` path, the text
+///   of a `?raw` import or a `?inline` asset), when the path is not a
+///   JavaScript-family file or carries an import query such as `?raw`.
+///
+/// A string-only default export in an ordinary script stays a source snapshot.
+pub fn is_generated_asset_module(path: &str, snapshot: &str) -> bool {
+    let code = snapshot.trim();
+    let code = code.strip_suffix(';').unwrap_or(code).trim_end();
+    let Some(expression) = code.strip_prefix("export default ") else {
+        return false;
+    };
+    let expression = expression.trim_start();
+    if let Some(marker) = expression.strip_prefix('"')
+        && marker.starts_with(VITE_ASSET_STUB_PREFIX)
+    {
+        return true;
+    }
+    if let Some(placeholder) = expression.strip_prefix(ROLLDOWN_FILE_URL_PREFIX) {
+        return !placeholder.is_empty()
+            && placeholder
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '$');
+    }
+    if serde_json::from_str::<String>(expression).is_err() {
+        return false;
+    }
+    let (extension, has_query) = extension_of(path);
+    has_query
+        || extension
+            .as_deref()
+            .is_none_or(|extension| !SCRIPT_EXTENSIONS.contains(&extension))
 }
 
 /// Returns the text of `bytes` when they are valid UTF-8 without NUL bytes.
-fn as_text(bytes: &[u8]) -> Option<&str> {
+pub fn as_text(bytes: &[u8]) -> Option<&str> {
     if bytes.contains(&0) {
         return None;
     }
@@ -204,20 +280,21 @@ impl SourceStore {
         }
         let live = self.read_live(project_root, path);
         let snapshot = self.snapshots.get(&normalize(path));
-        let stub = snapshot.is_some_and(|snapshot| is_asset_stub(snapshot));
+        let stub = snapshot
+            .is_some_and(|snapshot| is_generated_asset_module(&classified.display, snapshot));
         let (text, sha256, stale): (Option<String>, String, bool) = match (snapshot, live) {
-            // The snapshot is a generated asset stub, or there is no snapshot
-            // and the live file is not text: the two cannot be compared, so
-            // the source is unverifiable and never stale.
+            // The snapshot is generated asset module code, or there is no
+            // snapshot and the live file is not text: the two cannot be
+            // compared, so the source is unverifiable and never stale.
             (Some(_), LiveRead::Bytes(bytes)) if stub => {
-                tracing::debug!(path = %classified.display, "asset stub source is not freshness-checked");
+                tracing::debug!(path = %classified.display, "generated asset module is not freshness-checked");
                 (None, sha256_hex(&bytes), false)
             }
             (None, LiveRead::Bytes(bytes)) if as_text(&bytes).is_none() => {
                 tracing::debug!(path = %classified.display, "non-text source is not freshness-checked");
                 (None, sha256_hex(&bytes), false)
             }
-            // A text snapshot that is not an asset stub is compared with the
+            // A text snapshot that is not an asset module is compared with the
             // live bytes. A live file that is no longer text is a change.
             (Some(snapshot), LiveRead::Bytes(bytes)) => (
                 Some(snapshot.clone()),
@@ -618,6 +695,196 @@ mod tests {
         );
         // Text sources stay in the saved-run stale check.
         assert_eq!(store.project_relative.len(), 3);
+    }
+
+    #[test]
+    fn generated_asset_module_shapes_are_recognized_from_code_and_path() {
+        const LONG_DATA_URL: &str = "export default \"data:image/png;base64,iVBORw0KGgo=\"";
+        // (path, snapshot, expected)
+        let cases: &[(&str, &str, bool)] = &[
+            // Marker stub of earlier Vite releases.
+            ("src/logo.png", VITE_STUB, true),
+            (
+                "src/logo.png",
+                "  export default \"__VITE_ASSET__abc__$_x__\";\n",
+                true,
+            ),
+            // Placeholder stub of Rolldown-based Vite releases.
+            (
+                "src/logo.png",
+                "export default import.meta.ROLLDOWN_FILE_URL_ref1_url2",
+                true,
+            ),
+            (
+                "src/logo.png",
+                "export default import.meta.ROLLDOWN_FILE_URL_",
+                false,
+            ),
+            (
+                "src/logo.png",
+                "export default import.meta.ROLLDOWN_FILE_URL_a.b",
+                false,
+            ),
+            // Inlined data URLs, `?url` paths and `?raw` / `?inline` text.
+            ("src/logo.png", LONG_DATA_URL, true),
+            (
+                "src/icon.svg",
+                "export default \"data:image/svg+xml,%3Csvg%3E%3C/svg%3E\"",
+                true,
+            ),
+            ("src/icon.svg?inline", LONG_DATA_URL, true),
+            ("public/logo.png", "export default \"/logo.png\";", true),
+            (
+                "src/notes.txt?raw",
+                "export default \"line one\\nline two\\n\"",
+                true,
+            ),
+            (
+                "src/a.js?raw",
+                "export default \"export const a = 1;\\n\"",
+                true,
+            ),
+            (
+                "src/style.css?inline",
+                "export default \".a{color:red}\"",
+                true,
+            ),
+            // A string-only default export in a script is ordinary code.
+            ("src/label.js", "export default \"hello\";", false),
+            ("src/label.ts", "export default \"hello\"", false),
+            ("src/Label.TSX", "export default \"hello\"", false),
+            ("src/label.mjs", LONG_DATA_URL, false),
+            // Other module code is never an asset module.
+            ("src/icon.svg", "export default {}", false),
+            ("src/icon.svg", "export default \"a\" + b", false),
+            ("src/icon.svg", "export const a = \"x\"", false),
+            ("src/icon.svg", "<svg/>", false),
+            ("src/icon.svg", "", false),
+        ];
+        for (path, snapshot, expected) in cases {
+            assert_eq!(
+                is_generated_asset_module(path, snapshot),
+                *expected,
+                "{path}: {snapshot}"
+            );
+        }
+    }
+
+    #[test]
+    fn binary_asset_paths_are_recognized_by_extension() {
+        for (path, expected) in [
+            ("src/logo.png", true),
+            ("src/LOGO.PNG", true),
+            ("src/font.woff2?v=1", true),
+            ("src/main.js", false),
+            ("src/icon.svg", false),
+            ("src/png", false),
+            ("src/.png", false),
+        ] {
+            assert_eq!(is_binary_asset_path(path), expected, "{path}");
+        }
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum Snapshot {
+        None,
+        Text,
+        MarkerStub,
+        FileUrlStub,
+        DataUrlStub,
+        RawStub,
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum Live {
+        MatchingText,
+        ChangedText,
+        Binary,
+        InvalidUtf8,
+        Removed,
+    }
+
+    const SVG_TEXT: &str = "<svg xmlns=\"http://www.w3.org/2000/svg\"/>";
+
+    /// Decision matrix: snapshot kind x live file kind. Expected values are
+    /// (stale, content kept, listed for saved-run re-hash).
+    #[test]
+    fn source_store_decision_matrix_covers_text_and_asset_snapshots() {
+        use Live::*;
+        use Snapshot::*;
+        // (file, snapshot, live, expected)
+        type Case = (&'static str, Snapshot, Live, (bool, bool, bool));
+        let cases: &[Case] = &[
+            // Ordinary text snapshot: any difference, including a live file
+            // that is no longer text, is a change.
+            ("a.js", Text, MatchingText, (false, true, true)),
+            ("a.js", Text, ChangedText, (true, true, true)),
+            ("a.js", Text, Binary, (true, true, true)),
+            ("a.js", Text, InvalidUtf8, (true, true, true)),
+            ("a.js", Text, Removed, (true, true, true)),
+            // No snapshot: text is read live; non-text is unverifiable.
+            ("a.js", None, MatchingText, (false, true, true)),
+            ("a.js", None, Binary, (false, false, false)),
+            ("a.js", None, InvalidUtf8, (false, false, false)),
+            // Generated asset modules are never compared with the live file,
+            // whatever it holds; only removal counts as a change.
+            ("logo.png", MarkerStub, Binary, (false, false, false)),
+            ("logo.png", MarkerStub, Removed, (true, false, false)),
+            ("icon.svg", MarkerStub, MatchingText, (false, false, false)),
+            ("icon.svg", FileUrlStub, MatchingText, (false, false, false)),
+            ("icon.svg", FileUrlStub, Removed, (true, false, false)),
+            ("icon.svg", DataUrlStub, MatchingText, (false, false, false)),
+            ("icon.svg", DataUrlStub, ChangedText, (false, false, false)),
+            ("logo.png", DataUrlStub, Binary, (false, false, false)),
+            ("note.txt", RawStub, MatchingText, (false, false, false)),
+        ];
+        for (file, snapshot, live, expected) in cases {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join(file);
+            let snapshot_text = match snapshot {
+                None => Option::None,
+                Text => Some("export const a = 1;".to_owned()),
+                MarkerStub => Some(VITE_STUB.to_owned()),
+                FileUrlStub => {
+                    Some("export default import.meta.ROLLDOWN_FILE_URL_abc123".to_owned())
+                }
+                DataUrlStub => {
+                    Some("export default \"data:image/svg+xml,%3Csvg%2F%3E\"".to_owned())
+                }
+                RawStub => Some(format!("export default {:?}", SVG_TEXT)),
+            };
+            let live_bytes: Option<Vec<u8>> = match (live, file) {
+                (MatchingText, f) if f.ends_with(".js") => Some(b"export const a = 1;".to_vec()),
+                (MatchingText, _) => Some(SVG_TEXT.as_bytes().to_vec()),
+                (ChangedText, f) if f.ends_with(".js") => Some(b"export const a = 2;".to_vec()),
+                (ChangedText, _) => Some(b"<svg changed/>".to_vec()),
+                (Binary, _) => Some(PNG_BYTES.to_vec()),
+                (InvalidUtf8, _) => Some(vec![b'a', 0xff, 0xfe, b'b']),
+                (Removed, _) => Option::None,
+            };
+            if let Some(bytes) = &live_bytes {
+                std::fs::write(&path, bytes).unwrap();
+            }
+            let mut store = SourceStore::new(true);
+            if let Some(text) = snapshot_text {
+                store.snapshots.insert(normalize(&path), text);
+            }
+            let (id, text) = store
+                .add_file(dir.path(), &path)
+                .unwrap_or_else(|| panic!("{file} {snapshot:?} {live:?} must keep a source"));
+            let listed = store.project_relative.contains_key(&id);
+            let stale = !store.changed_since_build.is_empty();
+            let files = store.into_files();
+            assert_eq!(files.len(), 1);
+            let actual = (stale, text.is_some(), listed);
+            assert_eq!(actual, *expected, "{file} {snapshot:?} {live:?}");
+            assert_eq!(files[0].stale, stale, "{file} {snapshot:?} {live:?}");
+            assert_eq!(
+                files[0].content_included,
+                text.is_some(),
+                "{file} {snapshot:?} {live:?}"
+            );
+        }
     }
 
     #[test]
