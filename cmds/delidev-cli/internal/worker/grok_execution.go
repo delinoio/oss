@@ -24,7 +24,7 @@ import (
 )
 
 func executeGrokSession(ctx context.Context, config Config, owner domain.ID, input domain.ExecutionJobInput, logger *slog.Logger) (output json.RawMessage, returned error) {
-	if input.Continuation != nil || input.Fork != nil || (input.Version != 4 && input.Installation.Version != grok.SupportedVersion) {
+	if input.Continuation != nil || input.Fork != nil || (input.Version != 4 && !domain.HarnessVersionAllowed(domain.GrokBuild, input.Installation.Version)) {
 		return nil, domain.Fail(domain.Unsupported, "Grok execution requires the original pinned first-input profile.", "Retain existing native history; a replacement input or continuation is not authorized.")
 	}
 	contextTokens, err := input.Configuration.GrokFirstInputContext(input.Input.Mode)

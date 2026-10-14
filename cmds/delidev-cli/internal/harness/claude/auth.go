@@ -136,7 +136,7 @@ func authProblem() *domain.Error {
 	return domain.Fail(domain.Unauthenticated, "Claude subscription authentication could not be confirmed.", "Inspect the original Runner Device and login operation; do not resend the approval code.")
 }
 func authEnvironment(config AuthConfig) ([]string, error) {
-	if config.Version != SupportedVersion {
+	if !domain.HarnessVersionAllowed(domain.ClaudeCode, config.Version) {
 		return nil, incompatible()
 	}
 	env, err := nativeEnvironment(ProbeConfig{Process: config.Process, Version: config.Version, Home: config.Home})
@@ -200,7 +200,7 @@ func VerifyAuthVersion(ctx context.Context, config AuthConfig) error {
 	if err != nil {
 		return domain.SafeError(err)
 	}
-	if string(bytes.TrimSpace(raw)) != SupportedVersion+" (Claude Code)" {
+	if string(bytes.TrimSpace(raw)) != config.Version+" (Claude Code)" {
 		return incompatible()
 	}
 	return nil

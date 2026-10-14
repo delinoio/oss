@@ -24,7 +24,7 @@ import (
 )
 
 func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, input domain.ExecutionJobInput, logger *slog.Logger) (output json.RawMessage, returned error) {
-	if input.Validate() != nil || (input.Version != 4 && input.Installation.Version != claude.SupportedVersion) {
+	if input.Validate() != nil || (input.Version != 4 && !domain.HarnessVersionAllowed(domain.ClaudeCode, input.Installation.Version)) {
 		return nil, domain.Fail(domain.Unsupported, "Claude execution requires its original verified input and history profile.", "Preserve original history; do not start a replacement input.")
 	}
 	permission, effort, err := claudeExecutionSettings(input.Configuration, input.Input.Mode)

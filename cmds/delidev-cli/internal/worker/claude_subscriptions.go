@@ -53,7 +53,7 @@ func openClaudeProfile(config Config, credential Credential, account, profile do
 	if err != nil {
 		return nil, err
 	}
-	if installation.Harness != domain.ClaudeCode || installation.Version != claude.SupportedVersion || installation.ResolvedPath == "" {
+	if installation.Harness != domain.ClaudeCode || !domain.HarnessVersionAllowed(domain.ClaudeCode, installation.Version) || installation.ResolvedPath == "" {
 		return nil, subscription.Invalid()
 	}
 	executable, err := filepath.EvalSymlinks(installation.ResolvedPath)
@@ -251,14 +251,12 @@ func runClaudeAccount(ctx context.Context, config Config, client delidevv1connec
 	cleanup, success := false, false
 	var identity *pb.NativeSubscriptionIdentity
 	phase := domain.NativeSubscriptionRuntime
-	versionVerified := false
+	// observedVersion is the executable version reported by discovery. It is
+	// never replaced by the pinned baseline.
+	observedVersion := ""
 	defer func() {
 		if returned != nil {
-			detected := ""
-			if versionVerified {
-				detected = claude.SupportedVersion
-			}
-			diagnostic := &pb.NativeSubscriptionDiagnostic{DetectedVersion: detected, RequiredVersion: claude.SupportedVersion, Phase: pb.NativeSubscriptionDiagnosticPhase(phase), Code: string(domain.SafeError(returned).Code), CorrelationId: string(op.ID)}
+			diagnostic := &pb.NativeSubscriptionDiagnostic{DetectedVersion: observedVersion, RequiredVersion: domain.ClaudeProtocolVersion, Phase: pb.NativeSubscriptionDiagnosticPhase(phase), Code: string(domain.SafeError(returned).Code), CorrelationId: string(op.ID)}
 			reportCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
 			_, _ = client.PublishSubscriptionProgress(reportCtx, authenticated(credential, &pb.PublishSubscriptionProgressRequest{AccountId: string(account), LeaseId: lease.response.LeaseId, MachineId: string(credential.MachineID), InstanceId: string(instance), State: pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_FAILED, NativeDiagnostic: diagnostic}))
 			stop()
@@ -276,6 +274,9 @@ func runClaudeAccount(ctx context.Context, config Config, client delidevv1connec
 	var installation domain.Installation
 	if domain.Decode(lease.response.InstallationJson, &installation) != nil {
 		return subscription.Invalid()
+	}
+	if domain.ValidInstallationVersion(installation.Version) {
+		observedVersion = installation.Version
 	}
 	profile, err := openClaudeProfile(config, credential, account, domain.ID(lease.response.NativeProfileId), installation, domain.ID(lease.response.LeaseId), op.Action == domain.SubscriptionLogin)
 	if err != nil {
@@ -302,7 +303,6 @@ func runClaudeAccount(ctx context.Context, config Config, client delidevv1connec
 	if err := claude.VerifyAuthVersion(bounded, profile.config); err != nil {
 		return err
 	}
-	versionVerified = true
 	phase = domain.NativeSubscriptionLogin
 	if op.Action == domain.SubscriptionLogout {
 		phase = domain.NativeSubscriptionCleanup
@@ -420,7 +420,7 @@ func verifyNativeClaudeSubscriptionProfile(ctx context.Context, config Config, m
 	var installation *domain.Installation
 	for i := range machine.Installations {
 		candidate := &machine.Installations[i]
-		if candidate.Harness == domain.ClaudeCode && candidate.Version == claude.SupportedVersion && candidate.ProtocolVerified && candidate.State == domain.InstallationDetected && candidate.Problem == nil && candidate.Protocol != nil && candidate.Protocol.State == domain.ProtocolVerified && candidate.Protocol.Problem == nil {
+		if candidate.Harness == domain.ClaudeCode && domain.HarnessVersionAllowed(domain.ClaudeCode, candidate.Version) && candidate.ProtocolVerified && candidate.State == domain.InstallationDetected && candidate.Problem == nil && candidate.Protocol != nil && candidate.Protocol.State == domain.ProtocolVerified && candidate.Protocol.Problem == nil {
 			if installation != nil {
 				return false, subscription.Invalid()
 			}

@@ -70,7 +70,7 @@ func (p claudeExecutionCheckpoint) matches(ref ExecutionCheckpointRef) bool {
 // An uncertain write preserves recovery; never restart the original input.
 func retainClaudeCompletion(ctx context.Context, root string, jobID domain.ID, job domain.Job, input domain.ExecutionJobInput, completion domain.ExecutionCompletion, closed *claude.ClosedAPISession) (string, error) {
 	var accepted domain.ExecutionJobInput
-	if domain.Decode(job.Input, &accepted) != nil || input.Validate() != nil || input.Configuration.Harness != domain.ClaudeCode || (input.Version != 4 && input.Installation.Version != claude.SupportedVersion) || completion.ValidateForHarness(domain.ClaudeCode) != nil || completion.Version != 1 || completion.ExecutionID != input.ExecutionID || completion.InputID != input.InputID || job.Type != domain.ExecuteSessionJob || job.MachineID != input.MachineID {
+	if domain.Decode(job.Input, &accepted) != nil || input.Validate() != nil || input.Configuration.Harness != domain.ClaudeCode || (input.Version != 4 && !domain.HarnessVersionAllowed(domain.ClaudeCode, input.Installation.Version)) || completion.ValidateForHarness(domain.ClaudeCode) != nil || completion.Version != 1 || completion.ExecutionID != input.ExecutionID || completion.InputID != input.InputID || job.Type != domain.ExecuteSessionJob || job.MachineID != input.MachineID {
 		return "", executionCheckpointUncertain()
 	}
 	actual, err := json.Marshal(input)

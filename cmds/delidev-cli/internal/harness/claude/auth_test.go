@@ -121,6 +121,10 @@ func init() {
 	}
 	marker := filepath.Join(home, "fixture-account-state.json")
 	if os.Args[1] == "--version" {
+		if strings.Contains(filepath.Base(os.Getenv("HOME")), "newer") {
+			fmt.Println(newerFixtureVersion + " (Claude Code)")
+			os.Exit(0)
+		}
 		fmt.Println(SupportedVersion + " (Claude Code)")
 		os.Exit(0)
 	}
@@ -313,5 +317,30 @@ func TestNativeClaudeSubscriptionStreamValidatesOwnedProfileBeforeInput(t *testi
 				t.Fatal("native identity or publication authority entered logs")
 			}
 		})
+	}
+}
+
+const newerFixtureVersion = "2.1.237"
+
+func TestVerifyAuthVersionComparesObservedVersion(t *testing.T) {
+	newer, _ := fixtureConfig(t, "auth-native-newer")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	config := AuthConfig{Process: newer.Process, Version: newerFixtureVersion, Home: newer.Home}
+	if err := VerifyAuthVersion(ctx, config); err != nil {
+		t.Fatalf("newer verified install rejected: %v", err)
+	}
+	// The observed --version output must match the observed installation version
+	// even when both are admitted by the baseline predicate.
+	config.Version = SupportedVersion
+	if err := VerifyAuthVersion(ctx, config); err == nil || domain.SafeError(err).Code != domain.Unsupported {
+		t.Fatalf("mismatched observed version accepted: %v", err)
+	}
+	// Lower or malformed installations never reach the native process.
+	for _, version := range []string{"2.1.235", "2.1.236-rc.1", "", "not-a-version"} {
+		config.Version = version
+		if err := VerifyAuthVersion(ctx, config); err == nil || domain.SafeError(err).Code != domain.Unsupported {
+			t.Fatalf("version %q admitted: %v", version, err)
+		}
 	}
 }
