@@ -157,6 +157,9 @@ interface View {
   problem?: MessageKey;
   diagnostic?: GrokDiagnostic;
   browserReady: boolean;
+  // True only while the native receiver confirmed that it opened the original
+  // address; the waiting guidance never claims a browser opened otherwise.
+  browserOpened: boolean;
   urlReady: boolean;
   copyState: CopyState;
   canRetry: boolean;
@@ -325,6 +328,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
       suggested: false,
       busy: false,
       browserReady: false,
+      browserOpened: false,
       urlReady: false,
       copyState: CopyState.Idle,
       canRetry: false,
@@ -441,6 +445,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
             problem: undefined,
             diagnostic: undefined,
             browserReady: false,
+            browserOpened: false,
             urlReady: false,
             canCancel: false,
             canRetry: false,
@@ -462,6 +467,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
             ? {
                 problem: undefined,
                 browserReady: false,
+                browserOpened: false,
                 urlReady: false,
                 canRetry: false,
                 canceling: false,
@@ -508,6 +514,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
             update(p, {
               stage: GrokLoginStage.Waiting,
               browserReady: true,
+              browserOpened: true,
               problem: undefined,
             });
           } catch (error) {
@@ -519,6 +526,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
             update(p, {
               stage: GrokLoginStage.Waiting,
               browserReady: !incompatible,
+              browserOpened: false,
               problem: incompatible
                 ? "grok-subscription.problem.remoteUnsupported"
                 : "grok-subscription.problem.browserFailed",
@@ -611,6 +619,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
           // The same closed refusal as the first open: stop offering reopen.
           update(p, {
             browserReady: false,
+            browserOpened: false,
             problem: "grok-subscription.problem.remoteUnsupported",
           });
           return;
@@ -622,6 +631,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
         )
           throw new Error("Original browser binding changed");
         p.generation = result.generation;
+        update(p, { browserOpened: true, problem: undefined });
       },
       "grok-subscription.problem.browserFailed",
     );
@@ -829,7 +839,14 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
       Object.values(FailureCode).includes(d.code as FailureCode)
         ? d
         : undefined;
-  const help = helpKeys[v.stage];
+  // Waiting guidance follows what really happened: the browser opened, only the
+  // copyable link remains, or nothing is offered yet.
+  const help =
+    waiting && !v.browserOpened
+      ? v.urlReady
+        ? "grok-subscription.help.waitingLink"
+        : undefined
+      : helpKeys[v.stage];
   return (
     <section
       className="subscription-account-create subscription-onboarding desktop-wizard"

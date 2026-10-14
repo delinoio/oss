@@ -112,7 +112,9 @@ function fixture(url = loginURL) {
     suggestedName: suggested,
     generation,
   }));
-  const cancel = vi.fn(() => ({ account: current }));
+  const cancel = vi.fn((_request: { mutation?: { requestId: string } }) => ({
+    account: current,
+  }));
   const forward = vi.fn((_request: { operationId: string }) => ({
     accepted: true,
   }));
@@ -306,6 +308,9 @@ it("creates one account and one browser login despite double click, Strict Mode 
   );
   expect(actions(f, OAuthNativeAction.SubscriptionOpen)).toHaveLength(0);
   expect(actions(f, OAuthNativeAction.Take).length).toBeGreaterThan(0);
+  // The browser opened: the guidance may say so.
+  expect(screen.getByText(copy("grok-subscription.help.waiting"))).toBeTruthy();
+  expect(screen.queryByText(copy("grok-subscription.help.waitingLink"))).toBeNull();
   // Progress holds the sign-in link: it never reaches the shared query cache.
   expect(
     f.client
@@ -545,6 +550,9 @@ it("refuses a malformed original authorization without opening a browser", async
   expect(
     screen.queryByRole("button", { name: copy("grok-subscription.copyLink") }),
   ).toBeNull();
+  // Nothing opened and no link is offered, so no waiting guidance claims either.
+  expect(screen.queryByText(copy("grok-subscription.help.waiting"))).toBeNull();
+  expect(screen.queryByText(copy("grok-subscription.help.waitingLink"))).toBeNull();
 });
 
 it("presents the receiver's Incompatible refusal for remote desktops and keeps the link copyable", async () => {
@@ -565,7 +573,10 @@ it("presents the receiver's Incompatible refusal for remote desktops and keeps t
   ).toBeTruthy();
   expect(actions(f, OAuthNativeAction.GrokSubscriptionOpen)).toHaveLength(1);
   // The closed refusal leaves no native binding, so reopening is never offered,
-  // not even after later polls observe the same waiting login.
+  // not even after later polls observe the same waiting login. The guidance
+  // does not claim a browser opened; it points at the copyable link.
+  expect(screen.getByText(copy("grok-subscription.help.waitingLink"))).toBeTruthy();
+  expect(screen.queryByText(copy("grok-subscription.help.waiting"))).toBeNull();
   expect(
     screen.queryByRole("button", {
       name: copy("grok-subscription.openBrowser"),
@@ -717,8 +728,8 @@ it("replays an uncertain cancel only through Retry original request and never as
   fireEvent.click(retry);
   await screen.findByText(copy("grok-subscription.problem.canceling"));
   expect(f.cancel).toHaveBeenCalledTimes(2);
-  expect(f.cancel.mock.calls[1][0].mutation.requestId).toBe(
-    f.cancel.mock.calls[0][0].mutation.requestId,
+  expect(f.cancel.mock.calls[1][0].mutation?.requestId).toBe(
+    f.cancel.mock.calls[0][0].mutation?.requestId,
   );
   expect(
     screen.queryByRole("button", { name: copy("grok-subscription.cancel") }),
@@ -742,6 +753,9 @@ it("shows a generic browser failure and recovers through Open browser again", as
     {},
     { timeout: 3000 },
   );
+  // The open failed: the guidance points at the link instead of claiming it opened.
+  expect(screen.getByText(copy("grok-subscription.help.waitingLink"))).toBeTruthy();
+  expect(screen.queryByText(copy("grok-subscription.help.waiting"))).toBeNull();
   fireEvent.click(
     screen.getByRole("button", { name: copy("grok-subscription.openBrowser") }),
   );
@@ -751,6 +765,9 @@ it("shows a generic browser failure and recovers through Open browser again", as
     ),
   );
   expect(actions(f, OAuthNativeAction.GrokSubscriptionOpen)).toHaveLength(1);
+  // A successful reopen is the first time the browser opened.
+  await screen.findByText(copy("grok-subscription.help.waiting"));
+  expect(screen.queryByText(copy("grok-subscription.help.waitingLink"))).toBeNull();
 });
 
 it("forwards one native callback and never sends it again", async () => {

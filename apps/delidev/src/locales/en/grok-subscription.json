@@ -13,6 +13,7 @@
   "grok-subscription.status.recovery": "The original Grok sign-in result requires recovery",
   "grok-subscription.status.failed": "Grok sign-in could not be completed",
   "grok-subscription.help.waiting": "Your browser has opened to sign in to Grok. Return here after you finish. You can also copy the sign-in link into another browser.",
+  "grok-subscription.help.waitingLink": "Your browser did not open the sign-in page. Copy the sign-in link into a browser to sign in to Grok, then return here after you finish.",
   "grok-subscription.help.canceled": "No account was connected. Go back to AI Subscription and choose Add account to try again.",
   "grok-subscription.help.expired": "The sign-in window closed before it finished. Go back to AI Subscription and choose Add account to try again.",
   "grok-subscription.help.unsupported": "The server did not accept Grok browser sign-in. Check that the server supports Grok sign-in, then try again.",
