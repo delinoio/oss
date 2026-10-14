@@ -263,6 +263,20 @@ type tailnetIdentity struct {
 	Approval        bool      `json:"approval"`
 }
 
+// compatible reports whether the decoded identity is the exact approvable
+// DeliDev identity for origin at the current protocol version.
+func (v tailnetIdentity) compatible(origin string) bool {
+	return v.Version == 1 && v.ServerID.Validate() == nil && v.Origin == origin && v.ProtocolVersion == rpc.ProtocolVersion && v.Approval
+}
+
+// tailnetIdentityRejection is the generic unsupported failure plus the closed
+// invalid_identity cause; it carries no peer-provided value.
+func tailnetIdentityRejection() error {
+	failure := tailnetFailure(domain.Unsupported).(*domain.Error)
+	failure.Cause = string(tailscale.ProbeInvalidIdentity)
+	return failure
+}
+
 func (s *Service) CheckTailscale(ctx context.Context, req *connect.Request[pb.CheckTailscaleRequest]) (*connect.Response[pb.CheckTailscaleResponse], error) {
 	peer, err := s.tailnetPeer(ctx, req.Msg.PeerId)
 	if err != nil {
@@ -270,11 +284,15 @@ func (s *Service) CheckTailscale(ctx context.Context, req *connect.Request[pb.Ch
 	}
 	origin, _ := tailscale.Origin(peer.Host)
 	var v tailnetIdentity
-	if err := tailscale.Probe(ctx, origin, &v); err != nil {
+	if err := tailscale.CheckProbe(ctx, origin, &v); err != nil {
+		// Only the closed cause is logged; hostnames, URLs and native error text
+		// stay out of diagnostics.
+		s.logger.WarnContext(ctx, "tailscale_check", "phase", "probe", "code", domain.SafeError(err).Code, "cause", tailscale.ProbeCauseOf(err))
 		return nil, rpc.Error(err, "")
 	}
-	if v.Version != 1 || v.ServerID.Validate() != nil || v.Origin != origin || v.ProtocolVersion != rpc.ProtocolVersion || !v.Approval {
-		return nil, rpc.Error(tailnetFailure(domain.Unsupported), "")
+	if !v.compatible(origin) {
+		s.logger.WarnContext(ctx, "tailscale_check", "phase", "identity", "code", domain.Unsupported, "cause", tailscale.ProbeInvalidIdentity)
+		return nil, rpc.Error(tailnetIdentityRejection(), "")
 	}
 	return connect.NewResponse(&pb.CheckTailscaleResponse{DocumentJson: tailnetJSON(v)}), nil
 }
