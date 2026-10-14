@@ -346,6 +346,13 @@ export class SessionTabsStore {
       owner,
     );
   }
+  /** Whether `owner`'s hold is still announced (false after pagehide/dispose). */
+  holdsPendingClose(profile: string, pageId: string, owner: object) {
+    return this.pendingCloses.holds(
+      this.pendingCloseKey(profile, pageId),
+      owner,
+    );
+  }
   /** Releases one holder once its Close settled, was rejected or was abandoned. */
   releasePendingClose(profile: string, pageId: string, owner: object) {
     this.pendingCloses.release(this.pendingCloseKey(profile, pageId), owner);

@@ -906,6 +906,34 @@ it("removes the page from retained sessions when a lost Close is observed withou
   expect(pageCalls("close")).toHaveLength(1);
 });
 
+it("cancels the Close without a native call when pagehide withdrew its hold during the barrier", async () => {
+  const f = fixture({ pages: 1 });
+  const captured = mountWithRetainedSession(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(2));
+  // The window went inactive while the barrier was pending.
+  const holds = vi
+    .spyOn(captured.store, "holdsPendingClose")
+    .mockReturnValue(false);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Close fixture.test/1 tab" }),
+  );
+  await screen.findByRole("alert");
+  expect(holds).toHaveBeenCalled();
+  expect(pageCalls("close")).toHaveLength(0);
+  expect(f.model.pages).toHaveLength(1);
+  expect(tabNames()).toHaveLength(2);
+  // A later Close is a fresh operation that proceeds once the hold stands.
+  holds.mockRestore();
+  fireEvent.click(
+    within(screen.getByRole("alert")).getByRole("button", { name: "Dismiss" }),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Close fixture.test/1 tab" }),
+  );
+  await waitFor(() => expect(tabNames()).toHaveLength(1));
+  expect(pageCalls("close")).toHaveLength(1);
+});
+
 it("retains the descriptor in every session while a close fails or stays unconfirmed", async () => {
   const f = fixture({ pages: 1 });
   const captured = mountWithRetainedSession(f);

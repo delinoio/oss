@@ -726,6 +726,23 @@ function NativeSessionBrowser({
           operationRef.current?.operation_id !== original.operation_id
         )
           return;
+        // A pagehide or disposal during the wait withdrew the hold; sending
+        // the native Close now would leave siblings without an owner.
+        if (
+          !heldClose.current ||
+          !tabsStore.holdsPendingClose(
+            heldClose.current.profile,
+            heldClose.current.page,
+            closeOwner.current,
+          )
+        ) {
+          original.sent = false;
+          finishOperation();
+          setOperationFailure(
+            ownedMessage("session-browser.extra.51fee7071e2b"),
+          );
+          return;
+        }
       }
       const value = pageInventory(
         await invoke<PageInventory>("browser_pages", {

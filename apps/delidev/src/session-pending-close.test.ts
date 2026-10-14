@@ -642,6 +642,33 @@ describe("pending Close ownership across product windows", () => {
       registry.dispose();
     });
 
+    it("stops vouching for a hold once the page is hiding or disposed", async () => {
+      const registry = new PendingCloseRegistry({
+        channel: new Bus().endpoint(),
+        window: "w",
+      });
+      const owner = {};
+      void registry.hold("k", owner);
+      expect(registry.holds("k", owner)).toBe(true);
+      window.dispatchEvent(new Event("pagehide"));
+      expect(registry.holds("k", owner)).toBe(false);
+      // A hold taken after pagehide is never announced, so it never counts.
+      const late = {};
+      void registry.hold("late", late);
+      expect(registry.holds("late", late)).toBe(false);
+      registry.dispose();
+      expect(registry.holds("late", late)).toBe(false);
+    });
+
+    it("keeps a hold valid in a registry without a channel", () => {
+      const registry = new PendingCloseRegistry({ channel: null });
+      const owner = {};
+      void registry.hold("k", owner);
+      expect(registry.holds("k", owner)).toBe(true);
+      registry.release("k", owner);
+      expect(registry.holds("k", owner)).toBe(false);
+    });
+
     it("resumes announcing after a page restored from the cache", () => {
       const bus = new Bus();
       const registry = new PendingCloseRegistry({

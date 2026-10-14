@@ -595,6 +595,15 @@ export class PendingCloseRegistry {
     this.stopHeartbeat();
   }
 
+  /**
+   * Whether `owner` still holds `key` in a window that can announce it. False
+   * once the window went inactive (pagehide, disposal) or the hold was
+   * released, so a Close awaiting its barrier must not proceed.
+   */
+  holds(key: string, owner: object): boolean {
+    return (this.active || !this.channel) && (this.local.get(key)?.has(owner) ?? false);
+  }
+
   /** Whether any Session or product window still owns an unsettled Close. */
   has(key: string): boolean {
     if (this.local.has(key)) return true;

@@ -244,7 +244,7 @@ suspended renderer) keeps being awaited, because it may resume and reconcile at
 any time; it stops being awaited only after it acknowledges, announces `bye`, or
 its lock is gone (rechecked every second). Without a liveness source a window
 that stays silent for one second is presumed gone. A released or settled hold
-ends its wait. This ensures a sibling's inventory read cannot find the page unowned after
+ends its wait. A window that is discovered (or joins) after the first broadcast is sent an acknowledgement-requesting Hold again, and a Close whose hold was withdrawn while it waited (pagehide or disposal) is cancelled before the native call and reported as a failed action. This ensures a sibling's inventory read cannot find the page unowned after
 it disappears natively. A hold whose window stopped refreshing (for example after a crash)
 expires after 15 seconds, except that when the Web Locks API is available each
 window also holds a liveness lock named after its window identity and an expired
