@@ -333,22 +333,46 @@ fn env_guard(code: &str, start: usize, end: usize, ignored: &[(usize, usize)]) -
     // An if/while/switch test can remain in generated code without being
     // lowered to a short-circuit operator. Reject nested calls and comma
     // expressions whose later operand, rather than the env read, is the test.
-    let mut nested_closes = 0usize;
+    let mut nested_closes = Vec::new();
+    let mut nested_non_parenthesized = false;
     for index in (0..start).rev() {
         if in_ranges(ignored, index) {
             continue;
         }
         match bytes[index] {
             b')' => {
-                nested_closes += 1;
+                nested_closes.push(b'(');
                 continue;
             }
-            b'(' if nested_closes > 0 => {
-                nested_closes -= 1;
+            b']' => {
+                nested_closes.push(b'[');
                 continue;
             }
-            b'(' => {}
-            b';' | b'{' | b'}' if nested_closes == 0 => break,
+            b'}' => {
+                nested_closes.push(b'{');
+                continue;
+            }
+            b'(' if nested_closes.last() == Some(&b'(') => {
+                nested_closes.pop();
+                continue;
+            }
+            b'[' if nested_closes.last() == Some(&b'[') => {
+                nested_closes.pop();
+                nested_non_parenthesized = true;
+                continue;
+            }
+            b'{' if nested_closes.last() == Some(&b'{') => {
+                nested_closes.pop();
+                nested_non_parenthesized = true;
+                continue;
+            }
+            b'(' if nested_closes.is_empty() => {
+                if nested_non_parenthesized {
+                    return None;
+                }
+            }
+            b'[' | b'{' if nested_closes.is_empty() => return None,
+            b';' | b'{' if nested_closes.is_empty() => break,
             _ => continue,
         }
         if comma_after_read_before_closing_paren(bytes, index, end, ignored) {
@@ -1403,6 +1427,8 @@ y=/process.env.F/.test(z),process.env.G"#;
             "if(console.log(process.env.VERSION))run()",
             "if(process.env.VERSION,ready)run()",
             "if((process.env.VERSION),ready)run()",
+            "if([process.env.VERSION])run()",
+            "if({value:process.env.VERSION})run()",
             "console.log(process.env.VERSION, '&&')",
         ] {
             assert_eq!(guard(code, "process.env.VERSION"), None, "{code}");
