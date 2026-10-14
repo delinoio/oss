@@ -9,7 +9,7 @@ bundlewhy is not yet published to npm. Version 0.1.0 is in development.
 - bundlewhy does not explain every internal optimizer pass. It reports only the [rules](/bundlewhy/interpreting-diagnostics#rules) that have verified detectors. Inlining and constant folding currently have no coverage.
 - bundlewhy does not change your code or configuration and does not apply fixes automatically.
 - It does not run before-and-after experiments and never estimates savings.
-- Rspack export usage paths come from `RsdoctorPlugin`, an internal Rspack API that can change between releases. When it is unavailable, or Rspack reports no edge for a module, the diagnostic shows export usage as unavailable. The paths show Rspack-reported export dependencies, not function calls, runtime execution, removable code or savings, and at most five chains of 24 edges are shown per diagnostic.
+- bundlewhy derives export usage paths for Rspack from edges that the internal `RsdoctorPlugin` API reports, and that API can change between releases. When it is unavailable, or Rspack reports no edge for a module, the diagnostic shows export usage as unavailable. The edges are export dependencies that Rspack reported, and the paths that bundlewhy derives from them are not function calls, runtime execution, removable code or savings, and at most five chains of 24 edges are shown per diagnostic.
 - Only client production JavaScript builds are analyzed. SSR, library, Node-target and development-server builds are not supported, and there are no CSS diagnostics.
 - Only the engine versions on the [supported engines](/bundlewhy/supported-engines) page are supported.
 
