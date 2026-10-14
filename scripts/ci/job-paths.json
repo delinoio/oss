@@ -241,6 +241,8 @@
   },
   "pnport-native": {
     "paths": [
+      ".cargo/**",
+      ".nvmrc",
       "Cargo.lock",
       "Cargo.toml",
       "crates/pnport/**",
