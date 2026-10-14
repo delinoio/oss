@@ -503,13 +503,15 @@ owner's active operation:
   and logout with the connected generation) and initiating actor would
   otherwise admit the claim. Every other Take is refused with the same
   admission error and leaves no trace on any operation.
-- Finish settles inside its own transaction: a succeeded login or refresh is
-  `succeeded` with the committed generation, a succeeded logout is `succeeded`
-  without one, a cancellation is `canceled` without a diagnostic, a Worker-reported
-  native failure is `failed` with a `login`, `refresh` or `logout` / `unavailable`
-  diagnostic, and an unconfirmed native cleanup is `failed` with a
-  `cleanup` / `recovery_required` diagnostic. Progress reports `recovery-required`
-  while the account is fenced.
+- Finish settles inside its own transaction and keeps the first failure
+  authoritative: a succeeded login or refresh is `succeeded` with the committed
+  generation, a succeeded logout is `succeeded` without one, a cancellation is
+  `canceled` without a diagnostic, and a Worker-reported native failure
+  (`succeeded=false`, or a refresh without refresh confirmation) is `failed` with
+  a `login`, `refresh` or `logout` / `unavailable` diagnostic even when native
+  cleanup is also unconfirmed. An unconfirmed native cleanup is the `cleanup` /
+  `recovery_required` diagnostic only after a success or a cancellation.
+  Progress reports `recovery-required` while the account is fenced.
 - Canceling a queued, unclaimed operation (initiator device revocation, or the
   shared `cancelPendingLogin` body that `CancelSubscription` applies once Grok
   login can be requested; the RPC still refuses Grok accounts today) removes the
@@ -523,9 +525,10 @@ owner's active operation:
   its pending operation with `canceled=true` until Finish settles it.
   `SubscriptionState.Validate` rejects a `canceled` record that carries a Grok
   diagnostic, and progress never serves one.
-- A failure to remove superseded credential generations after the publication
-  committed replaces the succeeded record with a `cleanup` diagnostic
-  (`recordGrokCleanupFailure`).
+- A failure to remove superseded credential generations after Finish settled
+  replaces a `succeeded` or `canceled` record with a `cleanup` diagnostic
+  (`recordGrokCleanupFailure`); a `failed` record keeps its own diagnostic and
+  the recovery fence reports the outstanding cleanup.
 
 `GetSubscriptionProgress` (`grokProgressView`) maps every state of one original
 operation, so polling never fails merely because the operation has not settled:
@@ -540,6 +543,22 @@ operation, so polling never fails merely because the operation has not settled:
 | active record past its window                     | `expired`                                                  |
 | account recovery fence                            | `recovery-required`                                        |
 | any other operation ID, actor or no operation     | access denied                                              |
+
+Finish against the Worker's reported outcome (`S` native success, `R` refresh
+confirmation, `C` native cleanup confirmation):
+
+| Action  | Reported outcome                                     | Record state | Diagnostic (phase / code)       | Account fence |
+| ------- | ---------------------------------------------------- | ------------ | ------------------------------- | ------------- |
+| any     | success with `C` (refresh also with `R`)             | `succeeded`  | none                            | no            |
+| any     | success without `C`                                  | `failed`     | `cleanup` / `recovery_required` | yes           |
+| login   | failure with `C`                                     | `failed`     | `login` / `unavailable`         | no            |
+| login   | failure without `C`                                  | `failed`     | `login` / `unavailable`         | yes           |
+| login   | canceled with `C`                                    | `canceled`   | none                            | no            |
+| login   | canceled without `C`                                 | `failed`     | `cleanup` / `recovery_required` | yes           |
+| refresh | failure, or success without `R`, with or without `C` | `failed`     | `refresh` / `unavailable`       | yes           |
+| logout  | failure, with or without `C`                         | `failed`     | `logout` / `unavailable`        | yes           |
+| any     | vault removal fails after `succeeded` / `canceled`   | `failed`     | `cleanup` / the removal's code  | yes           |
+| any     | vault removal fails after a native failure           | `failed`     | the native failure's diagnostic | yes           |
 
 Cancellation against each state of the original login:
 

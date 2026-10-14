@@ -233,9 +233,10 @@ func (s *Service) recordGrokTakeRefusal(requestCtx context.Context, account, ope
 	}
 }
 
-// recordGrokCleanupFailure replaces the presentation of an operation whose
-// metadata already committed with a cleanup diagnostic, because the account
-// still owes removal of superseded credential generations. The account is
+// recordGrokCleanupFailure replaces the presentation of a succeeded or canceled
+// operation whose metadata already committed with a cleanup diagnostic, because
+// the account still owes removal of superseded credential generations. A native
+// failure that Finish already settled keeps its own diagnostic. The account is
 // fenced for recovery separately. The caller holds the account gate.
 func (s *Service) recordGrokCleanupFailure(requestCtx context.Context, account, operation domain.ID, version string, cause error) {
 	ctx, cancel := grokBookkeepingContext(requestCtx, grokBookkeepingTimeout)
@@ -251,6 +252,12 @@ func (s *Service) recordGrokCleanupFailure(requestCtx context.Context, account, 
 		}
 		o := a.Subscription.ServerOperation
 		if o.ID != operation || o.Active() || o.NativeStarted || o.CleanupPhase != "" {
+			return struct{}{}, nil
+		}
+		// The first failure stays authoritative: a native failure that Finish
+		// already settled keeps its diagnostic, and the recovery fence reports the
+		// outstanding cleanup. Only a succeeded or canceled outcome is replaced.
+		if o.State == domain.SubscriptionFailed && o.GrokDiagnostic != nil {
 			return struct{}{}, nil
 		}
 		value := *d

@@ -118,8 +118,12 @@ func TestGrokFinishSettlesProgressForEveryOutcome(t *testing.T) {
 			_, err := f.finishWith(l, domain.NewID(), nil, false, false, true)
 			return err
 		}, pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_FAILED, domain.GrokLogin, domain.Unavailable, false},
-		{"login unconfirmed cleanup", pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN, false, func(f *grokFixture, l *pb.TakeSubscriptionResponse) error {
+		{"login native failure with unconfirmed cleanup keeps the failure", pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN, false, func(f *grokFixture, l *pb.TakeSubscriptionResponse) error {
 			_, err := f.finishWith(l, domain.NewID(), nil, false, false, false)
+			return err
+		}, pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_RECOVERY_REQUIRED, domain.GrokLogin, domain.Unavailable, true},
+		{"login unconfirmed cleanup after success", pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN, false, func(f *grokFixture, l *pb.TakeSubscriptionResponse) error {
+			_, err := f.finishWith(l, domain.NewID(), nil, true, false, false)
 			return err
 		}, pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_RECOVERY_REQUIRED, domain.GrokCleanup, domain.RecoveryRequired, true},
 		{"refresh native failure", pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH, true, func(f *grokFixture, l *pb.TakeSubscriptionResponse) error {

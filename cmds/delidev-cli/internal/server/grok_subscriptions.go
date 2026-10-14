@@ -631,18 +631,25 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 			if settling != nil {
 				settledVersion = grokInstalledVersion(tx, lease.MachineID)
 				settlement := grokSettlement{Operation: settling.ID, Action: lease.Action, Actor: settling.Actor, Epoch: s.subscriptionServerEpoch()}
+				// The first failure stays authoritative: a native failure the Worker
+				// reported is never replaced by its unconfirmed cleanup, which only
+				// fences the account above. An unconfirmed cleanup is the diagnostic
+				// only when the operation itself succeeded or was canceled.
+				nativeFailed := !input.Success || lease.Action == domain.SubscriptionRefresh && !input.Refresh
 				switch {
+				case canceled && input.Cleanup:
+					settlement.State = domain.SubscriptionCanceled
+				case canceled:
+					settlement.State, settlement.Diagnostic = domain.SubscriptionFailed, grokLocalDiagnostic(settledVersion, domain.GrokCleanup, domain.RecoveryRequired)
+				case nativeFailed:
+					settlement.State, settlement.Diagnostic = domain.SubscriptionFailed, grokLocalDiagnostic(settledVersion, grokActionPhase(lease.Action), domain.Unavailable)
 				case !input.Cleanup:
 					settlement.State, settlement.Diagnostic = domain.SubscriptionFailed, grokLocalDiagnostic(settledVersion, domain.GrokCleanup, domain.RecoveryRequired)
-				case usable:
+				default:
 					settlement.State = domain.SubscriptionSucceeded
 					if lease.Action != domain.SubscriptionLogout {
 						settlement.Generation = newGeneration
 					}
-				case canceled:
-					settlement.State = domain.SubscriptionCanceled
-				default:
-					settlement.State, settlement.Diagnostic = domain.SubscriptionFailed, grokLocalDiagnostic(settledVersion, grokActionPhase(lease.Action), domain.Unavailable)
 				}
 				if settleGrokOperation(state, settlement, time.Now().UTC()) {
 					s.logger.InfoContext(ctx, "grok_subscription_operation_settled", "account_id", r.ID, "operation_id", settling.ID, "action", lease.Action, "state", settlement.State, "diagnostic_attached", state.ServerOperation.GrokDiagnostic != nil)
