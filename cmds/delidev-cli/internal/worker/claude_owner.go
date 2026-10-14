@@ -212,10 +212,23 @@ func (g *claudeAccountGate) found(ctx context.Context, config Config, input doma
 	lease := member.lease
 	g.mu.Lock()
 	existing := g.owner
+	// An owner whose last member already finished is a retirement that never
+	// received its Finish acknowledgment (a transport interruption, or recovery
+	// that cleaned the server lease). The server grants a founding lease only on
+	// an account with no lease, so this fresh founding Take proves the old owner
+	// is settled. It was retired under this gate, so nothing else can be using it.
+	stale := existing != nil && existing.runnable == 0
+	if stale {
+		g.owner = nil
+	}
 	g.mu.Unlock()
-	if existing != nil {
-		// The server granted a new owner while this Worker still tracks one. Fence
-		// instead of guessing which representation is authoritative.
+	if stale {
+		if config.Logger != nil {
+			config.Logger.WarnContext(ctx, "claude_shared_owner_stale_cleared", "account_id", input.AccountID, "stale_owner_lease_id", existing.lease.response.LeaseId, "owner_lease_id", lease.response.LeaseId)
+		}
+	} else if existing != nil {
+		// The server granted a new owner while this Worker still tracks a live
+		// one. Fence instead of guessing which representation is authoritative.
 		member.close()
 		return nil, nil, nil, &managedExecutionUncertain{subscription.Invalid()}
 	}

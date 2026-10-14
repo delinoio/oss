@@ -47,6 +47,9 @@ type sharedClaudeServer struct {
 	// recovering models the fenced account: an owner-scope cleanup Finish is
 	// accepted for the whole set.
 	recovering bool
+	// loseOwnerAck settles the next owner Finish on the server but answers with a
+	// transport error, as an interrupted connection would.
+	loseOwnerAck bool
 }
 
 func (s *sharedClaudeServer) document() []byte {
@@ -118,6 +121,10 @@ func (s *sharedClaudeServer) FinishSubscription(_ context.Context, req *connect.
 			return nil, connect.NewError(connect.CodeAborted, nil)
 		}
 		s.owner, s.members = "", nil
+		if s.loseOwnerAck {
+			s.loseOwnerAck = false
+			return nil, connect.NewError(connect.CodeUnavailable, nil)
+		}
 	default:
 		if !s.legacy {
 			s.t.Error("a shared owner member used the legacy Finish scope")
@@ -551,5 +558,61 @@ func TestClaudeSharedOwnerRecoveryJoinsEveryMemberBeforeOneOwnerCleanup(t *testi
 		if err != nil || domain.Decode(raw, &journal) != nil || journal.State != managedReported {
 			t.Fatal("a member's original claim stayed unsettled after owner recovery", err)
 		}
+	}
+}
+
+func TestClaudeSharedOwnerFoundsAgainAfterUnacknowledgedRetirement(t *testing.T) {
+	f := newSharedClaudeFixture(t, true)
+	members := f.start(t, 1)
+	f.mu.Lock()
+	f.loseOwnerAck = true
+	f.mu.Unlock()
+	if err := members[0].finish(true); err == nil {
+		t.Fatal("a lost owner Finish acknowledgment was reported as settled")
+	}
+	gate := f.config.claudeOwners.gate(f.account)
+	gate.mu.Lock()
+	stale := gate.owner != nil
+	gate.mu.Unlock()
+	if !stale {
+		t.Fatal("the fixture did not leave the unacknowledged owner behind")
+	}
+	if f.profileLocked() {
+		t.Fatal("the unacknowledged owner kept the profile lock")
+	}
+	// The server settled the owner, so the next session receives a founding lease.
+	next := f.start(t, 2)
+	f.mu.Lock()
+	founding := f.takes[len(f.takes)-2]
+	owner := f.owner
+	f.mu.Unlock()
+	if owner != domain.ID(founding.Mutation.RequestId) || next[0].profile.managedLease.response.OwnerLeaseId != "" || next[1].profile.managedLease.response.OwnerLeaseId != string(owner) {
+		t.Fatal("the next sessions did not found and join a fresh owner")
+	}
+	if !f.profileLocked() {
+		t.Fatal("the fresh owner did not take the canonical profile lock")
+	}
+	for index := len(next) - 1; index >= 0; index-- {
+		if err := next[index].finish(true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if f.profileLocked() {
+		t.Fatal("the fresh owner kept the profile lock after retirement")
+	}
+}
+
+func TestClaudeSharedOwnerStillFencesWhileTheTrackedOwnerHasRunnableMembers(t *testing.T) {
+	f := newSharedClaudeFixture(t, true)
+	f.start(t, 1)
+	// The server forgets the owner while this Worker still runs a member: that is
+	// a real disagreement and must fence rather than replace the live owner.
+	f.mu.Lock()
+	f.owner, f.members = "", nil
+	f.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	if _, _, _, err := beginClaudeSubscriptionExecution(ctx, f.config, domain.NewID(), f.input()); err == nil {
+		t.Fatal("a founding lease replaced an owner with runnable members")
 	}
 }

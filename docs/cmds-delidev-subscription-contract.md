@@ -99,7 +99,7 @@ journal. Admission and owner retirement are serialized per account by a gate tha
 is never held across a busy wait. The last runnable member joins every retained
 member's process owner, reads the native identity through the CLI's own status,
 releases the lock and only then reports the owner Finish; an unproven closure
-reports unconfirmed cleanup, which fences the account. Native code alone reads
+reports unconfirmed cleanup, which fences the account. An owner whose last member finished but whose owner Finish was never acknowledged is replaced when the server grants a fresh founding lease, which only an account with no lease receives; an owner that still has runnable members is never replaced and fences instead. Native code alone reads
 and renews the authentication in the canonical secure-storage directory under its
 own locks and compare-and-swap rereads; DeliDev never reads, copies or
 distributes those bytes. These are mock and fixture results for pinned Claude
