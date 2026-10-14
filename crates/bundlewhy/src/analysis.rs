@@ -36,6 +36,13 @@ pub struct AnalysisInput<'a> {
 pub struct AnalysisOutput {
     pub analysis: Analysis,
     pub sources: Vec<SourceFile>,
+    /// Source ID to project-relative path for the sources whose live file can
+    /// be re-hashed when a saved bundle is reopened (text sources only).
+    pub project_relative: std::collections::BTreeMap<String, String>,
+    /// Source ID to project-relative path for the sources whose live file is
+    /// only checked for existence when a saved bundle is reopened (generated
+    /// asset modules, binary files and derived modules).
+    pub existence_relative: std::collections::BTreeMap<String, String>,
 }
 
 pub fn engine_identity(bundler: BundlerChoice, collection: &Collection) -> EngineIdentity {
@@ -349,6 +356,8 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
             "Locations for these files are shown without source content.",
         ));
     }
+    let project_relative = context.sources.project_relative.clone();
+    let existence_relative = context.sources.existence_relative.clone();
     let sources = context.sources.into_files();
     let partial = problems.iter().any(|entry| {
         entry.code == ErrorCode::SourceMapMissing.as_str()
@@ -405,7 +414,12 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
         mode: ReportMode::Live,
         tool_version: env!("CARGO_PKG_VERSION").to_owned(),
     };
-    AnalysisOutput { analysis, sources }
+    AnalysisOutput {
+        analysis,
+        sources,
+        project_relative,
+        existence_relative,
+    }
 }
 
 #[cfg(test)]
@@ -436,6 +450,17 @@ mod tests {
         include_sources: bool,
         edit: impl Fn(&mut serde_json::Value),
     ) -> Fixture {
+        run_fixture_patched(bundler, include_sources, edit, |_, _| {})
+    }
+
+    /// Like `run_fixture_with`, with a hook that may rewrite the copied build
+    /// directory. It receives the build directory and the project path.
+    fn run_fixture_patched(
+        bundler: BundlerChoice,
+        include_sources: bool,
+        edit: impl Fn(&mut serde_json::Value),
+        patch_build: impl Fn(&Path, &str),
+    ) -> Fixture {
         let fixture_root = manifest_dir().join("tests/fixtures").join(bundler.as_str());
         let project = manifest_dir()
             .join("../../packages/bundlewhy/fixtures")
@@ -455,6 +480,7 @@ mod tests {
             std::fs::create_dir_all(target.parent().unwrap()).unwrap();
             std::fs::write(&target, relocate(&std::fs::read_to_string(&entry).unwrap())).unwrap();
         }
+        patch_build(&build, &project_text);
         let mut value: serde_json::Value = serde_json::from_str(&relocate(
             &std::fs::read_to_string(fixture_root.join("collect.json")).unwrap(),
         ))
@@ -595,6 +621,94 @@ mod tests {
     }
 
     #[test]
+    fn vite_png_asset_stub_is_neither_stale_nor_stored_as_content() {
+        const PNG_SOURCE: &str = "src/assets/logo.png";
+        let stub = "export default \"__VITE_ASSET__Vx9kQ1__\"";
+        let fixture = run_fixture_patched(
+            BundlerChoice::Vite,
+            true,
+            |value| {
+                let modules = value["modules"].as_array_mut().unwrap();
+                let mut png = modules
+                    .iter()
+                    .find(|module| {
+                        module["path"]
+                            .as_str()
+                            .is_some_and(|path| path.contains("/src/effects/"))
+                    })
+                    .unwrap()
+                    .clone();
+                let project = png["packageDir"].as_str().unwrap().to_owned();
+                let path = format!("{project}/{PNG_SOURCE}");
+                png["id"] = path.clone().into();
+                png["path"] = path.into();
+                png["isEntry"] = false.into();
+                modules.push(png);
+            },
+            |build, project| {
+                let map_path = build.join("assets/index-BHjrzQLH.js.map");
+                let mut map: serde_json::Value =
+                    serde_json::from_str(&std::fs::read_to_string(&map_path).unwrap()).unwrap();
+                map["sources"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(format!("{project}/{PNG_SOURCE}").into());
+                map["sourcesContent"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(stub.into());
+                std::fs::write(&map_path, serde_json::to_string(&map).unwrap()).unwrap();
+            },
+        );
+        let analysis = &fixture.output.analysis;
+        assert!(
+            !analysis
+                .problems
+                .iter()
+                .any(|entry| entry.code == "BW_SOURCE_STALE"),
+            "{:?}",
+            analysis.problems
+        );
+        let png = fixture
+            .output
+            .sources
+            .iter()
+            .find(|source| source.path == PNG_SOURCE)
+            .expect("the PNG keeps its source entry");
+        assert!(!png.stale);
+        assert!(png.content.is_empty());
+        assert!(!png.content_included);
+        assert!(!png.id.is_empty());
+        assert!(
+            fixture
+                .output
+                .sources
+                .iter()
+                .all(|source| !source.content.contains("__VITE_ASSET__"))
+        );
+        // Saved-run reloads only re-hash text sources.
+        assert!(!fixture.output.project_relative.contains_key(&png.id));
+        // Its removal is still detected when the saved run is reopened.
+        assert_eq!(
+            fixture
+                .output
+                .existence_relative
+                .get(&png.id)
+                .map(String::as_str),
+            Some(PNG_SOURCE)
+        );
+        assert!(
+            fixture
+                .output
+                .sources
+                .iter()
+                .filter(|source| source.origin == crate::model::SourceOrigin::Project)
+                .filter(|source| source.id != png.id)
+                .all(|source| fixture.output.project_relative.contains_key(&source.id))
+        );
+    }
+
+    #[test]
     fn vite_fixture_blockers_and_counterexamples() {
         let fixture = run_fixture(BundlerChoice::Vite, |_| {});
         let analysis = &fixture.output.analysis;
@@ -613,6 +727,36 @@ mod tests {
                 "src/effects/register.js"
             )
             .is_some()
+        );
+        let register = find(
+            diagnostics,
+            "vite/side-effect-retained",
+            "src/effects/register.js",
+        )
+        .unwrap();
+        // Rolldown reports no retention reason, so the cause is inferred.
+        assert_eq!(register.status, EvidenceStatus::Inferred);
+        assert!(!register.summary.contains("must run"));
+        assert!(
+            register
+                .corrective_action
+                .as_ref()
+                .unwrap()
+                .direction
+                .contains("\"sideEffects\"")
+        );
+        assert!(
+            !register
+                .corrective_action
+                .as_ref()
+                .unwrap()
+                .safety
+                .is_empty()
+        );
+        assert_eq!(
+            declared_free_outcome(register),
+            ConditionOutcome::Unmet,
+            "an undeclared module is not declared side-effect free"
         );
         assert_absent(
             diagnostics,
@@ -954,6 +1098,286 @@ mod tests {
         }
     }
 
+    fn declared_free_outcome(diagnostic: &Diagnostic) -> ConditionOutcome {
+        diagnostic
+            .conditions
+            .iter()
+            .find(|condition| condition.description == "The module is declared side-effect free")
+            .expect("declared side-effect free condition")
+            .outcome
+    }
+
+    fn retained_register(
+        module_side_effects: &str,
+        treeshake_side_effects: &str,
+        package_side_effects: Option<&str>,
+    ) -> Diagnostic {
+        let module_side_effects = module_side_effects.to_owned();
+        let treeshake_side_effects = treeshake_side_effects.to_owned();
+        let package_side_effects = package_side_effects.map(str::to_owned);
+        let fixture = run_fixture(BundlerChoice::Vite, |value| {
+            for module in value["modules"].as_array_mut().unwrap() {
+                if module["id"]
+                    .as_str()
+                    .is_some_and(|id| id.ends_with("src/effects/register.js"))
+                {
+                    module["moduleSideEffects"] = serde_json::json!(module_side_effects);
+                    module["treeshakeSideEffects"] = serde_json::json!(treeshake_side_effects);
+                    module["packageSideEffects"] = serde_json::json!(package_side_effects);
+                }
+            }
+        });
+        find(
+            &fixture.output.analysis.diagnostics,
+            "vite/side-effect-retained",
+            "src/effects/register.js",
+        )
+        .expect("register.js stays reported")
+        .clone()
+    }
+
+    fn direction(diagnostic: &Diagnostic) -> &str {
+        &diagnostic.corrective_action.as_ref().unwrap().direction
+    }
+
+    fn has_inferred_effect_evidence(diagnostic: &Diagnostic) -> bool {
+        diagnostic.evidence.iter().any(|evidence| {
+            evidence.status == EvidenceStatus::Inferred
+                && evidence.detail.contains("top-level side effects")
+        })
+    }
+
+    #[test]
+    fn vite_side_effect_retained_honors_free_declarations() {
+        for (module, option, package) in [
+            ("false", "null", None),
+            // A hook value takes precedence over the option and the package.
+            ("false", "true", Some("true")),
+            ("false", "null", Some("false")),
+            ("false", "null", Some("[array of 2]")),
+            // Without a hook value or a package declaration the option decides.
+            ("null", "false", None),
+            ("undefined", "false", None),
+        ] {
+            let finding = retained_register(module, option, package);
+            assert_eq!(
+                declared_free_outcome(&finding),
+                ConditionOutcome::Met,
+                "{module} / {option} / {package:?}"
+            );
+            assert_eq!(finding.status, EvidenceStatus::Inferred);
+            assert!(
+                !direction(&finding).contains("declare the package side-effect free"),
+                "{}",
+                direction(&finding)
+            );
+            assert!(
+                direction(&finding).contains("already declared side-effect free"),
+                "{}",
+                direction(&finding)
+            );
+            // An effective `false` lets Rolldown discard a module that has
+            // effects, so retained effects are not inferred for it.
+            assert!(
+                !finding.summary.contains("may contain top-level code"),
+                "{}",
+                finding.summary
+            );
+            assert!(
+                finding.summary.contains("another use of the module"),
+                "{}",
+                finding.summary
+            );
+            assert!(
+                !has_inferred_effect_evidence(&finding),
+                "{:?}",
+                finding.evidence
+            );
+            assert!(
+                finding
+                    .evidence
+                    .iter()
+                    .any(|evidence| evidence.status == EvidenceStatus::Inferred
+                        && evidence.detail.contains("remaining use")),
+                "{:?}",
+                finding.evidence
+            );
+            assert!(
+                !finding
+                    .corrective_action
+                    .as_ref()
+                    .unwrap()
+                    .safety
+                    .is_empty()
+            );
+        }
+    }
+
+    #[test]
+    fn vite_side_effect_retained_reports_explicit_effect_declarations() {
+        for (module, option, package) in [
+            ("no-treeshake", "null", None),
+            // A hook value takes precedence over the option and the package.
+            ("no-treeshake", "false", Some("false")),
+            ("no-treeshake", "null", Some("false")),
+            // The option decides when no hook value is set and the package
+            // declares nothing.
+            ("null", "true", None),
+        ] {
+            let finding = retained_register(module, option, package);
+            assert_eq!(
+                declared_free_outcome(&finding),
+                ConditionOutcome::Unmet,
+                "{module} / {option} / {package:?}"
+            );
+            assert_eq!(finding.status, EvidenceStatus::Confirmed);
+            assert!(finding.summary.contains("declares side effects"));
+            assert!(!direction(&finding).contains("declare the package side-effect free"));
+            assert!(!has_inferred_effect_evidence(&finding));
+            assert!(
+                !finding
+                    .corrective_action
+                    .as_ref()
+                    .unwrap()
+                    .safety
+                    .is_empty()
+            );
+        }
+    }
+
+    #[test]
+    fn vite_side_effect_retained_analyzes_hook_true_and_names_the_plugin() {
+        // `true` from a JavaScript hook asks for Rolldown's analysis and skips
+        // both the option and the package, whatever they say. The package
+        // declaration is not the source of this value, so the guidance never
+        // asks to edit it.
+        for (module, option, package) in [
+            ("true", "false", Some("false")),
+            ("true", "true", Some("true")),
+            ("true", "false", Some("[array of 2]")),
+            ("true", "true", None),
+            ("true", "null", None),
+        ] {
+            let finding = retained_register(module, option, package);
+            let case = format!("{module} / {option} / {package:?}");
+            assert_eq!(
+                declared_free_outcome(&finding),
+                ConditionOutcome::Unmet,
+                "{case}"
+            );
+            assert_eq!(finding.status, EvidenceStatus::Inferred, "{case}");
+            assert!(has_inferred_effect_evidence(&finding), "{case}");
+            assert!(!direction(&finding).contains("will not help"), "{case}");
+            assert!(
+                direction(&finding).contains("stop the plugin"),
+                "{}",
+                direction(&finding)
+            );
+            assert!(!direction(&finding).contains("narrowing"), "{case}");
+        }
+    }
+
+    #[test]
+    fn vite_side_effect_retained_is_unknown_for_unmatched_values() {
+        let list = retained_register("null", "null", Some("[array of 2]"));
+        assert_eq!(declared_free_outcome(&list), ConditionOutcome::Unknown);
+        assert_eq!(list.status, EvidenceStatus::Inferred);
+        // A retained file is most likely covered by the list; the guidance
+        // never asks to add a declaration for it.
+        assert!(direction(&list).contains("most likely covered"));
+        assert!(direction(&list).contains("narrow or remove that entry"));
+        assert!(!direction(&list).contains("add the declaration"));
+        assert!(has_inferred_effect_evidence(&list));
+
+        // A configured function cannot be evaluated.
+        let option = retained_register("null", "[function]", None);
+        assert_eq!(declared_free_outcome(&option), ConditionOutcome::Unknown);
+        assert!(
+            direction(&option).contains("build.rolldownOptions.treeshake.moduleSideEffects"),
+            "{}",
+            direction(&option)
+        );
+        assert!(!direction(&option).contains("covered"));
+
+        // A declared package may have given the module a value that outranks
+        // the option and is not collected, whatever the declaration is and
+        // whatever the option says.
+        for (option, package) in [
+            ("null", "false"),
+            ("null", "true"),
+            ("false", "true"),
+            ("true", "false"),
+            ("[function]", "[array of 2]"),
+            ("[array of 2]", "true"),
+        ] {
+            let finding = retained_register("null", option, Some(package));
+            assert_eq!(
+                declared_free_outcome(&finding),
+                ConditionOutcome::Unknown,
+                "{option} / {package}"
+            );
+            assert_eq!(finding.status, EvidenceStatus::Inferred);
+            assert!(direction(&finding).contains("most likely covered"));
+            assert!(!direction(&finding).contains("add the declaration"));
+        }
+
+        let hook = retained_register("[function]", "null", Some("true"));
+        assert_eq!(declared_free_outcome(&hook), ConditionOutcome::Unknown);
+        assert!(direction(&hook).contains("plugin"));
+        assert!(!direction(&hook).contains("covered"));
+        for finding in [&list, &option, &hook] {
+            assert!(
+                !finding
+                    .corrective_action
+                    .as_ref()
+                    .unwrap()
+                    .safety
+                    .is_empty()
+            );
+        }
+    }
+
+    #[test]
+    fn vite_side_effect_retained_id_ignores_the_declaration() {
+        let ids: Vec<String> = [
+            ("null", "null", None),
+            ("false", "null", None),
+            ("true", "null", Some("false")),
+            ("null", "false", Some("true")),
+            ("null", "false", None),
+            ("null", "null", Some("[array of 2]")),
+        ]
+        .into_iter()
+        .map(|(module, option, package)| retained_register(module, option, package).id)
+        .collect();
+        assert!(ids.iter().all(|id| id == &ids[0]), "{ids:?}");
+    }
+
+    #[test]
+    fn vite_side_effect_retained_keeps_provenance_and_paths() {
+        let finding = retained_register("null", "null", None);
+        assert_eq!(
+            finding.evidence[0].provenance,
+            "rolldown module info (getModuleInfo)"
+        );
+        assert_eq!(
+            finding.evidence[1].provenance,
+            "rolldown rendered chunk modules"
+        );
+        assert_eq!(finding.evidence[0].status, EvidenceStatus::Confirmed);
+        assert_eq!(finding.evidence[1].status, EvidenceStatus::Confirmed);
+        assert!(
+            finding
+                .evidence
+                .iter()
+                .any(|evidence| evidence.status == EvidenceStatus::Inferred)
+        );
+        assert_eq!(
+            finding.dependency_paths[0].modules,
+            vec!["index.html", "src/main.js", "src/effects/register.js"]
+        );
+    }
+
     #[test]
     fn vite_export_less_side_effect_modules_are_reported() {
         let fixture = run_fixture(BundlerChoice::Vite, |value| {
@@ -966,13 +1390,27 @@ mod tests {
                 }
             }
         });
+        let finding = find(
+            &fixture.output.analysis.diagnostics,
+            "vite/side-effect-retained",
+            "src/effects/register.js",
+        )
+        .unwrap();
         assert!(
-            find(
-                &fixture.output.analysis.diagnostics,
-                "vite/side-effect-retained",
-                "src/effects/register.js"
-            )
-            .is_some()
+            !finding
+                .corrective_action
+                .as_ref()
+                .unwrap()
+                .direction
+                .is_empty()
+        );
+        assert!(
+            !finding
+                .corrective_action
+                .as_ref()
+                .unwrap()
+                .safety
+                .is_empty()
         );
     }
 

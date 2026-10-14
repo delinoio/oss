@@ -94,14 +94,58 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 		checkpoint = &value
 		logger.InfoContext(ctx, "opencode_continuation_checkpoint_verified", "execution_id", input.ExecutionID, "previous_execution_id", input.Continuation.Previous.ExecutionID)
 	}
+	// The newest retained checkpoint of the history decides which persistent
+	// profile resumes in place: the last compaction action when one ran after
+	// the ordinary checkpoint, otherwise the ordinary execution itself.
+	historyOwner := domain.ID("")
+	if checkpoint != nil {
+		historyOwner = checkpoint.Reference.Claim.ExecutionID
+	}
+	if checkpoint != nil && input.Continuation.Compaction != nil {
+		value, err := readOpenCodeSessionCompactionCheckpoint(ctx, manager.Root, config.execution.Credential, input, *input.Continuation.Compaction, *checkpoint, 0)
+		if err != nil {
+			return nil, err
+		}
+		historyOwner = value.Input.ActionID
+		// Preserve the independent ordinary assignment/report reference while
+		// restoring only the separately accepted action's native snapshot.
+		valueCheckpoint := *checkpoint
+		valueCheckpoint.Native, valueCheckpoint.NativeReference = value.Native, value.NativeReference
+		checkpoint = &valueCheckpoint
+	}
 	phase = "runtime"
 	runtimeRoot := filepath.Join(manager.Root, "runtimes")
 	if err := security.PrivateDir(runtimeRoot); err != nil {
 		return nil, domain.SafeError(err)
 	}
-	home := filepath.Join(runtimeRoot, string(input.ExecutionID))
-	if _, err := os.Lstat(home); !errors.Is(err, os.ErrNotExist) {
+	// The per-execution directory is only the fresh operation journal; native
+	// state lives in the persistent conversation profile resolved below.
+	journal := filepath.Join(runtimeRoot, string(input.ExecutionID))
+	if _, err := os.Lstat(journal); !errors.Is(err, os.ErrNotExist) {
 		return nil, publicationUncertain()
+	}
+	if err := security.CreatePrivateDirExclusive(journal); err != nil {
+		return nil, publicationUncertain()
+	}
+	profile, err := openCodeExecutionProfile(ctx, config, input, historyOwner)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := profile.Close(); err != nil {
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
+		}
+	}()
+	home, err := openCodeRuntimeRoot(profile.Info)
+	if err != nil {
+		return nil, err
+	}
+	if input.Retry != nil && input.Continuation == nil && input.Fork == nil {
+		// An unsent first execution never accepted input, so its abandoned
+		// native session carries no history. Native caches and logs are kept.
+		if err := resetUnsentOpenCodeHistory(home); err != nil {
+			return nil, err
+		}
 	}
 	ordinaryTools := ordinaryExecutionTools(config.Logger)
 	env, err := harness.PrivateRuntimeEnvironment(home)
@@ -166,19 +210,6 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 		nativeConfig.ContextLimit = int64(input.Configuration.OpenCodeContext.Tokens)
 		nativeConfig.Prune = input.Configuration.OpenCodeContext.Policy == domain.OpenCodeNativeContextV1
 	}
-	var compacted *openCodeSessionCompactionCheckpoint
-	if checkpoint != nil && input.Continuation.Compaction != nil {
-		value, err := readOpenCodeSessionCompactionCheckpoint(ctx, manager.Root, connection.Credential, input, *input.Continuation.Compaction, *checkpoint, 0)
-		if err != nil {
-			return nil, err
-		}
-		compacted = &value
-		// Preserve the independent ordinary assignment/report reference while
-		// restoring only the separately accepted action's native snapshot.
-		valueCheckpoint := *checkpoint
-		valueCheckpoint.Native, valueCheckpoint.NativeReference = value.Native, value.NativeReference
-		checkpoint = &valueCheckpoint
-	}
 	var resumeClaim *opencode.SessionClaim
 	if forkSeed != nil {
 		claim, err := opencode.CheckpointResumeClaim(nativeConfig, forkSeed.NativeReference, input.ThreadRequestID)
@@ -214,13 +245,12 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	config.startup.setPhase(domain.StartupInitialize)
 	var api *opencode.OwnedAPI
 	if forkSeed != nil {
-		previousHome := filepath.Join(runtimeRoot, string(input.Fork.RuntimeID), "native")
+		previousHome := home
 		api, err = opencode.OpenResumedAPI(nativeCtx, nativeConfig, previousHome, forkSeed.Native, forkSeed.NativeReference, input.ThreadRequestID, opencode.BuildAgent, false)
 	} else if checkpoint != nil {
-		previousHome := filepath.Join(runtimeRoot, string(checkpoint.Reference.Claim.ExecutionID))
-		if compacted != nil {
-			previousHome = filepath.Join(runtimeRoot, string(compacted.Input.ActionID))
-		}
+		// Every execution and compaction action of the history is bound to
+		// this profile, so the retained checkpoint resumes in place.
+		previousHome := home
 		previousAgent, err := input.Configuration.OpenCodePrimaryForInput(input.Continuation.InputMode)
 		if err != nil {
 			return nil, err

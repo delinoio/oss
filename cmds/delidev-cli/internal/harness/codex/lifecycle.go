@@ -15,7 +15,7 @@ func (c *Client) verifyLifecyclePlugins(ctx context.Context) (returned error) {
 		return nil
 	}
 	defer c.recordFailure(ctx, domain.CodexProfile, &returned)
-	response, err := c.wire.Call(ctx, domain.NewID(), "experimentalFeature/list", struct {
+	response, err := c.call(ctx, domain.NewID(), "experimentalFeature/list", struct {
 		Limit int `json:"limit"`
 	}{256})
 	if err != nil {

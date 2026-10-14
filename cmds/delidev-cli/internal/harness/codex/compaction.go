@@ -118,7 +118,7 @@ func (c *Client) StartCompaction(ctx context.Context, action domain.ID, source C
 			c.execution.paused = true
 		}
 	}()
-	response, err := c.wire.Call(ctx, action, "thread/compact/start", struct {
+	response, err := c.call(ctx, action, "thread/compact/start", struct {
 		ThreadID domain.ID `json:"threadId"`
 	}{c.thread})
 	var ack map[string]json.RawMessage
@@ -405,7 +405,7 @@ func (c *Client) contextTurnPagesLocked(ctx context.Context, direction string, c
 	seen := map[string]bool{}
 	size := 0
 	for {
-		reply, err := c.wire.Call(ctx, domain.NewID(), "thread/turns/list", struct {
+		reply, err := c.call(ctx, domain.NewID(), "thread/turns/list", struct {
 			Thread    domain.ID `json:"threadId"`
 			Limit     int       `json:"limit"`
 			Direction string    `json:"sortDirection"`

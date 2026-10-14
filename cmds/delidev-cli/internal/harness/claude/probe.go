@@ -191,6 +191,7 @@ type probeWire struct {
 	ready   chan struct{}
 	cancel  context.CancelFunc
 	seen    bool
+	prelude bool
 	problem *domain.Error
 }
 
@@ -216,6 +217,22 @@ func (w *probeWire) fail(problem *domain.Error) {
 }
 
 func (w *probeWire) receive(raw []byte) {
+	if probeFrameIsPrelude(raw) {
+		// At most one schema-checked startup event may precede the response.
+		// It is discarded; a repeat, a late event or any other shape fails.
+		w.mu.Lock()
+		repeated := w.prelude || w.seen
+		w.prelude = true
+		w.mu.Unlock()
+		if repeated {
+			w.fail(incompatible())
+			return
+		}
+		if err := validateProbePrelude(raw); err != nil {
+			w.fail(domain.SafeError(err))
+		}
+		return
+	}
 	if err := validateInitialize(raw, w.id); err != nil {
 		w.fail(domain.SafeError(err))
 		return

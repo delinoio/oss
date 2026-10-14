@@ -27,6 +27,7 @@ PPTX list, image, shape, chart and connector components are leaves. Nonempty Rea
 ### Project requirements
 
 - `react-forge` is the public npm Node.js 24 / React 19.2.8 cross-platform document project in the feature. Follow `project-react-forge.md` and its complete requirements. Keep JavaScript reconciliation outside native workers, format models independent, sessions in memory, exports revision-pinned and atomic, and imported opaque content preserved. All required formats and evidence are required before completion.
+- GLB/FBX `SceneSession` exposes explicit static geometry derivation under the scene contract. Reserve aggregate admission before native work, retain original registered assets, and publish only validated complete derived handles after cancellation checks.
 
 ### Application integration
 

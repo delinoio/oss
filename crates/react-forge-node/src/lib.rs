@@ -12,7 +12,8 @@ mod pdf;
 mod pptx;
 mod scene;
 pub use scene::{
-    NativeCompactedGeometry, SceneAssetOperation, SceneCompactionOperation, compact_scene_geometry,
+    NativeCompactedGeometry, SceneAssetOperation, SceneCompactionOperation,
+    SimplifySceneGeometryOperation, compact_scene_geometry, simplify_scene_geometry,
     validate_scene_asset,
 };
 mod sfx;

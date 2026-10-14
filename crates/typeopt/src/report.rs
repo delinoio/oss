@@ -82,6 +82,15 @@ pub struct Size {
     /// `after`, which describes the optimized chunk graph. Always 0 in
     /// stage 1.
     pub retained: usize,
+    /// Stage 2 with `--minify`: code bytes that SWC minification of edited
+    /// chunks removed. They are included in `after` and `saved`; omitted
+    /// when nothing was minified.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub minified: usize,
+}
+
+fn is_zero(value: &usize) -> bool {
+    *value == 0
 }
 
 #[derive(Serialize, Default)]
@@ -259,6 +268,7 @@ pub fn build(snapshot: &Snapshot, outcome: &Outcome, passes: &PassSet) -> Report
             after: outcome.size_after,
             saved: outcome.size_before as isize - outcome.size_after as isize,
             retained: 0,
+            minified: 0,
         },
         pass_summary: summary,
         transformations,

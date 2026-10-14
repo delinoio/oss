@@ -78,6 +78,50 @@ pub fn validate_scene_asset(
 }
 
 #[napi(object)]
+pub struct SimplifiedSceneGeometry {
+    pub bytes: Buffer,
+    pub input_triangles: u32,
+    pub output_triangles: u32,
+    pub input_vertices: u32,
+    pub output_vertices: u32,
+    pub target_reached: bool,
+    pub estimated_error: f64,
+}
+
+pub struct SimplifySceneGeometryOperation {
+    bytes: Vec<u8>,
+    target: usize,
+    max_error: f64,
+    cancelled: Arc<AtomicBool>,
+}
+impl Task for SimplifySceneGeometryOperation {
+    type JsValue = SimplifiedSceneGeometry;
+    type Output = forge_scene::SimplifiedGeometry;
+
+    fn compute(&mut self) -> napi::Result<Self::Output> {
+        forge_tree_doc::cancellation::with_cancellation(self.cancelled.clone(), || {
+            forge_scene::simplify_geometry(&self.bytes, self.target, self.max_error)
+        })
+        .map_err(native_error)
+    }
+
+    fn resolve(&mut self, _env: Env, result: Self::Output) -> napi::Result<Self::JsValue> {
+        if self.cancelled.load(Ordering::Acquire) {
+            return Err(cancelled());
+        }
+        Ok(SimplifiedSceneGeometry {
+            bytes: result.bytes.into(),
+            input_triangles: result.input_triangles as u32,
+            output_triangles: result.output_triangles as u32,
+            input_vertices: result.input_vertices as u32,
+            output_vertices: result.output_vertices as u32,
+            target_reached: result.target_reached,
+            estimated_error: result.estimated_error,
+        })
+    }
+}
+
+#[napi(object)]
 pub struct NativeCompactedGeometry {
     pub bytes: Buffer,
     pub input_vertices: u32,
@@ -113,6 +157,22 @@ impl Task for SceneCompactionOperation {
             triangles: output.triangles,
         })
     }
+}
+
+#[napi]
+pub fn simplify_scene_geometry(
+    bytes: Buffer,
+    target_triangles: u32,
+    max_error: f64,
+    cancellation: &Cancellation,
+) -> napi::Result<AsyncTask<SimplifySceneGeometryOperation>> {
+    forge_scene::simplification_scratch(&bytes).map_err(native_error)?;
+    Ok(AsyncTask::new(SimplifySceneGeometryOperation {
+        bytes: bytes.to_vec(),
+        target: target_triangles as usize,
+        max_error,
+        cancelled: cancellation.flag.clone(),
+    }))
 }
 
 #[napi]

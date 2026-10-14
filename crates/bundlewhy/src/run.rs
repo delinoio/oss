@@ -51,6 +51,10 @@ const LOCKFILES: [&str; 5] = [
 /// (`.git`), whether or not they exist yet. Missing candidates are hashed as
 /// absent, so a workspace lockfile created during the build is detected.
 fn ancestor_lockfiles(project_root: &Path) -> Vec<PathBuf> {
+    if project_root.join(".git").exists() {
+        return Vec::new();
+    }
+
     let mut candidates = Vec::new();
     let mut directory = project_root.parent();
     while let Some(current) = directory {
@@ -334,20 +338,16 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
                 json!({ "stage": "measuring", "durationMs": measuring_ms, "diagnostics": output.analysis.diagnostics.len() }),
             );
             let analysis = output.analysis;
-            let project_relative = output
-                .sources
-                .iter()
-                .filter_map(|source| {
-                    let path = selection.project_root.join(&source.path);
-                    (source.origin == crate::model::SourceOrigin::Project
-                        && path.starts_with(&selection.project_root))
-                    .then(|| {
-                        crate::sources::safe_project_relative(&source.path)
-                            .map(|_| (source.id.clone(), source.path.clone()))
-                    })
-                    .flatten()
-                })
-                .collect();
+            let project_relative = bundle::retained_relative(
+                &selection.project_root,
+                &output.sources,
+                &output.project_relative,
+            );
+            let existence_relative = bundle::retained_relative(
+                &selection.project_root,
+                &output.sources,
+                &output.existence_relative,
+            );
             (
                 ResultBundle {
                     schema_version: SCHEMA_VERSION,
@@ -355,6 +355,7 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
                     analysis,
                     sources: output.sources,
                     project_relative,
+                    existence_relative,
                 },
                 None,
             )
@@ -795,17 +796,62 @@ mod tests {
     }
 
     #[test]
+    fn repository_root_lockfiles_do_not_protect_parent_lockfiles() {
+        let dir = tempfile::tempdir().unwrap();
+        let parent = dir.path().join("parent");
+        let project = parent.join("repo");
+        std::fs::create_dir_all(project.join(".git")).unwrap();
+        let selection = Selection {
+            project_root: project.clone(),
+            project_name: "repo".to_owned(),
+            bundler: BundlerChoice::Vite,
+            config_file: None,
+        };
+
+        assert!(ancestor_lockfiles(&project).is_empty());
+        let before = protected_files(&selection);
+        std::fs::write(parent.join("pnpm-lock.yaml"), "lockfileVersion: 9").unwrap();
+        assert_eq!(
+            before,
+            protected_files(&selection),
+            "creating a parent lockfile must not mark the project as modified"
+        );
+        std::fs::write(parent.join("pnpm-lock.yaml"), "lockfileVersion: 8").unwrap();
+        assert_eq!(
+            before,
+            protected_files(&selection),
+            "changing a parent lockfile must not mark the project as modified"
+        );
+
+        std::fs::write(project.join("pnpm-lock.yaml"), "lockfileVersion: 9").unwrap();
+        assert_ne!(
+            before,
+            protected_files(&selection),
+            "a project lockfile created during the run must be detected"
+        );
+        let with_lockfile = protected_files(&selection);
+        std::fs::write(project.join("pnpm-lock.yaml"), "lockfileVersion: 8").unwrap();
+        assert_ne!(
+            with_lockfile,
+            protected_files(&selection),
+            "a project lockfile changed during the run must be detected"
+        );
+    }
+
+    #[test]
     fn workspace_lockfiles_above_the_project_are_protected() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir(dir.path().join(".git")).unwrap();
-        let package = dir.path().join("packages/app");
+        let parent = dir.path().join("parent");
+        let repository = parent.join("repo");
+        std::fs::create_dir_all(repository.join(".git")).unwrap();
+        let package = repository.join("packages/app");
         std::fs::create_dir_all(&package).unwrap();
         let candidates = ancestor_lockfiles(&package);
         // Candidates exist for every ancestor up to and including the
         // repository root, even before any lockfile exists.
-        assert!(candidates.contains(&dir.path().join("pnpm-lock.yaml")));
-        assert!(candidates.contains(&dir.path().join("packages/package-lock.json")));
-        assert!(!candidates.iter().any(|path| !path.starts_with(dir.path())));
+        assert!(candidates.contains(&repository.join("pnpm-lock.yaml")));
+        assert!(candidates.contains(&repository.join("packages/package-lock.json")));
+        assert!(!candidates.contains(&parent.join("pnpm-lock.yaml")));
         let selection = Selection {
             project_root: package.clone(),
             project_name: "app".to_owned(),
@@ -813,11 +859,25 @@ mod tests {
             config_file: None,
         };
         let before = protected_files(&selection);
-        std::fs::write(dir.path().join("pnpm-lock.yaml"), "lockfileVersion: 9").unwrap();
-        let after = protected_files(&selection);
+        std::fs::write(parent.join("pnpm-lock.yaml"), "lockfileVersion: 9").unwrap();
+        assert_eq!(before, protected_files(&selection));
+        std::fs::write(repository.join("packages/package-lock.json"), "{}").unwrap();
+        let with_workspace_lockfile = protected_files(&selection);
         assert_ne!(
-            before, after,
-            "a lockfile created during the run must be detected"
+            before, with_workspace_lockfile,
+            "a workspace lockfile created during the run must be detected"
+        );
+        std::fs::write(repository.join("pnpm-lock.yaml"), "lockfileVersion: 9").unwrap();
+        let with_repository_lockfile = protected_files(&selection);
+        assert_ne!(
+            with_workspace_lockfile, with_repository_lockfile,
+            "a repository lockfile created during the run must be detected"
+        );
+        std::fs::write(package.join("yarn.lock"), "lockfileVersion: 9").unwrap();
+        assert_ne!(
+            with_repository_lockfile,
+            protected_files(&selection),
+            "a project lockfile created during the run must be detected"
         );
     }
 }

@@ -24,10 +24,27 @@ type nativeCheckpointContext struct {
 // independent source, then pins the last manual action. It never launches or
 // reconstructs a missing native observation or once-only command claim.
 func InspectCompactionCheckpoint(ctx context.Context, home string, raw []byte, ref CheckpointReference, sourceHome string, sourceRaw []byte, sourceRef CheckpointReference, action domain.ID) (NativeContextRecord, uint32, error) {
+	return inspectCompactionCheckpoint(ctx, home, raw, ref, sourceHome, sourceRaw, sourceRef, action, true, true)
+}
+
+// InspectCompactionCheckpointInPlace compares a compaction checkpoint with its
+// source when both retained in the same persistent profile. The action advanced
+// that profile, so the source's files are no longer the checkpoint's files and
+// only its retained metadata is compared. The compaction files are verified
+// only when verifyHome is set, which is correct for the newest checkpoint of the
+// profile and for no older one.
+func InspectCompactionCheckpointInPlace(ctx context.Context, home string, raw []byte, ref CheckpointReference, sourceRaw []byte, sourceRef CheckpointReference, action domain.ID, verifyHome bool) (NativeContextRecord, uint32, error) {
+	return inspectCompactionCheckpoint(ctx, home, raw, ref, home, sourceRaw, sourceRef, action, verifyHome, false)
+}
+
+func inspectCompactionCheckpoint(ctx context.Context, home string, raw []byte, ref CheckpointReference, sourceHome string, sourceRaw []byte, sourceRef CheckpointReference, action domain.ID, verifyHome, verifySource bool) (NativeContextRecord, uint32, error) {
 	empty := NativeContextRecord{}
 	p, err := decodeCheckpoint(raw, ref, home)
 	source, sourceErr := decodeCheckpoint(sourceRaw, sourceRef, sourceHome)
-	if err != nil || sourceErr != nil || action.Validate() != nil || ref.RequiresResume || sourceRef.RequiresResume || p.Context == nil || len(p.Context.Records) == 0 || InspectReplacementCheckpoint(ctx, home, raw, ref) != nil || InspectReplacementCheckpoint(ctx, sourceHome, sourceRaw, sourceRef) != nil {
+	if err != nil || sourceErr != nil || action.Validate() != nil || ref.RequiresResume || sourceRef.RequiresResume || p.Context == nil || len(p.Context.Records) == 0 || checkpointReplacementProfile(p) != nil || checkpointReplacementProfile(source) != nil {
+		return empty, 0, sessionUncertain()
+	}
+	if verifyHome && InspectCheckpoint(ctx, home, raw, ref) != nil || verifySource && InspectCheckpoint(ctx, sourceHome, sourceRaw, sourceRef) != nil {
 		return empty, 0, sessionUncertain()
 	}
 	left, _ := json.Marshal(checkpointHistories(p))

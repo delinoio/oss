@@ -27,6 +27,17 @@ import (
 
 const managedFixtureToken = "sk-ant-oat01-ServerFixtureTokenABCDEFGHIJKLMNOP0123456789_-"
 
+func TestManagedClaudeLoginReportsProtocolDiscoveryPhase(t *testing.T) {
+	f := newManagedClaudeFixture(t)
+	f.service.claudeSetupOpen = func(context.Context, nativeScope, domain.ID, *slog.Logger) (managedClaudeLogin, string, error) {
+		return nil, "2.1.287", managedClaudeDiscoveryError{domain.Fail(domain.Unsupported, "The installed Claude Code protocol is unavailable.", "Refresh native discovery on the server.")}
+	}
+	_, started, cleanup, version, phase, err := f.service.runManagedClaudeLogin(context.Background(), domain.NewID(), domain.ServerSubscriptionOperation{ID: domain.NewID()})
+	if started || !cleanup || version != "2.1.287" || phase != domain.NativeSubscriptionDiscovery || domain.SafeError(err).Code != domain.Unsupported {
+		t.Fatalf("discovery failure = started %t cleanup %t version %q phase %v code %s", started, cleanup, version, phase, domain.SafeError(err).Code)
+	}
+}
+
 func managedFixtureURL() string {
 	return strings.Replace(claudeFixtureURL(), "user%3Aprofile+user%3Ainference+user%3Asessions%3Aclaude_code", "user%3Ainference", 1)
 }

@@ -6,9 +6,9 @@ package terminal
 // directory segment of the prompt while the shell's physical working directory
 // is the original General Chat directory. They never touch user files, PWD or
 // command output, and a prompt whose directory segment is not recognized stays
-// unchanged. Each script copies the original directory into a shell-local
-// variable and removes the environment variable so child commands do not
-// inherit it.
+// unchanged. Fish reads its private handoff file after account configuration;
+// the other scripts remove the inherited variable so child commands do not
+// receive it.
 
 // zshEnvScript runs first (ZDOTDIR points at the wrapper directory). It runs
 // the account's .zshenv with the account's ZDOTDIR semantics, remembers where
@@ -26,10 +26,6 @@ typeset -g __delidev_user_zdotdir=${ZDOTDIR:-$HOME}
 typeset -g __delidev_zdotdir_was_set=0
 if [[ -n ${ZDOTDIR+x} ]]; then
   __delidev_zdotdir_was_set=1
-fi
-# zsh derives the default history file from ZDOTDIR; keep the account's file.
-if [[ -z ${HISTFILE+x} ]]; then
-  HISTFILE=$__delidev_user_zdotdir/.zsh_history
 fi
 ZDOTDIR=$__delidev_wrapper_dir
 `
@@ -133,16 +129,18 @@ esac
 `
 
 const fishInitScript = `# DeliDev process-local prompt integration (generated; safe to delete).
-set -g __delidev_chat_dir $DELIDEV_TERMINAL_CHAT_DIRECTORY
 set -e DELIDEV_TERMINAL_CHAT_DIRECTORY
-if functions -q prompt_pwd
-    functions -c prompt_pwd __delidev_native_prompt_pwd
-    function prompt_pwd --description 'prompt_pwd with the DeliDev chat label'
-        set -l here (builtin pwd -P)
-        if test "$here" = "$__delidev_chat_dir"
-            echo chat
-        else
-            __delidev_native_prompt_pwd $argv
+set -l __delidev_handoff_dir (status dirname)
+if read --global --unexport --line __delidev_chat_dir < "$__delidev_handoff_dir/chat-directory"
+    if functions -q prompt_pwd
+        functions -c prompt_pwd __delidev_native_prompt_pwd
+        function prompt_pwd --description 'prompt_pwd with the DeliDev chat label'
+            set -l here (builtin pwd -P)
+            if test "$here" = "$__delidev_chat_dir"
+                echo chat
+            else
+                __delidev_native_prompt_pwd $argv
+            end
         end
     end
 end

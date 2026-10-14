@@ -419,6 +419,11 @@ func (s *Service) WatchSubscription(ctx context.Context, req *connect.Request[pb
 					}
 					continue
 				}
+				// Grok lifecycle work is not pushed to any Worker until the managed Grok
+				// Worker capability is declared and negotiated.
+				if a.SubscriptionService == domain.SubscriptionGrok {
+					continue
+				}
 				if a.SubscriptionService == domain.SubscriptionClaude && !slices.Contains(machine.WorkerCapabilities, domain.NativeClaudeSubscriptionsV1) || a.SubscriptionService == domain.SubscriptionChatGPT && !slices.Contains(machine.WorkerCapabilities, domain.ManagedCodexSubscriptionsV1) {
 					continue
 				}
@@ -548,6 +553,13 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 			return s.takeManagedClaude(ctx, req)
 		}
 		return s.takeClaudeSubscription(ctx, req)
+	}
+	// Grok accounts never enter the Codex lifecycle below; they use the sealed
+	// Grok bundle lifecycle, and the Codex account guard still refuses them.
+	if matched, err := s.isGrokSubscription(ctx, m.Id); err != nil {
+		return nil, rpc.Error(err, c)
+	} else if matched {
+		return s.takeGrokSubscription(ctx, req)
 	}
 	if err := workerActor(ctx, req.Msg.MachineId, req.Msg.InstanceId); err != nil {
 		return nil, rpc.Error(err, c)
@@ -706,6 +718,12 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 			case domain.ExecuteSessionJob:
 				if domain.Decode(job.Input, &execution) != nil || execution.Validate() != nil {
 					return nil, subscriptionDenied()
+				}
+				if sharedCapable && !execution.SharedCodexOwnerEligible() {
+					sharedCapable = false
+					if err := accountBusy(); err != nil {
+						return nil, err
+					}
 				}
 				if sharedCapable {
 					if state.Lease == nil {
@@ -1058,6 +1076,11 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 			return s.finishManagedClaudeExecution(ctx, req)
 		}
 		return s.finishClaudeSubscription(ctx, req)
+	}
+	if matched, err := s.isGrokSubscription(ctx, m.Id); err != nil {
+		return nil, rpc.Error(err, c)
+	} else if matched {
+		return s.finishGrokSubscription(ctx, req)
 	}
 	if err := workerActor(ctx, req.Msg.MachineId, req.Msg.InstanceId); err != nil {
 		return nil, rpc.Error(err, c)

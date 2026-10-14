@@ -38,4 +38,6 @@ export type {
   SceneSessionOptions,
   AnimationSample,
   GeometryCompaction,
+  SimplifyGeometryOptions,
+  SimplifyGeometryResult,
 } from "./scene/session.js";
