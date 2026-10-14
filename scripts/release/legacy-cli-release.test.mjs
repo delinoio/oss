@@ -184,6 +184,7 @@ exit 1
           extractExecutable(readFileSync(archivePath), project, {
             license,
             notice,
+            requireTerms: true,
           }),
           binary,
         );

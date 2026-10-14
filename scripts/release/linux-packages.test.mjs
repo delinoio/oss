@@ -21,6 +21,7 @@ import {
   sha256,
   safeKey,
   setupFiles,
+  legacyArchiveTermsRequired,
 } from "./linux-packages/model.mjs";
 import { archive } from "./runmoor.mjs";
 import { FileStore } from "./linux-packages/store.mjs";
@@ -287,6 +288,34 @@ test("legacy archive terms are compared with the supplied source revision", () =
   );
   assert.throws(() =>
     extractExecutable(archive, "binpm", { license, notice }),
+  );
+});
+test("legacy executable-only archives require an authenticated historical revision", () => {
+  assert.equal(legacyArchiveTermsRequired("behind"), false);
+  for (const status of ["ahead", "diverged", "identical"])
+    assert.equal(legacyArchiveTermsRequired(status), true);
+  assert.throws(() => legacyArchiveTermsRequired("unknown"));
+
+  const executable = {
+    name: "binpm",
+    data: Buffer.from("binary:binpm"),
+    mode: 0o755,
+  };
+  const archive = legacyArchive([executable]);
+  assert.deepEqual(
+    extractExecutable(archive, "binpm", {
+      license,
+      notice,
+      requireTerms: false,
+    }),
+    executable.data,
+  );
+  assert.throws(() =>
+    extractExecutable(archive, "binpm", {
+      license,
+      notice,
+      requireTerms: true,
+    }),
   );
 });
 test("ELF checks reject wrong architecture, newer libc, runtime paths and CPU requirements", () => {

@@ -11,6 +11,8 @@ import {
   extractExecutable,
   inspectElf,
   sourceIdentity,
+  legacyArchiveTermsRequired,
+  legacyArchiveTermsRevision,
 } from "./model.mjs";
 
 export function command(executable, args, options = {}) {
@@ -126,7 +128,15 @@ export function downloadRelease(plan, output) {
   const terms = ["binpm", "cargo-mono", "nodeup", "with-watch", "derun"].includes(
     plan.project,
   )
-    ? { license: readSourceFile("LICENSE"), notice: readSourceFile("NOTICE") }
+    ? {
+        license: readSourceFile("LICENSE"),
+        notice: readSourceFile("NOTICE"),
+        requireTerms: legacyArchiveTermsRequired(
+          api(
+            `repos/delinoio/oss/compare/${legacyArchiveTermsRevision}...${plan.revision}`,
+          ).status,
+        ),
+      }
     : null;
   const commit = api(`repos/delinoio/oss/commits/${plan.revision}`);
   const epoch = Math.floor(Date.parse(commit.commit.committer.date) / 1000);

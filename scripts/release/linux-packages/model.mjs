@@ -18,6 +18,11 @@ const legacyArchiveProjects = new Set([
   Project.WithWatch,
   Project.Derun,
 ]);
+// This is the first source revision whose legacy archive workflows include both terms.
+// Compare the authenticated release revision with this boundary before accepting an
+// executable-only archive; the current checkout is not a historical-release signal.
+export const legacyArchiveTermsRevision =
+  "907167c9bc4ff019a03ea91240b06b7ec755fe15";
 export const Channel = Object.freeze({ Stable: "stable", Preview: "preview" });
 export const Architecture = Object.freeze({ Amd64: "amd64", Arm64: "arm64" });
 export const Mode = Object.freeze({ DryRun: "dry-run", Publish: "publish" });
@@ -99,6 +104,13 @@ export function validateRelease(release, plan, resolvedRevision) {
     );
   return expected;
 }
+export function legacyArchiveTermsRequired(comparisonStatus) {
+  requireValue(
+    ["ahead", "behind", "diverged", "identical"].includes(comparisonStatus),
+    "INVALID_SOURCE_COMPARISON",
+  );
+  return comparisonStatus !== "behind";
+}
 export function checksumFor(manifest, name) {
   const entries = manifest
     .trimEnd()
@@ -168,6 +180,13 @@ export function extractExecutable(bytes, project, terms = null) {
     // releases must carry both complete texts from their source checkout.
     const hasLicense = entries.has("LICENSE");
     requireValue(hasLicense === entries.has("NOTICE"), "INVALID_ARCHIVE_ENTRY");
+    const requiresTerms = terms?.requireTerms === true;
+    if (requiresTerms)
+      requireValue(
+        terms.license instanceof Uint8Array &&
+          terms.notice instanceof Uint8Array,
+        "ARCHIVE_TERMS_CONTEXT_REQUIRED",
+      );
     if (hasLicense) {
       requireValue(
         terms?.license instanceof Uint8Array &&
@@ -182,6 +201,7 @@ export function extractExecutable(bytes, project, terms = null) {
           "INVALID_ARCHIVE_PAYLOAD",
         );
     }
+    requireValue(!requiresTerms || hasLicense, "INVALID_ARCHIVE_ENTRY");
   }
   return entries.get(project);
 }
