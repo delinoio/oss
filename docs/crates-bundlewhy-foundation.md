@@ -37,7 +37,7 @@ An installed version outside the matrix fails with `BW_ENGINE_VERSION_UNSUPPORTE
 
 ### Diagnostic engine
 
-The diagnostic build always runs the project's own installed engine with collection overrides recorded in `EngineIdentity.overrides`: Vite forces a bundlewhy output directory, `emptyOutDir`, source maps and a post collector plugin; Rspack forces production mode, a bundlewhy output path, `output.clean` and `devtool: source-map`. Findings describe that diagnostic build, `diagnostic_engine` is always true and the notice states that output equivalence with the original build is not guaranteed. Adapter identity is `bundlewhy-collector-vite` / `bundlewhy-collector-rspack` with an adapter version.
+The diagnostic build always runs the project's own installed engine with collection overrides recorded in `EngineIdentity.overrides`: Vite forces a bundlewhy output directory, `emptyOutDir`, source maps and a post collector plugin; Rspack forces production mode, a bundlewhy output path, `output.clean` and `devtool: source-map`. Vite keeps a configured relative or absolute root and uses the selected project directory only when the configuration has no root. Findings describe that diagnostic build, `diagnostic_engine` is always true and the notice states that output equivalence with the original build is not guaranteed. Adapter identity is `bundlewhy-collector-vite` / `bundlewhy-collector-rspack` with an adapter version.
 
 ### Rules and coverage
 

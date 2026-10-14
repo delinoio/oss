@@ -193,7 +193,7 @@ await runAdapter(async (request) => {
   try {
     await vite.build(
       vite.mergeConfig(userConfig, {
-        root: request.projectRoot,
+        root: userConfig.root ?? request.projectRoot,
         configFile: false,
         mode: "production",
         logLevel: "warn",
