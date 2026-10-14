@@ -585,3 +585,52 @@ it("holds every policy-listed read-only default with a pending reason until the 
     customizationBindings(ShortcutId.NewSession, {}, true),
   );
 });
+
+it("holds the read-only Reload page default back for an R override, a pending read or an unverified map", () => {
+  const override = {
+    [ShortcutId.SessionFocus]: {
+      state: ShortcutOverrideState.Binding,
+      chord: { key: "r", shift: false },
+    },
+  } as const;
+  expect(readOnlyShortcutSuppression(ShortcutId.ReloadPage, {})).toBeUndefined();
+  expect(readOnlyShortcutSuppression(ShortcutId.ReloadPage, override)).toBe(
+    "shortcuts.reloadSuppressed",
+  );
+  expect(readOnlyShortcutSuppression(ShortcutId.ReloadPage, {}, false)).toBe(
+    "shortcuts.preferencesPending",
+  );
+  expect(
+    readOnlyShortcutSuppression(ShortcutId.ReloadPage, {}, true, false),
+  ).toBe("shortcuts.reloadUnverified");
+  // Other read-only defaults keep their original semantics when unverified.
+  expect(
+    readOnlyShortcutSuppression(ShortcutId.OpenTool, {}, true, false),
+  ).toBeUndefined();
+  // Shift variants and disabled overrides never claim the unshifted chord.
+  expect(
+    readOnlyShortcutSuppression(ShortcutId.ReloadPage, {
+      [ShortcutId.SessionFocus]: {
+        state: ShortcutOverrideState.Binding,
+        chord: { key: "r", shift: true },
+      },
+      [ShortcutId.NewSession]: { state: ShortcutOverrideState.Disabled },
+    }),
+  ).toBeUndefined();
+  expect(customizationBindings(ShortcutId.ReloadPage, {})).toEqual(
+    globalShortcutBindings[ShortcutId.ReloadPage],
+  );
+  expect(customizationBindings(ShortcutId.ReloadPage, override)).toEqual([]);
+  expect(customizationBindings(ShortcutId.ReloadPage, {}, true, false)).toEqual(
+    [],
+  );
+  // The saved document accepts an R override and the reload default never conflicts with it.
+  expect(parseShortcutOverrides(override)).toEqual(override);
+  expect(shortcutConflicts(override)).toEqual([]);
+  expect(
+    editableShortcutCatalog.some((action) => action.id === ShortcutId.ReloadPage),
+  ).toBe(false);
+  expect(
+    readOnlyShortcutCatalog.some((action) => action.id === ShortcutId.ReloadPage),
+  ).toBe(true);
+});

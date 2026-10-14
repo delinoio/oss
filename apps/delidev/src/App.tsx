@@ -104,6 +104,7 @@ import {
   useShortcuts,
 } from "./shortcut-provider";
 import {
+  ShortcutExecution,
   ShortcutId,
   ShortcutInput,
   ShortcutScope,
@@ -598,6 +599,16 @@ function Shell({
       bindings: globalShortcutBindings[ShortcutId.NewSession],
       input: ShortcutInput.Allow,
       run: startNewSession,
+    },
+    {
+      // Help and ARIA listing only; the window-level ReloadShortcutOwner above
+      // App executes the reload before ordinary dispatch can see the event.
+      id: ShortcutId.ReloadPage,
+      scope: ShortcutScope.Global,
+      label: "shortcuts.reloadPage",
+      bindings: globalShortcutBindings[ShortcutId.ReloadPage],
+      input: ShortcutInput.Allow,
+      execution: ShortcutExecution.Native,
     },
   ]);
   useLayoutEffect(() => {

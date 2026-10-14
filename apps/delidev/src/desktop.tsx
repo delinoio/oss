@@ -59,6 +59,7 @@ import {
   type NativeConnection,
 } from "./local-registration";
 import { localStartupProblem } from "./local-startup-problem";
+import { ReloadShortcutOwner } from "./reload-shortcut";
 const nativeProblems: Record<string, string> = {
   get "service-managed"() {
     return copy("desktop.aNativeServiceOwnsThisConnection_413f9b");
@@ -922,6 +923,7 @@ function DesktopContent() {
 export function Desktop() {
   return (
     <QuitConnectionProvider>
+      <ReloadShortcutOwner />
       <DesktopContent />
     </QuitConnectionProvider>
   );
