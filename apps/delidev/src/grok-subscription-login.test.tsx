@@ -564,6 +564,58 @@ it("presents the receiver's Incompatible refusal for remote desktops and keeps t
     screen.getByRole("button", { name: copy("grok-subscription.copyLink") }),
   ).toBeTruthy();
   expect(actions(f, OAuthNativeAction.GrokSubscriptionOpen)).toHaveLength(1);
+  // The closed refusal leaves no native binding, so reopening is never offered,
+  // not even after later polls observe the same waiting login.
+  expect(
+    screen.queryByRole("button", {
+      name: copy("grok-subscription.openBrowser"),
+    }),
+  ).toBeNull();
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 1300));
+  });
+  expect(
+    screen.queryByRole("button", {
+      name: copy("grok-subscription.openBrowser"),
+    }),
+  ).toBeNull();
+  expect(
+    screen.getByRole("button", { name: copy("grok-subscription.copyLink") }),
+  ).toBeTruthy();
+  expect(actions(f, OAuthNativeAction.GrokSubscriptionOpen)).toHaveLength(1);
+  expect(actions(f, OAuthNativeAction.GrokSubscriptionReopen)).toHaveLength(0);
+  expect(actions(f, OAuthNativeAction.Take)).toHaveLength(0);
+});
+
+it("stops offering Open browser again when a reopen meets the Incompatible refusal", async () => {
+  const f = fixture();
+  f.native.mockImplementation(async (_scope, action) => {
+    if (action === OAuthNativeAction.GrokSubscriptionOpen)
+      throw "browser-launch-failed";
+    if (action === OAuthNativeAction.GrokSubscriptionReopen)
+      throw "incompatible";
+    return { generation: "" };
+  });
+  render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Start Grok" }));
+  await screen.findByText(
+    copy("grok-subscription.problem.browserFailed"),
+    {},
+    { timeout: 3000 },
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: copy("grok-subscription.openBrowser") }),
+  );
+  await screen.findByText(copy("grok-subscription.problem.remoteUnsupported"));
+  expect(
+    screen.queryByRole("button", {
+      name: copy("grok-subscription.openBrowser"),
+    }),
+  ).toBeNull();
+  expect(
+    screen.getByRole("button", { name: copy("grok-subscription.copyLink") }),
+  ).toBeTruthy();
+  expect(actions(f, OAuthNativeAction.GrokSubscriptionReopen)).toHaveLength(1);
 });
 
 it("shows a generic browser failure and recovers through Open browser again", async () => {

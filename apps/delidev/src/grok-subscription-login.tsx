@@ -495,13 +495,17 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
               problem: undefined,
             });
           } catch (error) {
+            // A closed incompatible refusal leaves no native binding, so
+            // Open browser again would only be refused again: keep it hidden
+            // and leave the copyable link as the only way forward. Any other
+            // failure may succeed on an explicit reopen.
+            const incompatible = error === NativeFailureReason.Incompatible;
             update(p, {
               stage: GrokLoginStage.Waiting,
-              browserReady: true,
-              problem:
-                error === NativeFailureReason.Incompatible
-                  ? "grok-subscription.problem.remoteUnsupported"
-                  : "grok-subscription.problem.browserFailed",
+              browserReady: !incompatible,
+              problem: incompatible
+                ? "grok-subscription.problem.remoteUnsupported"
+                : "grok-subscription.problem.browserFailed",
             });
           }
         }
@@ -577,13 +581,24 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
     void run(
       p,
       async () => {
-        const result = await native(
-          p.opening,
-          OAuthNativeAction.GrokSubscriptionReopen,
-          p.generation,
-          p.operation,
-          p.url,
-        );
+        let result;
+        try {
+          result = await native(
+            p.opening,
+            OAuthNativeAction.GrokSubscriptionReopen,
+            p.generation,
+            p.operation,
+            p.url,
+          );
+        } catch (error) {
+          if (error !== NativeFailureReason.Incompatible) throw error;
+          // The same closed refusal as the first open: stop offering reopen.
+          update(p, {
+            browserReady: false,
+            problem: "grok-subscription.problem.remoteUnsupported",
+          });
+          return;
+        }
         if (!live(p)) return;
         if (
           !isEntityId(result.generation) ||
