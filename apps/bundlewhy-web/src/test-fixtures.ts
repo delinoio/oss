@@ -13,6 +13,7 @@ import {
   RunStatus,
   SourceFileSchema,
   SourceOrigin,
+  SourceRevisionEvidence,
   type Analysis,
 } from "./gen/bundlewhy/v1/bundlewhy_pb";
 
@@ -203,5 +204,6 @@ export function fixtureSource() {
       "// header\nimport { render } from './render';\nimport _ from 'lodash';\nrender(_);",
     contentIncluded: true,
     stale: true,
+    revisionEvidence: SourceRevisionEvidence.BUILD_SNAPSHOT,
   });
 }

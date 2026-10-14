@@ -15,7 +15,8 @@ The bundlewhy web UI in a local browser, exported HTML reports and the Rust serv
 ## Interfaces and Contracts
 
 - Methods: `GetRunProgress`, `GetAnalysis`, `GetSourceFile`, `CancelRun`, `ListRuns`, `SelectRun`, `ExportReport`. No method accepts a filesystem path, shell command or build option. `GetSourceFile` uses a bundle-local source ID; `SelectRun` uses a run UUID from `ListRuns`.
-- Enums are stable and additive: `OptimizationCategory`, `EvidenceStatus`, `ConditionOutcome`, `RunStatus`, `RunStage`, `Bundler`, `EngineSupport`, `CoverageState`, `LocationKind`, `SourceOrigin`, `AttributionState`, `ProblemSeverity`, `ReportMode`. JSON uses the proto3 enum names.
+- Enums are stable and additive: `OptimizationCategory`, `EvidenceStatus`, `ConditionOutcome`, `RunStatus`, `RunStage`, `Bundler`, `EngineSupport`, `CoverageState`, `LocationKind`, `SourceOrigin`, `SourceRevisionEvidence`, `AttributionState`, `ProblemSeverity`, `ReportMode`. JSON uses the proto3 enum names.
+- `SourceFile.revision_evidence` and `SourceFileSummary.revision_evidence` distinguish `BUILD_SNAPSHOT` text from `UNAVAILABLE` analyzed-revision evidence. `UNSPECIFIED` is the conservative value for older bundles that did not record provenance. An unavailable source must not expose post-build live text or its hash as analyzed content.
 - Sizes use `uint32` so JSON carries numbers. `Analysis.schema_version` is `1`.
 - Saved and exported reports reject `CancelRun`; exported reports also reject `SelectRun` and `ExportReport` with `failed_precondition`.
 - Connect errors use standard codes. Messages start with the stable `BW_*` code followed by `: `, and the UI shows the recovery instruction for that code.

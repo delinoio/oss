@@ -299,16 +299,20 @@ impl<'a> Context<'a> {
         let file = chunk.file.clone();
         if let Some((path, src_line, src_column)) = chunk.original(line, column) {
             let mut located = self.original_location(&path, src_line, src_column);
-            located.generated = Some(generated);
             if located.snippet.is_none() {
-                located.snippet = Some(CodeSnippet {
-                    kind: LocationKind::Generated,
-                    path: file,
-                    start_line: line + 1,
-                    highlight_line: line + 1,
-                    text: excerpt,
-                });
+                return Located {
+                    location: Some(generated),
+                    generated: None,
+                    snippet: Some(CodeSnippet {
+                        kind: LocationKind::Generated,
+                        path: file,
+                        start_line: line + 1,
+                        highlight_line: line + 1,
+                        text: excerpt,
+                    }),
+                };
             }
+            located.generated = Some(generated);
             return located;
         }
         Located {

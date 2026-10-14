@@ -29,6 +29,8 @@ Each optimization category has a coverage state for the run.
 
 "No findings" in a covered category means the detectors ran and found nothing. That is different from "no coverage": an unavailable or not-applicable category says nothing about your build. bundlewhy never presents missing coverage as a clean result.
 
+Vite dead-code elimination coverage is partial when a mapped source cannot be read or its build-time text is unavailable. An unresolved environment-variable finding may be missing because bundlewhy cannot confirm the generated expression against the original build source. Disabled minification remains not applicable, and a non-default minifier remains unavailable. Rspack's environment-variable detector does not require that Vite-specific source confirmation.
+
 ## Rules
 
 | Rule                                   | Engine | Category              | Status                                                                                       | Evidence                                                                                                   |
@@ -61,7 +63,7 @@ Each rule lists the conditions it checks. Every condition has an outcome:
 
 ## Locations
 
-Locations use your original source positions when a source map maps them. When a chunk has no usable source map, bundlewhy falls back to generated chunk positions, marks source attribution for that chunk unavailable and reports `BW_SOURCE_MAP_MISSING`. Snippets are short excerpts; the UI can also show the full source file when source content was stored.
+Locations use your original source positions when a source map maps them to verified build source text. When a chunk has no usable source map, bundlewhy falls back to generated chunk positions, marks source attribution for that chunk unavailable and reports `BW_SOURCE_MAP_MISSING`. A mapped source without verifiable build text also uses a generated location and snippet. The source viewer identifies when the analyzed source revision cannot be verified; it does not show a later live read as analyzed code. Snippets are short excerpts; the UI can show the full source file when a verified build snapshot was stored.
 
 ## Dependency paths
 

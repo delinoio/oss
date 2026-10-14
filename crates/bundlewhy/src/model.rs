@@ -152,6 +152,12 @@ proto_enum!(SourceOrigin {
     Generated = "SOURCE_ORIGIN_GENERATED",
 });
 
+proto_enum!(SourceRevisionEvidence {
+    Unspecified = "SOURCE_REVISION_EVIDENCE_UNSPECIFIED",
+    BuildSnapshot = "SOURCE_REVISION_EVIDENCE_BUILD_SNAPSHOT",
+    Unavailable = "SOURCE_REVISION_EVIDENCE_UNAVAILABLE",
+});
+
 proto_enum!(AttributionState {
     Unspecified = "ATTRIBUTION_STATE_UNSPECIFIED",
     Supported = "ATTRIBUTION_STATE_SUPPORTED",
@@ -347,6 +353,7 @@ pub struct SourceFile {
     pub content: String,
     pub content_included: bool,
     pub stale: bool,
+    pub revision_evidence: SourceRevisionEvidence,
 }
 
 impl SourceFile {
@@ -358,6 +365,7 @@ impl SourceFile {
             sha256: self.sha256.clone(),
             content_included: self.content_included,
             stale: self.stale,
+            revision_evidence: self.revision_evidence,
         }
     }
 }
@@ -371,6 +379,7 @@ pub struct SourceFileSummary {
     pub sha256: String,
     pub content_included: bool,
     pub stale: bool,
+    pub revision_evidence: SourceRevisionEvidence,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

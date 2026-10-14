@@ -117,6 +117,13 @@ enum SourceOrigin {
   SOURCE_ORIGIN_GENERATED = 4;
 }
 
+// Whether original source text is proven to be the revision read by the build.
+enum SourceRevisionEvidence {
+  SOURCE_REVISION_EVIDENCE_UNSPECIFIED = 0;
+  SOURCE_REVISION_EVIDENCE_BUILD_SNAPSHOT = 1;
+  SOURCE_REVISION_EVIDENCE_UNAVAILABLE = 2;
+}
+
 enum AttributionState {
   ATTRIBUTION_STATE_UNSPECIFIED = 0;
   ATTRIBUTION_STATE_SUPPORTED = 1;
@@ -273,6 +280,7 @@ message SourceFile {
   bool content_included = 6;
   // True when the saved hash differs from the current project file.
   bool stale = 7;
+  SourceRevisionEvidence revision_evidence = 8;
 }
 
 message SourceFileSummary {
@@ -282,6 +290,7 @@ message SourceFileSummary {
   string sha256 = 4;
   bool content_included = 5;
   bool stale = 6;
+  SourceRevisionEvidence revision_evidence = 7;
 }
 
 message Analysis {

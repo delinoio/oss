@@ -41,7 +41,7 @@ By default, bundlewhy analyzes the current directory and selects the bundler and
 | ---------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | `--no-open`                  | Start the local server but do not open a browser.                                                          |
 | `--no-serve`                 | Save the results and exit without starting the local server.                                               |
-| `--exclude-sources`          | Store source hashes and paths, but not source content.                                                     |
+| `--exclude-sources`          | Store source paths and available build-snapshot hashes, but not source content.                            |
 | `--allow-unsupported-engine` | Analyze with an installed engine version outside the [compatibility matrix](/bundlewhy/supported-engines). |
 
 Global flags are `--verbose`, `--no-color`, `--help` and `--version`.

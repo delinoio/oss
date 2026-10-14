@@ -27,6 +27,7 @@ import {
   RunStage,
   RunStatus,
   SourceFileSchema,
+  SourceRevisionEvidence,
   type Analysis,
 } from "./gen/bundlewhy/v1/bundlewhy_pb";
 import { TransportMode } from "./transport";
@@ -323,6 +324,29 @@ describe("source viewer", () => {
         "Source content was not included in this report.",
       ),
     ).toBeTruthy();
+  });
+
+  it("labels source text without a build snapshot as unverified", async () => {
+    const source = create(SourceFileSchema, {
+      ...fixtureSource(),
+      sha256: "",
+      content: "",
+      contentIncluded: false,
+      stale: false,
+      revisionEvidence: SourceRevisionEvidence.UNAVAILABLE,
+    });
+    await renderAnalysis(fixtureAnalysis(), {
+      getSourceFile: () => ({ source }),
+    });
+    fireEvent.click(screen.getByRole("button", { name: "View full source" }));
+    const dialog = await screen.findByRole("dialog", { name: "src/main.ts" });
+    expect(
+      within(dialog).getByText("Build source revision unavailable"),
+    ).toBeTruthy();
+    expect(
+      within(dialog).getByText("Verified build source content is unavailable."),
+    ).toBeTruthy();
+    expect(within(dialog).queryByText("// header")).toBeNull();
   });
 });
 

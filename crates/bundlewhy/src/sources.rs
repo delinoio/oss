@@ -7,7 +7,7 @@ use std::{
 
 use sha2::{Digest, Sha256};
 
-use crate::model::{SourceFile, SourceOrigin};
+use crate::model::{SourceFile, SourceOrigin, SourceRevisionEvidence};
 
 pub fn sha256_hex(bytes: &[u8]) -> String {
     let digest = Sha256::digest(bytes);
@@ -138,6 +138,9 @@ pub struct SourceStore {
     /// the file still exists.
     pub existence_relative: BTreeMap<String, String>,
     pub unreadable: Vec<String>,
+    /// Readable text with no build-time snapshot. Live bytes cannot prove
+    /// which revision the bundler analyzed.
+    pub unverified: Vec<String>,
     /// Source text the bundler used, from source-map `sourcesContent`, keyed by
     /// resolved path. Preferred over the live file, which may have changed
     /// after the build read it.
@@ -323,7 +326,7 @@ impl SourceStore {
         }
     }
 
-    /// Adds a file from disk and returns its source ID and text.
+    /// Adds a source and returns its ID and verified build text, if available.
     ///
     /// The text is `None` for a non-text source (an imported image or a
     /// bundler-generated asset stub): it keeps its path and ID for
@@ -403,7 +406,11 @@ impl SourceStore {
                 derived,
             ),
             (None, LiveRead::Bytes(bytes)) => match as_text(&bytes) {
-                Some(live) => (Some(live.to_owned()), sha256_hex(&bytes), false, false),
+                Some(_) => {
+                    tracing::debug!(path = %classified.display, "live source has no build snapshot");
+                    self.unverified.push(classified.display.clone());
+                    (None, String::new(), false, true)
+                }
                 None => (None, sha256_hex(&bytes), false, true),
             },
             (None, LiveRead::NotPermitted) => {
@@ -431,6 +438,11 @@ impl SourceStore {
             content: text.clone().unwrap_or_default(),
             content_included: verifiable,
             stale,
+            revision_evidence: if snapshot.is_some() && !stub {
+                SourceRevisionEvidence::BuildSnapshot
+            } else {
+                SourceRevisionEvidence::Unavailable
+            },
         };
         // A saved bundle is reopened against the backing file, not the module
         // path with its import query. Text sources are re-hashed; the others
@@ -613,7 +625,7 @@ mod tests {
         let first = store.add_file(dir.path(), &paths[0]).unwrap();
         let second = store.add_file(dir.path(), &paths[1]).unwrap();
         assert_ne!(first.0, second.0);
-        assert_eq!(second.1.as_deref(), Some("export const v = 2;"));
+        assert!(second.1.is_none());
         let files = store.into_files();
         assert_eq!(files.len(), 2);
         let mut displays: Vec<&str> = files.iter().map(|file| file.path.as_str()).collect();
@@ -642,6 +654,40 @@ mod tests {
         let files = store.into_files();
         assert!(files[0].stale);
         assert_eq!(files[0].sha256, sha256_hex(b"what the build read"));
+        assert_eq!(
+            files[0].revision_evidence,
+            SourceRevisionEvidence::BuildSnapshot
+        );
+    }
+
+    #[test]
+    fn source_provenance_without_snapshot_does_not_claim_live_revision() {
+        for edited_after_build in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let file = dir.path().join("a.js");
+            std::fs::write(&file, "export const value = 'built';").unwrap();
+            if edited_after_build {
+                std::fs::write(&file, "export const value = 'after';").unwrap();
+            }
+            // Without sourcesContent, neither the matching-looking live file
+            // nor a post-build edit can prove the bundler's input revision.
+            let mut store = SourceStore::new(true);
+            let (id, text) = store.add_file(dir.path(), &file).unwrap();
+            assert!(text.is_none());
+            assert_eq!(store.unverified, vec!["a.js"]);
+            assert!(store.changed_since_build.is_empty());
+            assert!(!store.project_relative.contains_key(&id));
+            assert_eq!(store.existence_relative[&id], "a.js");
+            let source = store.into_files().pop().unwrap();
+            assert_eq!(
+                source.revision_evidence,
+                SourceRevisionEvidence::Unavailable
+            );
+            assert!(source.content.is_empty());
+            assert!(!source.content_included);
+            assert!(source.sha256.is_empty());
+            assert!(!source.stale);
+        }
     }
 
     #[cfg(unix)]
@@ -665,14 +711,9 @@ mod tests {
         let module = outside.path().join("module.js");
         std::fs::write(&module, "export {}").unwrap();
         store.allowed.insert(normalize(&module));
-        assert_eq!(
-            store
-                .add_file(project.path(), &module)
-                .unwrap()
-                .1
-                .as_deref(),
-            Some("export {}")
-        );
+        assert!(store.add_file(project.path(), &module).unwrap().1.is_none());
+        assert_eq!(store.unverified.len(), 1);
+        assert!(store.unverified[0].ends_with("/module.js"));
     }
 
     #[test]
@@ -686,7 +727,11 @@ mod tests {
         assert_eq!(files.len(), 1);
         assert!(files[0].content.is_empty());
         assert!(!files[0].content_included);
-        assert_eq!(files[0].sha256, sha256_hex(b"export const a = 1;"));
+        assert!(files[0].sha256.is_empty());
+        assert_eq!(
+            files[0].revision_evidence,
+            SourceRevisionEvidence::Unavailable
+        );
     }
 
     const PNG_BYTES: &[u8] = &[
@@ -1013,13 +1058,13 @@ mod tests {
             ("a.js", Text, Binary, outcome(true, true, true, false)),
             ("a.js", Text, InvalidUtf8, outcome(true, true, true, false)),
             ("a.js", Text, Removed, outcome(true, true, true, false)),
-            // No snapshot: text is read live; non-text is unverifiable but
-            // its removal is still detected.
+            // No snapshot: a live text read cannot verify the built revision.
+            // Keep only an existence check for a saved run.
             (
                 "a.js",
                 None,
                 MatchingText,
-                outcome(false, true, true, false),
+                outcome(false, false, false, true),
             ),
             ("a.js", None, Binary, outcome(false, false, false, true)),
             (
@@ -1183,12 +1228,13 @@ mod tests {
                 ChangedText,
                 outcome(false, true, false, true),
             ),
-            // Without a snapshot the live file is the source, query or not.
+            // Without a snapshot neither a plain nor a queried live file
+            // proves the analyzed revision.
             (
                 "a.js?v=1",
                 None,
                 MatchingText,
-                outcome(false, true, true, false),
+                outcome(false, false, false, true),
             ),
             ("a.js?raw", None, Binary, outcome(false, false, false, true)),
         ];
@@ -1266,15 +1312,16 @@ mod tests {
         for name in ["src/a.js?raw", "src/a.js?v=1#x", "src/a.js#frag"] {
             let path = dir.path().join(name);
             let mut store = SourceStore::new(true);
-            // No source map snapshot: the live backing file is the source and
-            // is neither unreadable nor stale.
+            // No source map snapshot: a live read verifies the path, but not
+            // the revision used by the build.
             let (id, text) = store
                 .add_file(dir.path(), &path)
                 .unwrap_or_else(|| panic!("{name} must be readable"));
-            assert_eq!(text.as_deref(), Some("export const a = 1;"), "{name}");
+            assert!(text.is_none(), "{name}");
             assert!(store.unreadable.is_empty(), "{name}");
+            assert_eq!(store.unverified, vec![name.to_owned()], "{name}");
             assert!(store.changed_since_build.is_empty(), "{name}");
-            assert_eq!(store.project_relative[&id], "src/a.js", "{name}");
+            assert_eq!(store.existence_relative[&id], "src/a.js", "{name}");
             // The display path and module identity keep the query.
             let files = store.into_files();
             assert_eq!(files[0].path, name);

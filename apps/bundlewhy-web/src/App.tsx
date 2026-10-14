@@ -33,6 +33,7 @@ import {
   OptimizationCategory,
   ReportMode,
   RunStatus,
+  SourceRevisionEvidence,
   type Analysis,
   type ChunkSize,
   type CodeSnippet,
@@ -1216,15 +1217,33 @@ function SourceDialog({
         <>
           <p className="muted">
             {sourceOriginLabel(file.origin)}
-            {file.sha256 ? ` · SHA-256 ${file.sha256.slice(0, 12)}…` : ""}
+            {file.revisionEvidence === SourceRevisionEvidence.BUILD_SNAPSHOT &&
+            file.sha256
+              ? ` · Build SHA-256 ${file.sha256.slice(0, 12)}…`
+              : ""}
           </p>
+          {file.revisionEvidence !== SourceRevisionEvidence.BUILD_SNAPSHOT ? (
+            <div className="banner banner-warning" role="note">
+              <strong>
+                <span aria-hidden="true">⚠ </span>Build source revision
+                unavailable
+              </strong>
+              <p>
+                {file.revisionEvidence === SourceRevisionEvidence.UNAVAILABLE
+                  ? "This report has no verified build-time text for this source. Live file text is not shown as analyzed code."
+                  : "This report does not record whether source text came from the build."}
+              </p>
+            </div>
+          ) : null}
           {file.stale ? (
             <div className="banner banner-warning" role="note">
               <strong>
                 <span aria-hidden="true">⚠ </span>Source changed since analysis
               </strong>
               <p>
-                The current file differs from the version that was analyzed.
+                {file.revisionEvidence === SourceRevisionEvidence.BUILD_SNAPSHOT
+                  ? "The current file differs from the version that was analyzed."
+                  : "The source file was removed since this analysis."}
               </p>
             </div>
           ) : null}
@@ -1242,7 +1261,9 @@ function SourceDialog({
             </pre>
           ) : (
             <p className="empty">
-              Source content was not included in this report.
+              {file.revisionEvidence === SourceRevisionEvidence.UNAVAILABLE
+                ? "Verified build source content is unavailable."
+                : "Source content was not included in this report."}
             </p>
           )}
         </>

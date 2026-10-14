@@ -79,9 +79,11 @@ fn coverage(
     missing_maps: usize,
     failed_chunks: usize,
     unreadable_sources: usize,
+    unverified_sources: usize,
     unsupported_engine: Option<&str>,
 ) -> Vec<CategoryCoverage> {
     let rules = rules::rules_by_category(&collection.bundler);
+    let source_gaps = unreadable_sources.saturating_add(unverified_sources);
     OptimizationCategory::ALL
         .into_iter()
         .map(|category| {
@@ -159,12 +161,24 @@ fn coverage(
                         ),
                     )
                 }
-                // The direct-eval detector reads module sources; an unreadable
-                // source may hide a finding.
-                OptimizationCategory::NameMangling if unreadable_sources > 0 => (
+                // Vite's generated env expression needs confirmation from the
+                // build's original source; Rspack's detector does not.
+                OptimizationCategory::DeadCodeElimination
+                    if collection.bundler == "vite" && source_gaps > 0 =>
+                {
+                    (
+                        CoverageState::Partial,
+                        format!(
+                            "{source_gaps} source file(s) lack verifiable build text; Vite \
+                             environment-variable findings in them may be missing."
+                        ),
+                    )
+                }
+                // The direct-eval detector also reads original source text.
+                OptimizationCategory::NameMangling if source_gaps > 0 => (
                     CoverageState::Partial,
                     format!(
-                        "{unreadable_sources} source file(s) could not be read; direct-eval \
+                        "{source_gaps} source file(s) lack verifiable build text; direct-eval \
                          findings in them may be missing."
                     ),
                 ),
@@ -333,6 +347,7 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
         .map(|chunk| measure(chunk, display))
         .collect();
     let unreadable_sources = context.sources.unreadable.len();
+    let unverified_sources = context.sources.unverified.len();
     if !context.sources.changed_since_build.is_empty() {
         problems.push(problem(
             ErrorCode::SourceStale,
@@ -356,6 +371,15 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
             "Locations for these files are shown without source content.",
         ));
     }
+    if unverified_sources > 0 {
+        problems.push(problem(
+            ErrorCode::SourceUnverified,
+            ProblemSeverity::Warning,
+            format!("{unverified_sources} source file(s) have no build-time text snapshot"),
+            "Their live text cannot verify the revision analyzed by the build. Use source maps \
+             with sourcesContent or start a new run after checking build configuration.",
+        ));
+    }
     let project_relative = context.sources.project_relative.clone();
     let existence_relative = context.sources.existence_relative.clone();
     let sources = context.sources.into_files();
@@ -363,6 +387,7 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
         entry.code == ErrorCode::SourceMapMissing.as_str()
             || entry.code == ErrorCode::CollectionFailed.as_str()
             || entry.code == ErrorCode::SourceUnreadable.as_str()
+            || entry.code == ErrorCode::SourceUnverified.as_str()
     });
     let mut config_summary: Vec<ConfigEntry> = collection
         .config_summary
@@ -394,6 +419,7 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
             missing_maps.len(),
             failed_chunks,
             unreadable_sources,
+            unverified_sources,
             (collection.bundler_version != input.bundler.spec().version)
                 .then(|| {
                     format!(
@@ -425,7 +451,7 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{ConditionOutcome, Diagnostic, EvidenceStatus};
+    use crate::model::{ConditionOutcome, Diagnostic, EvidenceStatus, SourceRevisionEvidence};
 
     const PROJECT_PLACEHOLDER: &str = "/__bundlewhy_project__";
     const BUILD_PLACEHOLDER: &str = "/__bundlewhy_build__";
@@ -504,6 +530,143 @@ mod tests {
             project,
             output,
         }
+    }
+
+    fn vite_without_main_snapshot(
+        unreadable: bool,
+        edit: impl Fn(&mut serde_json::Value),
+    ) -> Fixture {
+        run_fixture_patched(BundlerChoice::Vite, true, edit, |build, project| {
+            let map_path = build.join("assets/index-BHjrzQLH.js.map");
+            let mut map: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(&map_path).unwrap()).unwrap();
+            let source_index = map["sources"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .position(|source| {
+                    source
+                        .as_str()
+                        .is_some_and(|path| path.ends_with("/src/main.js"))
+                })
+                .unwrap();
+            map["sourcesContent"][source_index] = serde_json::Value::Null;
+            if unreadable {
+                map["sources"][source_index] =
+                    format!("{project}/src/__bundlewhy_missing__.js").into();
+            }
+            std::fs::write(&map_path, serde_json::to_vec(&map).unwrap()).unwrap();
+        })
+    }
+
+    fn dead_code_coverage(analysis: &Analysis) -> &CategoryCoverage {
+        analysis
+            .coverage
+            .iter()
+            .find(|entry| entry.category == OptimizationCategory::DeadCodeElimination)
+            .unwrap()
+    }
+
+    #[test]
+    fn source_provenance_vite_unreadable_mapping_keeps_coverage_partial() {
+        let fixture = vite_without_main_snapshot(true, |_| {});
+        let analysis = &fixture.output.analysis;
+        assert_eq!(analysis.status, RunStatus::Partial);
+        assert_eq!(
+            analysis
+                .problems
+                .iter()
+                .filter(|entry| entry.code == "BW_SOURCE_UNREADABLE")
+                .count(),
+            1
+        );
+        assert!(
+            !analysis
+                .diagnostics
+                .iter()
+                .any(|entry| entry.rule == "minifier/unresolved-env-condition")
+        );
+        assert_eq!(dead_code_coverage(analysis).state, CoverageState::Partial);
+        assert!(
+            dead_code_coverage(analysis)
+                .note
+                .contains("environment-variable")
+        );
+    }
+
+    #[test]
+    fn source_provenance_vite_live_text_is_not_a_build_snapshot() {
+        let verified = run_fixture(BundlerChoice::Vite, |_| {});
+        assert!(
+            verified
+                .output
+                .analysis
+                .diagnostics
+                .iter()
+                .any(|entry| entry.rule == "minifier/unresolved-env-condition")
+        );
+        assert_eq!(
+            dead_code_coverage(&verified.output.analysis).state,
+            CoverageState::Covered
+        );
+
+        let unverified = vite_without_main_snapshot(false, |_| {});
+        let analysis = &unverified.output.analysis;
+        assert_eq!(analysis.status, RunStatus::Partial);
+        assert!(
+            analysis
+                .problems
+                .iter()
+                .any(|entry| entry.code == "BW_SOURCE_UNVERIFIED")
+        );
+        assert_eq!(dead_code_coverage(analysis).state, CoverageState::Partial);
+        assert!(
+            !analysis
+                .diagnostics
+                .iter()
+                .any(|entry| entry.rule == "minifier/unresolved-env-condition")
+        );
+        let main = unverified
+            .output
+            .sources
+            .iter()
+            .find(|source| source.path == "src/main.js")
+            .unwrap();
+        assert_eq!(main.revision_evidence, SourceRevisionEvidence::Unavailable);
+        assert!(main.content.is_empty());
+        assert!(main.sha256.is_empty());
+    }
+
+    #[test]
+    fn source_provenance_minifier_precedence_and_rspack_scope() {
+        for (edit, expected) in [
+            (false, CoverageState::NotApplicable),
+            (true, CoverageState::Unavailable),
+        ] {
+            let fixture = vite_without_main_snapshot(true, |value| {
+                if edit {
+                    value["defaultMinifier"] = false.into();
+                } else {
+                    value["minifyEnabled"] = false.into();
+                }
+            });
+            assert_eq!(dead_code_coverage(&fixture.output.analysis).state, expected);
+        }
+
+        let value: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(manifest_dir().join("tests/fixtures/rspack/collect.json")).unwrap(),
+        )
+        .unwrap();
+        let collection: Collection = serde_json::from_value(value).unwrap();
+        let rspack = coverage(&collection, 0, 0, 1, 0, None);
+        assert_eq!(
+            rspack
+                .iter()
+                .find(|entry| entry.category == OptimizationCategory::DeadCodeElimination)
+                .unwrap()
+                .state,
+            CoverageState::Covered
+        );
     }
 
     fn walk(dir: &Path) -> Vec<PathBuf> {
