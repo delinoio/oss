@@ -25,6 +25,53 @@ import {
 export const ADAPTER_ID = "bundlewhy-collector-vite";
 export const ADAPTER_VERSION = "1";
 
+/**
+ * Evaluates `build.rolldownOptions.treeshake.moduleSideEffects` for one bundled
+ * module the way Rolldown does when no plugin hook set a value for it.
+ *
+ * Returns "true" or "false" when the option decides the module, "null" when it
+ * gives no verdict (the default `true` and an unmatched rule list, so Rolldown
+ * continues with the package `sideEffects` field and its own code analysis),
+ * or a value summary for options that bundlewhy does not evaluate (functions
+ * and unknown shapes).
+ */
+export function configuredModuleSideEffects(option, id) {
+  if (option === undefined || option === true) return "null";
+  if (option === false) return "false";
+  // Rolldown normalizes this to "external modules are side-effect free, local
+  // modules have side effects"; the collected modules are bundled ones.
+  if (option === "no-external") return "true";
+  if (!Array.isArray(option)) return summarizeValue(option);
+  // A list of module IDs: listed modules have side effects, all others do not.
+  // Rolldown reads an empty list the same way, so no module has side effects.
+  if (option.every((entry) => typeof entry === "string")) {
+    return String(option.includes(id));
+  }
+  // A list of rules: the first matching rule decides.
+  for (const rule of option) {
+    const valid =
+      rule !== null &&
+      typeof rule === "object" &&
+      typeof rule.sideEffects === "boolean" &&
+      (rule.test === undefined || rule.test instanceof RegExp) &&
+      (rule.external === undefined || typeof rule.external === "boolean") &&
+      (rule.test !== undefined || rule.external !== undefined);
+    if (!valid) return summarizeValue(option);
+  }
+  for (const rule of option) {
+    // Bundled modules are never external.
+    if (rule.external === true) continue;
+    // Rolldown tests the pattern without regard to `lastIndex` state.
+    const test =
+      rule.test === undefined ||
+      new RegExp(rule.test.source, rule.test.flags.replace(/[gy]/g, "")).test(
+        id,
+      );
+    if (test) return String(rule.sideEffects);
+  }
+  return "null";
+}
+
 function collectorPlugin(state) {
   return {
     name: "bundlewhy:collector",
@@ -32,6 +79,13 @@ function collectorPlugin(state) {
     apply: "build",
     configResolved(config) {
       state.root = config.root;
+      const treeshakeOption =
+        config.build.rolldownOptions?.treeshake ??
+        config.build.rollupOptions?.treeshake;
+      state.moduleSideEffectsOption =
+        treeshakeOption !== null && typeof treeshakeOption === "object"
+          ? treeshakeOption.moduleSideEffects
+          : undefined;
       state.resolved = {
         minify: config.build.minify,
         sourcemap: config.build.sourcemap,
@@ -86,6 +140,14 @@ function collectorPlugin(state) {
           moduleSideEffects: info
             ? summarizeValue(info.moduleSideEffects)
             : null,
+          // Hook-level values (getModuleInfo) list only what JavaScript hooks
+          // set. They never reflect the configured
+          // treeshake.moduleSideEffects option, which Rolldown consults next,
+          // or a value that a native plugin (such as Vite's resolver) set.
+          treeshakeSideEffects: configuredModuleSideEffects(
+            state.moduleSideEffectsOption,
+            id,
+          ),
           inputFormat: info?.inputFormat ?? "unknown",
           renderedLength: 0,
           included: false,
@@ -95,9 +157,13 @@ function collectorPlugin(state) {
           packageName: pkg?.name ?? null,
           packageVersion: pkg?.version ?? null,
           packageDir: pkg?.dir ?? null,
+          // A string is a glob, so quote it: the bare words `true` and
+          // `false` stay reserved for the boolean values.
           packageSideEffects:
             pkg && pkg.sideEffects !== null
-              ? summarizeValue(pkg.sideEffects)
+              ? typeof pkg.sideEffects === "string"
+                ? JSON.stringify(pkg.sideEffects)
+                : summarizeValue(pkg.sideEffects)
               : null,
         };
         modules.set(id, record);
@@ -150,6 +216,7 @@ await runAdapter(async (request) => {
   const state = {
     root: null,
     resolved: null,
+    moduleSideEffectsOption: undefined,
     collection: null,
     outputs: 0,
     warnings: [],

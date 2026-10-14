@@ -2281,6 +2281,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 - Baseten Device OAuth retains original window/server/opening/generation ownership without a listener. Advertise it only with the accepted shared compiled registration and exact approval URI; BindOpen cannot receive query credentials, arbitrary paths or another provider URL. No native polling, Device code, token or public Take callback is supported.
 
 - Claude subscription browser Open/Reopen uses closed pinned original URLs and trusted main-window/server/Settings lifetime/operation/generation ownership. The native validator accepts the auth-login profile and, separately, the server-owned setup-token profile (exactly the `user:inference` scope, the manual code callback and `code=true`; never a localhost callback), matching the frontend and Go validators. Keep browser binding kinds disjoint from provider/Codex callback flows; create no listener or code receiver, never exchange or persist code. Initial replay cannot reopen; explicit reopen preserves exact original URL. Disposal or scope changes erase presentation authority under the desktop/subscription contracts.
+- Grok Build subscription browser Open/Reopen (`grok-subscription-open`, `grok-subscription-reopen`, `BrowserBindingKind::GrokSubscription`, TypeScript `OAuthNativeAction.GrokSubscriptionOpen/GrokSubscriptionReopen`) uses the same trusted main-window/server/Settings lifetime/operation/generation ownership and stays disjoint from provider, Codex and Claude kinds; it adds no `OAuthProfile`. The native validator accepts only a raw `https://auth.x.ai/oauth2/authorize` URL (no port, credentials or fragment; `url.as_str()` equal to the input) with a closed query: `response_type=code`, client `b1a00492-073a-47ea-816f-4c329264a828`, S256 with a 43-character challenge, nonempty `[A-Za-z0-9-_.~]` `state` and `nonce` (at most 512 bytes), optional `referrer=grok-build`, optional space-separated `scope`, and `redirect_uri` exactly `http://127.0.0.1:<port>/callback` with a numeric unprivileged port. Duplicate or unknown keys are refused. A valid URL opens once; initial replay never reopens; Reopen opens only the original URL once. Local login (`local=true`) binds nothing and only opens the URL because the server owns the loopback listener. Remote login is refused with `Incompatible` (after validation, before any browser or listener exists) while the server cannot forward a Grok callback: `ForwardSubscriptionCallback` accepts only the ChatGPT/Codex login (`auth.openai.com`, port 1457) and rejects Grok accounts, so a consumed one-shot code could never be delivered. The native host gates this on a private flag that stays false until the server validates and forwards Grok callbacks by service (Grok host, state and the bound dynamic port) while Codex forwarding stays unchanged. With that flag enabled, remote login binds IPv4 `127.0.0.1` on that same port only, accepts one loopback-peer `GET /callback` with exact Host `127.0.0.1:<port>` and a closed `code`/`state`/`scope` query whose state equals the original, and Take returns that query once for the existing TypeScript path to forward through `ForwardSubscriptionCallback` bound to the operation id. A bind conflict fails as `SidecarFailed` and never remaps the port; a denial or `iss` redirect is refused until the real redirect shape is recorded. Second, late, expired or post-close deliveries are dropped: the listener handler reads no longer than the attempt deadline and rechecks it immediately before the one-shot claim, so a peer accepted just before expiry cannot store a code afterwards, codes are zeroized on drop, and URLs, codes and state are never logged. The receiver joins on disposal, window close or expiry.
 
 - `credential_access.rs` retains one startup Keychain attempt and its paired client in the native Connector across renderer/window lifetimes. Reconcile the client only after successful explicit local-registration recovery for the same server; preserve the attempt/result and fail closed unless the previous client is revoked. Grant `desktop_credential_access` only to trusted Local webviews through its dedicated permission, recheck window/server/runtime authority before dispatch and response, and accept only Observe/Retry/Skip. Go owns existing vault reads and joined cancellation. Never expose credential bytes, accept account/path selectors, retry terminal failures automatically or weaken original 35-second shutdown. Follow the desktop/credential contracts.
 
@@ -5055,7 +5056,7 @@ Settings provides explicit export, file/pasted import, machine and checkout mapp
 
 The session transcript renders server-retained `grok_text` only after validating the complete original metadata array, exact native session/prompt namespaces, product execution identity, event/chunk ordering, role/state and absence of foreign content families. Preserve original text as inert text. Details show original first/latest events, latest native chunk and exact context estimate; response text completion is distinct from execution completion. Invalid or mixed records show unavailable rather than falling through to generic text.
 
-The existing Connect Query native-usage disclosure additionally reads Grok `1.0.41` resources under their original session/execution/thread/prompt. Validate the closed five-counter response shape and preserve canonical uint64 strings without JavaScript numeric conversion. Label product response order, measured zero, absent total/cost and separate context/input/auxiliary scopes. Retained preceding-execution and stale-read handling stays intact. Neither display starts work, changes configuration, synthesizes billing or enables unimplemented dispatch. Component/RPC rendering evidence is separate from native platform/tray acceptance.
+The existing Connect Query native-usage disclosure additionally reads Grok resources at or above `domain.GrokProtocolVersion` (`1.0.41`) under their original session/execution/thread/prompt. Validate the closed five-counter response shape and preserve canonical uint64 strings without JavaScript numeric conversion. Label product response order, measured zero, absent total/cost and separate context/input/auxiliary scopes. Retained preceding-execution and stale-read handling stays intact. Neither display starts work, changes configuration, synthesizes billing or enables unimplemented dispatch. Component/RPC rendering evidence is separate from native platform/tray acceptance.
 
 Original Grok completion details additionally require the exact `closed-first-text` terminal shape, original execution/session/prompt, default initial mode, observed model, closed one-response content and no foreign terminal family. Display native end-turn outcome and reported input total/call/duration/elapsed integers with full precision. Keep these overlapping input totals separate from individual-response usage, actual cost and auxiliary work; successful native closure cannot offer continuation or imply the final workspace cleanup report. Missing/mixed/inconsistent records show unavailable and expose no control.
 
@@ -5374,7 +5375,7 @@ API provider availability is server-owned and presence-aware under [the feature]
 
 Account type/provider list selectors are list-only Connect inputs applied by SQLite before page limiting. They do not alter coherent snapshots or event streams. Desktop account menus and the guided API account flow require `ACCOUNT_TYPE_FILTER` plus provider activation, active-provider model filtering and account-provider filtering capabilities; see the account, protocol, catalog and desktop contracts.
 
-Grok Build `1.0.41` now participates in native protocol discovery through owned private configuration inspection and ACP initialization, including its original empty startup MCP inventory. The profile rejects inherited settings/extensions and discards native host/path metadata, with no authentication, session creation or inference. Real isolated macOS arm64 discovery evidence is separate from the still-required Grok execution/account/Worker integration and other-platform acceptance; detected or protocol-verified installations retain empty execution capabilities.
+Grok Build at or above `domain.GrokProtocolVersion` (`1.0.41`) now participates in native protocol discovery through owned private configuration inspection and ACP initialization, including its original empty startup MCP inventory. The profile rejects inherited settings/extensions and discards native host/path metadata, with no authentication, session creation or inference. Real isolated macOS arm64 discovery evidence is separate from the still-required Grok execution/account/Worker integration and other-platform acceptance; detected or protocol-verified installations retain empty execution capabilities.
 
 Grok original session/input binding now composes its native observation, immutable Worker claims, durable outbox and transactional server publication. Initial Execute/Plan mode remains separately typed and visible in desktop execution configuration. Actual pinned macOS server/relay fixtures cover both modes and lost session/input acknowledgments with receipt-only replay; original text and response counters now have their own typed publication and desktop disclosure, and the separately verified closed first-text profile now publishes its native terminal plus a version-1 completion boundary. The ordinary first-text Worker runner and public initial Execute dispatch now compose workspace ownership, original native closure/history and the version-1 completion report for owned General Chat. The selected model context window and known/user-declared source are immutable and matched against native setup; unsupported selections remain queued without routing changes. User/tool/interaction/Plan/Stop publication and continuation remain unfinished. Registration is limited to the verified first-input Chat Completions/default-settings profile and cannot silently omit explicit instructions or options.
 
@@ -6997,14 +6998,67 @@ accessible text and expanded source remain available. Keep the 36px target, shar
 native keyboard behavior and visible focus. The resting row has no background,
 border, rounded box, shadow, Artifact label, raw kind or routine completion badge.
 
-Expanded content retains the same summary row and plain inert source text beside
-one subtle vertical rule with approximately 20px indentation. Show Initial
-observation, Streamed observations and Final observation only when they contain
-supplied text. Keep summary/content families, original part indices, delta kinds,
-order and exact Unicode/whitespace separate. Never merge, deduplicate, generate
-summaries, split sentences or reconstruct content from deltas. Empty records keep
-the disclosure and show **No reasoning content was supplied.** / **제공된 생각
-과정이 없습니다.** when expanded. No hidden reasoning recovery is implied.
+Expanded content retains the same summary row and shows exactly one plain inert
+text body beneath it, beside one subtle vertical rule with approximately 20px
+indentation, an 8px gap below the row, 13px neutral text, about 1.45 line height
+and wrapping with no horizontal overflow. It shows no Initial observation,
+Streamed observations or Final observation heading, no part-index label and no
+raw delta kind or index. The body comes from the first source family with
+non-whitespace text, in this order: completed content parts, streamed
+`reasoning-content` deltas in sequence order, started content parts, completed
+summary parts, streamed `reasoning-summary` deltas in sequence order, started
+summary parts. Families are never combined, so a completed content snapshot
+replaces the streamed body instead of extending it, and the UI never claims a
+snapshot was reconstructed from deltas. The selected parts are joined for display
+only: whitespace at a part boundary collapses to one space; a boundary without
+whitespace receives one space except before closing punctuation or quotes and
+after opening punctuation or quotes (best effort, so a word split across chunks
+can be separated). Punctuation roles are fixed by character:
+
+- Closing, attached to the previous part: `. , ; : ! ? ) ] } % …`, `»`, `”`
+  (U+201D) and the CJK and Korean closers `、 。 ， ． ： ； ！ ？ ） ］ ｝ 」 』 】
+〉 》 〕 〗 ｣ ｡ ､`.
+- Opening, attached to the next part: `( [ {`, `«`, `“` (U+201C), `‘`
+  (U+2018), `¡ ¿` and the CJK and Korean openers `「 『 【 〈 《 （ ［ ｛ 〔 〖 ｢`.
+- Every other character, including dashes, `/` and `・`, gets the normal space.
+- Curly double quotes follow the English convention (U+201C opens, U+201D
+  closes) and never change the straight double quote state; other quoting
+  conventions are not detected. Straight double quotes alternate between
+  opening and closing. U+2018 opens a quote unless it starts a word-initial
+  elision such as `‘tis`, where it is an apostrophe.
+
+The straight single quote and the curly closing quote U+2019 are both quotes and
+apostrophes, so they are classified by joiner state. For a part that starts with
+one of them, with `depth` as the number of unclosed single quotes:
+
+| Boundary before the part                                            | Part starts with                                                  | Result                                             |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------- | -------------------------------------------------- |
+| Whitespace, opening punctuation, an opening quote or the body start | `'` followed by an elision                                        | apostrophe                                         |
+| Same                                                                | `'` otherwise                                                     | opens a quote                                      |
+| Same                                                                | U+2019 followed by an elision                                     | apostrophe                                         |
+| Same                                                                | U+2019 otherwise                                                  | closes a quote when `depth > 0`, else apostrophe   |
+| None, after a word or punctuation                                   | `'` or U+2019 followed by an elision                              | apostrophe, one space                              |
+| Same                                                                | `'` followed by a contraction suffix (`s t re ve ll d m`)         | no space; closes when `depth > 0`, else apostrophe |
+| Same                                                                | `'` with `depth > 0`, not followed by a word or opening character | no space; closes a quote                           |
+| Same                                                                | `'` otherwise                                                     | one space; opens a quote                           |
+| Same                                                                | U+2019 otherwise                                                  | no space; closes when `depth > 0`, else apostrophe |
+
+Elisions, introduced by `'`, U+2018 or U+2019, are `tis`, `twas`, `em`, `cause` and `til`, each not followed by a letter
+or digit, and a two-digit year such as `90s`, not followed by another digit or a
+quote, so `He wrote` + `’tis done` reads `He wrote ’tis done` and `called` + `'foo'` reads
+`called 'foo'`. Inside a part, an apostrophe between two word characters never
+opens or closes a quote. A straight single quote or U+2019 preceded by
+whitespace, opening punctuation or an opening quote is an apostrophe for an
+elision, an opening quote for `'`, and a closing quote or apostrophe for U+2019.
+Elsewhere it closes a quote when `depth > 0` and is an apostrophe otherwise.
+Apostrophes never change `depth`.
+
+Whitespace inside a part, every non-whitespace character and
+the retained record (families, original indices, sequence numbers and exact
+strings) are unchanged. The component never generates summaries, Markdown,
+translations or logs of reasoning text. When no family has text the disclosure
+shows **No reasoning content was supplied.** / **제공된 생각 과정이 없습니다.**
+when expanded. No hidden reasoning recovery is implied.
 
 The original default is collapsed; the existing `reasoning_disclosure` Expanded
 and Collapsed preferences govern initial mount. Explicit user choices and focus
