@@ -49,7 +49,7 @@ jobs:
       configuration_run_id: ${{ steps.candidate.outputs.configuration_run_id }}
       configuration_reused: ${{ steps.candidate.outputs.configuration_reused }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with: { fetch-depth: 0, persist-credentials: false }
       - name: Resolve and verify the exact release revision
         id: source
@@ -64,7 +64,7 @@ jobs:
           git checkout --detach "$revision"
           echo "revision=$revision" >> "$GITHUB_OUTPUT"
           echo "authorization_revision=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with: { node-version-file: .nvmrc }
       - name: Resolve an absent or same-commit retry tag
         id: tag
@@ -169,7 +169,7 @@ jobs:
       run_id: ${{ steps.select.outputs.run_id }}
       run_attempt: ${{ steps.select.outputs.run_attempt }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           {
             persist-credentials: false,
@@ -213,7 +213,7 @@ jobs:
           github-token: ${{ github.token }}
           run-id: ${{ steps.select.outputs.run_id }}
           path: private-artifacts
-      - uses: sigstore/cosign-installer@v4.1.0
+      - uses: sigstore/cosign-installer@ba7bc0a3fef59531c69a25acd34668d6d3fe6f22 # v4.1.0
       - name: Revalidate the complete selected candidate
         env:
           DEVHUD_PRIVATE_WORKFLOW_REF: ${{ github.repository }}/.github/workflows/package-devhud-private.yml@${{ github.ref }}
@@ -275,7 +275,7 @@ jobs:
       DEVHUD_LOGTO_ISSUER: ${{ vars.DEVHUD_LOGTO_ISSUER }}
       DEVHUD_PUBLIC_ASSET_BASE_URL: ${{ vars.DEVHUD_PUBLIC_ASSET_BASE_URL }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           {
             fetch-depth: 0,
@@ -375,7 +375,7 @@ jobs:
       RELEASE_RETRY: ${{ needs.identity.outputs.retry }}
       STORE_PROVIDER: ${{ matrix.provider }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           {
             persist-credentials: false,
@@ -383,7 +383,7 @@ jobs:
           }
       - name: Checkout immutable workflow tooling
         if: ${{ matrix.provider == 'apple' }}
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
           ref: ${{ github.workflow_sha }}
@@ -474,7 +474,7 @@ jobs:
       DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN: ${{ secrets.DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN }}
       RELEASE_RETRY: ${{ needs.identity.outputs.retry }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           {
             persist-credentials: false,
@@ -507,14 +507,14 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           {
             persist-credentials: false,
             ref: "${{ needs.identity.outputs.revision }}",
           }
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v6
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with: { node-version-file: .nvmrc, cache: pnpm }
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm --filter public-docs test
@@ -577,7 +577,7 @@ jobs:
       DEVHUD_PUBLIC_DOCS_PROJECT_NAME: ${{ vars.DEVHUD_PUBLIC_DOCS_PROJECT_NAME }}
       RELEASE_VERSION: ${{ needs.identity.outputs.version }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           {
             persist-credentials: false,
@@ -596,7 +596,7 @@ jobs:
           github-token: ${{ github.token }}
           run-id: ${{ needs.candidate.outputs.run_id }}
           path: private-artifacts
-      - uses: sigstore/cosign-installer@v4.1.0
+      - uses: sigstore/cosign-installer@ba7bc0a3fef59531c69a25acd34668d6d3fe6f22 # v4.1.0
       - name: Install OCI transport
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends skopeo
       - name: Copy, inspect, and sign exact image digests
@@ -660,7 +660,7 @@ jobs:
       DEVHUD_PUBLIC_DOCS_ACCOUNT_ID: ${{ vars.DEVHUD_PUBLIC_DOCS_ACCOUNT_ID }}
       DEVHUD_PUBLIC_DOCS_PROJECT_NAME: ${{ vars.DEVHUD_PUBLIC_DOCS_PROJECT_NAME }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           {
             persist-credentials: false,
@@ -742,7 +742,7 @@ jobs:
       DEVHUD_PUBLIC_DOCS_ACCOUNT_ID: ${{ vars.DEVHUD_PUBLIC_DOCS_ACCOUNT_ID }}
       DEVHUD_PUBLIC_DOCS_PROJECT_NAME: ${{ vars.DEVHUD_PUBLIC_DOCS_PROJECT_NAME }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           {
             persist-credentials: false,
@@ -791,7 +791,7 @@ jobs:
       RELEASE_TAG: ${{ needs.identity.outputs.tag }}
       RELEASE_VERSION: ${{ needs.identity.outputs.version }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           {
             fetch-depth: 0,
@@ -804,7 +804,7 @@ jobs:
           github-token: ${{ github.token }}
           run-id: ${{ needs.candidate.outputs.run_id }}
           path: private-artifacts
-      - uses: sigstore/cosign-installer@v4.1.0
+      - uses: sigstore/cosign-installer@ba7bc0a3fef59531c69a25acd34668d6d3fe6f22 # v4.1.0
       - name: Build channel-safe public evidence payload
         run: |
           set -euo pipefail
@@ -887,7 +887,7 @@ jobs:
       DEVHUD_PUBLIC_DOCS_ACCOUNT_ID: ${{ vars.DEVHUD_PUBLIC_DOCS_ACCOUNT_ID }}
       DEVHUD_PUBLIC_DOCS_PROJECT_NAME: ${{ vars.DEVHUD_PUBLIC_DOCS_PROJECT_NAME }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           {
             persist-credentials: false,
@@ -967,7 +967,7 @@ jobs:
       DEVHUD_DOCS_RELEASE_IDENTITY: "devhud@v${{ needs.identity.outputs.version }}@${{ needs.identity.outputs.revision }}"
       DEVHUD_RELEASE_AUTHORIZATION_REVISION: ${{ needs.identity.outputs.authorization_revision }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           {
             persist-credentials: false,
@@ -989,8 +989,8 @@ jobs:
           set -euo pipefail
           git fetch --no-tags origin main
           git checkout --detach origin/main
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v6
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with: { node-version-file: .nvmrc, cache: pnpm }
       - name: Build the current consolidated documentation base
         run: |
@@ -1060,7 +1060,7 @@ jobs:
       DEVHUD_CHROME_WEB_STORE_CLIENT_SECRET: ${{ secrets.DEVHUD_CHROME_WEB_STORE_CLIENT_SECRET }}
       DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN: ${{ secrets.DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           {
             persist-credentials: false,
@@ -1073,7 +1073,7 @@ jobs:
             node scripts/release/devhud-store-release.mjs status "$provider" --output "$provider-final.json"
             jq -e '.status == "public"' "$provider-final.json" >/dev/null
           done
-      - uses: sigstore/cosign-installer@v4.1.0
+      - uses: sigstore/cosign-installer@ba7bc0a3fef59531c69a25acd34668d6d3fe6f22 # v4.1.0
       - name: Install OCI transport
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends skopeo
       - name: Download and verify the exact public GitHub Release assets
@@ -1182,7 +1182,7 @@ jobs:
       DEVHUD_CHROME_WEB_STORE_CLIENT_SECRET: ${{ secrets.DEVHUD_CHROME_WEB_STORE_CLIENT_SECRET }}
       DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN: ${{ secrets.DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           {
             persist-credentials: false,
@@ -1202,7 +1202,7 @@ jobs:
             node scripts/release/devhud-store-release.mjs status "$provider" --output "$provider-ga.json"
             jq -e '.status == "public"' "$provider-ga.json" >/dev/null
           done
-      - uses: sigstore/cosign-installer@v4.1.0
+      - uses: sigstore/cosign-installer@ba7bc0a3fef59531c69a25acd34668d6d3fe6f22 # v4.1.0
       - name: Install OCI transport
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends skopeo
       - name: Reverify the exact public GitHub Release assets after GA approval
@@ -1322,7 +1322,7 @@ jobs:
       DEVHUD_CHROME_WEB_STORE_CLIENT_SECRET: ${{ secrets.DEVHUD_CHROME_WEB_STORE_CLIENT_SECRET }}
       DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN: ${{ secrets.DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           {
             persist-credentials: false,
