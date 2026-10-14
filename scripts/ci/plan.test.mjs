@@ -299,6 +299,32 @@ test("Go runner changes select validation without adding native Go runners to PR
   }
 });
 
+test("Go report runner changes select native Go tests without widening other jobs", () => {
+  for (const event of [Event.PullRequest, Event.Push]) {
+    for (const path of [
+      "scripts/ci/go-test-report.mjs",
+      "scripts/ci/go-test-report.test.mjs",
+    ]) {
+      const plan = planJobs(event, [path]);
+      assert.deepEqual(selected(event, [path]), ["go-test", "source-format"]);
+      assert.ok(Object.values(plan.forced).every((forced) => !forced));
+      assert.deepEqual(
+        matricesForEvent(event).goTestMatrix.include,
+        nativeMatrices[
+          event === Event.PullRequest ? "go-test-pr" : "go-test"
+        ].filter((row) => !row.os.startsWith("macos")),
+      );
+    }
+    assert.deepEqual(selected(event, ["docs/project-with-watch.md"]), [
+      "source-format",
+    ]);
+    assert.equal(
+      planJobs(event, ["scripts/ci/go-test.mjs"]).jobs["go-test"],
+      true,
+    );
+  }
+});
+
 test("root Rust toolchain changes select Forge validation and rendering", () => {
   for (const event of [Event.PullRequest, Event.Push]) {
     for (const path of ["rust-toolchain", "rust-toolchain.toml"]) {
