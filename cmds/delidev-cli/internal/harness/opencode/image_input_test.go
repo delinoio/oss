@@ -317,8 +317,10 @@ func TestCheckpointInputPartsAcceptOnlyTheClosedExpansion(t *testing.T) {
 	if checkpointReplacementProfile(nativeCheckpoint{History: HistoryObservation{Messages: []HistoryMessage{{Parts: expanded}}}}) == nil {
 		t.Fatal("replacement profile admitted image-bearing history")
 	}
-	if forkSourceProfile(nativeCheckpoint{}) == nil {
-		t.Fatal("fork profile precondition changed")
+	for _, reasoning := range []bool{false, true} {
+		if forkPartKindAllowed(FilePartKind, reasoning) {
+			t.Fatalf("fork profile (reasoning=%v) admitted an image file part", reasoning)
+		}
 	}
 }
 
