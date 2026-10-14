@@ -419,7 +419,19 @@ fn is_unverifiable_asset(source: &SourceFile, live: &[u8]) -> bool {
     as_text(live).is_none() && is_binary_asset_path(&source.path)
 }
 
-/// Marks sources whose current project file differs from the saved hash.
+/// Marks sources whose current project file differs from the saved hash and
+/// reconciles the `BW_SOURCE_STALE` warning with the result.
+///
+/// The call is idempotent: every earlier `BW_SOURCE_STALE` problem (including
+/// the build-time "changed after the build read them" warning) is replaced by
+/// at most one warning that carries the current count, and no warning remains
+/// when nothing is stale. The count covers every source that is stale after
+/// the call: sources rechecked against their live file and sources that cannot
+/// be rechecked (no project-relative or existence-only entry, such as a
+/// dependency source or an asset saved by an earlier version) but keep their
+/// saved stale flag. Other problems keep their order. When the project root
+/// cannot be verified, no check is possible, so saved flags and warnings are
+/// left untouched.
 pub fn mark_stale(bundle: &mut ResultBundle) {
     let root = PathBuf::from(&bundle.project_root);
     if bundle.project_root.is_empty() || !root.is_absolute() {
@@ -432,7 +444,6 @@ pub fn mark_stale(bundle: &mut ResultBundle) {
     else {
         return;
     };
-    let mut stale = 0usize;
     for source in &mut bundle.sources {
         // A source listed for existence only (an asset module, a binary file
         // or a derived module) keeps no comparable hash: only its removal
@@ -453,7 +464,6 @@ pub fn mark_stale(bundle: &mut ResultBundle) {
         let removed = std::fs::symlink_metadata(canonical_root.join(&relative)).is_err();
         if existence_only {
             source.stale = removed;
-            stale += usize::from(removed);
             continue;
         }
         let is_stale = read_project_file(&canonical_root, &relative).map_or(removed, |bytes| {
@@ -465,8 +475,9 @@ pub fn mark_stale(bundle: &mut ResultBundle) {
             }
         });
         source.stale = is_stale;
-        stale += usize::from(is_stale);
     }
+    // Sources that were not rechecked keep their saved flag and still count.
+    let stale = bundle.sources.iter().filter(|source| source.stale).count();
     let stale_ids: HashSet<String> = bundle
         .sources
         .iter()
@@ -476,6 +487,12 @@ pub fn mark_stale(bundle: &mut ResultBundle) {
     for summary in &mut bundle.analysis.sources {
         summary.stale = stale_ids.contains(&summary.id);
     }
+    let stale_code = ErrorCode::SourceStale.as_str();
+    bundle
+        .analysis
+        .problems
+        .retain(|entry| entry.code != stale_code);
+    tracing::debug!(stale, "reconciled stale source warning");
     if stale > 0 {
         bundle.analysis.problems.push(problem(
             ErrorCode::SourceStale,
@@ -603,6 +620,141 @@ mod tests {
         std::fs::remove_file(project.join("src/big.js")).unwrap();
         mark_stale(&mut saved);
         assert!(saved.sources[0].stale);
+    }
+
+    fn stale_count(bundle: &ResultBundle) -> usize {
+        bundle
+            .analysis
+            .problems
+            .iter()
+            .filter(|entry| entry.code == "BW_SOURCE_STALE")
+            .count()
+    }
+
+    fn stale_fixture(dir: &Path, saved_text: &str) -> ResultBundle {
+        let project = dir.join("project");
+        std::fs::create_dir_all(project.join("src")).unwrap();
+        std::fs::write(project.join("src/a.js"), saved_text).unwrap();
+        let mut saved = bundle();
+        saved.project_root = project.to_string_lossy().into_owned();
+        saved.sources[0].sha256 = sha256_hex(saved_text.as_bytes());
+        saved.analysis.sources = vec![crate::model::SourceFileSummary {
+            id: "src-0123456789abcdef".to_owned(),
+            ..crate::model::SourceFileSummary::default()
+        }];
+        saved
+            .project_relative
+            .insert("src-0123456789abcdef".to_owned(), "src/a.js".to_owned());
+        saved
+    }
+
+    #[test]
+    fn mark_stale_is_idempotent_and_replaces_the_build_time_warning() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut saved = stale_fixture(dir.path(), "original");
+        std::fs::write(dir.path().join("project/src/a.js"), "changed").unwrap();
+        saved.analysis.problems.push(problem(
+            ErrorCode::SourceUnreadable,
+            ProblemSeverity::Warning,
+            "unreadable",
+            "recover",
+        ));
+        saved.analysis.problems.push(problem(
+            ErrorCode::SourceStale,
+            ProblemSeverity::Warning,
+            "9 source file(s) changed after the build read them",
+            "build-time",
+        ));
+        saved.analysis.problems.push(problem(
+            ErrorCode::RunInterrupted,
+            ProblemSeverity::Error,
+            "interrupted",
+            "recover",
+        ));
+        for _ in 0..3 {
+            mark_stale(&mut saved);
+            assert_eq!(stale_count(&saved), 1);
+        }
+        let codes: Vec<_> = saved
+            .analysis
+            .problems
+            .iter()
+            .map(|entry| entry.code.as_str())
+            .collect();
+        assert_eq!(
+            codes,
+            [
+                "BW_SOURCE_UNREADABLE",
+                "BW_RUN_INTERRUPTED",
+                "BW_SOURCE_STALE"
+            ]
+        );
+        let warning = saved.analysis.problems.last().unwrap();
+        assert_eq!(
+            warning.message,
+            "1 source file(s) changed or were removed since this analysis"
+        );
+        assert!(saved.sources[0].stale && saved.analysis.sources[0].stale);
+    }
+
+    #[test]
+    fn restoring_a_changed_file_clears_the_warning_but_keeps_other_problems() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut saved = stale_fixture(dir.path(), "original");
+        saved.analysis.problems.push(problem(
+            ErrorCode::RunInterrupted,
+            ProblemSeverity::Error,
+            "interrupted",
+            "recover",
+        ));
+        let file = dir.path().join("project/src/a.js");
+        std::fs::write(&file, "changed").unwrap();
+        save(dir.path(), &saved).unwrap();
+        let loaded = load(dir.path()).unwrap();
+        assert_eq!(stale_count(&loaded), 1);
+        assert!(loaded.sources[0].stale && loaded.analysis.sources[0].stale);
+
+        std::fs::remove_file(&file).unwrap();
+        let removed = load(dir.path()).unwrap();
+        assert_eq!(stale_count(&removed), 1);
+        assert!(removed.sources[0].stale);
+
+        std::fs::write(&file, "original").unwrap();
+        let restored = load(dir.path()).unwrap();
+        assert_eq!(stale_count(&restored), 0);
+        assert!(!restored.sources[0].stale && !restored.analysis.sources[0].stale);
+        assert_eq!(restored.analysis.problems.len(), 1);
+        assert_eq!(restored.analysis.problems[0].code, "BW_RUN_INTERRUPTED");
+    }
+
+    #[test]
+    fn a_saved_build_time_warning_is_dropped_when_the_checked_source_is_unchanged() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut saved = stale_fixture(dir.path(), "original");
+        saved.analysis.problems.push(problem(
+            ErrorCode::SourceStale,
+            ProblemSeverity::Warning,
+            "1 source file(s) changed after the build read them",
+            "build-time",
+        ));
+        mark_stale(&mut saved);
+        assert_eq!(stale_count(&saved), 0);
+    }
+
+    #[test]
+    fn an_unverifiable_project_root_leaves_saved_flags_and_warnings_untouched() {
+        let mut saved = bundle();
+        saved.project_root = "relative/root".to_owned();
+        saved.sources[0].stale = true;
+        saved.analysis.problems.push(problem(
+            ErrorCode::SourceStale,
+            ProblemSeverity::Warning,
+            "build-time",
+            "recover",
+        ));
+        mark_stale(&mut saved);
+        assert!(saved.sources[0].stale);
+        assert_eq!(stale_count(&saved), 1);
     }
 
     #[test]
@@ -1156,5 +1308,331 @@ mod tests {
                 .collect::<Vec<_>>(),
             [("a", "src/a.js"), ("b", "src/b.js")]
         );
+    }
+
+    fn sources_with_flags(entries: &[(&str, bool, Option<&str>)]) -> ResultBundle {
+        // (id, saved stale flag, project-relative path)
+        let mut saved = bundle();
+        saved.sources.clear();
+        saved.analysis.sources.clear();
+        for (id, stale, relative) in entries {
+            saved.sources.push(SourceFile {
+                id: (*id).to_owned(),
+                path: format!("src/{id}.js"),
+                stale: *stale,
+                sha256: sha256_hex(b"saved"),
+                ..SourceFile::default()
+            });
+            saved
+                .analysis
+                .sources
+                .push(crate::model::SourceFileSummary {
+                    id: (*id).to_owned(),
+                    stale: *stale,
+                    ..crate::model::SourceFileSummary::default()
+                });
+            if let Some(relative) = relative {
+                saved
+                    .project_relative
+                    .insert((*id).to_owned(), (*relative).to_owned());
+            }
+        }
+        saved
+    }
+
+    /// Every stale source counts toward the single warning, whether it was
+    /// rechecked against its live file or kept its saved flag.
+    #[test]
+    fn warning_counts_rechecked_and_retained_stale_sources() {
+        // (entries, existing warning, expected warning count message)
+        type Entry = (&'static str, bool, Option<&'static str>);
+        let cases: &[(&[Entry], bool, Option<usize>)] = &[
+            // Not listed for a recheck, saved stale: the flag and the warning stay.
+            (&[("a", true, None)], true, Some(1)),
+            (&[("a", true, None)], false, Some(1)),
+            // An unsafe stored path is never read; the saved flag is retained.
+            (&[("a", true, Some("../escape.js"))], true, Some(1)),
+            // A retained flag and a rechecked changed source count together.
+            (
+                &[("a", true, None), ("b", false, Some("src/b.js"))],
+                true,
+                Some(2),
+            ),
+            // A rechecked unchanged source clears its own flag only.
+            (
+                &[("a", true, None), ("c", true, Some("src/c.js"))],
+                true,
+                Some(1),
+            ),
+            // Nothing stale: an earlier build-time warning is dropped.
+            (&[("a", false, None)], true, None),
+            (&[("c", true, Some("src/c.js"))], true, None),
+        ];
+        for (entries, existing_warning, expected) in cases {
+            let dir = tempfile::tempdir().unwrap();
+            let project = dir.path().join("project");
+            std::fs::create_dir_all(project.join("src")).unwrap();
+            // `b` differs from its saved hash; `c` matches it.
+            std::fs::write(project.join("src/b.js"), "changed").unwrap();
+            std::fs::write(project.join("src/c.js"), "saved").unwrap();
+            let mut saved = sources_with_flags(entries);
+            saved.project_root = project.to_string_lossy().into_owned();
+            if *existing_warning {
+                saved.analysis.problems.push(problem(
+                    ErrorCode::SourceStale,
+                    ProblemSeverity::Warning,
+                    "9 source file(s) changed after the build read them",
+                    "build-time",
+                ));
+            }
+            for _ in 0..2 {
+                mark_stale(&mut saved);
+                let warnings: Vec<_> = saved
+                    .analysis
+                    .problems
+                    .iter()
+                    .filter(|entry| entry.code == "BW_SOURCE_STALE")
+                    .collect();
+                match expected {
+                    Some(count) => {
+                        assert_eq!(warnings.len(), 1, "{entries:?}");
+                        assert_eq!(
+                            warnings[0].message,
+                            format!(
+                                "{count} source file(s) changed or were removed since this \
+                                 analysis"
+                            )
+                        );
+                    }
+                    None => assert!(warnings.is_empty(), "{entries:?}"),
+                }
+                // Source and summary flags agree after every call.
+                for (source, summary) in saved.sources.iter().zip(&saved.analysis.sources) {
+                    assert_eq!(source.stale, summary.stale, "{entries:?}");
+                }
+            }
+        }
+    }
+
+    /// Rechecked text sources, existence-checked sources and sources that keep
+    /// their saved flag all count toward the single warning, and the count
+    /// stays the same across repeated calls.
+    #[test]
+    fn warning_counts_existence_checked_sources_with_rechecked_and_retained_ones() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(project.join("src")).unwrap();
+        // `b` differs from its saved hash; `y` exists; `x` was removed.
+        std::fs::write(project.join("src/b.js"), "changed").unwrap();
+        std::fs::write(project.join("src/y.png"), [0x89, b'P', b'N', b'G', 0, 0xff]).unwrap();
+        let mut saved = sources_with_flags(&[
+            ("b", false, Some("src/b.js")),
+            // No entry in either map: the saved flag is retained.
+            ("d", true, None),
+            ("x", false, None),
+            // Present again: the saved flag is cleared by the recheck.
+            ("y", true, None),
+        ]);
+        saved.project_root = project.to_string_lossy().into_owned();
+        saved
+            .existence_relative
+            .insert("x".to_owned(), "src/x.png".to_owned());
+        saved
+            .existence_relative
+            .insert("y".to_owned(), "src/y.png".to_owned());
+        for _ in 0..2 {
+            mark_stale(&mut saved);
+            let stale_ids: Vec<_> = saved
+                .sources
+                .iter()
+                .filter(|source| source.stale)
+                .map(|source| source.id.as_str())
+                .collect();
+            assert_eq!(stale_ids, ["b", "d", "x"]);
+            let warnings: Vec<_> = saved
+                .analysis
+                .problems
+                .iter()
+                .filter(|entry| entry.code == "BW_SOURCE_STALE")
+                .collect();
+            assert_eq!(warnings.len(), 1);
+            assert_eq!(
+                warnings[0].message,
+                "3 source file(s) changed or were removed since this analysis"
+            );
+            for (source, summary) in saved.sources.iter().zip(&saved.analysis.sources) {
+                assert_eq!(source.stale, summary.stale);
+            }
+        }
+    }
+
+    /// An asset that existed during the analysis and is removed afterwards is
+    /// reported once on every reopen and in every export, and cleared when the
+    /// file is restored.
+    #[test]
+    fn asset_removed_after_the_analysis_is_reported_on_reopen_and_export() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(project.join("src")).unwrap();
+        std::fs::write(project.join("src/a.js"), "export const a = 1;").unwrap();
+        let logo = project.join("src/logo.png");
+        std::fs::write(&logo, [0x89, b'P', b'N', b'G', 0, 0xff]).unwrap();
+        let canonical = std::fs::canonicalize(&project).unwrap();
+        let mut store = crate::sources::SourceStore::new(true);
+        for (name, snapshot) in [
+            ("src/logo.png", "export default \"__VITE_ASSET__abc__\""),
+            ("src/a.js", "export const a = 1;"),
+        ] {
+            store.snapshots.insert(
+                crate::sources::normalize(&canonical.join(name)),
+                snapshot.to_owned(),
+            );
+            store.add_file(&canonical, &canonical.join(name)).unwrap();
+        }
+        assert!(store.changed_since_build.is_empty());
+        let mut saved = bundle();
+        saved.project_root = canonical.to_string_lossy().into_owned();
+        saved.project_relative = store.project_relative.clone();
+        saved.existence_relative = store.existence_relative.clone();
+        saved.sources = store.into_files();
+        saved.analysis.sources = saved.sources.iter().map(SourceFile::summary).collect();
+        assert_eq!(saved.existence_relative.len(), 1);
+        save(dir.path(), &saved).unwrap();
+        let reopen = |expected: usize| {
+            for _ in 0..2 {
+                let loaded = load(dir.path()).unwrap();
+                assert_eq!(stale_count(&loaded), expected);
+                assert_eq!(loaded.sources.iter().filter(|s| s.stale).count(), expected);
+                let html = crate::export::render(
+                    "<html><head></head><body></body></html>",
+                    &loaded.analysis,
+                    &loaded.sources,
+                    true,
+                );
+                let marker = "id=\"bundlewhy-report\">";
+                let start = html.find(marker).unwrap() + marker.len();
+                let end = start + html[start..].find("</script>").unwrap();
+                let payload: serde_json::Value = serde_json::from_str(&html[start..end]).unwrap();
+                let exported = payload["analysis"]["problems"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter(|entry| entry["code"] == "BW_SOURCE_STALE")
+                    .count();
+                assert_eq!(exported, expected);
+            }
+        };
+        reopen(0);
+        std::fs::remove_file(&logo).unwrap();
+        reopen(1);
+        std::fs::write(&logo, b"restored").unwrap();
+        reopen(0);
+    }
+
+    /// A run saved by an earlier version holds a Vite asset whose file was
+    /// already missing during analysis as stale without any recheck entry. The
+    /// warning must survive a reopen and an export.
+    #[test]
+    fn stale_asset_stub_with_a_missing_file_keeps_its_warning_on_reopen_and_export() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(project.join("src")).unwrap();
+        std::fs::write(project.join("src/a.js"), "export const a = 1;").unwrap();
+        let canonical = std::fs::canonicalize(&project).unwrap();
+        let mut store = crate::sources::SourceStore::new(true);
+        for (name, snapshot) in [
+            ("src/gone.png", "export default \"__VITE_ASSET__abc__\""),
+            ("src/a.js", "export const a = 1;"),
+        ] {
+            store.snapshots.insert(
+                crate::sources::normalize(&canonical.join(name)),
+                snapshot.to_owned(),
+            );
+            store.add_file(&canonical, &canonical.join(name)).unwrap();
+        }
+        assert_eq!(store.changed_since_build, vec!["src/gone.png".to_owned()]);
+        let project_relative = store.project_relative.clone();
+        let mut saved = bundle();
+        saved.project_root = canonical.to_string_lossy().into_owned();
+        saved.sources = store.into_files();
+        saved.analysis.sources = saved
+            .sources
+            .iter()
+            .map(|source| crate::model::SourceFileSummary {
+                id: source.id.clone(),
+                stale: source.stale,
+                ..crate::model::SourceFileSummary::default()
+            })
+            .collect();
+        saved.project_relative = project_relative;
+        // The stale asset is saved without a recheck entry.
+        let gone = saved
+            .sources
+            .iter()
+            .find(|source| source.path == "src/gone.png")
+            .unwrap()
+            .id
+            .clone();
+        assert!(!saved.project_relative.contains_key(&gone));
+        saved.analysis.problems.push(problem(
+            ErrorCode::SourceStale,
+            ProblemSeverity::Warning,
+            "1 source file(s) changed after the build read them",
+            "build-time",
+        ));
+        save(dir.path(), &saved).unwrap();
+        for _ in 0..2 {
+            let loaded = load(dir.path()).unwrap();
+            let warnings: Vec<_> = loaded
+                .analysis
+                .problems
+                .iter()
+                .filter(|entry| entry.code == "BW_SOURCE_STALE")
+                .collect();
+            assert_eq!(warnings.len(), 1);
+            assert_eq!(
+                warnings[0].message,
+                "1 source file(s) changed or were removed since this analysis"
+            );
+            assert!(
+                loaded
+                    .sources
+                    .iter()
+                    .any(|source| source.id == gone && source.stale)
+            );
+            assert!(
+                loaded
+                    .analysis
+                    .sources
+                    .iter()
+                    .any(|s| s.id == gone && s.stale)
+            );
+            for include_sources in [true, false] {
+                let html = crate::export::render(
+                    "<html><head></head><body></body></html>",
+                    &loaded.analysis,
+                    &loaded.sources,
+                    include_sources,
+                );
+                let marker = "id=\"bundlewhy-report\">";
+                let start = html.find(marker).unwrap() + marker.len();
+                let end = start + html[start..].find("</script>").unwrap();
+                let payload: serde_json::Value = serde_json::from_str(&html[start..end]).unwrap();
+                let stale_warnings = payload["analysis"]["problems"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter(|entry| entry["code"] == "BW_SOURCE_STALE")
+                    .count();
+                assert_eq!(stale_warnings, 1);
+                assert!(
+                    payload["sources"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|source| source["id"] == gone.as_str() && source["stale"] == true)
+                );
+            }
+        }
     }
 }
