@@ -2315,6 +2315,14 @@ try {
           await page
             .getByRole("button", { name: l("Sessions"), exact: true })
             .click();
+        // Usage is reached through the More popover while it is unpinned.
+        if (surface === "Usage")
+          await page
+            .getByRole("button", {
+              name: language === "ko" ? "더보기" : "More",
+              exact: true,
+            })
+            .click();
         await page
           .getByRole("button", { name: l(surface), exact: true })
           .click();
