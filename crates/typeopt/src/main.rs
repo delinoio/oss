@@ -84,6 +84,19 @@ mod app {
             .get()
             .is_some_and(|chunks| chunks.contains(path))
     }
+    /// Source files reached only through dynamic package imports. Their
+    /// declarations may be supplied by the package and are outside the
+    /// bundle's checked application source.
+    static BUNDLE_DYNAMIC_FILES: std::sync::OnceLock<std::collections::BTreeSet<String>> =
+        std::sync::OnceLock::new();
+    pub(crate) fn set_bundle_dynamic_files(files: std::collections::BTreeSet<String>) {
+        let _ = BUNDLE_DYNAMIC_FILES.set(files);
+    }
+    pub(crate) fn bundle_dynamic_file(path: &str) -> bool {
+        BUNDLE_DYNAMIC_FILES
+            .get()
+            .is_some_and(|files| files.contains(path))
+    }
     /// Bundle chunks that an operator-excluded chunk can import, each with the
     /// excluded chunk that reaches it. They stay unchanged and keep their
     /// names: the excluded chunk keeps importing the original names.

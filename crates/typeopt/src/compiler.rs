@@ -359,6 +359,7 @@ impl Project {
             }
         }
         crate::app::set_bundle_dynamic_packages(dynamic_packages.keys().cloned().collect());
+        crate::app::set_bundle_dynamic_files(dynamic_files.iter().cloned().collect());
         let all_public = all_public || computed_import;
         if all_public {
             tracing::info!(
@@ -693,7 +694,10 @@ impl Project {
                 );
             }
             crate::app::check_cancelled()?;
-            check_diagnostics(&get_syntactic_diagnostics(file))?;
+            let file_name = source_file_info(file).file_name.clone();
+            if !(crate::app::bundle_mode() && crate::app::bundle_dynamic_file(&file_name)) {
+                check_diagnostics(&get_syntactic_diagnostics(file))?;
+            }
             if crate::app::bundle_mode() {
                 self.semantic_baseline.borrow_mut().insert(
                     source_file_info(file).file_name.clone(),

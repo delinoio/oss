@@ -2097,6 +2097,27 @@ fn resolves_explicit_runtime_import_before_declaration_substitution() {
     assert_eq!(out(temp.path(), "dep.js"), original);
 }
 
+/// A syntax error in a file reached only through a dynamic package boundary
+/// must not block analysis of the closed application bundle.
+#[test]
+fn ignores_syntax_diagnostics_in_dynamic_only_package_files() {
+    let temp = bundle(&[("index.js", r#"if(false)import("pkg");console.log(1);"#)]);
+    let package = temp.path().join("dist/node_modules/pkg");
+    fs::create_dir_all(&package).unwrap();
+    fs::write(
+        package.join("package.json"),
+        r#"{"name":"pkg","type":"module","main":"index.js"}"#,
+    )
+    .unwrap();
+    fs::write(package.join("index.js"), "export const = 1;").unwrap();
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 #[test]
 fn allows_transitive_dynamic_package_declarations() {
     let temp = bundle(&[("index.js", r#"if(false)import("pkg");console.log(1);"#)]);
