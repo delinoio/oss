@@ -294,7 +294,7 @@ pub fn analyze(prepared: &Prepared<'_>) -> Result<SceneAnalysis> {
     report.mesh_count = report.meshes.len();
     report
         .meshes
-        .sort_by(|a, b| b.triangle_count.cmp(&a.triangle_count));
+        .sort_by_key(|a| std::cmp::Reverse(a.triangle_count));
     Ok(report)
 }
 fn in_unit(v: f64) -> bool {
