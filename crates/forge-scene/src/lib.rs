@@ -327,14 +327,13 @@ pub fn analyze(prepared: &Prepared<'_>, geometry_quality: bool) -> Result<SceneA
             sum.checked_add(bytes.len()).ok_or_else(limited)
         })?;
         let scratch_budget = MAX_BYTES.checked_sub(retained_bytes).ok_or_else(limited)?;
-        let mut scratch = 0usize;
         for (id, geometry) in &prepared.geometries {
             let estimate = quality_scratch_estimate(
                 geometry.positions.len(),
                 geometry.indices.len() / 3,
                 id.len(),
             )?;
-            charge_quality_scratch(&mut scratch, estimate, scratch_budget)?;
+            ensure_quality_scratch(estimate, scratch_budget)?;
             quality.push(analyze_geometry(id, geometry)?);
         }
     }
@@ -398,12 +397,10 @@ fn quality_scratch_estimate(vertices: usize, triangles: usize, id_bytes: usize) 
         .ok_or_else(limited)
 }
 
-fn charge_quality_scratch(used: &mut usize, amount: usize, budget: usize) -> Result<()> {
-    let total = used.checked_add(amount).ok_or_else(limited)?;
-    if total > budget {
+fn ensure_quality_scratch(amount: usize, budget: usize) -> Result<()> {
+    if amount > budget {
         return Err(limited());
     }
-    *used = total;
     Ok(())
 }
 
@@ -983,11 +980,9 @@ mod tests {
     fn geometry_quality_rejects_overflowing_scratch_estimates() {
         assert!(quality_scratch_estimate(0, usize::MAX, 0).is_err());
         assert!(quality_scratch_estimate(usize::MAX, 0, 0).is_err());
-        let mut charged = 0;
-        charge_quality_scratch(&mut charged, 4096, 4096).unwrap();
-        assert_eq!(charged, 4096);
-        assert!(charge_quality_scratch(&mut charged, 1, 4096).is_err());
-        assert_eq!(charged, 4096);
+        ensure_quality_scratch(4096, 4096).unwrap();
+        ensure_quality_scratch(4097, 4096).unwrap_err();
+        ensure_quality_scratch(4096, 4096).unwrap();
     }
 
     #[test]
