@@ -2,6 +2,7 @@ package worker
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -23,6 +24,8 @@ import (
 // cleanup independently; this file cannot clear a lost completion report.
 type CodexExecutionCheckpoint struct {
 	Version               uint32                       `json:"version"`
+	AccountHome           string                       `json:"account_home,omitempty"`
+	ThreadHistory         *codex.ThreadHistoryProof    `json:"thread_history,omitempty"`
 	JobID                 domain.ID                    `json:"job_id"`
 	SessionID             domain.ID                    `json:"session_id"`
 	MachineID             domain.ID                    `json:"machine_id"`
@@ -122,7 +125,10 @@ func (p CodexExecutionCheckpoint) matches(ref ExecutionCheckpointRef) bool {
 	terminal := ref.Completion
 	terminal.Version, terminal.NativeCheckpointDigest = 1, ""
 	inputs, err := ref.nativeInputs()
-	if err != nil || ref.validate() != nil || p.Version != 1 || p.Native.ContextRevision != ref.ContextRevision || p.JobID != ref.JobID || p.SessionID != ref.SessionID || p.MachineID != ref.MachineID || p.HistoryExecutionID != ref.HistoryExecutionID || p.AssignmentInputDigest != ref.AssignmentInputDigest || p.ConfigurationDigest != ref.ConfigurationDigest || p.AccountID != ref.AccountID || p.ConnectionID != ref.ConnectionID || p.Completion != terminal || string(p.Native.ThreadID) != string(ref.Completion.NativeThreadID) || p.Native.SessionID != p.Native.ThreadID || string(p.Native.TurnID) != string(ref.Completion.NativeTurnID) || p.Native.Mode != ref.InputMode || !slices.Equal(p.Native.Effective.WorkspaceRoots, ref.WorkspaceRoots) || !sameHistoricalPrompts(p.Native.Inputs, inputs) {
+	if err != nil || ref.validate() != nil || (p.Version != 1 && p.Version != 2) || p.Native.ContextRevision != ref.ContextRevision || p.JobID != ref.JobID || p.SessionID != ref.SessionID || p.MachineID != ref.MachineID || p.HistoryExecutionID != ref.HistoryExecutionID || p.AssignmentInputDigest != ref.AssignmentInputDigest || p.ConfigurationDigest != ref.ConfigurationDigest || p.AccountID != ref.AccountID || p.ConnectionID != ref.ConnectionID || p.Completion != terminal || string(p.Native.ThreadID) != string(ref.Completion.NativeThreadID) || p.Native.SessionID != p.Native.ThreadID || string(p.Native.TurnID) != string(ref.Completion.NativeTurnID) || p.Native.Mode != ref.InputMode || !slices.Equal(p.Native.Effective.WorkspaceRoots, ref.WorkspaceRoots) || !sameHistoricalPrompts(p.Native.Inputs, inputs) {
+		return false
+	}
+	if p.Version == 1 && (p.AccountHome != "" || p.ThreadHistory != nil) || p.Version == 2 && (!ref.Subscription || p.AccountHome == "" || p.ThreadHistory == nil || p.ThreadHistory.ThreadID != p.Native.ThreadID) {
 		return false
 	}
 	status := map[domain.ExecutionOutcome]codex.TurnStatus{domain.ExecutionSucceeded: codex.TurnCompleted, domain.ExecutionFailed: codex.TurnFailed, domain.ExecutionStopped: codex.TurnInterrupted}[ref.Completion.Outcome]
@@ -188,16 +194,47 @@ func ReadCodexExecutionCheckpoint(root string, ref ExecutionCheckpointRef) (Code
 	}
 	// The history root is derived solely from a retained execution identity,
 	// never from a caller-provided path. Every component must still be private.
-	if _, err := executionCheckpointPath(root, ref.HistoryExecutionID); err != nil {
-		return CodexExecutionCheckpoint{}, err
-	}
-	if err := security.CheckPrivateDir(filepath.Join(root, "runtimes", string(ref.HistoryExecutionID), "codex")); err != nil {
-		return CodexExecutionCheckpoint{}, executionCheckpointUncertain()
+	if checkpoint.Version == 1 {
+		if _, err := executionCheckpointPath(root, ref.HistoryExecutionID); err != nil {
+			return CodexExecutionCheckpoint{}, err
+		}
+		if err := security.CheckPrivateDir(filepath.Join(root, "runtimes", string(ref.HistoryExecutionID), "codex")); err != nil {
+			return CodexExecutionCheckpoint{}, executionCheckpointUncertain()
+		}
+	} else {
+		expected, err := codexAccountHistoryHome(root, ref.AccountID)
+		if err != nil || checkpoint.AccountHome != expected || security.CheckPrivateDir(expected) != nil || codex.VerifyThreadHistory(context.Background(), expected, *checkpoint.ThreadHistory) != nil {
+			return CodexExecutionCheckpoint{}, executionCheckpointUncertain()
+		}
 	}
 	return checkpoint, nil
 }
 
+// codexAccountHistoryHome derives the only shared native history namespace
+// from the accepted account identity, never from a checkpoint or native path.
+func codexAccountHistoryHome(root string, account domain.ID) (string, error) {
+	if account.Validate() != nil || !filepath.IsAbs(root) {
+		return "", executionCheckpointUncertain()
+	}
+	resolved, err := filepath.EvalSymlinks(root)
+	if err != nil || resolved != root {
+		return "", executionCheckpointUncertain()
+	}
+	return filepath.Join(root, "runtimes", "accounts", string(account), "codex"), nil
+}
+
 func retainCodexCompletion(root string, jobID domain.ID, job domain.Job, input domain.ExecutionJobInput, bound codex.ThreadResult, completion domain.ExecutionCompletion, acceptedInputs []domain.ExecutionInputBinding, contextProofs ...*codex.ContinuationContextCheckpoint) (string, error) {
+	if len(contextProofs) > 1 {
+		return "", executionCheckpointUncertain()
+	}
+	var contextProof *codex.ContinuationContextCheckpoint
+	if len(contextProofs) == 1 {
+		contextProof = contextProofs[0]
+	}
+	return retainCodexCompletionWithHistory(root, jobID, job, input, bound, completion, acceptedInputs, contextProof, nil, "")
+}
+
+func retainCodexCompletionWithHistory(root string, jobID domain.ID, job domain.Job, input domain.ExecutionJobInput, bound codex.ThreadResult, completion domain.ExecutionCompletion, acceptedInputs []domain.ExecutionInputBinding, contextProof *codex.ContinuationContextCheckpoint, history *codex.ThreadHistoryProof, accountHome string) (string, error) {
 	var accepted domain.ExecutionJobInput
 	if domain.Decode(job.Input, &accepted) != nil || input.Validate() != nil || completion.Validate() != nil || completion.Version != 1 || bound.Thread == nil || bound.Effective == nil || bound.RequestID != input.ThreadRequestID || string(bound.Thread.ID) != string(completion.NativeThreadID) || completion.ExecutionID != input.ExecutionID || completion.InputID != input.InputID || job.Type != domain.ExecuteSessionJob || job.MachineID != input.MachineID {
 		return "", executionCheckpointUncertain()
@@ -237,11 +274,13 @@ func retainCodexCompletion(root string, jobID domain.ID, job domain.Job, input d
 	}
 	status := map[domain.ExecutionOutcome]codex.TurnStatus{domain.ExecutionSucceeded: codex.TurnCompleted, domain.ExecutionFailed: codex.TurnFailed, domain.ExecutionStopped: codex.TurnInterrupted}[completion.Outcome]
 	checkpoint := CodexExecutionCheckpoint{Version: 1, JobID: jobID, SessionID: ref.SessionID, MachineID: ref.MachineID, HistoryExecutionID: ref.HistoryExecutionID, AssignmentInputDigest: ref.AssignmentInputDigest, ConfigurationDigest: ref.ConfigurationDigest, AccountID: ref.AccountID, ConnectionID: ref.ConnectionID, Completion: completion, Native: codex.ContinuationCheckpoint{PaginatedHistory: bound.Thread.History == codex.PaginatedHistory, ContextRevision: input.ContextRevision, ThreadID: bound.Thread.ID, SessionID: bound.Thread.SessionID, TurnID: domain.ID(completion.NativeTurnID), Status: status, Mode: input.Input.Mode, Inputs: nativeInputs, Effective: *bound.Effective}}
-	if len(contextProofs) > 1 {
-		return "", executionCheckpointUncertain()
-	}
-	if len(contextProofs) == 1 {
-		checkpoint.Native.Context = contextProofs[0]
+	checkpoint.Native.Context = contextProof
+	if history != nil {
+		expected, err := codexAccountHistoryHome(root, input.AccountID)
+		if err != nil || !input.Configuration.Subscription || accountHome != expected || history.ThreadID != bound.Thread.ID || codex.VerifyThreadHistory(context.Background(), expected, *history) != nil {
+			return "", executionCheckpointUncertain()
+		}
+		checkpoint.Version, checkpoint.AccountHome, checkpoint.ThreadHistory = 2, accountHome, history
 	}
 	if !checkpoint.matches(ref) {
 		return "", executionCheckpointUncertain()
