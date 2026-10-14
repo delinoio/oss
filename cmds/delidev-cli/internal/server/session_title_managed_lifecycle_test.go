@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
@@ -279,6 +280,144 @@ func TestManagedTitlePreLeaseDenialReturnsDefiniteResult(t *testing.T) {
 				t.Fatalf("a pre-lease denial fenced the account: %+v", account.Subscription)
 			}
 		})
+	}
+}
+
+// Account-state changes accepted after auxiliary admission and before the
+// title's Take (logout, disablement, removal, a revoked connection or a
+// recovery fence) are caught by the account gate ahead of the job checks. They
+// commit no lease and no inference claim, so they return the same typed
+// no-delivery result as every other pre-lease denial.
+func TestManagedTitleAccountGateBeforeTakeReturnsDefiniteResult(t *testing.T) {
+	changes := map[string]func(f *managedTitleFixture, tx *store.Tx) error{
+		"disabled": func(f *managedTitleFixture, tx *store.Tx) error {
+			r, a, err := accountFromTx(tx, f.input.AccountID, 0)
+			if err != nil {
+				return err
+			}
+			a.Enabled = false
+			_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+			return err
+		},
+		"removal": func(f *managedTitleFixture, tx *store.Tx) error {
+			r, a, err := accountFromTx(tx, f.input.AccountID, 0)
+			if err != nil {
+				return err
+			}
+			a.Removal = &domain.AccountRemoval{RequestID: domain.NewID()}
+			_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+			return err
+		},
+		"revoked": func(f *managedTitleFixture, tx *store.Tx) error {
+			r, a, err := accountFromTx(tx, f.input.AccountID, 0)
+			if err != nil {
+				return err
+			}
+			a.Health = domain.AccountRevoked
+			_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+			return err
+		},
+		"recovery-fence": func(f *managedTitleFixture, tx *store.Tx) error {
+			r, a, err := accountFromTx(tx, f.input.AccountID, 0)
+			if err != nil {
+				return err
+			}
+			a.Subscription.RecoveryRequired = true
+			_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+			return err
+		},
+	}
+	for name, change := range changes {
+		t.Run(name, func(t *testing.T) {
+			f := newManagedTitleFixture(t, managedTitleOptions{})
+			record, err := f.claim()
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.mutate(t, name, func(tx *store.Tx) error { return change(f, tx) })
+			response, err := f.takeTitle(record.Revision)
+			if err == nil || response != nil {
+				t.Fatal("a title received protected credentials after its account state changed")
+			}
+			requireTitleNotDelivered(t, err, domain.Canceled)
+			if _, account := f.record(); account.Subscription.Lease != nil {
+				t.Fatalf("an account-gate denial committed a lease: %+v", account.Subscription)
+			}
+		})
+	}
+}
+
+// An accepted logout leaves the claimed title untouched while setting the
+// pending operation and revoking the account; the Take that follows must report
+// the definite no-delivery result and leave the accepted logout runnable.
+func TestManagedTitleTakeAfterAcceptedLogoutReturnsDefiniteResult(t *testing.T) {
+	f := newManagedTitleFixture(t, managedTitleOptions{})
+	record, err := f.claim()
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, _ := f.record()
+	logout, err := f.client.RequestSubscription(context.Background(), subscriptionRequest(f.service.Identity.Token, &pb.RequestSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(r.ID), ExpectedRevision: r.Revision}, MachineId: string(f.input.MachineID), Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, account := f.record(); account.Subscription.Pending == nil || account.Health != domain.AccountRevoked {
+		t.Fatalf("the accepted logout did not gate the account: %+v", account)
+	}
+	response, err := f.takeTitle(record.Revision)
+	if err == nil || response != nil {
+		t.Fatal("a title received protected credentials after an accepted logout")
+	}
+	requireTitleNotDelivered(t, err, domain.Canceled)
+	if _, account := f.record(); account.Subscription.Lease != nil || account.Subscription.RecoveryRequired || account.Subscription.Pending == nil {
+		t.Fatalf("the typed denial changed the accepted logout: %+v", account.Subscription)
+	}
+	var claimed bool
+	if err := f.service.Store.Read(context.Background(), func(tx *store.Tx) error {
+		var err error
+		claimed, err = tx.TitleInferenceClaimed(f.titleJob)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if claimed {
+		t.Fatal("a pre-lease denial consumed the one-time inference claim")
+	}
+	if _, err := f.take(&pb.RequestSubscriptionResponse{OperationId: logout.Msg.OperationId}, pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT); err != nil {
+		t.Fatal("the accepted logout cannot run after the denied title Take", err)
+	}
+}
+
+// Once an earlier Take committed the one-time inference claim, delivery is
+// unknown, so the account gate keeps the conservative generic denial.
+func TestManagedTitleAccountGateAfterInferenceClaimKeepsRecoveryDenial(t *testing.T) {
+	f := newManagedTitleFixture(t, managedTitleOptions{})
+	record, err := f.claim()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.mutate(t, "claim-inference", func(tx *store.Tx) error {
+		claimed, err := tx.ClaimTitleInference(f.titleJob)
+		if err == nil && !claimed {
+			t.Fatal("the fixture inference claim was not recorded")
+		}
+		return err
+	})
+	f.mutate(t, "disable", func(tx *store.Tx) error {
+		r, a, err := accountFromTx(tx, f.input.AccountID, 0)
+		if err != nil {
+			return err
+		}
+		a.Enabled = false
+		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+		return err
+	})
+	_, err = f.takeTitle(record.Revision)
+	if err == nil {
+		t.Fatal("a title with a consumed inference claim was admitted")
+	}
+	if got := rpc.ClientError(err); got.Cause == subscriptionTitleNotDeliveredCause {
+		t.Fatalf("a consumed inference claim returned the no-delivery proof: %+v", got)
 	}
 }
 

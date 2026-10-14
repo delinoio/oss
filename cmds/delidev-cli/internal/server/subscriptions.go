@@ -514,9 +514,48 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 		if action != domain.SubscriptionExecute && input.Revision > r.Revision {
 			return nil, domain.Fail(domain.Conflict, "The account revision has not been observed.", "Retain the original queued operation and its observed revision.")
 		}
+		// A denial before the managed title's inference claim commits rolls this
+		// transaction back: no lease, claim or credential exists. It is a definite
+		// no-delivery result (Stop, Archive, rename, logout, disablement, creator
+		// revocation, a recovery fence or a lost capability won first), so the
+		// Worker can report and settle the title instead of treating it as an
+		// uncertain execution. Once an earlier Take committed the claim, delivery
+		// is unknown and the conservative recovery denial remains. Every other job
+		// type keeps the recovery denial.
+		claimedHere := false
+		preLeaseDenied := func(job domain.Job, reason string) error {
+			if job.Type != domain.GenerateSessionTitleJob {
+				return subscriptionDenied()
+			}
+			if claimed, claimErr := tx.TitleInferenceClaimed(input.Operation); claimErr != nil || claimed && !claimedHere {
+				return subscriptionDenied()
+			}
+			s.logger.InfoContext(ctx, "subscription_title_take_denied_before_lease", "account_id", input.Account, "operation_id", input.Operation, "reason", reason)
+			return subscriptionTitleNotDelivered(domain.Canceled)
+		}
+		// accountGateDenied classifies a denial raised before the job is decoded.
+		// It reads the operation only to prove it is this Worker's own managed
+		// title; any other caller or job type keeps the generic denial.
+		accountGateDenied := func(reason string) error {
+			if action != domain.SubscriptionExecute {
+				return subscriptionDenied()
+			}
+			jobRecord, err := tx.Get(domain.JobKind, input.Operation)
+			if err != nil {
+				return subscriptionDenied()
+			}
+			job, err := store.Decode[domain.Job](jobRecord)
+			if err != nil || job.MachineID != input.Machine || job.InstanceID != input.Instance || job.AssignedDeviceID != actor.DeviceID {
+				return subscriptionDenied()
+			}
+			return preLeaseDenied(job, reason)
+		}
 		state := a.Subscription
-		if state == nil || state.RecoveryRequired {
+		if state == nil {
 			return nil, subscriptionDenied()
+		}
+		if state.RecoveryRequired {
+			return nil, accountGateDenied("recovery-fence")
 		}
 		// Execution, quota and reset-credit Take keep contention first. A fresh
 		// lifecycle Take instead proves its queued original is still admissible
@@ -549,8 +588,11 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 			if state.Pending != nil && state.Pending.Action == domain.SubscriptionRefresh {
 				return nil, domain.Fail(domain.ResourceExhausted, "The selected account is refreshing under exclusive ownership.", "Wait on this account's original operation without failover.")
 			}
+			// An accepted logout, a login, disablement or removal that won before the
+			// title's Take leaves the claimed title untouched, so this gate must
+			// return the same typed result as the other pre-lease denials.
 			if state.Pending != nil || !a.Enabled || a.Health != domain.AccountReady || a.Removal != nil || a.Connection == nil || state.Generation == "" {
-				return nil, subscriptionDenied()
+				return nil, accountGateDenied("account-state")
 			}
 			jr, err := tx.Get(domain.JobKind, input.Operation)
 			if err != nil {
@@ -558,23 +600,6 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 			}
 			job, err := store.Decode[domain.Job](jr)
 			var execution domain.ExecutionJobInput
-			// A denial before the managed title's inference claim commits rolls this
-			// transaction back: no lease, claim or credential exists. It is a definite
-			// no-delivery result (Stop, Archive, rename, logout, disablement or creator
-			// revocation won first), so the Worker can report and settle the title
-			// instead of treating it as an uncertain execution. Once an earlier Take
-			// committed the claim, delivery is unknown and the conservative recovery
-			// denial remains. Every other job type keeps the recovery denial.
-			preLeaseDenied := func(job domain.Job, reason string) error {
-				if job.Type != domain.GenerateSessionTitleJob {
-					return subscriptionDenied()
-				}
-				if claimed, claimErr := tx.TitleInferenceClaimed(jr.ID); claimErr != nil || claimed {
-					return subscriptionDenied()
-				}
-				s.logger.InfoContext(ctx, "subscription_title_take_denied_before_lease", "account_id", r.ID, "operation_id", jr.ID, "reason", reason)
-				return subscriptionTitleNotDelivered(domain.Canceled)
-			}
 			if err != nil || jr.Revision != input.Revision || job.State != domain.JobClaimed || job.MachineID != input.Machine || job.InstanceID != input.Instance || job.AssignedDeviceID != actor.DeviceID {
 				if err != nil {
 					return nil, subscriptionDenied()
@@ -656,6 +681,9 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 				if claimed, err := tx.ClaimTitleInference(jr.ID); err != nil || !claimed {
 					return nil, subscriptionDenied()
 				}
+				// The claim exists only inside this transaction. Any denial below
+				// rolls it back with the rest, so it is still a no-delivery result.
+				claimedHere = true
 				execution = authority.Original
 				titleRevision = jr.Revision
 			default:
@@ -664,7 +692,7 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 			if execution.Version == 4 {
 				_, machine, err := activeMachine(tx, input.Machine)
 				if err != nil || !slices.Contains(machine.WorkerCapabilities, domain.ManagedCodexSubscriptionsV1) || !slices.Contains(machine.WorkerCapabilities, domain.ExecutionStartupV1) {
-					return nil, subscriptionDenied()
+					return nil, preLeaseDenied(job, "capability-lost")
 				}
 				directExecution = true
 			} else if _, err := subscriptionInstallation(tx, input.Machine); err != nil {
@@ -672,10 +700,13 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 			}
 
 			if execution.AccountID != r.ID || execution.ConnectionID != a.Connection.ID || !execution.Configuration.Subscription || execution.Configuration.SubscriptionService != domain.SubscriptionChatGPT || execution.Configuration.Harness != domain.Codex {
-				return nil, subscriptionDenied()
+				return nil, preLeaseDenied(job, "assignment-mismatch")
 			}
 			if canceled, err := tx.JobCancellationRequested(jr.ID); err != nil || canceled {
-				return nil, subscriptionDenied()
+				if err != nil {
+					return nil, subscriptionDenied()
+				}
+				return nil, preLeaseDenied(job, "cancellation-requested")
 			}
 		} else if action == domain.SubscriptionQuota || action == domain.SubscriptionResetCredit {
 			op := state.Observation
