@@ -114,6 +114,15 @@ export function ScrollContinuation({
             }
             const tailBounds = tail.getBoundingClientRect(),
               containerBounds = container.getBoundingClientRect();
+            if (
+              tail === container.lastElementChild &&
+              container.scrollWidth <= container.clientWidth
+            ) {
+              // A short history strip has no overflow edge to reach. Keep
+              // paging until the loaded tail overflows the viewport; a
+              // synthetic child after the tail must still use its own edge.
+              return 0;
+            }
             if (tailBounds.width <= 0 || containerBounds.width <= 0) {
               // Test DOMs can omit layout geometry. Keep synthetic rows from
               // becoming a false end-of-history signal in that fallback.

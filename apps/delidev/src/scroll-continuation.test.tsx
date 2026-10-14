@@ -37,28 +37,44 @@ function List({
   showProgress?: boolean;
 }) {
   const root = useRef<HTMLDivElement>(null);
+  const horizontalTail = useRef<HTMLParagraphElement>(null);
   const reader = useMemo(() => read, [read]);
   const query = usePaginationChain("test-scope", active, reader, initialRead);
   return (
-    <div ref={root}>
-      <button type="button" onClick={query.reload}>
-        Load
-      </button>
-      <button type="button" onClick={query.refreshExplicit}>
-        Refresh
-      </button>
-      {query.rows.map((row) => (
-        <p key={row.id}>{row.id}</p>
-      ))}
+    <>
+      <div ref={root}>
+        <button type="button" onClick={query.reload}>
+          Load
+        </button>
+        <button type="button" onClick={query.refreshExplicit}>
+          Refresh
+        </button>
+        {query.rows.map((row, index) => (
+          <p
+            key={row.id}
+            ref={
+              axis === ContinuationAxis.Horizontal &&
+              index === query.rows.length - 1
+                ? horizontalTail
+                : undefined
+            }
+          >
+            {row.id}
+          </p>
+        ))}
+      </div>
       <ScrollContinuation
         axis={axis}
+        horizontalTail={
+          axis === ContinuationAxis.Horizontal ? horizontalTail : undefined
+        }
         query={query}
         label="items"
         root={root}
         active={active}
         showProgress={showProgress}
       />
-    </div>
+    </>
   );
 }
 function horizontalViewport() {
