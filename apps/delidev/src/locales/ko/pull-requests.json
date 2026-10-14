@@ -37,7 +37,6 @@
   "pull-requests.setASupportedGithubProfileOwner_c9cd89": "불러오기 전에 저장소 설정에서 지원되는 GitHub 프로필, 소유자 및 저장소 이름을 설정하세요.",
   "pull-requests.loadingRepositorySettings_98ac56": "저장소 설정을 불러오는 중…",
   "pull-requests.prPageSize_f04cb9": "PR 페이지 크기",
-  "pull-requests.noGithubRequestIsMadeUntil_55d1b2": "저장소를 선택하거나 필터를 변경하면 풀 리퀘스트를 자동으로 불러옵니다.",
   "pull-requests.theDisplayedResultsBelongToThe_44e130": "표시된 결과는 마지막으로 적용된 상태 및 검색에 속합니다.",
   "pull-requests.selectARepositoryNoGithubRequest_b499d2": "저장소를 선택하면 풀 리퀘스트를 자동으로 불러옵니다.",
   "pull-requests.repositorySettings_b00980": "저장소 설정",

@@ -37,7 +37,6 @@
   "pull-requests.setASupportedGithubProfileOwner_c9cd89": "Set a supported GitHub profile, owner and repository name in repository settings before loading.",
   "pull-requests.loadingRepositorySettings_98ac56": "Loading repository settings…",
   "pull-requests.prPageSize_f04cb9": "PR page size",
-  "pull-requests.noGithubRequestIsMadeUntil_55d1b2": "Pull requests load automatically when you select a repository or change filters.",
   "pull-requests.theDisplayedResultsBelongToThe_44e130": "The displayed results belong to the last applied state and search.",
   "pull-requests.selectARepositoryNoGithubRequest_b499d2": "Select a repository to load pull requests automatically.",
   "pull-requests.repositorySettings_b00980": "Repository settings",
