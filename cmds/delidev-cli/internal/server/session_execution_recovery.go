@@ -375,7 +375,7 @@ func finishExecutionRecovery(tx *store.Tx, record store.Record, job domain.Job) 
 		if session.Problem != nil && session.Problem.Code == domain.RecoveryRequired && session.SidechatActiveRetry == "" {
 			session.Problem = nil
 		}
-		if session.Archive == domain.ArchivePending {
+		if session.Archive == domain.ArchivePending && session.SidechatActiveRetry == "" {
 			session.Archive = domain.Archived
 		}
 		if pendingInitialSessionTitle(session, retryInput) {

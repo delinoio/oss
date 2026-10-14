@@ -420,6 +420,18 @@ func TestSidechatQuestionRetryRecoveryOfOlderGenerationKeepsNewerForkOwner(t *te
 	if before.SidechatActiveRetry != generationB.ID || before.Recovery != domain.NeedsRecovery || before.ExecutionSelection().ID != executionA {
 		t.Fatal("fixture did not leave generation B as the active owner", before.SidechatActiveRetry)
 	}
+	archiveResource := child.refresh(t)
+	_, err := child.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.archive-pending", nil, func(tx *store.Tx) (any, error) {
+		row, session, err := sessionRecord(tx, archiveResource.ID)
+		if err != nil {
+			return nil, err
+		}
+		session.Archive = domain.ArchivePending
+		return tx.Put(domain.SessionKind, row.ID, row.Revision, row.ID, row.ProjectID, session)
+	})
+	if err != nil {
+		t.Fatal("archive pending fixture", err)
+	}
 	// A failed inspection cannot settle either generation's cleanup.
 	current := child.refresh(t)
 	response, err := sessionClient(child.accountFixture).RecoverSessionExecution(context.Background(), ownerRequest(child.identity, &pb.RecoverSessionExecutionRequest{Mutation: &pb.Mutation{Id: string(current.ID), RequestId: string(domain.NewID()), ExpectedRevision: current.Revision}, ExpectedExecutionId: string(executionA)}))
@@ -442,6 +454,9 @@ func TestSidechatQuestionRetryRecoveryOfOlderGenerationKeepsNewerForkOwner(t *te
 	after, _ := store.Decode[domain.Session](child.refresh(t))
 	if after.SidechatActiveRetry != generationB.ID || after.Recovery != domain.NeedsRecovery || after.Dispatch != domain.DispatchPaused || !reflect.DeepEqual(after.Problem, before.Problem) {
 		t.Fatal("older generation recovery released the newer owner", after.SidechatActiveRetry)
+	}
+	if after.Archive != domain.ArchivePending {
+		t.Fatal("older generation recovery archived while the newer owner remains active", after.Archive)
 	}
 	if !after.Execution.CleanupVerified || !after.SidechatRetries[0].Completed || after.SidechatCurrentAnswer != executionA {
 		t.Fatal("older generation recovery lost its own answer")
