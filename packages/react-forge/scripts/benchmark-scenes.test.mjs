@@ -6,10 +6,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import React from "react";
-import {
-  parseLockedUfbxVersion,
-  runBenchmark,
-} from "./benchmark-scenes.mjs";
+import { parseLockedUfbxVersion, runBenchmark } from "./benchmark-scenes.mjs";
 import {
   assertTopology,
   expectedTopology,

@@ -70,7 +70,9 @@ export async function readJavaScriptBuildMetadata(output, expectedRevision) {
     throw new Error("React Forge JavaScript build provenance is invalid.");
   assertRevision(metadata.sourceRevision);
   if (expectedRevision && metadata.sourceRevision !== expectedRevision)
-    throw new Error("React Forge JavaScript build does not match source revision.");
+    throw new Error(
+      "React Forge JavaScript build does not match source revision.",
+    );
   let files;
   try {
     files = await fileDigests(output);
