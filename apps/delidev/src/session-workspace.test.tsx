@@ -819,6 +819,49 @@ it("keeps Info independent of all tabs with one active content region and retain
   expect(f.enqueue).not.toHaveBeenCalled();
   expect(f.rename).not.toHaveBeenCalled();
 });
+it("places one + Open tool trigger right after the tablist and no wrench or direct New browser page button", async () => {
+  const f = fixture();
+  render(f.view());
+  await screen.findByRole("heading", { name: "Original session" });
+  const triggers = screen.getAllByRole("button", { name: "Open tool" });
+  expect(triggers).toHaveLength(1);
+  const trigger = triggers[0]!;
+  expect(screen.queryByRole("button", { name: "New browser page" })).toBeNull();
+  const navigation = trigger.closest(".session-navigation")!;
+  expect(navigation).toBeTruthy();
+  const tablist = screen.getByRole("tablist");
+  expect(tablist.parentElement).toBe(navigation);
+  // The trigger popup is the tablist's next sibling, so + is immediately after the strip.
+  expect(tablist.nextElementSibling).toBe(trigger.parentElement);
+  expect(trigger.parentElement!.nextElementSibling).toBeNull();
+  expect(tablist.contains(trigger)).toBe(false);
+  expect(trigger.getAttribute("title")).toBe("Open tool");
+  expect(trigger.getAttribute("aria-haspopup")).toBe("dialog");
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(trigger.getAttribute("aria-controls")).toBeTruthy();
+  expect(trigger.textContent).toBe("");
+  expect(trigger.querySelectorAll("svg")).toHaveLength(1);
+  expect(trigger.querySelector("svg path")!.getAttribute("d")).toBe(
+    "M12 5v14M5 12h14",
+  );
+  const tabsBefore = screen.getAllByRole("tab").length;
+  fireEvent.click(trigger);
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  expect(screen.getByRole("dialog", { name: "Open tool" })).toBeTruthy();
+  expect(
+    screen
+      .getAllByRole("menuitem")
+      .slice(0, 5)
+      .map((row) => row.textContent?.replace(/Ctrl \+ E$/, "")),
+  ).toEqual(["Diff", "Files", "Terminals", "Browser", "Diagnostics"]);
+  // Opening creates no tool resource, browser page or tab.
+  expect(screen.getAllByRole("tab")).toHaveLength(tabsBefore);
+  expect(screen.queryByRole("dialog", { name: "New browser page" })).toBeNull();
+  fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(document.activeElement).toBe(trigger);
+  expect(screen.getAllByRole("tab")).toHaveLength(tabsBefore);
+});
 it("opens the New browser page dialog from Open tool without creating a Browser tab", async () => {
   const f = fixture();
   render(f.view());
@@ -826,7 +869,7 @@ it("opens the New browser page dialog from Open tool without creating a Browser 
   const tabsBefore = screen.getAllByRole("tab").length;
   fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
   fireEvent.click(screen.getByRole("menuitem", { name: "Browser" }));
-  // The same dialog as the workspace + button; opening it selects no tab.
+  // Opening the address dialog selects no tab and creates no page.
   const dialog = await screen.findByRole("dialog", {
     name: "New browser page",
   });
@@ -841,7 +884,10 @@ it("opens the New browser page dialog from Open tool without creating a Browser 
       screen.queryByRole("dialog", { name: "New browser page" }),
     ).toBeNull(),
   );
-  fireEvent.click(screen.getByRole("button", { name: "New browser page" }));
+  // The tab bar has no direct New browser page button; Open tool Browser is the only entry.
+  expect(screen.queryByRole("button", { name: "New browser page" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Browser" }));
   expect(
     await screen.findByRole("dialog", { name: "New browser page" }),
   ).toBeTruthy();

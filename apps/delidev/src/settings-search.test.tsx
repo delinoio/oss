@@ -369,3 +369,27 @@ it("indexes the Browser destinations in English and Korean for search and comman
     ]).map((row) => row.target),
   ).toEqual([SettingsSearchTarget.BrowserGeneral]);
 });
+it("indexes the Tailscale destinations in English and Korean", async () => {
+  const tailscale = [
+    {
+      category: SettingsCategory.Tailscale,
+      label: "Tailscale",
+      help: "Check this computer's Tailscale access.",
+    },
+  ];
+  expect(
+    matchSettings("tailnet", tailscale).map((row) => row.target),
+  ).toContain(SettingsSearchTarget.TailscaleDevices);
+  expect(
+    matchSettings("computer", tailscale).map((row) => row.target),
+  ).toContain(SettingsSearchTarget.TailscaleComputer);
+  expect(
+    matchSettings("requests", tailscale).map((row) => row.target),
+  ).toContain(SettingsSearchTarget.TailscaleRequests);
+  await i18n.changeLanguage("ko");
+  expect(
+    matchSettings("테일넷", [{ ...tailscale[0], help: "Tailscale" }]).map(
+      (row) => row.target,
+    ),
+  ).toContain(SettingsSearchTarget.TailscaleDevices);
+});

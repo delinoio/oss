@@ -11,6 +11,7 @@ import (
 )
 
 const pricingClearedPrefix = "pricing-cleared-v1:"
+const pricingUnknownClearPrefix = "pricing-unknown-clear-v1:"
 
 // pricingCleared records when an active price pointer stopped selecting one
 // immutable version. Pricing versions already keep their activation instant
@@ -20,7 +21,56 @@ type pricingCleared struct {
 	ClearedAt int64  `json:"cleared_at"`
 }
 
-func pricingClearedKey(id domain.ID) string { return pricingClearedPrefix + string(id) }
+// pricingUnknownClear retains the uncertainty of a legacy clear that has no
+// recorded instant. Reactivation must not turn that unknown interval into an
+// eligible historical price. It can be removed only if the original clear
+// instant is independently recovered.
+type pricingUnknownClear struct {
+	Version uint32 `json:"version"`
+}
+
+func pricingClearedKey(id domain.ID) string      { return pricingClearedPrefix + string(id) }
+func pricingUnknownClearKey(id domain.ID) string { return pricingUnknownClearPrefix + string(id) }
+
+func (t *Tx) pricingUnknownClear(id domain.ID) (bool, error) {
+	var raw []byte
+	err := t.tx.QueryRowContext(t.ctx, "SELECT value FROM metadata WHERE key=?", pricingUnknownClearKey(id)).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, storageError(err)
+	}
+	var value pricingUnknownClear
+	if len(raw) > 256 || domain.Decode(raw, &value) != nil || value.Version != 1 {
+		return false, corrupt()
+	}
+	return true, nil
+}
+
+// retainUnknownPricingClear runs before the next activation while the absent
+// active pointer still proves that the latest unmarked version was cleared.
+func (t *Tx) retainUnknownPricingClear(latestID domain.ID) error {
+	if latestID == "" {
+		return nil
+	}
+	if _, found, err := t.pricingClearedAt(latestID); err != nil {
+		return err
+	} else if found {
+		return nil
+	}
+	if found, err := t.pricingUnknownClear(latestID); err != nil {
+		return err
+	} else if found {
+		return nil
+	}
+	body, err := json.Marshal(pricingUnknownClear{Version: 1})
+	if err != nil {
+		return err
+	}
+	_, err = t.tx.ExecContext(t.ctx, "INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO NOTHING", pricingUnknownClearKey(latestID), body)
+	return storageError(err)
+}
 
 // recordPricingCleared retains the first clear instant for the version that was
 // active. It is called inside the transaction that removes the pointer.
@@ -90,6 +140,13 @@ func (t *Tx) PricingAt(model domain.ID, at time.Time) (*PricingVersion, error) {
 		}
 		return &value, nil
 	}
+	unknown, err := t.pricingUnknownClear(id)
+	if err != nil {
+		return nil, err
+	}
+	if unknown {
+		return nil, nil
+	}
 	// Clears before clear history existed left no instant. When the newest
 	// version is no longer selected its clear time is unknown, so report no
 	// eligible price rather than guess one.
@@ -119,4 +176,12 @@ func (t *Tx) pricingChangedAfter(model domain.ID, at time.Time) (bool, error) {
 		return false, storageError(err)
 	}
 	return count > 0, nil
+}
+
+func (t *Tx) pricingHistoryExists(model domain.ID) (bool, error) {
+	var exists bool
+	if err := t.tx.QueryRowContext(t.ctx, "SELECT EXISTS(SELECT 1 FROM pricing_versions WHERE model_key=?)", model).Scan(&exists); err != nil {
+		return false, storageError(err)
+	}
+	return exists, nil
 }

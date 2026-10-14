@@ -204,7 +204,6 @@ async function googleProductionReleases(environment, metadata, fetchImpl) {
 
 async function appleVersion(environment, metadata, fetchImpl, token) {
   const query = new URLSearchParams({
-    "filter[app]": environment.DEVHUD_APP_STORE_APP_ID,
     "filter[platform]": "IOS",
     "filter[versionString]": metadata.version,
     include: "build",
@@ -213,7 +212,7 @@ async function appleVersion(environment, metadata, fetchImpl, token) {
   });
   const result = await checked(
     fetchImpl,
-    `https://api.appstoreconnect.apple.com/v1/appStoreVersions?${query}`,
+    `https://api.appstoreconnect.apple.com/v1/apps/${encodeURIComponent(environment.DEVHUD_APP_STORE_APP_ID)}/appStoreVersions?${query}`,
     { headers: bearer(token) },
     "App Store version lookup",
   );
