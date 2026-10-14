@@ -683,6 +683,28 @@ fn unregistered_zip_file_child_keeps_native_enotdir() {
 }
 
 #[test]
+fn virtual_zip_suffix_requires_matching_graph_archive() {
+    for split in [false, true] {
+        let root = directory_fixture(split);
+        let root_path = fs::canonicalize(root.path()).unwrap();
+        fs::write(root_path.join("ordinary.zip"), b"not an archive").unwrap();
+        let logical = root_path.join(".yarn/__virtual__/fake/1/ordinary.zip/child");
+        let cache_root = tempfile::tempdir().unwrap();
+        let session = tempfile::tempdir().unwrap();
+        let mut view = View::new(
+            Graph::load(&root_path.join(".pnp.cjs")).unwrap(),
+            Cache::open(cache_root.path().join("cache")).unwrap(),
+            session.path().to_owned(),
+        );
+
+        let translated = view.translate(&logical).unwrap();
+        assert_eq!(translated.physical, logical, "split={split}");
+        assert!(!translated.readonly, "split={split}");
+        assert!(!session.path().join("active").exists());
+    }
+}
+
+#[test]
 fn leases_survive_cleanup_and_cache_corruption_is_not_reused() {
     const SCENARIO: &str = "PNPORT_CACHE_LEASE_SCENARIO";
     if std::env::var_os(SCENARIO).is_none() {

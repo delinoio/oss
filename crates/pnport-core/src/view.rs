@@ -351,9 +351,18 @@ impl View {
                 // and mutation behavior for every other path.
                 // Virtual package locations use a physical archive path that is
                 // absent from the graph's virtual location-ancestor index. The
-                // package lookup still proves ownership for those paths.
-                let graph_owned = self.graph.is_location_ancestor(&archive)
-                    || (info.virtual_segments.is_some() && self.graph.package(&logical).is_some());
+                // package lookup proves ownership only when its own archive
+                // maps to this physical path.
+                let virtual_archive_owned = info.virtual_segments.is_some()
+                    && self.graph.package(&logical).is_some_and(|package| {
+                        let Ok(VPath::Zip(package_info)) = VPath::from(&package.package_location)
+                        else {
+                            return false;
+                        };
+                        normalize(&package_info.physical_base_path()) == archive
+                    });
+                let graph_owned =
+                    self.graph.is_location_ancestor(&archive) || virtual_archive_owned;
                 if !graph_owned || archive.is_dir() {
                     self.native_backing(logical.clone())
                 } else {
