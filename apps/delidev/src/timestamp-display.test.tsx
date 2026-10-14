@@ -347,12 +347,12 @@ test("Relative mode keeps future, invalid and other-mode behavior", async () => 
     formatTimestampLabel("not a date", { now, mode: TimestampMode.Relative }),
   ).toBe("not a date");
   // Ordinary switches to an absolute date after 24 hours; Exact stays raw.
-  expect(
-    formatTimestampLabel(old, { now, timeZone: "UTC" }),
-  ).not.toMatch(/ago/);
-  expect(
-    formatTimestampLabel(old, { now, mode: TimestampMode.Exact }),
-  ).toBe(old);
+  expect(formatTimestampLabel(old, { now, timeZone: "UTC" })).not.toMatch(
+    /ago/,
+  );
+  expect(formatTimestampLabel(old, { now, mode: TimestampMode.Exact })).toBe(
+    old,
+  );
   expect(
     formatTimestampLabel(old, { now, mode: TimestampMode.Absolute }),
   ).not.toMatch(/ago/);
@@ -387,7 +387,9 @@ test("Relative labels tick without data reads, recompute on return and release t
     .spyOn(document, "visibilityState", "get")
     .mockReturnValue("visible");
   const value = new Date(now - 2 * MINUTE_MS).toISOString();
-  const view = render(<Timestamp value={value} mode={TimestampMode.Relative} />);
+  const view = render(
+    <Timestamp value={value} mode={TimestampMode.Relative} />,
+  );
   const time = view.container.querySelector("time")!;
   expect(time.textContent).toBe("2 minutes ago");
   expect(time.dateTime).toBe(value);

@@ -943,10 +943,7 @@ function Detail({
         <>
           <header className="pr-detail-header">
             <p className="pr-detail-status">
-              <span
-                className="pr-detail-state"
-                data-state={text(item.state)}
-              >
+              <span className="pr-detail-state" data-state={text(item.state)}>
                 {copy(
                   item.state === "closed"
                     ? "pull-requests.closed_c21ead"
@@ -954,7 +951,9 @@ function Detail({
                 )}
               </span>
               {item.draft ? (
-                <span className="pr-detail-draft">{copy("pr-cards.draft")}</span>
+                <span className="pr-detail-draft">
+                  {copy("pr-cards.draft")}
+                </span>
               ) : null}
               <span className="pr-detail-number">#{text(item.number)}</span>
             </p>

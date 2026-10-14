@@ -286,8 +286,7 @@ it("retains list/scroll while lazily reading all four tabs with independent comm
   expect((openAction as HTMLButtonElement).disabled).toBe(true);
   const notice = screen.getByText(/Browser opening is available/);
   expect(
-    toolbar.compareDocumentPosition(notice) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
+    toolbar.compareDocumentPosition(notice) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
   expect(header.querySelector(".pr-detail-status")?.textContent).toMatch(
     /^Open.*#102$/,
