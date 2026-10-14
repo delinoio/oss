@@ -5,6 +5,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
+
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
@@ -83,4 +85,33 @@ func TestGrokLogoutLeaseWithALostAcknowledgementIsFencedForTheScanner(t *testing
 	if a.Subscription.RecoveryRequired || a.Subscription.Pending != nil || a.Connection == nil || a.Subscription.Generation != before.Subscription.Generation || g.refs(t) != 1 {
 		t.Fatal("the fenced logout lease was not settled with its credential intact")
 	}
+}
+
+// A logout that failed before its revocation claim leaves the account connected
+// and revoked. A refresh would publish a generation that cannot restore readiness,
+// so only another logout may follow, and it settles normally.
+func TestGrokFailedLogoutAllowsOnlyAnotherLogout(t *testing.T) {
+	g := newGrokLoginFixture(t)
+	before := g.connected(t)
+	g.secrets.mu.Lock()
+	saved := g.secrets.values
+	g.secrets.values = map[credentials.Ref][]byte{}
+	g.secrets.mu.Unlock()
+	g.logout(t)
+	_, a := g.record()
+	if a.Health != domain.AccountRevoked || a.Subscription.Pending != nil || a.Connection == nil || a.Subscription.ServerOperation.State != domain.SubscriptionFailed {
+		t.Fatal("the failed logout did not leave the account connected and revoked")
+	}
+	before2 := g.idp.TokenRequests()
+	if _, err := g.client.RequestSubscription(context.Background(), subscriptionRequest(g.service.Identity.Token, &pb.RequestSubscriptionRequest{Mutation: g.mutation(), Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH})); err == nil {
+		t.Fatal("a refresh was accepted while the account is revoked by a failed logout")
+	}
+	if _, a = g.record(); a.Subscription.Pending != nil || a.Subscription.Generation != before.Subscription.Generation || g.idp.TokenRequests() != before2 {
+		t.Fatal("a refused refresh changed the account or reached the provider")
+	}
+	g.secrets.mu.Lock()
+	g.secrets.values = saved
+	g.secrets.mu.Unlock()
+	g.logout(t)
+	g.requireDisconnected(t)
 }

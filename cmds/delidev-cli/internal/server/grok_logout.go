@@ -46,6 +46,12 @@ const (
 	grokStepRevoke grokLoginStep = "revoke"
 )
 
+// grokRefreshAfterFailedLogout is the typed problem of a refresh requested while
+// the account is revoked by a logout that has not settled.
+func grokRefreshAfterFailedLogout() *domain.Error {
+	return domain.Fail(domain.Conflict, "This Grok account is signing out.", "Request the sign-out again; a refresh is refused until a sign-out has settled.")
+}
+
 // grokLogoutKind classifies an interrupted Grok logout by what it proved.
 type grokLogoutKind int
 

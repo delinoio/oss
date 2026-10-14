@@ -66,6 +66,14 @@ func (s *Service) requestServerSubscription(ctx context.Context, req *connect.Re
 		if action != domain.SubscriptionLogin && (a.Connection == nil || state.Generation == "") {
 			return nil, subscriptionDenied()
 		}
+		if action == domain.SubscriptionRefresh && a.SubscriptionService == domain.SubscriptionGrok && a.Health == domain.AccountRevoked {
+			// A Grok account stays revoked from the acceptance of its logout until a
+			// logout settles. A logout that failed before its revocation claim leaves
+			// the account connected and revoked; a refresh would publish a new
+			// generation that can never restore readiness, so only another logout
+			// may follow.
+			return nil, grokRefreshAfterFailedLogout()
+		}
 		if action == domain.SubscriptionRefresh {
 			// A refresh rotates the credential generation. A claimed managed title
 			// still owns the frozen generation, so the refresh waits for it.
