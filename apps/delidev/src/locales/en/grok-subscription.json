@@ -40,6 +40,7 @@
   "grok-subscription.problem.forwardUncertain": "The original callback result is uncertain. Waiting for the server to confirm sign-in; the callback will not be sent again.",
   "grok-subscription.problem.statusUnconfirmed": "The original sign-in status could not be verified. Waiting for another status check.",
   "grok-subscription.problem.cancelUnconfirmed": "The original cancellation could not be confirmed. Sign-in status will continue to be checked.",
+  "grok-subscription.problem.cancelFailed": "The cancellation was not accepted. The sign-in is still active; choose Cancel sign-in to try again.",
   "grok-subscription.problem.canceling": "Cancellation was requested. Waiting for the server to confirm.",
   "grok-subscription.problem.nameUnconfirmed": "The account name could not be saved. Your edit is kept; check the current account and save again.",
   "grok-subscription.diagnostic.version": "Grok version:",
