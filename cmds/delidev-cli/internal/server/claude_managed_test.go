@@ -113,7 +113,7 @@ func newManagedClaudeFixture(t *testing.T) *managedFixture {
 		t.Fatal(err)
 	}
 	m := &managedFixture{subscriptionFixture: f, native: newFakeManagedLogin()}
-	f.service.claudeSetupOpen = func(context.Context, string, domain.ID, *slog.Logger) (managedClaudeLogin, string, error) {
+	f.service.claudeSetupOpen = func(context.Context, nativeScope, domain.ID, *slog.Logger) (managedClaudeLogin, string, error) {
 		return m.native, domain.ClaudeProtocolVersion, nil
 	}
 	return m
@@ -1313,7 +1313,7 @@ func (n *codeDroppingLogin) Progress() (claude.SetupTokenProgress, error) {
 
 func TestManagedClaudeMissingApprovalBytesBeforeDeliveryStillFailClosed(t *testing.T) {
 	f := newManagedClaudeFixture(t)
-	f.service.claudeSetupOpen = func(context.Context, string, domain.ID, *slog.Logger) (managedClaudeLogin, string, error) {
+	f.service.claudeSetupOpen = func(context.Context, nativeScope, domain.ID, *slog.Logger) (managedClaudeLogin, string, error) {
 		return &codeDroppingLogin{fakeManagedLogin: f.native, service: f.service}, "2.1.237-rc.1", nil
 	}
 	op, err := f.request(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)

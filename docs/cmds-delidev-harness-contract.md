@@ -2881,6 +2881,167 @@ The `setup-token` adapter starts the pinned CLI on a bounded PTY (50 rows, 1000 
 
 Managed execution adds a token to the private stream configuration. The child environment keeps only owned paths, sets `CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST=1` (the pinned CLI then strips the token from tool and hook subprocesses) and the private secure-store directory, removes every inherited API, bearer, endpoint and descriptor source and never uses `--bare`. Initialization must report the `CLAUDE_CODE_OAUTH_TOKEN` token source with no API-key source and no email, organization or subscription metadata; token presence alone is not readiness. Checkpoints of this mode are distinct from relay and device-profile checkpoints. Real setup-token output and consumption were verified only against source strings and synthetic fixtures, not a real account.
 
+## Persistent native profiles
+
+`internal/nativeprofile` is the single owner and resolver of DeliDev-owned native
+homes. Every Codex, Claude Code, OpenCode and Grok launch path resolves its home
+through it instead of allocating a disposable per-execution or temporary
+directory. It is private versioned state of one owner storage root: the server
+and each Worker keep their own registry and never share or import profiles, and
+a Worker's machine identity is part of its ownership.
+
+A profile is resolved from a semantic `Key`: owner kind, optional server
+identity, optional Worker machine identity, harness, a typed `Purpose`, the
+account and (for conversation purposes) the logical conversation. Execution,
+request or attempt identifiers never appear in a key. Credential rotation does
+not change a key or path. The closed purposes are:
+
+| Scope                | Purposes                                                                      | Required key fields            |
+| -------------------- | ----------------------------------------------------------------------------- | ------------------------------ |
+| system (accountless) | `discovery`, `model_observation`, `title_probe`                               | harness                        |
+| account              | `auth`, `quota`, `credit`, `subscription_probe`                               | harness, account               |
+| conversation         | `conversation`, `fork`, `compaction`, `revert`, `sidechat`, `title`, `review` | harness, account, conversation |
+
+Layout below `<root>/native-profiles/`: `registry.json` (versioned registry,
+`registry.lock`), `locks/<profile-id>.lock`, `migrations/<kind>-<operation>.json`
+(migration receipts) and `p/<profile-id>/` for DeliDev-created profiles, with the
+versioned `owner.json` beside the native home `p/<profile-id>/<harness>/`. The
+native home never contains DeliDev files, so native scanners see only native
+state. Profile identifiers are canonical UUID v7. Resolving a key creates the
+profile once and afterwards returns the same path, including after an owner
+restart. An invalid owner record, a replaced or non-private directory, an
+incompatible registry or owner version, or a held lock blocks with a closed
+cause (`owner_invalid`, `incompatible_version`, `registry_invalid`,
+`profile_busy`) and never rewrites, repairs or falls back to another directory.
+`Acquire` takes the profile lock for the duration of one operation; accountless
+probes may wait a bounded time for an overlapping probe of the same harness.
+
+Concurrent conversations of one account use distinct profiles, so configuration,
+credentials and native history are never shared; access-only quota and credit
+profiles are separate from the managed `auth` profile and never contain managed
+authentication. Supported admission and native concurrency limits are
+unchanged. Adapters verify and reuse owned state: probe and execution
+environments no longer require empty directories, only canonical private paths.
+Every launch revalidates its model, instructions, account generation and route;
+a previous run's settings are never inherited.
+
+### Operation journals stay per operation
+
+A fresh `runtimes/<operation-id>/` (or `title-runtimes/<job-id>/`) directory
+remains the exclusive per-operation journal for replay protection and for
+small immutable checkpoints (`native-completion.json`, `fork-completion.json`,
+revert claims, `title-intent.json`). It is separate from the profile and never
+holds native state for migrated launch paths. Process ownership journals under
+`processes/<owner>` are likewise per operation. Completing, failing or
+cancelling an operation never deletes a profile and never requires helper
+removal.
+
+### Completion, credentials and retained data
+
+Process completion, credential cleanup and profile retention are separate. After
+a joined operation the owner retires only the exact transient credential files
+(`codex/auth.json`, `claude/.credentials.json`) and keeps configuration,
+history, caches and native-created helper symlinks. Helper links are never
+followed, are not treated as credential state, and do not block a later Refresh
+or eligible operation. A live or unjoined process, an unremoved credential file
+or an invalid owner still blocks the owning operation with a specific safe
+cause (`process_uncertain`, `credential_file_present`, `owner_invalid`). The
+OS vault stays authoritative; the registry stores no secret.
+
+Credential files are written only through `subscription.WriteCredentialFile`,
+whose temporary name is attributed to its target (`.pending-<target>-*`, via
+`security.OwnedTemporaryPrefix`). A crash between the temporary write and the
+rename therefore leaves an attributable plaintext remnant: the presence check
+(`CredentialFilePresent`) reports it as `credential_file_present`, retirement
+(`RetireCredentialFiles`, including account deletion) removes it, a non-regular
+entry with that name blocks without being removed, and the next credential write
+to the same target retires an earlier remnant before writing.
+
+The transient executable copy of a native model observation is created by
+exactly one attempt (`O_EXCL`) and removed only after that operation's owned
+processes are joined; an unproven owner keeps the copy and the failure. A retry
+of the same operation replaces a retained copy only after the owner is joined (an
+owner with no process journal never launched a process).
+
+### Registry lifecycle and validation
+
+Profile creation is all-or-nothing from the caller's view. If any step after the
+profile directory was created fails (including publishing `registry.json`), the
+lease is closed; the new directory is rolled back unless the on-disk registry
+proves the entry became durable, in which case it is kept (unlocked) so the next
+resolution reuses it. Loading a registry validates every entry against the
+owning root: owner kind, server identity and Worker machine identity must equal
+the current owner, and every legacy `path` must be a normalized, local,
+slash-separated path below the owner root outside `native-profiles/` (the same
+rule registration applies). A restored root under another identity, or an entry
+with an absolute, parent-traversing or non-normalized path, is `registry_invalid`
+for the whole root and is never repaired.
+
+### History binding and legacy registration
+
+Each conversation profile records the execution, action and fork-runtime
+identifiers whose native history it retains (the first identifier is permanent;
+the oldest later identifier is evicted at 64). Continuation, compaction, Fork,
+Revert, inspection and checkpoint readers resolve a history identifier through
+the registry. An identifier from before persistent profiles resolves to its
+verified legacy `runtimes/<id>` directory, which is registered in place: nothing
+is moved, merged or rewritten, and no native database is merged. A directory
+may be registered for one key only.
+
+### Deletion ownership
+
+A profile is deleted only by explicit session, account or storage deletion:
+session deletion removes the profiles bound to the session's conversation and
+history identifiers after their owners have joined; Claude subscription logout
+removes the account's profile; explicit server account deletion removes every
+server-owned profile of the account (`auth`, `quota`, `credit`,
+`subscription_probe` and their native caches) before the deletion is
+acknowledged. A profile that is referenced (registry references) or active
+(locked) is never deleted and keeps the deletion pending. When one scope matches
+several profiles, removals that already completed stay committed but any matching
+profile that is locked, referenced or unremovable makes the whole deletion return
+an error (`profile_busy`, `referenced` or `delete_blocked`), so no caller proves a
+deletion while a matching profile remains. There is no age-based pruning.
+
+### Legacy access-only quota migration
+
+A prior-epoch uncertain access-only quota or credit attempt whose per-operation
+runtime was retained (original aliases, empty original process index, no auth or
+probe files, no live controller) is settled once, as failed, through an
+idempotent versioned migration receipt (`verified`, then `settled`). The proof
+requires the retained process index, a joined original owner, a bounded
+secret-remnant check (no credential file names, token fields or JWT-like
+content; links are counted but never followed) and unchanged account,
+connection, generation and operation identity. The directory and its helper
+links are left untouched. Only the eligible obsolete captured credential
+reference is retired, balances and timestamps are unchanged, and the old request
+is never replayed. Missing ownership, process, credential or vault proof, a
+changed identity or an unreadable receipt keeps the original fence. A later
+ordinary Refresh makes a new observation through the account's permanent quota
+profile.
+
+### Logging
+
+Profile events use the structured fields `profile_id`, `owner`, `harness`,
+`purpose` and a closed `reason` (`created`, `reused`, `registered_legacy`,
+`history_recorded`, `profile_busy`, `owner_invalid`, `incompatible_version`,
+`registry_invalid`, `credential_file_present`, `credential_cleaned`,
+`credential_cleanup_blocked`, `process_uncertain`, `helper_retained`,
+`referenced`, `deleted`, `delete_blocked`, `create_rolled_back`, `migration_verified`,
+`migration_settled`). Logs never contain secrets, native contents or paths.
+
+### OpenCode execution-family status
+
+OpenCode discovery and protocol probes use the persistent accountless
+`discovery` profile. OpenCode execution, continuation, compaction and Fork still
+keep their immutable per-execution runtimes (`runtimes/<id>`), because their
+native checkpoints digest the complete runtime tree and copy the database
+forward into an empty, different runtime. Moving them to persistent profiles
+requires an in-place resume profile and a retained-configuration inspection
+verified against the pinned native; neither is part of the migrated paths. These
+runtimes remain legacy evidence: they are never auto-pruned, and session
+deletion still removes them with the session.
+
 ## Native version admission baselines
 
 Claude Code `2.1.236`, OpenCode `1.18.32` and Grok Build `1.0.41` are minimum SemVer baselines, not exact versions. `domain.HarnessVersionAllowed` (built on `domain.VersionAtLeast`) admits a version only when it is a valid bounded SemVer whose precedence is at or above the harness baseline. Prerelease versions follow standard SemVer precedence (`2.1.237-rc.1` is admitted and `2.1.236-rc.1` is not) and build metadata is ignored. Malformed and lower versions return `unsupported` from the explicit discovery probes before any native launch. Codex keeps `CodexVersionAllowed`.

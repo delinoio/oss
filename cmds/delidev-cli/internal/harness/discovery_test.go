@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
@@ -64,7 +65,7 @@ printf 'codex-cli 0.151.0\n'
 `)
 	input.Selections.Executables[0].Path = path
 	root, owner := discoveryRoot(t), domain.NewID()
-	result, err := Discover(context.Background(), DiscoveryConfig{Root: root, OwnerID: owner}, input)
+	result, err := Discover(context.Background(), DiscoveryConfig{Root: root, Profiles: testProfiles(t, root), OwnerID: owner}, input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,9 +79,16 @@ printf 'codex-cli 0.151.0\n'
 	if err := process.ReconcileOwner(filepath.Join(root, "processes"), owner); err != nil {
 		t.Fatal(err)
 	}
-	entries, err := os.ReadDir(filepath.Join(root, "probes"))
-	if err != nil || len(entries) != 0 {
-		t.Fatalf("retained completed probe: %v %v", entries, err)
+	// The accountless probe profile is persistent and is reused, not recreated.
+	profile, ok, err := testProfiles(t, root).Lookup(context.Background(), nativeprofile.Key{Harness: domain.Codex, Purpose: nativeprofile.PurposeDiscovery})
+	if err != nil || !ok {
+		t.Fatalf("probe profile was not retained: %v", err)
+	}
+	if _, err := os.Stat(profile.Root); err != nil {
+		t.Fatal("persistent probe profile was removed")
+	}
+	if _, err := os.Stat(filepath.Join(root, "probes")); err == nil {
+		t.Fatal("a disposable probe directory was allocated")
 	}
 	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
@@ -126,7 +134,8 @@ func TestExplicitPathFailuresNeverFallBack(t *testing.T) {
 	for _, test := range cases {
 		input := allMissing(t)
 		input.Selections.Executables[0].Path = test.path
-		result, err := Discover(context.Background(), DiscoveryConfig{Root: discoveryRoot(t), OwnerID: domain.NewID()}, input)
+		discoveryDir := discoveryRoot(t)
+		result, err := Discover(context.Background(), DiscoveryConfig{Root: discoveryDir, Profiles: testProfiles(t, discoveryDir), OwnerID: domain.NewID()}, input)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -136,7 +145,8 @@ func TestExplicitPathFailuresNeverFallBack(t *testing.T) {
 	}
 	input := allMissing(t)
 	input.Selections.Executables[0].Path = ""
-	result, err := Discover(context.Background(), DiscoveryConfig{Root: discoveryRoot(t), OwnerID: domain.NewID()}, input)
+	discoveryDir := discoveryRoot(t)
+	result, err := Discover(context.Background(), DiscoveryConfig{Root: discoveryDir, Profiles: testProfiles(t, discoveryDir), OwnerID: domain.NewID()}, input)
 	if err != nil || result.Installations[0].Version != "9.9.9" {
 		t.Fatalf("unset path was not searched: %+v %v", result, err)
 	}
@@ -148,7 +158,7 @@ func TestDiscoveryBoundsAndGrokUpdateSuppression(t *testing.T) {
 	input.Selections.Executables[1].Path = fixture(t, "while :; do printf 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'; done\n")
 	input.Selections.Executables[3].Path = fixture(t, "test \"$1\" = --no-auto-update\ntest \"$2\" = --version\nprintf 'grok 1.2.3\\n'\n")
 	root, owner := discoveryRoot(t), domain.NewID()
-	result, err := Discover(context.Background(), DiscoveryConfig{Root: root, OwnerID: owner}, input)
+	result, err := Discover(context.Background(), DiscoveryConfig{Root: root, Profiles: testProfiles(t, root), OwnerID: owner}, input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,21 +174,83 @@ func TestDiscoveryBoundsAndGrokUpdateSuppression(t *testing.T) {
 	}
 }
 
-func TestCanceledDiscoveryReapsBeforeRemovingRuntime(t *testing.T) {
+func TestCanceledDiscoveryReapsOwnedProcessesAndKeepsProfile(t *testing.T) {
 	input := allMissing(t)
 	input.Selections.Executables[0].Path = fixture(t, "while :; do sleep 1; done\n")
 	root, owner := discoveryRoot(t), domain.NewID()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	_, err := Discover(ctx, DiscoveryConfig{Root: root, OwnerID: owner}, input)
+	_, err := Discover(ctx, DiscoveryConfig{Root: root, Profiles: testProfiles(t, root), OwnerID: owner}, input)
 	if err == nil {
 		t.Fatal("canceled probe succeeded")
 	}
 	if err := process.ReconcileOwner(filepath.Join(root, "processes"), owner); err != nil {
 		t.Fatal(err)
 	}
-	entries, err := os.ReadDir(filepath.Join(root, "probes"))
-	if err != nil || len(entries) != 0 {
-		t.Fatalf("canceled probe runtime: %v %v", entries, err)
+	// A canceled probe retains its persistent profile; only owned processes are joined.
+	if _, err := os.Stat(filepath.Join(root, "probes")); err == nil {
+		t.Fatal("a disposable probe directory was allocated")
+	}
+}
+
+func TestDiscoveryReusesOnePersistentProfileAcrossRequestsAndRestart(t *testing.T) {
+	input := allMissing(t)
+	// The native leaves a cache entry and a helper link behind, as real natives do.
+	input.Selections.Executables[0].Path = fixture(t, `
+mkdir -p "$HOME/cache"
+printf retained > "$HOME/cache/native-cache"
+ln -sf "$0" "$HOME/cache/helper-link"
+printf 'codex-cli 0.151.0\n'
+`)
+	root := discoveryRoot(t)
+	var firstRoot string
+	for attempt := 0; attempt < 3; attempt++ {
+		registry := testProfiles(t, root)
+		if attempt == 2 {
+			// An owner restart opens a new registry over the same storage root.
+			reopened, err := nativeprofile.Open(nativeprofile.Config{Root: root, Owner: nativeprofile.OwnerWorker, Machine: registryMachine(t, registry)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			registry = reopened
+		}
+		owner := domain.NewID()
+		result, err := Discover(context.Background(), DiscoveryConfig{Root: root, Profiles: registry, OwnerID: owner}, input)
+		if err != nil || result.Installations[0].State != domain.InstallationDetected {
+			t.Fatalf("attempt %d: %+v %v", attempt, result, err)
+		}
+		info, ok, err := registry.Lookup(context.Background(), nativeprofile.Key{Harness: domain.Codex, Purpose: nativeprofile.PurposeDiscovery})
+		if err != nil || !ok {
+			t.Fatal("profile missing", err)
+		}
+		if firstRoot == "" {
+			firstRoot = info.Root
+		} else if info.Root != firstRoot {
+			t.Fatalf("a different request or restart allocated a new native home: %s", info.Root)
+		}
+		if raw, err := os.ReadFile(filepath.Join(info.Root, "cache", "native-cache")); err != nil || string(raw) != "retained" {
+			t.Fatal("native cache was not retained", err)
+		}
+		if _, err := os.Lstat(filepath.Join(info.Root, "cache", "helper-link")); err != nil {
+			t.Fatal("helper link was removed")
+		}
+		// Each request keeps its own fresh process journal.
+		if _, err := os.Stat(filepath.Join(root, "processes", string(owner))); err != nil {
+			t.Fatal("operation journal is missing", err)
+		}
+	}
+	entries, err := os.ReadDir(filepath.Join(root, "native-profiles", "p"))
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("expected one profile directory: %v %v", entries, err)
+	}
+}
+
+func TestDiscoveryRequiresPersistentProfileRegistry(t *testing.T) {
+	root := discoveryRoot(t)
+	if _, err := Discover(context.Background(), DiscoveryConfig{Root: root, OwnerID: domain.NewID()}, allMissing(t)); err == nil {
+		t.Fatal("discovery fell back to a temporary home")
+	}
+	if _, err := os.Stat(filepath.Join(root, "probes")); err == nil {
+		t.Fatal("a disposable probe directory was allocated")
 	}
 }
