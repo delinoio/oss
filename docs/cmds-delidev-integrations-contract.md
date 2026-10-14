@@ -653,7 +653,11 @@ and avatar/commit/detail reads are never resumed. The interrupted attempt first
 finishes completely (token cleared, completion signal closed). The foreground
 read then runs and releases the profile before the resumed attempt is admitted
 behind every pending same-profile foreground read, so exactly one read owns the
-profile at a time. Each resumed attempt reauthorizes the original actor and
+profile at a time. If the foreground caller cancels its join wait or the
+five-second join bound expires, the original workspace request terminates; the
+typed cancellation alone cannot authorize another provider attempt. A safe
+structured event records the failed displacement without token or provider
+content. Each resumed attempt reauthorizes the original actor and
 verifies the original repository revision, profile and token generation before
 reading; any change, revocation, shutdown, parent cancellation, provider
 failure, malformed observation or exhausted limit terminates the request without
@@ -676,4 +680,8 @@ persistent data is added. Content-free structured logs record
 `repository_integration_read_preempted`, `pull_request_workspace_requeued`,
 `pull_request_workspace_resumed` and `pull_request_workspace_finished`, each with
 the original `correlation_id` and `attempt_count` (the final log also carries
-`outcome` and `error_code`).
+`outcome` and `error_code`). The preempted event identifies the interrupted
+admission, including when one request is displaced more than once. The single
+finished event records the full RPC result after observation validation and
+bounded response construction, so malformed observations and response-limit
+failures report their terminal domain codes rather than provider success.

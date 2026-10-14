@@ -101,7 +101,20 @@ func (s *Service) GetPullRequestWorkspace(ctx context.Context, req *connect.Requ
 	// One budget spans every attempt of this request: the adapter deadline is
 	// frozen at the first provider attempt and provider reads are cumulative.
 	budget := gh.NewWorkspaceBudget()
-	selected, _, e := s.readResumablePullRequestWorkspace(ctx, id, correlation, func(ctx context.Context, token []byte, sel repositoryIntegrationSelection) error {
+	attempts := 0
+	var finalErr error
+	defer func() {
+		outcome, code := workspaceOutcomeSucceeded, domain.Code("")
+		if finalErr != nil {
+			outcome, code = workspaceOutcomeFailed, domain.SafeError(finalErr).Code
+		}
+		s.logger.Info("pull_request_workspace_finished", "repository_id", id, "outcome", outcome, "error_code", code, "attempt_count", attempts, "correlation_id", correlation)
+	}()
+	fail := func(err error) error {
+		finalErr = err
+		return rpc.Error(err, correlation)
+	}
+	selected, count, e := s.readResumablePullRequestWorkspace(ctx, id, correlation, func(ctx context.Context, token []byte, sel repositoryIntegrationSelection) error {
 		// A resumed attempt restarts from the original seeds; nothing observed by an
 		// interrupted attempt, including avatar locators, survives.
 		observed = gh.WorkspaceObservation{}
@@ -116,8 +129,9 @@ func (s *Service) GetPullRequestWorkspace(ctx context.Context, req *connect.Requ
 		observed, e = client.WorkspaceWithBudget(ctx, token, sel.repository.GitHubOwner, sel.repository.GitHubName, req.Msg.SeedNumbers, budget)
 		return e
 	})
+	attempts = count
 	if e != nil {
-		return nil, rpc.Error(e, correlation)
+		return nil, fail(e)
 	}
 	value := domain.PRWorkspace{PRReadScope: s.prScope(id, selected, observed.Repository), State: observed.State, Reasons: observed.Reasons, Seeds: append([]string{}, req.Msg.SeedNumbers...), Nodes: observed.Nodes, Edges: observed.Edges}
 	for i := range value.Nodes {
@@ -127,11 +141,11 @@ func (s *Service) GetPullRequestWorkspace(ctx context.Context, req *connect.Requ
 		}
 	}
 	if !value.Validate() {
-		return nil, rpc.Error(domain.Fail(domain.RecoveryRequired, "The workspace observation is inconsistent.", "Retry the original repository workspace explicitly."), correlation)
+		return nil, fail(domain.Fail(domain.RecoveryRequired, "The workspace observation is inconsistent.", "Retry the original repository workspace explicitly."))
 	}
 	raw, e := json.Marshal(value)
 	if e != nil || len(raw) > 1<<20 {
-		return nil, rpc.Error(domain.Fail(domain.ResourceExhausted, "The complete workspace exceeds its response limit.", "Use fewer accepted seeds; no truncated graph is returned."), correlation)
+		return nil, fail(domain.Fail(domain.ResourceExhausted, "The complete workspace exceeds its response limit.", "Use fewer accepted seeds; no truncated graph is returned."))
 	}
 	s.logger.Info("pull_request_workspace_observed", "repository_id", id, "node_count", len(value.Nodes), "state", value.State, "correlation_id", correlation)
 	response := connect.NewResponse(&pb.GetPullRequestWorkspaceResponse{SchemaVersion: 1, DocumentJson: raw})
