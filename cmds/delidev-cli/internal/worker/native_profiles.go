@@ -414,14 +414,15 @@ func publishAfterRelease(hold *sharedHomeHold, publish func() error) (releaseErr
 }
 
 // verifySharedCodexHome checks a checkpoint-bound shared home against the
-// registry without registering or creating anything. An unregistered legacy
-// home passes; a registered one must resolve to the same path.
+// registry without registering, locking or creating anything, so it also works
+// on a read-only Worker root. An unregistered legacy home, and a root with no
+// registry at all, pass; a registered one must resolve to the same path.
 func verifySharedCodexHome(root string, machine, account domain.ID, home string) error {
 	registry, err := nativeProfiles(Config{Root: root}, machine)
 	if err != nil {
 		return err
 	}
-	info, ok, err := registry.Lookup(context.Background(), sharedCodexOwnerKey(account))
+	info, ok, err := registry.Peek(sharedCodexOwnerKey(account))
 	if err != nil {
 		return err
 	}

@@ -314,6 +314,9 @@ func TestVerifySharedCodexHomeCreatesNothing(t *testing.T) {
 	if _, err := os.Lstat(home); !os.IsNotExist(err) {
 		t.Fatal("verification created the account home")
 	}
+	if _, err := os.Lstat(filepath.Join(config.Root, "native-profiles")); !os.IsNotExist(err) {
+		t.Fatal("verification created the registry directory")
+	}
 	registry, err := nativeProfiles(config, machine)
 	if err != nil {
 		t.Fatal(err)
@@ -491,4 +494,25 @@ func TestResolveSharedCodexHomeRegistrationTimeline(t *testing.T) {
 			t.Fatalf("the retry did not register the existing home: %v", err)
 		}
 	})
+}
+
+// Checkpoint verification is read-only on every registry state, including a
+// root that is read-only and has no registry at all.
+func TestVerifySharedCodexHomeWorksOnAReadOnlyRootWithoutARegistry(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("directory permissions do not block creation here")
+	}
+	config, machine := profileTestConfig(t)
+	account := domain.NewID()
+	home, _ := seedSharedCodexHistory(t, config, account)
+	if err := os.Chmod(config.Root, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(config.Root, 0o700) })
+	if err := verifySharedCodexHome(config.Root, machine, account, home); err != nil {
+		t.Fatalf("an absent registry on a read-only root failed verification: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(config.Root, "native-profiles")); !os.IsNotExist(err) {
+		t.Fatal("verification created the registry directory")
+	}
 }

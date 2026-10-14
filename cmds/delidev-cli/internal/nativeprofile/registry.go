@@ -506,6 +506,39 @@ func (r *Registry) Lookup(ctx context.Context, key Key) (Info, bool, error) {
 	return found, ok, err
 }
 
+// Peek is Lookup for readers that must not change anything. It takes no lock
+// and creates no directory or file, so it also works on a read-only root: a
+// registry that does not exist yet reports the key as unregistered. Registry
+// publication replaces the file atomically, so a lock-free read sees either the
+// old or the new registry, never a partial one. A registry directory that is
+// not a real private directory, or an unreadable or invalid registry, fails
+// with the same closed cause the locked paths use.
+func (r *Registry) Peek(key Key) (Info, bool, error) {
+	key, err := r.normalize(key)
+	if err != nil {
+		return Info{}, false, err
+	}
+	if _, err := os.Lstat(r.base); errors.Is(err, os.ErrNotExist) {
+		return Info{}, false, nil
+	}
+	if err := security.CheckPrivateDir(r.base); err != nil {
+		return Info{}, false, Failure(domain.RecoveryRequired, ReasonRegistryInvalid, "The native profile directory is not private.", "Inspect the owner storage root before retrying.")
+	}
+	if _, err := os.Lstat(r.registryPath()); errors.Is(err, os.ErrNotExist) {
+		return Info{}, false, nil
+	}
+	file, err := r.load()
+	if err != nil {
+		return Info{}, false, err
+	}
+	for _, e := range file.Profiles {
+		if e.Key == key {
+			return r.info(e, false), true, nil
+		}
+	}
+	return Info{}, false, nil
+}
+
 // RegisterLegacy registers an existing pre-registry history directory in
 // place. The directory must be a real private directory below the owner root.
 // Nothing is moved, merged or rewritten. Registering the same directory for the

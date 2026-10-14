@@ -2963,6 +2963,19 @@ registry. Only in-place registration creates its entry. Acquiring an unregistere
 creates no managed profile directory or registry entry, while acquiring an entry
 that was already registered in place locks it normally.
 
+Checkpoint readers verify the home through a read-only registry lookup that
+takes no lock and creates no file or directory, so it also works on a
+read-only Worker root:
+
+| Registry state                           | Registered path | Verification                       |
+| ---------------------------------------- | --------------- | ---------------------------------- |
+| `native-profiles/` or the file is absent | none            | passes; nothing is created         |
+| registry present, key unregistered       | none            | passes; the legacy home is allowed |
+| registry present, key registered         | the derived one | passes                             |
+| registry present, key registered         | another path    | recovery required                  |
+| registry directory not private or a link | n/a             | recovery required (`registry_invalid`) |
+| registry file unreadable or invalid      | n/a             | recovery required (`registry_invalid`) |
+
 The registry never creates or removes the account home. Registration is the
 only registry write, so a failed publication leaves the directory exactly as it
 was before the attempt, and the next attempt registers it in place. Nothing is

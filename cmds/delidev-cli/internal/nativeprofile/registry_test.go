@@ -1009,3 +1009,120 @@ func TestRegistryLoadRejectsSharedOwnerForOtherHarnesses(t *testing.T) {
 		t.Fatal("the invalid registry was rewritten")
 	}
 }
+
+// Peek is the read-only lookup: it answers from the registry on disk and never
+// creates the registry directories, their lock file or any profile, so it works
+// on a read-only root. Every cell below is one state of the registry.
+func TestPeekIsReadOnlyForEveryRegistryState(t *testing.T) {
+	ctx := context.Background()
+	key := func(account domain.ID) Key {
+		return Key{Harness: domain.Codex, Purpose: PurposeSharedOwner, Account: account}
+	}
+	snapshot := func(t *testing.T, root string) map[string]string {
+		t.Helper()
+		seen := map[string]string{}
+		_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+			if err != nil || path == root {
+				return nil
+			}
+			content := ""
+			if info.Mode().IsRegular() {
+				raw, _ := os.ReadFile(path)
+				content = string(raw)
+			}
+			seen[path] = info.Mode().String() + ":" + content
+			return nil
+		})
+		return seen
+	}
+	same := func(t *testing.T, before, after map[string]string) {
+		t.Helper()
+		if len(before) != len(after) {
+			t.Fatalf("peek changed the owner root: %v -> %v", before, after)
+		}
+		for path, state := range before {
+			if after[path] != state {
+				t.Fatalf("peek changed %s", path)
+			}
+		}
+	}
+	t.Run("registry absent", func(t *testing.T) {
+		root := testRoot(t)
+		r, _ := workerRegistry(t, root, nil)
+		before := snapshot(t, root)
+		if _, ok, err := r.Peek(key(domain.NewID())); err != nil || ok {
+			t.Fatalf("absent registry: ok=%v err=%v", ok, err)
+		}
+		same(t, before, snapshot(t, root))
+		if _, err := os.Lstat(r.Base()); !os.IsNotExist(err) {
+			t.Fatal("peek created the registry directory")
+		}
+	})
+	t.Run("registry directory without a registry file", func(t *testing.T) {
+		root := testRoot(t)
+		r, _ := workerRegistry(t, root, nil)
+		if err := security.PrivateDir(r.Base()); err != nil {
+			t.Fatal(err)
+		}
+		before := snapshot(t, root)
+		if _, ok, err := r.Peek(key(domain.NewID())); err != nil || ok {
+			t.Fatalf("empty registry directory: ok=%v err=%v", ok, err)
+		}
+		same(t, before, snapshot(t, root))
+	})
+	t.Run("registered and unregistered keys on a read-only registry", func(t *testing.T) {
+		root := testRoot(t)
+		r, _ := workerRegistry(t, root, nil)
+		account := domain.NewID()
+		relative := "runtimes/accounts/" + string(account) + "/codex"
+		if err := security.PrivateDir(filepath.Join(root, filepath.FromSlash(relative))); err != nil {
+			t.Fatal(err)
+		}
+		registered, err := r.RegisterLegacy(ctx, key(account), relative)
+		if err != nil {
+			t.Fatal(err)
+		}
+		before := snapshot(t, root)
+		found, ok, err := r.Peek(key(account))
+		if err != nil || !ok || found.ID != registered.ID || found.Root != registered.Root {
+			t.Fatalf("registered key: %+v ok=%v err=%v", found, ok, err)
+		}
+		if _, ok, err := r.Peek(key(domain.NewID())); err != nil || ok {
+			t.Fatalf("unregistered key: ok=%v err=%v", ok, err)
+		}
+		same(t, before, snapshot(t, root))
+	})
+	t.Run("invalid registry file", func(t *testing.T) {
+		root := testRoot(t)
+		r, _ := workerRegistry(t, root, nil)
+		if err := security.PrivateDir(r.Base()); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(r.registryPath(), []byte("{not json"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		before := snapshot(t, root)
+		if _, _, err := r.Peek(key(domain.NewID())); err == nil {
+			t.Fatal("an invalid registry was accepted")
+		} else if reason, ok := Reasoned(err); !ok || reason != ReasonRegistryInvalid {
+			t.Fatalf("invalid registry reason: %v", err)
+		}
+		same(t, before, snapshot(t, root))
+	})
+	t.Run("registry directory is a link", func(t *testing.T) {
+		root := testRoot(t)
+		r, _ := workerRegistry(t, root, nil)
+		elsewhere := filepath.Join(root, "elsewhere")
+		if err := security.PrivateDir(elsewhere); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(elsewhere, r.Base()); err != nil {
+			t.Skip("symlinks unavailable")
+		}
+		if _, _, err := r.Peek(key(domain.NewID())); err == nil {
+			t.Fatal("a linked registry directory was read")
+		} else if reason, ok := Reasoned(err); !ok || reason != ReasonRegistryInvalid {
+			t.Fatalf("linked registry reason: %v", err)
+		}
+	})
+}
