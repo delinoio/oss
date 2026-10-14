@@ -125,3 +125,23 @@ func containsPrefix(values []string, prefix string) bool {
 	}
 	return false
 }
+
+func TestRemovePromptIntegrationClearsCrashLeftovers(t *testing.T) {
+	root, id := t.TempDir(), domain.NewID()
+	dir := PromptIntegrationDirectory(root, id)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bashrc"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemovePromptIntegration(root, id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(dir); !os.IsNotExist(err) {
+		t.Fatalf("leftover wrapper must be removed: %v", err)
+	}
+	if err := RemovePromptIntegration(root, "../escape"); err != nil {
+		t.Fatalf("invalid identifiers are ignored: %v", err)
+	}
+}
