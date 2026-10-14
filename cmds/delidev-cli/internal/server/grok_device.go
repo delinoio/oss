@@ -69,9 +69,15 @@ func (s *Service) grokDeviceLoginSteps(ctx, parent context.Context, id domain.ID
 	fail := func(state domain.SubscriptionLoginState, code domain.Code, step grokLoginStep) grokOutcome {
 		return grokOutcome{state: state, code: code, step: step, claimed: outcome.claimed}
 	}
-	// interrupted classifies the end of a wait: server shutdown and explicit
-	// cancellation are canceled, the operation window is expired.
+	// interrupted classifies the end of a wait: explicit cancellation is
+	// canceled and the operation window is expired. Server shutdown after the
+	// exchange claim is recovery: the device code lives only in memory, so a
+	// shutdown between polls cannot resume the login any more than a crash can,
+	// and the claim must not be forgotten.
 	interrupted := func(step grokLoginStep) grokOutcome {
+		if parent.Err() != nil && outcome.claimed {
+			return grokOutcome{state: domain.SubscriptionRecovery, code: domain.RecoveryRequired, step: step, claimed: true}
+		}
 		if parent.Err() == nil && !time.Now().Before(original.ExpiresAt) {
 			return fail(domain.SubscriptionExpired, domain.Canceled, step)
 		}
