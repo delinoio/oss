@@ -253,6 +253,126 @@ it.each([
 ])("formats part boundaries for %j", (parts, expected) => {
   expect(joinReasoningParts(parts)).toBe(expected);
 });
+it.each([
+  // Straight single quote opening a part without boundary whitespace.
+  [["The file is called", "'foo'"], "The file is called 'foo'"],
+  [["The file is called", "'foo", "'"], "The file is called 'foo'"],
+  [["The file is called", "'", "foo", "'"], "The file is called 'foo'"],
+  [["Done.", "'foo' is next"], "Done. 'foo' is next"],
+  [["Is it", "'foo'?"], "Is it 'foo'?"],
+  [["Open (", "'foo')"], "Open ('foo')"],
+  [["He said \u201c", "'hi'", "\u201d"], "He said \u201c'hi'\u201d"],
+  [["He said", ' "', "'hi'", '"'], "He said \"'hi'\""],
+  // A quote that is open is closed by a leading single quote.
+  [["called 'foo", "'"], "called 'foo'"],
+  [["called 'foo", "' now"], "called 'foo' now"],
+  [["called 'foo", "'."], "called 'foo'."],
+  [["a 'b' c", "'d'"], "a 'b' c 'd'"],
+  [["called 'foo", "'bar'"], "called 'foo 'bar'"],
+  [
+    ["the user's 'name", "is odd. It is called", "'foo'"],
+    "the user's 'name is odd. It is called 'foo'",
+  ],
+  [["the '90s", "and", "'tis"], "the '90s and 'tis"],
+  [["called '4", "'"], "called '4'"],
+  [["Emphasis 'em", "'phasis'"], "Emphasis 'em 'phasis'"],
+  [["a 'b", "'", "'c'"], "a 'b' 'c'"],
+  [["nested 'a \u2018b", "\u2019", "'"], "nested 'a \u2018b\u2019'"],
+  // Boundary whitespace is preserved as a single space.
+  [["called ", "'foo'"], "called 'foo'"],
+  [["called", " 'foo'"], "called 'foo'"],
+  [["called", "\n'foo'"], "called 'foo'"],
+  [["called 'foo' ", "'bar'"], "called 'foo' 'bar'"],
+  [["called 'foo", " '"], "called 'foo '"],
+  // Apostrophes inside words, contractions and possessives are not quotes.
+  [["don't", "'foo'"], "don't 'foo'"],
+  [["It", "'s", "fine"], "It's fine"],
+  [["It", "'s"], "It's"],
+  [["We", "'re", "here"], "We're here"],
+  [["They", "'ve", "'ll", "'d"], "They've'll'd"],
+  [["I", "'m", "sure"], "I'm sure"],
+  [["Don", "'t", "go"], "Don't go"],
+  [["dogs'", "bowl"], "dogs' bowl"],
+  [["the dog's", "'bowl'"], "the dog's 'bowl'"],
+  [["the dogs'", "'bowl'"], "the dogs' 'bowl'"],
+  [["rock 'n' roll", "'now'"], "rock 'n' roll 'now'"],
+  [["Is that", "'tis"], "Is that 'tis"],
+  [["since", "'90s"], "since '90s"],
+  [["a", "'em", "all"], "a 'em all"],
+  [["it", "'s", "'foo'"], "it's 'foo'"],
+  [["called 'foo", "'s", "bar"], "called 'foo's bar"],
+  // Nested and mixed quotes.
+  [
+    ["She said", '"he called', "'foo'", 'and left"'],
+    "She said \"he called 'foo' and left\"",
+  ],
+  [["\u2018", "foo", "\u2019"], "\u2018foo\u2019"],
+  [["called", "\u2018foo\u2019"], "called \u2018foo\u2019"],
+  [["called \u2018foo", "'"], "called \u2018foo'"],
+  // Punctuation and brackets.
+  [["Wait", ";", "ok", ":", "go"], "Wait; ok: go"],
+  [["See", "[1]", "and", "{x}"], "See [1] and {x}"],
+  [["See [", "1", "]"], "See [1]"],
+  [["Is", "it", "?"], "Is it?"],
+  [["50", "%", "done"], "50% done"],
+  [["Wait\u2026", "ok"], "Wait\u2026 ok"],
+  [["(", "(", "x", ")", ")"], "((x))"],
+  [["\u00ab", "x", "\u00bb", "y"], "\u00abx\u00bb y"],
+  [["\u00bfQu\u00e9", "\u00a1s\u00ed!"], "\u00bfQu\u00e9 \u00a1s\u00ed!"],
+  // Markdown and inline code stay inert and unchanged.
+  [["Run", "`ls -la`", "now"], "Run `ls -la` now"],
+  [["Run `echo 'x", "'`", "now"], "Run `echo 'x'` now"],
+  [["Run", "`echo 'x'`", "'y'"], "Run `echo 'x'` 'y'"],
+  [["Use", "**bold**", "and", "_it_", "."], "Use **bold** and _it_."],
+  [["- item", "- item"], "- item - item"],
+  // CJK and Korean text.
+  [
+    ["\ud14c\uc2a4\ud2b8", "'foo'", "\uc785\ub2c8\ub2e4"],
+    "\ud14c\uc2a4\ud2b8 'foo' \uc785\ub2c8\ub2e4",
+  ],
+  [
+    [
+      "\ud30c\uc77c\uc774\ub984\uc740",
+      "'\uc548\ub155'",
+      "\uc785\ub2c8\ub2e4",
+      ".",
+    ],
+    "\ud30c\uc77c\uc774\ub984\uc740 '\uc548\ub155' \uc785\ub2c8\ub2e4.",
+  ],
+  [
+    [
+      "\u8a00\u8449\u306f",
+      "\u300c",
+      "\u3053\u3093\u306b\u3061\u306f",
+      "\u300d",
+      "\u3067\u3059",
+      "\u3002",
+    ],
+    "\u8a00\u8449\u306f \u300c\u3053\u3093\u306b\u3061\u306f\u300d \u3067\u3059\u3002",
+  ],
+  [
+    ["\ud14c\uc2a4\ud2b8", "\u3001", "\uc2dc\ud5d8"],
+    "\ud14c\uc2a4\ud2b8\u3001 \uc2dc\ud5d8",
+  ],
+  [["\ud55c\uae00'", "\uac12'"], "\ud55c\uae00' \uac12'"],
+  // Empty, whitespace-only and edge parts.
+  [["", "'foo'", ""], "'foo'"],
+  [["called", "", "'foo'"], "called 'foo'"],
+  [["called", " ", "'foo'"], "called 'foo'"],
+  [["called", "\n\t", "'foo'"], "called 'foo'"],
+  [["'", "foo", "'"], "'foo'"],
+  [["'", "'"], "''"],
+  [["x", "'"], "x '"],
+  [[], ""],
+])("keeps quotes readable across part boundaries for %j", (parts, expected) => {
+  expect(joinReasoningParts(parts)).toBe(expected);
+});
+it("joins very large quote-heavy parts without quadratic work", () => {
+  const quotes = "'".repeat(200000);
+  const joined = joinReasoningParts(["a", quotes, "b ' c", quotes]);
+  expect(joined.startsWith("a '")).toBe(true);
+  expect(joined.length).toBeGreaterThan(400000);
+});
 it("formats for display only and never mutates the retained record", () => {
   const value = {
     started: snapshot(["  a "], ["  <b>x</b> ", "y\n"]),

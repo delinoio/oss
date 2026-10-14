@@ -193,52 +193,171 @@ export function reasoningBodyParts(data: CodexReasoningData): string[] {
   return [];
 }
 
+// Straight double quotes and straight single quotes are ambiguous, so they are
+// classified by joiner state instead of membership in these sets. The curly
+// single closing quote stays here because it also serves as an apostrophe.
 const closingPunctuation = new Set(
-  Array.from(".,;:!?)]}%…»”’、。，．：；！？）］｝」』】〉》'"),
+  Array.from(".,;:!?)]}%…»”’、。，．：；！？）］｝」』】〉》"),
 );
 const openingPunctuation = new Set(Array.from("([{«“‘¡¿「『【〈《（［｛"));
 const isSpace = (char: string | undefined) =>
   char !== undefined && /^\s$/u.test(char);
+const isWordChar = (char: string | undefined) =>
+  char !== undefined && /^[\p{L}\p{N}]$/u.test(char);
+// Apostrophe suffixes that can start a part when a word is split at an
+// apostrophe ("It" + "'s"), and word-initial elisions ("'tis", "'em", "'90s").
+// Both patterns only inspect a short prefix, so matching stays constant time.
+const contractionSuffix = /^'(?:s|t|re|ve|ll|d|m)(?![\p{L}\p{N}'])/iu;
+const leadingElision =
+  /^'(?:(?:tis|twas|em|cause|til)(?![\p{L}\p{N}])|\d\d(?!\d*'))/iu;
+const lookaheadLength = 12;
+// A leading quote directly followed by a word or opening character opens a
+// quoted span; one followed by whitespace, punctuation or nothing closes it.
+const startsQuotedWord = (core: string) => {
+  const next = Array.from(core.slice(1, 3))[0];
+  return (
+    next !== undefined &&
+    (isWordChar(next) || openingPunctuation.has(next) || next === '"')
+  );
+};
+const firstCodePoint = (text: string) =>
+  String.fromCodePoint(text.codePointAt(0)!);
+const lastCodePoint = (text: string) => Array.from(text.slice(-2)).at(-1)!;
+
+enum QuoteKind {
+  Opening = "opening",
+  Closing = "closing",
+  Apostrophe = "apostrophe",
+}
+interface JoinState {
+  // Currently unclosed straight or curly single quotes (apostrophes excluded).
+  singleDepth: number;
+  // True while the straight double quote count is odd.
+  doubleOpen: boolean;
+  // True when the last emitted character is an opening quote.
+  lastOpening: boolean;
+}
+
+// Classifies a straight single quote that has a known previous character.
+function singleQuoteKind(
+  chars: readonly string[],
+  index: number,
+  state: JoinState,
+  previousOpening: boolean,
+): QuoteKind {
+  const previous = chars[index - 1] ?? "";
+  const next = chars[index + 1];
+  if (isWordChar(previous) && isWordChar(next)) return QuoteKind.Apostrophe;
+  if (isSpace(previous) || openingPunctuation.has(previous) || previousOpening)
+    return leadingElision.test(
+      chars.slice(index, index + 1 + lookaheadLength).join(""),
+    )
+      ? QuoteKind.Apostrophe
+      : QuoteKind.Opening;
+  return state.singleDepth > 0 ? QuoteKind.Closing : QuoteKind.Apostrophe;
+}
+
+// Advances the quote state over one trimmed part. The first character is
+// classified by the caller because its context crosses the part boundary.
+function scanQuotes(
+  core: string,
+  leading: QuoteKind | undefined,
+  state: JoinState,
+) {
+  const chars = Array.from(core);
+  let opening = false;
+  chars.forEach((char, index) => {
+    opening = false;
+    if (char === '"') {
+      state.doubleOpen = !state.doubleOpen;
+      opening = state.doubleOpen;
+    } else if (char === "\u2018") {
+      state.singleDepth += 1;
+      opening = true;
+    } else if (char === "\u2019" || char === "'") {
+      let kind: QuoteKind;
+      if (index === 0 && leading !== undefined) kind = leading;
+      else if (char === "\u2019")
+        kind =
+          state.singleDepth > 0 &&
+          !(isWordChar(chars[index - 1]) && isWordChar(chars[index + 1]))
+            ? QuoteKind.Closing
+            : QuoteKind.Apostrophe;
+      else
+        kind = singleQuoteKind(
+          chars,
+          index,
+          state,
+          index > 0 && chars[index - 1] === '"' && state.doubleOpen,
+        );
+      if (kind === QuoteKind.Opening) {
+        state.singleDepth += 1;
+        opening = true;
+      } else if (kind === QuoteKind.Closing && state.singleDepth > 0) {
+        state.singleDepth -= 1;
+      }
+    }
+    if (index === chars.length - 1) state.lastOpening = opening;
+  });
+}
 
 // Joins ordered parts into one display string. Whitespace at a part boundary
 // collapses to a single space; a boundary without whitespace gets one space
 // unless it would precede closing punctuation or follow opening punctuation or
-// an opening quote. Text inside a part, and every non-whitespace character, is
-// unchanged. Leading and trailing whitespace of the whole body is dropped.
+// an opening quote. Straight quotes are opening or closing by tracked state: a
+// part that starts with a single quote closes an unclosed quote or continues an
+// apostrophe contraction ("It" + "'s"), and otherwise opens a new quote. Text
+// inside a part, and every non-whitespace character, is unchanged. Leading and
+// trailing whitespace of the whole body is dropped.
 export function joinReasoningParts(parts: readonly string[]): string {
   let body = "";
   let last = "";
-  let doubleQuotes = 0;
   let boundarySpace = false;
+  const state: JoinState = {
+    singleDepth: 0,
+    doubleOpen: false,
+    lastOpening: false,
+  };
   for (const part of parts) {
     const core = part.trim();
     if (core.length === 0) {
       boundarySpace = boundarySpace || part.length > 0;
       continue;
     }
+    let leading: QuoteKind | undefined;
+    const first = firstCodePoint(core);
+    if (first === "'") leading = QuoteKind.Opening;
     if (body.length > 0) {
-      const first = Array.from(core)[0]!;
       const spaced = boundarySpace || isSpace(part[0]);
+      const prevOpening = openingPunctuation.has(last) || state.lastOpening;
       let separator = " ";
-      if (!spaced) {
-        const before = Array.from(body.slice(-2));
-        const prevOpening =
-          openingPunctuation.has(last) ||
-          ((last === '"' || last === "'") &&
-            (before.length < 2 ||
-              isSpace(before[0]) ||
-              openingPunctuation.has(before[0]!)));
+      if (first === "'") {
+        if (spaced || prevOpening) {
+          leading = leadingElision.test(core)
+            ? QuoteKind.Apostrophe
+            : QuoteKind.Opening;
+        } else if (contractionSuffix.test(core)) {
+          separator = "";
+          leading =
+            state.singleDepth > 0 ? QuoteKind.Closing : QuoteKind.Apostrophe;
+        } else if (state.singleDepth > 0 && !startsQuotedWord(core)) {
+          // A quote left unclosed earlier must not swallow a later opening quote.
+          separator = "";
+          leading = QuoteKind.Closing;
+        }
+        if (prevOpening && !spaced) separator = "";
+      } else if (!spaced) {
         const nextClosing =
-          first === '"'
-            ? doubleQuotes % 2 === 1
-            : closingPunctuation.has(first);
+          first === '"' ? state.doubleOpen : closingPunctuation.has(first);
         if (prevOpening || nextClosing) separator = "";
       }
       body += separator;
+    } else if (first === "'" && leadingElision.test(core)) {
+      leading = QuoteKind.Apostrophe;
     }
     body += core;
-    for (const char of core) if (char === '"') doubleQuotes += 1;
-    last = Array.from(core).at(-1)!;
+    scanQuotes(core, leading, state);
+    last = lastCodePoint(core);
     boundarySpace = isSpace(part.at(-1));
   }
   return body;

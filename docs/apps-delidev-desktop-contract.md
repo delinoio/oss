@@ -6825,7 +6825,13 @@ snapshot was reconstructed from deltas. The selected parts are joined for displa
 only: whitespace at a part boundary collapses to one space; a boundary without
 whitespace receives one space except before closing punctuation or quotes and
 after opening punctuation or quotes (best effort, so a word split across chunks
-can be separated). Whitespace inside a part, every non-whitespace character and
+can be separated). Straight quotes are classified by tracked state rather than
+by character: a part that starts with a straight single quote closes a quote
+left open earlier when the quote is followed by whitespace, punctuation or
+nothing, continues an apostrophe contraction such as `It` + `'s`, and otherwise
+opens a new quote, so `called` + `'foo'` reads `called 'foo'`. Apostrophes inside
+words, possessives and elisions such as `'tis` or `'90s` do not open quotes, and
+straight double quotes alternate between opening and closing. Whitespace inside a part, every non-whitespace character and
 the retained record (families, original indices, sequence numbers and exact
 strings) are unchanged. The component never generates summaries, Markdown,
 translations or logs of reasoning text. When no family has text the disclosure
