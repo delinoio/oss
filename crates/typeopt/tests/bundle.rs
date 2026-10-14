@@ -2598,6 +2598,19 @@ precache([{url:"index.html",revision:"p1"}]);"#,
 }
 
 #[test]
+fn refreshes_classic_script_precache_entries() {
+    let sw = r#"with(self){self.workbox.precacheAndRoute([{url:"index.html",revision:"v1"}]);}"#;
+    let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
+    chunks.push(("sw.js", sw));
+    chunks.push(("workbox.js", "self.workbox={precacheAndRoute(){}};"));
+    let temp = bundle(&chunks);
+    optimize(temp.path(), &[]);
+    let published = out(temp.path(), "sw.js");
+    assert!(!published.contains(r#"revision:\"v1\""#), "{published}");
+    assert_eq!(published.len(), sw.len());
+}
+
+#[test]
 fn refreshes_precache_entries_with_escaped_urls() {
     let sw = r#"self.workbox.precacheAndRoute([{url:"index\u002ehtml",revision:"v1"},{url:"robots\u002etxt",revision:"r1"},{url:"https:\u002f\u002fexample.com/index.html",revision:"x1"},{url:"..\u002f..\u002foutside.txt",revision:"o1"}]);"#;
     let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();

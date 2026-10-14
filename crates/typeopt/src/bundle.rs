@@ -15,7 +15,7 @@ use swc_core::{
             CallExpr, Callee, EsVersion, Expr, Lit, MemberProp, ObjectLit, Prop, PropName,
             PropOrSpread,
         },
-        parser::{EsSyntax, Syntax, parse_file_as_module},
+        parser::{EsSyntax, Syntax, parse_file_as_program},
         visit::{Visit, VisitWith},
     },
 };
@@ -1423,7 +1423,7 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize)> {
     let file = source_map.new_source_file(Lrc::new(FileName::Anon), text.to_owned());
     GLOBALS.set(&Globals::new(), || {
         let mut errors = Vec::new();
-        let Ok(module) = parse_file_as_module(
+        let Ok(program) = parse_file_as_program(
             &file,
             Syntax::Es(EsSyntax::default()),
             EsVersion::latest(),
@@ -1440,7 +1440,7 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize)> {
             base: file.start_pos.0,
             values: Vec::new(),
         };
-        module.visit_with(&mut visitor);
+        program.visit_with(&mut visitor);
         visitor.values.sort_by_key(|(_, start, _)| *start);
         visitor.values
     })
