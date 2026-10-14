@@ -101,6 +101,48 @@ func TestAccountApiFormatChangeBindsInspectedProviderRevision(t *testing.T) {
 	}
 }
 
+func TestAccountApiFormatChangeChecksProviderRevisionBeforeCleanup(t *testing.T) {
+	f := newOAuthFixture(t)
+	providerBody := domain.Provider{
+		Name:           "Format fixture",
+		Protocol:       domain.OpenAIChat,
+		Endpoint:       "https://api.example.test/chat/v1",
+		Authentication: domain.BearerAuth,
+		APIFormats: []domain.ProviderAPIFormat{
+			{Protocol: domain.OpenAIChat, Endpoint: "https://api.example.test/chat/v1", Authentication: domain.BearerAuth},
+			{Protocol: domain.OpenAIResponses, Endpoint: "https://api.example.test/responses/v1", Authentication: domain.BearerAuth},
+		},
+	}
+	provider, err := saveAPIFormatConfiguration(f, domain.ProviderKind, providerBody, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	account, err := saveAPIFormatConfiguration(f, domain.AccountKind, domain.Account{
+		Alias:       "Format fixture",
+		Type:        domain.APIAccount,
+		ProviderID:  domain.ID(provider.Id),
+		APIProtocol: domain.OpenAIChat,
+		Enabled:     true,
+		Health:      domain.AccountDisconnected,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	providerBody.Name = "Changed format fixture"
+	if _, err = saveAPIFormatConfiguration(f, domain.ProviderKind, providerBody, provider); err != nil {
+		t.Fatal(err)
+	}
+	f.vault.referenceError = domain.Fail(domain.Unavailable, "fixture cleanup unavailable", "retry")
+	request := formatRequest(account, pb.ApiProtocol_API_PROTOCOL_OPENAI_RESPONSES)
+	request.ProviderRevision = provider.Revision
+	if _, err = f.s.ChangeAccountApiFormat(f.ctx, connect.NewRequest(request)); rpc.ClientError(err).Code != domain.Conflict {
+		t.Fatalf("stale Provider revision did not win before cleanup: %v", err)
+	}
+	if _, _, enumerations := f.vault.counts(); enumerations != 0 {
+		t.Fatalf("stale Provider revision accessed protected credentials: %d enumerations", enumerations)
+	}
+}
+
 type legacyProviderlessChangeAccountFormatInput struct {
 	ID                                               domain.ID
 	Revision                                         uint64

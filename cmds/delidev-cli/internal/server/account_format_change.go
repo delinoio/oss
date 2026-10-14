@@ -69,7 +69,18 @@ func (s *Service) ChangeAccountApiFormat(ctx context.Context, req *connect.Reque
 		err = s.Store.Read(ctx, func(tx *store.Tx) error {
 			var e error
 			previous, account, e = accountFromTx(tx, input.ID, input.Revision)
-			return e
+			if e != nil {
+				return e
+			}
+			providerRecord, e := tx.Get(domain.ProviderKind, account.ProviderID)
+			if e != nil {
+				return e
+			}
+			if providerRecord.ID != account.ProviderID || providerRecord.Revision != input.ProviderRevision {
+				s.logger.WarnContext(ctx, "account_api_format_provider_revision_conflict", "account_id", input.ID, "provider_id", account.ProviderID, "expected_revision", input.ProviderRevision, "actual_revision", providerRecord.Revision)
+				return domain.Fail(domain.Conflict, "The selected provider profile changed.", "Refresh the provider profile and review its API format before saving again.")
+			}
+			return nil
 		})
 		if err != nil {
 			return nil, rpc.Error(err, correlation)
