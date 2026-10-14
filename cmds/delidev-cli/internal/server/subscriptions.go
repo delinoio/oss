@@ -171,6 +171,11 @@ func (s *Service) RequestSubscription(ctx context.Context, req *connect.Request[
 	if matched, err := s.isClaudeSubscription(ctx, m.Id); err != nil {
 		return nil, rpc.Error(err, c)
 	} else if matched {
+		if managed, err := s.routesToManagedClaude(ctx, req.Msg); err != nil {
+			return nil, rpc.Error(err, c)
+		} else if managed {
+			return s.requestManagedClaude(ctx, req)
+		}
 		return s.requestClaudeSubscription(ctx, req)
 	}
 	if req.Msg.MachineId == "" {
@@ -268,6 +273,11 @@ func (s *Service) CancelSubscription(ctx context.Context, req *connect.Request[p
 	if matched, err := s.isClaudeSubscription(ctx, m.Id); err != nil {
 		return nil, rpc.Error(err, c)
 	} else if matched {
+		if _, managed, err := s.claudeAccountMode(ctx, m.Id); err != nil {
+			return nil, rpc.Error(err, c)
+		} else if managed {
+			return s.cancelManagedClaude(ctx, req)
+		}
 		return s.cancelClaudeSubscription(ctx, req)
 	}
 	result, err := s.Store.Mutate(ctx, domain.ID(m.RequestId), "subscription.cancel", disconnectAccountInput{domain.ID(m.Id), m.ExpectedRevision}, func(tx *store.Tx) (any, error) {
@@ -309,6 +319,11 @@ func (s *Service) GetSubscriptionProgress(ctx context.Context, req *connect.Requ
 	if matched, err := s.isClaudeSubscription(ctx, req.Msg.AccountId); err != nil {
 		return nil, rpc.Error(err, c)
 	} else if matched {
+		if _, managed, err := s.claudeAccountMode(ctx, req.Msg.AccountId); err != nil {
+			return nil, rpc.Error(err, c)
+		} else if managed {
+			return s.managedClaudeProgress(ctx, req)
+		}
 		return s.getClaudeSubscriptionProgress(ctx, req)
 	}
 	unlock, err := s.lockAccounts(ctx)
@@ -373,7 +388,7 @@ func (s *Service) WatchSubscription(ctx context.Context, req *connect.Request[pb
 			if err != nil {
 				return err
 			}
-			if !slices.Contains(machine.WorkerCapabilities, domain.ManagedCodexSubscriptionsV1) {
+			if !slices.Contains(machine.WorkerCapabilities, domain.ManagedCodexSubscriptionsV1) && !slices.Contains(machine.WorkerCapabilities, domain.ManagedClaudeExecutionV1) {
 				return subscriptionDenied()
 			}
 			// A current adapter may wait for explicitly accepted lifecycle work
@@ -391,6 +406,18 @@ func (s *Service) WatchSubscription(ctx context.Context, req *connect.Request[pb
 				a, err := store.Decode[domain.Account](r)
 				if err != nil {
 					return err
+				}
+				if a.ManagedClaudeAccount() {
+					// A server-token account is watched only for original-Worker execution
+					// cleanup; its login and logout run on the server.
+					if !slices.Contains(machine.WorkerCapabilities, domain.ManagedClaudeExecutionV1) || a.Subscription.Lease == nil || !a.Subscription.RecoveryRequired || a.Subscription.Lease.MachineID != domain.ID(req.Msg.MachineId) {
+						continue
+					}
+					records = append(records, r)
+					if len(records) == 4 {
+						break
+					}
+					continue
 				}
 				if a.SubscriptionService == domain.SubscriptionClaude && !slices.Contains(machine.WorkerCapabilities, domain.NativeClaudeSubscriptionsV1) || a.SubscriptionService == domain.SubscriptionChatGPT && !slices.Contains(machine.WorkerCapabilities, domain.ManagedCodexSubscriptionsV1) {
 					continue
@@ -480,6 +507,11 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 	if matched, err := s.isClaudeSubscription(ctx, m.Id); err != nil {
 		return nil, rpc.Error(err, c)
 	} else if matched {
+		if _, managed, err := s.claudeAccountMode(ctx, m.Id); err != nil {
+			return nil, rpc.Error(err, c)
+		} else if managed {
+			return s.takeManagedClaude(ctx, req)
+		}
 		return s.takeClaudeSubscription(ctx, req)
 	}
 	if err := workerActor(ctx, req.Msg.MachineId, req.Msg.InstanceId); err != nil {
@@ -921,6 +953,11 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 	if matched, err := s.isClaudeSubscription(ctx, m.Id); err != nil {
 		return nil, rpc.Error(err, c)
 	} else if matched {
+		if _, managed, err := s.claudeAccountMode(ctx, m.Id); err != nil {
+			return nil, rpc.Error(err, c)
+		} else if managed {
+			return s.finishManagedClaudeExecution(ctx, req)
+		}
 		return s.finishClaudeSubscription(ctx, req)
 	}
 	if err := workerActor(ctx, req.Msg.MachineId, req.Msg.InstanceId); err != nil {

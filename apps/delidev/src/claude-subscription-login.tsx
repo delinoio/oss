@@ -76,6 +76,8 @@ enum Step {
   Terminal,
 }
 interface View {
+  // Server-owned setup-token sign-in: no Runner Device participates.
+  server: boolean;
   step: Step;
   machine: string;
   name: string;
@@ -88,6 +90,7 @@ interface View {
   diagnostic?: NativeSubscriptionDiagnostic;
 }
 interface Pending {
+  server: boolean;
   opening: string;
   machine: string;
   account?: Resource;
@@ -104,7 +107,7 @@ interface Pending {
   start?: () => Promise<void>;
   retry?: () => Promise<void>;
 }
-export function claudeLoginURL(raw: string): boolean {
+function claudeAuthorizationURL(raw: string, setupToken: boolean): boolean {
   try {
     if (raw.length > 8192 || !/^[!-~]+$/.test(raw)) return false;
     const u = new URL(raw),
@@ -154,6 +157,14 @@ export function claudeLoginURL(raw: string): boolean {
     )
       return false;
     const redirect = q.get("redirect_uri");
+    // A server cannot receive a browser callback: setup-token sign-in is the
+    // inference-only, code-pasting profile and never a localhost callback.
+    if (
+      setupToken &&
+      (redirect !== "https://platform.claude.com/oauth/code/callback" ||
+        q.get("code") !== "true")
+    )
+      return false;
     if (redirect !== "https://platform.claude.com/oauth/code/callback") {
       const c = new URL(redirect ?? "");
       if (
@@ -170,15 +181,17 @@ export function claudeLoginURL(raw: string): boolean {
       )
         return false;
     }
-    const scopes = (q.get("scope") ?? "").split(/\s+/),
-      permitted = [
-        "org:create_api_key",
-        "user:profile",
-        "user:inference",
-        "user:sessions:claude_code",
-        "user:mcp_servers",
-        "user:file_upload",
-      ];
+    const scopes = (q.get("scope") ?? "").split(/\s+/);
+    if (setupToken)
+      return scopes.length === 1 && scopes[0] === "user:inference";
+    const permitted = [
+      "org:create_api_key",
+      "user:profile",
+      "user:inference",
+      "user:sessions:claude_code",
+      "user:mcp_servers",
+      "user:file_upload",
+    ];
     return (
       scopes.includes("user:profile") &&
       scopes.includes("user:inference") &&
@@ -188,6 +201,12 @@ export function claudeLoginURL(raw: string): boolean {
   } catch {
     return false;
   }
+}
+export function claudeLoginURL(raw: string): boolean {
+  return claudeAuthorizationURL(raw, false);
+}
+export function claudeSetupTokenURL(raw: string): boolean {
+  return claudeAuthorizationURL(raw, true);
 }
 function eligibleRunner(r: Resource): boolean {
   const d = document(r),
@@ -451,13 +470,17 @@ export function useClaudeSubscriptionLogin(
       update(p, { busy: false });
     }
   };
-  const begin = (initial?: Resource, reauth = false) => {
+  const begin = (initial?: Resource, reauth = false, serverLogin = false) => {
     if (!active || pending.current || opening?.disposed) return;
     runnerTouched.current = false;
+    // The first login of a new account uses the server when it advertises the
+    // capability. Reauthentication and device-owned accounts keep their Runner.
+    const server = serverLogin && !reauth;
     const machine = initial
       ? text(object(document(initial).subscription).owner_machine_id)
       : "";
     const p: Pending = {
+      server,
       opening: newRequestId(),
       machine,
       fixedRunner: Boolean(machine),
@@ -474,7 +497,8 @@ export function useClaudeSubscriptionLogin(
     };
     pending.current = p;
     setView({
-      step: Step.Runner,
+      server,
+      step: server ? Step.Login : Step.Runner,
       machine,
       name: "Claude",
       state: SubscriptionLoginState.PREPARING,
@@ -503,7 +527,7 @@ export function useClaudeSubscriptionLogin(
       | Parameters<typeof clients.subscription.requestSubscription>[0]
       | undefined;
     p.start = async () => {
-      if (!native || !isEntityId(p.machine))
+      if (!native || (!p.server && !isEntityId(p.machine)))
         throw new Error("Select original Runner");
       update(p, { step: Step.Login });
       if (!p.account) {
@@ -528,7 +552,7 @@ export function useClaudeSubscriptionLogin(
           expectedRevision: p.account.revision,
           requestId: newRequestId(),
         },
-        machineId: p.machine,
+        ...(p.server ? {} : { machineId: p.machine }),
         action: reauth ? SubscriptionAction.REFRESH : SubscriptionAction.LOGIN,
         deviceCode: false,
       };
@@ -546,10 +570,12 @@ export function useClaudeSubscriptionLogin(
         throw new Error("Invalid original operation");
       p.account = result.account;
       p.operation = result.operationId;
-      runner.remember(request.machineId ?? "");
+      if (!p.server) runner.remember(request.machineId ?? "");
       changed();
     };
-    if (reauth)
+    // Reauthentication and a deliberate server Add account click start exactly
+    // one request. Its retained request ID makes every later click a replay.
+    if (reauth || server)
       void run(p, p.start, "claude-subscription.requestUnconfirmed", true);
   };
   useEffect(() => {
@@ -572,10 +598,15 @@ export function useClaudeSubscriptionLogin(
             s = object(d.subscription);
           if (!live(p)) return;
           if (
-            text(object(s.native_operation).id) !== p.operation ||
+            (p.server
+              ? s.claude_credential !== "server-token" ||
+                text(object(s.server_operation).id) !== p.operation ||
+                Boolean(s.owner_machine_id) ||
+                Boolean(s.native_profile_id)
+              : text(object(s.native_operation).id) !== p.operation ||
+                s.owner_machine_id !== p.machine ||
+                !isEntityId(text(s.native_profile_id))) ||
             s.generation !== result.generation ||
-            s.owner_machine_id !== p.machine ||
-            !isEntityId(text(s.native_profile_id)) ||
             s.recovery_required === true ||
             !isEntityId(text(object(d.connection).id))
           )
@@ -632,12 +663,16 @@ export function useClaudeSubscriptionLogin(
           return;
         if (
           result.userCode ||
-          !claudeLoginURL(result.url) ||
+          !(p.server ? claudeSetupTokenURL : claudeLoginURL)(result.url) ||
           (p.url && p.url !== result.url) ||
-          ![
-            SubscriptionLoginMethod.BROWSER_CALLBACK,
-            SubscriptionLoginMethod.BROWSER_CODE,
-          ].includes(result.loginMethod)
+          !(
+            p.server
+              ? [SubscriptionLoginMethod.BROWSER_CODE]
+              : [
+                  SubscriptionLoginMethod.BROWSER_CALLBACK,
+                  SubscriptionLoginMethod.BROWSER_CODE,
+                ]
+          ).includes(result.loginMethod)
         )
           throw new Error("Invalid original native URL");
         p.url = result.url;
@@ -949,16 +984,38 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
       name.current?.focus({ preventScroll: true });
     if (!visible && code.current) code.current.value = "";
   }, [visible, v.step]);
-  const step = v.step === Step.Runner ? 0 : v.step === Step.Name ? 2 : 1;
-  const status: Partial<Record<SubscriptionLoginState, MessageKey>> = {
-    [SubscriptionLoginState.PREPARING]: "claude-subscription.preparing",
-    [SubscriptionLoginState.WAITING]: "claude-subscription.waiting",
-    [SubscriptionLoginState.CANCELED]: "claude-subscription.canceled",
-    [SubscriptionLoginState.EXPIRED]: "claude-subscription.expired",
-    [SubscriptionLoginState.UNSUPPORTED]: "claude-subscription.unsupported",
-    [SubscriptionLoginState.RECOVERY_REQUIRED]: "claude-subscription.recovery",
-    [SubscriptionLoginState.FAILED]: "claude-subscription.failed",
+  const step = v.server
+    ? v.step === Step.Name
+      ? 1
+      : 0
+    : v.step === Step.Runner
+      ? 0
+      : v.step === Step.Name
+        ? 2
+        : 1;
+  const serverStatus: Partial<Record<SubscriptionLoginState, MessageKey>> = {
+    [SubscriptionLoginState.PREPARING]: "claude-subscription.server.preparing",
+    [SubscriptionLoginState.WAITING]: "claude-subscription.server.waiting",
+    [SubscriptionLoginState.CANCELED]: "claude-subscription.server.canceled",
+    [SubscriptionLoginState.EXPIRED]: "claude-subscription.server.expired",
+    [SubscriptionLoginState.UNSUPPORTED]:
+      "claude-subscription.server.unsupported",
+    [SubscriptionLoginState.RECOVERY_REQUIRED]:
+      "claude-subscription.server.recovery",
+    [SubscriptionLoginState.FAILED]: "claude-subscription.server.failed",
   };
+  const status: Partial<Record<SubscriptionLoginState, MessageKey>> = v.server
+    ? serverStatus
+    : {
+        [SubscriptionLoginState.PREPARING]: "claude-subscription.preparing",
+        [SubscriptionLoginState.WAITING]: "claude-subscription.waiting",
+        [SubscriptionLoginState.CANCELED]: "claude-subscription.canceled",
+        [SubscriptionLoginState.EXPIRED]: "claude-subscription.expired",
+        [SubscriptionLoginState.UNSUPPORTED]: "claude-subscription.unsupported",
+        [SubscriptionLoginState.RECOVERY_REQUIRED]:
+          "claude-subscription.recovery",
+        [SubscriptionLoginState.FAILED]: "claude-subscription.failed",
+      };
   const runner = p.selectedRunner,
     runnerName = runner
       ? productResourceName(productLabel, runner)
@@ -983,11 +1040,13 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
         aria-label={copy("claude-subscription.steps")}
       >
         {(
-          [
-            "claude-subscription.runner",
-            "claude-subscription.login",
-            "claude-subscription.accountName",
-          ] as const
+          (v.server
+            ? ["claude-subscription.login", "claude-subscription.accountName"]
+            : [
+                "claude-subscription.runner",
+                "claude-subscription.login",
+                "claude-subscription.accountName",
+              ]) as readonly MessageKey[]
         ).map((key, index) => (
           <li
             key={key}
@@ -1115,9 +1174,15 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
         </form>
       ) : (
         <>
-          <p>
-            {copy("claude-subscription.runnerSummary", { runner: runnerName })}
-          </p>
+          {v.server ? (
+            <p>{copy("claude-subscription.server.subtitle")}</p>
+          ) : (
+            <p>
+              {copy("claude-subscription.runnerSummary", {
+                runner: runnerName,
+              })}
+            </p>
+          )}
           {v.step === Step.Name ? (
             <>
               <p
@@ -1166,6 +1231,12 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
             </>
           ) : (
             <>
+              {v.server && v.step === Step.Login ? (
+                <>
+                  <h3>{copy("claude-subscription.server.heading")}</h3>
+                  <p>{copy("claude-subscription.server.body")}</p>
+                </>
+              ) : null}
               <p role="status" className="subscription-onboarding-status">
                 {v.step === Step.Login ? (
                   <span

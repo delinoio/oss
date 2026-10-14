@@ -43,7 +43,7 @@ const alias = "ChatGPT fixture";
 const confirmLabel = "Disconnect and delete account";
 function fixture(
   connected = true,
-  service: "chatgpt" | "claude" = "chatgpt",
+  service: "chatgpt" | "claude" | "claude-server" = "chatgpt",
   failedLogin: boolean | "pending-credentials" | "terminal-logout" = false,
 ) {
   const machine = newRequestId(),
@@ -55,7 +55,7 @@ function fixture(
   const preferences = {
     alias,
     type: "subscription",
-    subscription_service: service,
+    subscription_service: service === "claude-server" ? "claude" : service,
     enabled: true,
     exclude_automatic: false,
     recovery_notifications: false,
@@ -110,6 +110,9 @@ function fixture(
               ...(service === "claude"
                 ? { owner_machine_id: machine, native_profile_id: profile }
                 : {}),
+              ...(service === "claude-server"
+                ? { claude_credential: "server-token" }
+                : {}),
             },
           }
         : {}),
@@ -150,6 +153,7 @@ function fixture(
       SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,
       SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1,
       SystemCapability.CLAUDE_SUBSCRIPTIONS_V1,
+      SystemCapability.CLAUDE_SERVER_LOGIN_V1,
       SystemCapability.SUBSCRIPTION_CLEANUP_RECOVERY_V1,
     ],
   }));
@@ -1123,6 +1127,52 @@ it("logs Claude out on its original Runner before deleting the fresh cleared acc
   );
   expect(value.cleanup).not.toHaveBeenCalled();
 });
+
+it("logs a server-token Claude account out through the server without a Runner Device", async () => {
+  const value = fixture(true, "claude-server");
+  await start(value);
+  expect(value.logout).toHaveBeenCalledTimes(1);
+  const request = value.logout.mock.calls[0][0];
+  expect(request.machineId).toBe("");
+  expect(request.action).toBe(SubscriptionAction.LOGOUT);
+  expect(value.remove).not.toHaveBeenCalled();
+  value.complete();
+  await waitFor(() => expect(value.remove).toHaveBeenCalledTimes(1), {
+    timeout: 4000,
+  });
+});
+
+it("waits for server-token Claude credential cleanup before deleting the account", async () => {
+  const value = fixture(true, "claude-server");
+  await start(value);
+  value.complete();
+  const operation = () =>
+    object(object(document(value.current).subscription).server_operation);
+  // The logout settled but the retired vault reference is still being deleted.
+  value.patch({
+    subscription: {
+      ...object(document(value.current).subscription),
+      server_operation: {
+        ...operation(),
+        cleanup_phase: "credentials-pending",
+      },
+    },
+  });
+  await tick();
+  expect(value.remove).not.toHaveBeenCalled();
+  expect(screen.queryByText("Account deletion paused.")).toBeNull();
+  // Once the server confirms deletion of the reference the original deletion runs.
+  value.patch({
+    subscription: {
+      ...object(document(value.current).subscription),
+      server_operation: { ...operation(), cleanup_phase: undefined },
+    },
+  });
+  await waitFor(() => expect(value.remove).toHaveBeenCalledTimes(1), {
+    timeout: 4000,
+  });
+  expect(value.logout).toHaveBeenCalledTimes(1);
+}, 15000);
 
 it("keeps Claude configuration while the original Runner cleanup is uncertain", async () => {
   const value = fixture(true, "claude");

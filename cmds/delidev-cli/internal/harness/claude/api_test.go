@@ -23,13 +23,23 @@ func init() {
 		return
 	}
 	mode := strings.TrimPrefix(filepath.Base(root), "fixture-api-")
+	managedToken := strings.HasPrefix(mode, "managed-token-")
 	for _, key := range []string{"CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB", "ANTHROPIC_MODEL", "NODE_OPTIONS", "HTTPS_PROXY", "BASH_ENV"} {
-		if os.Getenv(key) != "" {
+		if os.Getenv(key) != "" && !(managedToken && key == "CLAUDE_CODE_OAUTH_TOKEN") {
 			os.Exit(70)
 		}
 	}
 	nativeSubscription := strings.HasPrefix(mode, "native-subscription-")
-	if nativeSubscription {
+	if managedToken {
+		for _, key := range []string{"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR", "CLAUDE_CODE_HOST_AUTH_ENV_VAR"} {
+			if os.Getenv(key) != "" {
+				os.Exit(71)
+			}
+		}
+		if os.Getenv("CLAUDE_CODE_OAUTH_TOKEN") != managedTokenFixtureToken || os.Getenv("CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST") != "1" || os.Getenv("CLAUDE_CONFIG_DIR") != filepath.Join(root, "claude") || os.Getenv("CLAUDE_SECURESTORAGE_CONFIG_DIR") != os.Getenv("CLAUDE_CONFIG_DIR") {
+			os.Exit(71)
+		}
+	} else if nativeSubscription {
 		for _, key := range []string{"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST"} {
 			if os.Getenv(key) != "" {
 				os.Exit(71)
@@ -85,6 +95,19 @@ func init() {
 	result["commands"] = []any{map[string]any{"name": "compact", "description": "Compact native context", "argumentHint": "[instructions]"}}
 	result["account"].(map[string]any)["tokenSource"] = "ANTHROPIC_AUTH_TOKEN"
 	result["account"].(map[string]any)["apiKeySource"] = "ANTHROPIC_API_KEY"
+	if managedToken {
+		result["account"] = map[string]any{"apiProvider": "firstParty", "tokenSource": "CLAUDE_CODE_OAUTH_TOKEN"}
+		switch mode {
+		case "managed-token-api-source":
+			result["account"].(map[string]any)["apiKeySource"] = "apiKeyHelper"
+		case "managed-token-identity":
+			result["account"].(map[string]any)["email"] = "fixture@example.invalid"
+		case "managed-token-wrong-source":
+			result["account"].(map[string]any)["tokenSource"] = "ANTHROPIC_AUTH_TOKEN"
+		case "managed-token-no-source":
+			delete(result["account"].(map[string]any), "tokenSource")
+		}
+	}
 	if nativeSubscription {
 		result["account"] = map[string]any{"apiProvider": "firstParty", "email": "fixture@example.invalid", "organization": "Fixture", "subscriptionType": "pro"}
 		if mode == "native-subscription-api-source" {

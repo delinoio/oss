@@ -70,10 +70,13 @@ func (s SubscriptionState) validateNativeClaude(account Account) error {
 		return Fail(InvalidArgument, "Invalid native Claude subscription ownership.", "Preserve the original Runner, profile, generation and operation.")
 	}
 	if account.SubscriptionService != SubscriptionClaude {
-		if s.NativeProfileID != "" || s.NativeOperation != nil {
+		if s.NativeProfileID != "" || s.NativeOperation != nil || s.ClaudeCredential != "" {
 			return invalid()
 		}
 		return nil
+	}
+	if s.ClaudeCredential != "" {
+		return s.validateManagedClaude(account)
 	}
 	if s.ServerOperation != nil || s.Observation != nil || s.ResetCredits != nil || s.QuotaState != "" || s.QuotaObservedAt != nil || s.SpendControlReached != nil || s.SpendControlObservedAt != nil {
 		return invalid()
