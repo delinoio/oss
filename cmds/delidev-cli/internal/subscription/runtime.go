@@ -155,6 +155,10 @@ func CleanupRuntime(home string, original os.FileInfo) error {
 var CredentialFiles = []string{
 	"codex/auth.json",
 	"claude/.credentials.json",
+	// Grok keeps its credential below $GROK_HOME. The advisory lock file is a
+	// credential-adjacent artifact that logout and cleanup must also retire.
+	"grok/" + GrokAuthFileName,
+	"grok/" + GrokLockFileName,
 }
 
 // credentialParentReal proves that the directory containing a credential file

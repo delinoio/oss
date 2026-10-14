@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -396,4 +397,43 @@ func TestCredentialCleanupValidatesParentBeforeAbsentSync(t *testing.T) {
 			t.Fatalf("non-directory parent lost its validation error: %v", err)
 		}
 	})
+}
+
+func TestCredentialFilesCoverTheGrokAuthFileAndLock(t *testing.T) {
+	for _, want := range []string{"grok/auth.json", "grok/auth.json.lock"} {
+		if !slices.Contains(CredentialFiles, want) {
+			t.Fatalf("CredentialFiles lacks %s", want)
+		}
+	}
+	for _, name := range []string{"grok/auth.json", "grok/auth.json.lock"} {
+		t.Run(name, func(t *testing.T) {
+			profile := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(profile, "grok"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			kept := filepath.Join(profile, "grok", "sessions.json")
+			if err := os.WriteFile(kept, []byte("kept"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			target := filepath.Join(profile, filepath.FromSlash(name))
+			if err := os.WriteFile(target, []byte("secret"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if present, err := CredentialFilePresent(profile); err != nil || !present {
+				t.Fatalf("a Grok credential file was considered absent: %v %v", present, err)
+			}
+			if err := RetireCredentialFiles(profile); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Lstat(target); !os.IsNotExist(err) {
+				t.Fatal("the Grok credential file survived retirement")
+			}
+			if raw, err := os.ReadFile(kept); err != nil || string(raw) != "kept" {
+				t.Fatal("retirement changed retained Grok data")
+			}
+			if present, err := CredentialFilePresent(profile); err != nil || present {
+				t.Fatalf("profile still blocked: %v %v", present, err)
+			}
+		})
+	}
 }

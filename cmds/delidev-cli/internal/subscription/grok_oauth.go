@@ -76,6 +76,10 @@ const (
 	GrokReasonUserInfo       GrokOAuthReason = "userinfo"
 	GrokReasonMapping        GrokOAuthReason = "mapping"
 	GrokReasonIdentity       GrokOAuthReason = "identity"
+	// GrokReasonRevokeRejected is a definite provider refusal of a revocation
+	// request; GrokReasonRevokeUncertain is a revocation whose outcome is unknown.
+	GrokReasonRevokeRejected  GrokOAuthReason = "revoke-rejected"
+	GrokReasonRevokeUncertain GrokOAuthReason = "revoke-uncertain"
 )
 
 // GrokOAuthError reports one failed step by closed reason only.

@@ -76,6 +76,9 @@ type IdP struct {
 	discoveryRequests atomic.Int32
 	lastToken         url.Values
 	lastTokenHeaders  http.Header
+	revokeRequests    atomic.Int32
+	revokeForms       []url.Values
+	revokeHeaders     []http.Header
 	tokenForms        []url.Values
 	refreshCurrent    string
 	issued            int
@@ -125,6 +128,14 @@ type IdP struct {
 	DeviceCompleteURI   string // verification_uri_complete override
 	DeviceHideDiscovery bool
 
+	// Revocation knobs. RevokeStatus and RevokeBody override the revoke response;
+	// RevokeGate blocks the endpoint until closed and RevokeEntered receives once
+	// per request. A default 200 response invalidates the presented token.
+	RevokeStatus  int
+	RevokeBody    string
+	RevokeGate    chan struct{}
+	RevokeEntered chan struct{}
+
 	// Refresh knobs. RefreshMode shapes a successful refresh_token grant,
 	// OmitRefreshIDToken drops the ID token from it, and TruncateTokenBody makes
 	// any token response end before its declared length.
@@ -151,6 +162,7 @@ func New(t testing.TB) *IdP {
 	mux.HandleFunc("/oauth2/token", idp.token)
 	mux.HandleFunc("/oauth2/device/code", idp.deviceCode)
 	mux.HandleFunc("/oauth2/userinfo", idp.userinfo)
+	mux.HandleFunc("/oauth2/revoke", idp.revoke)
 	idp.server = httptest.NewTLSServer(mux)
 	address := idp.server.Listener.Addr().String()
 	transport := &http.Transport{
@@ -224,6 +236,23 @@ func (i *IdP) CurrentRefreshToken() string {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	return i.refreshCurrent
+}
+
+// RevokeRequests counts revocation endpoint requests.
+func (i *IdP) RevokeRequests() int { return int(i.revokeRequests.Load()) }
+
+// RevokeForms returns the form of every revocation request in arrival order.
+func (i *IdP) RevokeForms() []url.Values {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	return append([]url.Values(nil), i.revokeForms...)
+}
+
+// RevokeHeaders returns the headers of every revocation request in arrival order.
+func (i *IdP) RevokeHeaders() []http.Header {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	return append([]http.Header(nil), i.revokeHeaders...)
 }
 
 // LastTokenHeaders returns the headers of the last token request.
@@ -441,6 +470,52 @@ func (i *IdP) devicePoll(w http.ResponseWriter, r *http.Request, reject func()) 
 		i.mu.Unlock()
 	}
 	i.write(w, body)
+}
+
+// revoke answers an RFC 7009 revocation request. By default it validates the
+// public-client request shape and, like a real provider, answers 200 and
+// invalidates the presented refresh token.
+func (i *IdP) revoke(w http.ResponseWriter, r *http.Request) {
+	i.revokeRequests.Add(1)
+	_ = r.ParseForm()
+	i.mu.Lock()
+	i.revokeForms = append(i.revokeForms, r.PostForm)
+	i.revokeHeaders = append(i.revokeHeaders, r.Header.Clone())
+	i.mu.Unlock()
+	if i.RevokeEntered != nil {
+		select {
+		case i.RevokeEntered <- struct{}{}:
+		default:
+		}
+	}
+	if i.RevokeGate != nil {
+		select {
+		case <-i.RevokeGate:
+		case <-r.Context().Done():
+			return
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if i.RevokeBody != "" || i.RevokeStatus != 0 {
+		status := i.RevokeStatus
+		if status == 0 {
+			status = http.StatusOK
+		}
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(i.RevokeBody))
+		return
+	}
+	if r.Method != http.MethodPost || r.PostForm.Get("client_id") != subscription.GrokClientID || r.PostForm.Get("token_type_hint") != "refresh_token" || r.PostForm.Get("token") == "" || r.PostForm.Get("client_secret") != "" || r.Header.Get("Authorization") != "" {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid_request"})
+		return
+	}
+	i.mu.Lock()
+	if r.PostForm.Get("token") == i.refreshCurrent {
+		i.refreshCurrent = ""
+	}
+	i.mu.Unlock()
+	w.WriteHeader(http.StatusOK)
 }
 
 // write encodes a successful token response, optionally cut short.
