@@ -607,6 +607,15 @@ impl Project {
                     continue;
                 }
                 if !(text.starts_with("./") || text.starts_with("../")) {
+                    if text.starts_with("//") {
+                        // Protocol-relative URLs are external URL references,
+                        // not package specifiers eligible for dynamic-package
+                        // boundary treatment.
+                        if bare.is_none() {
+                            bare = Some(text.to_owned());
+                        }
+                        continue;
+                    }
                     // A package specifier names a module outside the bundle.
                     if !text.contains(':') {
                         if dynamic {

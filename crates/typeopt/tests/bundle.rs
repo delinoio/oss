@@ -2036,6 +2036,13 @@ fn rejects_imports_outside_the_bundle() {
     let output = run_typeopt(temp.path(), &[]);
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("outside the bundle directory"));
+    let protocol_relative = bundle(&[(
+        "index.js",
+        r#"if(false)import("//cdn.example.com/app.js");console.log(1);"#,
+    )]);
+    let output = run_typeopt(protocol_relative.path(), &[]);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("outside the bundle directory"));
     let package = bundle(&[("index.js", r#"import{x}from"pkg";console.log(x);"#)]);
     let module = package.path().join("node_modules/pkg");
     fs::create_dir_all(&module).unwrap();
