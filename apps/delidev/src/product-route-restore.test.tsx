@@ -146,7 +146,24 @@ function fixture() {
     schedule: vi.fn(),
     inbox: vi.fn(),
   };
-  const failure: { code?: Code } = {};
+  // `id` limits the injected failure to reads of one ID.
+  const failure: { code?: Code; id?: string } = {};
+  const failing = (id: string) =>
+    failure.code !== undefined && (!failure.id || failure.id === id);
+  // Like the server, a read of an ID that belongs to another entity kind is an
+  // invalid argument, not a missing resource.
+  const kindOf = new Map<string, EntityKind>([
+    ...resources.map((row) => [row.id, row.kind] as const),
+    [schedule.id, EntityKind.SCHEDULE],
+    [otherSchedule.id, EntityKind.SCHEDULE],
+    [inboxEntry.id, EntityKind.INBOX],
+    [otherInboxEntry.id, EntityKind.INBOX],
+  ]);
+  const rejectWrongKind = (id: string, kind: EntityKind) => {
+    const actual = kindOf.get(id);
+    if (actual !== undefined && actual !== kind)
+      throw new ConnectError("wrong kind", Code.InvalidArgument);
+  };
   const preferences = create(NotificationPreferencesSchema, {
     revision: 1n,
     interactions: true,
@@ -180,7 +197,9 @@ function fixture() {
       getResource: async (request) => {
         reads.resource(request);
         await held.get(request.id);
-        if (failure.code) throw new ConnectError("read failed", failure.code);
+        if (failing(request.id))
+          throw new ConnectError("read failed", failure.code);
+        rejectWrongKind(request.id, request.kind);
         return {
           resource: resources.find(
             (row) => row.kind === request.kind && row.id === request.id,
@@ -215,7 +234,9 @@ function fixture() {
       getInboxEntry: async (request) => {
         reads.inbox(request);
         await held.get(request.id);
-        if (failure.code) throw new ConnectError("read failed", failure.code);
+        if (failing(request.id))
+          throw new ConnectError("read failed", failure.code);
+        rejectWrongKind(request.id, EntityKind.INBOX);
         const view = [inboxView, otherInboxView].find(
           (row) => row.entry?.id === request.id,
         );
@@ -229,7 +250,9 @@ function fixture() {
       getSchedule: async (request) => {
         reads.schedule(request);
         await held.get(request.id);
-        if (failure.code) throw new ConnectError("read failed", failure.code);
+        if (failing(request.id))
+          throw new ConnectError("read failed", failure.code);
+        rejectWrongKind(request.id, EntityKind.SCHEDULE);
         const found = [schedule, otherSchedule].find(
           (row) => row.id === request.id,
         );
@@ -591,6 +614,171 @@ describe("route fallbacks", () => {
     await waitFor(() => expect(value.reads.schedule).toHaveBeenCalled());
     await waitFor(() => expect(search().has("item")).toBe(false));
     expect(search().get("screen")).toBe(Surface.Schedules);
+  });
+});
+
+// Every failure a restore read can return, classified once. A definitive
+// rejection clears the selection to the requested screen's list; a transient
+// failure keeps it (or, for a Schedule, which needs the fresh resource, clears
+// it so the list's own retry applies).
+const definitiveCodes: Array<[string, Code]> = [
+  ["invalid_argument", Code.InvalidArgument],
+  ["not_found", Code.NotFound],
+  ["permission_denied", Code.PermissionDenied],
+  ["unauthenticated", Code.Unauthenticated],
+];
+const transientCodes: Array<[string, Code]> = [
+  ["failed_precondition", Code.FailedPrecondition],
+  ["unavailable", Code.Unavailable],
+  ["deadline_exceeded", Code.DeadlineExceeded],
+  ["canceled", Code.Canceled],
+  ["internal", Code.Internal],
+];
+
+describe("route failure classification", () => {
+  const cases = [
+    ...definitiveCodes.map(([name, code]) => [name, code, true] as const),
+    ...transientCodes.map(([name, code]) => [name, code, false] as const),
+  ];
+
+  it.each(cases)("%s on a Session read", async (_name, code, definitive) => {
+    const value = fixture();
+    value.failure.code = code;
+    route(`?screen=sessions&session=${value.session.id}`);
+    render(<App transport={value.transport} />);
+    await waitFor(() => expect(value.reads.resource).toHaveBeenCalled());
+    if (definitive) {
+      expect(
+        await screen.findByText("Your sessions, in one place"),
+      ).toBeTruthy();
+      await waitFor(() => expect(search().has("session")).toBe(false));
+    } else {
+      await waitFor(() =>
+        expect(search().get("session")).toBe(value.session.id),
+      );
+      expect(screen.queryByText("Your sessions, in one place")).toBeNull();
+    }
+    expect(value.mutated).not.toHaveBeenCalled();
+  });
+
+  it.each(cases)(
+    "%s on a Sidechat read keeps only the parent",
+    async (_name, code) => {
+      const value = fixture();
+      value.failure.code = code;
+      // Only the Sidechat child fails: the parent still opens either way.
+      value.failure.id = value.sidechat.id;
+      route(
+        `?screen=sessions&session=${value.session.id}&sidechat=${value.sidechat.id}`,
+      );
+      render(<App transport={value.transport} />);
+      await waitFor(() =>
+        expect(screen.getAllByText("Retained session").length).toBeGreaterThan(
+          0,
+        ),
+      );
+      expect(screen.queryByRole("tab", { name: /Side question/ })).toBeNull();
+      await waitFor(() => expect(search().has("sidechat")).toBe(false));
+      expect(search().get("session")).toBe(value.session.id);
+    },
+  );
+
+  it.each(cases)(
+    "%s on an Inbox entry read",
+    async (_name, code, definitive) => {
+      const value = fixture();
+      value.failure.code = code;
+      route(`?screen=inbox&item=${value.inboxEntry.id}`);
+      render(<App transport={value.transport} />);
+      await waitFor(() => expect(value.reads.inbox).toHaveBeenCalled());
+      if (definitive)
+        await waitFor(() => expect(search().has("item")).toBe(false));
+      else
+        await waitFor(() =>
+          expect(search().get("item")).toBe(value.inboxEntry.id),
+        );
+      expect(search().get("screen")).toBe(Surface.Inbox);
+      expect(value.mutated).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(cases)(
+    "%s on a Schedule read: the selection is cleared",
+    async (_name, code) => {
+      const value = fixture();
+      value.failure.code = code;
+      route(`?screen=schedules&item=${value.schedule.id}`);
+      render(<App transport={value.transport} />);
+      await waitFor(() => expect(value.reads.schedule).toHaveBeenCalled());
+      await waitFor(() => expect(search().has("item")).toBe(false));
+      expect(search().get("screen")).toBe(Surface.Schedules);
+    },
+  );
+
+  it.each(cases)("%s on a repository read", async (_name, code, definitive) => {
+    const value = fixture();
+    value.failure.code = code;
+    route(`?screen=pull-requests&item=${value.repository.id}`);
+    render(<App transport={value.transport} />);
+    await waitFor(() => expect(value.reads.resource).toHaveBeenCalled());
+    if (definitive)
+      await waitFor(() => expect(search().has("item")).toBe(false));
+    else
+      await waitFor(() =>
+        expect(search().get("item")).toBe(value.repository.id),
+      );
+    expect(search().get("screen")).toBe(Surface.PullRequests);
+    expect(value.mutated).not.toHaveBeenCalled();
+  });
+
+  it("restores the Settings category and Usage tab without any read", async () => {
+    const value = fixture();
+    value.failure.code = Code.InvalidArgument;
+    route(`?screen=usage&tab=${UsageTab.Overview}`);
+    render(<App transport={value.transport} />);
+    await waitFor(() => expect(search().get("screen")).toBe(Surface.Usage));
+    expect(value.reads.resource).not.toHaveBeenCalled();
+    expect(value.reads.schedule).not.toHaveBeenCalled();
+    expect(value.reads.inbox).not.toHaveBeenCalled();
+  });
+});
+
+describe("wrong-kind route IDs", () => {
+  it("clears a Schedule ID supplied as a Pull requests repository", async () => {
+    const value = fixture();
+    route(`?screen=pull-requests&item=${value.schedule.id}`);
+    render(<App transport={value.transport} />);
+    await waitFor(() => expect(value.reads.resource).toHaveBeenCalled());
+    await waitFor(() => expect(search().has("item")).toBe(false));
+    expect(search().get("screen")).toBe(Surface.PullRequests);
+    expect(screen.queryByRole("region", { name: "Query options" })).toBeNull();
+  });
+
+  it("clears a repository ID supplied as a Session", async () => {
+    const value = fixture();
+    route(`?screen=sessions&session=${value.repository.id}`);
+    render(<App transport={value.transport} />);
+    expect(await screen.findByText("Your sessions, in one place")).toBeTruthy();
+    await waitFor(() => expect(search().has("session")).toBe(false));
+    expect(search().get("screen")).toBe(Surface.Sessions);
+  });
+
+  it("clears a repository ID supplied as a Schedule", async () => {
+    const value = fixture();
+    route(`?screen=schedules&item=${value.repository.id}`);
+    render(<App transport={value.transport} />);
+    await waitFor(() => expect(value.reads.schedule).toHaveBeenCalled());
+    await waitFor(() => expect(search().has("item")).toBe(false));
+    expect(search().get("screen")).toBe(Surface.Schedules);
+  });
+
+  it("clears a Schedule ID supplied as an Inbox entry", async () => {
+    const value = fixture();
+    route(`?screen=inbox&item=${value.schedule.id}`);
+    render(<App transport={value.transport} />);
+    await waitFor(() => expect(value.reads.inbox).toHaveBeenCalled());
+    await waitFor(() => expect(search().has("item")).toBe(false));
+    expect(search().get("screen")).toBe(Surface.Inbox);
   });
 });
 

@@ -35,13 +35,67 @@ const unavailable = (
   return { route: SearchSessionRoute.Unavailable, transient };
 };
 
-/** A definitive missing or denied target, as opposed to a retryable failure. */
+/** How route restoration treats one failed read of a route selection. */
+export enum RouteFailureDisposition {
+  /**
+   * The server definitively rejected the selection (missing, denied, or an ID
+   * that is not a valid selection of this kind): clear it to the requested
+   * screen's list.
+   */
+  Clear = "clear",
+  /**
+   * The read may succeed on retry or says nothing about the selection: keep it
+   * so the mounted screen's own retry and error state applies.
+   */
+  Retain = "retain",
+}
+
+/**
+ * The single classification of every failure code a route-restoration read can
+ * return (GetResource, GetSchedule and GetInboxEntry), shared by every restored
+ * kind: Session, Sidechat, Inbox entry, Schedule and repository. The Settings
+ * category and Usage tab need no read. Typed as an exhaustive record so a new
+ * code cannot ship without an explicit decision.
+ *
+ * Transport-level outcomes arrive through `clientFailure`: gRPC
+ * `failed_precondition` is `RecoveryRequired`; `deadline_exceeded`, `internal`
+ * and unmapped transport errors are `ServerUnavailable`/`Internal`; a cancelled
+ * read is `Canceled`.
+ */
+export const routeFailureDispositions: Readonly<
+  Record<FailureCode, RouteFailureDisposition>
+> = {
+  // A syntactically valid ID of another entity kind (for example a Schedule ID
+  // supplied as a repository) is rejected as invalid, never retryable.
+  [FailureCode.InvalidArgument]: RouteFailureDisposition.Clear,
+  [FailureCode.NotFound]: RouteFailureDisposition.Clear,
+  [FailureCode.Unauthenticated]: RouteFailureDisposition.Clear,
+  [FailureCode.PermissionDenied]: RouteFailureDisposition.Clear,
+  [FailureCode.Conflict]: RouteFailureDisposition.Retain,
+  [FailureCode.Unavailable]: RouteFailureDisposition.Retain,
+  [FailureCode.ServerUnavailable]: RouteFailureDisposition.Retain,
+  [FailureCode.ConfirmationRequired]: RouteFailureDisposition.Retain,
+  [FailureCode.MissingInput]: RouteFailureDisposition.Retain,
+  [FailureCode.Unsupported]: RouteFailureDisposition.Retain,
+  [FailureCode.RecoveryRequired]: RouteFailureDisposition.Retain,
+  [FailureCode.BudgetReached]: RouteFailureDisposition.Retain,
+  [FailureCode.ResourceExhausted]: RouteFailureDisposition.Retain,
+  [FailureCode.CursorExpired]: RouteFailureDisposition.Retain,
+  [FailureCode.ProviderDisabled]: RouteFailureDisposition.Retain,
+  [FailureCode.Canceled]: RouteFailureDisposition.Retain,
+  [FailureCode.Internal]: RouteFailureDisposition.Retain,
+};
+
+/** Classifies one failed route-restoration read through the shared table. */
+export function routeFailureDisposition(
+  error: unknown,
+): RouteFailureDisposition {
+  return routeFailureDispositions[clientFailure(error).code];
+}
+
+/** A definitive rejection of the selection, as opposed to a retryable failure. */
 export function inaccessibleFailure(error: unknown): boolean {
-  return [
-    FailureCode.NotFound,
-    FailureCode.PermissionDenied,
-    FailureCode.Unauthenticated,
-  ].includes(clientFailure(error).code);
+  return routeFailureDisposition(error) === RouteFailureDisposition.Clear;
 }
 
 /** Presentation state of one pending or failed Search-result opening. */

@@ -454,11 +454,18 @@ current transport (`GetResource` for Session and repository, `GetSchedule`,
 `GetInboxEntry`; a Sidechat must resolve to a child of the requested parent). While
 the connection is unavailable the route stays pending, the URL keeps the original
 route, and the selection resumes only when the same connection becomes ready. A
-deleted, denied, malformed or wrong-connection selection (not found, permission
-denied, unauthenticated, an unexpected shape or an invalid envelope with a
-non-positive revision or an unsupported schema version, checked the same way for
-every restored kind) clears the selection and shows the
-requested screen's list, default category or Sessions Home. A retryable read failure
+deleted, denied, malformed, wrong-kind or wrong-connection selection (not found,
+permission denied, unauthenticated, invalid argument such as an ID of another entity
+kind, an unexpected shape or an invalid envelope with a non-positive revision or an
+unsupported schema version, checked the same way for every restored kind) clears the
+selection and shows the requested screen's list, default category or Sessions Home.
+Failure codes are classified once, for every restored kind, by
+`routeFailureDispositions` in `search-session-routing.ts`, an exhaustive table over
+`FailureCode`: `invalid_argument`, `not_found`, `permission_denied` and
+`unauthenticated` are definitive (clear); every other code, including
+`recovery_required` (gRPC failed precondition), `unavailable`, `server_unavailable`
+(deadline exceeded and unmapped transport errors), `canceled` and `internal`, is
+retryable (retain). A retryable read failure
 reopens the Session or repository so its own mounted retry and error state shows; a
 Schedule needs the fresh resource, so it is cleared and the list's own retry applies.
 Deliberate navigation, or any selection made on the pending screen while its
@@ -477,8 +484,9 @@ focused external Browser ownership and the English/Korean copy are unchanged. No
 native, server, RPC, storage or migration change is involved. Regression coverage:
 `product-route.test.ts` (parse, serialize, hash and history, identity claim),
 `product-route-restore.test.tsx` (mirroring, restore per screen, fallbacks, pending
-routes, reload-shortcut remount, envelope validation per kind and slow-read supersession
-per kind).
+routes, reload-shortcut remount, envelope validation per kind, slow-read supersession
+per kind, and a failure-code by restore-kind matrix including wrong-kind IDs) and
+`search-session-routing.test.ts` (the failure classification table).
 
 Read-only shortcut defaults yield to existing editable chords through one shared
 policy, `readOnlyShortcutSuppression` in `shortcut-preferences.ts`, keyed by
