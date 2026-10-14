@@ -183,16 +183,16 @@ func credentialParentReal(root, name string) (bool, error) {
 // a file may hold a plaintext credential bundle under a name other than the
 // final path, so every presence check and retirement covers it. A non-regular
 // entry with the attributed name is reported as an error.
-func credentialTemporaries(root, name string) ([]string, error) {
+func credentialTemporaries(root, name string) ([]string, bool, error) {
 	real, err := credentialParentReal(root, name)
 	if err != nil || !real {
-		return nil, err
+		return nil, real, err
 	}
 	path := filepath.Join(root, filepath.FromSlash(name))
 	parent, prefix := filepath.Dir(path), security.OwnedTemporaryPrefix(path)
 	entries, err := os.ReadDir(parent)
 	if err != nil {
-		return nil, &RuntimeCleanupError{Stage: CleanupValidation, Reason: CleanupFilesystem}
+		return nil, true, &RuntimeCleanupError{Stage: CleanupValidation, Reason: CleanupFilesystem}
 	}
 	var found []string
 	for _, entry := range entries {
@@ -205,26 +205,41 @@ func credentialTemporaries(root, name string) ([]string, error) {
 			continue
 		}
 		if err != nil {
-			return nil, &RuntimeCleanupError{Stage: CleanupValidation, Reason: CleanupFilesystem}
+			return nil, true, &RuntimeCleanupError{Stage: CleanupValidation, Reason: CleanupFilesystem}
 		}
 		if !info.Mode().IsRegular() {
-			return nil, &RuntimeCleanupError{Stage: CleanupValidation, Reason: CleanupNotRegular}
+			return nil, true, &RuntimeCleanupError{Stage: CleanupValidation, Reason: CleanupNotRegular}
 		}
 		found = append(found, candidate)
 	}
-	return found, nil
+	return found, true, nil
 }
 
 func retireCredentialTemporaries(root, name string) error {
-	found, err := credentialTemporaries(root, name)
+	return retireCredentialTemporariesWithSync(root, name, security.SyncParent)
+}
+
+func retireCredentialTemporariesWithSync(root, name string, syncParent func(string) error) error {
+	found, real, err := credentialTemporaries(root, name)
 	if err != nil {
 		return err
 	}
+	if !real {
+		return nil
+	}
+	path := filepath.Join(root, filepath.FromSlash(name))
 	for _, candidate := range found {
 		if err := os.Remove(candidate); err != nil && !os.IsNotExist(err) {
 			return &RuntimeCleanupError{Stage: CleanupAuthFile, Reason: CleanupFilesystem}
 		}
-		if err := security.SyncParent(candidate); err != nil {
+		if err := syncParent(candidate); err != nil {
+			return &RuntimeCleanupError{Stage: CleanupSync, Reason: CleanupFilesystem}
+		}
+	}
+	// An empty scan can follow a removal whose parent sync failed. Confirm the
+	// validated parent before treating the absent temporary as retired.
+	if len(found) == 0 {
+		if err := syncParent(path); err != nil {
 			return &RuntimeCleanupError{Stage: CleanupSync, Reason: CleanupFilesystem}
 		}
 	}
@@ -255,7 +270,7 @@ func CredentialFilePresent(root string) (bool, error) {
 		if !real {
 			continue
 		}
-		temporaries, err := credentialTemporaries(root, name)
+		temporaries, _, err := credentialTemporaries(root, name)
 		if err != nil {
 			return true, err
 		}
@@ -283,6 +298,10 @@ func CredentialFilePresent(root string) (bool, error) {
 // symlinks, are left untouched. The caller has already joined the original
 // native process and descendants.
 func RetireCredentialFiles(root string) error {
+	return retireCredentialFilesWithSync(root, security.SyncParent)
+}
+
+func retireCredentialFilesWithSync(root string, syncParent func(string) error) error {
 	for _, name := range CredentialFiles {
 		real, err := credentialParentReal(root, name)
 		if err != nil {
@@ -291,12 +310,15 @@ func RetireCredentialFiles(root string) error {
 		if !real {
 			continue
 		}
-		if err := retireCredentialTemporaries(root, name); err != nil {
+		if err := retireCredentialTemporariesWithSync(root, name, syncParent); err != nil {
 			return err
 		}
 		path := filepath.Join(root, filepath.FromSlash(name))
 		info, err := os.Lstat(path)
 		if os.IsNotExist(err) {
+			if err := syncParent(path); err != nil {
+				return &RuntimeCleanupError{Stage: CleanupSync, Reason: CleanupFilesystem}
+			}
 			continue
 		}
 		if err != nil {
@@ -308,7 +330,7 @@ func RetireCredentialFiles(root string) error {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			return &RuntimeCleanupError{Stage: CleanupAuthFile, Reason: CleanupFilesystem}
 		}
-		if err := security.SyncParent(path); err != nil {
+		if err := syncParent(path); err != nil {
 			return &RuntimeCleanupError{Stage: CleanupSync, Reason: CleanupFilesystem}
 		}
 	}

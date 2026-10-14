@@ -2,6 +2,7 @@ package worker
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -120,6 +121,54 @@ func TestExecutionCheckpointRetainsExactNativeContextWithoutContent(t *testing.T
 	if string(after) != string(original) {
 		t.Fatal("conflicting completion overwrote original native evidence")
 	}
+}
+
+func TestSharedCodexCheckpointBindsAccountHomeAndThreadBytes(t *testing.T) {
+	f := newCheckpointFixture(t)
+	f.input.Configuration.Subscription = true
+	digest, err := f.input.Configuration.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.input.ConfigurationDigest = digest
+	f.bound.Effective.Provider = "openai"
+	f.ref.Subscription = true
+	f.ref.ConfigurationDigest = digest
+	f.job.Input, _ = json.Marshal(f.input)
+	f.ref.AssignmentInputDigest = executionInputDigest(f.job.Input)
+	home, err := codexAccountHistoryHome(f.root, f.input.AccountID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(home, "sessions", "2026", "10", "14", "rollout.jsonl")
+	if err := security.PrivateDir(filepath.Dir(path)); err != nil {
+		t.Fatal(err)
+	}
+	content := []byte("private shared history\n")
+	if err := os.WriteFile(path, content, 0600); err != nil {
+		t.Fatal(err)
+	}
+	hash := sha256.Sum256(content)
+	proof := &codex.ThreadHistoryProof{ThreadID: f.bound.Thread.ID, Path: path, Digest: hex.EncodeToString(hash[:])}
+	checkpointDigest, err := retainCodexCompletionWithHistory(f.root, f.jobID, f.job, f.input, f.bound, f.completion, nil, nil, proof, home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.ref.Completion.Version, f.ref.Completion.NativeCheckpointDigest = 2, checkpointDigest
+	checkpoint, err := ReadCodexExecutionCheckpoint(f.root, f.ref)
+	if err != nil || checkpoint.Version != 2 || checkpoint.AccountHome != home || checkpoint.ThreadHistory == nil || checkpoint.ThreadHistory.ThreadID != f.bound.Thread.ID {
+		t.Fatalf("shared ownership was not retained: %#v, %v", checkpoint, err)
+	}
+	if err := os.WriteFile(path, []byte("changed history\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	checkpointRecovery(t, func() error { _, readErr := ReadCodexExecutionCheckpoint(f.root, f.ref); return readErr }())
+	if err := os.WriteFile(path, content, 0600); err != nil {
+		t.Fatal(err)
+	}
+	foreign := f.ref
+	foreign.AccountID = domain.NewID()
+	checkpointRecovery(t, func() error { _, readErr := ReadCodexExecutionCheckpoint(f.root, foreign); return readErr }())
 }
 
 func TestExecutionCheckpointDirectStartupRetainsAcceptedAssignment(t *testing.T) {

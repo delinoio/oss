@@ -106,3 +106,14 @@ func TestManualNativeOpenCodeProjectCheckpointReplacement(t *testing.T) {
 		t.Run(mode, func(t *testing.T) { nativeCheckpointReplacement(t, binary, mode, checkpointCommittedProject) })
 	}
 }
+
+func TestManualNativeOpenCodeProjectInPlaceResume(t *testing.T) {
+	binary := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
+	if binary == "" {
+		t.Skip("explicit private pinned OpenCode in-place project fixture")
+	}
+	profiles := map[string]nativeCheckpointWorkspace{"committed": checkpointCommittedProject, "unborn": checkpointUnbornProject, "first-commit": checkpointFirstCommitProject}
+	for name, profile := range profiles {
+		t.Run(name, func(t *testing.T) { nativeCheckpointReplacementMode(t, binary, "build", true, profile) })
+	}
+}

@@ -200,6 +200,27 @@ func TestSharedOwnerStaysExclusiveWithoutNegotiation(t *testing.T) {
 	}
 }
 
+func TestSharedCodexOwnerKeepsProcessWideImageProfileExclusive(t *testing.T) {
+	f := newMemberFixture(t, true)
+	f.input.NativeImageGeneration = true
+	jobs := f.prepareJobs(1)
+	first, err := f.takeJob(jobs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clear(first.Bundle)
+	if first.OwnerLeaseId != "" {
+		t.Fatal("singleton image profile joined a shared owner")
+	}
+	_, account := f.record()
+	if account.Subscription.SharedOwner() || len(account.Subscription.Members) != 0 {
+		t.Fatal("process-wide image profile founded a shared owner")
+	}
+	if _, err := f.takeJob(jobs[1]); err == nil {
+		t.Fatal("second image session bypassed its singleton lease")
+	}
+}
+
 func TestMemberFinishNeverTouchesCredentialsOrSiblings(t *testing.T) {
 	f := newMemberFixture(t, true)
 	jobs := f.prepareJobs(3)

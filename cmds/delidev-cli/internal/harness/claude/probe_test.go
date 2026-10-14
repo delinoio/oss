@@ -40,7 +40,7 @@ func fixtureResult287() map[string]any {
 	result := fixtureResult()
 	result["analytics_disabled"] = true
 	result["capabilities"] = []any{"fixture-capability"}
-	result["feedback_mode"] = "disabled"
+	result["feedback_mode"] = map[string]any{"kind": "disabled"}
 	result["remote_control_available"] = false
 	result["remote_control_auto_connect_default"] = false
 	result["session_state"] = "idle"
@@ -65,7 +65,7 @@ func fixtureResponseWith(id domain.ID, result any, envelope map[string]any) []by
 	return append(raw, '\n')
 }
 
-const fixturePrelude = `{"type":"system","subtype":"ui_invalidate","uuid":"fixture-uuid","session_id":"fixture-session"}` + "\n"
+const fixturePrelude = `{"type":"system","subtype":"ui_invalidate","event":"ui.render","uuid":"fixture-uuid","session_id":"fixture-session"}` + "\n"
 
 // fixture287Frames builds the stdout for a "v287*" fixture mode.
 func fixture287Frames(mode string, id domain.ID) []byte {
@@ -77,6 +77,8 @@ func fixture287Frames(mode string, id domain.ID) []byte {
 		prelude = `{"type":"system","subtype":"unknown_event"}` + "\n"
 	case "v287-field":
 		prelude = `{"type":"system","subtype":"ui_invalidate","token":"private"}` + "\n"
+	case "v287-event":
+		prelude = `{"type":"system","subtype":"ui_invalidate","event":"other"}` + "\n"
 	case "v287-malformed":
 		prelude = `{"type":"system",` + "\n"
 	case "v287-pending":
@@ -90,7 +92,9 @@ func fixture287Frames(mode string, id domain.ID) []byte {
 	case "v287-remote":
 		result["remote_control_auto_connect_default"] = true
 	case "v287-feedback":
-		result["feedback_mode"] = "enabled"
+		result["feedback_mode"] = map[string]any{"kind": "enabled"}
+	case "v287-feedback-field":
+		result["feedback_mode"] = map[string]any{"kind": "disabled", "extra": true}
 	case "v287-account":
 		result["account"] = map[string]any{"tokenSource": "oauth", "apiProvider": "firstParty"}
 	case "v287-foreign":
@@ -236,6 +240,30 @@ func fixtureConfig(t *testing.T, mode string) (ProbeConfig, *bytes.Buffer) {
 	return ProbeConfig{Version: SupportedVersion, Home: filepath.Join(root, "claude"), Process: process.Config{Directory: filepath.Join(root, "processes"), OwnerID: domain.NewID(), Executable: executable, Env: env, Cwd: root, Logger: slog.New(slog.NewJSONHandler(logs, nil))}}, logs
 }
 
+// This opt-in test checks only isolated native initialization. It never reads
+// an existing Claude home, account credential or user workspace.
+func TestManualNativeClaudeProbe(t *testing.T) {
+	binary := os.Getenv("DELIDEV_NATIVE_CLAUDE_EXECUTABLE")
+	version := os.Getenv("DELIDEV_NATIVE_CLAUDE_VERSION")
+	if binary == "" && version == "" {
+		t.Skip("set DELIDEV_NATIVE_CLAUDE_EXECUTABLE and DELIDEV_NATIVE_CLAUDE_VERSION for isolated native validation")
+	}
+	if binary == "" || version == "" {
+		t.Fatal("native probe requires both executable and observed version")
+	}
+	config, _ := fixtureConfig(t, "native")
+	config.Process.Executable = binary
+	config.Version = version
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := Probe(ctx, config); err != nil {
+		t.Fatalf("isolated native initialization failed: %s", domain.SafeError(err).Code)
+	}
+	if err := process.ReconcileOwner(config.Process.Directory, config.Process.OwnerID); err != nil {
+		t.Fatal("native probe cleanup was not confirmed")
+	}
+}
+
 func TestProbeOwnsOnlyBoundedPrivateInitialization(t *testing.T) {
 	for _, test := range []struct {
 		mode string
@@ -290,10 +318,10 @@ func TestProbeAcceptsClaude287StartupFrameAndInitializeFields(t *testing.T) {
 	}{
 		{"v287", ""}, {"v287-noprelude", ""},
 		{"v287-twice", domain.Unsupported}, {"v287-late", domain.Unsupported}, {"v287-subtype", domain.Unsupported},
-		{"v287-field", domain.Unsupported}, {"v287-malformed", domain.Unsupported}, {"v287-oversize", domain.ResourceExhausted},
+		{"v287-field", domain.Unsupported}, {"v287-event", domain.Unsupported}, {"v287-malformed", domain.Unsupported}, {"v287-oversize", domain.ResourceExhausted},
 		{"v287-foreign", domain.Unsupported}, {"v287-duplicate", domain.Unsupported}, {"v287-trailing", domain.Unsupported},
 		{"v287-pending", domain.Unsupported}, {"v287-dialog", domain.Unsupported}, {"v287-result-pending", domain.Unsupported}, {"v287-busy", domain.Unsupported},
-		{"v287-remote", domain.Unsupported}, {"v287-feedback", domain.Unsupported}, {"v287-account", domain.Unsupported},
+		{"v287-remote", domain.Unsupported}, {"v287-feedback", domain.Unsupported}, {"v287-feedback-field", domain.Unsupported}, {"v287-account", domain.Unsupported},
 	} {
 		t.Run(test.mode, func(t *testing.T) {
 			cfg, logs := fixtureConfig(t, test.mode)
@@ -351,6 +379,13 @@ func TestInitializeValidatesClaude287Fields(t *testing.T) {
 	if err := validateInitialize(fixtureResponseWith(id, fixtureResult287(), fixtureEnvelope287()), id); err != nil {
 		t.Fatal(err)
 	}
+	for _, mode := range []string{"disabled", "off"} {
+		result := fixtureResult287()
+		result["feedback_mode"] = mode
+		if err := validateInitialize(fixtureResponseWith(id, result, fixtureEnvelope287()), id); err != nil {
+			t.Fatalf("previous feedback mode %q was rejected: %v", mode, err)
+		}
+	}
 	for _, change := range []struct {
 		name  string
 		field string
@@ -365,6 +400,9 @@ func TestInitializeValidatesClaude287Fields(t *testing.T) {
 		{"capabilities-too-many", "capabilities", make([]any, 65)},
 		{"capabilities-nested", "capabilities", map[string]any{"a": []any{}}},
 		{"feedback-enabled", "feedback_mode", "enabled"},
+		{"feedback-object-enabled", "feedback_mode", map[string]any{"kind": "enabled"}},
+		{"feedback-object-extra", "feedback_mode", map[string]any{"kind": "disabled", "extra": true}},
+		{"feedback-object-null", "feedback_mode", map[string]any{"kind": nil}},
 		{"feedback-type", "feedback_mode", true},
 		{"remote-available", "remote_control_available", true},
 		{"remote-null", "remote_control_auto_connect_default", nil},
@@ -497,6 +535,7 @@ func TestProbePreludeIsClosedExactAndNonNull(t *testing.T) {
 		frame string
 		ok    bool
 	}{
+		{"current", `{"type":"system","subtype":"ui_invalidate","event":"ui.render","uuid":"fixture-uuid","session_id":"fixture-session"}`, true},
 		{"full", `{"type":"system","subtype":"ui_invalidate","uuid":"0b1e2d3c-1111-4222-8333-444455556666","session_id":"fixture-session"}`, true},
 		{"bare", `{"type":"system","subtype":"ui_invalidate"}`, true},
 		{"uuid-only", `{"type":"system","subtype":"ui_invalidate","uuid":"fixture-uuid"}`, true},
@@ -511,6 +550,10 @@ func TestProbePreludeIsClosedExactAndNonNull(t *testing.T) {
 		{"uuid-control", `{"type":"system","subtype":"ui_invalidate","uuid":"a\u0000b"}`, false},
 		{"subtype-null", `{"type":"system","subtype":null}`, false},
 		{"subtype-other", `{"type":"system","subtype":"init"}`, false},
+		{"event-other", `{"type":"system","subtype":"ui_invalidate","event":"other"}`, false},
+		{"event-null", `{"type":"system","subtype":"ui_invalidate","event":null}`, false},
+		{"event-object", `{"type":"system","subtype":"ui_invalidate","event":{}}`, false},
+		{"event-alias", `{"type":"system","subtype":"ui_invalidate","Event":"ui.render"}`, false},
 		{"unknown-field", `{"type":"system","subtype":"ui_invalidate","extra":1}`, false},
 		{"alias-type", `{"Type":"system","Subtype":"ui_invalidate"}`, false},
 		{"alias-subtype", `{"type":"system","Subtype":"ui_invalidate"}`, false},

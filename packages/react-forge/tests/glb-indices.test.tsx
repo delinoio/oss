@@ -40,6 +40,12 @@ interface Gltf {
     }[];
   }[];
   images?: { bufferView: number }[];
+  samplers?: {
+    magFilter?: number;
+    minFilter?: number;
+    wrapS?: number;
+    wrapT?: number;
+  }[];
   nodes: { mesh?: number; weights?: number[] }[];
   animations?: unknown[];
   skins?: unknown[];
@@ -134,6 +140,9 @@ sceneTest(
       const bytes = await session.exportBuffer();
       assert.deepEqual(await session.exportBuffer(), bytes);
       const parsed = parseGlb(bytes);
+      assert.deepEqual(parsed.json.samplers, [
+        { magFilter: 9729, minFilter: 9987, wrapS: 10497, wrapT: 10497 },
+      ]);
       const first = indices(parsed, 0);
       const second = indices(parsed, 1);
       assert.equal(first.accessor.componentType, 5123);

@@ -15,7 +15,8 @@ use crate::{
     error::{BwError, BwResult, ErrorCode, problem},
     model::{Analysis, ProblemSeverity, RunStatus, SCHEMA_VERSION, SourceFile},
     sources::{
-        as_text, is_binary_asset_path, is_generated_asset_module, safe_project_relative, sha256_hex,
+        as_text, filesystem_path, is_binary_asset_path, is_generated_asset_module,
+        safe_project_relative, sha256_hex,
     },
 };
 
@@ -540,6 +541,23 @@ pub fn mark_stale(bundle: &mut ResultBundle) {
         let Some(relative) = safe_project_relative(path) else {
             continue;
         };
+        // Older schema-1 bundles stored the module path rather than the
+        // backing file in projectRelative. Resolve it with the same literal
+        // filename precedence as a new analysis, then validate the selected
+        // path again before reading it.
+        let backing = if existence_only {
+            canonical_root.join(&relative)
+        } else {
+            filesystem_path(&canonical_root.join(&relative))
+        };
+        let Some(relative) = backing
+            .strip_prefix(&canonical_root)
+            .ok()
+            .and_then(|path| path.to_str())
+            .and_then(safe_project_relative)
+        else {
+            continue;
+        };
         // A file that cannot be verified (too large, special, outside the
         // root) is not reported stale; only a removed file or a hash mismatch
         // is.
@@ -770,6 +788,162 @@ mod tests {
             .project_relative
             .insert("src-0123456789abcdef".to_owned(), "src/a.js".to_owned());
         saved
+    }
+
+    #[test]
+    fn legacy_source_query_asset_reopens_without_false_stale_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(project.join("src")).unwrap();
+        let asset = project.join("src/icon.svg");
+        std::fs::write(&asset, "<svg/>").unwrap();
+
+        let mut saved = stale_fixture(dir.path(), "source");
+        saved.sources[0].path = "src/icon.svg?raw".to_owned();
+        saved.sources[0].content = "export default \"<svg/>\"".to_owned();
+        saved.sources[0].content_included = true;
+        saved.sources[0].sha256 = sha256_hex(saved.sources[0].content.as_bytes());
+        saved.sources[0].stale = true;
+        saved.analysis.sources[0] = saved.sources[0].summary();
+        saved
+            .project_relative
+            .insert(saved.sources[0].id.clone(), "src/icon.svg?raw".to_owned());
+        save(dir.path(), &saved).unwrap();
+
+        for _ in 0..2 {
+            let loaded = load(dir.path()).unwrap();
+            assert_eq!(loaded.project_relative, saved.project_relative);
+            assert!(!loaded.sources[0].stale);
+            assert!(!loaded.analysis.sources[0].stale);
+            assert_eq!(stale_count(&loaded), 0);
+        }
+
+        std::fs::remove_file(&asset).unwrap();
+        let removed = load(dir.path()).unwrap();
+        assert!(removed.sources[0].stale && removed.analysis.sources[0].stale);
+        assert_eq!(stale_count(&removed), 1);
+
+        std::fs::write(&asset, "<svg changed/>").unwrap();
+        let restored = load(dir.path()).unwrap();
+        assert!(!restored.sources[0].stale && !restored.analysis.sources[0].stale);
+        assert_eq!(stale_count(&restored), 0);
+    }
+
+    #[test]
+    fn legacy_source_literal_paths_win_and_text_still_uses_its_hash() {
+        // Windows cannot create a literal filename containing `?`.
+        let suffixes: &[&str] = if cfg!(windows) {
+            &["#component"]
+        } else {
+            &["?raw", "#component"]
+        };
+        for suffix in suffixes {
+            let dir = tempfile::tempdir().unwrap();
+            let mut saved = stale_fixture(dir.path(), "original");
+            let relative = format!("src/a.js{suffix}");
+            saved.sources[0].path = relative.clone();
+            saved.sources[0].content = "original".to_owned();
+            saved.sources[0].content_included = true;
+            saved.analysis.sources[0] = saved.sources[0].summary();
+            saved
+                .project_relative
+                .insert(saved.sources[0].id.clone(), relative.clone());
+            save(dir.path(), &saved).unwrap();
+
+            let literal = dir.path().join("project").join(&relative);
+            std::fs::write(&literal, "different").unwrap();
+            let loaded = load(dir.path()).unwrap();
+            assert!(loaded.sources[0].stale, "{relative}");
+            assert_eq!(stale_count(&loaded), 1);
+
+            std::fs::remove_file(&literal).unwrap();
+            let loaded = load(dir.path()).unwrap();
+            assert!(!loaded.sources[0].stale, "{relative}");
+            assert_eq!(stale_count(&loaded), 0);
+
+            std::fs::write(dir.path().join("project/src/a.js"), "changed").unwrap();
+            let loaded = load(dir.path()).unwrap();
+            assert!(loaded.sources[0].stale, "{relative}");
+            assert_eq!(stale_count(&loaded), 1);
+        }
+    }
+
+    #[test]
+    fn legacy_source_query_keeps_saved_path_safety_limits() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut saved = stale_fixture(dir.path(), "original");
+        let project = dir.path().join("project");
+        let backing = project.join("src/a.js");
+        saved.sources[0].path = "src/a.js?raw".to_owned();
+        saved
+            .project_relative
+            .insert(saved.sources[0].id.clone(), "src/a.js?raw".to_owned());
+
+        // A directory and an oversized regular file both exist, but neither
+        // can be read or treated as a source change.
+        std::fs::remove_file(&backing).unwrap();
+        std::fs::create_dir(&backing).unwrap();
+        mark_stale(&mut saved);
+        assert!(!saved.sources[0].stale);
+        std::fs::remove_dir(&backing).unwrap();
+        std::fs::write(&backing, vec![b'x'; (MAX_STALE_CHECK_BYTES + 1) as usize]).unwrap();
+        mark_stale(&mut saved);
+        assert!(!saved.sources[0].stale);
+
+        #[cfg(unix)]
+        {
+            std::fs::remove_file(&backing).unwrap();
+            let outside = dir.path().join("outside.js");
+            std::fs::write(&outside, "different").unwrap();
+            std::os::unix::fs::symlink(&outside, &backing).unwrap();
+            mark_stale(&mut saved);
+            assert!(!saved.sources[0].stale);
+        }
+
+        saved.project_relative.insert(
+            saved.sources[0].id.clone(),
+            "src/../../outside.js?raw".to_owned(),
+        );
+        assert_eq!(
+            parse(&serde_json::to_vec(&saved).unwrap())
+                .unwrap_err()
+                .code,
+            ErrorCode::ResultInvalid
+        );
+    }
+
+    #[test]
+    fn legacy_source_missing_fragment_clears_after_restoration() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(project.join("src")).unwrap();
+        let module = project.join("src/a.js#component");
+        let mut store = crate::sources::SourceStore::new(true);
+        store.snapshots.insert(
+            crate::sources::normalize(&module),
+            "export const a = 1;".to_owned(),
+        );
+        store.add_file(&project, &module).unwrap();
+        let mut saved = bundle();
+        saved.project_root = project.to_string_lossy().into_owned();
+        saved.project_relative = store.project_relative.clone();
+        saved.sources = store.into_files();
+        saved.analysis.sources = saved.sources.iter().map(SourceFile::summary).collect();
+        assert_eq!(
+            saved.project_relative.get(&saved.sources[0].id),
+            Some(&"src/a.js".to_owned())
+        );
+        assert_eq!(saved.sources[0].path, "src/a.js#component");
+        save(dir.path(), &saved).unwrap();
+
+        let missing = load(dir.path()).unwrap();
+        assert!(missing.sources[0].stale);
+        assert_eq!(stale_count(&missing), 1);
+
+        std::fs::write(project.join("src/a.js"), "export const a = 1;").unwrap();
+        let restored = load(dir.path()).unwrap();
+        assert!(!restored.sources[0].stale && !restored.analysis.sources[0].stale);
+        assert_eq!(stale_count(&restored), 0);
     }
 
     #[test]

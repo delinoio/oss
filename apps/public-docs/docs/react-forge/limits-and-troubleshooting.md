@@ -37,6 +37,8 @@ Local document work has no hosted service, telemetry, URL fetching, automatic re
 
 [GLB](/react-forge/formats/glb/) and [FBX](/react-forge/formats/fbx/) creation are available in npm `0.2.0`. They use SceneSession with registered geometry/textures, explicit file export, and revision-bound world-space bounds. The released static API excludes existing-file editing, animation and rigging. The FBX material profile targets Blender 4.5; visual checks do not establish identical results in other FBX applications.
 
+If a static model is dense, count `indices.length / 3` per mesh instance before export and compare [the low and dense sheet examples](/react-forge/formats/glb/#polygon-efficient-static-authoring). Use a single opaque texture for painted detail that does not change the physical outline. Keep physical backs, required seams, and distinct material or animation parts. Smaller files and successful structural validation do not establish target-application appearance or performance.
+
 ## Animation extension limits (unreleased)
 
 The unreleased scene extension adds at most four joint influences per vertex and

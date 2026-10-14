@@ -120,14 +120,18 @@ process-local integration that loads only after the account's own shell
 initialization:
 
 - `zsh`: a per-terminal `ZDOTDIR` wrapper sources the account's `.zshenv` and
-  `.zshrc` (honoring an account-defined `ZDOTDIR` and history file), then
+  `.zshrc` (honoring an account-defined `ZDOTDIR`, explicit history file and an
+  intentionally unset `HISTFILE`), then
   registers a `precmd` hook that rewrites the recognized zsh directory escapes
   (`%~`, `%d`, `%/`, `%c`, `%C`, `%.`, with optional numeric argument) in
   `PROMPT` and restores the native prompt away from the directory.
 - `bash`: `--rcfile` loads the account's `~/.bashrc`, then a `PROMPT_COMMAND`
   hook rewrites the `\w` and `\W` escapes of `PS1`, preserving `$?`.
-- `fish`: `--init-command` runs after the account's configuration and wraps
-  `prompt_pwd`.
+- `fish`: `--init-command` runs after the account's configuration, reads the
+  verified physical directory from a private per-terminal file into an
+  unexported shell variable, and wraps `prompt_pwd`. The physical directory
+  never enters fish's launch environment or command arguments, including while
+  `config.fish` and `conf.d` hooks start children before the wrapper runs.
 - `powershell`: `-NoExit -Command` dot-sources a wrapper after the profile and
   replaces the displayed current location in the `prompt` function's result.
   PowerShell is reachable only through an explicit shell override on
@@ -141,9 +145,11 @@ the terminal, never changes `PWD`, and never rewrites command output or the
 stored/streamed terminal bytes. Wrapper files live in a private per-terminal
 directory `terminal-integrations/<terminal-id>` under the Worker root and are
 removed when the shell is joined or closed, and by acknowledged retirement for
-crash leftovers. The directory is passed to the scripts through the private
-environment variable `DELIDEV_TERMINAL_CHAT_DIRECTORY`, which they unset after
-copying it into a shell-local variable. A prompt whose directory segment is
+crash leftovers. Zsh, bash and PowerShell receive the directory through
+`DELIDEV_TERMINAL_CHAT_DIRECTORY`, which they unset after copying it into a
+shell-local variable. Fish reads its private file only after account startup;
+failed handoff preparation keeps the native interactive prompt and exposes no
+physical directory in the launch environment. A prompt whose directory segment is
 not one of the recognized forms (for example a theme that computes its own
 cwd), an unsupported shell, or any failure to prepare the wrapper leaves the
 native prompt unchanged and the shell interactive. The integration is applied

@@ -152,7 +152,7 @@ func (c *Client) VerifyContinuation(ctx context.Context, requestID domain.ID, ch
 			return mismatch()
 		}
 	}
-	response, err := c.wire.Call(ctx, requestID, "thread/turns/list", struct {
+	response, err := c.call(ctx, requestID, "thread/turns/list", struct {
 		ThreadID      domain.ID `json:"threadId"`
 		Limit         int       `json:"limit"`
 		SortDirection string    `json:"sortDirection"`

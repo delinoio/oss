@@ -94,6 +94,8 @@ TypeScript modules with a leading `// @ts-nocheck` comment disable the semantic 
 
 Bundle mode has its own input rules; see [Stage 2: bundle mode](#stage-2-bundle-mode). The stage 1 CLI owns emission controls: it overrides `noEmit`, declaration/incremental/composite output, `rootDir`, output locations and source-map output settings. It does not change the input tsconfig. JavaScript and node_modules are not transformed; imported JSON and other assets stay in the original project.
 
+Stage 1 preserves intrinsic calls when a runtime import may load external code that patches built-ins. An explicit `node:` import and a resolved JSON file are exempt. A bare core-looking name or `.json` suffix alone is insufficient: if the resolved runtime is unknown, the report records `intrinsic_may_be_replaced`. The scan also covers JavaScript `module.require` and direct aliases of loaders created with `createRequire` from `node:module` or `module`.
+
 This conservative boundary is intentional: types alone do not prove transformation safety. There is no aggressive mode or trusted-declaration opt-out. Always run application behavior tests after bundling. This is an application optimizer, not a library/declaration compatibility tool. To roll back one optimization, rerun into a new directory with `--disable-pass <id>`; to roll back adoption, restore the original build inputs and configuration.
 
 ## Vite example
