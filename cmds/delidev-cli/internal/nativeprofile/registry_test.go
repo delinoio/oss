@@ -1009,3 +1009,54 @@ func TestRegistryLoadRejectsSharedOwnerForOtherHarnesses(t *testing.T) {
 		t.Fatal("the invalid registry was rewritten")
 	}
 }
+
+// CheckLegacy applies the registration conflict rules without registering,
+// creating or locking anything.
+func TestCheckLegacyReportsConflictsWithoutChangingTheRegistry(t *testing.T) {
+	ctx := context.Background()
+	root := testRoot(t)
+	r, _ := workerRegistry(t, root, nil)
+	account := domain.NewID()
+	key := Key{Harness: domain.Codex, Purpose: PurposeSharedOwner, Account: account}
+	relative := "runtimes/accounts/" + string(account) + "/codex"
+	if _, bound, err := r.CheckLegacy(ctx, key, relative); err != nil || bound {
+		t.Fatalf("an unseen key was bound: %v", err)
+	}
+	if _, _, err := r.CheckLegacy(ctx, key, "../escape"); err == nil {
+		t.Fatal("an invalid legacy path was accepted")
+	}
+	if err := security.PrivateDir(filepath.Join(root, filepath.FromSlash(relative))); err != nil {
+		t.Fatal(err)
+	}
+	registered, err := r.RegisterLegacy(ctx, key, relative)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found, bound, err := r.CheckLegacy(ctx, key, relative); err != nil || !bound || found.ID != registered.ID {
+		t.Fatalf("a registered key was not reported: %v", err)
+	}
+	// The key is bound to another path, and the path is bound to another key.
+	for name, check := range map[string]func() error{
+		"key at another path": func() error { _, _, err := r.CheckLegacy(ctx, key, relative+"-other"); return err },
+		"path for another key": func() error {
+			other := Key{Harness: domain.Codex, Purpose: PurposeConversation, Account: account, Conversation: domain.NewID()}
+			_, _, err := r.CheckLegacy(ctx, other, relative)
+			return err
+		},
+	} {
+		if reason, ok := Reasoned(check()); !ok || reason != ReasonKeyConflict {
+			t.Fatalf("%s did not conflict", name)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(relative)+"-other")); !os.IsNotExist(err) {
+		t.Fatal("CheckLegacy created a directory")
+	}
+	if entries, _ := os.ReadDir(filepath.Join(root, "native-profiles", "p")); len(entries) != 0 {
+		t.Fatal("CheckLegacy created a managed profile")
+	}
+	lease, err := r.Acquire(ctx, key)
+	if err != nil {
+		t.Fatalf("CheckLegacy left a lock behind: %v", err)
+	}
+	_ = lease.Close()
+}

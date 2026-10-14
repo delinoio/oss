@@ -529,19 +529,14 @@ func (r *Registry) RegisterLegacy(ctx context.Context, key Key, relative string,
 		if historyOwnedByOther(file.Profiles, key, histories) {
 			return false, historyConflict()
 		}
-		for i, e := range file.Profiles {
-			if e.Key == key {
-				if e.Origin != OriginLegacy || e.Path != clean {
-					// A conversation owns exactly one retained history.
-					return false, Failure(domain.Conflict, ReasonKeyConflict, "The conversation already has a different retained native history.", "Keep the original history and inspect the conversation before retrying.")
-				}
-				changed := mergeHistories(&file.Profiles[i], histories)
-				result = r.info(file.Profiles[i], false)
-				return changed, nil
-			}
-			if e.Origin == OriginLegacy && e.Path == clean {
-				return false, Failure(domain.Conflict, ReasonKeyConflict, "The legacy native history is registered for another profile.", "Keep the original history and inspect the conversation before retrying.")
-			}
+		bound, err := legacyBinding(file.Profiles, key, clean)
+		if err != nil {
+			return false, err
+		}
+		if bound >= 0 {
+			changed := mergeHistories(&file.Profiles[bound], histories)
+			result = r.info(file.Profiles[bound], false)
+			return changed, nil
 		}
 		if len(file.Profiles) >= maxProfiles {
 			return false, Failure(domain.ResourceExhausted, ReasonRegistryInvalid, "The native profile registry is full.", "Delete unused sessions or accounts before creating more profiles.")
@@ -557,6 +552,55 @@ func (r *Registry) RegisterLegacy(ctx context.Context, key Key, relative string,
 		return true, nil
 	})
 	return result, err
+}
+
+// legacyBinding applies the registration conflict rules without changing
+// anything. It returns the index of the entry already bound to key at the clean
+// legacy path, or -1 when key is unregistered and the path is free. A key bound
+// to a different history, or a path registered for another key, is a conflict.
+func legacyBinding(entries []entry, key Key, clean string) (int, error) {
+	for i, e := range entries {
+		if e.Key == key {
+			if e.Origin != OriginLegacy || e.Path != clean {
+				// A conversation owns exactly one retained history.
+				return -1, Failure(domain.Conflict, ReasonKeyConflict, "The conversation already has a different retained native history.", "Keep the original history and inspect the conversation before retrying.")
+			}
+			return i, nil
+		}
+		if e.Origin == OriginLegacy && e.Path == clean {
+			return -1, Failure(domain.Conflict, ReasonKeyConflict, "The legacy native history is registered for another profile.", "Keep the original history and inspect the conversation before retrying.")
+		}
+	}
+	return -1, nil
+}
+
+// CheckLegacy reports, without creating or changing anything, whether
+// RegisterLegacy would accept key at the relative path. It returns the
+// registered profile when key is already bound to that path, and the same
+// closed key-conflict failure RegisterLegacy returns when the key or the path
+// is bound elsewhere. Callers use it to validate registry state before they
+// create a directory that they intend to register in place.
+func (r *Registry) CheckLegacy(ctx context.Context, key Key, relative string) (Info, bool, error) {
+	key, err := r.normalize(key)
+	if err != nil {
+		return Info{}, false, err
+	}
+	if !validLegacyPath(relative) {
+		return Info{}, false, Failure(domain.InvalidArgument, ReasonLegacyUnverified, "The legacy native history path is invalid.", "Use a path below the owner storage root.")
+	}
+	var found Info
+	var bound bool
+	err = r.withRegistry(ctx, func(file *registryFile) (bool, error) {
+		index, err := legacyBinding(file.Profiles, key, relative)
+		if err != nil {
+			return false, err
+		}
+		if index >= 0 {
+			found, bound = r.info(file.Profiles[index], false), true
+		}
+		return false, nil
+	})
+	return found, bound, err
 }
 
 func historyOwnedByOther(entries []entry, key Key, histories []domain.ID) bool {

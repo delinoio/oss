@@ -2946,9 +2946,12 @@ account only creates the fixed private directory, and registration is
 idempotent across owner restarts. The Worker resolves it through the registry
 for every shared execution and for a version 1 history import, and
 checkpoint readers reject a registered path that differs from the derived
-account home. A directory that is not a real private directory, or a
-registration for another path, blocks with a recovery-required failure and is
-never repaired or recreated.
+account home. The Worker validates the registry before it creates anything: a
+key registered for another path, or the derived path registered for another
+profile, blocks with the closed `key_conflict` cause and creates no directory
+and changes no registry entry. A registered home that is no longer a real
+private directory, or a directory that is not a real private directory, blocks
+with a recovery-required failure and is never repaired or recreated.
 
 `shared_owner` is a registered-only purpose that is defined for the `codex`
 harness alone: a key for any other harness is invalid, including in a restored

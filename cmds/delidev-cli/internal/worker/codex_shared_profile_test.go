@@ -178,3 +178,134 @@ func TestSessionDeletionKeepsSharedCodexHome(t *testing.T) {
 		t.Fatal("session deletion unregistered the shared account home")
 	}
 }
+
+// Registry state is validated before the derived account home is created. Every
+// row below leaves the file system and the registry exactly as it found them,
+// except the rows that register a new home.
+func TestSharedCodexHomeValidatesRegistryBeforeCreatingDirectory(t *testing.T) {
+	ctx := context.Background()
+	type row struct {
+		name string
+		// arrange prepares the registry and returns whether the derived home must
+		// exist afterwards and the closed reason expected from resolution.
+		arrange func(t *testing.T, config Config, machine, account domain.ID, home string)
+		reason  nativeprofile.Reason
+		code    domain.Code
+		created bool
+	}
+	otherPath := func(account domain.ID) string { return "runtimes/accounts/" + string(account) + "/codex-restored" }
+	rows := []row{
+		{name: "key bound to another valid legacy path while the derived home is absent", reason: nativeprofile.ReasonKeyConflict, code: domain.Conflict,
+			arrange: func(t *testing.T, config Config, machine, account domain.ID, home string) {
+				registry, err := nativeProfiles(config, machine)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := security.PrivateDir(filepath.Join(config.Root, filepath.FromSlash(otherPath(account)))); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := registry.RegisterLegacy(ctx, sharedCodexOwnerKey(account), otherPath(account)); err != nil {
+					t.Fatal(err)
+				}
+			}},
+		{name: "derived path bound to another profile while the derived home is absent", reason: nativeprofile.ReasonKeyConflict, code: domain.Conflict,
+			arrange: func(t *testing.T, config Config, machine, account domain.ID, home string) {
+				registry, err := nativeProfiles(config, machine)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := security.PrivateDir(home); err != nil {
+					t.Fatal(err)
+				}
+				other := nativeprofile.Key{Harness: domain.Codex, Purpose: nativeprofile.PurposeConversation, Account: account, Conversation: domain.NewID()}
+				if _, err := registry.RegisterLegacy(ctx, other, sharedCodexLegacyPath(account)); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Remove(home); err != nil {
+					t.Fatal(err)
+				}
+			}},
+		{name: "registered home removed", code: domain.RecoveryRequired,
+			arrange: func(t *testing.T, config Config, machine, account domain.ID, home string) {
+				if _, err := resolveSharedCodexHome(ctx, config, machine, account); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Remove(home); err != nil {
+					t.Fatal(err)
+				}
+			}},
+		{name: "unregistered home replaced by a link", code: domain.RecoveryRequired,
+			arrange: func(t *testing.T, config Config, machine, account domain.ID, home string) {
+				target := filepath.Join(config.Root, "elsewhere")
+				if err := security.PrivateDir(target); err != nil {
+					t.Fatal(err)
+				}
+				if err := security.PrivateDir(filepath.Dir(home)); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(target, home); err != nil {
+					t.Skip("symlinks unavailable")
+				}
+			}},
+	}
+	for _, r := range rows {
+		r := r
+		t.Run(r.name, func(t *testing.T) {
+			config, machine := profileTestConfig(t)
+			account := domain.NewID()
+			home, err := codexAccountHistoryHome(config.Root, account)
+			if err != nil {
+				t.Fatal(err)
+			}
+			r.arrange(t, config, machine, account, home)
+			registry, err := nativeProfiles(config, machine)
+			if err != nil {
+				t.Fatal(err)
+			}
+			before, hadBefore, _ := registry.Lookup(ctx, sharedCodexOwnerKey(account))
+			_, beforeErr := os.Lstat(home)
+			_, err = resolveSharedCodexHome(ctx, config, machine, account)
+			if err == nil {
+				t.Fatal("resolution accepted inconsistent state")
+			}
+			if r.reason != "" {
+				if reason, ok := nativeprofile.Reasoned(err); !ok || reason != r.reason {
+					t.Fatalf("reason = %v, want %s: %v", reason, r.reason, err)
+				}
+			}
+			if r.code != "" && domain.SafeError(err).Code != r.code {
+				t.Fatalf("code = %s, want %s", domain.SafeError(err).Code, r.code)
+			}
+			if _, afterErr := os.Lstat(home); (beforeErr == nil) != (afterErr == nil) {
+				t.Fatal("a failed resolution created or removed the derived account home")
+			}
+			after, hasAfter, _ := registry.Lookup(ctx, sharedCodexOwnerKey(account))
+			if hadBefore != hasAfter || before.ID != after.ID || before.Root != after.Root {
+				t.Fatal("a failed resolution changed the registry")
+			}
+		})
+	}
+}
+
+// Checkpoint verification reads the registry and never creates the home.
+func TestVerifySharedCodexHomeCreatesNothing(t *testing.T) {
+	config, machine := profileTestConfig(t)
+	account := domain.NewID()
+	home, err := codexAccountHistoryHome(config.Root, account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := verifySharedCodexHome(config.Root, machine, account, home); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(home); !os.IsNotExist(err) {
+		t.Fatal("verification created the account home")
+	}
+	registry, err := nativeProfiles(config, machine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, _ := registry.Lookup(context.Background(), sharedCodexOwnerKey(account)); ok {
+		t.Fatal("verification registered the account home")
+	}
+}

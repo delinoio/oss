@@ -262,9 +262,12 @@ func sharedCodexLegacyPath(account domain.ID) string {
 
 // resolveSharedCodexHome registers the fixed per-account Codex history home in
 // place and returns its profile without locking it. Registration is idempotent
-// and survives owner restarts. A registered path that differs from the derived
-// account home, or a home that is not a real private directory, blocks with a
-// closed cause and is never repaired or replaced.
+// and survives owner restarts. The registry is validated before any directory
+// is created: a key or path bound to another history blocks with a closed cause
+// and creates nothing. A registered home must still be a real private
+// directory; it is never repaired, recreated or replaced. Only an unregistered
+// account creates its fixed private directory, and only after the registry
+// accepted the key.
 func resolveSharedCodexHome(ctx context.Context, config Config, machine, account domain.ID) (nativeprofile.Info, error) {
 	home, err := codexAccountHistoryHome(config.Root, account)
 	if err != nil {
@@ -274,10 +277,19 @@ func resolveSharedCodexHome(ctx context.Context, config Config, machine, account
 	if err != nil {
 		return nativeprofile.Info{}, err
 	}
-	if err := security.PrivateDir(home); err != nil {
+	key, relative := sharedCodexOwnerKey(account), sharedCodexLegacyPath(account)
+	registered, bound, err := registry.CheckLegacy(ctx, key, relative)
+	if err != nil {
+		return nativeprofile.Info{}, err
+	}
+	if bound {
+		if registered.Root != home || security.CheckPrivateDir(home) != nil {
+			return nativeprofile.Info{}, executionCheckpointUncertain()
+		}
+	} else if err := security.PrivateDir(home); err != nil {
 		return nativeprofile.Info{}, executionCheckpointUncertain()
 	}
-	info, err := registry.RegisterLegacy(ctx, sharedCodexOwnerKey(account), sharedCodexLegacyPath(account))
+	info, err := registry.RegisterLegacy(ctx, key, relative)
 	if err != nil {
 		return nativeprofile.Info{}, err
 	}
