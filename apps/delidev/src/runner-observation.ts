@@ -6,6 +6,7 @@ import {
   type Resource,
 } from "@delinoio/delidev-api-client";
 import { document, items, object } from "./documents";
+import { claudeVersionAllowed, validInstallationVersion } from "./harness-version";
 
 /** Closed presentation evidence only. It never grants execution authority. */
 export type RunnerExclusion =
@@ -60,12 +61,7 @@ export function validRunnerObservation(
         ))),
   );
 }
-const version = (value: unknown): value is string =>
-  typeof value === "string" &&
-  value.length <= 256 &&
-  /^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]{1,64})?(?:\+[a-zA-Z0-9.-]{1,64})?$/.test(
-    value,
-  );
+const version = validInstallationVersion;
 export function claudeRunnerObservation(
   resource?: Resource,
 ): RunnerObservation {
@@ -85,11 +81,11 @@ export function claudeRunnerObservation(
     .filter((row) => row.harness === "claude-code");
   if (!installations.length) return { cause: "missing" };
   if (installations.length !== 1) return { cause: "duplicate" };
-  return installationObservation(installations[0], "2.1.236");
+  return installationObservation(installations[0], claudeVersionAllowed);
 }
 export function installationObservation(
   installation: Record<string, unknown>,
-  requiredVersion?: string,
+  versionAllowed?: (detectedVersion: string) => boolean,
 ): RunnerObservation {
   switch (installation.state) {
     case "missing":
@@ -109,7 +105,7 @@ export function installationObservation(
   }
   if (!version(installation.version)) return { cause: "unavailable" };
   const detectedVersion = installation.version;
-  if (requiredVersion && detectedVersion !== requiredVersion)
+  if (versionAllowed && !versionAllowed(detectedVersion))
     return { cause: "version", detectedVersion };
   if (installation.problem) return { cause: "unavailable", detectedVersion };
   const protocol = object(installation.protocol);

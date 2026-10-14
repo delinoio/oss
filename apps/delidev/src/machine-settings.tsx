@@ -39,6 +39,7 @@ import {
   type Resource,
 } from "@delinoio/delidev-api-client";
 import { document, encode, items, object, text } from "./documents";
+import { claudeVersionAllowed } from "./harness-version";
 import { Harness, TextField } from "./configuration-fields";
 import { ObservedJob, useJobObservation } from "./jobs";
 import { useRetainedMutation } from "./mutation";
@@ -453,7 +454,7 @@ export function MachineSettingsView({
                 ? { cause: "unavailable" as const }
                 : installationObservation(
                     installation,
-                    harness === Harness.Claude ? "2.1.236" : undefined,
+                    harness === Harness.Claude ? claudeVersionAllowed : undefined,
                   );
             return (
               <article className="result" key={index}>
