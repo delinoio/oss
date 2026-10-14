@@ -29,10 +29,21 @@ const route = (modalities: string[]) => ({
   accounts: [{ id: newRequestId() }],
 });
 
-function wrapper(agent: Record<string, unknown>) {
+function wrapper(
+  agent: Record<string, unknown>,
+  openCode: { system: boolean; worker: boolean } = {
+    system: true,
+    worker: true,
+  },
+) {
   const transport = createRouterTransport(({ service }) => {
     service(SystemService, {
-      getStatus: () => ({ capabilities: [SystemCapability.IMAGE_INPUTS_V1] }),
+      getStatus: () => ({
+        capabilities: [
+          SystemCapability.IMAGE_INPUTS_V1,
+          ...(openCode.system ? [SystemCapability.OPENCODE_IMAGE_INPUTS_V1] : []),
+        ],
+      }),
     });
     service(ResourceService, {
       getResource: (request) => ({
@@ -43,7 +54,14 @@ function wrapper(agent: Record<string, unknown>) {
           schemaVersion: request.kind === EntityKind.AGENT ? 4 : 1,
           documentJson: encode(
             request.kind === EntityKind.MACHINE
-              ? { worker_capabilities: [WorkerCapability.IMAGE_INPUTS_V1] }
+              ? {
+                  worker_capabilities: [
+                    WorkerCapability.IMAGE_INPUTS_V1,
+                    ...(openCode.worker
+                      ? [WorkerCapability.OPENCODE_IMAGE_INPUTS_V1]
+                      : []),
+                  ],
+                }
               : agent,
           ),
         }),
@@ -63,6 +81,7 @@ function wrapper(agent: Record<string, unknown>) {
 async function ready(
   agent: Record<string, unknown>,
   original?: { harness: string; declared: boolean },
+  openCode?: { system: boolean; worker: boolean },
 ) {
   const { result } = renderHook(
     () =>
@@ -74,7 +93,7 @@ async function ready(
         original?.harness,
         original?.declared,
       ),
-    { wrapper: wrapper(agent) },
+    { wrapper: wrapper(agent, openCode) },
   );
   await waitFor(() => expect(result.current.machine).toBeDefined());
   await waitFor(() => expect(result.current.loading).toBe(false));
@@ -124,4 +143,22 @@ it("uses the frozen execution snapshot for queued follow-ups", async () => {
   expect(await ready(agent, { harness: "sidechat", declared: true })).toBe(
     false,
   );
+});
+
+it("keeps OpenCode unavailable until both sides negotiate the independent pair", async () => {
+  const agent = { harness: "opencode", routes: [route(["text", "image"])] };
+  for (const openCode of [
+    { system: false, worker: true },
+    { system: true, worker: false },
+    { system: false, worker: false },
+  ]) {
+    expect(await ready(agent, undefined, openCode)).toBe(false);
+    expect(
+      await ready(agent, { harness: "opencode", declared: true }, openCode),
+    ).toBe(false);
+    // The base pair still admits Codex without the OpenCode refinement.
+    expect(
+      await ready({ harness: "codex", routes: [route(["text"])] }, undefined, openCode),
+    ).toBe(true);
+  }
 });

@@ -24,6 +24,25 @@ const MaxImageChunkBytes = 256 << 10
 const MaxInputImagePixels = 40_000_000
 const ImageInputsV1 WorkerCapability = "image-inputs-v1"
 
+// OpenCodeImageInputsV1 independently negotiates OpenCode image attachments.
+// A Worker that predates it advertises ImageInputsV1 for Codex only and rejects
+// an OpenCode job that declares image input, so ImageInputsV1 never implies it.
+const OpenCodeImageInputsV1 WorkerCapability = "opencode-image-inputs-v1"
+
+// OpenCodeImageInputsPaired reports whether a Worker capability set keeps the
+// OpenCode image capability bound to the base image capability. A set without
+// the OpenCode capability is trivially paired.
+func OpenCodeImageInputsPaired(capabilities []WorkerCapability) bool {
+	return !slices.Contains(capabilities, OpenCodeImageInputsV1) || slices.Contains(capabilities, ImageInputsV1)
+}
+
+// ImageInputWorkerSupported reports whether a Worker can execute image
+// attachments for the harness: Codex needs the base capability, and OpenCode
+// additionally needs its independent capability.
+func ImageInputWorkerSupported(harness Harness, capabilities []WorkerCapability) bool {
+	return slices.Contains(capabilities, ImageInputsV1) && (harness != OpenCode || slices.Contains(capabilities, OpenCodeImageInputsV1))
+}
+
 // MaxOpenCodeInputImagesBytes bounds the combined original image bytes of one
 // OpenCode input. The native server rewrites each image into a base64 data URL
 // inside its stored message and event frames, and the OpenCode adapter keeps

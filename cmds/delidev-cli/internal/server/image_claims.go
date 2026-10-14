@@ -39,7 +39,7 @@ func checkImageRoute(tx *store.Tx, agentID, machineID domain.ID, prompt string, 
 	if err != nil {
 		return err
 	}
-	if !agent.Harness.ImageInputs() || !slices.Contains(machine.WorkerCapabilities, domain.ImageInputsV1) || !domain.ImagePromptAllowed(agent.Harness, prompt) {
+	if !agent.Harness.ImageInputs() || !domain.ImageInputWorkerSupported(agent.Harness, machine.WorkerCapabilities) || !domain.ImagePromptAllowed(agent.Harness, prompt) {
 		return domain.UnsupportedImageInput()
 	}
 	if err := domain.ValidateImageAttachmentsForHarness(agent.Harness, refs); err != nil {
@@ -117,7 +117,7 @@ func checkSessionImageRoute(tx *store.Tx, session domain.Session, prompt string,
 	if err != nil {
 		return err
 	}
-	if !snapshot.Configuration.Harness.ImageInputs() || !snapshot.Configuration.ImageInputDeclared || snapshot.Configuration.SidechatPolicy != "" || !slices.Contains(machine.WorkerCapabilities, domain.ImageInputsV1) || !domain.ImagePromptAllowed(snapshot.Configuration.Harness, prompt) {
+	if !snapshot.Configuration.Harness.ImageInputs() || !snapshot.Configuration.ImageInputDeclared || snapshot.Configuration.SidechatPolicy != "" || !domain.ImageInputWorkerSupported(snapshot.Configuration.Harness, machine.WorkerCapabilities) || !domain.ImagePromptAllowed(snapshot.Configuration.Harness, prompt) {
 		return domain.UnsupportedImageInput()
 	}
 	if err := domain.ValidateImageAttachmentsForHarness(snapshot.Configuration.Harness, refs); err != nil {

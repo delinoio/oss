@@ -251,3 +251,36 @@ func TestExecutionConfigurationFreezesOpenCodeImageDeclaration(t *testing.T) {
 		t.Fatal("retained non-image harness declaration accepted")
 	}
 }
+
+func TestOpenCodeImageCapabilityRefinesTheBaseImageCapability(t *testing.T) {
+	base, refined := []WorkerCapability{ImageInputsV1}, []WorkerCapability{ImageInputsV1, OpenCodeImageInputsV1}
+	for name, test := range map[string]struct {
+		harness      Harness
+		capabilities []WorkerCapability
+		supported    bool
+	}{
+		"codex base":               {Codex, base, true},
+		"codex refined":            {Codex, refined, true},
+		"opencode base":            {OpenCode, base, false},
+		"opencode refined":         {OpenCode, refined, true},
+		"opencode refinement only": {OpenCode, []WorkerCapability{OpenCodeImageInputsV1}, false},
+		"opencode none":            {OpenCode, nil, false},
+		"claude refined":           {ClaudeCode, refined, true},
+	} {
+		if ImageInputWorkerSupported(test.harness, test.capabilities) != test.supported {
+			t.Errorf("%s: supported != %v", name, test.supported)
+		}
+	}
+	if !OpenCodeImageInputsPaired(base) || !OpenCodeImageInputsPaired(refined) || !OpenCodeImageInputsPaired(nil) {
+		t.Fatal("a paired capability set was rejected")
+	}
+	if OpenCodeImageInputsPaired([]WorkerCapability{OpenCodeImageInputsV1}) {
+		t.Fatal("the OpenCode image capability without the base capability was paired")
+	}
+	if err := (Machine{Name: "Original Worker", OS: "linux", Architecture: "amd64", WorkerCapabilities: refined}).Validate(); err != nil {
+		t.Fatalf("a machine holding both image capabilities failed validation: %v", err)
+	}
+	if err := (Machine{Name: "Original Worker", OS: "linux", Architecture: "amd64", WorkerCapabilities: []WorkerCapability{OpenCodeImageInputsV1}}).Validate(); err == nil {
+		t.Fatal("a machine holding the OpenCode image capability without the base capability validated")
+	}
+}

@@ -1398,6 +1398,18 @@ The allocation ledger retains the complete enum/message field closure and the Sk
 
 The feature owns `AttachmentService`, its closed image/transfer/upload declarations, System 45, Worker 25 and typed creation/enqueue/queued-edit attachment field 5. Follow the [image input contract](cmds-delidev-image-input-contract.md). The owner permits these declarations and complete activation in the same feature PR. Byte chunks remain bounded at 256 KiB outside generic resource and assignment JSON; old peers retain text-only behavior. No migration is added.
 
+System capability 105 and Worker capability 70 (`OPENCODE_IMAGE_INPUTS_V1`) are an
+independent pair that enables image attachments for OpenCode. They refine capability
+45/25, which every peer holding them must also hold, and never change what 45/25 mean.
+The server freezes the OpenCode image declaration and admits or dispatches OpenCode
+attachments only for a Runner Device that reports 70; a Worker that predates the pair
+keeps receiving text-only OpenCode assignments with no declaration. A Worker attachment
+that reports 70 without 25 is invalid peer state: AttachWorker rejects it as
+`InvalidArgument` before persistence and Machine validation never accepts it. The
+Worker advertises 70 only after the original server echoed it. No protobuf message
+field or migration is added; the generated Go and TypeScript enums are regenerated
+together.
+
 The image input allocation ledger includes every AttachmentService method with its exact request, response and streaming profile. Queued edits preserve original accepted references; explicit typed references must match the complete ordered original selection. Omission retains old-client text edits.
 
 ## The feature batch allocation exception

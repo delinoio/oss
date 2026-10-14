@@ -479,6 +479,10 @@ export function useImageRoute(
   const systemSupported = Boolean(
     status.data?.capabilities.includes(SystemCapability.IMAGE_INPUTS_V1),
   );
+  // OpenCode needs its independent System/Worker pair on top of the base pair.
+  const openCodeSystemSupported = Boolean(
+    status.data?.capabilities.includes(SystemCapability.OPENCODE_IMAGE_INPUTS_V1),
+  );
   const row = machine.data?.resource,
     agentRow = agent.data?.resource;
   const machineSupported =
@@ -491,17 +495,29 @@ export function useImageRoute(
         value === WorkerCapability.IMAGE_INPUTS_V1 ||
         value === "image-inputs-v1",
     );
+  const openCodeMachineSupported =
+    row?.id === machineId &&
+    items(document(row).worker_capabilities).some(
+      (value) =>
+        value === WorkerCapability.OPENCODE_IMAGE_INPUTS_V1 ||
+        value === "opencode-image-inputs-v1",
+    );
+  const openCodePairSupported =
+    openCodeSystemSupported && openCodeMachineSupported;
   const agentDocument = document(agentRow);
   const harnessSupported = originalHarness
     ? originalHarness === ImageHarness.Codex ||
-      (originalHarness === ImageHarness.OpenCode && originalImageDeclared)
+      (originalHarness === ImageHarness.OpenCode &&
+        originalImageDeclared &&
+        openCodePairSupported)
     : agentRow?.id === agentId &&
       agentRow.kind === EntityKind.AGENT &&
       agentRow.revision > 0n &&
       supportsResourceSchema(agentRow) &&
       (text(agentDocument.harness) === ImageHarness.Codex ||
         (text(agentDocument.harness) === ImageHarness.OpenCode &&
-          agentDeclaresImageInput(agentDocument)));
+          agentDeclaresImageInput(agentDocument) &&
+          openCodePairSupported));
   return {
     systemSupported,
     ready: systemSupported && machineSupported && harnessSupported,
