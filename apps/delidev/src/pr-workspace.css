@@ -94,10 +94,20 @@
   font-size: 12px;
   line-height: 1.5;
 }
+/* Detail commit author and committer lines keep the wrapping flex layout. */
 .pr-row-author {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 13px;
+}
+/* Compact list metadata author: one inline unit inside the wrapping meta row. */
+.pr-row-meta .pr-row-author {
+  display: inline-flex;
+  flex-wrap: nowrap;
   gap: 4px;
+  font-size: inherit;
 }
 .pr-row-meta .pr-avatar {
   width: 16px;
