@@ -322,6 +322,11 @@ content-free evidence at `session-deletions/<session>-workspace-removed.json`
 (`version` 2, server, session, machine, `removed`; no manifest, path or device).
 Version-1 evidence written by older Workers is ignored, because it may have been
 published for an absent failed-only workspace; the next genuine removal replaces it.
+This is a deliberate fail-closed trade-off: a pre-upgrade genuine removal and a
+pre-upgrade failed-only cleanup leave identical durable state (version-1 evidence
+and a manifest-less proof), so no discriminator exists. A strict obligation that
+depended only on such evidence stays pending rather than risk removing copies
+without original removal proof.
 A later obligation whose own workspace is absent and has no stored snapshot
 manifest, and whose jobs forbid an absent workspace, adopts that removal only when
 the evidence matches its exact server, session and machine; missing, unreadable or
