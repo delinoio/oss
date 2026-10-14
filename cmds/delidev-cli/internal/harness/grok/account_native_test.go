@@ -348,11 +348,50 @@ type accountScratch struct {
 	processes  string
 	env        []string
 
+	mu        sync.Mutex
+	uncertain []error
+
 	once       sync.Once
 	cleanupErr error
 }
 
+// newAccountScratch builds a scratch tree whose cleanup failure fails the test.
 func newAccountScratch(t *testing.T, executable string, extraEnv []string) *accountScratch {
+	t.Helper()
+	s := buildAccountScratch(t, executable, extraEnv)
+	// Registered before any further setup so every failure still cleans up.
+	t.Cleanup(func() {
+		if err := s.Cleanup(); err != nil {
+			t.Errorf("scratch cleanup: %v", err)
+		}
+	})
+	return s
+}
+
+// noteUncertain records that a native process tree may still be alive. The
+// scratch tree is then retained instead of removed from under it.
+func (s *accountScratch) noteUncertain(err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.uncertain = append(s.uncertain, err)
+}
+
+func (s *accountScratch) uncertainErr() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return errors.Join(s.uncertain...)
+}
+
+// observe flags an ownership-recovery failure from internal/process and passes
+// the error through unchanged.
+func (s *accountScratch) observe(err error) error {
+	if err != nil && domain.SafeError(err).Code == domain.RecoveryRequired {
+		s.noteUncertain(errors.New("native process ownership could not be confirmed"))
+	}
+	return err
+}
+
+func buildAccountScratch(t *testing.T, executable string, extraEnv []string) *accountScratch {
 	t.Helper()
 	// A short root keeps native unix-socket paths below platform limits.
 	root, err := os.MkdirTemp("", "ddgrok")
@@ -369,10 +408,11 @@ func newAccountScratch(t *testing.T, executable string, extraEnv []string) *acco
 		repo:       filepath.Join(root, "repo"),
 		processes:  filepath.Join(root, "proc"),
 	}
-	// Registered before any further setup so every failure still cleans up.
 	t.Cleanup(func() {
-		if err := s.Cleanup(); err != nil {
-			t.Errorf("scratch cleanup: %v", err)
+		// Backstop for a scratch built without newAccountScratch's reporting
+		// cleanup: never leave a tree behind unless ownership is uncertain.
+		if s.uncertainErr() == nil {
+			_ = os.RemoveAll(s.root)
 		}
 	})
 	for _, dir := range []string{"home", "grok", "repo", "config", "cache", "data", "state", "tmp"} {
@@ -444,8 +484,9 @@ func (s *accountScratch) config(args []string, stdout, stderr io.Writer) process
 // proves the owned process tree is gone.
 func (s *accountScratch) run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	config := s.config(args, stdout, stderr)
-	err := process.Run(ctx, config)
+	err := s.observe(process.Run(ctx, config))
 	if reconcile := process.ReconcileOwner(config.Directory, config.OwnerID); reconcile != nil {
+		s.noteUncertain(errors.New("native process ownership reconciliation failed"))
 		err = errors.Join(err, reconcile)
 	}
 	return err
@@ -481,24 +522,38 @@ func (s *accountScratch) Login(ctx context.Context, sink io.Writer, logf func(st
 }
 
 // Cleanup always attempts `grok logout` on a fresh context, then removes the
-// whole scratch tree. It is idempotent and safe after cancellation.
+// whole scratch tree. It is idempotent and safe after cancellation. The tree is
+// removed only when every owned native process is confirmed gone: if ownership
+// reconciliation failed anywhere, the tree is retained (its path is reported,
+// never its content) and the returned error fails the run.
 func (s *accountScratch) Cleanup() error {
 	s.once.Do(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), accountCleanupTimeout)
 		defer cancel()
 		var errs []error
 		if _, err := os.Lstat(s.grokHome); err == nil {
-			// Logout failure matters only if the credential file survives.
-			_ = s.run(ctx, []string{"logout"}, nil, nil)
+			// A plain logout failure matters only if the credential file survives
+			// (a repeated logout may legitimately report nothing to do). An
+			// ownership failure is recorded by run and handled below.
+			logoutErr := s.run(ctx, []string{"logout"}, nil, nil)
 			if _, err := os.Lstat(filepath.Join(s.grokHome, "auth.json")); err == nil {
-				errs = append(errs, errors.New("scratch credential file survived logout"))
+				if logoutErr != nil {
+					errs = append(errs, errors.New("scratch credential file survived logout: "+describeNativeError(logoutErr)))
+				} else {
+					errs = append(errs, errors.New("scratch credential file survived logout"))
+				}
 			}
+		}
+		if uncertain := s.uncertainErr(); uncertain != nil {
+			errs = append(errs, fmt.Errorf("cleanup is uncertain (%w); the scratch tree is retained at %s and must be removed manually after confirming no grok process still uses it", uncertain, s.root))
+			s.cleanupErr = errors.Join(errs...)
+			return
 		}
 		if err := os.RemoveAll(s.root); err != nil {
 			errs = append(errs, err)
 		}
 		if _, err := os.Lstat(s.root); !errors.Is(err, os.ErrNotExist) {
-			errs = append(errs, errors.New("scratch directory was not removed"))
+			errs = append(errs, fmt.Errorf("scratch directory was not removed; it remains at %s", s.root))
 		}
 		s.cleanupErr = errors.Join(errs...)
 	})
@@ -619,21 +674,46 @@ func (f *acpFrames) pop() (acpMessage, bool, error) {
 	return message, true, nil
 }
 
-func startACP(ctx context.Context, s *accountScratch) (*acpClient, func(), error) {
+// startACP launches `grok agent stdio`. The returned closer stops the process
+// and must have its error checked: a non-nil result means native ownership could
+// not be confirmed, and the scratch tree is then retained by Cleanup. The agent's
+// stderr is diagnostic text that can carry account details, so it is discarded
+// on purpose; every failure is reported from the JSON-RPC stream instead.
+func startACP(ctx context.Context, s *accountScratch) (*acpClient, func() error, error) {
 	frames := &acpFrames{notify: make(chan struct{}, 1)}
 	config := s.config([]string{"agent", "stdio"}, frames, nil)
 	handle, err := process.Start(ctx, config)
 	if err != nil {
+		_ = s.observe(err)
 		return nil, nil, errors.New("ACP process could not start: " + describeNativeError(err))
 	}
-	closer := func() {
+	closer := func() error {
+		var errs []error
+		// The input may already be gone because the agent exited; the ownership
+		// checks below decide whether anything is left running.
 		_ = handle.CloseInput()
-		_ = handle.Close()
-		_ = handle.Wait()
-		_ = process.ReconcileOwner(config.Directory, config.OwnerID)
+		if err := s.observe(handle.Close()); err != nil {
+			errs = append(errs, errors.New("ACP process stop could not be confirmed"))
+		}
+		// Wait reports the stopped agent's own exit status; only a failure that
+		// is not a plain exit status says anything about the process tree.
+		if err := handle.Wait(); err != nil {
+			if _, exited := process.CommandExitCode(err); !exited {
+				s.noteUncertain(errors.New("ACP process wait failed"))
+				errs = append(errs, errors.New("ACP process wait failed: "+string(domain.SafeError(err).Code)))
+			}
+		}
+		if err := process.ReconcileOwner(config.Directory, config.OwnerID); err != nil {
+			s.noteUncertain(errors.New("ACP process ownership reconciliation failed"))
+			errs = append(errs, errors.New("ACP process ownership reconciliation failed"))
+		}
+		return errors.Join(errs...)
 	}
 	if err := handle.Resume(); err != nil {
-		closer()
+		_ = s.observe(err)
+		if closeErr := closer(); closeErr != nil {
+			return nil, nil, fmt.Errorf("ACP process could not resume (%s) and cleanup failed: %w", describeNativeError(err), closeErr)
+		}
 		return nil, nil, errors.New("ACP process could not resume: " + describeNativeError(err))
 	}
 	return &acpClient{handle: handle, frames: frames}, closer, nil
@@ -681,7 +761,10 @@ func (c *acpClient) call(ctx context.Context, method string, params any) (json.R
 		}
 		switch {
 		case message.Method != "" && len(message.ID) > 0:
-			_ = c.send(map[string]any{"jsonrpc": "2.0", "id": json.RawMessage(message.ID), "error": map[string]any{"code": -32601, "message": "not supported by the acceptance client"}})
+			refusal := map[string]any{"jsonrpc": "2.0", "id": json.RawMessage(message.ID), "error": map[string]any{"code": -32601, "message": "not supported by the acceptance client"}}
+			if err := c.send(refusal); err != nil {
+				return nil, fmt.Errorf("ACP %s: could not refuse an agent request: %w", method, err)
+			}
 		case message.Method != "":
 			if message.Method == "session/update" {
 				c.updates++
@@ -787,7 +870,11 @@ func TestAccountAcceptance(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer closeACP()
+		defer func() {
+			if err := closeACP(); err != nil {
+				t.Errorf("ACP shutdown: %v", err)
+			}
+		}()
 		initialized, err := client.call(ctx, "initialize", map[string]any{
 			"protocolVersion": 1, "clientCapabilities": map[string]any{},
 			"clientInfo": map[string]any{"name": "delidev-account-acceptance", "version": "0.1.0"},
@@ -877,7 +964,8 @@ logout)
 esac
 `
 
-func fakeAccountScratch(t *testing.T, mode string, extraEnv ...string) (*accountScratch, string) {
+// fakeGrokExecutable writes the fake grok and returns it with its call log.
+func fakeGrokExecutable(t *testing.T) (string, string) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("the fake grok is a POSIX shell script")
@@ -887,9 +975,14 @@ func fakeAccountScratch(t *testing.T, mode string, extraEnv ...string) (*account
 	if err := os.WriteFile(executable, []byte(fakeGrokScript), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	record := filepath.Join(dir, "calls.log")
-	scratch := newAccountScratch(t, executable, append([]string{"FAKE_GROK_LOG=" + record, "FAKE_GROK_LOGIN=" + mode}, extraEnv...))
-	return scratch, record
+	return executable, filepath.Join(dir, "calls.log")
+}
+
+func fakeAccountScratch(t *testing.T, mode string, extraEnv ...string) (*accountScratch, string) {
+	t.Helper()
+	executable, record := fakeGrokExecutable(t)
+	env := append([]string{"FAKE_GROK_LOG=" + record, "FAKE_GROK_LOGIN=" + mode}, extraEnv...)
+	return newAccountScratch(t, executable, env), record
 }
 
 func fakeCalls(t *testing.T, record string) []string {
@@ -1162,5 +1255,29 @@ func TestNativeAccountHarnessTimeBudget(t *testing.T) {
 	}
 	if err := checkTimeBudget(now.Add(10*time.Minute), true, now, 30*time.Minute); err == nil {
 		t.Fatal("a 10m package timeout cannot cover a 30m approval override")
+	}
+}
+
+// TestNativeAccountHarnessUncertainCleanupRetainsScratch proves that an
+// unconfirmed process ownership leaves the scratch tree in place and fails.
+func TestNativeAccountHarnessUncertainCleanupRetainsScratch(t *testing.T) {
+	executable, record := fakeGrokExecutable(t)
+	scratch := buildAccountScratch(t, executable, []string{"FAKE_GROK_LOG=" + record, "FAKE_GROK_LOGIN="})
+	t.Cleanup(func() { _ = os.RemoveAll(scratch.root) })
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	if err := scratch.Login(ctx, &lockedBuffer{}, func(string, ...any) {}); err != nil {
+		t.Fatal(err)
+	}
+	scratch.noteUncertain(errors.New("ACP process ownership reconciliation failed"))
+	err := scratch.Cleanup()
+	if err == nil || !strings.Contains(err.Error(), "retained at "+scratch.root) {
+		t.Fatalf("uncertain cleanup did not fail with the retained path: %v", err)
+	}
+	if _, statErr := os.Lstat(scratch.root); statErr != nil {
+		t.Fatalf("scratch tree was removed despite uncertain ownership: %v", statErr)
+	}
+	if again := scratch.Cleanup(); again == nil {
+		t.Fatal("a repeated cleanup must keep reporting the failure")
 	}
 }

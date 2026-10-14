@@ -510,7 +510,13 @@ through `internal/process`. It then checks, in order:
    content, copies it, links it or prints the hash.
 
 Cleanup always runs `grok logout` and removes the scratch directory, including
-after a canceled or timed-out login. A failed check fails the test with a
+after a canceled or timed-out login, but only when every native process it
+started is confirmed gone. If stopping the ACP agent, a command's ownership
+reconciliation or `grok logout` ownership cannot be confirmed, the scratch tree
+is retained, the run fails and the error names the retained path (never its
+content); remove it manually after confirming no `grok` process still uses it.
+The cleanup logout fails the run only when the scratch credential file survives
+or its ownership is uncertain; step 5 checks the explicit logout strictly. A failed check fails the test with a
 message that names the check and never echoes native output, URLs, codes,
 identity or key material. A failure on the current stable release keeps support
 disabled until resolved.
