@@ -202,9 +202,11 @@ type Service struct {
 	// in isolated tests; grokRandom replaces crypto/rand for deterministic ones.
 	grokOAuthTransport http.RoundTripper
 	grokRandom         io.Reader
-	// grokRefreshFault is a test seam that runs at named points of a server-owned
-	// Grok refresh. Production code leaves it nil.
-	grokRefreshFault func(grokRefreshFaultPoint)
-	grokLoginMu      sync.Mutex
-	grokLogins       map[domain.ID]*grokLoginFlow
+	// grokFaultHook is a test seam that runs at named points of a server-owned
+	// Grok login or refresh. A hook may panic to end the process there, or return
+	// an error that the operation treats as a failed write at that point.
+	// Production code leaves it nil.
+	grokFaultHook func(grokFaultPoint) error
+	grokLoginMu   sync.Mutex
+	grokLogins    map[domain.ID]*grokLoginFlow
 }

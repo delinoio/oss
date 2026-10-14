@@ -337,7 +337,18 @@ func (s *Service) runGrokLogin(parent context.Context, id domain.ID) {
 		return struct{}{}, nil
 	})
 	unlock()
-	if err != nil || !original.NativeStarted {
+	if err == nil {
+		err = s.grokFault(grokFaultAfterLease)
+	}
+	if err != nil {
+		if original.NativeStarted {
+			// The lease transaction ran but its outcome is unknown: the durable
+			// operation decides whether it is fenced for the scanner.
+			s.fenceUnsettledGrokOperation(parent, id, original)
+		}
+		return
+	}
+	if !original.NativeStarted {
 		return
 	}
 	s.logGrok(parent, slog.LevelInfo, "grok_login_started", original, grokStepClaim, "account_id", id)
@@ -376,10 +387,8 @@ func (s *Service) runGrokLogin(parent context.Context, id domain.ID) {
 	bounded, stop := context.WithTimeout(domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice}), 30*time.Second)
 	defer stop()
 	if err := s.finishGrokLogin(bounded, id, original, &outcome); err != nil {
-		if e := s.markServerSubscriptionRecovery(id, original.ID, nil); e != nil {
-			s.logGrok(bounded, slog.LevelWarn, "grok_login_recovery_unconfirmed", original, grokStepFinish, "code", domain.SafeError(e).Code)
-		}
 		s.logGrok(bounded, slog.LevelWarn, "grok_login_finish_failed", original, grokStepFinish, "code", domain.SafeError(err).Code)
+		s.fenceUnsettledGrokOperation(bounded, id, original)
 	}
 	outcome.bundle.Clear()
 }
