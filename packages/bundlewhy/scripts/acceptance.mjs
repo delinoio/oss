@@ -43,10 +43,14 @@ const EXPECTED = {
 };
 
 function run(command, commandArgs, options = {}) {
+  const shell =
+    options.shell ??
+    (process.platform === "win32" &&
+      path.extname(command).toLowerCase() === ".cmd");
   const result = spawnSync(command, commandArgs, {
     cwd: repoRoot,
     encoding: "utf8",
-    shell: false,
+    shell,
     ...options,
   });
   if (result.status !== 0 && !options.allowFailure) {
@@ -57,6 +61,15 @@ function run(command, commandArgs, options = {}) {
     );
   }
   return result;
+}
+
+// Tests provide command paths for platform-specific mock shims. Production
+// runs keep using the host's pnpm and cargo commands.
+function commandPath(name) {
+  const mockBin = process.env.BUNDLEWHY_ACCEPTANCE_MOCK_BIN;
+  return mockBin
+    ? path.join(mockBin, process.platform === "win32" ? `${name}.cmd` : name)
+    : name;
 }
 
 function treeDigest(dir) {
@@ -75,20 +88,22 @@ function treeDigest(dir) {
   return hash.digest("hex");
 }
 
-const binary = path.join(
-  repoRoot,
-  "target/debug",
-  process.platform === "win32" ? "bundlewhy.exe" : "bundlewhy",
-);
+const binary =
+  process.env.BUNDLEWHY_ACCEPTANCE_MOCK_BINARY ??
+  path.join(
+    repoRoot,
+    "target/debug",
+    process.platform === "win32" ? "bundlewhy.exe" : "bundlewhy",
+  );
 let outDir;
 let failed = false;
 let abortError;
 try {
   if (!args.includes("--skip-build")) {
-    run("pnpm", ["--filter", "bundlewhy-web", "build"], {
+    run(commandPath("pnpm"), ["--filter", "bundlewhy-web", "build"], {
       shell: process.platform === "win32",
     });
-    run("cargo", ["build", "-p", "bundlewhy"]);
+    run(commandPath("cargo"), ["build", "-p", "bundlewhy"]);
   }
 
   const targets = option("--project")

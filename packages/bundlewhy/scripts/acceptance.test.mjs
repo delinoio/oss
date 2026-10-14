@@ -11,7 +11,18 @@ const runId = "01234567-89ab-7cde-8f01-23456789abcd";
 
 function executable(file, source) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
+  if (process.platform === "win32") {
+    const script = `${file}.cjs`;
+    fs.writeFileSync(script, source);
+    const shim = `${file}.cmd`;
+    fs.writeFileSync(
+      shim,
+      `@echo off\r\n"${process.execPath}" "${script}" %*\r\n`,
+    );
+    return shim;
+  }
   fs.writeFileSync(file, `#!/usr/bin/env node\n${source}`, { mode: 0o755 });
+  return file;
 }
 
 function runCase(mode) {
@@ -44,7 +55,7 @@ if (process.env.BW_ACCEPTANCE_TEST_MODE === "build-fail") {
 }`,
     );
     executable(path.join(bin, "cargo"), "process.exitCode = 0;");
-    executable(
+    const binary = executable(
       path.join(root, "target/debug/bundlewhy"),
       `const fs = require("node:fs");
 const path = require("node:path");
@@ -85,6 +96,8 @@ if (args.includes("analyze")) {
         env: {
           ...process.env,
           BW_ACCEPTANCE_TEST_MODE: mode,
+          BUNDLEWHY_ACCEPTANCE_MOCK_BIN: bin,
+          BUNDLEWHY_ACCEPTANCE_MOCK_BINARY: binary,
           PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`,
         },
       },
