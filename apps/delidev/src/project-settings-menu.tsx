@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useSidebarActionMenuOwner } from "./session-row-actions";
 import { useQuery } from "@connectrpc/connect-query";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   EntityKind,
   ResourceQuery,
@@ -31,6 +32,7 @@ export function ProjectSettingsMenu({
   active: boolean;
 }) {
   useLocale();
+  const queryClient = useQueryClient();
   const owner = useSidebarActionMenuOwner(),
     visible = owner.open === `project:${projectId}`;
   const opener = useRef<HTMLButtonElement>(null),
@@ -230,7 +232,13 @@ export function ProjectSettingsMenu({
               kind={EntityKind.PROJECT}
               initial={row}
               active={active}
-              saved={() => setOpen(false)}
+              saved={() => {
+                setOpen(false);
+                // Refresh the loaded Home navigation so the sidebar row shows
+                // the persisted name; cursors, archive selection and scroll
+                // are retained by the existing refresh observer.
+                void queryClient.invalidateQueries({ refetchType: "active" });
+              }}
               cancel={() => setOpen(false)}
             />
           ) : (
