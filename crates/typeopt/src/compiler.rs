@@ -628,17 +628,25 @@ impl Project {
                 }
                 // URL semantics: queries and fragments do not name files.
                 let path = percent_decode(text.split(['?', '#']).next().unwrap_or_default());
-                let resolved = with_type_checker_for_file(file, |checker| {
-                    resolved_module_file(checker, specifier)
-                })
-                .or_else(|| {
-                    resolve_module_path(&base.join(&path)).or_else(|| {
-                        base.join(&path)
-                            .canonicalize()
-                            .ok()
-                            .map(|path| path.to_string_lossy().into_owned())
+                let candidate = base.join(&path);
+                let resolved = if candidate.extension().is_some() {
+                    candidate
+                        .canonicalize()
+                        .ok()
+                        .filter(|path| path.is_file())
+                        .map(|path| path.to_string_lossy().into_owned())
+                        .or_else(|| {
+                            with_type_checker_for_file(file, |checker| {
+                                resolved_module_file(checker, specifier)
+                            })
+                        })
+                        .or_else(|| resolve_module_path(&candidate))
+                } else {
+                    with_type_checker_for_file(file, |checker| {
+                        resolved_module_file(checker, specifier)
                     })
-                });
+                    .or_else(|| resolve_module_path(&candidate))
+                };
                 if let Some(resolved) = resolved {
                     if path != text {
                         public.insert(resolved.clone());

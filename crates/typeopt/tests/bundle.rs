@@ -2069,6 +2069,34 @@ fn rejects_relative_imports_hidden_by_dynamic_package_boundary() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("outside the bundle directory"));
 }
 
+/// An explicit runtime extension must keep its runtime file linked even when
+/// TypeScript can resolve a sibling declaration file first.
+#[test]
+fn resolves_explicit_runtime_import_before_declaration_substitution() {
+    let temp = bundle(&[
+        (
+            "index.js",
+            r#"import{make}from"./dep.js";console.log(make(3).verticalSpacing);"#,
+        ),
+        (
+            "dep.js",
+            "export function make(n){return{verticalSpacing:n,horizontalSpacing:n*2}}",
+        ),
+        (
+            "dep.d.ts",
+            "export declare function make(n:number): {verticalSpacing:number};",
+        ),
+    ]);
+    let original = fs::read_to_string(temp.path().join("dist/dep.js")).unwrap();
+    let output = run_typeopt(temp.path(), &["--bundle-exclude", "index.js"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(out(temp.path(), "dep.js"), original);
+}
+
 #[test]
 fn allows_transitive_dynamic_package_declarations() {
     let temp = bundle(&[("index.js", r#"if(false)import("pkg");console.log(1);"#)]);
