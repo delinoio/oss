@@ -322,7 +322,7 @@ impl Project {
             computed: computed_import,
             bare,
             dynamic_packages,
-            dynamic_files,
+            mut dynamic_files,
             worker_scripts,
         } = project.bundle_imported(dir);
         // Chunks known to run as ES modules: imported by another chunk or
@@ -358,6 +358,10 @@ impl Project {
                 );
             }
         }
+        // Every bundle chunk is an explicit program root. A package
+        // declaration can resolve back to one, but its diagnostics must still
+        // protect that root from publishing malformed code.
+        dynamic_files.retain(|file| !chunks.contains(file));
         crate::app::set_bundle_dynamic_packages(dynamic_packages.keys().cloned().collect());
         crate::app::set_bundle_dynamic_files(dynamic_files.iter().cloned().collect());
         let all_public = all_public || computed_import;

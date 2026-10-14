@@ -2167,6 +2167,29 @@ fn ignores_syntax_diagnostics_in_dynamic_only_package_files() {
     assert!(!out(temp.path(), "settings.js").contains("verticalSpacing"));
 }
 
+/// A dynamic package declaration cannot suppress diagnostics for an explicit
+/// bundle root that it references.
+#[test]
+fn checks_dynamic_package_references_to_bundle_roots() {
+    let temp = bundle(&[
+        ("index.js", r#"if(false)import("pkg");console.log(1);"#),
+        ("root.js", "export const = 1;"),
+    ]);
+    let package = temp.path().join("dist/node_modules/pkg");
+    fs::create_dir_all(&package).unwrap();
+    fs::write(
+        package.join("package.json"),
+        r#"{"name":"pkg","type":"module","main":"../../root.js"}"#,
+    )
+    .unwrap();
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(
+        !output.status.success(),
+        "malformed bundle root was published"
+    );
+    assert!(!temp.path().join("out").exists());
+}
+
 #[test]
 fn allows_transitive_dynamic_package_declarations() {
     let temp = bundle(&[("index.js", r#"if(false)import("pkg");console.log(1);"#)]);
