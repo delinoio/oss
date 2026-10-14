@@ -708,3 +708,42 @@ func TestValidServerLoginProgressIsServiceAware(t *testing.T) {
 		})
 	}
 }
+
+// Server shutdown is not a user cancellation. The device code lives only in
+// memory, so after the exchange claim a shutdown between polls leaves the same
+// durable state as a crash: recovery-required, with the claim retained. Before
+// the claim nothing was sent, so shutdown stays canceled.
+func TestGrokDeviceLoginShutdownBetweenPollsKeepsAClaimInRecovery(t *testing.T) {
+	t.Run("after the claim", func(t *testing.T) {
+		g := newGrokDeviceFixture(t)
+		g.idp.DeviceScript = pendingScript(5)
+		entered, release := make(chan struct{}), make(chan struct{})
+		g.clock.blockAt(2, entered, release)
+		run := g.startDevice(t)
+		awaitServerFixture(t, entered)
+		run.cancel()
+		p, a := g.settle(t, run, stateRecovery)
+		st := a.Subscription
+		if g.idp.DevicePolls() != 1 || !st.RecoveryRequired || st.Pending == nil || !st.ServerOperation.CodeConsumed || st.ServerOperation.State != domain.SubscriptionRecovery || p.GrokDiagnostic == nil || p.GrokDiagnostic.Code != string(domain.RecoveryRequired) {
+			t.Fatal("a shutdown between polls after the claim did not keep the login in recovery")
+		}
+		g.requireNoBundle(t, a)
+		// The claimed device code is never resent or released automatically.
+		if grokLoginNeedsRecovery(a) || g.service.recoverGrokLogin(ownerContext(), g.input.AccountID, st.ServerOperation.ID) == nil || g.idp.DevicePolls() != 1 {
+			t.Fatal("recovery released or resent a claimed device login")
+		}
+	})
+	t.Run("before the claim", func(t *testing.T) {
+		g := newGrokDeviceFixture(t)
+		entered, release := make(chan struct{}), make(chan struct{})
+		g.clock.blockAt(1, entered, release)
+		run := g.startDevice(t)
+		awaitServerFixture(t, entered)
+		run.cancel()
+		_, a := g.settle(t, run, stateCanceled)
+		if g.idp.DevicePolls() != 0 || a.Subscription.ServerOperation.CodeConsumed || a.Subscription.RecoveryRequired {
+			t.Fatal("a shutdown before the claim must settle as canceled without a fence")
+		}
+		g.requireNoBundle(t, a)
+	})
+}

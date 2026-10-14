@@ -260,6 +260,11 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 					if retries[a.Subscription.ServerOperation.ID].due(now) {
 						candidates = append(candidates, candidate{account: r.ID, operation: a.Subscription.ServerOperation.ID, cleanup: true, grok: true, logout: true})
 					}
+				} else if grokRefreshNeedsRecovery(a) {
+					eligible[a.Subscription.ServerOperation.ID] = true
+					if retries[a.Subscription.ServerOperation.ID].due(now) {
+						candidates = append(candidates, candidate{account: r.ID, operation: a.Subscription.ServerOperation.ID, cleanup: true, grok: true, refresh: true})
+					}
 				} else if grokLoginNeedsRecovery(a) {
 					eligible[a.Subscription.ServerOperation.ID] = true
 					if retries[a.Subscription.ServerOperation.ID].due(now) {
@@ -308,7 +313,12 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 						s.logger.WarnContext(child, "grok_logout_recovery_pending", "phase", grokLogPhaseCleanup, "operation_id", next.operation, "code", domain.SafeError(err).Code)
 					}
 				} else if next.grok {
-					if err := s.recoverGrokLogin(child, next.account, next.operation); err != nil && child.Err() == nil {
+					if next.refresh {
+						if err := s.recoverGrokRefresh(child, next.account, next.operation); err != nil && child.Err() == nil {
+							result.failed = true
+							s.logger.WarnContext(child, "grok_refresh_recovery_pending", "operation_id", next.operation, "code", domain.SafeError(err).Code)
+						}
+					} else if err := s.recoverGrokLogin(child, next.account, next.operation); err != nil && child.Err() == nil {
 						result.failed = true
 						s.logger.WarnContext(child, "grok_login_recovery_pending", "operation_id", next.operation, "code", domain.SafeError(err).Code)
 					}

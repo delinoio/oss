@@ -32,13 +32,14 @@ func (g *grokLoginFixture) logout(t *testing.T) *pb.RequestSubscriptionResponse 
 
 // crashLogoutAt runs a requested logout and ends it at the named point, as a
 // process crash would.
-func (g *grokLoginFixture) crashLogoutAt(t *testing.T, point grokRefreshFaultPoint) *pb.RequestSubscriptionResponse {
+func (g *grokLoginFixture) crashLogoutAt(t *testing.T, point grokFaultPoint) *pb.RequestSubscriptionResponse {
 	t.Helper()
 	op := g.serverStart(logoutAction)
-	g.service.grokRefreshFault = func(p grokRefreshFaultPoint) {
+	g.service.grokFaultHook = func(p grokFaultPoint) error {
 		if p == point {
 			panic(grokCrash{})
 		}
+		return nil
 	}
 	crashed := false
 	func() {
@@ -52,7 +53,7 @@ func (g *grokLoginFixture) crashLogoutAt(t *testing.T, point grokRefreshFaultPoi
 		}()
 		g.service.runServerSubscription(ownerContext(), g.input.AccountID)
 	}()
-	g.service.grokRefreshFault = nil
+	g.service.grokFaultHook = nil
 	if !crashed {
 		t.Fatalf("the logout never reached %s", point)
 	}
@@ -240,7 +241,7 @@ func TestGrokLogoutTimeoutOrShutdownDuringRevocationIsUncertain(t *testing.T) {
 
 func TestGrokLogoutCrashPointsNeverResendOrDeleteWithoutRecoveryState(t *testing.T) {
 	for _, scenario := range []struct {
-		point    grokRefreshFaultPoint
+		point    grokFaultPoint
 		phase    domain.GrokRevocationPhase
 		resolves bool
 		requests int

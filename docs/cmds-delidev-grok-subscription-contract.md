@@ -4,7 +4,7 @@
 
 This contract owns the Grok Build subscription lifecycle in `cmds/delidev-cli`,
 its Connect interface and the desktop AI Subscription flow. Implementation is
-partial; only System 39 (server-owned login) is advertised. Implemented: the protocol identifiers below
+partial; System 39 (server-owned login) is advertised only behind the explicit login switch. Implemented: the protocol identifiers below
 (declared only), the bound credential bundle library, the protected-vault
 generations, the protected Take/Finish lease handlers on the server, the
 Worker-side credential custody described under Storage, the fixed xAI OAuth
@@ -19,12 +19,17 @@ described under [Server-owned refresh](#server-owned-refresh)) and the
 server-owned logout (provider revocation under the account lease, protected
 cleanup and the Worker-lease logout retry, described under
 [Server-owned logout](#server-owned-logout)) together with the
-Worker-side confinement of a native refresh. System 39 is advertised because
-both login methods are implemented (decision D1: one capability for browser and
-device login together). The advertisement claims no real-account acceptance: the
-opt-in real-account run was not performed. Not activated: Worker-side watch
-dispatch, the native process execution that produces a native refresh, and Grok
-execution (System 40, Worker 21).
+Worker-side confinement of a native refresh. System 39 covers both login
+methods (decision D1: one capability for browser and device login together) and
+is advertised only when the server enables Grok subscription login
+(`server.Config.GrokSubscriptionLogin`, default off). The implementation is
+complete without the switch, but no client can start a Grok login yet, and a
+client that sees the capability expects to reach the flow, so the switch stays
+off until a product entry point (the desktop AI Subscription flow) can start
+both methods; no entry point sets it yet. The advertisement claims no
+real-account acceptance: the opt-in real-account run was not performed. Not
+activated: Worker-side watch dispatch, the native process execution that
+produces a native refresh, and Grok execution (System 40, Worker 21).
 The subscription profile declares `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) as its minimum SemVer baseline. `domain.GrokSubscriptionVersionAllowed` admits a valid SemVer at or above it (prereleases of the baseline are below it) and gates protected Take admission of a Grok lease; no capability, discovery or execution path references it. Newer releases are validated natively, not rejected by number. The API and history baseline stays `domain.GrokProtocolVersion` (`1.0.41`); Grok Build 1.0.52 inspection is accepted when its optional `experiments` inventory is an empty array (see `cmds-delidev-harness-contract.md`), which does not change these baselines. Reservation support is separate
 from implemented support and actual account/platform acceptance.
 
@@ -43,7 +48,8 @@ private runtime. Separate accounts can run independently.
 ## Interfaces and Contracts
 
 These allocations are declared in the protos and generated bindings. GetStatus
-advertises System 39 (browser and device login together); it never lists System
+advertises System 39 (browser and device login together) only when
+`server.Config.GrokSubscriptionLogin` is set; it never lists System
 40, and AttachWorker never lists Worker 21, the Worker does not report 21 and
 the server rejects it as an unknown capability. GetSubscriptionProgress
 populates `grok_diagnostic` only for a failed or uncertain server-owned Grok
@@ -77,6 +83,18 @@ Remote desktop callbacks retain the same original address and use a trusted
 native receiver plus authenticated Connect forwarding. Device authorization
 honors RFC 8628 pending, slow-down, denial and expiry; see
 [Server-owned device login](#server-owned-device-login).
+
+### Capability advertisement table
+
+Each capability has one switch and one default. A switch is set only by a product
+entry point that can actually reach the feature; no entry point sets any of them
+yet. Tests pin every row in `grok_reservations_test.go`.
+
+| Capability                                                                 | Switch                                | Default                                               | Advertised when   |
+| -------------------------------------------------------------------------- | ------------------------------------- | ----------------------------------------------------- | ----------------- |
+| System 39 `GROK_SUBSCRIPTION_LOGIN_V1` (browser and device login together) | `server.Config.GrokSubscriptionLogin` | off                                                   | the switch is set |
+| System 40 `GROK_SUBSCRIPTION_EXECUTION_V1`                                 | none in this contract revision        | never advertised                                      | never             |
+| Worker 21                                                                  | none in this contract revision        | never advertised, rejected as unknown by AttachWorker | never             |
 
 ### Server-owned browser login
 
@@ -130,7 +148,8 @@ conversations:write workspaces:read workspaces:write`, `referrer=grok-build`.
   token endpoint as a public client (`grant_type=authorization_code`,
   `client_id`, `redirect_uri`, `code`, `code_verifier`; no client secret, no
   `Authorization` header, no redirect following, no retry). A definitive provider
-  rejection (HTTP 400 or 401 with an OAuth `error`) settles the login as failed.
+  rejection (HTTP 400 or 401 whose entire body is one OAuth `error` object; see the
+  [response table](#token-endpoint-response-table)) settles the login as failed.
   A transport error, cancellation (`CancelSubscription`, shutdown or expiry during
   the request), timeout, unreadable or oversized body, unexpected status or a
   malformed success body is uncertain: the operation ends in
@@ -203,8 +222,11 @@ id with the other method is a conflict.
   a `device_code` (printable ASCII, at most 2048 bytes, kept as owned bytes), a
   `user_code` matching `[A-Z0-9-]{4,32}` (for example `XXXX-XXXX`), a
   `verification_uri_complete` and/or `verification_uri` (https, host exactly
-  `accounts.x.ai`, no credentials or fragment, at most a `user_code` query equal
-  to the user code), a positive `expires_in` (at most 24 hours) and an optional
+  `accounts.x.ai`, an absolute path, no credentials or fragment; a query may carry
+  the provider's own routing or tracking parameters, each key a short token used
+  once and each value short printable text, and the complete URI must carry a
+  `user_code` equal to the user code, which is preserved with the safe
+  parameters), a positive `expires_in` (at most 24 hours) and an optional
   `interval` of 1 to 60 seconds (default 5). The complete URL is preferred. Any
   other response ends the login as failed (`Unavailable`) before anything is
   claimed. The real provider's scopes, `interval`, `expires_in` and error bodies
@@ -247,7 +269,10 @@ id with the other method is a conflict.
 - **Outcome.** Cancel before any poll (including during the authorization
   request or the first wait) and cancel between polls settle as canceled, the
   latter keeping the recorded claim; a cancel during an in-flight poll is
-  uncertain and ends in recovery. Denial, expiry and rejection settle as failed
+  uncertain and ends in recovery. A server shutdown is not a cancel: after the
+  claim, a shutdown between polls ends in recovery exactly like a crash (the device
+  code lives only in memory and cannot be resumed), while a shutdown before the
+  claim settles as canceled. Denial, expiry and rejection settle as failed
   (with `grok_diagnostic` for failures), expired (no diagnostic) and never leave a
   bundle, generation, connection or vault reference.
 - **Bundle.** On tokens the same server function as the browser flow
@@ -301,7 +326,7 @@ compaction are excluded.
 
 ### Project requirements
 
-- DeliDev Grok Build subscription support follows `cmds-delidev-grok-subscription-contract.md`. System 39 (server-owned browser and device login) is advertised; System 40 and Worker 21 are declared but unadvertised until the owning feature activates them; the server-owned browser login, device login and refresh and progress field 10 (failed login or refresh only) are implemented. Declarations grant no native execution or migration. Preserve existing capability ownership, server-owned OAuth/protected credentials, original account leases and same-account/Worker history; verify the subscription profile at or above `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) by native validation before activation.
+- DeliDev Grok Build subscription support follows `cmds-delidev-grok-subscription-contract.md`. System 39 (server-owned browser and device login) is advertised only behind `server.Config.GrokSubscriptionLogin`; System 40 and Worker 21 are declared but unadvertised until the owning feature activates them; the server-owned browser login, device login and refresh and progress field 10 (failed login or refresh only) are implemented. Declarations grant no native execution or migration. Preserve existing capability ownership, server-owned OAuth/protected credentials, original account leases and same-account/Worker history; verify the subscription profile at or above `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) by native validation before activation.
 
 ## Storage
 
@@ -584,7 +609,8 @@ settlement and recovery).
   behavior of the real provider were not observed: the implementation and its
   tests model RFC 6749, and the opt-in capture stays unperformed.
 - **Outcomes.** Success publishes the next generation (below). A definitive
-  provider refusal (HTTP 400 or 401 with an OAuth `error`, for example
+  provider refusal (HTTP 400 or 401 whose entire body is one OAuth `error`
+  object, for example
   `invalid_grant`) means the token did not rotate: the operation settles as
   `FAILED` with `grok_diagnostic` code `unauthenticated`, the stored bundle is
   kept, and the account health becomes `expired` until the owner signs in again.
@@ -607,13 +633,17 @@ settlement and recovery).
   the committed refresh: the superseded generation is unreferenced, never
   granted and removed by the next cleanup (it is logged as
   `grok_refresh_cleanup_pending`). A staging or commit failure retires the staged
-  generation only after proving the account does not reference it. A claimed
+  generation only after proving the account does not reference it. A settlement
+  that fails before it commits fences the still-pending operation with the
+  refresh `grok_diagnostic` (`recovery_required`), and a lost commit
+  acknowledgement after the commit leaves the published refresh as it is. A claimed
   refresh is not discarded by a late cancellation or actor change, because its
   result is the only usable credential.
 - **Restart.** A restart marks an active refresh recovery-required. One that
   never reached the claim sent nothing and settles automatically as a failed
-  refresh (`recoverGrokRefresh`, health restored to ready); one with a claim
-  stays in recovery and is never resolved automatically. Backup restore is
+  refresh (`recoverGrokRefresh`, health restored to ready), dispatched by the same
+  subscription scanner as `recoverGrokLogin`; one with a claim stays in recovery
+  and is never resolved automatically. Backup restore is
   blocked while a refresh is pending or fenced (the existing restore preflight
   covers the pending operation and the recovery fence), so a restored image can
   never resend a claimed token.
@@ -621,7 +651,7 @@ settlement and recovery).
   correlation id and stable codes; no token, URL, path or identity value is
   logged, and the fixture asserts it.
 
-Fault-injection seams (`grokRefreshFault`, test-only) cover the points after the
+Fault-injection seams (`grokFaultHook`, test-only) cover the points after the
 claim, after the response, after staging and after the commit.
 
 ### Server-owned logout
@@ -722,9 +752,75 @@ revoked` and `revoked_generation` equal to the current generation) before any
   correlation id and stable codes; no token, URL, path, email or identity value
   is logged, and the fixtures assert it.
 
-Fault-injection seams (`grokRefreshFault`, test-only) cover the points after the
+Fault-injection seams (`grokFaultHook`, test-only) cover the points after the
 revocation claim, after the revocation response, after the revocation is
 recorded and after the vault removal.
+
+### Server operation lifecycle table
+
+Every server-owned Grok operation passes through the same stages, and each cell
+below has one durable outcome. "Fenced" means the account is
+`RECOVERY_REQUIRED` (`recovery_required` set, health failed, operation retained);
+the diagnostic always carries the phase of the operation (`LOGIN` or `REFRESH`)
+and the operation as correlation id. The scanner settles only a fenced operation
+whose exchange was never claimed; a claim is never released automatically.
+
+| Stage reached                       | Event                                                                         | Outcome                                                                                                                                           | Recovery kind        | Diagnostic                            |
+| ----------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- | ------------------------------------- |
+| queued, not leased                  | restart                                                                       | fenced by the startup fence, then settled `FAILED` by the scanner (`recoverGrokLogin` or `recoverGrokRefresh`); a refresh restores health `ready` | automatic            | `unavailable`                         |
+| queued, not leased                  | cancel (login only)                                                           | `CANCELED`, pending cleared                                                                                                                       | none                 | none                                  |
+| leased, no claim                    | shutdown or cancel                                                            | `CANCELED`                                                                                                                                        | none                 | none                                  |
+| leased, no claim                    | window expiry                                                                 | `EXPIRED`                                                                                                                                         | none                 | none                                  |
+| leased, no claim                    | restart                                                                       | fenced, then settled `FAILED` by the scanner                                                                                                      | automatic            | `unavailable`                         |
+| leased, no claim                    | failure before the claim (vault, discovery, listener)                         | `FAILED`, credential untouched                                                                                                                    | none                 | the failure code                      |
+| claimed device login, between polls | server shutdown                                                               | fenced, the claim is retained                                                                                                                     | manual, never resent | `recovery_required`                   |
+| claimed device login, between polls | user cancel                                                                   | `CANCELED`, the claim stays recorded and no further poll is sent                                                                                  | none                 | none                                  |
+| claimed, request not sent           | restart or crash                                                              | fenced, the claim is retained                                                                                                                     | manual, never resent | `recovery_required`                   |
+| claimed, request sent               | transport failure, timeout, shutdown, cancel, unparsed or unexpected response | fenced                                                                                                                                            | manual, never resent | `recovery_required`                   |
+| claimed, request sent               | definitive refusal (see the [response table](#token-endpoint-response-table)) | `FAILED` (refresh also sets health `expired`)                                                                                                     | none                 | `unauthenticated` or the refusal code |
+| claimed refresh, response received  | identity, ID token, userinfo or mapping not verified                          | fenced                                                                                                                                            | manual               | `recovery_required`                   |
+| claimed login, response received    | ID token, userinfo or mapping not verified                                    | `FAILED`, nothing stored (there is no credential to protect)                                                                                      | none                 | the failure code                      |
+| claimed, response verified          | settlement committed                                                          | `SUCCEEDED`, next generation published                                                                                                            | none                 | none                                  |
+| claimed, response verified          | settlement write failed before the commit                                     | fenced, staged generation retired                                                                                                                 | manual               | `recovery_required`                   |
+| any stage                           | settlement commit acknowledgement lost after the commit                       | the committed outcome stands, nothing is rewritten                                                                                                | none                 | as committed                          |
+| any stage                           | cancel after a claim                                                          | ignored: a claimed operation never settles as canceled                                                                                            | manual               | `recovery_required`                   |
+
+### Commit acknowledgement ambiguity
+
+A transaction can commit and still report an error (a lost acknowledgement). Each
+durable transaction of the Grok flows therefore has one reconcile rule, and none
+of them marks a committed transaction as failed or fences it again. The finish
+paths of login and refresh reconcile through `fenceUnsettledGrokOperation`: it
+re-reads the durable operation and fences it only while it is still the account's
+pending native-started operation.
+
+| Transaction                                                  | Ambiguous error                                                   | Reconcile rule                                                                                                                                                                                                                                                                     |
+| ------------------------------------------------------------ | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| lease (`grok.server.refresh-lease`, `grok.server.claim`)     | the lease may be durable with no owner running                    | the runner re-reads the operation: a durable lease (native-started, pending) is fenced with the phase diagnostic so the scanner settles it as `FAILED`; an operation that is still queued is left for the next scan (`TestGrokLeaseWithALostAcknowledgementIsFencedForTheScanner`) |
+| exchange claim (`claimGrokExchange`, `claimGrokRefresh`)     | the claim flag may be durable although the request was never sent | the request is not sent after any claim error, so the operation settles `FAILED` with the stored credential untouched and the flag is inert on a settled operation; a claim whose commit succeeded is the only way a request is sent                                               |
+| stage (vault write of the next generation)                   | the generation may exist                                          | an unpublished generation is retired only after proving the account does not reference it                                                                                                                                                                                          |
+| publish (`grok.server.finish`, `grok.server.refresh-finish`) | the settlement may be committed                                   | re-read: a settled operation is the outcome; a still-pending one is fenced with the phase diagnostic; superseded generations are removed by the next cleanup                                                                                                                       |
+
+### Token endpoint response table
+
+The authorization-code exchange and the refresh grant share one response parser
+(`parseGrokTokenBody`). A body is parsed only when it is exactly one JSON object:
+another JSON value, a stray comma or any other non-whitespace byte after the first
+object makes the response unparsed, whatever its status. Both grants are claimed
+before the request, so an unparsed response is never a published success and never
+a definitive rejection that would release the claim. The table is pinned by
+`TestGrokTokenResponseTable`, which runs every row against both grants.
+
+| Status                                                     | Body                                                          | Reason                     | Settlement after the claim         |
+| ---------------------------------------------------------- | ------------------------------------------------------------- | -------------------------- | ---------------------------------- |
+| 200                                                        | one valid token object (trailing whitespace allowed)          | success                    | publish                            |
+| 200                                                        | token object followed by another JSON value or any other byte | `GrokReasonTokenResponse`  | `RECOVERY_REQUIRED`                |
+| 200                                                        | missing or invalid member, not JSON                           | `GrokReasonTokenResponse`  | `RECOVERY_REQUIRED`                |
+| 400, 401                                                   | exactly one object with a non-empty `error`                   | `GrokReasonTokenRejected`  | `FAILED`, the token did not rotate |
+| 400, 401                                                   | an `error` object followed by any other byte or JSON value    | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
+| 400, 401                                                   | no `error` member or not JSON                                 | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
+| other 4xx, 5xx, redirect                                   | any body                                                      | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
+| transport error, cancellation, truncated or oversized body | none                                                          | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
 
 ### Native refresh confinement
 

@@ -50,6 +50,12 @@ type Config struct {
 	// fixtures from contacting the official catalog endpoints. Production
 	// startup leaves this false so maintenance remains enabled.
 	DisableBackgroundMaintenanceForTesting bool
+	// GrokSubscriptionLogin is the single switch that advertises System
+	// capability 39 (server-owned Grok browser and device login). The
+	// implementation is complete without it; it stays false until a product
+	// entry point can start a Grok login, because a client that sees the
+	// capability expects to reach the flow. No product entry point sets it yet.
+	GrokSubscriptionLogin bool
 
 	accountSecrets               accountSecrets
 	disableCatalogMaintenance    bool
@@ -202,11 +208,15 @@ type Service struct {
 	// in isolated tests; grokRandom replaces crypto/rand for deterministic ones.
 	grokOAuthTransport http.RoundTripper
 	grokRandom         io.Reader
+	// grokLogin mirrors Config.GrokSubscriptionLogin.
+	grokLogin bool
 	// grokClock replaces the device login poll clock in tests.
 	grokClock grokClock
-	// grokRefreshFault is a test seam that runs at named points of a server-owned
-	// Grok refresh. Production code leaves it nil.
-	grokRefreshFault func(grokRefreshFaultPoint)
-	grokLoginMu      sync.Mutex
-	grokLogins       map[domain.ID]*grokLoginFlow
+	// grokFaultHook is a test seam that runs at named points of a server-owned
+	// Grok login or refresh. A hook may panic to end the process there, or return
+	// an error that the operation treats as a failed write at that point.
+	// Production code leaves it nil.
+	grokFaultHook func(grokFaultPoint) error
+	grokLoginMu   sync.Mutex
+	grokLogins    map[domain.ID]*grokLoginFlow
 }
