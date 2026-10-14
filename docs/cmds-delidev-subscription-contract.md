@@ -199,6 +199,9 @@ and grant no execution. Its server-owned browser login (a Go OAuth client on the
 shared `ServerSubscriptionOperation` model, selected when a Grok account requests
 login without a machine) and its service-aware callback forwarding are owned by
 [the Grok contract](cmds-delidev-grok-subscription-contract.md#server-owned-browser-login);
+its server-owned RFC 8628 device login (the same model with `device_code=true`,
+a durable claim before the first poll and recovery instead of resend) is owned by
+[the Grok contract](cmds-delidev-grok-subscription-contract.md#server-owned-device-login);
 its server-owned refresh (the same model with action refresh, a durable
 `refresh_claimed` exchange claim and recovery instead of resend) is owned by
 [the Grok contract](cmds-delidev-grok-subscription-contract.md#server-owned-refresh);
@@ -213,7 +216,7 @@ not performed.
 
 ## Failed subscription cleanup reservations
 
-System `FAILED_SUBSCRIPTION_CLEANUP_V1 = 41` and all batch/status/result declarations were reserved on main by the originating change before activation. System 38 belongs to Claude and 39/40 to Grok. The reservation itself granted no cleanup, login or deletion authority.
+System `FAILED_SUBSCRIPTION_CLEANUP_V1 = 41` and all batch/status/result declarations were reserved on main by the originating change before activation. System 38 belongs to Claude and 39/40 to Grok (39 is advertised for the server-owned Grok login). The reservation itself granted no cleanup, login or deletion authority.
 
 One explicit owner/paired-client `CleanupFailedSubscriptions(request_id)` admits a server-owned durable job and freezes every candidate account ID, revision, original initial ChatGPT server LOGIN and deletion request UUID in account child jobs. Receipt replay binds the original actor and server and returns the same current job. Only one batch can be pending per server. Admission scans the complete bounded server inventory; frontend account pages never select work. Failed, canceled, expired, unsupported and interrupted initial logins qualify, including credential-cleanup-confirmed failures. The same explicit batch also selects disconnected subscription Accounts for every supported service, including metadata-only accounts and completed logout accounts. Version-2 private child jobs distinguish original failed LOGIN cleanup from disconnected configuration deletion; version-1 children retain their original LOGIN-only meaning. Disconnected targets have no invented operation ID and must retain no active login, native process, generation, identity commitment, active Worker ownership, lease, recovery, removal or active observation. A completed Worker logout may retain its historical owner-machine routing hint; it grants no active authority without a generation, lease, pending action or recovery, and does not bypass protected-reference checks. Connected accounts, restored generations and independent Worker/native/observation ownership are excluded.
 

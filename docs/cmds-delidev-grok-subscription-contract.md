@@ -4,21 +4,24 @@
 
 This contract owns the Grok Build subscription lifecycle in `cmds/delidev-cli`,
 its Connect interface and the desktop AI Subscription flow. Implementation is
-partial and nothing is advertised. Implemented: the protocol identifiers below
+partial; only System 39 (server-owned login) is advertised. Implemented: the protocol identifiers below
 (declared only), the bound credential bundle library, the protected-vault
 generations, the protected Take/Finish lease handlers on the server, the
 Worker-side credential custody described under Storage, the fixed xAI OAuth
 profile, the server-owned Go browser login (loopback listener, PKCE, token
 exchange, ID-token validation, bundle mapping and durable exchange claim), the
 service-aware callback forwarding described under
-[Server-owned browser login](#server-owned-browser-login) and the server-owned
+[Server-owned browser login](#server-owned-browser-login), the server-owned
+device-code login described under
+[Server-owned device login](#server-owned-device-login) and the server-owned
 refresh (the `refresh_token` grant under the account lease with a durable claim,
 described under [Server-owned refresh](#server-owned-refresh)) together with the
-Worker-side confinement of a native refresh. Not activated: the
-System 39 advertisement (it waits for the complete browser and device login and
-for the opt-in real-account run, which this change did not perform), device-code
-login, logout, Worker-side watch dispatch, the native process execution that
-produces a native refresh, and Grok execution.
+Worker-side confinement of a native refresh. System 39 is advertised because
+both login methods are implemented (decision D1: one capability for browser and
+device login together). The advertisement claims no real-account acceptance: the
+opt-in real-account run was not performed. Not activated: logout, Worker-side
+watch dispatch, the native process execution that produces a native refresh, and
+Grok execution (System 40, Worker 21).
 The subscription profile declares `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) as its minimum SemVer baseline. `domain.GrokSubscriptionVersionAllowed` admits a valid SemVer at or above it (prereleases of the baseline are below it) and gates protected Take admission of a Grok lease; no capability, discovery or execution path references it. Newer releases are validated natively, not rejected by number. The API and history baseline stays `domain.GrokProtocolVersion` (`1.0.41`); Grok Build 1.0.52 inspection is accepted when its optional `experiments` inventory is an empty array (see `cmds-delidev-harness-contract.md`), which does not change these baselines. Reservation support is separate
 from implemented support and actual account/platform acceptance.
 
@@ -36,15 +39,17 @@ private runtime. Separate accounts can run independently.
 
 ## Interfaces and Contracts
 
-These allocations are declared in the protos and generated bindings but are
-unadvertised: GetStatus and AttachWorker never list System 39/40 or Worker 21,
-the Worker does not report 21 and the server rejects it as an unknown
-capability. GetSubscriptionProgress populates `grok_diagnostic` only for a failed
-or uncertain server-owned Grok browser login (phase `LOGIN`; see
-[Server-owned browser login](#server-owned-browser-login)) or refresh (phase
+These allocations are declared in the protos and generated bindings. GetStatus
+advertises System 39 (browser and device login together); it never lists System
+40, and AttachWorker never lists Worker 21, the Worker does not report 21 and
+the server rejects it as an unknown capability. GetSubscriptionProgress
+populates `grok_diagnostic` only for a failed or uncertain server-owned Grok
+browser or device login (phase `LOGIN`; see
+[Server-owned browser login](#server-owned-browser-login) and
+[Server-owned device login](#server-owned-device-login)) or refresh (phase
 `REFRESH`; see [Server-owned refresh](#server-owned-refresh)) and never for a
 Codex or Claude operation. The owning feature change advertises and activates
-the capabilities:
+the remaining capabilities:
 
 - System `GROK_SUBSCRIPTION_LOGIN_V1 = 39`.
 - System `GROK_SUBSCRIPTION_EXECUTION_V1 = 40`.
@@ -56,8 +61,8 @@ the capabilities:
   PROFILE 3, RUNTIME 4, LOGIN 5, REFRESH 6, LOGOUT 7, MODELS 8, EXECUTION 9,
   HISTORY 10 and CLEANUP 11.
 
-These ledger reservations grant no authentication, execution, active schema or
-capability advertisement; the unadvertised storage and lease layer under Storage
+These ledger reservations grant no execution or active schema; advertising 39
+claims only the server-owned login. The storage and lease layer under Storage
 does not depend on them. Existing System 30/35/36/37 and Worker 19 ownership
 remains unchanged. The planned login reuses Request/Progress/Cancel/Callback
 and protected Take/Finish Subscription RPCs (Take/Finish are implemented for Grok accounts). The selected account service and
@@ -67,8 +72,8 @@ The fixed official xAI OAuth profile validates PKCE, state, nonce and tokens.
 Browser callbacks bind the original IPv4 loopback address and ephemeral port.
 Remote desktop callbacks retain the same original address and use a trusted
 native receiver plus authenticated Connect forwarding. Device authorization
-honors RFC 8628 pending, slow-down, denial and expiry (device login is separate
-work and is refused today with `Unsupported`).
+honors RFC 8628 pending, slow-down, denial and expiry; see
+[Server-owned device login](#server-owned-device-login).
 
 ### Server-owned browser login
 
@@ -76,8 +81,9 @@ work and is refused today with `Unsupported`).
 and `device_code=false` creates the same `ServerSubscriptionOperation` as the
 Codex server login (15-minute expiry, original actor, epoch and finish
 generation). The login action is described here, and refresh under
-[Server-owned refresh](#server-owned-refresh); logout and
-`device_code=true` are refused with `Unsupported`, and the Codex lifecycle still
+[Server-owned refresh](#server-owned-refresh); logout is refused with
+`Unsupported`, `device_code=true` selects the
+[device login](#server-owned-device-login) instead, and the Codex lifecycle still
 refuses every Grok account (`subscriptionAccount`); the service-neutral server
 gate is `serverSubscriptionAccount`. The Go flow lives in
 `internal/subscription/grok_oauth.go` (profile, discovery, PKCE, ID-token
@@ -173,6 +179,80 @@ conversations:write workspaces:read workspaces:write`, `referrer=grok-build`.
   is settled automatically as a failed login (`recoverGrokLogin`), and one after
   the claim stays in recovery. Account removal and logout are separate work.
 
+### Server-owned device login
+
+`RequestSubscription` for a Grok subscription account with `machine_id` omitted,
+action `LOGIN` and `device_code=true` runs the RFC 8628 device authorization
+grant in Go (`internal/subscription/grok_device.go` for the client,
+`internal/server/grok_device.go` for the driver). It shares the operation model,
+15-minute window, actor/epoch fences, finish generation, identity commitment
+and settlement of the browser login. The method is the explicit flag: a device
+request never opens a loopback listener or an authorization URL, a browser
+request never contacts the device endpoint, and neither falls back to the
+other. Replaying the same mutation id returns the original operation; the same
+id with the other method is a conflict.
+
+- **Authorization.** One `POST` of `client_id` and the browser flow's scope
+  string (no client secret, no `Authorization` header, no redirect following, no
+  retry) to the discovered `device_authorization_endpoint` (issuer origin only),
+  else the fixed `https://auth.x.ai/oauth2/device/code`. The response must carry
+  a `device_code` (printable ASCII, at most 2048 bytes, kept as owned bytes), a
+  `user_code` matching `[A-Z0-9-]{4,32}` (for example `XXXX-XXXX`), a
+  `verification_uri_complete` and/or `verification_uri` (https, host exactly
+  `accounts.x.ai`, no credentials or fragment, at most a `user_code` query equal
+  to the user code), a positive `expires_in` (at most 24 hours) and an optional
+  `interval` of 1 to 60 seconds (default 5). The complete URL is preferred. Any
+  other response ends the login as failed (`Unavailable`) before anything is
+  claimed. The real provider's scopes, `interval`, `expires_in` and error bodies
+  were never captured: these values are RFC 8628 defaults and the browser
+  profile's scopes, and are an **unverified assumption**.
+- **Presentation.** The verification URL and user code are returned only through
+  the transient `GetSubscriptionProgress` `url` and `user_code` fields while the
+  operation is waiting. `validServerLoginProgress` is service-aware: for Grok it
+  accepts only an https `accounts.x.ai` URL without credentials or fragment plus
+  a user code of the existing `[A-Z0-9-]{4,32}` shape. The URL, user code and
+  device code never reach logs, documents, events or `grok_diagnostic`; the
+  account document records only the closed login method (`LoginMethod` device
+  code), the exchange claim and the outcome. Settled operations return neither
+  field.
+- **Polling.** The loop waits one interval before the first poll and between
+  polls, so requests never come faster than the effective interval. `POST
+  /oauth2/token` (discovered endpoint) carries `grant_type`
+  `urn:ietf:params:oauth:grant-type:device_code`, `client_id` and `device_code`.
+  `authorization_pending` continues; `slow_down` adds 5 seconds to the interval
+  for this and every later poll; `access_denied` ends the login as failed
+  (`PermissionDenied`, the same code as a denied browser login);
+  `expired_token` and the local deadline end it as expired. The local deadline is
+  the minimum of the provider's `expires_in` and the remaining operation window
+  (15 minutes), measured on an injectable clock; the loop waits out a remainder
+  shorter than the interval and then expires without another poll. Any other
+  OAuth error (HTTP 400 or 401) is a definitive rejection (failed,
+  `PermissionDenied`).
+- **Claim rule (decision).** The exchange claim (`CodeConsumed`,
+  `CodeSubmissionID`, `LoginMethod` device code) is persisted once, immediately
+  before the first token poll is sent, because every poll can redeem the device
+  code. A definitive pending, slow-down, denied, expired or rejected answer is
+  not uncertain. From the claim on, a poll whose outcome is unknown (transport
+  error, cancellation or shutdown during the request, timeout, unreadable or
+  oversized body, unexpected or rate-limit status, malformed success) ends in
+  `RECOVERY_REQUIRED` (account fenced, operation retained, `grok_diagnostic` code
+  `recovery_required`) and the device code is never sent again; no poll is
+  retried. The device code lives only in memory, so a restart cannot resume
+  polling: an interrupted login whose exchange was claimed stays in recovery and
+  one that was never claimed settles as a failed login (`recoverGrokLogin`).
+- **Outcome.** Cancel before any poll (including during the authorization
+  request or the first wait) and cancel between polls settle as canceled, the
+  latter keeping the recorded claim; a cancel during an in-flight poll is
+  uncertain and ends in recovery. Denial, expiry and rejection settle as failed
+  (with `grok_diagnostic` for failures), expired (no diagnostic) and never leave a
+  bundle, generation, connection or vault reference.
+- **Bundle.** On tokens the same server function as the browser flow
+  (`grokBundleOutcome`) verifies the ID token (signature, issuer, audience, time
+  and subject; a device authorization request carries no nonce, so there is none
+  to compare), reads userinfo and maps the bundle with `BuildGrokBundle`, so both
+  methods yield identical bundles for the same token response. Sealing,
+  duplicate-identity handling and publication are unchanged.
+
 The trusted native receiver (`apps/delidev/src-tauri/src/oauth.rs`) exposes
 `grok-subscription-open` and `grok-subscription-reopen` for the server-returned
 browser URL. It validates the fixed `https://auth.x.ai/oauth2/authorize` shape
@@ -217,7 +297,7 @@ compaction are excluded.
 
 ### Project requirements
 
-- DeliDev Grok Build subscription support follows `cmds-delidev-grok-subscription-contract.md`. System 39/40 and Worker 21 are declared but unadvertised until the owning feature activates them; the server-owned browser login and refresh and progress field 10 (failed login or refresh only) are implemented. Declarations grant no native execution or migration. Preserve existing capability ownership, server-owned OAuth/protected credentials, original account leases and same-account/Worker history; verify the subscription profile at or above `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) by native validation before activation.
+- DeliDev Grok Build subscription support follows `cmds-delidev-grok-subscription-contract.md`. System 39 (server-owned browser and device login) is advertised; System 40 and Worker 21 are declared but unadvertised until the owning feature activates them; the server-owned browser login, device login and refresh and progress field 10 (failed login or refresh only) are implemented. Declarations grant no native execution or migration. Preserve existing capability ownership, server-owned OAuth/protected credentials, original account leases and same-account/Worker history; verify the subscription profile at or above `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) by native validation before activation.
 
 ## Storage
 

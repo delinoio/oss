@@ -198,7 +198,7 @@ JSON; no assignment rewrite, credential grant or SQLite migration is added.
 
 ## Failed subscription cleanup reservations
 
-System `FAILED_SUBSCRIPTION_CLEANUP_V1 = 41` and all batch/status/result declarations were reserved on main by the originating change before activation. System 38 belongs to Claude and 39/40 to Grok. The reservation itself granted no cleanup, login or deletion authority.
+System `FAILED_SUBSCRIPTION_CLEANUP_V1 = 41` and all batch/status/result declarations were reserved on main by the originating change before activation. System 38 belongs to Claude and 39/40 to Grok (39 is advertised for the server-owned Grok login). The reservation itself granted no cleanup, login or deletion authority.
 
 One explicit owner/paired-client `CleanupFailedSubscriptions(request_id)` admits a server-owned durable job and freezes every candidate account ID, revision, original initial ChatGPT server LOGIN and deletion request UUID in account child jobs. Receipt replay binds the original actor and server and returns the same current job. Only one batch can be pending per server. Admission scans the complete bounded server inventory; frontend account pages never select work. Failed, canceled, expired, unsupported and interrupted initial logins qualify, including credential-cleanup-confirmed failures. The same explicit batch also selects disconnected subscription Accounts for every supported service, including metadata-only accounts and completed logout accounts. Version-2 private child jobs distinguish original failed LOGIN cleanup from disconnected configuration deletion; version-1 children retain their original LOGIN-only meaning. Disconnected targets have no invented operation ID and must retain no active login, native process, generation, identity commitment, active Worker ownership, lease, recovery, removal or active observation. A completed Worker logout may retain its historical owner-machine routing hint; it grants no active authority without a generation, lease, pending action or recovery, and does not bypass protected-reference checks. Connected accounts, restored generations and independent Worker/native/observation ownership are excluded.
 
@@ -219,20 +219,22 @@ These declarations now exist in `system.proto` (`SYSTEM_CAPABILITY_GROK_SUBSCRIP
 `SYSTEM_CAPABILITY_GROK_SUBSCRIPTION_EXECUTION_V1 = 40`), `worker.proto`
 (`WORKER_CAPABILITY_MANAGED_GROK_SUBSCRIPTIONS_V1 = 21`) and `subscription.proto`
 (`GetSubscriptionProgressResponse.grok_diagnostic = 10`, `GrokDiagnostic`,
-`GrokDiagnosticPhase`) with regenerated Go and TypeScript bindings. They are
-declared but unadvertised: GetStatus and AttachWorker never list 39, 40 or 21
-and the Worker does not report 21 (the server keeps rejecting it as an unknown
+`GrokDiagnosticPhase`) with regenerated Go and TypeScript bindings. System 39
+is advertised by GetStatus (server-owned Grok browser and device login together,
+decision D1); GetStatus never lists 40 and AttachWorker never lists 21, and the
+Worker does not report 21 (the server keeps rejecting it as an unknown
 capability). The server-owned Grok browser login is implemented behind the
 existing RPCs: `RequestSubscription` (machine omitted, `device_code=false`) starts
-it, `GetSubscriptionProgress` returns the transient `url` while waiting, the
+it (`device_code=true` starts the RFC 8628 device login instead: the transient
+`url` is the `accounts.x.ai` verification URL and `user_code` the approval code), `GetSubscriptionProgress` returns the transient `url` while waiting, the
 generation and `suggested_name` on success and `grok_diagnostic` (phase LOGIN)
 only for a failed or uncertain login, and `ForwardSubscriptionCallback` is
 service-aware for Grok accounts. The server-owned Grok refresh is likewise
 implemented behind `RequestSubscription` (action REFRESH, machine omitted) and
 reports through `GetSubscriptionProgress` (`grok_diagnostic` phase REFRESH only
 for a failed or uncertain refresh). No field, enum value or capability changed. The
-owning feature change advertises and activates System 39 once device login and
-the opt-in real-account acceptance run are complete. Codex field 7, native
+opt-in real-account acceptance run was not performed; System 40 and Worker 21
+stay for the Grok execution change. Codex field 7, native
 field 9 and existing System 30/35/36/37 and Worker 19 ownership remain
 unchanged. Reservations activate nothing and add no migration.
 
@@ -628,7 +630,7 @@ Record implementation status and validation results in pull requests, issues and
 
 - Failed subscription cleanup follows `cmds-delidev-subscription-contract.md#failed-subscription-cleanup-reservations` after main reservation the originating change (System 41). Preserve server-owned complete batches, original actor/login/revision, shared vault/reference deletion checks, atomic result/tombstone receipts, joined shutdown and restore quarantine. Terminal failures require a new explicit batch; status/restart never relaunches login or callbacks. No database migration or Rust/native change.
 
-- DeliDev Grok Build subscription support follows `cmds-delidev-grok-subscription-contract.md`. System 39/40 and Worker 21 are declared in the protos but unadvertised until the owning feature activates them; progress field 10 is populated only for a failed or uncertain server-owned Grok browser login or refresh. Reservations grant no native execution or migration. Preserve existing capability ownership, server-owned OAuth/protected credentials, original account leases and same-account/Worker history; verify the subscription profile at or above `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) by native validation before activation.
+- DeliDev Grok Build subscription support follows `cmds-delidev-grok-subscription-contract.md`. System 39 (server-owned browser and device login) is advertised; System 40 and Worker 21 are declared in the protos but unadvertised until the owning feature activates them; progress field 10 is populated only for a failed or uncertain server-owned Grok browser login, device login or refresh. Reservations grant no native execution or migration. Preserve existing capability ownership, server-owned OAuth/protected credentials, original account leases and same-account/Worker history; verify the subscription profile at or above `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) by native validation before activation.
 
 - Known subscription model suggestions follow `cmds-delidev-catalog-contract.md#known-subscription-model-suggestions`. The originating change established System capability 35 and the advisory declarations on main before activation. Keep bounded read-only owner/client metadata, explicit server outbound routing, joined cache refresh and review-only daily PRs separate from account/native/execution authority. Preserve atomic native-ID Worker saves and saved revision/history checks; no database migration.
 
