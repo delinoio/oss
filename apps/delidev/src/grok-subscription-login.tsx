@@ -161,6 +161,9 @@ interface View {
   copyState: CopyState;
   canRetry: boolean;
   canCancel: boolean;
+  // Set once the server acknowledged the original cancellation. The login is
+  // winding down, so no further cancel, browser or link action is offered.
+  canceling: boolean;
 }
 interface Pending {
   opening: string;
@@ -174,6 +177,7 @@ interface Pending {
   polling: boolean;
   busy: boolean;
   terminal: boolean;
+  cancelAcknowledged: boolean;
   copyTimer?: ReturnType<typeof setTimeout>;
   retry?: () => Promise<void>;
 }
@@ -312,6 +316,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
       polling: false,
       busy: false,
       terminal: false,
+      cancelAcknowledged: false,
     };
     pending.current = p;
     setView({
@@ -324,6 +329,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
       copyState: CopyState.Idle,
       canRetry: false,
       canCancel: false,
+      canceling: false,
     });
     if (!native) {
       update(p, { problem: "grok-subscription.problem.desktopRequired" });
@@ -438,6 +444,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
             urlReady: false,
             canCancel: false,
             canRetry: false,
+            canceling: false,
           });
           changed();
           return;
@@ -449,13 +456,15 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
         update(p, {
           stage,
           diagnostic: progress.grokDiagnostic,
-          canCancel: !terminal,
+          // A poll never re-offers Cancel after the server acknowledged it.
+          canCancel: !terminal && !p.cancelAcknowledged,
           ...(terminal
             ? {
                 problem: undefined,
                 browserReady: false,
                 urlReady: false,
                 canRetry: false,
+                canceling: false,
               }
             : {}),
         });
@@ -634,7 +643,14 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
   };
   const cancel = () => {
     const p = pending.current;
-    if (!p || !live(p) || !p.operation || p.terminal) return;
+    if (
+      !p ||
+      !live(p) ||
+      !p.operation ||
+      p.terminal ||
+      p.cancelAcknowledged
+    )
+      return;
     let request:
       Parameters<typeof clients.subscription.cancelSubscription>[0] | undefined;
     void run(
@@ -668,7 +684,15 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
           throw new Error("Invalid cancellation");
         if (live(p)) {
           p.account = result.account;
-          update(p, { problem: "grok-subscription.problem.canceling" });
+          // The server acknowledged this exact cancellation. Polling keeps
+          // observing until it reports the terminal state, but a second
+          // click must not send another cancel mutation.
+          p.cancelAcknowledged = true;
+          update(p, {
+            problem: "grok-subscription.problem.canceling",
+            canCancel: false,
+            canceling: true,
+          });
         }
       },
       "grok-subscription.problem.cancelUnconfirmed",
@@ -919,7 +943,7 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
             </dl>
           ) : null}
           <SettingsTaskActions className="">
-            {waiting && v.browserReady ? (
+            {waiting && v.browserReady && !v.canceling ? (
               <SettingsActionButton
                 icon={SettingsActionIcon.Open}
                 type="button"
@@ -930,7 +954,7 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
                 {copy("grok-subscription.openBrowser")}
               </SettingsActionButton>
             ) : null}
-            {waiting && v.urlReady ? (
+            {waiting && v.urlReady && !v.canceling ? (
               <SettingsActionButton
                 icon={SettingsActionIcon.Copy}
                 type="button"
@@ -944,7 +968,9 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
               <SettingsActionButton
                 icon={SettingsActionIcon.Cancel}
                 type="button"
-                disabled={busy}
+                // An uncertain cancel is replayed only through Retry original
+                // request, never as a second, different cancel mutation.
+                disabled={busy || v.canRetry}
                 onClick={props.cancel}
               >
                 {copy("grok-subscription.cancel")}

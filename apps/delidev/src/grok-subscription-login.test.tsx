@@ -618,6 +618,89 @@ it("stops offering Open browser again when a reopen meets the Incompatible refus
   expect(actions(f, OAuthNativeAction.GrokSubscriptionReopen)).toHaveLength(1);
 });
 
+it("sends one cancel mutation, keeps polling and hides every login action once the server acknowledged it", async () => {
+  const f = fixture();
+  await start(f);
+  const progressCalls = f.progress.mock.calls.length;
+  fireEvent.click(
+    screen.getByRole("button", { name: copy("grok-subscription.cancel") }),
+  );
+  await screen.findByText(copy("grok-subscription.problem.canceling"));
+  expect(f.cancel).toHaveBeenCalledTimes(1);
+  const hidden = () => {
+    for (const name of [
+      "grok-subscription.cancel",
+      "grok-subscription.openBrowser",
+      "grok-subscription.copyLink",
+      "grok-subscription.retryOriginal",
+    ] as const)
+      expect(screen.queryByRole("button", { name: copy(name) }), name).toBeNull();
+  };
+  hidden();
+  // The server still reports the login as waiting: polling continues but a
+  // poll never re-offers Cancel.
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 2300));
+  });
+  expect(f.progress.mock.calls.length).toBeGreaterThan(progressCalls);
+  hidden();
+  expect(f.cancel).toHaveBeenCalledTimes(1);
+  // The terminal state replaces the notice and still offers nothing.
+  f.setState(State.CANCELED);
+  await screen.findByText(
+    copy("grok-subscription.status.canceled"),
+    {},
+    { timeout: 3000 },
+  );
+  hidden();
+  expect(f.cancel).toHaveBeenCalledTimes(1);
+  expect(f.login).toHaveBeenCalledTimes(1);
+});
+
+it("replays an uncertain cancel only through Retry original request and never as a second cancel", async () => {
+  const f = fixture();
+  await start(f);
+  f.cancel.mockImplementationOnce(() => {
+    throw typedFailure(Code.Internal, FailureCode.Internal);
+  });
+  const cancel = screen.getByRole("button", {
+    name: copy("grok-subscription.cancel"),
+  });
+  fireEvent.click(cancel);
+  const retry = await screen.findByRole("button", {
+    name: copy("grok-subscription.retryOriginal"),
+  });
+  expect(
+    screen.getByText(copy("grok-subscription.problem.cancelUnconfirmed")),
+  ).toBeTruthy();
+  // Cancel stays visible but disabled while the original request is unresolved.
+  expect(
+    (
+      screen.getByRole("button", {
+        name: copy("grok-subscription.cancel"),
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  fireEvent.click(
+    screen.getByRole("button", { name: copy("grok-subscription.cancel") }),
+  );
+  expect(f.cancel).toHaveBeenCalledTimes(1);
+  fireEvent.click(retry);
+  await screen.findByText(copy("grok-subscription.problem.canceling"));
+  expect(f.cancel).toHaveBeenCalledTimes(2);
+  expect(f.cancel.mock.calls[1][0].mutation.requestId).toBe(
+    f.cancel.mock.calls[0][0].mutation.requestId,
+  );
+  expect(
+    screen.queryByRole("button", { name: copy("grok-subscription.cancel") }),
+  ).toBeNull();
+  expect(
+    screen.queryByRole("button", {
+      name: copy("grok-subscription.retryOriginal"),
+    }),
+  ).toBeNull();
+});
+
 it("shows a generic browser failure and recovers through Open browser again", async () => {
   const f = fixture();
   f.native.mockImplementationOnce(async () => {
