@@ -952,6 +952,11 @@ fn module_require_and_created_loader_guard_intrinsics() {
         ),
         (
             "bridge.mjs",
+            "import * as mod from \"node:module\";\nconst load = \
+             mod[\"createRequire\"](import.meta.url);\nload(\"patch-slice\");\n",
+        ),
+        (
+            "bridge.mjs",
             "import mod from \"node:module\";\nconst load = \
              mod.createRequire(import.meta.url);\nload(\"patch-slice\");\n",
         ),

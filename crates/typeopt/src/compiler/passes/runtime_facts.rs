@@ -1661,6 +1661,21 @@ fn is_host_module_expression(expression: Node, host_modules: &HashSet<String>) -
     }
 }
 
+/// Whether a module namespace accesses the `createRequire` factory.
+fn is_create_require_access(callee: Node) -> bool {
+    match callee.kind() {
+        SyntaxKind::PropertyAccessExpression => callee.name().text() == "createRequire",
+        SyntaxKind::ElementAccessExpression => {
+            let key = skip_outer(callee.argument_expression());
+            matches!(
+                key.kind(),
+                SyntaxKind::StringLiteral | SyntaxKind::NoSubstitutionTemplateLiteral
+            ) && key.text() == "createRequire"
+        }
+        _ => false,
+    }
+}
+
 fn created_require_loaders(nodes: &[Node]) -> HashSet<String> {
     let mut factories = HashSet::new();
     let mut host_modules = HashSet::new();
@@ -1741,8 +1756,7 @@ fn created_require_loaders(nodes: &[Node]) -> HashSet<String> {
             } else {
                 let callee = skip_outer(init.expression());
                 (callee.kind() == SyntaxKind::Identifier && factories.contains(callee.text()))
-                    || (callee.kind() == SyntaxKind::PropertyAccessExpression
-                        && callee.name().text() == "createRequire"
+                    || (is_create_require_access(callee)
                         && is_host_module_expression(callee.expression(), &host_modules))
             };
             let from_loader =
