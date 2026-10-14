@@ -682,6 +682,11 @@ fn chunk_map(root: &Path, chunk: &Path, text: &str) -> Option<MapRef> {
 /// comment (inline or referencing a file). Source maps are debugging
 /// metadata and never count as size, so composing, re-encoding or removing a
 /// map comment does not change the measured size.
+/// Where the trailing source map comment of a chunk starts, if it has one.
+pub(crate) fn map_comment_start(text: &str) -> Option<usize> {
+    map_reference(text).map(|comment| comment.start)
+}
+
 pub(crate) fn chunk_code_len(text: &str) -> usize {
     map_reference(text).map_or(text.len(), |comment| {
         text.len() - (comment.end - comment.start)
