@@ -52,6 +52,26 @@ use crate::{
 /// Name of the constructor entry in method tables; never a property name.
 pub(super) const CONSTRUCTOR: &str = " new";
 
+/// Properties of `Symbol` whose values are well-known symbols in every
+/// supported engine. Any other property is a string or number key
+/// (`Symbol.name`, `Symbol.length`) or may be missing (`Symbol.dispose`),
+/// which makes the key the string `"undefined"`.
+const WELL_KNOWN_SYMBOLS: &[&str] = &[
+    "asyncIterator",
+    "hasInstance",
+    "isConcatSpreadable",
+    "iterator",
+    "match",
+    "matchAll",
+    "replace",
+    "search",
+    "species",
+    "split",
+    "toPrimitive",
+    "toStringTag",
+    "unscopables",
+];
+
 /// Names that every object inherits from `Object.prototype` or that carry
 /// protocol meaning. An instance access to one of them is never renamed.
 pub(super) fn inherited_name(name: &str) -> bool {
@@ -157,7 +177,7 @@ impl Builder<'_, '_> {
         }
     }
 
-    /// `Symbol.iterator` and other well-known symbols name no string
+    /// `Symbol.iterator` and the other well-known symbols name no string
     /// property.
     fn well_known_symbol(&self, key: Node) -> bool {
         let expression = skip_outer(key.expression());
@@ -165,7 +185,9 @@ impl Builder<'_, '_> {
             return false;
         }
         let object = skip_outer(expression.expression());
-        object.kind() == SyntaxKind::Identifier
+        expression.name().kind() == SyntaxKind::Identifier
+            && WELL_KNOWN_SYMBOLS.contains(&expression.name().text())
+            && object.kind() == SyntaxKind::Identifier
             && object.text() == "Symbol"
             && self.symbol(object).is_none_or(|symbol| {
                 self.ctx.checker.sym(symbol).declarations.iter().all(|&d| {

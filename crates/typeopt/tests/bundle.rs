@@ -2972,7 +2972,7 @@ fn keeps_classes_exported_through_dynamic_namespaces() {
 /// an instance member by name, so the names stay.
 #[test]
 fn keeps_class_members_that_unknown_code_can_observe() {
-    let cases: [(&str, &[&str]); 13] = [
+    let cases: [(&str, &[&str]); 14] = [
         // A method loaded without a call runs with another receiver.
         (
             r#"class W{constructor(){this.fieldName=1}methodName(){return this.fieldName}}const w=new W;const f=w.methodName;console.log(w.methodName(),f.call({fieldName:9}));"#,
@@ -3032,6 +3032,11 @@ fn keeps_class_members_that_unknown_code_can_observe() {
         (
             r#"globalThis.Matcher={[Symbol.hasInstance]:v=>v.matchedValue===1};const value={matchedValue:1};console.log(value instanceof globalThis.Matcher);"#,
             &["matchedValue"],
+        ),
+        // `Symbol.name` is the string "Symbol", not a well-known symbol.
+        (
+            r#"class C{[Symbol.name]=1;otherField=2}const c=new C;console.log(c.Symbol,c.otherField);"#,
+            &["Symbol", "otherField"],
         ),
         // A function-valued field names its function.
         (
