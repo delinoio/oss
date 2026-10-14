@@ -1795,6 +1795,45 @@ it("never sends a 50-item refresh to a same-identity reconnect peer that lacks t
   ).toBe(true);
 });
 
+it("never sends a 50-item refresh after a same-token reconnect keeps the transport but downgrades the peer", async () => {
+  const value = fixture();
+  value.capabilities([SystemCapability.PULL_REQUEST_PAGING_50_V1]);
+  const identity = {
+    currentDeviceId: newRequestId(),
+    pairingAuthority: {
+      endpoint: "http://127.0.0.1:46310",
+      serverId: newRequestId(),
+    },
+  };
+  const view = render(
+    <App transport={value.transport} {...identity} connectionEpoch={0} />,
+  );
+  const pane = await open();
+  await choose(value.rows[0]);
+  const select = pane.getByLabelText("PR page size") as HTMLSelectElement;
+  await waitFor(() => expect(select.options[2].disabled).toBe(false));
+  fireEvent.change(select, { target: { value: "50" } });
+  const sizes = () =>
+    value.query.mock.calls.map(
+      ([request]) =>
+        JSON.parse(new TextDecoder().decode(request.queryJson)).page_size,
+    );
+  await waitFor(() => expect(sizes()).toContain(50));
+  const sent = sizes().length;
+  // The saved-server reconnect returned the same token, so the transport object
+  // and query client are retained while the server behind them lost the
+  // capability. Only the connection epoch changes.
+  value.capabilities([]);
+  view.rerender(
+    <App transport={value.transport} {...identity} connectionEpoch={1} />,
+  );
+  await waitFor(() => expect(select.value).toBe("20"));
+  await waitFor(() => expect(select.options[2].disabled).toBe(true));
+  await pane.findByText(pagingNote);
+  await waitFor(() => expect(sizes().slice(sent)).toContain(20));
+  expect(sizes().slice(sent)).not.toContain(50);
+});
+
 it("reports accepted progress in the header, guidance while another page exists and a distinct exhausted state", async () => {
   const value = fixture();
   const read = value.query.getMockImplementation()!;

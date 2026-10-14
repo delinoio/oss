@@ -82,6 +82,7 @@ import {
   RepositoryProfileAssociation,
 } from "./repository-association";
 import { SettingsCategory } from "./settings-category";
+import { useConnectionEpoch } from "./connection-epoch";
 
 /** Closed set of PR page sizes offered by the sidebar. Fifty needs the
  * negotiated System capability PULL_REQUEST_PAGING_50_V1. */
@@ -523,11 +524,13 @@ export function PullRequests({
   const [composing, setComposing] = useState(false);
   const [pageSize, setPageSize] = useState<number>(PullRequestPageSize.Twenty);
   // The capability gate trusts only a GetStatus observation made through the
-  // current transport. A same-identity reconnect preserves the query client, so
-  // the observation is keyed by transport: after a downgrade or peer
-  // replacement the previous peer's capabilities are unavailable in the same
-  // render and no 50-item request can reach the new peer before it answers.
+  // current transport during the current connection epoch. A same-identity
+  // reconnect preserves the query client and may even keep the transport, so the
+  // observation is keyed by both: after a downgrade or peer replacement the
+  // previous peer's capabilities are unavailable in the same render and no
+  // 50-item request can reach the new peer before it answers.
   const transport = useTransport();
+  const connectionEpoch = useConnectionEpoch();
   const statusOptions = createQueryOptions(
     SystemQuery.getStatus,
     {},
@@ -537,7 +540,10 @@ export function PullRequests({
     ...statusOptions,
     queryKey: [
       ...statusOptions.queryKey,
-      { pageSizeCapabilityTransport: transportIdentity(transport) },
+      {
+        pageSizeCapabilityTransport: transportIdentity(transport),
+        pageSizeCapabilityEpoch: connectionEpoch,
+      },
     ],
     queryFn: (context) =>
       statusOptions.queryFn!({
