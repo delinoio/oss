@@ -2730,3 +2730,23 @@ fn keeps_revision_data_outside_precache_calls() {
         r#"export const d=[{url:"index.html",revision:"v1"}];"#
     );
 }
+
+/// Formatted Workbox manifests put whitespace before keys; their entries are
+/// refreshed as well.
+#[test]
+fn refreshes_formatted_precache_entries() {
+    let sw = "self.workbox.precacheAndRoute([\n  {\n    url: \"index.html\",\n    revision: \
+              \"dca4ee13e6e90a3b14607a0c53990951\"\n  },\n  { revision: null, url: \
+              \"assets/settings-BBBBBBBB.js\" }\n]);\n";
+    let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
+    chunks.push(("sw.js", sw));
+    let temp = bundle(&chunks);
+    optimize(temp.path(), &[]);
+    let published = out(temp.path(), "sw.js");
+    assert!(
+        !published.contains("dca4ee13e6e90a3b14607a0c53990951"),
+        "{published}"
+    );
+    assert!(!published.contains("BBBBBBBB"), "{published}");
+    assert_eq!(published.len(), sw.len());
+}

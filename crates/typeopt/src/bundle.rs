@@ -1392,6 +1392,17 @@ fn precache_arrays(text: &str) -> Vec<(usize, usize)> {
     arrays
 }
 
+/// Whether the property key at `at` starts an object member: it follows `{` or
+/// `,`, possibly after whitespace (formatted manifests put each key on its
+/// own line).
+fn follows_delimiter(bytes: &[u8], at: usize) -> bool {
+    bytes[..at]
+        .iter()
+        .rev()
+        .find(|b| !b.is_ascii_whitespace())
+        .is_some_and(|&b| matches!(b, b'{' | b','))
+}
+
 /// Precache entries `{url:"…",revision:"…"}` (either order) of a service
 /// worker manifest, as Workbox and vite-plugin-pwa emit them inside a
 /// `precacheAndRoute`/`precache` array: the URL and the byte span of the
@@ -1412,7 +1423,7 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize)> {
         } else {
             at
         };
-        if key == 0 || !matches!(bytes[key - 1], b'{' | b',') {
+        if !follows_delimiter(bytes, key) {
             continue;
         }
         let Some((_, start, end)) = string_property(text, key, "revision") else {
@@ -1430,11 +1441,9 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize)> {
         }
         let object = &text[open..=close];
         let url = object.char_indices().find_map(|(i, c)| {
-            (i > 0
-                && matches!(c, 'u' | '"' | '\'')
-                && matches!(object.as_bytes()[i - 1], b'{' | b','))
-            .then(|| string_property(text, open + i, "url"))
-            .flatten()
+            (matches!(c, 'u' | '"' | '\'') && follows_delimiter(object.as_bytes(), i))
+                .then(|| string_property(text, open + i, "url"))
+                .flatten()
         });
         if let Some((url, _, _)) = url {
             entries.push((url, start, end));
