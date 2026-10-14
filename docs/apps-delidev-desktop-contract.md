@@ -52,6 +52,16 @@ external GitHub actor and App identity and keeps its original bytes, including d
 IDs above the JavaScript safe-integer range. The projection is display-only: Apply
 sends the exact preview bytes, and numeric tokens and malformed JSON are unchanged.
 
+Loading a pasted or file-read document that `JSON.parse` rejects with a `SyntaxError` (for
+example `not-json` or an unterminated object) shows the localized `validation.4b7e1f93a2d6`
+guidance: the document is not valid JSON, so correct the syntax or paste a current version 4
+DeliDev export. The raw engine message is never shown. The draft stays editable, the stage
+remains Load document, and no preview or apply request is sent. Only that parse failure maps
+to this message: valid JSON with an unsupported version or shape keeps
+`validation.71aacc919010`, oversized and invalid UTF-8 input keep their own messages, other
+unexpected failures keep the generic read failure, and export-side validation of the
+server-produced document never shows advice to edit pasted JSON.
+
 The presentation owners include Home and repository navigation, Projects and
 Repositories, resource/settings selectors and actions, accounts/providers/runners/
 devices and saved connections, sessions/queues/terminals/storage/reviews, schedules,
