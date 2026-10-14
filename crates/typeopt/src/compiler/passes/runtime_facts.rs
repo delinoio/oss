@@ -1634,16 +1634,31 @@ fn relative_application_file(ctx: &Ctx, importer: &str, specifier: &str) -> bool
 /// loader calls are not used as evidence that an intrinsic is intact.
 fn is_host_module_expression(expression: Node, host_modules: &HashSet<String>) -> bool {
     let expression = skip_outer(expression);
+    if expression.kind() == SyntaxKind::AwaitExpression {
+        return is_host_module_expression(expression.expression(), host_modules);
+    }
     if expression.kind() == SyntaxKind::Identifier {
         return host_modules.contains(expression.text());
     }
-    expression.kind() == SyntaxKind::CallExpression
-        && skip_outer(expression.expression()).kind() == SyntaxKind::Identifier
-        && skip_outer(expression.expression()).text() == "require"
-        && expression
-            .arguments()
-            .first()
-            .is_some_and(|argument| matches!(argument.text(), "node:module" | "module"))
+    if expression.kind() != SyntaxKind::CallExpression {
+        return false;
+    }
+    let Some(argument) = expression.arguments().first() else {
+        return false;
+    };
+    if !matches!(
+        argument.kind(),
+        SyntaxKind::StringLiteral | SyntaxKind::NoSubstitutionTemplateLiteral
+    ) || !matches!(argument.text(), "node:module" | "module")
+    {
+        return false;
+    }
+    let callee = skip_outer(expression.expression());
+    match callee.kind() {
+        SyntaxKind::ImportKeyword => true,
+        SyntaxKind::Identifier => callee.text() == "require",
+        _ => false,
+    }
 }
 
 fn created_require_loaders(nodes: &[Node]) -> HashSet<String> {
@@ -1683,14 +1698,7 @@ fn created_require_loaders(nodes: &[Node]) -> HashSet<String> {
             }
             SyntaxKind::VariableDeclaration if node.name().kind() == SyntaxKind::Identifier => {
                 let init = skip_outer(node.initializer());
-                if init.kind() == SyntaxKind::CallExpression
-                    && skip_outer(init.expression()).kind() == SyntaxKind::Identifier
-                    && skip_outer(init.expression()).text() == "require"
-                    && init
-                        .arguments()
-                        .first()
-                        .is_some_and(|argument| matches!(argument.text(), "node:module" | "module"))
-                {
+                if is_host_module_expression(init, &host_modules) {
                     host_modules.insert(node.name().text().to_owned());
                 }
             }
@@ -1698,14 +1706,7 @@ fn created_require_loaders(nodes: &[Node]) -> HashSet<String> {
                 if node.name().kind() == SyntaxKind::ObjectBindingPattern =>
             {
                 let init = skip_outer(node.initializer());
-                if init.kind() != SyntaxKind::CallExpression
-                    || skip_outer(init.expression()).kind() != SyntaxKind::Identifier
-                    || skip_outer(init.expression()).text() != "require"
-                    || !init
-                        .arguments()
-                        .first()
-                        .is_some_and(|argument| matches!(argument.text(), "node:module" | "module"))
-                {
+                if !is_host_module_expression(init, &host_modules) {
                     continue;
                 }
                 for binding in node.name().elements().iter() {
