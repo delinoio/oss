@@ -95,16 +95,10 @@ pub fn save(run_dir: &Path, bundle: &ResultBundle) -> BwResult<()> {
             "Use --exclude-sources, or analyze a smaller build.",
         ));
     }
-    // A small summary lets run listings avoid reading full bundles.
-    let summary = serde_json::json!({
-        "schemaVersion": bundle.schema_version,
-        "runId": bundle.analysis.run_id,
-        "status": bundle.analysis.status,
-        "projectName": bundle.analysis.project_name,
-        "bundler": bundle.analysis.engine.as_ref().map(|engine| engine.bundler).unwrap_or_default(),
-        "startedAt": bundle.analysis.started_at,
-    });
-    let _ = std::fs::write(run_dir.join(SUMMARY_FILE), summary.to_string());
+    // The summary must never describe a bundle that is not committed: drop
+    // the old one first, commit the bundle, then publish the new summary.
+    let summary_path = run_dir.join(SUMMARY_FILE);
+    let _ = std::fs::remove_file(&summary_path);
     let temporary = run_dir.join(format!("{BUNDLE_FILE}.tmp"));
     // std::fs::rename replaces an existing destination on every supported
     // platform, including Windows (MoveFileExW with replacement).
@@ -119,7 +113,25 @@ pub fn save(run_dir: &Path, bundle: &ResultBundle) -> BwResult<()> {
                 ),
                 "Check that the output directory is writable and has free space.",
             )
-        })
+        })?;
+    let summary = serde_json::json!({
+        "schemaVersion": bundle.schema_version,
+        "runId": bundle.analysis.run_id,
+        "status": bundle.analysis.status,
+        "projectName": bundle.analysis.project_name,
+        "bundler": bundle.analysis.engine.as_ref().map(|engine| engine.bundler).unwrap_or_default(),
+        "startedAt": bundle.analysis.started_at,
+    });
+    let summary_temporary = run_dir.join(format!("{SUMMARY_FILE}.tmp"));
+    let written = std::fs::write(&summary_temporary, summary.to_string())
+        .and_then(|()| std::fs::rename(&summary_temporary, &summary_path));
+    if let Err(error) = written {
+        // Listings then read the committed bundle instead; no stale summary.
+        tracing::warn!(%error, "run summary could not be written; listings will read the bundle");
+        let _ = std::fs::remove_file(&summary_temporary);
+        let _ = std::fs::remove_file(&summary_path);
+    }
+    Ok(())
 }
 
 fn invalid(message: impl Into<String>) -> BwError {
@@ -533,6 +545,24 @@ mod tests {
                 .iter()
                 .any(|entry| entry.code == "BW_RESULT_TOO_LARGE")
         );
+    }
+
+    #[test]
+    fn a_failed_bundle_write_leaves_no_summary_claiming_completion() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut saved = bundle();
+        saved.analysis.status = RunStatus::Running;
+        save(dir.path(), &saved).unwrap();
+        assert!(
+            std::fs::read_to_string(dir.path().join(SUMMARY_FILE))
+                .unwrap()
+                .contains("RUN_STATUS_RUNNING")
+        );
+        // Block the bundle commit: a directory where the temporary file goes.
+        std::fs::create_dir(dir.path().join(format!("{BUNDLE_FILE}.tmp"))).unwrap();
+        saved.analysis.status = RunStatus::Complete;
+        assert!(save(dir.path(), &saved).is_err());
+        assert!(!dir.path().join(SUMMARY_FILE).exists());
     }
 
     #[cfg(unix)]
