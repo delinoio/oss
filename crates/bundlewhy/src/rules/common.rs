@@ -287,6 +287,7 @@ impl EnvGuard {
 /// Recognize only a generated branch whose test contains this read. A plain
 /// value read in a call, assignment or another data expression is not a DCE
 /// blocker.
+#[cfg(test)]
 fn env_guard(code: &str, start: usize, end: usize, ignored: &[(usize, usize)]) -> Option<EnvGuard> {
     env_guards(code, &[(start, end)], ignored)
         .into_iter()
