@@ -931,6 +931,49 @@ describe("route failure classification", () => {
     expect(value.mutated).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["a Sidechat", "sidechat"],
+    ["a Session with malformed provenance", "malformed"],
+  ] as const)(
+    "clears %s in the session slot that loads after a transient read failure",
+    async (_name, which) => {
+      const value = fixture();
+      value.failure.code = Code.Unavailable;
+      value.failure.id = value[which].id;
+      route(`?screen=sessions&session=${value[which].id}`);
+      render(<App transport={value.transport} />);
+      await waitFor(() =>
+        expect(
+          value.reads.resource.mock.calls.map(([request]) => request.id),
+        ).toContain(value[which].id),
+      );
+      // The pane loads the Session through the stream, finds it is not a valid
+      // top-level selection, and the Shell clears it.
+      expect(
+        await screen.findByText("Your sessions, in one place"),
+      ).toBeTruthy();
+      await waitFor(() => expect(search().has("session")).toBe(false));
+      expect(search().has("sidechat")).toBe(false);
+      expect(value.mutated).not.toHaveBeenCalled();
+    },
+  );
+
+  it("clears a retained Sidechat and its parent when the parent loads as a Sidechat", async () => {
+    const value = fixture();
+    value.failure.code = Code.Unavailable;
+    value.failure.id = value.foreignSidechat.id;
+    route(
+      `?screen=sessions&session=${value.foreignSidechat.id}&sidechat=${value.sidechat.id}`,
+    );
+    render(<App transport={value.transport} />);
+    expect(
+      await screen.findByText("Your sessions, in one place"),
+    ).toBeTruthy();
+    await waitFor(() => expect(search().has("session")).toBe(false));
+    expect(search().has("sidechat")).toBe(false);
+    expect(screen.queryByRole("tab", { name: /Side question/ })).toBeNull();
+  });
+
   it.each(transientCodes)(
     "%s on the parent keeps the requested Sidechat too",
     async (_name, code) => {

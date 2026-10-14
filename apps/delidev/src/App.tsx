@@ -563,6 +563,36 @@ function Shell({
     openSessionRef.current = openSession;
     showSessionRef.current = showSession;
   });
+  // The top-level Session a retryable failure restored without verification,
+  // and the navigation-intent token at that moment. The mounted pane reports
+  // the loaded Session; an invalid one (a Sidechat, or malformed provenance) is
+  // cleared unless the user navigated since, so a malformed URL cannot leave an
+  // unverified Session selected.
+  const unverifiedRestore = useRef<{
+    id: string;
+    sidechat?: string;
+    intent: number;
+  }>(undefined);
+  const [unverifiedRestoreId, setUnverifiedRestoreId] = useState("");
+  const verifyRestoredSession = useCallback(
+    (valid: boolean) => {
+      const pending = unverifiedRestore.current;
+      if (!pending) return;
+      unverifiedRestore.current = undefined;
+      setUnverifiedRestoreId("");
+      if (valid) return;
+      if (navigationIntent.current !== pending.intent) return;
+      console.warn("delidev.product_route.restore_rejected", {
+        surface: Surface.Sessions,
+        reason: "unverified-session-invalid",
+      });
+      if (pending.sidechat)
+        tabs.discardProvisionalSidechat(pending.id, pending.sidechat);
+      setVisited((previous) => previous.filter((id) => id !== pending.id));
+      setSelected((current) => (current === pending.id ? "" : current));
+    },
+    [tabs],
+  );
   // Verifies the route selection with fresh reads through the current
   // connection. It waits for connection readiness, never dispatches a mutation
   // and reopens only what this connection can read. The restore captures the
@@ -609,6 +639,17 @@ function Shell({
             read.open.parent,
             read.open.name,
           );
+          // A retryable failure opened a Session that was never verified as a
+          // top-level Session: its pane judges it once it loads.
+          if (read.outcome === RouteReadOutcome.Failed) {
+            const top = read.open.parent ?? read.open.id;
+            unverifiedRestore.current = {
+              id: top,
+              sidechat: read.open.parent ? read.open.id : undefined,
+              intent,
+            };
+            setUnverifiedRestoreId(top);
+          }
           return;
         }
         case Surface.Inbox: {
@@ -1143,6 +1184,11 @@ function Shell({
                                   openSettings(
                                     SettingsEntryDestination.RunnerDevices,
                                   )
+                                }
+                                verifyRestored={
+                                  id === unverifiedRestoreId
+                                    ? verifyRestoredSession
+                                    : undefined
                                 }
                               />
                             </div>

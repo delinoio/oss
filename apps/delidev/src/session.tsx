@@ -939,6 +939,7 @@ export function SessionView({
   connectionReady = true,
   embedded = false,
   activateOnMount = !embedded,
+  verifyRestored,
 }: {
   id: string;
   draft: string;
@@ -959,6 +960,13 @@ export function SessionView({
    */
   activateOnMount?: boolean;
   openRunnerSettings?: () => void;
+  /**
+   * Set while this top-level Session was restored from the URL without a
+   * successful verification read. Called once the pane has loaded the Session
+   * with whether it is a valid top-level selection (not a Sidechat, not
+   * malformed), so the Shell can clear an invalid restored selection.
+   */
+  verifyRestored?: (valid: boolean) => void;
 }) {
   const productLabel = useProductLabels();
   const navigationIntent = useNavigationIntent();
@@ -1330,6 +1338,16 @@ export function SessionView({
       );
     else tabs.store.discardProvisionalSidechat(parent, id);
   }, [embedded, id, session, tabs.store, productLabel]);
+  // A top-level Session restored while its verification read failed transiently
+  // is judged here once it loads: a Sidechat belongs only under its verified
+  // parent, and malformed provenance is never a valid selection.
+  useEffect(() => {
+    if (embedded || !verifyRestored || session?.id !== id) return;
+    const kind = loadedSessionProvenance(session, id).conversationKind;
+    verifyRestored(
+      kind !== ConversationKind.Sidechat && kind !== ConversationKind.Unknown,
+    );
+  }, [embedded, id, session, verifyRestored]);
   useSessionInboxRead(
     id,
     conversationActive && !embedded,

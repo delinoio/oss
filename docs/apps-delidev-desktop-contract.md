@@ -500,7 +500,12 @@ valid only in the `sidechat` slot under a parent that this restore itself read a
 | Transient | retain the requested Sidechat under the parent (placeholder name) |
 
 "Clear" opens nothing and removes the selection from the URL, so the requested
-screen's list shows. A retained Sidechat is mounted under the requested parent so its
+screen's list shows. A `Transient` row opens its Session without a verification
+read, so the Shell remembers it with the navigation-intent token and the mounted
+top-level pane reports it once loaded (`verifyRestored`): a Sidechat, malformed
+provenance or an invalid envelope there is cleared exactly like a `Rejected` row (the
+Session and any provisional Sidechat under it end, and the URL drops them) unless the
+user navigated in between. A retained Sidechat is mounted under the requested parent so its
 own retry and error state runs, and the URL keeps the `sidechat` ID. A Sidechat tab
 opened without a verified name never shows its internal ID in its text, `title` or
 accessible name: it carries a localized product-identity label (the Session
