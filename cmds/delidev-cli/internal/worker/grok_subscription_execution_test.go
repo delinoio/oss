@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http/httptest"
 	"os"
@@ -44,6 +45,9 @@ type grokExecutionServer struct {
 	homeEntriesAtFinish   [][]string
 	logs                  *bytes.Buffer
 	failFinishWithConnect bool
+	// installationJSON is the verified observation an execute Take returns; nil
+	// returns none.
+	installationJSON []byte
 }
 
 func newGrokExecutionServer(t *testing.T) *grokExecutionServer {
@@ -55,6 +59,7 @@ func newGrokExecutionServer(t *testing.T) *grokExecutionServer {
 	logs := &bytes.Buffer{}
 	f := &grokExecutionServer{t: t, logs: logs, account: domain.NewID(), generation: domain.NewID(), credential: Credential{ServerID: domain.NewID(), MachineID: domain.NewID()}}
 	f.config = Config{Root: root, Logger: slog.New(slog.NewJSONHandler(logs, nil)), grokExecution: true}
+	f.installationJSON = f.installationDocument(domain.Installation{Harness: domain.GrokBuild, Version: domain.GrokSubscriptionBaselineVersion, ResolvedPath: filepath.Join(root, "controlled", "grok")})
 	f.envelope = mustSeal(t, f.credential.ServerID, f.account, f.generation, mustParse(t, grokWorkerFile(t, "synthetic-principal-1", "one", "2026-10-14T06:00:00Z")))
 	f.home = filepath.Join(root, "profile", "grok")
 	if err := security.PrivateDir(filepath.Dir(f.home)); err != nil {
@@ -69,6 +74,15 @@ func newGrokExecutionServer(t *testing.T) *grokExecutionServer {
 	f.credential.Endpoint = server.URL
 	f.config.execution = &PublicationConfig{Credential: f.credential, Instance: domain.NewID(), Assignment: &pb.Resource{Revision: 2}}
 	return f
+}
+
+func (f *grokExecutionServer) installationDocument(installation domain.Installation) []byte {
+	f.t.Helper()
+	raw, err := json.Marshal(installation)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return raw
 }
 
 func (f *grokExecutionServer) TakeSubscription(_ context.Context, req *connect.Request[pb.TakeSubscriptionRequest]) (*connect.Response[pb.TakeSubscriptionResponse], error) {
@@ -88,7 +102,7 @@ func (f *grokExecutionServer) TakeSubscription(_ context.Context, req *connect.R
 		f.t.Error("protected delivery preceded the original durable claim")
 		return nil, connect.NewError(connect.CodeFailedPrecondition, nil)
 	}
-	return connect.NewResponse(&pb.TakeSubscriptionResponse{LeaseId: string(lease), LeaseRevision: 3, GenerationId: string(f.generation), Bundle: bytes.Clone(f.envelope)}), nil
+	return connect.NewResponse(&pb.TakeSubscriptionResponse{LeaseId: string(lease), LeaseRevision: 3, GenerationId: string(f.generation), Bundle: bytes.Clone(f.envelope), InstallationJson: bytes.Clone(f.installationJSON)}), nil
 }
 
 func (f *grokExecutionServer) FinishSubscription(_ context.Context, req *connect.Request[pb.FinishSubscriptionRequest]) (*connect.Response[pb.FinishSubscriptionResponse], error) {
@@ -519,4 +533,100 @@ func TestGrokSubscriptionExecutionIsRefusedUnlessWorker21WasNegotiated(t *testin
 	if len(f.takes) != 0 {
 		t.Fatal("a refused execution took a lease")
 	}
+}
+
+// The execute Take returns the only installation the lease may launch. Discovery
+// can replace the job's frozen observation between dispatch and Take, so the
+// Worker uses and validates the returned one.
+func TestGrokExecutionUsesTheInstallationTheTakeAuthorized(t *testing.T) {
+	f := newGrokExecutionServer(t)
+	authorized := filepath.Join(f.config.Root, "authorized-grok")
+	if err := os.WriteFile(authorized, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := filepath.EvalSymlinks(authorized)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.installationJSON = f.installationDocument(domain.Installation{Harness: domain.GrokBuild, Version: "1.0.99", ResolvedPath: resolved})
+	run, err := f.begin(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, version, err := run.executable()
+	if err != nil || path != resolved || version != "1.0.99" {
+		t.Fatalf("the lease did not use the authorized installation: %q %q %v", path, version, err)
+	}
+	// A path that is not its own canonical identity (a symlink swapped in since the
+	// Take) is refused.
+	link := filepath.Join(f.config.Root, "swapped-grok")
+	if err := os.Symlink(resolved, link); err != nil {
+		t.Skip("symlinks are unavailable:", err)
+	}
+	run.installation.ResolvedPath = link
+	if _, _, err := run.executable(); err == nil {
+		t.Fatal("a swapped executable identity was accepted")
+	}
+	if err := run.finish(true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGrokExecutionRefusesAnUnusableAuthorizedInstallationAndReleasesTheLease(t *testing.T) {
+	for name, document := range map[string]func(*grokExecutionServer) []byte{
+		"none":     func(*grokExecutionServer) []byte { return nil },
+		"not json": func(*grokExecutionServer) []byte { return []byte("not json") },
+		"another harness": func(f *grokExecutionServer) []byte {
+			return f.installationDocument(domain.Installation{Harness: domain.Codex, Version: domain.GrokSubscriptionBaselineVersion, ResolvedPath: "/controlled/native/grok"})
+		},
+		"below the baseline": func(f *grokExecutionServer) []byte {
+			return f.installationDocument(domain.Installation{Harness: domain.GrokBuild, Version: domain.GrokProtocolVersion, ResolvedPath: "/controlled/native/grok"})
+		},
+		"relative path": func(f *grokExecutionServer) []byte {
+			return f.installationDocument(domain.Installation{Harness: domain.GrokBuild, Version: domain.GrokSubscriptionBaselineVersion, ResolvedPath: "grok"})
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newGrokExecutionServer(t)
+			f.installationJSON = document(f)
+			if _, err := f.begin(t); err == nil {
+				t.Fatal("an unusable authorized installation was accepted")
+			}
+			request := f.onlyFinish(t)
+			if request.Succeeded || !request.CleanupConfirmed || len(request.Bundle) != 0 {
+				t.Fatalf("the refused lease was not released with confirmed cleanup: %+v", request)
+			}
+			if entries, _ := os.ReadDir(f.home); len(entries) != 0 {
+				t.Fatal("a credential was written for an unusable installation")
+			}
+		})
+	}
+}
+
+// A Finish whose response is lost may leave the execute lease held. Every
+// post-Take failure then reports execution uncertainty, which closes the
+// primary lane and reconciles ownership, instead of an ordinary failed job.
+func TestGrokExecutionWithAnUnacknowledgedFinishIsUncertain(t *testing.T) {
+	t.Run("failure after the Take", func(t *testing.T) {
+		f := newGrokExecutionServer(t)
+		f.installationJSON = nil
+		f.failFinishWithConnect = true
+		_, err := f.begin(t)
+		var uncertain *managedExecutionUncertain
+		if !errors.As(err, &uncertain) {
+			t.Fatalf("an unacknowledged Finish after a failed begin was an ordinary error: %v", err)
+		}
+	})
+	t.Run("release after the execution", func(t *testing.T) {
+		f := newGrokExecutionServer(t)
+		run, err := f.begin(t)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.failFinishWithConnect = true
+		var uncertain *managedExecutionUncertain
+		if err := run.release(true); !errors.As(err, &uncertain) {
+			t.Fatalf("an unacknowledged Finish was an ordinary error: %v", err)
+		}
+	})
 }

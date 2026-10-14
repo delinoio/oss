@@ -807,7 +807,14 @@ blocks) is unchanged.
   start while an execute lease is active; separate accounts hold separate leases
   and run in parallel. There is no shared-owner or member scope for Grok. The
   response carries the stored envelope re-opened against this server, the
-  account and the generation, exactly like a refresh.
+  account and the generation, exactly like a refresh, and the verified
+  installation observation the Take admitted. That observation is the only one the
+  lease may launch: the Worker decodes it, requires a Grok Build installation at or
+  above the subscription baseline with an absolute path, proves the path is its
+  own canonical identity, and runs that executable and version instead of the
+  job's frozen observation, which discovery may have replaced since dispatch. An
+  unusable observation releases the lease with confirmed cleanup before any
+  credential is written.
 - **Credential custody.** The Worker binds the fresh private home
   (`<profile>/grok`, outside the workspace) before the Take, keeps the envelope
   in memory, and materializes `$GROK_HOME/auth.json` with mode 0600 through the
@@ -839,7 +846,11 @@ blocks) is unchanged.
   identity returns the sealed credential, an unjoined process, a foreign
   identity, an unreadable file or an unconfirmed removal never confirms cleanup
   or returns a bundle. An execution that failed before the harness asked for the
-  credential reports cleanup confirmed by construction.
+  credential reports cleanup confirmed by construction. A Finish whose response
+  is lost (a timeout or a dropped connection) leaves the lease possibly held, so
+  it is reported as managed execution uncertainty, not as an ordinary failed job:
+  the primary lane closes and ownership is reconciled, including for a failure
+  right after the Take.
 - **Finish.** The server settles an execute Finish with `Succeeded` and
   confirmed cleanup: an unchanged credential keeps the current generation and
   stages nothing; a rotated credential must keep the bound identity and publish a

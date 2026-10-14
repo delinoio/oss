@@ -50,6 +50,7 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 		return nil, domain.Fail(domain.Unsupported, "This Grok runner requires an owned General Chat workspace.", "Keep repository workspaces for their separately verified native profile.")
 	}
 	executable := input.Installation.ResolvedPath
+	installationVersion := input.Installation.Version
 	resolved, err := filepath.EvalSymlinks(executable)
 	if err != nil || !filepath.IsAbs(executable) || resolved != executable {
 		return nil, domain.Fail(domain.RecoveryRequired, "The selected native executable identity changed.", "Refresh Worker discovery; no PATH fallback is used.")
@@ -109,8 +110,22 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 		if err != nil {
 			return nil, err
 		}
+		// The lease authorizes only the installation its Take returned, which discovery
+		// may have replaced since the job was dispatched. That observation, not the
+		// job's frozen one, is validated, launched and credited with the credential.
+		if executable, installationVersion, err = subscriptionRun.executable(); err != nil {
+			defer func() {
+				if err := subscriptionRun.release(true); err != nil {
+					output, returned = nil, err
+				}
+			}()
+			return nil, err
+		}
 		defer func() {
-			if err := subscriptionRun.finish(nativeJoined); err != nil {
+			// A Finish that is not acknowledged leaves the execute lease possibly held:
+			// that is execution uncertainty, which closes the primary lane and
+			// reconciles ownership, never an ordinary failed job.
+			if err := subscriptionRun.release(nativeJoined); err != nil {
 				output, returned = nil, err
 			}
 		}()
@@ -178,7 +193,7 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 	if err != nil {
 		return nil, err
 	}
-	nativeConfig := grok.APIExecutionConfig{OrdinaryTools: ordinaryTools, Probe: grok.ProbeConfig{Process: process.Config{StartupObserver: config.progress.native, Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: home, Env: env, Logger: logger}, Version: input.Installation.Version, Home: filepath.Join(home, "grok")}, Workspace: lease.WorkingDirectory(), Model: input.Configuration.NativeModel, Instructions: instructions, ContextTokens: contextTokens, Mode: input.Input.Mode, ServerOrigin: connection.Credential.Endpoint, Token: token}
+	nativeConfig := grok.APIExecutionConfig{OrdinaryTools: ordinaryTools, Probe: grok.ProbeConfig{Process: process.Config{StartupObserver: config.progress.native, Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: home, Env: env, Logger: logger}, Version: installationVersion, Home: filepath.Join(home, "grok")}, Workspace: lease.WorkingDirectory(), Model: input.Configuration.NativeModel, Instructions: instructions, ContextTokens: contextTokens, Mode: input.Input.Mode, ServerOrigin: connection.Credential.Endpoint, Token: token}
 	if subscribed {
 		nativeConfig.ServerOrigin, nativeConfig.Token = "", ""
 		nativeConfig.Subscription, nativeConfig.PrepareCredential = true, subscriptionRun.prepare

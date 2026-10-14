@@ -36,10 +36,37 @@ type grokSubscriptionRun struct {
 	processes string
 	original  subscription.GrokBundle
 	attempted bool
+	// installation is the verified observation the execute Take authorized. It is
+	// the only installation the lease may launch: discovery can replace the
+	// job's frozen observation between dispatch and Take.
+	installation domain.Installation
+}
+
+// authorizedGrokInstallation decodes and validates the installation returned by
+// the execute Take: a Grok Build installation at or above the subscription
+// baseline with an absolute path.
+func authorizedGrokInstallation(raw []byte) (domain.Installation, error) {
+	var installation domain.Installation
+	if domain.Decode(raw, &installation) != nil || installation.Harness != domain.GrokBuild || !domain.GrokSubscriptionVersionAllowed(installation.Version) || !filepath.IsAbs(installation.ResolvedPath) {
+		return domain.Installation{}, subscription.Invalid()
+	}
+	return installation, nil
+}
+
+// executable returns the authorized installation's executable after proving that
+// its path is its own canonical identity (no symlink swap since Take).
+func (r *grokSubscriptionRun) executable() (string, string, error) {
+	resolved, err := filepath.EvalSymlinks(r.installation.ResolvedPath)
+	if err != nil || resolved != r.installation.ResolvedPath {
+		return "", "", domain.Fail(domain.RecoveryRequired, "The authorized native executable identity changed.", "Refresh Worker discovery; no PATH fallback is used.")
+	}
+	return resolved, r.installation.Version, nil
 }
 
 // beginGrokSubscriptionExecution Takes the execute lease for the claimed job and
-// binds the private native home. Nothing is written to the home yet.
+// binds the private native home. Nothing is written to the home yet. A failure
+// after the Take releases the lease; if that Finish is not acknowledged the
+// ownership is uncertain, never an ordinary failed job.
 func beginGrokSubscriptionExecution(ctx context.Context, config Config, owner domain.ID, input domain.ExecutionJobInput, grokHome string) (*grokSubscriptionRun, error) {
 	connection := config.execution
 	client, closeHTTP, err := subscriptionRPC(ctx, config, connection.Credential)
@@ -52,26 +79,31 @@ func beginGrokSubscriptionExecution(ctx context.Context, config Config, owner do
 		return nil, err
 	}
 	run := &grokSubscriptionRun{lease: lease, closeHTTP: closeHTTP, logger: config.Logger, owner: owner, processes: filepath.Join(config.Root, "processes")}
+	abort := func(cause error) (*grokSubscriptionRun, error) {
+		clear(lease.response.Bundle)
+		if err := run.release(true); err != nil {
+			return nil, err
+		}
+		return nil, cause
+	}
 	if len(lease.response.Bundle) == 0 || domain.ID(lease.response.GenerationId).Validate() != nil {
 		// An execute lease always carries the current generation.
-		clear(lease.response.Bundle)
-		_ = run.finish(true)
-		return nil, subscription.Invalid()
+		return abort(subscription.Invalid())
+	}
+	run.installation, err = authorizedGrokInstallation(lease.response.InstallationJson)
+	if err != nil {
+		return abort(err)
 	}
 	home, err := subscription.BindGrokHome(grokHome)
 	if err != nil {
-		clear(lease.response.Bundle)
-		_ = run.finish(true)
-		return nil, err
+		return abort(err)
 	}
 	lease.grokHome = home
 	// The home path is retained so the original Worker can retire a credential it
 	// left behind, even after a restart.
 	lease.journal.GrokHome = grokHome
 	if err := writeJSON(lease.journalPath, lease.journal); err != nil {
-		clear(lease.response.Bundle)
-		_ = run.finish(true)
-		return nil, subscription.Invalid()
+		return abort(subscription.Invalid())
 	}
 	if config.Logger != nil {
 		config.Logger.InfoContext(ctx, "grok_subscription_execution_leased", "phase", "EXECUTION", "step", "lease", "account_id", input.AccountID, "lease_id", lease.response.LeaseId)
@@ -115,6 +147,17 @@ func (r *grokSubscriptionRun) finish(joined bool) error {
 	original := r.original
 	r.original = subscription.GrokBundle{}
 	return r.lease.finishGrokExecution(original, r.attempted, joined)
+}
+
+// release is finish for a caller that reports through the job runner: a Finish
+// that is not acknowledged leaves the execute lease possibly held, which is
+// execution uncertainty (the primary lane closes and ownership is reconciled),
+// never an ordinary failed job.
+func (r *grokSubscriptionRun) release(joined bool) error {
+	if err := r.finish(joined); err != nil {
+		return &managedExecutionUncertain{err}
+	}
+	return nil
 }
 
 // grokNativeJoined proves that no native process owned by owner remains. An
