@@ -27,7 +27,7 @@ import (
 //  3. read: the stored generation is opened against this server and account;
 //  4. claim: GrokRevocationClaimed is written durably, in its own transaction;
 //  5. send: exactly one revocation request, with no retry;
-//  6. confirm: a revoked or already-invalid token is recorded durably as
+//  6. confirm: a token the provider acknowledged (HTTP 200) is recorded durably as
 //     GrokRevocationConfirmed together with SubscriptionState.RevokedGeneration;
 //  7. clean: only now every protected generation is deleted from the vault and
 //     the account is published as disconnected.

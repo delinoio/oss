@@ -164,27 +164,16 @@ func (g *grokLoginFixture) requireNoLogoutLeak(t *testing.T, op *pb.RequestSubsc
 	}
 }
 
-func TestGrokLogoutAlreadyInvalidTokenCountsAsRevoked(t *testing.T) {
-	for name, body := range map[string]string{"invalid_token": `{"error":"invalid_token"}`, "invalid_grant": `{"error":"invalid_grant"}`} {
-		t.Run(name, func(t *testing.T) {
-			g := newGrokLoginFixture(t)
-			g.connected(t)
-			g.idp.RevokeStatus, g.idp.RevokeBody = http.StatusBadRequest, body
-			g.logout(t)
-			if g.idp.RevokeRequests() != 1 {
-				t.Fatal("expected one revocation request")
-			}
-			g.requireDisconnected(t)
-		})
-	}
-}
-
 func TestGrokLogoutUnprovenRevocationLeavesRecoveryAndKeepsTheBundle(t *testing.T) {
 	for name, scenario := range map[string]struct {
 		status int
 		body   string
 	}{
-		"definite-4xx":   {http.StatusBadRequest, `{"error":"invalid_client"}`},
+		"definite-4xx": {http.StatusBadRequest, `{"error":"invalid_client"}`},
+		// RFC 7009 answers 200 for an invalid token, so an error response is a
+		// refused request and never proof that the token is unusable elsewhere.
+		"invalid-grant":  {http.StatusBadRequest, `{"error":"invalid_grant"}`},
+		"invalid-token":  {http.StatusUnauthorized, `{"error":"invalid_token"}`},
 		"forbidden":      {http.StatusForbidden, ``},
 		"server-error":   {http.StatusInternalServerError, ``},
 		"unavailable":    {http.StatusServiceUnavailable, ``},
