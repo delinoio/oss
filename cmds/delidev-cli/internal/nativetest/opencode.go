@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -27,7 +28,47 @@ import (
 // opt-in native tests exercise. Unset means every native test skips.
 const OpenCodeExecutableEnv = "DELIDEV_NATIVE_OPENCODE_EXECUTABLE"
 
-const versionTimeout = 20 * time.Second
+const (
+	versionTimeout = 20 * time.Second
+	// versionOutputLimit bounds the stdout captured from `--version`. A real
+	// version line is a few dozen bytes; anything larger is a misselected
+	// executable and is terminated instead of buffered until the timeout.
+	versionOutputLimit = 1024
+	// versionWaitDelay bounds how long the probe waits for output pipes to close
+	// after the process is killed (for example when a child inherited them).
+	versionWaitDelay = 2 * time.Second
+)
+
+var errVersionOutputLimit = errors.New("output exceeded the bound")
+
+// boundedWriter keeps at most limit bytes and cancels the probe as soon as a
+// write would exceed that bound, so memory use stays fixed regardless of how
+// fast the executable writes.
+type boundedWriter struct {
+	mu       sync.Mutex
+	buf      []byte
+	limit    int
+	cancel   context.CancelFunc
+	exceeded bool
+}
+
+func (w *boundedWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.exceeded || len(w.buf)+len(p) > w.limit {
+		w.exceeded = true
+		w.cancel()
+		return 0, errVersionOutputLimit
+	}
+	w.buf = append(w.buf, p...)
+	return len(p), nil
+}
+
+func (w *boundedWriter) result() ([]byte, bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return append([]byte(nil), w.buf...), w.exceeded
+}
 
 // openCodeVersions caches successful observations per executable so one
 // `go test` process runs each selected binary's --version once.
@@ -78,10 +119,20 @@ func ObserveOpenCodeVersion(home, path string) (string, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), versionTimeout)
 	defer cancel()
+	stdout := &boundedWriter{limit: versionOutputLimit, cancel: cancel}
 	command := exec.CommandContext(ctx, path, "--version")
 	command.Env, command.Dir = env, home
-	output, err := command.Output()
+	// Stderr stays nil so it is discarded rather than buffered.
+	command.Stdout, command.WaitDelay = stdout, versionWaitDelay
+	err = command.Run()
+	output, exceeded := stdout.result()
+	if exceeded {
+		return "", errors.New("--version output exceeded " + strconv.Itoa(versionOutputLimit) + " bytes; the probe was terminated")
+	}
 	if err != nil {
+		if ctx.Err() != nil {
+			return "", errors.New("--version timed out after " + versionTimeout.String())
+		}
 		return "", errors.New("--version failed: " + err.Error())
 	}
 	return ParseVersion(string(output))

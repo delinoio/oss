@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
@@ -95,6 +96,9 @@ func TestNativeOpenCodeExecutableVersionRule(t *testing.T) {
 		{"prerelease-trailing-dot", "printf '1.18.33-rc.\\n'", outcomeFatal},
 		{"build-metadata-empty-identifier", "printf '1.18.33+a..b\\n'", outcomeFatal},
 		{"leading-zero-core", "printf '01.18.33\\n'", outcomeFatal},
+		{"endless-output", "exec yes", outcomeFatal},
+		{"endless-output-without-newline", "while :; do printf 'xxxxxxxxxxxxxxxx'; done", outcomeFatal},
+		{"oversized-line", "i=0; while [ $i -lt 200 ]; do printf '0123456789'; i=$((i+1)); done; printf '\\n'", outcomeFatal},
 		{"two-lines", "printf '1.18.33\\n1.18.34\\n'", outcomeFatal},
 		{"empty", "exit 0", outcomeFatal},
 		{"failing", "exit 3", outcomeFatal},
@@ -122,6 +126,20 @@ func TestNativeOpenCodeExecutableVersionRule(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A runaway executable must end the probe at the output bound, quickly and with
+// a fatal result, instead of being buffered until the 20-second timeout.
+func TestObserveOpenCodeVersionBoundsOutput(t *testing.T) {
+	path := fakeOpenCode(t, "exec yes")
+	started := time.Now()
+	version, err := nativetest.ObserveOpenCodeVersion(t.TempDir(), path)
+	if err == nil || !strings.Contains(err.Error(), "exceeded") {
+		t.Fatalf("version=%q err=%v, want an output-bound error", version, err)
+	}
+	if elapsed := time.Since(started); elapsed > 10*time.Second {
+		t.Fatalf("probe was not terminated at the bound: %s", elapsed)
 	}
 }
 
