@@ -90,12 +90,17 @@ function fixture(first: Outcome) {
     });
   });
   const target = document.createElement("div");
-  document.body.append(target);
+  const requests = document.createElement("div");
+  document.body.append(target, requests);
   render(
     <TransportProvider transport={transport}>
       <QueryClientProvider client={new QueryClient()}>
         <MutationIntents>
-          <TailscaleConnections target={target} onPaired={vi.fn()} />
+          <TailscaleConnections
+            target={target}
+            requests={requests}
+            onPaired={vi.fn()}
+          />
         </MutationIntents>
       </QueryClientProvider>
     </TransportProvider>,
@@ -238,7 +243,8 @@ function accessFixture(options: {
   });
   const current = document.createElement("div");
   const target = document.createElement("div");
-  document.body.append(current, target);
+  const requests = document.createElement("div");
+  document.body.append(current, target, requests);
   render(
     <TransportProvider transport={transport}>
       <QueryClientProvider
@@ -250,6 +256,7 @@ function accessFixture(options: {
           <TailscaleConnections
             current={current}
             target={target}
+            requests={requests}
             onPaired={vi.fn()}
           />
         </MutationIntents>

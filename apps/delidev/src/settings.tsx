@@ -62,6 +62,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   useId,
@@ -1740,6 +1741,7 @@ enum SettingsArea {
   Network,
   Configuration,
   Diagnostics,
+  Tailscale,
   Notifications,
   Transfer,
   Integrations,
@@ -1906,6 +1908,15 @@ export const settingsCategories: Record<
     kind: EntityKind.DEVICE,
     area: SettingsArea.Configuration,
   },
+  [SettingsCategory.Tailscale]: {
+    get label() {
+      return copy("settings.tailscale");
+    },
+    get description() {
+      return copy("settings.tailscaleDescription");
+    },
+    area: SettingsArea.Tailscale,
+  },
   [SettingsCategory.ServerPreferences]: {
     get label() {
       return copy("settings.serverPreferences_eba66b");
@@ -1991,6 +2002,7 @@ export const settingsGroups: {
     categories: [
       SettingsCategory.ExecutionWorkers,
       SettingsCategory.PairedDevices,
+      SettingsCategory.Tailscale,
     ],
   },
   {
@@ -2035,6 +2047,8 @@ const settingsIcons: Record<SettingsCategory, string> = {
   [SettingsCategory.ExecutionWorkers]:
     "M3 4h18v13H3zM8 21h8m-4-4v4M7 8h4m-4 4h10",
   [SettingsCategory.PairedDevices]: "M7 3h10v18H7zM10 6h4m-4 12h4",
+  [SettingsCategory.Tailscale]:
+    "M12 5h.01M12 12h.01M12 19h.01M5 5h.01M5 12h.01M5 19h.01M19 5h.01M19 12h.01M19 19h.01",
   [SettingsCategory.GitWorkflow]:
     "M6 4v6m0 0a3 3 0 1 0 0 6m0-6h7a3 3 0 1 1 0 6h5m-12 0v4",
   [SettingsCategory.ServerPreferences]:
@@ -2111,7 +2125,7 @@ type NavigateSettings = (
 // itself only with its own approved contract text.
 // Surface categories move their whole content column and every task opened in
 // them. Heading categories contain persistent portal hosts or native controllers
-// (Connections, App information, Runner Devices), so only the static category heading moves and
+// (Connections, App information, Runner Devices, Tailscale), so only the static category heading moves and
 // tasks present their own heading entrance.
 const entranceCategories: ReadonlyMap<SettingsCategory, EntranceTarget> =
   new Map([
@@ -2132,6 +2146,7 @@ const entranceCategories: ReadonlyMap<SettingsCategory, EntranceTarget> =
     [SettingsCategory.Repositories, EntranceTarget.Surface],
     [SettingsCategory.Integrations, EntranceTarget.Surface],
     [SettingsCategory.ExecutionWorkers, EntranceTarget.Heading],
+    [SettingsCategory.Tailscale, EntranceTarget.Heading],
     [SettingsCategory.Diagnostics, EntranceTarget.Heading],
     [SettingsCategory.AppInformation, EntranceTarget.Heading],
   ]);
@@ -2209,6 +2224,20 @@ function SettingsVisit({
     selection.key,
     entranceTarget !== undefined,
   );
+  // Only the original local desktop window supplies the Tailscale presentation
+  // publisher; saved-server windows list no Tailscale category at all.
+  const tailscaleAvailable = props.runnerTailscale !== undefined;
+  const visibleGroups = useMemo(
+    () =>
+      settingsGroups.map((group) => ({
+        ...group,
+        categories: group.categories.filter(
+          (category) =>
+            category !== SettingsCategory.Tailscale || tailscaleAvailable,
+        ),
+      })),
+    [tailscaleAvailable],
+  );
   const initialDestination = useRef(entryDestination);
   const handledDestination = useRef<SettingsNavigationEntry | undefined>(
     undefined,
@@ -2262,7 +2291,7 @@ function SettingsVisit({
         showHeading={false}
       >
         <SettingsSearch
-          categories={settingsGroups.flatMap((group) =>
+          categories={visibleGroups.flatMap((group) =>
             group.categories.map((category) => ({
               category,
               label: settingsCategories[category].label,
@@ -2278,7 +2307,7 @@ function SettingsVisit({
             aria-label={copy("settings.settingsCategories_b9ed95")}
             data-settings-groups
           >
-            {settingsGroups.map((group) => (
+            {visibleGroups.map((group) => (
               <section className="settings-nav-group" key={group.label}>
                 <h2>
                   {copy(
@@ -2898,6 +2927,8 @@ function SettingsWorkspace({
                         ? "settings-content settings-app-information"
                         : area === SettingsArea.Diagnostics
                           ? "settings-content settings-connections"
+                          : area === SettingsArea.Tailscale
+                            ? "settings-content settings-tailscale"
                           : area === SettingsArea.KeyboardShortcuts
                             ? "settings-content settings-shortcuts"
                             : "settings-content"
@@ -3109,6 +3140,11 @@ function SettingsWorkspace({
                       )}
                     </div>
                   ) : null}
+                  {area === SettingsArea.Tailscale && runnerTailscale ? (
+                    <div>
+                      <RunnerTailscalePresentation publish={runnerTailscale} />
+                    </div>
+                  ) : null}
                   {area === SettingsArea.Configuration ? (
                     <div>
                       {controlLocalWorker && isRunnerDevices ? (
@@ -3316,11 +3352,6 @@ function SettingsWorkspace({
                               label={copy("settings.settingsPages_05ec05")}
                             />
                           </div>
-                          {runnerTailscale ? (
-                            <RunnerTailscalePresentation
-                              publish={runnerTailscale}
-                            />
-                          ) : null}
                         </>
                       ) : hasSpecializedPanel ? null : (
                         <>

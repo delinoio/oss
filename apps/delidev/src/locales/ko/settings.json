@@ -42,6 +42,8 @@
   "settings.repositories_1e32af": "저장소",
   "settings.runnerDevices_a176a8": "실행 장치",
   "settings.pairedDevices_f72c6a": "페어링된 장치",
+  "settings.tailscale": "Tailscale",
+  "settings.tailscaleDescription": "이 컴퓨터의 Tailscale 접근을 확인하고, 테일넷의 기기를 찾고, 연결 요청을 검토합니다.",
   "settings.serverPreferences_eba66b": "서버 환경 설정",
   "settings.gitWorkflow": "Git 워크플로",
   "settings.gitWorkflowDescription": "기본 브랜치, Worktree fetch 및 풀 리퀘스트 문제 해결입니다.",

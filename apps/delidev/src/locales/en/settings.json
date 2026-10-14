@@ -42,6 +42,8 @@
   "settings.repositories_1e32af": "Repositories",
   "settings.runnerDevices_a176a8": "Runner Devices",
   "settings.pairedDevices_f72c6a": "Paired devices",
+  "settings.tailscale": "Tailscale",
+  "settings.tailscaleDescription": "Check this computer's Tailscale access, find devices on your tailnet and review connection requests.",
   "settings.serverPreferences_eba66b": "Server preferences",
   "settings.gitWorkflow": "Git",
   "settings.gitWorkflowDescription": "Default branch, Worktree fetch, and pull request remediation.",

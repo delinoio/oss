@@ -129,16 +129,45 @@ function approvalLabel(state: ApprovalState) {
   return copy(keys[state] ?? "tailscale.uncertain");
 }
 
-// This controller stays with the original Local connection. The Runner Devices
-// presentation supplies the access and devices slots; leaving it disposes
-// discovery while exact accepted requests and approvals remain owned.
+// The stored access intent (Access.enabled) and the observed Access.state are
+// separate facts. Only the Ready state is ever presented as ready.
+enum AccessStatus {
+  Loading = "loading",
+  Unavailable = "unavailable",
+  Off = "off",
+  Ready = "ready",
+  ActionNeeded = "action-needed",
+  SetupRequired = "setup-required",
+}
+function accessStatus(access: Access | undefined, pending: boolean) {
+  if (!access)
+    return pending ? AccessStatus.Loading : AccessStatus.Unavailable;
+  if (access.state === "ready") return AccessStatus.Ready;
+  if (access.state === "off") return AccessStatus.Off;
+  return access.enabled ? AccessStatus.ActionNeeded : AccessStatus.SetupRequired;
+}
+const accessStatusCopy = {
+  [AccessStatus.Loading]: "tailscale.accessLoading",
+  [AccessStatus.Unavailable]: "tailscale.unavailable",
+  [AccessStatus.Off]: "tailscale.off",
+  [AccessStatus.Ready]: "tailscale.ready",
+  [AccessStatus.ActionNeeded]: "tailscale.actionNeeded",
+  [AccessStatus.SetupRequired]: "tailscale.setupRequired",
+} as const;
+
+// This controller stays with the original Local connection. The Tailscale
+// category presentation supplies the access (This computer), devices and
+// requests slots; leaving it disposes discovery while exact accepted requests
+// and approvals remain owned.
 export function TailscaleConnections({
   current,
   target,
+  requests,
   onPaired,
 }: {
   current?: HTMLElement;
   target?: HTMLElement;
+  requests?: HTMLElement;
   onPaired: () => void;
 }) {
   useLocale();
@@ -183,6 +212,7 @@ export function TailscaleConnections({
       setDismissed(undefined);
     },
   );
+  const accessState = accessStatus(access, accessRead.isPending);
   const approvals = decode<Approval[]>(inbox.data?.documentJson) ?? [];
   const approval = approvals.find(
     (a) => a.state === ApprovalState.Pending && a.id !== dismissed,
@@ -190,73 +220,103 @@ export function TailscaleConnections({
   return (
     <>
       <PersistentConnectionView target={current} hidden>
-        {supported ? (
-          <section className="tailscale-access" aria-labelledby={accessHeading}>
-            <h2 id={accessHeading}>{copy("tailscale.access")}</h2>
-            <p role="status">
-              {copy("tailscale.access")}:{" "}
-              {access?.state === "ready"
-                ? copy("tailscale.on")
-                : access?.state === "off"
-                  ? copy("tailscale.off")
-                  : copy("tailscale.setupRequired")}
-            </p>
-            {access?.origin ? (
-              <p className="tailscale-identity">{access.origin}</p>
-            ) : null}
-            <button
-              type="button"
-              disabled={accessMutation.busy}
-              onClick={() =>
-                access?.enabled
-                  ? void accessMutation.send({
-                      requestId: newRequestId(),
-                      enabled: false,
-                    })
-                  : setConfirmation(true)
-              }
-            >
-              {access?.enabled
-                ? copy("tailscale.disable")
-                : copy("tailscale.enable")}
-            </button>
-            {!accessRead.error && isLoginRequired(accessMutation.error) ? (
-              <LoginRequiredProblem error={accessMutation.error} />
-            ) : (
-              <Problem
-                error={
-                  accessRead.error ??
-                  accessMutation.error ??
-                  inbox.error ??
-                  decisions.error
-                }
-              />
-            )}
-            {decisions.uncertain ? (
-              <button type="button" onClick={() => void decisions.retry()}>
-                {copy("tailscale.reconcile")}
-              </button>
-            ) : null}
-            {accessMutation.uncertain ? (
-              <button type="button" onClick={() => void accessMutation.retry()}>
-                {copy("tailscale.reconcile")}
-              </button>
-            ) : null}
-          </section>
-        ) : null}
-      </PersistentConnectionView>
-      <PersistentConnectionView target={target} hidden>
-        {target ? (
-          <section className="tailscale-devices">
-            <h2>{copy("tailscale.devices")}</h2>
+        {current ? (
+          <section
+            className="tailscale-section tailscale-access"
+            aria-labelledby={accessHeading}
+            data-settings-search-target="tailscale-computer"
+          >
+            <h2 id={accessHeading}>{copy("tailscale.thisComputer")}</h2>
             {supported ? (
-              <DeviceInventory access={access} onPaired={onPaired} />
+              <>
+                <p className="tailscale-help">{copy("tailscale.computerHelp")}</p>
+                <dl className="tailscale-facts">
+                  {access ? (
+                    <div>
+                      <dt>{copy("tailscale.intent")}</dt>
+                      <dd>
+                        {access.enabled
+                          ? copy("tailscale.intentEnabled")
+                          : copy("tailscale.intentDisabled")}
+                      </dd>
+                    </div>
+                  ) : null}
+                  <div>
+                    <dt>{copy("tailscale.status")}</dt>
+                    <dd role="status" data-access-status={accessState}>
+                      {copy(accessStatusCopy[accessState])}
+                    </dd>
+                  </div>
+                </dl>
+                {accessState === AccessStatus.ActionNeeded ? (
+                  <p className="tailscale-guidance">
+                    {copy("tailscale.setupGuidance")}
+                  </p>
+                ) : null}
+                {access?.origin ? (
+                  <p className="tailscale-identity">{access.origin}</p>
+                ) : null}
+                <button
+                  type="button"
+                  disabled={accessMutation.busy}
+                  onClick={() =>
+                    access?.enabled
+                      ? void accessMutation.send({
+                          requestId: newRequestId(),
+                          enabled: false,
+                        })
+                      : setConfirmation(true)
+                  }
+                >
+                  {access?.enabled
+                    ? copy("tailscale.disable")
+                    : copy("tailscale.enable")}
+                </button>
+                {access?.enabled ? (
+                  <p className="tailscale-note">{copy("tailscale.disableNote")}</p>
+                ) : null}
+                {!accessRead.error && isLoginRequired(accessMutation.error) ? (
+                  <LoginRequiredProblem error={accessMutation.error} />
+                ) : (
+                  <Problem
+                    error={
+                      accessRead.error ??
+                      accessMutation.error ??
+                      inbox.error ??
+                      decisions.error
+                    }
+                  />
+                )}
+                {decisions.uncertain ? (
+                  <button type="button" onClick={() => void decisions.retry()}>
+                    {copy("tailscale.reconcile")}
+                  </button>
+                ) : null}
+                {accessMutation.uncertain ? (
+                  <button
+                    type="button"
+                    onClick={() => void accessMutation.retry()}
+                  >
+                    {copy("tailscale.reconcile")}
+                  </button>
+                ) : null}
+              </>
+            ) : status.isPending ? (
+              <p role="status">{copy("tailscale.loading")}</p>
             ) : (
               <p>{copy("tailscale.unsupported")}</p>
             )}
           </section>
         ) : null}
       </PersistentConnectionView>
+      {supported && (target || requests) ? (
+        <DeviceInventory
+          access={access}
+          onPaired={onPaired}
+          devices={target}
+          requests={requests}
+        />
+      ) : null}
       {confirmation ? (
         <Modal
           title={copy("tailscale.enable")}
@@ -344,12 +404,19 @@ export function TailscaleConnections({
     </>
   );
 }
+// Owns discovery, retained connection requests and the begin, resume and cancel
+// mutations. It presents the devices and requests regions through two stable
+// portal hosts so the same state feeds both sections of the category.
 function DeviceInventory({
   access,
   onPaired,
+  devices,
+  requests,
 }: {
   access?: Access;
   onPaired: () => void;
+  devices?: HTMLElement;
+  requests?: HTMLElement;
 }) {
   useLocale();
   const discovery = useQuery(TailscaleQuery.discoverTailscale, {});
@@ -404,123 +471,164 @@ function DeviceInventory({
     : original;
   return (
     <>
-      <p>{copy("tailscale.help")}</p>
-      <button
-        type="button"
-        disabled={discovery.isFetching}
-        onClick={() => void discovery.refetch()}
-      >
-        {copy("tailscale.refresh")}
-      </button>
-      <p role="status">
-        {discovery.isPending
-          ? copy("tailscale.loading")
-          : inventory?.state === "running"
-            ? copy("tailscale.connected")
-            : inventory?.state === "logged-out"
-              ? copy("tailscale.loggedOut")
-              : inventory?.state === "machine-approval"
-                ? copy("tailscale.machineApproval")
-                : inventory?.state === "stopped"
-                  ? copy("tailscale.stopped")
-                  : inventory?.state === "starting"
-                    ? copy("tailscale.starting")
-                    : copy("tailscale.unavailable")}
-      </p>
-      <Problem error={discovery.error} />
-      {inventory?.state === "running" && inventory.peers.length === 0 ? (
-        <p>{copy("tailscale.empty")}</p>
-      ) : null}
-      <ul className="tailscale-list">
-        {inventory?.peers.map((peer) => (
-          <PeerRow
-            key={peer.id}
-            peer={peer}
-            workerEnabled={access?.state === "ready"}
-            choose={(role) => setSelected({ peer, role })}
-          />
-        ))}
-      </ul>
-      <Problem
-        error={start.error ?? resume.error ?? cancel.error ?? operations.error}
-      />
-      {start.uncertain ? (
-        <button type="button" onClick={() => void start.retry()}>
-          {copy("tailscale.reconcile")}
-        </button>
-      ) : null}
-      {resume.uncertain ? (
-        <button
-          type="button"
-          disabled={resume.busy}
-          onClick={() => void resume.retry()}
-        >
-          {copy("tailscale.retryResume")}
-        </button>
-      ) : null}
-      {cancel.uncertain ? (
-        <button
-          type="button"
-          disabled={cancel.busy}
-          onClick={() => void cancel.retry()}
-        >
-          {copy("tailscale.retryCancel")}
-        </button>
-      ) : null}
-      {resume.uncertain || cancel.uncertain ? (
-        <p id={retainedHelpId} role="status">
-          {copy("tailscale.retainedRequestHelp")}
-        </p>
-      ) : null}
-      {retained.length ? (
-        <section>
-          <h3>{copy("tailscale.operations")}</h3>
-          <ul className="tailscale-list">
-            {retained.map((a) => (
-              <li key={a.id}>
-                <strong>{a.name || a.origin}</strong>
-                <p role="status">{approvalLabel(a.state)}</p>
-                {a.code ? (
-                  <>
-                    <p>{copy("tailscale.matchingCode")}</p>
-                    <strong className="tailscale-code">{a.code}</strong>
-                  </>
-                ) : null}
-                <p className="tailscale-identity">{a.origin}</p>
-                {a.state === ApprovalState.Pending ||
-                a.state === ApprovalState.Approved ||
-                a.state === ApprovalState.Uncertain ? (
-                  <button
-                    type="button"
-                    disabled={resumeBlocked}
-                    aria-describedby={
-                      resume.uncertain ? retainedHelpId : undefined
-                    }
-                    onClick={() => void resume.send({ requestId: a.id })}
-                  >
-                    {copy("tailscale.reconcile")}
-                  </button>
-                ) : null}
-                {a.state === ApprovalState.Pending ? (
-                  <button
-                    type="button"
-                    disabled={cancelBlocked}
-                    aria-describedby={
-                      cancel.uncertain ? retainedHelpId : undefined
-                    }
-                    onClick={() => void cancel.send({ requestId: a.id })}
-                  >
-                    {copy("tailscale.cancel")}
-                  </button>
-                ) : null}
-                {a.state === ApprovalState.Completed ? (
-                  <p>{copy("tailscale.completedHelp")}</p>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
+      <PersistentConnectionView target={devices} hidden>
+        {devices ? (
+          <section
+            className="tailscale-section tailscale-devices"
+            aria-labelledby="tailscale-devices-heading"
+            data-settings-search-target="tailscale-devices"
+          >
+            <h2 id="tailscale-devices-heading">
+              {copy("tailscale.tailnetDevices")}
+            </h2>
+            <p className="tailscale-help">{copy("tailscale.help")}</p>
+            <div className="tailscale-toolbar">
+              <div>
+                <span className="tailscale-label">
+                  {copy("tailscale.client")}
+                </span>
+                <p role="status">
+                  {discovery.isPending
+                    ? copy("tailscale.loading")
+                    : inventory?.state === "running"
+                      ? copy("tailscale.connected")
+                      : inventory?.state === "logged-out"
+                        ? copy("tailscale.loggedOut")
+                        : inventory?.state === "machine-approval"
+                          ? copy("tailscale.machineApproval")
+                          : inventory?.state === "stopped"
+                            ? copy("tailscale.stopped")
+                            : inventory?.state === "starting"
+                              ? copy("tailscale.starting")
+                              : copy("tailscale.unavailable")}
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={discovery.isFetching}
+                onClick={() => void discovery.refetch()}
+              >
+                {copy("tailscale.refresh")}
+              </button>
+            </div>
+            <Problem error={discovery.error} />
+            {inventory?.state === "running" && inventory.peers.length === 0 ? (
+              <p>{copy("tailscale.empty")}</p>
+            ) : null}
+            <ul className="tailscale-list">
+              {inventory?.peers.map((peer) => (
+                <PeerRow
+                  key={peer.id}
+                  peer={peer}
+                  workerEnabled={access?.state === "ready"}
+                  choose={(role) => setSelected({ peer, role })}
+                />
+              ))}
+            </ul>
+          </section>
+        ) : null}
+      </PersistentConnectionView>
+      <PersistentConnectionView target={requests} hidden>
+        {requests ? (
+          <section
+            className="tailscale-section tailscale-requests"
+            aria-labelledby="tailscale-requests-heading"
+            data-settings-search-target="tailscale-requests"
+          >
+            <h2 id="tailscale-requests-heading">
+              {copy("tailscale.requests")}
+            </h2>
+            <p className="tailscale-help">{copy("tailscale.requestsHelp")}</p>
+            <Problem
+              error={
+                start.error ?? resume.error ?? cancel.error ?? operations.error
+              }
+            />
+            {start.uncertain ? (
+              <button type="button" onClick={() => void start.retry()}>
+                {copy("tailscale.reconcile")}
+              </button>
+            ) : null}
+            {resume.uncertain ? (
+              <button
+                type="button"
+                disabled={resume.busy}
+                onClick={() => void resume.retry()}
+              >
+                {copy("tailscale.retryResume")}
+              </button>
+            ) : null}
+            {cancel.uncertain ? (
+              <button
+                type="button"
+                disabled={cancel.busy}
+                onClick={() => void cancel.retry()}
+              >
+                {copy("tailscale.retryCancel")}
+              </button>
+            ) : null}
+            {resume.uncertain || cancel.uncertain ? (
+              <p id={retainedHelpId} role="status">
+                {copy("tailscale.retainedRequestHelp")}
+              </p>
+            ) : null}
+            {retained.length ? (
+              <ul className="tailscale-list">
+                {retained.map((a) => (
+                  <li key={a.id}>
+                    <div>
+                      <strong>{a.name || a.origin}</strong>
+                      <p role="status">{approvalLabel(a.state)}</p>
+                      {a.code ? (
+                        <>
+                          <p>{copy("tailscale.matchingCode")}</p>
+                          <strong className="tailscale-code">{a.code}</strong>
+                        </>
+                      ) : null}
+                      <p className="tailscale-identity">{a.origin}</p>
+                      {a.state === ApprovalState.Completed ? (
+                        <p>{copy("tailscale.completedHelp")}</p>
+                      ) : null}
+                    </div>
+                    <div className="tailscale-actions">
+                      {a.state === ApprovalState.Pending ||
+                      a.state === ApprovalState.Approved ||
+                      a.state === ApprovalState.Uncertain ? (
+                        <button
+                          type="button"
+                          disabled={resumeBlocked}
+                          aria-describedby={
+                            resume.uncertain ? retainedHelpId : undefined
+                          }
+                          onClick={() => void resume.send({ requestId: a.id })}
+                        >
+                          {copy("tailscale.reconcile")}
+                        </button>
+                      ) : null}
+                      {a.state === ApprovalState.Pending ? (
+                        <button
+                          type="button"
+                          disabled={cancelBlocked}
+                          aria-describedby={
+                            cancel.uncertain ? retainedHelpId : undefined
+                          }
+                          onClick={() => void cancel.send({ requestId: a.id })}
+                        >
+                          {copy("tailscale.cancel")}
+                        </button>
+                      ) : null}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : operations.isPending ? (
+              <p role="status">{copy("tailscale.requestsLoading")}</p>
+            ) : (
+              <p>{copy("tailscale.requestsEmpty")}</p>
+            )}
+          </section>
+        ) : null}
+      </PersistentConnectionView>
       {selected ? (
         <Modal
           title={

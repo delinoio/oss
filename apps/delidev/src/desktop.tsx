@@ -388,6 +388,7 @@ function LocalDesktop() {
       <TailscaleConnections
         current={runnerSlots?.access}
         target={runnerSlots?.devices}
+        requests={runnerSlots?.requests}
         onPaired={() => setSavedRefresh((value) => value + 1)}
       />
       <LocalServerControls
