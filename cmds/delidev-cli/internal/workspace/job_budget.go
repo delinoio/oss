@@ -28,6 +28,20 @@ const (
 	unresolvedNameFill = "<"
 )
 
+// ValidateWorkerRoot enforces ManifestWorkerRootReserveBytes. The root is
+// measured as encoding/json writes it (so a Windows separator costs two bytes
+// and '<', '>' or '&' cost six), which is how it repeats inside the Manifest.
+func ValidateWorkerRoot(root string) error {
+	encoded, err := json.Marshal(root)
+	if err != nil {
+		return domain.Fail(domain.InvalidArgument, "The Worker data directory cannot be encoded.", "Choose a different Worker data directory.")
+	}
+	if len(encoded)-2 > ManifestWorkerRootReserveBytes {
+		return domain.Fail(domain.InvalidArgument, "The Worker data directory path is too long once JSON-escaped.", "Choose a shorter Worker data directory with fewer separators or special characters.")
+	}
+	return nil
+}
+
 // MaxManifestBytes returns an upper bound of the serialized Manifest a Worker
 // can publish for this request. Every generated identity, digest and commit
 // uses its maximum length and every unresolved path or reference uses the

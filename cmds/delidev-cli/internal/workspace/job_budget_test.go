@@ -125,3 +125,27 @@ func TestMaxManifestBytesReservesEscapedWorkerRoot(t *testing.T) {
 		}
 	}
 }
+
+// Admission reserves ManifestWorkerRootReserveBytes, so a Worker must refuse a
+// data root whose JSON-encoded length exceeds it.
+func TestWorkerRootEncodedLengthIsEnforced(t *testing.T) {
+	for name, tc := range map[string]struct {
+		root string
+		ok   bool
+	}{
+		"plain at limit":      {strings.Repeat("r", ManifestWorkerRootReserveBytes), true},
+		"plain over":          {strings.Repeat("r", ManifestWorkerRootReserveBytes+1), false},
+		"escaped at limit":    {strings.Repeat("<", ManifestWorkerRootReserveBytes/6), true},
+		"escaped over":        {strings.Repeat("<", ManifestWorkerRootReserveBytes/6+1), false},
+		"separators at limit": {strings.Repeat(`\`, ManifestWorkerRootReserveBytes/2), true},
+		"separators over":     {strings.Repeat(`\`, ManifestWorkerRootReserveBytes/2+1), false},
+	} {
+		if err := ValidateWorkerRoot(tc.root); (err == nil) != tc.ok {
+			t.Fatalf("%s: accepted=%v want %v (%v)", name, err == nil, tc.ok, err)
+		}
+	}
+	m := &Manager{Root: "/" + strings.Repeat("<", ManifestWorkerRootReserveBytes/6+1)}
+	if err := m.initialize(); err == nil {
+		t.Fatal("initialize accepted an over-long encoded root")
+	}
+}

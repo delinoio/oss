@@ -139,6 +139,9 @@ func (m *Manager) initialize() error {
 	if m.initialized {
 		return nil
 	}
+	if err := ValidateWorkerRoot(m.Root); err != nil {
+		return err
+	}
 	if err := security.PrivateDir(m.Root); err != nil {
 		return err
 	}
@@ -146,6 +149,9 @@ func (m *Manager) initialize() error {
 	// ownership journals and registration comparisons in that same namespace.
 	canonical, err := filepath.EvalSymlinks(m.Root)
 	if err != nil {
+		return err
+	}
+	if err := ValidateWorkerRoot(canonical); err != nil {
 		return err
 	}
 	m.Root = canonical
