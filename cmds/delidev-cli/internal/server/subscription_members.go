@@ -22,6 +22,22 @@ func subscriptionMemberNotAdmitted(code domain.Code) *domain.Error {
 	return problem
 }
 
+// subscriptionFinishInput is the idempotency identity of one managed Codex
+// Finish. Scope is omitted for the legacy meaning, so the retained request digest
+// of every historical Finish receipt is unchanged and its replay stays valid.
+type subscriptionFinishInput struct {
+	Account, Lease, Machine, Instance, Generation domain.ID
+	Commitment                                    string
+	Revision                                      uint64
+	Cleanup, Refresh, Success                     bool
+	Scope                                         domain.SubscriptionFinishScope `json:",omitempty"`
+}
+
+// memberLeaseResolver resolves one exact member of a shared owner inside a
+// transaction for the Codex or the device-owned Claude lane. Each lane keeps its
+// own account-type and installation checks.
+type memberLeaseResolver func(ctx context.Context, tx *store.Tx, account, lease, machine, instance domain.ID, memberScope bool) (store.Record, domain.Account, domain.SubscriptionLease, *domain.SubscriptionMember, error)
+
 // sharedMemberAdmissible proves that one more execute job may join the live
 // shared owner. The owner stays bound to its original Runner, device, instance,
 // server epoch and credential generation, and an owner with no runnable member is
@@ -52,11 +68,11 @@ func (s *Service) sharedMemberAdmissible(state *domain.SubscriptionState, machin
 // boundary and no generation changed, so the owner and siblings are untouched.
 // The release is a bounded write detached from request cancellation. The caller
 // holds the accounts gate.
-func (s *Service) releaseUndeliveredMember(ctx context.Context, account, lease, machine, instance domain.ID, reason string) error {
+func (s *Service) releaseUndeliveredMember(ctx context.Context, resolve memberLeaseResolver, account, lease, machine, instance domain.ID, reason string) error {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 	_, err := s.Store.Mutate(ctx, domain.NewID(), "subscription.member-release", struct{ Account, Lease domain.ID }{account, lease}, func(tx *store.Tx) (any, error) {
-		r, a, _, member, err := s.subscriptionLeaseView(ctx, tx, account, lease, machine, instance, true)
+		r, a, _, member, err := resolve(ctx, tx, account, lease, machine, instance, true)
 		if err != nil {
 			return nil, err
 		}
@@ -78,11 +94,11 @@ func (s *Service) releaseUndeliveredMember(ctx context.Context, account, lease, 
 // sibling and never retires the owner. A member whose native or descendant
 // closure is unproven stays retained with its workspace and cleanup ownership
 // until final owner containment closes; that retention is not a completed Stop.
-func (s *Service) settleSubscriptionMember(ctx context.Context, tx *store.Tx, account, lease, machine, instance, generation domain.ID, revision uint64, cleanup, success bool) (any, error) {
+func (s *Service) settleSubscriptionMember(ctx context.Context, tx *store.Tx, resolve memberLeaseResolver, account, lease, machine, instance, generation domain.ID, revision uint64, cleanup, success bool) (any, error) {
 	if err := tx.Authorize(); err != nil {
 		return nil, err
 	}
-	r, a, view, member, err := s.subscriptionLeaseView(ctx, tx, account, lease, machine, instance, true)
+	r, a, view, member, err := resolve(ctx, tx, account, lease, machine, instance, true)
 	if err != nil {
 		return nil, err
 	}
@@ -102,4 +118,38 @@ func (s *Service) settleSubscriptionMember(ctx context.Context, tx *store.Tx, ac
 	}
 	s.logger.InfoContext(ctx, "subscription_member_finished", "account_id", account, "lease_id", lease, "owner_lease_id", state.Lease.ID, "operation_id", view.OperationID, "outcome", outcome, "succeeded", success, "runnable_members", state.RunnableMembers(), "members", len(state.Members))
 	return accountReceipt{ID: r.ID}, nil
+}
+
+// claudeFinishInput is the idempotency identity of one device-owned Claude
+// Finish; Scope is omitted for the legacy meaning exactly like the Codex input.
+type claudeFinishInput struct {
+	Account, Lease, Machine, Instance, Generation, Profile domain.ID
+	Identity                                               string
+	Revision                                               uint64
+	Cleanup, Success                                       bool
+	Scope                                                  domain.SubscriptionFinishScope `json:",omitempty"`
+}
+
+// ownerFinishAllowed proves that an owner-scoped Finish may settle the stored
+// lease. A shared owner is retired only by the owner scope, a singleton lease
+// only by the legacy scope, and a shared owner only after its last runnable
+// member (the finishing one, when it names a member identifier).
+func ownerFinishAllowed(st *domain.SubscriptionState, scope domain.SubscriptionFinishScope, member *domain.SubscriptionMember) error {
+	if st.SharedOwner() != (scope == domain.SubscriptionFinishOwner) {
+		return subscriptionDenied()
+	}
+	if !st.SharedOwner() {
+		return nil
+	}
+	remaining := st.RunnableMembers()
+	if member != nil {
+		if member.State != domain.SubscriptionMemberRunning {
+			return subscriptionDenied()
+		}
+		remaining--
+	}
+	if remaining != 0 {
+		return domain.Fail(domain.Conflict, "Other execution members still use this account owner.", "Finish every member first; only the last member retires the owner.")
+	}
+	return nil
 }

@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,11 +20,12 @@ import (
 // prepares additional claimed execute jobs that share the account.
 type memberFixture struct {
 	*subscriptionFixture
+	claude bool
 }
 
 func newMemberFixture(t *testing.T, negotiated bool) *memberFixture {
 	t.Helper()
-	f := &memberFixture{newSubscriptionFixture(t)}
+	f := &memberFixture{subscriptionFixture: newSubscriptionFixture(t)}
 	clear(f.login())
 	if negotiated {
 		_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.shared-owner-capability", nil, func(tx *store.Tx) (any, error) {
@@ -48,6 +50,13 @@ func (f *memberFixture) prepareJobs(count int) []memberJob {
 	_, account := f.record()
 	f.input.ConnectionID = account.Connection.ID
 	f.input.Configuration.Subscription = true
+	if f.claude {
+		c := &f.input.Configuration
+		c.Harness, c.SubscriptionService, c.ProviderID = domain.ClaudeCode, domain.SubscriptionClaude, ""
+		c.ModelID = (domain.ModelIdentity{SubscriptionService: domain.SubscriptionClaude, NativeID: c.NativeModel}).Key()
+		c.Options = domain.AgentOptions{Permission: domain.PermissionDefault}
+		f.input.Installation = domain.Installation{Harness: domain.ClaudeCode, State: domain.InstallationDetected, Version: domain.ClaudeProtocolVersion, ProtocolVerified: true, Protocol: &domain.ProtocolObservation{Protocol: domain.ProtocolFor(domain.ClaudeCode), State: domain.ProtocolVerified}}
+	}
 	f.input.ConfigurationDigest, _ = f.input.Configuration.Digest()
 	var jobs []memberJob
 	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.shared-owner-jobs", nil, func(tx *store.Tx) (any, error) {
@@ -534,5 +543,153 @@ func TestConcurrentAdmissionJoinsEveryMemberExactlyOnce(t *testing.T) {
 	}
 	if got := f.members(t); len(got) != 16 {
 		t.Fatal("concurrent admission lost or duplicated members", len(got))
+	}
+}
+
+// claudeMemberFixture connects a device-owned Claude account through the real
+// native login Take/Finish, negotiates ClaudeDeviceOwnedMembersV1 and prepares
+// claimed Claude execute jobs on the same account.
+func newClaudeMemberFixture(t *testing.T, negotiated bool) *memberFixture {
+	t.Helper()
+	f := &memberFixture{subscriptionFixture: newClaudeSubscriptionFixture(t), claude: true}
+	op := claudeStart(t, f.subscriptionFixture, pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
+	lease, err := f.take(op, pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	finish := &pb.FinishSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(f.input.AccountID), ExpectedRevision: lease.LeaseRevision}, LeaseId: lease.LeaseId, GenerationId: lease.GenerationId, MachineId: string(f.input.MachineID), InstanceId: string(f.instance), CleanupConfirmed: true, Succeeded: true, NativeIdentity: &pb.NativeSubscriptionIdentity{ProfileId: lease.NativeProfileId, IdentityCommitment: strings.Repeat("ab", 32)}}
+	if _, err := f.client.FinishSubscription(context.Background(), subscriptionRequest(f.workerToken, finish)); err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.claude-member-capability", nil, func(tx *store.Tx) (any, error) {
+		mr, machine, err := activeMachine(tx, f.input.MachineID)
+		if err != nil {
+			return nil, err
+		}
+		if negotiated {
+			machine.WorkerCapabilities = append(machine.WorkerCapabilities, domain.ClaudeDeviceOwnedMembersV1)
+		}
+		return tx.Put(domain.MachineKind, mr.ID, mr.Revision, "", "", machine)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return f
+}
+
+func TestDeviceOwnedClaudeMembersShareOneProfileOwnerWithoutCap(t *testing.T) {
+	f := newClaudeMemberFixture(t, true)
+	jobs := f.prepareJobs(5)
+	var leases []*pb.TakeSubscriptionResponse
+	for index, job := range jobs {
+		lease, err := f.takeJob(job)
+		if err != nil {
+			t.Fatalf("Claude job %d was not admitted: %v", index, err)
+		}
+		if len(lease.Bundle) != 0 || lease.NativeProfileId == "" || (index == 0 && lease.OwnerLeaseId != "") || (index > 0 && lease.OwnerLeaseId != leases[0].LeaseId) {
+			t.Fatal("Claude members must name the one canonical profile and carry no authentication")
+		}
+		leases = append(leases, lease)
+	}
+	_, account := f.record()
+	if !account.Subscription.SharedOwner() || len(account.Subscription.Members) != 6 || account.Subscription.NativeProfileID == "" {
+		t.Fatal("six Claude sessions were not admitted to one profile owner")
+	}
+	// Member Finish never reports identity and never moves the generation.
+	generation, identity := account.Subscription.Generation, account.Subscription.IdentityCommitment
+	for _, index := range []int{4, 0} {
+		if _, err := f.finishScope(leases[index], leases[index].LeaseRevision, pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_MEMBER, leases[index].GenerationId, nil, true, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// An identity or refresh confirmation on a member Finish is refused.
+	rejected := &pb.FinishSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(f.input.AccountID), ExpectedRevision: leases[1].LeaseRevision}, LeaseId: leases[1].LeaseId, GenerationId: leases[1].GenerationId, MachineId: string(f.input.MachineID), InstanceId: string(f.instance), CleanupConfirmed: true, Succeeded: true, FinishScope: pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_MEMBER, NativeIdentity: &pb.NativeSubscriptionIdentity{ProfileId: leases[1].NativeProfileId, IdentityCommitment: strings.Repeat("ab", 32)}}
+	if _, err := f.client.FinishSubscription(context.Background(), subscriptionRequest(f.workerToken, rejected)); err == nil {
+		t.Fatal("a member Finish accepted identity authority")
+	}
+	for _, index := range []int{1, 2, 3} {
+		if _, err := f.finishScope(leases[index], leases[index].LeaseRevision, pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_MEMBER, leases[index].GenerationId, nil, true, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, mid := f.record()
+	if mid.Subscription.Generation != generation || mid.Subscription.IdentityCommitment != identity || len(mid.Subscription.Members) != 1 || mid.Subscription.Members[0].LeaseID != domain.ID(leases[5].LeaseId) {
+		t.Fatal("member Finish disturbed credentials or the last member")
+	}
+	// The last member retires the owner with the confirmed native identity.
+	owner := &pb.FinishSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(f.input.AccountID), ExpectedRevision: leases[0].LeaseRevision}, LeaseId: leases[5].LeaseId, GenerationId: leases[5].GenerationId, MachineId: string(f.input.MachineID), InstanceId: string(f.instance), CleanupConfirmed: true, Succeeded: true, FinishScope: pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_OWNER, NativeIdentity: &pb.NativeSubscriptionIdentity{ProfileId: leases[0].NativeProfileId, IdentityCommitment: identity}}
+	if _, err := f.client.FinishSubscription(context.Background(), subscriptionRequest(f.workerToken, owner)); err != nil {
+		t.Fatal(err)
+	}
+	_, after := f.record()
+	if after.Subscription.Lease != nil || len(after.Subscription.Members) != 0 || after.Subscription.RecoveryRequired || after.Health != domain.AccountReady || after.Subscription.Generation != generation {
+		t.Fatal("Claude owner retirement did not release the account")
+	}
+}
+
+func TestDeviceOwnedClaudeStaysExclusiveForOldPeers(t *testing.T) {
+	f := newClaudeMemberFixture(t, false)
+	jobs := f.prepareJobs(1)
+	first, err := f.takeJob(jobs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.takeJob(jobs[1]); domain.SafeError(rpc.ClientError(err)).Code != domain.ResourceExhausted {
+		t.Fatal("an old Claude peer shared the profile", err)
+	}
+	_, account := f.record()
+	if account.Subscription.SharedOwner() || len(account.Subscription.Members) != 0 || first.OwnerLeaseId != "" {
+		t.Fatal("an old Claude peer produced the shared representation")
+	}
+}
+
+func TestClaudeOwnerLossAndLogoutJoinEveryMember(t *testing.T) {
+	f := newClaudeMemberFixture(t, true)
+	jobs := f.prepareJobs(2)
+	var leases []*pb.TakeSubscriptionResponse
+	for _, job := range jobs {
+		lease, err := f.takeJob(job)
+		if err != nil {
+			t.Fatal(err)
+		}
+		leases = append(leases, lease)
+	}
+	// Logout is accepted behind the members: readiness is revoked at once and the
+	// lifecycle Take waits for every member.
+	op := claudeStart(t, f.subscriptionFixture, pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT)
+	if _, err := f.take(op, pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT); domain.SafeError(rpc.ClientError(err)).Code != domain.ResourceExhausted {
+		t.Fatal("Claude logout overlapped live members", err)
+	}
+	if _, err := f.takeJob(memberJob{ID: domain.NewID(), Revision: 1}); err == nil {
+		t.Fatal("fresh Claude admission stayed open behind a queued logout")
+	}
+	if err := f.service.retainLostSubscriptionLeases(f.input.MachineID, f.instance, true); err != nil {
+		t.Fatal(err)
+	}
+	_, account := f.record()
+	if !account.Subscription.RecoveryRequired || len(account.Subscription.Members) != 3 {
+		t.Fatal("owner loss did not fence the Claude owner/member set")
+	}
+	for _, lease := range leases {
+		if _, err := f.finishScope(lease, lease.LeaseRevision, pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_MEMBER, lease.GenerationId, nil, true, true); err == nil {
+			t.Fatal("a fenced Claude member finished")
+		}
+	}
+}
+
+// The retained request digest of every historical Finish receipt hashes the
+// legacy input shape, so the new scope field must not appear unless it is used.
+func TestLegacyFinishReceiptIdentityIsUnchanged(t *testing.T) {
+	codex, _ := json.Marshal(subscriptionFinishInput{Account: "a", Lease: "l", Machine: "m", Instance: "i", Generation: "g", Commitment: "c", Revision: 3, Cleanup: true, Refresh: false, Success: true})
+	if got, want := string(codex), `{"Account":"a","Lease":"l","Machine":"m","Instance":"i","Generation":"g","Commitment":"c","Revision":3,"Cleanup":true,"Refresh":false,"Success":true}`; got != want {
+		t.Fatalf("Codex Finish identity changed:\n%s\n%s", got, want)
+	}
+	claude, _ := json.Marshal(claudeFinishInput{Account: "a", Lease: "l", Machine: "m", Instance: "i", Generation: "g", Profile: "p", Identity: "x", Revision: 3, Cleanup: true, Success: true})
+	if got, want := string(claude), `{"Account":"a","Lease":"l","Machine":"m","Instance":"i","Generation":"g","Profile":"p","Identity":"x","Revision":3,"Cleanup":true,"Success":true}`; got != want {
+		t.Fatalf("Claude Finish identity changed:\n%s\n%s", got, want)
+	}
+	scoped, _ := json.Marshal(subscriptionFinishInput{Scope: domain.SubscriptionFinishMember})
+	if !strings.Contains(string(scoped), `"Scope":"member"`) {
+		t.Fatal("a scoped Finish must bind its scope into the receipt identity")
 	}
 }

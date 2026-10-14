@@ -902,7 +902,7 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 		if joinedOwner {
 			// A joined member holds no credential, so a failed admission releases
 			// only that member and never fences the owner or its siblings.
-			if releaseErr := s.releaseUndeliveredMember(ctx, input.Account, input.Lease, input.Machine, input.Instance, reason); releaseErr != nil {
+			if releaseErr := s.releaseUndeliveredMember(ctx, s.subscriptionLeaseView, input.Account, input.Lease, input.Machine, input.Instance, reason); releaseErr != nil {
 				s.logger.WarnContext(ctx, "subscription_member_release_unconfirmed", "account_id", input.Account, "lease_id", input.Lease, "reason", reason, "code", domain.SafeError(releaseErr).Code)
 				return original
 			}
@@ -1060,13 +1060,7 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 	if len(req.Msg.Bundle) > subscription.MaxBundle {
 		return nil, rpc.Error(subscription.Invalid(), c)
 	}
-	input := struct {
-		Account, Lease, Machine, Instance, Generation domain.ID
-		Commitment                                    string
-		Revision                                      uint64
-		Cleanup, Refresh, Success                     bool
-		Scope                                         domain.SubscriptionFinishScope
-	}{domain.ID(m.Id), domain.ID(req.Msg.LeaseId), domain.ID(req.Msg.MachineId), domain.ID(req.Msg.InstanceId), domain.ID(req.Msg.GenerationId), s.accountCommitment(domain.ID(m.RequestId), req.Msg.Bundle), m.ExpectedRevision, req.Msg.CleanupConfirmed, req.Msg.RefreshConfirmed, req.Msg.Succeeded, subscriptionFinishScope(req.Msg.FinishScope)}
+	input := subscriptionFinishInput{domain.ID(m.Id), domain.ID(req.Msg.LeaseId), domain.ID(req.Msg.MachineId), domain.ID(req.Msg.InstanceId), domain.ID(req.Msg.GenerationId), s.accountCommitment(domain.ID(m.RequestId), req.Msg.Bundle), m.ExpectedRevision, req.Msg.CleanupConfirmed, req.Msg.RefreshConfirmed, req.Msg.Succeeded, subscriptionFinishScope(req.Msg.FinishScope)}
 	unlock, err := s.lockAccounts(ctx)
 	if err != nil {
 		return nil, rpc.Error(err, c)
@@ -1084,7 +1078,7 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 			return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "A member Finish carries no authentication.", "Only the owner Finish writes back the credential generation."), c)
 		}
 		result, err = s.Store.Mutate(ctx, domain.ID(m.RequestId), "subscription.finish", input, func(tx *store.Tx) (any, error) {
-			return s.settleSubscriptionMember(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance, input.Generation, input.Revision, input.Cleanup, input.Success)
+			return s.settleSubscriptionMember(ctx, tx, s.subscriptionLeaseView, input.Account, input.Lease, input.Machine, input.Instance, input.Generation, input.Revision, input.Cleanup, input.Success)
 		})
 		if err != nil {
 			return nil, rpc.Error(err, c)
@@ -1113,21 +1107,9 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 		// A shared owner is retired only by an explicit owner-scope Finish after
 		// its last runnable member, and a singleton lease only by the legacy scope.
 		// Neither crosses into the other representation.
-		if state.SharedOwner() != (input.Scope == domain.SubscriptionFinishOwner) {
-			return nil, rpc.Error(subscriptionDenied(), c)
-		}
-		if state.SharedOwner() {
-			remaining := state.RunnableMembers()
-			if member != nil {
-				if member.State != domain.SubscriptionMemberRunning {
-					return nil, rpc.Error(subscriptionDenied(), c)
-				}
-				remaining--
-			}
-			if remaining != 0 {
-				s.logger.WarnContext(ctx, "subscription_owner_finish_refused_runnable_members", "account_id", input.Account, "lease_id", input.Lease, "runnable_members", remaining)
-				return nil, rpc.Error(domain.Fail(domain.Conflict, "Other execution members still use this account owner.", "Finish every member first; only the last member retires the owner."), c)
-			}
+		if err := ownerFinishAllowed(state, input.Scope, member); err != nil {
+			s.logger.WarnContext(ctx, "subscription_owner_finish_refused", "account_id", input.Account, "lease_id", input.Lease, "finish_scope", input.Scope, "runnable_members", state.RunnableMembers(), "code", domain.SafeError(err).Code)
+			return nil, rpc.Error(err, c)
 		}
 		// Receipt replay above is read-only. A new finish cannot resolve an
 		// ownership loss or touch its vault generations through this channel.
@@ -1219,9 +1201,9 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 				return nil, err
 			}
 			state := a.Subscription
-			if state.SharedOwner() && (state.RunnableMembers() > 1 || currentMember != nil && currentMember.State != domain.SubscriptionMemberRunning || state.RunnableMembers() == 1 && currentMember == nil) {
+			if err := ownerFinishAllowed(state, input.Scope, currentMember); err != nil {
 				// A sibling was admitted between the check and the write.
-				return nil, domain.Fail(domain.Conflict, "Other execution members still use this account owner.", "Finish every member first; only the last member retires the owner.")
+				return nil, err
 			}
 			if lease.Action == domain.SubscriptionExecute {
 				if _, err := managedSidechatLease(tx, *lease); err != nil {
