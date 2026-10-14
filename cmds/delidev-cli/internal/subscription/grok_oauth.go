@@ -404,6 +404,35 @@ func (t GrokTokens) Format(f fmt.State, _ rune) {
 	_, _ = f.Write([]byte(t.String()))
 }
 
+// grokTokenBody is the JSON body of a token endpoint response. Every member is
+// optional on the wire; the callers decide which ones their grant requires.
+type grokTokenBody struct {
+	AccessToken  string      `json:"access_token"`
+	RefreshToken string      `json:"refresh_token"`
+	IDToken      string      `json:"id_token"`
+	TokenType    string      `json:"token_type"`
+	ExpiresIn    json.Number `json:"expires_in"`
+	Error        string      `json:"error"`
+}
+
+// parseGrokTokenBody decodes a token endpoint body. It reports true only when
+// the body is exactly one JSON object: another JSON value or any other trailing
+// byte after it makes the whole response unparsed, whatever its status. A claimed
+// grant must treat such a body as uncertain, never as a published success and
+// never as a definitive rejection that would release the claim.
+func parseGrokTokenBody(raw []byte) (grokTokenBody, bool) {
+	var body grokTokenBody
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if decoder.Decode(&body) != nil {
+		return grokTokenBody{}, false
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		return grokTokenBody{}, false
+	}
+	return body, true
+}
+
 // ExchangeCode redeems one authorization code at the token endpoint as a
 // public client with the PKCE verifier. It sends exactly one request and never
 // retries. A definitive provider rejection is GrokReasonTokenRejected; every
@@ -423,17 +452,7 @@ func (c GrokOAuthClient) ExchangeCode(ctx context.Context, endpoints GrokEndpoin
 	if err != nil {
 		return GrokTokens{}, err
 	}
-	var body struct {
-		AccessToken  string      `json:"access_token"`
-		RefreshToken string      `json:"refresh_token"`
-		IDToken      string      `json:"id_token"`
-		TokenType    string      `json:"token_type"`
-		ExpiresIn    json.Number `json:"expires_in"`
-		Error        string      `json:"error"`
-	}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.UseNumber()
-	parsed := decoder.Decode(&body) == nil
+	body, parsed := parseGrokTokenBody(raw)
 	if status != http.StatusOK {
 		if parsed && (status == http.StatusBadRequest || status == http.StatusUnauthorized) && body.Error != "" {
 			return GrokTokens{}, grokFailure(GrokReasonTokenRejected)

@@ -121,7 +121,8 @@ conversations:write workspaces:read workspaces:write`, `referrer=grok-build`.
   token endpoint as a public client (`grant_type=authorization_code`,
   `client_id`, `redirect_uri`, `code`, `code_verifier`; no client secret, no
   `Authorization` header, no redirect following, no retry). A definitive provider
-  rejection (HTTP 400 or 401 with an OAuth `error`) settles the login as failed.
+  rejection (HTTP 400 or 401 whose entire body is one OAuth `error` object; see the
+  [response table](#token-endpoint-response-table)) settles the login as failed.
   A transport error, cancellation (`CancelSubscription`, shutdown or expiry during
   the request), timeout, unreadable or oversized body, unexpected status or a
   malformed success body is uncertain: the operation ends in
@@ -500,7 +501,8 @@ settlement and recovery).
   behavior of the real provider were not observed: the implementation and its
   tests model RFC 6749, and the opt-in capture stays unperformed.
 - **Outcomes.** Success publishes the next generation (below). A definitive
-  provider refusal (HTTP 400 or 401 with an OAuth `error`, for example
+  provider refusal (HTTP 400 or 401 whose entire body is one OAuth `error`
+  object, for example
   `invalid_grant`) means the token did not rotate: the operation settles as
   `FAILED` with `grok_diagnostic` code `unauthenticated`, the stored bundle is
   kept, and the account health becomes `expired` until the owner signs in again.
@@ -539,6 +541,27 @@ settlement and recovery).
 
 Fault-injection seams (`grokRefreshFault`, test-only) cover the points after the
 claim, after the response, after staging and after the commit.
+
+### Token endpoint response table
+
+The authorization-code exchange and the refresh grant share one response parser
+(`parseGrokTokenBody`). A body is parsed only when it is exactly one JSON object:
+another JSON value, a stray comma or any other non-whitespace byte after the first
+object makes the response unparsed, whatever its status. Both grants are claimed
+before the request, so an unparsed response is never a published success and never
+a definitive rejection that would release the claim. The table is pinned by
+`TestGrokTokenResponseTable`, which runs every row against both grants.
+
+| Status | Body | Reason | Settlement after the claim |
+| --- | --- | --- | --- |
+| 200 | one valid token object (trailing whitespace allowed) | success | publish |
+| 200 | token object followed by another JSON value or any other byte | `GrokReasonTokenResponse` | `RECOVERY_REQUIRED` |
+| 200 | missing or invalid member, not JSON | `GrokReasonTokenResponse` | `RECOVERY_REQUIRED` |
+| 400, 401 | exactly one object with a non-empty `error` | `GrokReasonTokenRejected` | `FAILED`, the token did not rotate |
+| 400, 401 | an `error` object followed by any other byte or JSON value | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED` |
+| 400, 401 | no `error` member or not JSON | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED` |
+| other 4xx, 5xx, redirect | any body | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED` |
+| transport error, cancellation, truncated or oversized body | none | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED` |
 
 ### Native refresh confinement
 
