@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -69,7 +70,7 @@ func TestSignedCompleteInventoryAndRejections(t *testing.T) {
 	if e != nil || len(good.Payload.Artifacts) != 12 {
 		t.Fatal(e)
 	}
-	cases := map[string]func(*Payload){"missing": func(p *Payload) { p.Artifacts = p.Artifacts[:11] }, "duplicate": func(p *Payload) { p.Artifacts[1] = p.Artifacts[0] }, "foreign-project": func(p *Payload) { p.Artifacts[0].URL = strings.Replace(p.Artifacts[0].URL, "delidev-v", "devhud-v", 1) }, "unknown-target": func(p *Payload) { p.Artifacts[0].Target = "linux-386" }, "uppercase-hash": func(p *Payload) { p.Artifacts[0].SHA256 = strings.ToUpper(p.Artifacts[0].SHA256) }, "oversized": func(p *Payload) { p.Artifacts[0].Size = ArtifactLimit + 1 }, "wrong-protocol": func(p *Payload) { p.ProtocolVersion = 2 }, "future": func(p *Payload) { p.PublishedAt = "2027-01-01T00:00:00Z" }, "bad-source": func(p *Payload) { p.SourceRevision = "main" }, "downgrade": func(p *Payload) { p.Version = "0.0.1" }, "suffix": func(p *Payload) { p.Version = "0.2.0-beta" }}
+	cases := map[string]func(*Payload){"missing": func(p *Payload) { p.Artifacts = p.Artifacts[:11] }, "duplicate": func(p *Payload) { p.Artifacts[1] = p.Artifacts[0] }, "foreign-project": func(p *Payload) { p.Artifacts[0].URL = strings.Replace(p.Artifacts[0].URL, "delidev@v", "devhud@v", 1) }, "unknown-target": func(p *Payload) { p.Artifacts[0].Target = "linux-386" }, "uppercase-hash": func(p *Payload) { p.Artifacts[0].SHA256 = strings.ToUpper(p.Artifacts[0].SHA256) }, "oversized": func(p *Payload) { p.Artifacts[0].Size = ArtifactLimit + 1 }, "wrong-protocol": func(p *Payload) { p.ProtocolVersion = 2 }, "future": func(p *Payload) { p.PublishedAt = "2027-01-01T00:00:00Z" }, "bad-source": func(p *Payload) { p.SourceRevision = "main" }, "downgrade": func(p *Payload) { p.Version = "0.0.1" }, "suffix": func(p *Payload) { p.Version = "0.2.0-beta" }}
 	for name, edit := range cases {
 		t.Run(name, func(t *testing.T) {
 			_, _, p := fixture(t)
@@ -111,7 +112,7 @@ func TestActualHTTPNamespaceSelectionDownloadAndCancellation(t *testing.T) {
 		}
 		switch {
 		case r.URL.Path == "/repos/"+Repository+"/releases":
-			io.WriteString(w, `[{"tag_name":"react-forge-v99.0.0","draft":false,"prerelease":false},{"tag_name":"delidev-v0.2.0","draft":false,"prerelease":false}]`)
+			io.WriteString(w, `[{"tag_name":"react-forge-v99.0.0","draft":false,"prerelease":false},{"tag_name":"delidev-v0.9.0","draft":false,"prerelease":false},{"tag_name":"delidev@v0.3.0","draft":true,"prerelease":false},{"tag_name":"delidev@v0.4.0","draft":false,"prerelease":true},{"tag_name":"delidev@v0.2.0","draft":false,"prerelease":false}]`)
 		case strings.HasSuffix(r.URL.Path, ManifestName):
 			w.Write(raw)
 		default:
@@ -166,6 +167,40 @@ func TestActualHTTPNamespaceSelectionDownloadAndCancellation(t *testing.T) {
 	os.Symlink(filepath.Join(root, "missing"), path)
 	if VerifyFile(path, a) == nil {
 		t.Fatal("Symlink accepted")
+	}
+}
+func TestReleaseNamespaceUsesAtTagPrefix(t *testing.T) {
+	if TagPrefix != "delidev@v" {
+		t.Fatalf("Unexpected tag prefix %q", TagPrefix)
+	}
+	name := ArtifactName(Worker, "darwin-arm64")
+	want := "https://github.com/" + Repository + "/releases/download/delidev@v0.2.0/" + name
+	if got := ReleaseURL("0.2.0", name); got != want {
+		t.Fatalf("Unexpected release URL %q", got)
+	}
+	if e := ValidateArtifactURL(want, "0.2.0", name); e != nil {
+		t.Fatalf("Canonical artifact URL rejected: %v", e)
+	}
+	for _, source := range []string{
+		strings.Replace(want, "delidev@v", "delidev-v", 1),
+		strings.Replace(want, "delidev@v", "nodeup@v", 1),
+		strings.Replace(want, "delidev@v", "delidev%40v", 1),
+		strings.Replace(want, "/delidev@v0.2.0/", "/delidev@v0.3.0/", 1),
+	} {
+		if ValidateArtifactURL(source, "0.2.0", name) == nil {
+			t.Fatalf("Foreign artifact URL accepted: %s", source)
+		}
+	}
+	redirect := newHTTPClient().CheckRedirect
+	via := func(path string) []*http.Request {
+		return []*http.Request{{URL: &url.URL{Scheme: "https", Host: "github.com", Path: path}}}
+	}
+	target := &http.Request{URL: &url.URL{Scheme: "https", Host: "release-assets.githubusercontent.com", Path: "/blob"}}
+	if e := redirect(target, via("/"+Repository+"/releases/download/delidev@v0.2.0/"+name)); e != nil {
+		t.Fatalf("New namespace redirect rejected: %v", e)
+	}
+	if redirect(target, via("/"+Repository+"/releases/download/delidev-v0.2.0/"+name)) == nil {
+		t.Fatal("Old namespace redirect accepted")
 	}
 }
 func TestClosedTargetsAndVersionPrecision(t *testing.T) {

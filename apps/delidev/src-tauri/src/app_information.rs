@@ -13,7 +13,9 @@ pub enum AppInformationLink {
 impl AppInformationLink {
     pub fn destination(self) -> &'static str {
         match self {
-            Self::Releases => "https://github.com/delinoio/oss/releases?q=delidev-v&expanded=true",
+            Self::Releases => {
+                "https://github.com/delinoio/oss/releases?q=delidev%40v&expanded=true"
+            }
             Self::License => "https://github.com/delinoio/oss/blob/main/LICENSE",
             Self::Notices => "https://github.com/delinoio/oss/tree/main/apps/delidev/public",
         }
@@ -30,7 +32,7 @@ mod tests {
             (
                 "releases",
                 AppInformationLink::Releases,
-                "https://github.com/delinoio/oss/releases?q=delidev-v&expanded=true",
+                "https://github.com/delinoio/oss/releases?q=delidev%40v&expanded=true",
             ),
             (
                 "license",

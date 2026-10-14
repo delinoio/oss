@@ -371,7 +371,7 @@ Subscription Account details follows the [subscription Settings modal boundary](
 ## Automated distribution
 
 The owner-authorized release coordinator includes DeliDev stable version selection,
-exact `delidev-v<semver>` tags and ends after tag preparation. Those tag pushes
+exact `delidev@v<semver>` tags and ends after tag preparation. Those tag pushes
 start independent macOS/Linux x64/arm64 download-only GitHub publication.
 Deployment failures are recovered in the original tag workflow; coordinator
 success does not establish publication. Windows production signing is unavailable and both Windows targets
