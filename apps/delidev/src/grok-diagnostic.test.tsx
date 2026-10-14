@@ -6,7 +6,13 @@ import {
   GrokDiagnosticSchema,
   newRequestId,
 } from "@delinoio/delidev-api-client";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   GrokDiagnosticNotice,
@@ -82,7 +88,11 @@ it.each(["en", "ko"] as const)(
 );
 
 it("shows detected and supported versions for an unsupported release", async () => {
-  const value = diagnostic(GrokDiagnosticPhase.VERSION, FailureCode.Unsupported, "1.0.43");
+  const value = diagnostic(
+    GrokDiagnosticPhase.VERSION,
+    FailureCode.Unsupported,
+    "1.0.43",
+  );
   render(<GrokDiagnosticNotice diagnostic={value} />);
   const alert = screen.getByRole("alert").textContent!;
   expect(alert).toContain(
@@ -95,7 +105,9 @@ it("shows detected and supported versions for an unsupported release", async () 
   );
   await act(() => i18n.changeLanguage("ko"));
   const korean = screen.getByRole("alert").textContent!;
-  expect(korean).toContain("Grok Build 1.0.43이(가) 버전 검증 단계를 완료하지 못했습니다.");
+  expect(korean).toContain(
+    "Grok Build 1.0.43이(가) 버전 검증 단계를 완료하지 못했습니다.",
+  );
   expect(korean).toContain("1.0.46 이상의 올바른 SemVer");
   expect(korean).toContain("감지된 버전:1.0.43");
   expect(korean).toContain("지원되는 버전:1.0.46");
@@ -124,12 +136,18 @@ it("describes undetected, invalid and timed out failures from closed metadata", 
   for (const bad of [
     diagnostic(GrokDiagnosticPhase.LOGIN, "bogus" as FailureCode),
     diagnostic(GrokDiagnosticPhase.UNSPECIFIED),
-    diagnostic(GrokDiagnosticPhase.LOGIN, FailureCode.Unsupported, "/Users/private"),
+    diagnostic(
+      GrokDiagnosticPhase.LOGIN,
+      FailureCode.Unsupported,
+      "/Users/private",
+    ),
   ])
     expect(safeGrokDiagnostic(bad)).toBeUndefined();
   expect(safeGrokDiagnostic(undefined)).toBeUndefined();
   const rejected = render(
-    <GrokDiagnosticNotice diagnostic={diagnostic(GrokDiagnosticPhase.UNSPECIFIED)} />,
+    <GrokDiagnosticNotice
+      diagnostic={diagnostic(GrokDiagnosticPhase.UNSPECIFIED)}
+    />,
   );
   expect(rejected.container.textContent).toBe("");
 });
@@ -147,16 +165,25 @@ it("copies only the correlation id and reports a failed copy", async () => {
   expect(await screen.findByText("Reference copied.")).toBeTruthy();
   writeText.mockRejectedValueOnce(new Error("denied"));
   fireEvent.click(screen.getByRole("button", { name: "Copy reference" }));
-  expect(await screen.findByText("The reference could not be copied.")).toBeTruthy();
+  expect(
+    await screen.findByText("The reference could not be copied."),
+  ).toBeTruthy();
   // A malformed reference is neither displayed nor copyable.
   cleanup();
   render(
     <GrokDiagnosticNotice
-      diagnostic={diagnostic(GrokDiagnosticPhase.PROFILE, FailureCode.Unsupported, "1.0.52", "not-an-id")}
+      diagnostic={diagnostic(
+        GrokDiagnosticPhase.PROFILE,
+        FailureCode.Unsupported,
+        "1.0.52",
+        "not-an-id",
+      )}
     />,
   );
   expect(screen.queryByRole("button", { name: "Copy reference" })).toBeNull();
-  expect(screen.getByRole("alert").textContent).toContain("Reference:Not reported");
+  expect(screen.getByRole("alert").textContent).toContain(
+    "Reference:Not reported",
+  );
 });
 
 it("reads the stored installation diagnostic and drops unknown phases", () => {
@@ -179,7 +206,11 @@ it("reads the stored installation diagnostic and drops unknown phases", () => {
 
 it("reuses the diagnostic in Grok onboarding while the service stays unsupported", async () => {
   const inspect = vi.fn();
-  const value = diagnostic(GrokDiagnosticPhase.VERSION, FailureCode.Unsupported, "1.0.43");
+  const value = diagnostic(
+    GrokDiagnosticPhase.VERSION,
+    FailureCode.Unsupported,
+    "1.0.43",
+  );
   render(
     <SubscriptionOnboarding
       serviceName="Grok"
@@ -199,11 +230,17 @@ it("reuses the diagnostic in Grok onboarding while the service stays unsupported
       inspect={inspect}
     />,
   );
-  expect(screen.getByRole("status").textContent).toBe("Grok sign-in is not supported yet");
+  expect(screen.getByRole("status").textContent).toBe(
+    "Grok sign-in is not supported yet",
+  );
   const alert = screen.getByRole("alert").textContent!;
-  expect(alert).toContain("Grok Build 1.0.43 did not complete version validation.");
+  expect(alert).toContain(
+    "Grok Build 1.0.43 did not complete version validation.",
+  );
   expect(alert).toContain("Supported version:1.0.46");
   expect(alert).not.toMatch(sensitive);
-  expect(screen.queryByRole("button", { name: "Open browser again" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Open browser again" }),
+  ).toBeNull();
   expect(inspect).not.toHaveBeenCalled();
 });

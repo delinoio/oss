@@ -439,8 +439,7 @@ logout, models, execution and history producers wrap their failures with
 `ServerSubscriptionOperation.GrokDiagnostic` (JSON `grok_diagnostic`) is valid only
 on a Grok account's settled operation, never together with the Codex diagnostic,
 and its correlation ID equals the operation ID. `GetSubscriptionProgress` for a
-Grok account returns the original operation's state and `grok_diagnostic` (field
-10) after the usual actor check; Codex field 7 and native field 9 stay unset,
+Grok account returns the original operation's state and `grok_diagnostic` (field 10) after the usual actor check; Codex field 7 and native field 9 stay unset,
 older clients ignore field 10, and no URL or user code is returned.
 
 The desktop reconstructs presentation from closed metadata only
