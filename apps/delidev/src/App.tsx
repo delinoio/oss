@@ -94,6 +94,11 @@ import {
   readRouteSession,
   RouteReadOutcome,
 } from "./product-route-restore";
+import {
+  deriveProductRoute,
+  MirrorRestoreState,
+  SchedulesMode,
+} from "./product-route-mirror";
 import { Schedules } from "./schedules";
 import type { ControlLocalWorker } from "./local-worker-controls";
 import type { ReadLocalWorkerProof } from "./local-worker";
@@ -438,8 +443,15 @@ function Shell({
     (tab: UsageTab) => setRouteSelection((current) => ({ ...current, tab })),
     [],
   );
+  // Settings remounts for every visit and reports its own category, so the
+  // category of an earlier visit is dropped when the visit ends instead of
+  // describing the next one.
   useEffect(() => {
-    if (surface !== Surface.Settings) setRestoreCategory(undefined);
+    if (surface === Surface.Settings) return;
+    setRestoreCategory(undefined);
+    setRouteSelection((current) =>
+      current.category ? { ...current, category: undefined } : current,
+    );
   }, [surface]);
   const [projectCreation, setProjectCreation] = useState<{
     id: string;
@@ -723,27 +735,45 @@ function Shell({
     queryClient,
   ]);
   // Mirror committed navigation into the URL query with history.replaceState.
-  // The URL keeps the original route until its selection has been verified.
+  // The URL keeps the original route until its selection has been verified. The
+  // route derives only from the visible surface's own state through the table in
+  // `product-route-mirror.ts`: a selection retained by a hidden workspace (the
+  // Schedule behind an occurrence review, a category of an earlier Settings
+  // visit) never describes another destination.
   const sidechatRoute =
     selectedTabs.tab.kind === SessionTabKind.Sidechat
       ? selectedTabs.tab.id
       : undefined;
   useEffect(() => {
-    if (pendingSelection) return;
-    const route: ProductRoute = { surface };
-    if (surface === Surface.Sessions && selected) {
-      route.session = selected;
-      route.sidechat = sidechatRoute;
-    } else if (surface === Surface.Inbox) route.item = routeSelection.inbox;
-    else if (surface === Surface.Schedules)
-      route.item = routeSelection.schedule;
-    else if (surface === Surface.PullRequests)
-      route.item = routeSelection.repository;
-    else if (surface === Surface.Settings)
-      route.category = routeSelection.category;
-    else if (surface === Surface.Usage) route.tab = routeSelection.tab;
-    writeProductRoute(route);
-  }, [pendingSelection, surface, selected, sidechatRoute, routeSelection]);
+  const mirrorRestore = pendingSelection
+    ? MirrorRestoreState.Pending
+    : unverifiedRestoreId
+      ? MirrorRestoreState.Provisional
+      : MirrorRestoreState.Settled;
+  const mirrorSchedules = notificationOccurrence
+    ? SchedulesMode.OccurrenceReview
+    : SchedulesMode.Workspace;
+    const route = deriveProductRoute({
+      surface,
+      restore: mirrorRestore,
+      schedules: mirrorSchedules,
+      session: selected,
+      sidechat: sidechatRoute,
+      inbox: routeSelection.inbox,
+      schedule: routeSelection.schedule,
+      repository: routeSelection.repository,
+      category: routeSelection.category,
+      tab: routeSelection.tab,
+    });
+    if (route) writeProductRoute(route);
+  }, [
+    mirrorRestore,
+    mirrorSchedules,
+    surface,
+    selected,
+    sidechatRoute,
+    routeSelection,
+  ]);
   // Any deliberate navigation supersedes a pending Search-result resolution.
   const open = (id: string, originalParent?: string, name?: string) => {
     supersedeSearchOpening();

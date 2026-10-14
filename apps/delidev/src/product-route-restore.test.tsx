@@ -153,6 +153,50 @@ function fixture() {
   ];
   // Reads of a held ID wait until `hold` releases them, so a test can answer a
   // restore read after the user acted.
+  // An operational notification about an occurrence of the *other* Schedule.
+  const occurrence = create(ResourceSchema, {
+    id: newRequestId(),
+    kind: EntityKind.OCCURRENCE,
+    revision: 1n,
+    schemaVersion: 1,
+    documentJson: encode({
+      schedule_id: otherSchedule.id,
+      state: "failed",
+      trigger: "cron",
+      overlap: "wait",
+      selection: {
+        name: "Chosen schedule",
+        prompt: "Occurrence prompt",
+        project_id: newRequestId(),
+        agent_id: newRequestId(),
+        machine_id: newRequestId(),
+        workspace: "worktree",
+        mode: "plan",
+      },
+    }),
+  });
+  const operationalEntry = create(ResourceSchema, {
+    id: newRequestId(),
+    kind: EntityKind.INBOX,
+    revision: 1n,
+    schemaVersion: 1,
+    createdAt: "2026-09-29T00:20:00Z",
+    documentJson: encode({
+      source: "operational",
+      source_id: newRequestId(),
+      read_state: "unread",
+      operational: {
+        kind: "schedule-start-failed",
+        sequence: "1",
+        observed_at: "2026-09-29T00:20:00Z",
+        occurrence_id: occurrence.id,
+      },
+    }),
+  });
+  const operationalView: InboxView = create(InboxViewSchema, {
+    entry: operationalEntry,
+    occurrence,
+  });
   const held = new Map<string, Promise<void>>();
   const hold = (id: string) => {
     let release = () => {};
@@ -211,6 +255,7 @@ function fixture() {
       createSession: (request) => {
         mutated("createSession", request);
         throw new ConnectError("unexpected", Code.Internal);
+    [operationalEntry.id, EntityKind.INBOX],
       },
       controlSession: (request) => {
         mutated("controlSession", request);
@@ -254,14 +299,16 @@ function fixture() {
       },
     });
     router.service(InboxService, {
-      listInbox: () => ({ entries: [inboxView, otherInboxView] }),
+      listInbox: () => ({
+        entries: [inboxView, otherInboxView, operationalView],
+      }),
       getInboxEntry: async (request) => {
         reads.inbox(request);
         await held.get(request.id);
         if (failing(request.id))
           throw new ConnectError("read failed", failure.code);
         rejectWrongKind(request.id, EntityKind.INBOX);
-        const view = [inboxView, otherInboxView].find(
+        const view = [inboxView, otherInboxView, operationalView].find(
           (row) => row.entry?.id === request.id,
         );
         if (!view) throw new ConnectError("missing", Code.NotFound);
@@ -341,6 +388,7 @@ const search = () => new URLSearchParams(window.location.search);
 const newDocument = () => resetProductRouteClaim();
 
 afterEach(() => {
+      getScheduleOccurrence: () => ({ occurrence }),
   vi.restoreAllMocks();
 });
 
@@ -361,6 +409,7 @@ describe("route mirroring", () => {
     };
     const home = () =>
       fireEvent.click(rail().getByRole("button", { name: "Sessions" }));
+    operationalEntry,
     await visit(
       () => fireEvent.click(screen.getByRole("button", { name: "Search" })),
       Surface.Search,
@@ -448,6 +497,73 @@ describe("route restore after a document reload", () => {
       expect(screen.getAllByText("Retained session").length).toBeGreaterThan(0),
     );
     expect(screen.queryByRole("tab", { name: /Side question/ })).toBeNull();
+describe("route mirror derives from the visible destination only", () => {
+  it("omits the Schedule retained behind an operational occurrence review, so a reload does not reopen it", async () => {
+    const value = fixture();
+    route(`?screen=schedules&item=${value.schedule.id}`);
+    const view = render(<App transport={value.transport} />);
+    expect(
+      await screen.findByRole("heading", { name: "Restored schedule" }),
+    ).toBeTruthy();
+    await waitFor(() => expect(search().get("item")).toBe(value.schedule.id));
+    fireEvent.click(rail().getByRole("button", { name: "Sessions" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
+    await waitFor(() => expect(search().get("screen")).toBe(Surface.Inbox));
+    // Select the operational notification and open its occurrence review. The
+    // occurrence belongs to the other Schedule; the retained selection is the
+    // restored one.
+    const row = await screen.findByRole("button", {
+      name: /Schedule start failed/,
+    });
+    fireEvent.click(row);
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Open (target|original)/i }),
+    );
+    await waitFor(() => expect(search().get("screen")).toBe(Surface.Schedules));
+    await waitFor(() => expect(search().has("item")).toBe(false));
+    expect(await screen.findByText("Occurrence prompt")).toBeTruthy();
+    // A reload from the review opens the selection-free Schedules destination.
+    expect(search().get("screen")).toBe(Surface.Schedules);
+    view.unmount();
+    newDocument();
+    const reads = value.reads.schedule.mock.calls.length;
+    render(<App transport={value.transport} />);
+    expect(
+      await screen.findByText(
+        "Select a schedule from the sidebar to inspect its details and retained history.",
+      ),
+    ).toBeTruthy();
+    expect(search().has("item")).toBe(false);
+    expect(value.reads.schedule.mock.calls.length).toBe(reads);
+    expect(value.mutated).not.toHaveBeenCalled();
+  });
+
+  it("does not describe the next Settings visit with the category of an earlier one", async () => {
+    const value = fixture();
+    route(`?screen=settings&category=${SettingsCategory.Backups}`);
+    render(<App transport={value.transport} />);
+    await waitFor(() =>
+      expect(search().get("category")).toBe(SettingsCategory.Backups),
+    );
+    fireEvent.click(rail().getByRole("button", { name: "Sessions" }));
+    await waitFor(() => expect(search().get("screen")).toBe(Surface.Sessions));
+    const written: string[] = [];
+    const replace = window.history.replaceState.bind(window.history);
+    vi.spyOn(window.history, "replaceState").mockImplementation(
+      (state, unused, url) => {
+        written.push(String(url));
+        replace(state, unused, url);
+      },
+    );
+    fireEvent.click(rail().getByRole("button", { name: "More" }));
+    fireEvent.click(await rail().findByRole("button", { name: "Settings" }));
+    await waitFor(() => expect(search().get("screen")).toBe(Surface.Settings));
+    await waitFor(() => expect(search().has("category")).toBe(true));
+    expect(search().get("category")).not.toBe(SettingsCategory.Backups);
+    for (const url of written) expect(url).not.toContain("backups");
+  });
+});
+
     await waitFor(() => expect(search().has("sidechat")).toBe(false));
     expect(search().get("session")).toBe(value.session.id);
   });
