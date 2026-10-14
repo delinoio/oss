@@ -206,13 +206,19 @@ impl SourceStore {
         let snapshot = self.snapshots.get(&normalize(path));
         let stub = snapshot.is_some_and(|snapshot| is_asset_stub(snapshot));
         let (text, sha256, stale): (Option<String>, String, bool) = match (snapshot, live) {
-            // The live file is not text, or the snapshot is a generated asset
-            // stub: the two cannot be compared, so the source is unverifiable
-            // and never stale.
-            (_, LiveRead::Bytes(bytes)) if stub || as_text(&bytes).is_none() => {
+            // The snapshot is a generated asset stub, or there is no snapshot
+            // and the live file is not text: the two cannot be compared, so
+            // the source is unverifiable and never stale.
+            (Some(_), LiveRead::Bytes(bytes)) if stub => {
+                tracing::debug!(path = %classified.display, "asset stub source is not freshness-checked");
+                (None, sha256_hex(&bytes), false)
+            }
+            (None, LiveRead::Bytes(bytes)) if as_text(&bytes).is_none() => {
                 tracing::debug!(path = %classified.display, "non-text source is not freshness-checked");
                 (None, sha256_hex(&bytes), false)
             }
+            // A text snapshot that is not an asset stub is compared with the
+            // live bytes. A live file that is no longer text is a change.
             (Some(snapshot), LiveRead::Bytes(bytes)) => (
                 Some(snapshot.clone()),
                 sha256_hex(snapshot.as_bytes()),
@@ -612,5 +618,27 @@ mod tests {
         );
         // Text sources stay in the saved-run stale check.
         assert_eq!(store.project_relative.len(), 3);
+    }
+
+    #[test]
+    fn text_snapshot_replaced_by_binary_is_stale_and_keeps_the_snapshot_hash() {
+        for replacement in [PNG_BYTES.to_vec(), vec![b'a', 0xff, 0xfe, b'b']] {
+            let dir = tempfile::tempdir().unwrap();
+            let file = dir.path().join("a.js");
+            std::fs::write(&file, &replacement).unwrap();
+            let mut store = SourceStore::new(true);
+            store
+                .snapshots
+                .insert(normalize(&file), "export const a = 1;".to_owned());
+            let (id, text) = store.add_file(dir.path(), &file).unwrap();
+            assert_eq!(text.as_deref(), Some("export const a = 1;"));
+            assert_eq!(store.changed_since_build, vec!["a.js".to_owned()]);
+            // The saved-run reload keeps comparing the live file.
+            assert!(store.project_relative.contains_key(&id));
+            let files = store.into_files();
+            assert!(files[0].stale);
+            assert!(files[0].content_included);
+            assert_eq!(files[0].sha256, sha256_hex(b"export const a = 1;"));
+        }
     }
 }
