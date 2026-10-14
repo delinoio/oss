@@ -8,6 +8,17 @@ use std::{
 };
 
 use anyhow::{Context, Result, ensure};
+use swc_core::{
+    common::{FileName, GLOBALS, Globals, SourceMap, sync::Lrc},
+    ecma::{
+        ast::{
+            CallExpr, Callee, EsVersion, Expr, Lit, MemberProp, ObjectLit, Prop, PropName,
+            PropOrSpread,
+        },
+        parser::{EsSyntax, Syntax, parse_file_as_module},
+        visit::{Visit, VisitWith},
+    },
+};
 
 use crate::{
     compiler::Snapshot,
@@ -1314,167 +1325,165 @@ fn rehash(
     })
 }
 
-/// String value of the property `key` at `at` (`key:"…"`, `"key":'…'`), with
-/// the byte span of the value inside its quotes.
-fn string_property(text: &str, at: usize, key: &str) -> Option<(String, usize, usize)> {
-    let bytes = text.as_bytes();
-    let mut index = at;
-    let quoted = matches!(bytes.get(index), Some(b'"' | b'\''));
-    if quoted {
-        index += 1;
-    }
-    if !text[index..].starts_with(key) {
-        return None;
-    }
-    index += key.len();
-    if quoted {
-        if bytes.get(index) != bytes.get(at) {
-            return None;
-        }
-        index += 1;
-    }
-    while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
-        index += 1;
-    }
-    if bytes.get(index) != Some(&b':') {
-        return None;
-    }
-    index += 1;
-    while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
-        index += 1;
-    }
-    let quote = *bytes.get(index).filter(|b| matches!(b, b'"' | b'\''))?;
-    let start = index + 1;
-    let end = start + text[start..].find(quote as char)?;
-    let value = &text[start..end];
-    // Escaped content is not a plain file name or digest.
-    (!value.contains('\\')).then(|| (value.to_owned(), start, end))
-}
-
-/// Byte spans of the array literals passed to Workbox `precacheAndRoute(…)`
-/// or `precache(…)` calls (as a method or a plain call), the only places
-/// where a `{url, revision}` object is a precache manifest entry rather than
-/// application data.
-fn precache_arrays(text: &str) -> Vec<(usize, usize)> {
-    let bytes = text.as_bytes();
-    let mut arrays = Vec::new();
-    let mut from = 0;
-    while let Some(offset) = text[from..].find("precache") {
-        let at = from + offset;
-        from = at + "precache".len();
-        let mut index = from;
-        if text[index..].starts_with("AndRoute") {
-            index += "AndRoute".len();
-        }
-        let joined = at > 0
-            && (bytes[at - 1].is_ascii_alphanumeric() || matches!(bytes[at - 1], b'_' | b'$'));
-        let skip = |mut i: usize| {
-            while bytes.get(i).is_some_and(u8::is_ascii_whitespace) {
-                i += 1;
-            }
-            i
-        };
-        index = skip(index);
-        if joined || bytes.get(index) != Some(&b'(') {
-            continue;
-        }
-        index = skip(index + 1);
-        if bytes.get(index) != Some(&b'[') {
-            continue;
-        }
-        // The matching bracket, skipping string literals.
-        let (start, mut depth, mut quote, mut escaped) = (index, 0usize, None, false);
-        let mut end = None;
-        for (i, &b) in bytes.iter().enumerate().skip(start) {
-            if let Some(q) = quote {
-                if escaped {
-                    escaped = false;
-                } else if b == b'\\' {
-                    escaped = true;
-                } else if b == q {
-                    quote = None;
-                }
-                continue;
-            }
-            match b {
-                b'"' | b'\'' | b'`' => quote = Some(b),
-                b'[' => depth += 1,
-                b']' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        end = Some(i);
-                        break;
-                    }
-                }
-                _ => {}
-            }
-        }
-        if let Some(end) = end {
-            arrays.push((start, end));
-            from = end;
-        }
-    }
-    arrays
-}
-
-/// Whether the property key at `at` starts an object member: it follows `{` or
-/// `,`, possibly after whitespace (formatted manifests put each key on its
-/// own line).
-fn follows_delimiter(bytes: &[u8], at: usize) -> bool {
-    bytes[..at]
-        .iter()
-        .rev()
-        .find(|b| !b.is_ascii_whitespace())
-        .is_some_and(|&b| matches!(b, b'{' | b','))
-}
-
 /// Precache entries `{url:"…",revision:"…"}` (either order) of a service
 /// worker manifest, as Workbox and vite-plugin-pwa emit them inside a
-/// `precacheAndRoute`/`precache` array: the URL and the byte span of the
-/// revision string.
+/// `precacheAndRoute`/`precache` array: the decoded URL and the byte span of
+/// the revision string. Parsing JavaScript excludes apparent calls in strings,
+/// comments, template text and regular expressions.
 fn precache_entries(text: &str) -> Vec<(String, usize, usize)> {
-    let bytes = text.as_bytes();
-    let arrays = precache_arrays(text);
-    let mut entries = Vec::new();
-    let mut from = 0;
-    while let Some(offset) = text[from..].find("revision") {
-        let at = from + offset;
-        from = at + "revision".len();
-        if !arrays.iter().any(|&(start, end)| at > start && at < end) {
-            continue;
+    struct Entries<'a> {
+        text: &'a str,
+        base: u32,
+        values: Vec<(String, usize, usize)>,
+    }
+
+    impl Entries<'_> {
+        fn name(key: &PropName) -> Option<&str> {
+            match key {
+                PropName::Ident(name) => Some(name.sym.as_ref()),
+                PropName::Str(name) => Some(name.value.as_str()?),
+                _ => None,
+            }
         }
-        let key = if at > 0 && matches!(bytes[at - 1], b'"' | b'\'') {
-            at - 1
-        } else {
-            at
-        };
-        if !follows_delimiter(bytes, key) {
-            continue;
+
+        fn value(&self, value: &swc_core::ecma::ast::Str) -> Option<(String, usize, usize)> {
+            let start = value.span.lo.0.checked_sub(self.base)? as usize + 1;
+            let end = (value.span.hi.0.checked_sub(self.base)? as usize).checked_sub(1)?;
+            let raw = self.text.get(start..end)?;
+            Some((decode_js_string(raw)?, start, end))
         }
-        let Some((_, start, end)) = string_property(text, key, "revision") else {
-            continue;
-        };
-        // The enclosing object literal, which holds no nested objects.
-        let Some(open) = text[..key].rfind(['{', '}']).filter(|&i| bytes[i] == b'{') else {
-            continue;
-        };
-        let Some(close) = text[end..].find(['{', '}']).map(|i| end + i) else {
-            continue;
-        };
-        if bytes[close] != b'}' {
-            continue;
-        }
-        let object = &text[open..=close];
-        let url = object.char_indices().find_map(|(i, c)| {
-            (matches!(c, 'u' | '"' | '\'') && follows_delimiter(object.as_bytes(), i))
-                .then(|| string_property(text, open + i, "url"))
-                .flatten()
-        });
-        if let Some((url, _, _)) = url {
-            entries.push((url, start, end));
+
+        fn entry(&self, object: &ObjectLit) -> Option<(String, usize, usize)> {
+            let (mut url, mut revision) = (None, None);
+            for property in &object.props {
+                let PropOrSpread::Prop(property) = property else {
+                    return None;
+                };
+                let Prop::KeyValue(property) = &**property else {
+                    return None;
+                };
+                match Self::name(&property.key) {
+                    Some("url") if url.is_none() => {
+                        let Expr::Lit(Lit::Str(value)) = &*property.value else {
+                            return None;
+                        };
+                        url = Some(self.value(value)?.0);
+                    }
+                    Some("revision") if revision.is_none() => {
+                        let Expr::Lit(Lit::Str(value)) = &*property.value else {
+                            return None;
+                        };
+                        let (_, start, end) = self.value(value)?;
+                        // Keep replacement spans simple so source-map offsets
+                        // stay stable and the revision remains a literal.
+                        if self.text[start..end].contains('\\') {
+                            return None;
+                        }
+                        revision = Some((start, end));
+                    }
+                    Some("url" | "revision") => return None,
+                    _ => {}
+                }
+            }
+            let (start, end) = revision?;
+            Some((url?, start, end))
         }
     }
-    entries
+
+    impl Visit for Entries<'_> {
+        fn visit_call_expr(&mut self, call: &CallExpr) {
+            let name = match &call.callee {
+                Callee::Expr(callee) => match &**callee {
+                    Expr::Ident(name) => Some(name.sym.as_ref()),
+                    Expr::Member(member) => match &member.prop {
+                        MemberProp::Ident(name) => Some(name.sym.as_ref()),
+                        _ => None,
+                    },
+                    _ => None,
+                },
+                _ => None,
+            };
+            if matches!(name, Some("precache" | "precacheAndRoute")) {
+                if let Some(first) = call.args.first() {
+                    if let Expr::Array(array) = &*first.expr {
+                        for element in array.elems.iter().flatten() {
+                            if let Expr::Object(object) = &*element.expr {
+                                if let Some(entry) = self.entry(object) {
+                                    self.values.push(entry);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            call.visit_children_with(self);
+        }
+    }
+
+    let source_map: Lrc<SourceMap> = Default::default();
+    let file = source_map.new_source_file(Lrc::new(FileName::Anon), text.to_owned());
+    GLOBALS.set(&Globals::new(), || {
+        let mut errors = Vec::new();
+        let Ok(module) = parse_file_as_module(
+            &file,
+            Syntax::Es(EsSyntax::default()),
+            EsVersion::latest(),
+            None,
+            &mut errors,
+        ) else {
+            return Vec::new();
+        };
+        if !errors.is_empty() {
+            return Vec::new();
+        }
+        let mut visitor = Entries {
+            text,
+            base: file.start_pos.0,
+            values: Vec::new(),
+        };
+        module.visit_with(&mut visitor);
+        visitor.values.sort_by_key(|(_, start, _)| *start);
+        visitor.values
+    })
+}
+
+/// Maps a Workbox URL to a regular staged file. A root-relative deployment
+/// prefix may be absent from the bundle, but an exact staged path wins.
+fn precache_target(root: &Path, directory: &Path, url: &str) -> Option<PathBuf> {
+    let path = crate::compiler::percent_decode(url.split(['?', '#']).next()?);
+    if path.is_empty()
+        || path.contains('\\')
+        || path.starts_with("//")
+        || url::Url::parse(&path).is_ok()
+    {
+        return None;
+    }
+    let rooted = path.strip_prefix('/');
+    let joined = rooted.map_or_else(|| directory.join(&path), |path| root.join(path));
+    let exact = normalize_within(root, &joined)?;
+    match std::fs::symlink_metadata(&exact) {
+        Ok(metadata) => return metadata.is_file().then_some(exact),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(_) => return None,
+    }
+    let rooted = rooted?;
+    let segments: Vec<&str> = rooted.split('/').collect();
+    // A fallback must only remove a deployment prefix, never a traversal or
+    // an empty path component that could change the URL's meaning.
+    if segments.len() < 2
+        || segments
+            .iter()
+            .any(|s| s.is_empty() || *s == "." || *s == "..")
+    {
+        return None;
+    }
+    (1..segments.len()).find_map(|skip| {
+        let candidate = normalize_within(root, &root.join(segments[skip..].join("/")))?;
+        std::fs::symlink_metadata(&candidate)
+            .ok()
+            .filter(|metadata| metadata.is_file())
+            .map(|_| candidate)
+    })
 }
 
 /// Gives precache entries of files whose published content differs from the
@@ -1508,22 +1517,11 @@ fn refresh_precache_revisions(
         let directory = file.parent().unwrap_or(root);
         let mut changed = false;
         for (url, start, end) in precache_entries(&text.clone()) {
-            let path = url.split(['?', '#']).next().unwrap_or_default();
-            if path.is_empty() || path.contains("://") || path.starts_with("//") {
-                continue;
-            }
-            let joined = match path.strip_prefix('/') {
-                Some(absolute) => root.join(absolute),
-                None => directory.join(path),
-            };
             // Only regular files of the staged bundle: `..` must not leave it,
             // and a device or FIFO must not block publication.
-            let Some(staged) = normalize_within(root, &joined) else {
+            let Some(staged) = precache_target(root, directory, &url) else {
                 continue;
             };
-            if !std::fs::symlink_metadata(&staged).is_ok_and(|m| m.is_file()) {
-                continue;
-            }
             let Ok(published) = std::fs::read(&staged) else {
                 continue;
             };
@@ -1531,18 +1529,25 @@ fn refresh_precache_revisions(
             if std::fs::read(source.join(relative)).is_ok_and(|input| input == published) {
                 continue;
             }
+            ensure!(
+                end > start,
+                "cannot refresh empty precache revision in {}",
+                relative_display(root, file)
+            );
             let digest = crate::compiler::sha256_hex(&published);
-            let revision: String = digest.chars().cycle().take(end - start).collect();
-            if text[start..end] != revision {
-                text.replace_range(start..end, &revision);
-                refreshed += 1;
-                changed = true;
-                tracing::debug!(
-                    manifest = %relative_display(root, file),
-                    entry = url.as_str(),
-                    "refreshed a precache revision of a changed file"
-                );
+            let mut revision: String = digest.chars().cycle().take(end - start).collect();
+            if text[start..end] == revision {
+                let last = revision.pop().expect("nonempty revision");
+                revision.push(if last == '0' { '1' } else { '0' });
             }
+            text.replace_range(start..end, &revision);
+            refreshed += 1;
+            changed = true;
+            tracing::debug!(
+                manifest = %relative_display(root, file),
+                target = %relative_display(root, &staged),
+                "refreshed a precache revision of a changed file"
+            );
         }
         if changed {
             std::fs::write(file, text).context("cannot refresh a precache revision")?;

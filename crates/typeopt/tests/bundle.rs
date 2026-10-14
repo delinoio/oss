@@ -2560,6 +2560,152 @@ fn refreshes_service_worker_precache_entries() {
     );
 }
 
+#[test]
+fn refreshes_only_executable_precache_calls() {
+    let sw = concat!(
+        r#"importScripts("./workbox.js");
+const example='precacheAndRoute([{url:"index.html",revision:"v1"}])';
+// precacheAndRoute([{url:"index.html",revision:"v1"}])
+/* precacheAndRoute([{url:"index.html",revision:"v1"}]) */
+const pattern=/precacheAndRoute\(\[\{url:"index.html",revision:"v1"\}\]\)/;
+const template="#,
+        "\u{60}",
+        r#"precacheAndRoute([{url:"index.html",revision:"v1"}])"#,
+        "\u{60}",
+        r#";
+self.workbox.precacheAndRoute([{url:"index.html",revision:"v1"}]);
+precache([{url:"index.html",revision:"p1"}]);"#,
+    );
+    let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
+    chunks.push(("sw.js", sw));
+    chunks.push(("workbox.js", "self.workbox={precacheAndRoute(){}};"));
+    let temp = bundle(&chunks);
+    optimize(temp.path(), &[]);
+    let published = out(temp.path(), "sw.js");
+    let real_call = sw.rfind("self.workbox.precacheAndRoute").unwrap();
+    assert_eq!(&published[..real_call], &sw[..real_call]);
+    assert_eq!(
+        published.matches(r#"revision:"v1""#).count(),
+        5,
+        "{published}"
+    );
+    assert!(published.contains(r#"self.workbox.precacheAndRoute([{url:"index.html",revision:""#));
+    assert!(!published.contains(r#"precache([{url:"index.html",revision:"p1""#));
+    assert_eq!(
+        fs::read_to_string(temp.path().join("dist/sw.js")).unwrap(),
+        sw
+    );
+}
+
+#[test]
+fn refreshes_precache_entries_with_escaped_urls() {
+    let sw = r#"self.workbox.precacheAndRoute([{url:"index\u002ehtml",revision:"v1"},{url:"robots\u002etxt",revision:"r1"},{url:"https:\u002f\u002fexample.com/index.html",revision:"x1"},{url:"..\u002f..\u002foutside.txt",revision:"o1"}]);"#;
+    let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
+    chunks.push(("sw.js", sw));
+    chunks.push(("robots.txt", "User-agent: *"));
+    let temp = bundle(&chunks);
+    optimize(temp.path(), &[]);
+    let published = out(temp.path(), "sw.js");
+    assert!(published.contains(r#"url:"index\u002ehtml",revision:""#));
+    assert!(!published.contains(r#"url:"index\u002ehtml",revision:"v1""#));
+    assert!(published.contains(r#"url:"robots\u002etxt",revision:"r1""#));
+    assert!(published.contains(r#"url:"https:\u002f\u002fexample.com/index.html",revision:"x1""#));
+    assert!(published.contains(r#"url:"..\u002f..\u002foutside.txt",revision:"o1""#));
+    assert_eq!(published.len(), sw.len());
+}
+
+#[test]
+fn keeps_pinned_and_hashed_precache_manifests() {
+    let sw = r#"self.workbox.precacheAndRoute([{url:"index.html",revision:"old"}]);"#;
+    for (name, options) in [
+        ("sw.js", vec!["--bundle-exclude", "sw.js"]),
+        ("sw-AB12cd34.js", vec![]),
+    ] {
+        let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
+        chunks.push((name, sw));
+        let temp = bundle(&chunks);
+        optimize(temp.path(), &options);
+        assert_eq!(out(temp.path(), name), sw, "{name}");
+    }
+}
+
+#[test]
+fn refreshes_deployment_prefixed_precache_url_after_exact_lookup() {
+    let sw = r#"self.workbox.precacheAndRoute([{url:"/my-app/index.html",revision:"old"},{url:"/index.html",revision:"old"}]);"#;
+    let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
+    chunks.push(("sw.js", sw));
+    let temp = bundle(&chunks);
+    optimize(temp.path(), &[]);
+    let published = out(temp.path(), "sw.js");
+    assert!(!published.contains("revision:\"old\""), "{published}");
+    assert!(
+        published.contains("url:\"/my-app/index.html\""),
+        "{published}"
+    );
+    assert_eq!(published.len(), sw.len());
+
+    let mut exact_chunks = chunks;
+    exact_chunks.push(("my-app/index.html", "unchanged exact target"));
+    let exact = bundle(&exact_chunks);
+    optimize(exact.path(), &[]);
+    let published = out(exact.path(), "sw.js");
+    assert!(
+        published.contains(r#"url:"/my-app/index.html",revision:"old""#),
+        "{published}"
+    );
+    assert!(
+        !published.contains(r#"url:"/index.html",revision:"old""#),
+        "{published}"
+    );
+}
+
+#[test]
+fn refreshes_colliding_short_precache_revision_and_rejects_empty_one() {
+    use sha2::{Digest, Sha256};
+
+    let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
+    chunks.push((
+        "sw.js",
+        r#"self.workbox.precacheAndRoute([{url:"/index.html",revision:"x"}]);"#,
+    ));
+    let temp = bundle(&chunks);
+    optimize(temp.path(), &[]);
+    let digest = Sha256::digest(fs::read(temp.path().join("out/index.html")).unwrap());
+    let colliding = format!("{:x}", digest[0] >> 4);
+    fs::remove_dir_all(temp.path().join("out")).unwrap();
+    let sw = format!(
+        "self.workbox.precacheAndRoute([{{url:\"/index.html\",revision:\"{colliding}\"}}]);"
+    );
+    fs::write(temp.path().join("dist/sw.js"), &sw).unwrap();
+    optimize(temp.path(), &[]);
+    let published = out(temp.path(), "sw.js");
+    assert!(
+        !published.contains(&format!("revision:\"{colliding}\"")),
+        "{published}"
+    );
+    assert_eq!(published.len(), sw.len());
+
+    fs::remove_dir_all(temp.path().join("out")).unwrap();
+    optimize(temp.path(), &[]);
+    assert_eq!(published, out(temp.path(), "sw.js"));
+
+    fs::remove_dir_all(temp.path().join("out")).unwrap();
+    let empty = r#"self.workbox.precacheAndRoute([{url:"/index.html",revision:""}]);"#;
+    fs::write(temp.path().join("dist/sw.js"), empty).unwrap();
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("cannot refresh empty precache revision"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!temp.path().join("out").exists());
+    assert_eq!(
+        fs::read_to_string(temp.path().join("dist/sw.js")).unwrap(),
+        empty
+    );
+}
+
 /// A chunk in another directory with the same content-hashed file name as a
 /// frozen chunk is frozen too: references name only the file name, so an
 /// edited copy could not be renamed and would be published under the old hash.
