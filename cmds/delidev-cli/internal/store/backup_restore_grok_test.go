@@ -139,3 +139,57 @@ func TestBackupRestoreClearsEmptyGrokSubscriptionState(t *testing.T) {
 		t.Fatal("restore manufactured ownership for an empty Grok subscription")
 	}
 }
+
+// Restore revokes copied Worker devices. The rewritten record must stay
+// readable, otherwise account deletion (which scans devices for browser
+// profiles) fails with a storage error after any restore.
+func TestBackupRestoreKeepsRevokedWorkerDevicesReadable(t *testing.T) {
+	s, root, ctx, in, _ := restoreFixture(t)
+	device := domain.NewID()
+	if _, err := s.Mutate(ctx, domain.NewID(), "fixture.worker-device", nil, func(tx *Tx) (any, error) {
+		return tx.Put(domain.DeviceKind, device, 0, "", "", domain.Device{Name: "Fixture Worker", Type: domain.WorkerDevice, MachineID: domain.NewID(), PairedAt: time.Now().UTC()})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	backup, err := s.Backup(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	observed, err := s.InspectBackup(ctx, backup, in.ServerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in.Backup, in.SHA256 = observed.Backup, observed.SHA256
+	if in.ExpectedRevision, err = s.RestoreRevision(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = s.RestoreBackup(ctx, domain.NewID(), in); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	page := []Record{}
+	if err := reopened.Read(ctx, func(tx *Tx) (err error) {
+		page, err = tx.List(Filter{Kind: domain.DeviceKind, Limit: MaxPage})
+		return err
+	}); err != nil {
+		t.Fatal("restored device records are unreadable", err)
+	}
+	for _, r := range page {
+		if r.ID != device {
+			continue
+		}
+		restored, err := Decode[domain.Device](r)
+		if err != nil || !restored.Revoked {
+			t.Fatal("restore did not revoke the copied Worker device", err)
+		}
+		return
+	}
+	t.Fatal("restored Worker device is missing")
+}
