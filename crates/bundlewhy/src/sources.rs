@@ -362,25 +362,20 @@ impl SourceStore {
             // The snapshot is generated asset module code, or there is no
             // snapshot and the live file is not text: the two cannot be
             // compared, so the source is unverifiable and never stale.
-            (Some(_), LiveRead::Bytes(bytes)) if stub => {
+            (Some(_), LiveRead::Bytes(_)) if stub => {
                 tracing::debug!(path = %classified.display, "generated asset module is not freshness-checked");
-                (None, sha256_hex(&bytes), false, true)
+                (None, String::new(), false, true)
             }
             (None, LiveRead::Bytes(bytes)) if as_text(&bytes).is_none() => {
                 tracing::debug!(path = %classified.display, "non-text source is not freshness-checked");
-                (None, sha256_hex(&bytes), false, true)
+                (None, String::new(), false, true)
             }
             // A module derived through an import query (for example
             // `Comp.vue?vue&type=style`) holds transformed code, which is
             // not expected to equal the file.
             (Some(snapshot), LiveRead::Bytes(_)) if derived => {
                 tracing::debug!(path = %classified.display, "derived module is not content-checked");
-                (
-                    Some(snapshot.clone()),
-                    sha256_hex(snapshot.as_bytes()),
-                    false,
-                    true,
-                )
+                (Some(snapshot.clone()), String::new(), false, true)
             }
             // A text snapshot that is not an asset module is compared with
             // the live bytes. A live file that is no longer text is a
@@ -768,7 +763,7 @@ mod tests {
         assert!(!files[0].stale);
         assert!(!files[0].content_included);
         assert!(files[0].content.is_empty());
-        assert_eq!(files[0].sha256, sha256_hex(PNG_BYTES));
+        assert!(files[0].sha256.is_empty());
     }
 
     #[test]
@@ -781,7 +776,9 @@ mod tests {
         assert_eq!(text, None);
         assert!(store.changed_since_build.is_empty());
         assert!(store.project_relative.is_empty());
-        assert!(!store.into_files()[0].stale);
+        let source = store.into_files().pop().unwrap();
+        assert!(!source.stale);
+        assert!(source.sha256.is_empty());
     }
 
     #[test]
