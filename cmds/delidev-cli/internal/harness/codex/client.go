@@ -79,11 +79,15 @@ type Client struct {
 	modelObservation     string
 	home                 string
 	wire                 *nativewire.Connection
+	sharedEvents         *sharedEvents
+	sharedQueue          <-chan nativewire.Event
 	version              string
 	ownerID              domain.ID
 	logger               *slog.Logger
 	control              chan struct{}
 	thread               domain.ID
+	unsubscribing        bool
+	threadClosed         bool
 	problem              *domain.Error
 	remoteControlRefusal *remoteControlPolicyViolation
 	mode                 ProtocolMode
@@ -429,6 +433,9 @@ func (c *Client) Close() error {
 // results. Authentication comparison and scanning must still run after a joined
 // original tree even when helper retirement fails.
 func (c *Client) CloseWithExecutionHelpers() (nativeErr, helperErr error) {
+	if c.sharedEvents != nil {
+		return sharedEventUncertain(), nil
+	}
 	nativeErr = domain.WithCodexDiagnostic(c.version, domain.CodexCleanup, c.wire.CloseGracefully(3*time.Second))
 	if nativeErr != nil {
 		if c.executionHelpers != nil {

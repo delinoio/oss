@@ -16,6 +16,7 @@ import (
 )
 
 type threadFixture struct {
+	sharedThreads          map[domain.ID]bool
 	skillRoots             []string
 	subagents              []map[string]any
 	mode                   string
@@ -32,6 +33,28 @@ type threadFixture struct {
 }
 
 func (f *threadFixture) handle(id json.RawMessage, method string, raw json.RawMessage, write func(json.RawMessage, any)) bool {
+	if method == "thread/unsubscribe" && (strings.HasPrefix(f.mode, "thread-unsubscribe-") || f.mode == "thread-managed-shared") {
+		var params struct {
+			ThreadID domain.ID `json:"threadId"`
+		}
+		if domain.Decode(raw, &params) != nil || f.thread == nil || params.ThreadID != f.thread["id"].(domain.ID) && !f.sharedThreads[params.ThreadID] {
+			os.Exit(46)
+		}
+		status := "unsubscribed"
+		if f.mode == "thread-unsubscribe-status" {
+			status = "notSubscribed"
+		}
+		write(id, map[string]any{"status": status})
+		if f.mode == "thread-unsubscribe-closed" || f.mode == "thread-unsubscribe-foreign" || f.mode == "thread-managed-shared" {
+			thread := params.ThreadID
+			if f.mode == "thread-unsubscribe-foreign" {
+				thread = domain.NewID()
+			}
+			f.notify("thread/closed", map[string]any{"threadId": thread})
+		}
+		delete(f.sharedThreads, params.ThreadID)
+		return true
+	}
 	if f.handleNativeCodeReview(id, method, raw, write) {
 		return true
 	}
@@ -114,6 +137,12 @@ func (f *threadFixture) handle(id json.RawMessage, method string, raw json.RawMe
 		threadID = domain.ID(params["threadId"].(string))
 	}
 	f.thread = map[string]any{"id": threadID, "sessionId": threadID, "cliVersion": fixtureVersion(), "cwd": params["cwd"], "modelProvider": params["modelProvider"], "createdAt": int64(1), "updatedAt": int64(1), "ephemeral": false, "preview": "", "projectId": nil, "source": "appServer", "status": map[string]any{"type": "idle"}, "turns": []any{}}
+	if f.mode == "thread-managed-shared" {
+		if f.sharedThreads == nil {
+			f.sharedThreads = make(map[domain.ID]bool)
+		}
+		f.sharedThreads[threadID] = true
+	}
 	f.thread["historyMode"] = "legacy"
 	if strings.HasPrefix(f.mode, "thread-revert-paginated-") {
 		f.thread["historyMode"] = "paginated"
