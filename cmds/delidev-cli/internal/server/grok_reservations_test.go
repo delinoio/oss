@@ -29,6 +29,9 @@ func TestGrokReservationsAreDeclaredWithLedgerNumbers(t *testing.T) {
 	}
 }
 
+// System 39 stays unadvertised until the server-owned browser login, the device
+// login and the opt-in real-account acceptance run are all complete. The browser
+// login itself is implemented (grok_login.go) but its real run is not performed.
 func TestGrokReservationsAreNotAdvertisedByStatus(t *testing.T) {
 	f := newManagedClaudeFixture(t)
 	status, err := f.service.GetStatus(context.Background(), connect.NewRequest(&pb.GetStatusRequest{}))
@@ -69,7 +72,9 @@ func TestGrokWorkerReservationIsNotAdvertisedAndRejectedAsUnknown(t *testing.T) 
 	}
 }
 
-func TestGrokDiagnosticIsNeverPopulatedByProgress(t *testing.T) {
+// grok_diagnostic is populated only by a failed or uncertain Grok browser login
+// (grok_login_test.go); Codex operations never populate it.
+func TestGrokDiagnosticIsNotPopulatedForCodexProgress(t *testing.T) {
 	f := newSubscriptionFixture(t)
 	op := f.serverStart(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
 	if f.progressFor(op.OperationId).GrokDiagnostic != nil {
