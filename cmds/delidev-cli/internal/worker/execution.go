@@ -325,6 +325,13 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	managedUnusedOriginal := false
 	managedPreNativeCleanup, managedHelperRetained := false, false
 	defer func() {
+		founderAbort := sharedMember != nil && sharedFounder && sharedOwner.runtime == nil
+		var founderErr error
+		if founderAbort {
+			// Keep admission serialized until the original owner Finish settles.
+			// A waiting Take must not join an owner without a native runtime.
+			founderErr = sharedOwner.abortFounder(nativeHome, sharedMember)
+		}
 		if releaseCodexAdmission != nil {
 			releaseCodexAdmission()
 		}
@@ -332,10 +339,8 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			defer closeManagedRPC()
 		}
 		if sharedMember != nil {
-			var finishErr error
-			if sharedFounder && sharedOwner.runtime == nil {
-				finishErr = sharedOwner.abortFounder(nativeHome, sharedMember)
-			} else {
+			finishErr := founderErr
+			if !founderAbort {
 				finishErr = sharedOwner.gate.finishMember(sharedOwner, sharedMember, sharedMember.proven)
 			}
 			if finishErr != nil {
