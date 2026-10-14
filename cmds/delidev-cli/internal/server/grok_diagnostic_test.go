@@ -143,6 +143,17 @@ func TestGrokTakeRefusalCarriesPhaseAndVersions(t *testing.T) {
 			i.ProtocolVerified = false
 			i.Protocol = &domain.ProtocolObservation{Protocol: domain.ProtocolFor(domain.GrokBuild), State: domain.ProtocolUnsupported, GrokDiagnostic: profileFailure}
 		}, domain.GrokProfile, "1.0.52", "profile validation"},
+		// A release between the discovery baseline (1.0.41) and the subscription
+		// baseline keeps its probe's profile diagnostic, but admission must still
+		// classify it as a version failure.
+		{"stored profile failure below subscription baseline", func(i *domain.Installation) {
+			i.Version, i.ProtocolVerified = "1.0.43", false
+			i.Protocol = &domain.ProtocolObservation{Protocol: domain.ProtocolFor(domain.GrokBuild), State: domain.ProtocolUnsupported, GrokDiagnostic: domain.GrokErrorDiagnostic(domain.WithGrokDiagnostic("1.0.43", domain.GrokProfile, domain.Fail(domain.Unsupported, "x", "y")))}
+		}, domain.GrokVersion, "1.0.43", "at or above " + domain.GrokSubscriptionBaselineVersion},
+		{"stored profile failure on an undiscovered installation", func(i *domain.Installation) {
+			i.State, i.ResolvedPath, i.ProtocolVerified = domain.InstallationMissing, "", false
+			i.Protocol = &domain.ProtocolObservation{Protocol: domain.ProtocolFor(domain.GrokBuild), State: domain.ProtocolUnsupported, GrokDiagnostic: profileFailure}
+		}, domain.GrokDiscovery, "1.0.52", "executable discovery"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			f := newGrokFixture(t)

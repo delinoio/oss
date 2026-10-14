@@ -38,23 +38,27 @@ func grokDiagnosticMessage(d *domain.GrokDiagnostic) *pb.GrokDiagnostic {
 }
 
 // grokAdmissionFailure classifies a refused Grok installation by the original
-// phase. A stored failed-validation diagnostic is restored unchanged so the
-// first native failure remains authoritative.
+// phase. Discovery validity and the subscription version baseline are decided
+// first: a release between the discovery baseline and the subscription
+// baseline can retain a stored profile diagnostic from its probe, but admission
+// must still report it as a version failure. Only an installation that is
+// discovered and at or above the subscription baseline restores its stored
+// failed-validation diagnostic unchanged, so the first native failure stays
+// authoritative.
 func grokAdmissionFailure(found *domain.Installation) error {
 	if found == nil {
 		return domain.WithGrokDiagnostic("", domain.GrokDiscovery, grokInstallationRequired())
-	}
-	if found.Protocol != nil && found.Protocol.GrokDiagnostic != nil && found.Protocol.GrokDiagnostic.DetectedVersion == found.Version && found.Protocol.GrokDiagnostic.Validate() == nil {
-		return domain.RestoreGrokDiagnostic(*found.Protocol.GrokDiagnostic)
 	}
 	switch {
 	case found.State != domain.InstallationDetected || found.ResolvedPath == "" || found.ObservedAt == nil || found.ObservedAt.IsZero():
 		return domain.WithGrokDiagnostic(found.Version, domain.GrokDiscovery, grokInstallationRequired())
 	case !domain.GrokSubscriptionVersionAllowed(found.Version):
 		return domain.GrokVersionFailure(found.Version)
-	default:
-		return domain.WithGrokDiagnostic(found.Version, domain.GrokProfile, grokInstallationRequired())
 	}
+	if stored := found.Protocol; stored != nil && stored.GrokDiagnostic != nil && stored.GrokDiagnostic.DetectedVersion == found.Version && stored.GrokDiagnostic.Validate() == nil {
+		return domain.RestoreGrokDiagnostic(*stored.GrokDiagnostic)
+	}
+	return domain.WithGrokDiagnostic(found.Version, domain.GrokProfile, grokInstallationRequired())
 }
 
 func grokInstallationRequired() *domain.Error {
