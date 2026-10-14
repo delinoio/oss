@@ -494,6 +494,16 @@ rejected by the aggregate while its original bytes stay unchanged. Exactly the
 budget passes and one more byte fails safely as `recovery-required`; the frame
 limit, 128 turns, 4,096 items, unique item/cursor identities and malformed-output
 rejection are unchanged. Fork keeps its separate 4 MiB bound.
+The profile is a property of the original execution, not of the compaction or
+Revert client. When the original assignment froze native image generation
+(managed OpenAI, no Sidechat), the worker opens the compaction client, the Revert
+client and the credential-free Revert recovery client with the explicit
+`image_history` frame profile. It selects the enlarged frame and the 16 MiB
+budget above without enabling image generation (the generation feature stays
+disabled for these clients) and without credentials, so a retained turn above
+4 MiB that the original execution admitted is admitted by manual compaction,
+Revert and post-crash reconciliation, and recovery computes the same budget as
+the claim. Every other session keeps the default 1 MiB frame and 4 MiB budget.
 The private Revert intent file (`native-revert-intent.json`) persists the
 complete expected prefix and has its own bound of 17 MiB plus 64 KiB (the 16 MiB
 largest history budget, a 1 MiB source continuation checkpoint and a 64 KiB intent

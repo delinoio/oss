@@ -152,13 +152,28 @@ const (
 	// independent Fork history. It is explicit, never inferred from image
 	// generation, and Open accepts it only with ManagedForkHistory.
 	ForkHistoryFrameProfile FrameProfile = "fork_history"
+	// ImageHistoryFrameProfile reapplies the enlarged native frame of an original
+	// execution that generated images to managed history inspection (compaction,
+	// Revert and Revert recovery). It never enables image generation, needs no
+	// credentials, and Open accepts it only for a non-generating, non-Sidechat
+	// ThreadProtocol client with a private image root and machine identity.
+	ImageHistoryFrameProfile FrameProfile = "image_history"
 )
+
+// imageHistoryProfileAdmitted reports whether the explicit image-history frame
+// request names the closed route above.
+func (config Config) imageHistoryProfileAdmitted() bool {
+	return config.Mode == ThreadProtocol && config.API == nil && config.Sidechat == "" && !config.EnableImageGeneration && !config.ManagedForkHistory && config.ImageRoot != "" && config.ImageMachineID.Validate() == nil
+}
 
 // Freeze one frame profile before launch for both the transport and decoders.
 // A private storage root alone does not admit generation. Read-only Sidechat
 // borrows original parent history without enabling the generation feature.
 // Managed independent Fork requests the same enlarged frame explicitly.
 func (config Config) imageObservationProfile() bool {
+	if config.FrameProfile == ImageHistoryFrameProfile {
+		return config.imageHistoryProfileAdmitted()
+	}
 	if config.FrameProfile == ForkHistoryFrameProfile {
 		return config.Mode == ThreadProtocol && config.ManagedAuthentication && config.ManagedForkHistory && config.API == nil && config.Sidechat == ""
 	}

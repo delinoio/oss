@@ -263,6 +263,7 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 	if managed != nil {
 		nativeConfig.API = nil
 		nativeConfig.ManagedAuthentication = true
+		nativeConfig.FrameProfile = retainedHistoryFrameProfile(i.Assignment)
 		nativeConfig.QuotaObserver = managed.publishRollingQuota
 	} else {
 		proxy, err = openCodexNativeProxy(nativeCtx, config, i.ActionID)

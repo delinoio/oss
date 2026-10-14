@@ -59,3 +59,27 @@ func TestRevertSourceBoundCoversEveryPersistedExecutionCheckpoint(t *testing.T) 
 		t.Fatal("Revert source bound is below the persisted execution checkpoint ceiling", codex.MaxRevertSourceBytes, maxExecutionCheckpointBytes)
 	}
 }
+
+func TestRetainedHistoryFrameProfileFollowsOriginalImageGeneration(t *testing.T) {
+	original := func(mutate func(*domain.ExecutionJobInput)) domain.ExecutionJobInput {
+		input := domain.ExecutionJobInput{NativeImageGeneration: true}
+		input.Configuration.Harness, input.Configuration.Subscription = domain.Codex, true
+		mutate(&input)
+		return input
+	}
+	for _, test := range []struct {
+		name     string
+		input    domain.ExecutionJobInput
+		expected codex.FrameProfile
+	}{
+		{"original-generation", original(func(*domain.ExecutionJobInput) {}), codex.ImageHistoryFrameProfile},
+		{"no-generation", original(func(i *domain.ExecutionJobInput) { i.NativeImageGeneration = false }), codex.DefaultFrameProfile},
+		{"api-account", original(func(i *domain.ExecutionJobInput) { i.Configuration.Subscription = false }), codex.DefaultFrameProfile},
+		{"sidechat", original(func(i *domain.ExecutionJobInput) { i.Configuration.SidechatPolicy = domain.CodexReadOnlySidechatV1 }), codex.DefaultFrameProfile},
+		{"other-harness", original(func(i *domain.ExecutionJobInput) { i.Configuration.Harness = domain.ClaudeCode }), codex.DefaultFrameProfile},
+	} {
+		if got := retainedHistoryFrameProfile(test.input); got != test.expected {
+			t.Fatal("unexpected retained history frame profile", test.name, got)
+		}
+	}
+}

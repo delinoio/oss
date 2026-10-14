@@ -148,8 +148,10 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 		return nil, incompatible()
 	}
 	// The enlarged Fork history frame belongs only to the managed independent
-	// Fork route, for both the source inspection and the paused child.
-	if config.FrameProfile != DefaultFrameProfile && (config.FrameProfile != ForkHistoryFrameProfile || !config.ManagedForkHistory || config.API != nil) {
+	// Fork route, for both the source inspection and the paused child. The
+	// image-history frame belongs only to history inspection of an original
+	// execution that generated images.
+	if config.FrameProfile != DefaultFrameProfile && !(config.FrameProfile == ForkHistoryFrameProfile && config.ManagedForkHistory && config.API == nil) && !(config.FrameProfile == ImageHistoryFrameProfile && config.imageHistoryProfileAdmitted()) {
 		return nil, incompatible()
 	}
 	if ((config.Mode == QuotaProtocol || config.Mode == CreditProtocol) && (config.ManagedAuthentication || config.API != nil || config.Sidechat != "" || config.ModelObservation)) || (config.Mode == SubscriptionProtocol && !config.ManagedAuthentication) || (config.ManagedAuthentication && (config.Mode == ProbeProtocol || config.API != nil)) {

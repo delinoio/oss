@@ -152,7 +152,7 @@ func recoverSessionRevert(ctx context.Context, config Config, job domain.Job, re
 	if err != nil {
 		return nil, err
 	}
-	native, err := codex.Open(ctx, codex.Config{RevertHistory: true, ImageRoot: config.Root, ImageMachineID: request.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: home, Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: domain.ID(config.execution.Assignment.Id), Executable: installation.ResolvedPath, Cwd: inspection.WorkingDirectory(), Env: env, Logger: config.Logger}})
+	native, err := codex.Open(ctx, codex.Config{RevertHistory: true, FrameProfile: retainedHistoryFrameProfile(input.Assignment), ImageRoot: config.Root, ImageMachineID: request.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: home, Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: domain.ID(config.execution.Assignment.Id), Executable: installation.ResolvedPath, Cwd: inspection.WorkingDirectory(), Env: env, Logger: config.Logger}})
 	if err != nil {
 		return nil, err
 	}
