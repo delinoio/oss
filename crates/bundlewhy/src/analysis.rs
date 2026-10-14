@@ -72,6 +72,7 @@ fn coverage(
     missing_maps: usize,
     failed_chunks: usize,
     unreadable_sources: usize,
+    unsupported_engine: Option<&str>,
 ) -> Vec<CategoryCoverage> {
     let rules = rules::rules_by_category(&collection.bundler);
     OptimizationCategory::ALL
@@ -184,6 +185,17 @@ fn coverage(
                         ),
                     )
                 }
+                // Detectors and evidence interpretation are verified only for
+                // the frozen matrix; an explicitly selected other version can
+                // change APIs or stats silently.
+                _ if unsupported_engine.is_some() => (
+                    CoverageState::Partial,
+                    format!(
+                        "Detectors are verified for {}; results from this unsupported engine may \
+                         be incomplete.",
+                        unsupported_engine.unwrap_or_default()
+                    ),
+                ),
                 _ => (CoverageState::Covered, String::new()),
             };
             CategoryCoverage {
@@ -366,6 +378,15 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
             missing_maps.len(),
             failed_chunks,
             unreadable_sources,
+            (collection.bundler_version != input.bundler.spec().version)
+                .then(|| {
+                    format!(
+                        "{} {}",
+                        input.bundler.spec().package,
+                        input.bundler.spec().version
+                    )
+                })
+                .as_deref(),
         ),
         chunks: chunk_sizes,
         problems,
@@ -1049,6 +1070,17 @@ mod tests {
         let fixture = run_fixture(BundlerChoice::Vite, |value| {
             value["bundlerVersion"] = serde_json::Value::String("8.0.0".to_owned());
         });
+        let covered = fixture
+            .output
+            .analysis
+            .coverage
+            .iter()
+            .filter(|entry| entry.state == CoverageState::Covered)
+            .count();
+        assert_eq!(
+            covered, 0,
+            "unsupported engines must not report covered categories"
+        );
         let engine = fixture.output.analysis.engine.unwrap();
         assert_eq!(engine.support, EngineSupport::UnsupportedSelected);
         assert_eq!(engine.supported_versions, "vite 8.3.4");
