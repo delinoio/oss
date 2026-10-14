@@ -158,8 +158,17 @@ correlation reference, input delivery and independent cleanup classification.
 Copy only validated metadata; opening or copying details performs no inspection.
 Failure guidance describes delivery and cleanup independently. Acknowledged input
 and confirmed original cleanup must not be described as uncertain. Preserve safe
-cause-specific correction alongside original-execution recovery guidance. These
-settled observations do not prove the execution outcome or grant resend authority.
+cause-specific correction alongside original-execution recovery guidance for every
+accepted delivery/cleanup combination; the correction is independent of those facts
+and never grants resend authority. Every accepted startup problem code maps to a
+server correction that agrees with the desktop selection: `InvalidArgument` uses the
+settings correction like `Unsupported`, and the remaining accepted codes use the
+device-check correction. The server guidance and the desktop recovery
+guidance both lead with the selected correction, and the session recovery card
+renders that correction exactly once (a separate correction is shown only when the
+guidance does not already contain it); the technical details disclosure repeats only
+the delivery and cleanup facts and never the correction. These settled observations do not prove the
+execution outcome or grant resend authority.
 
 Retry is explicit and available only after positive input-not-sent and original
 cleanup proof. The existing revision-checked Resume lane creates a distinct
