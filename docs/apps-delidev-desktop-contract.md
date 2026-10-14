@@ -759,12 +759,53 @@ Use existing light/dark semantic tokens and bundled English/Korean catalogs. Ent
 
 ### Contextual desktop navigation
 
-The desktop shell uses a shared 52px icon rail beside a 288px context pane; at viewport widths up to and including 1,100px, only the pane contracts to 256px. Preserve the native 960×640 minimum. The rail order is Sessions, Pull requests, Usage, Schedules, with Settings at the bottom. DeliDev remains static, left-aligned text. The header Inbox bell and Search magnifier appear only in the home area (`Surface.Sessions`, including welcome and selected detail, `Surface.NewSession` and `Surface.NewGeneralChat`). Other destinations render no action group, buttons, disabled controls or placeholders. Keep the 34px minimum header height, bell-then-magnifier order, 34×34px targets, 18px decorative SVGs, 2px action gap, `b6577` foreground and existing hover/focus treatment; hiding actions must not move the heading, pane content or rail. Accessible button names remain exactly **Inbox** and **Search**. Their existing callbacks select the corresponding context surface without selecting a rail item; Sessions returns to the retained conversation or welcome. Sidebar-only styling must not alter the conversation/composer, title bar, or right-side panels. The rail and groups remain keyboard-operable with visible focus, descriptive names/tooltips, and reduced-motion-safe status graphics.
+The desktop shell uses a shared 52px icon rail beside a 288px context pane; at viewport widths up to and including 1,100px, only the pane contracts to 256px. Preserve the native 960×640 minimum. The rail order is Sessions, Pull requests, Usage only while pinned (see Pinnable More menu for Usage), Schedules, More, a flexible spacer, then the existing bottom group with Settings. Absent preference state is unpinned, so the default rail is Sessions, Pull requests, Schedules, More. DeliDev remains static, left-aligned text. The header Inbox bell and Search magnifier appear only in the home area (`Surface.Sessions`, including welcome and selected detail, `Surface.NewSession` and `Surface.NewGeneralChat`). Other destinations render no action group, buttons, disabled controls or placeholders. Keep the 34px minimum header height, bell-then-magnifier order, 34×34px targets, 18px decorative SVGs, 2px action gap, `b6577` foreground and existing hover/focus treatment; hiding actions must not move the heading, pane content or rail. Accessible button names remain exactly **Inbox** and **Search**. Their existing callbacks select the corresponding context surface without selecting a rail item; Sessions returns to the retained conversation or welcome. Sidebar-only styling must not alter the conversation/composer, title bar, or right-side panels. The rail and groups remain keyboard-operable with visible focus, descriptive names/tooltips, and reduced-motion-safe status graphics.
 
 Below 760 CSS pixels, retain the rail and show a purpose-named **Open …** control in the main area. It opens one native modal drawer beside the rail with a visible Close action, Escape handling, contained focus, background inertness and focus restoration to the opener. Keep the same surface controllers and query observers while switching between pane and drawer placement; filter edits alone do not close the drawer. Selection, opening a destination, explicit Apply/Reset/Search/Load and schedule selection close it. If the viewport becomes wide while open, close modal mode without dropping state and focus the corresponding visible navigation control. Reflow without clipping at 200% zoom.
 
 Header-origin navigation and Settings entry/departure transfer focus after the destination DOM commit and drawer close. Consume a pending destination in the parent synchronous layout effect: wide viewports focus `#main` with `preventScroll`, allowing the existing subsequent first-entry Search query autofocus to win; compact viewports focus the persistent destination opener (**Open inbox filters**, **Open search filters**, or the other surface’s purpose-named control). First compact Search query autofocus still waits for explicitly opening its drawer. Evaluate the current `(max-width: 759px)` media query at handoff, discard superseded navigation/Settings intent, and never schedule a competing later autofocus frame or focus an inert/closed destination. Other ordinary rail, tray and notification navigation retain their existing focus behavior. Settings entry/departure uses the visible main or compact destination opener; explicit Settings-internal New Project entry retains once-only Name focus and departure never restores a former modal opener. Visibility depends only on surface, including loading, empty, denied, offline and cached-refresh states; controllers, query instances, filters, cursors, per-surface scroll, selected session, composer and New session drafts remain connection-scoped memory. Hiding actions introduces no Web Storage, extra reads/writes, feature flag, API/schema change or telemetry. The feature supersedes only the previous globally visible header-action rule. Record verification and native coverage limits in the feature, its pull requests and CI runs.
 Header-origin navigation and Settings entry/departure transfer focus after the destination DOM commit and drawer close. Consume a pending destination in the parent synchronous layout effect: wide viewports focus `#main` with `preventScroll`, allowing the existing subsequent first-entry Search query autofocus to win; compact viewports focus the persistent destination opener (**Open inbox filters**, **Open search filters**, or the other surface’s purpose-named control). First compact Search query autofocus still waits for explicitly opening its drawer. Evaluate the current `(max-width: 759px)` media query at handoff, discard superseded navigation/Settings intent, and never schedule a competing later autofocus frame or focus an inert/closed destination. Other ordinary rail, tray and notification navigation retain their existing focus behavior. Settings entry/departure uses the visible main or compact destination opener; Settings-internal New Project entry retains once-only repository-search focus and departure never restores a former modal opener. Home New Project uses its independent dialog ownership and does not replace the Settings visit. Visibility depends only on surface, including loading, empty, denied, offline and cached-refresh states; controllers, query instances, filters, cursors, per-surface scroll, selected session, composer and New session drafts remain connection-scoped memory. Hiding actions introduces no Web Storage, extra reads/writes, feature flag, API/schema change or telemetry. The feature supersedes only the previous globally visible header-action rule. Record verification and native coverage limits in the feature, its pull requests and CI runs.
+
+### Pinnable More menu for Usage
+
+The rail ends its primary group with **More**, a 44px three-dot outline button
+(`aria-haspopup="dialog"`, `aria-expanded`) that opens one anchored, rounded
+popover next to the rail. More is not a content surface and owns no controller.
+The popover contains a single **Usage** row (outline bar-chart icon) and a
+separate icon button named **Pin Usage** or **Unpin Usage** (at least 40px, label
+changes with confirmed state). Both are localized in the bundled English and
+Korean catalogs (More / 더보기, Pin Usage / 사용량 고정, Unpin Usage / 사용량 고정 해제).
+
+- Selecting the Usage row closes More, returns focus to the More button and calls
+  the same `navigate(Surface.Usage)` used by the tray and account links, so the
+  Usage filters, queries, mounted content and drafts keep their current
+  lifetimes. The row stays in More while Usage is pinned so the same control can
+  unpin it.
+- Pin and Unpin change only rail visibility; they never navigate. Pinned Usage
+  sits between Pull requests and Schedules. Unpinning while Usage is active keeps
+  the page active. While Usage is active, the Usage rail button carries
+  `aria-current="page"` when pinned and the More button carries it when unpinned.
+- Tray and account Usage navigation work regardless of pin state and never write
+  the preference.
+- Escape and an outside press dismiss the popover and restore focus to the More
+  button (a press on another control keeps the focus that control takes); focus
+  moving to another control also dismisses it. Opening focuses the Usage row;
+  Arrow keys, Home and End move between the controls. The compact modal drawer
+  dismisses an open popover. The popover is a non-modal `popover="manual"`
+  dialog in rail DOM order, so it is never clipped by the rail; it uses the
+  existing semantic light/dark tokens, the shared visible-focus treatment, adds
+  no motion, and wraps without horizontal clipping at 200% zoom.
+- The pin button uses `aria-disabled` (not `disabled`) while a read or save is in
+  flight or a problem is unresolved, so focus is retained. A read or save
+  problem keeps the last confirmed pin state and shows a localized alert with an
+  explicit **Reload navigation preference** action inside the popover; an
+  uncertain save is never displayed as committed and Reload never replays it.
+  Reload keeps focus on the pin button.
+
+Pin state is the Boolean `usage_pinned`, persisted in the separate
+`navigation_preference.json` document described under Device navigation
+preference. It adds no server RPC, protocol field, account sync or migration of
+`sidebar_preference.json`.
 
 ### Shared scroll continuation
 
@@ -6219,6 +6260,39 @@ help dialog retains existing eligible action dismissal. B is a fixed product
 reservation in device shortcut validation, not an additional editable override.
 Automated fixtures/builds do not establish installed CEF/platform persistence or
 native account acceptance.
+
+### Device navigation preference
+
+`navigation_preference.json` is an independent computer-local, bounded 4096-byte
+version-1 document containing only the Boolean `usage_pinned` and the document
+version (`{"version":1,"usage_pinned":false}`). Missing storage defaults to
+`usage_pinned=false`. Unknown fields, a missing or non-Boolean `usage_pinned`,
+oversized, invalid, linked and newer-version documents are classified
+(InvalidDocument or UnsupportedVersion), preserved unchanged and keep the last
+confirmed pin state. The file is separate from `sidebar_preference.json`, server
+configuration, pairing, exports and backups and carries no IDs, credentials or
+content. `NavigationProvider` lives above Desktop connection and Settings
+lifetimes, so the pin survives connection changes and restarts; isolated
+non-native fixtures use in-memory state only.
+
+`read_navigation_preference` and `update_navigation_preference` (argument
+`usagePinned`, plus the expected process revision) use the closed
+`device-navigation` permission only for existing main/local-* and saved server-*
+product capabilities. The store is a parallel of the sidebar preference store and
+keeps its contracts: authority capture and recheck, off-UI-thread storage work,
+the persistent `navigation-preference.lock` sidecar leased from inspection
+through publication, full Missing/Present observation comparison, owned scratch
+files (`.navigation_preference-*.tmp` and `.claim`), atomic no-clobber or
+exchange publication, parent and file durability barriers, receipt verification
+and OutcomeUnknown for any uncertain outcome that only an explicit Read can
+recover. Committed changes publish ordered `navigation-preference-changed`
+snapshots only to authorized product windows, so other windows on the same
+computer update; external, tray and child views have no storage or event
+authority. The renderer applies the same monotonic, contradiction-rejecting and
+save-failure fencing rules as the sidebar preference. Logs contain only stable
+operations, revisions and outcome classifications (never paths or content).
+Automated fixtures do not establish installed CEF or multi-window platform
+persistence; real-app validation is separate.
 
 ## Per-turn elapsed presentation
 
