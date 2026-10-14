@@ -260,7 +260,8 @@ fn apply_collapse(
     for (i, &f) in faces.iter().enumerate() {
         guarded(i)?;
         let mut next = f.map(|v| if v == source { destination } else { v });
-        if next[0] == next[1] || next[1] == next[2] || next[2] == next[0] {
+        let was_degenerate = f[0] == f[1] || f[1] == f[2] || f[2] == f[0];
+        if !was_degenerate && (next[0] == next[1] || next[1] == next[2] || next[2] == next[0]) {
             continue;
         }
         output.push(std::mem::take(&mut next));
@@ -778,6 +779,29 @@ mod tests {
         assert_eq!(result.output_triangles, 4);
         assert!(!result.target_reached);
         assert_eq!(result.bytes, source);
+    }
+
+    #[test]
+    fn collapse_preserves_preexisting_degenerate_faces() {
+        let base = geometry(&grid()).unwrap();
+        let mut positions = base.positions.clone();
+        positions.extend([[2., 0., 0.], [2., 1., 0.]]);
+        let mut normals = base.normals.clone();
+        normals.extend([[0., 0., 1.]; 2]);
+        let mut indices = base.indices.clone();
+        indices.extend([9, 9, 10]);
+        let source = encode(&positions, &normals, &indices);
+        let result = simplify_geometry(&source, 7, 0.).unwrap();
+        let output = geometry(&result.bytes).unwrap();
+        assert_eq!(result.output_triangles, 7);
+        assert!(
+            output
+                .indices
+                .as_chunks::<3>()
+                .0
+                .iter()
+                .any(|face| face[0] == face[1])
+        );
     }
 
     #[test]
