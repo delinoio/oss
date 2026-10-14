@@ -84,10 +84,12 @@ active content region; Conversation/drafts remain mounted and inert while
 inactive. The former Browser split, compact overlay, Expand/Restore presentation
 and Browser picker are superseded.
 
-The workspace tab strip ends with an ordinary New browser page `+` button. It is
-not a tab or numeric-shortcut position and stays reachable beside the scrolling
-tabs. The `+` button and the Open tool Browser row open the same compact
-`Modal` (480px maximum, viewport-bounded, 40px controls, 8px corners, English and
+The workspace tab strip is followed by the single Open tool `+` button (the
+SessionToolMenu trigger, localized accessible name and title Open tool / 도구 열기).
+It is not a tab or numeric-shortcut position, stays reachable beside the
+scrolling tabs and never creates a page directly; the tab bar renders no direct
+New browser page button. The Open tool dialog's Browser row is the only entry to the
+compact `Modal` (480px maximum, viewport-bounded, 40px controls, 8px corners, English and
 Korean "New browser page / 새 브라우저 페이지"). It shows the existing
 account-sharing explanation, one labelled Address field (focused on opening, with
 focus trapped and the opener restored on dismissal), Cancel and Open page. Opening

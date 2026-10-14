@@ -37,7 +37,7 @@ The task selects the first supported text/paragraph/cell region. Use the library
 
 ## Static 3D product assets
 
-The [AURA audio studio](audio-studio-assets/README.md) creates headphones, a DAC/amplifier, a stand and the combined studio as GLB/FBX. Its original procedural geometry and seven deterministic PNG textures are included. The unreleased 3D API is also demonstrated by `scene-glb.tsx` and `scene-fbx.tsx`. The verification workflow reimports the actual files in Blender and a local GLB viewer; see the example provenance and reproduction commands.
+The [AURA audio studio](audio-studio-assets/README.md) creates headphones, a DAC/amplifier, a stand and the combined studio as GLB/FBX. Its original procedural geometry and seven deterministic PNG textures are included. The static scene API is also demonstrated by `scene-glb.tsx` and `scene-fbx.tsx`. `scene-compact-glb.tsx` shows the unreleased explicit geometry compaction API on a six-vertex fixture with two preserved faces. The verification workflow reimports the actual files in Blender and a local GLB viewer; see the example provenance and reproduction commands.
 
 ## Zombie-game gunshot
 

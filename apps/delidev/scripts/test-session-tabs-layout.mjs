@@ -170,6 +170,36 @@ try {
         assert.equal(toolGeometry.title, toolLabel);
         assert.equal(toolGeometry.hidden, "true");
         assert.equal(toolGeometry.focusable, "false");
+        // The single + follows the scrolling tab strip directly; no wrench
+        // trigger or direct New browser page button remains on the row.
+        const toolPlacement = await toolTrigger.evaluate((node) => {
+          const strip = document.querySelector(
+              ".session-navigation > [role=tablist]",
+            ),
+            stripBox = strip.getBoundingClientRect(),
+            box = node.getBoundingClientRect(),
+            scale = parseFloat(getComputedStyle(document.body).zoom) || 1;
+          return {
+            gap: box.left - stripBox.right,
+            scale,
+            adjacent: strip.nextElementSibling === node.parentElement,
+            last: node.parentElement.nextElementSibling === null,
+            triggers: document.querySelectorAll(
+              ".session-navigation > .session-tool-popup > button",
+            ).length,
+            newPage: document.querySelectorAll(".session-new-page").length,
+            inView: box.right <= window.innerWidth + 1 && box.left >= 0,
+          };
+        });
+        assert(toolPlacement.adjacent && toolPlacement.last);
+        assert.equal(toolPlacement.triggers, 1);
+        assert.equal(toolPlacement.newPage, 0);
+        assert(
+          toolPlacement.gap >= -1 &&
+            toolPlacement.gap <= 12 * toolPlacement.scale,
+          JSON.stringify(toolPlacement),
+        );
+        assert(toolPlacement.inView, JSON.stringify(toolPlacement));
         const toolCalls = await page.evaluate(() =>
           JSON.stringify(browserFixture),
         );
