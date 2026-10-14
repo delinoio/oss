@@ -78,6 +78,10 @@ func init() {
 		switch mode {
 		case "inspect-managed":
 			report["permissions"].(map[string]any)["managedSettingsExists"] = true
+		case "inspect-experiments":
+			// Grok Build 1.0.52 reports an experiments inventory; a populated one
+			// is outside the validated profile.
+			report["experiments"] = []any{"foreign"}
 		case "inspect-hooks":
 			report["hooks"] = []any{map[string]any{"command": "private-hook-sentinel"}}
 		case "inspect-overflow":

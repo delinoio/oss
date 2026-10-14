@@ -326,6 +326,11 @@ func (s *Service) GetSubscriptionProgress(ctx context.Context, req *connect.Requ
 		}
 		return s.getClaudeSubscriptionProgress(ctx, req)
 	}
+	if matched, err := s.isGrokSubscription(ctx, req.Msg.AccountId); err != nil {
+		return nil, rpc.Error(err, c)
+	} else if matched {
+		return s.grokSubscriptionProgress(ctx, req)
+	}
 	unlock, err := s.lockAccounts(ctx)
 	if err != nil {
 		return nil, rpc.Error(err, c)

@@ -115,7 +115,9 @@ func grokSubscriptionInstallation(tx *store.Tx, machine domain.ID) (domain.Insta
 		}
 	}
 	if found == nil || !domain.GrokSubscriptionVersionAllowed(found.Version) || found.State != domain.InstallationDetected || !found.ProtocolVerified || found.Protocol == nil || found.Protocol.Protocol != domain.ProtocolFor(domain.GrokBuild) || found.Protocol.State != domain.ProtocolVerified || found.Protocol.Problem != nil || found.Problem != nil || found.ResolvedPath == "" || found.ObservedAt == nil || found.ObservedAt.IsZero() || found.ObservedAt.After(time.Now().UTC().Add(time.Second)) {
-		return domain.Installation{}, domain.Fail(domain.Unsupported, "Grok subscription authentication requires a verified, supported Grok Build installation.", "Discover the installed Grok Build on the selected Runner Device and install the pinned supported release yourself.")
+		// The refusal carries the original phase, installed version and supported
+		// baseline as a closed diagnostic; it never exposes native text or paths.
+		return domain.Installation{}, grokAdmissionFailure(found)
 	}
 	return *found, nil
 }
@@ -201,6 +203,9 @@ func (s *Service) takeGrokSubscription(ctx context.Context, req *connect.Request
 		}
 		installation, err := grokSubscriptionInstallation(tx, input.Machine)
 		if err != nil {
+			if d := domain.GrokErrorDiagnostic(err); d != nil {
+				s.logger.WarnContext(ctx, "grok_subscription_take_installation_refused", "account_id", input.Account, "operation_id", input.Operation, "phase", d.Phase, "code", d.Code, "installed_version", d.DetectedVersion, "supported_version", d.SupportedVersion)
+			}
 			return nil, err
 		}
 		if err := tx.WorkerUpdateAdmission(input.Machine); err != nil {

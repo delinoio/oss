@@ -29,6 +29,7 @@ type ProbeConfig struct {
 type probePhase string
 
 const (
+	versionPhase          probePhase = "version"
 	profilePhase          probePhase = "profile"
 	runtimePhase          probePhase = "runtime"
 	inspectPhase          probePhase = "inspect"
@@ -39,6 +40,25 @@ const (
 	initializePhase       probePhase = "initialize"
 	cleanupPhase          probePhase = "cleanup"
 )
+
+// diagnosticPhase maps an internal probe phase to the closed wire-visible
+// diagnostic phase. Unknown phases fall back to profile validation.
+func (p probePhase) diagnosticPhase() domain.GrokPhase {
+	switch p {
+	case versionPhase:
+		return domain.GrokVersion
+	case runtimePhase, launchPhase, initializePhase:
+		return domain.GrokRuntime
+	case authenticatePhase:
+		return domain.GrokLogin
+	case cleanupPhase:
+		return domain.GrokCleanup
+	default:
+		// profile, inspect, runtime-inspect and workspace-inspect validate the
+		// native configuration profile.
+		return domain.GrokProfile
+	}
+}
 
 func incompatible() *domain.Error {
 	return domain.Fail(domain.Unsupported, "The installed Grok Build does not match its native protocol profile.", "Select a validated Grok Build version and refresh protocol discovery; no account execution was authorized.")
@@ -67,11 +87,14 @@ func nativeLaunchError(err error) error {
 // session creation, permission response or model request. Its success proves
 // only this installed protocol profile, not any account or execution feature.
 func Probe(ctx context.Context, config ProbeConfig) (returned error) {
-	phase := profilePhase
+	phase := versionPhase
 	defer func() {
+		// The first native failure keeps its original phase and the installed
+		// version; no native text enters the diagnostic.
+		returned = domain.WithGrokDiagnostic(config.Version, phase.diagnosticPhase(), returned)
 		if config.Process.Logger != nil {
 			if returned != nil {
-				config.Process.Logger.WarnContext(ctx, "Grok Build native handshake failed", "owner_id", config.Process.OwnerID, "phase", phase, "code", domain.SafeError(returned).Code)
+				config.Process.Logger.WarnContext(ctx, "Grok Build native handshake failed", "owner_id", config.Process.OwnerID, "phase", phase, "diagnostic_phase", phase.diagnosticPhase(), "code", domain.SafeError(returned).Code, "installed_version", config.Version, "supported_version", domain.GrokSubscriptionBaselineVersion)
 			} else {
 				config.Process.Logger.InfoContext(ctx, "Grok Build native handshake completed", "owner_id", config.Process.OwnerID)
 			}
