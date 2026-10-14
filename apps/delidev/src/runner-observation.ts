@@ -6,7 +6,10 @@ import {
   type Resource,
 } from "@delinoio/delidev-api-client";
 import { document, items, object } from "./documents";
-import { claudeVersionAllowed, validInstallationVersion } from "./harness-version";
+import {
+  claudeVersionAllowed,
+  validInstallationVersion,
+} from "./harness-version";
 
 /** Closed presentation evidence only. It never grants execution authority. */
 export type RunnerExclusion =

@@ -454,7 +454,9 @@ export function MachineSettingsView({
                 ? { cause: "unavailable" as const }
                 : installationObservation(
                     installation,
-                    harness === Harness.Claude ? claudeVersionAllowed : undefined,
+                    harness === Harness.Claude
+                      ? claudeVersionAllowed
+                      : undefined,
                   );
             return (
               <article className="result" key={index}>

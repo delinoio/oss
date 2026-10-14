@@ -56,7 +56,10 @@ import {
 import { type ScrollContinuationQuery } from "./scroll-continuation";
 import { OAuthNativeAction, useOAuthNativeControl } from "./account-oauth";
 import { document, encode, items, object, text } from "./documents";
-import { claudeVersionAllowed, validInstallationVersion } from "./harness-version";
+import {
+  claudeVersionAllowed,
+  validInstallationVersion,
+} from "./harness-version";
 import { copy, useLocale, type MessageKey } from "./localization";
 import { useSettingsOpening } from "./settings-lifetime";
 import {
@@ -1246,7 +1249,9 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
                 ) : null}
                 {v.state === SubscriptionLoginState.UNSUPPORTED ? (
                   <>
-                    <strong>{copy("claude-subscription.validationHeading")}</strong>{" "}
+                    <strong>
+                      {copy("claude-subscription.validationHeading")}
+                    </strong>{" "}
                   </>
                 ) : null}
                 {copy(status[v.state] ?? "claude-subscription.failed")}
