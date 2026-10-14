@@ -72,6 +72,11 @@ try {
           assert.equal(document.meshes.length, 1);
           assert.equal(document.materials.length, 1);
           assert.equal(document.textures?.length ?? 0, counts.textures);
+          if (counts.textures > 0) {
+            assert.deepEqual(document.samplers, [
+              { magFilter: 9729, minFilter: 9987, wrapS: 33071, wrapT: 33071 },
+            ]);
+          }
           const primitive = document.meshes[0].primitives[0];
           assert.equal(
             document.accessors[primitive.attributes.POSITION].count,

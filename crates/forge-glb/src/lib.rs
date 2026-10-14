@@ -420,7 +420,9 @@ pub fn export(prepared: &Prepared<'_>) -> Result<Vec<u8>> {
         root["buffers"] = json!([{"byteLength":w.bin.len()}]);
     }
     if root.get("textures").is_some() {
-        root["samplers"] = json!([{"magFilter":9729,"minFilter":9987,"wrapS":10497,"wrapT":10497}]);
+        // Clamp texture edges so mip-level filtering cannot wrap into the
+        // opposite edge and bleed repeat-atlas texels into the visible quad.
+        root["samplers"] = json!([{"magFilter":9729,"minFilter":9987,"wrapS":33071,"wrapT":33071}]);
     }
     if !w.lights.is_empty() {
         root["extensionsUsed"] = json!(["KHR_lights_punctual"]);
