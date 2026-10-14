@@ -981,3 +981,143 @@ it("waits for an invalidated peer's read before starting the next check and does
   expect(checkState.maxActive).toBe(1);
   expect(mutations(calls)).toEqual(quiet);
 });
+
+const checkButton = (row: HTMLElement) =>
+  within(row).getByRole("button", { name: "Check" });
+const ready = { enabled: true, state: "ready" };
+
+it("sends a fresh read for a restored peer instead of re-exposing its earlier automatic approval", async () => {
+  const options = {
+    peers: [peer],
+    peerAccepts: true,
+    initialAccess: ready,
+  };
+  const { calls } = fixture(options);
+  category(TAILSCALE);
+  const row = await rowOf("Fixture peer");
+  await within(row).findByText(/Accepting requests/);
+  expect(checkedIds(calls)).toEqual(["peer-1"]);
+  // The peer goes offline, then comes back on a different host and later on
+  // its original one; each change is observed by a Refresh.
+  options.peers = [{ ...peer, online: false }];
+  await refresh(calls);
+  expect(within(row).getByText(/Not checked/)).toBeTruthy();
+  expect(within(row).queryByRole("button", { name: "Connect" })).toBeNull();
+  options.peers = [{ ...peer, host: "moved.example" }];
+  await refresh(calls);
+  options.peers = [peer];
+  await refresh(calls);
+  // A restored peer is only checkable manually and sends no automatic read.
+  expect(within(row).getByText(/Not checked/)).toBeTruthy();
+  expect(within(row).queryByRole("button", { name: "Connect" })).toBeNull();
+  expect(
+    within(row).queryByRole("button", { name: "Register Worker" }),
+  ).toBeNull();
+  expect(checkedIds(calls)).toEqual(["peer-1"]);
+  // The peer no longer accepts requests: the manual Check must read it again
+  // rather than expose the earlier approval.
+  options.peerAccepts = false;
+  fireEvent.click(checkButton(row));
+  await within(row).findByText(/Unavailable or blocked/);
+  expect(checkedIds(calls)).toEqual(["peer-1", "peer-1"]);
+  expect(within(row).queryByRole("button", { name: "Connect" })).toBeNull();
+  expect(mutations(calls)).toEqual(quiet);
+});
+
+it("hides and resets an earlier automatic failure when the peer changes and sends a fresh read on Check", async () => {
+  const options = {
+    peers: [peer],
+    failChecks: ["peer-1"],
+    initialAccess: ready,
+  };
+  const { calls } = fixture(options);
+  category(TAILSCALE);
+  const row = await rowOf("Fixture peer");
+  await within(row).findByText(/Unavailable or blocked/);
+  expect(within(row).getByRole("alert")).toBeTruthy();
+  options.peers = [{ ...peer, online: false }];
+  await refresh(calls);
+  // The failure belongs to the earlier observation and is not shown for it.
+  expect(within(row).queryByRole("alert")).toBeNull();
+  expect(within(row).getByText(/Not checked/)).toBeTruthy();
+  options.peers = [peer];
+  await refresh(calls);
+  expect(within(row).queryByRole("alert")).toBeNull();
+  expect(within(row).getByText(/Not checked/)).toBeTruthy();
+  expect(checkedIds(calls)).toEqual(["peer-1"]);
+  options.failChecks = [];
+  fireEvent.click(checkButton(row));
+  await within(row).findByText(/Accepting requests/);
+  expect(checkedIds(calls)).toEqual(["peer-1", "peer-1"]);
+  expect(within(row).queryByRole("alert")).toBeNull();
+  expect(within(row).getByRole("button", { name: "Connect" })).toBeTruthy();
+  expect(mutations(calls)).toEqual(quiet);
+});
+
+it("discards a manual check result when the peer is shared to or moves, and reads again on the next Check", async () => {
+  const options = {
+    peers: [peer, second],
+    peerAccepts: true,
+    initialAccess: ready,
+  };
+  const { calls } = fixture(options);
+  category(TAILSCALE);
+  await within(await rowOf("Second peer")).findByText(/Accepting requests/);
+  // Only the visit queue checks automatically; a peer first seen after Refresh
+  // is checked manually.
+  options.peers = [peer, second, third];
+  await refresh(calls);
+  const added = await rowOf("Third peer");
+  fireEvent.click(checkButton(added));
+  await within(added).findByText(/Accepting requests/);
+  expect(checkedIds(calls)).toEqual(["peer-1", "peer-2", "peer-3"]);
+  options.peers = [peer, second, { ...third, shared_to: true }];
+  await refresh(calls);
+  expect(within(added).getByText(/Not checked/)).toBeTruthy();
+  expect(within(added).queryByRole("button", { name: "Connect" })).toBeNull();
+  options.peers = [peer, second, { ...third, host: "moved.example" }];
+  await refresh(calls);
+  expect(within(added).getByText(/Not checked/)).toBeTruthy();
+  expect(within(added).queryByRole("button", { name: "Connect" })).toBeNull();
+  options.peerAccepts = false;
+  fireEvent.click(checkButton(added));
+  await within(added).findByText(/Unavailable or blocked/);
+  expect(checkedIds(calls)).toEqual(["peer-1", "peer-2", "peer-3", "peer-3"]);
+  expect(within(added).queryByRole("button", { name: "Connect" })).toBeNull();
+  // Unchanged peers keep their settled automatic results.
+  expect(
+    within(await rowOf("Fixture peer")).getByText(/Accepting requests/),
+  ).toBeTruthy();
+  expect(mutations(calls)).toEqual(quiet);
+});
+
+it("discards the result of a read that was in flight when the peer changed", async () => {
+  const options = {
+    peers: [peer],
+    holdChecks: true,
+    peerAccepts: true,
+    initialAccess: ready,
+  };
+  const { calls, release } = fixture(options);
+  category(TAILSCALE);
+  const row = await rowOf("Fixture peer");
+  await waitFor(() => expect(checkedIds(calls)).toEqual(["peer-1"]));
+  options.peers = [{ ...peer, online: false }];
+  await refresh(calls);
+  options.peers = [peer];
+  await refresh(calls);
+  // The earlier read ends after the peer was restored; its approval is dropped.
+  release("peer-1");
+  await waitFor(() => expect(within(row).queryByText(/Checking…/)).toBeNull());
+  await idle();
+  expect(within(row).getByText(/Not checked/)).toBeTruthy();
+  expect(within(row).queryByRole("button", { name: "Connect" })).toBeNull();
+  expect(checkedIds(calls)).toEqual(["peer-1"]);
+  options.peerAccepts = false;
+  fireEvent.click(checkButton(row));
+  await waitFor(() => expect(checkedIds(calls)).toEqual(["peer-1", "peer-1"]));
+  release("peer-1");
+  await within(row).findByText(/Unavailable or blocked/);
+  expect(within(row).queryByRole("button", { name: "Connect" })).toBeNull();
+  expect(mutations(calls)).toEqual(quiet);
+});

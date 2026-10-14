@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useCallback, useEffect, useId, useState } from "react";
-import { useQuery } from "@connectrpc/connect-query";
+import {
+  createConnectQueryKey,
+  useQuery,
+  useTransport,
+} from "@connectrpc/connect-query";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   DeviceType,
   FailureCode,
@@ -805,6 +810,21 @@ function PeerRow({
   useLocale();
   const [checked, setChecked] = useState(false);
   const enabled = checked || automatic;
+  // A check result describes the peer as observed when it was read. Any change
+  // to the observed host, online state or sharing leaves the earlier result
+  // (success or failure) behind: it is hidden at once, the manual opt-in is
+  // cleared and the cached entry is reset, so a later Check always sends a
+  // fresh read instead of re-exposing the old approval or error.
+  const observation = JSON.stringify([peer.host, peer.online, peer.shared_to]);
+  const [observed, setObserved] = useState(observation);
+  const [discard, setDiscard] = useState(false);
+  if (observed !== observation) {
+    setObserved(observation);
+    setChecked(false);
+    setDiscard(true);
+  }
+  const queryClient = useQueryClient();
+  const transport = useTransport();
   // Checking is an explicit single-peer read. Unmount cancels it; cached online
   // metadata never establishes DeliDev support or enables another peer's action.
   const check = useQuery(
@@ -818,10 +838,35 @@ function PeerRow({
       gcTime: 0,
     },
   );
-  const identity = enabled
-    ? decode<Identity>(check.data?.documentJson)
-    : undefined;
-  useEffect(() => setChecked(false), [peer.host, peer.online]);
+  const identity =
+    enabled && !discard
+      ? decode<Identity>(check.data?.documentJson)
+      : undefined;
+  // An invalidated result is reset only once no read is in flight: the queue
+  // waits for that read to end, so it is allowed to finish and then discarded.
+  useEffect(() => {
+    if (!discard || check.isFetching) return;
+    if (check.status === "pending") {
+      setDiscard(false);
+      return;
+    }
+    void queryClient.resetQueries({
+      queryKey: createConnectQueryKey({
+        schema: TailscaleQuery.checkTailscale,
+        input: { peerId: peer.id },
+        transport,
+        cardinality: "finite",
+      }),
+      exact: true,
+    });
+  }, [
+    discard,
+    check.isFetching,
+    check.status,
+    queryClient,
+    transport,
+    peer.id,
+  ]);
   // The active automatic check is done once its read is no longer in flight and
   // has produced a result or an error (including a check that a manual click
   // already finished); the queue then advances to the next peer.
@@ -890,7 +935,7 @@ function PeerRow({
           <SSHSetup active initialHost={peer.host} />
         ) : null}
       </div>
-      <Problem error={check.error} />
+      <Problem error={discard ? undefined : check.error} />
     </li>
   );
 }
