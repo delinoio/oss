@@ -702,15 +702,18 @@ function Shell({
                       <CommandMenu
                         openSession={open}
                         close={() => setCommandMenuOpen(false)}
-                        commands={applicationCommands({
-                          navigate,
-                          navigateHeader,
-                          openSettings,
-                          newSession: startNewSession,
-                          newGeneralChat: startNewGeneralChat,
-                          newProject: openNewProject,
-                          help: openHelp,
-                        })}
+                        commands={applicationCommands(
+                          {
+                            navigate,
+                            navigateHeader,
+                            openSettings,
+                            newSession: startNewSession,
+                            newGeneralChat: startNewGeneralChat,
+                            newProject: openNewProject,
+                            help: openHelp,
+                          },
+                          { tailscale: runnerTailscale !== undefined },
+                        )}
                       />
                     ) : null}
                     <main

@@ -216,7 +216,7 @@ then retry only that journal. Startup uses the existing detached Worker controll
 registration. Client/Worker completion does not create an Agent Worker or infer
 harness/account readiness.
 
-The desktop Tailscale access and device views appear in Settings Runner Devices (not Connections), presented by the original desktop-owned controller through Runner slots, and retain resume and cancel requests through
+The desktop Tailscale access, device and connection-request views appear in the dedicated Settings Tailscale category in the original local desktop window (not Runner Devices or Connections), presented by the original desktop-owned controller through typed slots, and retain resume and cancel requests through
 connection-owned retained mutations. While either retains input or is uncertain,
 its row action stays disabled, and a separately labelled retry control replays
 only the original request ID and bytes; it never creates a second request.
