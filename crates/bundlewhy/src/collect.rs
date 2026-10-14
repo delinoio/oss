@@ -32,6 +32,41 @@ pub struct Collection {
     pub modules: Vec<CollectedModule>,
     pub chunks: Vec<CollectedChunk>,
     pub assets: Vec<String>,
+    /// Export-to-export usage edges that the engine reported. Absent for
+    /// engines and adapter versions that do not collect them.
+    pub export_usage: Option<CollectedExportUsage>,
+}
+
+/// Export usage graph collected from the engine (Rspack's `RsdoctorPlugin`).
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct CollectedExportUsage {
+    /// False when the engine API, hook or graph could not be used.
+    pub available: bool,
+    /// Why the graph is unavailable.
+    pub reason: Option<String>,
+    /// Engine edges that were dropped because a module could not be mapped.
+    pub skipped_edges: u32,
+    pub edges: Vec<CollectedExportEdge>,
+}
+
+/// One engine-reported edge: `consumer` uses `provider`.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct CollectedExportEdge {
+    pub consumer: CollectedExportRef,
+    pub provider: CollectedExportRef,
+    pub dependency_id: Option<String>,
+    pub location: Option<String>,
+}
+
+/// A module plus an export path inside it. A `None` export is module or
+/// namespace scope: the engine did not name one export.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct CollectedExportRef {
+    pub module: String,
+    pub export: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]

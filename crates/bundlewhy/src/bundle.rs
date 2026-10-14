@@ -13,7 +13,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     error::{BwError, BwResult, ErrorCode, problem},
-    model::{Analysis, ProblemSeverity, RunStatus, SCHEMA_VERSION, SourceFile},
+    model::{
+        Analysis, Diagnostic, ExportReference, ExportScope, ExportUsage, ExportUsagePathEnd,
+        ExportUsageState, ExportUsageTruncation, ProblemSeverity, RunStatus, SCHEMA_VERSION,
+        SourceFile,
+    },
+    rules::export_usage::{MAX_EDGES_PER_PATH, MAX_PATHS},
     sources::{
         as_text, filesystem_path, is_binary_asset_path, is_generated_asset_module,
         safe_project_relative, sha256_hex,
@@ -233,6 +238,11 @@ fn validate(bundle: &ResultBundle) -> BwResult<()> {
             }
         }
     }
+    for diagnostic in &analysis.diagnostics {
+        if let Some(usage) = &diagnostic.export_usage {
+            validate_export_usage(diagnostic, usage)?;
+        }
+    }
     for (id, path) in bundle
         .project_relative
         .iter()
@@ -240,6 +250,76 @@ fn validate(bundle: &ResultBundle) -> BwResult<()> {
     {
         if !ids.contains(id.as_str()) || safe_project_relative(path).is_none() {
             return Err(invalid(format!("unsafe project-relative path for {id}")));
+        }
+    }
+    Ok(())
+}
+
+fn valid_export_reference(reference: &ExportReference) -> bool {
+    !reference.module.is_empty()
+        && match reference.scope {
+            ExportScope::Named => {
+                !reference.export_path.is_empty()
+                    && reference.export_path.iter().all(|part| !part.is_empty())
+            }
+            ExportScope::Module => reference.export_path.is_empty(),
+            ExportScope::Unspecified => false,
+        }
+}
+
+/// Export usage evidence is untrusted input: its shape must match what the
+/// analysis produces, so a damaged or hand-edited bundle cannot show a chain
+/// whose edges do not connect or whose limits contradict each other.
+fn validate_export_usage(diagnostic: &Diagnostic, usage: &ExportUsage) -> BwResult<()> {
+    let id = &diagnostic.id;
+    let bad = |detail: &str| {
+        invalid(format!(
+            "diagnostic {id} has invalid export usage: {detail}"
+        ))
+    };
+    match usage.state {
+        ExportUsageState::Unspecified => return Err(bad("state is unspecified")),
+        ExportUsageState::Unavailable => {
+            if !usage.paths.is_empty() {
+                return Err(bad("unavailable evidence lists paths"));
+            }
+            return Ok(());
+        }
+        ExportUsageState::Available => {}
+    }
+    if usage.paths.is_empty() {
+        return Err(bad("available evidence has no paths"));
+    }
+    if usage.paths.len() > MAX_PATHS {
+        return Err(bad("too many paths"));
+    }
+    if usage.truncation == ExportUsageTruncation::Unspecified {
+        return Err(bad("truncation is unspecified"));
+    }
+    for path in &usage.paths {
+        if path.edges.is_empty() || path.edges.len() > MAX_EDGES_PER_PATH {
+            return Err(bad("a path has no edges or too many edges"));
+        }
+        match path.end {
+            ExportUsagePathEnd::Unspecified => return Err(bad("a path end is unspecified")),
+            ExportUsagePathEnd::Truncated if usage.truncation == ExportUsageTruncation::None => {
+                return Err(bad("a truncated path without a truncation marker"));
+            }
+            _ => {}
+        }
+        for edge in &path.edges {
+            if !valid_export_reference(&edge.consumer) || !valid_export_reference(&edge.provider) {
+                return Err(bad("an edge has an invalid export reference"));
+            }
+        }
+        // Each edge's provider is the next edge's consumer: the chain runs
+        // from the outermost consumer to the diagnostic module.
+        if path
+            .edges
+            .windows(2)
+            .any(|pair| pair[0].provider != pair[1].consumer)
+        {
+            return Err(bad("path edges are not connected"));
         }
     }
     Ok(())
@@ -525,7 +605,7 @@ pub fn mark_stale(bundle: &mut ResultBundle) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Diagnostic, SourceLocation};
+    use crate::model::{Diagnostic, ExportUsageEdge, ExportUsagePath, SourceLocation};
 
     fn bundle() -> ResultBundle {
         ResultBundle {
@@ -597,6 +677,154 @@ mod tests {
         });
         assert_eq!(
             parse(&serde_json::to_vec(&broken).unwrap())
+                .unwrap_err()
+                .code,
+            ErrorCode::ResultInvalid
+        );
+    }
+
+    fn named(module: &str, name: &str) -> ExportReference {
+        ExportReference {
+            module: module.to_owned(),
+            export_path: vec![name.to_owned()],
+            scope: ExportScope::Named,
+        }
+    }
+
+    fn module_scope(module: &str) -> ExportReference {
+        ExportReference {
+            module: module.to_owned(),
+            export_path: Vec::new(),
+            scope: ExportScope::Module,
+        }
+    }
+
+    fn usage_edge(consumer: ExportReference, provider: ExportReference) -> ExportUsageEdge {
+        ExportUsageEdge {
+            consumer,
+            provider,
+            dependency_id: "7".to_owned(),
+            location: "3:1-4".to_owned(),
+        }
+    }
+
+    fn valid_usage() -> ExportUsage {
+        ExportUsage {
+            state: ExportUsageState::Available,
+            note: String::new(),
+            paths: vec![ExportUsagePath {
+                edges: vec![
+                    usage_edge(module_scope("src/main.js"), named("src/lib.js", "foo")),
+                    usage_edge(named("src/lib.js", "foo"), named("src/shared.js", "bar")),
+                ],
+                end: ExportUsagePathEnd::Root,
+            }],
+            truncation: ExportUsageTruncation::None,
+        }
+    }
+
+    fn bundle_with_usage(usage: ExportUsage) -> ResultBundle {
+        let mut bundle = bundle();
+        bundle.analysis.diagnostics.push(Diagnostic {
+            id: "d-0123456789ab".to_owned(),
+            export_usage: Some(usage),
+            ..Diagnostic::default()
+        });
+        bundle
+    }
+
+    fn parse_usage(usage: ExportUsage) -> BwResult<ResultBundle> {
+        parse(&serde_json::to_vec(&bundle_with_usage(usage)).unwrap())
+    }
+
+    #[test]
+    fn export_usage_round_trips_and_older_bundles_still_open() {
+        let parsed = parse_usage(valid_usage()).unwrap();
+        assert_eq!(
+            parsed.analysis.diagnostics[0].export_usage,
+            Some(valid_usage())
+        );
+        // A bundle written before the field existed has no `exportUsage` key.
+        let mut value = serde_json::to_value(bundle_with_usage(valid_usage())).unwrap();
+        value["analysis"]["diagnostics"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("exportUsage");
+        let older = parse(&serde_json::to_vec(&value).unwrap()).unwrap();
+        assert!(older.analysis.diagnostics[0].export_usage.is_none());
+    }
+
+    #[test]
+    fn unavailable_export_usage_is_valid_without_paths() {
+        let usage = ExportUsage {
+            state: ExportUsageState::Unavailable,
+            note: "hook missing".to_owned(),
+            ..ExportUsage::default()
+        };
+        assert!(parse_usage(usage).is_ok());
+    }
+
+    #[test]
+    fn rejects_every_invalid_export_usage_shape() {
+        type Edit = fn(&mut ExportUsage);
+        let cases: [(&str, Edit); 14] = [
+            ("unspecified state", |usage| {
+                usage.state = ExportUsageState::Unspecified;
+            }),
+            ("unavailable with paths", |usage| {
+                usage.state = ExportUsageState::Unavailable;
+            }),
+            ("available without paths", |usage| usage.paths.clear()),
+            ("too many paths", |usage| {
+                let path = usage.paths[0].clone();
+                usage.paths = vec![path; MAX_PATHS + 1];
+            }),
+            ("unspecified truncation", |usage| {
+                usage.truncation = ExportUsageTruncation::Unspecified;
+            }),
+            ("path without edges", |usage| usage.paths[0].edges.clear()),
+            ("path with too many edges", |usage| {
+                let edge = usage.paths[0].edges[1].clone();
+                usage.paths[0].edges = vec![edge; MAX_EDGES_PER_PATH + 1];
+            }),
+            ("unspecified path end", |usage| {
+                usage.paths[0].end = ExportUsagePathEnd::Unspecified;
+            }),
+            ("truncated end without marker", |usage| {
+                usage.paths[0].end = ExportUsagePathEnd::Truncated;
+            }),
+            ("unspecified scope", |usage| {
+                usage.paths[0].edges[0].consumer.scope = ExportScope::Unspecified;
+            }),
+            ("named scope without export path", |usage| {
+                usage.paths[0].edges[1].consumer.export_path.clear();
+            }),
+            ("module scope with export path", |usage| {
+                usage.paths[0].edges[0].consumer.export_path = vec!["x".to_owned()];
+            }),
+            ("empty module", |usage| {
+                usage.paths[0].edges[0].consumer.module.clear();
+            }),
+            ("disconnected edges", |usage| {
+                usage.paths[0].edges[1].consumer = named("src/other.js", "foo");
+            }),
+        ];
+        for (name, edit) in cases {
+            let mut usage = valid_usage();
+            edit(&mut usage);
+            let error = parse_usage(usage).expect_err(name);
+            assert_eq!(error.code, ErrorCode::ResultInvalid, "{name}");
+            assert!(error.message.contains("export usage"), "{name}");
+        }
+    }
+
+    #[test]
+    fn rejects_unknown_export_usage_enum_values() {
+        let mut value = serde_json::to_value(bundle_with_usage(valid_usage())).unwrap();
+        value["analysis"]["diagnostics"][0]["exportUsage"]["state"] =
+            serde_json::json!("EXPORT_USAGE_STATE_EXPLODED");
+        assert_eq!(
+            parse(&serde_json::to_vec(&value).unwrap())
                 .unwrap_err()
                 .code,
             ErrorCode::ResultInvalid

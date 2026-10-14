@@ -225,6 +225,7 @@ fn side_effect_retained(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
                      effect is silently removed."
                 .to_owned(),
             dependency: context.is_dependency(module),
+            export_usage: Some(super::export_usage::build(context, &module.id)),
         });
     }
 }
@@ -336,6 +337,7 @@ fn concatenation_bailouts(context: &mut Context<'_>, drafts: &mut Vec<Diagnostic
             direction: direction.to_owned(),
             safety: safety.to_owned(),
             dependency: context.is_dependency(module),
+            export_usage: Some(super::export_usage::build(context, &module.id)),
         });
     }
 }
@@ -392,6 +394,7 @@ fn multiple_chunks(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>)
                      trade-off with real load measurements."
                 .to_owned(),
             dependency: context.is_dependency(module),
+            export_usage: Some(super::export_usage::build(context, &module.id)),
         });
     }
 }

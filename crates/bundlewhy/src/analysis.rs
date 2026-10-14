@@ -620,6 +620,223 @@ mod tests {
         common_assertions(analysis);
     }
 
+    fn path_modules(path: &crate::model::ExportUsagePath) -> Vec<String> {
+        let mut names: Vec<String> = path
+            .edges
+            .iter()
+            .map(|edge| edge.consumer.module.clone())
+            .collect();
+        names.push(path.edges.last().unwrap().provider.module.clone());
+        names
+    }
+
+    #[test]
+    fn rspack_export_usage_follows_the_engine_edges_for_every_shape() {
+        use crate::model::{
+            ExportScope, ExportUsagePathEnd, ExportUsageState, ExportUsageTruncation,
+        };
+
+        let fixture = run_fixture(BundlerChoice::Rspack, |_| {});
+        let diagnostics = &fixture.output.analysis.diagnostics;
+        let leaf = find(
+            diagnostics,
+            "rspack/module-concatenation-bailout",
+            "src/exports/leaf.js",
+        )
+        .unwrap();
+        let usage = leaf.export_usage.as_ref().unwrap();
+        assert_eq!(usage.state, ExportUsageState::Available);
+        assert_eq!(usage.truncation, ExportUsageTruncation::None);
+        let chains: Vec<Vec<String>> = usage.paths.iter().map(path_modules).collect();
+        let expect = |names: &[&str]| -> Vec<String> {
+            names.iter().map(|name| (*name).to_owned()).collect()
+        };
+
+        // Re-export: Rspack reports the entry's use of `leaf` directly; the
+        // re-exporting module has no edge and is not invented.
+        assert!(chains.contains(&expect(&["src/main.js", "src/exports/leaf.js"])));
+        assert!(
+            chains
+                .iter()
+                .flatten()
+                .all(|module| module != "src/exports/reexport.js")
+        );
+        // Branching: two consumers of `leaf` with the same entry.
+        let namespace = usage
+            .paths
+            .iter()
+            .find(|path| path_modules(path).contains(&"src/exports/namespace.js".to_owned()))
+            .unwrap();
+        assert_eq!(
+            path_modules(namespace),
+            expect(&[
+                "src/main.js",
+                "src/exports/namespace.js",
+                "src/exports/leaf.js"
+            ])
+        );
+        assert_eq!(namespace.end, ExportUsagePathEnd::Root);
+        // Namespace: the provider side has no named export.
+        let last = namespace.edges.last().unwrap();
+        assert_eq!(last.provider.scope, ExportScope::Module);
+        assert!(last.provider.export_path.is_empty());
+        // The entry consumes from module scope, not a named export.
+        assert_eq!(namespace.edges[0].consumer.scope, ExportScope::Module);
+        assert_eq!(namespace.edges[1].consumer.scope, ExportScope::Named);
+        // Cycle: leaf and cycle-back use each other.
+        let cycle = usage
+            .paths
+            .iter()
+            .find(|path| path.end == ExportUsagePathEnd::Cycle)
+            .unwrap();
+        assert_eq!(
+            path_modules(cycle),
+            expect(&[
+                "src/exports/leaf.js",
+                "src/exports/cycle-back.js",
+                "src/exports/leaf.js"
+            ])
+        );
+        // Dependency ID and location come from the engine edge.
+        for edge in usage.paths.iter().flat_map(|path| &path.edges) {
+            assert!(!edge.dependency_id.is_empty());
+            assert!(edge.location.contains(':'));
+        }
+
+        // The chain through chain-a / chain-b is reached from cycle-back too.
+        let cycle_back = find(
+            diagnostics,
+            "rspack/module-concatenation-bailout",
+            "src/exports/cycle-back.js",
+        )
+        .unwrap();
+        assert!(cycle_back.export_usage.as_ref().unwrap().paths.len() >= 2);
+
+        // Module importer paths are unchanged by the new evidence.
+        assert_eq!(
+            leaf.dependency_paths[0].modules.first().unwrap(),
+            "src/main.js"
+        );
+    }
+
+    #[test]
+    fn rspack_diagnostic_without_edges_reports_unavailable_export_usage() {
+        use crate::model::ExportUsageState;
+
+        let fixture = run_fixture(BundlerChoice::Rspack, |_| {});
+        let diagnostics = &fixture.output.analysis.diagnostics;
+        // Loaded only through import(): the engine reports no edge for it.
+        let lazy = find(
+            diagnostics,
+            "rspack/module-concatenation-bailout",
+            "src/lazy/a.js",
+        )
+        .unwrap();
+        let usage = lazy.export_usage.as_ref().unwrap();
+        assert_eq!(usage.state, ExportUsageState::Unavailable);
+        assert_eq!(usage.note, super::rules::export_usage::NOTE_NO_EDGE);
+        assert!(usage.paths.is_empty());
+        // Other evidence of the diagnostics is intact: a retained module with
+        // no edge keeps its importer path.
+        assert!(!lazy.evidence.is_empty());
+        let register = find(
+            diagnostics,
+            "rspack/side-effect-retained",
+            "src/effects/register.js",
+        )
+        .unwrap();
+        assert_eq!(
+            register.export_usage.as_ref().unwrap().state,
+            ExportUsageState::Unavailable
+        );
+        assert_eq!(register.status, EvidenceStatus::Confirmed);
+        assert!(!register.dependency_paths.is_empty());
+    }
+
+    #[test]
+    fn collections_without_export_usage_keep_their_existing_evidence() {
+        use crate::model::ExportUsageState;
+
+        let with_usage = run_fixture(BundlerChoice::Rspack, |_| {});
+        let without = run_fixture(BundlerChoice::Rspack, |value| {
+            value.as_object_mut().unwrap().remove("exportUsage");
+        });
+        let strip = |diagnostics: &[Diagnostic]| -> Vec<Diagnostic> {
+            diagnostics
+                .iter()
+                .cloned()
+                .map(|mut diagnostic| {
+                    diagnostic.export_usage = None;
+                    diagnostic
+                })
+                .collect()
+        };
+        assert_eq!(
+            strip(&with_usage.output.analysis.diagnostics),
+            strip(&without.output.analysis.diagnostics)
+        );
+        for diagnostic in &without.output.analysis.diagnostics {
+            if let Some(usage) = &diagnostic.export_usage {
+                assert_eq!(usage.state, ExportUsageState::Unavailable);
+                assert_eq!(usage.note, super::rules::export_usage::NOTE_NOT_COLLECTED);
+            }
+        }
+    }
+
+    #[test]
+    fn unavailable_engine_graph_is_reported_per_diagnostic_and_nothing_else_changes() {
+        use crate::model::ExportUsageState;
+
+        let fixture = run_fixture(BundlerChoice::Rspack, |value| {
+            value["exportUsage"] = serde_json::json!({
+                "available": false,
+                "reason": "This Rspack version does not provide experiments.RsdoctorPlugin.",
+                "skippedEdges": 0,
+                "edges": []
+            });
+        });
+        let analysis = &fixture.output.analysis;
+        assert_eq!(
+            analysis.status,
+            RunStatus::Complete,
+            "{:?}",
+            analysis.problems
+        );
+        let usages: Vec<_> = analysis
+            .diagnostics
+            .iter()
+            .filter_map(|diagnostic| diagnostic.export_usage.as_ref())
+            .collect();
+        assert!(!usages.is_empty());
+        assert!(usages.iter().all(|usage| {
+            usage.state == ExportUsageState::Unavailable
+                && usage.note.contains("RsdoctorPlugin")
+                && usage.paths.is_empty()
+        }));
+        assert!(
+            find(
+                &analysis.diagnostics,
+                "rspack/side-effect-retained",
+                "src/effects/register.js"
+            )
+            .is_some()
+        );
+    }
+
+    #[test]
+    fn vite_diagnostics_never_carry_export_usage() {
+        let fixture = run_fixture(BundlerChoice::Vite, |_| {});
+        assert!(!fixture.output.analysis.diagnostics.is_empty());
+        assert!(
+            fixture
+                .output
+                .analysis
+                .diagnostics
+                .iter()
+                .all(|diagnostic| diagnostic.export_usage.is_none())
+        );
+    }
+
     #[test]
     fn vite_png_asset_stub_is_neither_stale_nor_stored_as_content() {
         const PNG_SOURCE: &str = "src/assets/logo.png";

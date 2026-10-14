@@ -212,3 +212,98 @@ export async function runAdapter(main) {
     process.exitCode = 1;
   }
 }
+
+/** Largest export usage edge list an adapter stores in one collection. */
+export const MAX_EXPORT_USAGE_EDGES = 100_000;
+
+/**
+ * Decodes Rspack's positional export usage tuples into collection edges.
+ *
+ * Each tuple is `[consumerKey, consumerExport, providerKey, providerExport,
+ * dependencyId, location]`. Module keys are numeric and only meaningful
+ * inside the payload that carried them, so `identifiers` maps them to bundler
+ * module identifiers. A `null` export path means module or namespace scope.
+ * Edges that cannot be decoded or whose modules are not collected modules
+ * (for example a concatenated container) are skipped and counted, never
+ * guessed. The result never contains source text.
+ *
+ * @param {unknown} rawEdges payload field `exportUsageEdges`
+ * @param {Map<number, string>} identifiers module key to bundler identifier
+ * @param {Set<string>} collectedIds identifiers of collected modules
+ */
+export function decodeExportUsageEdges(rawEdges, identifiers, collectedIds) {
+  if (!Array.isArray(rawEdges)) {
+    return {
+      available: false,
+      reason:
+        "The Rspack export usage payload has an unexpected shape (exportUsageEdges is not a list).",
+      skippedEdges: 0,
+      edges: [],
+    };
+  }
+  const exportPath = (value) => {
+    if (value === null) return { ok: true, value: null };
+    if (
+      Array.isArray(value) &&
+      value.length > 0 &&
+      value.every((part) => typeof part === "string")
+    ) {
+      return { ok: true, value: [...value] };
+    }
+    return { ok: false };
+  };
+  const edges = [];
+  const seen = new Set();
+  let skippedEdges = 0;
+  for (const raw of rawEdges) {
+    if (!Array.isArray(raw) || raw.length < 6) {
+      skippedEdges += 1;
+      continue;
+    }
+    const [consumerKey, consumerExport, providerKey, providerExport] = raw;
+    const consumerModule = identifiers.get(consumerKey);
+    const providerModule = identifiers.get(providerKey);
+    const consumer = exportPath(consumerExport);
+    const provider = exportPath(providerExport);
+    if (
+      !consumerModule ||
+      !providerModule ||
+      !collectedIds.has(consumerModule) ||
+      !collectedIds.has(providerModule) ||
+      !consumer.ok ||
+      !provider.ok
+    ) {
+      skippedEdges += 1;
+      continue;
+    }
+    const edge = {
+      consumer: { module: consumerModule, export: consumer.value },
+      provider: { module: providerModule, export: provider.value },
+      dependencyId: typeof raw[4] === "string" ? raw[4] : null,
+      location: typeof raw[5] === "string" ? raw[5] : null,
+    };
+    const key = JSON.stringify(edge);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    edges.push(edge);
+  }
+  if (edges.length > MAX_EXPORT_USAGE_EDGES) {
+    return {
+      available: false,
+      reason: `Rspack reported more than ${MAX_EXPORT_USAGE_EDGES} export usage edges; none were stored.`,
+      skippedEdges: 0,
+      edges: [],
+    };
+  }
+  edges.sort((left, right) => {
+    const a = JSON.stringify(left);
+    const b = JSON.stringify(right);
+    return a < b ? -1 : a > b ? 1 : 0;
+  });
+  return { available: true, reason: null, skippedEdges, edges };
+}
+
+/** Collection value for export usage that could not be collected. */
+export function unavailableExportUsage(reason) {
+  return { available: false, reason, skippedEdges: 0, edges: [] };
+}

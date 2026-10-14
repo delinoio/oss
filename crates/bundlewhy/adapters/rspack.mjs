@@ -10,6 +10,7 @@ import {
   AdapterError,
   AdapterErrorCode,
   checkEngineVersion,
+  decodeExportUsageEdges,
   importFile,
   moduleFilePath,
   nearestPackage,
@@ -18,11 +19,12 @@ import {
   runAdapter,
   stripAnsi,
   summarizeValue,
+  unavailableExportUsage,
   writeCollection,
 } from "./common.mjs";
 
 export const ADAPTER_ID = "bundlewhy-collector-rspack";
-export const ADAPTER_VERSION = "1";
+export const ADAPTER_VERSION = "2";
 
 const STATS_OPTIONS = Object.freeze({
   all: false,
@@ -318,6 +320,107 @@ function normalizeStats(stats) {
   };
 }
 
+const EXPORT_USAGE_TAP = "bundlewhy-export-usage";
+
+/** One-line, length-bounded error text for the collection and logs. */
+function shortMessage(error) {
+  return String(error?.message ?? error)
+    .split("\n")[0]
+    .slice(0, 200);
+}
+
+/**
+ * Prepares the observation-only RsdoctorPlugin that reports Rspack's export
+ * usage graph. The plugin is appended to the diagnostic build's plugin list;
+ * the project's engine and its other plugins stay as configured. Every access
+ * to the internal plugin API is guarded: when the API, the hook or the graph
+ * is unavailable, the collection records why and the build continues.
+ */
+function prepareExportUsage(rspackModule, plugins) {
+  const state = { graph: null, unavailable: null };
+  const RsdoctorPlugin = rspackModule.experiments?.RsdoctorPlugin;
+  if (
+    typeof RsdoctorPlugin !== "function" ||
+    typeof RsdoctorPlugin.getCompilationHooks !== "function"
+  ) {
+    state.unavailable =
+      "This Rspack version does not provide experiments.RsdoctorPlugin, which reports export usage edges.";
+    return { state, plugins };
+  }
+  if (plugins.some((entry) => entry instanceof RsdoctorPlugin)) {
+    state.unavailable =
+      "The project already configures RsdoctorPlugin; bundlewhy does not add a second instance.";
+    return { state, plugins };
+  }
+  let observer;
+  try {
+    observer = new RsdoctorPlugin({
+      moduleGraphFeatures: ["graph"],
+      chunkGraphFeatures: false,
+      exportUsageGraph: true,
+    });
+  } catch (error) {
+    state.unavailable = `RsdoctorPlugin could not be created: ${shortMessage(error)}`;
+    return { state, plugins };
+  }
+  const collector = {
+    apply(compiler) {
+      const fail = (error) => {
+        state.unavailable = `The RsdoctorPlugin moduleGraph hook could not be used: ${shortMessage(error)}`;
+      };
+      try {
+        // thisCompilation is not fired for child compilations, so the
+        // payload always describes the main build.
+        compiler.hooks.thisCompilation.tap(EXPORT_USAGE_TAP, (compilation) => {
+          try {
+            const hooks = RsdoctorPlugin.getCompilationHooks(compilation);
+            hooks.moduleGraph.tapPromise(EXPORT_USAGE_TAP, async (graph) => {
+              state.graph = graph;
+            });
+          } catch (error) {
+            fail(error);
+          }
+        });
+      } catch (error) {
+        fail(error);
+      }
+    },
+  };
+  return { state, plugins: [...plugins, observer, collector] };
+}
+
+/** Builds the collection's export usage record from the captured payload. */
+function collectExportUsage(state, normalized) {
+  if (state.unavailable) return unavailableExportUsage(state.unavailable);
+  const graph = state.graph;
+  if (!graph || typeof graph !== "object") {
+    return unavailableExportUsage(
+      "Rspack did not deliver the RsdoctorPlugin module graph for this build.",
+    );
+  }
+  if (!Array.isArray(graph.modules)) {
+    return unavailableExportUsage(
+      "The Rspack export usage payload has an unexpected shape (modules is not a list).",
+    );
+  }
+  const identifiers = new Map();
+  for (const entry of graph.modules) {
+    if (
+      entry &&
+      typeof entry.ukey === "number" &&
+      typeof entry.identifier === "string"
+    ) {
+      identifiers.set(entry.ukey, entry.identifier);
+    }
+  }
+  const collectedIds = new Set(normalized.modules.map((module) => module.id));
+  return decodeExportUsageEdges(
+    graph.exportUsageEdges,
+    identifiers,
+    collectedIds,
+  );
+}
+
 function runCompiler(rspack, config) {
   return new Promise((resolve, reject) => {
     let compiler;
@@ -394,6 +497,16 @@ await runAdapter(async (request) => {
     watch: false,
     output: { ...(config.output ?? {}), path: request.buildDir, clean: true },
   };
+  const exportUsage = prepareExportUsage(
+    rspackModule,
+    Array.isArray(config.plugins) ? config.plugins : [],
+  );
+  if (exportUsage.state.unavailable === null) {
+    diagnosticConfig.plugins = exportUsage.plugins;
+    overrides.push(
+      "plugins += RsdoctorPlugin (observation-only export usage graph; the project's plugins are unchanged)",
+    );
+  }
 
   progress("building", `Running the Rspack ${version} production build`);
   let stats;
@@ -411,6 +524,13 @@ await runAdapter(async (request) => {
   progress("collecting", "Normalizing Rspack stats");
   const json = stats.toJson(STATS_OPTIONS);
   const normalized = normalizeStats(json);
+  const exportUsageRecord = collectExportUsage(exportUsage.state, normalized);
+  progress(
+    "collecting",
+    exportUsageRecord.available
+      ? `Collected ${exportUsageRecord.edges.length} export usage edge(s)`
+      : "Export usage edges are unavailable for this build",
+  );
   if (stats.hasErrors()) {
     throw new AdapterError(
       AdapterErrorCode.BuildFailed,
@@ -462,6 +582,7 @@ await runAdapter(async (request) => {
     ssrBuild: nodeTarget || platform.node === true || platform.nwjs === true,
     buildDir: request.buildDir,
     logs: [],
+    exportUsage: exportUsageRecord,
     ...normalized,
   });
 });

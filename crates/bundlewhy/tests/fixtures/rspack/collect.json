@@ -8,14 +8,15 @@
  "defaultMinifier": true,
  "minifyEnabled": true,
  "adapterId": "bundlewhy-collector-rspack",
- "adapterVersion": "1",
+ "adapterVersion": "2",
  "engineDetails": {},
  "overrides": [
   "mode=production",
   "output.path=build (bundlewhy run directory)",
   "output.clean=true",
   "devtool=source-map",
-  "watch=false"
+  "watch=false",
+  "plugins += RsdoctorPlugin (observation-only export usage graph; the project's plugins are unchanged)"
  ],
  "configFile": "/__bundlewhy_project__/rspack.config.mjs",
  "context": "/__bundlewhy_project__",
@@ -36,6 +37,291 @@
  "ssrBuild": false,
  "buildDir": "/__bundlewhy_build__",
  "logs": [],
+ "exportUsage": {
+  "available": true,
+  "reason": null,
+  "skippedEdges": 0,
+  "edges": [
+   {
+    "consumer": {
+     "module": "javascript/esm|/__bundlewhy_project__/src/exports/chain-a.js",
+     "export": [
+      "chainA"
+     ]
+    },
+    "provider": {
+     "module": "javascript/esm|/__bundlewhy_project__/src/exports/leaf.js",
+     "export": [
+      "leaf"
+     ]
+    },
+    "dependencyId": "73",
+    "location": "4:10-14"
+   },
+   {
+    "consumer": {
+     "module": "javascript/esm|/__bundlewhy_project__/src/exports/chain-b.js",
+     "export": [
+      "chainB"
+     ]
+    },
+    "provider": {
+     "module": "javascript/esm|/__bundlewhy_project__/src/exports/leaf.js",
+     "export": [
+      "leaf"
+     ]
+    },
+    "dependencyId": "37",
+    "location": "4:10-14"
+   },
+   {
+    "consumer": {
+     "module": "javascript/esm|/__bundlewhy_project__/src/exports/cycle-back.js",
+     "export": [
+      "back"
+     ]
+    },
+    "provider": {
+     "module": "javascript/esm|/__bundlewhy_project__/src/exports/leaf.js",
+     "export": [
+      "leaf"
+     ]
+    },
+    "dependencyId": "81",
+    "location": "4:17-21"
+   },
+   {
+    "consumer": {
+     "module": "javascript/esm|/__bundlewhy_project__/src/exports/leaf.js",
+     "export": [
+      "leaf"
+     ]
+    },
+    "provider": {
+     "module": "javascript/esm|/__bundlewhy_project__/src/exports/cycle-back.js",
+     "export": [
+      "back"
+     ]
+    },
+    "dependencyId": "61",
+    "location": "7:24-28"
+   },
+   {
+    "consumer": {
+     "module": "javascript/esm|/__bundlewhy_project__/src/exports/namespace.js",
+     "export": [
+      "viaNamespace"
+     ]
+    },
+    "provider": {
+     "module": "javascript/esm|/__bundlewhy_project__/src/exports/leaf.js",
+     "export": null
+    },
+    "dependencyId": "51",
+    "location": "4:10-20"
+   },
+   {
+    "consumer": {
+     "module": "javascript/esm|/__bundlewhy_project__/src/lazy/a.js",
+     "export": [
+      "a"
+     ]
+    },
+    "provider": {
+     "module": "javascript/esm|/__bundlewhy_project__/src/lazy/common.js",
+     "export": [
+      "common"
+     ]
+    },
+    "dependencyId": "69",
+    "location": "4:10-16"
+   },
+   {
+    "consumer": {
+     "module": "javascript/esm|/__bundlewhy_project__/src/lazy/b.js",
+     "export": [
+      "b"
+     ]
+    },
+    "provider": {
+     "module": "javascript/esm|/__bundlewhy_project__/src/lazy/common.js",
+     "export": [
+      "common"
+     ]
+    },
+    "dependencyId": "77",
+    "location": "4:10-16"
+   },
+   {
+    "consumer": {
+     "module": "javascript/esm|/__bundlewhy_project__/src/main.js",
+     "export": null
+    },
+    "provider": {
+     "module": "javascript/dynamic|/__bundlewhy_project__/src/legacy/cjs.cjs",
+     "export": [
+      "legacyValue"
+     ]
+    },
+    "dependencyId": "20",
+    "location": "27:13-31"
+   },
+   {
+    "consumer": {
+     "module": "javascript/esm|/__bundlewhy_project__/src/main.js",
+     "export": null
+    },
+    "provider": {
+     "module": "javascript/esm|/__bundlewhy_project__/src/dynamic/evaluate.js",
+     "export": [
+      "evaluate"
+     ]
+    },
+    "dependencyId": "22",
+    "location": "27:43-51"
+   },
+   {
+    "consumer": {
+     "module": "javascript/esm|/__bundlewhy_project__/src/main.js",
+     "export": null
+    },
+    "provider": {
+     "module": "javascript/esm|/__bundlewhy_project__/src/dynamic/plain.js",
+     "export": [
+      "plainAdd"
+     ]
+    },
+    "dependencyId": "23",
+    "location": "27:62-70"
+   },
+   {
+    "consumer": {
+     "module": "javascript/esm|/__bundlewhy_project__/src/main.js",
+     "export": null
+    },
+    "provider": {
+     "module": "javascript/esm|/__bundlewhy_project__/src/exports/chain-a.js",
+     "export": [
+      "chainA"
+     ]
+    },
+    "dependencyId": "25",
+    "location": "29:13-19"
+   },
+   {
+    "consumer": {
+     "module": "javascript/esm|/__bundlewhy_project__/src/main.js",
+     "export": null
+    },
+    "provider": {
+     "module": "javascript/esm|/__bundlewhy_project__/src/exports/chain-b.js",
+     "export": [
+      "chainB"
+     ]
+    },
+    "dependencyId": "26",
+    "location": "29:26-32"
+   },
+   {
+    "consumer": {
+     "module": "javascript/esm|/__bundlewhy_project__/src/main.js",
+     "export": null
+    },
+    "provider": {
+     "module": "javascript/esm|/__bundlewhy_project__/src/exports/leaf.js",
+     "export": [
+      "leaf"
+     ]
+    },
+    "dependencyId": "27",
+    "location": "29:39-45"
+   },
+   {
+    "consumer": {
+     "module": "javascript/esm|/__bundlewhy_project__/src/main.js",
+     "export": null
+    },
+    "provider": {
+     "module": "javascript/esm|/__bundlewhy_project__/src/exports/namespace.js",
+     "export": [
+      "viaNamespace"
+     ]
+    },
+    "dependencyId": "28",
+    "location": "29:52-64"
+   },
+   {
+    "consumer": {
+     "module": "javascript/esm|/__bundlewhy_project__/src/main.js",
+     "export": null
+    },
+    "provider": {
+     "module": "javascript/esm|/__bundlewhy_project__/src/shared/static-and-dynamic.js",
+     "export": [
+      "shared"
+     ]
+    },
+    "dependencyId": "24",
+    "location": "28:13-19"
+   },
+   {
+    "consumer": {
+     "module": "javascript/esm|/__bundlewhy_project__/src/main.js",
+     "export": null
+    },
+    "provider": {
+     "module": "javascript/esm|/__bundlewhy_project__/vendor/dup-v1/index.js",
+     "export": [
+      "formatV1"
+     ]
+    },
+    "dependencyId": "16",
+    "location": "26:13-21"
+   },
+   {
+    "consumer": {
+     "module": "javascript/esm|/__bundlewhy_project__/src/main.js",
+     "export": null
+    },
+    "provider": {
+     "module": "javascript/esm|/__bundlewhy_project__/vendor/dup-v2/index.js",
+     "export": [
+      "formatV2"
+     ]
+    },
+    "dependencyId": "17",
+    "location": "26:26-34"
+   },
+   {
+    "consumer": {
+     "module": "javascript/esm|/__bundlewhy_project__/src/main.js",
+     "export": null
+    },
+    "provider": {
+     "module": "javascript/esm|/__bundlewhy_project__/vendor/single/again.js",
+     "export": [
+      "singleAgain"
+     ]
+    },
+    "dependencyId": "19",
+    "location": "26:49-60"
+   },
+   {
+    "consumer": {
+     "module": "javascript/esm|/__bundlewhy_project__/src/main.js",
+     "export": null
+    },
+    "provider": {
+     "module": "javascript/esm|/__bundlewhy_project__/vendor/single/index.js",
+     "export": [
+      "single"
+     ]
+    },
+    "dependencyId": "18",
+    "location": "26:39-45"
+   }
+  ]
+ },
  "modules": [
   {
    "id": "javascript/esm|/__bundlewhy_project__/src/main.js",
@@ -52,18 +338,18 @@
    "moduleSideEffects": null,
    "inputFormat": "es",
    "moduleType": "javascript/esm",
-   "renderedLength": 1214,
+   "renderedLength": 1490,
    "included": true,
    "chunks": [
     "main.js"
    ],
    "bailouts": [
-    "Statement with side_effects in source code at ./src/main.js:18:1-20:2",
+    "Statement with side_effects in source code at ./src/main.js:22:1-24:2",
     "ModuleConcatenation bailout: Module is an entry point"
    ],
    "reasons": [],
    "depth": 0,
-   "concatenatedInto": "javascript/esm|/__bundlewhy_project__/src/main.js|6c0c46e18c9798c2",
+   "concatenatedInto": "javascript/esm|/__bundlewhy_project__/src/main.js|cf78c437d3d6ae3f",
    "packageName": "bundlewhy-fixture-rspack-app",
    "packageVersion": "",
    "packageDir": "/__bundlewhy_project__",
@@ -106,7 +392,7 @@
     }
    ],
    "depth": 1,
-   "concatenatedInto": "javascript/esm|/__bundlewhy_project__/src/main.js|6c0c46e18c9798c2",
+   "concatenatedInto": "javascript/esm|/__bundlewhy_project__/src/main.js|cf78c437d3d6ae3f",
    "packageName": "bundlewhy-fixture-rspack-app",
    "packageVersion": "",
    "packageDir": "/__bundlewhy_project__",
@@ -150,13 +436,13 @@
     {
      "type": "esm import specifier",
      "from": "javascript/esm|/__bundlewhy_project__/src/main.js",
-     "loc": "22:13-21",
+     "loc": "26:13-21",
      "explanation": null,
      "active": true
     }
    ],
    "depth": 1,
-   "concatenatedInto": "javascript/esm|/__bundlewhy_project__/src/main.js|6c0c46e18c9798c2",
+   "concatenatedInto": "javascript/esm|/__bundlewhy_project__/src/main.js|cf78c437d3d6ae3f",
    "packageName": "bundlewhy-dup-lib",
    "packageVersion": "1.0.0",
    "packageDir": "/__bundlewhy_project__/vendor/dup-v1",
@@ -200,13 +486,13 @@
     {
      "type": "esm import specifier",
      "from": "javascript/esm|/__bundlewhy_project__/src/main.js",
-     "loc": "22:26-34",
+     "loc": "26:26-34",
      "explanation": null,
      "active": true
     }
    ],
    "depth": 1,
-   "concatenatedInto": "javascript/esm|/__bundlewhy_project__/src/main.js|6c0c46e18c9798c2",
+   "concatenatedInto": "javascript/esm|/__bundlewhy_project__/src/main.js|cf78c437d3d6ae3f",
    "packageName": "bundlewhy-dup-lib",
    "packageVersion": "2.0.0",
    "packageDir": "/__bundlewhy_project__/vendor/dup-v2",
@@ -250,13 +536,13 @@
     {
      "type": "esm import specifier",
      "from": "javascript/esm|/__bundlewhy_project__/src/main.js",
-     "loc": "22:39-45",
+     "loc": "26:39-45",
      "explanation": null,
      "active": true
     }
    ],
    "depth": 1,
-   "concatenatedInto": "javascript/esm|/__bundlewhy_project__/src/main.js|6c0c46e18c9798c2",
+   "concatenatedInto": "javascript/esm|/__bundlewhy_project__/src/main.js|cf78c437d3d6ae3f",
    "packageName": "bundlewhy-single-lib",
    "packageVersion": "1.0.0",
    "packageDir": "/__bundlewhy_project__/vendor/single",
@@ -300,13 +586,13 @@
     {
      "type": "esm import specifier",
      "from": "javascript/esm|/__bundlewhy_project__/src/main.js",
-     "loc": "22:49-60",
+     "loc": "26:49-60",
      "explanation": null,
      "active": true
     }
    ],
    "depth": 1,
-   "concatenatedInto": "javascript/esm|/__bundlewhy_project__/src/main.js|6c0c46e18c9798c2",
+   "concatenatedInto": "javascript/esm|/__bundlewhy_project__/src/main.js|cf78c437d3d6ae3f",
    "packageName": "bundlewhy-single-lib",
    "packageVersion": "1.0.0",
    "packageDir": "/__bundlewhy_project__/vendor/single",
@@ -350,13 +636,163 @@
     {
      "type": "esm import specifier",
      "from": "javascript/esm|/__bundlewhy_project__/src/main.js",
-     "loc": "23:62-70",
+     "loc": "27:62-70",
      "explanation": null,
      "active": true
     }
    ],
    "depth": 1,
-   "concatenatedInto": "javascript/esm|/__bundlewhy_project__/src/main.js|6c0c46e18c9798c2",
+   "concatenatedInto": "javascript/esm|/__bundlewhy_project__/src/main.js|cf78c437d3d6ae3f",
+   "packageName": "bundlewhy-fixture-rspack-app",
+   "packageVersion": "",
+   "packageDir": "/__bundlewhy_project__",
+   "packageSideEffects": null
+  },
+  {
+   "id": "javascript/esm|/__bundlewhy_project__/src/exports/chain-a.js",
+   "name": "./src/exports/chain-a.js",
+   "path": "/__bundlewhy_project__/src/exports/chain-a.js",
+   "virtual": false,
+   "isEntry": false,
+   "importers": [
+    "javascript/esm|/__bundlewhy_project__/src/main.js"
+   ],
+   "dynamicImporters": [],
+   "importedIds": [],
+   "dynamicImportedIds": [],
+   "exports": [
+    "chainA"
+   ],
+   "usedExports": [
+    "chainA"
+   ],
+   "moduleSideEffects": null,
+   "inputFormat": "es",
+   "moduleType": "javascript/esm",
+   "renderedLength": 89,
+   "included": true,
+   "chunks": [
+    "main.js"
+   ],
+   "bailouts": [],
+   "reasons": [
+    {
+     "type": "esm import",
+     "from": "javascript/esm|/__bundlewhy_project__/src/main.js",
+     "loc": "14:1-47",
+     "explanation": null,
+     "active": false
+    },
+    {
+     "type": "esm import specifier",
+     "from": "javascript/esm|/__bundlewhy_project__/src/main.js",
+     "loc": "29:13-19",
+     "explanation": null,
+     "active": true
+    }
+   ],
+   "depth": 1,
+   "concatenatedInto": "javascript/esm|/__bundlewhy_project__/src/main.js|cf78c437d3d6ae3f",
+   "packageName": "bundlewhy-fixture-rspack-app",
+   "packageVersion": "",
+   "packageDir": "/__bundlewhy_project__",
+   "packageSideEffects": null
+  },
+  {
+   "id": "javascript/esm|/__bundlewhy_project__/src/exports/chain-b.js",
+   "name": "./src/exports/chain-b.js",
+   "path": "/__bundlewhy_project__/src/exports/chain-b.js",
+   "virtual": false,
+   "isEntry": false,
+   "importers": [
+    "javascript/esm|/__bundlewhy_project__/src/main.js"
+   ],
+   "dynamicImporters": [],
+   "importedIds": [],
+   "dynamicImportedIds": [],
+   "exports": [
+    "chainB"
+   ],
+   "usedExports": [
+    "chainB"
+   ],
+   "moduleSideEffects": null,
+   "inputFormat": "es",
+   "moduleType": "javascript/esm",
+   "renderedLength": 96,
+   "included": true,
+   "chunks": [
+    "main.js"
+   ],
+   "bailouts": [],
+   "reasons": [
+    {
+     "type": "esm import",
+     "from": "javascript/esm|/__bundlewhy_project__/src/main.js",
+     "loc": "15:1-47",
+     "explanation": null,
+     "active": false
+    },
+    {
+     "type": "esm import specifier",
+     "from": "javascript/esm|/__bundlewhy_project__/src/main.js",
+     "loc": "29:26-32",
+     "explanation": null,
+     "active": true
+    }
+   ],
+   "depth": 1,
+   "concatenatedInto": "javascript/esm|/__bundlewhy_project__/src/main.js|cf78c437d3d6ae3f",
+   "packageName": "bundlewhy-fixture-rspack-app",
+   "packageVersion": "",
+   "packageDir": "/__bundlewhy_project__",
+   "packageSideEffects": null
+  },
+  {
+   "id": "javascript/esm|/__bundlewhy_project__/src/exports/namespace.js",
+   "name": "./src/exports/namespace.js",
+   "path": "/__bundlewhy_project__/src/exports/namespace.js",
+   "virtual": false,
+   "isEntry": false,
+   "importers": [
+    "javascript/esm|/__bundlewhy_project__/src/main.js"
+   ],
+   "dynamicImporters": [],
+   "importedIds": [],
+   "dynamicImportedIds": [],
+   "exports": [
+    "viaNamespace"
+   ],
+   "usedExports": [
+    "viaNamespace"
+   ],
+   "moduleSideEffects": null,
+   "inputFormat": "es",
+   "moduleType": "javascript/esm",
+   "renderedLength": 120,
+   "included": true,
+   "chunks": [
+    "main.js"
+   ],
+   "bailouts": [],
+   "reasons": [
+    {
+     "type": "esm import",
+     "from": "javascript/esm|/__bundlewhy_project__/src/main.js",
+     "loc": "17:1-55",
+     "explanation": null,
+     "active": false
+    },
+    {
+     "type": "esm import specifier",
+     "from": "javascript/esm|/__bundlewhy_project__/src/main.js",
+     "loc": "29:52-64",
+     "explanation": null,
+     "active": true
+    }
+   ],
+   "depth": 1,
+   "concatenatedInto": "javascript/esm|/__bundlewhy_project__/src/main.js|cf78c437d3d6ae3f",
    "packageName": "bundlewhy-fixture-rspack-app",
    "packageVersion": "",
    "packageDir": "/__bundlewhy_project__",
@@ -403,7 +839,7 @@
     {
      "type": "esm import specifier",
      "from": "javascript/esm|/__bundlewhy_project__/src/main.js",
-     "loc": "23:13-31",
+     "loc": "27:13-31",
      "explanation": null,
      "active": true
     }
@@ -455,7 +891,7 @@
     {
      "type": "esm import specifier",
      "from": "javascript/esm|/__bundlewhy_project__/src/main.js",
-     "loc": "23:43-51",
+     "loc": "27:43-51",
      "explanation": null,
      "active": true
     }
@@ -507,7 +943,7 @@
     {
      "type": "esm import specifier",
      "from": "javascript/esm|/__bundlewhy_project__/src/main.js",
-     "loc": "24:13-19",
+     "loc": "28:13-19",
      "explanation": null,
      "active": true
     },
@@ -516,6 +952,167 @@
      "from": "javascript/esm|/__bundlewhy_project__/src/main.js",
      "loc": null,
      "explanation": null,
+     "active": true
+    }
+   ],
+   "depth": 1,
+   "concatenatedInto": null,
+   "packageName": "bundlewhy-fixture-rspack-app",
+   "packageVersion": "",
+   "packageDir": "/__bundlewhy_project__",
+   "packageSideEffects": null
+  },
+  {
+   "id": "javascript/esm|/__bundlewhy_project__/src/exports/leaf.js",
+   "name": "./src/exports/leaf.js",
+   "path": "/__bundlewhy_project__/src/exports/leaf.js",
+   "virtual": false,
+   "isEntry": false,
+   "importers": [
+    "javascript/esm|/__bundlewhy_project__/src/exports/chain-a.js",
+    "javascript/esm|/__bundlewhy_project__/src/exports/chain-b.js",
+    "javascript/esm|/__bundlewhy_project__/src/exports/cycle-back.js",
+    "javascript/esm|/__bundlewhy_project__/src/exports/namespace.js",
+    "javascript/esm|/__bundlewhy_project__/src/main.js"
+   ],
+   "dynamicImporters": [],
+   "importedIds": [],
+   "dynamicImportedIds": [],
+   "exports": [
+    "leaf"
+   ],
+   "usedExports": [
+    "*"
+   ],
+   "moduleSideEffects": null,
+   "inputFormat": "es",
+   "moduleType": "javascript/esm",
+   "renderedLength": 331,
+   "included": true,
+   "chunks": [
+    "main.js"
+   ],
+   "bailouts": [
+    "ModuleConcatenation bailout: Module uses eval()"
+   ],
+   "reasons": [
+    {
+     "type": "esm import",
+     "from": "javascript/esm|/__bundlewhy_project__/src/exports/chain-a.js",
+     "loc": "1:1-34",
+     "explanation": null,
+     "active": false
+    },
+    {
+     "type": "esm import specifier",
+     "from": "javascript/esm|/__bundlewhy_project__/src/exports/chain-a.js",
+     "loc": "4:10-14",
+     "explanation": null,
+     "active": true
+    },
+    {
+     "type": "esm import",
+     "from": "javascript/esm|/__bundlewhy_project__/src/exports/chain-b.js",
+     "loc": "1:1-34",
+     "explanation": null,
+     "active": false
+    },
+    {
+     "type": "esm import specifier",
+     "from": "javascript/esm|/__bundlewhy_project__/src/exports/chain-b.js",
+     "loc": "4:10-14",
+     "explanation": null,
+     "active": true
+    },
+    {
+     "type": "esm import",
+     "from": "javascript/esm|/__bundlewhy_project__/src/exports/cycle-back.js",
+     "loc": "1:1-34",
+     "explanation": null,
+     "active": false
+    },
+    {
+     "type": "esm import specifier",
+     "from": "javascript/esm|/__bundlewhy_project__/src/exports/cycle-back.js",
+     "loc": "4:17-21",
+     "explanation": null,
+     "active": true
+    },
+    {
+     "type": "esm import",
+     "from": "javascript/esm|/__bundlewhy_project__/src/exports/namespace.js",
+     "loc": "1:1-41",
+     "explanation": null,
+     "active": false
+    },
+    {
+     "type": "esm import specifier",
+     "from": "javascript/esm|/__bundlewhy_project__/src/exports/namespace.js",
+     "loc": "4:10-20",
+     "explanation": null,
+     "active": true
+    },
+    {
+     "type": "esm export import",
+     "from": "javascript/esm|/__bundlewhy_project__/src/exports/reexport.js",
+     "loc": "1:1-44",
+     "explanation": null,
+     "active": false
+    },
+    {
+     "type": "esm export import specifier",
+     "from": "javascript/esm|/__bundlewhy_project__/src/exports/reexport.js",
+     "loc": "1:1-44",
+     "explanation": null,
+     "active": false
+    },
+    {
+     "type": "esm import",
+     "from": "javascript/esm|/__bundlewhy_project__/src/exports/chain-a.js",
+     "loc": "1:1-34",
+     "explanation": null,
+     "active": false
+    },
+    {
+     "type": "esm import specifier",
+     "from": "javascript/esm|/__bundlewhy_project__/src/exports/chain-a.js",
+     "loc": "4:10-14",
+     "explanation": null,
+     "active": true
+    },
+    {
+     "type": "esm import",
+     "from": "javascript/esm|/__bundlewhy_project__/src/exports/chain-b.js",
+     "loc": "1:1-34",
+     "explanation": null,
+     "active": false
+    },
+    {
+     "type": "esm import specifier",
+     "from": "javascript/esm|/__bundlewhy_project__/src/exports/chain-b.js",
+     "loc": "4:10-14",
+     "explanation": null,
+     "active": true
+    },
+    {
+     "type": "esm import",
+     "from": "javascript/esm|/__bundlewhy_project__/src/exports/namespace.js",
+     "loc": "1:1-41",
+     "explanation": null,
+     "active": false
+    },
+    {
+     "type": "esm import specifier",
+     "from": "javascript/esm|/__bundlewhy_project__/src/exports/namespace.js",
+     "loc": "4:10-20",
+     "explanation": null,
+     "active": true
+    },
+    {
+     "type": "esm import specifier",
+     "from": "javascript/esm|/__bundlewhy_project__/src/main.js",
+     "loc": "29:39-45",
+     "explanation": "(skipped side-effect-free modules)",
      "active": true
     }
    ],
@@ -652,12 +1249,103 @@
     {
      "type": "esm import specifier",
      "from": "javascript/esm|/__bundlewhy_project__/src/main.js",
-     "loc": "23:33-41",
+     "loc": "27:33-41",
      "explanation": null,
      "active": false
     }
    ],
    "depth": 1,
+   "concatenatedInto": null,
+   "packageName": "bundlewhy-fixture-rspack-app",
+   "packageVersion": "",
+   "packageDir": "/__bundlewhy_project__",
+   "packageSideEffects": null
+  },
+  {
+   "id": "javascript/esm|/__bundlewhy_project__/src/exports/reexport.js",
+   "name": "./src/exports/reexport.js",
+   "path": "/__bundlewhy_project__/src/exports/reexport.js",
+   "virtual": false,
+   "isEntry": false,
+   "importers": [],
+   "dynamicImporters": [],
+   "importedIds": [],
+   "dynamicImportedIds": [],
+   "exports": [
+    "reLeaf"
+   ],
+   "usedExports": null,
+   "moduleSideEffects": null,
+   "inputFormat": "es",
+   "moduleType": "javascript/esm",
+   "renderedLength": 44,
+   "included": false,
+   "chunks": [],
+   "bailouts": [
+    "ModuleConcatenation bailout: Module is not in any chunk"
+   ],
+   "reasons": [
+    {
+     "type": "esm import",
+     "from": "javascript/esm|/__bundlewhy_project__/src/main.js",
+     "loc": "16:1-48",
+     "explanation": null,
+     "active": false
+    }
+   ],
+   "depth": 1,
+   "concatenatedInto": null,
+   "packageName": "bundlewhy-fixture-rspack-app",
+   "packageVersion": "",
+   "packageDir": "/__bundlewhy_project__",
+   "packageSideEffects": null
+  },
+  {
+   "id": "javascript/esm|/__bundlewhy_project__/src/exports/cycle-back.js",
+   "name": "./src/exports/cycle-back.js",
+   "path": "/__bundlewhy_project__/src/exports/cycle-back.js",
+   "virtual": false,
+   "isEntry": false,
+   "importers": [
+    "javascript/esm|/__bundlewhy_project__/src/exports/leaf.js"
+   ],
+   "dynamicImporters": [],
+   "importedIds": [],
+   "dynamicImportedIds": [],
+   "exports": [
+    "back"
+   ],
+   "usedExports": [
+    "back"
+   ],
+   "moduleSideEffects": null,
+   "inputFormat": "es",
+   "moduleType": "javascript/esm",
+   "renderedLength": 84,
+   "included": true,
+   "chunks": [
+    "main.js"
+   ],
+   "bailouts": [
+    "ModuleConcatenation bailout: Cannot concat with javascript/esm|/__bundlewhy_project__/src/exports/leaf.js: Module uses eval()"
+   ],
+   "reasons": [
+    {
+     "type": "esm import",
+     "from": "javascript/esm|/__bundlewhy_project__/src/exports/leaf.js",
+     "loc": "4:1-40",
+     "explanation": null,
+     "active": false
+    },
+    {
+     "type": "esm import specifier",
+     "from": "javascript/esm|/__bundlewhy_project__/src/exports/leaf.js",
+     "loc": "7:24-28",
+     "explanation": null,
+     "active": true
+    }
+   ],
+   "depth": 2,
    "concatenatedInto": null,
    "packageName": "bundlewhy-fixture-rspack-app",
    "packageVersion": "",
@@ -756,9 +1444,14 @@
     "javascript/esm|/__bundlewhy_project__/vendor/single/index.js",
     "javascript/esm|/__bundlewhy_project__/vendor/single/again.js",
     "javascript/esm|/__bundlewhy_project__/src/dynamic/plain.js",
+    "javascript/esm|/__bundlewhy_project__/src/exports/chain-a.js",
+    "javascript/esm|/__bundlewhy_project__/src/exports/chain-b.js",
+    "javascript/esm|/__bundlewhy_project__/src/exports/namespace.js",
     "javascript/dynamic|/__bundlewhy_project__/src/legacy/cjs.cjs",
     "javascript/esm|/__bundlewhy_project__/src/dynamic/evaluate.js",
-    "javascript/esm|/__bundlewhy_project__/src/shared/static-and-dynamic.js"
+    "javascript/esm|/__bundlewhy_project__/src/shared/static-and-dynamic.js",
+    "javascript/esm|/__bundlewhy_project__/src/exports/leaf.js",
+    "javascript/esm|/__bundlewhy_project__/src/exports/cycle-back.js"
    ],
    "map": "main.js.map"
   },
