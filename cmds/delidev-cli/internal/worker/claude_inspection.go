@@ -43,7 +43,10 @@ func inspectCompletedClaudeCheckpoint(ctx context.Context, root string, ref Comp
 	if err != nil || saved.NativeReference.RequiresResume != (completion.Outcome == domain.ExecutionFailed) {
 		return executionCheckpointUncertain()
 	}
-	history := filepath.Join(root, "runtimes", string(c.HistoryExecutionID))
+	history, err := historyNativeRoot(ctx, root, c.MachineID, domain.ClaudeCode, c.AccountID, c.HistoryExecutionID)
+	if err != nil {
+		return err
+	}
 	executable := native.Executable
 	if native.Startup != nil {
 		installation, err := resolveOriginalStartup(ctx, Config{Root: root}, c.JobID, domain.ExecutionJobInput{Version: 4, Startup: native.Startup, Configuration: domain.ExecutionConfiguration{Harness: domain.ClaudeCode}})

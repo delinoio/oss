@@ -299,6 +299,19 @@ func checkpointConfigurationDigest(config APIStreamConfig, origin, instructionsS
 	if config.Subscription != nil {
 		// Preserve existing API checkpoint bytes. Subscription checkpoints add only
 		// a digest-bound local reference, never profile files or credentials.
+		if config.Subscription.SecureStorageHome != "" {
+			// Version 2 binds the session-private history directory and the
+			// canonical secure-storage directory independently. Version 1 keeps
+			// the exact digest below, so retained histories stay valid.
+			scoped, _ := json.Marshal(struct {
+				Configuration     json.RawMessage
+				Profile           domain.ID
+				Home              string
+				SecureStorageHome string
+				Mode              string
+			}{raw, config.Subscription.ID, config.Subscription.Home, config.Subscription.SecureStorageHome, "claude-subscription-v2"})
+			return checkpointDigest(scoped)
+		}
 		scoped, _ := json.Marshal(struct {
 			Configuration json.RawMessage
 			Profile       domain.ID

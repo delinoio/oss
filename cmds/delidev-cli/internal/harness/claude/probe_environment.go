@@ -1,6 +1,7 @@
 package claude
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -10,15 +11,20 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
+// userAuthoredConfigurationNames lists the Claude configuration entries that only
+// a user (never the native itself) authors below CLAUDE_CONFIG_DIR.
+var userAuthoredConfigurationNames = []string{"settings.json", "settings.local.json", "CLAUDE.md", "hooks", "commands", "agents", "plugins", "skills", "output-styles"}
+
 func probeEnvironment(config ProbeConfig) ([]string, error) {
-	return nativeEnvironment(config, true)
+	return nativeEnvironment(config)
 }
 
-// Retained mode is private to a proved closed-session handoff. Discovery and
-// fresh execution must continue to reject every populated runtime directory.
-func nativeEnvironment(config ProbeConfig, fresh bool) ([]string, error) {
+// The runtime is a persistent DeliDev-owned profile. Ownership is proved by the
+// profile owner before this call; here only private canonical paths are
+// required and retained native caches or helper files are accepted.
+func nativeEnvironment(config ProbeConfig) ([]string, error) {
 	invalid := func() error {
-		return domain.Fail(domain.InvalidArgument, "Claude Code discovery requires a fresh private runtime.", "Prepare a dedicated canonical Worker runtime before native protocol validation.")
+		return domain.Fail(domain.InvalidArgument, "Claude Code requires a canonical DeliDev-owned private profile.", "Use the persistent profile resolved by DeliDev before native protocol validation.")
 	}
 	if !filepath.IsAbs(config.Home) {
 		return nil, invalid()
@@ -40,14 +46,13 @@ func nativeEnvironment(config ProbeConfig, fresh bool) ([]string, error) {
 		if err != nil || actual != path {
 			return nil, invalid()
 		}
-		// Never probe a retained execution runtime or consume an existing login,
-		// hook, plugin, cache or settings file. Version detection uses this same
-		// empty runtime before the protocol probe.
-		if fresh && name != "" {
-			entries, err := os.ReadDir(path)
-			if err != nil || len(entries) != 0 {
-				return nil, invalid()
-			}
+	}
+	// A persistent profile retains native caches and history, but a user-authored
+	// configuration surface must never be consumed: settings, memory, hooks,
+	// commands, agents, plugins, skills and output styles are rejected by name.
+	for _, name := range userAuthoredConfigurationNames {
+		if _, err := os.Lstat(filepath.Join(home, name)); !errors.Is(err, os.ErrNotExist) {
+			return nil, invalid()
 		}
 	}
 	lookup := map[string]string{}

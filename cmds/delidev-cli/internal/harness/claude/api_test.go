@@ -45,7 +45,12 @@ func init() {
 				os.Exit(71)
 			}
 		}
-		if os.Getenv("CLAUDE_CONFIG_DIR") != filepath.Join(root, "owned-profile", "claude") || os.Getenv("CLAUDE_SECURESTORAGE_CONFIG_DIR") != os.Getenv("CLAUDE_CONFIG_DIR") {
+		if mode == "native-subscription-v2-valid" {
+			// Version 2: private configuration and history, canonical secure storage.
+			if os.Getenv("CLAUDE_CONFIG_DIR") != filepath.Join(root, "claude") || os.Getenv("CLAUDE_SECURESTORAGE_CONFIG_DIR") != filepath.Join(root, "owned-profile", "claude") {
+				os.Exit(71)
+			}
+		} else if os.Getenv("CLAUDE_CONFIG_DIR") != filepath.Join(root, "owned-profile", "claude") || os.Getenv("CLAUDE_SECURESTORAGE_CONFIG_DIR") != os.Getenv("CLAUDE_CONFIG_DIR") {
 			os.Exit(71)
 		}
 	} else if os.Getenv("ANTHROPIC_API_KEY") != nativeAPIFixtureToken || os.Getenv("ANTHROPIC_AUTH_TOKEN") != nativeAPIFixtureToken || os.Getenv("CLAUDE_SECURESTORAGE_CONFIG_DIR") != filepath.Join(root, "claude") || os.Getenv("ANTHROPIC_BASE_URL") != "https://relay.example/api-proxy" || os.Getenv("CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST") != "1" {

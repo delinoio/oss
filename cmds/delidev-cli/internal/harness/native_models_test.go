@@ -13,6 +13,9 @@ import (
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
 func TestNativeExecutableIdentityRejectsReplacement(t *testing.T) {
@@ -55,7 +58,7 @@ func TestManualNativeModelsPrivateCopyAndCleanup(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "sk-unused-test-fixture")
 	root := t.TempDir()
 	scope := domain.NativeModelScope{Version: 1, MachineID: domain.NewID(), MachineRevision: 1, InstallationGeneration: 1, NativeVersion: domain.CodexProtocolVersion, Executable: binary, ExecutableSHA256: digest, AccountID: domain.NewID(), AccountRevision: 1, ConnectionID: domain.NewID(), ProviderID: domain.NewID(), Actor: domain.Principal{Type: domain.OwnerDevice}}
-	result, err := DiscoverNativeModels(context.Background(), DiscoveryConfig{Root: root, OwnerID: domain.NewID(), Logger: slog.New(slog.NewJSONHandler(io.Discard, nil))}, scope)
+	result, err := DiscoverNativeModels(context.Background(), DiscoveryConfig{Root: root, Profiles: testProfiles(t, root), OwnerID: domain.NewID(), Logger: slog.New(slog.NewJSONHandler(io.Discard, nil))}, scope)
 	if err != nil || result.Validate(false) != nil || len(result.Models) == 0 {
 		t.Fatalf("owned native observation failed: count=%d error=%v", len(result.Models), err)
 	}
@@ -67,8 +70,87 @@ func TestManualNativeModelsPrivateCopyAndCleanup(t *testing.T) {
 		t.Fatal("cleanup was not independently joined")
 	}
 	scope.ExecutableSHA256 = strings.Repeat("0", 64)
-	if _, err := DiscoverNativeModels(context.Background(), DiscoveryConfig{Root: root, OwnerID: domain.NewID()}, scope); err == nil {
+	if _, err := DiscoverNativeModels(context.Background(), DiscoveryConfig{Root: root, Profiles: testProfiles(t, root), OwnerID: domain.NewID()}, scope); err == nil {
 		t.Fatal("changed executable identity launched another observation")
 	}
 	t.Logf("owned private copy observed %d entries and removed its runtime", len(result.Models))
+}
+
+func nativeModelFixture(t *testing.T) (DiscoveryConfig, domain.NativeModelScope, string) {
+	t.Helper()
+	root := t.TempDir()
+	executable := filepath.Join(root, "codex-fixture")
+	if err := os.WriteFile(executable, []byte("#!/bin/sh\nexit 1\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	digest, err := InspectExecutable(context.Background(), executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := DiscoveryConfig{Root: root, Profiles: testProfiles(t, root), OwnerID: domain.NewID(), Logger: slog.New(slog.NewJSONHandler(io.Discard, nil))}
+	scope := domain.NativeModelScope{Version: 1, MachineID: domain.NewID(), MachineRevision: 1, InstallationGeneration: 1, NativeVersion: domain.CodexProtocolVersion, Executable: executable, ExecutableSHA256: digest, AccountID: domain.NewID(), AccountRevision: 1, ConnectionID: domain.NewID(), ProviderID: domain.NewID(), Actor: domain.Principal{Type: domain.OwnerDevice}}
+	lease, err := acquireSystemProfile(context.Background(), config.Profiles, domain.Codex, nativeprofile.PurposeModelObservation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmp := filepath.Join(lease.Root, "tmp")
+	if err := security.PrivateDir(tmp); err != nil {
+		t.Fatal(err)
+	}
+	if err := lease.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return config, scope, filepath.Join(tmp, "codex-native-"+string(config.OwnerID))
+}
+
+// A retry after an interrupted observation replaces the retained copy only
+// after the owner is joined, and this attempt's own copy outlives the operation
+// exactly when its owned processes could not be proven joined.
+func TestNativeModelCopyOutlivesOnlyAnUnjoinedOwner(t *testing.T) {
+	config, scope, snapshot := nativeModelFixture(t)
+	if err := os.WriteFile(snapshot, []byte("previous attempt"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	_, err := DiscoverNativeModels(context.Background(), config, scope)
+	if err == nil {
+		t.Fatal("the fixture executable unexpectedly observed models")
+	}
+	raw, statErr := os.ReadFile(snapshot)
+	if statErr == nil && string(raw) == "previous attempt" {
+		t.Fatal("the previous attempt's copy was reused")
+	}
+	unjoined := process.ReconcileOwner(filepath.Join(config.Root, "processes"), config.OwnerID) != nil
+	if unjoined && statErr != nil {
+		t.Fatalf("the copy was removed while its owner is not joined: %v (%v)", statErr, err)
+	}
+	if !unjoined && statErr == nil {
+		t.Fatal("a transient executable copy survived a joined operation")
+	}
+}
+
+// A copy owned by an operation whose processes cannot be proven joined stays in
+// place: removing it first could pull the executable from a live process.
+func TestNativeModelKeepsRetainedCopyWhenOwnerCannotBeJoined(t *testing.T) {
+	config, scope, snapshot := nativeModelFixture(t)
+	if err := os.WriteFile(snapshot, []byte("previous attempt"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	// A regular file where the owner's journal directory must be makes the
+	// reconciliation fail closed.
+	processRoot := filepath.Join(config.Root, "processes")
+	if err := security.PrivateDir(processRoot); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(processRoot, string(config.OwnerID)), []byte("not a journal"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := process.ReconcileOwner(processRoot, config.OwnerID); err == nil {
+		t.Skip("the process package accepts this fixture as joined")
+	}
+	if _, err := DiscoverNativeModels(context.Background(), config, scope); err == nil {
+		t.Fatal("an unjoined owner was reported as observed")
+	}
+	if raw, err := os.ReadFile(snapshot); err != nil || string(raw) != "previous attempt" {
+		t.Fatalf("the retained executable copy was removed before the owner was joined: %v", err)
+	}
 }

@@ -612,6 +612,21 @@ fn registry_value<'a>(section: &'a RegistrySection, name: &str) -> Option<&'a st
         .filter(|data| *data != "(value not set)")
 }
 
+/// `/ve` selects the unnamed value in reg.exe itself. Its printed label is
+/// localized, so only the requested key and the single returned type/data row
+/// identify the result; the label must never be used as a value name here.
+#[allow(dead_code)]
+fn queried_unnamed_value(output: &str, key_path: &str) -> Option<String> {
+    let sections = parse_registry(output);
+    let section = sections
+        .iter()
+        .find(|section| section.path.eq_ignore_ascii_case(key_path))?;
+    let [(_, value)] = section.values.as_slice() else {
+        return None;
+    };
+    (!value.is_empty() && value != "(value not set)").then(|| value.clone())
+}
+
 #[allow(dead_code)]
 fn expand_variables(value: &str, lookup: &dyn Fn(&str) -> Option<String>) -> Option<String> {
     let mut output = String::new();
@@ -657,6 +672,8 @@ pub(crate) fn command_executable(
 pub(crate) fn windows_browser(
     key_name: &str,
     sections: &[RegistrySection],
+    name: Option<&str>,
+    command: &str,
     lookup: &dyn Fn(&str) -> Option<String>,
 ) -> Option<InstalledBrowser> {
     if !valid_identity(key_name) {
@@ -673,20 +690,8 @@ pub(crate) fn windows_browser(
     let associations = find("capabilities\\urlassociations")?;
     registry_value(associations, "http")?;
     registry_value(associations, "https")?;
-    let executable = command_executable(
-        registry_value(find("shell\\open\\command")?, "(Default)")?,
-        lookup,
-    )?;
-    let root = sections.iter().find(|section| {
-        section
-            .path
-            .rsplit('\\')
-            .next()
-            .is_some_and(|last| last.eq_ignore_ascii_case(key_name))
-    });
-    let name = root
-        .and_then(|section| registry_value(section, "(Default)"))
-        .unwrap_or(key_name);
+    let executable = command_executable(command, lookup)?;
+    let name = name.unwrap_or(key_name);
     Some(InstalledBrowser {
         entry: BrowserEntry {
             identity: key_name.to_owned(),
@@ -741,7 +746,26 @@ pub(crate) fn discover_windows(
             let Some(detail) = reader.query(&[&format!(r"{root}\{key_name}"), "/s"]) else {
                 continue;
             };
-            if let Some(browser) = windows_browser(key_name, &parse_registry(&detail), &lookup) {
+            let key_path = format!(r"{root}\{key_name}");
+            let full_path = format!(r"{prefix}\{key_name}");
+            let name = reader
+                .query(&[&key_path, "/ve"])
+                .and_then(|output| queried_unnamed_value(&output, &full_path));
+            let command_path = format!(r"{key_path}\shell\open\command");
+            let full_command_path = format!(r"{full_path}\shell\open\command");
+            let Some(command) = reader
+                .query(&[&command_path, "/ve"])
+                .and_then(|output| queried_unnamed_value(&output, &full_command_path))
+            else {
+                continue;
+            };
+            if let Some(browser) = windows_browser(
+                key_name,
+                &parse_registry(&detail),
+                name.as_deref(),
+                &command,
+                &lookup,
+            ) {
                 found.push(browser);
             }
         }
@@ -1002,7 +1026,24 @@ mod tests {
         .join("\r\n")
     }
 
-    struct Fixture;
+    fn unnamed(path: &str, label: &str, value: &str) -> String {
+        ["", path, &format!("    {label}    REG_SZ    {value}"), ""].join("\r\n")
+    }
+
+    struct Fixture {
+        label: &'static str,
+        detail: String,
+        command: Option<&'static str>,
+    }
+    impl Fixture {
+        fn chrome(label: &'static str) -> Self {
+            Self {
+                label,
+                detail: chrome().replace("(Default)", label),
+                command: Some(r#""C:\Program Files\Google\Chrome\Application\chrome.exe" --flag"#),
+            }
+        }
+    }
     impl RegistryReader for Fixture {
         fn query(&self, arguments: &[&str]) -> Option<String> {
             match arguments {
@@ -1010,7 +1051,25 @@ mod tests {
                 [
                     r"HKLM\SOFTWARE\Clients\StartMenuInternet\Google Chrome",
                     "/s",
-                ] => Some(chrome()),
+                ] => Some(self.detail.clone()),
+                [
+                    r"HKLM\SOFTWARE\Clients\StartMenuInternet\Google Chrome",
+                    "/ve",
+                ] => Some(unnamed(
+                    &format!("{HIVE}\\Google Chrome"),
+                    self.label,
+                    "Google Chrome",
+                )),
+                [
+                    r"HKLM\SOFTWARE\Clients\StartMenuInternet\Google Chrome\shell\open\command",
+                    "/ve",
+                ] => self.command.map(|command| {
+                    unnamed(
+                        &format!("{HIVE}\\Google Chrome\\shell\\open\\command"),
+                        self.label,
+                        command,
+                    )
+                }),
                 [r"HKLM\SOFTWARE\Clients\StartMenuInternet\Plain", "/s"] => Some(plain()),
                 _ => None,
             }
@@ -1019,7 +1078,7 @@ mod tests {
 
     #[test]
     fn windows_registry_registration_yields_executable_without_registered_arguments() {
-        let found = discover_windows(&Fixture).unwrap();
+        let found = discover_windows(&Fixture::chrome("(Default)")).unwrap();
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].entry.identity, "Google Chrome");
         assert_eq!(found[0].entry.name, "Google Chrome");
@@ -1031,6 +1090,43 @@ mod tests {
             found[0].launch.argv("https://example.com/?a&b"),
             ["https://example.com/?a&b"]
         );
+    }
+
+    #[test]
+    fn windows_registry_unnamed_values_ignore_localized_display_labels() {
+        let expected = discover_windows(&Fixture::chrome("(Default)")).unwrap();
+        for label in ["(par défaut)", "(Standard)", "(기본값)", "arbitrary label"] {
+            assert_eq!(discover_windows(&Fixture::chrome(label)).unwrap(), expected);
+        }
+        assert_eq!(
+            queried_unnamed_value(&unnamed(HIVE, "(par défaut)", "Browser Name"), HIVE,).as_deref(),
+            Some("Browser Name")
+        );
+        assert_eq!(
+            queried_unnamed_value(&unnamed(HIVE, "(par défaut)", "Browser Name"), "other"),
+            None
+        );
+    }
+
+    #[test]
+    fn windows_registry_rejects_missing_associations_and_commands() {
+        for scheme in ["http", "https"] {
+            let mut fixture = Fixture::chrome("(par défaut)");
+            fixture.detail = fixture
+                .detail
+                .replace(&format!("    {scheme}    REG_SZ    ChromeHTML\r\n"), "");
+            assert!(discover_windows(&fixture).unwrap().is_empty());
+        }
+
+        let mut fixture = Fixture::chrome("(par défaut)");
+        fixture.command = None;
+        fixture.detail = fixture.detail.replace("(par défaut)", "unrelated");
+        assert!(fixture.detail.contains("unrelated"));
+        assert!(discover_windows(&fixture).unwrap().is_empty());
+
+        let mut fixture = Fixture::chrome("(par défaut)");
+        fixture.command = Some("browser.exe --flag");
+        assert!(discover_windows(&fixture).unwrap().is_empty());
     }
 
     #[test]

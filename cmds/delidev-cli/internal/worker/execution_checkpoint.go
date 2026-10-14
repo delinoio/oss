@@ -188,10 +188,13 @@ func ReadCodexExecutionCheckpoint(root string, ref ExecutionCheckpointRef) (Code
 	}
 	// The history root is derived solely from a retained execution identity,
 	// never from a caller-provided path. Every component must still be private.
+	// The history's native profile is resolved through the profile registry by
+	// the caller; this reader only requires the retained operation journal.
 	if _, err := executionCheckpointPath(root, ref.HistoryExecutionID); err != nil {
 		return CodexExecutionCheckpoint{}, err
 	}
-	if err := security.CheckPrivateDir(filepath.Join(root, "runtimes", string(ref.HistoryExecutionID), "codex")); err != nil {
+	historyRoot, err := peekHistoryNativeRoot(root, ref.MachineID, domain.Codex, ref.HistoryExecutionID)
+	if err != nil || security.CheckPrivateDir(filepath.Join(historyRoot, "codex")) != nil {
 		return CodexExecutionCheckpoint{}, executionCheckpointUncertain()
 	}
 	return checkpoint, nil

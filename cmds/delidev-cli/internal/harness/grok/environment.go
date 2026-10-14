@@ -1,6 +1,7 @@
 package grok
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -10,9 +11,14 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
+// userAuthoredConfigurationNames lists the entries below the native home that only
+// a user (never the native itself) authors. A persistent profile retains native
+// caches and history but never consumes these configuration or login surfaces.
+var userAuthoredConfigurationNames = []string{"auth.json", "config.toml", "config.json", "settings.json", "GROK.md", "AGENTS.md", "hooks", "plugins", "skills", "commands", "agents", "mcp.json"}
+
 func probeEnvironment(config ProbeConfig) ([]string, error) {
 	invalid := func() error {
-		return domain.Fail(domain.InvalidArgument, "Grok Build discovery requires a fresh private runtime.", "Prepare a dedicated canonical Worker runtime before native protocol validation.")
+		return domain.Fail(domain.InvalidArgument, "Grok Build requires a canonical DeliDev-owned private profile.", "Use the persistent profile resolved by DeliDev before native protocol validation.")
 	}
 	if !filepath.IsAbs(config.Home) || filepath.Base(config.Home) != "grok" {
 		return nil, invalid()
@@ -27,15 +33,9 @@ func probeEnvironment(config ProbeConfig) ([]string, error) {
 		if err != nil || actual != path || security.CheckPrivateDir(path) != nil {
 			return nil, invalid()
 		}
-		if name != "" {
-			entries, err := os.ReadDir(path)
-			if err != nil || len(entries) != 0 {
-				return nil, invalid()
-			}
-		}
 	}
-	// Discovery creates these empty siblings for the other native profiles.
-	// Reject every root file and unrecognized directory before native scanners
+	// A persistent profile root holds only DeliDev-created sibling
+	// directories. Reject every root file and unrecognized directory before native scanners
 	// can discover project instructions, extensions or credentials there.
 	entries, err := os.ReadDir(root)
 	if err != nil {
@@ -45,11 +45,15 @@ func probeEnvironment(config ProbeConfig) ([]string, error) {
 		switch entry.Name() {
 		case "grok", "config", "cache", "data", "state", "tmp", "codex", "claude", "opencode":
 			path := filepath.Join(root, entry.Name())
-			children, err := os.ReadDir(path)
-			if !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || security.CheckPrivateDir(path) != nil || err != nil || len(children) != 0 {
+			if !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || security.CheckPrivateDir(path) != nil {
 				return nil, invalid()
 			}
 		default:
+			return nil, invalid()
+		}
+	}
+	for _, name := range userAuthoredConfigurationNames {
+		if _, err := os.Lstat(filepath.Join(config.Home, name)); !errors.Is(err, os.ErrNotExist) {
 			return nil, invalid()
 		}
 	}

@@ -27,18 +27,25 @@ func (s *Service) readResumablePullRequestWorkspace(ctx context.Context, id doma
 	resume := &integrationResume{}
 	attempts := 0
 	for {
+		if resume.failedDisplacement.Load() {
+			return repositoryIntegrationSelection{}, attempts, errIntegrationDisplacementFailed
+		}
 		attempts++
 		if attempts > 1 {
 			s.logger.Info("pull_request_workspace_resumed", "repository_id", id, "attempt_count", attempts, "correlation_id", correlation)
 		}
-		selected, err := s.admitRepositoryIntegration(ctx, id, "workspace", correlation, resume, read)
+		selected, err := s.admitRepositoryIntegration(ctx, id, "workspace", correlation, attempts, resume, read)
+		if resume.failedDisplacement.Load() {
+			return repositoryIntegrationSelection{}, attempts, errIntegrationDisplacementFailed
+		}
+		if errors.Is(err, errIntegrationDisplacementFailed) {
+			return repositoryIntegrationSelection{}, attempts - 1, err
+		}
 		if !errors.Is(err, errIntegrationPreempted) {
-			outcome, code := workspaceOutcomeSucceeded, domain.Code("")
-			if err != nil {
-				outcome, code = workspaceOutcomeFailed, domain.SafeError(err).Code
-			}
-			s.logger.Info("pull_request_workspace_finished", "repository_id", id, "outcome", outcome, "error_code", code, "attempt_count", attempts, "correlation_id", correlation)
 			return selected, attempts, err
+		}
+		if resume.failedDisplacement.Load() {
+			return repositoryIntegrationSelection{}, attempts, errIntegrationDisplacementFailed
 		}
 		s.logger.Info("pull_request_workspace_requeued", "repository_id", id, "attempt_count", attempts, "correlation_id", correlation)
 		if ctxErr := ctx.Err(); ctxErr != nil {
@@ -48,7 +55,6 @@ func (s *Service) readResumablePullRequestWorkspace(ctx context.Context, id doma
 		} else {
 			continue
 		}
-		s.logger.Info("pull_request_workspace_finished", "repository_id", id, "outcome", workspaceOutcomeFailed, "error_code", domain.SafeError(err).Code, "attempt_count", attempts, "correlation_id", correlation)
 		return repositoryIntegrationSelection{}, attempts, err
 	}
 }
