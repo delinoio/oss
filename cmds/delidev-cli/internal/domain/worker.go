@@ -131,8 +131,11 @@ const (
 	ManagedCodexSubscriptionsV1    WorkerCapability = "managed-codex-subscriptions-v1"
 	NativeClaudeSubscriptionsV1    WorkerCapability = "native-claude-subscriptions-v1"
 	ManagedClaudeExecutionV1       WorkerCapability = "managed-claude-execution-v1"
-	CodexQuotaBlockV1              WorkerCapability = "codex-quota-block-v1"
-	SubscriptionPaidCreditsV1      WorkerCapability = "subscription-paid-credits-v1"
+	// ManagedGrokSubscriptionsV1 is Worker wire capability 21. It is withdrawn
+	// unless the server explicitly enables Grok subscription execution.
+	ManagedGrokSubscriptionsV1 WorkerCapability = "managed-grok-subscriptions-v1"
+	CodexQuotaBlockV1          WorkerCapability = "codex-quota-block-v1"
+	SubscriptionPaidCreditsV1  WorkerCapability = "subscription-paid-credits-v1"
 
 	SubscriptionObservationsV1  WorkerCapability = "subscription-observations-v1"
 	NativeSessionCompactionV1   WorkerCapability = "native-session-compaction-v1"
