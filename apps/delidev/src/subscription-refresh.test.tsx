@@ -39,6 +39,10 @@ type Options = {
   data?: Record<string, unknown>;
   subscription?: Record<string, unknown>;
   list?: boolean;
+  // Legacy Runner-bound Claude capability 38; advertised unless disabled.
+  claudeLegacy?: boolean;
+  // Server-owned Claude sign-in capability 67; absent unless enabled.
+  claudeServer?: boolean;
 };
 function fixture(options: Options = {}) {
   const connection = newRequestId(),
@@ -103,7 +107,12 @@ function fixture(options: Options = {}) {
         capabilities: [
           SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,
           SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1,
-          SystemCapability.CLAUDE_SUBSCRIPTIONS_V1,
+          ...(options.claudeLegacy === false
+            ? []
+            : [SystemCapability.CLAUDE_SUBSCRIPTIONS_V1]),
+          ...(options.claudeServer === true
+            ? [SystemCapability.CLAUDE_SERVER_LOGIN_V1]
+            : []),
           ...(options.supported === false
             ? []
             : [SystemCapability.SERVER_SUBSCRIPTION_QUOTA_V2]),
@@ -341,21 +350,41 @@ it.each([
   {
     name: "disconnected sign-in",
     data: { connection: {}, health: "disconnected" },
+    options: {},
     label: "Sign in to ChatGPT",
     key: "subscription-accounts.signInTo_fa4edf",
   },
   {
-    name: "Claude reauthentication",
-    data: { subscription_service: "claude" },
-    label: "Sign in again",
-    key: "Sign in again",
+    name: "Claude sign-in",
+    data: {
+      subscription_service: "claude",
+      connection: {},
+      health: "disconnected",
+    },
+    options: { claudeServer: true, subscription: { generation: "" } },
+    label: "Sign in to Claude",
+    key: "subscription-accounts.signInTo_fa4edf",
+  },
+  {
+    name: "Claude connect new account",
+    data: {
+      subscription_service: "claude",
+      connection: {},
+      health: "disconnected",
+    },
+    options: {
+      claudeServer: true,
+      subscription: { native_profile_id: "device-owned-profile" },
+    },
+    label: "Connect new account",
+    key: "Connect new account",
   },
 ])(
   "blocks $name through the explicit read owner, including direct callbacks",
-  async ({ data, label, key }) => {
+  async ({ data, options, label, key }) => {
     const begin = stubLogin();
     const action = captureActions();
-    const f = fixture({ supported: false, data });
+    const f = fixture({ supported: false, data, ...options });
     render(<f.Harness />);
     const button = await screen.findByRole("button", { name: label });
     await waitFor(() =>
