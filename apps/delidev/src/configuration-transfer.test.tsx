@@ -348,7 +348,13 @@ it("shows localized malformed JSON guidance in Korean", async () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "설정 문서 불러오기" }));
     expect(screen.getByText(malformedJsonKorean)).toBeTruthy();
-    expect((screen.getByRole("textbox", { name: "설정 JSON" }) as HTMLTextAreaElement).value).toBe(draft);
+    expect(
+      (
+        screen.getByRole("textbox", {
+          name: "설정 JSON",
+        }) as HTMLTextAreaElement
+      ).value,
+    ).toBe(draft);
     expect(value.preview).not.toHaveBeenCalled();
     expect(value.apply).not.toHaveBeenCalled();
   } finally {
