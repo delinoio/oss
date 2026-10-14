@@ -16,6 +16,8 @@ acceptance uses Khronos, Three.js, ufbx and Blender 4.5.14. No npm publication,
 scene import, automatic rigging, IK, retargeting, physics or playback runtime is
 part of this extension.
 
+An unreleased explicit static-geometry simplification operation is owned by the scene contract. It derives an immutable GLB/FBX geometry asset with bounded native scratch and truthful counts/error while preserving normal registration and export behavior.
+
 The scene contract also defines an unreleased budgeted parametric surface helper
 for both formats. Callers choose explicit tessellation and a triangle ceiling;
 the helper adds no adaptive quality or hidden surface faces.
