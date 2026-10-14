@@ -763,173 +763,171 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
         ))}
       </ol>
       <>
-          <p>{copy("claude-subscription.server.subtitle")}</p>
-          {v.step === Step.Name ? (
-            <>
-              <p
-                role="status"
-                className="subscription-onboarding-status subscription-onboarding-success"
-              >
-                <span aria-hidden="true">✓</span>
-                {copy("claude-subscription.success")}
-              </p>
-              <form
-                id={id}
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  p.save();
-                }}
-              >
-                <label htmlFor={`${id}-name`}>
-                  {copy("claude-subscription.accountName")}
-                </label>
-                <input
-                  id={`${id}-name`}
-                  ref={name}
-                  autoComplete="off"
-                  value={v.name}
-                  disabled={busy}
-                  onChange={(e) => p.name(e.target.value)}
-                />
-                <p>{copy("claude-subscription.nameHelp")}</p>
-                <SettingsTaskActions form={id}>
-                  <SettingsActionButton
-                    icon={SettingsActionIcon.Save}
-                    className="primary"
-                    disabled={busy || !subscriptionNameValid(v.name)}
-                  >
-                    {copy("claude-subscription.saveName")}
-                  </SettingsActionButton>
-                  <SettingsActionButton
-                    icon={SettingsActionIcon.Cancel}
-                    type="button"
-                    onClick={p.leave}
-                  >
-                    {copy("claude-subscription.later")}
-                  </SettingsActionButton>
-                </SettingsTaskActions>
-              </form>
-            </>
-          ) : (
-            <>
-              {v.step === Step.Login ? (
-                <>
-                  <h3>{copy("claude-subscription.server.heading")}</h3>
-                  <p>{copy("claude-subscription.server.body")}</p>
-                </>
-              ) : null}
-              <p role="status" className="subscription-onboarding-status">
-                {v.step === Step.Login ? (
-                  <span
-                    className="subscription-onboarding-spinner"
-                    aria-hidden="true"
-                  />
-                ) : null}
-                {v.state === SubscriptionLoginState.UNSUPPORTED ? (
-                  <>
-                    <strong>
-                      {copy("claude-subscription.validationHeading")}
-                    </strong>{" "}
-                  </>
-                ) : null}
-                {copy(status[v.state] ?? "claude-subscription.failed")}
-              </p>
-              {v.step === Step.Login && v.browserReady ? (
+        <p>{copy("claude-subscription.server.subtitle")}</p>
+        {v.step === Step.Name ? (
+          <>
+            <p
+              role="status"
+              className="subscription-onboarding-status subscription-onboarding-success"
+            >
+              <span aria-hidden="true">✓</span>
+              {copy("claude-subscription.success")}
+            </p>
+            <form
+              id={id}
+              onSubmit={(e) => {
+                e.preventDefault();
+                p.save();
+              }}
+            >
+              <label htmlFor={`${id}-name`}>
+                {copy("claude-subscription.accountName")}
+              </label>
+              <input
+                id={`${id}-name`}
+                ref={name}
+                autoComplete="off"
+                value={v.name}
+                disabled={busy}
+                onChange={(e) => p.name(e.target.value)}
+              />
+              <p>{copy("claude-subscription.nameHelp")}</p>
+              <SettingsTaskActions form={id}>
                 <SettingsActionButton
-                  icon={SettingsActionIcon.Open}
-                  type="button"
-                  disabled={busy}
-                  onClick={p.reopen}
+                  icon={SettingsActionIcon.Save}
+                  className="primary"
+                  disabled={busy || !subscriptionNameValid(v.name)}
                 >
-                  {copy("claude-subscription.reopen")}
+                  {copy("claude-subscription.saveName")}
                 </SettingsActionButton>
-              ) : null}
-              {v.step === Step.Login &&
-              v.method === SubscriptionLoginMethod.BROWSER_CODE ? (
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    const value = code.current?.value ?? "";
-                    if (code.current) code.current.value = "";
-                    p.submit(value);
-                  }}
-                >
-                  <label htmlFor={`${id}-code`}>
-                    {copy("claude-subscription.approvalCode")}
-                  </label>
-                  <input
-                    id={`${id}-code`}
-                    ref={(input) => {
-                      code.current = input;
-                      p.setApprovalInput(input);
-                    }}
-                    type="password"
-                    autoComplete="off"
-                    spellCheck={false}
-                    maxLength={16384}
-                    placeholder={copy("claude-subscription.codePlaceholder")}
-                    disabled={busy || v.codeClaimed}
-                  />
-                  <p>
-                    {copy(
-                      v.codeClaimed
-                        ? "claude-subscription.codeClaimed"
-                        : "claude-subscription.codeHelp",
-                    )}
-                  </p>
-                  <SettingsActionButton
-                    icon={SettingsActionIcon.Confirm}
-                    className="primary"
-                    disabled={busy || v.codeClaimed}
-                  >
-                    {copy("claude-subscription.submitCode")}
-                  </SettingsActionButton>
-                </form>
-              ) : null}
-              {safeDiagnostic ? (
-                <dl className="subscription-onboarding-diagnostic">
-                  <div>
-                    <dt>{copy("claude-subscription.version")}</dt>
-                    <dd>
-                      {d.detectedVersion ||
-                        copy("claude-subscription.notDetected")}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>{copy("claude-subscription.phase")}</dt>
-                    <dd>
-                      {copy(
-                        `claude-subscription.phase${d.phase}` as MessageKey,
-                      )}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>{copy("claude-subscription.failureCode")}</dt>
-                    <dd>{d.code}</dd>
-                  </div>
-                </dl>
-              ) : null}
-              <SettingsTaskActions>
-                {v.step === Step.Login ? (
-                  <SettingsActionButton
-                    icon={SettingsActionIcon.Cancel}
-                    type="button"
-                    disabled={busy}
-                    onClick={p.cancel}
-                  >
-                    {copy("claude-subscription.cancel")}
-                  </SettingsActionButton>
-                ) : null}
                 <SettingsActionButton
-                  icon={SettingsActionIcon.Back}
+                  icon={SettingsActionIcon.Cancel}
                   type="button"
-                  onClick={back}
+                  onClick={p.leave}
                 >
-                  {copy("claude-subscription.back")}
+                  {copy("claude-subscription.later")}
                 </SettingsActionButton>
               </SettingsTaskActions>
-            </>
-          )}
+            </form>
+          </>
+        ) : (
+          <>
+            {v.step === Step.Login ? (
+              <>
+                <h3>{copy("claude-subscription.server.heading")}</h3>
+                <p>{copy("claude-subscription.server.body")}</p>
+              </>
+            ) : null}
+            <p role="status" className="subscription-onboarding-status">
+              {v.step === Step.Login ? (
+                <span
+                  className="subscription-onboarding-spinner"
+                  aria-hidden="true"
+                />
+              ) : null}
+              {v.state === SubscriptionLoginState.UNSUPPORTED ? (
+                <>
+                  <strong>
+                    {copy("claude-subscription.validationHeading")}
+                  </strong>{" "}
+                </>
+              ) : null}
+              {copy(status[v.state] ?? "claude-subscription.failed")}
+            </p>
+            {v.step === Step.Login && v.browserReady ? (
+              <SettingsActionButton
+                icon={SettingsActionIcon.Open}
+                type="button"
+                disabled={busy}
+                onClick={p.reopen}
+              >
+                {copy("claude-subscription.reopen")}
+              </SettingsActionButton>
+            ) : null}
+            {v.step === Step.Login &&
+            v.method === SubscriptionLoginMethod.BROWSER_CODE ? (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const value = code.current?.value ?? "";
+                  if (code.current) code.current.value = "";
+                  p.submit(value);
+                }}
+              >
+                <label htmlFor={`${id}-code`}>
+                  {copy("claude-subscription.approvalCode")}
+                </label>
+                <input
+                  id={`${id}-code`}
+                  ref={(input) => {
+                    code.current = input;
+                    p.setApprovalInput(input);
+                  }}
+                  type="password"
+                  autoComplete="off"
+                  spellCheck={false}
+                  maxLength={16384}
+                  placeholder={copy("claude-subscription.codePlaceholder")}
+                  disabled={busy || v.codeClaimed}
+                />
+                <p>
+                  {copy(
+                    v.codeClaimed
+                      ? "claude-subscription.codeClaimed"
+                      : "claude-subscription.codeHelp",
+                  )}
+                </p>
+                <SettingsActionButton
+                  icon={SettingsActionIcon.Confirm}
+                  className="primary"
+                  disabled={busy || v.codeClaimed}
+                >
+                  {copy("claude-subscription.submitCode")}
+                </SettingsActionButton>
+              </form>
+            ) : null}
+            {safeDiagnostic ? (
+              <dl className="subscription-onboarding-diagnostic">
+                <div>
+                  <dt>{copy("claude-subscription.version")}</dt>
+                  <dd>
+                    {d.detectedVersion ||
+                      copy("claude-subscription.notDetected")}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{copy("claude-subscription.phase")}</dt>
+                  <dd>
+                    {copy(`claude-subscription.phase${d.phase}` as MessageKey)}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{copy("claude-subscription.failureCode")}</dt>
+                  <dd>{d.code}</dd>
+                </div>
+              </dl>
+            ) : null}
+            <SettingsTaskActions>
+              {v.step === Step.Login ? (
+                <SettingsActionButton
+                  icon={SettingsActionIcon.Cancel}
+                  type="button"
+                  disabled={busy}
+                  onClick={p.cancel}
+                >
+                  {copy("claude-subscription.cancel")}
+                </SettingsActionButton>
+              ) : null}
+              <SettingsActionButton
+                icon={SettingsActionIcon.Back}
+                type="button"
+                onClick={back}
+              >
+                {copy("claude-subscription.back")}
+              </SettingsActionButton>
+            </SettingsTaskActions>
+          </>
+        )}
       </>
       {v.problem ? <p role="alert">{copy(v.problem)}</p> : null}
       {p.retry ? (

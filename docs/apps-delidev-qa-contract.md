@@ -87,7 +87,6 @@ same-identity disconnections retain the existing App and pending intents.
 
 ### apps/delidev/scripts constraints
 
-
 - `test-session-actions-layout.mjs` validates synthetic sidebar execution colors, sibling menu geometry, no-navigation opening and keyboard/focus in English/Korean, light/dark and wide/narrow/effective 200% viewports. Build/server/browser state stays outside the checkout and is disposed. Use host Playwright/Chrome; the fixture grants no native CEF, account or platform acceptance.
 
 - `test-account-format-layout.mjs` validates the synthetic capability-9 edit dialog at wide/narrow viewports, native labeled select, Provider lock, key absence, footer/body scrolling and keyboard focus/closure. Keep screenshots outside the checkout and native-select keystroke/native/account acceptance limits explicit.

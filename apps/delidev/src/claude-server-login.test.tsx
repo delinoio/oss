@@ -95,7 +95,9 @@ function fixture(dialog = false) {
     });
     return { account: current, operationId: operation };
   });
-  let diagnostic: ReturnType<typeof create<typeof NativeSubscriptionDiagnosticSchema>> | undefined;
+  let diagnostic:
+    | ReturnType<typeof create<typeof NativeSubscriptionDiagnosticSchema>>
+    | undefined;
   const progress = vi.fn(() => ({
     state,
     url: state === SubscriptionLoginState.WAITING ? progressURL : "",
@@ -154,9 +156,7 @@ function fixture(dialog = false) {
         ) : flow.hidden ? (
           <button onClick={flow.show}>View original operation</button>
         ) : (
-          <button
-            onClick={() => flow.begin(SubscriptionServiceId.Claude)}
-          >
+          <button onClick={() => flow.begin(SubscriptionServiceId.Claude)}>
             Add Claude
           </button>
         )}
