@@ -72,6 +72,26 @@ export function configuredModuleSideEffects(option, id) {
   return "null";
 }
 
+/**
+ * Reads the `moduleSideEffects` value that the resolve hooks give a module.
+ *
+ * `getModuleInfo()` only shows values that JavaScript hooks set. Vite's own
+ * resolver is a native Rolldown plugin that reports the nearest package
+ * `sideEffects` field as a hook value (`true` for a matching entry, `false`
+ * otherwise) without it reaching `getModuleInfo()`, and that value outranks
+ * the configured `treeshake.moduleSideEffects`. Resolving the module ID again
+ * returns it. Returns "unavailable" when the module cannot be resolved again.
+ */
+async function resolvedModuleSideEffects(context, id) {
+  try {
+    const resolved = await context.resolve(id, undefined);
+    if (!resolved || resolved.id !== id) return "unavailable";
+    return summarizeValue(resolved.moduleSideEffects);
+  } catch {
+    return "unavailable";
+  }
+}
+
 function collectorPlugin(state) {
   return {
     name: "bundlewhy:collector",
@@ -113,7 +133,7 @@ function collectorPlugin(state) {
         column: log.loc?.column ?? null,
       });
     },
-    generateBundle(_options, bundle) {
+    async generateBundle(_options, bundle) {
       // generateBundle runs once per output. bundlewhy analyzes one output;
       // several outputs are rejected after the build instead of silently
       // keeping only the last one.
@@ -145,6 +165,8 @@ function collectorPlugin(state) {
             state.moduleSideEffectsOption,
             id,
           ),
+          // Filled in below for the modules that Rolldown rendered.
+          resolveSideEffects: null,
           inputFormat: info?.inputFormat ?? "unknown",
           renderedLength: 0,
           included: false,
@@ -154,9 +176,13 @@ function collectorPlugin(state) {
           packageName: pkg?.name ?? null,
           packageVersion: pkg?.version ?? null,
           packageDir: pkg?.dir ?? null,
+          // A string is a glob, so quote it: the bare words `true` and
+          // `false` stay reserved for the boolean values.
           packageSideEffects:
             pkg && pkg.sideEffects !== null
-              ? summarizeValue(pkg.sideEffects)
+              ? typeof pkg.sideEffects === "string"
+                ? JSON.stringify(pkg.sideEffects)
+                : summarizeValue(pkg.sideEffects)
               : null,
         };
         modules.set(id, record);
@@ -194,6 +220,20 @@ function collectorPlugin(state) {
           modules: chunkModules,
           map: output.sourcemapFileName ?? `${output.fileName}.map`,
         });
+      }
+      // Only rendered modules without a used export can become findings, so
+      // only those are resolved again.
+      for (const record of modules.values()) {
+        if (
+          record.renderedLength > 0 &&
+          !record.isEntry &&
+          record.usedExports?.length === 0
+        ) {
+          record.resolveSideEffects = await resolvedModuleSideEffects(
+            this,
+            record.id,
+          );
+        }
       }
       state.collection = { modules: [...modules.values()], chunks, assets };
     },
