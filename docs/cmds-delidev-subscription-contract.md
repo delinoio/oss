@@ -78,6 +78,58 @@ owner/member set as quarantined evidence under a recovery fence. Structured logs
 carry account, lease, operation and counts only, never authentication, prompts or
 native content.
 
+**Device-owned Claude accounts (Worker `CLAUDE_DEVICE_OWNED_MEMBERS_V1 = 68`).**
+The native Claude lane uses the same owner/member representation with its own
+negotiation. The server admits a negotiated execute Take as the founding owner or
+a joined member exactly as above, with no bundle for any member (this lane never
+delivers authentication bytes), and uses `MEMBER` and `OWNER` Finish scopes. An
+owner Finish carries the native identity commitment and confirmed cleanup that the
+singleton Finish carried; a member Finish carries neither and cannot confirm an
+identity. A fenced owner is cleaned only as one set through an owner-scope
+cleanup Finish.
+
+On the Worker, one account owner per connection holds the canonical profile lock
+for its whole lifetime, replacing the per-execution lock with account lifecycle
+exclusion: login, reauthentication and logout take the profile only after the
+server owner has drained and the Worker released the lock. Each session is a
+member with its own lease journal, process owner, workspace lease and publication
+journal. Admission and owner retirement are serialized per account by a gate that
+is never held across a busy wait. The last runnable member joins every retained
+member's process owner, reads the native identity through the CLI's own status,
+releases the lock and only then reports the owner Finish; an unproven closure
+reports unconfirmed cleanup, which fences the account. Native code alone reads
+and renews the authentication in the canonical secure-storage directory under its
+own locks and compare-and-swap rereads; DeliDev never reads, copies or
+distributes those bytes. These are mock and fixture results for pinned Claude
+Code `2.1.236`, not real simultaneous renewal, owner-crash or cross-platform
+acceptance.
+
+*Profile versions.* Version 1 keeps one canonical directory as native
+configuration, history and secure storage. A retained version 1 history keeps its
+exact checkpoint bytes and digest and continues only in the canonical directory,
+one session at a time per account on the Worker. Version 2 gives every session a
+private configuration and history directory (`CLAUDE_CONFIG_DIR`) and names the
+canonical profile only as the secure-storage namespace
+(`CLAUDE_SECURESTORAGE_CONFIG_DIR`). Its checkpoint digest binds the private
+history directory and the canonical secure-storage directory independently, and
+the Worker checkpoint records `profile_version = 2` (omitted for version 1, so
+version 1 bytes are unchanged). A fresh session of a negotiated Worker is
+version 2; a continuation keeps the version of its predecessor and binds the
+previous session's private directory. A foreign owner, history directory or
+digest fails closed.
+
+**Codex Worker activation (not part of this change).** The server accepts and
+echoes Worker capability 67 and models members for the managed Codex lane, but no
+Worker advertises it yet, so managed Codex execution stays exclusive per account.
+Activation requires one account-scoped app-server and private authentication
+runtime that shares the native `AuthManager` across independently routed threads;
+completion of one thread must not rotate credentials or close a sibling; early
+workspace release requires exact `thread/closed` after `thread/unsubscribe` plus
+independently proven descendant closure, otherwise the member's workspace and
+cleanup stay retained until final owner containment; and the retained per-session
+history needs an explicit owner-home design before simultaneous threads can share
+one native home. These remain unimplemented and unvalidated.
+
 **Scope boundary.** The server-owned Claude setup-token lane (Worker capability
 41, `claude_credential = server-token`) is explicitly outside the owner/member
 model and stays exclusive: it delivers a static server-held token inside one
@@ -433,7 +485,7 @@ A fresh subscription lifecycle Take may return Canceled with exact cause `subscr
 
 - Idle quota/reset-credit observation publication failure does not itself imply credential-owner recovery. Collect the unchanged valid native bundle and independently join native/file cleanup before completing the short credential lease; retain original operation uncertainty/key for explicit credit reconciliation. Failed bundle/native/file validation still fences ownership.
 
-- Claude subscription Worker 20 requires verified original Claude Code 2.1.236 and joined empty-profile cleanup. Persist original lease/process/code claims before native effects; use one canonical private account profile and scoped secure storage, original-machine owner and exclusive lock. Official login/status/logout owns auth; raw identity stays local and the original keyed commitment is pinned in private profile ownership before later status comparison or execution input. Original recovery joins process journals and confirms logout/status plus bounded owned-profile removal before reporting cleanup. Execution reuses stream-json/history with no API auth injection or auth-file checkpoints. Never replay uncertain Take/login/code or claim actual platform acceptance from fixtures.
+- Claude subscription Worker 20 requires verified original Claude Code 2.1.236 and joined empty-profile cleanup. Persist original lease/process/code claims before native effects; use one canonical private account profile and scoped secure storage, original-machine owner and exclusive lock (lifecycle operations and Workers that did not negotiate Worker 68 keep the whole-execution lock; a negotiated Worker's owner holds it for the owner's lifetime, see the shared account owner section). Official login/status/logout owns auth; raw identity stays local and the original keyed commitment is pinned in private profile ownership before later status comparison or execution input. Original recovery joins process journals and confirms logout/status plus bounded owned-profile removal before reporting cleanup. Execution reuses stream-json/history with no API auth injection or auth-file checkpoints. Never replay uncertain Take/login/code or claim actual platform acceptance from fixtures.
 
 Subscription lifecycle Take treats only Canceled with exact cause `subscription_take_not_admitted` as an operation-local no-grant refusal. Retire its original private claim without Finish, retry or native launch; preserve other accounts on the joined lane. Execute, ordinary Canceled, RecoveryRequired, unknown delivery and uncertain Finish retain existing lane/recovery fences.
 

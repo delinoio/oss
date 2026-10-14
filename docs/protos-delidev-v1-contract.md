@@ -22,10 +22,13 @@ added: owner and member records are an additive JSON extension of the account
 document. The [subscription contract](cmds-delidev-subscription-contract.md) owns
 the behavior.
 
-The owner/member change activates capability 67: the server records it from the
-Worker attach and echoes it in `supported_worker_capabilities`, accepts
-`finish_scope` and populates `owner_lease_id` on joined members. Capability 68
-stays reserved until the device-owned Claude change activates it.
+The owner/member change activates both capabilities on the server and the
+device-owned Claude Worker: the server records 67 and 68 from the Worker attach and
+echoes them in `supported_worker_capabilities`, accepts `finish_scope` and
+populates `owner_lease_id` on joined members. A Claude Worker advertises 68 only
+for a verified native Claude lane after observing that echo. No Worker advertises
+67 yet: the managed Codex Worker activation (shared app-server) is a separate,
+unimplemented change, so managed Codex execution stays exclusive per account.
 
 ## Parallel session dispatch negotiation
 

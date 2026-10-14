@@ -1,5 +1,23 @@
 # DeliDev native harness adapter contract
 
+## Claude native subscription profile versions
+
+`NativeSubscriptionProfile` version 1 (no `SecureStorageHome`) is the historical
+canonical profile: `CLAUDE_CONFIG_DIR` and `CLAUDE_SECURESTORAGE_CONFIG_DIR` are
+both the canonical `claude` directory. Version 2 sets `CLAUDE_CONFIG_DIR` to the
+session-private `claude` directory (it must equal the stream's own home) and
+`CLAUDE_SECURESTORAGE_CONFIG_DIR` to a different canonical `claude` directory; both
+must be existing private directories named `claude`. The adapter passes directory
+names only and never opens the secure-storage directory. The checkpoint
+configuration digest of version 1 is unchanged; version 2 hashes the private
+history directory, the secure-storage directory and a closed mode marker
+independently. The pinned `2.1.236` secure-storage-scoped renewal, locked reread
+and compare-and-swap behavior is an implementation observation of the original
+CLI, validated here only with scripted fixtures and not as real renewal or
+cross-platform acceptance. The
+[subscription contract](cmds-delidev-subscription-contract.md#shared-account-owner-and-execution-members)
+owns the owner/member behavior.
+
 ## Scope
 
 `cmds/delidev-cli/internal/harness` owns Worker-native installation discovery and protocol adapters. All four the feature harnesses remain required: Codex, Claude Code, OpenCode and Grok Build. This contract records implemented boundaries without reducing the complete [requirements](cmds-delidev-requirements.md).

@@ -1,5 +1,18 @@
 # DeliDev owned process contract
 
+## Shared subscription owner process ownership
+
+Under the [shared account owner model](cmds-delidev-subscription-contract.md#shared-account-owner-and-execution-members)
+every execution member keeps its own process owner (its session job identifier),
+journal and cleanup: one member's completion, Stop or failure never terminates,
+reconciles or adopts a sibling's processes. The owner's own authentication
+operations use the founding lease's owner. A final owner containment joins every
+retained member's process owner before it reports confirmed cleanup, and recovery
+of a lost owner joins every member's process owner before touching the canonical
+profile. A missing owner directory means the member never started a process; it is
+not a failure and not a cleanup proof for a member that did. Logs carry owner,
+lease, operation and counts only.
+
 ## Scope
 
 `cmds/delidev-cli/internal/process` owns Worker-launched Git, native harness and terminal process lifecycles. The complete product requirements remain in [issue requirements](cmds-delidev-requirements.md); distinguish implementation from native-platform verification in pull requests, issues and CI logs/artifacts.
