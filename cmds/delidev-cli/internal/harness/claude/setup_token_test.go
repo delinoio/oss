@@ -264,8 +264,38 @@ func TestSetupTokenRunsOriginalCLIOnAPTYAndEmitsOneToken(t *testing.T) {
 	}
 }
 
+func TestSetupTokenAcceptsCleanExitWithOneTokenWithoutFinalHeading(t *testing.T) {
+	config := setupTokenFixture(t, "no-marker")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	login, err := StartSetupToken(ctx, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer login.Close()
+	if got := waitSetupTokenURL(t, login); got != setupTokenFixtureURL() {
+		t.Fatal("original address changed")
+	}
+	if err := login.Submit([]byte(setupFixtureCode)); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-login.Done():
+	case <-ctx.Done():
+		t.Fatal("original child did not exit")
+	}
+	if err := login.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	token, err := login.Token()
+	if err != nil || string(token) != managedTokenFixtureToken {
+		t.Fatalf("cleanly emitted token was rejected: %v", err)
+	}
+	clear(token)
+}
+
 func TestSetupTokenFailureModesNeverReleaseAToken(t *testing.T) {
-	for _, mode := range []string{"foreign-url", "callback-url", "ambiguous", "malformed", "no-token", "no-marker", "oversized", "rejected", "exit-failure", "redraw"} {
+	for _, mode := range []string{"foreign-url", "callback-url", "ambiguous", "malformed", "no-token", "oversized", "rejected", "exit-failure", "redraw"} {
 		t.Run(mode, func(t *testing.T) {
 			config := setupTokenFixture(t, mode)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
