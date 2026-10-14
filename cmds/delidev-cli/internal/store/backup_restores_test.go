@@ -1060,3 +1060,82 @@ func TestBackupRestoreBlocksAnUnsettledGrokRefresh(t *testing.T) {
 		})
 	}
 }
+
+// A claimed Grok revocation may already have revoked the token at the provider,
+// and a confirmed one still owes its protected cleanup. Restoring an image that
+// predates either would resurrect a credential generation, so both block restore
+// until the logout settles.
+func TestBackupRestoreBlocksAnUnsettledGrokLogout(t *testing.T) {
+	grokLogout := func(settle func(*domain.Account)) domain.Account {
+		now := time.Now().UTC()
+		operation := domain.NewID()
+		generation := domain.NewID()
+		a := domain.Account{Alias: "grok", Type: domain.SubscriptionAccount, SubscriptionService: domain.SubscriptionGrok, Health: domain.AccountRevoked, Connection: &domain.AccountConnection{ID: domain.NewID(), Authentication: domain.SubscriptionAuth, ConnectedAt: now}, Subscription: &domain.SubscriptionState{
+			Generation: generation, IdentityCommitment: strings.Repeat("b", 64),
+			Pending:         &domain.SubscriptionOperation{ID: operation, Action: domain.SubscriptionLogout, Actor: domain.Principal{Type: domain.OwnerDevice}, Phase: domain.SubscriptionClaimed},
+			ServerOperation: &domain.ServerSubscriptionOperation{ID: operation, Epoch: domain.NewID(), FinishID: domain.NewID(), Generation: generation, Action: domain.SubscriptionLogout, Actor: domain.Principal{Type: domain.OwnerDevice}, State: domain.SubscriptionPreparing, NativeStarted: true, GrokRevocation: domain.GrokRevocationClaimed, StartedAt: now, ExpiresAt: now.Add(15 * time.Minute)},
+		}}
+		settle(&a)
+		return a
+	}
+	for _, test := range []struct {
+		name    string
+		settle  func(*domain.Account)
+		allowed bool
+	}{
+		{"claimed", func(*domain.Account) {}, false},
+		{"revoked with pending cleanup", func(a *domain.Account) {
+			a.Subscription.RecoveryRequired = true
+			a.Subscription.ServerOperation.State = domain.SubscriptionRecovery
+			a.Subscription.ServerOperation.GrokRevocation = domain.GrokRevocationConfirmed
+			a.Subscription.RevokedGeneration = a.Subscription.Generation
+			a.Health = domain.AccountFailed
+		}, false},
+		{"settled", func(a *domain.Account) {
+			a.Subscription.Pending = nil
+			a.Subscription.ServerOperation.NativeStarted = false
+			a.Subscription.ServerOperation.State = domain.SubscriptionSucceeded
+			a.Subscription.ServerOperation.GrokRevocation = domain.GrokRevocationConfirmed
+			a.Subscription.Generation, a.Subscription.IdentityCommitment = "", ""
+			a.Connection = nil
+			a.Health = domain.AccountDisconnected
+		}, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			s, root, ctx, in, original := restoreFixture(t)
+			account := grokLogout(test.settle)
+			_, err := s.Mutate(ctx, domain.NewID(), "fixture-grok-logout", nil, func(tx *Tx) (any, error) {
+				return tx.Put(domain.AccountKind, domain.NewID(), 0, "", "", account)
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			in.ExpectedRevision, err = s.RestoreRevision(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			source := filepath.Join(root, "backups", string(in.Backup.ID)+".sqlite")
+			before, err := os.ReadFile(source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, _, err = s.RestoreBackup(ctx, domain.NewID(), in)
+			if test.allowed {
+				if err != nil {
+					t.Fatal("a settled logout blocked restore", err)
+				}
+			} else {
+				if domain.SafeError(err).Code != domain.RecoveryRequired || s.RestoreFrozen() {
+					t.Fatal("an unsettled logout did not preserve the live epoch", err)
+				}
+				if _, err := s.Get(ctx, domain.ProjectKind, original); err != nil {
+					t.Fatal("live state changed", err)
+				}
+			}
+			after, err := os.ReadFile(source)
+			if err != nil || !bytes.Equal(before, after) {
+				t.Fatal("restore changed the source image", err)
+			}
+		})
+	}
+}
