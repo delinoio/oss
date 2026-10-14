@@ -89,3 +89,37 @@ it("projects only the exact quota code/cause pair, including retained documents"
       .cause,
   ).toBeUndefined();
 });
+
+it("projects only proven Tailscale check causes with their exact codes", () => {
+  const failure = (code: string, cause: string) =>
+    clientFailure(
+      new ConnectError("Unavailable.", Code.Unavailable, undefined, [
+        {
+          desc: ErrorDetailSchema,
+          value: create(ErrorDetailSchema, { code, cause }),
+        },
+      ]),
+    );
+  const pairs: Array<[FailureCode, FailureCause]> = [
+    [FailureCode.Unavailable, FailureCause.TailscaleConnectionRefused],
+    [FailureCode.Unavailable, FailureCause.TailscaleTimeout],
+    [FailureCode.Unavailable, FailureCause.TailscaleCertificateInvalid],
+    [FailureCode.Unavailable, FailureCause.TailscaleUnexpectedHttp],
+    [FailureCode.Unsupported, FailureCause.TailscaleInvalidIdentity],
+  ];
+  for (const [code, cause] of pairs) {
+    expect(failure(code, cause).cause).toBe(cause);
+    expect(failureCause(code, cause)).toBe(cause);
+    // A cause with any other code is not a typed cause.
+    expect(failureCause(FailureCode.Internal, cause)).toBeUndefined();
+    expect(failureCause(FailureCode.Conflict, cause)).toBeUndefined();
+  }
+  expect(failureCause("unsupported", "connection_refused")).toBeUndefined();
+  expect(failureCause("unavailable", "invalid_identity")).toBeUndefined();
+  expect(failure("unavailable", "dns_failure").cause).toBeUndefined();
+  expect(failure("unavailable", "").cause).toBeUndefined();
+  expect(
+    clientFailure(new ConnectError("connection_refused", Code.Unavailable))
+      .cause,
+  ).toBeUndefined();
+});
