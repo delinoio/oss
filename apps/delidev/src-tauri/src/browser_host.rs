@@ -128,6 +128,13 @@ struct PageOperation {
     // (window label, generation). CloseBrowser is asynchronous, so native
     // cleanup is complete only after each child reports on_before_close.
     awaiting_close: BTreeSet<(String, u64)>,
+    // Page the committed mutation leaves selected, which reconciliation keeps
+    // on screen. A child showing it is never superseded by this operation.
+    // Unknown until the mutation outcome is recorded.
+    selected: Option<String>,
+    // Page each child registered before `selected` was known was showing. The
+    // outcome record uses it to drop children the mutation does not supersede.
+    candidate_tabs: BTreeMap<(String, u64), String>,
     // The UI-loop reconciliation finished without error, so the awaited set is
     // final. Only then may a close callback settle the receipt without another
     // Observe; before it, or after a failed reconciliation, the set is partial.
@@ -146,18 +153,47 @@ impl PageOperation {
             && (self.receipt.metadata_committed || self.receipt.phase == PagePhase::Accepted)
     }
 
-    // Awaits the close callbacks of the given (window, generation) children
-    // that could be this operation's originals.
-    fn await_originals(&mut self, children: &[(String, u64)]) {
-        let limit = self.generation_limit;
-        self.awaiting_close.extend(
-            children
-                .iter()
-                .filter(|(_, generation)| *generation <= limit)
-                .cloned(),
-        );
+    // Awaits the close callbacks of the given children that could be this
+    // operation's originals: created within the generation boundary and not
+    // showing the page the mutation leaves selected. Reconciliation never
+    // replaces a child on the selected page, so closing an inactive page must
+    // not delay on an unrelated child that merely displays another page.
+    fn await_originals(&mut self, children: &[ChildIdentity]) {
+        for (window, generation, tab) in children {
+            if *generation > self.generation_limit {
+                continue;
+            }
+            let identity = (window.clone(), *generation);
+            if let Some(tab) = tab {
+                if self.selected.as_deref() == Some(tab.as_str()) {
+                    continue;
+                }
+                if self.selected.is_none() {
+                    self.candidate_tabs.insert(identity.clone(), tab.clone());
+                }
+            } else {
+                // Superseded by a selection: it is closing whatever the
+                // mutation leaves selected.
+                self.candidate_tabs.remove(&identity);
+            }
+            self.awaiting_close.insert(identity);
+        }
+    }
+
+    // Publishes the page the committed mutation leaves selected and drops
+    // children registered while it was in flight that it does not supersede.
+    fn publish_selection(&mut self, selected: &str) {
+        let candidates = std::mem::take(&mut self.candidate_tabs);
+        self.awaiting_close
+            .retain(|identity| candidates.get(identity).is_none_or(|tab| tab != selected));
+        self.selected = Some(selected.into());
     }
 }
+// (window label, generation, displayed page) of a native child. The page is
+// set for a child that a lifecycle close removes, which a page mutation
+// supersedes only when it does not show the page left selected. It is `None`
+// for a child that a selection already superseded and is closing.
+type ChildIdentity = (String, u64, Option<String>);
 const PAGE_LIMIT: usize = 16;
 const OPERATION_LIMIT: usize = 64;
 fn operation_key(owner: &str, profile: &str, operation_id: &str) -> String {
@@ -212,7 +248,7 @@ struct TabReplacement {
     closing: Vec<Browser>,
     // (window label, generation) of every superseded child that still owns a
     // native browser or has one being created.
-    superseded: Vec<(String, u64)>,
+    superseded: Vec<ChildIdentity>,
 }
 #[derive(Default)]
 struct State {
@@ -264,7 +300,7 @@ impl State {
             if has_native_child {
                 replacement
                     .superseded
-                    .push((label.clone(), view.generation));
+                    .push((label.clone(), view.generation, None));
             }
             if let Some(browser) = view.browser.take() {
                 replacement.closing.push(browser);
@@ -344,7 +380,11 @@ impl State {
         };
         if view.browser.is_some() || view.creation_pending {
             let profile = view.profile.clone();
-            let identity = (window.to_string(), view.generation);
+            let identity = (
+                window.to_string(),
+                view.generation,
+                Some(view.request.tab.clone()),
+            );
             self.track_outstanding_superseded(&profile, &[identity]);
         }
     }
@@ -373,7 +413,7 @@ impl State {
     // identities now; `prepare_pages` discards them when the mutation outcome
     // turns out to be a failure, and keeps them when it is recorded as
     // committed.
-    fn track_outstanding_superseded(&mut self, profile: &str, superseded: &[(String, u64)]) {
+    fn track_outstanding_superseded(&mut self, profile: &str, superseded: &[ChildIdentity]) {
         // The in-flight operation owns the profile's mutation slot. After a
         // failed reconciliation the slot is released while the committed
         // receipt stays CleanupPending with a partial awaited set, so a retry
@@ -403,11 +443,11 @@ impl State {
     // committed nothing already holds a final empty set, and a replacement
     // child created after the commit never delays the original cleanup.
     fn await_removing_children(&mut self, key: &str, profile: &str) {
-        let children: Vec<(String, u64)> = self
+        let children: Vec<ChildIdentity> = self
             .views
             .iter()
             .filter(|(_, v)| v.profile == profile && (v.browser.is_some() || v.creation_pending))
-            .map(|(label, v)| (label.clone(), v.generation))
+            .map(|(label, v)| (label.clone(), v.generation, Some(v.request.tab.clone())))
             .collect();
         if let Some(operation) = self
             .page_operations
@@ -1237,6 +1277,8 @@ impl BrowserHost {
                     order,
                     durability: None,
                     awaiting_close: BTreeSet::new(),
+                    selected: None,
+                    candidate_tabs: BTreeMap::new(),
                     cleanup_reconciled: false,
                 },
             );
@@ -1291,13 +1333,15 @@ impl BrowserHost {
                     // closes are not attributed to it.
                     None => {
                         operation.awaiting_close.clear();
+                        operation.candidate_tabs.clear();
                         operation.cleanup_reconciled = true;
                     }
                     Some(Some((target, code))) => {
                         operation.durability = Some(target);
                         operation.receipt.failure = Some(code);
+                        operation.publish_selection(&tabs.selected);
                     }
-                    Some(None) => {}
+                    Some(None) => operation.publish_selection(&tabs.selected),
                 }
                 operation.tabs = tabs;
             }
@@ -1305,6 +1349,7 @@ impl BrowserHost {
                 // Nothing was committed, so no child closed during the
                 // mutation belongs to this receipt.
                 operation.awaiting_close.clear();
+                operation.candidate_tabs.clear();
                 operation.receipt.failure = Some(code);
             }
         }
@@ -6643,6 +6688,102 @@ esac
                 .awaiting_close
                 .is_empty()
         );
+    }
+
+    // A live child on the selected page, plus an inactive original page that
+    // the next Close removes.
+    fn selected_page_child_fixture() -> (
+        tempfile::TempDir,
+        Arc<BrowserHost>,
+        ProfileRecord,
+        ViewRequest,
+        String,
+    ) {
+        let (temp, host, record, _view_id, original) = active_storage_fixture();
+        let selected = create_page(&host, &record, "https://fixture.test/selected");
+        {
+            let mut state = host.state.lock().unwrap();
+            let view = state.views.get_mut("fixture").unwrap();
+            view.request.tab = selected.clone();
+            view.creation_pending = true;
+        }
+        (temp, host, record, original, selected)
+    }
+
+    #[test]
+    fn lifecycle_close_after_inactive_page_close_commit_ignores_the_selected_child() {
+        let (_temp, host, record, original, _selected) = selected_page_child_fixture();
+        let key = admit_close(&host, &record, &original.tab);
+        // Hide, reservation or window close removes the child that shows the
+        // selected page between the commit and the UI-loop reconciliation.
+        host.state
+            .lock()
+            .unwrap()
+            .remove_view_tracking_outstanding("fixture");
+        assert!(
+            host.state.lock().unwrap().page_operations[&key]
+                .awaiting_close
+                .is_empty()
+        );
+        let receipt = finish_fixture_pages(&host, &record, &key);
+        assert_eq!(receipt.phase, PagePhase::Completed);
+        assert!(receipt.native_cleanup_complete);
+    }
+
+    #[test]
+    fn lifecycle_close_during_inactive_page_close_ignores_the_selected_child() {
+        let (_temp, host, record, original, _selected) = selected_page_child_fixture();
+        let request = page_request(PageAction::Close, None, Some(&original.tab));
+        let key = operation_key(OWNER, &record.id, request.operation_id.as_deref().unwrap());
+        // The lifecycle close lands while the mutation is in flight, before
+        // the selection it leaves behind is known.
+        host.prepare_pages(OWNER, None, &record, &request, |staged, committed| {
+            host.state
+                .lock()
+                .unwrap()
+                .remove_view_tracking_outstanding("fixture");
+            staged.publish_with_commit(committed)
+        })
+        .unwrap();
+        assert!(
+            host.state.lock().unwrap().page_operations[&key]
+                .awaiting_close
+                .is_empty()
+        );
+        let receipt = finish_fixture_pages(&host, &record, &key);
+        assert_eq!(receipt.phase, PagePhase::Completed);
+    }
+
+    #[test]
+    fn lifecycle_close_of_a_child_the_close_supersedes_stays_awaited() {
+        let (_temp, host, record, original, _selected) = selected_page_child_fixture();
+        // A stale child still shows the closed page, so reconciliation would
+        // replace it and the receipt must observe its close callback.
+        host.state
+            .lock()
+            .unwrap()
+            .views
+            .get_mut("fixture")
+            .unwrap()
+            .request
+            .tab = original.tab.clone();
+        let request = page_request(PageAction::Close, None, Some(&original.tab));
+        let key = operation_key(OWNER, &record.id, request.operation_id.as_deref().unwrap());
+        host.prepare_pages(OWNER, None, &record, &request, |staged, committed| {
+            host.state
+                .lock()
+                .unwrap()
+                .remove_view_tracking_outstanding("fixture");
+            staged.publish_with_commit(committed)
+        })
+        .unwrap();
+        let generation = 1;
+        assert_eq!(
+            host.state.lock().unwrap().page_operations[&key].awaiting_close,
+            BTreeSet::from([("fixture".to_string(), generation)])
+        );
+        let receipt = finish_fixture_pages(&host, &record, &key);
+        assert_eq!(receipt.phase, PagePhase::CleanupPending);
     }
 
     #[test]

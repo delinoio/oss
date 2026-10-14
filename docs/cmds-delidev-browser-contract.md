@@ -178,7 +178,13 @@ closes to its receipt, while a published one keeps them. The same registration a
 reservation, a hide, or a window close) removes a view that owns or is creating a native child after the metadata commit but before
 reconciliation, so reconciliation never finds nothing to await while that child's `CloseBrowser` is still pending. A hide or window close whose native unmap fails
 retains the view for retried cleanup but still requests `CloseBrowser`, so it
-registers the view's exact generation on the receipt as well. A hide that races a view whose native child is still being created marks the view closing and returns busy, and it registers that generation before returning, because the closing view is excluded from reconciliation and the creation callback closes the child only afterwards. Publishing an
+registers the view's exact generation on the receipt as well. A lifecycle close
+registers only a child that the mutation would supersede, which is a child not
+showing the page the mutation leaves selected: the receipt records that page when
+the metadata commits and drops earlier in-flight registrations that show it, so
+closing an inactive page never waits on the callback of an unrelated child that
+displays another page. A child that a selection already superseded is awaited
+whichever page it showed. A hide that races a view whose native child is still being created marks the view closing and returns busy, and it registers that generation before returning, because the closing view is excluded from reconciliation and the creation callback closes the child only afterwards. Publishing an
 `open_browser` view that replaces one already published for the window (for
 example overlapping opens sharing a view ID) removes the old view through the
 same registration. The `on_before_close` callback that empties a reconciled receipt's set settles it
