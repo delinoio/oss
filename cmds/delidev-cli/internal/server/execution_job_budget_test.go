@@ -213,3 +213,38 @@ func TestCheckedExecutionAssignmentRechecksSerializedBytes(t *testing.T) {
 		t.Fatal("maximum unescaped prompt was rejected", err)
 	}
 }
+
+// The queued continuation prompt replaces the predecessor's input after the
+// first check, so its escaped size must be measured again.
+func TestQueueContinuationRechecksInstalledPrompt(t *testing.T) {
+	c := newContinuationFixture(t, domain.ExecutionSucceeded)
+	c.enqueue(t, "small", domain.ExecuteMode)
+	record := c.refresh(t)
+	// 174,000 '<' escape to about 1.04 MB: it fits the entity limit but not the
+	// execution Job document that also carries the wrapper and configuration.
+	prompt := strings.Repeat("<", 174000)
+	_, err := c.service.Store.Mutate(context.Background(), domain.NewID(), "session.dispatch.execution", record.ID, func(tx *store.Tx) (any, error) {
+		sr, session, err := sessionRecord(tx, record.ID)
+		if err != nil {
+			return nil, err
+		}
+		ir, err := tx.OldestQueuedInput(sr.ID)
+		if err != nil {
+			return nil, err
+		}
+		next, err := store.Decode[domain.QueuedInput](ir)
+		if err != nil {
+			return nil, err
+		}
+		next.Prompt = prompt
+		if _, err := tx.Put(domain.QueueKind, ir.ID, ir.Revision, sr.ID, sr.ProjectID, next); err != nil {
+			return nil, err
+		}
+		session.PendingInputBytes = uint64(len(prompt))
+		_, err = queueContinuation(tx, sr, session, false)
+		return nil, err
+	})
+	if domain.SafeError(err).Code != domain.ResourceExhausted {
+		t.Fatal("oversized queued continuation prompt reached job publication", err)
+	}
+}
