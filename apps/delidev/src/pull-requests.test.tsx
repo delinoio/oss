@@ -556,12 +556,16 @@ it("preserves selected identity and filter drafts through empty appended pages a
   const tokens = value.list.mock.calls
     .filter(([request]) => request.filter?.kind === EntityKind.REPOSITORY)
     .map(([request]) => request.filter?.pageToken);
-  expect(tokens.slice(0, 2)).toEqual(["", "repository-next"]);
+  // The activation invalidation reaching the marker while the initial read is
+  // active is queued as one coalesced first-page refresh, so extra "" reads may
+  // precede the appended page. The appended page is still read.
+  expect(tokens[0]).toBe("");
+  expect(
+    tokens.filter((token) => token === "repository-next"),
+  ).not.toHaveLength(0);
   // Refresh reads only the accepted two-page range and does not discover a tail.
   expect(
-    tokens
-      .slice(2)
-      .every((token) => token === "" || token === "repository-next"),
+    tokens.every((token) => token === "" || token === "repository-next"),
   ).toBe(true);
   await waitFor(() =>
     expect(submitted(value, value.query.mock.calls.length - 1).search).toBe(

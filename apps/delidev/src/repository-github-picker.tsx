@@ -44,6 +44,7 @@ import {
 } from "@delinoio/delidev-api-client";
 import { document as resourceDocument, object, text } from "./documents";
 import { DialogSurface, Problem } from "./ui";
+import { useEntranceActivation } from "./entrance-motion";
 import { copy, useLocale } from "./localization";
 import {
   useSettingsTaskDismiss,
@@ -185,6 +186,10 @@ function GitHubRepositoryDialog({
   const id = useId(),
     dialog = useRef<HTMLDialogElement>(null),
     heading = useRef<HTMLHeadingElement>(null);
+  // One mounted chooser is one opening. Only the static header moves: the native
+  // dialog host and the scrolling body never receive the transform, and neither
+  // focus nor dismissal waits for it.
+  const entrance = useEntranceActivation(id);
   useLayoutEffect(() => {
     const node = dialog.current!,
       trigger = opener.current,
@@ -273,7 +278,11 @@ function GitHubRepositoryDialog({
         }
       }}
     >
-      <header className="repository-github-header">
+      <header
+        className="repository-github-header"
+        ref={entrance.ref}
+        data-entrance={entrance["data-entrance"]}
+      >
         <h2 ref={heading} tabIndex={-1} id={id}>
           {copy("repository-github.title")}
         </h2>

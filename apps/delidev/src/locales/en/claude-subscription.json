@@ -34,7 +34,7 @@
   "claude-subscription.browserFailed": "The browser could not be opened. Open the original page again.",
   "claude-subscription.codeUnconfirmed": "The code result is uncertain. Wait for original sign-in or cleanup; do not submit it again.",
   "claude-subscription.canceling": "Cancellation requested. Waiting for original native cleanup.",
-  "claude-subscription.cancelUnconfirmed": "The original cancellation could not be confirmed. Wait for the Runner status.",
+  "claude-subscription.cancelUnconfirmed": "The original cancellation could not be confirmed. Wait for the sign-in status.",
   "claude-subscription.nameUnconfirmed": "The account name could not be saved. The connected account is kept.",
   "claude-subscription.retryOriginal": "Retry original request",
   "claude-subscription.version": "Claude Code version",
@@ -77,5 +77,18 @@
   "claude-subscription.excluded.version": "This Claude Code version is unsupported. Install Claude Code 2.1.236 on the Runner, select its executable if needed, then inspect it again.",
   "claude-subscription.excluded.protocol": "The native Claude protocol is not verified. Open Runner Devices and inspect the installation with native protocol verification enabled; version detection alone does not establish readiness.",
   "claude-subscription.excluded.protocolFailed": "Native protocol verification failed. Review the installation on this Runner, then explicitly verify its native protocol again.",
-  "claude-subscription.excluded.protocolUnsupported": "This installation has no supported native protocol. Install a supported harness version on the Runner, then explicitly verify its native protocol."
+  "claude-subscription.excluded.protocolUnsupported": "This installation has no supported native protocol. Install a supported harness version on the Runner, then explicitly verify its native protocol.",
+  "claude-subscription.server.subtitle": "Saved on the selected server.",
+  "claude-subscription.server.heading": "Complete sign-in in your browser",
+  "claude-subscription.server.body": "Sign in to your Claude account in the browser window.",
+  "claude-subscription.server.preparing": "Preparing sign-in…",
+  "claude-subscription.server.waiting": "Waiting for sign-in…",
+  "claude-subscription.server.canceled": "Sign-in canceled. The server confirmed cleanup.",
+  "claude-subscription.server.expired": "Sign-in expired. Start again with a new account after the server confirms cleanup.",
+  "claude-subscription.server.unsupported": "This server cannot run the required Claude Code version (2.1.236). Update Claude Code on the server, then try again.",
+  "claude-subscription.server.recovery": "The server must confirm cleanup before another sign-in can start.",
+  "claude-subscription.server.failed": "Claude sign-in failed. No account was connected. Try again with a new account.",
+  "claude-subscription.server.tokenLimits": "This account uses a Claude sign-in token saved on the selected server. The token expires, cannot use Remote Control or Claude connectors, and cannot be renewed here. To reconnect, add a new Claude account.",
+  "claude-subscription.server.account": "Saved on the server",
+  "claude-subscription.server.connectNew": "Connect new account"
 }

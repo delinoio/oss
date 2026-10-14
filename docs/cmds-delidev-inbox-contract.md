@@ -88,7 +88,7 @@ CLI individual controls are `notification configure --revision N` with any of `-
 
 ## Storage
 
-Schema v17 adds per-client preference revisions and client/inbox-unique delivery reservations. It stores only opaque IDs, closed kinds/states and booleans, with inbox deletion cascading to that inbox's reservations. Migration from v1-v16 retains a synchronized pre-migration backup, preserves original resources/receipts/history and starts with no invented delivery evidence or preferences. Existing conflicting tables fail migration atomically; they are never adopted or overwritten. Reopening preserves reservations, including claimed-but-unreported uncertainty. Ordinary preference and delivery writes do not create inbox resource revisions/events.
+Schema v17 adds per-client preference revisions and client/inbox-unique delivery reservations. It stores only opaque IDs, closed kinds/states and booleans, with inbox deletion cascading to that inbox's reservations. Migration from v1-v16 retains a synchronized pre-migration backup, preserves original resources/receipts/history and starts with no invented delivery evidence or preferences. Existing conflicting tables fail migration atomically; they are never adopted or overwritten. Reopening preserves reservations, including claimed-but-unreported uncertainty. Ordinary preference and delivery writes do not create inbox resource revisions/events. Typed version-1 delivery metadata is keyed by inbox ID rather than cascaded, so both ordinary Inbox deletion and permanent Session purge remove every `notification-delivery-v1:INBOX_ID:CLIENT_ID` key owned by each purged Inbox entry in the same transaction, leaving other inboxes' keys untouched; repeated purge and restart replay stay idempotent.
 
 Schema v10 adds unique source-kind/source-ID ownership and read-state/session indexes over `inbox` entities. Creation, source publication, state/events and request receipts are atomic. Source IDs are interaction UUIDs or execution UUIDs; every terminal record also binds its original queue input. Existing source records remain authoritative and are never rewritten by inbox backfill or read-state changes.
 
@@ -152,6 +152,9 @@ current authenticated session and initial transcript load successfully. Sidechat
 mobile, hidden conversations, failed or incomplete loads do not qualify. The
 conversation must be selected, the document visible and the product window focused.
 This is a dedicated mutation; Inbox inspection and every ordinary read remain read-only.
+Initial transcript load evidence is a successful whole-chain read of the current
+observation (Initial, Refresh or Reload), not residence of the first payload page,
+so payload eviction of the first page does not prevent a new visit's acknowledgment.
 
 The request has a UUID-v7 `request_id` and original UUID-v7 `session_id`. System
 capability `SESSION_INBOX_READ_V1 = 89` independently enables it; count-only capability

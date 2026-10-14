@@ -24,6 +24,11 @@ import { document, encode } from "./documents";
 import { i18n, copy } from "./localization";
 import { MutationIntents } from "./mutation";
 import { SubscriptionQuotaControls } from "./subscription-quota";
+import {
+  SettingsDialogSize,
+  SettingsTaskDialog,
+  SettingsTasks,
+} from "./settings-task";
 
 function fixture(
   details: unknown = [
@@ -44,6 +49,9 @@ function fixture(
   automaticConsent = false,
   automaticPhase = "uncertain",
   creditsV2 = true,
+  savedQuota: Record<string, unknown> = {},
+  quotaCapability = true,
+  statusError = false,
 ) {
   const machine = newRequestId(),
     connection = newRequestId(),
@@ -65,6 +73,7 @@ function fixture(
         ? { id: newRequestId(), action: "reset-credit", phase: automaticPhase }
         : undefined,
       generation,
+      ...savedQuota,
       owner_machine_id: server ? "" : machine,
       server_quota_generation: server ? generation : undefined,
       server_credit: creditPhase
@@ -122,23 +131,31 @@ function fixture(
     });
     return { account };
   });
+  const status = vi.fn();
   const transport = createRouterTransport((router) => {
     router.service(SystemService, {
-      getStatus: () => ({
-        capabilities: [
-          SystemCapability.AUTOMATIC_RESET_CREDIT_CONSENT_V1,
-          SystemCapability.SUBSCRIPTION_RESET_CREDITS_V1,
-          ...(serverCredits
-            ? [SystemCapability.SERVER_SUBSCRIPTION_RESET_CREDITS_V1]
-            : []),
-          ...(creditsV2
-            ? [SystemCapability.SERVER_SUBSCRIPTION_RESET_CREDITS_V2]
-            : []),
-          ...(supported
-            ? [SystemCapability.SERVER_SUBSCRIPTION_QUOTA_V2]
-            : [SystemCapability.SUBSCRIPTION_QUOTA_V1]),
-        ],
-      }),
+      getStatus: () => {
+        status();
+        if (statusError)
+          throw new ConnectError("private-status-fixture", Code.Unavailable);
+        return {
+          capabilities: [
+            SystemCapability.AUTOMATIC_RESET_CREDIT_CONSENT_V1,
+            SystemCapability.SUBSCRIPTION_RESET_CREDITS_V1,
+            ...(serverCredits
+              ? [SystemCapability.SERVER_SUBSCRIPTION_RESET_CREDITS_V1]
+              : []),
+            ...(creditsV2
+              ? [SystemCapability.SERVER_SUBSCRIPTION_RESET_CREDITS_V2]
+              : []),
+            ...(!quotaCapability
+              ? []
+              : supported
+                ? [SystemCapability.SERVER_SUBSCRIPTION_QUOTA_V2]
+                : [SystemCapability.SUBSCRIPTION_QUOTA_V1]),
+          ],
+        };
+      },
     });
     router.service(SubscriptionService, {
       requestSubscriptionObservation: request,
@@ -151,7 +168,8 @@ function fixture(
   });
   function Harness() {
     const [current, setCurrent] = useState(account),
-      [, setBusy] = useState(false);
+      [, setBusy] = useState(false),
+      [visible, setVisible] = useState(true);
     return (
       <QueryClientProvider client={queryClient}>
         <TransportProvider transport={transport}>
@@ -161,12 +179,48 @@ function fixture(
               active
               accepted={setCurrent}
               busyChanged={setBusy}
+              visible={visible}
               footer={(refresh) => (
                 <button disabled={!refresh} onClick={() => void refresh?.()}>
                   Refresh account status and quota
                 </button>
               )}
             />
+            <button onClick={() => setVisible(false)}>
+              Disconnect fixture account
+            </button>
+            <button onClick={() => setVisible(true)}>
+              Reconnect fixture account
+            </button>
+            <button
+              onClick={() => {
+                account = create(ResourceSchema, {
+                  ...account,
+                  revision: account.revision + 1n,
+                  documentJson: encode({
+                    ...data,
+                    padding: "x".repeat(1 << 20),
+                  }),
+                });
+                setCurrent(account);
+              }}
+            >
+              Oversize fixture document
+            </button>
+            <button
+              onClick={() => {
+                // The owner keeps `visible` true while a request is in flight,
+                // so a poll can report the disconnection with `visible` unchanged.
+                account = create(ResourceSchema, {
+                  ...account,
+                  revision: account.revision + 1n,
+                  documentJson: encode({ ...data, connection: undefined }),
+                });
+                setCurrent(account);
+              }}
+            >
+              Drop fixture connection
+            </button>
             <button
               onClick={() => {
                 account = create(ResourceSchema, {
@@ -259,6 +313,7 @@ function fixture(
     request,
     reconcile,
     consent,
+    status,
     account,
     machine,
     connection,
@@ -1153,6 +1208,62 @@ it("keeps automatic credits off until exact confirmation and disables them expli
   });
   expect(value.request).not.toHaveBeenCalled();
 });
+it("keeps the enclosing wide dialog size through automatic-use consent and cancellation", async () => {
+  // CSS maximum widths are viewport-limited, so assert above the 960px mark.
+  vi.stubGlobal("innerWidth", 1280);
+  try {
+    const value = fixture();
+    const outer = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    render(
+      <QueryClientProvider client={outer}>
+        <TransportProvider transport={createRouterTransport(() => {})}>
+          <SettingsTasks>
+            <SettingsTaskDialog
+              title="Manage subscription"
+              size={SettingsDialogSize.Wide}
+              close={() => {}}
+            >
+              <value.Harness />
+            </SettingsTaskDialog>
+          </SettingsTasks>
+        </TransportProvider>
+      </QueryClientProvider>,
+    );
+    const size = () => screen.getByRole("dialog").getAttribute("data-size");
+    const checkbox = (await screen.findByRole("checkbox", {
+      name: "Automatic use",
+    })) as HTMLInputElement;
+    await waitFor(() => expect(checkbox.disabled).toBe(false));
+    expect(size()).toBe("wide");
+    fireEvent.click(checkbox);
+    const heading = await screen.findByRole("heading", {
+      name: "Enable automatic reset credit use?",
+    });
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    expect(size()).toBe("wide");
+    await waitFor(() =>
+      expect(globalThis.document.activeElement).toBe(heading),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("heading", {
+          name: "Enable automatic reset credit use?",
+        }),
+      ).toBeNull(),
+    );
+    expect(size()).toBe("wide");
+    expect(value.consent).not.toHaveBeenCalled();
+    expect(value.request).not.toHaveBeenCalled();
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
 it("fences a consent confirmation after account revision replacement", async () => {
   const value = fixture();
   render(<value.Harness />);
@@ -1182,6 +1293,227 @@ it("fences a consent confirmation after account revision replacement", async () 
       })) as HTMLInputElement
     ).checked,
   ).toBe(false);
+});
+
+it("leaves the consent confirmation when the account disconnects and does not restore it on reconnect", async () => {
+  const value = fixture();
+  render(<value.Harness />);
+  const checkbox = await screen.findByRole("checkbox", {
+    name: "Automatic use",
+  });
+  await waitFor(() =>
+    expect((checkbox as HTMLInputElement).disabled).toBe(false),
+  );
+  fireEvent.click(checkbox);
+  await screen.findByRole("heading", {
+    name: "Enable automatic reset credit use?",
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Disconnect fixture account" }),
+  );
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("heading", {
+        name: "Enable automatic reset credit use?",
+      }),
+    ).toBeNull(),
+  );
+  // The read-only presentation keeps the status footer and admits no control.
+  expect(
+    screen.getByRole("button", { name: "Refresh account status and quota" }),
+  ).toBeTruthy();
+  expect(screen.queryByRole("checkbox")).toBeNull();
+  expect(value.consent).not.toHaveBeenCalled();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Reconnect fixture account" }),
+  );
+  const reconnected = (await screen.findByRole("checkbox", {
+    name: "Automatic use",
+  })) as HTMLInputElement;
+  expect(reconnected.checked).toBe(false);
+  expect(
+    screen.queryByRole("heading", {
+      name: "Enable automatic reset credit use?",
+    }),
+  ).toBeNull();
+  expect(value.consent).not.toHaveBeenCalled();
+});
+
+it("closes the consent confirmation when the account disconnects while the owner keeps the controls visible", async () => {
+  const value = fixture();
+  render(<value.Harness />);
+  const checkbox = await screen.findByRole("checkbox", {
+    name: "Automatic use",
+  });
+  await waitFor(() =>
+    expect((checkbox as HTMLInputElement).disabled).toBe(false),
+  );
+  fireEvent.click(checkbox);
+  await screen.findByRole("heading", {
+    name: "Enable automatic reset credit use?",
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Drop fixture connection" }),
+  );
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("heading", {
+        name: "Enable automatic reset credit use?",
+      }),
+    ).toBeNull(),
+  );
+  expect(value.consent).not.toHaveBeenCalled();
+  // `visible` stayed true, so the original controls remain mounted and the
+  // confirmation is not restored on its own.
+  expect(
+    await screen.findByRole("checkbox", { name: "Automatic use" }),
+  ).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: "Enable automatic use" }),
+  ).toBeNull();
+});
+
+it("keeps the saved quota observation visible for a disconnected account on a server without quota support", async () => {
+  const value = fixture(
+    undefined,
+    undefined,
+    "",
+    false,
+    true,
+    "",
+    false,
+    "",
+    false,
+    false,
+    {},
+    "",
+    false,
+    "uncertain",
+    true,
+    { quota_observed_at: new Date().toISOString(), quota_state: "failed" },
+    // Neither the server nor the Worker quota capability is advertised.
+    false,
+  );
+  render(<value.Harness />);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Disconnect fixture account" }),
+  );
+  await waitFor(() => expect(screen.queryByRole("checkbox")).toBeNull());
+  // Wait for the status read so an unread capability set cannot hide the gate.
+  await waitFor(() => expect(value.status).toHaveBeenCalled());
+  expect(await screen.findByText(/Last successful observation/)).toBeTruthy();
+  expect(screen.getByText(/The latest refresh failed/)).toBeTruthy();
+});
+
+it("keeps a local preference save failure visible after the account disconnects", async () => {
+  const value = fixture();
+  render(<value.Harness />);
+  const checkbox = await screen.findByRole("checkbox", {
+    name: /Notify me of observed quota recovery/,
+  });
+  await waitFor(() =>
+    expect((checkbox as HTMLInputElement).disabled).toBe(false),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Oversize fixture document" }),
+  );
+  fireEvent.click(checkbox);
+  const failure =
+    "Account preferences could not be saved. Reload the current account before saving.";
+  await screen.findByText(failure);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Disconnect fixture account" }),
+  );
+  await waitFor(() => expect(screen.queryByRole("checkbox")).toBeNull());
+  expect((await screen.findByText(failure)).getAttribute("role")).toBe("alert");
+});
+
+it("leaves the shared status failure to its owner when the account is disconnected", async () => {
+  const value = fixture(
+    undefined,
+    undefined,
+    "",
+    false,
+    true,
+    "",
+    false,
+    "",
+    false,
+    false,
+    {},
+    "",
+    false,
+    "uncertain",
+    true,
+    {},
+    true,
+    true,
+  );
+  render(<value.Harness />);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Disconnect fixture account" }),
+  );
+  await waitFor(() => expect(value.status).toHaveBeenCalled());
+  // The owner renders the status Problem once; the read-only view adds no
+  // second alert or Results section for the same failure.
+  await waitFor(() => expect(screen.queryByRole("checkbox")).toBeNull());
+  expect(
+    screen.queryByRole("heading", { name: "Results and recovery" }),
+  ).toBeNull();
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(
+    screen.getByRole("button", { name: "Refresh account status and quota" }),
+  ).toBeTruthy();
+});
+
+it("keeps every independent retained failure visible after the account disconnects", async () => {
+  const value = fixture();
+  value.request.mockRejectedValueOnce(
+    new ConnectError("private-quota-fixture", Code.InvalidArgument),
+  );
+  value.consent.mockRejectedValueOnce(
+    new ConnectError("private-consent-fixture", Code.InvalidArgument),
+  );
+  render(<value.Harness />);
+  const refresh = await screen.findByRole("button", {
+    name: "Refresh account status and quota",
+  });
+  await waitFor(() =>
+    expect((refresh as HTMLButtonElement).disabled).toBe(false),
+  );
+  fireEvent.click(refresh);
+  await waitFor(() => expect(value.request).toHaveBeenCalledOnce());
+  await screen.findByText("DeliDev could not complete this request.");
+  const checkbox = await screen.findByRole("checkbox", {
+    name: "Automatic use",
+  });
+  await waitFor(() =>
+    expect((checkbox as HTMLInputElement).disabled).toBe(false),
+  );
+  fireEvent.click(checkbox);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Enable automatic use" }),
+  );
+  await waitFor(() => expect(value.consent).toHaveBeenCalledOnce());
+  await waitFor(() =>
+    expect(
+      screen.getAllByText("DeliDev could not complete this request."),
+    ).toHaveLength(1),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull(),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Disconnect fixture account" }),
+  );
+  await waitFor(() => expect(screen.queryByRole("checkbox")).toBeNull());
+  expect(
+    screen.getAllByText("DeliDev could not complete this request."),
+  ).toHaveLength(2);
+  expect(screen.queryByText(/private-(quota|consent)-fixture/)).toBeNull();
+  expect(value.request).toHaveBeenCalledOnce();
+  expect(value.consent).toHaveBeenCalledOnce();
 });
 
 it.each(["light", "dark"])(

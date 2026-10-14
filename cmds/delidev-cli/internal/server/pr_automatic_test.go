@@ -28,6 +28,8 @@ type automaticPRFixture struct {
 	permission    atomic.Bool
 	ciFailed      atomic.Bool
 	queryHook     func(context.Context, domain.RepositoryQuery) error
+	// observationHook edits a successful provider observation before it is returned.
+	observationHook func(domain.RepositoryQuery, *gh.RepositoryQueryObservation)
 }
 
 func newAutomaticPRFixture(t *testing.T) *automaticPRFixture {
@@ -79,6 +81,9 @@ func newAutomaticPRFixture(t *testing.T) *automaticPRFixture {
 			}
 		}
 		v := automaticPRObservation(q, f.permission.Load(), f.ciFailed.Load())
+		if f.observationHook != nil {
+			f.observationHook(q, &v)
+		}
 		return v, nil
 	})
 	f.link = f.addLink(t, f.repo, "17")
@@ -522,11 +527,255 @@ func TestAutomaticPRDetailObservationHasBoundedDeadline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := f.service.automaticPRObservations(f.owner, link, nil); err != nil {
+	if _, _, _, err := f.service.automaticPRObservations(f.owner, link, nil); err != nil {
 		t.Fatal(err)
 	}
 	if remaining := time.Until(observedDeadline); remaining <= 0 || remaining > 20*time.Second {
 		t.Fatalf("detail deadline was not bounded: %s", remaining)
+	}
+}
+
+func automaticPRTestLink(t *testing.T, f *automaticPRFixture) domain.SessionPullRequest {
+	t.Helper()
+	link, err := store.Decode[domain.SessionPullRequest](f.link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return link
+}
+
+var allAutomaticPRKinds = []domain.PRProblemKind{domain.PRFeedbackProblem, domain.PRCIProblem, domain.PRMergeConflictProblem}
+
+func TestAutomaticPRObservationsReadDetailLastAndKeepConflictFresh(t *testing.T) {
+	f := newAutomaticPRFixture(t)
+	const delay = 60 * time.Millisecond
+	var mu sync.Mutex
+	var order []domain.RepositoryQueryOperation
+	f.queryHook = func(_ context.Context, q domain.RepositoryQuery) error {
+		mu.Lock()
+		order = append(order, q.Operation)
+		mu.Unlock()
+		if q.Operation != domain.RepositoryDetail {
+			time.Sleep(delay)
+		}
+		return nil
+	}
+	target, observations, deferred, err := f.service.automaticPRObservations(f.owner, automaticPRTestLink(t, f), allAutomaticPRKinds)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deferred) != 0 {
+		t.Fatalf("fast sources must not be deferred: %v", deferred)
+	}
+	want := []domain.RepositoryQueryOperation{domain.RepositoryReviewers, domain.RepositoryCI, domain.RepositoryDetail}
+	if len(order) != len(want) {
+		t.Fatalf("each kind must be read exactly once: %v", order)
+	}
+	for i := range want {
+		if order[i] != want[i] {
+			t.Fatalf("read order = %v, want %v", order, want)
+		}
+	}
+	feedback, ci, conflict := observations[domain.PRFeedbackProblem], observations[domain.PRCIProblem], observations[domain.PRMergeConflictProblem]
+	if feedback.Query.Operation != domain.RepositoryReviewers || ci.Query.Operation != domain.RepositoryCI || conflict.Query.Operation != domain.RepositoryDetail {
+		t.Fatal("observations were not kept per kind")
+	}
+	if conflict.ObservedAt.Before(ci.ObservedAt) || !ci.ObservedAt.After(feedback.ObservedAt) {
+		t.Fatalf("detail must be the newest observation: feedback=%s ci=%s detail=%s", feedback.ObservedAt, ci.ObservedAt, conflict.ObservedAt)
+	}
+	if conflict.ObservedAt.Sub(feedback.ObservedAt) < delay {
+		t.Fatal("the conflict observation does not postdate the slow source reads")
+	}
+	if target.Target.ObservedAt != conflict.ObservedAt {
+		t.Fatal("the common target must come from the final detail read")
+	}
+	if age := time.Since(conflict.ObservedAt); age >= domain.MaxPRRemediationObservationAge {
+		t.Fatalf("conflict observation expired before selection: %s", age)
+	}
+}
+
+// shortenAutomaticPRBounds scales the provider bound and freshness window down
+// so deferral behavior can be exercised without 20-second sleeps.
+func shortenAutomaticPRBounds(t *testing.T, bound, window time.Duration) {
+	t.Helper()
+	oldBound, oldWindow := automaticPRReadBound, automaticPRFreshnessWindow
+	automaticPRReadBound, automaticPRFreshnessWindow = bound, window
+	t.Cleanup(func() { automaticPRReadBound, automaticPRFreshnessWindow = oldBound, oldWindow })
+}
+
+func sleepOrDone(ctx context.Context, d time.Duration) error {
+	select {
+	case <-time.After(d):
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func TestAutomaticPRObservationsDeferSourceThatWouldAgeEarlierObservation(t *testing.T) {
+	shortenAutomaticPRBounds(t, 300*time.Millisecond, 450*time.Millisecond)
+	f := newAutomaticPRFixture(t)
+	var mu sync.Mutex
+	var order []domain.RepositoryQueryOperation
+	slowCI := true
+	f.queryHook = func(ctx context.Context, q domain.RepositoryQuery) error {
+		mu.Lock()
+		order = append(order, q.Operation)
+		slow := slowCI
+		mu.Unlock()
+		if q.Operation == domain.RepositoryCI && slow {
+			// Longer than the budget left behind the final detail reserve.
+			return sleepOrDone(ctx, 250*time.Millisecond)
+		}
+		return nil
+	}
+	target, observations, deferred, err := f.service.automaticPRObservations(f.owner, automaticPRTestLink(t, f), allAutomaticPRKinds)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deferred) != 1 || deferred[0] != domain.PRCIProblem {
+		t.Fatalf("the CI read cut short by the freshness budget must be deferred, got %v", deferred)
+	}
+	if _, ok := observations[domain.PRCIProblem]; ok {
+		t.Fatal("a deferred kind must not contribute an observation")
+	}
+	feedback, conflict := observations[domain.PRFeedbackProblem], observations[domain.PRMergeConflictProblem]
+	if feedback.Query.Operation != domain.RepositoryReviewers || conflict.Query.Operation != domain.RepositoryDetail {
+		t.Fatal("feedback and conflict observations were lost by the slow CI read")
+	}
+	if gap := target.Target.ObservedAt.Sub(feedback.ObservedAt); gap >= automaticPRFreshnessWindow {
+		t.Fatalf("feedback aged %s behind the final detail read", gap)
+	}
+	// The deferred kind is observed first by its own pass and keeps its bound.
+	mu.Lock()
+	slowCI, order = false, nil
+	mu.Unlock()
+	_, second, deferred, err := f.service.automaticPRObservations(f.owner, automaticPRTestLink(t, f), deferred)
+	if err != nil || len(deferred) != 0 || second[domain.PRCIProblem].Query.Operation != domain.RepositoryCI {
+		t.Fatalf("deferred pass = %v, %v, %v", second, deferred, err)
+	}
+	if len(order) != 2 || order[0] != domain.RepositoryCI || order[1] != domain.RepositoryDetail {
+		t.Fatalf("deferred pass read order = %v", order)
+	}
+}
+
+func TestAutomaticPRObservationsDeferSourceWithoutBudgetBeforeReading(t *testing.T) {
+	shortenAutomaticPRBounds(t, 300*time.Millisecond, 300*time.Millisecond)
+	f := newAutomaticPRFixture(t)
+	var mu sync.Mutex
+	var order []domain.RepositoryQueryOperation
+	f.queryHook = func(_ context.Context, q domain.RepositoryQuery) error {
+		mu.Lock()
+		order = append(order, q.Operation)
+		mu.Unlock()
+		return nil
+	}
+	_, observations, deferred, err := f.service.automaticPRObservations(f.owner, automaticPRTestLink(t, f), []domain.PRProblemKind{domain.PRFeedbackProblem, domain.PRCIProblem})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deferred) != 1 || deferred[0] != domain.PRCIProblem || len(observations) != 1 {
+		t.Fatalf("deferred = %v, observations = %v", deferred, observations)
+	}
+	for _, op := range order {
+		if op == domain.RepositoryCI {
+			t.Fatalf("a source without freshness budget must not be read: %v", order)
+		}
+	}
+}
+
+func TestAutomaticPRRemediationKeepsFeedbackWhenCIReadIsSlow(t *testing.T) {
+	shortenAutomaticPRBounds(t, 300*time.Millisecond, 450*time.Millisecond)
+	f := newAutomaticPRFixture(t)
+	f.ciFailed.Store(true)
+	f.savePolicy(t, func(p *domain.RemediationPolicy) { p.CIFailure, p.ReviewFeedback = true, true })
+	f.queryHook = func(ctx context.Context, q domain.RepositoryQuery) error {
+		if q.Operation == domain.RepositoryCI {
+			return sleepOrDone(ctx, 250*time.Millisecond)
+		}
+		return nil
+	}
+	if err := f.service.remediateAutomaticPR(f.owner, f.link); err != nil {
+		t.Fatal(err)
+	}
+	attempts, _ := f.attempts(t)
+	if len(attempts) != 1 {
+		t.Fatalf("slow CI must not drop eligible feedback, attempts = %d", len(attempts))
+	}
+	a, _ := store.Decode[domain.PRRemediationAttempt](attempts[0])
+	if len(a.Problems) == 0 {
+		t.Fatal("the attempt carries no feedback problem")
+	}
+}
+
+func TestAutomaticPRObservationsSlowOrFailedSourcesAffectOnlyTheirKind(t *testing.T) {
+	f := newAutomaticPRFixture(t)
+	f.queryHook = func(_ context.Context, q domain.RepositoryQuery) error {
+		switch q.Operation {
+		case domain.RepositoryReviewers:
+			time.Sleep(40 * time.Millisecond)
+			return domain.Fail(domain.Unavailable, "Feedback is unavailable.", "Retry later.")
+		case domain.RepositoryCI:
+			time.Sleep(40 * time.Millisecond)
+		}
+		return nil
+	}
+	started := time.Now()
+	_, observations, _, err := f.service.automaticPRObservations(f.owner, automaticPRTestLink(t, f), allAutomaticPRKinds)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := observations[domain.PRFeedbackProblem]; ok {
+		t.Fatal("a failed feedback read must not contribute an observation")
+	}
+	if observations[domain.PRCIProblem].Query.Operation != domain.RepositoryCI {
+		t.Fatal("the CI observation was lost by the failed feedback read")
+	}
+	conflict, ok := observations[domain.PRMergeConflictProblem]
+	if !ok || conflict.ObservedAt.Before(started.Add(80*time.Millisecond).Truncate(time.Millisecond)) {
+		t.Fatal("the conflict observation must be read after the slow source reads")
+	}
+	if age := time.Since(conflict.ObservedAt); age >= domain.MaxPRRemediationObservationAge {
+		t.Fatalf("conflict observation expired before selection: %s", age)
+	}
+}
+
+func TestAutomaticPRObservationsRejectMixedEvidence(t *testing.T) {
+	f := newAutomaticPRFixture(t)
+	f.observationHook = func(q domain.RepositoryQuery, v *gh.RepositoryQueryObservation) {
+		if q.Operation == domain.RepositoryReviewers {
+			v.Items[0].HeadRef = "other-branch"
+		}
+	}
+	_, _, _, err := f.service.automaticPRObservations(f.owner, automaticPRTestLink(t, f), allAutomaticPRKinds)
+	if err == nil || domain.SafeError(err).Code != domain.Conflict {
+		t.Fatalf("a source observed at another head must conflict, got %v", err)
+	}
+	f.observationHook = func(q domain.RepositoryQuery, v *gh.RepositoryQueryObservation) {
+		if q.Operation == domain.RepositoryDetail {
+			v.Items[0].BaseSHA = strings.Repeat("e", 40)
+		}
+	}
+	if _, _, _, err := f.service.automaticPRObservations(f.owner, automaticPRTestLink(t, f), allAutomaticPRKinds); err == nil || domain.SafeError(err).Code != domain.Conflict {
+		t.Fatalf("a final detail with another base must conflict with collected sources, got %v", err)
+	}
+}
+
+func TestAutomaticPRObservationsSingleKindsAndParentCancellation(t *testing.T) {
+	f := newAutomaticPRFixture(t)
+	for _, kind := range allAutomaticPRKinds {
+		_, observations, _, err := f.service.automaticPRObservations(f.owner, automaticPRTestLink(t, f), []domain.PRProblemKind{kind, kind})
+		if err != nil || len(observations) != 1 || observations[kind].Query.Operation != automaticPROperation(kind) {
+			t.Fatalf("%s observations = %v, %v", kind, observations, err)
+		}
+	}
+	canceled, cancel := context.WithCancel(f.owner)
+	f.queryHook = func(ctx context.Context, q domain.RepositoryQuery) error {
+		cancel()
+		return ctx.Err()
+	}
+	if _, _, _, err := f.service.automaticPRObservations(canceled, automaticPRTestLink(t, f), allAutomaticPRKinds); err == nil {
+		t.Fatal("parent cancellation must stop the pass")
 	}
 }
 

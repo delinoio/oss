@@ -756,6 +756,24 @@ function PaginatedQueryResult({ active = true, ...props }: QueryProps) {
     active,
     chain.refresh,
   );
+  // A workspace component renders once under its earliest resident seed across
+  // every page still holding a payload, not per page. Residency is computed
+  // here because each payload page renders its own PRWorkspaceRows instance.
+  const residentSeeds = (() => {
+    const owners = new Map<string, string>();
+    for (const page of chain.pages)
+      for (const row of page.rows)
+        if (!owners.has(row.id)) owners.set(row.id, page.token);
+    const resident = new Set(chain.payloadPages.map((page) => page.token));
+    return chain.pages
+      .filter((page) => resident.has(page.token))
+      .flatMap((page) =>
+        page.rows
+          .filter((row) => owners.get(row.id) === page.token)
+          .map((row) => row.number),
+      )
+      .filter(Boolean);
+  })();
   return (
     <div
       ref={bindRoot}
@@ -808,6 +826,7 @@ function PaginatedQueryResult({ active = true, ...props }: QueryProps) {
               allSeeds={chain.pages
                 .flatMap((page) => page.rows.map((row) => row.number))
                 .filter(Boolean)}
+              residentSeeds={residentSeeds}
               observations={workspaceObservations}
               observe={observeWorkspace}
               selected={props.selected}

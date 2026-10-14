@@ -276,7 +276,7 @@ func (c *Client) StartTurn(ctx context.Context, requestID, inputID domain.ID, in
 	if err := c.verifySidechat(ctx, s.Cwd, c.thread); err != nil {
 		return result, err
 	}
-	if c.sidechat != "" && !sidechatEffective(s) {
+	if c.readOnlyProfile() && !sidechatEffective(s) {
 		return result, sidechatUnavailable()
 	}
 	mode := nativeExecute
@@ -359,7 +359,7 @@ func (c *Client) Steer(ctx context.Context, requestID, inputID, expectedTurnID d
 	if err := c.verifySidechat(ctx, state.settings.Cwd, c.thread); err != nil {
 		return result, err
 	}
-	if c.sidechat != "" && !sidechatEffective(state.settings) {
+	if c.readOnlyProfile() && !sidechatEffective(state.settings) {
 		return result, sidechatUnavailable()
 	}
 	params := struct {

@@ -36,7 +36,7 @@ func (p RevertedContext) validate() error {
 // changed replacement history never authorizes another native mutation.
 func (c *Client) RevertThread(ctx context.Context, action domain.ID, source ContinuationCheckpoint, target HistoricalInput, before domain.ID, claim func(RevertIntent) error) (result CompactedCheckpoint, returned error) {
 	defer c.recordFailure(ctx, domain.CodexHistory, &returned)
-	if !c.revertHistory || action.Validate() != nil || before.Validate() != nil || target.ID.Validate() != nil || source.validate(ResumeAfterTerminal) != nil {
+	if !c.revertHistory || action.Validate() != nil || before.Validate() != nil || target.ID.Validate() != nil || source.validate(ResumeAfterTerminal) != nil || !revertSourceWithinBound(source) {
 		return result, compactionUncertain()
 	}
 	if err := c.acquireControl(ctx); err != nil {
@@ -75,6 +75,11 @@ func (c *Client) RevertThread(ctx context.Context, action domain.ID, source Cont
 		return result, compactionUncertain()
 	}
 	intent := RevertIntent{Version: 1, ActionID: action, Source: source, Target: target, BeforeTurnID: before, ExpectedHistory: slices.Clone(history[:index])}
+	// Refuse before the claim callback when the private intent could not be
+	// persisted; this keeps the failure a positive no-send proof.
+	if encoded, e := json.Marshal(intent); e != nil || len(encoded) > MaxRevertIntentBytes-revertClaimWrapperReserve {
+		return result, compactionUncertain()
+	}
 	if err := claim(intent); err != nil {
 		return result, err
 	}
@@ -194,6 +199,30 @@ func (c *Client) verifyRevertedContinuation(ctx context.Context, request domain.
 	return last, nil
 }
 
+const (
+	// MaxRevertSourceBytes bounds the encoded source continuation checkpoint a
+	// Revert intent may carry. It equals the worker's persisted execution
+	// checkpoint ceiling, so every persisted source checkpoint is admissible
+	// while a larger in-memory one cannot make the intent unpersistable.
+	MaxRevertSourceBytes = 1 << 20
+	// revertIntentEnvelopeReserve covers the target, identifiers and field names
+	// of the intent beside its source checkpoint and retained history.
+	revertIntentEnvelopeReserve = 64 << 10
+	// revertClaimWrapperReserve leaves room for the owner's claim wrapper.
+	revertClaimWrapperReserve = 4 << 10
+	// MaxRevertIntentBytes bounds the persisted private Revert intent file. It
+	// holds the largest profile-aware retained history, the bounded source
+	// checkpoint and the intent envelope.
+	MaxRevertIntentBytes = enlargedNativeFrameBytes + MaxRevertSourceBytes + revertIntentEnvelopeReserve
+)
+
+// revertSourceWithinBound refuses a source checkpoint whose encoding could push
+// an otherwise admissible retained history past the intent file ceiling.
+func revertSourceWithinBound(source ContinuationCheckpoint) bool {
+	encoded, err := json.Marshal(source)
+	return err == nil && len(encoded) <= MaxRevertSourceBytes
+}
+
 // RevertIntent is a private exact send claim. Recovery can only inspect it.
 type RevertIntent struct {
 	Version         uint32                 `json:"version"`
@@ -259,7 +288,7 @@ func (c *Client) ReconcileRevert(ctx context.Context, intent RevertIntent) (Comp
 		ids = append(ids, turn.ID)
 	}
 	p := CompactedCheckpoint{Version: 2, Source: intent.Source, Records: []CompactionRecord{}, TurnsCount: uint32(len(history)), HistoryDigest: historyDigest(history), RolloutPath: path, RolloutDigest: hex.EncodeToString(digest[:]), Revert: &RevertedContext{ActionID: intent.ActionID, BeforeTurnID: intent.BeforeTurnID, InputID: intent.Target.ID, PromptDigest: hex.EncodeToString(intent.Target.PromptDigest[:]), RetainedTurnIDs: ids}}
-	if VerifyRevertIntent(intent, p) != nil || c.checkNativeStateLocked(ctx, true) != nil {
+	if verifyRevertIntentWithin(intent, p, c.historyAggregateLimit()) != nil || c.checkNativeStateLocked(ctx, true) != nil {
 		return CompactedCheckpoint{}, compactionUncertain()
 	}
 	c.execution.paused = true
@@ -268,7 +297,15 @@ func (c *Client) ReconcileRevert(ctx context.Context, intent RevertIntent) (Comp
 
 // VerifyRevertIntent joins the original private send claim to replacement
 // history. Neither a public result nor a rewritten checkpoint can replace it.
+//
+// The package function cannot know which native frame profile produced the
+// intent, so it accepts the largest profile-aware history budget. The writing
+// client enforced its own profile before the intent was claimed.
 func VerifyRevertIntent(intent RevertIntent, p CompactedCheckpoint) error {
+	return verifyRevertIntentWithin(intent, p, enlargedNativeFrameBytes)
+}
+
+func verifyRevertIntentWithin(intent RevertIntent, p CompactedCheckpoint, limit int) error {
 	if intent.Version != 1 || intent.ActionID.Validate() != nil || intent.Target.ID.Validate() != nil || intent.BeforeTurnID.Validate() != nil || intent.ExpectedHistory == nil || len(intent.ExpectedHistory) > maxForkTurns || p.Version != 2 || p.Revert == nil || p.Revert.validate() != nil || p.Source.validate(ResumeAfterTerminal) != nil || p.Revert.ActionID != intent.ActionID || p.Revert.InputID != intent.Target.ID || p.Revert.BeforeTurnID != intent.BeforeTurnID || p.Revert.PromptDigest != hex.EncodeToString(intent.Target.PromptDigest[:]) || p.TurnsCount != uint32(len(intent.ExpectedHistory)) || p.HistoryDigest != historyDigest(intent.ExpectedHistory) || len(p.Revert.RetainedTurnIDs) != len(intent.ExpectedHistory) {
 		return compactionUncertain()
 	}
@@ -281,7 +318,7 @@ func VerifyRevertIntent(intent RevertIntent, p CompactedCheckpoint) error {
 	for n, raw := range intent.ExpectedHistory {
 		size += len(raw)
 		turn, e := decodeTurn(raw)
-		if e != nil || !turn.Status.terminal() || turn.ID != p.Revert.RetainedTurnIDs[n] || size > 4<<20 {
+		if e != nil || !turn.Status.terminal() || turn.ID != p.Revert.RetainedTurnIDs[n] || size > limit {
 			return compactionUncertain()
 		}
 	}

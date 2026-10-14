@@ -39,6 +39,64 @@ A lost reply retries the same phase; it never invokes installation or creates a
 generation. Failed persistence retains original retry/inspection ownership and
 logs uncertainty without claiming terminal publication.
 
+Before the first settlement attempt, the native host durably retains the exact
+observed outcome in a private per-operation record at
+`<root>/desktop-updates/native-outcomes/<operation-id>.json`, beside the
+Go-owned journal in the original connector root scope. The record is a closed
+`outcome` kind with the phase (`installed`, `failed` or `uncertain` only),
+server ID, operation ID, revision, native generation and optional
+saved-connection ID. The directory is owner-only and never repaired or created
+outside an existing `desktop-updates` scope, which is validated (a real
+directory without symlink ancestors) before the store directory is created. On
+Unix the store directory is created 0700 and an existing one must keep the same
+owner as its parent with no group or other permission bits. On Windows the
+native store creates no descriptor of its own: the `desktop-updates` scope is
+created and validated by the Go `security.PrivateDir` policy as a protected
+single-owner full-control DACL with object and container inheritance, and every
+`native-begin`, `native-inspect` and `native-outcome` revalidates it. The store
+directory is only ever created below that scope, so it inherits exactly the
+owner-only ACE, and no other principal can pre-create, replace or inject entries
+in it; changing its ACL requires the same owner principal that already owns all
+update state. Native therefore rejects symlinked ancestors but performs no
+separate DACL comparison, matching the other native private directories.
+Fixtures and cross-compilation do not establish installed Windows ACL
+acceptance. Files are written owner-only through a fsynced temporary file (the
+`desktop-updates` parent is fsynced before every persistence so a newly created
+store directory is durable) and published with a no-replace hard link (a
+destination created after the preceding read is reread and accepted only when
+identical), bounded to 4 KiB, and an existing record for the same operation is
+never replaced with different content. The record is retired only after the
+offline `native-outcome` response echoes the recorded phase for the same
+identities, and only when the stored bytes still equal, byte for byte, the bytes
+written for the verified record: the name is atomically claimed, the claimed
+bytes are verified, and only then is the claim unlinked. A differently encoded
+or replaced file is restored and retained; when another writer has already
+published the canonical name, the claimed file is renamed to a visible
+`<operation-id>.<uuid>.conflict.json` quarantine name instead of staying under its
+hidden dot-prefixed claim name, so the next listing reports both records as
+retained evidence. On the next launch a bounded
+background pass, and each original-scope `native-inspect` for the exact server,
+operation, revision and saved scope, replays the retained phase through the same
+offline writer with a settlement-only token. That token has no installer entry
+point, so replay never invokes installation and never changes the journal phase
+or generation. Launch keeps fresh installation admission busy until the pass
+ends, and Quit stops the pass between records. The launch pass streams the store in a single directory
+pass that reads entries lazily and visits each one as it is read, so memory stays
+constant and the work stays linear however many corrupt or retained entries the
+store holds. Retained records that stay unresolved (missing journal, rejected
+identity, failed settlement) cannot starve a later valid record on any launch,
+unreadable entries are reported without being deleted, and each entry is
+attempted once per pass. Quit is checked before every entry, so a very large
+damaged store cannot delay shutdown. An original-scope
+inspection reads only the record keyed by its own operation ID and never
+enumerates the directory. Corrupt, oversized, symlinked, misnamed,
+unknown-field, foreign-identity or rejected records stay on disk, are logged
+with typed outcomes and never authorize installation. A missing journal or
+record is never inferred as Installed. Fixture sidecars cover Installed, Failed
+and Uncertain replay, lost replies, foreign scope and corrupt evidence; they do
+not establish installed-platform acceptance. The record kind enum is the
+extension point for later retained native evidence.
+
 The retained worker holds no window handle. After the durable begin it rechecks
 the exact original authority from retained native state only: the OAuth window
 epoch, then the product-window registry instance, role, Local revision, saved
@@ -58,6 +116,100 @@ exhausted or Quit cancels, the original Uncertain phase stays with the retained
 token and is settled through the same inspection/Quit path without any
 installation. Logs record the failure code and attempt count only, never saved
 binding details.
+
+The retained token slot and the token's recorded outcome are recovered from lock
+poison instead of reported as Busy. A panic that unwinds while the worker holds
+the slot leaves the stored token and its preserved Uncertain phase intact, so
+Quit and exact-match inspection still settle that original token with zero extra
+installer calls and never infer Installed. A foreign server, operation or
+revision is ignored. Only a verified settlement clears the slot (and its poison
+flag); a failed writer leaves the token retained. A poisoned outcome whose phase
+was never recorded settles as Uncertain and never starts an installer. Logs
+record the recovery site only (`pending-poison-recovered`,
+`outcome-poison-recovered`), never identities or secrets.
+
+Quit also cancels native staging. The copy into exclusive native staging checks
+Quit before it starts, before each bounded 64 KiB chunk and once after the copy
+completes, so Quit never waits for the rest of a large artifact. Cancellation
+and any other staging failure are a pre-effect Failed: the OS installer is not
+called, only the staging file this call created (`<generation>.<extension>`
+through `create_new`) is removed, and foreign or earlier-generation files are
+left untouched. Size, digest, change-byte and `create_new` exclusivity checks
+are unchanged. Staging cancellation is pre-effect only; once the installer
+has begun, independent installer uncertainty stays Uncertain as observed.
+
+Before the original `native-begin` is submitted, the native host durably retains
+its identity in a begin-intent record, a second closed kind (`begin-intent`) of
+the same store family at
+`<root>/desktop-updates/native-begin-intents/<operation-id>.<generation>.json`.
+It carries the server ID, operation ID, revision, native generation and optional
+saved-connection ID, and its only valid phase is Prepared. It follows the same
+owner-only, atomic, 4 KiB and never-overwrite rules, and a begin whose identity
+cannot be retained is rejected without being sent. A begin rejected before it
+reaches the resident runtime retires its intent. A request counts as sent only
+once the resident pipe's writer queue has accepted its frame; a missing session,
+a broken or exiting pipe, a full pending map or a rejected frame proves it never
+left this process, so that intent is retired and fences no retry. Once a response arrives with
+phase Installing the intent stays until the verified terminal settlement
+retires it. When the response is canceled or lost, including by Quit, native
+never submits `native-begin` or an installer a second time. It reads the
+original journal through the bounded offline `native-inspect` (the uncanceled
+local request, independent of Quit), accepting only the exact server, operation,
+revision and saved scope, and then classifies:
+
+- Installing with the original generation proves acceptance. Native builds a
+  settlement-only `AcceptedInstallation` with phase Uncertain and no installer
+  entry point, publishes it as the pending owner and settles Uncertain through
+  the offline writer, because an earlier process may already have run the
+  installer.
+- A terminal phase with the original generation was already settled; the intent
+  is retired.
+- Another generation in the journal can never be this begin, because Go accepts
+  `native-begin` only for the generation it carries. The intent is retired and
+  nothing is settled. A different saved scope or identity is rejected by the
+  original read, settles nothing and keeps the intent.
+- Prepared proves non-acceptance only when the resident runtime request that
+  carried `native-begin` can no longer land. In the same process it may still
+  land, so the intent stays retained; the launch pass of a later process runs
+  after that runtime exited and retires it.
+- An unreadable, busy or failed inspection keeps the intent across Quit and
+  restart.
+
+A retained begin intent also fences its own request. While the exact intent
+for a server, operation, revision, generation and saved scope is retained,
+native never submits `native-begin` for it again, because the earlier
+runtime request may still land and a retry would race it. A retry instead
+re-reads the original journal through the same classification above, so a late
+acceptance recovers settlement-only ownership, a terminal phase or foreign
+generation retires the intent, and an unproven Prepared journal reports Busy
+with the intent retained. The fence is the retained record itself, so it
+survives the retained worker completing, Quit and restart, and it lifts only
+when reconciliation retires the intent. An unreadable or conflicting record
+for the exact request rejects the begin without sending it.
+
+The launch pass and each original-scope `native-inspect` reconcile retained
+intents after retained outcomes. The launch pass streams every intent in one
+directory pass exactly as it does for outcomes. An original-scope inspection lists only the
+intents whose file names carry its own operation ID, so unrelated retained
+intents cannot hide it. An exact retained outcome record for the same
+operation always settles first, and an intent never writes an inferred Uncertain
+while that record is pending; that record is looked up by its exact operation
+name, and an unreadable or unavailable lookup keeps the intent.
+
+The launch-only Prepared classification relies on the previous process having
+exited. Every desktop process holds the exclusive `browser-data/browser-host.lock`
+lease of its connector root from startup, before the launch pass begins, until
+after the update host has joined at exit. A second process on the same root
+cannot start, so a launch pass never overlaps a runtime that could still land a
+retained request or invoke the installer, and the operating system releases the
+lease when a process dies. Processes with different data roots share neither the
+lease nor the update scope. Reconciliation never repeats `native-begin` or
+invokes an installer, never changes the journal generation, and Quit stops it
+between records. Fixture sidecars cover accepted begin, a canceled response
+after acceptance, a late original response, a lost response before acceptance
+and its restart retirement, a begin rejected before sending, foreign generation
+and scope, and an unreadable inspection; they do not establish installed-platform
+acceptance.
 
 The native application manifest declares `desktop_update_context` and
 `desktop_update_native` under the dedicated closed `desktop-update` permission.
@@ -148,4 +300,4 @@ GitHub Environment configuration.
 
 Public CLI `update check` uses a 35-second outer context and response-header limit so the original bounded 30-second release lookup can return its typed result. A shorter caller deadline wins. Checks never retry automatically after timeout; exact original request identities, update reads, Worker acceptance/cancellation and native installation deadlines retain their existing semantics.
 
-Public CLI `update check`, `update worker-request` and `update cancel` report success only when the response `request_id` equals the exact request ID the CLI dispatched, whether generated or supplied with `--request-id`. A missing, malformed or foreign receipt ID returns the closed `RecoveryRequired` failure, keeps the sent ID in the output envelope for recovery, and never adopts the foreign identity or repeats the mutation. `update get` is read-only and unchanged.
+Public CLI `update check`, `update worker-request` and `update cancel` report success only when the response `request_id` equals the exact request ID the CLI dispatched, whether generated or supplied with `--request-id`. A missing, malformed or foreign receipt ID returns the closed `RecoveryRequired` failure, keeps the sent ID in the output envelope for recovery, and never adopts the foreign identity or repeats the mutation. `update get` is read-only and unchanged. A generated request ID is allocated for `check`, `worker-request` and `cancel` only after the signed-update capability read and local flag parsing succeed, immediately before the mutation RPC; unknown flags, bad subcommands, status failures and missing `SIGNED_UPDATES_V1` support send no mutation and emit no generated `request_id`. An explicit `--request-id` is preserved unchanged.

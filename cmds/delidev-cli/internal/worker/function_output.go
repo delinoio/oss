@@ -36,7 +36,21 @@ func (c *CodexEventPublisher) publishFunctionOutput(ctx context.Context, event c
 		}
 		retained = functionOutputPublication{ID: domain.NewID(), Digest: digest}
 	}
+	// Validate the complete update, including the native identity and stage, before
+	// any retained state changes so negotiated and private paths accept the same
+	// evidence.
 	update := &domain.FunctionOutputUpdate{ID: retained.ID, NativeID: event.ItemID, Stage: event.FunctionOutputStage, Output: *event.FunctionOutput}
+	if update.Validate() != nil {
+		return publicationUncertain()
+	}
+	if !c.functionOutputsSupported {
+		// Older peers cannot validate this event kind, so the observation stays
+		// private. The native identity and lifecycle are still retained so no
+		// other item family can claim the ID and the shared item bound holds.
+		retained.Completed = event.FunctionOutputStage == domain.FunctionOutputCompleted
+		c.outputs[event.ItemID] = retained
+		return nil
+	}
 	if err := c.publish(ctx, domain.ExecutionEvent{Kind: domain.ExecutionFunctionOutputObserved, FunctionOutput: update}); err != nil {
 		return err
 	}

@@ -100,3 +100,53 @@ func TestSecondDeviceObligationVerifiesSharedWorkspaceRemoval(t *testing.T) {
 		}
 	}
 }
+
+// The copy callback receives the session owner's maintenance lock object bound
+// by the reconciliation itself, and only when that reconciliation ran.
+func TestDeleteOwnedWorkspaceWithOwnerBindsReconcilerMaintenanceLock(t *testing.T) {
+	for _, ownerIndex := range []bool{false, true} {
+		ctx := context.Background()
+		m := manager(t)
+		request, _ := requestFor(repository(t))
+		source, err := m.Prepare(ctx, request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := security.PrivateDir(filepath.Join(m.Root, "session-deletions")); err != nil {
+			t.Fatal(err)
+		}
+		// Preparation may have left a process index; the variants differ only in
+		// whether the deletion finds one to reconcile.
+		index := filepath.Join(m.Root, "processes", string(source.SessionID))
+		if ownerIndex {
+			if err := security.PrivateDir(index); err != nil && !os.IsExist(err) {
+				t.Fatal(err)
+			}
+		} else if err := os.RemoveAll(index); err != nil {
+			t.Fatal(err)
+		}
+		w := domain.SessionDeletionWork{Version: 1, DeletionID: domain.NewID(), ServerID: domain.NewID(), SessionID: source.SessionID, MachineID: source.MachineID, DeviceID: domain.NewID(), Copies: []domain.SessionDeletionCopy{{JobID: domain.NewID(), Type: domain.PrepareWorkspaceJob, Revision: 2, Digest: strings.Repeat("ab", 32), InstanceID: domain.NewID()}}, PreparationDigests: []string{source.InputDigest}}
+		lock := filepath.Join(m.Root, "processes", string(source.SessionID)+".recovery.lock")
+		called := false
+		err = m.DeleteOwnedWorkspaceWithOwner(ctx, w, false, func(owner *security.PathIdentity) error {
+			called = true
+			if owner.Present() != ownerIndex {
+				t.Error("owner binding presence does not follow reconciliation", ownerIndex)
+			}
+			if ownerIndex {
+				if !owner.Held() || owner.Record().Kind != security.ObjectRegular || owner.Record().Size != 0 || owner.StillAt(lock) != nil {
+					t.Error("owner binding is not the reconciler's empty regular lock")
+				}
+				taken := owner.Take()
+				defer taken.Close()
+				if owner.Present() {
+					t.Error("Take left the identity in the workspace")
+				}
+			}
+			return nil
+		})
+		if err != nil || !called {
+			t.Fatal(err, called)
+		}
+	}
+}

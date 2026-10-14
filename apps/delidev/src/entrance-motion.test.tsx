@@ -4,14 +4,26 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   EntranceMotion,
+  settleEnclosingEntrances,
   useActivationCount,
   useEntranceActivation,
 } from "./entrance-motion";
 
-function Harness({ enabled = true }: { enabled?: boolean }) {
+function Harness({
+  enabled = true,
+  clearWhenDisabled = false,
+}: {
+  enabled?: boolean;
+  clearWhenDisabled?: boolean;
+}) {
   const [activation, setActivation] = useState("first");
   const [text, setText] = useState("");
-  const entrance = useEntranceActivation(activation, enabled);
+  const entrance = useEntranceActivation(
+    activation,
+    enabled,
+    EntranceMotion.Y4,
+    clearWhenDisabled,
+  );
   return (
     <div>
       <div data-testid="surface" {...entrance}>
@@ -253,8 +265,14 @@ it("settles each 120ms primitive only on its own animation name", () => {
   expect(entering()).toBeNull();
 });
 
-function EdgeHarness({ active }: { active: boolean }) {
-  const count = useActivationCount(active);
+function EdgeHarness({
+  active,
+  countMount = true,
+}: {
+  active: boolean;
+  countMount?: boolean;
+}) {
+  const count = useActivationCount(active, countMount);
   return <output data-testid="count">{count}</output>;
 }
 
@@ -268,6 +286,18 @@ it("counts rising activation edges only", () => {
   expect(count()).toBe("1");
   rerender(<EdgeHarness active />);
   expect(count()).toBe("2");
+});
+
+it("does not count a mount that starts active when countMount is false", () => {
+  const { rerender } = render(<EdgeHarness active countMount={false} />);
+  const count = () => screen.getByTestId("count").textContent;
+  expect(count()).toBe("0");
+  rerender(<EdgeHarness active countMount={false} />);
+  expect(count()).toBe("0");
+  rerender(<EdgeHarness active={false} countMount={false} />);
+  expect(count()).toBe("0");
+  rerender(<EdgeHarness active countMount={false} />);
+  expect(count()).toBe("1");
 });
 
 function stubAnimations(node: Element, running: string[]) {
@@ -311,3 +341,35 @@ function MotionRestartHarness() {
     </div>
   );
 }
+
+it("clears the attribute synchronously when an enclosed host requests a settle", () => {
+  render(
+    <div>
+      <Harness />
+    </div>,
+  );
+  expect(entering()).toBe("y4");
+  // No act() flush: a top-layer host measures its anchor right after the call.
+  settleEnclosingEntrances(screen.getByTestId("spinner"));
+  expect(entering()).toBeNull();
+  act(() => {});
+  expect(entering()).toBeNull();
+});
+
+it("keeps a request-scoped entrance running when enabled turns off unless the surface opts in to clearing", () => {
+  const { rerender, unmount } = render(<Harness />);
+  expect(entering()).toBe("y4");
+  rerender(<Harness enabled={false} />);
+  expect(entering()).toBe("y4");
+  unmount();
+  const view = render(<Harness clearWhenDisabled />);
+  expect(entering()).toBe("y4");
+  view.rerender(<Harness enabled={false} clearWhenDisabled />);
+  expect(entering()).toBeNull();
+  view.rerender(<Harness clearWhenDisabled />);
+  expect(entering()).toBeNull();
+  act(() => {
+    fireEvent.click(screen.getByRole("button", { name: "Re-enter" }));
+  });
+  expect(entering()).toBe("y4");
+});

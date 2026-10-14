@@ -9,7 +9,7 @@ import (
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
-func nativeModelCatalog(ctx context.Context, c client, o options, args []string) (any, error) {
+func nativeModelCatalog(ctx context.Context, c client, o *options, args []string) (any, error) {
 	f := flags("model " + args[0])
 	id := f.String("id", "", "original observation job ID")
 	revision := f.Uint64("revision", 0, "current machine or job revision")
@@ -21,6 +21,7 @@ func nativeModelCatalog(ctx context.Context, c client, o options, args []string)
 		if err := parse(f, args[1:]); err != nil {
 			return nil, err
 		}
+		ensureRequest(o)
 		response, err := c.nativeModels.DiscoverNativeModels(ctx, request(c, &pb.DiscoverNativeModelsRequest{Mutation: &pb.Mutation{RequestId: string(o.requestID), Id: *machine, ExpectedRevision: *revision}, AccountId: *account, AccountRevision: *accountRevision, IncludeHidden: *hidden}))
 		if err != nil {
 			return nil, rpc.ClientError(err)
@@ -51,6 +52,7 @@ func nativeModelCatalog(ctx context.Context, c client, o options, args []string)
 	}
 	var response nativeModelChangeView
 	if args[0] == "native-cancel" {
+		ensureRequest(o)
 		result, err := c.nativeModels.CancelNativeModelDiscovery(ctx, request(c, &pb.CancelNativeModelDiscoveryRequest{Mutation: &pb.Mutation{RequestId: string(o.requestID), Id: *id, ExpectedRevision: *revision}}))
 		if err != nil {
 			return nil, rpc.ClientError(err)

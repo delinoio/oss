@@ -23,6 +23,7 @@ import {
 } from "./session-control";
 import { SessionForkAction } from "./session-fork";
 import { copy } from "./localization";
+import { settleEnclosingEntrances } from "./entrance-motion";
 import { Problem } from "./ui";
 
 const Context = createContext<{ open: string; setOpen: (id: string) => void }>({
@@ -113,6 +114,8 @@ export function SessionRowActions({
   useLayoutEffect(() => {
     if (!visible || !popup.current || !opener.current) return;
     const menu = popup.current;
+    // A native popover never sits beneath an animated ancestor.
+    settleEnclosingEntrances(menu);
     menu.showPopover?.();
     const position = () => {
       const bounds = opener.current?.getBoundingClientRect();

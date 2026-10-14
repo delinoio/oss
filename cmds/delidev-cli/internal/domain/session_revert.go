@@ -5,16 +5,52 @@ import "slices"
 
 const CodexSessionRevertV1 WorkerCapability = "codex-session-revert-v1"
 
+// CodexSessionRevertTargetProofV1 is advertised by a Worker that decodes the
+// retained checkpoint reference of a Revert target and resolves the original
+// selected-skill proof from it. A Worker without it strictly rejects those
+// fields, so the server never freezes them for such a Worker.
+const CodexSessionRevertTargetProofV1 WorkerCapability = "codex-session-revert-target-proof-v1"
+
 type SessionRevertTarget struct {
 	MessageID       ID             `json:"message_id"`
 	InputID         ID             `json:"input_id"`
 	NativeTurnID    NativeIdentity `json:"native_turn_id"`
 	Prompt          SessionInput   `json:"prompt"`
 	ContextRevision uint64         `json:"context_revision"`
+	// ExecutionID and CheckpointDigest identify the immutable retained native
+	// checkpoint of the execution that accepted this target input. They let the
+	// Worker resolve the original selected-skill proof for a target that predates
+	// the latest source execution. Both are absent for text-only compatibility
+	// and for jobs accepted before this proof was carried. They are frozen only
+	// when a skilled target belongs to an earlier execution than the source, the
+	// one case the source checkpoint cannot prove, so a Worker that predates them
+	// still receives the original envelope in every other case.
+	ExecutionID      ID     `json:"execution_id,omitempty"`
+	CheckpointDigest string `json:"checkpoint_digest,omitempty"`
+}
+
+// CarriesProof reports whether the target freezes a retained checkpoint
+// reference, which only a Worker with CodexSessionRevertTargetProofV1 decodes.
+func (t SessionRevertTarget) CarriesProof() bool {
+	return t.ExecutionID != ""
+}
+
+// RequiresProofCapability reports whether only a Worker with
+// CodexSessionRevertTargetProofV1 may execute this target. Every skilled target
+// requires it, even when the source checkpoint supplies the proof and the
+// envelope carries no checkpoint reference, because a Worker that predates the
+// capability compares only the prompt digest and never authenticates the
+// selected skills. A target that carries a reference also requires it.
+func (t SessionRevertTarget) RequiresProofCapability() bool {
+	return t.CarriesProof() || len(t.Prompt.Skills) > 0
 }
 
 func (t SessionRevertTarget) Validate() error {
 	if UniqueIDs([]ID{t.MessageID, t.InputID}) != nil || t.NativeTurnID.Validate(Codex, NativeTurnIdentity) != nil || t.Prompt.Validate() != nil {
+		return CompactionUncertain()
+	}
+	// The retained checkpoint reference is all-or-nothing and digest-shaped.
+	if (t.ExecutionID == "") != (t.CheckpointDigest == "") || t.ExecutionID != "" && (t.ExecutionID.Validate() != nil || !validCompactionDigest(t.CheckpointDigest)) {
 		return CompactionUncertain()
 	}
 	return nil

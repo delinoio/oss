@@ -3,10 +3,13 @@ import {
   createContext,
   useCallback,
   useContext,
+  useLayoutEffect,
+  useMemo,
   useRef,
+  useState,
   type ReactNode,
 } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, type QueryCache } from "@tanstack/react-query";
 import {
   EntityKind,
   decodeResourceDocument,
@@ -25,6 +28,7 @@ export {
   productMetadata,
   productMetadataJSON,
   generatedIdentityFields,
+  configurationPreviewPaths,
 } from "./product-identity";
 
 const kinds: Partial<Record<EntityKind, PresentationKind>> = {
@@ -59,66 +63,99 @@ export function presentationKind(kind?: EntityKind): PresentationKind {
 export function identityFallback(kind: PresentationKind): string {
   return copy(`product-identity.${kind}` as MessageKey);
 }
+/**
+ * Returns the exact optional document name, else alias, of a resource. Retain
+ * this raw value (never a presentation string) when a later render must derive
+ * the localized and numbered label again.
+ */
+export function productResourceObservedName(
+  resource?: Resource,
+): string | undefined {
+  const data = resource ? decodeResourceDocument(resource) : undefined;
+  return typeof data?.name === "string"
+    ? data.name
+    : typeof data?.alias === "string"
+      ? data.alias
+      : undefined;
+}
 function observeResource(registry: ProductIdentities, resource: Resource) {
   if (!resource.id || !supportsResourceSchema(resource)) return;
-  const data = decodeResourceDocument(resource);
-  const name =
-    typeof data?.name === "string"
-      ? data.name
-      : typeof data?.alias === "string"
-        ? data.alias
-        : undefined;
-  registry.observe(presentationKind(resource.kind), resource.id, name);
+  registry.observe(
+    presentationKind(resource.kind),
+    resource.id,
+    productResourceObservedName(resource),
+  );
+}
+/** Keys whose subtrees carry content or protected evidence and are never observed. */
+const excludedObservationKeys: ReadonlySet<string> = new Set([
+  "documentJson",
+  "responseJson",
+  "reportJson",
+  "bundleJson",
+  "native",
+  "metadata",
+  "content",
+  "output",
+  "text",
+  "prompt",
+  "frames",
+  "messages",
+]);
+/**
+ * Visits authorized client observations once per object identity and records
+ * resource names in the registry. Never inspects content bytes.
+ */
+class CacheObserver {
+  private readonly seen = new WeakSet<object>();
+  constructor(readonly registry: ProductIdentities) {}
+  visit = (value: unknown) => {
+    if (!value || typeof value !== "object" || this.seen.has(value)) return;
+    this.seen.add(value);
+    if ("documentJson" in value && "kind" in value && "id" in value) {
+      observeResource(this.registry, value as Resource);
+      return;
+    }
+    if (Array.isArray(value)) value.forEach(this.visit);
+    else
+      for (const [key, entry] of Object.entries(value)) {
+        if (!excludedObservationKeys.has(key)) this.visit(entry);
+      }
+  };
+  /** Full traversal; only the provider setup paths call this, never a consumer render. */
+  scan(cache: QueryCache) {
+    for (const query of cache.getAll()) this.visit(query.state.data);
+  }
 }
 interface Owner {
   registry: ProductIdentities;
-  observe: () => void;
 }
 const IdentityOwner = createContext<Owner | undefined>(undefined);
-/** The existing connection boundary owns this memory; this provider starts no read. */
+/**
+ * The existing connection boundary owns this memory; this provider starts no
+ * read. It scans the cache once when created, then observes only the data of
+ * added or updated queries at the cache-update boundary. Consumers never scan.
+ */
 export function ProductIdentityProvider({ children }: { children: ReactNode }) {
   const client = useQueryClient();
-  const registry = useRef(new ProductIdentities());
-  const seen = useRef(new WeakSet<object>());
-  const observe = () => {
-    const visit = (value: unknown) => {
-      if (!value || typeof value !== "object" || seen.current.has(value))
-        return;
-      seen.current.add(value);
-      if ("documentJson" in value && "kind" in value && "id" in value) {
-        observeResource(registry.current, value as Resource);
-        return;
-      }
-      if (Array.isArray(value)) value.forEach(visit);
-      else
-        for (const [key, entry] of Object.entries(value)) {
-          // Scan only authorized client observations; never inspect content bytes.
-          if (
-            ![
-              "documentJson",
-              "responseJson",
-              "reportJson",
-              "bundleJson",
-              "native",
-              "metadata",
-              "content",
-              "output",
-              "text",
-              "prompt",
-              "frames",
-              "messages",
-            ].includes(key)
-          )
-            visit(entry);
-        }
-    };
-    for (const query of client.getQueryCache().getAll())
-      visit(query.state.data);
-  };
+  const [observer] = useState(() => {
+    const created = new CacheObserver(new ProductIdentities());
+    // Render-safe: the registry is private until this provider commits.
+    created.scan(client.getQueryCache());
+    return created;
+  });
+  const owner = useMemo(() => ({ registry: observer.registry }), [observer]);
+  useLayoutEffect(() => {
+    const cache = client.getQueryCache();
+    const unsubscribe = cache.subscribe((event) => {
+      if (event.type === "added" || event.type === "updated")
+        observer.visit(event.query.state.data);
+    });
+    // Cover events between the render-time scan (or a client change) and subscription.
+    observer.scan(cache);
+    return unsubscribe;
+  }, [client, observer]);
   return (
-    <IdentityOwner.Provider value={{ registry: registry.current, observe }}>
-      {children}
-    </IdentityOwner.Provider>
+    <IdentityOwner.Provider value={owner}>{children}</IdentityOwner.Provider>
   );
 }
 export function useProductLabels(): IdentityLabel {
@@ -126,7 +163,6 @@ export function useProductLabels(): IdentityLabel {
   const owner = useContext(IdentityOwner);
   const local = useRef(new ProductIdentities());
   const registry = owner?.registry ?? local.current;
-  owner?.observe();
   return useCallback(
     (kind, id, name) =>
       registry.label(
@@ -155,14 +191,11 @@ export function productResourceName(
   label: IdentityLabel,
   resource?: Resource,
 ): string {
-  const data = resource ? decodeResourceDocument(resource) : undefined;
-  const name =
-    typeof data?.name === "string"
-      ? data.name
-      : typeof data?.alias === "string"
-        ? data.alias
-        : undefined;
-  return label(presentationKind(resource?.kind), resource?.id, name);
+  return label(
+    presentationKind(resource?.kind),
+    resource?.id,
+    productResourceObservedName(resource),
+  );
 }
 export function ResourceIdentity({ resource }: { resource?: Resource }) {
   return productResourceName(useProductLabels(), resource);

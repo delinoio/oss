@@ -387,6 +387,10 @@ function IntegrationCreation({
     { enabled: active, retry: false },
   );
   const negotiated = useRef<boolean | undefined>(undefined);
+  // Last settled outcome of a metadata-first opening: a validated capability
+  // inventory stays announced through later fetches; only a settled read that
+  // is no longer supported (error or malformed inventory) clears it.
+  const recoveredAnnounced = useRef(false);
   const capabilities = status.data?.capabilities;
   const supported =
     status.isSuccess &&
@@ -407,6 +411,10 @@ function IntegrationCreation({
     !status.isFetching
   )
     negotiated.current = Boolean(supported);
+  if (negotiated.current === false) {
+    if (supported) recoveredAnnounced.current = true;
+    else if (!status.isFetching) recoveredAnnounced.current = false;
+  }
   if (negotiated.current === undefined)
     return (
       <>
@@ -437,7 +445,10 @@ function IntegrationCreation({
           {copy("integrations.onboardingSupportChanged")} {retryStatus}
         </p>
       ) : null}
-      {!negotiated.current && !status.error ? (
+      {!negotiated.current && recoveredAnnounced.current ? (
+        <p role="status">{copy("integrations.onboardingSupportRecovered")}</p>
+      ) : null}
+      {!negotiated.current && !recoveredAnnounced.current && !status.error ? (
         <p role="status">{copy("integrations.onboardingUnsupported")}</p>
       ) : null}
       {negotiated.current ? (

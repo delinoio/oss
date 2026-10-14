@@ -98,6 +98,23 @@ than 16 pages. Capability loading, unsupported and removal-pending guidance, the
 original exact registration retry, and safe failure text never create a fallback
 page.
 
+Admission follows the read-only enumeration state. Open page stays disabled, and
+submission returns without sending anything, while the `ListBrowserProfiles`
+walk is loading, paginating (a next page token is outstanding), failed or
+invalid (a read error, more than one matching profile across the walk, a repeated token or a
+next page token returned by page 64). A matching profile is only a candidate while a
+next page token is outstanding: the walk continues, and the profile is admitted
+only after the terminal page confirms it is the sole match. A confirmed absence
+(a settled terminal page with no matching profile on any page) can also admit a
+new page; absence permits exactly one registration at explicit submission. A found
+profile additionally needs one successfully observed current-profile inventory,
+so an unread or unreadable inventory is never treated as empty. A later inventory read failure revokes that proof
+until a retry read succeeds. The dialog shows
+localized read-only guidance for pending states and, for a failed profile or
+inventory read, a retry that re-reads only that state (profiles from the first
+page with cached pages bypassed, or the inventory) and never repeats any accepted or uncertain mutation.
+A session that becomes active again while the walk has no profile restarts it the same way, from the first page with cached pages bypassed, so a partial refetch of the current page never combines with pages read before the session was inactive.
+
 Only explicit submission may change the inventory. It reuses the original
 capability/account/session/revision checks and exact registration recovery: an
 existing profile (found by the read-only `ListBrowserProfiles` page walk) is
@@ -150,10 +167,67 @@ failed; `metadata_committed`; `native_cleanup_complete`; a closed failure code).
 After a mutation commits, live shared children are reconciled with the shared
 selection on the UI loop: a child already on the selected page is preserved, a
 superseded child is unmapped before any handle or generation changes, and a page
-nobody presents is never displayed. Failures before admission are returned as a
+nobody presents is never displayed. CloseBrowser is asynchronous, so a successful
+close request is not completed cleanup: the receipt records the exact (window,
+generation) of every original native child it superseded and stays
+`cleanup-pending` with `native_cleanup_complete` false until each of those
+children reports `on_before_close`. Replacement children carry a newer generation
+and unrelated children are never awaited, so neither delays nor satisfies the
+original cleanup; two windows presenting one page require both original
+callbacks. If profile removal begins after the metadata commit and before this
+reconciliation, the reconciliation does not replace children; instead the receipt
+awaits every original native child of that profile (within the receipt's
+generation boundary) until removal's own close requests report
+`on_before_close`, so it never reports completed cleanup early. A receipt that
+no longer tracks outstanding children, such as an idempotent Close of an already
+absent page whose awaited set is final and empty, registers nothing on this path
+and completes without waiting for removal's callbacks. Closing a
+page that no native child presents completes immediately.
+A page selection control from another window that supersedes children after the
+metadata commit but before this reconciliation registers those children on the
+profile's in-flight receipt as well, so the receipt never reports
+completed cleanup before their `on_before_close`. Registration starts while the
+mutation is in flight, before the receipt records `metadata_committed`, because
+a close can land after the staged replacement publishes and before that flag is
+set; a mutation that fails, or an idempotent Close of an already absent page that
+publishes nothing, discards the registrations and never attributes later child
+closes to its receipt, while a published one keeps them. The same registration applies when a lifecycle close (a superseding
+reservation, a hide, or a window close) removes a view that owns or is creating a native child after the metadata commit but before
+reconciliation, so reconciliation never finds nothing to await while that child's `CloseBrowser` is still pending. A hide or window close whose native unmap fails
+retains the view for retried cleanup but still requests `CloseBrowser`, so it
+registers the view's exact generation on the receipt as well. A lifecycle close
+registers only a child that the mutation would supersede, which is a child not
+showing the page the mutation leaves selected: the receipt records that page when
+the metadata commits and drops earlier in-flight registrations that show it, so
+closing an inactive page never waits on the callback of an unrelated child that
+displays another page. A child that a selection already superseded is awaited
+whichever page it showed. A hide that races a view whose native child is still being created marks the view closing and returns busy, and it registers that generation before returning, because the closing view is excluded from reconciliation and the creation callback closes the child only afterwards. Publishing an
+`open_browser` view that replaces one already published for the window (for
+example overlapping opens sharing a view ID) removes the old view through the
+same registration. The `on_before_close` callback that empties a reconciled receipt's set settles it
+immediately, so an owner that unmounts before its next Observe cannot leave a
+`cleanup-pending` receipt that exhausts the page operation limit. A receipt whose
+reconciliation failed stays `cleanup-pending` with a partial set after the
+profile's mutation slot is released, so every later registration above also
+applies to a committed receipt whose reconciliation has not succeeded, and a
+child removed before the retried Observe is still awaited. Only children that
+existed when the receipt's metadata committed are attributed to it: the receipt
+records the highest view generation at that commit, so a replacement child created
+after it (for example by a partially failed reconciliation) is never added to the
+awaited set when it is later hidden or closed. When a later
+operation's reconciliation supersedes a child that such an older unresolved receipt
+still owns as an original, the child is registered on that receipt as well, so
+observing the older receipt before the close callback cannot complete it early.
+Observing the
+receipt re-evaluates this set without a second metadata mutation or a duplicate
+close request. Failures before admission are returned as a
 typed `not-admitted` error and prove nothing changed; any later failure is
 retained on the receipt or surfaces as an uncertain reply that only observation of
-the original operation settles. `open_browser` takes a page ID instead of an
+the original operation settles. Admission includes an identical replay of a
+retained operation: once the replay is accepted, a failed observation of the
+original operation (including a host stop racing in before the read) is an
+`uncertain` reply, never `not-admitted`, and never repeats the mutation; observing
+the same operation ID settles it. `open_browser` takes a page ID instead of an
 address and moves the shared profile selection to that retained page;
 `control_browser` can no longer create or close a page.
 
@@ -172,6 +246,18 @@ close is a fresh explicit operation. Closing an inactive page never presents it 
 another native page. This resource Close is the one browser-specific exception to
 the presentation-only dismissal other tools use, and it remains separate from the
 16-page gate and from profile/account removal.
+
+An acknowledged close is profile-scoped, so its cleanup is not limited to the
+initiating Session: when the original Close is observed complete, or an
+observation without an original receipt proves the page is gone, the exact
+profile/page descriptor is removed from every Session snapshot in the shared tab
+store, including inactive and retained Sessions that are not polling. Each
+affected Session applies the same selection rule only when its own selected
+descriptor was removed (left neighbor, then Conversation after the last page);
+unrelated selections, ordering, the same page id under another profile and other
+pages are untouched. Repeated acknowledgment is idempotent, and pending, failed
+or uncertain closes retain the descriptor in every Session. The cleanup is
+store-level only and issues no extra native close.
 
 Other windows and sessions of the same account observe the inventory read-only
 and align their descriptors (append newly listed pages in inventory order,

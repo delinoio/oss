@@ -60,6 +60,10 @@ type APIStreamConfig struct {
 	Instructions   string                     `json:"-"`
 	API            APIConfig                  `json:"-"`
 	Subscription   *NativeSubscriptionProfile `json:"-"`
+	// ManagedToken is one server-owned setup token delivered by a protected
+	// lease. It excludes Subscription and the API relay; callers clear it after
+	// the joined child has terminated.
+	ManagedToken []byte `json:"-"`
 }
 
 // NativeSubscriptionProfile is a device-local reference under an exclusive
@@ -79,6 +83,9 @@ func (config APIStreamConfig) ProtectedValues() []string {
 	values := slices.Clone(config.Process.ProtectedValues)
 	if config.Subscription == nil {
 		values = append(values, config.API.Token)
+	}
+	if len(config.ManagedToken) != 0 {
+		values = append(values, string(config.ManagedToken))
 	}
 	return values
 }
@@ -133,7 +140,12 @@ func prepareAPIStreamMode(config APIStreamConfig, resumed bool) (process.Config,
 	if err != nil {
 		return process.Config{}, err
 	}
-	if config.Subscription != nil {
+	if len(config.ManagedToken) != 0 {
+		if config.Subscription != nil || !domain.ClaudeSetupTokenValid(config.ManagedToken) {
+			return process.Config{}, apiConfigurationError()
+		}
+		env = managedTokenEnvironment(env, config.Home, config.ManagedToken)
+	} else if config.Subscription != nil {
 		if config.Subscription.ID.Validate() != nil || security.CheckPrivateDir(config.Subscription.Home) != nil {
 			return process.Config{}, apiConfigurationError()
 		}
@@ -260,7 +272,12 @@ func openAPIStreamMode(ctx context.Context, config APIStreamConfig, resumed bool
 	// The process owner identity may be its OS supervisor, not the native PID.
 	// Ownership is proved by its private stdio scope and joined cleanup, never
 	// by equating a native self-reported PID with the supervisor's identity.
-	if err := validateInitializeMode(response.Result, string(config.Permission), "ANTHROPIC_API_KEY", config.Subscription != nil); err != nil {
+	if len(config.ManagedToken) != 0 {
+		err = validateInitializeManagedToken(response.Result, string(config.Permission))
+	} else {
+		err = validateInitializeMode(response.Result, string(config.Permission), "ANTHROPIC_API_KEY", config.Subscription != nil)
+	}
+	if err != nil {
 		return nil, err
 	}
 	process.ObserveStartup(config.Process, domain.StartupInitialize, domain.StartupProgressCompleted)

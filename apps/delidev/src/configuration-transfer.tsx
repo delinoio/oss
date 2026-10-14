@@ -3,6 +3,7 @@ import {
   PresentationKind,
   productMetadataJSON,
   generatedIdentityFields,
+  configurationPreviewPaths,
 } from "./product-identity-labels";
 import "./wizard-presentation.css";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
@@ -285,6 +286,7 @@ export function ConfigurationTransfer({
               decoder.decode(preview.bytes),
               generatedIdentityFields,
               productLabel,
+              configurationPreviewPaths,
             ),
           )
         : "",
@@ -692,7 +694,7 @@ export function ConfigurationTransfer({
             </li>
           ))}
         </ol>
-        <fieldset disabled={blocked}>
+        <fieldset className="transfer-input-fieldset" disabled={blocked}>
           <legend className="transfer-input-legend">
             {copy("configuration-transfer.chooseAnExport_270d3d")}
           </legend>

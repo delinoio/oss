@@ -149,7 +149,10 @@ Retain typed `model/verification` values, including `trustedAccessForCyber`,
 without granting account readiness, model eligibility or permissions. Required
 empty verification arrays retain their existing discarded-metadata representation.
 `model/safetyBuffering/updated` retains the original model, ordered use cases and
-reasons, buffering UI flag and required nullable faster-model descriptor.
+reasons, buffering UI flag and required nullable faster-model descriptor. The
+buffering `model` must equal the selected execution model exactly; any other value
+is rejected as incompatible and is neither retained nor published as passive
+evidence. The faster-model descriptor is never compared with or adopted as a model.
 `turn/moderationMetadata` retains bounded JSONValue, including objects, arrays,
 scalars and explicit null. These private observations emit no product prompt,
 response, tool or input mutation. Neither buffering nor verification selects a
@@ -159,12 +162,22 @@ model; original usage and effective settings remain authoritative.
 and closed `highRiskCyberActivity` reason. Retain the safety decision without
 reversing it or adopting a faster-model descriptor. An actual model change pauses
 fresh sends and prevents selected-model success publication. Keep the first
-problem when earlier uncertainty exists. Original native terminal evidence remains
+problem when earlier uncertainty exists. The model-change latch and recovery problem
+are independent of evidence retention: when the aggregate evidence caps are full, an
+actual model change still latches them, and the overflowed evidence is neither
+retained nor counted. Overflow by non-reroute evidence keeps the generic
+incompatible rejection. Original native terminal evidence remains
 available for reconciliation and independent cleanup; neither terminal completion
 nor passive observations clears the pause or replays input.
 
 Reject unknown enums, malformed or ambiguous fields and unowned root turns.
-Foreign threads and server requests retain their existing private boundaries.
+Foreign threads and server requests retain their existing private boundaries:
+a foreign-thread safety notification is validated only for the 64 KiB envelope
+bound, the exact native field set and valid thread/turn identity. Closed
+verification and reroute enums and descriptor text bounds apply only to the owned
+root thread, so an unsupported foreign descriptor stays a private native extension
+and cannot pause the execution or alter safety evidence, model selection,
+completion or account authority.
 After terminal completion, accept only an exact previously retained observation
 as late private evidence; changed or unseen late observations fail validation.
 Deep-copy retained payloads. Bound each notification to 64 KiB, string descriptors
@@ -303,6 +316,10 @@ Managed subscriptions remain unsupported until their protected lifecycle exists.
 ### Codex automatic title profile
 
 Automatic titles reuse the successful original execution executable path/hash with the native Responses profile. Worker attachment performs no title probe; the actual auxiliary process validates its protocol. For each title, a separate private Codex runtime validates effective provider/model, zero request/stream retries, ephemeral credentials, read-only sandbox and approval-never settings before sending the single first-message request. The title run accepts no tool, interaction or auxiliary native event; it rejects malformed/oversized/multiline output without repair. The 30-second inference and 4 KiB raw-text bounds apply, and process cleanup plus private runtime removal must finish before success publication. See the [automatic title contract](cmds-delidev-session-titles-contract.md) for assignment ownership and evidence limits.
+
+### Codex managed automatic title profile
+
+Protected ChatGPT titles run the original startup-proven executable with `ManagedAuthentication` and the private `ManagedTitle` profile. Codex rejects overrides of the reserved built-in `openai` provider, so the profile selects the alias `delidev_chatgpt_title`: OpenAI display name, Responses wire protocol, ChatGPT-authenticated requests, the native default base URL, websockets disabled and `request_max_retries=0`, `stream_max_retries=0`. The alias names no base URL, key, header, query or credential command. The thread uses fixed instructions in an empty private workspace with a read-only sandbox, approval `never`, `project_doc_max_bytes=0`, disabled web search, empty MCP/plugin/hook/notify tables and the Sidechat denial list plus `shell_tool`, `unified_exec_tty`, `view_image`, `sleep_tool`, `write_stdin_approval` and `skill_search`. `config/read` must report the exact merged provider shape (a closed set: the six required fields, known inert fields only as null or absent, and a disabled standalone web-search flag; any other key is refused), retry limits and ambient-instruction settings, and `experimentalFeature/list` must report every denied flag observed off before any input; a missing or enabled flag, inherited provider authority or unobserved retry limit is refused as `unsupported` before sending. The pinned profile reports `unified_exec` enabled even when configured off; it is a transport of the disabled shell tool. Codex cannot disable `update_plan`, so any tool, interaction or unexpected native event fails the title closed and discards its text. See the [title contract](cmds-delidev-session-titles-contract.md#protected-chatgpt-subscription-titles).
 
 ### Codex JSON-RPC stdio transport
 
@@ -2596,8 +2613,17 @@ A nonempty sample list, positive extra count or failed scan can emit the existin
 generic native-warning notice on the original process and active known
 nonterminal turn. An empty successful scan emits no notice. Deduplicate each of
 three warning classifications (world-writable paths, failed scan, or both) for
-the lifetime of that original execution process. Replays and observations in
-paused, failed or completed contexts become validated discarded metadata. They
+the lifetime of that original execution process. Every valid nonempty
+classification observed on the bound original process records its class in that
+process-local registry, including observations between turns, while paused, in
+failed or completed contexts, with a recovery problem, or with an unknown or
+absent active turn. Those observations, and replays of an already-recorded
+class, become validated discarded metadata, so replaying the same class on a
+later eligible active turn in that process is also discarded metadata. A first
+observation of a different class on an eligible turn emits exactly one notice,
+and a fresh original process starts with an empty registry. Empty successful
+scans, malformed payloads, foreign or unbound process contexts, server requests
+and setup completions never write the registry. Discarded observations
 do not create a new current turn or change settings, approvals, account/provider,
 readiness, input delivery, response receipts, recovery or cleanup ownership.
 
@@ -2634,7 +2660,7 @@ The closed Codex `imageView` item retains the original native call ID and path i
 
 The Worker binds an opaque observation ID to the original tool record, authenticated machine, exact immutable preparation/manifest digest and canonical root-relative location. Both Worker and server validate the accepted prepared-root metadata; completion must preserve the original reference exactly. This proves ownership of the native observation, not ownership or unchanged contents of a live file. Lexical scope validation performs no filesystem read, link traversal, URL fetch or native call. A symlink's current target and later file changes cannot provide byte or deletion authority. The original private path is not published.
 
-Preparation and image observations share the original Worker OS path grammar. Windows UNC paths retain their complete authority/share prefix for exact root matching; slash normalization never removes that identity. Reject malformed shares, device namespaces, alternate streams, traversal and sibling roots. Linux and macOS retain literal colon and backslash filename characters in the inert relative observation. Portable metadata rejects absolute paths and URLs; server revalidation applies the original Worker OS before accepting the exact reference again.
+Preparation and image observations share the original Worker OS path grammar. Windows UNC paths retain their complete authority/share prefix for exact root matching; slash normalization never removes that identity. Root matching uses one component-boundary scope rule: the POSIX filesystem root `/` scopes `/image.png` to `image.png` and never builds a `//` prefix, the longest matching root wins, and Windows drive roots such as `C:/` stay outside preparation admission. Windows drive and UNC roots (server, share and path) compare ASCII letters case-insensitively against the prepared root, while Linux and macOS compare exactly so `/Repo` and `/repo` remain distinct roots; the relative observation always keeps the observed spelling and the matched root identity. Reject malformed shares, device namespaces, alternate streams, traversal and sibling roots. Linux and macOS retain literal colon and backslash filename characters in the inert relative observation. Portable metadata rejects absolute paths and URLs; server revalidation applies the original Worker OS before accepting the exact reference again.
 
 The existing synchronized outbox, atomic native-item index, original account/execution/thread/turn, sequence and receipt checks own publication and replay. Archive and history retain one original observation. Replay never reads the location. Full native history validation accepts only the closed image-view metadata while preserving original rollout/checkpoint digests; it does not replay the tool. Lost acknowledgments, unsupported older peers, foreign generations or changed references retain recovery without input resend. No RPC, capability allocation or migration is added.
 
@@ -2719,7 +2745,16 @@ or `file_id` alternative and the optional closed detail; conflicting
 alternatives, null detail, unknown fields, duplicate keys, malformed Unicode
 escapes and oversized documents require recovery. The public projection is
 bounded to 512 KiB; private locator and ciphertext bytes may use the whole
-admitted native frame because they never enter that projection.
+admitted native frame because they never enter that projection. Retained-history
+scans (context inspection, compaction, continuation and Revert) use an aggregate
+budget of `max(4 MiB, native frame limit)`, so an output admitted by the enlarged
+16 MiB frame is not rejected by the aggregate; Fork keeps its own 4 MiB bound and
+the private Revert intent file is bounded at 17 MiB plus a 64 KiB envelope
+(16 MiB history, 1 MiB source checkpoint). The `image_history` frame profile
+reapplies the enlarged frame to managed compaction, Revert and credential-free
+Revert recovery clients of a session whose original execution froze native image
+generation; it never enables generation. See
+`cmds-delidev-compaction-contract.md` for the exact-budget and no-send rules.
 
 The app-server removes `input_image` and `input_audio` entries from
 `item/started` and `item/completed` notifications. When the client owns a
@@ -2737,7 +2772,13 @@ encrypted-content presence only. Locator values and opaque encrypted bytes stay
 in the original protected native history and its digest, and logs record only
 shape counts. Never fetch, open, decrypt, replay or reconstruct content from a
 result observation. A Worker whose server did not negotiate the capability
-keeps the observation private and the original turn continues.
+keeps the observation private and the original turn continues. That private
+path still validates the observation, its native item identity (non-empty, at
+most 1024 bytes) and its `started`/`completed` stage before retaining anything,
+and retains that identity and the
+completion lifecycle, so it consumes one shared native item slot, rejects an ID
+already owned by a message, tool, artifact or dynamic tool, and blocks any later
+item family from claiming that ID. It publishes no function-output event.
 
 The lifecycle digest covers the authoritative history item, including private
 locator and ciphertext bytes, not the media-stripped notification.
@@ -2775,6 +2816,13 @@ only response is `success: false` and one `inputText` item containing
 `This dynamic tool is unavailable in DeliDev.` No handler, registry, arbitrary
 tool backend, automatic input replay or automatic resend is introduced.
 
+A dynamic tool shares the Worker's native item identity space and the 10,000
+retained-item bound with messages, tools, artifacts, image generations and
+function outputs. A retained dynamic native ID cannot start any other item
+family, and a new item of any family is rejected as publication-uncertain at the
+bound without emitting an event. Updates to an already retained dynamic tool
+remain admitted at the bound and do not change the count.
+
 The first wire-request uniqueness claim atomically publishes a complete private
 original owner document. A missing or partial later call journal preserves that
 inspectable owner and never permits another send.
@@ -2806,3 +2854,9 @@ produce a continuation checkpoint or later input authority.
 The separate `CreditProtocol` profile is available only to the server-owned System 101 credit lane. It shares the [quota-only external authentication](#quota-only-external-chatgpt-authentication--issue-1854) boundary: experimental API support, disabled plugins, ephemeral credentials, the verified official OpenAI provider, configuration verified before credentials, and only an access token, account and plan supplied to one external `account/login/start`. The once-only closed login completion is validated and discarded, every `account/chatgptAuthTokens/refresh` request is refused with the fixed safe error, and no managed auth file, ID or refresh token, authentication renewal or credential write-back exists. Native readiness, the configured Direct route and the executable digest are verified for the actual server process; an unsupported profile fails without a Worker fallback.
 
 `ConsumeExternalResetCredit` requires the server's durable send claim and sends one official `account/rateLimitResetCredit/consume` request with the original UUIDv7 `idempotencyKey` and the immutable credit or count-only selection. A valid closed outcome is checkpointed through the server callback before one separate omitted-params `account/rateLimits/read`; a checkpoint or read failure returns the outcome with an independent read error, so it cannot erase consumption. The quota-only `QuotaProtocol` profile stays read-only and rejects consumption. The client is single use and joins its notification reader before cleanup. Independent original-process and private-file cleanup remain required.
+
+### Claude Code setup-token and managed token execution
+
+The `setup-token` adapter starts the pinned CLI on a bounded PTY (50 rows, 1000 columns) without `CI`, with `TERM=xterm-256color`, a verified no-op `BROWSER` opener (Windows and any host without one fail closed as unsupported instead of letting the child open the server user's browser) and none of the API, bearer, endpoint, proxy or login sources. Its URL profile is separate from auth-login: host `claude.com`, path `/cai/oauth/authorize`, the pinned client, S256 PKCE, `code=true`, the manual code callback and exactly the `user:inference` scope. The screen parser removes terminal escapes, accepts only delimited candidates, requires identical addresses and one distinct `sk-ant-oat01-` token with the completion marker, and releases the token at most once after a successful joined exit.
+
+Managed execution adds a token to the private stream configuration. The child environment keeps only owned paths, sets `CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST=1` (the pinned CLI then strips the token from tool and hook subprocesses) and the private secure-store directory, removes every inherited API, bearer, endpoint and descriptor source and never uses `--bare`. Initialization must report the `CLAUDE_CODE_OAUTH_TOKEN` token source with no API-key source and no email, organization or subscription metadata; token presence alone is not readiness. Checkpoints of this mode are distinct from relay and device-profile checkpoints. Real setup-token output and consumption were verified only against source strings and synthetic fixtures, not a real account.

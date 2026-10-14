@@ -15,6 +15,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/tokenprices"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/updates"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/userservice"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/worker"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 	"log/slog"
 	"net"
@@ -68,6 +69,11 @@ type Service struct {
 	tailscale          *tailscale.Manager
 	tailnetMu          sync.Mutex
 	tailnetStartWorker func(context.Context, string) error
+	// Optional seams for tests; nil selects the production clock, outbound HTTP
+	// client and Worker pairing retry.
+	tailnetNow  func() time.Time
+	tailnetHTTP func() (*http.Client, *http.Transport)
+	tailnetPair func(context.Context, string, worker.PairingCode, domain.DeviceType, string) (worker.Credential, error)
 	delidevv1connect.UnimplementedTailscaleServiceHandler
 	delidevv1connect.UnimplementedAttachmentServiceHandler
 	imageTransfersMu      sync.Mutex
@@ -111,18 +117,29 @@ type Service struct {
 	github                githubIdentity
 	githubQueries         githubRepositoryQueries
 	githubWorkspaces      githubPullRequestWorkspaces
+	githubAvatars         githubAvatarFetcher
 	githubRepositories    githubRepositoryInventory
 	terminalOutputMu      sync.Mutex
 	terminalOutputChanged chan struct{}
 	// Set only by isolated tests: runs after the account deletion replay check
 	// misses and before failed-subscription cleanup is admitted or observed.
 	afterAccountDeleteReplay func(context.Context)
+	// Test hooks bounding the failed-login deletion completion race: one after a
+	// deletion releases the account gate and before its cleanup run, one before
+	// the per-account runner acquires the gate.
+	afterFailedSubscriptionDeleteObserve func(context.Context)
+	beforeFailedCleanupAccountGate       func(context.Context, domain.ID)
 	// Set before stream admission in isolated tests; production uses 100 ms.
-	terminalWatchInterval         time.Duration
-	terminalOutputs               map[domain.ID]*terminalOutputRing
-	terminalOutputOrder           list.List
-	prFixRequests                 prFixRequestTracker
-	subscriptionOpen              serverSubscriptionOpener
+	terminalWatchInterval time.Duration
+	terminalOutputs       map[domain.ID]*terminalOutputRing
+	terminalOutputOrder   list.List
+	prFixRequests         prFixRequestTracker
+	subscriptionOpen      serverSubscriptionOpener
+	claudeSetupOpen       managedClaudeOpener
+	// serverCleanupRetryBase is the first delay before a failed server-owned
+	// credential cleanup is retried. Zero selects the default; tests shorten it.
+	serverCleanupRetryBase        time.Duration
+	claudeFinishAck               func() error
 	quotaOpen                     serverQuotaOpener
 	creditOpen                    serverCreditOpener
 	subscriptionCallbackTransport http.RoundTripper

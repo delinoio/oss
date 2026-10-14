@@ -111,6 +111,10 @@ func claimTitleJob(ctx context.Context, s *Service, machine, instance, device, j
 				return nil, domain.Fail(domain.ResourceExhausted, "This Worker already owns an active title operation.", "Keep later title work durably queued on its original Worker.")
 			}
 		}
+		var probe domain.AuxiliaryTitleInput
+		if domain.Decode(job.Input, &probe) == nil && probe.IsManaged() {
+			return s.claimManagedTitleJob(tx, record, job, machine, instance, device)
+		}
 		var input domain.AuxiliaryTitleInput
 		if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.SessionID != record.SessionID || input.ProjectID != record.ProjectID || input.MachineID != machine || input.OriginalJobID != job.ParentID {
 			updated, err := retireQueuedTitle(tx, record, job, domain.JobFailed, domain.TitleFailed, domain.TitleReasonInvalidOutput, domain.Fail(domain.InvalidArgument, "The immutable title assignment is inconsistent.", "Preserve the accepted session and inspect its original execution."))
@@ -300,7 +304,14 @@ func (s *Service) WatchAuxiliaryWork(ctx context.Context, req *connect.Request[p
 				candidateID := record.ID
 				record, err = claimTitleJob(ctx, s, machine, instance, actor.DeviceID, candidateID)
 				if err != nil {
-					if domain.SafeError(err).Code == domain.ResourceExhausted {
+					if safe := domain.SafeError(err); safe.Code == domain.ResourceExhausted {
+						if safe.Cause == managedTitleDeferredCause {
+							// Only this title's account is busy. Leave it queued and keep
+							// scanning so titles for free accounts on this Worker still run.
+							s.logger.DebugContext(ctx, "managed_title_deferred", "machine_id", machine, "job_id", candidateID)
+							after = candidateID
+							continue
+						}
 						waitForCapacity = true
 						break
 					}
@@ -364,4 +375,57 @@ func (s *Service) titleCancellationRequested(ctx context.Context, jobID domain.I
 		return err
 	})
 	return requested, err
+}
+
+// managedTitleDeferredCause marks a ResourceExhausted result that belongs to one
+// queued managed title (its account is leased, refreshing, observed, fenced or
+// has eligible primary work) rather than to the whole title lane. The auxiliary
+// scan keeps such a title durably queued and continues with later candidates;
+// lane-wide exhaustion stays an untagged ResourceExhausted that ends the scan.
+const managedTitleDeferredCause = "managed_title_account_busy"
+
+func managedTitleDeferred() *domain.Error {
+	deferred := domain.Fail(domain.ResourceExhausted, "The original subscription account is busy.", "Keep this title durably queued; eligible primary work has admission priority and a running title is never preempted.")
+	deferred.Cause = managedTitleDeferredCause
+	return deferred
+}
+
+// claimManagedTitleJob admits a protected ChatGPT title on its original Worker.
+// Transient account ownership keeps the title durably queued; lost authority
+// retires it. Admission neither delivers credentials nor consumes the one-time
+// inference claim: both happen only in TakeSubscription.
+func (s *Service) claimManagedTitleJob(tx *store.Tx, record store.Record, job domain.Job, machine, instance, device domain.ID) (any, error) {
+	authority, err := s.validateManagedTitle(tx, record, job, managedTitleAdmission)
+	if err != nil {
+		switch domain.SafeError(err).Code {
+		case domain.BudgetReached:
+			return retireQueuedTitle(tx, record, job, domain.JobCanceled, domain.TitleSkipped, domain.TitleReasonBudgetReached, domain.SafeError(err))
+		case domain.Unsupported:
+			return retireQueuedTitle(tx, record, job, domain.JobFailed, domain.TitleUnsupported, domain.TitleReasonCapabilityAbsent, domain.Fail(domain.Unsupported, "The original Worker no longer proves the managed title profile.", "Keep the title unsupported; no fallback harness or authentication is allowed."))
+		case domain.PermissionDenied:
+			return retireQueuedTitle(tx, record, job, domain.JobCanceled, domain.TitleSkipped, domain.TitleReasonAuthorityLost, domain.Fail(domain.PermissionDenied, "The managed title no longer matches its original authority.", "Keep the placeholder; no account, model, Worker or credential generation may be substituted."))
+		}
+		return nil, err
+	}
+	input := authority.Input
+	if input.OriginalInstanceID != instance || input.OriginalDeviceID != device {
+		return retireQueuedTitle(tx, record, job, domain.JobCanceled, domain.TitleSkipped, domain.TitleReasonAuthorityLost, domain.Fail(domain.PermissionDenied, "Only the original Worker process can run its managed title.", "Keep the placeholder; title inference never transfers to a replacement."))
+	}
+	busy, err := managedTitleAccountBusy(tx, input.AccountID, authority.Account, record)
+	if err != nil {
+		return nil, err
+	}
+	if busy {
+		return nil, managedTitleDeferred()
+	}
+	job.State, job.InstanceID, job.AssignedDeviceID = domain.JobClaimed, instance, device
+	updated, err := tx.PutJob(record.ID, record.Revision, record.SessionID, record.ProjectID, job)
+	if err != nil {
+		return nil, err
+	}
+	authority.Session.TitleState = domain.TitleRunning
+	if _, err := tx.Put(domain.SessionKind, authority.SessionRecord.ID, authority.SessionRecord.Revision, authority.SessionRecord.ID, authority.SessionRecord.ProjectID, authority.Session); err != nil {
+		return nil, err
+	}
+	return updated, nil
 }

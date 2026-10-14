@@ -9,6 +9,7 @@ import { ConfigurationTransfer } from "./configuration-transfer";
 import { EntranceTarget } from "./entrance-motion";
 import { MutationIntents } from "./mutation";
 import { Settings } from "./settings";
+import { unoptedSettingsCategory } from "./entrance-test-support";
 import {
   SettingsDialogSize,
   SettingsTaskDialog,
@@ -67,6 +68,8 @@ it.each([
   "Agent Workers",
 ])("plays the %s category entrance once per explicit opening", (name) => {
   render(providers(<Settings />));
+  // The default landing category (AI Subscription) opted in too, so leave it first.
+  category(unoptedSettingsCategory);
   expect(column().getAttribute("data-entrance")).toBeNull();
   category(name);
   const node = column();
@@ -79,7 +82,7 @@ it.each([
   category(name);
   expect(column()).toBe(node);
   expect(column().getAttribute("data-entrance")).toBeNull();
-  category("Instructions");
+  category(unoptedSettingsCategory);
   expect(column().getAttribute("data-entrance")).toBeNull();
   category(name);
   expect(column().getAttribute("data-entrance")).toBe("y4");
@@ -105,7 +108,7 @@ it.each(["App information", "Connections"])(
     expect(title.contains(panels)).toBe(false);
     dispatch(title);
     expect(title.getAttribute("data-entrance")).toBeNull();
-    category("Instructions");
+    category(unoptedSettingsCategory);
     expect(heading().getAttribute("data-entrance")).toBeNull();
     category(name);
     expect(heading().getAttribute("data-entrance")).toBe("y4");

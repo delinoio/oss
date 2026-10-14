@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
+	"strings"
 	"testing"
 )
 
@@ -62,5 +63,25 @@ func TestBranchPrefixUnsupportedWorkerFailsBeforeNativeSelection(t *testing.T) {
 	_, err := checkedExecutionConfiguration(nil, domain.Session{}, domain.Machine{}, domain.ExecutionJobInput{Configuration: domain.ExecutionConfiguration{BranchPrefix: &domain.BranchPrefixSelection{Version: 1, Prefix: "team"}}})
 	if err == nil || domain.SafeError(err).Code != domain.Unsupported {
 		t.Fatal("unsupported Worker admitted", err)
+	}
+}
+
+func TestBranchPrefixExactQuoteRequiresNegotiatedWorkerCapability(t *testing.T) {
+	selection := func(version uint32) domain.ExecutionJobInput {
+		return domain.ExecutionJobInput{Configuration: domain.ExecutionConfiguration{BranchPrefix: &domain.BranchPrefixSelection{Version: version, Prefix: "team"}}}
+	}
+	legacyOnly := domain.Machine{WorkerCapabilities: []domain.WorkerCapability{domain.BranchPrefixInstructionsV1}}
+	_, err := checkedExecutionConfiguration(nil, domain.Session{}, legacyOnly, selection(domain.BranchPrefixVersionExactQuote))
+	if err == nil || domain.SafeError(err).Code != domain.Unsupported || !strings.Contains(domain.SafeError(err).Message, "exact branch prefix quoting") {
+		t.Fatal("version 2 selection admitted by a Worker that negotiated only version 1", err)
+	}
+	_, err = checkedExecutionConfiguration(nil, domain.Session{}, legacyOnly, selection(domain.BranchPrefixVersionLegacyQuote))
+	if err != nil && strings.Contains(domain.SafeError(err).Message, "exact branch prefix quoting") {
+		t.Fatal("version 1 selection required exact quoting", err)
+	}
+	exact := domain.Machine{WorkerCapabilities: []domain.WorkerCapability{domain.BranchPrefixInstructionsV1, domain.BranchPrefixExactQuoteV1}}
+	_, err = checkedExecutionConfiguration(nil, domain.Session{}, exact, selection(domain.BranchPrefixVersionExactQuote))
+	if err != nil && strings.Contains(domain.SafeError(err).Message, "exact branch prefix quoting") {
+		t.Fatal("negotiated Worker rejected version 2 selection", err)
 	}
 }

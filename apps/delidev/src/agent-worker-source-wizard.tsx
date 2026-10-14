@@ -3,6 +3,7 @@ import {
   useProductLabels,
   PresentationKind,
   productResourceName,
+  productResourceObservedName,
 } from "./product-identity-labels";
 import "./wizard-presentation.css";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
@@ -317,7 +318,7 @@ function SourceGroup({
     new Set(knownModels.data.models.map((row) => row.nativeId)).size ===
       knownModels.data.models.length;
   const [labels, setLabels] = useState<
-    Record<string, { name: string; status: AccountDisplayStatus }>
+    Record<string, { name?: string; status: AccountDisplayStatus }>
   >({});
   const selectedIds = ids.join("\u0000");
   const retainDisplay = useCallback(
@@ -325,7 +326,7 @@ function SourceGroup({
       setLabels((previous) => ({
         ...previous,
         [row.id]: {
-          name: productResourceName(productLabel, row),
+          name: productResourceObservedName(row),
           status: accountDisplayStatus(document(row)),
         },
       })),

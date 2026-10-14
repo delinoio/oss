@@ -2,7 +2,7 @@
 use std::{
     collections::BTreeMap,
     sync::{
-        Arc, Condvar, Mutex,
+        Arc, Condvar, Mutex, MutexGuard,
         atomic::{AtomicBool, Ordering},
     },
     time::{Duration, Instant},
@@ -11,7 +11,10 @@ use std::{
 use delidev_desktop::{
     Connector, NativeFailure,
     oauth::OAuthHost,
-    updater::{AcceptedInstallation, Action, DesktopUpdateRequest, Phase, Prepared, PublicResult},
+    updater::{
+        AcceptedInstallation, Action, BeginOutcome, DesktopUpdateRequest, Phase, Prepared,
+        PublicResult, ReconcileScope,
+    },
 };
 use tauri::WebviewWindow;
 use tauri_runtime_cef::CefRuntime;
@@ -127,12 +130,19 @@ fn run_retained(
     budget: Duration,
     interval: Duration,
 ) -> Result<Prepared, NativeFailure> {
-    let mut pending = task.pending.lock().map_err(|_| NativeFailure::Busy)?;
+    let mut pending = task.pending_guard("run-retained");
     *pending = Some((begun, Phase::Uncertain));
     let (accepted, phase) = pending.as_mut().unwrap();
-    *phase = select_phase(check, stopping, budget, interval, || {
-        accepted.install(connector)
-    });
+    *phase = if accepted.is_settlement_only() {
+        // Recovered ownership never reaches the installer and its original
+        // effects are unknown, so it needs no authority check to stay
+        // Uncertain.
+        Phase::Uncertain
+    } else {
+        select_phase(check, stopping, budget, interval, || {
+            accepted.install(connector)
+        })
+    };
     drop(pending);
     task.settle(connector)
 }
@@ -156,6 +166,10 @@ pub struct UpdateHost {
     busy: AtomicBool,
     stopping: AtomicBool,
     installation: Mutex<Option<Arc<Installation>>>,
+    // Set while the launch pass replays retained outcomes. Fresh installation
+    // admission waits for it so a retained journal is settled first.
+    recovering: AtomicBool,
+    recovery: Mutex<Option<std::thread::JoinHandle<()>>>,
 }
 #[derive(Default)]
 struct Installation {
@@ -165,12 +179,76 @@ struct Installation {
     pending: Mutex<Option<(AcceptedInstallation, Phase)>>,
 }
 impl Installation {
+    /// Locks the retained ownership slot, recovering from poison. A panic that
+    /// unwinds while the guard is held leaves the stored token and its
+    /// preserved phase untouched, and that token is the only authority able to
+    /// settle the original Installing journal, so poison must never turn it
+    /// into permanent Busy. Recovery never changes the stored phase: it stays
+    /// the Uncertain value published before any fallible work.
+    fn pending_guard(
+        &self,
+        site: &'static str,
+    ) -> MutexGuard<'_, Option<(AcceptedInstallation, Phase)>> {
+        self.pending.lock().unwrap_or_else(|poisoned| {
+            tracing::error!(
+                operation = "desktop_update_settlement",
+                state = "pending-poison-recovered",
+                site,
+                retained = poisoned.get_ref().is_some()
+            );
+            poisoned.into_inner()
+        })
+    }
+
     fn settle(&self, connector: &Connector) -> Result<Prepared, NativeFailure> {
-        let mut pending = self.pending.lock().map_err(|_| NativeFailure::Busy)?;
+        let mut pending = self.pending_guard("settle");
         let (accepted, phase) = pending.as_ref().ok_or(NativeFailure::InvalidEvidence)?;
+        // Persist the exact observed outcome before the first settlement
+        // attempt so it survives process exit if every attempt fails. A store
+        // failure is logged but never prevents the bounded settlement.
+        let store = connector.outcome_store();
+        let record = match accepted.outcome_record(*phase) {
+            Ok(record) => match store.persist(&record) {
+                Ok(()) => Some(record),
+                Err(code) => {
+                    tracing::error!(
+                        operation = "desktop_update_settlement",
+                        state = "outcome-persist-failed",
+                        ?code
+                    );
+                    None
+                }
+            },
+            Err(code) => {
+                tracing::error!(
+                    operation = "desktop_update_settlement",
+                    state = "outcome-record-invalid",
+                    ?code
+                );
+                None
+            }
+        };
         let result = accepted.settle(connector, *phase);
         if result.is_ok() {
+            // Retire only after the verified matching journal settlement.
+            if let Some(record) = &record
+                && let Err(code) = store.retire(record)
+            {
+                tracing::warn!(
+                    operation = "desktop_update_settlement",
+                    state = "outcome-retire-failed",
+                    ?code
+                );
+            }
             *pending = None;
+            // The slot is consistent again once the verified settlement
+            // consumed the token.
+            self.pending.clear_poison();
+        } else if record.is_some() {
+            tracing::warn!(
+                operation = "desktop_update_settlement",
+                state = "outcome-retained-for-restart"
+            );
         }
         result
     }
@@ -193,28 +271,80 @@ impl UpdateHost {
         server: &str,
         id: &str,
         revision: u64,
+        saved_connection: Option<&str>,
     ) -> Result<(), NativeFailure> {
         let owner = self.installation.lock().map_err(|_| NativeFailure::Busy)?;
         if let Some(task) = owner.as_ref() {
             if task
                 .result
                 .lock()
-                .map_err(|_| NativeFailure::Busy)?
+                .unwrap_or_else(|e| e.into_inner())
                 .is_none()
             {
                 return Ok(());
             }
             let matches = task
-                .pending
-                .lock()
-                .map_err(|_| NativeFailure::Busy)?
+                .pending_guard("settle-retained")
                 .as_ref()
                 .is_some_and(|(accepted, _)| accepted.matches(server, id, revision));
             if matches {
                 task.settle(connector)?;
             }
         }
+        // A prior process may have retained the exact outcome durably. Replay
+        // only this original scope; failures keep uncertainty and never fail
+        // the read-only inspection that follows.
+        let report = connector.reconcile_retained_outcomes(
+            &ReconcileScope::Original {
+                server,
+                id,
+                revision,
+                saved_connection,
+            },
+            &|| false,
+        );
+        let scope = ReconcileScope::Original {
+            server,
+            id,
+            revision,
+            saved_connection,
+        };
+        let intents = connector.reconcile_begin_intents(&scope, &|| false);
+        tracing::info!(
+            operation = "desktop_update_inspect_reconcile",
+            settled = report.settled,
+            retained = report.retained,
+            intents_settled = intents.settled,
+            intents_retained = intents.retained
+        );
         Ok(())
+    }
+
+    /// Replays every retained outcome from a previous process on a bounded
+    /// background thread. Installation admission stays busy until it ends.
+    pub fn begin_launch_reconcile(self: &Arc<Self>, connector: Arc<Connector>) {
+        self.recovering.store(true, Ordering::Release);
+        let host = Arc::clone(self);
+        let handle = std::thread::spawn(move || {
+            let report = connector.reconcile_retained_outcomes(&ReconcileScope::Launch, &|| {
+                host.stopping.load(Ordering::Acquire)
+            });
+            // Outcomes settle first so an exact retained phase is never
+            // replaced by an inferred Uncertain from a begin intent.
+            let intents = connector.reconcile_begin_intents(&ReconcileScope::Launch, &|| {
+                host.stopping.load(Ordering::Acquire)
+            });
+            tracing::info!(
+                operation = "desktop_update_launch_reconcile",
+                settled = report.settled,
+                retained = report.retained,
+                skipped = report.skipped,
+                intents_settled = intents.settled,
+                intents_retained = intents.retained
+            );
+            host.recovering.store(false, Ordering::Release);
+        });
+        *self.recovery.lock().unwrap_or_else(|e| e.into_inner()) = Some(handle);
     }
 
     pub fn request_stop(&self) {
@@ -229,17 +359,16 @@ impl UpdateHost {
         if self.stopping.load(Ordering::Acquire) {
             return Err(NativeFailure::Stopped);
         }
+        if self.recovering.load(Ordering::Acquire) {
+            return Err(NativeFailure::Busy);
+        }
         if let Some(previous) = owner.as_ref() {
             if previous
                 .result
                 .lock()
-                .map_err(|_| NativeFailure::Busy)?
+                .unwrap_or_else(|e| e.into_inner())
                 .is_none()
-                || previous
-                    .pending
-                    .lock()
-                    .map_err(|_| NativeFailure::Busy)?
-                    .is_some()
+                || previous.pending_guard("start").is_some()
             {
                 return Err(NativeFailure::Busy);
             }
@@ -270,6 +399,18 @@ impl UpdateHost {
         // Called only by the tracked Quit worker or after native runtime
         // return. Joining cannot depend on a renderer future or
         // presentation epoch.
+        if let Some(recovery) = self
+            .recovery
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take()
+            && recovery.join().is_err()
+        {
+            tracing::error!(
+                operation = "desktop_update_join",
+                code = "reconcile-panicked"
+            );
+        }
         let owner = self.installation.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(task) = owner.as_ref() {
             if let Some(join) = task.join.lock().unwrap_or_else(|e| e.into_inner()).take()
@@ -277,11 +418,7 @@ impl UpdateHost {
             {
                 tracing::error!(operation = "desktop_update_join", code = "native-uncertain");
             }
-            let pending = task
-                .pending
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .is_some();
+            let pending = task.pending_guard("join").is_some();
             if pending && let Err(code) = task.settle(connector) {
                 tracing::error!(
                     operation = "desktop_update_join",
@@ -395,8 +532,9 @@ pub async fn desktop_update_native(
             let c = Arc::clone(connector.inner());
             let sid = server.clone();
             let oid = id.clone();
+            let saved_id = expected.as_ref().map(|profile| profile.id.clone());
             tauri::async_runtime::spawn_blocking(move || {
-                retained.settle_retained(&c, &sid, &oid, revision)
+                retained.settle_retained(&c, &sid, &oid, revision, saved_id.as_deref())
             })
             .await
             .map_err(|_| NativeFailure::SidecarFailed)??;
@@ -519,7 +657,7 @@ pub async fn desktop_update_native(
         let native_original = original.clone();
         let native_host = Arc::clone(&host);
         let task = host.start(move |task| {
-            let begun = c.begin_desktop_installation(
+            let begun = match c.begin_desktop_installation(
                 saved.as_ref(),
                 DesktopUpdateRequest {
                     server: &sid,
@@ -529,7 +667,23 @@ pub async fn desktop_update_native(
                     action: "native-begin",
                     outcome: None,
                 },
-            )?;
+            ) {
+                BeginOutcome::Accepted(begun) => begun,
+                // The response was canceled or lost but the exact original
+                // journal is Installing. Own it for settlement only.
+                BeginOutcome::Recovered {
+                    installation,
+                    cause,
+                } => {
+                    tracing::warn!(
+                        operation = "desktop_update",
+                        phase = "begin-recovered",
+                        ?cause
+                    );
+                    installation
+                }
+                other => return Err(other.failure().unwrap_or(NativeFailure::InvalidEvidence)),
+            };
             run_retained(
                 &task,
                 &c,
@@ -576,6 +730,14 @@ pub async fn desktop_update_native(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    fn accepted(outcome: BeginOutcome) -> AcceptedInstallation {
+        match outcome {
+            BeginOutcome::Accepted(accepted) => accepted,
+            _ => panic!("expected an accepted original begin"),
+        }
+    }
     #[test]
     fn quit_joins_original_task_after_caller_departure_and_fences_new_admission() {
         let temp = tempfile::tempdir().unwrap();
@@ -632,6 +794,29 @@ mod tests {
     /// file, plus the original accepted installation token from its begin.
     #[cfg(unix)]
     fn native_fixture() -> (NativeFixture, AcceptedInstallation) {
+        let (fixture, generation) = native_parts();
+        let accepted = accepted(begin_original(&fixture, &generation));
+        (fixture, accepted)
+    }
+
+    #[cfg(unix)]
+    fn begin_original(fixture: &NativeFixture, generation: &str) -> BeginOutcome {
+        fixture.connector.begin_desktop_installation(
+            None,
+            DesktopUpdateRequest {
+                server: &fixture.server,
+                id: &fixture.id,
+                revision: 7,
+                generation,
+                action: "native-begin",
+                outcome: None,
+            },
+        )
+    }
+
+    /// The fixture before any begin, plus the original native generation.
+    #[cfg(unix)]
+    fn native_parts() -> (NativeFixture, String) {
         use std::os::unix::fs::PermissionsExt;
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().canonicalize().unwrap();
@@ -650,16 +835,30 @@ if sys.argv[3]=='server':
   if op in ('runtime.cancel','runtime.fence'): continue
   assert op=='update.native-begin'
   open(os.path.join(root,'calls'),'a').write('x')
+  if os.path.exists(os.path.join(root,'reject')):
+   print(json.dumps({'version':2,'id':request['id'],'error':{'code':'recovery_required'}}),flush=True)
+   continue
   result=json.load(open(os.path.join(root,'begin.json')))['result']
   print(json.dumps({'version':2,'id':request['id'],'result':result}),flush=True)
 else:
- assert sys.argv[3:5]==['update','native-outcome']
+ assert sys.argv[3]=='update' and sys.argv[4] in ('native-outcome','native-inspect')
+ if sys.argv[4]=='native-inspect':
+  open(os.path.join(root,'calls'),'a').write('i')
+  name='inspect.json' if os.path.exists(os.path.join(root,'inspect.json')) else 'begin.json'
+  print(open(os.path.join(root,name)).read())
+  sys.exit(0)
  open(os.path.join(root,'calls'),'a').write('x')
  print(open(os.path.join(root,'outcome.json')).read())
 "#,
         )
         .unwrap();
         std::fs::set_permissions(&sidecar, std::fs::Permissions::from_mode(0o700)).unwrap();
+        std::fs::create_dir(root.join("desktop-updates")).unwrap();
+        std::fs::set_permissions(
+            root.join("desktop-updates"),
+            std::fs::Permissions::from_mode(0o700),
+        )
+        .unwrap();
         let connector = Arc::new(Connector::new(sidecar, root.clone()).unwrap());
         let id = uuid::Uuid::now_v7().to_string();
         let server = uuid::Uuid::now_v7().to_string();
@@ -691,19 +890,6 @@ else:
             serde_json::to_vec(&serde_json::json!({"version":1,"result":value})).unwrap(),
         )
         .unwrap();
-        let accepted = connector
-            .begin_desktop_installation(
-                None,
-                DesktopUpdateRequest {
-                    server: &server,
-                    id: &id,
-                    revision: 7,
-                    generation: &generation,
-                    action: "native-begin",
-                    outcome: None,
-                },
-            )
-            .unwrap();
         (
             NativeFixture {
                 _temp: temp,
@@ -712,7 +898,7 @@ else:
                 server,
                 id,
             },
-            accepted,
+            generation,
         )
     }
 
@@ -983,7 +1169,8 @@ else:
             if quit {
                 host.join(&connector);
             } else {
-                host.settle_retained(&connector, &server, &id, 7).unwrap();
+                host.settle_retained(&connector, &server, &id, 7, None)
+                    .unwrap();
             }
             assert!(task.pending.lock().unwrap().is_none());
             host.join(&connector);
@@ -994,6 +1181,316 @@ else:
                 "only original begin and same-phase outcome; no installer replay"
             );
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn poisoned_pending_still_settles_the_preserved_uncertain_token_through_inspect_and_quit() {
+        for quit in [false, true] {
+            let (fixture, accepted) = native_fixture();
+            let NativeFixture {
+                root,
+                connector,
+                server,
+                id,
+                ..
+            } = &fixture;
+            let (root, connector, server, id) = (
+                root.clone(),
+                Arc::clone(connector),
+                server.clone(),
+                id.clone(),
+            );
+            let host = Arc::new(UpdateHost::default());
+            let task = host
+                .start(move |task| {
+                    let mut pending = task.pending.lock().unwrap();
+                    *pending = Some((accepted, Phase::Uncertain));
+                    // An unwind while the guard is held poisons the slot.
+                    panic!("panic while the retained token is held");
+                })
+                .unwrap();
+            assert!(matches!(task.wait(), Err(NativeFailure::SidecarFailed)));
+            assert!(task.pending.is_poisoned());
+            if quit {
+                host.join(&connector);
+            } else {
+                // A foreign operation never consumes the retained token.
+                host.settle_retained(&connector, &server, "foreign", 7, None)
+                    .unwrap();
+                host.settle_retained(&connector, "foreign", &id, 7, None)
+                    .unwrap();
+                host.settle_retained(&connector, &server, &id, 8, None)
+                    .unwrap();
+                assert!(task.pending_guard("test").is_some());
+                assert_eq!(std::fs::read(root.join("calls")).unwrap(), b"x");
+                host.settle_retained(&connector, &server, &id, 7, None)
+                    .unwrap();
+            }
+            assert!(task.pending_guard("test").is_none());
+            assert!(
+                !task.pending.is_poisoned(),
+                "a verified settlement clears the poison"
+            );
+            host.join(&connector);
+            connector.shutdown_owned().unwrap();
+            assert_eq!(
+                std::fs::read(root.join("calls")).unwrap(),
+                b"xx",
+                "one original begin and one same-phase Uncertain outcome; no installer"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recovered_begin_ownership_settles_uncertain_without_authority_check_or_installer() {
+        let (fixture, generation) = native_parts();
+        // The runtime rejects the response, but the original journal is
+        // Installing, so the begin was accepted.
+        std::fs::write(fixture.root.join("reject"), b"x").unwrap();
+        let BeginOutcome::Recovered {
+            installation,
+            cause,
+        } = begin_original(&fixture, &generation)
+        else {
+            panic!("an Installing journal must recover settlement-only ownership");
+        };
+        assert_eq!(cause, NativeFailure::InvalidEvidence);
+        assert!(installation.is_settlement_only());
+        let task = Installation::default();
+        let checks = std::sync::atomic::AtomicUsize::new(0);
+        let stopping = AtomicBool::new(false);
+        let result = run_retained(
+            &task,
+            &fixture.connector,
+            installation,
+            || {
+                checks.fetch_add(1, Ordering::AcqRel);
+                Ok(())
+            },
+            &stopping,
+            Duration::from_secs(5),
+            Duration::from_millis(1),
+        )
+        .unwrap();
+        assert_eq!(result.phase, Phase::Uncertain);
+        assert_eq!(checks.load(Ordering::Acquire), 0, "no authority check runs");
+        assert!(task.pending.lock().unwrap().is_none());
+        assert_eq!(
+            std::fs::read(fixture.root.join("calls")).unwrap(),
+            b"xix",
+            "one begin, one inspection and one same-phase outcome; no installer"
+        );
+        assert!(fixture.connector.intent_store().scan().unwrap().is_empty());
+        fixture.connector.shutdown_owned().unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unresolved_begin_keeps_a_retry_from_racing_the_original_request() {
+        let (fixture, generation) = native_parts();
+        std::fs::write(fixture.root.join("reject"), b"x").unwrap();
+        // The original journal is still Prepared, so the lost begin is
+        // unproven.
+        let mut prepared: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(fixture.root.join("begin.json")).unwrap())
+                .unwrap();
+        prepared["result"]["phase"] = serde_json::json!("prepared");
+        std::fs::write(
+            fixture.root.join("inspect.json"),
+            serde_json::to_vec(&prepared).unwrap(),
+        )
+        .unwrap();
+        let host = Arc::new(UpdateHost::default());
+        for expected in [NativeFailure::InvalidEvidence, NativeFailure::Busy] {
+            let connector = Arc::clone(&fixture.connector);
+            let (server, id, generation) = (
+                fixture.server.clone(),
+                fixture.id.clone(),
+                generation.clone(),
+            );
+            let task = host
+                .start(move |_| {
+                    let outcome = connector.begin_desktop_installation(
+                        None,
+                        DesktopUpdateRequest {
+                            server: &server,
+                            id: &id,
+                            revision: 7,
+                            generation: &generation,
+                            action: "native-begin",
+                            outcome: None,
+                        },
+                    );
+                    assert!(matches!(outcome, BeginOutcome::Unresolved(_)));
+                    Err(outcome.failure().unwrap())
+                })
+                .unwrap();
+            assert_eq!(task.wait().err(), Some(expected));
+        }
+        let calls = std::fs::read(fixture.root.join("calls")).unwrap();
+        assert_eq!(
+            calls.iter().filter(|call| **call == b'x').count(),
+            1,
+            "native-begin is submitted once; the retry only re-inspects"
+        );
+        assert_eq!(fixture.connector.intent_store().scan().unwrap().len(), 1);
+        host.join(&fixture.connector);
+        fixture.connector.shutdown_owned().unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_quit_settlement_is_retained_and_replayed_on_next_launch_without_installer() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().canonicalize().unwrap();
+        let sidecar = root.join("sidecar");
+        std::fs::write(
+            &sidecar,
+            r#"#!/usr/bin/python3
+import sys,json,os
+root=sys.argv[2]
+if sys.argv[3]=='server':
+ print(json.dumps({'version':2,'result':{'endpoint':'http://127.0.0.1:51234','generation':'019c2381-9300-7000-8000-000000000001','key':'CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk'}}),flush=True)
+ for line in sys.stdin:
+  request=json.loads(line)
+  op=request['operation']
+  if op=='runtime.shutdown': break
+  if op in ('runtime.cancel','runtime.fence'): continue
+  assert op=='update.native-begin'
+  open(os.path.join(root,'begins'),'a').write('x')
+  result=json.load(open(os.path.join(root,'begin.json')))['result']
+  print(json.dumps({'version':2,'id':request['id'],'result':result}),flush=True)
+else:
+ assert sys.argv[3] == 'update' and sys.argv[4] in ('native-outcome','native-inspect')
+ if sys.argv[4]=='native-inspect':
+  name='outcome.json' if os.path.exists(os.path.join(root,'settled')) else 'begin.json'
+  print(open(os.path.join(root,name)).read())
+  sys.exit(0)
+ open(os.path.join(root,'outcomes'),'a').write('x')
+ if os.path.exists(os.path.join(root,'down')):
+  print(json.dumps({'version':1,'error':{'code':'unavailable'}}))
+  sys.exit(1)
+ open(os.path.join(root,'settled'),'w').write('x')
+ print(open(os.path.join(root,'outcome.json')).read())
+"#,
+        )
+        .unwrap();
+        std::fs::set_permissions(&sidecar, std::fs::Permissions::from_mode(0o700)).unwrap();
+        std::fs::create_dir(root.join("desktop-updates")).unwrap();
+        std::fs::set_permissions(
+            root.join("desktop-updates"),
+            std::fs::Permissions::from_mode(0o700),
+        )
+        .unwrap();
+        let connector = Arc::new(Connector::new(sidecar, root.clone()).unwrap());
+        let id = uuid::Uuid::now_v7().to_string();
+        let server = uuid::Uuid::now_v7().to_string();
+        let generation = uuid::Uuid::now_v7().to_string();
+        let target = format!(
+            "{}-{}",
+            std::env::consts::OS,
+            if cfg!(target_arch = "aarch64") {
+                "arm64"
+            } else {
+                "amd64"
+            }
+        )
+        .replace("macos-", "darwin-");
+        let extension = if cfg!(target_os = "macos") {
+            ".dmg"
+        } else {
+            ".AppImage"
+        };
+        let mut value = serde_json::json!({"version":1,"operation_id":id,"server_id":server,"generation":generation,"release_version":"0.2.0","target":target,"phase":"installing","artifact_path":root.join("desktop-updates/downloads").join(format!("{}{}","a".repeat(64),extension)),"artifact_sha256":"a".repeat(64),"artifact_size":8,"manifest_sha256":"b".repeat(64)});
+        std::fs::write(
+            root.join("begin.json"),
+            serde_json::to_vec(&serde_json::json!({"version":1,"result":value})).unwrap(),
+        )
+        .unwrap();
+        value["phase"] = serde_json::json!("installed");
+        std::fs::write(
+            root.join("outcome.json"),
+            serde_json::to_vec(&serde_json::json!({"version":1,"result":value})).unwrap(),
+        )
+        .unwrap();
+        let accepted = accepted(connector.begin_desktop_installation(
+            None,
+            DesktopUpdateRequest {
+                server: &server,
+                id: &id,
+                revision: 7,
+                generation: &generation,
+                action: "native-begin",
+                outcome: None,
+            },
+        ));
+        // Every outcome writer attempt fails while Quit joins the task.
+        std::fs::write(root.join("down"), b"x").unwrap();
+        let host = Arc::new(UpdateHost::default());
+        let task = host
+            .start(move |task| {
+                *task.pending.lock().unwrap() = Some((accepted, Phase::Installed));
+                Err(NativeFailure::Busy)
+            })
+            .unwrap();
+        assert!(matches!(task.wait(), Err(NativeFailure::Busy)));
+        host.join(&connector);
+        assert!(task.pending.lock().unwrap().is_some());
+        assert_eq!(std::fs::read(root.join("outcomes")).unwrap().len(), 4);
+        let store = connector.outcome_store();
+        let retained = store.scan().unwrap();
+        assert_eq!(retained.len(), 1);
+        let delidev_desktop::updater_outcome::StoredEntry::Record(record) = &retained[0] else {
+            panic!("expected a retained outcome record");
+        };
+        assert_eq!(
+            (
+                record.phase,
+                record.operation_id.as_str(),
+                record.server_id.as_str(),
+                record.generation.as_str(),
+                record.revision,
+                record.saved_connection.as_deref()
+            ),
+            (
+                Phase::Installed,
+                id.as_str(),
+                server.as_str(),
+                generation.as_str(),
+                7,
+                None
+            )
+        );
+        // The next process admits no installation until the launch pass ends,
+        // then settles the exact retained phase once.
+        std::fs::remove_file(root.join("down")).unwrap();
+        let next = Arc::new(UpdateHost::default());
+        next.recovering.store(true, Ordering::Release);
+        assert!(matches!(
+            next.start(|_| Err(NativeFailure::SidecarFailed)),
+            Err(NativeFailure::Busy)
+        ));
+        next.recovering.store(false, Ordering::Release);
+        next.begin_launch_reconcile(Arc::clone(&connector));
+        let waiting = std::time::Instant::now();
+        while next.recovering.load(Ordering::Acquire) {
+            assert!(waiting.elapsed() < std::time::Duration::from_secs(30));
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        next.join(&connector);
+        assert!(store.scan().unwrap().is_empty());
+        // The begin intent is retired once the settled journal is inspected.
+        assert!(connector.intent_store().scan().unwrap().is_empty());
+        assert_eq!(std::fs::read(root.join("outcomes")).unwrap().len(), 5);
+        assert_eq!(
+            std::fs::read(root.join("begins")).unwrap().len(),
+            1,
+            "reconciliation never repeats the durable begin or an installer"
+        );
+        connector.shutdown_owned().unwrap();
     }
 
     #[test]

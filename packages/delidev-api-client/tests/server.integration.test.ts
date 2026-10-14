@@ -159,6 +159,7 @@ it("uses real Go Connect binary messages, atomic events, replay receipts and ind
   expect((await removed).value).toMatchObject({
     kind: SyncKind.Remove,
     id: mutation.id,
+    entityKind: EntityKind.TEMPLATE,
   });
   stopped.abort();
   expect((await stream.next()).done).toBe(true);

@@ -256,22 +256,35 @@ function restoreRepositorySave(
     });
     return undefined;
   }
-  const job =
-    retained.job?.kind === EntityKind.JOB &&
-    isEntityId(retained.job.id) &&
-    supportsResourceSchema(retained.job)
-      ? retained.job
-      : undefined;
+  const accepted = acceptedRepositorySave(initial.id, request, retained.job);
   console.info("delidev.settings.repository_save_restored", {
-    phase: job ? "job" : "input",
+    phase: accepted ? "job" : "input",
   });
+  return { data, job: accepted?.job, submission: accepted?.submission };
+}
+
+// Pairs an accepted job with the request that produced it. The job and its
+// completion binding (job, Repository and expected revision) always come from
+// the same retained entry, and only for the Repository this editor shows.
+function acceptedRepositorySave(
+  repositoryId: string,
+  request: MessageShape<typeof ConfigurationQuery.saveConfiguration.input>,
+  retainedJob: Resource | undefined,
+): { job: Resource; submission?: RepositorySaveSubmission } | undefined {
+  if (
+    request.kind !== EntityKind.REPOSITORY ||
+    request.mutation?.id !== repositoryId ||
+    retainedJob?.kind !== EntityKind.JOB ||
+    !isEntityId(retainedJob.id) ||
+    !supportsResourceSchema(retainedJob)
+  )
+    return undefined;
   return {
-    data,
-    job,
+    job: retainedJob,
     submission:
-      job && request.mutation.expectedRevision > 0n
+      request.mutation.expectedRevision > 0n
         ? {
-            jobId: job.id,
+            jobId: retainedJob.id,
             repositoryId: request.mutation.id,
             expectedRevision: request.mutation.expectedRevision,
           }
@@ -755,16 +768,20 @@ export function ConfigurationEditor({
           )
       : undefined,
   );
-  // A definitive rejection that predates this editor belongs to an abandoned
-  // draft: its request document is gone, so the reopened saved document must
-  // not inherit the error. Busy, uncertain, accepted-job and retained-input
-  // state keeps its connection-owned recovery and is never treated as stale.
+  // A definitive name rejection that predates this editor belongs to an
+  // abandoned draft: its request document is gone, so the reopened saved
+  // document must not inherit the name guidance. Other definitive errors
+  // (denied, revision, identity) keep their generic presentation. Busy,
+  // uncertain, accepted-job and retained-input state keeps its
+  // connection-owned recovery and is never treated as stale.
   const staleRejection = useRef<unknown>(
     kind === EntityKind.REPOSITORY &&
       Boolean(source) &&
       !mutation.busy &&
       !mutation.uncertain &&
-      !mutation.input
+      !mutation.input &&
+      mutation.error !== undefined &&
+      isConfigurationNameConflict(mutation.error)
       ? mutation.error
       : undefined,
   );
@@ -786,6 +803,41 @@ export function ConfigurationEditor({
     // job state that arrived after this editor rendered.
     mutation.clearRejected();
   }, []);
+  // The original save can be accepted after this editor was constructed. The
+  // unmounted submitter skips its accepted callback, so adopt the retained job
+  // and its completion binding from the same connection-owned entry. This only
+  // reads retained state and never sends or replays a save.
+  const retainedJob = mutation.job;
+  const retainedInput = mutation.input;
+  useEffect(() => {
+    if (
+      kind !== EntityKind.REPOSITORY ||
+      !initial ||
+      job !== undefined ||
+      !retainedJob ||
+      !retainedInput ||
+      completedRepositoryJobs.current.has(retainedJob.id)
+    )
+      return;
+    const adopted = acceptedRepositorySave(
+      initial.id,
+      retainedInput as MessageShape<
+        typeof ConfigurationQuery.saveConfiguration.input
+      >,
+      retainedJob,
+    );
+    if (!adopted) {
+      console.warn("delidev.settings.repository_adoption_skipped", {
+        reason: "identity",
+      });
+      return;
+    }
+    console.info("delidev.settings.repository_save_adopted", {
+      hasSubmission: Boolean(adopted.submission),
+    });
+    setRepositorySave(adopted.submission);
+    setJob(adopted.job);
+  }, [kind, initial, job, retainedJob, retainedInput]);
   const formatMutation = useRetainedMutation(
     `account-change-format:${source?.id ?? "new"}`,
     AccountQuery.changeAccountApiFormat,
@@ -2066,6 +2118,15 @@ const entranceCategories: ReadonlyMap<SettingsCategory, EntranceTarget> =
     [SettingsCategory.Transfer, EntranceTarget.Surface],
     [SettingsCategory.Backups, EntranceTarget.Surface],
     [SettingsCategory.AgentWorkers, EntranceTarget.Surface],
+    [SettingsCategory.ApiAccounts, EntranceTarget.Surface],
+    [SettingsCategory.SubscriptionAccounts, EntranceTarget.Surface],
+    [SettingsCategory.Providers, EntranceTarget.Surface],
+    [SettingsCategory.Instructions, EntranceTarget.Surface],
+    [SettingsCategory.ProjectDefaults, EntranceTarget.Surface],
+    [SettingsCategory.Projects, EntranceTarget.Surface],
+    [SettingsCategory.Repositories, EntranceTarget.Surface],
+    [SettingsCategory.Integrations, EntranceTarget.Surface],
+    [SettingsCategory.ExecutionWorkers, EntranceTarget.Surface],
     [SettingsCategory.Diagnostics, EntranceTarget.Heading],
     [SettingsCategory.AppInformation, EntranceTarget.Heading],
   ]);
@@ -3938,9 +3999,7 @@ function RunnerDeviceInventory({
                       />
                     </p>
                   ) : null}
-                  <small>
-                    {productLabel(PresentationKind.Resource, row.id)}
-                  </small>
+                  <small>{productLabel(PresentationKind.Runner, row.id)}</small>
                 </div>
                 <div className="actions">
                   <SettingsActionButton

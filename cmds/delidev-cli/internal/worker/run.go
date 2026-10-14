@@ -288,6 +288,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 		config.quotaBlockSupported = false
 		config.functionOutputsSupported = false
 		claudeCapabilityExpected := false
+		managedClaudeExpected := false
 		metadataExpected := false
 		namedDirectoriesExpected := false
 		remoteCloneExpected := false
@@ -299,6 +300,8 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			openCodeForkExpected := runtime.GOOS != "windows" && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1)
 			openCodeCompactionExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1) && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1)
 			revertExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_REVERT_V1)
+			// The extended target envelope is only meaningful with Revert itself.
+			revertTargetProofExpected := revertExpected && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_REVERT_TARGET_PROOF_V1)
 			compactionExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1) && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1)
 			networkExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1)
 			subagentExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1)
@@ -338,10 +341,17 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				profile += "\x00subscription-paid-credits-v1"
 			}
 			config.nativeClaudeInstallation = nil
-			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1) {
+			supportsDeviceClaude := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1)
+			supportsManagedClaude := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CLAUDE_EXECUTION_V1)
+			if supportsDeviceClaude || supportsManagedClaude {
+				// One empty-profile probe backs both independently negotiated
+				// capabilities. It reads no personal login and creates no authority.
 				probeCtx, stop := context.WithTimeout(ctx, 30*time.Second)
-				claudeCapabilityExpected, err = verifyNativeClaudeSubscriptionProfile(probeCtx, config, attached.Msg.Machine)
+				var claudeProbe bool
+				claudeProbe, err = verifyNativeClaudeSubscriptionProfile(probeCtx, config, attached.Msg.Machine)
 				stop()
+				claudeCapabilityExpected = claudeProbe && supportsDeviceClaude
+				managedClaudeExpected = claudeProbe && supportsManagedClaude
 				if claudeCapabilityExpected {
 					var machine domain.Machine
 					if domain.Decode(attached.Msg.Machine.DocumentJson, &machine) == nil {
@@ -368,11 +378,17 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if revertExpected {
 				profile += "\x00codex-session-revert-v1"
 			}
+			if revertTargetProofExpected {
+				profile += "\x00codex-session-revert-target-proof-v1"
+			}
 			if compactionExpected {
 				profile += "\x00codex-session-compaction-v1"
 			}
 			if managedCapabilityExpected && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1) {
 				profile += "\x00managed-codex-fork-v1"
+			}
+			if managedCapabilityExpected && verifiedTitleProfile && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_TITLES_V1) {
+				profile += "\x00managed-codex-titles-v1"
 			}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1) {
 				profile += "\x00codex-approval-review-v1"
@@ -394,6 +410,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 			if claudeCapabilityExpected {
 				profile += "\x00native-claude-subscriptions-v1"
+			}
+			if managedClaudeExpected {
+				profile += "\x00managed-claude-execution-v1"
 			}
 			if verifiedTitleProfile {
 				profile += "\x00verified"
@@ -440,6 +459,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1) {
 				profile += "\x00session-startup-progress-v1"
 			}
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_EXACT_QUOTE_V1) {
+				profile += "\x00branch-prefix-exact-quote-v1"
+			}
 			if capabilityAttachID == "" || capabilityProfile != profile {
 				capabilityAttachID, capabilityProfile = domain.NewID(), profile
 			}
@@ -484,6 +506,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if revertExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_REVERT_V1)
 			}
+			if revertTargetProofExpected {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_REVERT_TARGET_PROOF_V1)
+			}
 			if openCodeCompactionExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1)
 				if !compactionExpected {
@@ -495,6 +520,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 			if managedCapabilityExpected && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1)
+			}
+			if managedCapabilityExpected && verifiedTitleProfile && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_TITLES_V1) {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_TITLES_V1)
 			}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1)
@@ -520,6 +548,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if claudeCapabilityExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1)
 			}
+			if managedClaudeExpected {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CLAUDE_EXECUTION_V1)
+			}
 			if verifiedTitleProfile {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1)
 			}
@@ -538,6 +569,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			negotiate, stopNegotiation := context.WithTimeout(ctx, 30*time.Second)
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1)
+			}
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_EXACT_QUOTE_V1) {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_EXACT_QUOTE_V1)
 			}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1) && openCodeChildExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1)
@@ -594,7 +628,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			config.remoteWorkspaceClone = remoteCloneExpected && machineCapability(attached.Msg.Machine, domain.RemoteWorkspaceCloneV1)
 			config.repositoryClone = cloneExpected && machineCapability(attached.Msg.Machine, domain.RepositoryCloneV1)
 			config.inspectionMetadata = metadataExpected && machineCapability(attached.Msg.Machine, domain.RepositoryInspectionMetadataV1)
-			err = watchAttached(ctx, config, client, credential, instance, auxiliary, (managedCapabilityExpected || claudeCapabilityExpected) && managedSubscriptionCapability(attached.Msg.Machine))
+			err = watchAttached(ctx, config, client, credential, instance, auxiliary, (managedCapabilityExpected || claudeCapabilityExpected || managedClaudeExpected) && managedSubscriptionCapability(attached.Msg.Machine))
 			if time.Since(started) > 30*time.Second {
 				backoff = time.Second
 			}

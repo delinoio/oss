@@ -158,8 +158,17 @@ correlation reference, input delivery and independent cleanup classification.
 Copy only validated metadata; opening or copying details performs no inspection.
 Failure guidance describes delivery and cleanup independently. Acknowledged input
 and confirmed original cleanup must not be described as uncertain. Preserve safe
-cause-specific correction alongside original-execution recovery guidance. These
-settled observations do not prove the execution outcome or grant resend authority.
+cause-specific correction alongside original-execution recovery guidance for every
+accepted delivery/cleanup combination; the correction is independent of those facts
+and never grants resend authority. Every accepted startup problem code maps to a
+server correction that agrees with the desktop selection: `InvalidArgument` uses the
+settings correction like `Unsupported`, and the remaining accepted codes use the
+device-check correction. The server guidance and the desktop recovery
+guidance both lead with the selected correction, and the session recovery card
+renders that correction exactly once (a separate correction is shown only when the
+guidance does not already contain it); the technical details disclosure repeats only
+the delivery and cleanup facts and never the correction. These settled observations do not prove the
+execution outcome or grant resend authority.
 
 Retry is explicit and available only after positive input-not-sent and original
 cleanup proof. The existing revision-checked Resume lane creates a distinct
@@ -321,7 +330,7 @@ The conversation presents the original closed startup classification, safe cause
 
 ExecutionStartupObservation field 11 carries the closed ExecutionStartupFailureKind enum: zero UNSPECIFIED is omitted, and IMAGE_INPUT_REJECTED is one. This optional classification adds no capability or migration and preserves legacy observation bytes and generic behavior. A generic Unsupported error does not prove image provenance. Only the original Codex image-preparation branch before turn/start may issue an opaque proof bound to the original request, input and complete ordered input digest. Successful sends, turn transport failures, acknowledgments and attachment-resolution failures carry no such proof.
 
-The Worker retains an exclusive synchronized metadata-only claim bound to the original authenticated server/device/instance, immutable assignment revision/digest, execution/input/request and input digest. Classification requires that unchanged claim plus separately confirmed process, workspace and protected credential cleanup. Missing, changed or uncertain evidence retains claimed/uncertain delivery and original recovery. It never retries by observation.
+The Worker retains an exclusive synchronized metadata-only claim bound to the original authenticated server/device/instance, immutable assignment revision/digest, execution/input/request and input digest. The server admits an image rejection only when the claimed queue record equals the immutable assignment input in prompt, mode, ordered skills and ordered attachments; matching the input digest alone is insufficient because the digest omits mode and skills. Classification requires that unchanged claim plus separately confirmed process, workspace and protected credential cleanup. Missing, changed or uncertain evidence retains claimed/uncertain delivery and original recovery. It never retries by observation.
 
 The server accepts IMAGE_INPUT_REJECTED only for Failed/Input/Codex/Unsupported/NotSent/confirmed cleanup, original nonempty images, the unchanged ready process identity and native thread without an acknowledged turn, and the exact claimed queue execution/request/full input. Keep original public mutation receipts and assignment revisions. Normal finalization retains the original prompt, skill bindings and ordered image references as rejected, frees pending capacity and pauses without recovery. Explicit retry retains existing original-selection ownership checks. Desktop guidance identifies a new session with an explicitly image-capable Agent Worker and Runner Device, or a new text-only session, as the path for changing input or selection. Original-session retry keeps its original input and assignment; queued text continues to block that retry. Preserve visible original rejected input/images and never substitute attachments or start another send automatically.
 

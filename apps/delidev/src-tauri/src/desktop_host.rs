@@ -447,11 +447,17 @@ impl Pipe {
         }
     }
 
+    /// `enqueued` runs exactly once, immediately after the frame was accepted
+    /// by the bounded writer queue and before the response wait. A request
+    /// that fails earlier (pipe broken or exiting, pending map full, frame
+    /// rejected) never calls it, so the caller can tell a request that can
+    /// still land from one that never left this process.
     fn request(
         &self,
         request: &Request,
         exiting: &AtomicBool,
         timeout: Duration,
+        enqueued: &dyn Fn(),
     ) -> Result<serde_json::Value> {
         if exiting.load(Ordering::Acquire) {
             return Err(NativeFailure::Stopped);
@@ -483,6 +489,7 @@ impl Pipe {
                 .remove(&request.id);
             return Err(e);
         }
+        enqueued();
         let deadline = Instant::now() + timeout;
         let result = loop {
             if exiting.load(Ordering::Acquire) {
@@ -1014,6 +1021,19 @@ impl Connector {
         input: Option<zeroize::Zeroizing<Vec<u8>>>,
         timeout: Duration,
     ) -> Result<serde_json::Value> {
+        self.resident_request_observed(arguments, input, timeout, &|| {})
+    }
+
+    /// Like [`Connector::resident_request`], and `enqueued` runs once the
+    /// request frame was accepted by the resident pipe's writer queue. Any
+    /// failure before that point proves the request never reached the runtime.
+    pub(crate) fn resident_request_observed(
+        &self,
+        arguments: &[OsString],
+        input: Option<zeroize::Zeroizing<Vec<u8>>>,
+        timeout: Duration,
+        enqueued: &dyn Fn(),
+    ) -> Result<serde_json::Value> {
         let mut args: Vec<String> = arguments
             .iter()
             .map(|v| {
@@ -1098,7 +1118,7 @@ impl Connector {
         let result = self
             .session
             .get(self)?
-            .request(&request, &self.exiting, timeout);
+            .request(&request, &self.exiting, timeout, enqueued);
         use zeroize::Zeroize;
         request.input.zeroize();
         result

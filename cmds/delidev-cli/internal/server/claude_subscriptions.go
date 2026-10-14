@@ -30,7 +30,8 @@ func (s *Service) isClaudeSubscription(ctx context.Context, id string) (bool, er
 }
 func claudeSubscriptionAccount(tx *store.Tx, id domain.ID, revision uint64) (store.Record, domain.Account, error) {
 	r, a, err := accountFromTx(tx, id, revision)
-	if err == nil && (a.Type != domain.SubscriptionAccount || a.SubscriptionService != domain.SubscriptionClaude || a.ProviderID != "") {
+	// Device-owned lifecycle never adopts a server-token account.
+	if err == nil && (a.Type != domain.SubscriptionAccount || a.SubscriptionService != domain.SubscriptionClaude || a.ProviderID != "" || a.Subscription != nil && a.Subscription.ManagedClaude()) {
 		err = subscriptionDenied()
 	}
 	return r, a, err
@@ -325,8 +326,18 @@ func (s *Service) takeClaudeSubscription(ctx context.Context, req *connect.Reque
 			return nil, subscriptionDenied()
 		}
 
-		if st.Lease != nil {
-			return nil, domain.Fail(domain.ResourceExhausted, "This Claude account is exclusively owned by another operation.", "Wait for that original operation and cleanup on this Runner Device.")
+		accountBusy := func() error {
+			if st.Lease != nil {
+				return domain.Fail(domain.ResourceExhausted, "This Claude account is exclusively owned by another operation.", "Wait for that original operation and cleanup on this Runner Device.")
+			}
+			return nil
+		}
+		// Execution keeps contention first. A fresh lifecycle Take classifies its
+		// queued original after the Worker fences and before contention below.
+		if action == domain.SubscriptionExecute {
+			if err := accountBusy(); err != nil {
+				return nil, err
+			}
 		}
 		if err := currentInstance(tx, input.Machine, input.Instance); err != nil {
 			return nil, err
@@ -334,26 +345,43 @@ func (s *Service) takeClaudeSubscription(ctx context.Context, req *connect.Reque
 		if _, err := claudeSubscriptionInstallation(tx, input.Machine); err != nil {
 			return nil, err
 		}
-		if action != domain.SubscriptionExecute {
+		profileOwned := st.NativeProfileID != "" && st.OwnerMachineID == input.Machine
+		if action == domain.SubscriptionExecute {
+			if !profileOwned {
+				return nil, subscriptionDenied()
+			}
+		} else {
 			if err := tx.WorkerUpdateAdmission(input.Machine); err != nil {
 				return nil, err
 			}
 			op := st.Pending
-			if input.Revision > r.Revision || op != nil && (op.Phase != domain.SubscriptionQueued || op.Action != action) {
+			if input.Revision > r.Revision {
 				return nil, subscriptionDenied()
 			}
-			// A queued replacement owns its own profile and selected machine.
-			// Retire only this stale claim after the original Worker fences; never
-			// inspect or adopt the replacement's profile as this claim's authority.
+			// A queued replacement owns its own profile, selected machine, action and
+			// phase. Retire only this stale claim after the original Worker fences;
+			// never inspect or adopt the replacement as this claim's authority.
 			if op != nil && op.ID != input.Operation {
 				return nil, subscriptionTakeNotAdmitted()
 			}
-		}
-		if st.NativeProfileID == "" || st.OwnerMachineID != input.Machine {
 			// Queued initial login cancellation retires its unused profile owner.
 			// Only the retained original canceled operation proves no native grant.
 			o := st.NativeOperation
-			if action == domain.SubscriptionExecute || st.Pending != nil || o == nil || o.ID != input.Operation || o.Action != action || o.MachineID != input.Machine || o.State != domain.SubscriptionCanceled {
+			var original bool
+			if op == nil {
+				original = profileOwned || o != nil && o.ID == input.Operation && o.Action == action && o.MachineID == input.Machine && o.State == domain.SubscriptionCanceled
+			} else {
+				original = op.Phase == domain.SubscriptionQueued && op.Action == action && op.MachineID == input.Machine && profileOwned
+			}
+			if original && (op == nil || op.Canceled) {
+				return nil, subscriptionTakeNotAdmitted()
+			}
+			// A matching claim that fails its original fields keeps the existing
+			// contention-first outcome and never carries the no-grant proof.
+			if err := accountBusy(); err != nil {
+				return nil, err
+			}
+			if !original {
 				return nil, subscriptionDenied()
 			}
 		}
@@ -376,12 +404,6 @@ func (s *Service) takeClaudeSubscription(ctx context.Context, req *connect.Reque
 		} else {
 			op := st.Pending
 			o := st.NativeOperation
-			if op != nil && op.MachineID != input.Machine {
-				return nil, subscriptionDenied()
-			}
-			if op == nil || op.ID != input.Operation || op.Canceled {
-				return nil, subscriptionTakeNotAdmitted()
-			}
 			if o == nil || o.Epoch != s.subscriptionServerEpoch() || !o.ExpiresAt.After(time.Now().UTC()) {
 				return nil, subscriptionDenied()
 			}
@@ -538,6 +560,11 @@ func (s *Service) SubmitSubscriptionLoginCode(ctx context.Context, req *connect.
 	defer clear(req.Msg.Code)
 	if err := validateAccountMutation(m); err != nil {
 		return nil, rpc.Error(err, c)
+	}
+	if _, managed, err := s.claudeAccountMode(ctx, m.Id); err != nil {
+		return nil, rpc.Error(err, c)
+	} else if managed {
+		return s.submitManagedClaudeCode(ctx, req)
 	}
 	actor, err := claudeActor(ctx)
 	if err != nil {

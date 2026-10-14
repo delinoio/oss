@@ -13,7 +13,10 @@ import (
 	"time"
 )
 
-func updateCommand(ctx context.Context, c client, o options, args []string) (any, error) {
+// updateCommand allocates a generated mutation request ID only after the server
+// capability and local flags are validated, immediately before the mutation RPC.
+// o is the dispatcher-owned options so the output envelope carries the same ID.
+func updateCommand(ctx context.Context, c client, o *options, args []string) (any, error) {
 	if len(args) == 0 {
 		return nil, usage()
 	}
@@ -52,13 +55,14 @@ func updateCommand(ctx context.Context, c client, o options, args []string) (any
 				t = pb.UpdateTarget(i + 1)
 			}
 		}
+		ensureRequest(o)
 		bounded, cancel := context.WithTimeout(ctx, 35*time.Second)
 		defer cancel()
 		r, e := c.installation.CheckUpdate(bounded, request(c, &pb.CheckUpdateRequest{RequestId: string(o.requestID), Component: cpt, Target: t, CurrentVersion: *current, MachineId: *machine, ExpectedMachineRevision: *machineRev}))
 		if e != nil {
 			return nil, rpc.ClientError(e)
 		}
-		if e := verifyUpdateReceipt(r.Msg.RequestId, o); e != nil {
+		if e := verifyUpdateReceipt(r.Msg.RequestId, *o); e != nil {
 			return nil, e
 		}
 		return map[string]any{"update": resourceJSON(r.Msg.Update), "replayed": r.Msg.Replayed}, nil
@@ -75,13 +79,14 @@ func updateCommand(ctx context.Context, c client, o options, args []string) (any
 		if parse(fs, args[1:]) != nil {
 			return nil, usage()
 		}
+		ensureRequest(o)
 		m := &pb.Mutation{Id: *id, ExpectedRevision: *revision, RequestId: string(o.requestID)}
 		if args[0] == "cancel" {
 			r, e := c.installation.CancelUpdate(ctx, request(c, &pb.CancelUpdateRequest{Mutation: m}))
 			if e != nil {
 				return nil, rpc.ClientError(e)
 			}
-			if e := verifyUpdateReceipt(r.Msg.RequestId, o); e != nil {
+			if e := verifyUpdateReceipt(r.Msg.RequestId, *o); e != nil {
 				return nil, e
 			}
 			return map[string]any{"update": resourceJSON(r.Msg.Update), "replayed": r.Msg.Replayed}, nil
@@ -90,7 +95,7 @@ func updateCommand(ctx context.Context, c client, o options, args []string) (any
 		if e != nil {
 			return nil, rpc.ClientError(e)
 		}
-		if e := verifyUpdateReceipt(r.Msg.RequestId, o); e != nil {
+		if e := verifyUpdateReceipt(r.Msg.RequestId, *o); e != nil {
 			return nil, e
 		}
 		return map[string]any{"update": resourceJSON(r.Msg.Update), "replayed": r.Msg.Replayed}, nil

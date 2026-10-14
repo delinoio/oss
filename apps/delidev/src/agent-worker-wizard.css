@@ -276,9 +276,6 @@
     gap: 12px;
     flex-wrap: wrap;
   }
-  .worker-steps li:not([aria-current="step"]) > span:last-child {
-    display: none;
-  }
   .worker-footer {
     flex-wrap: wrap;
   }

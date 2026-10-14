@@ -8,6 +8,7 @@ import { AppearanceProvider, Theme, type AppearanceBridge } from "./appearance";
 import { defaultPreferences, palettes } from "./appearance-preferences";
 import { MutationIntents } from "./mutation";
 import { Settings } from "./settings";
+import { unoptedSettingsCategory } from "./entrance-test-support";
 
 function dispatch(node: Element, type = "animationend") {
   const event = new Event(type, { bubbles: true });
@@ -53,6 +54,8 @@ afterEach(() => {
 
 it("plays the Appearance entrance once per explicit category opening and and not for categories that have not opted in", async () => {
   render(view(<Settings />));
+  // The default landing category (AI Subscription) opted in too, so leave it first.
+  category(unoptedSettingsCategory);
   expect(column().getAttribute("data-entrance")).toBeNull();
   category("Appearance");
   expect(column().getAttribute("data-entrance")).toBe("y4");
@@ -66,7 +69,7 @@ it("plays the Appearance entrance once per explicit category opening and and not
   expect(column()).toBe(node);
   expect(column().getAttribute("data-entrance")).toBeNull();
   // Leaving and re-entering is a new explicit activation.
-  category("Instructions");
+  category(unoptedSettingsCategory);
   expect(column().getAttribute("data-entrance")).toBeNull();
   category("Appearance");
   expect(column().getAttribute("data-entrance")).toBe("y4");
@@ -76,7 +79,7 @@ it("leaves no stale motion when the category changes before completion", () => {
   render(view(<Settings />));
   category("Appearance");
   const old = column();
-  category("Instructions");
+  category(unoptedSettingsCategory);
   expect(document.contains(old)).toBe(false);
   dispatch(old);
   expect(column().getAttribute("data-entrance")).toBeNull();

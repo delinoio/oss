@@ -361,7 +361,7 @@ export class FilesController {
       const expanded = new Set(this.snapshot.expanded);
       expanded.add(path);
       this.publish({ expanded });
-      for (const candidate of [path, ...expanded]) {
+      for (const candidate of new Set([path, ...expanded])) {
         if (!this.visible(candidate)) continue;
         const directory = this.directory(candidate);
         directory.chain.activate();

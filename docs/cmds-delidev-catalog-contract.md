@@ -715,18 +715,33 @@ and desktop validators reject the same control/space/ref grammar. Values never
 enter shell commands or diagnostics.
 
 The accepted configuration transaction pins the selected prefix and original
-Settings/Project IDs and revisions in optional version-1 immutable execution
-metadata. Omitted declarations preserve historical bytes and digests. Current
+Settings/Project IDs and revisions in optional immutable execution
+metadata (version 2 for new selections on Workers with capability 65; retained version 1 remains valid).
+Omitted declarations preserve historical bytes and digests. Current
 settings never rewrite prior generations. Retain selection through Plan/Execute
 transitions, continuation, retry, recovery, compaction and Fork snapshots.
 The existing ordered template text remains exact. Compose one deterministic
 shared instruction after it in Execute only, including it in the aggregate
-256 KiB limit. Plan and read-only Sidechat receive no prefix instruction. Codex,
+256 KiB limit. The instruction quotes the prefix JSON-style (escaping quotes,
+backslashes and control characters). New selections use immutable version 2,
+which applies no HTML escaping, so `<`, `>` and `&` stay exact UTF-8 rather than
+becoming `\u003c`, `\u003e` or `\u0026`, and U+2028/U+2029 line separators are
+likewise kept literal. Retained version-1 selections keep the original
+`encoding/json` quoting byte for byte so Claude continuation instruction
+comparison and completed-recovery digests of already accepted Execute sessions
+stay valid; they are never rewritten to version 2. Plan and
+read-only Sidechat receive no prefix instruction. Codex,
 Claude Code, OpenCode and Grok Build use their existing instruction channels;
 Grok's unchanged empty-template Plan profile remains independently required.
 Worker capability 38 negotiates the complete declaration before native dispatch;
 unsupported Workers receive an explicit update requirement, with no native
-version gate. This preference never creates/renames branches, changes detached
+version gate. Worker capability 65 (`BRANCH_PREFIX_EXACT_QUOTE_V1`) separately
+negotiates acceptance of selection version 2. Initial execution preview pins
+version 2 only for a Runner Device that reported capability 65 and otherwise
+pins version 1, so a Worker that negotiated only capability 38 keeps receiving
+selections it validates. Dispatch of a retained version-2 selection to a Runner
+Device without capability 65 fails before native execution with an explicit
+update requirement; no selection is rewritten or downgraded. This preference never creates/renames branches, changes detached
 Worktree or Local preparation, grants Git workspace authority, or guarantees
 model compliance. General Chat gains no repository authority.
 

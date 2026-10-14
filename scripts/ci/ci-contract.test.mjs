@@ -2010,3 +2010,18 @@ test("Rstack formatting uses the exact comparison and never caches results", () 
   assert.ok(leaf.task.passThroughEnv.includes("TURBO_SCM_HEAD"));
   assert.equal(packages["package.json"].devDependencies.rstack, "0.8.3");
 });
+
+test("DeliDev mobile Turbo tasks hash the shared desktop identity module", () => {
+  const mobileTurbo = JSON.parse(
+    readFileSync(`${root}/apps/delidev-mobile/turbo.json`, "utf8"),
+  );
+  const sharedInput = "$TURBO_ROOT$/apps/delidev/src/product-identity.ts";
+  for (const name of ["build", "build:frontend", "typecheck"]) {
+    const inputs = mobileTurbo.tasks[name].inputs;
+    // Turbo replaces (not merges) inherited arrays, so root inputs must be repeated.
+    for (const input of turbo.tasks[name].inputs)
+      assert.ok(inputs.includes(input), `${name}: ${input}`);
+    assert.ok(inputs.includes(sharedInput), `${name}: ${sharedInput}`);
+  }
+  assert.equal(mobileTurbo.tasks.test.cache, false);
+});

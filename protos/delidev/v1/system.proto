@@ -54,6 +54,10 @@ message GetStatusResponse {
 
 enum SystemCapability {
   SYSTEM_CAPABILITY_UNSPECIFIED = 0;
+  // Server-owned Claude setup-token login for new accounts, without a Runner Device.
+  SYSTEM_CAPABILITY_CLAUDE_SERVER_LOGIN_V1 = 67;
+  // Server-owned Claude token execution on Workers that advertise the adapter.
+  SYSTEM_CAPABILITY_CLAUDE_MANAGED_EXECUTION_V1 = 68;
   SYSTEM_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1 = 92;
   SYSTEM_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1 = 102;
   SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1 = 90;
@@ -74,6 +78,8 @@ enum SystemCapability {
   SYSTEM_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1 = 76;
 
   SYSTEM_CAPABILITY_MANAGED_CODEX_FORK_V1 = 53;
+  // Automatic session titles for protected ChatGPT subscription accounts.
+  SYSTEM_CAPABILITY_MANAGED_CODEX_TITLES_V1 = 59;
   SYSTEM_CAPABILITY_CODEX_APPROVAL_REVIEW_V1 = 55;
 
   SYSTEM_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1 = 54;
@@ -98,6 +104,10 @@ enum SystemCapability {
   SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_RESET_CREDITS_V2 = 101;
   SYSTEM_CAPABILITY_CLAUDE_SUBSCRIPTIONS_V1 = 38;
   SYSTEM_CAPABILITY_FAILED_SUBSCRIPTION_CLEANUP_V1 = 41;
+  // Explicit DeleteConfiguration cleanup of a terminal original server ChatGPT
+  // LOGOUT account whose only remaining blocker is protected credential cleanup.
+  // Capability 41 keeps its failed-initial-LOGIN meaning.
+  SYSTEM_CAPABILITY_SUBSCRIPTION_CLEANUP_RECOVERY_V1 = 64;
   SYSTEM_CAPABILITY_EXECUTION_STARTUP_V1 = 43;
   SYSTEM_CAPABILITY_GITHUB_TOKEN_ONBOARDING_V1 = 34;
   SYSTEM_CAPABILITY_REPOSITORY_CLONE_V1 = 31;
