@@ -32,7 +32,7 @@
     "ci:delidev:bindings": "node from-root.mjs go test ./protos/gen/go/delidev/...",
     "ci:clibox:native": "node from-root.mjs cargo test --locked -p clibox -p clibox-config -p clibox-fspy -p clibox-system -p clibox-transform -p clibox-wait",
     "ci:runner": "node from-root.mjs node --test scripts/ci/run-affected.test.mjs",
-    "ci:ach:native": "node from-root.mjs go test -race ./cmds/async-commit-hook/...",
+    "ci:ach:native": "node from-root.mjs go test -race -count=1 ./cmds/async-commit-hook/...",
     "ci:ach:release": "node from-root.mjs node --test scripts/release/async-commit-hook.test.mjs",
     "ci:ach:package": "node from-root.mjs python3 scripts/release/build-async-commit-hook.py --output \"$RUNNER_TEMP/ach-release\"",
     "ci:rust:test:devhud": "node from-root.mjs node scripts/ci/rust-affected.mjs test",

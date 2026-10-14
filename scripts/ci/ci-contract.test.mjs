@@ -262,7 +262,7 @@ test("async-commit-hook retains runner, interface, protocol and unsigned archive
   const commands = jobCommands(workflow.jobs["async-commit-hook"]);
   for (const command of [
     "async-commit-hook#build:embedded",
-    "go test -race ./cmds/async-commit-hook/...",
+    "go test -race -count=1 ./cmds/async-commit-hook/...",
     "async-commit-hook#ci:check",
     "public-docs#ci:check",
     "@delinoio/async-commit-hook-api-client#test",
@@ -275,6 +275,19 @@ test("async-commit-hook retains runner, interface, protocol and unsigned archive
     commands.match(/pnpm install --frozen-lockfile --ignore-scripts/gu)?.length,
     1,
   );
+  const graph = jobTaskGraph(workflow.jobs["async-commit-hook"]);
+  assert.ok(graph.has("@delinoio/ci#ci:ach:native"));
+  assert.ok(graph.has("@delinoio/ci#ci:ach:check"));
+  const achTasks = JSON.parse(
+    readFileSync(`${root}/scripts/ci/turbo.json`, "utf8"),
+  ).tasks;
+  assert.equal(achTasks["ci:ach:native"].cache, false);
+  assert.deepEqual(achTasks["ci:ach:native"].dependsOn, [
+    "async-commit-hook#build:embedded",
+  ]);
+  assert.ok(achTasks["ci:ach:check"].dependsOn.includes("ci:ach:native"));
+  assert.ok(achTasks["ci:ach:check"].dependsOn.includes("ci:ach:package"));
+  assert.deepEqual(achTasks["ci:ach:package"].dependsOn, ["ci:ach:native"]);
 });
 
 test("every step reaching shared protocol breaking checks carries the event baseline", () => {
