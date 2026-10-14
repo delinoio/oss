@@ -506,14 +506,50 @@ function DeviceInventory({
       setSettled((prev) => (prev.includes(id) ? prev : [...prev, id])),
     [],
   );
+  // Peers whose automatic read is in flight, reported by their rows. An entry
+  // that stops being eligible keeps its read running until it ends, so the
+  // queue waits for it instead of starting the next peer's read alongside it.
+  const [reading, setReading] = useState<readonly string[]>([]);
+  const markReading = useCallback(
+    (id: string, busy: boolean) =>
+      setReading((prev) =>
+        busy
+          ? prev.includes(id)
+            ? prev
+            : [...prev, id]
+          : prev.includes(id)
+            ? prev.filter((other) => other !== id)
+            : prev,
+      ),
+    [],
+  );
+  // Queue entries that went offline, vanished or changed host leave the visit
+  // queue for good: a later Refresh that restores the peer never re-enters it,
+  // so it is only checkable manually for the rest of the visit.
+  const [dropped, setDropped] = useState<readonly string[]>([]);
   const currentPeers = inventory?.peers ?? [];
-  // Serial advance: only the first queued peer that is still eligible and has
-  // not settled is checked. A peer that vanished or went offline is skipped.
-  const activeId = queue?.find(
-    (q) =>
-      !settled.includes(q.id) &&
-      currentPeers.some((p) => queuedAndEligible(q, p)),
-  )?.id;
+  const live = (q: QueuedPeer) =>
+    !dropped.includes(q.id) &&
+    currentPeers.some((p) => queuedAndEligible(q, p));
+  useEffect(() => {
+    if (!queue || !inventory) return;
+    const invalid = queue
+      .filter(
+        (q) =>
+          !dropped.includes(q.id) &&
+          !inventory.peers.some((p) => queuedAndEligible(q, p)),
+      )
+      .map((q) => q.id);
+    if (invalid.length) setDropped((prev) => [...prev, ...invalid]);
+  }, [queue, inventory, dropped]);
+  // Serial advance: only the first queued peer that is still live and has not
+  // settled is checked, and only after every invalidated entry's read ended.
+  const waiting = queue?.some(
+    (q) => !live(q) && !settled.includes(q.id) && reading.includes(q.id),
+  );
+  const activeId = waiting
+    ? undefined
+    : queue?.find((q) => !settled.includes(q.id) && live(q))?.id;
   const original = decode<Approval[]>(operations.data?.documentJson) ?? [];
   const retained = accepted
     ? [accepted, ...original.filter((a) => a.id !== accepted.id)]
@@ -571,7 +607,9 @@ function DeviceInventory({
             ) : null}
             <ul className="tailscale-list">
               {inventory?.peers.map((peer) => {
-                const queued = queue?.find((q) => queuedAndEligible(q, peer));
+                const queued = queue?.find(
+                  (q) => !dropped.includes(q.id) && queuedAndEligible(q, peer),
+                );
                 const active = queued !== undefined && queued.id === activeId;
                 return (
                   <PeerRow
@@ -585,6 +623,7 @@ function DeviceInventory({
                     }
                     active={active}
                     onSettled={markSettled}
+                    onReading={markReading}
                   />
                 );
               })}
@@ -750,6 +789,7 @@ function PeerRow({
   automatic,
   active,
   onSettled,
+  onReading,
 }: {
   peer: Peer;
   choose: (role: DeviceType) => void;
@@ -759,6 +799,8 @@ function PeerRow({
   // This peer is the one automatic check currently owning the queue.
   active: boolean;
   onSettled: (id: string) => void;
+  // Reports whether this row has a check read in flight.
+  onReading: (id: string, busy: boolean) => void;
 }) {
   useLocale();
   const [checked, setChecked] = useState(false);
@@ -787,6 +829,10 @@ function PeerRow({
   useEffect(() => {
     if (active && settledRead) onSettled(peer.id);
   }, [active, settledRead, onSettled, peer.id]);
+  useEffect(() => {
+    onReading(peer.id, check.isFetching);
+  }, [check.isFetching, onReading, peer.id]);
+  useEffect(() => () => onReading(peer.id, false), [onReading, peer.id]);
   return (
     <li>
       <div>

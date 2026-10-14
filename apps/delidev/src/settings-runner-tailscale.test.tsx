@@ -889,3 +889,95 @@ it("does not repeat or restart automatic checks on Strict Mode replay, focus, re
   expect(checkedIds(calls)).toHaveLength(4);
   expect(mutations(calls)).toEqual(quiet);
 });
+
+const third = {
+  ...peer,
+  id: "peer-3",
+  name: "Third peer",
+  host: "third.example",
+};
+const refresh = async (calls: ReturnType<typeof fixture>["calls"]) => {
+  const before = calls.discover.mock.calls.length;
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  await waitFor(() =>
+    expect(calls.discover.mock.calls.length).toBeGreaterThan(before),
+  );
+  await idle();
+};
+
+it("never re-enters the visit queue for a peer that went offline or changed host before its turn", async () => {
+  const options = { peers: [peer, second, third], holdChecks: true };
+  const { calls, release, checkState } = fixture(options);
+  category(TAILSCALE);
+  await rowOf("Third peer");
+  await waitFor(() => expect(checkedIds(calls)).toEqual(["peer-1"]));
+  // peer-2 goes offline and peer-3 changes host while peer-1 is checking.
+  options.peers = [
+    peer,
+    { ...second, online: false },
+    { ...third, host: "moved.example" },
+  ];
+  await refresh(calls);
+  // Both come back with their original eligibility before the queue advances.
+  options.peers = [peer, second, third];
+  await refresh(calls);
+  expect(checkedIds(calls)).toEqual(["peer-1"]);
+  release("peer-1");
+  await within(await rowOf("Fixture peer")).findByText(/Accepting requests/);
+  await idle();
+  expect(checkedIds(calls)).toEqual(["peer-1"]);
+  expect(
+    within(await rowOf("Second peer")).getByText(/Not checked/),
+  ).toBeTruthy();
+  expect(
+    within(await rowOf("Third peer")).getByText(/Not checked/),
+  ).toBeTruthy();
+  expect(checkState.maxActive).toBe(1);
+  expect(mutations(calls)).toEqual(quiet);
+});
+
+it("never re-enters the visit queue for a peer that vanished before its turn", async () => {
+  const options = { peers: [peer, second, third], holdChecks: true };
+  const { calls, release } = fixture(options);
+  category(TAILSCALE);
+  await rowOf("Third peer");
+  await waitFor(() => expect(checkedIds(calls)).toEqual(["peer-1"]));
+  options.peers = [peer, third];
+  await refresh(calls);
+  options.peers = [peer, second, third];
+  await refresh(calls);
+  release("peer-1");
+  await waitFor(() => expect(checkedIds(calls)).toEqual(["peer-1", "peer-3"]));
+  release("peer-3");
+  await within(await rowOf("Third peer")).findByText(/Accepting requests/);
+  await idle();
+  expect(checkedIds(calls)).toEqual(["peer-1", "peer-3"]);
+  expect(
+    within(await rowOf("Second peer")).getByText(/Not checked/),
+  ).toBeTruthy();
+  expect(mutations(calls)).toEqual(quiet);
+});
+
+it("waits for an invalidated peer's read before starting the next check and does not re-check it", async () => {
+  const options = { peers: [peer, second], holdChecks: true };
+  const { calls, release, checkState } = fixture(options);
+  category(TAILSCALE);
+  await rowOf("Second peer");
+  await waitFor(() => expect(checkedIds(calls)).toEqual(["peer-1"]));
+  // The active peer goes offline while its read is still running.
+  options.peers = [{ ...peer, online: false }, second];
+  await refresh(calls);
+  expect(checkedIds(calls)).toEqual(["peer-1"]);
+  expect(checkState.maxActive).toBe(1);
+  options.peers = [peer, second];
+  await refresh(calls);
+  expect(checkedIds(calls)).toEqual(["peer-1"]);
+  release("peer-1");
+  await waitFor(() => expect(checkedIds(calls)).toEqual(["peer-1", "peer-2"]));
+  release("peer-2");
+  await within(await rowOf("Second peer")).findByText(/Accepting requests/);
+  await idle();
+  expect(checkedIds(calls)).toEqual(["peer-1", "peer-2"]);
+  expect(checkState.maxActive).toBe(1);
+  expect(mutations(calls)).toEqual(quiet);
+});
