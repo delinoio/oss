@@ -2148,28 +2148,28 @@ export function SessionView({
   // Hide-boundary freshness only. A terminal token proves traversal, not
   // payload completeness: every retained page must still have its payload
   // resident (at most three stay), else evicted pages could hide a response,
-  // follow-up or interaction. A refresh keeps its retained pages displayed
-  // (the startup list stays), but retained pages are not current proof that no
-  // response, follow-up or interaction arrived, so Info stays visible meanwhile.
+  // follow-up or interaction. A healthy background refresh (previous complete
+  // pages retained, no error, no continuation token, all payloads resident) does
+  // not restore Info: isFetching is deliberately not part of these gates, so
+  // routine rereads cause no panel or layout flicker. A refresh that fails, comes
+  // back incomplete or evicts pages, or that resolves with new evidence, still
+  // fails closed through the remaining terms and the existing evidence checks.
   const startupTranscriptCurrent =
     Boolean(messages.data) &&
     !messages.error &&
     !messages.isPending &&
-    !messages.isFetching &&
     !messages.nextPageToken &&
     pagesResident(messages);
   const startupQueueCurrent =
     Boolean(queue.data) &&
     !queue.error &&
     !queue.isPending &&
-    !queue.isFetching &&
     !queue.nextPageToken &&
     pagesResident(queue);
   const startupInteractionsCurrent =
     Boolean(interactions.data) &&
     !interactions.error &&
     !interactions.isPending &&
-    !interactions.isFetching &&
     !interactions.nextPageToken &&
     pagesResident(interactions);
   const startupBudgetCurrent =

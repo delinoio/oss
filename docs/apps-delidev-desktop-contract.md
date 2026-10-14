@@ -6394,12 +6394,23 @@ follow-up, replacement execution, unsupported workspace or unknown first-input
 evidence retains Info.
 Every hiding path additionally requires, at the visibility boundary only: a
 complete current transcript, queue and interaction read (payload present, no
-error, not pending, not fetching, no continuation token, and a resident payload
+error, not pending, no continuation token, and a resident payload
 page for every retained page token), and current
-successful non-blocking session budget evidence. A refresh that retains stale
-pages (`isFetching`) keeps the retained startup presentation but restores Info
-until the read settles; the fence is not applied to the progress projection, so
-routine refreshes cause no startup-list flicker. A terminal token proves
+successful non-blocking session budget evidence. A healthy background refresh of
+the same session's pages (previous complete pages retained, no error, no
+continuation token, every payload page resident) does not restore Info:
+`isFetching` is not a freshness term, so Session information stays hidden, the
+single-column conversation layout, the waiting progress node, the Startup
+details disclosure, the composer draft and focus stay unchanged, and no extra
+operation starts while the read is in flight, in both Session and General Chat
+workspaces. When the read resolves with unchanged pages nothing changes; when it
+resolves with a new assistant response, later queued input or an interaction,
+the waiting projection ends and Info appears through the existing evidence
+precedence. A failed read, a continuation token, an evicted page, a session or
+transport change, disconnect, Stop, recovery, a blocking budget or approval
+evidence still fails closed (Info visible, no stale waiting claim, no implicit
+retry, existing focus behavior). Budget evidence rereads keep their own
+fail-closed rule. A terminal token proves
 traversal only; when the three-page payload bound has evicted any retained page,
 that read is incomplete and Info stays visible, while the bound and the explicit
 restoration controls are unchanged. Pending, absent, failed or
