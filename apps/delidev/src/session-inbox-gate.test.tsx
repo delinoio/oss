@@ -46,7 +46,13 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 // Mirrors the transcript terms of the Session conversation Inbox gate.
-function Conversation({ sessionId, active }: { sessionId: string; active: boolean }) {
+function Conversation({
+  sessionId,
+  active,
+}: {
+  sessionId: string;
+  active: boolean;
+}) {
   const messages = useConversationPages(EntityKind.MESSAGE, sessionId, active);
   useSessionInboxRead(
     sessionId,
