@@ -2750,3 +2750,25 @@ fn refreshes_formatted_precache_entries() {
     assert!(!published.contains("BBBBBBBB"), "{published}");
     assert_eq!(published.len(), sw.len());
 }
+
+/// A precache URL that leaves the bundle directory is ignored: typeopt never
+/// reads outside the staged output for it.
+#[test]
+fn ignores_precache_entries_outside_the_bundle() {
+    let temp = bundle(&HASHED);
+    fs::write(temp.path().join("outside.txt"), "outside").unwrap();
+    let sw = r#"self.workbox.precacheAndRoute([{url:"../../outside.txt",revision:"00000000000000000000000000000000"},{url:"assets/../index.html",revision:"dca4ee13e6e90a3b14607a0c53990951"}]);"#;
+    fs::write(temp.path().join("dist/sw.js"), sw).unwrap();
+    optimize(temp.path(), &[]);
+    let published = out(temp.path(), "sw.js");
+    assert!(
+        published
+            .contains(r#"{url:"../../outside.txt",revision:"00000000000000000000000000000000"}"#),
+        "{published}"
+    );
+    // A `..` that stays inside the bundle still names index.html.
+    assert!(
+        !published.contains("dca4ee13e6e90a3b14607a0c53990951"),
+        "{published}"
+    );
+}

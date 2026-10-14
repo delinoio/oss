@@ -1487,10 +1487,18 @@ fn refresh_precache_revisions(
             if path.is_empty() || path.contains("://") || path.starts_with("//") {
                 continue;
             }
-            let staged = match path.strip_prefix('/') {
+            let joined = match path.strip_prefix('/') {
                 Some(absolute) => root.join(absolute),
-                None => directory.join(path.trim_start_matches("./")),
+                None => directory.join(path),
             };
+            // Only regular files of the staged bundle: `..` must not leave it,
+            // and a device or FIFO must not block publication.
+            let Some(staged) = normalize_within(root, &joined) else {
+                continue;
+            };
+            if !std::fs::symlink_metadata(&staged).is_ok_and(|m| m.is_file()) {
+                continue;
+            }
             let Ok(published) = std::fs::read(&staged) else {
                 continue;
             };
@@ -1516,6 +1524,29 @@ fn refresh_precache_revisions(
         }
     }
     Ok(refreshed)
+}
+
+/// `path` with `.` and `..` components resolved lexically, if it stays
+/// inside `root`.
+fn normalize_within(root: &Path, path: &Path) -> Option<PathBuf> {
+    use std::path::Component;
+    let relative = path.strip_prefix(root).ok()?;
+    let mut parts: Vec<&std::ffi::OsStr> = Vec::new();
+    for component in relative.components() {
+        match component {
+            Component::Normal(part) => parts.push(part),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                parts.pop()?;
+            }
+            Component::RootDir | Component::Prefix(_) => return None,
+        }
+    }
+    Some(
+        parts
+            .iter()
+            .fold(root.to_path_buf(), |path, part| path.join(part)),
+    )
 }
 
 fn relative_display(root: &Path, path: &Path) -> String {
