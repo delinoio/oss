@@ -1303,7 +1303,7 @@ export function SessionView({
       messages.loaded &&
       !messages.error &&
       !messages.isFetching &&
-      messages.payloadPages.some((page) => page.token === ""),
+      messages.observed,
     ),
   );
   // A toolbar gesture can precede the initial session snapshot. Capture its

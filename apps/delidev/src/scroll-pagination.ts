@@ -57,6 +57,12 @@ export interface PaginationSnapshot<
   rows: Row[];
   pages: PaginationPage<Row>[];
   loaded: boolean;
+  /** Observation-owned evidence that the current activation completed a read
+   * of the whole chain from the first page (Initial, Refresh or Reload). It is
+   * independent of payload residence, so evicting the first payload page never
+   * revokes it. Suspend, reset, failed or in-flight whole-chain reads clear it,
+   * and Additional or Restore reads never grant it. */
+  observed: boolean;
   nextPageToken: string;
   loading?: ReadStage;
   error?: PaginationFailure;
@@ -100,8 +106,16 @@ const emptySnapshot = <
   rows: [],
   pages: [],
   loaded: false,
+  observed: false,
   nextPageToken: "",
 });
+
+// Only these stages revisit every page from the first one, so only a success
+// of one of them proves that the current observation loaded the transcript.
+const readsWholeChain = (stage: ReadStage) =>
+  stage === ReadStage.Initial ||
+  stage === ReadStage.Refresh ||
+  stage === ReadStage.Reload;
 
 // A scope has one serial reader and a generation independent of every other
 // scope. Cancellation is also a publication guard for transports ignoring abort.
@@ -152,11 +166,13 @@ export class PaginationChain<Row extends PaginationRow, Payload = never> {
     this.controller = undefined;
     if (
       this.snapshot.loading ||
+      this.snapshot.observed ||
       (!retainPayload && this.snapshot.payloadPages.length)
     )
       this.publish({
         ...this.snapshot,
         payloadPages: retainPayload ? this.snapshot.payloadPages : [],
+        observed: false,
         loading: undefined,
       });
   }
@@ -240,7 +256,10 @@ export class PaginationChain<Row extends PaginationRow, Payload = never> {
     const previous = this.snapshot;
     let completed = false;
     this.controller = controller;
-    this.publish({ ...previous, loading: stage, error: undefined });
+    // Failed or incomplete whole-chain reads never keep earlier evidence, while
+    // a page read inside the same observation leaves it untouched.
+    const observed = previous.observed && !readsWholeChain(stage);
+    this.publish({ ...previous, observed, loading: stage, error: undefined });
     let currentToken = token;
     try {
       const refreshing = stage === ReadStage.Refresh;
@@ -332,6 +351,7 @@ export class PaginationChain<Row extends PaginationRow, Payload = never> {
           });
           this.publish({
             ...previous,
+            observed,
             loading: undefined,
             error: {
               stage,
@@ -353,6 +373,7 @@ export class PaginationChain<Row extends PaginationRow, Payload = never> {
           });
           this.publish({
             ...previous,
+            observed,
             loading: undefined,
             error: {
               stage,
@@ -444,6 +465,7 @@ export class PaginationChain<Row extends PaginationRow, Payload = never> {
           payload,
         })),
         loaded: true,
+        observed: observed || readsWholeChain(stage),
         nextPageToken: pages.at(-1)?.nextPageToken ?? "",
       });
       completed = true;
@@ -463,6 +485,7 @@ export class PaginationChain<Row extends PaginationRow, Payload = never> {
       });
       this.publish({
         ...previous,
+        observed,
         loading: undefined,
         error: { stage, token: currentToken, failure },
       });

@@ -6519,6 +6519,14 @@ execution, draft and pagination presentation. Hidden/resource/Sidechat views and
 mobile cannot acknowledge. Session snapshot ownership prevents a retained prior
 activation or replaced transport from proving fresh loading.
 
+Transcript load evidence is a pagination-chain `observed` flag, not residence of
+the first payload page. Only a successful Initial, Refresh or Reload read from the
+first page sets it, so evicting that payload (at most three payload pages stay
+resident) never blocks a reselected Session whose refresh succeeded. Suspend,
+reset, an in-flight or failed whole-chain read, and Restore or Additional reads
+never grant it; Additional reads inside a visit leave it unchanged and never
+acknowledge by themselves.
+
 The hook submits once per conversation selection or foreground return. Readiness
 changes, reconnects, polling and new alerts do not reset a submitted visit. Exact
 failed requests survive navigation in the connection mutation registry and only the
