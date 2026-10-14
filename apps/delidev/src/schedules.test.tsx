@@ -1561,6 +1561,51 @@ it("closes only an open picker on the first Escape and the wizard on the second"
 });
 
 it.each([
+  ["Frequency", "Frequency"],
+  ["Weekday", "Weekday"],
+  ["overlap", /previous occurrence is still active/i],
+  ["Time", "Time"],
+])(
+  "leaves Escape from the native %s control to its platform picker and cancels from a non-picker control",
+  async (_name, label) => {
+    const value = fixture();
+    render(value.view(<Schedules active open={() => {}} />));
+    fireEvent.click(newScheduleOpener());
+    await fillCreation(value);
+    goStep(2);
+    // The weekday and time controls only exist for the weekly preset.
+    choose("Frequency", "weekly");
+    const control = screen.getByLabelText(label);
+    expect(
+      control instanceof HTMLSelectElement ||
+        (control instanceof HTMLInputElement && control.type === "time"),
+    ).toBe(true);
+    control.focus();
+    // Native picker Escape never sets defaultPrevented before bubbling.
+    const event = new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    });
+    control.dispatchEvent(event);
+    expect(screen.getByLabelText("Frequency")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeTruthy();
+    expect(newScheduleOpener().disabled).toBe(true);
+    pressEscape(control);
+    pressEscape(control);
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeTruthy();
+    // Escape from a non-picker control still cancels the wizard.
+    const next = screen.getByRole("button", { name: "Next" });
+    next.focus();
+    pressEscape(next);
+    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+    expect(newScheduleOpener().disabled).toBe(false);
+    expect(globalThis.document.activeElement).toBe(newScheduleOpener());
+    expect(value.save).not.toHaveBeenCalled();
+  },
+);
+
+it.each([
   ["a defaultPrevented event", (event: Event) => event.preventDefault()],
   ["an IME composition", undefined],
   ["a repeated key", undefined],
