@@ -1326,16 +1326,87 @@ fn string_property(text: &str, at: usize, key: &str) -> Option<(String, usize, u
     (!value.contains('\\')).then(|| (value.to_owned(), start, end))
 }
 
+/// Byte spans of the array literals passed to Workbox `precacheAndRoute(…)`
+/// or `precache(…)` calls (as a method or a plain call), the only places
+/// where a `{url, revision}` object is a precache manifest entry rather than
+/// application data.
+fn precache_arrays(text: &str) -> Vec<(usize, usize)> {
+    let bytes = text.as_bytes();
+    let mut arrays = Vec::new();
+    let mut from = 0;
+    while let Some(offset) = text[from..].find("precache") {
+        let at = from + offset;
+        from = at + "precache".len();
+        let mut index = from;
+        if text[index..].starts_with("AndRoute") {
+            index += "AndRoute".len();
+        }
+        let joined = at > 0
+            && (bytes[at - 1].is_ascii_alphanumeric() || matches!(bytes[at - 1], b'_' | b'$'));
+        let skip = |mut i: usize| {
+            while bytes.get(i).is_some_and(u8::is_ascii_whitespace) {
+                i += 1;
+            }
+            i
+        };
+        index = skip(index);
+        if joined || bytes.get(index) != Some(&b'(') {
+            continue;
+        }
+        index = skip(index + 1);
+        if bytes.get(index) != Some(&b'[') {
+            continue;
+        }
+        // The matching bracket, skipping string literals.
+        let (start, mut depth, mut quote, mut escaped) = (index, 0usize, None, false);
+        let mut end = None;
+        for (i, &b) in bytes.iter().enumerate().skip(start) {
+            if let Some(q) = quote {
+                if escaped {
+                    escaped = false;
+                } else if b == b'\\' {
+                    escaped = true;
+                } else if b == q {
+                    quote = None;
+                }
+                continue;
+            }
+            match b {
+                b'"' | b'\'' | b'`' => quote = Some(b),
+                b'[' => depth += 1,
+                b']' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = Some(i);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        if let Some(end) = end {
+            arrays.push((start, end));
+            from = end;
+        }
+    }
+    arrays
+}
+
 /// Precache entries `{url:"…",revision:"…"}` (either order) of a service
-/// worker manifest, as Workbox and vite-plugin-pwa emit them: the URL and the
-/// byte span of the revision string.
+/// worker manifest, as Workbox and vite-plugin-pwa emit them inside a
+/// `precacheAndRoute`/`precache` array: the URL and the byte span of the
+/// revision string.
 fn precache_entries(text: &str) -> Vec<(String, usize, usize)> {
     let bytes = text.as_bytes();
+    let arrays = precache_arrays(text);
     let mut entries = Vec::new();
     let mut from = 0;
     while let Some(offset) = text[from..].find("revision") {
         let at = from + offset;
         from = at + "revision".len();
+        if !arrays.iter().any(|&(start, end)| at > start && at < end) {
+            continue;
+        }
         let key = if at > 0 && matches!(bytes[at - 1], b'"' | b'\'') {
             at - 1
         } else {

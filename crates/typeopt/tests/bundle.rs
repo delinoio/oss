@@ -2709,3 +2709,24 @@ fn keeps_calls_that_write_a_binding_imported_at_the_site() {
     ]);
     assert!(out(temp.path(), "index.js").contains("tick()"));
 }
+
+/// `{url, revision}` objects outside a Workbox precache call are application
+/// data and keep their values.
+#[test]
+fn keeps_revision_data_outside_precache_calls() {
+    let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
+    chunks[1] = (
+        "assets/index-AAAAAAAA.js",
+        r#"import{m as e}from"./settings-BBBBBBBB.js";import{p as t}from"./plain-CCCCCCCC.js";import{d}from"../config.js";console.log(e(2).verticalSpacing,t(),d[0].revision);"#,
+    );
+    chunks.push((
+        "config.js",
+        r#"export const d=[{url:"index.html",revision:"v1"}];"#,
+    ));
+    let temp = bundle(&chunks);
+    optimize(temp.path(), &[]);
+    assert_eq!(
+        out(temp.path(), "config.js"),
+        r#"export const d=[{url:"index.html",revision:"v1"}];"#
+    );
+}
