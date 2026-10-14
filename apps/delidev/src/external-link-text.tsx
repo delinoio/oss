@@ -18,7 +18,13 @@ import "./external-links.css";
  * are unchanged. Only message text uses this component; reasoning, tool, diff
  * and file evidence keep rendering inert text.
  */
-export function LinkedPre({ text }: { text: string }) {
+export function LinkedPre({
+  text,
+  complete,
+}: {
+  text: string;
+  complete: boolean;
+}) {
   useLocale();
   const [failure, setFailure] = useState<ExternalLinkFailure>();
   const pending = useRef(false);
@@ -31,8 +37,8 @@ export function LinkedPre({ text }: { text: string }) {
   }, []);
   const native = externalLinksAvailable();
   const parts = useMemo(
-    () => (native ? splitLinkedText(text) : [{ text }]),
-    [native, text],
+    () => (native ? splitLinkedText(text, complete) : [{ text }]),
+    [native, text, complete],
   );
   const open = async (url: string) => {
     // One activation is one launch: no retry and no second browser.

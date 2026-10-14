@@ -200,7 +200,7 @@ export function NativeGrokUser({ data }: { data: Document }) {
           {copy("native-grok.verifiedFromClosedNativeHistory_2d5065")}
         </small>
       </header>
-      <LinkedPre text={data.text as string} />
+      <LinkedPre text={data.text as string} complete />
       <Disclosure>
         <DisclosureSummary>
           {copy("native-grok.grokInputDetails_e34cc2")}
@@ -248,7 +248,10 @@ export function NativeGrokText({ data }: { data: Document }) {
           </small>
         </header>
       ) : null}
-      <LinkedPre text={data.text as string} />
+      <LinkedPre
+        text={data.text as string}
+        complete={data.state === "complete"}
+      />
       <Disclosure>
         <DisclosureSummary>
           {copy("native-grok.grokTextDetails_97e9e2")}

@@ -136,13 +136,18 @@ export function validHttpUrl(value: string): boolean {
   }
 }
 
-/** Splits text into plain and URL segments whose concatenation is the input. */
+/**
+ * Splits message text without changing it. A URL at the buffer boundary stays
+ * plain text until the owning message or block has completed.
+ */
 export function splitLinkedText(
   text: string,
+  complete: boolean,
 ): ({ text: string } | { text: string; url: string })[] {
   const parts: ({ text: string } | { text: string; url: string })[] = [];
   let offset = 0;
   for (const token of findUrlTokens(text)) {
+    if (!complete && token.end === text.length) continue;
     if (token.start > offset)
       parts.push({ text: text.slice(offset, token.start) });
     parts.push({ text: text.slice(token.start, token.end), url: token.url });

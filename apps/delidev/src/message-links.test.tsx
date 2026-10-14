@@ -55,6 +55,22 @@ it("makes URLs in generic user and assistant text activatable while preserving t
   expect(native.invoke).toHaveBeenCalledWith("open_external_url", { url });
 });
 
+it("uses original generic message completion and keeps unknown tails inert", () => {
+  const data = transcriptRoleFixtures();
+  const { rerender } = renderRows([
+    { ...data.assistant, state: "streaming", text: `See ${url}` },
+    { ...data.assistant, state: "unavailable", text: `Unknown ${url}` },
+  ]);
+  expect(screen.getAllByLabelText("Assistant message")).toHaveLength(2);
+  expect(screen.queryAllByRole("link")).toHaveLength(0);
+  rerender(
+    <TranscriptItem
+      resource={transcriptResource({ ...data.assistant, text: `See ${url}` })}
+    />,
+  );
+  expect(screen.getByRole("link").textContent).toBe(url);
+});
+
 it("keeps unknown roles and tool, artifact and progress records inert", () => {
   const rows = [
     { role: "unknown", state: "complete", text: `Unknown ${url}` },
@@ -97,6 +113,25 @@ it("activates URLs in Grok user input and assistant text only", () => {
   expect(container.querySelectorAll("dd a, details a")).toHaveLength(0);
 });
 
+it("keeps a streaming Grok tail inert until the validated response completes", () => {
+  const data = transcriptRoleFixtures();
+  const streaming = {
+    ...data.grokText,
+    state: "streaming",
+    text: `Grok ${url}`,
+  };
+  const { rerender } = renderRows([streaming]);
+  expect(
+    screen.getByLabelText("Grok assistant text").querySelector("a"),
+  ).toBeNull();
+  rerender(
+    <TranscriptItem
+      resource={transcriptResource({ ...streaming, state: "complete" })}
+    />,
+  );
+  expect(screen.getByRole("link").textContent).toBe(url);
+});
+
 it("activates URLs only in Claude text blocks and keeps reasoning inert", () => {
   const data = transcriptRoleFixtures();
   const claude = data.claude as any;
@@ -110,6 +145,23 @@ it("activates URLs only in Claude text blocks and keeps reasoning inert", () => 
     `Claude reasoning ${url}`,
   );
   expect(container.querySelector("details a")).toBeNull();
+});
+
+it("uses Claude text-block completion even while its message is streaming", () => {
+  const data = transcriptRoleFixtures();
+  const claude = structuredClone(data.claude) as any;
+  claude.state = "streaming";
+  claude.claude.blocks = [claude.claude.blocks[0]];
+  claude.claude.blocks[0].block.text = `Claude ${url}`;
+  claude.claude.blocks[0].state = "streaming";
+  claude.claude.stop_reason = null;
+  const { rerender } = renderRows([claude]);
+  expect(
+    screen.getByLabelText("Assistant message").querySelector("a"),
+  ).toBeNull();
+  claude.claude.blocks[0].state = "stopped";
+  rerender(<TranscriptItem resource={transcriptResource(claude)} />);
+  expect(screen.getByRole("link").textContent).toBe(url);
 });
 
 it("renders no links on web or mobile", () => {
