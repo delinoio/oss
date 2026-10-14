@@ -131,6 +131,14 @@ window is never cancelled.
 
 The renderer side of this lifecycle (which phase offers Open verification page, when the opening owes a native Dispose, what a late result may change) is the `device-waiting`, `device-opened` and `device-address` rows of the [state machine](#desktop-browser-sign-in-state-machine) below, which is generated from the same table the controller runs: a device login owes no native Dispose until Open verification page is requested, a pending open is retired by Dispose on Back, unmount, abort, cancellation and every terminal state, and the verification page, the pinned code and the address are offered nowhere once a cancellation was acknowledged or observed. A healthy status read recovers only the polling notice; notices from explicit actions and one-shot native steps stay until the user acts again. An auxiliary open or reopen never consumes the retry closure of a replayable mutation (account creation, login request, cancellation, naming).
 
+A connected Grok account in AI Subscription management (`subscription-accounts.tsx`)
+follows System capability 39 alone for Refresh login and Log out (there is no
+separate Grok refresh or logout capability, and capabilities 30 and 38 never
+enable Grok). Without capability 39 both controls stay disabled behind the
+Grok-specific `grok-subscription.lifecycle.unavailable` guidance; the generic
+unsupported-service remediation is not used for Grok. An existing disconnected
+Grok account offers no sign-in action.
+
 Quota/reset credit/pricing, enterprise SSO, external identity providers, imported
 user login, account switching, cross-Worker resume, Fork, Sidechat and manual
 compaction are excluded.
@@ -181,44 +189,44 @@ Retry original request is shown exactly while a retry kind other than `none` is 
 
 #### Events
 
-| Event                         | Method      | Trigger                                                                                         |
-| ----------------------------- | ----------- | ----------------------------------------------------------------------------------------------- |
-| `poll-preparing`              | both        | A status read reports preparing                                                                 |
-| `poll-preparing-canceled`     | both        | A status read reports preparing with the canceled flag                                          |
-| `poll-waiting`                | both        | A status read reports waiting                                                                   |
-| `poll-waiting-canceled`       | both        | A status read reports waiting with the canceled flag (another client or a lost cancel response) |
-| `poll-canceled`               | both        | A status read reports the canceled state                                                        |
-| `poll-expired`                | both        | A status read reports the expired state                                                         |
-| `poll-unsupported`            | both        | A status read reports the unsupported state                                                     |
-| `poll-recovery`               | both        | A status read reports recovery required                                                         |
-| `poll-failed`                 | both        | A status read reports the failed state                                                          |
-| `poll-succeeded`              | both        | A status read reports success and the fresh account verifies generation and operation           |
-| `poll-error`                  | both        | A status read fails or its result cannot be verified                                            |
-| `link-ready`                  | browser     | The original authorization link passes validation for the first time                            |
-| `code-ready`                  | device code | The validated device verification address and user code pass validation for the first time      |
-| `verification-open-started`   | device code | Open verification page is requested (the opener may be admitted before it finishes)             |
-| `verification-open-succeeded` | device code | The native opener opened the verification page                                                  |
-| `verification-open-failed`    | device code | The native opener failed to open the verification page                                          |
-| `open-succeeded`              | browser     | The native receiver confirms the first open                                                     |
-| `open-incompatible`           | browser     | The first open meets the Incompatible refusal                                                   |
-| `open-failed`                 | browser     | The first open fails for any other reason                                                       |
-| `reopen-succeeded`            | browser     | Open browser again succeeds                                                                     |
-| `reopen-incompatible`         | browser     | Open browser again meets the Incompatible refusal                                               |
-| `reopen-failed`               | browser     | Open browser again fails                                                                        |
-| `callback-take-failed`        | browser     | Taking the native callback fails (never retried)                                                |
-| `callback-forward-failed`     | browser     | Forwarding the taken callback fails (never retried)                                             |
-| `replay-started`              | both        | A start, cancel or name save request (first run or Retry original request) begins               |
-| `auxiliary-started`           | browser     | Open browser again begins                                                                       |
-| `start-accepted`              | both        | Account creation and RequestSubscription succeed                                                |
-| `start-refused`               | both        | Account creation or RequestSubscription is refused definitively                                 |
-| `start-uncertain`             | both        | Account creation or RequestSubscription has an uncertain outcome                                |
-| `cancel-accepted`             | both        | CancelSubscription is acknowledged                                                              |
-| `cancel-refused`              | both        | CancelSubscription is refused definitively                                                      |
-| `cancel-uncertain`            | both        | CancelSubscription has an uncertain outcome                                                     |
-| `name-saved`                  | both        | The account alias save is verified                                                              |
-| `name-refused`                | both        | The account alias save is refused definitively                                                  |
-| `name-uncertain`              | both        | The account alias save has an uncertain outcome                                                 |
-| `dispose`                     | both        | The task is left, Settings closes or the controller unmounts                                    |
+| Event                         | Method      | Trigger                                                                                                                            |
+| ----------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `poll-preparing`              | both        | A status read reports preparing                                                                                                    |
+| `poll-preparing-canceled`     | both        | A status read reports preparing with the canceled flag                                                                             |
+| `poll-waiting`                | both        | A status read reports waiting                                                                                                      |
+| `poll-waiting-canceled`       | both        | A status read reports waiting with the canceled flag (another client or a lost cancel response)                                    |
+| `poll-canceled`               | both        | A status read reports the canceled state                                                                                           |
+| `poll-expired`                | both        | A status read reports the expired state                                                                                            |
+| `poll-unsupported`            | both        | A status read reports the unsupported state                                                                                        |
+| `poll-recovery`               | both        | A status read reports recovery required                                                                                            |
+| `poll-failed`                 | both        | A status read reports the failed state                                                                                             |
+| `poll-succeeded`              | both        | A status read reports success and the fresh account verifies generation and operation                                              |
+| `poll-error`                  | both        | A status read fails or its result cannot be verified                                                                               |
+| `link-ready`                  | browser     | The original authorization link passes validation for the first time                                                               |
+| `code-ready`                  | device code | The validated device verification address and user code pass validation for the first time                                         |
+| `verification-open-started`   | device code | Open verification page is requested (the opener may be admitted before it finishes)                                                |
+| `verification-open-succeeded` | device code | The native opener opened the verification page                                                                                     |
+| `verification-open-failed`    | device code | The native opener failed to open the verification page                                                                             |
+| `open-succeeded`              | browser     | The native receiver confirms the first open                                                                                        |
+| `open-incompatible`           | browser     | The first open meets the Incompatible refusal                                                                                      |
+| `open-failed`                 | browser     | The first open fails for any other reason                                                                                          |
+| `reopen-succeeded`            | browser     | Open browser again succeeds                                                                                                        |
+| `reopen-incompatible`         | browser     | Open browser again meets the Incompatible refusal                                                                                  |
+| `reopen-failed`               | browser     | Open browser again fails                                                                                                           |
+| `callback-take-failed`        | browser     | Taking the native callback fails (never retried)                                                                                   |
+| `callback-forward-failed`     | browser     | Forwarding the taken callback fails (never retried)                                                                                |
+| `replay-started`              | both        | A start, cancel or name save request (first run or Retry original request) begins                                                  |
+| `auxiliary-started`           | browser     | Open browser again begins                                                                                                          |
+| `start-accepted`              | both        | Account creation and RequestSubscription succeed                                                                                   |
+| `start-refused`               | both        | Account creation or RequestSubscription is refused definitively, or its receipt fails the local account, alias or operation checks |
+| `start-uncertain`             | both        | Account creation or RequestSubscription has an uncertain outcome                                                                   |
+| `cancel-accepted`             | both        | CancelSubscription is acknowledged                                                                                                 |
+| `cancel-refused`              | both        | CancelSubscription is refused definitively, or its receipt fails the local account checks                                          |
+| `cancel-uncertain`            | both        | CancelSubscription has an uncertain outcome                                                                                        |
+| `name-saved`                  | both        | The account alias save is verified                                                                                                 |
+| `name-refused`                | both        | The account alias save is refused definitively, or its receipt fails the local alias or account checks                             |
+| `name-uncertain`              | both        | The account alias save has an uncertain outcome                                                                                    |
+| `dispose`                     | both        | The task is left, Settings closes or the controller unmounts                                                                       |
 
 #### Transitions
 

@@ -31,6 +31,7 @@
   "grok-subscription.later": "Later",
   "grok-subscription.footer.naming": "Your signed-in account is kept if you leave this screen.",
   "grok-subscription.footer.pending": "Leaving this screen keeps the account and its current sign-in state.",
+  "grok-subscription.lifecycle.unavailable": "Refresh login and Log out are not available for Grok accounts on this server. Update the selected server to supported DeliDev software with Grok sign-in, then recheck support here. Nothing has been changed by this guidance.",
   "grok-subscription.problem.desktopRequired": "Grok browser sign-in requires the desktop app.",
   "grok-subscription.problem.requestUnconfirmed": "The original sign-in request could not be confirmed. Keep this screen open and retry the original request.",
   "grok-subscription.problem.requestFailed": "The sign-in request was not accepted.",

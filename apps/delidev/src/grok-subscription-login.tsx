@@ -56,6 +56,13 @@ enum CopyState {
   Copied = "copied",
   Failed = "failed",
 }
+// A response whose receipt this controller rejects locally: the account, alias,
+// operation, revision or ownership it carries is not the one that was
+// requested. The server already answered, so replaying the same request would
+// only reproduce the same rejected receipt. The failure is definite: it ends
+// the attempt with the mutation's definite-failure notice and retains no
+// request. Any other local or transport failure keeps its uncertain meaning.
+class GrokReceiptRejected extends Error {}
 // The trusted native receiver rejects with its kebab-case failure name.
 enum NativeFailureReason {
   Incompatible = "incompatible",
@@ -370,7 +377,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
         p.account!.revision,
       )
     )
-      throw new Error("Account ownership changed");
+      throw new GrokReceiptRejected("Account ownership changed");
     if (live(p)) p.account = result.resource;
     return result.resource;
   };
@@ -399,15 +406,18 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
     } catch (error) {
       if (live(p)) {
         if (kind) {
-          const uncertain = [
-            FailureCode.Unavailable,
-            FailureCode.ServerUnavailable,
-            FailureCode.Canceled,
-            FailureCode.Internal,
-          ].includes(clientFailure(error).code);
+          const uncertain =
+            !(error instanceof GrokReceiptRejected) &&
+            [
+              FailureCode.Unavailable,
+              FailureCode.ServerUnavailable,
+              FailureCode.Canceled,
+              FailureCode.Internal,
+            ].includes(clientFailure(error).code);
           const outcomes = grokRetryOutcomes[kind];
           // An uncertain outcome keeps the exact original request for explicit
-          // replay; a definite refusal ends the attempt without a retry.
+          // replay; a definite refusal, including a receipt this controller
+          // rejects locally, ends the attempt without a retry.
           dispatch(p, uncertain ? outcomes.uncertain : outcomes.refused);
           p.retry = p.machine.retry === kind ? action : undefined;
         } else if (typeof mode !== "string") dispatch(p, mode.failed);
@@ -477,7 +487,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
           ) ||
           document(result.resource).alias !== grokDefaultAlias
         )
-          throw new Error("Invalid created account");
+          throw new GrokReceiptRejected("Invalid created account");
         p.account = result.resource;
         changed();
       }
@@ -502,7 +512,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
           p.account.revision,
         )
       )
-        throw new Error("Invalid login ownership");
+        throw new GrokReceiptRejected("Invalid login ownership");
       p.account = result.account;
       p.operation = result.operationId;
       dispatch(p, GrokLoginEvent.StartAccepted);
@@ -843,7 +853,9 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
             object(object(document(current).subscription).server_operation).id,
           ) !== p.operation
         )
-          throw new Error("Original cancellation ownership changed");
+          throw new GrokReceiptRejected(
+            "Original cancellation ownership changed",
+          );
         request ??= {
           mutation: {
             id: current.id,
@@ -860,7 +872,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
             current.revision,
           )
         )
-          throw new Error("Invalid cancellation");
+          throw new GrokReceiptRejected("Invalid cancellation");
         if (live(p)) {
           p.account = result.account;
           // The server acknowledged this exact cancellation. The table retires
@@ -914,7 +926,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
           ) ||
           document(result.resource).alias !== alias
         )
-          throw new Error("Invalid saved name");
+          throw new GrokReceiptRejected("Invalid saved name");
         dispatch(p, GrokLoginEvent.NameSaved);
         leave();
       },

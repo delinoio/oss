@@ -178,9 +178,27 @@ function NativeManagedSubscriptionAccount({
     status.data?.capabilities.includes(
       SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1,
     ) === true;
+  // Grok joins the lifecycle under its own negotiated System capability 39
+  // (Grok browser login). It has no separate refresh or logout capability, so a
+  // connected Grok account's Refresh login and Log out follow capability 39
+  // alone; without it they stay unavailable behind Grok-specific guidance, never
+  // behind the generic unsupported-service remediation. Capabilities 30 and 38
+  // belong to ChatGPT and Claude.
   const serviceSupported =
     service === SubscriptionServiceId.ChatGPT ||
-    service === SubscriptionServiceId.Claude;
+    service === SubscriptionServiceId.Claude ||
+    service === SubscriptionServiceId.Grok;
+  // Like Add account, the capability counts only from a settled, error-free
+  // status read: React Query keeps the previous data during a refetch and after
+  // a failed one, and a stale advertisement must not enable a Grok mutation.
+  const grokLifecycle =
+    service === SubscriptionServiceId.Grok &&
+    status.isSuccess &&
+    !status.error &&
+    !status.isFetching &&
+    status.data?.capabilities.includes(
+      SystemCapability.GROK_SUBSCRIPTION_LOGIN_V1,
+    ) === true;
   // A server-token Claude account depends only on the server capability; a
   // device-owned account keeps the Runner-bound native capability.
   const managedClaude =
@@ -236,7 +254,9 @@ function NativeManagedSubscriptionAccount({
         : status.data?.capabilities.includes(
             SystemCapability.CLAUDE_SUBSCRIPTIONS_V1,
           ) === true
-      : capable);
+      : service === SubscriptionServiceId.Grok
+        ? grokLifecycle
+        : capable);
   const ownerMachine = text(state.owner_machine_id);
   const owner = useQuery(
     ResourceQuery.getResource,
@@ -400,7 +420,13 @@ function NativeManagedSubscriptionAccount({
         (status.isSuccess && !status.error && !status.isFetching)) ? (
         <InlineRemediation
           summary={
-            <p>{copy("account-connection.inline.subscriptionUnsupported")}</p>
+            <p>
+              {copy(
+                service === SubscriptionServiceId.Grok
+                  ? "grok-subscription.lifecycle.unavailable"
+                  : "account-connection.inline.subscriptionUnsupported",
+              )}
+            </p>
           }
           actions={
             <SettingsActionButton
@@ -451,32 +477,36 @@ function NativeManagedSubscriptionAccount({
             {copy("claude-subscription.server.connectNew")}
           </SettingsActionButton>
         ) : !connected ? (
-          <SettingsActionButton
-            icon={SettingsActionIcon.Connect}
-            type="button"
-            disabled={
-              !ready ||
-              !flow.available ||
-              (service === SubscriptionServiceId.Claude && !claudeServerLogin)
-            }
-            onClick={() => {
-              if (
+          // An existing disconnected Grok account has no sign-in action: the
+          // Grok flow always creates a separate account (Add account).
+          service === SubscriptionServiceId.Grok ? null : (
+            <SettingsActionButton
+              icon={SettingsActionIcon.Connect}
+              type="button"
+              disabled={
                 !ready ||
                 !flow.available ||
-                (service === SubscriptionServiceId.Claude &&
-                  !claudeServerLogin) ||
-                refreshLock.current
-              )
-                return;
-              // Only a never-used Claude account takes the server-owned flow.
-              flow.begin(service, current);
-            }}
-          >
-            <LocalizedText
-              id="subscription-accounts.signInTo_fa4edf"
-              components={{ s0: <>{subscriptionServiceNames[service]}</> }}
-            />
-          </SettingsActionButton>
+                (service === SubscriptionServiceId.Claude && !claudeServerLogin)
+              }
+              onClick={() => {
+                if (
+                  !ready ||
+                  !flow.available ||
+                  (service === SubscriptionServiceId.Claude &&
+                    !claudeServerLogin) ||
+                  refreshLock.current
+                )
+                  return;
+                // Only a never-used Claude account takes the server-owned flow.
+                flow.begin(service, current);
+              }}
+            >
+              <LocalizedText
+                id="subscription-accounts.signInTo_fa4edf"
+                components={{ s0: <>{subscriptionServiceNames[service]}</> }}
+              />
+            </SettingsActionButton>
+          )
         ) : (
           <>
             {service === SubscriptionServiceId.Claude ? null : (
