@@ -73,7 +73,7 @@ func forkBoundary(tx *store.Tx, id domain.ID, expected domain.NativeIdentity) (s
 		// only when the original Worker negotiated both capabilities. A v1-only
 		// Worker is rejected here, before any job, child or native session.
 		if reasoning {
-			if !slices.Contains(machine.WorkerCapabilities, domain.OpenCodeGeneralChatForkReasoningV1) {
+			if !domain.OpenCodeForkReasoningSupported(machine.WorkerCapabilities) {
 				return r, session, input, domain.Fail(domain.Unsupported, "This Runner Device does not support forking OpenCode history that includes reasoning.", "Update and reconnect the original Unix Runner Device and keep the completed source session.")
 			}
 			input.OpenCode = &domain.OpenCodeForkRequests{Profile: domain.OpenCodeForkProfileV2}
@@ -415,7 +415,7 @@ func validateForkAuthority(tx *store.Tx, input domain.ForkJobInput, phase forkAu
 		}
 		if input.OpenCode.Profile.Reasoning() {
 			_, machine, err := activeMachine(tx, input.SourceAssignment.MachineID)
-			if err != nil || !slices.Contains(machine.WorkerCapabilities, domain.OpenCodeGeneralChatForkReasoningV1) {
+			if err != nil || !domain.OpenCodeForkReasoningSupported(machine.WorkerCapabilities) {
 				return domain.Fail(domain.Unsupported, "The original Runner Device lost OpenCode Fork reasoning support.", "Update and reconnect the original Unix Runner Device; the source stays unchanged.")
 			}
 		}

@@ -104,7 +104,7 @@ func (a *executionAuthority) checkedScope(tx *store.Tx, grant store.ExecutionGra
 		return empty, executionDenied()
 	}
 	_, machine, machineErr := activeMachine(tx, grant.MachineID)
-	if machineErr != nil || input.Configuration.Options.ApprovalsReviewer != "" && !slices.Contains(machine.WorkerCapabilities, domain.CodexApprovalReviewV1) || input.Fork != nil && input.Configuration.Harness == domain.OpenCode && (!slices.Contains(machine.WorkerCapabilities, domain.OpenCodeGeneralChatForkV1) || input.Fork.OpenCodeProfile.Reasoning() && !slices.Contains(machine.WorkerCapabilities, domain.OpenCodeGeneralChatForkReasoningV1)) {
+	if machineErr != nil || input.Configuration.Options.ApprovalsReviewer != "" && !slices.Contains(machine.WorkerCapabilities, domain.CodexApprovalReviewV1) || input.Fork != nil && input.Configuration.Harness == domain.OpenCode && !slices.Contains(machine.WorkerCapabilities, domain.OpenCodeGeneralChatForkV1) {
 		return empty, executionDenied()
 	}
 	_, session, err := sessionRecord(tx, input.SessionID)
@@ -112,6 +112,11 @@ func (a *executionAuthority) checkedScope(tx *store.Tx, grant store.ExecutionGra
 		return empty, executionDenied()
 	}
 	if input.Configuration.Subscription && !input.Configuration.IsOpenCodeGo() && session.Fork != nil && !session.IsSidechat() && !domain.ManagedForkSupported(machine.WorkerCapabilities) {
+		return empty, executionDenied()
+	}
+	// A profile v2 child keeps this requirement for every continuation, after
+	// the one-shot fork input is gone.
+	if domain.OpenCodeForkReasoningRequired(session, input) && !domain.OpenCodeForkReasoningSupported(machine.WorkerCapabilities) {
 		return empty, executionDenied()
 	}
 	if requireSidechatParent(tx, session) != nil || input.Configuration.SidechatPolicy != "" && (!slices.Contains(machine.WorkerCapabilities, domain.CodexReadOnlySidechatWorkerV1) || input.Configuration.Subscription && !domain.ManagedSidechatSupported(machine.WorkerCapabilities)) {

@@ -221,6 +221,61 @@ func TestOpenCodeForkReasoningChildNeedsReasoningCapabilityToResume(t *testing.T
 	}
 }
 
+// setForkWorkerCapabilities rewrites the machine capability set the way a
+// reconnecting Worker with another profile would.
+func setForkWorkerCapabilities(t *testing.T, f *continuationFixture, remove ...domain.WorkerCapability) {
+	t.Helper()
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.change-fork-capabilities", nil, func(tx *store.Tx) (any, error) {
+		r, machine, err := activeMachine(tx, domain.ID(f.machine.Id))
+		if err != nil {
+			return nil, err
+		}
+		machine.WorkerCapabilities = slices.DeleteFunc(machine.WorkerCapabilities, func(capability domain.WorkerCapability) bool {
+			return slices.Contains(remove, capability)
+		})
+		return tx.Put(r.Kind, r.ID, r.Revision, r.SessionID, r.ProjectID, machine)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestOpenCodeForkReasoningContinuationStaysBoundToBothCapabilities(t *testing.T) {
+	for name, removed := range map[string][]domain.WorkerCapability{
+		"reasoning-only": {domain.OpenCodeGeneralChatForkReasoningV1},
+		"both-pairs":     {domain.OpenCodeGeneralChatForkReasoningV1, domain.OpenCodeGeneralChatForkV1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newOpenCodeForkSource(t, openCodeForkFixtureOptions{reasoning: true, reasoningCapability: true})
+			accepted, err := forkOpenCodeSource(t, f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			job, input := forkClaimFixture(t, f, accepted.Msg.Job.Id)
+			child := publishOpenCodeForkResult(t, f, job, input)
+			f.change.Session = child
+			// The first child turn imports the fork checkpoint and completes with
+			// the one-shot fork input cleared from every later assignment.
+			f.enqueue(t, "First reasoning child input.", domain.ExecuteMode)
+			f.control(t, pb.SessionAction_SESSION_ACTION_RESUME)
+			f.claim(t)
+			f.thread, f.turn = "ses_01960dcbe1fdabcdefghijklmn", "msg_01960dcbe1f1ABCDEFGHIJKLMN"
+			f.grant(t)
+			finishOpenCodeRecoveryTurn(t, f, true)
+			setForkWorkerCapabilities(t, f, removed...)
+			f.enqueue(t, "Second reasoning child input.", domain.ExecuteMode)
+			_ = f.service.dispatchExecution(context.Background(), f.refresh(t))
+			session, err := store.Decode[domain.Session](f.refresh(t))
+			if err != nil || session.Fork == nil || !session.Fork.OpenCodeProfile.Reasoning() {
+				t.Fatal("child lost its retained profile v2", err)
+			}
+			if session.ActiveExecutionID != "" || session.Dispatch == domain.DispatchClaimed {
+				t.Fatal("a continuation of a profile v2 child was dispatched to a Worker without both capability pairs")
+			}
+		})
+	}
+}
+
 func TestAttachWorkerRejectsReasoningWithoutBaseForkCapability(t *testing.T) {
 	f := newOpenCodeForkSource(t, openCodeForkFixtureOptions{reasoning: true, reasoningCapability: true})
 	instance := string(domain.NewID())

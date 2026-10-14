@@ -34,11 +34,31 @@ func TestOpenCodeForkReasoningCapabilityPairing(t *testing.T) {
 		"reasoning only": {[]WorkerCapability{reasoning}, false, false},
 		"both":           {[]WorkerCapability{base, reasoning}, true, true},
 	} {
-		if OpenCodeForkReasoningPaired(tc.capabilities) != tc.paired {
+		if OpenCodeForkReasoningPaired(tc.capabilities) != tc.paired || OpenCodeForkReasoningSupported(tc.capabilities) != tc.supported {
 			t.Fatalf("%s: pairing contract changed", name)
 		}
 	}
 	if err := (Machine{WorkerCapabilities: []WorkerCapability{reasoning}}).Validate(); err == nil {
 		t.Fatal("a machine holding reasoning without the base capability validated")
+	}
+}
+
+func TestOpenCodeForkReasoningRequiredFollowsRetainedSessionProfile(t *testing.T) {
+	retained := Session{Fork: &ForkOrigin{OpenCodeProfile: OpenCodeForkProfileV2}}
+	oneShot := ExecutionJobInput{Configuration: ExecutionConfiguration{Harness: OpenCode}, Fork: &ForkExecution{OpenCodeProfile: OpenCodeForkProfileV2}}
+	continuation := ExecutionJobInput{Configuration: ExecutionConfiguration{Harness: OpenCode}}
+	if !OpenCodeForkReasoningRequired(Session{}, oneShot) {
+		t.Fatal("the first v2 turn does not require both capabilities")
+	}
+	if !OpenCodeForkReasoningRequired(retained, continuation) {
+		t.Fatal("a later v2 continuation lost its capability requirement after the fork input was cleared")
+	}
+	if OpenCodeForkReasoningRequired(Session{Fork: &ForkOrigin{}}, continuation) || OpenCodeForkReasoningRequired(Session{}, continuation) {
+		t.Fatal("a profile v1 session requires the reasoning capability")
+	}
+	other := continuation
+	other.Configuration.Harness = Codex
+	if OpenCodeForkReasoningRequired(retained, other) {
+		t.Fatal("another harness requires the OpenCode reasoning capability")
 	}
 }

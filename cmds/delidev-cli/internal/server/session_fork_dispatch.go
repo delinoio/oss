@@ -32,7 +32,7 @@ func queueForkInitialExecution(tx *store.Tx, sr store.Record, session domain.Ses
 	}
 	// A profile v2 child retains cloned reasoning history only a reasoning-aware
 	// Worker can verify.
-	if f.OpenCodeProfile.Reasoning() && !machineCapabilityContains(machine.WorkerCapabilities, domain.OpenCodeGeneralChatForkReasoningV1) {
+	if f.OpenCodeProfile.Reasoning() && !domain.OpenCodeForkReasoningSupported(machine.WorkerCapabilities) {
 		return store.Record{}, forkConflict()
 	}
 	instance, seen, err := tx.WorkerInstance(session.MachineID)

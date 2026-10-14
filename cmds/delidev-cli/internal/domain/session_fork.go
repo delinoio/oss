@@ -229,6 +229,23 @@ func OpenCodeForkReasoningPaired(capabilities []WorkerCapability) bool {
 	return !slices.Contains(capabilities, OpenCodeGeneralChatForkReasoningV1) || slices.Contains(capabilities, OpenCodeGeneralChatForkV1)
 }
 
+// OpenCodeForkReasoningSupported reports whether a Worker can execute and verify
+// profile v2 Fork history: it must hold both the base and the reasoning pair.
+func OpenCodeForkReasoningSupported(capabilities []WorkerCapability) bool {
+	return slices.Contains(capabilities, OpenCodeGeneralChatForkV1) && slices.Contains(capabilities, OpenCodeGeneralChatForkReasoningV1)
+}
+
+// OpenCodeForkReasoningRequired reports whether executing input for session needs
+// the profile v2 capabilities. The retained session profile is authoritative so
+// every later continuation of a v2 child stays bound to them after the first
+// turn clears the one-shot fork input.
+func OpenCodeForkReasoningRequired(session Session, input ExecutionJobInput) bool {
+	if input.Configuration.Harness != OpenCode {
+		return false
+	}
+	return input.Fork != nil && input.Fork.OpenCodeProfile.Reasoning() || session.Fork != nil && session.Fork.OpenCodeProfile.Reasoning()
+}
+
 // OpenCodeForkProfile names the closed OpenCode General Chat copy profile the
 // server selected for one Fork. The zero value is profile v1, so jobs, receipts
 // and checkpoints persisted before profile v2 keep their exact bytes.
