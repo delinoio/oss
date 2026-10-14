@@ -269,7 +269,18 @@ pub fn analyze(prepared: &Prepared<'_>) -> Result<SceneAnalysis> {
     }
     for (id, bytes) in prepared.assets {
         checkpoint()?;
-        if id.starts_with("geometry:") {
+        let mut is_geometry = prepared.geometries.contains_key(id) || id.starts_with("geometry:");
+        if !is_geometry
+            && !prepared.textures.contains_key(id)
+            && !prepared.samplers.contains_key(id)
+        {
+            is_geometry = match geometry(bytes) {
+                Ok(_) => true,
+                Err(error) if error.code == ErrorCode::Cancelled => return Err(error),
+                Err(_) => false,
+            };
+        }
+        if is_geometry {
             report.registered_geometry_bytes += bytes.len();
             if !prepared.geometries.contains_key(id) {
                 report.unused_geometry_count += 1;
@@ -784,6 +795,46 @@ mod tests {
             255
         );
         assert_eq!(decode(&bytes).unwrap(), color);
+    }
+
+    #[test]
+    fn analysis_counts_geometry_assets_without_a_node_layer_prefix() {
+        let scene: Scene = serde_json::from_value(serde_json::json!({
+            "document_id": "01956e48-8f55-7000-8000-000000000001",
+            "nodes": [{
+                "id": "01956e48-8f55-7000-8000-000000000002",
+                "type": "mesh",
+                "geometry": "g",
+                "material": {}
+            }]
+        }))
+        .unwrap();
+        let mut bytes = b"FSG1".to_vec();
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        for position in [[0.0f32, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]] {
+            for value in position {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        for _ in 0..3 {
+            bytes.extend_from_slice(&0.0f32.to_le_bytes());
+            bytes.extend_from_slice(&0.0f32.to_le_bytes());
+            bytes.extend_from_slice(&1.0f32.to_le_bytes());
+        }
+        for index in [0u32, 1, 2] {
+            bytes.extend_from_slice(&index.to_le_bytes());
+        }
+        let assets = Assets::from([
+            ("g".to_owned(), bytes.clone()),
+            ("unused".to_owned(), bytes.clone()),
+        ]);
+        let prepared = prepare(&scene, &assets).unwrap();
+        let report = analyze(&prepared).unwrap();
+        assert_eq!(report.registered_geometry_bytes, bytes.len() * 2);
+        assert_eq!(report.referenced_geometry_bytes, bytes.len());
+        assert_eq!(report.unused_geometry_count, 1);
     }
 
     #[test]

@@ -244,4 +244,31 @@ for (const format of [Format.Glb, Format.Fbx] as const) {
       }
     },
   );
+
+  sceneTest(
+    `${format}: stale analysis checks revision before native validation`,
+    async () => {
+      const session = createSession(format);
+      try {
+        const q = await session.registerGeometry(quad());
+        await session.render(
+          <Scene>
+            <Mesh geometry={q} />
+          </Scene>,
+        );
+        const first = await session.analyze();
+        await session.render(
+          <Scene>
+            <Mesh geometry={q} material={{ metallic: 2 }} />
+          </Scene>,
+        );
+        await assert.rejects(
+          session.analyze({ revision: first.revision }),
+          { code: ErrorCode.Conflict },
+        );
+      } finally {
+        await session.dispose();
+      }
+    },
+  );
 }

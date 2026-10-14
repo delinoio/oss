@@ -690,9 +690,15 @@ export class SceneSession {
     context: { revision: number },
     operation: "generate" | "inspect" | "analyze" = "generate",
     animation?: AnimationSample,
+    expectedRevision?: number,
   ) {
     const p = await this.pinned(signal);
     context.revision = p.revision;
+    if (expectedRevision !== undefined && p.revision !== expectedRevision)
+      throw new ForgeError(
+        ErrorCode.Conflict,
+        "Requested scene revision is stale.",
+      );
     if (
       animation &&
       (animation.clip.documentId !== this.documentId ||
@@ -745,15 +751,13 @@ export class SceneSession {
       throw malformed();
     return this.track(Stage.Layout, (context) =>
       this.ordered(signal, async () => {
-        const result = await this.process(signal, context, "analyze");
-        if (
-          options.revision !== undefined &&
-          result.revision !== options.revision
-        )
-          throw new ForgeError(
-            ErrorCode.Conflict,
-            "Requested scene revision is stale.",
-          );
+        const result = await this.process(
+          signal,
+          context,
+          "analyze",
+          undefined,
+          options.revision,
+        );
         const native = JSON.parse(result.geometry) as Omit<
           SceneAnalysis,
           "documentId" | "revision"
