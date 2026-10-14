@@ -71,6 +71,7 @@ export const schemas = {
     nodeId: nodeId.optional(),
     kind: z.string().min(1).max(128).optional(),
     revision: z.number().int().min(0).optional(),
+    geometryQuality: z.boolean().optional(),
   }),
   [Operation.Measure]: z.strictObject({
     ...session,
@@ -122,7 +123,7 @@ const descriptions: Record<Operation, string> = {
   sessions:
     "List active in-memory sessions, their format, last revision and execution status. Sessions disappear when the server exits.",
   inspect:
-    "Inspect settled local targets or cached Figma targets. Filter targets by nodeId/kind; offset/limit paginate. Text previews are capped at 4096 characters. view=scene_analysis returns GLB/FBX topology totals and paged largest meshes, optionally at an exact revision; filters are invalid for that view. view=receipt returns the last Figma receipt without publishing. Does not refresh Figma remotely.",
+    "Inspect settled local targets or cached Figma targets. Filter targets by nodeId/kind; offset/limit paginate. Text previews are capped at 4096 characters. view=scene_analysis returns GLB/FBX topology totals and paged largest meshes, optionally at an exact revision; geometryQuality=true adds exact-index geometry findings for referenced meshes on that page. Filters are invalid for that view. view=receipt returns the last Figma receipt without publishing. Does not refresh Figma remotely.",
   measure:
     "Measure a document-scoped node at an exact revision (WAV timeline x/width are seconds). GLB/FBX accept animation={clip: clipNodeId, time: seconds} for deformed world bounds. For local documents first inspect to settle a revision; Figma measurement requires a completed publication. A changed revision returns conflict.",
   refresh:
@@ -193,10 +194,12 @@ export function parse<O extends Operation>(
     }
   }
   if (operation === Operation.Inspect) {
-    const { view, revision, nodeId, kind } =
+    const { view, revision, nodeId, kind, geometryQuality } =
       result.data as Input<Operation.Inspect>;
     if (
       (revision !== undefined && view !== InspectionView.SceneAnalysis) ||
+      (geometryQuality !== undefined &&
+        view !== InspectionView.SceneAnalysis) ||
       (view === InspectionView.SceneAnalysis &&
         (nodeId !== undefined || kind !== undefined))
     )

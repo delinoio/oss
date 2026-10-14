@@ -34,6 +34,37 @@ test("CLI analyzes GLB and FBX tasks without automatic export", async () => {
       report.meshes.map((row: { triangleCount: number }) => row.triangleCount),
       [2, 2, 2, 1],
     );
+    assert.equal(report.geometryQuality, undefined);
+    const quality = JSON.parse(
+      (await exec(process.execPath, [...args, "--geometry-quality", "--json"]))
+        .stdout,
+    );
+    assert.equal(quality.geometryQuality.length, 2);
+    assert.ok(
+      quality.meshes.every((row: { geometryId?: string }) => row.geometryId),
+    );
+    const qualityFixture = fileURLToPath(
+      new URL("../examples/scene-geometry-quality.tsx", import.meta.url),
+    );
+    const detailed = JSON.parse(
+      (
+        await exec(process.execPath, [
+          cli,
+          "analyze",
+          qualityFixture,
+          "--data",
+          JSON.stringify({ format }),
+          "--geometry-quality",
+          "--json",
+        ])
+      ).stdout,
+    );
+    assert.deepEqual(
+      detailed.geometryQuality[0].findings.map(
+        (finding: { count: number }) => finding.count,
+      ),
+      [1, 1, 2, 1, 1],
+    );
     const text = (await exec(process.execPath, args)).stdout;
     assert.match(text, /Scene revision .*4 meshes/);
     assert.match(text, /triangles/);

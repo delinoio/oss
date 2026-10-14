@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { test } from "node:test";
 import React, { Suspense, use } from "react";
-import { createSession, ErrorCode, Format, Stage } from "../src/index.js";
+import {
+  createSession,
+  ErrorCode,
+  Format,
+  Stage,
+  SceneGeometryFindingCode,
+} from "../src/index.js";
 import {
   Scene,
   Group,
@@ -29,6 +35,124 @@ const triangle = (): GeometryInput => ({
 });
 
 for (const format of [Format.Glb, Format.Fbx] as const) {
+  sceneTest(
+    `${format}: a base-pose zero-area triangle can open under a morph`,
+    async () => {
+      const session = createSession(format);
+      try {
+        const geometry = await session.registerGeometry({
+          positions: new Float32Array([0, 0, 0, 1, 0, 0, 2, 0, 0]),
+          normals: new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]),
+          indices: new Uint32Array([0, 1, 2]),
+          morphTargets: [
+            {
+              name: "open",
+              positions: new Float32Array([0, 0, 0, 0, 1, 0, 0, 0, 0]),
+            },
+          ],
+        });
+        await session.render(
+          <Scene>
+            <Mesh geometry={geometry} morphWeights={[1]} />
+          </Scene>,
+        );
+        const snapshot = await session.snapshot();
+        const mesh = snapshot.targets.find((target) => target.kind === "mesh");
+        assert.ok(mesh);
+        const measured = await session.measure(mesh, {
+          revision: snapshot.revision,
+        });
+        assert.equal(measured.max[1], 1);
+        const before = await session.exportBuffer();
+        const quality = await session.analyze({ geometryQuality: true });
+        assert.equal(quality.geometryQuality?.[0]?.findings[2]?.count, 1);
+        assert.deepEqual(await session.exportBuffer(), before);
+      } finally {
+        await session.dispose();
+      }
+    },
+  );
+
+  sceneTest(
+    `${format}: optional exact-index quality preserves the source`,
+    async () => {
+      const session = createSession(format);
+      try {
+        const source: GeometryInput = {
+          positions: new Float32Array([
+            0, 0, 0, 1, 0, 0, 0, 1, 0, 2, 0, 0, 9, 9, 9,
+          ]),
+          normals: new Float32Array([
+            0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1,
+          ]),
+          indices: new Uint32Array([
+            0, 1, 2, 1, 2, 0, 2, 1, 0, 0, 0, 1, 0, 1, 3,
+          ]),
+        };
+        const handle = await session.registerGeometry(source);
+        await session.render(
+          <Scene>
+            <Mesh geometry={handle} />
+            <Mesh
+              geometry={handle}
+              scale={[-1, 1, 1]}
+              material={{ doubleSided: true }}
+            />
+          </Scene>,
+        );
+        const before = await session.exportBuffer();
+        const plain = await session.analyze();
+        assert.equal(plain.geometryQuality, undefined);
+        assert.equal(
+          (await session.analyze({ geometryQuality: false })).geometryQuality,
+          undefined,
+        );
+        assert.equal(plain.meshes[0]?.geometryId, undefined);
+        const quality = await session.analyze({
+          geometryQuality: true,
+          revision: plain.revision,
+        });
+        assert.equal(quality.revision, plain.revision);
+        assert.equal(quality.geometryQuality?.length, 1);
+        assert.deepEqual(
+          quality.meshes.map((mesh) => mesh.geometryId),
+          [handle.assetId, handle.assetId],
+        );
+        const findings = quality.geometryQuality![0]!.findings;
+        assert.deepEqual(
+          findings.map((finding) => finding.code),
+          Object.values(SceneGeometryFindingCode),
+        );
+        assert.deepEqual(
+          findings.map((finding) => finding.count),
+          [1, 1, 2, 1, 1],
+        );
+        assert.deepEqual(
+          findings.map((finding) => finding.samples),
+          [[4], [3], [3, 4], [1], [2]],
+        );
+        assert.ok(findings.every((finding) => !finding.truncated));
+        assert.ok(
+          findings.every((finding) => Object.isFrozen(finding.samples)),
+        );
+        assert.deepEqual(await session.exportBuffer(), before);
+        assert.equal(session.revision, plain.revision);
+        assert.throws(
+          () => session.analyze({ geometryQuality: "yes" } as never),
+          { code: ErrorCode.MalformedInput },
+        );
+        const abort = new AbortController();
+        abort.abort();
+        await assert.rejects(
+          session.analyze({ geometryQuality: true, signal: abort.signal }),
+          { code: ErrorCode.Cancelled },
+        );
+      } finally {
+        await session.dispose();
+      }
+    },
+  );
+
   sceneTest(
     `${format}: analysis counts shared and unused geometry at one revision`,
     async () => {

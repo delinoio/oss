@@ -232,7 +232,7 @@ export class SessionRuntime {
       case Operation.Execute:
         return this.execute(input as Input<Operation.Execute>, signal, record);
       case Operation.Inspect: {
-        const { view, offset, limit, nodeId, kind, revision } =
+        const { view, offset, limit, nodeId, kind, revision, geometryQuality } =
           input as Input<Operation.Inspect>;
         if (view === InspectionView.SceneAnalysis) {
           if (!(session instanceof SceneSession))
@@ -240,11 +240,24 @@ export class SessionRuntime {
               ErrorCode.UnsupportedEdit,
               "Scene analysis requires a GLB or FBX session.",
             );
-          const report = await session.analyze({ revision, signal });
+          const report = await session.analyze({
+            revision,
+            signal,
+            geometryQuality,
+          });
+          const meshes = report.meshes.slice(offset, offset + limit);
+          const pageGeometry = new Set(meshes.map((mesh) => mesh.geometryId));
           return {
             ...this.metadata(record),
             ...report,
-            meshes: report.meshes.slice(offset, offset + limit),
+            meshes,
+            ...(report.geometryQuality
+              ? {
+                  geometryQuality: report.geometryQuality.filter((quality) =>
+                    pageGeometry.has(quality.geometryId),
+                  ),
+                }
+              : {}),
             total: report.meshes.length,
             truncated: offset + limit < report.meshes.length,
             nextOffset:

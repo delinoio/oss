@@ -64,6 +64,43 @@ export default async ({state}) => {
       assert.equal(second.nextOffset, null);
       assert.equal(second.truncated, false);
       assert.equal(second.revision, first.revision);
+      const qualityPage = await peer.call("inspect", {
+        sessionId,
+        view: "scene_analysis",
+        geometryQuality: true,
+        limit: 2,
+      });
+      assert.equal(qualityPage.geometryQuality.length, 1);
+      assert.equal(
+        qualityPage.meshes[0].geometryId,
+        qualityPage.geometryQuality[0].geometryId,
+      );
+      assert.deepEqual(
+        qualityPage.geometryQuality[0].findings.map(
+          (finding: { count: number }) => finding.count,
+        ),
+        [0, 0, 0, 0, 0],
+      );
+      const qualityLast = await peer.call("inspect", {
+        sessionId,
+        view: "scene_analysis",
+        geometryQuality: true,
+        offset: 3,
+        limit: 1,
+      });
+      assert.equal(qualityLast.geometryQuality.length, 1);
+      assert.notEqual(
+        qualityLast.geometryQuality[0].geometryId,
+        qualityPage.geometryQuality[0].geometryId,
+      );
+      const wrongView = await peer.raw("inspect", {
+        sessionId,
+        geometryQuality: true,
+      });
+      assert.equal(
+        (wrongView.structuredContent as any).error.code,
+        "malformed_input",
+      );
       const filtered = await peer.raw("inspect", {
         sessionId,
         view: "scene_analysis",
@@ -106,6 +143,47 @@ export default async ({session,state})=>{await session.render(<Scene><Mesh geome
         "unsupported_edit",
       );
       await peer.call("close", { sessionId: document.sessionId });
+    } finally {
+      await peer.close();
+      await rm(cwd, { recursive: true, force: true });
+    }
+  },
+);
+
+sceneTest(
+  "real SDK geometry quality returns the portable category fixture",
+  async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "react-forge-quality-mcp-"));
+    const peer = await connect(cwd);
+    try {
+      const { sessionId } = await peer.call("execute", {
+        code: `import {createSession,Format} from '@delino/react-forge';
+import {Scene,Mesh} from '@delino/react-forge/glb';
+export default async () => {
+ const s=createSession(Format.Glb);
+ const g=await s.registerGeometry({positions:new Float32Array([0,0,0,1,0,0,0,1,0,2,0,0,9,9,9]),normals:Float32Array.from({length:15},(_,i)=>i%3===2?1:0),indices:new Uint32Array([0,1,2,1,2,0,2,1,0,0,0,1,0,1,3])});
+ await s.render(<Scene><Mesh geometry={g}/></Scene>);
+ return s;
+};`,
+      });
+      const report = await peer.call("inspect", {
+        sessionId,
+        view: "scene_analysis",
+        geometryQuality: true,
+      });
+      assert.deepEqual(
+        report.geometryQuality[0].findings.map(
+          (finding: { count: number }) => finding.count,
+        ),
+        [1, 1, 2, 1, 1],
+      );
+      assert.deepEqual(
+        report.geometryQuality[0].findings.map(
+          (finding: { samples: number[] }) => finding.samples,
+        ),
+        [[4], [3], [3, 4], [1], [2]],
+      );
+      await peer.call("close", { sessionId });
     } finally {
       await peer.close();
       await rm(cwd, { recursive: true, force: true });

@@ -2,7 +2,7 @@
 //! I/O.
 #![forbid(unsafe_code)]
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     io::Cursor,
 };
 
@@ -208,6 +208,56 @@ pub struct MeshAnalysis {
     pub vertex_count: usize,
     pub triangle_count: usize,
     pub geometry_instance_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub geometry_id: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SceneGeometryFindingCode {
+    UnusedVertex,
+    RepeatedIndexTriangle,
+    ZeroAreaTriangle,
+    DuplicateTriangle,
+    OppositeWindingTriangle,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GeometryFinding {
+    pub code: SceneGeometryFindingCode,
+    pub count: usize,
+    pub samples: Vec<usize>,
+    pub truncated: bool,
+}
+
+impl GeometryFinding {
+    fn new(code: SceneGeometryFindingCode) -> Self {
+        Self {
+            code,
+            count: 0,
+            samples: Vec::new(),
+            truncated: false,
+        }
+    }
+
+    fn record(&mut self, index: usize) {
+        self.count += 1;
+        if self.samples.len() < 32 {
+            self.samples.push(index);
+        } else {
+            self.truncated = true;
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GeometryQuality {
+    pub geometry_id: String,
+    pub vertex_count: usize,
+    pub triangle_count: usize,
+    pub findings: Vec<GeometryFinding>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -223,11 +273,13 @@ pub struct SceneAnalysis {
     pub referenced_geometry_bytes: usize,
     pub unused_geometry_count: usize,
     pub meshes: Vec<MeshAnalysis>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub geometry_quality: Option<Vec<GeometryQuality>>,
 }
 
 /// Count the validated authored topology. Traversal order is retained for
 /// equal-size meshes; the exporter is never needed to obtain these counts.
-pub fn analyze(prepared: &Prepared<'_>) -> Result<SceneAnalysis> {
+pub fn analyze(prepared: &Prepared<'_>, geometry_quality: bool) -> Result<SceneAnalysis> {
     checkpoint()?;
     let mut report = SceneAnalysis {
         mesh_count: 0,
@@ -240,6 +292,7 @@ pub fn analyze(prepared: &Prepared<'_>) -> Result<SceneAnalysis> {
         referenced_geometry_bytes: 0,
         unused_geometry_count: 0,
         meshes: Vec::new(),
+        geometry_quality: geometry_quality.then(Vec::new),
     };
     let mut instances = BTreeMap::<&str, usize>::new();
     fn visit<'a>(node: &'a Node, rows: &mut Vec<(Uuid, &'a str)>) -> Result<()> {
@@ -268,6 +321,22 @@ pub fn analyze(prepared: &Prepared<'_>) -> Result<SceneAnalysis> {
             .get(id)
             .ok_or_else(|| invalid("geometry"))?
             .len();
+    }
+    if let Some(quality) = &mut report.geometry_quality {
+        let retained_bytes = prepared.assets.values().try_fold(0usize, |sum, bytes| {
+            sum.checked_add(bytes.len()).ok_or_else(limited)
+        })?;
+        let scratch_budget = MAX_BYTES.checked_sub(retained_bytes).ok_or_else(limited)?;
+        let mut scratch = 0usize;
+        for (id, geometry) in &prepared.geometries {
+            let estimate = quality_scratch_estimate(
+                geometry.positions.len(),
+                geometry.indices.len() / 3,
+                id.len(),
+            )?;
+            charge_quality_scratch(&mut scratch, estimate, scratch_budget)?;
+            quality.push(analyze_geometry(id, geometry)?);
+        }
     }
     for (id, bytes) in prepared.assets {
         checkpoint()?;
@@ -311,6 +380,7 @@ pub fn analyze(prepared: &Prepared<'_>) -> Result<SceneAnalysis> {
             vertex_count,
             triangle_count,
             geometry_instance_count: instances[id],
+            geometry_id: geometry_quality.then(|| id.to_owned()),
         });
     }
     report.mesh_count = report.meshes.len();
@@ -318,6 +388,107 @@ pub fn analyze(prepared: &Prepared<'_>) -> Result<SceneAnalysis> {
         .meshes
         .sort_by_key(|a| std::cmp::Reverse(a.triangle_count));
     Ok(report)
+}
+
+fn quality_scratch_estimate(vertices: usize, triangles: usize, id_bytes: usize) -> Result<usize> {
+    vertices
+        .checked_add(triangles.checked_mul(128).ok_or_else(limited)?)
+        .and_then(|bytes| bytes.checked_add(4096))
+        .and_then(|bytes| bytes.checked_add(id_bytes))
+        .ok_or_else(limited)
+}
+
+fn charge_quality_scratch(used: &mut usize, amount: usize, budget: usize) -> Result<()> {
+    let total = used.checked_add(amount).ok_or_else(limited)?;
+    if total > budget {
+        return Err(limited());
+    }
+    *used = total;
+    Ok(())
+}
+
+fn analyze_geometry(id: &str, geometry: &Geometry) -> Result<GeometryQuality> {
+    let mut used = Vec::new();
+    used.try_reserve_exact(geometry.positions.len())
+        .map_err(|_| limited())?;
+    used.resize(geometry.positions.len(), false);
+    let mut findings = [
+        GeometryFinding::new(SceneGeometryFindingCode::UnusedVertex),
+        GeometryFinding::new(SceneGeometryFindingCode::RepeatedIndexTriangle),
+        GeometryFinding::new(SceneGeometryFindingCode::ZeroAreaTriangle),
+        GeometryFinding::new(SceneGeometryFindingCode::DuplicateTriangle),
+        GeometryFinding::new(SceneGeometryFindingCode::OppositeWindingTriangle),
+    ];
+    let mut orientations = HashMap::<[u32; 3], [u32; 3]>::new();
+    orientations
+        .try_reserve(geometry.indices.len() / 3)
+        .map_err(|_| limited())?;
+    let (triangles, remainder) = geometry.indices.as_chunks::<3>();
+    debug_assert!(remainder.is_empty());
+    for (triangle_index, triangle) in triangles.iter().enumerate() {
+        if triangle_index.is_multiple_of(4096) {
+            checkpoint()?;
+        }
+        let indices = [triangle[0], triangle[1], triangle[2]];
+        for &index in &indices {
+            used[index as usize] = true;
+        }
+        let repeated =
+            indices[0] == indices[1] || indices[1] == indices[2] || indices[2] == indices[0];
+        if repeated {
+            findings[1].record(triangle_index);
+        }
+        let [a, b, c] = indices.map(|index| geometry.positions[index as usize].map(f64::from));
+        let ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+        let ac = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+        let cross = [
+            ab[1] * ac[2] - ab[2] * ac[1],
+            ab[2] * ac[0] - ab[0] * ac[2],
+            ab[0] * ac[1] - ab[1] * ac[0],
+        ];
+        if cross == [0.0; 3] {
+            findings[2].record(triangle_index);
+        }
+        if !repeated {
+            let mut unordered = indices;
+            unordered.sort_unstable();
+            let oriented = [
+                indices,
+                [indices[1], indices[2], indices[0]],
+                [indices[2], indices[0], indices[1]],
+            ]
+            .into_iter()
+            .min()
+            .expect("three rotations");
+            match orientations.entry(unordered) {
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(oriented);
+                }
+                std::collections::hash_map::Entry::Occupied(entry) => {
+                    if *entry.get() == oriented {
+                        findings[3].record(triangle_index);
+                    } else {
+                        findings[4].record(triangle_index);
+                    }
+                }
+            }
+        }
+    }
+    for (vertex_index, is_used) in used.into_iter().enumerate() {
+        if vertex_index.is_multiple_of(4096) {
+            checkpoint()?;
+        }
+        if !is_used {
+            findings[0].record(vertex_index);
+        }
+    }
+    checkpoint()?;
+    Ok(GeometryQuality {
+        geometry_id: id.to_owned(),
+        vertex_count: geometry.positions.len(),
+        triangle_count: geometry.indices.len() / 3,
+        findings: findings.into(),
+    })
 }
 fn in_unit(v: f64) -> bool {
     v.is_finite() && (0.0..=1.0).contains(&v)
@@ -760,6 +931,64 @@ pub fn fbx_texture(bytes: &[u8], m: &Material, role: TextureRole) -> Result<Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn geometry_quality_counts_occurrences_and_bounds_samples() {
+        let mut geometry = Geometry {
+            positions: vec![
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [2.0, 0.0, 0.0],
+                [9.0, 9.0, 9.0],
+            ],
+            normals: vec![[0.0, 0.0, 1.0]; 5],
+            tangents: None,
+            uv: None,
+            indices: vec![0, 1, 2, 1, 2, 0, 2, 1, 0, 0, 0, 1, 0, 1, 3],
+            skin: None,
+            morph_targets: vec![],
+        };
+        let quality = analyze_geometry("geometry:fixture", &geometry).unwrap();
+        let counts: Vec<_> = quality
+            .findings
+            .iter()
+            .map(|finding| finding.count)
+            .collect();
+        assert_eq!(counts, [1, 1, 2, 1, 1]);
+        let samples: Vec<_> = quality
+            .findings
+            .iter()
+            .map(|finding| finding.samples.clone())
+            .collect();
+        assert_eq!(samples, [vec![4], vec![3], vec![3, 4], vec![1], vec![2]]);
+        assert!(quality.findings.iter().all(|finding| !finding.truncated));
+        geometry.indices = [0, 1, 2].repeat(101);
+        let quality = analyze_geometry("geometry:fixture", &geometry).unwrap();
+        assert_eq!(quality.findings[3].count, 100);
+        assert_eq!(quality.findings[3].samples, (1..=32).collect::<Vec<_>>());
+        assert!(quality.findings[3].truncated);
+        geometry.positions.push([0.0, 0.0, 0.0]);
+        geometry.normals.push([0.0, 0.0, 1.0]);
+        let mut uv = vec![[0.0, 0.0]; 5];
+        uv.push([1.0, 0.0]);
+        geometry.uv = Some(uv);
+        geometry.indices = vec![0, 1, 2, 5, 1, 2];
+        let seam = analyze_geometry("geometry:seam", &geometry).unwrap();
+        assert_eq!(seam.findings[3].count, 0);
+        assert_eq!(seam.findings[4].count, 0);
+    }
+
+    #[test]
+    fn geometry_quality_rejects_overflowing_scratch_estimates() {
+        assert!(quality_scratch_estimate(0, usize::MAX, 0).is_err());
+        assert!(quality_scratch_estimate(usize::MAX, 0, 0).is_err());
+        let mut charged = 0;
+        charge_quality_scratch(&mut charged, 4096, 4096).unwrap();
+        assert_eq!(charged, 4096);
+        assert!(charge_quality_scratch(&mut charged, 1, 4096).is_err());
+        assert_eq!(charged, 4096);
+    }
 
     #[test]
     fn packed_scalar_channels_and_baked_color_factors_keep_their_transfer_space() {

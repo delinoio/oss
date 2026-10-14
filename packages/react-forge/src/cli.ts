@@ -13,7 +13,7 @@ const help = `React Forge ${packageManifest.version}
 
 Usage:
   react-forge run <entry.tsx> --output <file> [--data <json>] [--overwrite] [--json]
-  react-forge analyze <entry.tsx> [--data <json>] [--json]
+  react-forge analyze <entry.tsx> [--data <json>] [--json] [--geometry-quality]
   react-forge mcp [--cwd <directory>]
   react-forge --help
   react-forge --version
@@ -102,7 +102,12 @@ export async function main(args: string[]): Promise<number> {
       const flag = args[at]!;
       if (flags.has(flag))
         throw new ForgeError(ErrorCode.MalformedInput, "Duplicate CLI option.");
-      if (flag === "--json" || flag === "--overwrite") flags.set(flag, true);
+      if (
+        flag === "--json" ||
+        flag === "--overwrite" ||
+        flag === "--geometry-quality"
+      )
+        flags.set(flag, true);
       else if (flag === "--output" || flag === "--data") {
         const value = args[++at];
         if (!value || value.startsWith("--"))
@@ -118,10 +123,15 @@ export async function main(args: string[]): Promise<number> {
         );
     }
     const output = flags.get("--output");
+    if (!analyzing && flags.has("--geometry-quality"))
+      throw new ForgeError(
+        ErrorCode.MalformedInput,
+        "--geometry-quality requires analyze.",
+      );
     if (analyzing && (output !== undefined || flags.has("--overwrite")))
       throw new ForgeError(
         ErrorCode.MalformedInput,
-        "Analyze accepts only --data and --json.",
+        "Analyze accepts only --data, --json and --geometry-quality.",
       );
     if (!analyzing && typeof output !== "string")
       throw new ForgeError(ErrorCode.MalformedInput, "--output is required.");
@@ -195,7 +205,10 @@ export async function main(args: string[]): Promise<number> {
           ErrorCode.UnsupportedEdit,
           "Analyze requires a GLB or FBX scene session.",
         );
-      const report = await session.analyze({ signal: controller.signal });
+      const report = await session.analyze({
+        signal: controller.signal,
+        geometryQuality: flags.has("--geometry-quality"),
+      });
       const summary = `Scene revision ${report.revision}: ${report.meshCount} meshes, ${report.referencedGeometryCount} referenced geometries, ${report.unusedGeometryCount} unused geometries; unique ${report.uniqueVertexCount} vertices/${report.uniqueTriangleCount} triangles; instances ${report.instanceVertexCount} vertices/${report.instanceTriangleCount} triangles; geometry bytes ${report.referencedGeometryBytes} referenced/${report.registeredGeometryBytes} registered.\n`;
       const rows = report.meshes
         .slice(0, 10)
@@ -204,9 +217,16 @@ export async function main(args: string[]): Promise<number> {
             `${mesh.nodeId}: ${mesh.vertexCount} vertices, ${mesh.triangleCount} triangles, ${mesh.geometryInstanceCount} instances\n`,
         )
         .join("");
+      const quality =
+        report.geometryQuality
+          ?.map(
+            (row) =>
+              `${row.geometryId}: ${row.findings.map((finding) => `${finding.code}=${finding.count}${finding.truncated ? "+" : ""}`).join(", ")}\n`,
+          )
+          .join("") ?? "";
       await write(
         process.stdout,
-        json ? `${JSON.stringify(report)}\n` : summary + rows,
+        json ? `${JSON.stringify(report)}\n` : summary + rows + quality,
       );
       return 0;
     }
