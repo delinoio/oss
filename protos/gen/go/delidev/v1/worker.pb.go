@@ -47,9 +47,9 @@ const (
 	WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1        WorkerCapability = 38
 	// Worker accepts retained branch prefix selection version 2 (exact JSON-style quoting).
 	WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_EXACT_QUOTE_V1 WorkerCapability = 65
-	// Reserved: the Worker runs independent session preparation and execution jobs
-	// concurrently on one stream. Allocated without active behavior; no peer may
-	// advertise or echo it until the dispatch change activates it.
+	// Worker runs independent session preparation and execution jobs concurrently
+	// on one stream. The server echoes it in AttachWorkerResponse and the Worker
+	// advertises it only after observing that echo.
 	WorkerCapability_WORKER_CAPABILITY_PARALLEL_SESSIONS_V1           WorkerCapability = 66
 	WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1      WorkerCapability = 26
 	WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1               WorkerCapability = 24

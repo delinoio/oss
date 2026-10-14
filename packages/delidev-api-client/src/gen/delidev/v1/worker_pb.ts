@@ -1938,9 +1938,9 @@ export enum WorkerCapability {
   BRANCH_PREFIX_EXACT_QUOTE_V1 = 65,
 
   /**
-   * Reserved: the Worker runs independent session preparation and execution jobs
-   * concurrently on one stream. Allocated without active behavior; no peer may
-   * advertise or echo it until the dispatch change activates it.
+   * Worker runs independent session preparation and execution jobs concurrently
+   * on one stream. The server echoes it in AttachWorkerResponse and the Worker
+   * advertises it only after observing that echo.
    *
    * @generated from enum value: WORKER_CAPABILITY_PARALLEL_SESSIONS_V1 = 66;
    */
