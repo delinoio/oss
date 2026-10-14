@@ -242,7 +242,9 @@ function accessFixture(options: {
   render(
     <TransportProvider transport={transport}>
       <QueryClientProvider
-        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
       >
         <MutationIntents>
           <TailscaleConnections
@@ -285,7 +287,9 @@ it("shows the localized login recovery outside the closed Technical details disc
   expect(details.open).toBe(false);
   expect(details.textContent).toContain("unavailable");
   expect(details.textContent).toContain(LOGIN_MESSAGE);
-  expect(within(alert).queryByText("DeliDev could not complete this request.")).toBeNull();
+  expect(
+    within(alert).queryByText("DeliDev could not complete this request."),
+  ).toBeNull();
   // Disclosure toggling and locale switching never send a mutation.
   details.open = true;
   fireEvent(details, new Event("toggle"));
@@ -329,7 +333,11 @@ it("keeps the generic Problem for a different unavailable failure", async () => 
   });
   await enable();
   await waitFor(() => expect(accessAlert()).not.toBeNull());
-  expect(within(accessAlert()!).getByText("DeliDev could not complete this request.")).toBeTruthy();
+  expect(
+    within(accessAlert()!).getByText(
+      "DeliDev could not complete this request.",
+    ),
+  ).toBeTruthy();
   expect(outsideDisclosure(LOGIN_MESSAGE)).toHaveLength(0);
 });
 
@@ -344,7 +352,11 @@ it("does not synthesize a login diagnosis from a logged-out discovery observatio
   });
   await enable();
   await waitFor(() => expect(accessAlert()).not.toBeNull());
-  expect(within(accessAlert()!).getByText("DeliDev could not complete this request.")).toBeTruthy();
+  expect(
+    within(accessAlert()!).getByText(
+      "DeliDev could not complete this request.",
+    ),
+  ).toBeTruthy();
   expect(screen.getByText("Tailscale login required")).toBeTruthy();
   expect(outsideDisclosure(LOGIN_MESSAGE)).toHaveLength(0);
 });
