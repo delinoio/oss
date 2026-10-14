@@ -838,9 +838,18 @@ it("reloads the product window once from the connected top-level screens", async
       "Schedules",
       "Settings",
     ]) {
-      const button = screen.queryByRole("button", {
-        name: new RegExp(`^${name}`),
-      });
+      // Usage is unpinned by default, so it is reached through the More popover.
+      if (name === "Usage")
+        fireEvent.click(screen.getByRole("button", { name: "More" }));
+      const button =
+        name === "Usage"
+          ? within(screen.getByRole("dialog", { name: "More" })).queryByRole(
+              "button",
+              { name: "Usage" },
+            )
+          : screen.queryByRole("button", {
+              name: new RegExp(`^${name}`),
+            });
       expect(button, name).toBeTruthy();
       fireEvent.click(button!);
       pressReload();
