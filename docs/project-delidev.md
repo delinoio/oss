@@ -137,7 +137,7 @@ The standalone [Pull requests sidebar](apps-delidev-desktop-contract.md#standalo
 - [Account lifecycle and AI API Keys presentation](cmds-delidev-accounts-contract.md)
 - [Managed Codex subscriptions and shared account owner/member ownership](cmds-delidev-subscription-contract.md#shared-account-owner-and-execution-members), Worker 67 `SHARED_SUBSCRIPTION_OWNER_V1` and Worker 68 `CLAUDE_DEVICE_OWNED_MEMBERS_V1`
 - [OpenCode Go subscriptions](cmds-delidev-opencode-go-subscription-contract.md)
-- [Grok Build subscriptions (storage and lease layer and server-owned Go browser login, device-code login, refresh and logout implemented; System 39 advertised for the login, System 40 and Worker 21 declared but unadvertised; native process execution planned)](cmds-delidev-grok-subscription-contract.md)
+- [Grok Build subscriptions (storage and lease layer, server-owned Go browser login, device-code login, refresh and logout, and switched-off subscription execution with `cached_token` ACP authentication, execute lease, credential custody and original-Worker recovery implemented; System 39 advertised for the login, System 40 and Worker 21 declared and advertised only when execution is switched on after real-account verification)](cmds-delidev-grok-subscription-contract.md)
 - [API account browser OAuth](cmds-delidev-account-oauth-contract.md)
 - [Provider inspection](cmds-delidev-providers-contract.md)
 - [Provider and model catalog](cmds-delidev-catalog-contract.md)
