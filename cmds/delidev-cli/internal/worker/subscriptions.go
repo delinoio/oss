@@ -83,6 +83,9 @@ type managedSubscriptionJournal struct {
 	// logged out the canonical profile. A shared owner never infers this from any
 	// member's per-session Cleanup or NativeIdentity flags.
 	OwnerProfileCleaned bool `json:"owner_profile_cleaned,omitempty"`
+	// GrokHome is the private native home of a Grok execute lease. Recovery by
+	// the original Worker retires a credential left in it.
+	GrokHome string `json:"grok_home,omitempty"`
 }
 
 func subscriptionRPC(ctx context.Context, config Config, credential Credential) (delidevv1connect.SubscriptionServiceClient, func(), error) {
@@ -307,12 +310,12 @@ func watchSubscriptions(ctx context.Context, config Config, credential Credentia
 			continue
 		}
 		var account domain.Account
-		if domain.Decode(r.DocumentJson, &account) != nil || account.Subscription == nil || account.Subscription.Pending == nil && account.Subscription.Observation == nil && !(account.SubscriptionService == domain.SubscriptionClaude && account.Subscription.RecoveryRequired && account.Subscription.Lease != nil) {
+		if domain.Decode(r.DocumentJson, &account) != nil || account.Subscription == nil || account.Subscription.Pending == nil && account.Subscription.Observation == nil && !(account.SubscriptionService == domain.SubscriptionClaude && account.Subscription.RecoveryRequired && account.Subscription.Lease != nil) && !grokRecoveryAccount(account) {
 			return subscription.Invalid()
 		}
 		var op domain.SubscriptionOperation
 		var observation *domain.SubscriptionObservationOperation
-		if account.SubscriptionService == domain.SubscriptionClaude && account.Subscription.RecoveryRequired && account.Subscription.Lease != nil {
+		if account.SubscriptionService == domain.SubscriptionClaude && account.Subscription.RecoveryRequired && account.Subscription.Lease != nil || grokRecoveryAccount(account) {
 			op = domain.SubscriptionOperation{ID: account.Subscription.Lease.OperationID}
 		} else if account.Subscription.Observation != nil && account.Subscription.Observation.Phase == domain.SubscriptionObservationQueued {
 			observation = account.Subscription.Observation
@@ -334,6 +337,9 @@ func watchSubscriptions(ctx context.Context, config Config, credential Credentia
 			defer wg.Done()
 			defer func() { mu.Lock(); delete(active, op.ID); mu.Unlock() }()
 			run := func() error {
+				if grokRecoveryAccount(account) {
+					return runGrokRecovery(ctx, config, client, credential, domain.ID(r.Id), account)
+				}
 				if observation != nil && account.Subscription.Lease != nil {
 					handled, err := config.observations.run(ctx, domain.ID(r.Id), *observation)
 					if !handled {
@@ -820,7 +826,7 @@ func managedSubscriptionCapability(resource *pb.Resource) bool {
 
 func slicesContainManagedCapability(values []domain.WorkerCapability) bool {
 	for _, v := range values {
-		if v == domain.ManagedCodexSubscriptionsV1 || v == domain.NativeClaudeSubscriptionsV1 || v == domain.ManagedClaudeExecutionV1 {
+		if v == domain.ManagedCodexSubscriptionsV1 || v == domain.NativeClaudeSubscriptionsV1 || v == domain.ManagedClaudeExecutionV1 || v == domain.ManagedGrokSubscriptionsV1 {
 			return true
 		}
 	}

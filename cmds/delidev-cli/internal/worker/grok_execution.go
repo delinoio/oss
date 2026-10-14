@@ -27,6 +27,14 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 	if input.Continuation != nil || input.Fork != nil || (input.Version != 4 && !domain.HarnessVersionAllowed(domain.GrokBuild, input.Installation.Version)) {
 		return nil, domain.Fail(domain.Unsupported, "Grok execution requires the original pinned first-input profile.", "Retain existing native history; a replacement input or continuation is not authorized.")
 	}
+	// A managed subscription execution takes the account's exclusive lease and
+	// materializes its credential in the private home. It is available only on a
+	// Worker that negotiated capability 21 and only for a verified installation
+	// at or above the subscription baseline. API execution is unchanged.
+	subscribed := input.Configuration.Subscription
+	if subscribed && (!config.grokExecution || config.execution == nil || input.Configuration.SubscriptionService != domain.SubscriptionGrok || !domain.GrokSubscriptionVersionAllowed(input.Installation.Version)) {
+		return nil, domain.Fail(domain.Unsupported, "This Runner Device cannot execute Grok subscriptions.", "Update the Worker and verify its managed Grok profile before sending input.")
+	}
 	contextTokens, err := input.Configuration.GrokFirstInputContext(input.Input.Mode)
 	if err != nil {
 		return nil, err
@@ -91,6 +99,22 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 		return nil, domain.SafeError(err)
 	}
 	connection := config.execution
+	var subscriptionRun *grokSubscriptionRun
+	nativeJoined := true
+	if subscribed {
+		// The lease is taken before the native process exists and released only
+		// after the credential is retired, so its Finish is the last step of the
+		// execution on every exit path.
+		subscriptionRun, err = beginGrokSubscriptionExecution(ctx, config, owner, input, filepath.Join(home, "grok"))
+		if err != nil {
+			return nil, err
+		}
+		defer func() {
+			if err := subscriptionRun.finish(nativeJoined); err != nil {
+				output, returned = nil, err
+			}
+		}()
+	}
 	publicationConfig := *connection
 	publicationConfig.Root = manager.Root
 	publisher, err := OpenExecutionPublisher(publicationConfig)
@@ -136,7 +160,12 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 	if err != nil {
 		return nil, rpc.ClientError(err)
 	}
-	if registered == nil || registered.Msg == nil || registered.Msg.ProxyPath != "/api-proxy/v1" {
+	expectedProxyPath := "/api-proxy/v1"
+	if subscribed {
+		// A native subscription carries no DeliDev relay.
+		expectedProxyPath = ""
+	}
+	if registered == nil || registered.Msg == nil || registered.Msg.ProxyPath != expectedProxyPath {
 		return nil, publicationUncertain()
 	}
 	// Startup cancellation and stream loss join the owned process immediately.
@@ -150,6 +179,10 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 		return nil, err
 	}
 	nativeConfig := grok.APIExecutionConfig{OrdinaryTools: ordinaryTools, Probe: grok.ProbeConfig{Process: process.Config{StartupObserver: config.progress.native, Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: home, Env: env, Logger: logger}, Version: input.Installation.Version, Home: filepath.Join(home, "grok")}, Workspace: lease.WorkingDirectory(), Model: input.Configuration.NativeModel, Instructions: instructions, ContextTokens: contextTokens, Mode: input.Input.Mode, ServerOrigin: connection.Credential.Endpoint, Token: token}
+	if subscribed {
+		nativeConfig.ServerOrigin, nativeConfig.Token = "", ""
+		nativeConfig.Subscription, nativeConfig.PrepareCredential = true, subscriptionRun.prepare
+	}
 	tools, err := OpenGrokEventPublisher(binding)
 	if err != nil {
 		return nil, err
@@ -161,6 +194,7 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 	}
 	defer func() {
 		if err := api.Close(); err != nil {
+			nativeJoined = false
 			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
 	}()

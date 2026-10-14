@@ -29,17 +29,26 @@ import (
 // for Finish and released by finishGrok; a failed materialization releases it
 // here.
 func (l *managedSubscriptionLease) materializeGrok(grokHome string) (bundle subscription.GrokBundle, err error) {
+	// The directory is bound (opened and validated through its handle) before
+	// anything is written or accepted; every later step uses that handle only.
+	home, err := subscription.BindGrokHome(grokHome)
+	if err != nil {
+		clear(l.response.Bundle)
+		l.response.Bundle = nil
+		return subscription.GrokBundle{}, err
+	}
+	return l.materializeGrokBound(home)
+}
+
+// materializeGrokBound is materializeGrok for a home the caller already bound.
+// The lease takes ownership of home: it is retained for Finish and released by
+// finishGrok, or released here when materialization fails.
+func (l *managedSubscriptionLease) materializeGrokBound(home subscription.GrokHome) (bundle subscription.GrokBundle, err error) {
 	raw := l.response.Bundle
 	defer func() {
 		clear(raw)
 		l.response.Bundle = nil
 	}()
-	// The directory is bound (opened and validated through its handle) before
-	// anything is written or accepted; every later step uses that handle only.
-	home, err := subscription.BindGrokHome(grokHome)
-	if err != nil {
-		return subscription.GrokBundle{}, err
-	}
 	l.grokHome = home
 	defer func() {
 		if err != nil {
@@ -137,4 +146,33 @@ func (l *managedSubscriptionLease) finishGrok(original subscription.GrokBundle, 
 		l.logger.LogAttrs(context.Background(), slog.LevelInfo, "grok_subscription_finish", slog.String("account_id", string(l.account)), slog.String("lease_id", l.response.LeaseId), slog.String("action", action.String()), slog.Bool("success", outcome.Success), slog.Bool("cleanup_confirmed", outcome.Cleanup))
 	}
 	return l.finish(outcome.Bundle, outcome.Cleanup, refresh, outcome.Success)
+}
+
+// finishGrokExecution settles one Grok execute lease. attempted records whether
+// the Worker began to materialize the credential: when it did not, no file was
+// ever written and the cleanup is confirmed by construction. Otherwise the
+// native file is read once (sealing a native refresh when the process was
+// joined and kept the original identity) and retired through the bound home.
+// An unjoined native process never confirms cleanup, because it could still
+// rewrite the credential: the file is retired best-effort and the server keeps
+// the lease fenced. The bound home is released here.
+func (l *managedSubscriptionLease) finishGrokExecution(original subscription.GrokBundle, attempted, joined bool) error {
+	defer original.Clear()
+	defer clear(l.response.Bundle)
+	defer func() {
+		_ = l.grokHome.Close()
+		l.grokHome = subscription.GrokHome{}
+	}()
+	outcome := grokFinishOutcome{Cleanup: true}
+	if attempted {
+		outcome = prepareGrokFinish(l.grokHome, l.credential.ServerID, l.account, l.finishID, l.journal.Action, original, joined)
+		if !joined {
+			clear(outcome.Bundle)
+			outcome = grokFinishOutcome{}
+		}
+	}
+	if l.logger != nil {
+		l.logger.LogAttrs(context.Background(), slog.LevelInfo, "grok_subscription_execution_finish", slog.String("phase", "EXECUTION"), slog.String("step", "finish"), slog.String("account_id", string(l.account)), slog.String("lease_id", l.response.LeaseId), slog.Bool("credential_written", attempted), slog.Bool("process_joined", joined), slog.Bool("success", outcome.Success), slog.Bool("cleanup_confirmed", outcome.Cleanup))
+	}
+	return l.finish(outcome.Bundle, outcome.Cleanup, false, outcome.Success)
 }

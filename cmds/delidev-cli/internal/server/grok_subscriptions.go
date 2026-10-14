@@ -77,7 +77,7 @@ func (s *Service) grokLeaseAction(action domain.SubscriptionAction) bool {
 }
 
 func grokUnsupported() *domain.Error {
-	return domain.Fail(domain.Unsupported, "This Grok operation is not available.", "Use login, refresh or logout; Grok execution is not activated.")
+	return domain.Fail(domain.Unsupported, "This Grok operation is not available.", "Use login, refresh or logout; Grok execution is enabled only on servers that verified it.")
 }
 
 // grokLoggingOut is the typed problem of work refused because the account's
@@ -126,9 +126,10 @@ func grokSubscriptionAccount(tx *store.Tx, id domain.ID, revision uint64) (store
 // installation on the selected Runner Device whose version is at or above the
 // subscription baseline. The legacy discovery baseline is deliberately not used:
 // it admits every release from 1.0.41, while a managed credential may be
-// delivered only to an installation that meets the subscription profile. The managed-Grok Worker capability
-// (Worker 21) is reserved but not yet declared, so admission is bound to the
-// verified installation until that capability activates.
+// delivered only to an installation that meets the subscription profile. An
+// execute lease additionally requires the Runner Device to negotiate the
+// managed-Grok Worker capability (Worker 21), which exists only when the server
+// enabled Grok subscription execution.
 func grokSubscriptionInstallation(tx *store.Tx, machine domain.ID) (domain.Installation, error) {
 	_, m, err := activeMachine(tx, machine)
 	if err != nil {

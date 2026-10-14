@@ -51,6 +51,12 @@ type Config struct {
 	// account owners.
 	claudeMembers bool
 	claudeOwners  *claudeOwnerRegistry
+	// ManagedGrokSubscriptions enables Worker capability 21. It stays false until
+	// the native Grok Build subscription profile is verified with a real account
+	// on the current stable release; no product entry point sets it yet.
+	// grokExecution is the negotiated result of the current attach.
+	ManagedGrokSubscriptions bool
+	grokExecution            bool
 	// codexMembers is negotiated only after the server echoes the shared owner
 	// capability and the account's managed native installation is verified.
 	codexMembers bool
@@ -346,6 +352,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 		config.functionOutputsSupported = false
 		claudeCapabilityExpected := false
 		managedClaudeExpected := false
+		grokExpected := false
 		metadataExpected := false
 		namedDirectoriesExpected := false
 		remoteCloneExpected := false
@@ -400,6 +407,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			config.nativeClaudeInstallation = nil
 			supportsDeviceClaude := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1)
 			supportsManagedClaude := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CLAUDE_EXECUTION_V1)
+			// Worker 21 is reported only when this Worker was explicitly enabled for
+			// Grok subscription execution and the server echoed the capability.
+			grokExpected = config.ManagedGrokSubscriptions && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_GROK_SUBSCRIPTIONS_V1)
 			if supportsDeviceClaude || supportsManagedClaude {
 				// One empty-profile probe backs both independently negotiated
 				// capabilities. It reads no personal login and creates no authority.
@@ -467,6 +477,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 			if claudeCapabilityExpected {
 				profile += "\x00native-claude-subscriptions-v1"
+			}
+			if grokExpected {
+				profile += "\x00managed-grok-subscriptions-v1"
 			}
 			if managedClaudeExpected {
 				profile += "\x00managed-claude-execution-v1"
@@ -617,6 +630,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if managedClaudeExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CLAUDE_EXECUTION_V1)
 			}
+			if grokExpected {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_GROK_SUBSCRIPTIONS_V1)
+			}
 			if verifiedTitleProfile {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1)
 			}
@@ -699,6 +715,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				config.Logger.InfoContext(ctx, "worker auxiliary title capability not negotiated", "machine_id", credential.MachineID)
 			}
 			config.updatesEnabled = machineCapability(attached.Msg.Machine, domain.SignedWorkerUpdatesV1)
+			config.grokExecution = grokExpected && machineCapability(attached.Msg.Machine, domain.ManagedGrokSubscriptionsV1)
 			config.claudeMembers = claudeCapabilityExpected && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CLAUDE_DEVICE_OWNED_MEMBERS_V1) && machineCapability(attached.Msg.Machine, domain.ClaudeDeviceOwnedMembersV1)
 			config.parallelSessions = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_PARALLEL_SESSIONS_V1) && machineCapability(attached.Msg.Machine, domain.ParallelSessionsV1)
 			config.codexMembers = managedCapabilityExpected && config.parallelSessions && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SHARED_SUBSCRIPTION_OWNER_V1) && machineCapability(attached.Msg.Machine, domain.SharedSubscriptionOwnerV1)
