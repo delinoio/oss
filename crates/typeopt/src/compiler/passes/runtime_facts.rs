@@ -1869,9 +1869,16 @@ fn imports_external_runtime(ctx: &mut Ctx) -> bool {
                     let require = callee.kind() == SyntaxKind::Identifier
                         && callee.text() == "require"
                         && ctx.files[index].js;
-                    let created_loader = callee.kind() == SyntaxKind::Identifier
-                        && (loaders.contains(callee.text())
-                            || loader_symbols.contains(&ctx.resolve(callee)));
+                    let created_loader = match callee.kind() {
+                        SyntaxKind::Identifier => {
+                            loaders.contains(callee.text())
+                                || loader_symbols.contains(&ctx.resolve(callee))
+                        }
+                        SyntaxKind::PropertyAccessExpression => {
+                            loader_symbols.contains(&ctx.resolve(callee.name()))
+                        }
+                        _ => false,
+                    };
                     if !dynamic
                         && !require
                         && !created_loader
