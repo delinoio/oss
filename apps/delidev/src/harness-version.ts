@@ -84,6 +84,25 @@ export function claudeVersionAllowed(version: unknown): boolean {
 }
 
 /**
+ * Version predicate applied to a Settings installation observation before any
+ * protocol state is evaluated. Claude Code and OpenCode report an under-baseline
+ * detected version as a version problem; other harnesses keep protocol-only
+ * classification.
+ */
+export function installationVersionAllowed(
+  harness: unknown,
+): ((version: string) => boolean) | undefined {
+  switch (harness) {
+    case HarnessId.Claude:
+      return claudeVersionAllowed;
+    case HarnessId.OpenCode:
+      return (version) => harnessVersionAllowed(HarnessId.OpenCode, version);
+    default:
+      return undefined;
+  }
+}
+
+/**
  * The single per-harness version rule for renderer validators of retained
  * native records (interactions, usage, subagents): valid SemVer precedence at
  * or above the harness baseline. It mirrors domain.HarnessVersionAllowed for

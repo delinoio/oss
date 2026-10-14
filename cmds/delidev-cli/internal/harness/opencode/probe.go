@@ -41,7 +41,7 @@ const (
 )
 
 func incompatible() *domain.Error {
-	return domain.Fail(domain.Unsupported, "The installed OpenCode does not match its native protocol profile.", "Select a validated native OpenCode version and refresh discovery; no execution was authorized.")
+	return domain.Fail(domain.Unsupported, "The installed OpenCode does not match its native protocol profile.", "Update OpenCode on this Worker (run opencode upgrade, or use the package manager that installed it), then refresh discovery; no execution was authorized.")
 }
 func unavailable() *domain.Error {
 	return domain.Fail(domain.Unavailable, "OpenCode native protocol initialization did not complete.", "Inspect the selected Worker installation and refresh protocol discovery.")

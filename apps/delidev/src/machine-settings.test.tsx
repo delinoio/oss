@@ -4,7 +4,7 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { act, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import {
   EntityKind,
@@ -15,7 +15,11 @@ import {
   type Resource,
 } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
-import { useMachineSettingsController } from "./machine-settings";
+import {
+  MachineSettingsView,
+  installationCauseCopyKey,
+  useMachineSettingsController,
+} from "./machine-settings";
 import { MutationIntents } from "./mutation";
 
 const earlier = "2026-10-09T00:00:00Z";
@@ -354,4 +358,96 @@ it("retains the accepted observation while the same connection replaces its tran
   expect(value.result.current.data.installations).toMatchObject([
     { explicit_path: "/replacement/codex" },
   ]);
+});
+
+it.each([
+  ["opencode", "version", "machine-settings.opencode.excluded.version"],
+  [
+    "opencode",
+    "protocolUnsupported",
+    "machine-settings.opencode.excluded.protocolUnsupported",
+  ],
+  ["opencode", "missing", "machine-settings.excluded.missing"],
+  ["opencode", "protocolFailed", "machine-settings.excluded.protocolFailed"],
+  ["claude-code", "version", "claude-subscription.excluded.version"],
+  ["codex", "version", "machine-settings.excluded.version"],
+  [
+    "codex",
+    "protocolUnsupported",
+    "machine-settings.excluded.protocolUnsupported",
+  ],
+  ["grok-build", "version", "machine-settings.excluded.version"],
+] as const)(
+  "selects installation copy for %s cause %s",
+  (harness, cause, key) => {
+    expect(installationCauseCopyKey(harness, cause)).toBe(key);
+  },
+);
+
+it("keeps OpenCode update guidance free of numeric baselines in both languages", async () => {
+  for (const locale of ["en", "ko"]) {
+    const messages = (
+      await import(`./locales/${locale}/machine-settings.json`)
+    ).default as Record<string, string>;
+    for (const cause of ["version", "protocolUnsupported"]) {
+      const message = messages[`machine-settings.opencode.excluded.${cause}`];
+      expect(message).toContain("opencode upgrade");
+      expect(message).not.toMatch(/\d+\.\d+/);
+    }
+  }
+});
+
+function Observed({ resource }: { resource: Resource }) {
+  const controller = useMachineSettingsController(resource, true);
+  return (
+    <MachineSettingsView controller={controller} active close={() => {}} />
+  );
+}
+
+it("renders the detected version and OpenCode update guidance for an under-baseline installation", async () => {
+  const resource = create(ResourceSchema, {
+    id: newRequestId(),
+    kind: EntityKind.MACHINE,
+    schemaVersion: 1,
+    revision: 7n,
+    documentJson: encode({
+      name: "Runner",
+      last_seen: earlier,
+      installations: [
+        {
+          harness: "opencode",
+          state: "detected",
+          version: "1.18.20",
+          protocol_verified: true,
+          protocol: { state: "verified" },
+        },
+        {
+          harness: "codex",
+          state: "detected",
+          version: "0.1.0",
+          protocol_verified: true,
+          protocol: { state: "verified" },
+        },
+      ],
+    }),
+  });
+  const transport = createRouterTransport((router) => {
+    router.service(ResourceService, {
+      getResource: async () => ({ resource }),
+    });
+  });
+  render(
+    <TransportProvider transport={transport}>
+      <QueryClientProvider client={new QueryClient()}>
+        <MutationIntents>
+          <Observed resource={resource} />
+        </MutationIntents>
+      </QueryClientProvider>
+    </TransportProvider>,
+  );
+  expect(await screen.findByText("Detected version: 1.18.20")).toBeTruthy();
+  expect(screen.getByText(/Update OpenCode on this Runner/)).toBeTruthy();
+  expect(screen.queryByText(/did not provide a supported version/)).toBeNull();
+  // Codex keeps protocol-only classification and the verified message.
+  expect(screen.getByText("Detected version: 0.1.0")).toBeTruthy();
 });

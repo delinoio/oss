@@ -36,5 +36,7 @@
   "machine-settings.detectedVersion": "Detected version: {{version}}",
   "machine-settings.protocolVerified": "The observed native protocol is verified. This observation does not grant another operation permission.",
   "machine-settings.excluded.protocolFailed": "Native protocol verification failed. Review the installation on this Runner, then explicitly verify its native protocol again.",
-  "machine-settings.excluded.protocolUnsupported": "This installation has no supported native protocol. Install a supported harness version on the Runner, then explicitly verify its native protocol."
+  "machine-settings.excluded.protocolUnsupported": "This installation has no supported native protocol. Install a supported harness version on the Runner, then explicitly verify its native protocol.",
+  "machine-settings.opencode.excluded.version": "This OpenCode version is not supported. Update OpenCode on this Runner (run opencode upgrade, or update it with the package manager that installed it), then check installed harnesses again.",
+  "machine-settings.opencode.excluded.protocolUnsupported": "This OpenCode installation has no supported native protocol. Update OpenCode on this Runner (run opencode upgrade, or update it with the package manager that installed it), then explicitly verify its native protocol."
 }

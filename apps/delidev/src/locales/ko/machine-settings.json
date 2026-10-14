@@ -36,5 +36,7 @@
   "machine-settings.detectedVersion": "감지된 버전: {{version}}",
   "machine-settings.protocolVerified": "관측된 네이티브 프로토콜이 검증되었습니다. 이 관측이 다른 작업에 대한 권한을 부여하지는 않습니다.",
   "machine-settings.excluded.protocolFailed": "네이티브 프로토콜 검증에 실패했습니다. 이 Runner의 설치를 확인한 뒤 네이티브 프로토콜 검증을 다시 명시적으로 실행하세요.",
-  "machine-settings.excluded.protocolUnsupported": "이 설치에는 지원되는 네이티브 프로토콜이 없습니다. Runner에 지원되는 하네스 버전을 설치한 뒤 네이티브 프로토콜 검증을 명시적으로 실행하세요."
+  "machine-settings.excluded.protocolUnsupported": "이 설치에는 지원되는 네이티브 프로토콜이 없습니다. Runner에 지원되는 하네스 버전을 설치한 뒤 네이티브 프로토콜 검증을 명시적으로 실행하세요.",
+  "machine-settings.opencode.excluded.version": "이 OpenCode 버전은 지원되지 않습니다. 이 Runner에서 OpenCode를 업데이트(opencode upgrade 실행 또는 설치에 사용한 패키지 관리자로 업데이트)한 뒤 설치된 하네스를 다시 검사하세요.",
+  "machine-settings.opencode.excluded.protocolUnsupported": "이 OpenCode 설치에는 지원되는 네이티브 프로토콜이 없습니다. 이 Runner에서 OpenCode를 업데이트(opencode upgrade 실행 또는 설치에 사용한 패키지 관리자로 업데이트)한 뒤 네이티브 프로토콜 검증을 명시적으로 실행하세요."
 }

@@ -272,6 +272,13 @@ func TestProbeAdmitsNewerVersionsToRealNativeChecks(t *testing.T) {
 			if _, statErr := os.Stat(config.Process.Directory); !os.IsNotExist(statErr) {
 				t.Fatal("rejected version launched a process")
 			}
+			problem := domain.SafeError(err)
+			if !strings.Contains(problem.Guidance, "opencode upgrade") || !strings.Contains(problem.Guidance, "refresh discovery") {
+				t.Fatalf("unsupported guidance lacks OpenCode update steps: %q", problem.Guidance)
+			}
+			if strings.Contains(problem.Message+problem.Guidance, SupportedVersion) {
+				t.Fatalf("unsupported problem names the numeric baseline: %q %q", problem.Message, problem.Guidance)
+			}
 		})
 	}
 }

@@ -7,8 +7,10 @@ import {
 } from "@delinoio/delidev-api-client";
 import { expect, it } from "vitest";
 import { encode } from "./documents";
+import { installationVersionAllowed } from "./harness-version";
 import {
   claudeRunnerObservation,
+  installationObservation,
   validRunnerObservation,
 } from "./runner-observation";
 const installation = {
@@ -169,4 +171,78 @@ it("retains a newly paired Go Runner owner with null unobserved installations wi
   expect(validRunnerObservation(observed({ installations: [null] }))).toBe(
     false,
   );
+});
+
+it("classifies an under-baseline OpenCode installation as a version problem before protocol states", () => {
+  const opencode = {
+    harness: "opencode",
+    state: "detected",
+    version: "1.18.32",
+    protocol_verified: true,
+    protocol: { state: "verified" },
+  };
+  const versionAllowed = installationVersionAllowed("opencode");
+  expect(
+    installationObservation(
+      { ...opencode, version: "1.18.20" },
+      versionAllowed,
+    ),
+  ).toEqual({ cause: "version", detectedVersion: "1.18.20" });
+  // The version problem wins over every protocol state, including verified.
+  for (const protocol of [
+    { protocol_verified: false, protocol: { state: "unsupported" } },
+    { protocol_verified: false, protocol: { state: "failed" } },
+    { protocol_verified: false },
+  ])
+    expect(
+      installationObservation(
+        { ...opencode, ...protocol, version: "1.18.20" },
+        versionAllowed,
+      ),
+    ).toEqual({ cause: "version", detectedVersion: "1.18.20" });
+  for (const detectedVersion of [
+    "1.18.32",
+    "1.18.33",
+    "1.19.0",
+    "1.18.32+build.5",
+    "2.0.0-rc.1",
+  ])
+    expect(
+      installationObservation(
+        { ...opencode, version: detectedVersion },
+        versionAllowed,
+      ),
+    ).toEqual({ detectedVersion });
+  // Admitted versions still reach the protocol states.
+  expect(
+    installationObservation(
+      {
+        ...opencode,
+        version: "1.18.33",
+        protocol_verified: false,
+        protocol: { state: "unsupported" },
+      },
+      versionAllowed,
+    ),
+  ).toEqual({ cause: "protocolUnsupported", detectedVersion: "1.18.33" });
+  expect(
+    installationObservation(
+      { ...opencode, version: "1.19.0", protocol_verified: false },
+      versionAllowed,
+    ),
+  ).toEqual({ cause: "protocol", detectedVersion: "1.19.0" });
+  for (const malformed of ["", "v1.19.0", "1.18", "not-a-version", 118, null])
+    expect(
+      installationObservation(
+        { ...opencode, version: malformed },
+        versionAllowed,
+      ),
+    ).toEqual({ cause: "unavailable" });
+});
+it("keeps Codex and Grok installation classification protocol-only", () => {
+  expect(installationVersionAllowed("codex")).toBeUndefined();
+  expect(installationVersionAllowed("grok-build")).toBeUndefined();
+  expect(installationVersionAllowed("unknown")).toBeUndefined();
+  expect(installationVersionAllowed("claude-code")?.("2.1.235")).toBe(false);
+  expect(installationVersionAllowed("claude-code")?.("2.1.236")).toBe(true);
 });
