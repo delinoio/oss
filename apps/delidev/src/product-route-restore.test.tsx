@@ -748,8 +748,12 @@ describe("selection supersedes a slow route restore", () => {
       release();
     });
     await act(async () => {});
-    expect(screen.getByRole("heading", { name: "Chosen schedule" })).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: "Restored schedule" })).toBeNull();
+    expect(
+      screen.getByRole("heading", { name: "Chosen schedule" }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("heading", { name: "Restored schedule" }),
+    ).toBeNull();
     expect(search().get("item")).toBe(value.otherSchedule.id);
     expect(value.mutated).not.toHaveBeenCalled();
   });
