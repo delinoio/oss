@@ -2163,7 +2163,8 @@ function scriptRead(f: ReturnType<typeof fixture>, read: RefreshRead) {
   const run = async () => {
     state.started += 1;
     await state.gate?.gate;
-    if (state.fail) throw new ConnectError("Read unavailable", Code.Unavailable);
+    if (state.fail)
+      throw new ConnectError("Read unavailable", Code.Unavailable);
   };
   if (read === "queue")
     f.listQueue.mockImplementation((async (request: { pageToken: string }) => {
@@ -2189,7 +2190,8 @@ function scriptRead(f: ReturnType<typeof fixture>, read: RefreshRead) {
 /** The agent request tray recovers only while its disclosure is expanded. */
 async function openRetry(container: HTMLElement, read: RefreshRead) {
   if (read !== "interactions") return;
-  const requests = container.querySelector<HTMLDetailsElement>("details.requests");
+  const requests =
+    container.querySelector<HTMLDetailsElement>("details.requests");
   expect(requests).toBeTruthy();
   fireEvent.click(requests!.querySelector("summary")!);
   await waitFor(() => expect(requests!.open).toBe(true));
