@@ -445,6 +445,37 @@ and its correlation ID equals the operation ID. `GetSubscriptionProgress` for a
 Grok account returns the original operation's state and `grok_diagnostic` (field 10) after the usual actor check; Codex field 7 and native field 9 stay unset,
 older clients ignore field 10, and no URL or user code is returned.
 
+Persistence: the Worker-owned Grok lifecycle has no server-owned operation, so
+`settleGrokOperation` records each outcome on the account's `ServerOperation`
+(the only record progress serves) from the paths that exist today, always keyed
+by the original operation ID and never overwriting a settled outcome or another
+owner's active operation:
+
+- A refused protected Take records the admission diagnostic (`discovery`,
+  `version` or `profile`) with state `unsupported` (`recordGrokTakeRefusal`). The
+  operation stays queued and claimable; the next successful Take clears the
+  record. Only the operation's own queued, unclaimed Pending on the requesting
+  Runner Device is annotated.
+- Finish settles inside its own transaction: a succeeded login or refresh is
+  `succeeded` with the committed generation, a succeeded logout is `succeeded`
+  without one, a cancellation is `canceled` without a diagnostic, a Worker-reported
+  native failure is `failed` with a `login`, `refresh` or `logout` / `unavailable`
+  diagnostic, and an unconfirmed native cleanup is `failed` with a
+  `cleanup` / `recovery_required` diagnostic. Progress reports `recovery-required`
+  while the account is fenced.
+- A failure to remove superseded credential generations after the publication
+  committed replaces the succeeded record with a `cleanup` diagnostic
+  (`recordGrokCleanupFailure`).
+
+A succeeded operation's progress response carries `generation` (the generation
+the account still references) so the onboarding controller can name the account;
+Grok produces no suggested name. The version label is the Runner Device's single
+valid Grok Build installation at settlement time. Diagnostics for the `models`,
+`execution` and `history` phases and for server-side native login, refresh and
+logout have no producers yet; they remain covered by the phase mapping and
+validation tests and attach through the same `settleGrokOperation` when those
+producers land.
+
 The desktop reconstructs presentation from closed metadata only
 (`apps/delidev/src/grok-diagnostic.tsx`, English and Korean). `GrokDiagnosticNotice`
 shows the message, phase guidance and a Technical details disclosure with detected

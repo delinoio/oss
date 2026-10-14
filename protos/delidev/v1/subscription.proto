@@ -145,7 +145,7 @@ message GetSubscriptionProgressResponse {
   CodexDiagnostic diagnostic = 7;
   SubscriptionLoginMethod login_method = 8;
   NativeSubscriptionDiagnostic native_diagnostic = 9;
-  // Declared for Grok Build; no server path populates it yet.
+  // Safe metadata for the original Grok Build failure; absent on older servers.
   GrokDiagnostic grok_diagnostic = 10;
 }
 message WatchSubscriptionRequest {

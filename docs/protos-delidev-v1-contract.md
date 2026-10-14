@@ -223,7 +223,8 @@ These declarations now exist in `system.proto` (`SYSTEM_CAPABILITY_GROK_SUBSCRIP
 declared but unadvertised: GetStatus and AttachWorker never list 39, 40 or 21,
 the Worker does not report 21 (the server keeps rejecting it as an unknown
 capability). GetSubscriptionProgress populates `grok_diagnostic` only for a Grok
-account's original operation with safe, locally reconstructed metadata; the owning
+account's original operation with safe, locally reconstructed metadata, and reports
+`generation` (field 6) for a succeeded Grok login or refresh; the owning
 feature change advertises and activates the capabilities. Codex field 7, native
 field 9 and existing System 30/35/36/37 and Worker 19 ownership remain
 unchanged. Reservations activate nothing and add no migration.
