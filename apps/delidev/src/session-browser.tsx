@@ -189,16 +189,37 @@ function pendingInventory(value: PageInventory): PageInventory {
   };
 }
 
+/**
+ * A rejected receipt proof. A removal-pending reply still carries an
+ * independently validated (empty) inventory, so the profile state can be
+ * reconciled while the receipt itself stays rejected and unsettled.
+ */
+class BrowserProofError extends Error {
+  constructor(
+    message: string,
+    readonly inventory?: PageInventory,
+  ) {
+    super(message);
+  }
+}
+
 /** Proves a native page reply against the operation that requested it. */
 function pageInventory(
   value: PageInventory,
   operation?: PageOperation,
 ): PageInventory {
   browserState(value?.state);
+  const reject = (message: string): never => {
+    throw new BrowserProofError(
+      message,
+      value.state.removal_pending
+        ? { ...pendingInventory(value), receipt: null }
+        : undefined,
+    );
+  };
   const receipt = value.receipt;
   if (!operation) {
-    if (receipt !== null)
-      throw new Error("Browser inventory proof is invalid.");
+    if (receipt !== null) reject("Browser inventory proof is invalid.");
     return pendingInventory(value);
   }
   if (receipt === null) return pendingInventory(value);
@@ -213,7 +234,7 @@ function pageInventory(
     (operation.action === PageAction.Close &&
       receipt.page_id !== operation.page_id)
   )
-    throw new Error("Browser operation proof is invalid.");
+    reject("Browser operation proof is invalid.");
   if (receipt.phase === PagePhase.Completed) {
     const listed = value.state.tabs.tabs.some(
       (page) => page.id === receipt.page_id,
@@ -230,7 +251,7 @@ function pageInventory(
         ? listed
         : !listed && !value.state.removal_pending)
     )
-      throw new Error("Browser operation proof is invalid.");
+      reject("Browser operation proof is invalid.");
   }
   return pendingInventory(value);
 }
@@ -810,6 +831,11 @@ function NativeSessionBrowser({
           });
           return;
         }
+        // The receipt stays rejected and the operation unsettled, but the
+        // independently validated removal-pending inventory still drops stale
+        // sibling descriptors; the closing page stays owned by `ownedPages`.
+        if (error instanceof BrowserProofError && error.inventory)
+          observeInventory(error.inventory, profileId);
         original.uncertain = true;
         setOperation({ ...original });
         setOperationFailure(ownedMessage("session-browser.operationUnknown"));
@@ -955,7 +981,17 @@ function NativeSessionBrowser({
           observeInventory(value, profileId);
           setInventoryFailure(undefined);
         }
-      } catch {
+      } catch (error) {
+        if (
+          error instanceof BrowserProofError &&
+          error.inventory &&
+          !disposed &&
+          alive.current &&
+          !nativeBusy.current &&
+          epoch === mutationEpoch.current &&
+          !operationRef.current
+        )
+          observeInventory(error.inventory, profileId);
         if (!disposed)
           setInventoryFailure(
             ownedMessage("session-browser.extra.c6d1ec80c1c4"),

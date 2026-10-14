@@ -171,6 +171,11 @@ has one of four actions:
   returns the loaded tabs next to `removal_pending: true` (a committed Create can
   race with removal): the raw listing only proves the original receipt, and
   reconciliation and completion handling never see or open those pages.
+  A removal-pending reply whose Close or Create receipt fails any proof check
+  stays rejected: the operation remains unsettled and uncertain and the closing
+  page keeps its descriptor. The independently validated removal-pending state is
+  still reconciled as an empty inventory, so other Pages' descriptors are not left
+  stale while the bad receipt is retained.
 
 Every reply carries `{state, receipt}`. A receipt separates committed metadata
 from incomplete native cleanup (`phase` accepted, cleanup-pending, completed or

@@ -1735,6 +1735,44 @@ it.each(invalidProofs)(
   SLOW_TEST,
 );
 
+it.each(invalidProofs)(
+  "still drops sibling descriptors under removal when the Close receipt reports %s",
+  async (_name, tamper) => {
+    const f = fixture({ pages: 2 });
+    f.model.outcome = "lose-reply";
+    mount(f);
+    await waitFor(() => expect(tabNames()).toHaveLength(3));
+    const loaded = f.model.pages.map((page) => ({ ...page }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close fixture.test/1 tab" }),
+    );
+    const alert = await screen.findByRole("alert");
+    f.model.removalPending = true;
+    // The host replies with the loaded tabs next to the rejected receipt.
+    rewriteObserve((reply) => ({
+      state: {
+        tabs: { tabs: loaded, selected: loaded[1].id },
+        removal_pending: true,
+      },
+      receipt: tamper(reply.receipt),
+    }));
+    fireEvent.click(
+      within(alert).getByRole("button", { name: "Check status" }),
+    );
+    // The independently validated pending inventory reconciles the sibling
+    // while the closing page stays protected and its operation unsettled.
+    await waitFor(() =>
+      expect(tabNames()).toEqual(["Conversation", "https://fixture.test/1"]),
+    );
+    await settle(1500);
+    expect(tabNames()).toEqual(["Conversation", "https://fixture.test/1"]);
+    expect(screen.getByRole("button", { name: "Check status" })).toBeTruthy();
+    expect(pageCalls("close")).toHaveLength(1);
+    expect(pageCalls("create")).toHaveLength(0);
+  },
+  SLOW_TEST,
+);
+
 it(
   "rejects a removal-pending Close receipt for a different page",
   async () => {
