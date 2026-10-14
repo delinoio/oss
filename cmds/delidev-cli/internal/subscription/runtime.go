@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
@@ -177,9 +178,74 @@ func credentialParentReal(root, name string) (bool, error) {
 	return true, nil
 }
 
-// CredentialFilePresent reports whether a transient credential file remains
-// in a retained profile. An unexpected non-regular entry is reported as an
-// error because it cannot be proven to be removable credential state.
+// credentialTemporaries lists the target-attributed temporary files that an
+// interrupted atomic credential write can leave beside a credential file. Such
+// a file may hold a plaintext credential bundle under a name other than the
+// final path, so every presence check and retirement covers it. A non-regular
+// entry with the attributed name is reported as an error.
+func credentialTemporaries(root, name string) ([]string, error) {
+	real, err := credentialParentReal(root, name)
+	if err != nil || !real {
+		return nil, err
+	}
+	path := filepath.Join(root, filepath.FromSlash(name))
+	parent, prefix := filepath.Dir(path), security.OwnedTemporaryPrefix(path)
+	entries, err := os.ReadDir(parent)
+	if err != nil {
+		return nil, &RuntimeCleanupError{Stage: CleanupValidation, Reason: CleanupFilesystem}
+	}
+	var found []string
+	for _, entry := range entries {
+		if !strings.HasPrefix(entry.Name(), prefix) {
+			continue
+		}
+		candidate := filepath.Join(parent, entry.Name())
+		info, err := os.Lstat(candidate)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return nil, &RuntimeCleanupError{Stage: CleanupValidation, Reason: CleanupFilesystem}
+		}
+		if !info.Mode().IsRegular() {
+			return nil, &RuntimeCleanupError{Stage: CleanupValidation, Reason: CleanupNotRegular}
+		}
+		found = append(found, candidate)
+	}
+	return found, nil
+}
+
+func retireCredentialTemporaries(root, name string) error {
+	found, err := credentialTemporaries(root, name)
+	if err != nil {
+		return err
+	}
+	for _, candidate := range found {
+		if err := os.Remove(candidate); err != nil && !os.IsNotExist(err) {
+			return &RuntimeCleanupError{Stage: CleanupAuthFile, Reason: CleanupFilesystem}
+		}
+		if err := security.SyncParent(candidate); err != nil {
+			return &RuntimeCleanupError{Stage: CleanupSync, Reason: CleanupFilesystem}
+		}
+	}
+	return nil
+}
+
+// WriteCredentialFile publishes one credential file atomically through a
+// temporary name attributed to its target. Remnants of an earlier interrupted
+// write to the same target are retired first, so a crash can never leave a
+// credential bundle that a later operation would consider clean.
+func WriteCredentialFile(path string, contents []byte) error {
+	if err := retireCredentialTemporaries(filepath.Dir(path), filepath.Base(path)); err != nil {
+		return err
+	}
+	return security.WriteAtomicOwned(path, contents)
+}
+
+// CredentialFilePresent reports whether a transient credential file, or the
+// target-attributed temporary of an interrupted credential write, remains in a
+// retained profile. An unexpected non-regular entry is reported as an error
+// because it cannot be proven to be removable credential state.
 func CredentialFilePresent(root string) (bool, error) {
 	for _, name := range CredentialFiles {
 		real, err := credentialParentReal(root, name)
@@ -188,6 +254,13 @@ func CredentialFilePresent(root string) (bool, error) {
 		}
 		if !real {
 			continue
+		}
+		temporaries, err := credentialTemporaries(root, name)
+		if err != nil {
+			return true, err
+		}
+		if len(temporaries) != 0 {
+			return true, nil
 		}
 		info, err := os.Lstat(filepath.Join(root, filepath.FromSlash(name)))
 		if os.IsNotExist(err) {
@@ -204,10 +277,11 @@ func CredentialFilePresent(root string) (bool, error) {
 	return false, nil
 }
 
-// RetireCredentialFiles removes only the listed transient credential files from
-// a retained profile. The profile directory and everything else it contains,
-// including native-created helper symlinks, are left untouched. The caller
-// has already joined the original native process and descendants.
+// RetireCredentialFiles removes only the listed transient credential files and
+// their target-attributed temporaries from a retained profile. The profile
+// directory and everything else it contains, including native-created helper
+// symlinks, are left untouched. The caller has already joined the original
+// native process and descendants.
 func RetireCredentialFiles(root string) error {
 	for _, name := range CredentialFiles {
 		real, err := credentialParentReal(root, name)
@@ -216,6 +290,9 @@ func RetireCredentialFiles(root string) error {
 		}
 		if !real {
 			continue
+		}
+		if err := retireCredentialTemporaries(root, name); err != nil {
+			return err
 		}
 		path := filepath.Join(root, filepath.FromSlash(name))
 		info, err := os.Lstat(path)

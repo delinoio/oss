@@ -270,7 +270,7 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 		if err := validateManagedAuthenticationHome(nativeHome, manifest.WorkspaceRoots()); err != nil {
 			return nil, err
 		}
-		if security.WriteAtomic(filepath.Join(nativeHome, "auth.json"), managed.response.Bundle) != nil {
+		if subscription.WriteCredentialFile(filepath.Join(nativeHome, "auth.json"), managed.response.Bundle) != nil {
 			return nil, subscription.Invalid()
 		}
 	}

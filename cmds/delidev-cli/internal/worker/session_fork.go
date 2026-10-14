@@ -382,7 +382,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 			return nil, err
 		}
 		preNative = true
-		if err := security.WriteAtomic(filepath.Join(nativeConfig.Home, "auth.json"), managed.response.Bundle); err != nil {
+		if err := subscription.WriteCredentialFile(filepath.Join(nativeConfig.Home, "auth.json"), managed.response.Bundle); err != nil {
 			return nil, subscription.Invalid()
 		}
 		nativeConfig.API, nativeConfig.ManagedAuthentication = nil, true

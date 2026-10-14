@@ -386,7 +386,7 @@ func runManagedAccount(ctx context.Context, config Config, client delidevv1conne
 		if _, _, err := subscription.Parse(lease.response.Bundle); err != nil {
 			return err
 		}
-		if err := security.WriteAtomic(filepath.Join(nativeHome, "auth.json"), lease.response.Bundle); err != nil {
+		if err := subscription.WriteCredentialFile(filepath.Join(nativeHome, "auth.json"), lease.response.Bundle); err != nil {
 			return subscription.Invalid()
 		}
 	}

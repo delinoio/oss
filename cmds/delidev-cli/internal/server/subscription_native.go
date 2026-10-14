@@ -136,7 +136,7 @@ func openServerSubscription(ctx context.Context, scope nativeScope, owner domain
 		if _, _, e := subscription.Parse(bundle); e != nil {
 			return nil, e
 		}
-		if e := security.WriteAtomic(filepath.Join(nativeHome, "auth.json"), bundle); e != nil {
+		if e := subscription.WriteCredentialFile(filepath.Join(nativeHome, "auth.json"), bundle); e != nil {
 			return nil, subscriptionDenied()
 		}
 	}
