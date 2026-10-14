@@ -21,6 +21,24 @@ import (
 // packages/opencode/src/session/prompt.ts (createUserMessage file handling).
 const syntheticReadPrefix = "Called the Read tool with the following input:"
 
+// syntheticReadText renders the complete synthetic text part that the pinned
+// native pipeline stores for one image file part whose file URL is the private
+// Worker path. For a file part that is neither text/plain nor a directory, the
+// pinned source interpolates the resolved path without JSON escaping:
+//
+//	`Called the Read tool with the following input: {"filePath":"${filepath}"}`
+//
+// The result is the only accepted payload: a header, one space, a one-key JSON
+// object holding the path, and nothing else. It contains the private path, so
+// it is compared in memory only and never logged, digested or retained in a
+// checkpoint.
+func syntheticReadText(path string) (string, bool) {
+	if _, ok := inputFileURL(path); !ok {
+		return "", false
+	}
+	return syntheticReadPrefix + ` {"filePath":"` + path + `"}`, true
+}
+
 // maxSyntheticReadBytes bounds one synthetic Read text part. It carries a
 // private path and a short JSON object, never image bytes.
 const maxSyntheticReadBytes = 64 << 10
@@ -39,14 +57,19 @@ type InputImage struct {
 	Path      string
 }
 
-// storedInputImage is the path-free identity retained for stored-input
-// verification of one image.
+// storedInputImage is the identity retained for stored-input verification of
+// one image. Every field except readText is path-free.
 type storedInputImage struct {
 	mediaType domain.ImageMediaType
 	sha256    string
 	bytes     uint64
 	partID    string
 	filename  string
+	// readText is the exact synthetic Read text the native server must store
+	// for this image. It embeds the private Worker path, so it is empty when
+	// the image carries no path (claim digests) and must never be logged or
+	// formatted. An empty value matches no native part.
+	readText string
 }
 
 // imageExtension maps the closed attachment media types to the opaque
@@ -116,7 +139,8 @@ func storedImages(partID string, images []InputImage) ([]storedInputImage, bool)
 		if !ok {
 			return nil, false
 		}
-		result[i] = storedInputImage{mediaType: image.MediaType, sha256: image.SHA256, bytes: image.Bytes, partID: id, filename: "image-" + strconv.Itoa(i+1) + "." + extension}
+		readText, _ := syntheticReadText(image.Path)
+		result[i] = storedInputImage{mediaType: image.MediaType, sha256: image.SHA256, bytes: image.Bytes, partID: id, filename: "image-" + strconv.Itoa(i+1) + "." + extension, readText: readText}
 	}
 	return result, true
 }
@@ -211,8 +235,11 @@ const (
 
 // classifyInputPart recognizes the closed set of parts the native server may
 // store for one accepted input. index is the image ordinal for file parts.
-// It validates only the part itself; counts and order are checked by callers.
-func classifyInputPart(input *sessionInput, part NativePart) (storedInputPart, int, error) {
+// syntheticSeen is the number of synthetic Read parts already accepted before
+// this one: the native server stores the synthetic part of each image in
+// attachment order, so the next synthetic part must be exactly the Read text of
+// image number syntheticSeen. Counts and file order are checked by callers.
+func classifyInputPart(input *sessionInput, part NativePart, syntheticSeen int) (storedInputPart, int, error) {
 	if part.SessionID != input.receipt.SessionID || part.MessageID != input.receipt.MessageID {
 		return 0, 0, observerProblem()
 	}
@@ -228,7 +255,14 @@ func classifyInputPart(input *sessionInput, part NativePart) (storedInputPart, i
 			}
 			return originalInputPart, 0, nil
 		}
-		if len(input.images) == 0 || text.Synthetic == nil || !*text.Synthetic || len(text.Text) > maxSyntheticReadBytes || !strings.HasPrefix(text.Text, syntheticReadPrefix) {
+		// The complete payload must equal the pinned Read text of the expected
+		// image. A prefix, trailing content, another path or JSON shape, a
+		// duplicated phrase or a different part order all fail closed because
+		// the model consumes this text but the public transcript hides it.
+		if syntheticSeen < 0 || syntheticSeen >= len(input.images) || text.Synthetic == nil || !*text.Synthetic || len(text.Text) > maxSyntheticReadBytes {
+			return 0, 0, observerProblem()
+		}
+		if want := input.images[syntheticSeen].readText; want == "" || text.Text != want {
 			return 0, 0, observerProblem()
 		}
 		return syntheticInputPart, 0, nil
@@ -308,7 +342,7 @@ func verifyInputParts(input *sessionInput, parts []NativePart) (complete bool, e
 			return false, sessionProblem()
 		}
 		seen[part.ID] = true
-		kind, index, err := classifyInputPart(input, part)
+		kind, index, err := classifyInputPart(input, part, synthetic)
 		if err != nil {
 			return false, sessionProblem()
 		}
@@ -366,10 +400,6 @@ func validateStoredImageInput(raw []json.RawMessage, input sessionInput) (bool, 
 // message. Parts arrive in native creation order: the original text first, then
 // each image's synthetic Read part and its file part in attachment order.
 func (o *inputObserver) imageInputPart(message *observedMessage, value NativePart, old *observedPart) error {
-	kind, index, err := classifyInputPart(&o.input, value)
-	if err != nil || old != nil || len(message.parts) >= o.input.partTotal() {
-		return observerProblem()
-	}
 	synthetic, files := 0, 0
 	for _, id := range message.parts {
 		if seen := o.parts[id]; seen != nil && seen.value.Kind == FilePartKind {
@@ -377,6 +407,10 @@ func (o *inputObserver) imageInputPart(message *observedMessage, value NativePar
 		} else if seen != nil && id != o.input.receipt.PartID {
 			synthetic++
 		}
+	}
+	kind, index, err := classifyInputPart(&o.input, value, synthetic)
+	if err != nil || old != nil || len(message.parts) >= o.input.partTotal() {
+		return observerProblem()
 	}
 	switch kind {
 	case originalInputPart:

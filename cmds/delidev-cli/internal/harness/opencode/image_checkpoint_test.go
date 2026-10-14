@@ -28,7 +28,7 @@ func newImageHistoryFixture(t *testing.T) (*historyFixture, [sha256.Size]byte) {
 	observed := newImageObserver(t, input)
 	observed.message(observed.user)
 	observed.part(observed.input)
-	observed.part(syntheticPart(1))
+	observed.part(syntheticFor(input, (1)))
 	observed.part(nativeFilePart(t, input, 0, raw))
 	observed.status(NativeStatusBusy)
 	observed.message(observed.a)
@@ -36,7 +36,7 @@ func newImageHistoryFixture(t *testing.T) (*historyFixture, [sha256.Size]byte) {
 	observed.status(NativeStatusIdle)
 	observed.observe(SessionIdleEvent, map[string]any{"sessionID": fixtureSessionID})
 	// The native server stores parts ordered by identifier, not arrival.
-	f := &historyFixture{t: t, o: observed.o, original: storedMessage(t, input, observed.input, nativeFilePart(t, input, 0, raw), syntheticPart(1))}
+	f := &historyFixture{t: t, o: observed.o, original: storedMessage(t, input, observed.input, nativeFilePart(t, input, 0, raw), syntheticFor(input, (1)))}
 	o := f.o
 	creation, stored := o.creation, o.input
 	session := &sessionAPI{creation: &creation, input: &stored, observer: o, events: &eventStream{ctx: context.Background()}, gate: make(chan struct{}, 1), cwd: o.cwd, runtimeRoot: o.root, password: "private-http-secret", origin: "http://127.0.0.1:1", alive: func() error { return nil }}
