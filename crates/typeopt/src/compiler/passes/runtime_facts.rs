@@ -1634,6 +1634,7 @@ fn relative_application_file(ctx: &Ctx, importer: &str, specifier: &str) -> bool
 /// loader calls are not used as evidence that an intrinsic is intact.
 fn created_require_loaders(nodes: &[Node]) -> HashSet<String> {
     let mut factories = HashSet::new();
+    let mut host_modules = HashSet::new();
     for &node in nodes {
         match node.kind() {
             SyntaxKind::ImportDeclaration
@@ -1643,19 +1644,27 @@ fn created_require_loaders(nodes: &[Node]) -> HashSet<String> {
                 if clause.is_nil() || clause.is_type_only() {
                     continue;
                 }
-                let bindings = clause.named_bindings();
-                if bindings.kind() != SyntaxKind::NamedImports {
-                    continue;
+                if clause.name().is_some() {
+                    host_modules.insert(clause.name().text().to_owned());
                 }
-                for specifier in bindings.elements().iter() {
-                    let imported = if specifier.property_name().is_some() {
-                        specifier.property_name()
-                    } else {
-                        specifier.name()
-                    };
-                    if imported.text() == "createRequire" && !specifier.is_type_only() {
-                        factories.insert(specifier.name().text().to_owned());
+                let bindings = clause.named_bindings();
+                match bindings.kind() {
+                    SyntaxKind::NamespaceImport => {
+                        host_modules.insert(bindings.name().text().to_owned());
                     }
+                    SyntaxKind::NamedImports => {
+                        for specifier in bindings.elements().iter() {
+                            let imported = if specifier.property_name().is_some() {
+                                specifier.property_name()
+                            } else {
+                                specifier.name()
+                            };
+                            if imported.text() == "createRequire" && !specifier.is_type_only() {
+                                factories.insert(specifier.name().text().to_owned());
+                            }
+                        }
+                    }
+                    _ => {}
                 }
             }
             SyntaxKind::VariableDeclaration
@@ -1699,9 +1708,16 @@ fn created_require_loaders(nodes: &[Node]) -> HashSet<String> {
                 continue;
             }
             let init = skip_outer(node.initializer());
-            let from_factory = init.kind() == SyntaxKind::CallExpression
-                && skip_outer(init.expression()).kind() == SyntaxKind::Identifier
-                && factories.contains(skip_outer(init.expression()).text());
+            let from_factory = if init.kind() != SyntaxKind::CallExpression {
+                false
+            } else {
+                let callee = skip_outer(init.expression());
+                (callee.kind() == SyntaxKind::Identifier && factories.contains(callee.text()))
+                    || (callee.kind() == SyntaxKind::PropertyAccessExpression
+                        && callee.name().text() == "createRequire"
+                        && skip_outer(callee.expression()).kind() == SyntaxKind::Identifier
+                        && host_modules.contains(skip_outer(callee.expression()).text()))
+            };
             let from_loader =
                 init.kind() == SyntaxKind::Identifier && loaders.contains(init.text());
             if (from_factory || from_loader) && loaders.insert(node.name().text().to_owned()) {
