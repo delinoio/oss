@@ -300,9 +300,7 @@ export class PendingCloseRegistry {
     };
     void this.locks
       .query()
-      .then((state) =>
-        settle(lockNames(state).includes(name)),
-      )
+      .then((state) => settle(lockNames(state).includes(name)))
       .catch(() => settle(false));
   }
 
