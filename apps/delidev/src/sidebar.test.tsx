@@ -2589,3 +2589,63 @@ it("keeps the confirmed pin state and offers explicit reload after read or uncer
   await waitFor(() => expect(within(popover).queryByRole("alert")).toBeNull());
   expect(railNames()).not.toContain("Usage");
 });
+
+it("re-places an open More popover when a failure notice makes it taller", async () => {
+  const stored = memoryNavigationBridge();
+  let failUpdate = false;
+  const bridge: NavigationBridge = {
+    ...stored,
+    update: vi.fn(async (pinned, revision) => {
+      if (failUpdate) throw new Error("storage detail");
+      return stored.update(pinned, revision);
+    }),
+  };
+  // jsdom has no layout: model a 300px viewport, a 60px popover that grows to
+  // 200px with the notice, and an opener whose top sits near the bottom edge.
+  vi.stubGlobal("innerHeight", 300);
+  const height = vi
+    .spyOn(HTMLElement.prototype, "offsetHeight", "get")
+    .mockImplementation(function (this: HTMLElement) {
+      return this.matches(".sidebar-more-popover")
+        ? this.querySelector(".navigation-preference-notice")
+          ? 200
+          : 60
+        : 0;
+    });
+  try {
+    mountSidebar({ ...emptyLists, navigation: bridge });
+    await screen.findByRole("button", { name: "Sessions" });
+    const more = screen.getByRole("button", { name: "More" });
+    vi.spyOn(more, "getBoundingClientRect").mockReturnValue({
+      top: 200,
+      right: 44,
+      bottom: 244,
+      left: 0,
+      width: 44,
+      height: 44,
+      x: 0,
+      y: 200,
+      toJSON: () => ({}),
+    });
+    fireEvent.click(more);
+    const popover = await screen.findByRole("dialog", { name: "More" });
+    expect(popover.style.top).toBe("200px");
+    failUpdate = true;
+    fireEvent.click(within(popover).getByRole("button", { name: "Pin Usage" }));
+    await within(popover).findByRole("alert");
+    // The notice must stay inside the viewport: 300 - 200 - 4.
+    expect(popover.style.top).toBe("96px");
+    failUpdate = false;
+    fireEvent.click(
+      within(popover).getByRole("button", {
+        name: "Reload navigation preference",
+      }),
+    );
+    await waitFor(() =>
+      expect(within(popover).queryByRole("alert")).toBeNull(),
+    );
+    expect(popover.style.top).toBe("200px");
+  } finally {
+    height.mockRestore();
+  }
+});

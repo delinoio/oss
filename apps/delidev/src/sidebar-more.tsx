@@ -77,6 +77,8 @@ export function SidebarMore({
   const trigger = useRef<HTMLButtonElement>(null);
   const popup = useRef<HTMLDivElement>(null);
   const pin = useRef<HTMLButtonElement>(null);
+  // The mounted popover's placement routine, shared by every size change.
+  const placement = useRef<(() => void) | undefined>(undefined);
   const close = (restoreFocus: boolean) => {
     setOpen(false);
     if (restoreFocus) trigger.current?.focus();
@@ -94,6 +96,7 @@ export function SidebarMore({
       element.style.left = `${Math.max(4, Math.min(bounds.right + 8, window.innerWidth - element.offsetWidth - 4))}px`;
       element.style.top = `${Math.max(4, Math.min(bounds.top, window.innerHeight - element.offsetHeight - 4))}px`;
     };
+    placement.current = place;
     element.showPopover?.();
     place();
     element.querySelector<HTMLButtonElement>("button")?.focus();
@@ -103,13 +106,27 @@ export function SidebarMore({
       // A control that receives the click keeps the focus it is about to take.
       close(element.contains(document.activeElement));
     };
+    // Content that appears or wraps while the list is open changes its height
+    // (for example the preference notice), so placement follows the size too.
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? undefined
+        : new ResizeObserver(place);
+    observer?.observe(element);
     window.addEventListener("resize", place);
     document.addEventListener("pointerdown", dismiss);
     return () => {
+      placement.current = undefined;
+      observer?.disconnect();
       window.removeEventListener("resize", place);
       document.removeEventListener("pointerdown", dismiss);
     };
   }, [open]);
+  // Re-place synchronously when the notice or an operation changes the height
+  // of an already open list, so its alert and Reload action stay in view.
+  useLayoutEffect(() => {
+    if (open) placement.current?.();
+  }, [open, navigation.snapshot.problem, navigation.operation, pinned]);
   const blocked =
     navigation.operation !== undefined || navigation.snapshot.problem !== null;
   const label = pinned ? copy("sidebar.unpinUsage") : copy("sidebar.pinUsage");
