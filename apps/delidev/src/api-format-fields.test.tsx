@@ -70,7 +70,10 @@ function fixture(
           ? [
               ProviderInventoryCapability.ACCOUNT_API_PROTOCOL_V1,
               ...(keepsKey
-                ? [ProviderInventoryCapability.ACCOUNT_API_FORMAT_CHANGE_V1]
+                ? [
+                    ProviderInventoryCapability.ACCOUNT_API_FORMAT_CHANGE_V1,
+                    ProviderInventoryCapability.ACCOUNT_API_FORMAT_CHANGE_REVISION_V1,
+                  ]
                 : []),
             ]
           : [],
