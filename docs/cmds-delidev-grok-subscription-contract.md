@@ -289,10 +289,16 @@ Residual window: the native Grok child can only reach the home through its path
 last verification can make the native child read or write the substitute; the
 next verification rejects the lease as uncleaned, and no Worker-side operation is
 ever redirected. On Windows the same handle-relative API is used (a directory
-handle with relative opens, renames and removals, and an ACL check on the handle);
-it is validated by cross-compilation only, so the Windows behavior stays fail
-closed: any unconfirmed identity, ACL or link count reports an unconfirmed
-cleanup.
+handle with relative opens, renames and removals). The check on the handle reads
+the owner and the DACL in one security-descriptor read and requires both: a
+single full-access ACE for the current user, and an owner that is the process
+user or the default owner of objects the process creates (the Administrators
+group when the token is elevated). The owner matters because the owner of an
+object can always rewrite its DACL, so an owner-only ACE list on a foreign-owned
+directory would let that principal regain access while credentials are present.
+The Windows code is validated by cross-compilation (`GOOS=windows go vet` and
+`go test -c`) only, so the Windows behavior stays fail closed: any unconfirmed
+identity, owner, ACL or link count reports an unconfirmed cleanup.
 
 Native refresh, login execution and Worker-side watch dispatch for
 Grok are separate lifecycle work and are not activated by this storage contract.
