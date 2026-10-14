@@ -462,6 +462,9 @@ so `01.0.0`, `1.0.0-01` and empty prerelease or build identifiers are invalid)
 accepts it; otherwise it reports invalid version metadata exactly like
 `GrokDiagnostic.text`. `TestGrokVersionReasonFollowsFullSemVerValidation` and
 `grok-diagnostic.test.tsx` share one version table.
+A diagnostic is presented only with a nonempty supported version that passes
+both checks, because the server always reports the supported baseline; a stored
+or received value that omits it is dropped as untrusted.
 
 Login, refresh, execution and logout share one exclusive account lease. Logout
 blocks new execution and completes only after original execution exit and

@@ -83,7 +83,6 @@ const reasonKeys: Partial<Record<FailureCode, MessageKey>> = {
   [FailureCode.Canceled]: "grok-diagnostic.reason.canceled",
 };
 
-
 export interface SafeGrokDiagnostic {
   version: string;
   supported: string;
@@ -104,7 +103,10 @@ export function safeGrokDiagnostic(
   if (
     !d ||
     (d.detectedVersion && !validInstallationVersion(d.detectedVersion)) ||
-    (d.supportedVersion && !validInstallationVersion(d.supportedVersion)) ||
+    // The server always reports the supported baseline (domain.GrokDiagnostic.
+    // Validate), so an omitted or malformed value means the metadata is untrusted.
+    !validInstallationVersion(d.supportedVersion) ||
+    !validSemVer(d.supportedVersion) ||
     !phaseKeys[d.phase] ||
     !Object.values(FailureCode).includes(d.code as FailureCode)
   )
@@ -117,10 +119,9 @@ export function safeGrokDiagnostic(
   let reason: string;
   if (timeout) reason = copy("grok-diagnostic.reason.timeout");
   else if (d.phase === GrokDiagnosticPhase.VERSION)
-    reason =
-      supported && validSemVer(d.detectedVersion)
-        ? copy("grok-diagnostic.reason.versionSupported", { supported })
-        : copy("grok-diagnostic.reason.versionInvalid");
+    reason = validSemVer(d.detectedVersion)
+      ? copy("grok-diagnostic.reason.versionSupported", { supported })
+      : copy("grok-diagnostic.reason.versionInvalid");
   else
     reason = copy(
       reasonKeys[d.code as FailureCode] ?? "grok-diagnostic.reason.other",

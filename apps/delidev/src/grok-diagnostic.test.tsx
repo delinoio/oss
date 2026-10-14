@@ -191,6 +191,32 @@ it("describes undetected, invalid and timed out failures from closed metadata", 
   expect(rejected.container.textContent).toBe("");
 });
 
+it.each(["", "1.0", "01.0.46", "1.0.46-01", "1.0.46+a..b", "/Users/private"])(
+  "never presents a diagnostic whose supported version is %j",
+  (supportedVersion) => {
+    const value = create(GrokDiagnosticSchema, {
+      detectedVersion: "1.0.52",
+      supportedVersion,
+      phase: GrokDiagnosticPhase.PROFILE,
+      code: FailureCode.Unsupported,
+      correlationId: newRequestId(),
+    });
+    expect(safeGrokDiagnostic(value)).toBeUndefined();
+    const view = render(<GrokDiagnosticNotice diagnostic={value} />);
+    expect(view.container.textContent).toBe("");
+  },
+);
+
+it("drops a stored installation diagnostic that omits the supported version", () => {
+  const stored = grokDiagnosticFromDocument({
+    detected_version: "1.0.52",
+    phase: "profile",
+    code: "unsupported",
+  });
+  expect(stored).toBeDefined();
+  expect(safeGrokDiagnostic(stored)).toBeUndefined();
+});
+
 it("copies only the correlation id and reports a failed copy", async () => {
   const value = diagnostic(GrokDiagnosticPhase.PROFILE);
   const writeText = vi.fn().mockResolvedValue(undefined);
