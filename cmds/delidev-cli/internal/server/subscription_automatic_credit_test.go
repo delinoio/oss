@@ -683,3 +683,50 @@ func TestAutomaticCreditAndManualCreditShareOneOwnerAndKey(t *testing.T) {
 		}
 	})
 }
+
+// TestAutomaticCreditBindsTheReportingMemberLeaseOfASharedOwner covers a joined
+// member that reports the quota block: the episode and frozen proof name that
+// member's lease, job and revision rather than the founding owner's, and the
+// claim lapses with the member instead of surviving under the founding job.
+func TestAutomaticCreditBindsTheReportingMemberLeaseOfASharedOwner(t *testing.T) {
+	f, b, _, _ := automaticServerFixture(t, true, false)
+	var owner domain.ID
+	var memberLease domain.ID = domain.NewID()
+	founding := domain.NewID()
+	automaticFixtureMutation(t, f, func(tx *store.Tx, a *domain.Account) error {
+		now := tx.ObservationTime()
+		owner = a.Subscription.Lease.ID
+		a.Subscription.Lease.Shared = true
+		a.Subscription.Lease.OperationID = founding
+		a.Subscription.Members = []domain.SubscriptionMember{
+			{LeaseID: owner, OperationID: founding, Revision: a.Subscription.Lease.Revision, State: domain.SubscriptionMemberRunning, AdmittedAt: now},
+			{LeaseID: memberLease, OperationID: f.job, Revision: a.Subscription.Lease.Revision + 5, State: domain.SubscriptionMemberRunning, AdmittedAt: now},
+		}
+		return nil
+	})
+	admitFixture(t, f, &b, "")
+	_, a := f.record()
+	st := a.Subscription
+	episode := st.AutomaticCreditEpisode
+	if episode == nil || episode.LeaseID != memberLease || episode.LeaseID == owner {
+		t.Fatal("the episode was not bound to the reporting member lease", episode)
+	}
+	proof := episode.ServerProof
+	member, _ := st.Member(memberLease)
+	if proof == nil || proof.LeaseID != memberLease || proof.OperationID != f.job || proof.OperationID == founding || proof.LeaseRevision != member.Revision {
+		t.Fatal("the frozen proof names the founding owner's job, lease or revision", proof)
+	}
+	if st.ServerCredit == nil || st.ServerCredit.Automatic == nil || st.ServerCredit.Automatic.LeaseID != memberLease || !automaticEpisodeAuthority(st, episode, *proof, proof.Consent.Generation) {
+		t.Fatal("the running reporting member did not authorize its own claim")
+	}
+	// A finished member holds no authority, and the founding job cannot adopt it.
+	if !st.ReleaseMember(memberLease) {
+		t.Fatal("fixture member vanished")
+	}
+	if automaticEpisodeAuthority(st, episode, *proof, proof.Consent.Generation) {
+		t.Fatal("the automatic claim stayed authorized after the reporting member finished")
+	}
+	if lease, ok := automaticCreditLease(st, owner); !ok || lease.OperationID != founding {
+		t.Fatal("the founding member must still resolve its own job", lease, ok)
+	}
+}

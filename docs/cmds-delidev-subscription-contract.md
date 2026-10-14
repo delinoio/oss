@@ -804,6 +804,12 @@ Record declarations and complete implementation together; no migration or new
 native action is added. Existing manual consumption, server credit lanes and
 explicit Resume retain their independent ownership.
 
+On a shared account owner, an automatic-credit episode and its frozen server
+proof bind the lease, job and revision of the running member whose session
+reported the quota block, never the founding owner's. The claim is authorized
+only while that member is running; a finished or retained member, or the
+founding member's unrelated job, cannot continue it.
+
 Consent defaults off and binds the authenticated actor, account connection and
 credential generation. Enabling requires explicit confirmation; disabling is a
 separate exact mutation. Logout and every replacement credential generation clear
