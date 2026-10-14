@@ -117,11 +117,28 @@ func (c *Client) observeImageGeneration(native nativewire.Event, turnID domain.I
 	return Event{Kind: kind, ThreadID: c.thread, TurnID: turnID, ItemID: image.ID, ImageGeneration: image, Correlated: true}, nil
 }
 
+// enlargedNativeFrameBytes is the native frame limit of the enlarged original
+// image-observation and Fork-history profiles.
+const enlargedNativeFrameBytes = 16 << 20
+
 func (c *Client) nativeFrameLimit() int {
 	if c.imageObservations {
-		return 16 << 20
+		return enlargedNativeFrameBytes
 	}
 	return nativewire.MaxFrame
+}
+
+// baseHistoryAggregateBytes is the aggregate retained-history budget of the
+// default one-MiB native frame profile.
+const baseHistoryAggregateBytes = 4 << 20
+
+// historyAggregateLimit bounds the complete retained history that context
+// inspection, compaction, continuation and legacy Revert scans accept. The
+// budget follows the selected native frame profile, so one protected item that
+// fits the enlarged frame cannot exceed the aggregate alone. Fork keeps its
+// separate maxForkHistoryBytes bound.
+func (c *Client) historyAggregateLimit() int {
+	return max(baseHistoryAggregateBytes, c.nativeFrameLimit())
 }
 
 // FrameProfile is the closed set of native frame limits a caller may request.

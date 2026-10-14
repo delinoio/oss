@@ -481,7 +481,26 @@ once. Require original non-ephemeral idle root metadata, required nullable
 backwards cursors, descending full-item pagination from the returned anchor, and
 an independent current ascending hydration. Both must equal the frozen prefix,
 including settled command/file changes. Bound cursors, distinct turns/items,
-128 turns and 4 MiB; empty history is valid only under the explicit Revert proof.
+128 turns and the profile-aware history budget below; empty history is valid only
+under the explicit Revert proof.
+
+The aggregate retained-history budget is `max(4 MiB, native frame limit)`: 16 MiB
+under the enlarged original native frame profile (image observations or
+`fork_history`) and 4 MiB under the default 1 MiB profile. It applies uniformly
+to context inspection, compaction history, context-bearing continuation and
+legacy/paginated Revert scans, so one protected `functionCallOutput` admitted by
+the enlarged frame (for example seven 700 KiB `input_image` parts) cannot be
+rejected by the aggregate while its original bytes stay unchanged. Exactly the
+budget passes and one more byte fails safely as `recovery-required`; the frame
+limit, 128 turns, 4,096 items, unique item/cursor identities and malformed-output
+rejection are unchanged. Fork keeps its separate 4 MiB bound.
+The private Revert intent file (`native-revert-intent.json`) persists the
+complete expected prefix and has its own 17 MiB bound (the 16 MiB largest budget
+plus a 1 MiB claim envelope), above the 10 MiB compaction checkpoint ceiling. The
+harness refuses before the claim callback when the encoded intent would exceed
+that bound, which remains a positive no-send failure. The package-level intent
+verifier cannot know the writing client's profile and accepts at most the 16 MiB
+ceiling; the writing client enforces its own profile budget first.
 Unknown, partial or changed evidence retains quarantine. Allocation and version
 metadata alone do not establish actual native support.
 
@@ -499,7 +518,8 @@ Item pages have required nullable continuation and backwards cursors. Original
 item IDs are unique across the thread, and every item belongs to an original
 retained turn in order. Reject missing, foreign, repeated, reordered, unsupported
 or unsettled item evidence, missing pages and cursor cycles. Retain the native
-frame bound, 128-turn and 4 MiB history limits, with at most 4,096 distinct items.
+frame bound, 128-turn and profile-aware history budget (16 MiB under the enlarged
+native frame profile, otherwise 4 MiB), with at most 4,096 distinct items.
 Canonical history preserves exact JSON numbers before digest comparison.
 Replacement continuation and explicit original-intent recovery use the same
 complete hydration; observation never sends Revert again. Existing original

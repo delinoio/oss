@@ -462,7 +462,7 @@ func (c *Client) contextTurnPagesLocked(ctx context.Context, direction string, c
 				}
 			}
 			size += len(raw)
-			if len(turns) >= maxForkTurns || size > 4<<20 {
+			if len(turns) >= maxForkTurns || size > c.historyAggregateLimit() {
 				return nil, compactionUncertain()
 			}
 			var value any

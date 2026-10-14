@@ -32,7 +32,7 @@ func (c *Client) revertHistoryLocked(ctx context.Context, direction string, turn
 				entries = append(entries, revertHistoryItem{TurnID: wire.ID, Item: item})
 			}
 		}
-		return joinRevertHistory(turns, entries)
+		return joinRevertHistory(turns, entries, c.historyAggregateLimit())
 	}
 	entries := []revertHistoryItem{}
 	seenItems, seenCursors := map[string]bool{}, map[string]bool{}
@@ -60,7 +60,7 @@ func (c *Client) revertHistoryLocked(ctx context.Context, direction string, turn
 		}
 		size += len(reply.Result)
 		var next, back *string
-		if size > 4<<20 || json.Unmarshal(page.Next, &next) != nil || json.Unmarshal(page.Back, &back) != nil || back != nil && domain.Text(*back, "native item backwards cursor", 4096, true) != nil {
+		if size > c.historyAggregateLimit() || json.Unmarshal(page.Next, &next) != nil || json.Unmarshal(page.Back, &back) != nil || back != nil && domain.Text(*back, "native item backwards cursor", 4096, true) != nil {
 			return nil, compactionUncertain()
 		}
 		for _, entry := range page.Data {
@@ -83,7 +83,7 @@ func (c *Client) revertHistoryLocked(ctx context.Context, direction string, turn
 	if direction == "desc" {
 		slices.Reverse(entries)
 	}
-	return joinRevertHistory(turns, entries)
+	return joinRevertHistory(turns, entries, c.historyAggregateLimit())
 }
 
 type revertHistoryItem struct {
@@ -123,7 +123,7 @@ func verifyRevertHistoryItem(raw json.RawMessage) (string, error) {
 
 // Item pages must cover every projected item in the same order. Omitted item
 // pages are joined, never treated as equality of partial turn projections.
-func joinRevertHistory(turns []json.RawMessage, entries []revertHistoryItem) ([]json.RawMessage, error) {
+func joinRevertHistory(turns []json.RawMessage, entries []revertHistoryItem, limit int) ([]json.RawMessage, error) {
 	if len(turns) > maxForkTurns || len(entries) > 4096 {
 		return nil, compactionUncertain()
 	}
@@ -198,7 +198,7 @@ func joinRevertHistory(turns []json.RawMessage, entries []revertHistoryItem) ([]
 		}
 		normal, err := json.Marshal(value)
 		size += len(normal)
-		if err != nil || size > 4<<20 || len(result) >= maxForkTurns {
+		if err != nil || size > limit || len(result) >= maxForkTurns {
 			return nil, compactionUncertain()
 		}
 		result = append(result, normal)

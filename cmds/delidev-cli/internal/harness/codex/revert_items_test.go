@@ -251,7 +251,7 @@ func TestRevertItemJoinBoundsIdentityOrderAndNumbers(t *testing.T) {
 		turns = append(turns, raw)
 		entries = append(entries, revertHistoryItem{TurnID: id, Item: item})
 	}
-	joined, err := joinRevertHistory(turns, entries)
+	joined, err := joinRevertHistory(turns, entries, baseHistoryAggregateBytes)
 	if err != nil || len(joined) != maxForkTurns || !strings.Contains(string(joined[0]), "9007199254740993") {
 		t.Fatal("bounded original item proof changed", err)
 	}
@@ -291,12 +291,12 @@ func TestRevertItemJoinBoundsIdentityOrderAndNumbers(t *testing.T) {
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			raw, items := scenario.mutate()
-			if _, err := joinRevertHistory(raw, items); err == nil {
+			if _, err := joinRevertHistory(raw, items, baseHistoryAggregateBytes); err == nil {
 				t.Fatal("invalid complete history admitted")
 			}
 		})
 	}
-	if result, err := joinRevertHistory([]json.RawMessage{}, []revertHistoryItem{}); err != nil || result == nil || len(result) != 0 {
+	if result, err := joinRevertHistory([]json.RawMessage{}, []revertHistoryItem{}, baseHistoryAggregateBytes); err != nil || result == nil || len(result) != 0 {
 		t.Fatal("explicit empty proof lost")
 	}
 	bounded := []revertHistoryItem{entries[0]}
@@ -304,11 +304,11 @@ func TestRevertItemJoinBoundsIdentityOrderAndNumbers(t *testing.T) {
 		item, _ := json.Marshal(map[string]any{"id": "bounded-" + strconv.Itoa(n), "type": "agentMessage"})
 		bounded = append(bounded, revertHistoryItem{TurnID: entries[0].TurnID, Item: item})
 	}
-	if _, err := joinRevertHistory(turns[:1], bounded); err != nil {
+	if _, err := joinRevertHistory(turns[:1], bounded, baseHistoryAggregateBytes); err != nil {
 		t.Fatal("bounded complete item set rejected", err)
 	}
 	bounded = append(bounded, revertHistoryItem{TurnID: entries[0].TurnID, Item: json.RawMessage(`{"id":"overflow","type":"agentMessage"}`)})
-	if _, err := joinRevertHistory(turns[:1], bounded); err == nil {
+	if _, err := joinRevertHistory(turns[:1], bounded, baseHistoryAggregateBytes); err == nil {
 		t.Fatal("item count overflow admitted")
 	}
 }
