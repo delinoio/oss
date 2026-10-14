@@ -4,7 +4,7 @@
 
 This contract owns the planned Grok Build subscription lifecycle in
 `cmds/delidev-cli`, its Connect interface and the desktop AI Subscription flow.
-The subscription profile declares `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) as its minimum SemVer baseline. `domain.GrokSubscriptionVersionAllowed` admits a valid SemVer at or above it (prereleases of the baseline are below it) and is not yet referenced by any capability, discovery or execution path. Newer releases are validated natively, not rejected by number. The API and history baseline stays `domain.GrokProtocolVersion` (`1.0.41`); the Grok Build 1.0.52 inspection failure is tracked in issue 3835. Reservation support is separate
+The subscription profile declares `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) as its minimum SemVer baseline. `domain.GrokSubscriptionVersionAllowed` admits a valid SemVer at or above it (prereleases of the baseline are below it) and is not yet referenced by any capability, discovery or execution path. Newer releases are validated natively, not rejected by number. The API and history baseline stays `domain.GrokProtocolVersion` (`1.0.41`); the known Grok Build 1.0.52 inspection failure is a separate limitation and does not change these baselines. Reservation support is separate
 from implemented support and actual account/platform acceptance.
 
 ## Runtime and Language
