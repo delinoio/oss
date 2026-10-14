@@ -553,15 +553,10 @@ export function SessionForkProvider({
   const resultJob = verifiedJob ?? job;
   const state = text(document(resultJob).state);
   const problem = object(document(resultJob).problem);
-  // A published child must be a distinct, nonempty Session; an empty or
-  // source-equal readback id would corrupt tab ownership of the original parent.
+  // A published child must be a distinct, nonempty Session with the original
+  // source and Sidechat overlay.
   const returnedId = text(fork.data?.session?.id);
   const returnedIdValid = Boolean(returnedId) && returnedId !== source?.id;
-  const malformedChild =
-    Boolean(verifiedJob) &&
-    state === JobState.Succeeded &&
-    fork.data?.session?.kind === EntityKind.SESSION &&
-    !returnedIdValid;
   const child =
     Boolean(verifiedJob) &&
     state === JobState.Succeeded &&
@@ -575,6 +570,8 @@ export function SessionForkProvider({
       ))
       ? fork.data.session
       : undefined;
+  const malformedChild =
+    Boolean(verifiedJob) && state === JobState.Succeeded && !child;
   const reset = () => {
     const original = directOwner.current;
     if (original)
