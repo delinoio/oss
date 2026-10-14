@@ -333,6 +333,27 @@ export function ScheduleCreation({
             else next();
           }}
           onKeyDown={(event) => {
+            // Escape dismisses the idle wizard exactly like Cancel. An open
+            // picker consumes its own Escape first (defaultPrevented), and any
+            // locked state keeps the recovery controls authoritative.
+            if (event.key === "Escape") {
+              if (
+                event.defaultPrevented ||
+                event.nativeEvent.isComposing ||
+                event.keyCode === 229 ||
+                event.repeat ||
+                event.altKey ||
+                event.ctrlKey ||
+                event.metaKey ||
+                event.shiftKey ||
+                blocked
+              )
+                return;
+              event.preventDefault();
+              event.stopPropagation();
+              cancel();
+              return;
+            }
             if (
               event.key === "Enter" &&
               event.target instanceof HTMLInputElement &&

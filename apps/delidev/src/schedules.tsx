@@ -1270,6 +1270,8 @@ export function Schedules({
   const workspace = useRef<HTMLDivElement>(null);
   const deferredSave = useRef<{ row?: Resource } | undefined>(undefined);
   const focusAfterDeferredSave = useRef(false);
+  const newScheduleButton = useRef<HTMLButtonElement>(null);
+  const focusOpenerAfterCancel = useRef(false);
   const wasReviewing = useRef(false);
   const focusBeforeReview = useRef<HTMLElement | null>(null);
   useLayoutEffect(() => {
@@ -1356,6 +1358,41 @@ export function Schedules({
       ?.querySelector<HTMLElement>("button:not(:disabled)")
       ?.focus({ preventScroll: true });
   }, [editing, selected]);
+  // Cancelling the creation wizard (button or Escape) unmounts the focused
+  // control and re-enables the New schedule opener in the same commit. Return
+  // focus to that opener, or to a visible Schedules control when the sidebar is
+  // a closed compact drawer, unless focus already moved somewhere else.
+  useLayoutEffect(() => {
+    if (!focusOpenerAfterCancel.current || editing) return;
+    focusOpenerAfterCancel.current = false;
+    const current = globalThis.document.activeElement;
+    if (
+      current &&
+      current !== globalThis.document.body &&
+      current !== globalThis.document.documentElement &&
+      current.isConnected
+    )
+      return;
+    const available = (element: HTMLElement | null | undefined) =>
+      Boolean(
+        element?.isConnected &&
+        !(element as HTMLButtonElement).disabled &&
+        !element.closest("[hidden], [inert]"),
+      );
+    const opener = newScheduleButton.current;
+    const main = workspace.current?.closest("main");
+    const compact = (main ?? globalThis.document).querySelector<HTMLElement>(
+      ".sidebar-context-trigger",
+    );
+    const target = available(opener)
+      ? opener
+      : available(compact)
+        ? compact
+        : available(main)
+          ? main
+          : undefined;
+    target?.focus({ preventScroll: true });
+  }, [editing]);
   const selectSchedule = (row: Resource) => {
     if (locked) return;
     if (row.id !== selected?.id)
@@ -1378,6 +1415,7 @@ export function Schedules({
         className="schedules-sidebar"
       >
         <button
+          ref={newScheduleButton}
           className="primary sidebar-action"
           disabled={locked}
           onClick={newSchedule}
@@ -1552,6 +1590,11 @@ export function Schedules({
                 else latestApplySave.current(row);
               }}
               cancel={() => {
+                const focused = globalThis.document.activeElement;
+                focusOpenerAfterCancel.current =
+                  !focused ||
+                  focused === globalThis.document.body ||
+                  Boolean(workspace.current?.contains(focused));
                 setEditing(undefined);
                 setProtectedWorkflow(false);
               }}
