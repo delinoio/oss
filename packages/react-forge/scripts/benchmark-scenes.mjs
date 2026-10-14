@@ -16,7 +16,6 @@ import { monitorEventLoopDelay, performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import React from "react";
-import validator from "gltf-validator";
 import manifest from "../package.json" with { type: "json" };
 import platforms from "../src/native-platforms.json" with { type: "json" };
 import { readNativeBuildMetadata } from "./native-build-provenance.mjs";
@@ -348,6 +347,7 @@ export async function runBenchmark(output, options = {}) {
       let actual;
       if (options.verifyArtifact) actual = await options.verifyArtifact(item);
       else if (item.format === "glb") {
+        const { default: validator } = await import("gltf-validator");
         const validation = await validator.validateBytes(item.bytes);
         if (validation.issues.numErrors)
           throw new Error("Khronos GLB validation failed.");

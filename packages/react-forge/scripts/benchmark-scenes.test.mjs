@@ -73,6 +73,42 @@ test("locked ufbx version parsing accepts Windows lockfile line endings", () => 
   );
 });
 
+test("scene case children do not load the GLB validator", async () => {
+  await withDirectory(async (dir) => {
+    const marker = join(dir, "gltf-validator-loaded");
+    const loader = join(dir, "loader.mjs");
+    await writeFile(
+      loader,
+      `
+      import { appendFileSync } from "node:fs";
+      export async function resolve(specifier, context, nextResolve) {
+        if (specifier === "gltf-validator")
+          appendFileSync(process.env.MARKER_PATH, "loaded\\n");
+        return nextResolve(specifier, context);
+      }
+      `,
+    );
+    spawnSync(
+      process.execPath,
+      [
+        "--experimental-loader",
+        loader,
+        file,
+        "--case",
+        "fbx",
+        "small",
+        join(dir, "case.fbx"),
+      ],
+      {
+        cwd: join(fileURLToPath(new URL("../", import.meta.url))),
+        env: { ...process.env, MARKER_PATH: marker },
+        encoding: "utf8",
+      },
+    );
+    await assert.rejects(readFile(marker));
+  });
+});
+
 function glb(
   indexCount,
   componentType = 5125,
