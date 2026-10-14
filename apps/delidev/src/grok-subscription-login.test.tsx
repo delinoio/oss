@@ -169,11 +169,7 @@ function fixture(url = loginURL) {
             </button>
             <button
               onClick={() =>
-                flow.begin(
-                  SubscriptionServiceId.Grok,
- undefined,
- true,
- )
+                flow.begin(SubscriptionServiceId.Grok, undefined, true)
               }
             >
               Start Grok device
@@ -854,7 +850,11 @@ it("sends one deviceCode login despite double click, Strict Mode and polling and
     code,
   );
   expect(code.tabIndex).toBe(0);
-  expect(screen.getByRole("textbox", { name: copy("grok-subscription.device.codeAria") })).toBe(code);
+  expect(
+    screen.getByRole("textbox", {
+      name: copy("grok-subscription.device.codeAria"),
+    }),
+  ).toBe(code);
   expect(screen.getByRole("status").textContent).toContain(
     copy("grok-subscription.status.waiting"),
   );

@@ -1160,11 +1160,7 @@ export function SubscriptionAccounts({
                   return;
                 // One deliberate click starts the device-code method; it never
                 // falls back to or from browser login automatically.
-                flow.begin(
-                  SubscriptionServiceId.Grok,
- undefined,
- true,
- );
+                flow.begin(SubscriptionServiceId.Grok, undefined, true);
               }
             : undefined
         }
