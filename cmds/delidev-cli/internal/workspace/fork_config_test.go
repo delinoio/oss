@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unsafe"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
@@ -62,6 +63,20 @@ func appendForkConfigRecords(t *testing.T, path string, count int) {
 	}
 	if err = file.Close(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestSplitForkConfigRecordsRetainsCommandBuffer(t *testing.T) {
+	raw := []byte("fixture.first\none\x00fixture.second\ntwo\x00")
+	records := splitForkConfigRecords(raw, 2)
+	if len(records) != 2 {
+		t.Fatalf("split returned %d records, want 2", len(records))
+	}
+	if unsafe.StringData(records[0]) != unsafe.SliceData(raw) {
+		t.Fatal("first record does not retain the command output buffer")
+	}
+	if unsafe.StringData(records[1]) != unsafe.SliceData(raw[18:]) {
+		t.Fatal("second record does not retain the command output buffer")
 	}
 }
 

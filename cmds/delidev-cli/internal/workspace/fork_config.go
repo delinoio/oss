@@ -25,7 +25,7 @@ type forkConfigLayer struct {
 }
 
 const (
-	// A retained record is a string header in the strings.Split backing array.
+	// A retained record is a string header pointing into the command output buffer.
 	forkConfigRecordHeaderBytes = uint64(unsafe.Sizeof(string("")))
 	// Each retained layer also keeps its []string slice header.
 	forkConfigSliceHeaderBytes = uint64(unsafe.Sizeof([]string{}))
@@ -58,6 +58,22 @@ func forkConfigKey(record string) string {
 	return key
 }
 
+// splitForkConfigRecords retains each NUL-delimited record as a string backed by
+// the command output buffer. The buffer remains live through the returned
+// strings, so parsing does not create a second copy of the complete output.
+func splitForkConfigRecords(out []byte, recordsCount int) []string {
+	records := make([]string, 0, recordsCount)
+	start := 0
+	for index, value := range out {
+		if value != 0 {
+			continue
+		}
+		records = append(records, unsafe.String(unsafe.SliceData(out[start:index]), index-start))
+		start = index + 1
+	}
+	return records
+}
+
 // listForkConfigFile lists one configuration file without following includes.
 // The output must fit the aggregate Fork allowance for retained config records.
 func listForkConfigFile(ctx context.Context, git Git, dir, path string, allowance uint64) ([]string, uint64, error) {
@@ -78,11 +94,7 @@ func listForkConfigFile(ctx context.Context, git Git, dir, path string, allowanc
 			return nil, 0, domain.Fail(domain.ResourceExhausted, "The complete workspace snapshot exceeds its bound.", "Reduce workspace data before retrying; sources remain intact.")
 		}
 	}
-	records := strings.Split(string(out), "\x00")
-	if len(records) > 0 && records[len(records)-1] == "" {
-		records = records[:len(records)-1]
-	}
-	return records, uint64(len(out)), nil
+	return splitForkConfigRecords(out, recordsCount), uint64(len(out)), nil
 }
 
 // forkConfigProofBytes estimates the retained parsed representation: the
