@@ -83,7 +83,7 @@ original evidence. Grok records at `domain.GrokProtocolVersion` (`1.0.41`) and v
 and acquire no new resume authority. API execution keeps its independent support
 boundary when revalidated against `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) or newer.
 
-The approved desktop flow preserves service order, existing marks, navigation
+The desktop browser flow is implemented in `apps/delidev/src/grok-subscription-login.tsx` and enabled only when the server advertises System capability 39; the device-code method remains planned. The approved desktop flow preserves service order, existing marks, navigation
 and theme. Add account starts browser login; Use a device code is explicit.
 Waiting offers reopen/copy/open-page/cancel as appropriate. Confirmed success
 advances to account naming. Preparing, waiting, canceled, expired, failed and

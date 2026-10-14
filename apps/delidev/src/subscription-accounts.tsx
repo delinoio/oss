@@ -772,6 +772,10 @@ export function SubscriptionAccounts({
     status.data?.capabilities.includes(
       SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1,
     ) === true;
+  const grokLoginCapable =
+    status.data?.capabilities.includes(
+      SystemCapability.GROK_SUBSCRIPTION_LOGIN_V1,
+    ) === true;
   const accountOperationsBlocked = Boolean(
     selected ||
     goIntent ||
@@ -1086,6 +1090,13 @@ export function SubscriptionAccounts({
                 ) {
                   setGoIntent(true);
                   setGoCreate(true);
+                } else if (
+                  service === SubscriptionServiceId.Grok &&
+                  !grokLoginCapable
+                ) {
+                  // Without capability 39 the Grok row keeps its unsupported
+                  // presentation and starts nothing.
+                  return;
                 } else if (service && flow.available)
                   flow.begin(
                     service,
@@ -1106,7 +1117,9 @@ export function SubscriptionAccounts({
               ) === true
             : brand === SubscriptionBrand.ChatGPT
               ? loginCapable && flow.available
-              : brand === SubscriptionBrand.Claude &&
+              : brand === SubscriptionBrand.Grok
+                ? grokLoginCapable && flow.available
+                : brand === SubscriptionBrand.Claude &&
                 flow.available &&
                 (status.data?.capabilities.includes(
                   SystemCapability.CLAUDE_SUBSCRIPTIONS_V1,
