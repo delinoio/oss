@@ -15,16 +15,20 @@ import (
 // threads, and keeps an event emitted before thread/start returns for the
 // member that subsequently binds that exact native identity.
 type sharedEvents struct {
-	mu       sync.Mutex
-	members  map[domain.ID]chan nativewire.Event
-	children map[domain.ID]domain.ID
-	requests map[domain.ID]domain.ID
-	pending  map[domain.ID][]nativewire.Event
-	problem  error
-	done     chan struct{}
+	mu           sync.Mutex
+	members      map[domain.ID]chan nativewire.Event
+	children     map[domain.ID]domain.ID
+	requests     map[domain.ID]domain.ID
+	pending      map[domain.ID][]nativewire.Event
+	pendingCount int
+	problem      error
+	done         chan struct{}
 }
 
-const maxSharedPendingEvents = 256
+const (
+	maxSharedPendingEvents      = 256
+	maxSharedTotalPendingEvents = 1024
+)
 
 func newSharedEvents() *sharedEvents {
 	return &sharedEvents{
@@ -52,6 +56,7 @@ func (s *sharedEvents) bind(thread domain.ID) (<-chan nativewire.Event, error) {
 	for _, event := range s.pending[thread] {
 		queue <- event
 	}
+	s.pendingCount -= len(s.pending[thread])
 	delete(s.pending, thread)
 	s.members[thread] = queue
 	return queue, nil
@@ -61,6 +66,7 @@ func (s *sharedEvents) unbind(thread domain.ID) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.members, thread)
+	s.pendingCount -= len(s.pending[thread])
 	delete(s.pending, thread)
 	for child, root := range s.children {
 		if root == thread {
@@ -156,10 +162,11 @@ func (s *sharedEvents) deliver(event nativewire.Event) error {
 			return sharedEventUncertain()
 		}
 	}
-	if len(s.pending[thread]) >= maxSharedPendingEvents {
+	if len(s.pending[thread]) >= maxSharedPendingEvents || s.pendingCount >= maxSharedTotalPendingEvents {
 		return sharedEventUncertain()
 	}
 	s.pending[thread] = append(s.pending[thread], event)
+	s.pendingCount++
 	return nil
 }
 

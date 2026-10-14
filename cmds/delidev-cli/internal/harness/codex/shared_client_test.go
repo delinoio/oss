@@ -20,7 +20,7 @@ func TestSharedRuntimeBindsIndependentNativeThreads(t *testing.T) {
 }
 
 func testSharedRuntimeBindsIndependentNativeThreads(t *testing.T, count int) {
-	config := fixtureConfig(t, "thread-managed-ready")
+	config := fixtureConfig(t, "thread-managed-shared")
 	config.Mode = ThreadProtocol
 	config.ManagedAuthentication = true
 	ctx, stop := context.WithTimeout(context.Background(), 10*time.Second)
@@ -76,5 +76,16 @@ func testSharedRuntimeBindsIndependentNativeThreads(t *testing.T, count int) {
 	}
 	if nativeErr, _ := members[0].CloseWithExecutionHelpers(); domain.SafeError(nativeErr).Code != domain.RecoveryRequired {
 		t.Fatalf("member closed account process: %v", nativeErr)
+	}
+	for i, member := range members {
+		if err := member.RetireSharedMember(ctx, domain.NewID()); err != nil {
+			t.Fatalf("member %d retirement: %v", i, err)
+		}
+		if i+1 < len(members) {
+			remaining := members[i+1]
+			if err := remaining.verifyManagedConfig(ctx, settings.Cwd); err != nil {
+				t.Fatalf("sibling lost account connection: %v", err)
+			}
+		}
 	}
 }
