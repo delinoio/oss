@@ -140,6 +140,31 @@ func TestGrokMaterializationRefusesNonPrivateOrLinkedHome(t *testing.T) {
 		if entries, _ := os.ReadDir(real); len(entries) != 0 {
 			t.Fatal("a credential was written through a symlink")
 		}
+		// A bundle-less login lets the native child create auth.json itself, so it
+		// must be refused in the same homes.
+		for name, unsafe := range map[string]string{"group-readable": open, "symlinked": link} {
+			if _, err := grokWorkerLease(t, server, account, "", nil).materializeGrok(unsafe); err == nil {
+				t.Fatalf("a %s home was accepted for a fresh login", name)
+			}
+		}
+	}
+}
+
+func TestGrokFreshLoginRefusesLeftoverCredentialFiles(t *testing.T) {
+	server, account := domain.NewID(), domain.NewID()
+	for name, leftover := range map[string]string{
+		"credential": subscription.GrokAuthFileName,
+		"temporary":  security.OwnedTemporaryPrefix(subscription.GrokAuthFileName) + "synthetic",
+	} {
+		t.Run(name, func(t *testing.T) {
+			home := grokHome(t)
+			if err := os.WriteFile(filepath.Join(home, leftover), []byte("synthetic"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := grokWorkerLease(t, server, account, "", nil).materializeGrok(home); err == nil {
+				t.Fatal("a fresh login accepted a home that already holds a credential")
+			}
+		})
 	}
 }
 

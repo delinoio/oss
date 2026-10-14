@@ -18,16 +18,26 @@ import (
 // the file is retired. Nothing here logs a credential, path or identity value.
 
 // materializeGrok opens the delivered envelope and writes grokHome/auth.json.
-// A fresh login delivers no bundle and writes nothing. The returned bundle holds
-// the original identity for the Finish binding check; the caller clears it.
+// A fresh login delivers no bundle and writes nothing, but the native login
+// creates auth.json itself, so the home is validated and must hold no credential
+// file or interrupted-write temporary before any login or refresh proceeds. The
+// returned bundle holds the original identity for the Finish binding check; the
+// caller clears it.
 func (l *managedSubscriptionLease) materializeGrok(grokHome string) (subscription.GrokBundle, error) {
 	raw := l.response.Bundle
 	defer func() {
 		clear(raw)
 		l.response.Bundle = nil
 	}()
+	if err := subscription.CheckGrokHome(grokHome); err != nil {
+		return subscription.GrokBundle{}, err
+	}
 	if len(raw) == 0 {
 		if l.response.GenerationId != "" {
+			return subscription.GrokBundle{}, subscription.GrokBundleInvalid()
+		}
+		// A leftover credential would otherwise be sealed as the result of this login.
+		if present, err := subscription.GrokAuthFilePresent(grokHome); err != nil || present {
 			return subscription.GrokBundle{}, subscription.GrokBundleInvalid()
 		}
 		return subscription.GrokBundle{}, nil

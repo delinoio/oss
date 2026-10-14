@@ -30,14 +30,24 @@ func (b GrokBundle) Equal(other GrokBundle) bool {
 		b.IdentityKey() == other.IdentityKey() && b.identity.Expiry.Equal(other.identity.Expiry)
 }
 
+// CheckGrokHome requires grokHome to be a real, private, non-linked directory.
+// Every credential read or write below it, and a bundle-less login that lets the
+// native child create auth.json itself, depends on this check.
+func CheckGrokHome(grokHome string) error {
+	if err := security.CheckPrivateDir(grokHome); err != nil {
+		return GrokBundleInvalid()
+	}
+	return nil
+}
+
 // WriteGrokAuthFile materializes the bundle as $GROK_HOME/auth.json for the
 // native child. The home must be a private directory; the file is published
 // atomically with owner-only permission, and remnants of an interrupted earlier
 // write are retired first. On failure the target is retired so no partial
 // credential file is left behind.
 func WriteGrokAuthFile(grokHome string, bundle GrokBundle) error {
-	if err := security.CheckPrivateDir(grokHome); err != nil {
-		return GrokBundleInvalid()
+	if err := CheckGrokHome(grokHome); err != nil {
+		return err
 	}
 	raw, err := bundle.AuthFile()
 	if err != nil {
@@ -54,8 +64,8 @@ func WriteGrokAuthFile(grokHome string, bundle GrokBundle) error {
 // ReadGrokAuthFile reads and validates the native $GROK_HOME/auth.json after a
 // login or refresh. The entry must be a regular, bounded, non-linked file.
 func ReadGrokAuthFile(grokHome string) (GrokBundle, error) {
-	if err := security.CheckPrivateDir(grokHome); err != nil {
-		return GrokBundle{}, GrokBundleInvalid()
+	if err := CheckGrokHome(grokHome); err != nil {
+		return GrokBundle{}, err
 	}
 	path := filepath.Join(grokHome, GrokAuthFileName)
 	info, err := os.Lstat(path)

@@ -211,7 +211,11 @@ Worker custody mirrors this. The Worker opens the delivered envelope against its
 own server, the account and the delivered generation, then writes
 `$GROK_HOME/auth.json` atomically with owner-only permission into a private,
 non-linked home, clears the in-memory envelope, and writes nothing when the
-envelope is rebound. After the native process exits it reads the file once,
+envelope is rebound. The home is validated before any delivery is accepted,
+including a fresh login that delivers no bundle and lets the native login create
+`auth.json` itself; such a login also requires a home with no credential file or
+interrupted-write temporary, so a leftover credential is never sealed as the
+login result. After the native process exits it reads the file once,
 seals the next generation (bound to the Finish request identifier) only when the
 original identity is unchanged, and retires the file and interrupted-write
 temporaries. The file must be a regular, bounded, non-symlinked entry with
