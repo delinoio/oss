@@ -2677,3 +2677,32 @@ it("dismisses More when Shift+Tab moves focus to the opener but not for a press 
   expect(more.getAttribute("aria-expanded")).toBe("false");
   expect(document.activeElement).toBe(more);
 });
+
+it("exposes one current-page destination while Usage is active and More is open", async () => {
+  const bridge = memoryNavigationBridge();
+  const value = mountSidebar({
+    ...emptyLists,
+    stateful: true,
+    navigation: bridge,
+  });
+  await screen.findByRole("button", { name: "Sessions" });
+  value.setSurface(Surface.Usage);
+  const current = () =>
+    [
+      ...document.querySelectorAll(
+        ".sidebar-rail [aria-current='page'], .sidebar-more-popover [aria-current]",
+      ),
+    ].map((node) => node.getAttribute("aria-label"));
+  const more = screen.getByRole("button", { name: "More" });
+  fireEvent.click(more);
+  const popover = screen.getByRole("dialog", { name: "More" });
+  // Unpinned: the More button is the only current destination.
+  expect(current()).toEqual(["More"]);
+  expect(
+    within(popover).getByRole("button", { name: "Usage" }).dataset.current,
+  ).toBe("true");
+  fireEvent.click(within(popover).getByRole("button", { name: "Pin Usage" }));
+  await waitFor(() => expect(railNames()).toContain("Usage"));
+  // Pinned: the Usage rail button is the only current destination.
+  expect(current()).toEqual(["Usage"]);
+});

@@ -851,16 +851,24 @@ Korean catalogs (More / 더보기, Pin Usage / 사용량 고정, Unpin Usage / �
   sits between Pull requests and Schedules. Unpinning while Usage is active keeps
   the page active. While Usage is active, the Usage rail button carries
   `aria-current="page"` when pinned and the More button carries it when unpinned.
+  The Usage row inside the popover never carries `aria-current`, so assistive
+  technology reports exactly one current destination; the row shows the active
+  state visually through `data-current="true"`.
 - Tray and account Usage navigation work regardless of pin state and never write
   the preference.
 - Escape and an outside press dismiss the popover and restore focus to the More
   button (a press on another control keeps the focus that control takes); focus
-  moving to another control also dismisses it. Opening focuses the Usage row;
+  moving to another control also dismisses it, including keyboard focus that
+  returns to the More button (Shift+Tab from the first row). A pointer press on
+  the More button does not dismiss on blur: its click toggles the popover. Opening focuses the Usage row;
   Arrow keys, Home and End move between the controls. The compact modal drawer
   dismisses an open popover. The popover is a non-modal `popover="manual"`
   dialog in rail DOM order, so it is never clipped by the rail; it uses the
   existing semantic light/dark tokens, the shared visible-focus treatment, adds
-  no motion, and wraps without horizontal clipping at 200% zoom.
+  no motion, and wraps without horizontal clipping at 200% zoom. Placement is
+  recomputed whenever the open popover changes size (including when the
+  preference alert and Reload action appear), so they stay inside short
+  viewports.
 - The pin button uses `aria-disabled` (not `disabled`) while a read or save is in
   flight or a problem is unresolved, so focus is retained. A read or save
   problem keeps the last confirmed pin state and shows a localized alert with an

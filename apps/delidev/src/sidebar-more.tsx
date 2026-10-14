@@ -209,7 +209,9 @@ export function SidebarMore({
             <button
               type="button"
               className="sidebar-more-item"
-              aria-current={usageActive ? "page" : undefined}
+              // The rail control (More or the pinned Usage button) carries
+              // aria-current, so the row marks the destination visually only.
+              data-current={usageActive ? "true" : undefined}
               onClick={() => {
                 close(true);
                 openUsage();

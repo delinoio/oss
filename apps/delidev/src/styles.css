@@ -263,7 +263,7 @@ pre {
 .sidebar-more-pin:focus-visible {
   background: var(--surface-hover);
 }
-.sidebar-more-item[aria-current="page"] {
+.sidebar-more-item[data-current="true"] {
   background: var(--selected-background);
   color: var(--selected-text);
 }
