@@ -435,6 +435,7 @@ func (i *IdP) devicePoll(w http.ResponseWriter, r *http.Request, reject func()) 
 	if step != "" {
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": step})
+		_, _ = w.Write([]byte(i.TokenTrailer))
 		return
 	}
 	body := map[string]any{"access_token": "fake-access-token", "token_type": "Bearer", "expires_in": i.ExpiresIn, "id_token": i.idToken("")}

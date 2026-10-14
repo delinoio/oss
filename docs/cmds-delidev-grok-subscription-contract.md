@@ -218,8 +218,11 @@ id with the other method is a conflict.
   a `device_code` (printable ASCII, at most 2048 bytes, kept as owned bytes), a
   `user_code` matching `[A-Z0-9-]{4,32}` (for example `XXXX-XXXX`), a
   `verification_uri_complete` and/or `verification_uri` (https, host exactly
-  `accounts.x.ai`, no credentials or fragment, at most a `user_code` query equal
-  to the user code), a positive `expires_in` (at most 24 hours) and an optional
+  `accounts.x.ai`, an absolute path, no credentials or fragment; a query may carry
+  the provider's own routing or tracking parameters, each key a short token used
+  once and each value short printable text, and the complete URI must carry a
+  `user_code` equal to the user code, which is preserved with the safe
+  parameters), a positive `expires_in` (at most 24 hours) and an optional
   `interval` of 1 to 60 seconds (default 5). The complete URL is preferred. Any
   other response ends the login as failed (`Unavailable`) before anything is
   claimed. The real provider's scopes, `interval`, `expires_in` and error bodies

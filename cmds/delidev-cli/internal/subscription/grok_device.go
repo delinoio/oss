@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"strconv"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // The RFC 8628 device authorization grant of the fixed xAI profile. The device
@@ -46,9 +48,27 @@ var grokUserCodePattern = regexp.MustCompile(`^[A-Z0-9-]{4,32}$`)
 // shape (for example XXXX-XXXX).
 func GrokUserCodeValid(value string) bool { return grokUserCodePattern.MatchString(value) }
 
+var grokQueryKeyPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,64}$`)
+
+// grokSafeQueryValue accepts a short printable value without control characters.
+func grokSafeQueryValue(value string) bool {
+	if len(value) > 256 || !utf8.ValidString(value) {
+		return false
+	}
+	for _, r := range value {
+		if unicode.IsControl(r) {
+			return false
+		}
+	}
+	return true
+}
+
 // GrokVerificationURL validates a device verification URL: https on the
-// verification host, no credentials or fragment, and at most a user_code query.
-// A user_code query value must equal userCode when one is given.
+// verification host, an absolute path, no credentials or fragment. The query may
+// carry the provider's own routing or tracking parameters (RFC 8628 leaves the
+// shape of the complete URI to the provider) as long as each key is a short token,
+// each value is short printable text and each key appears once. A user_code member,
+// when present, must equal userCode when one is given.
 func GrokVerificationURL(raw, userCode string) (string, bool) {
 	if raw == "" || len(raw) > grokVerificationMax {
 		return "", false
@@ -62,11 +82,21 @@ func GrokVerificationURL(raw, userCode string) (string, bool) {
 		return "", false
 	}
 	for key, values := range query {
-		if key != "user_code" || len(values) != 1 || userCode != "" && values[0] != userCode {
+		if len(values) != 1 || !grokQueryKeyPattern.MatchString(key) || !grokSafeQueryValue(values[0]) {
+			return "", false
+		}
+		if key == "user_code" && userCode != "" && values[0] != userCode {
 			return "", false
 		}
 	}
 	return u.String(), true
+}
+
+// grokCarriesUserCode reports whether a validated verification URL embeds the
+// given user code, as a complete verification URI must.
+func grokCarriesUserCode(verified, userCode string) bool {
+	u, err := url.Parse(verified)
+	return err == nil && u.Query().Get("user_code") == userCode
 }
 
 // GrokDeviceGrant is one device authorization. The device code is secret and
@@ -179,7 +209,7 @@ func (c GrokOAuthClient) RequestDeviceAuthorization(ctx context.Context, endpoin
 		}
 		text, isString := grokJSONString(value)
 		verified, valid := GrokVerificationURL(text, userCode)
-		if !isString || !valid {
+		if !isString || !valid || member == "verification_uri_complete" && !grokCarriesUserCode(verified, userCode) {
 			grant.Clear()
 			return GrokDeviceGrant{}, failure
 		}
