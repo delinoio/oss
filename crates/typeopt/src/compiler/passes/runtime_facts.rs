@@ -1667,6 +1667,19 @@ fn created_require_loaders(nodes: &[Node]) -> HashSet<String> {
                     _ => {}
                 }
             }
+            SyntaxKind::VariableDeclaration if node.name().kind() == SyntaxKind::Identifier => {
+                let init = skip_outer(node.initializer());
+                if init.kind() == SyntaxKind::CallExpression
+                    && skip_outer(init.expression()).kind() == SyntaxKind::Identifier
+                    && skip_outer(init.expression()).text() == "require"
+                    && init
+                        .arguments()
+                        .first()
+                        .is_some_and(|argument| matches!(argument.text(), "node:module" | "module"))
+                {
+                    host_modules.insert(node.name().text().to_owned());
+                }
+            }
             SyntaxKind::VariableDeclaration
                 if node.name().kind() == SyntaxKind::ObjectBindingPattern =>
             {
@@ -1748,11 +1761,7 @@ fn module_require_call(callee: Node, loaders: &HashSet<String>) -> bool {
 /// specifiers through the checker; it never executes or reads dependencies.
 fn imports_external_runtime(ctx: &mut Ctx) -> bool {
     for index in 0..ctx.files.len() {
-        let loaders = if ctx.files[index].js {
-            created_require_loaders(&ctx.files[index].nodes)
-        } else {
-            HashSet::new()
-        };
+        let loaders = created_require_loaders(&ctx.files[index].nodes);
         for position in 0..ctx.files[index].nodes.len() {
             let node = ctx.files[index].nodes[position];
             let specifier = match node.kind() {
@@ -1775,8 +1784,11 @@ fn imports_external_runtime(ctx: &mut Ctx) -> bool {
                     let require = callee.kind() == SyntaxKind::Identifier
                         && callee.text() == "require"
                         && ctx.files[index].js;
+                    let created_loader =
+                        callee.kind() == SyntaxKind::Identifier && loaders.contains(callee.text());
                     if !dynamic
                         && !require
+                        && !created_loader
                         && !(ctx.files[index].js && module_require_call(callee, &loaders))
                     {
                         continue;

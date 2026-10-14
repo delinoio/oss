@@ -925,9 +925,19 @@ fn module_require_and_created_loader_guard_intrinsics() {
              makeRequire(__filename);\nload(\"patch-slice\");\n",
         ),
         (
+            "bridge.cjs",
+            "const mod = require(\"node:module\");\nconst load = \
+             mod.createRequire(__filename);\nload(\"patch-slice\");\n",
+        ),
+        (
             "bridge.mjs",
             "import { createRequire as makeRequire } from \"node:module\";\nconst load = \
              makeRequire(import.meta.url);\nload(\"patch-slice\");\n",
+        ),
+        (
+            "bridge.ts",
+            "// @ts-ignore\nimport { createRequire as makeRequire } from \"node:module\";\nconst \
+             load = makeRequire(import.meta.url);\nload(\"patch-slice\");\n",
         ),
         (
             "bridge.mjs",
