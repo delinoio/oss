@@ -98,6 +98,30 @@ The form retains a 1040px settings column, 720px login width, 40px controls,
 status announcements and name focus. Leaving clears display/timer/callback
 authority without canceling an accepted server operation.
 
+Device verification open lifecycle (renderer and native host must agree on
+every cell). `grok-device-authorization-open` is stateless and binds no
+listener, but every admitted dispatch owns a per-opening cancellation flag that
+the native host registers under the same lock that Dispose, window close,
+`stop` and revocation exhaustion hold. Admission therefore either refuses a
+retired scope, a stale epoch or a stopped host, or registers a dispatch that the
+following retirement cancels; the dispatcher checks that flag immediately before
+it starts the browser process and while it waits for it. The flag is never the
+host-wide stop flag, and an unrelated opening or window is never cancelled.
+
+| Server stage | Retry closure               | Verification open                                                  | Leave (Back, unmount, abort) / terminal state                                                     |
+| ------------ | --------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| PREPARING    | none                        | hidden                                                             | no native call unless an open was requested                                                       |
+| WAITING      | none                        | enabled; one click opens once                                      | native Dispose only if an open was requested                                                      |
+| WAITING      | held (uncertain cancel)     | disabled; Cancel disabled; only Retry replays the original request | retry dropped on terminal; Dispose only if an open was requested                                  |
+| WAITING      | none, open pending          | busy; no second dispatch                                           | native Dispose retires the pending dispatch; its late failure is not shown after a terminal state |
+| WAITING      | none, cancellation accepted | hidden; code stays copyable                                        | Dispose only if an open was requested                                                             |
+| terminal     | dropped                     | hidden                                                             | settled; Dispose only if an open was requested                                                    |
+
+A healthy status read in any stage recovers only the polling notice; notices
+from explicit actions and one-shot native steps stay until the user acts again.
+An auxiliary open or reopen never consumes the retry closure of a replayable
+mutation (account creation, login request, cancellation, naming).
+
 Quota/reset credit/pricing, enterprise SSO, external identity providers, imported
 user login, account switching, cross-Worker resume, Fork, Sidechat and manual
 compaction are excluded.

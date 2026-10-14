@@ -233,6 +233,9 @@ interface Pending {
   bound: boolean;
   callbackDispatched: boolean;
   disposed: boolean;
+  // A device verification open was requested, so the native host may hold an
+  // admitted dispatch for this opening that only a native Dispose can retire.
+  deviceOpened: boolean;
   canceling: boolean;
   polling: boolean;
   busy: boolean;
@@ -261,6 +264,18 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
   const update = (p: Pending, change: Partial<View>) => {
     if (live(p)) setView((current) => current && { ...current, ...change });
   };
+  // A browser login owns a native receiver for its whole opening. A device
+  // login owns native state only once the user asked to open the verification
+  // page: that admitted dispatch may still be pending, and only disposing the
+  // opening retires it before a browser starts.
+  const nativeOwned = (p: Pending) =>
+    p.method === GrokLoginMethod.Browser || p.deviceOpened;
+  const disposeNative = (p: Pending) => {
+    if (native && nativeOwned(p))
+      void native(p.opening, OAuthNativeAction.Dispose, "", "", "").catch(
+        () => undefined,
+      );
+  };
   // Disposal clears display, timer and callback authority only. It never
   // cancels an operation the server already accepted.
   const dispose = (p: Pending) => {
@@ -270,22 +285,14 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
     p.userCode = "";
     if (p.copyTimer) clearTimeout(p.copyTimer);
     p.copyTimer = undefined;
-    // A device login never opened a native receiver, so there is nothing to
-    // dispose natively.
-    if (native && p.method === GrokLoginMethod.Browser)
-      void native(p.opening, OAuthNativeAction.Dispose, "", "", "").catch(
-        () => undefined,
-      );
+    disposeNative(p);
   };
   const finish = (p: Pending) => {
     p.terminal = true;
     p.retry = undefined;
     p.url = "";
     p.userCode = "";
-    if (native && p.method === GrokLoginMethod.Browser)
-      void native(p.opening, OAuthNativeAction.Dispose, "", "", "").catch(
-        () => undefined,
-      );
+    disposeNative(p);
   };
   const leave = () => {
     const p = pending.current;
@@ -364,7 +371,9 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
     try {
       await action();
     } catch (error) {
-      if (live(p)) {
+      // A settled login makes an auxiliary open moot, so its late failure is
+      // not worth a notice on the terminal screen.
+      if (live(p) && (replay || !p.terminal)) {
         const uncertain = [
           FailureCode.Unavailable,
           FailureCode.ServerUnavailable,
@@ -400,6 +409,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
       bound: false,
       callbackDispatched: false,
       disposed: false,
+      deviceOpened: false,
       canceling: false,
       polling: false,
       busy: false,
@@ -688,9 +698,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
   // available once the login settled, while a replayable mutation is waiting
   // for its explicit retry, or after a cancellation was accepted.
   const auxiliary = (p: Pending | undefined): p is Pending =>
-    Boolean(
-      p && live(p) && !p.terminal && !p.canceling && !p.retry && !p.busy,
-    );
+    Boolean(p && live(p) && !p.terminal && !p.canceling && !p.retry && !p.busy);
   const reopen = () => {
     const p = pending.current;
     if (!auxiliary(p) || !p.url || !native) return;
@@ -752,6 +760,9 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
     )
       return;
     const url = p.url;
+    // Marked before the native call so every exit path disposes the opening
+    // and retires a dispatch that is admitted but not yet finished.
+    p.deviceOpened = true;
     void run(
       p,
       async () => {

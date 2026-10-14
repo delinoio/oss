@@ -179,10 +179,36 @@ impl Drop for Attempt {
         }
     }
 }
+// One admitted Grok device verification dispatch. It owns a cancellation flag
+// that only retirement of its own scope (Dispose), its window (close), or the
+// whole host (stop/exhaustion) can set, so a dispatch that was admitted just
+// before a Settings screen closed still observes that closure.
+struct DeviceOpening {
+    scope: OAuthScope,
+    cancel: Arc<AtomicBool>,
+}
+// Unregisters an admitted device opening when its dispatch settles, whether the
+// opener succeeded, failed or panicked.
+struct DeviceOpeningGuard<'a> {
+    host: &'a OAuthHost,
+    cancel: Arc<AtomicBool>,
+}
+impl Drop for DeviceOpeningGuard<'_> {
+    fn drop(&mut self) {
+        self.host
+            .device_openings
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .retain(|opening| !Arc::ptr_eq(&opening.cancel, &self.cancel));
+    }
+}
 #[derive(Default)]
 pub struct OAuthHost {
     disposed: Mutex<std::collections::BTreeSet<OAuthScope>>,
     attempts: Mutex<BTreeMap<String, Attempt>>,
+    // Lock order: `attempts` is always taken before `device_openings`, and
+    // `device_openings` is never held while taking another lock.
+    device_openings: Mutex<Vec<DeviceOpening>>,
     epochs: Mutex<BTreeMap<String, u64>>,
     stopped: AtomicBool,
     // Remote Grok login needs the Go server to validate and forward the captured
@@ -195,8 +221,23 @@ pub struct OAuthHost {
 }
 
 impl OAuthHost {
+    // Cancels every admitted device opening selected by `retired`. A poisoned
+    // registry must still deliver cancellation, so poisoning is ignored.
+    fn cancel_device_openings(&self, retired: impl Fn(&OAuthScope) -> bool) {
+        for opening in self
+            .device_openings
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .iter()
+            .filter(|opening| retired(&opening.scope))
+        {
+            opening.cancel.store(true, Ordering::Release);
+        }
+    }
+
     fn exhausted(&self, attempts: &mut BTreeMap<String, Attempt>) -> NativeFailure {
         self.stopped.store(true, Ordering::Release);
+        self.cancel_device_openings(|_| true);
         // Retained revocations are never evicted. Stop and join every original
         // listener so capacity failure cannot leave active callback authority.
         attempts.clear();
@@ -248,6 +289,9 @@ impl OAuthHost {
         let next = epoch
             .checked_add(1)
             .ok_or_else(|| self.exhausted(&mut attempts))?;
+        // The epoch advances under the attempts lock, so a device opening is
+        // either already registered here or is refused as a stale epoch.
+        self.cancel_device_openings(|scope| scope.window == window);
         *self
             .epochs
             .lock()
@@ -265,6 +309,7 @@ impl OAuthHost {
         if let Ok(mut attempts) = self.attempts.lock() {
             attempts.clear();
         }
+        self.cancel_device_openings(|_| true);
     }
 
     pub fn control(
@@ -388,8 +433,27 @@ impl OAuthHost {
             }
             validate_grok_device_authorization(authorization)?;
             let url = Zeroizing::new(authorization.to_string());
+            // The attempts lock is held from the disposed check through
+            // registration, and Dispose, window close and stop hold it while
+            // retiring a scope. Every dispatch is therefore either refused
+            // above or registered here and cancelled by the retirement that
+            // follows it.
+            let cancel = Arc::new(AtomicBool::new(false));
+            self.device_openings
+                .lock()
+                .map_err(|_| NativeFailure::Busy)?
+                .push(DeviceOpening {
+                    scope,
+                    cancel: Arc::clone(&cancel),
+                });
+            let _guard = DeviceOpeningGuard {
+                host: self,
+                cancel: Arc::clone(&cancel),
+            };
             drop(attempts);
-            opener(&url, &self.stopped)?;
+            // The dispatcher checks this per-opening flag immediately before it
+            // starts the browser process and while it waits for it.
+            opener(&url, &cancel)?;
             return Ok(OAuthResult::default());
         }
         if matches!(
@@ -579,6 +643,9 @@ impl OAuthHost {
         // Disposal is idempotent only for the exact old generation. A late
         // Settings cleanup cannot close a replacement listener.
         if action == OAuthAction::Dispose {
+            // Retire admitted device dispatches first so a disposal that fails
+            // on capacity still cancels them.
+            self.cancel_device_openings(|opening| *opening == scope);
             self.remember_disposed(scope.clone(), &mut attempts)?;
             if let Some(original) = attempts.get(&scope.window)
                 && original.scope == scope
@@ -3351,6 +3418,211 @@ mod grok_subscription_tests {
             ),
             Err(NativeFailure::Stopped)
         ));
+    }
+
+    // Device opener lifecycle (Rust half of the renderer state table):
+    //   admit          -> refused when stopped, stale epoch, disposed or
+    // invalid;                     otherwise registered with a per-opening
+    // cancel flag   Dispose(scope) -> sets the flag of every opening in
+    // that scope only   close_window   -> sets the flag of every opening in
+    // that window only   stop/exhausted -> sets every flag
+    //   settle         -> unregisters on success and on failure
+    fn open_device(
+        host: &OAuthHost,
+        scope: &OAuthScope,
+        opener: impl FnOnce(&str, &AtomicBool) -> Result<(), NativeFailure>,
+    ) -> Result<OAuthResult, NativeFailure> {
+        host.control_with_browser(
+            scope.clone(),
+            OAuthAction::GrokDeviceAuthorizationOpen,
+            "",
+            &uuid::Uuid::now_v7().to_string(),
+            DEVICE_WITH_CODE,
+            true,
+            opener,
+        )
+    }
+    fn registered_device_openings(host: &OAuthHost) -> usize {
+        host.device_openings.lock().unwrap().len()
+    }
+
+    #[test]
+    fn device_open_receives_its_own_flag_and_dispose_sets_it_while_dispatching() {
+        let host = OAuthHost::default();
+        let scope = scope();
+        let sibling = OAuthScope {
+            opening: uuid::Uuid::now_v7().to_string(),
+            ..scope.clone()
+        };
+        open_device(&host, &scope, |_, cancel| {
+            assert!(!cancel.load(Ordering::Acquire));
+            assert_eq!(registered_device_openings(&host), 1);
+            // A different opening in the same window is not retired.
+            host.control(sibling.clone(), OAuthAction::Dispose, "", "", "")
+                .unwrap();
+            assert!(!cancel.load(Ordering::Acquire));
+            // The Settings screen of this opening closes mid-dispatch.
+            host.control(scope.clone(), OAuthAction::Dispose, "", "", "")
+                .unwrap();
+            assert!(cancel.load(Ordering::Acquire));
+            assert!(!host.stopped.load(Ordering::Acquire));
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(registered_device_openings(&host), 0);
+        // The retired scope refuses the next admission without dispatching.
+        assert!(matches!(
+            open_device(&host, &scope, |_, _| panic!("retired opening dispatched")),
+            Err(NativeFailure::Stopped)
+        ));
+        assert_eq!(registered_device_openings(&host), 0);
+    }
+
+    #[test]
+    fn dispose_cancels_every_concurrent_device_opening_of_the_scope() {
+        let host = OAuthHost::default();
+        let scope = scope();
+        open_device(&host, &scope, |_, first| {
+            open_device(&host, &scope, |_, second| {
+                assert_eq!(registered_device_openings(&host), 2);
+                host.control(scope.clone(), OAuthAction::Dispose, "", "", "")
+                    .unwrap();
+                assert!(first.load(Ordering::Acquire));
+                assert!(second.load(Ordering::Acquire));
+                Ok(())
+            })
+            .map(|_| ())
+        })
+        .unwrap();
+        assert_eq!(registered_device_openings(&host), 0);
+    }
+
+    #[test]
+    fn an_admitted_dispatch_observes_dispose_that_lands_before_it_starts_a_browser() {
+        let host = Arc::new(OAuthHost::default());
+        let scope = scope();
+        let (started_tx, started_rx) = std::sync::mpsc::channel::<()>();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let worker_host = Arc::clone(&host);
+        let worker_scope = scope.clone();
+        let launched = Arc::new(AtomicBool::new(false));
+        let worker_launched = Arc::clone(&launched);
+        let worker = thread::spawn(move || {
+            // Models the dispatcher: admitted, then checks its flag right
+            // before it would start the browser process.
+            open_device(&worker_host, &worker_scope, move |_, cancel| {
+                started_tx.send(()).unwrap();
+                release_rx.recv().unwrap();
+                if cancel.load(Ordering::Acquire) {
+                    return Err(NativeFailure::Stopped);
+                }
+                worker_launched.store(true, Ordering::SeqCst);
+                Ok(())
+            })
+        });
+        started_rx.recv().unwrap();
+        host.control(scope.clone(), OAuthAction::Dispose, "", "", "")
+            .unwrap();
+        release_tx.send(()).unwrap();
+        assert!(matches!(
+            worker.join().unwrap(),
+            Err(NativeFailure::Stopped)
+        ));
+        assert!(!launched.load(Ordering::SeqCst));
+        assert_eq!(registered_device_openings(&host), 0);
+    }
+
+    #[test]
+    fn window_close_cancels_only_device_openings_of_that_window_and_refuses_stale_epochs() {
+        let host = OAuthHost::default();
+        let scope = scope();
+        let other_window = OAuthScope {
+            window: "secondary".into(),
+            ..scope.clone()
+        };
+        open_device(&host, &other_window, |_, secondary| {
+            open_device(&host, &scope, |_, main| {
+                host.close_window("secondary").unwrap();
+                assert!(secondary.load(Ordering::Acquire));
+                assert!(!main.load(Ordering::Acquire));
+                host.close_window("main").unwrap();
+                assert!(main.load(Ordering::Acquire));
+                Ok(())
+            })
+            .map(|_| ())
+        })
+        .unwrap();
+        assert_eq!(registered_device_openings(&host), 0);
+        // The closed window's old epoch can no longer admit a dispatch.
+        assert!(matches!(
+            open_device(&host, &scope, |_, _| panic!("stale epoch dispatched")),
+            Err(NativeFailure::Stopped)
+        ));
+        assert_eq!(registered_device_openings(&host), 0);
+    }
+
+    #[test]
+    fn host_stop_and_revocation_exhaustion_cancel_every_device_opening() {
+        let host = OAuthHost::default();
+        open_device(&host, &scope(), |_, cancel| {
+            host.stop();
+            assert!(cancel.load(Ordering::Acquire));
+            Ok(())
+        })
+        .unwrap();
+        assert!(matches!(
+            open_device(&host, &scope(), |_, _| panic!("stopped host dispatched")),
+            Err(NativeFailure::Stopped)
+        ));
+
+        let host = OAuthHost::default();
+        {
+            let mut disposed = host.disposed.lock().unwrap();
+            for _ in 0..4096 {
+                disposed.insert(OAuthScope {
+                    opening: uuid::Uuid::now_v7().to_string(),
+                    ..scope()
+                });
+            }
+        }
+        let admitted = scope();
+        // Pre-seed capacity so the admitted opening itself is not in the set.
+        open_device(&host, &admitted, |_, cancel| {
+            let overflow = OAuthScope {
+                opening: uuid::Uuid::now_v7().to_string(),
+                ..scope()
+            };
+            // Capacity exhaustion closes admission for the whole host and
+            // retires every admitted dispatch, even one in another scope.
+            assert!(matches!(
+                host.control(overflow, OAuthAction::Dispose, "", "", ""),
+                Err(NativeFailure::Stopped)
+            ));
+            assert!(cancel.load(Ordering::Acquire));
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(registered_device_openings(&host), 0);
+    }
+
+    #[test]
+    fn a_failed_device_dispatch_unregisters_and_leaves_the_scope_usable() {
+        let host = OAuthHost::default();
+        let scope = scope();
+        assert!(matches!(
+            open_device(&host, &scope, |_, _| Err(NativeFailure::TimedOut)),
+            Err(NativeFailure::TimedOut)
+        ));
+        assert_eq!(registered_device_openings(&host), 0);
+        let opened = AtomicBool::new(false);
+        open_device(&host, &scope, |_, _| {
+            opened.store(true, Ordering::SeqCst);
+            Ok(())
+        })
+        .unwrap();
+        assert!(opened.load(Ordering::SeqCst));
+        assert_eq!(registered_device_openings(&host), 0);
+        assert!(host.disposed.lock().unwrap().is_empty());
     }
 
     #[test]

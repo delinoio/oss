@@ -42,6 +42,11 @@ pub(crate) fn dispatch(url: &str, stopped: &AtomicBool) -> std::result::Result<(
         .stdout(Stdio::null())
         .stderr(Stdio::null());
     apply_environment(&mut command, false);
+    // Re-check immediately before the process starts: a retirement that landed
+    // while the command was being built must still refuse this dispatch.
+    if stopped.load(Ordering::Acquire) {
+        return Err(NativeFailure::Stopped);
+    }
     let mut child = command.spawn().map_err(|_| NativeFailure::SidecarFailed)?;
     let until = Instant::now() + Duration::from_secs(5);
     loop {

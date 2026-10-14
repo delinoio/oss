@@ -1289,6 +1289,19 @@ it("offers Use a device code beside Add account only with capability 39 and star
 const openName = () => copy("grok-subscription.device.openVerification");
 const nativeOpen = (f: ReturnType<typeof fixture>) =>
   actions(f, OAuthNativeAction.GrokDeviceAuthorizationOpen);
+function holdNextNativeOpen(f: ReturnType<typeof fixture>) {
+  let settle: (outcome: "resolve" | "reject") => void = () => undefined;
+  f.native.mockImplementationOnce(
+    () =>
+      new Promise((resolve, reject) => {
+        settle = (outcome) =>
+          outcome === "resolve"
+            ? resolve({ generation: "" })
+            : reject("browser-launch-failed");
+      }),
+  );
+  return (outcome: "resolve" | "reject" = "resolve") => settle(outcome);
+}
 const cancelRequests = (f: ReturnType<typeof fixture>) =>
   f.cancel.mock.calls as unknown as Array<
     [{ mutation: { requestId: string } }]
@@ -1338,8 +1351,9 @@ it("keeps the held cancellation retry when the verification page cannot be opene
   await screen.findByText(copy("grok-subscription.problem.canceling"));
   // Once the cancellation is accepted the verification page is not offered.
   expect(screen.queryByRole("button", { name: openName() })).toBeNull();
-  expect(screen.queryByRole("button", { name: copy("grok-subscription.cancel") }))
-    .toBeNull();
+  expect(
+    screen.queryByRole("button", { name: copy("grok-subscription.cancel") }),
+  ).toBeNull();
   expect(
     screen.queryByRole("button", {
       name: copy("grok-subscription.retryOriginal"),
@@ -1398,6 +1412,154 @@ it("drops the held retry and every opener when a terminal state arrives", async 
   expect(nativeActions(f)).toEqual([]);
 }, 20000);
 
+it("recovers the polling notice on a healthy preparing read and keeps other notices", async () => {
+  const f = deviceFixture();
+  await startDevice(f);
+  f.setState(State.PREPARING);
+  f.progress.mockImplementationOnce(() => {
+    throw new ConnectError("Fixture status failure", Code.Unavailable);
+  });
+  const notice = copy("grok-subscription.problem.statusUnconfirmed");
+  await screen.findByText(notice, {}, { timeout: 3000 });
+  // Later successful reads still report PREPARING, which has no early path to
+  // a presentation update, yet they must recover the notice.
+  await waitFor(() => expect(screen.queryByText(notice)).toBeNull(), {
+    timeout: 4000,
+  });
+  expect(
+    screen.getByText(copy("grok-subscription.status.preparing")),
+  ).toBeTruthy();
+  expect(screen.queryByRole("button", { name: openName() })).toBeNull();
+
+  // A one-shot opener failure is not a polling notice and survives healthy
+  // preparing reads.
+  f.setState(State.WAITING);
+  await screen.findByRole("button", { name: openName() }, { timeout: 3000 });
+  f.native.mockRejectedValueOnce("browser-launch-failed");
+  openVerification();
+  const failure = copy("grok-subscription.problem.verificationOpenFailed");
+  await screen.findByText(failure);
+  f.setState(State.PREPARING);
+  await pollTwice(f);
+  expect(screen.getByText(failure)).toBeTruthy();
+}, 30000);
+
+it("recovers the polling notice on a healthy read that reports an accepted cancellation", async () => {
+  const f = deviceFixture();
+  await startDevice(f);
+  f.progress.mockImplementationOnce(() => {
+    throw new ConnectError("Fixture status failure", Code.Unavailable);
+  });
+  const notice = copy("grok-subscription.problem.statusUnconfirmed");
+  await screen.findByText(notice, {}, { timeout: 3000 });
+  f.progress.mockImplementation(() => ({
+    state: State.WAITING,
+    url: DEVICE_URL,
+    userCode: DEVICE_CODE,
+    suggestedName: "",
+    generation: f.generation,
+    canceled: true,
+  }));
+  await waitFor(() => expect(screen.queryByText(notice)).toBeNull(), {
+    timeout: 4000,
+  });
+  // The server already canceled: the page is not offered any more.
+  expect(screen.queryByRole("button", { name: openName() })).toBeNull();
+  expect(nativeOpen(f)).toHaveLength(0);
+}, 20000);
+
+it("does not touch native state when a never-opened device login is left", async () => {
+  const f = deviceFixture();
+  const view = await startDevice(f);
+  fireEvent.click(
+    screen.getByRole("button", { name: copy("grok-subscription.back") }),
+  );
+  await screen.findByRole("button", { name: "Start Grok device" });
+  expect(nativeActions(f)).toEqual([]);
+  view.unmount();
+  expect(nativeActions(f)).toEqual([]);
+});
+
+it("disposes the opening after a completed open when the screen is left", async () => {
+  const f = deviceFixture();
+  await startDevice(f);
+  openVerification();
+  await waitFor(() => expect(nativeOpen(f)).toHaveLength(1));
+  fireEvent.click(
+    screen.getByRole("button", { name: copy("grok-subscription.back") }),
+  );
+  await screen.findByRole("button", { name: "Start Grok device" });
+  const disposals = actions(f, OAuthNativeAction.Dispose);
+  expect(disposals.length).toBeGreaterThanOrEqual(1);
+  // The same opening scope retires the dispatch the host admitted.
+  for (const call of disposals) expect(call[0]).toBe(nativeOpen(f)[0][0]);
+});
+
+it.each([
+  ["Back", "back"],
+  ["unmount", "unmount"],
+  ["terminal state", "terminal"],
+  ["verified success", "success"],
+] as const)(
+  "retires a pending verification open through the native host on %s",
+  async (_name, how) => {
+    const f = deviceFixture();
+    const view = await startDevice(f);
+    const settle = holdNextNativeOpen(f);
+    openVerification();
+    await waitFor(() => expect(nativeOpen(f)).toHaveLength(1));
+    // While the native call is pending the opener is busy, never duplicated.
+    expect(
+      (screen.getByRole("button", { name: openName() }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: openName() }));
+    expect(nativeOpen(f)).toHaveLength(1);
+    const before = actions(f, OAuthNativeAction.Dispose).length;
+    if (how === "back")
+      fireEvent.click(
+        screen.getByRole("button", { name: copy("grok-subscription.back") }),
+      );
+    else if (how === "unmount") view.unmount();
+    else if (how === "terminal") {
+      f.setState(State.EXPIRED);
+      await screen.findByText(
+        copy("grok-subscription.status.expired"),
+        {},
+        { timeout: 3000 },
+      );
+    } else {
+      f.success();
+      await screen.findByLabelText(
+        copy("grok-subscription.accountName"),
+        {},
+        { timeout: 3000 },
+      );
+    }
+    await waitFor(() =>
+      expect(actions(f, OAuthNativeAction.Dispose).length).toBeGreaterThan(
+        before,
+      ),
+    );
+    for (const call of actions(f, OAuthNativeAction.Dispose))
+      expect(call[0]).toBe(nativeOpen(f)[0][0]);
+    // The late native settlement neither throws nor resurrects any state.
+    await act(async () => {
+      settle("reject");
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(screen.queryByText(DEVICE_CODE)).toBeNull();
+    expect(
+      screen.queryByText(
+        copy("grok-subscription.problem.verificationOpenFailed"),
+      ),
+    ).toBeNull();
+    expect(nativeOpen(f)).toHaveLength(1);
+    expect(externalOpen).not.toHaveBeenCalled();
+  },
+  20000,
+);
+
 it("hides the verification page when the server accepted the cancellation", async () => {
   const f = deviceFixture();
   await startDevice(f);
@@ -1442,57 +1604,3 @@ it("replays the exact original naming request after an uncertain failure on a se
   expect(saves[2][0].mutation.requestId).toBe(saves[1][0].mutation.requestId);
   expect(document(f.current())).toMatchObject({ alias: "Edited Grok" });
 }, 20000);
-it("recovers the polling notice on a healthy preparing read and keeps other notices", async () => {
-  const f = deviceFixture();
-  await startDevice(f);
-  f.setState(State.PREPARING);
-  f.progress.mockImplementationOnce(() => {
-    throw new ConnectError("Fixture status failure", Code.Unavailable);
-  });
-  const notice = copy("grok-subscription.problem.statusUnconfirmed");
-  await screen.findByText(notice, {}, { timeout: 3000 });
-  // Later successful reads still report PREPARING, which has no early path to
-  // a presentation update, yet they must recover the notice.
-  await waitFor(() => expect(screen.queryByText(notice)).toBeNull(), {
-    timeout: 4000,
-  });
-  expect(screen.getByText(copy("grok-subscription.status.preparing"))).toBeTruthy();
-  expect(screen.queryByRole("button", { name: openName() })).toBeNull();
-
-  // A one-shot opener failure is not a polling notice and survives healthy
-  // preparing reads.
-  f.setState(State.WAITING);
-  await screen.findByRole("button", { name: openName() }, { timeout: 3000 });
-  f.native.mockRejectedValueOnce("browser-launch-failed");
-  openVerification();
-  const failure = copy("grok-subscription.problem.verificationOpenFailed");
-  await screen.findByText(failure);
-  f.setState(State.PREPARING);
-  await pollTwice(f);
-  expect(screen.getByText(failure)).toBeTruthy();
-}, 30000);
-
-it("recovers the polling notice on a healthy read that reports an accepted cancellation", async () => {
-  const f = deviceFixture();
-  await startDevice(f);
-  f.progress.mockImplementationOnce(() => {
-    throw new ConnectError("Fixture status failure", Code.Unavailable);
-  });
-  const notice = copy("grok-subscription.problem.statusUnconfirmed");
-  await screen.findByText(notice, {}, { timeout: 3000 });
-  f.progress.mockImplementation(() => ({
-    state: State.WAITING,
-    url: DEVICE_URL,
-    userCode: DEVICE_CODE,
-    suggestedName: "",
-    generation: f.generation,
-    canceled: true,
-  }));
-  await waitFor(() => expect(screen.queryByText(notice)).toBeNull(), {
-    timeout: 4000,
-  });
-  // The server already canceled: the page is not offered any more.
-  expect(screen.queryByRole("button", { name: openName() })).toBeNull();
-  expect(nativeOpen(f)).toHaveLength(0);
-}, 20000);
-
