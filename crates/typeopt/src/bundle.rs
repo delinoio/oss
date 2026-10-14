@@ -1403,16 +1403,15 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize)> {
                 },
                 _ => None,
             };
-            if matches!(name, Some("precache" | "precacheAndRoute")) {
-                if let Some(first) = call.args.first() {
-                    if let Expr::Array(array) = &*first.expr {
-                        for element in array.elems.iter().flatten() {
-                            if let Expr::Object(object) = &*element.expr {
-                                if let Some(entry) = self.entry(object) {
-                                    self.values.push(entry);
-                                }
-                            }
-                        }
+            if matches!(name, Some("precache" | "precacheAndRoute"))
+                && let Some(first) = call.args.first()
+                && let Expr::Array(array) = &*first.expr
+            {
+                for element in array.elems.iter().flatten() {
+                    if let Expr::Object(object) = &*element.expr
+                        && let Some(entry) = self.entry(object)
+                    {
+                        self.values.push(entry);
                     }
                 }
             }
