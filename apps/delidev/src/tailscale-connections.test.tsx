@@ -762,7 +762,7 @@ for (const entry of CAUSES) {
           entry.code === "unsupported" ? Code.Unimplemented : Code.Unavailable,
         ),
     });
-      const heading = await screen.findByText(entry.heading);
+    const heading = await screen.findByText(entry.heading);
     expect(heading.closest("details")).toBeNull();
     // Other causes' guidance and the refused row text never appear.
     expect(
@@ -796,7 +796,7 @@ it("keeps the generic Problem for unproven, unknown or mismatched causes", async
       checkFailure("Original safe message.", "unavailable", "invalid_identity"),
   ]) {
     checkFixture({ failure });
-      await waitFor(() => expect(rowAlert()).not.toBeNull());
+    await waitFor(() => expect(rowAlert()).not.toBeNull());
     expect(
       within(rowAlert()!).getByText("DeliDev could not complete this request."),
     ).toBeTruthy();
