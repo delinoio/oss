@@ -113,3 +113,35 @@ func TestHarnessVersionAllowedUsesSemVerPrecedence(t *testing.T) {
 		}
 	}
 }
+
+func TestGrokSubscriptionVersionAllowedUsesSemVerPrecedence(t *testing.T) {
+	if GrokProtocolVersion != "1.0.41" || GrokSubscriptionBaselineVersion != "1.0.46" {
+		t.Fatalf("unexpected Grok baselines: api=%q subscription=%q", GrokProtocolVersion, GrokSubscriptionBaselineVersion)
+	}
+	cases := []struct {
+		version string
+		want    bool
+	}{
+		{"1.0.45", false},
+		{"1.0.46", true},
+		{"1.0.46+build.5", true},
+		{"1.0.47", true},
+		{"1.0.52", true},
+		{"1.1.0", true},
+		{"2.0.0", true},
+		{"1.0.47-rc.1", true},
+		{"1.0.46-rc.1", false},
+		{"1.0.41", false},
+		{"", false},
+		{"v1.0.46", false},
+		{"1.0", false},
+		{"01.0.46", false},
+		{"1.0.046", false},
+		{"not-a-version", false},
+	}
+	for _, c := range cases {
+		if got := GrokSubscriptionVersionAllowed(c.version); got != c.want {
+			t.Errorf("GrokSubscriptionVersionAllowed(%q) = %v, want %v", c.version, got, c.want)
+		}
+	}
+}

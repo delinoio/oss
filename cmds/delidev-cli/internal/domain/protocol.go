@@ -14,11 +14,18 @@ const (
 	CodexMinimumVersion = "0.151.0"
 	// CodexProtocolVersion retains the historical fixture baseline. Runtime
 	// admission uses CodexVersionAllowed and records the installed version.
-	CodexProtocolVersion    = CodexMinimumVersion
-	ClaudeProtocolVersion   = "2.1.236"
+	CodexProtocolVersion  = CodexMinimumVersion
+	ClaudeProtocolVersion = "2.1.236"
+	// GrokProtocolVersion is the minimum SemVer baseline for the existing Grok
+	// Build API and history profiles. It is not an exact pin.
 	GrokProtocolVersion     = "1.0.41"
 	OpenCodeProtocolVersion = "1.18.32"
 )
+
+// GrokSubscriptionBaselineVersion is the minimum Grok Build SemVer for the
+// planned subscription profile. It is a declared baseline only; newer releases
+// are validated natively and never rejected by number alone.
+const GrokSubscriptionBaselineVersion = "1.0.46"
 
 // CodexVersionAllowed permits an actual native attempt, not inferred protocol
 // readiness. Every accepted installation still requires its native handshake.
@@ -36,6 +43,14 @@ func VersionAtLeast(version, baseline string) bool {
 	}
 	v, b := "v"+version, "v"+baseline
 	return semver.IsValid(v) && semver.IsValid(b) && semver.Compare(v, b) >= 0
+}
+
+// GrokSubscriptionVersionAllowed reports whether version is a valid SemVer at
+// or above GrokSubscriptionBaselineVersion. It is intentionally not wired into
+// any capability, discovery or execution path; the subscription flow adopts it
+// only together with native validation of the actual account profile.
+func GrokSubscriptionVersionAllowed(version string) bool {
+	return VersionAtLeast(version, GrokSubscriptionBaselineVersion)
 }
 
 // HarnessVersionAllowed is the explicit discovery and legacy (execution input
