@@ -29,7 +29,12 @@ type sessionDeletionProof struct {
 	// IdentityInventory marks a proof whose removal start retained an identity
 	// inventory. A started proof without it was written by an earlier release.
 	IdentityInventory bool `json:"identity_inventory,omitempty"`
-	Complete          bool `json:"complete"`
+	// WorkspaceAbsenceAllowed records the absence policy that was derived from the
+	// validated job journals by the attempt that started removal. A retry skips
+	// journal validation, so it restores this value instead of re-deriving a
+	// permissive default. A started proof without it fails closed (strict).
+	WorkspaceAbsenceAllowed bool `json:"workspace_absence_allowed,omitempty"`
+	Complete                bool `json:"complete"`
 }
 
 // sessionDeletionPath is the session-level admission tombstone. Its existence
@@ -186,6 +191,16 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 	if sessionDeletionAfterCaptureHook != nil {
 		sessionDeletionAfterCaptureHook()
 	}
+	allowAbsentWorkspace := w.Fork == nil
+	if proof.RemovalStarted {
+		// A retry does not revalidate the job journals that justified an absent
+		// workspace. Only the policy persisted by the attempt that started removal
+		// may relax it; a proof from an earlier release is strict (fail closed).
+		allowAbsentWorkspace = allowAbsentWorkspace && proof.WorkspaceAbsenceAllowed
+		if !allowAbsentWorkspace {
+			config.Logger.InfoContext(ctx, "session_deletion_workspace_absence_strict", "deletion_id", w.DeletionID, "persisted_policy", proof.WorkspaceAbsenceAllowed)
+		}
+	}
 	startRemoval := func() error {
 		if proof.RemovalStarted {
 			return nil
@@ -195,9 +210,9 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 		}
 		proof.RemovalStarted = true
 		proof.IdentityInventory = true
+		proof.WorkspaceAbsenceAllowed = allowAbsentWorkspace
 		return writeJSON(path, proof)
 	}
-	allowAbsentWorkspace := w.Fork == nil
 	if w.Fork != nil && !proof.RemovalStarted {
 		if _, err := executionCheckpointPath(root, w.Fork.RuntimeID); err != nil {
 			return proof, domain.SessionDeletionPending()

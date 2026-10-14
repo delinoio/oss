@@ -310,7 +310,7 @@ both primary and auxiliary lanes, reconciles exact retained process indexes,
 and acquires the same workspace lock as preparation/execution/reads. Missing,
 foreign, busy or uncertain evidence remains pending. A missing workspace without
 original removal proof is not completion, except for positively failed preparations
-that never produced a workspace. Worker attempts are bounded to two minutes.
+that never produced a workspace. Such a failed-only cleanup finishes its own obligation but publishes no session-scoped workspace-removal evidence; only removal of an owned workspace (retained manifest) publishes it for later device obligations. Worker attempts are bounded to two minutes.
 
 Worker retained deletion state is bound to each original device obligation, not
 only to the session. The Worker keeps `session-deletions/<session>.json` solely
@@ -327,13 +327,42 @@ stays pending and is never copied to another device. The session-keyed workspace
 proof migrates together with its session proof, before the version-2 tombstone
 replaces the legacy scope, so an already completed legacy proof (which never
 reaches workspace cleanup) cannot strand another device obligation behind its
-digest. A migrated proof that recorded the removal also publishes the shared
-removal evidence below.
+digest. A migrated proof that recorded the removal and retained its original
+manifest also publishes the shared removal evidence below; a removed legacy proof
+without a manifest is ambiguous with a failed-only cleanup and publishes nothing.
 
 The managed `workspaces/<session>` directory is shared by every device obligation
 of one session and machine. When an obligation removes it, it first publishes
 content-free evidence at `session-deletions/<session>-workspace-removed.json`
-(`version`, server, session, machine, `removed`; no manifest, path or device).
+(`version` 2, server, session, machine, `removed`; no manifest, path or device).
+Version-1 evidence written by older Workers is ignored, because it may have been
+published for an absent failed-only workspace; the next genuine removal replaces it.
+This is a deliberate fail-closed trade-off: a pre-upgrade genuine removal and a
+pre-upgrade failed-only cleanup leave identical durable state (version-1 evidence
+and a manifest-less proof), so no discriminator exists. A strict obligation that
+depended only on such evidence stays pending rather than risk removing copies
+without original removal proof.
+
+Workspace cleanup also distrusts any manifest-less version-1 obligation workspace
+proof, removed or not, and re-derives it from current evidence under the caller's
+absence policy. The Worker derives that policy (absent workspace allowed only for
+positively failed preparations) from the validated job journals, which a retry
+does not re-read. The attempt that starts removal therefore persists it as
+`workspace_absence_allowed` in the obligation proof, and a retry restores that
+value. A started proof without the field, written by an earlier release, is
+strict: it never relaxes to the absent-workspace policy, so copies are removed only
+with current removal proof (a manifest, a stored snapshot manifest or version-2
+shared evidence) and otherwise stay pending.
+
+The same rule applies to the obligation-scoped workspace proof: it is written at
+version 2, and a manifest-less removed version-1 proof (which an older Worker also
+wrote after adopting version-1 shared evidence for an absent failed-only workspace,
+before removing copies) is never trusted. The proof is re-derived from current
+evidence, so such an obligation stays pending until version-2 evidence or a
+retained manifest exists. When a retained removed proof still carries its manifest
+(a crash before copy removal), recovery republishes version-2 shared evidence from
+that manifest so later strict obligations are not stranded by version-1 evidence.
+
 A later obligation whose own workspace is absent and has no stored snapshot
 manifest, and whose jobs forbid an absent workspace, adopts that removal only when
 the evidence matches its exact server, session and machine; missing, unreadable or

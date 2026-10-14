@@ -27,10 +27,12 @@ function List({
   read,
   active = true,
   initialRead = true,
+  showProgress = false,
 }: {
   read: PaginationReader<Row>;
   active?: boolean;
   initialRead?: boolean;
+  showProgress?: boolean;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const reader = useMemo(() => read, [read]);
@@ -48,6 +50,7 @@ function List({
         label="items"
         root={root}
         active={active}
+        showProgress={showProgress}
       />
     </div>
   );
@@ -283,4 +286,56 @@ it("applies a marker invalidation that arrived during an active read once that r
   });
   await waitFor(() => expect(screen.getByText("row-2")).toBeTruthy());
   expect(read).toHaveBeenCalledTimes(2);
+});
+
+it.each([SupportedLanguage.English, SupportedLanguage.Korean])(
+  "opt-in progress shows guidance only while another page exists and a distinct exhausted state afterward (%s)",
+  async (language) => {
+    await i18n.changeLanguage(language);
+    const guidance = i18n.t("pagination.moreAvailable", { label: "items" }),
+      exhausted = i18n.t("pagination.exhausted", { label: "items" });
+    let finish!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const read = vi.fn<PaginationReader<Row>>(async (token) => {
+      if (token === "second") await gate;
+      return {
+        rows: [{ id: token || "first", revision: 1n }],
+        nextPageToken: token === "second" ? "" : "second",
+      };
+    });
+    renderValue(<List read={read} showProgress />);
+    await screen.findByText("first");
+    // A next page exists, so only guidance and the fallback control appear.
+    expect(screen.queryByText(guidance)).not.toBeNull();
+    expect(screen.queryByText(exhausted)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /items/ }));
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+    // The pending read neither offers guidance nor claims exhaustion.
+    expect(screen.queryByText(guidance)).toBeNull();
+    expect(screen.queryByText(exhausted)).toBeNull();
+    await act(async () => {
+      finish();
+      await gate;
+    });
+    await screen.findByText(exhausted);
+    expect(screen.queryByText(guidance)).toBeNull();
+    expect(screen.queryByRole("button", { name: /items/ })).toBeNull();
+  },
+);
+it("opt-in progress never claims exhaustion after a failed or empty-token-less read", async () => {
+  await i18n.changeLanguage(SupportedLanguage.English);
+  const read = vi.fn<PaginationReader<Row>>(async (token) => {
+    if (token === "second") throw new ConnectError("failed", Code.Unavailable);
+    return { rows: [{ id: "first", revision: 1n }], nextPageToken: "second" };
+  });
+  renderValue(<List read={read} showProgress />);
+  await screen.findByText("first");
+  fireEvent.click(screen.getByRole("button", { name: /Load more items/ }));
+  await screen.findByRole("button", { name: "Retry" });
+  expect(
+    screen.queryByText("No further page of items is available."),
+  ).toBeNull();
+  expect(screen.queryByText("Scroll to load more items.")).toBeNull();
 });

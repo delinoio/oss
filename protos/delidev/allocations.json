@@ -13525,6 +13525,13 @@
       "number": 102
     },
     {
+      "issue": 3666,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_PULL_REQUEST_PAGING_50_V1",
+      "number": 103
+    },
+    {
       "issue": 2397,
       "kind": "enum",
       "declaration": "WorkerCapability",

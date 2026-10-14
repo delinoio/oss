@@ -299,6 +299,32 @@ test("Go runner changes select validation without adding native Go runners to PR
   }
 });
 
+test("Go report runner changes select native Go tests without widening other jobs", () => {
+  for (const event of [Event.PullRequest, Event.Push]) {
+    for (const path of [
+      "scripts/ci/go-test-report.mjs",
+      "scripts/ci/go-test-report.test.mjs",
+    ]) {
+      const plan = planJobs(event, [path]);
+      assert.deepEqual(selected(event, [path]), ["go-test", "source-format"]);
+      assert.ok(Object.values(plan.forced).every((forced) => !forced));
+      assert.deepEqual(
+        matricesForEvent(event).goTestMatrix.include,
+        nativeMatrices[
+          event === Event.PullRequest ? "go-test-pr" : "go-test"
+        ].filter((row) => !row.os.startsWith("macos")),
+      );
+    }
+    assert.deepEqual(selected(event, ["docs/project-with-watch.md"]), [
+      "source-format",
+    ]);
+    assert.equal(
+      planJobs(event, ["scripts/ci/go-test.mjs"]).jobs["go-test"],
+      true,
+    );
+  }
+});
+
 test("root Rust toolchain changes select Forge validation and rendering", () => {
   for (const event of [Event.PullRequest, Event.Push]) {
     for (const path of ["rust-toolchain", "rust-toolchain.toml"]) {
@@ -434,7 +460,7 @@ test("Git LFS attribute changes force every eligible job", () => {
   }
 });
 
-test("pnport installer changes select four-host native verification on main", () => {
+test("pnport installer changes select Linux native verification on main", () => {
   for (const installer of [
     "scripts/install/pnport.sh",
     "scripts/install/pnport.ps1",
@@ -450,6 +476,50 @@ test("pnport installer changes select four-host native verification on main", ()
       installer,
     );
   }
+});
+
+test("pnport native checks include Cargo and Node configuration on affected main pushes", () => {
+  for (const event of Object.values(Event)) {
+    const matrix = matricesForEvent(event).pnportMatrix.include;
+    assert.deepEqual(
+      matrix.map(({ suffix }) => suffix),
+      ["linux-x64-gnu", "linux-arm64-gnu"],
+      event,
+    );
+    for (const path of [".cargo/config.toml", ".nvmrc"]) {
+      const needs = results(event, [path]);
+      const expected = event === Event.Push;
+      assert.equal(
+        planJobs(event, [path]).jobs["pnport-native"],
+        expected,
+        `${event}: ${path}`,
+      );
+      assert.equal(
+        needs["pnport-native"].result,
+        expected ? "success" : "skipped",
+        `${event}: ${path}`,
+      );
+      assert.equal(validateResults(needs), true, `${event}: ${path}`);
+      for (const result of expected
+        ? ["failure", "cancelled", "skipped", undefined]
+        : ["success", "failure", "cancelled", undefined]) {
+        needs["pnport-native"].result = result;
+        assert.throws(
+          () => validateResults(needs),
+          /pnport-native/u,
+          `${event}: ${path}: ${result}`,
+        );
+      }
+    }
+  }
+  assert.equal(
+    planJobs(Event.Push, ["docs/project-with-watch.md"]).jobs["pnport-native"],
+    false,
+  );
+  assert.equal(
+    planJobs(Event.Push, ["crates/pnport/src/main.rs"]).jobs["pnport-native"],
+    true,
+  );
 });
 
 test("main selects affected non-Mac native jobs; manual skips native jobs", () => {

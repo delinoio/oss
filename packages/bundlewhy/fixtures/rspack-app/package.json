@@ -1,0 +1,5 @@
+{
+  "name": "bundlewhy-fixture-rspack-app",
+  "private": true,
+  "type": "module"
+}

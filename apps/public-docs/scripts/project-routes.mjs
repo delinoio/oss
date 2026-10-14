@@ -97,4 +97,14 @@ export const projectRoutes = {
     "/limits-and-troubleshooting",
     "/releases",
   ],
+  bundlewhy: [
+    "/",
+    "/installation",
+    "/getting-started",
+    "/supported-engines",
+    "/interpreting-diagnostics",
+    "/privacy-and-export",
+    "/limitations",
+    "/troubleshooting",
+  ],
 };

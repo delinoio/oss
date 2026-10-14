@@ -12,6 +12,7 @@
         "pnpm-lock.yaml",
         "protos/async_commit_hook/v1/**",
         "protos/delidev/v1/**",
+        "protos/bundlewhy/v1/**",
         "$TURBO_ROOT$/.nvmrc",
         "$TURBO_ROOT$/package.json",
         "$TURBO_ROOT$/pnpm-lock.yaml",
@@ -23,7 +24,8 @@
         "protos/gen/**",
         "packages/devhud-api-client/src/gen/**",
         "packages/async-commit-hook-api-client/src/gen/**",
-        "packages/delidev-api-client/src/gen/**"
+        "packages/delidev-api-client/src/gen/**",
+        "apps/bundlewhy-web/src/gen/**"
       ],
       "env": ["CI_CACHE_CONTEXT", "CI_PROTO_CACHE_CONTEXT"]
     },
