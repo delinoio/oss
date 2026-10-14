@@ -12,7 +12,11 @@ import {
   type Resource,
 } from "@delinoio/delidev-api-client";
 import { currentInboxSource } from "./inbox-source";
-import { inaccessibleFailure } from "./search-session-routing";
+import {
+  SearchSessionRoute,
+  inaccessibleFailure,
+  resolveSearchSession,
+} from "./search-session-routing";
 
 /** Closed outcome of verifying one route selection with a fresh read. */
 export enum RouteReadOutcome {
@@ -157,4 +161,87 @@ export function readRouteInboxEntry(
         : undefined,
     signal,
   );
+}
+
+/**
+ * How the Shell opens a verified Session selection: the ID to show and, for a
+ * Sidechat, its original parent and display name (when known).
+ */
+export interface RouteSessionOpen {
+  id: string;
+  parent?: string;
+  name?: string;
+}
+
+/**
+ * Result of verifying a Session selection and its optional Sidechat. `Missing`
+ * opens nothing. `Found` and `Failed` both carry what to open: a `Failed` read
+ * is retryable, so the selection is still opened (the mounted view owns its
+ * retry and error state) instead of being dropped from the URL.
+ */
+export type RouteSessionRead =
+  | { outcome: RouteReadOutcome.Missing }
+  | {
+      outcome: RouteReadOutcome.Found | RouteReadOutcome.Failed;
+      open: RouteSessionOpen;
+    };
+
+/**
+ * Verifies a Session selection and its Sidechat with fresh reads and
+ * classifies every nested read in one place: a definitive rejection of the
+ * parent clears the selection, a definitive rejection of the child falls back
+ * to the verified parent, and a transient failure of either read retains the
+ * deepest requested selection so it is never lost to a temporary outage.
+ */
+export async function readRouteSession(
+  client: QueryClient,
+  transport: Transport,
+  selection: { id: string; sidechat?: string },
+  signal?: AbortSignal,
+): Promise<RouteSessionRead> {
+  const top = await resolveSearchSession(
+    client,
+    transport,
+    selection.id,
+    signal,
+  );
+  if (top.route === SearchSessionRoute.Sidechat)
+    return {
+      outcome: RouteReadOutcome.Found,
+      open: { id: selection.id, parent: top.parent, name: top.name },
+    };
+  if (top.route === SearchSessionRoute.Unavailable) {
+    if (!top.transient) return missing;
+    // The parent could not be verified yet, so neither could its Sidechat:
+    // retain both and let the mounted views own the retry and error state.
+    return {
+      outcome: RouteReadOutcome.Failed,
+      open: selection.sidechat
+        ? { id: selection.sidechat, parent: selection.id }
+        : { id: selection.id },
+    };
+  }
+  if (!selection.sidechat || signal?.aborted)
+    return { outcome: RouteReadOutcome.Found, open: { id: selection.id } };
+  const child = await resolveSearchSession(
+    client,
+    transport,
+    selection.sidechat,
+    signal,
+  );
+  if (
+    child.route === SearchSessionRoute.Sidechat &&
+    child.parent === selection.id
+  )
+    return {
+      outcome: RouteReadOutcome.Found,
+      open: { id: selection.sidechat, parent: child.parent, name: child.name },
+    };
+  if (child.route === SearchSessionRoute.Unavailable && child.transient)
+    return {
+      outcome: RouteReadOutcome.Failed,
+      open: { id: selection.sidechat, parent: selection.id },
+    };
+  // Definitively not a Sidechat of this Session: open the verified parent only.
+  return { outcome: RouteReadOutcome.Found, open: { id: selection.id } };
 }

@@ -662,11 +662,11 @@ describe("route failure classification", () => {
   });
 
   it.each(cases)(
-    "%s on a Sidechat read keeps only the parent",
-    async (_name, code) => {
+    "%s on a Sidechat read",
+    async (_name, code, definitive) => {
       const value = fixture();
       value.failure.code = code;
-      // Only the Sidechat child fails: the parent still opens either way.
+      // Only the Sidechat child fails: the verified parent opens either way.
       value.failure.id = value.sidechat.id;
       route(
         `?screen=sessions&session=${value.session.id}&sidechat=${value.sidechat.id}`,
@@ -677,9 +677,37 @@ describe("route failure classification", () => {
           0,
         ),
       );
-      expect(screen.queryByRole("tab", { name: /Side question/ })).toBeNull();
-      await waitFor(() => expect(search().has("sidechat")).toBe(false));
+      if (definitive) {
+        // A definitively rejected child is dropped in favor of its parent.
+        expect(screen.queryByRole("tab", { name: /Side question/ })).toBeNull();
+        await waitFor(() => expect(search().has("sidechat")).toBe(false));
+      } else {
+        // A retryable failure keeps the Sidechat selection: the child tab is
+        // mounted so its own retry and error state runs, and the URL keeps it.
+        await waitFor(() =>
+          expect(search().get("sidechat")).toBe(value.sidechat.id),
+        );
+      }
       expect(search().get("session")).toBe(value.session.id);
+      expect(value.mutated).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(transientCodes)(
+    "%s on the parent keeps the requested Sidechat too",
+    async (_name, code) => {
+      const value = fixture();
+      value.failure.code = code;
+      route(
+        `?screen=sessions&session=${value.session.id}&sidechat=${value.sidechat.id}`,
+      );
+      render(<App transport={value.transport} />);
+      await waitFor(() => expect(value.reads.resource).toHaveBeenCalled());
+      await waitFor(() =>
+        expect(search().get("sidechat")).toBe(value.sidechat.id),
+      );
+      expect(search().get("session")).toBe(value.session.id);
+      expect(value.mutated).not.toHaveBeenCalled();
     },
   );
 

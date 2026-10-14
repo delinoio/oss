@@ -79,6 +79,7 @@ import {
   readRouteInboxEntry,
   readRouteRepository,
   readRouteSchedule,
+  readRouteSession,
   RouteReadOutcome,
 } from "./product-route-restore";
 import { Schedules } from "./schedules";
@@ -533,51 +534,18 @@ function Shell({
     void (async () => {
       switch (pending.surface) {
         case Surface.Sessions: {
-          const top = await resolveSearchSession(
+          const read = await readRouteSession(
             queryClient,
             owner,
-            pending.id,
+            pending,
             controller.signal,
           );
           if (!current()) return;
-          if (top.route === SearchSessionRoute.Sidechat) {
-            settle(RouteReadOutcome.Found);
-            openSessionRef.current(pending.id, top.parent, top.name);
-            return;
-          }
-          if (top.route === SearchSessionRoute.Unavailable && !top.transient) {
-            settle(RouteReadOutcome.Missing);
-            return;
-          }
-          if (top.route === SearchSessionRoute.Unavailable) {
-            // The mounted Session view owns the existing retry and error state.
-            settle(RouteReadOutcome.Failed);
-            openSessionRef.current(pending.id);
-            return;
-          }
-          if (pending.sidechat) {
-            const child = await resolveSearchSession(
-              queryClient,
-              owner,
-              pending.sidechat,
-              controller.signal,
-            );
-            if (!current()) return;
-            if (
-              child.route === SearchSessionRoute.Sidechat &&
-              child.parent === pending.id
-            ) {
-              settle(RouteReadOutcome.Found);
-              openSessionRef.current(
-                pending.sidechat,
-                child.parent,
-                child.name,
-              );
-              return;
-            }
-          }
-          settle(RouteReadOutcome.Found);
-          openSessionRef.current(pending.id);
+          settle(read.outcome);
+          if (read.outcome === RouteReadOutcome.Missing) return;
+          // A retryable failure still opens the deepest requested selection;
+          // the mounted view owns its existing retry and error state.
+          openSessionRef.current(read.open.id, read.open.parent, read.open.name);
           return;
         }
         case Surface.Inbox: {

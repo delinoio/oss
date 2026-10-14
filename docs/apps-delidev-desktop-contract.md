@@ -468,6 +468,13 @@ Failure codes are classified once, for every restored kind, by
 retryable (retain). A retryable read failure
 reopens the Session or repository so its own mounted retry and error state shows; a
 Schedule needs the fresh resource, so it is cleared and the list's own retry applies.
+`readRouteSession` classifies the nested Session reads in one place: a definitive
+rejection of the parent clears the selection; a definitive rejection of the Sidechat
+(missing, denied, not a child of the parent) opens the verified parent only; a
+retryable failure of the Sidechat read, or of the parent read, retains the requested
+Sidechat (the child tab is mounted under the requested parent so its own retry and
+error state runs, and the URL keeps the `sidechat` ID) instead of dropping it.
+
 Deliberate navigation, or any selection made on the pending screen while its
 read is still running (a Session, Inbox entry, Schedule or repository), supersedes
 the pending selection: the read is cancelled and its late result is discarded, so
@@ -476,8 +483,8 @@ must report through `Shell`, be added to the route parser, serializer and restor
 tests, and follow the same envelope and supersession rules.
 Restoration only selects and reads: no mutation is dispatched, no pending operation
 is replayed, and drafts, filters, search text, scroll, dialogs and in-memory
-presentation reset as before. Structured logs (`delidev.product_route.restore`,
-`delidev.product_route.superseded`) carry only the screen and a closed outcome.
+presentation reset as before. The structured log `delidev.product_route.restore`
+carries only the screen and a closed outcome (including `superseded`).
 
 The reload shortcut, its saved override policy, capture and IME/modifier guards,
 focused external Browser ownership and the English/Korean copy are unchanged. No
@@ -485,7 +492,8 @@ native, server, RPC, storage or migration change is involved. Regression coverag
 `product-route.test.ts` (parse, serialize, hash and history, identity claim),
 `product-route-restore.test.tsx` (mirroring, restore per screen, fallbacks, pending
 routes, reload-shortcut remount, envelope validation per kind, slow-read supersession
-per kind, and a failure-code by restore-kind matrix including wrong-kind IDs) and
+per kind, retained Sidechat selections after transient failures, and a failure-code by
+restore-kind matrix including wrong-kind IDs) and
 `search-session-routing.test.ts` (the failure classification table).
 
 Read-only shortcut defaults yield to existing editable chords through one shared
