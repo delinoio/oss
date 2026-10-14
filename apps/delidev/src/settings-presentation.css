@@ -294,7 +294,9 @@
   grid-row: 1 / span 2;
   width: auto;
 }
-.settings-content[aria-label] .subscription-provider-card .subscription-provider-actions {
+.settings-content[aria-label]
+  .subscription-provider-card
+  .subscription-provider-actions {
   grid-column: 3;
   grid-row: 1 / span 2;
   display: flex;

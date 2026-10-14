@@ -815,9 +815,9 @@ it("sends one deviceCode login despite double click, Strict Mode and polling and
   expect(f.forward).not.toHaveBeenCalled();
   expect(code.tagName).toBe("OUTPUT");
   expect(code.className).toContain("grok-device-user-code");
-  expect(
-    screen.getByLabelText(copy("grok-subscription.device.codeAria")),
-  ).toBe(code);
+  expect(screen.getByLabelText(copy("grok-subscription.device.codeAria"))).toBe(
+    code,
+  );
   expect(screen.getByRole("status").textContent).toContain(
     copy("grok-subscription.status.waiting"),
   );
@@ -935,9 +935,13 @@ it("cancels through the server and clears the code when the screen closes", asyn
   );
   await waitFor(() => expect(f.cancel).toHaveBeenCalledTimes(1));
   f.setState(State.CANCELED);
-  await screen.findByText(copy("grok-subscription.status.canceled"), {}, {
-    timeout: 3000,
-  });
+  await screen.findByText(
+    copy("grok-subscription.status.canceled"),
+    {},
+    {
+      timeout: 3000,
+    },
+  );
   expect(screen.queryByText(DEVICE_CODE)).toBeNull();
   view.unmount();
   expect(window.document.body.textContent).not.toContain(DEVICE_CODE);
@@ -1028,7 +1032,9 @@ it("advances to naming after verified device success and drops the code", async 
     {},
     { timeout: 3000 },
   );
-  expect((input as HTMLInputElement).value).toBe("grok.fixture@example.invalid");
+  expect((input as HTMLInputElement).value).toBe(
+    "grok.fixture@example.invalid",
+  );
   expect(screen.queryByText(DEVICE_CODE)).toBeNull();
 });
 
