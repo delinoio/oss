@@ -1741,6 +1741,24 @@ fn created_require_loaders(nodes: &[Node]) -> HashSet<String> {
         }
     }
     let mut loaders = HashSet::new();
+    // A direct default export has no VariableDeclaration to seed below.
+    for &node in nodes {
+        if node.kind() != SyntaxKind::ExportAssignment {
+            continue;
+        }
+        let init = skip_outer(node.expression());
+        if init.kind() != SyntaxKind::CallExpression {
+            continue;
+        }
+        let callee = skip_outer(init.expression());
+        let from_factory = (callee.kind() == SyntaxKind::Identifier
+            && factories.contains(callee.text()))
+            || (is_create_require_access(callee)
+                && is_host_module_expression(callee.expression(), &host_modules));
+        if from_factory {
+            loaders.insert("default".to_owned());
+        }
+    }
     // A direct initializer and a local alias both retain the loader identity.
     for _ in 0..nodes.len() {
         let mut changed = false;
@@ -1802,6 +1820,23 @@ fn imports_external_runtime(ctx: &mut Ctx) -> bool {
     let mut loader_symbols = HashSet::new();
     for index in 0..ctx.files.len() {
         let nodes = ctx.files[index].nodes.clone();
+        if local_loaders[index].contains("default") {
+            let module = ctx.files[index].node.symbol();
+            if !module.is_nil() {
+                let module = ctx.checker.get_merged_symbol_exported(module);
+                let default_export = ctx
+                    .checker
+                    .symbols
+                    .get(ctx.checker.sym(module).exports, "default");
+                if !default_export.is_nil() {
+                    loader_symbols.insert(default_export);
+                    let target = ctx.skip_alias(default_export);
+                    if !target.is_nil() {
+                        loader_symbols.insert(target);
+                    }
+                }
+            }
+        }
         for node in nodes {
             if node.kind() != SyntaxKind::VariableDeclaration
                 || node.name().kind() != SyntaxKind::Identifier

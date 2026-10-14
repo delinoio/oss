@@ -1032,6 +1032,34 @@ fn exported_created_loader_namespace_guard_propagates_across_application_modules
     assert_slice_preserved(&files, "[9]\n");
 }
 
+#[test]
+fn default_exported_created_loader_guard_propagates_across_application_modules() {
+    let packages = package(
+        "patch-slice",
+        "Array.prototype.slice = function () { return [9]; };\n",
+        "export {};\n",
+    );
+    let files = with_packages(
+        &[
+            (
+                "main.ts",
+                "import \"./consumer.mjs\";\nconsole.log(JSON.stringify([1].slice()));\n",
+            ),
+            (
+                "consumer.mjs",
+                "import load from \"./loader.mjs\";\nload(\"patch-slice\");\n",
+            ),
+            (
+                "loader.mjs",
+                "import { createRequire } from \"node:module\";\nexport default \
+                 createRequire(import.meta.url);\n",
+            ),
+        ],
+        &packages,
+    );
+    assert_slice_preserved(&files, "[9]\n");
+}
+
 fn with_packages<'a>(
     files: &'a [(&'a str, &'a str)],
     packages: &'a [(String, String)],
