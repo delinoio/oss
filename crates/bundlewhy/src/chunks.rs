@@ -23,6 +23,27 @@ pub struct Chunk {
     line_starts: Vec<usize>,
 }
 
+/// Decodes `%XX` escapes in a `file://` URL path.
+fn percent_decode(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%'
+            && let Some(value) = text
+                .get(index + 1..index + 3)
+                .and_then(|hex| u8::from_str_radix(hex, 16).ok())
+        {
+            out.push(value);
+            index += 3;
+            continue;
+        }
+        out.push(bytes[index]);
+        index += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 /// Joins `sourceRoot` and a source with one separator. Absolute and URL
 /// sources ignore the root; a trailing `/` on the root and a leading `./` on
 /// the source never produce `//` or an absolute-looking remainder.
@@ -49,6 +70,14 @@ pub fn resolve_map_source(entry: &str, map_dir: &Path, context: &Path) -> Option
             return None;
         }
         return Some(normalize(&context.join(relative)));
+    }
+    // `file://` URLs name local paths (RFC 8089); other URL schemes do not.
+    if let Some(rest) = entry.strip_prefix("file://") {
+        let path = rest.strip_prefix("localhost").unwrap_or(rest);
+        let decoded = percent_decode(path);
+        return Path::new(&decoded)
+            .is_absolute()
+            .then(|| normalize(Path::new(&decoded)));
     }
     if entry.contains("://") || entry.starts_with('\0') {
         return None;
@@ -91,19 +120,10 @@ impl Chunk {
                         None
                     }
                 });
-        // A map without any source-bearing token cannot map anything; treat
-        // it as missing so coverage and problems reflect generated-only data.
-        let map = map.filter(|map| {
-            let usable = map.tokens().any(|token| token.has_source());
-            if !usable {
-                tracing::warn!(chunk = file, "source map has no usable mappings");
-            }
-            usable
-        });
         let map_dir = map_path
             .parent()
             .map_or_else(|| build_dir.to_path_buf(), Path::to_path_buf);
-        let map_sources = map.as_ref().map_or_else(Vec::new, |map| {
+        let map_sources: Vec<Option<PathBuf>> = map.as_ref().map_or_else(Vec::new, |map| {
             map.sources()
                 .map(|source| {
                     let root = map.get_source_root().unwrap_or("");
@@ -112,6 +132,22 @@ impl Chunk {
                 })
                 .collect()
         });
+        // A map is usable only when some source-bearing token resolves to a
+        // path; otherwise nothing maps back and the chunk is generated-only.
+        let usable = map.as_ref().is_some_and(|map| {
+            map.tokens().any(|token| {
+                token.has_source()
+                    && matches!(map_sources.get(token.get_src_id() as usize), Some(Some(_)))
+            })
+        });
+        if map.is_some() && !usable {
+            tracing::warn!(chunk = file, "source map has no resolvable mappings");
+        }
+        let (map, map_sources) = if usable {
+            (map, map_sources)
+        } else {
+            (None, Vec::new())
+        };
         Ok(Self {
             file: file.to_owned(),
             line_starts: line_starts(&code),
@@ -338,6 +374,28 @@ mod tests {
         let total: u32 = per_source.values().sum::<u32>() + unmapped;
         assert_eq!(total, 20);
         assert_eq!(unmapped, 0);
+    }
+
+    #[test]
+    fn maps_whose_sources_never_resolve_are_unusable_and_file_urls_resolve() {
+        let (_dir, chunk) = chunk_with_map(
+            "const a=1;",
+            r#"{"version":3,"sources":["https://cdn.example/a.js"],"names":[],"mappings":"AAAA"}"#,
+        );
+        assert!(chunk.map.is_none());
+        assert_eq!(
+            resolve_map_source(
+                "file:///work/src/a%20b.js",
+                Path::new("/out"),
+                Path::new("/app")
+            ),
+            Some(PathBuf::from("/work/src/a b.js"))
+        );
+        let (_dir, chunk) = chunk_with_map(
+            "const a=1;",
+            r#"{"version":3,"sources":["file:///work/src/a.js"],"names":[],"mappings":"AAAA"}"#,
+        );
+        assert!(chunk.map.is_some());
     }
 
     #[test]
