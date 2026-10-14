@@ -21,11 +21,12 @@ Every native OpenCode test obtains its binary through `nativetest.NativeOpenCode
 - skips when the variable is unset;
 - fails the test when the path is relative;
 - runs `<path> --version` in the private runtime environment (a fresh temporary `HOME`, XDG, `OPENCODE_*` updater/plugin/LSP/model-fetch opt-outs, no inherited credentials), mirroring `harness.PrivateRuntimeEnvironment` (a parity test fails if they drift);
-- parses the output as one SemVer line (an optional leading `v` is accepted) and fails the test for empty or non-SemVer output or a failing process;
+- captures at most 1 KiB of `--version` stdout, discards stderr, and terminates the probe as soon as the bound is exceeded, so a misselected executable that writes continuously ends in a fatal result instead of exhausting memory until the 20-second timeout;
+- parses the output as one SemVer line (an optional leading `v` is accepted) using the same checks as `domain.HarnessVersionAllowed` (the installation-version shape plus strict `golang.org/x/mod/semver` syntax), and fails the test for empty or malformed output (for example `1.18.33-01` or `1.18.33-..`), more than one line, or a failing process, never mistaking malformed output for a below-minimum version;
 - logs `installed_version` and `baseline_version` (`domain.OpenCodeProtocolVersion`) with `t.Logf`;
 - skips with a message naming the installed and minimum versions when `domain.HarnessVersionAllowed(domain.OpenCode, version)` is false, so the rule cannot drift from production admission.
 
-Real-binary `ProbeConfig` values use the observed version, not `opencode.SupportedVersion`. The baseline is a minimum, not an exact pin: any admitted newer version (for example `1.18.33` or `2.0.0-rc.1`) runs the same native checks. Discovery tests assert `domain.HarnessVersionAllowed` and equality with the observed version for the real binary; the in-process fake keeps reporting the baseline.
+Real-binary `ProbeConfig` values use the observed version, and fixtures that describe the real binary to the Worker (`Installation.Version`, the first-dispatch discovery report) carry that version too, not `opencode.SupportedVersion`. The baseline is a minimum, not an exact pin: any admitted newer version (for example `1.18.33` or `2.0.0-rc.1`) runs the same native checks. Discovery tests assert `domain.HarnessVersionAllowed` and equality with the observed version for the real binary; the in-process fake keeps reporting the baseline.
 
 ### Install and upgrade
 
@@ -44,6 +45,8 @@ go test ./internal/worker -run 'NativeOpenCode' -count=1 -v -timeout 45m
 ```
 
 Use `-v` to see the logged installed and baseline versions. Narrow `-run` to one test while debugging. On Windows the same variable selects the installed Windows binary; `DELIDEV_NATIVE_OPENCODE_WINDOWS_WORKSPACE_PARENT` additionally enables the cross-drive Plan fixture.
+
+Test fake executables are shell scripts with fixed source: never concatenate a path, version, environment value or other dynamic data into script text. Pass such values as data files that the script reads (for example `IFS= read -r value < "$data/name"`), and keep regression tests that place shell metacharacters in the wrapper path and inherited `HOME`.
 
 Unit coverage for the helper itself uses fake executables and needs no OpenCode install: `go test ./internal/nativetest/... -count=1`.
 
@@ -77,7 +80,7 @@ See Commands above. Pull request CI runs the unset-variable suite only; native r
 
 ## Dependencies and Integrations
 
-Depends on `internal/domain` (`OpenCodeProtocolVersion`, `HarnessVersionAllowed`). The helper package must not import `internal/harness` or `internal/harness/opencode`, because their own tests import it.
+Depends on `internal/domain` (`OpenCodeProtocolVersion`, `HarnessVersionAllowed`) and `golang.org/x/mod/semver`. The helper package must not import `internal/harness` or `internal/harness/opencode`, because their own tests import it.
 
 ## Change Triggers
 
