@@ -29,7 +29,11 @@ import { MutationIntents } from "./mutation";
 import { NotificationProvider } from "./toast-notifications";
 import { document, encode } from "./documents";
 
-function fixture(supported = true, cleanup = false) {
+function fixture(
+  supported = true,
+  cleanup = false,
+  revisionBoundSupported = true,
+) {
   let provider = create(ResourceSchema, {
     id: newRequestId(),
     kind: EntityKind.PROVIDER,
@@ -119,6 +123,11 @@ function fixture(supported = true, cleanup = false) {
           ProviderInventoryCapability.ACCOUNT_API_PROTOCOL_V1,
           ...(supported
             ? [ProviderInventoryCapability.ACCOUNT_API_FORMAT_CHANGE_V1]
+            : []),
+          ...(revisionBoundSupported
+            ? [
+                ProviderInventoryCapability.ACCOUNT_API_FORMAT_CHANGE_REVISION_V1,
+              ]
             : []),
         ],
       }),
@@ -353,6 +362,14 @@ it("retries only the original uncertain format request", async () => {
     value.changeFormat.mock.calls[0][0],
   );
   expect(value.disconnect).not.toHaveBeenCalled();
+});
+
+it("does not enable key-preserving changes without revision capability", async () => {
+  fixture(true, false, false);
+  await screen.findByRole("option", { name: "OpenAI Responses" });
+  expect(
+    screen.getByRole("combobox", { name: "API format" }).matches(":disabled"),
+  ).toBe(true);
 });
 
 it("rejects late completion after the editor lifetime ends", async () => {

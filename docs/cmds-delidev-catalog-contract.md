@@ -5,14 +5,19 @@
 The originating change established the complete reservations on main before activation.
 The feature owns ProviderInventory capability
 `ACCOUNT_API_FORMAT_CHANGE_V1 = 9` separately from capability 7 and OAuth
-reservation 8. The owner/client `AccountService.ChangeAccountApiFormat` RPC
+reservation 8. Capability
+`ACCOUNT_API_FORMAT_CHANGE_REVISION_V1 = 10` is required for revision-bound
+format saves. The owner/client `AccountService.ChangeAccountApiFormat` RPC
 uses request fields mutation 1, api_protocol 2, alias 3, enabled 4,
 exclude_automatic 5 and recovery_notifications 6; its response uses account 1,
 request_id 2 and replayed 3. Request field provider_revision 7 binds the exact
 inspected Provider resource revision to the selected protocol. Reuse the existing
 `ApiProtocol` enum.
-Capability 9 now activates this dedicated operation. The reservation-only PR
-granted no format change, key access or execution authority.
+Capability 9 now activates the dedicated operation, while capability 10 gates
+the provider revision check for clients that send `provider_revision`. A client
+must not enable connected key-preserving format changes when capability 10 is
+absent. The reservation-only PR granted no format change, key access or
+execution authority.
 
 The active operation rejects omitted or zero Provider revisions. The mutation
 checks the Account revision, its Provider identity, and the inspected Provider
@@ -35,7 +40,8 @@ exact actor/revision/request retries, and explicit Disconnect/deletion cleanup
 across all generations. Do not convert formats or change Provider identity or
 keyless credential ownership. No SQLite migration or native change is authorized.
 Capability 7 and its existing cleanup-required configuration operation remain
-unchanged; capability 9 owns the dedicated extension.
+unchanged; capability 9 owns the dedicated extension and capability 10 gates
+revision-bound provider checks.
 
 ## OAuth format selection extension
 
@@ -421,7 +427,7 @@ Provider-row account links use the list-only `provider_id` selector on `Resource
 
 ### Project requirements
 
-- Key-preserving API format changes follow `cmds-delidev-catalog-contract.md#key-preserving-api-format-change-reservations`: the originating change established ProviderInventory 9 and the complete ChangeAccountApiFormat RPC declarations on main before activation. Preserve capability 7, OAuth reservation 8, protected shared key references, original execution/continuation generations, new-format validation, immutable referenced profiles and all-generation explicit cleanup. No SQLite migration or native change. Reservation-only changes activate no support.
+- Key-preserving API format changes follow `cmds-delidev-catalog-contract.md#key-preserving-api-format-change-reservations`: the originating change established ProviderInventory 9 and the complete ChangeAccountApiFormat RPC declarations on main before activation; capability 10 gates revision-bound provider checks. Preserve capability 7, OAuth reservation 8, protected shared key references, original execution/continuation generations, new-format validation, immutable referenced profiles and all-generation explicit cleanup. No SQLite migration or native change. Reservation-only changes activate no support.
 
 - API account format selection follows `cmds-delidev-catalog-contract.md#api-account-format-selection` and the account/protocol contracts. The originating change established ProviderInventory capability 7, inventory profile field 10, account-list protocol field 5 and the complete closed declarations on main before activation. Preserve schema-3 API families, portable v4 with v1–3 imports, original defaults, capability-7 disconnect/confirmed cleanup and capability-9 key-preserving format changes, account-referenced profile immutability, immutable executions and keyless cleanup proofs. Resolve the selected account profile in every consuming flow; add no database migration or format conversion.
 

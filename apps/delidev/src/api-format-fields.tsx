@@ -44,6 +44,9 @@ function useFormatCapability(active: boolean) {
       inventory.data?.capabilities.includes(
         ProviderInventoryCapability.ACCOUNT_API_FORMAT_CHANGE_V1,
       ) &&
+      inventory.data?.capabilities.includes(
+        ProviderInventoryCapability.ACCOUNT_API_FORMAT_CHANGE_REVISION_V1,
+      ) &&
       !inventory.error &&
       !inventory.isFetching,
     ),

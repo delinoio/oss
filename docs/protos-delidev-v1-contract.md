@@ -51,13 +51,17 @@ is added.
 The originating change established the complete reservations on main before activation.
 The feature owns ProviderInventory capability
 `ACCOUNT_API_FORMAT_CHANGE_V1 = 9` separately from capability 7 and OAuth
-reservation 8. The owner/client `AccountService.ChangeAccountApiFormat` RPC
+reservation 8. Capability
+`ACCOUNT_API_FORMAT_CHANGE_REVISION_V1 = 10` gates revision-bound format saves.
+The owner/client `AccountService.ChangeAccountApiFormat` RPC
 uses request fields mutation 1, api_protocol 2, alias 3, enabled 4,
 exclude_automatic 5 and recovery_notifications 6; its response uses account 1,
 request_id 2 and replayed 3. Request field provider_revision 7 carries the
 inspected Provider resource revision. Reuse the existing `ApiProtocol` enum.
-Capability 9 now activates this dedicated operation. The reservation-only PR
-granted no format change, key access or execution authority.
+Capability 9 now activates this dedicated operation, while capability 10 is
+required before a client enables the provider revision check. The
+reservation-only PR granted no format change, key access or execution
+authority.
 Active servers reject zero or omitted provider_revision on fresh requests and
 do not reinterpret earlier receipt bytes as provider-bound evidence. An exact
 accepted revised request replays through its original actor-bound digest before
@@ -74,7 +78,8 @@ exact actor/revision/request retries, and explicit Disconnect/deletion cleanup
 across all generations. Do not convert formats or change Provider identity or
 keyless credential ownership. No SQLite migration or native change is authorized.
 Capability 7 and its existing cleanup-required configuration operation remain
-unchanged; capability 9 owns the dedicated extension.
+unchanged; capability 9 owns the dedicated extension and capability 10 gates
+revision-bound provider checks.
 
 ## OAuth API format selection reservations
 
@@ -100,7 +105,7 @@ actor/login/credential ownership, once-only exchange and cleanup stay intact.
 The desktop uses one provider-metadata-driven format presentation for manual and
 OAuth connections: explicitly choose among multiple formats, or display the sole
 format. Preserve Google project binding and device approval. Existing accounts
-may use capability 9 for the key-preserving change without a new OAuth exchange;
+may use capabilities 9 and 10 for the key-preserving change without a new OAuth exchange;
 capability 7 alone requires Disconnect and confirmed cleanup before format changes. No historical
 account/execution rewrite, protocol conversion or native change is authorized.
 
@@ -556,7 +561,7 @@ Record implementation status and validation results in pull requests, issues and
 
 - The feature image inputs follow `cmds-delidev-image-input-contract.md`. The owner permits declarations and complete activation in the same feature PR for System 45, Worker 25 and creation/enqueue attachments field 5 only. Preserve metadata-only server storage, authenticated Worker byte ownership, ordered immutable claims, original native image proofs and durable independent cleanup; no migration. Real-account, installed-native, remote-machine and platform acceptance remain owner-assigned and nonblocking for this feature.
 
-- Key-preserving API format changes follow `cmds-delidev-catalog-contract.md#key-preserving-api-format-change-reservations`: the originating change established ProviderInventory 9 and the complete ChangeAccountApiFormat RPC declarations on main before activation. Preserve capability 7, OAuth reservation 8, protected shared key references, original execution/continuation generations, new-format validation, immutable referenced profiles and all-generation explicit cleanup. No SQLite migration or native change. Reservation-only changes activate no support.
+- Key-preserving API format changes follow `cmds-delidev-catalog-contract.md#key-preserving-api-format-change-reservations`: the originating change established ProviderInventory 9 and the complete ChangeAccountApiFormat RPC declarations on main before activation; capability 10 gates revision-bound provider checks. Preserve capability 7, OAuth reservation 8, protected shared key references, original execution/continuation generations, new-format validation, immutable referenced profiles and all-generation explicit cleanup. No SQLite migration or native change. Reservation-only changes activate no support.
 
 - OAuth API format selection follows `cmds-delidev-account-oauth-contract.md#oauth-api-format-selection-reservations`: record ProviderInventory 8 and Start/attempt api_protocol fields 4/7 in the owning feature PR. Reuse the existing ApiProtocol enum; preserve original default/receipt compatibility, provider OAuth eligibility, once-only exchange, protected credentials, immutable selected profiles and confirmed cleanup. No database migration or native change. Reservations alone activate no support.
 
