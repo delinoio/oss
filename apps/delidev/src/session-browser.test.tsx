@@ -1524,6 +1524,66 @@ it(
 );
 
 it(
+  "keeps the descriptor of another Session's unsettled Close under removal until its proof settles",
+  async () => {
+    const f = fixture({ pages: 2 });
+    f.model.outcome = "cleanup-pending";
+    f.model.settleOnObserve = false;
+    const other = create(ResourceSchema, {
+      id: newRequestId(),
+      kind: EntityKind.SESSION,
+      revision: 3n,
+    });
+    function OtherPages() {
+      const snapshot = useSessionTabs(other.id);
+      return (
+        <output data-testid="other-pages">
+          {snapshot.tabs
+            .filter((tab) => tab.kind === SessionTabKind.Page)
+            .map((tab) => tab.id)
+            .join(",")}
+        </output>
+      );
+    }
+    render(
+      <TransportProvider transport={f.transport}>
+        <QueryClientProvider client={f.client}>
+          <MutationIntents>
+            <SessionTabsProvider>
+              <Workspace f={f} />
+              <SessionBrowser session={other} accountId={f.accountId} />
+              <OtherPages />
+            </SessionTabsProvider>
+          </MutationIntents>
+        </QueryClientProvider>
+      </TransportProvider>,
+    );
+    const [closing, sibling] = f.model.pages.map((page) => page.id);
+    const otherPages = () => screen.getByTestId("other-pages").textContent;
+    await waitFor(() => expect(otherPages()).toBe(`${closing},${sibling}`));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close fixture.test/1 tab" }),
+    );
+    const alert = await screen.findByRole("alert");
+    await act(async () => {
+      f.model.removalPending = true;
+    });
+    // The other Session polls the empty inventory and drops the sibling, but
+    // keeps the page whose original Close is still unsettled.
+    await waitFor(() => expect(otherPages()).toBe(closing), { timeout: 6000 });
+    await settle(3500);
+    expect(otherPages()).toBe(closing);
+    f.model.settleOnObserve = true;
+    fireEvent.click(
+      within(alert).getByRole("button", { name: "Check status" }),
+    );
+    await waitFor(() => expect(otherPages()).toBe(""));
+    expect(pageCalls("close")).toHaveLength(1);
+  },
+  SLOW_TEST,
+);
+
+it(
   "settles a lost Close reply observed after the profile began removal without replaying it",
   async () => {
     const f = fixture({ pages: 2 });

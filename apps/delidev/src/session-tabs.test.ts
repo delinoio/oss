@@ -483,6 +483,24 @@ describe("shared Page descriptors follow native browser pages", () => {
         sessionTabKey(page("p1", "a")),
       ]);
     });
+    it("keeps a page held by another Session's pending Close until it is released", () => {
+      const store = new SessionTabsStore();
+      const owner = {};
+      store.open("a", page("p1", "x"));
+      store.open("b", page("p1", "x"));
+      store.open("b", page("p1", "y"));
+      store.holdPendingClose("p1", "x", owner);
+      store.reconcilePages("b", "p1", []);
+      expect(store.snapshot("b").tabs.map(sessionTabKey)).toEqual([
+        SessionTabKind.Conversation,
+        sessionTabKey(page("p1", "x")),
+      ]);
+      store.releasePendingClose("p1", "x", owner);
+      store.reconcilePages("b", "p1", []);
+      expect(store.snapshot("b").tabs.map(sessionTabKey)).toEqual([
+        SessionTabKind.Conversation,
+      ]);
+    });
     it("never creates descriptors for an empty inventory", () => {
       const store = new SessionTabsStore();
       const before = store.snapshot("s");

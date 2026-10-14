@@ -474,6 +474,20 @@ function NativeSessionBrowser({
   const presentation = useRef("");
   const shortcutAdmission = useRef("");
   const tabsStore = useSessionTabsStore();
+  // Identifies this view as the holder of its unsettled Close in the shared
+  // store, so every Session keeps the page descriptor until the proof settles.
+  const closeOwner = useRef({});
+  const heldClose = useRef<{ profile: string; page: string }>(undefined);
+  const releaseClose = () => {
+    const held = heldClose.current;
+    heldClose.current = undefined;
+    if (held)
+      tabsStore.releasePendingClose(
+        held.profile,
+        held.page,
+        closeOwner.current,
+      );
+  };
   const activeRef = useRef(active);
   activeRef.current = active;
   const selectedPageRef = useRef(selectedPage);
@@ -619,6 +633,8 @@ function NativeSessionBrowser({
     alive.current = true;
     return () => {
       alive.current = false;
+      // An abandoned operation can no longer be settled by this view.
+      releaseClose();
     };
   }, []);
   const focusSelectedTab = () => {
@@ -654,6 +670,7 @@ function NativeSessionBrowser({
     );
   };
   const finishOperation = () => {
+    releaseClose();
     operationRef.current = undefined;
     setOperation(undefined);
   };
@@ -810,6 +827,11 @@ function NativeSessionBrowser({
   const runner = useRef(runOperation);
   runner.current = runOperation;
   const startOperation = (next: PageOperation) => {
+    releaseClose();
+    if (next.action === PageAction.Close && next.page_id && profileId) {
+      heldClose.current = { profile: profileId, page: next.page_id };
+      tabsStore.holdPendingClose(profileId, next.page_id, closeOwner.current);
+    }
     operationRef.current = next;
     setOperation(next);
     setOperationFailure(undefined);

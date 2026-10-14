@@ -219,8 +219,10 @@ refresh labels from observed URLs, and drop descriptors the inventory no longer
 lists) without selecting a page or taking ownership of another window's
 operation. A removal-pending (empty) inventory is authoritative: it drops this
 profile's Page descriptors the same way, without any native mutation, while a
-page owned by an in-flight original Close keeps its descriptor until that proof
-settles. Existing local `tabs.json` storage remains compatible; no business RPC,
+page owned by an unsettled original Close keeps its descriptor in every Session
+(the close is profile-scoped, so the shared tab store records the owner and a
+reconciling Session never drops that page) until the owner observes the proof or
+abandons the operation. Existing local `tabs.json` storage remains compatible; no business RPC,
 protocol allocation, SQLite migration, dependency or browser-engine change is
 added.
 

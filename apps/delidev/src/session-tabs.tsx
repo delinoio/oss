@@ -302,13 +302,35 @@ export class SessionTabsStore {
       .map(([id]) => id);
     for (const id of holders) this.closePage(id, profile, pageId);
   }
+  // Unsettled original Close operations by profile/page key. The close is
+  // profile-scoped, so every Session keeps the descriptor until the owning
+  // Session observes the original proof, not only the initiating one.
+  private pendingCloses = new Map<string, Set<object>>();
+  private pendingCloseKey(profile: string, pageId: string) {
+    return JSON.stringify([profile, pageId]);
+  }
+  /** Marks a page as owned by an unsettled Close; `owner` identifies the holder. */
+  holdPendingClose(profile: string, pageId: string, owner: object) {
+    const key = this.pendingCloseKey(profile, pageId);
+    const owners = this.pendingCloses.get(key) ?? new Set<object>();
+    owners.add(owner);
+    this.pendingCloses.set(key, owners);
+  }
+  /** Releases one holder once its Close settled, was rejected or was abandoned. */
+  releasePendingClose(profile: string, pageId: string, owner: object) {
+    const key = this.pendingCloseKey(profile, pageId);
+    const owners = this.pendingCloses.get(key);
+    if (!owners) return;
+    owners.delete(owner);
+    if (!owners.size) this.pendingCloses.delete(key);
+  }
   /**
    * Aligns the Page descriptors with one native inventory of the admitted
    * profile. Pages already listed keep their order and selection and only
    * refresh their label; newly discovered pages are appended in inventory
    * order without being selected; descriptors the inventory no longer lists
    * (and foreign-profile descriptors) are removed unless a pending close still
-   * owns them. A restoration never opens or selects a page.
+   * owns them in any Session. A restoration never opens or selects a page.
    */
   reconcilePages(
     id: string,
@@ -322,7 +344,11 @@ export class SessionTabsStore {
       if (
         tab.kind === SessionTabKind.Page &&
         (tab.profile !== profile || !listed.has(tab.id)) &&
-        !(tab.profile === profile && owned.has(tab.id))
+        !(
+          tab.profile === profile &&
+          (owned.has(tab.id) ||
+            this.pendingCloses.has(this.pendingCloseKey(profile, tab.id)))
+        )
       )
         this.closePage(id, tab.profile, tab.id);
     }
