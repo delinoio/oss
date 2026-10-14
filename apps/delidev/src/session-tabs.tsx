@@ -512,7 +512,8 @@ export class SessionTabsStore {
 const Context = createContext<SessionTabsStore | undefined>(undefined);
 export function SessionTabsProvider({ children }: { children: ReactNode }) {
   const [store] = useState(
-    () => new SessionTabsStore(new PendingCloseRegistry({ deferConnect: true })),
+    () =>
+      new SessionTabsStore(new PendingCloseRegistry({ deferConnect: true })),
   );
   useEffect(() => {
     store.connect();
