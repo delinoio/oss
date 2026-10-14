@@ -25,7 +25,19 @@ export interface PendingCloseChannel {
   close(): void;
 }
 
+/**
+ * The slice of the Web Locks API used as a liveness source. A lock held by a
+ * window is released by the browser when that window closes or crashes, and
+ * unlike renderer timers it is not throttled while the window is hidden.
+ */
+export interface PendingCloseLocks {
+  request(name: string, callback: () => Promise<unknown>): Promise<unknown>;
+  query(): Promise<{ held?: { name?: string }[] }>;
+}
+
 export interface PendingCloseOptions {
+  /** `null` disables the Web Locks liveness source. Defaults to navigator.locks. */
+  locks?: PendingCloseLocks | null;
   /** `null` disables cross-window sharing. Defaults to a BroadcastChannel. */
   channel?: PendingCloseChannel | null;
   now?: () => number;
@@ -39,6 +51,15 @@ function defaultChannel(): PendingCloseChannel | null {
     // A Node-hosted channel must never keep a test process alive.
     (channel as unknown as { unref?: () => void }).unref?.();
     return channel as unknown as PendingCloseChannel;
+  } catch {
+    return null;
+  }
+}
+
+function defaultLocks(): PendingCloseLocks | null {
+  try {
+    if (typeof navigator === "undefined" || !navigator.locks) return null;
+    return navigator.locks as unknown as PendingCloseLocks;
   } catch {
     return null;
   }
@@ -82,6 +103,9 @@ export class PendingCloseRegistry {
   private window: string;
   private options: PendingCloseOptions;
   private onPageHide = () => this.releaseAll();
+  private locks: PendingCloseLocks | null = null;
+  private unlock: (() => void) | undefined;
+  private probing = new Set<string>();
 
   constructor(options: PendingCloseOptions = {}) {
     this.options = options;
@@ -104,6 +128,52 @@ export class PendingCloseRegistry {
     this.send({ kind: PendingCloseMessageKind.Query });
     if (typeof window !== "undefined")
       window.addEventListener("pagehide", this.onPageHide);
+    this.holdLivenessLock();
+  }
+
+  private lockName(window: string) {
+    return `${channelName}:${window}`;
+  }
+
+  /** Holds this window's liveness lock until disposal or window teardown. */
+  private holdLivenessLock() {
+    const { locks } = this.options;
+    this.locks = locks === undefined ? defaultLocks() : locks;
+    if (!this.locks) return;
+    try {
+      void this.locks
+        .request(
+          this.lockName(this.window),
+          () => new Promise<void>((resolve) => (this.unlock = resolve)),
+        )
+        .catch(() => undefined);
+    } catch {
+      // Without the lock, siblings fall back to heartbeat expiry for this window.
+    }
+  }
+
+  /**
+   * Checks whether an expired remote holder's window is still alive. A hidden
+   * window's throttled heartbeat is not proof of death; only a released
+   * liveness lock is.
+   */
+  private probe(holder: string) {
+    if (!this.locks || this.probing.has(holder)) return;
+    this.probing.add(holder);
+    const name = this.lockName(holder);
+    const settle = (alive: boolean) => {
+      this.probing.delete(holder);
+      for (const [key, holders] of this.remote) {
+        if (!holders.has(holder)) continue;
+        if (alive) holders.set(holder, this.now() + expiryMs);
+        else holders.delete(holder);
+        if (!holders.size) this.remote.delete(key);
+      }
+    };
+    void this.locks
+      .query()
+      .then((state) => settle(Boolean(state.held?.some((l) => l.name === name))))
+      .catch(() => settle(false));
   }
 
   /**
@@ -123,6 +193,10 @@ export class PendingCloseRegistry {
     }
     this.channel = null;
     this.remote.clear();
+    this.probing.clear();
+    this.unlock?.();
+    this.unlock = undefined;
+    this.locks = null;
   }
 
   private send(message: Omit<PendingCloseMessage, "scope" | "window">) {
@@ -203,8 +277,12 @@ export class PendingCloseRegistry {
     const holders = this.remote.get(key);
     if (!holders) return false;
     const now = this.now();
-    for (const [holder, expiry] of holders)
-      if (expiry <= now) holders.delete(holder);
+    for (const [holder, expiry] of holders) {
+      if (expiry > now) continue;
+      // Keep counting an expired holder until its liveness lock is gone.
+      if (this.locks) this.probe(holder);
+      else holders.delete(holder);
+    }
     if (!holders.size) this.remote.delete(key);
     return holders.size > 0;
   }

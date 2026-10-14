@@ -232,7 +232,11 @@ have independent renderer memory, so the store announces each hold, a
 heartbeat refresh and its release over a same-origin `BroadcastChannel`
 (`delidev.browser.pending-close`). A newly opened window queries the current
 holds. A hold whose window stopped refreshing (for example after a crash)
-expires after 15 seconds, and a closing window releases its holds on `pagehide`.
+expires after 15 seconds, except that when the Web Locks API is available each
+window also holds a liveness lock named after its window identity and an expired
+hold is kept while that lock is still held, because renderer timers of a hidden
+or minimized window are throttled and are not proof of death. Without Web Locks the
+15-second expiry applies. A closing window releases its holds on `pagehide`.
 A discarded tab store (for example when the connection identity remounts the
 provider) disposes its registry: it releases its holds, detaches the `pagehide`
 listener and closes the channel, and a replayed mount reconnects it.

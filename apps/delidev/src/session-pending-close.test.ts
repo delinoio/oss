@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   PendingCloseRegistry,
   type PendingCloseChannel,
+  type PendingCloseLocks,
 } from "./session-pending-close";
 import {
   SessionTabsStore,
@@ -86,6 +87,42 @@ describe("pending Close ownership across product windows", () => {
     expect(second.has("k")).toBe(true);
     clock.advance(60_000);
     expect(second.has("k")).toBe(false);
+  });
+
+  it("keeps an expired hold while its window's liveness lock is held", async () => {
+    const held = new Set<string>();
+    const locks: PendingCloseLocks = {
+      request: (name, callback) => {
+        held.add(name);
+        return callback().finally(() => held.delete(name));
+      },
+      query: async () => ({ held: [...held].map((name) => ({ name })) }),
+    };
+    const bus = new Bus();
+    let time = 0;
+    const make = (name: string) =>
+      new PendingCloseRegistry({
+        channel: bus.endpoint(),
+        locks,
+        now: () => time,
+        window: name,
+      });
+    const hidden = make("hidden");
+    const active = make("active");
+    hidden.hold("k", {});
+    time += 600_000;
+    // The first read triggers the liveness probe and still counts the hold.
+    expect(active.has("k")).toBe(true);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(active.has("k")).toBe(true);
+    // The window crashes without a Release: the browser frees its lock, so the hold finally lapses.
+    held.clear();
+    time += 600_000;
+    expect(active.has("k")).toBe(true);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(active.has("k")).toBe(false);
   });
 
   it("answers a newly opened window's query with current holds", () => {
