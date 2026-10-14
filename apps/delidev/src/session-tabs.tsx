@@ -511,7 +511,9 @@ export class SessionTabsStore {
 }
 const Context = createContext<SessionTabsStore | undefined>(undefined);
 export function SessionTabsProvider({ children }: { children: ReactNode }) {
-  const [store] = useState(() => new SessionTabsStore());
+  const [store] = useState(
+    () => new SessionTabsStore(new PendingCloseRegistry({ deferConnect: true })),
+  );
   useEffect(() => {
     store.connect();
     return () => store.dispose();
@@ -520,7 +522,10 @@ export function SessionTabsProvider({ children }: { children: ReactNode }) {
 }
 export function useSessionTabsStore() {
   const context = useContext(Context),
-    [fallback] = useState(() => new SessionTabsStore());
+    [fallback] = useState(
+      () =>
+        new SessionTabsStore(new PendingCloseRegistry({ deferConnect: true })),
+    );
   useEffect(() => {
     // The fallback store only serves callers outside a provider.
     if (context) {

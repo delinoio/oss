@@ -214,6 +214,25 @@ describe("pending Close ownership across product windows", () => {
     expect(observer.has("k")).toBe(false);
   });
 
+  it("does not touch the channel or lifecycle until connected", () => {
+    const bus = new Bus();
+    const endpoint = bus.endpoint();
+    const seen: unknown[] = [];
+    bus.endpoint().onmessage = (event) => seen.push(event.data);
+    const registry = new PendingCloseRegistry({
+      channel: endpoint,
+      locks: null,
+      deferConnect: true,
+      window: "w",
+    });
+    expect(endpoint.onmessage).toBeNull();
+    expect(seen).toEqual([]);
+    registry.connect();
+    expect(endpoint.onmessage).not.toBeNull();
+    expect(seen).toContainEqual(expect.objectContaining({ kind: "query" }));
+    registry.dispose();
+  });
+
   describe("hold synchronization barrier", () => {
     /** Queues posts so delivery order is controlled by the test. */
     class QueuedBus {
@@ -363,6 +382,83 @@ describe("pending Close ownership across product windows", () => {
       bus.flush();
       expect(late.has("k")).toBe(true);
       await vi.advanceTimersByTimeAsync(150);
+      expect(synced).toBe(true);
+    });
+
+    it("requires an acknowledgement from a window joining an open barrier", async () => {
+      const bus = new QueuedBus();
+      const make = (window: string, drop = false) =>
+        new PendingCloseRegistry({
+          channel: bus.endpoint(drop),
+          locks: null,
+          window,
+        });
+      const first = make("a");
+      make("b");
+      bus.flush();
+      let synced = false;
+      void first.hold("k", {}).then(() => (synced = true));
+      // Discovery ends with only "b" required.
+      await vi.advanceTimersByTimeAsync(101);
+      // "c" joins while the barrier is open but never receives the Hold.
+      make("c", true);
+      bus.flush();
+      await vi.advanceTimersByTimeAsync(500);
+      expect(synced).toBe(false);
+    });
+
+    it("keeps a remote hold when the liveness query fails", async () => {
+      const locks: PendingCloseLocks = {
+        request: () => new Promise(() => undefined),
+        query: async () => {
+          throw new Error("query failed");
+        },
+      };
+      const bus = new Bus();
+      let time = 0;
+      const make = (window: string) =>
+        new PendingCloseRegistry({
+          channel: bus.endpoint(),
+          locks,
+          now: () => time,
+          window,
+        });
+      const holder = make("holder");
+      const observer = make("observer");
+      holder.hold("k", {});
+      time += 600_000;
+      expect(observer.has("k")).toBe(true);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(observer.has("k")).toBe(true);
+    });
+
+    it("keeps awaiting a silent window for a while when liveness is unknown", async () => {
+      const locks: PendingCloseLocks = {
+        request: () => new Promise(() => undefined),
+        query: async () => {
+          throw new Error("query failed");
+        },
+      };
+      const bus = new QueuedBus();
+      const first = new PendingCloseRegistry({
+        channel: bus.endpoint(),
+        locks,
+        window: "a",
+      });
+      // "b" introduces itself but never acknowledges.
+      new PendingCloseRegistry({
+        channel: bus.endpoint(true),
+        locks: null,
+        window: "b",
+      });
+      bus.flush();
+      let synced = false;
+      void first.hold("k", {}).then(() => (synced = true));
+      await vi.advanceTimersByTimeAsync(3_000);
+      expect(synced).toBe(false);
+      await vi.advanceTimersByTimeAsync(5_000);
       expect(synced).toBe(true);
     });
 

@@ -15,6 +15,11 @@ const syncTimeoutMs = 1000;
  * also waits this long for windows whose handshake has not arrived yet.
  */
 const discoveryMs = 100;
+/**
+ * Best-effort bound for a barrier whose liveness query keeps failing: silent
+ * windows stay awaited for this many rechecks before they are presumed gone.
+ */
+const unknownLivenessRechecks = 5;
 
 enum PendingCloseMessageKind {
   Hold = "hold",
@@ -82,6 +87,12 @@ export interface PendingCloseOptions {
   channel?: PendingCloseChannel | null;
   now?: () => number;
   window?: string;
+  /**
+   * Skips the connection normally made by the constructor. Constructing a
+   * registry during React render must be side-effect free, so the owner calls
+   * `connect()` from an effect that commits.
+   */
+  deferConnect?: boolean;
 }
 
 function defaultChannel(): PendingCloseChannel | null {
@@ -197,7 +208,7 @@ export class PendingCloseRegistry {
     this.options = options;
     this.now = options.now ?? Date.now;
     this.window = options.window ?? windowIdentity();
-    this.connect();
+    if (!options.deferConnect) this.connect();
   }
 
   /**
@@ -301,7 +312,9 @@ export class PendingCloseRegistry {
     void this.locks
       .query()
       .then((state) => settle(lockNames(state).includes(name)))
-      .catch(() => settle(false));
+      // An inconclusive query is not proof of death: keep the hold and let the
+      // next expiry probe again.
+      .catch(() => settle(true));
   }
 
   /**
@@ -368,6 +381,9 @@ export class PendingCloseRegistry {
     this.peers.add(data.window);
     if (data.kind === PendingCloseMessageKind.Query) {
       this.send({ kind: PendingCloseMessageKind.Presence });
+      // A window that joined an open barrier must acknowledge it too.
+      for (const waiter of this.waiters.values())
+        waiter.required?.add(data.window);
       for (const key of this.local.keys()) {
         // A Hold still gathering acknowledgements asks the newcomer for one,
         // otherwise a window that joined mid-barrier could never satisfy it.
@@ -509,11 +525,18 @@ export class PendingCloseRegistry {
       });
       // After each silent period, drop only the windows that are provably gone
       // and keep waiting for the rest.
+      let unknown = 0;
       const recheck = () => {
         if (finished) return;
         void this.liveWindows().then((live) => {
           if (finished) return;
           discovered(live);
+          // A failing liveness query is inconclusive: keep awaiting silent
+          // windows for a bounded number of rechecks before giving up on them.
+          if (!live && this.locks && ++unknown <= unknownLivenessRechecks) {
+            later(recheck, syncTimeoutMs);
+            return;
+          }
           for (const peer of [...(waiter.required ?? [])]) {
             if (waiter.acked.has(peer) || live?.has(peer)) continue;
             waiter.required?.delete(peer);
