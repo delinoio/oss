@@ -109,3 +109,37 @@ func resetNativeSnapshot(ctx context.Context, home string, source nativeCheckpoi
 	}
 	return nil
 }
+
+// prepareFreshRuntime readies a persistent profile for a new native history.
+// A profile that still holds a native database already retains history, which a
+// new session must not adopt; the caller resets an unsent attempt explicitly.
+func prepareFreshRuntime(ctx context.Context, home string) error {
+	if !canonicalDirectory(home) {
+		return sessionUncertain()
+	}
+	if _, err := os.Lstat(filepath.Join(home, "data", "opencode", "opencode.db")); !errors.Is(err, os.ErrNotExist) {
+		return sessionUncertain()
+	}
+	return retireOwnedRuntimeFiles(ctx, home)
+}
+
+// ResetUnsentHistory removes the native history directory of a profile whose
+// only native session never accepted input. Native caches, logs outside the
+// history directory and helper files stay. The caller must hold the profile
+// lock and have proved through its own journal that the attempt was unsent.
+func ResetUnsentHistory(ctx context.Context, home string) error {
+	if !canonicalDirectory(home) || security.CheckPrivateDir(home) != nil {
+		return sessionUncertain()
+	}
+	root, err := os.OpenRoot(home)
+	if err != nil {
+		return sessionUncertain()
+	}
+	defer root.Close()
+	if info, err := root.Lstat("data/opencode"); errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else if err != nil || !info.IsDir() || root.RemoveAll("data/opencode") != nil {
+		return sessionUncertain()
+	}
+	return retireOwnedRuntimeFiles(ctx, home)
+}

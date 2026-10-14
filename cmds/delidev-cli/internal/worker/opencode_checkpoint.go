@@ -157,7 +157,10 @@ func (c *OpenCodeEventPublisher) RetainCheckpoint(ctx context.Context) (string, 
 		return fail(executionCheckpointUncertain())
 	}
 	root := b.publisher.config.Root
-	home := filepath.Join(root, "runtimes", string(ref.Claim.ExecutionID))
+	home, err := openCodeHistoryRoot(ctx, root, ref.Claim.MachineID, ref.Claim.AccountID, ref.Claim.ExecutionID)
+	if err != nil {
+		return fail(executionCheckpointUncertain())
+	}
 	if opencode.InspectCheckpoint(ctx, home, native, nativeRef) != nil {
 		return fail(executionCheckpointUncertain())
 	}
@@ -181,7 +184,7 @@ func (c *OpenCodeEventPublisher) RetainCheckpoint(ctx context.Context) (string, 
 		return fail(executionCheckpointUncertain())
 	}
 	digest := executionInputDigest(raw)
-	if _, err := readOpenCodeExecutionCheckpoint(ctx, root, ref, digest); err != nil {
+	if _, err := readOpenCodeExecutionCheckpoint(ctx, root, ref, digest, true); err != nil {
 		return fail(err)
 	}
 	if _, err := check(); err != nil {
@@ -203,7 +206,11 @@ func (c *OpenCodeEventPublisher) RetainCheckpoint(ctx context.Context) (string, 
 // Read-only verification requires independent original journal metadata and
 // the exact retained digest. It never creates files, reconstructs claims or
 // grants a replacement process, new input or version-2 report.
-func readOpenCodeExecutionCheckpoint(ctx context.Context, root string, ref openCodeCheckpointReference, digest string) (openCodeExecutionCheckpoint, error) {
+//
+// inspectFiles compares the retained native files. It is set for the newest
+// checkpoint of a persistent profile only: a later run of the same profile
+// supersedes older checkpoints, which stay readable as metadata evidence.
+func readOpenCodeExecutionCheckpoint(ctx context.Context, root string, ref openCodeCheckpointReference, digest string, inspectFiles bool) (openCodeExecutionCheckpoint, error) {
 	if ctx.Err() != nil || ref.validate() != nil {
 		return openCodeExecutionCheckpoint{}, executionCheckpointUncertain()
 	}
@@ -223,8 +230,15 @@ func readOpenCodeExecutionCheckpoint(ctx context.Context, root string, ref openC
 	if err != nil || !bytes.Equal(canonical, raw) {
 		return openCodeExecutionCheckpoint{}, executionCheckpointUncertain()
 	}
-	home := filepath.Join(root, "runtimes", string(ref.Claim.ExecutionID))
-	if opencode.InspectCheckpoint(ctx, home, value.Native, value.NativeReference) != nil {
+	home, err := openCodeHistoryRoot(ctx, root, ref.Claim.MachineID, ref.Claim.AccountID, ref.Claim.ExecutionID)
+	if err != nil {
+		return openCodeExecutionCheckpoint{}, executionCheckpointUncertain()
+	}
+	if inspectFiles {
+		if opencode.InspectCheckpoint(ctx, home, value.Native, value.NativeReference) != nil {
+			return openCodeExecutionCheckpoint{}, executionCheckpointUncertain()
+		}
+	} else if opencode.InspectCheckpointMetadata(value.Native, value.NativeReference, home) != nil {
 		return openCodeExecutionCheckpoint{}, executionCheckpointUncertain()
 	}
 	return value, nil

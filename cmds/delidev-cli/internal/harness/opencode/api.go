@@ -60,6 +60,13 @@ func openAPISessionRestoring(ctx context.Context, config apiSessionConfig, resto
 			return nil, err
 		}
 	} else {
+		if restore == nil {
+			// A new native history never adopts retained history. Only the
+			// per-run DeliDev files of an earlier unsent attempt are rewritten.
+			if err := prepareFreshRuntime(ctx, filepath.Dir(config.Probe.Home)); err != nil {
+				return nil, err
+			}
+		}
 		if env, err = finish(); err != nil {
 			return nil, err
 		}

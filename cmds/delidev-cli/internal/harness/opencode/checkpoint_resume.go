@@ -252,6 +252,18 @@ func InspectReplacementCheckpoint(ctx context.Context, home string, raw []byte, 
 	return InspectCheckpoint(ctx, home, raw, ref)
 }
 
+// InspectReplacementMetadata is InspectReplacementCheckpoint without the file
+// comparison. It serves a checkpoint that a later run of the same persistent
+// profile superseded: its retained metadata stays comparable evidence, but its
+// files are no longer a resume source.
+func InspectReplacementMetadata(raw []byte, ref CheckpointReference, home string) error {
+	value, err := decodeCheckpoint(raw, ref, home)
+	if err != nil {
+		return err
+	}
+	return checkpointReplacementProfile(value)
+}
+
 func checkpointReplacementProfile(value nativeCheckpoint) error {
 	if !validCheckpointTools(value) || !validCheckpointSnapshot(value) || !validCheckpointProjectAdoption(value) || !validCheckpointReferences(value) || value.Snapshot == nil && !checkpointGlobalRoot(value) {
 		return incompatible()
