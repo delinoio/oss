@@ -182,7 +182,8 @@ import {
   text,
   Workspace,
 } from "./documents";
-import { ConversationKind, conversationProvenance } from "./home-navigation";
+import { ConversationKind } from "./home-navigation";
+import { loadedSessionProvenance } from "./search-session-routing";
 import {
   useRetainedMutation,
   useRetainedMutationNotifications,
@@ -1307,13 +1308,17 @@ export function SessionView({
   );
   // A Sidechat restored before its Session could be verified carries a
   // placeholder name. Once the pane reads the Session, the descriptor takes its
-  // verified name, or ends if the Session is not a Sidechat of that parent.
+  // verified name, or ends if the Session is not a Sidechat of that parent
+  // (including malformed provenance).
   useEffect(() => {
     if (!embedded || session?.id !== id) return;
     const parent = tabs.store.parent(id);
     if (!parent || !tabs.store.provisionalSidechat(parent, id)) return;
-    const provenance = conversationProvenance(session, readDocument(session));
-    if (provenance.conversationKind === ConversationKind.Unknown) return;
+    const provenance = loadedSessionProvenance(session, id);
+    // Malformed provenance (missing workspace, invalid Fork metadata) or an
+    // invalid envelope proves the loaded Session is not a valid Sidechat of the
+    // requested parent, exactly as other nonmatching provenance does, so the
+    // placeholder ends.
     if (
       provenance.conversationKind === ConversationKind.Sidechat &&
       provenance.sidechatParent === parent

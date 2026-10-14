@@ -506,7 +506,9 @@ opened without a verified name never shows its internal ID in its text, `title` 
 accessible name: it carries a localized product-identity label (the Session
 presentation label) and is marked provisional. When the child's own pane loads the
 Session, the descriptor takes the verified name; if the loaded Session is not a
-Sidechat of that parent, the placeholder tab ends and its `sidechat` ID leaves the URL.
+Sidechat of that parent, including a Session with malformed or unknown provenance or an
+invalid envelope (`loadedSessionProvenance`, the same checks route verification
+applies), the placeholder tab ends and its `sidechat` ID leaves the URL.
 
 Restore supersession uses one monotonic navigation-intent token owned by `Shell`
 (`navigationIntent`, a ref). Every handler that actually changes the surface, the

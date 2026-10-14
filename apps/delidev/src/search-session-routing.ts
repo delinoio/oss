@@ -8,9 +8,29 @@ import {
   clientFailure,
   newRequestId,
   supportsResourceSchema,
+  type Resource,
 } from "@delinoio/delidev-api-client";
 import { document, resourceName } from "./documents";
 import { ConversationKind, conversationProvenance } from "./home-navigation";
+
+/**
+ * Provenance of a Session a mounted pane has loaded, under the same envelope
+ * checks route verification applies (kind, IDs, positive revision, supported
+ * schema). A resource that fails them, or whose metadata is malformed, is
+ * `ConversationKind.Unknown`: it is not a valid selection of any kind.
+ */
+export function loadedSessionProvenance(resource: Resource, id: string) {
+  const valid =
+    resource.id === id &&
+    resource.kind === EntityKind.SESSION &&
+    resource.sessionId === id &&
+    typeof resource.revision === "bigint" &&
+    resource.revision > 0n &&
+    supportsResourceSchema(resource);
+  return valid
+    ? conversationProvenance(resource, document(resource))
+    : { conversationKind: ConversationKind.Unknown };
+}
 
 /** Closed outcome of resolving which host a Search result opens under. */
 export enum SearchSessionRoute {

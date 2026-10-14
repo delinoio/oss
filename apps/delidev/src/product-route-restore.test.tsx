@@ -906,6 +906,31 @@ describe("route failure classification", () => {
     });
   });
 
+  it("ends a placeholder tab whose Session loads with malformed provenance and clears its URL", async () => {
+    const value = fixture();
+    // Only the malformed Session's route read fails transiently; its pane
+    // later loads it through the stream.
+    value.failure.code = Code.Unavailable;
+    value.failure.id = value.malformed.id;
+    route(
+      `?screen=sessions&session=${value.session.id}&sidechat=${value.malformed.id}`,
+    );
+    render(<App transport={value.transport} />);
+    await waitFor(() =>
+      expect(
+        value.reads.resource.mock.calls.map(([request]) => request.id),
+      ).toContain(value.malformed.id),
+    );
+    await waitFor(() => expect(search().has("sidechat")).toBe(false));
+    expect(
+      screen
+        .queryAllByRole("tab")
+        .filter((tab) => !/Conversation/.test(tab.textContent ?? "")),
+    ).toHaveLength(0);
+    expect(search().get("session")).toBe(value.session.id);
+    expect(value.mutated).not.toHaveBeenCalled();
+  });
+
   it.each(transientCodes)(
     "%s on the parent keeps the requested Sidechat too",
     async (_name, code) => {
