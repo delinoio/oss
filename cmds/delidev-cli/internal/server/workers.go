@@ -204,6 +204,11 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 	if len(capabilities) != len(slices.Compact(slices.Sorted(slices.Values(capabilities)))) {
 		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "The Worker reported a duplicate native capability.", "Report each verified capability once."), correlation)
 	}
+	// Profile v2 peers hold both pairs; a reasoning-only report is never a
+	// valid peer state and must not be persisted.
+	if !domain.OpenCodeForkReasoningPaired(capabilities) {
+		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "The Worker reported OpenCode Fork reasoning without base OpenCode Fork support.", "Report the reasoning capability only together with the base OpenCode Fork capability."), correlation)
+	}
 	input := struct {
 		Machine, Instance            domain.ID
 		Version                      string

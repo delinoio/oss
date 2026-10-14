@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"slices"
 )
 
 // ForkOrigin is a retained boundary, never an executable copy of source input.
@@ -220,6 +221,13 @@ func (f ForkOrigin) Validate() error {
 // opencode-general-chat-v2 (completed plain timed reasoning parts). It never
 // replaces OpenCodeGeneralChatForkV1, which every v2 peer must also hold.
 const OpenCodeGeneralChatForkReasoningV1 WorkerCapability = "opencode-general-chat-fork-reasoning-v1"
+
+// OpenCodeForkReasoningPaired reports whether a Worker capability set keeps the
+// reasoning capability bound to the base OpenCode Fork capability. A set without
+// the reasoning capability is trivially paired.
+func OpenCodeForkReasoningPaired(capabilities []WorkerCapability) bool {
+	return !slices.Contains(capabilities, OpenCodeGeneralChatForkReasoningV1) || slices.Contains(capabilities, OpenCodeGeneralChatForkV1)
+}
 
 // OpenCodeForkProfile names the closed OpenCode General Chat copy profile the
 // server selected for one Fork. The zero value is profile v1, so jobs, receipts

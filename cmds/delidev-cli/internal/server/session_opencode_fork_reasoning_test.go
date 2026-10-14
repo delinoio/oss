@@ -10,6 +10,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
@@ -217,5 +218,30 @@ func TestOpenCodeForkReasoningChildNeedsReasoningCapabilityToResume(t *testing.T
 		if decodeErr != nil || session.ActiveExecutionID != "" || session.Dispatch == domain.DispatchClaimed {
 			t.Fatal("child without the reasoning capability was dispatched")
 		}
+	}
+}
+
+func TestAttachWorkerRejectsReasoningWithoutBaseForkCapability(t *testing.T) {
+	f := newOpenCodeForkSource(t, openCodeForkFixtureOptions{reasoning: true, reasoningCapability: true})
+	instance := string(domain.NewID())
+	_, err := f.workerClient.AttachWorker(context.Background(), ownerRequest(f.workerIdentity, &pb.AttachWorkerRequest{
+		ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: f.machine.Id, InstanceId: instance, Version: rpc.Version,
+		Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_REASONING_V1},
+	}))
+	if err == nil || connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatal("reasoning without the base Fork capability was accepted", err)
+	}
+	_, machine, readErr := func() (store.Record, domain.Machine, error) {
+		var r store.Record
+		var m domain.Machine
+		readErr := f.service.Store.Read(context.Background(), func(tx *store.Tx) error {
+			var err error
+			r, m, err = activeMachine(tx, domain.ID(f.machine.Id))
+			return err
+		})
+		return r, m, readErr
+	}()
+	if readErr != nil || !domain.OpenCodeForkReasoningPaired(machine.WorkerCapabilities) {
+		t.Fatal("an unpaired reasoning capability was persisted", readErr)
 	}
 }

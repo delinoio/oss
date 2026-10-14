@@ -21,3 +21,24 @@ func TestOpenCodeForkProfileZeroValueIsV1AndOmitted(t *testing.T) {
 		t.Fatal("profile v2 not retained on the child seed")
 	}
 }
+
+func TestOpenCodeForkReasoningCapabilityPairing(t *testing.T) {
+	base, reasoning := OpenCodeGeneralChatForkV1, OpenCodeGeneralChatForkReasoningV1
+	for name, tc := range map[string]struct {
+		capabilities []WorkerCapability
+		paired       bool
+		supported    bool
+	}{
+		"none":           {nil, true, false},
+		"base only":      {[]WorkerCapability{base}, true, false},
+		"reasoning only": {[]WorkerCapability{reasoning}, false, false},
+		"both":           {[]WorkerCapability{base, reasoning}, true, true},
+	} {
+		if OpenCodeForkReasoningPaired(tc.capabilities) != tc.paired {
+			t.Fatalf("%s: pairing contract changed", name)
+		}
+	}
+	if err := (Machine{WorkerCapabilities: []WorkerCapability{reasoning}}).Validate(); err == nil {
+		t.Fatal("a machine holding reasoning without the base capability validated")
+	}
+}

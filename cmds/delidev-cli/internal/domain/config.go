@@ -835,6 +835,9 @@ func (m Machine) Validate() error {
 		}
 		seenCapabilities[capability] = true
 	}
+	if !OpenCodeForkReasoningPaired(m.WorkerCapabilities) {
+		return Fail(InvalidArgument, "OpenCode Fork reasoning support requires base OpenCode Fork support.", "Report the reasoning capability only together with the base OpenCode Fork capability.")
+	}
 	return nil
 }
 
