@@ -399,6 +399,43 @@ func TestNativeCodeReviewFinishedJournalRejectsInvalidBoundsAndIdentity(t *testi
 	}
 }
 
+func TestNativeCodeReviewJournalAllowanceDoesNotChangeOtherJobs(t *testing.T) {
+	f := newNativeReviewRecoveryFixture(t)
+	job := f.job
+	job.Type = domain.InspectRepositoryJob
+	job.Input = json.RawMessage(`{"path":"/fixture"}`)
+	job.ParentID = ""
+	rawJob, err := json.Marshal(job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resource := &pb.Resource{Id: f.resource.Id, SessionId: f.resource.SessionId, ProjectId: f.resource.ProjectId, Revision: f.resource.Revision, DocumentJson: rawJob}
+	finished := f.original
+	finished.Digest = executionInputDigest(rawJob)
+	finished.State, finished.Output = journalFinished, json.RawMessage(`"ok"`)
+	path := filepath.Join(f.root, "jobs", string(f.id)+".json")
+	if err := writeJSON(path, finished); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runJob(context.Background(), Config{Root: f.root}, f.instance, resource, job); err != nil {
+		t.Fatalf("small non-review journal rejected: %v", err)
+	}
+	finished.Output, err = json.Marshal(strings.Repeat("x", 1<<20))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeJSON(path, finished); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := os.ReadFile(path)
+	if err != nil || len(stored) <= 1<<20 || len(stored) >= 2<<20 {
+		t.Fatalf("non-review fixture did not isolate decoder bound: %d bytes, %v", len(stored), err)
+	}
+	if _, err := runJob(context.Background(), Config{Root: f.root}, f.instance, resource, job); err == nil {
+		t.Fatal("non-review job adopted native review journal allowance")
+	}
+}
+
 func (f *nativeReviewRecoveryFixture) retain(t *testing.T, raw []byte) {
 	t.Helper()
 	if err := security.WriteAtomic(filepath.Join(f.root, "jobs", string(f.id), "review-result.json"), raw); err != nil {
