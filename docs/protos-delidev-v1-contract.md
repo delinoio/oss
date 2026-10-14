@@ -1537,6 +1537,10 @@ projections follow the closed states and private/public separation in the
 [connections contract](cmds-delidev-connections-contract.md#tailscale-connections).
 No new SQLite entity or migration is introduced.
 
+## Pull request paging allocation
+
+System `PULL_REQUEST_PAGING_50_V1 = 103` (allocation ledger issue 3666) independently negotiates PR List/Search `page_size` up to 50 through `QueryRepositoryIntegration` JSON and up to 50 accepted `GetPullRequestWorkspace.seed_numbers`. It adds no message, field, RPC, Worker allocation, feature flag or database migration, is independent of `PULL_REQUEST_WORKSPACE_V1 = 90`, and the server advertises it from `GetStatus`. Unsupported peers keep the 20-item limits and the desktop sends no 50-item request. Number 103 follows `CODEX_DYNAMIC_TOOLS_V1 = 102`; reconcile against current allocations before merge.
+
 ## Pull request workspace read allocation
 
 System `PULL_REQUEST_WORKSPACE_V1 = 90` independently negotiates the implemented

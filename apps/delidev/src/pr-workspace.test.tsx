@@ -943,3 +943,152 @@ it("renders a component with seeds on two resident pages exactly once", () => {
   expect(numbers()).toEqual(["101", "102", "103"]);
   view.unmount();
 });
+
+it("disposes the selection and old enrichment when the page size scope is replaced", async () => {
+  const profile = newRequestId();
+  const repository = create(ResourceSchema, {
+    id: newRequestId(),
+    kind: EntityKind.REPOSITORY,
+    revision: 1n,
+    schemaVersion: 1,
+    documentJson: encode({
+      integration_id: profile,
+      github_owner: "fixture-owner",
+      github_name: "repo",
+    }),
+  });
+  const scope = {
+    repository_id: repository.id,
+    repository_revision: "1",
+    profile_id: profile,
+    generation_id: newRequestId(),
+    observed_at: "2026-10-11T00:00:00Z",
+    repository: {
+      provider: "github.com",
+      id: "37",
+      node_id: "R_37",
+      owner: "fixture-owner",
+      name: "repo",
+      private: true,
+    },
+  };
+  const row = {
+    provider: "github.com",
+    kind: "pull-request",
+    identity_source: "pull-request-api",
+    id: "1201",
+    node_id: "PR_201",
+    number: "201",
+    title: "Selectable row",
+    state: "open",
+    created_at: "2026-10-10T00:00:00Z",
+    updated_at: "2026-10-11T00:00:00Z",
+    url: "https://github.com/fixture-owner/repo/pull/201",
+    author: {
+      provider_type: "User",
+      kind: "user",
+      id: "19",
+      node_id: "U_19",
+      login: "fixture-author",
+    },
+    draft: false,
+  };
+  const list = vi.fn(async (request: { queryJson: Uint8Array }) => ({
+    schemaVersion: 1,
+    documentJson: encode({
+      ...scope,
+      identity: { id: "17", node_id: "U_17", login: "fixture-user" },
+      query: JSON.parse(new TextDecoder().decode(request.queryJson)),
+      items: [row],
+    }),
+  }));
+  const enrich = vi.fn(async (request: { seedNumbers: string[] }) => ({
+    schemaVersion: 1,
+    documentJson: encode({
+      ...scope,
+      state: "complete",
+      reasons: [],
+      seeds: request.seedNumbers,
+      nodes: [{ item: row, seed: true }],
+      edges: [],
+    }),
+  }));
+  const transport = createRouterTransport((router) => {
+    router.service(SystemService, {
+      getStatus: () => ({
+        capabilities: [SystemCapability.PULL_REQUEST_WORKSPACE_V1],
+      }),
+    });
+    router.service(IntegrationService, {
+      queryRepositoryIntegration: list,
+      getPullRequestWorkspace: enrich,
+    });
+  });
+  let resize!: (size: number) => void;
+  function Fixture({ size }: { size: number }) {
+    const navigation: PullRequestNavigation = {
+      scopeKey: `scope-${size}`,
+      query: {
+        kind: ItemKind.PullRequest,
+        operation: QueryOperation.List,
+        state: ItemState.Open,
+        page: 1,
+        page_size: size,
+      },
+      previous: [],
+    };
+    return (
+      <StandalonePullRequestResults
+        selected={repository}
+        navigation={navigation}
+        changeNavigation={() => {}}
+        active
+      />
+    );
+  }
+  function Host() {
+    const [size, setSize] = useState(20);
+    resize = setSize;
+    return <Fixture size={size} />;
+  }
+  const view = render(
+    <TransportProvider transport={transport}>
+      <QueryClientProvider client={new QueryClient()}>
+        <Host />
+      </QueryClientProvider>
+    </TransportProvider>,
+  );
+  const button = await screen.findByRole("button", {
+    name: /#201 Selectable row/,
+  });
+  await waitFor(() => expect(enrich).toHaveBeenCalledTimes(1));
+  fireEvent.click(button);
+  await waitFor(() =>
+    expect(
+      view.container
+        .querySelector("[data-pr-number='201']")
+        ?.getAttribute("aria-pressed"),
+    ).toBe("true"),
+  );
+  act(() => resize(50));
+  const lists = () =>
+    list.mock.calls
+      .map(([request]) =>
+        JSON.parse(new TextDecoder().decode(request.queryJson)),
+      )
+      .filter((query) => query.operation === "list");
+  await waitFor(() => expect(lists()).toHaveLength(2));
+  expect(lists().map((query) => [query.page, query.page_size])).toEqual([
+    [1, 20],
+    [1, 50],
+  ]);
+  await waitFor(() =>
+    expect(
+      view.container
+        .querySelector("[data-pr-number='201']")
+        ?.getAttribute("aria-pressed"),
+    ).toBe("false"),
+  );
+  // The replacement owns its own enrichment; the old one is not reused.
+  await waitFor(() => expect(enrich).toHaveBeenCalledTimes(2));
+});
