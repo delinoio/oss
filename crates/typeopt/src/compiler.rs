@@ -322,6 +322,7 @@ impl Project {
             computed: computed_import,
             bare,
             dynamic_packages,
+            dynamic_files,
             worker_scripts,
         } = project.bundle_imported(dir);
         // Chunks known to run as ES modules: imported by another chunk or
@@ -342,7 +343,7 @@ impl Project {
                  {specifier:?}); bundle mode needs a self-contained bundle"
             );
         }
-        if let Some(outside) = project.application_file_outside(dir, &dynamic_packages) {
+        if let Some(outside) = project.application_file_outside(dir, &dynamic_files, &edges) {
             bail!(
                 "a bundle chunk imports a module outside the bundle directory, which cannot be \
                  published: {outside}"
@@ -474,55 +475,30 @@ impl Project {
     /// declaration elsewhere. Declarations reached only through a dynamic
     /// package import are intentionally outside the closed runtime bundle;
     /// they are skipped here because that import remains an unresolved
-    /// boundary.
+    /// boundary. The set is the resolved dynamic dependency closure, rather
+    /// than a lexical package root, so relative imports from an application
+    /// chunk cannot hide under a dynamic package directory.
     fn application_file_outside(
         &self,
         dir: &std::path::Path,
-        dynamic_packages: &BTreeMap<String, Paths>,
+        dynamic_files: &Paths,
+        edges: &BTreeMap<String, Paths>,
     ) -> Option<String> {
         let _scope = enter_program(Some(&self.version));
-        let dynamic_roots = Self::dynamic_package_roots(dir, dynamic_packages);
+        if let Some(outside) = edges
+            .values()
+            .flatten()
+            .filter(|name| !name.starts_with("bundled:"))
+            .find(|name| !std::path::Path::new(name).starts_with(dir))
+        {
+            return Some(outside.clone());
+        }
         source_files()
             .into_iter()
             .map(|file| source_file_info(file).file_name.clone())
             .filter(|name| !name.starts_with("bundled:"))
-            .filter(|name| {
-                !dynamic_roots
-                    .iter()
-                    .any(|root| std::path::Path::new(name).starts_with(root))
-            })
+            .filter(|name| !dynamic_files.contains(name))
             .find(|name| !std::path::Path::new(name).starts_with(dir))
-    }
-
-    /// Return package roots whose files are compiler inputs only because a
-    /// literal dynamic import leaves the package unresolved at runtime.
-    fn dynamic_package_roots(
-        dir: &std::path::Path,
-        dynamic_packages: &BTreeMap<String, Paths>,
-    ) -> BTreeSet<std::path::PathBuf> {
-        let mut roots = BTreeSet::new();
-        let dir = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
-        for specifier in dynamic_packages.values().flat_map(|paths| paths.iter()) {
-            let mut parts = specifier.split('/');
-            let package = match parts.next() {
-                Some(scope) if scope.starts_with('@') => {
-                    let Some(name) = parts.next() else { continue };
-                    format!("{scope}/{name}")
-                }
-                Some(name) => name.to_owned(),
-                None => continue,
-            };
-            let mut ancestor = Some(dir.as_path());
-            while let Some(root) = ancestor {
-                let lexical = root.join("node_modules").join(&package);
-                roots.insert(lexical.clone());
-                if let Ok(canonical) = lexical.canonicalize() {
-                    roots.insert(canonical);
-                }
-                ancestor = root.parent();
-            }
-        }
-        roots
     }
 
     /// Bundle chunks that another chunk imports with an import or export
@@ -537,9 +513,11 @@ impl Project {
         let mut computed = false;
         let mut bare = None;
         let mut dynamic_packages = BTreeMap::<String, Paths>::new();
+        let mut dynamic_entries = Paths::new();
         let (mut worker_scripts, mut worker_computed) = (Paths::new(), false);
         let mut non_esm = Paths::new();
-        for file in source_files() {
+        let files = source_files();
+        for file in files.iter().copied() {
             if !is_application(file) {
                 continue;
             }
@@ -633,6 +611,13 @@ impl Project {
                                 .entry(name.clone())
                                 .or_default()
                                 .insert(text.to_owned());
+                            let target = with_type_checker_for_file(file, |checker| {
+                                resolved_module_file(checker, specifier)
+                            })
+                            .or_else(|| resolve_dynamic_package_entry(&name, text));
+                            if let Some(target) = target {
+                                dynamic_entries.insert(target);
+                            }
                         } else if bare.is_none() {
                             bare = Some(text.to_owned());
                         }
@@ -659,6 +644,7 @@ impl Project {
         if worker_computed {
             worker_scripts.extend(non_esm.iter().cloned());
         }
+        let dynamic_files = dynamic_package_files(&files, &dynamic_entries, &edges);
         BundleImports {
             imported,
             unlinked: public,
@@ -666,6 +652,7 @@ impl Project {
             computed,
             bare,
             dynamic_packages,
+            dynamic_files,
             worker_scripts,
         }
     }
@@ -1400,8 +1387,151 @@ struct BundleImports {
     /// Bare package specifiers loaded through literal dynamic imports,
     /// grouped by the unchanged chunk that contains each import.
     dynamic_packages: BTreeMap<String, Paths>,
+    /// Compiler inputs reached only through those dynamic package imports.
+    dynamic_files: Paths,
     /// Chunks that `importScripts` can load as classic scripts.
     worker_scripts: Paths,
+}
+
+/// Resolve a module specifier to the source file that declares its module.
+/// TypeScript's module symbol includes package entry points and declaration
+/// files, which gives bundle mode the same resolution boundary as analysis.
+fn resolved_module_file(checker: &mut Checker, specifier: Node) -> Option<String> {
+    let symbol = checker.get_symbol_at_location(specifier);
+    if symbol.is_nil() {
+        return None;
+    }
+    let declaration = checker.sym(symbol).declarations.first().copied()?;
+    Some(source_file_info(get_source_file_of_node(declaration)).file_name)
+}
+
+/// Resolve a bare package entry when TypeScript intentionally leaves a
+/// dynamic import unresolved. Declaration entry points are preferred because
+/// they are the compiler inputs that must be kept in the dynamic closure.
+fn resolve_dynamic_package_entry(importer: &str, specifier: &str) -> Option<String> {
+    if specifier.contains(':') || specifier.starts_with('.') || specifier.starts_with('/') {
+        return None;
+    }
+    let mut parts = specifier.split('/');
+    let package = match parts.next()? {
+        scope if scope.starts_with('@') => format!("{scope}/{}", parts.next()?),
+        name => name.to_owned(),
+    };
+    let subpath = parts.collect::<Vec<_>>().join("/");
+    let importer = std::path::Path::new(importer);
+    let mut ancestor = importer.parent();
+    while let Some(root) = ancestor {
+        let package_root = root.join("node_modules").join(&package);
+        if package_root.is_dir() {
+            let target = if subpath.is_empty() {
+                let manifest = package_root.join("package.json");
+                let fields = std::fs::read_to_string(manifest)
+                    .ok()
+                    .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok());
+                let entry = fields.as_ref().and_then(|value| {
+                    ["types", "typings", "module", "main"]
+                        .into_iter()
+                        .find_map(|field| value.get(field)?.as_str())
+                });
+                entry.map_or_else(
+                    || package_root.join("index"),
+                    |entry| package_root.join(entry),
+                )
+            } else {
+                package_root.join(&subpath)
+            };
+            if let Some(file) = resolve_module_path(&target) {
+                return Some(file);
+            }
+        }
+        ancestor = root.parent();
+    }
+    None
+}
+
+fn resolve_module_path(path: &std::path::Path) -> Option<String> {
+    let candidates = [
+        path.to_path_buf(),
+        path.with_extension("ts"),
+        path.with_extension("tsx"),
+        path.with_extension("d.ts"),
+        path.with_extension("js"),
+        path.with_extension("jsx"),
+        path.with_extension("mjs"),
+        path.with_extension("cjs"),
+        path.join("index.ts"),
+        path.join("index.tsx"),
+        path.join("index.d.ts"),
+        path.join("index.js"),
+        path.join("index.jsx"),
+        path.join("index.mjs"),
+        path.join("index.cjs"),
+    ];
+    candidates
+        .into_iter()
+        .find(|candidate| candidate.is_file())
+        .and_then(|candidate| candidate.canonicalize().ok())
+        .map(|candidate| candidate.to_string_lossy().into_owned())
+}
+
+/// Collect the files reached only through a literal dynamic package import.
+/// The closure includes package declarations and their transitive module
+/// dependencies. Static bundle edges are removed so a relative application
+/// import cannot be hidden under the dynamic package's filesystem root.
+fn dynamic_package_files(
+    files: &[Node],
+    entries: &Paths,
+    edges: &BTreeMap<String, Paths>,
+) -> Paths {
+    let by_name: HashMap<String, Node> = files
+        .iter()
+        .copied()
+        .map(|file| (source_file_info(file).file_name.clone(), file))
+        .collect();
+    let mut dynamic = Paths::new();
+    let mut pending: Vec<String> = entries.iter().cloned().collect();
+    while let Some(name) = pending.pop() {
+        if !dynamic.insert(name.clone()) {
+            continue;
+        }
+        let Some(&file) = by_name.get(&name) else {
+            continue;
+        };
+        let mut nodes = Vec::new();
+        collect(file, &mut nodes);
+        with_type_checker_for_file(file, |checker| {
+            for node in nodes {
+                let specifier = match node.kind() {
+                    SyntaxKind::ImportDeclaration | SyntaxKind::ExportDeclaration => {
+                        node.module_specifier()
+                    }
+                    SyntaxKind::CallExpression
+                        if node.expression().kind() == SyntaxKind::ImportKeyword =>
+                    {
+                        node.arguments().iter().next().unwrap_or(Node::NIL)
+                    }
+                    _ => continue,
+                };
+                if specifier.is_nil()
+                    || !matches!(
+                        specifier.kind(),
+                        SyntaxKind::StringLiteral | SyntaxKind::NoSubstitutionTemplateLiteral
+                    )
+                {
+                    continue;
+                }
+                if let Some(target) = resolved_module_file(checker, specifier)
+                    .or_else(|| resolve_dynamic_package_entry(&name, specifier.text()))
+                    && !dynamic.contains(&target)
+                {
+                    pending.push(target);
+                }
+            }
+        });
+    }
+    let static_targets: Paths = edges.values().flatten().cloned().collect();
+    dynamic.retain(|file| !static_targets.contains(file));
+    dynamic
 }
 
 /// Chunks that a boundary chunk can import, statically or through a literal

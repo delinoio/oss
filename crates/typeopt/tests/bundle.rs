@@ -2050,6 +2050,57 @@ fn rejects_imports_outside_the_bundle() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("outside the bundle directory"));
 }
 
+#[test]
+fn rejects_relative_imports_hidden_by_dynamic_package_boundary() {
+    let temp = bundle(&[(
+        "sub/index.js",
+        r#"import{x}from"../../node_modules/pkg/index.js";if(false)import("pkg");console.log(x);"#,
+    )]);
+    let package = temp.path().join("node_modules/pkg");
+    fs::create_dir_all(&package).unwrap();
+    fs::write(
+        package.join("package.json"),
+        r#"{"name":"pkg","type":"module","main":"index.js"}"#,
+    )
+    .unwrap();
+    fs::write(package.join("index.js"), "export const x=1;").unwrap();
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("outside the bundle directory"));
+}
+
+#[test]
+fn allows_transitive_dynamic_package_declarations() {
+    let temp = bundle(&[("index.js", r#"if(false)import("pkg");console.log(1);"#)]);
+    let package = temp.path().join("node_modules/pkg");
+    let dependency = temp.path().join("node_modules/dep");
+    fs::create_dir_all(&package).unwrap();
+    fs::create_dir_all(&dependency).unwrap();
+    fs::write(
+        package.join("package.json"),
+        r#"{"name":"pkg","type":"module","main":"index.js","types":"index.d.ts"}"#,
+    )
+    .unwrap();
+    fs::write(package.join("index.js"), "export const x=1;").unwrap();
+    fs::write(package.join("index.d.ts"), "export {y} from \"dep\";").unwrap();
+    fs::write(
+        dependency.join("package.json"),
+        r#"{"name":"dep","types":"index.d.ts"}"#,
+    )
+    .unwrap();
+    fs::write(
+        dependency.join("index.d.ts"),
+        "export declare const y:number;",
+    )
+    .unwrap();
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 /// A package loaded only by a guarded dynamic import is an unchanged
 /// boundary; an independent chunk can still be optimized.
 #[test]
