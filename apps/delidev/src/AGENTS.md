@@ -12,8 +12,6 @@ Changes to shared renderer shortcuts must update dispatch, Help, the Settings ca
 
 Tab strips for Project editing, Usage, Backups history, session tabs and the terminal selector share `tab-strip.css` (classes `tab-strip`, `tab-item`, `tab-label`, `is-selected`, `tab-close`). Do not add per-surface tab geometry, and exclude new broad button rules from `tab-item`, `tab-label` and `tab-close` with the existing `:where(:not(...))` guard. The change is presentation only: preserve roles, activation mode, retained state and resource lifetimes, following the [shared tab strip presentation](../../../docs/apps-delidev-desktop-contract.md#shared-tab-strip-presentation).
 
-The product route in the URL query (`product-route.ts`, `product-route-restore.ts`) keeps the current screen and selection across the full-webview reload. A new top-level screen or selection must report through `Shell` and be added to the route parser, serializer and restore tests, following [Product route retained across reload](../../../docs/apps-delidev-desktop-contract.md#product-route-retained-across-reload).
-
 The shared pure `product-identity.ts` module is owned here and consumed by the mobile renderer. Changes must read both renderer contracts; desktop React/query-cache observation stays in `product-identity-labels.tsx`.
 
 ## Owning contracts
