@@ -12,7 +12,7 @@ import { createServer } from "node:net";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import platforms from "../src/platforms.cjs";
-import { ensure, event, metadata, npm, root } from "./common.mjs";
+import { ensure, event, metadata, npm, root, sourceText } from "./common.mjs";
 import { buildPackage } from "./package.mjs";
 
 const { values } = parseArgs({
@@ -640,6 +640,29 @@ try {
       installed.version === metadata().version,
       "Installed native version mismatch",
     );
+    const installedNative = path.join(consumer, "node_modules", native.name);
+    const notices =
+      target.os === platforms.Platform.Darwin
+        ? [["LICENSE.fspy", "crates/fspy/LICENSE"]]
+        : target.os === platforms.Platform.Windows
+          ? [
+              ["LICENSE.fspy", "crates/fspy/LICENSE"],
+              ["LICENSE.detours", "crates/fspy_detours_sys/detours/LICENSE"],
+            ]
+          : [];
+    for (const [name, source] of notices)
+      ensure(
+        readFileSync(path.join(installedNative, name)).equals(
+          Buffer.from(sourceText(source)),
+        ),
+        `Installed native notice mismatch: ${name}`,
+      );
+    if (target.os === platforms.Platform.Linux)
+      ensure(
+        !existsSync(path.join(installedNative, "LICENSE.fspy")) &&
+          !existsSync(path.join(installedNative, "LICENSE.detours")),
+        "Unexpected Linux native notice",
+      );
     event("consumer_smoke", {
       manager,
       target: target.suffix,

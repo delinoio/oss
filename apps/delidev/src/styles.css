@@ -200,6 +200,90 @@ pre {
 .sidebar-rail-button:focus-visible .sidebar-rail-tooltip {
   opacity: 1;
 }
+.sidebar-more-trigger[aria-expanded="true"] {
+  background: var(--surface-selected);
+  color: var(--text);
+}
+.sidebar-more-trigger[aria-expanded="true"] .sidebar-rail-tooltip {
+  opacity: 0;
+}
+.sidebar-more-popover {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  width: 230px;
+  max-width: calc(100vw - 8px);
+  max-height: calc(100dvh - 8px);
+  overflow: auto;
+  overscroll-behavior: none;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  z-index: 40;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  box-shadow: 0 4px 20px var(--shadow-soft);
+}
+.sidebar-more-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.sidebar-more-item,
+.sidebar-more-pin {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  border-color: transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+}
+.sidebar-more-item {
+  flex: 1 1 auto;
+  min-width: 0;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 0 10px;
+  text-align: left;
+}
+.sidebar-more-pin {
+  flex: 0 0 auto;
+  justify-content: center;
+  width: 40px;
+  min-width: 40px;
+  padding: 0;
+  color: var(--text-secondary);
+}
+.sidebar-more-item:hover,
+.sidebar-more-pin:hover,
+.sidebar-more-item:focus-visible,
+.sidebar-more-pin:focus-visible {
+  background: var(--surface-hover);
+}
+.sidebar-more-item[data-current="true"] {
+  background: var(--selected-background);
+  color: var(--selected-text);
+}
+.sidebar-more-pin[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.sidebar-more-popover .navigation-preference-notice {
+  display: grid;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 8px 10px 4px;
+  border-top: 1px solid var(--border);
+}
+.sidebar-more-popover .navigation-preference-notice p {
+  margin: 0;
+}
+.sidebar-more-popover .navigation-preference-notice button {
+  min-height: 40px;
+}
 .sidebar-pane {
   display: flex;
   min-width: 0;

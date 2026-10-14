@@ -74,5 +74,16 @@
   "sidebar.conversationFork": "독립 Fork",
   "sidebar.conversationSidechat": "사이드 채팅",
   "sidebar.conversationChildren": "{{name}} 아래의 대화",
-  "sidebar.projectActions": "프로젝트 작업 · {{name}}"
+  "sidebar.projectActions": "프로젝트 작업 · {{name}}",
+  "sidebar.more": "더보기",
+  "sidebar.pinUsage": "사용량 고정",
+  "sidebar.unpinUsage": "사용량 고정 해제",
+  "sidebar.navigation.reload": "탐색 설정 다시 읽기",
+  "sidebar.navigation.unavailable": "탐색 설정 저장소를 사용할 수 없습니다. 신뢰할 수 있는 앱 창에서 다시 읽으세요.",
+  "sidebar.navigation.readFailed": "저장된 탐색 설정을 읽지 못했습니다. 다시 시도하기 전에 다시 읽으세요.",
+  "sidebar.navigation.invalidDocument": "저장된 탐색 설정이 올바르지 않습니다. 원본 파일은 변경되지 않았습니다. 다시 시도하기 전에 다시 읽으세요.",
+  "sidebar.navigation.unsupportedVersion": "탐색 설정의 버전을 지원하지 않습니다. 원본 파일은 변경되지 않았습니다.",
+  "sidebar.navigation.writeFailed": "탐색 설정을 저장하지 못했습니다. 확인된 고정 상태를 유지합니다. 다시 시도하기 전에 다시 읽으세요.",
+  "sidebar.navigation.outcomeUnknown": "저장 결과를 확인할 수 없습니다. 다시 변경하기 전에 탐색 설정을 다시 읽으세요.",
+  "sidebar.navigation.changed": "다른 창에서 탐색 설정이 변경되었습니다. 다시 선택하기 전에 다시 읽으세요."
 }

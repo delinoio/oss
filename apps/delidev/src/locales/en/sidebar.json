@@ -74,5 +74,16 @@
   "sidebar.conversationFork": "Independent Fork",
   "sidebar.conversationSidechat": "Side Chat",
   "sidebar.conversationChildren": "Conversations beneath {{name}}",
-  "sidebar.projectActions": "Project actions · {{name}}"
+  "sidebar.projectActions": "Project actions · {{name}}",
+  "sidebar.more": "More",
+  "sidebar.pinUsage": "Pin Usage",
+  "sidebar.unpinUsage": "Unpin Usage",
+  "sidebar.navigation.reload": "Reload navigation preference",
+  "sidebar.navigation.unavailable": "Navigation preference storage is unavailable. Reload in a trusted product window.",
+  "sidebar.navigation.readFailed": "The saved navigation preference could not be read. Reload before trying again.",
+  "sidebar.navigation.invalidDocument": "The saved navigation preference is invalid. The original file remains unchanged. Reload before trying again.",
+  "sidebar.navigation.unsupportedVersion": "The navigation preference uses an unsupported version. The original file remains unchanged.",
+  "sidebar.navigation.writeFailed": "The navigation preference could not be saved. The confirmed pin state remains active. Reload before trying again.",
+  "sidebar.navigation.outcomeUnknown": "The save outcome is unknown. Reload the navigation preference before making another change.",
+  "sidebar.navigation.changed": "The navigation preference changed elsewhere. Reload before choosing again."
 }
