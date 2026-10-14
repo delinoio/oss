@@ -126,6 +126,9 @@ func TestGrokFinishReportsMapToExplicitOutcomes(t *testing.T) {
 			if c.action != login {
 				current = f.login("synthetic-principal-1")
 			}
+			if c.action == logout {
+				f.markRevoked(t)
+			}
 			lease, err := f.take(f.queue(c.action), c.action)
 			if err != nil {
 				t.Fatal(err)

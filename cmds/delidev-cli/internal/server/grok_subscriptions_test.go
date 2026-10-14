@@ -172,6 +172,23 @@ func (f *grokFixture) finishWith(lease *pb.TakeSubscriptionResponse, request dom
 	return response.Msg, nil
 }
 
+// markRevoked records that the provider revoked the account's current
+// generation, which a Worker-routed logout requires before it may delete it.
+func (f *grokFixture) markRevoked(t *testing.T) {
+	t.Helper()
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.grok.revoked", nil, func(tx *store.Tx) (any, error) {
+		r, a, err := accountFromTx(tx, f.input.AccountID, 0)
+		if err != nil {
+			return nil, err
+		}
+		a.Subscription.RevokedGeneration = a.Subscription.Generation
+		return tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 // login completes one Grok login for principal and returns its generation.
 func (f *grokFixture) login(principal string) domain.ID {
 	f.t.Helper()
@@ -255,7 +272,9 @@ func TestGrokLifecycleMovesBundleOnlyThroughProtectedTakeAndFinish(t *testing.T)
 		t.Fatal("refresh retained the superseded generation")
 	}
 
-	// Logout returns the bundle for native cleanup and removes every reference.
+	// Logout returns the bundle for native cleanup and removes every reference,
+	// after the provider revoked the current generation.
+	f.markRevoked(t)
 	lease, err = f.take(f.queue(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT), pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT)
 	if err != nil || len(lease.Bundle) == 0 {
 		t.Fatal("logout did not receive the current envelope")
@@ -618,6 +637,7 @@ func TestGrokFinishDeletesTheReferencedGenerationOnlyAfterPublication(t *testing
 	if vault.deletes != 1 || vault.prematures != 0 {
 		t.Fatalf("refresh removed the superseded generation while it was still referenced (%d deletes, %d premature)", vault.deletes, vault.prematures)
 	}
+	f.markRevoked(t)
 	lease, err = f.take(f.queue(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT), pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT)
 	if err != nil {
 		t.Fatal(err)
@@ -795,6 +815,7 @@ func TestGrokRetireUnpublishedGenerationRequiresProofOfNonPublication(t *testing
 func TestGrokFinishFencedLogoutKeepsTheReferencedGeneration(t *testing.T) {
 	f := newGrokFixture(t)
 	generation := f.login("synthetic-principal-1")
+	f.markRevoked(t)
 	lease, err := f.take(f.queue(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT), pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT)
 	if err != nil {
 		t.Fatal(err)

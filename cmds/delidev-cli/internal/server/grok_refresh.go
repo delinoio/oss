@@ -52,6 +52,12 @@ const (
 	grokFaultAfterResponse grokRefreshFaultPoint = "after_response"
 	grokFaultAfterStage    grokRefreshFaultPoint = "after_stage"
 	grokFaultAfterPersist  grokRefreshFaultPoint = "after_persist"
+
+	// Logout fault points.
+	grokFaultAfterRevokeClaim        grokRefreshFaultPoint = "after_revoke_claim"
+	grokFaultAfterRevoke             grokRefreshFaultPoint = "after_revoke"
+	grokFaultAfterRevocationRecorded grokRefreshFaultPoint = "after_revocation_recorded"
+	grokFaultAfterLogoutCleanup      grokRefreshFaultPoint = "after_logout_cleanup"
 )
 
 func (s *Service) grokFault(point grokRefreshFaultPoint) {

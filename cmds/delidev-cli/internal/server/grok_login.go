@@ -250,10 +250,6 @@ func serverSubscriptionAccount(tx *store.Tx, id domain.ID, revision uint64) (sto
 	return subscriptionAccount(tx, id, revision)
 }
 
-func grokLoginUnsupportedAction() *domain.Error {
-	return domain.Fail(domain.Unsupported, "Only Grok login and refresh are available on the server.", "Use login or refresh; logout is separate lifecycle work.")
-}
-
 // grokOutcome is the settled result of the OAuth steps, before it is written.
 type grokOutcome struct {
 	bundle subscription.GrokBundle
@@ -278,8 +274,11 @@ func (o grokOutcome) needsDiagnostic() bool {
 
 func (s *Service) logGrok(ctx context.Context, level slog.Level, message string, o domain.ServerSubscriptionOperation, step grokLoginStep, attrs ...any) {
 	phase := grokLogPhaseLogin
-	if o.Action == domain.SubscriptionRefresh {
+	switch o.Action {
+	case domain.SubscriptionRefresh:
 		phase = grokLogPhaseRefresh
+	case domain.SubscriptionLogout:
+		phase = grokLogPhaseLogout
 	}
 	base := []any{"phase", phase, "operation_id", o.ID, "correlation_id", o.ID, "step", step}
 	s.logger.Log(ctx, level, message, append(base, attrs...)...)

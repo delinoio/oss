@@ -53,14 +53,6 @@ func (s *Service) requestServerSubscription(ctx context.Context, req *connect.Re
 		if err != nil {
 			return nil, err
 		}
-		if a.SubscriptionService == domain.SubscriptionGrok {
-			// Server-owned Grok supports browser login, device-code login and
-			// refresh. The method is the explicit device_code flag: a device
-			// request never falls back to the browser method or the reverse.
-			if action == domain.SubscriptionLogout {
-				return nil, grokLoginUnsupportedAction()
-			}
-		}
 		if a.Subscription == nil {
 			a.Subscription = &domain.SubscriptionState{}
 		}
@@ -236,6 +228,7 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 			cleanup            bool
 			claude             bool
 			grok               bool
+			logout             bool
 			refresh            bool
 		}
 		var candidates []candidate
@@ -262,6 +255,11 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 					continue
 				} else if a.Subscription != nil && !a.Subscription.RecoveryRequired && a.Subscription.ServerOperation != nil && a.Subscription.ServerOperation.State == domain.SubscriptionPreparing && !a.Subscription.ServerOperation.NativeStarted && a.Subscription.ServerOperation.Epoch == s.subscriptionServerEpoch() && a.Subscription.Pending != nil && a.Subscription.Pending.Phase == domain.SubscriptionQueued && a.Subscription.Lease == nil {
 					candidates = append(candidates, candidate{account: r.ID})
+				} else if grokLogoutRecoveryKind(a) != grokLogoutNone {
+					eligible[a.Subscription.ServerOperation.ID] = true
+					if retries[a.Subscription.ServerOperation.ID].due(now) {
+						candidates = append(candidates, candidate{account: r.ID, operation: a.Subscription.ServerOperation.ID, cleanup: true, grok: true, logout: true})
+					}
 				} else if grokLoginNeedsRecovery(a) {
 					eligible[a.Subscription.ServerOperation.ID] = true
 					if retries[a.Subscription.ServerOperation.ID].due(now) {
@@ -303,6 +301,11 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 						}
 					} else {
 						s.runManagedClaude(child, next.account)
+					}
+				} else if next.grok && next.logout {
+					if err := s.recoverGrokLogout(child, next.account, next.operation); err != nil && child.Err() == nil {
+						result.failed = true
+						s.logger.WarnContext(child, "grok_logout_recovery_pending", "phase", grokLogPhaseCleanup, "operation_id", next.operation, "code", domain.SafeError(err).Code)
 					}
 				} else if next.grok {
 					if err := s.recoverGrokLogin(child, next.account, next.operation); err != nil && child.Err() == nil {
@@ -381,10 +384,14 @@ func (r cleanupRetry) after(now time.Time, failed bool, base time.Duration) clea
 
 func (s *Service) runServerSubscription(parent context.Context, id domain.ID) {
 	if action, matched := s.grokServerAction(parent, id); matched {
-		// Grok login and refresh are Go-owned OAuth flows, not native processes.
-		if action == domain.SubscriptionRefresh {
+		// Grok login, refresh and logout are Go-owned OAuth flows, not native
+		// processes.
+		switch action {
+		case domain.SubscriptionRefresh:
 			s.runGrokRefresh(parent, id)
-		} else {
+		case domain.SubscriptionLogout:
+			s.runGrokLogout(parent, id)
+		default:
 			s.runGrokLogin(parent, id)
 		}
 		return

@@ -453,10 +453,10 @@ func TestGrokRefreshIsAvailableOnlyToAConnectedGrokAccount(t *testing.T) {
 	if request(pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH) == nil {
 		t.Fatal("an unconnected account accepted a refresh")
 	}
-	g.connected(t)
 	if request(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT) == nil {
-		t.Fatal("server-owned Grok logout is not available yet")
+		t.Fatal("an unconnected account accepted a logout")
 	}
+	g.connected(t)
 	if err := request(pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH); err != nil {
 		t.Fatal(err)
 	}

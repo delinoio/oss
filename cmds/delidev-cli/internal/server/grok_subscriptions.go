@@ -69,6 +69,24 @@ func grokUnsupported() *domain.Error {
 	return domain.Fail(domain.Unsupported, "This Grok operation is not available.", "Use login, refresh or logout; Grok execution is not activated.")
 }
 
+// grokLoggingOut is the typed problem of work refused because the account's
+// logout was accepted.
+func grokLoggingOut() *domain.Error {
+	return domain.Fail(domain.Unavailable, "This Grok account is logging out.", "Wait for the logout to finish; new Grok execution is refused until the account signs in again.")
+}
+
+// grokAccountLoggingOut reports whether the account has an accepted logout that
+// has not settled.
+func (s *Service) grokAccountLoggingOut(ctx context.Context, id domain.ID) bool {
+	logging := false
+	_ = s.Store.Read(ctx, func(tx *store.Tx) error {
+		_, a, err := accountFromTx(tx, id, 0)
+		logging = err == nil && a.GrokLoggingOut()
+		return nil
+	})
+	return logging
+}
+
 func (s *Service) isGrokSubscription(ctx context.Context, id string) (bool, error) {
 	if domain.ID(id).Validate() != nil {
 		return false, subscriptionDenied()
@@ -165,6 +183,13 @@ func (s *Service) takeGrokSubscription(ctx context.Context, req *connect.Request
 		return nil, rpc.Error(subscriptionDenied(), c)
 	}
 	if !grokLifecycleAction(action) {
+		// Readiness is revoked from the acceptance of a logout, so new execution is
+		// refused with a typed unavailable problem while it waits, revokes and
+		// cleans up. Any other unsupported work keeps its generic refusal.
+		if s.grokAccountLoggingOut(ctx, input.Account) {
+			s.logger.WarnContext(ctx, "grok_subscription_take_logging_out", "phase", grokLogPhaseLogout, "account_id", input.Account, "action", action)
+			return nil, rpc.Error(grokLoggingOut(), c)
+		}
 		s.logger.WarnContext(ctx, "grok_subscription_take_unsupported_action", "account_id", input.Account, "action", action)
 		return nil, rpc.Error(grokUnsupported(), c)
 	}
@@ -229,6 +254,11 @@ func (s *Service) takeGrokSubscription(ctx context.Context, req *connect.Request
 		}
 		if err := subscriptionActorValid(tx, op.Actor); err != nil {
 			return nil, err
+		}
+		// A Worker lease may carry a logout only after the provider revoked the
+		// current generation: the protected bundle is never deleted first.
+		if action == domain.SubscriptionLogout && (st.RevokedGeneration == "" || st.RevokedGeneration != st.Generation) {
+			return nil, subscriptionDenied()
 		}
 		op.Phase = domain.SubscriptionClaimed
 		st.Lease = &domain.SubscriptionLease{ID: input.Lease, OperationID: input.Operation, Revision: r.Revision + 1, Action: action, MachineID: input.Machine, InstanceID: input.Instance, DeviceID: actor.DeviceID, Epoch: s.subscriptionServerEpoch(), Generation: st.Generation, StartedAt: time.Now().UTC()}
@@ -431,11 +461,19 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 		}
 		state := original.Subscription
 		lease := state.Lease
-		if state.RecoveryRequired || state.Generation != input.Generation || lease.Generation != input.Generation || lease.Revision != input.Revision {
+		// A logout whose private-home cleanup was not confirmed stays fenced on its
+		// original lease; only that lease's exact Worker, instance and epoch (checked
+		// by the lease view above) may report Finish again. Every other fence blocks.
+		retry := lease.Action == domain.SubscriptionLogout && state.RecoveryRequired
+		if state.RecoveryRequired && !retry || state.Generation != input.Generation || lease.Generation != input.Generation || lease.Revision != input.Revision {
 			return nil, rpc.Error(subscriptionDenied(), c)
 		}
 		owned = true
 		usable := input.Success && input.Cleanup && (lease.Action != domain.SubscriptionRefresh || input.Refresh)
+		// The bundle is deleted only after the provider revoked its refresh token.
+		if lease.Action == domain.SubscriptionLogout && (state.RevokedGeneration == "" || state.RevokedGeneration != lease.Generation) {
+			usable = false
+		}
 		if state.Pending != nil && state.Pending.Canceled {
 			usable = false
 		}
@@ -513,8 +551,11 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 				return nil, err
 			}
 			state := a.Subscription
-			if state.RecoveryRequired || state.Generation != input.Generation {
+			if state.RecoveryRequired && lease.Action != domain.SubscriptionLogout || state.Generation != input.Generation {
 				return nil, subscriptionDenied()
+			}
+			if lease.Action == domain.SubscriptionLogout && (state.RevokedGeneration == "" || state.RevokedGeneration != lease.Generation) {
+				usable = false
 			}
 			if state.Pending != nil {
 				if err := subscriptionActorValid(tx, state.Pending.Actor); err != nil {
@@ -539,6 +580,11 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 				state.Members = nil
 				if state.Pending != nil && state.Pending.ID == lease.OperationID {
 					state.Pending = nil
+				}
+				if lease.Action == domain.SubscriptionLogout {
+					// Confirmed cleanup settles a fence left by an earlier unconfirmed one.
+					state.RecoveryRequired = false
+					state.RevokedGeneration = ""
 				}
 				if usable && lease.Action != domain.SubscriptionLogout {
 					state.Generation = newGeneration
