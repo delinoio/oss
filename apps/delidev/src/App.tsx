@@ -32,6 +32,7 @@ import {
 } from "./entrance-motion";
 import type { UsageEntry } from "./usage-entry";
 import { LocalConnectionPresentationProvider } from "./local-connection-presentation";
+import { ConnectionEpochProvider } from "./connection-epoch";
 import {
   useCallback,
   useEffect,
@@ -103,6 +104,7 @@ import {
   useShortcuts,
 } from "./shortcut-provider";
 import {
+  ShortcutExecution,
   ShortcutId,
   ShortcutInput,
   ShortcutScope,
@@ -598,6 +600,16 @@ function Shell({
       input: ShortcutInput.Allow,
       run: startNewSession,
     },
+    {
+      // Help and ARIA listing only; the window-level ReloadShortcutOwner above
+      // App executes the reload before ordinary dispatch can see the event.
+      id: ShortcutId.ReloadPage,
+      scope: ShortcutScope.Global,
+      label: "shortcuts.reloadPage",
+      bindings: globalShortcutBindings[ShortcutId.ReloadPage],
+      input: ShortcutInput.Allow,
+      execution: ShortcutExecution.Native,
+    },
   ]);
   useLayoutEffect(() => {
     const destination = pendingFocusDestination.current;
@@ -701,15 +713,18 @@ function Shell({
                       <CommandMenu
                         openSession={open}
                         close={() => setCommandMenuOpen(false)}
-                        commands={applicationCommands({
-                          navigate,
-                          navigateHeader,
-                          openSettings,
-                          newSession: startNewSession,
-                          newGeneralChat: startNewGeneralChat,
-                          newProject: openNewProject,
-                          help: openHelp,
-                        })}
+                        commands={applicationCommands(
+                          {
+                            navigate,
+                            navigateHeader,
+                            openSettings,
+                            newSession: startNewSession,
+                            newGeneralChat: startNewGeneralChat,
+                            newProject: openNewProject,
+                            help: openHelp,
+                          },
+                          { tailscale: runnerTailscale !== undefined },
+                        )}
                       />
                     ) : null}
                     <main
@@ -1000,41 +1015,47 @@ export function App({
     <SidebarPreferenceBoundary>
       <TransportProvider transport={transport}>
         <QueryClientProvider key={connection.id} client={client}>
-          <ProductIdentityProvider>
-            <NotificationProvider>
-              <MutationIntents>
-                <SubscriptionQuotaAutoRefresh ready={connectionReady} />
-                <SessionTabsProvider>
-                  <SessionSubmissionsProvider>
-                    <ImageDraftProvider>
-                      <PRWorkflowProvider>
-                        <ShortcutProvider>
-                          <SessionNameEditorProvider>
-                            <SessionInboxReadBoundary ready={connectionReady}>
-                              <Shell
-                                connectionReady={connectionReady}
-                                pairingAuthority={pairingAuthority}
-                                currentDeviceId={currentDeviceId}
-                                controlLocalWorker={controlLocalWorker}
-                                chooseRepositoryFolder={chooseRepositoryFolder}
-                                connectionSettings={connectionSettings}
-                                appInformationSettings={appInformationSettings}
-                                runnerTailscale={runnerTailscale}
-                                connectionTarget={connectionTarget}
-                                onConnectionHelp={onConnectionHelp}
-                                localServer={localServer}
-                                readLocalWorker={readLocalWorker}
-                              />
-                            </SessionInboxReadBoundary>
-                          </SessionNameEditorProvider>
-                        </ShortcutProvider>
-                      </PRWorkflowProvider>
-                    </ImageDraftProvider>
-                  </SessionSubmissionsProvider>
-                </SessionTabsProvider>
-              </MutationIntents>
-            </NotificationProvider>
-          </ProductIdentityProvider>
+          <ConnectionEpochProvider epoch={connectionEpoch}>
+            <ProductIdentityProvider>
+              <NotificationProvider>
+                <MutationIntents>
+                  <SubscriptionQuotaAutoRefresh ready={connectionReady} />
+                  <SessionTabsProvider>
+                    <SessionSubmissionsProvider>
+                      <ImageDraftProvider>
+                        <PRWorkflowProvider>
+                          <ShortcutProvider>
+                            <SessionNameEditorProvider>
+                              <SessionInboxReadBoundary ready={connectionReady}>
+                                <Shell
+                                  connectionReady={connectionReady}
+                                  pairingAuthority={pairingAuthority}
+                                  currentDeviceId={currentDeviceId}
+                                  controlLocalWorker={controlLocalWorker}
+                                  chooseRepositoryFolder={
+                                    chooseRepositoryFolder
+                                  }
+                                  connectionSettings={connectionSettings}
+                                  appInformationSettings={
+                                    appInformationSettings
+                                  }
+                                  runnerTailscale={runnerTailscale}
+                                  connectionTarget={connectionTarget}
+                                  onConnectionHelp={onConnectionHelp}
+                                  localServer={localServer}
+                                  readLocalWorker={readLocalWorker}
+                                />
+                              </SessionInboxReadBoundary>
+                            </SessionNameEditorProvider>
+                          </ShortcutProvider>
+                        </PRWorkflowProvider>
+                      </ImageDraftProvider>
+                    </SessionSubmissionsProvider>
+                  </SessionTabsProvider>
+                </MutationIntents>
+              </NotificationProvider>
+            </ProductIdentityProvider>
+          </ConnectionEpochProvider>
         </QueryClientProvider>
       </TransportProvider>
     </SidebarPreferenceBoundary>

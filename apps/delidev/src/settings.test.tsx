@@ -4643,6 +4643,75 @@ it("retains Connection controls without mounting or reading Settings Doctor", as
   expect(doctor).not.toHaveBeenCalled();
 });
 
+it("Connections renders no App information shortcut and starts with the connection controls", async () => {
+  const value = fixture([]);
+  render(
+    value.view(
+      <Settings
+        connectionSettings={
+          <section aria-label="Original native connection">
+            <h2>Original native connection</h2>
+          </section>
+        }
+      />,
+    ),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Connections" }));
+  const connection = await screen.findByRole("region", {
+    name: "Original native connection",
+  });
+  expect(
+    screen.queryByRole("button", { name: "Open App information" }),
+  ).toBeNull();
+  expect(screen.queryByText("Open App information")).toBeNull();
+  const panels = connection.closest(".settings-panels");
+  expect(panels).not.toBeNull();
+  expect(panels?.querySelector("button")).toBeNull();
+  expect(panels?.firstElementChild?.firstElementChild).toBe(connection);
+});
+
+it("Connections falls back to the Current connection section without an App information shortcut", async () => {
+  const value = fixture([]);
+  render(value.view(<Settings />));
+  fireEvent.click(screen.getByRole("button", { name: "Connections" }));
+  const current = await screen.findByRole("region", {
+    name: "Current connection",
+  });
+  expect(
+    screen.queryByRole("button", { name: "Open App information" }),
+  ).toBeNull();
+  const panels = current.closest(".settings-panels");
+  expect(panels?.firstElementChild?.firstElementChild).toBe(current);
+  expect(panels?.querySelector("button")).toBeNull();
+});
+
+it("Korean Connections has no App information shortcut while the sidebar entry remains", async () => {
+  const value = fixture([]);
+  render(value.view(<Settings />));
+  try {
+    await act(async () => {
+      await i18n.changeLanguage(SupportedLanguage.Korean);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "연결" }));
+    expect(screen.queryByRole("button", { name: "앱 정보 열기" })).toBeNull();
+    expect(screen.queryByText("앱 정보 열기")).toBeNull();
+    expect(screen.getByRole("button", { name: "앱 정보" })).toBeTruthy();
+  } finally {
+    await act(async () => {
+      await i18n.changeLanguage(SupportedLanguage.English);
+    });
+  }
+});
+
+it("App information stays reachable from its sidebar category", async () => {
+  const value = fixture([]);
+  render(value.view(<Settings />));
+  fireEvent.click(screen.getByRole("button", { name: "App information" }));
+  expect(
+    await screen.findByRole("heading", { name: "App information", level: 1 }),
+  ).toBeTruthy();
+});
+
 it("Settings search keeps the active draft on typing and same-category selection, and discards query on departure", async () => {
   const value = fixture([]);
   const view = render(value.view(<Settings />));

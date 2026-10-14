@@ -26,6 +26,10 @@ import (
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
 
+// maxSubscriptionLeaseWait caps the delay between busy Take retries for one
+// waiting operation.
+const maxSubscriptionLeaseWait = 5 * time.Second
+
 type managedSubscriptionLease struct {
 	paidCredits bool
 	logger      *slog.Logger
@@ -90,6 +94,10 @@ func takeManagedSubscription(ctx context.Context, config Config, client delidevv
 	var response *connect.Response[pb.TakeSubscriptionResponse]
 	var err error
 	waitingLogged := false
+	// Parallel sessions can wait for one account at the same time. Back off the
+	// busy retry so each waiting operation costs at most one Take per
+	// maxSubscriptionLeaseWait after the first few attempts.
+	wait := time.Second
 	for {
 		response, err = client.TakeSubscription(ctx, authenticated(credential, &pb.TakeSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(leaseID), Id: string(account), ExpectedRevision: revision}, MachineId: string(credential.MachineID), InstanceId: string(instance), OperationId: string(operation), Action: action}))
 		if err == nil {
@@ -135,13 +143,14 @@ func takeManagedSubscription(ctx context.Context, config Config, client delidevv
 			config.Logger.InfoContext(ctx, "subscription_lease_waiting", "account_id", account, "operation_id", operation, "action", action)
 			waitingLogged = true
 		}
-		timer := time.NewTimer(time.Second)
+		timer := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
 			return nil, domain.SafeError(ctx.Err())
 		case <-timer.C:
 		}
+		wait = min(wait*2, maxSubscriptionLeaseWait)
 	}
 	if response.Msg.LeaseId != string(leaseID) || response.Msg.LeaseRevision == 0 {
 		clear(response.Msg.Bundle)

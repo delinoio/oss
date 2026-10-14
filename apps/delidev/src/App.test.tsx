@@ -3765,7 +3765,7 @@ it.each([false, true])(
     fireEvent.keyDown(name, { key: "Escape" });
     expect(screen.getByRole("textbox", { name: "Name" })).toBe(name);
     expect(
-      rail.getByRole("button", { name: "Usage" }).hasAttribute("disabled"),
+      rail.getByRole("button", { name: "More" }).hasAttribute("disabled"),
     ).toBe(false);
     fireEvent.click(rail.getByRole("button", { name: "Settings" }));
     expect(screen.getByRole("textbox", { name: "Name" })).toBe(name);
@@ -3779,6 +3779,7 @@ it.each([false, true])(
     expect(
       (screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value,
     ).toBe("Visit draft");
+    fireEvent.click(rail.getByRole("button", { name: "More" }));
     fireEvent.click(rail.getByRole("button", { name: "Usage" }));
     expect(
       screen.queryByRole("region", { name: "Settings content" }),

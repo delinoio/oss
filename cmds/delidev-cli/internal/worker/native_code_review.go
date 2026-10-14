@@ -288,7 +288,8 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 			nativeConfig.ManagedAuthentication = true
 			nativeConfig.QuotaObserver = managed.publishRollingQuota
 		} else {
-			proxy, err = openCodexNativeProxy(nativeCtx, config, input.ActionID)
+			nativeRoute := captureNativeRoute(config)
+			proxy, err = openCodexNativeProxy(nativeCtx, config, input.ActionID, nativeRoute)
 			if err != nil {
 				return err
 			}
@@ -296,7 +297,7 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 				nativeConfig.API.LoopbackProxyURL = proxy.NativeURL()
 				nativeConfig.Process.ProtectedValues = append(protected, proxy.ProtectedValues()...)
 			} else {
-				forwarder, err = openCodexNativeForwarder(nativeCtx, config, input.ActionID, token, false)
+				forwarder, err = openCodexNativeForwarder(nativeCtx, config, input.ActionID, token, false, nativeRoute)
 				if err != nil {
 					return err
 				}

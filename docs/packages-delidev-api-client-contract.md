@@ -498,6 +498,10 @@ the [Tailscale protocol contract](protos-delidev-v1-contract.md#tailscale-connec
 Closed bounded JSON projections retain public observation metadata only; private
 keys, decrypted grants and protected Worker inputs stay Go-owned.
 
+## Pull request paging capability
+
+The generated `SystemCapability` enum exposes `PULL_REQUEST_PAGING_50_V1 = 103`. Desktop clients read it from `SystemQuery.getStatus` and enable the 50 option of the Pull requests page-size select only when it is advertised; they never send a 50-item List/Search or 50-seed workspace request without it. Regenerate bindings with `pnpm proto:generate`; no hand-written client export is added.
+
 ## Pull request workspace client
 
 The generated IntegrationQuery client exposes independently negotiated workspace,

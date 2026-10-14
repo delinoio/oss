@@ -64,6 +64,7 @@ const legacyJobs = [
   "node-public-docs-test",
   "node-clibox-test",
   "node-pnport-test",
+  "node-bundlewhy-test",
   "pnport-native",
 ];
 const devhudJobs = [
@@ -261,7 +262,7 @@ test("native CI prepares tool state before Turbo and serializes shared Rust suit
 test("async-commit-hook retains runner, interface, protocol and unsigned archive validation", () => {
   const commands = jobCommands(workflow.jobs["async-commit-hook"]);
   for (const command of [
-    "async-commit-hook#build:embedded",
+    "async-commit-hook#ci:embedded",
     "go test -race ./cmds/async-commit-hook/...",
     "async-commit-hook#ci:check",
     "public-docs#ci:check",
@@ -275,6 +276,45 @@ test("async-commit-hook retains runner, interface, protocol and unsigned archive
     commands.match(/pnpm install --frozen-lockfile --ignore-scripts/gu)?.length,
     1,
   );
+});
+
+test("async-commit-hook CI waits for frontend readers before both rebuilds", () => {
+  const graph = jobTaskGraph(workflow.jobs["async-commit-hook"]);
+  const app = "async-commit-hook";
+  const ci = "@delinoio/ci";
+  const embedded = graph.get(`${app}#ci:embedded`);
+  const native = graph.get(`${ci}#ci:ach:native`);
+  const archive = graph.get(`${ci}#ci:ach:package`);
+  assert.equal(embedded.command, "pnpm build:embedded");
+  assert.equal(embedded.task.cache, false);
+  assert.deepEqual(embedded.task.dependsOn, ["ci:check"]);
+  assert.deepEqual(native.task.dependsOn, [`${app}#ci:embedded`]);
+  assert.deepEqual(archive.task.dependsOn, ["ci:ach:native"]);
+  for (const task of [native, archive]) assert.equal(task.task.cache, false);
+  assert.deepEqual(graph.get(`${app}#ci:check`).task.dependsOn, [
+    "typecheck",
+    "test:unit",
+    "build:frontend",
+    "ci:contracts",
+  ]);
+  assert.deepEqual(graph.get(`${app}#ci:contracts`).task.dependsOn, [
+    "build:frontend",
+  ]);
+  assert.ok(graph.has(`${app}#ci:contracts`));
+  assert.ok(graph.has(`${app}#build:frontend`));
+  assert.ok(graph.has(`${ci}#ci:ach:check`));
+
+  const direct = JSON.parse(
+    readFileSync(`${root}/apps/async-commit-hook/package.json`, "utf8"),
+  );
+  assert.equal(
+    direct.scripts["build:embedded"],
+    "node scripts/embed.mjs --clean && pnpm --filter @delinoio/async-commit-hook-api-client build && pnpm build && node scripts/embed.mjs",
+  );
+  const directGraph = JSON.parse(
+    readFileSync(`${root}/apps/async-commit-hook/turbo.json`, "utf8"),
+  );
+  assert.equal(directGraph.tasks["build:embedded"].cache, false);
 });
 
 test("every step reaching shared protocol breaking checks carries the event baseline", () => {
@@ -1761,10 +1801,10 @@ test("the separate Runmoor PR workflow retains full native validation through Tu
   assert.equal(job["timeout-minutes"], 20);
   assert.deepEqual(runmoor.permissions, { contents: "read" });
   const commands = jobCommands(job);
-  assert.ok(commands.includes("go test -race ./cmds/runmoor/..."));
+  assert.ok(commands.includes("go test -race -count=1 ./cmds/runmoor/..."));
   assert.ok(
     commands.includes(
-      "go test -run TestDockerIntegration -v -timeout 10m ./cmds/runmoor/internal/runmoor",
+      "go test -count=1 -run TestDockerIntegration -v -timeout 10m ./cmds/runmoor/internal/runmoor",
     ),
   );
   assert.equal(

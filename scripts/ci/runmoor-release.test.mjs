@@ -13,6 +13,12 @@ test("Workflow keeps credentials, OIDC and actual signing out of every dry-run j
   assert.deepEqual(workflow.permissions, { contents: "read" });
   assert.equal(workflow.on.workflow_dispatch.inputs.dry_run.default, true);
   assert.deepEqual(workflow.on.push.tags, ["runmoor@v*"]);
+  assert.equal(
+    workflow.jobs.build.steps.find(
+      (step) => step.name === "Test command contracts",
+    ).run,
+    "go test -count=1 ./cmds/runmoor/...",
+  );
   for (const [name, job] of Object.entries(workflow.jobs)) {
     if (name === "publish" || name === "homebrew") continue;
     assert.equal(job.permissions?.["id-token"], undefined);

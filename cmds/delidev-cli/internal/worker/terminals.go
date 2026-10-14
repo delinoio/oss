@@ -70,6 +70,8 @@ type nativeTerminal struct {
 	outputLost      bool
 	finished        bool
 	naturalReportID domain.ID
+	// Per-terminal prompt wrapper files, removed once the shell is gone.
+	prompt terminal.PromptIntegration
 }
 
 type terminalManager struct {
@@ -328,8 +330,10 @@ func (m *terminalManager) execute(a terminal.Assignment) terminal.Result {
 			if err != nil {
 				return err
 			}
+			native.prompt = m.promptIntegration(a, shell, cwd, args, env)
+			launchArgs, env := native.prompt.Args, native.prompt.Env
 			attempted = true
-			native.handle, err = process.Start(liveCtx, process.Config{Directory: m.processRoot(), OwnerID: a.ID, Executable: shell, Args: args, Env: env, Cwd: cwd, Terminal: &process.TerminalSize{Rows: a.Terminal.Rows, Columns: a.Terminal.Columns}, Stdout: output, Stderr: io.Discard, Logger: m.config.Logger})
+			native.handle, err = process.Start(liveCtx, process.Config{Directory: m.processRoot(), OwnerID: a.ID, Executable: shell, Args: launchArgs, Env: env, Cwd: cwd, Terminal: &process.TerminalSize{Rows: a.Terminal.Rows, Columns: a.Terminal.Columns}, Stdout: output, Stderr: io.Discard, Logger: m.config.Logger})
 			if err != nil {
 				return err
 			}
@@ -348,6 +352,7 @@ func (m *terminalManager) execute(a terminal.Assignment) terminal.Result {
 				}
 			}
 			<-native.outputDone
+			m.cleanupPrompt(a.ID, native)
 			result.OutputLost = native.outputLost
 			result.State, result.Problem = domain.TerminalExited, domain.SafeError(err)
 			if !result.CleanupVerified {
@@ -370,6 +375,7 @@ func (m *terminalManager) execute(a terminal.Assignment) terminal.Result {
 			native.cancel()
 			_ = native.handle.Close()
 			<-native.outputDone
+			m.cleanupPrompt(a.ID, native)
 			result = native.result
 			result.OutputLost = result.OutputLost || native.outputLost || lost
 			delete(m.live, a.ID)
@@ -451,6 +457,28 @@ func (m *terminalManager) execute(a terminal.Assignment) terminal.Result {
 	return result
 }
 
+// promptIntegration applies the General Chat prompt label. Repository
+// Worktree and Local terminals, and every unsupported shell, keep their
+// original arguments and environment. The log records only the shell kind and
+// outcome, never paths, prompt text or output.
+func (m *terminalManager) promptIntegration(a terminal.Assignment, shell, cwd string, args, env []string) terminal.PromptIntegration {
+	if a.Manifest == nil || a.Manifest.Type != domain.GeneralChat {
+		return terminal.PromptIntegration{Args: args, Env: env}
+	}
+	integration := terminal.PreparePromptIntegration(m.config.Root, a.ID, shell, cwd, args, env)
+	m.config.Logger.InfoContext(m.ctx, "terminal_prompt_integration", "terminal_id", a.ID, "shell_kind", integration.Kind, "outcome", integration.Outcome)
+	return integration
+}
+
+// cleanupPrompt removes the shell's wrapper files after its process is gone. The
+// wrappers are regenerable, so a failure is only logged and never blocks the
+// terminal lifecycle; retirement removes any leftover by terminal ID.
+func (m *terminalManager) cleanupPrompt(id domain.ID, native *nativeTerminal) {
+	if err := native.prompt.Cleanup(); err != nil {
+		m.config.Logger.Warn("terminal_prompt_cleanup_pending", "terminal_id", id)
+	}
+}
+
 func (m *terminalManager) reconcile(id domain.ID) error {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(m.ctx), 15*time.Second)
 	defer cancel()
@@ -480,6 +508,7 @@ func (m *terminalManager) finishNativeResult(ctx context.Context, id domain.ID, 
 		<-native.outputDone
 	}
 	native.cancel()
+	m.cleanupPrompt(id, native)
 	result.OutputLost = native.outputLost
 	reconcile, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()

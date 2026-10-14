@@ -9,7 +9,7 @@ The 2026-09-25 follow-up adds static GLB/FBX generation, SceneSession, original 
 The explicit SFX follow-up adds offline procedural game effects exported as WAV, with zombie-game gunshot acceptance, under the [SFX contract](packages-react-forge-sfx-contract.md). It was included in the published `0.2.0` release.
 
 The 2026-09-26 animation follow-up adds object keyframes, explicit joints/skinning,
-position/normal morphs, callback baking and sampled bounds to both scene formats.
+position/normal morphs, callback baking and sampled bounds to both scene formats. An explicit unreleased geometry compaction operation preserves complete indexed vertex attributes and triangle multiplicity for both formats.
 It remains **unreleased** and does not change the static format's 0.2.0 history.
 Original `animated-character*.tsx` examples cover idle/walk/wave clips; local
 acceptance uses Khronos, Three.js, ufbx and Blender 4.5.14. No npm publication,

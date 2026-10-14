@@ -27,7 +27,7 @@ import {
   globalShortcutBindings,
 } from "./shortcuts";
 import { i18n, useLocale } from "./localization";
-import { settingsGroups } from "./settings";
+import { availableSettingsGroups } from "./settings";
 import { settingsSearchTargets } from "./settings-search";
 import {
   editableShortcutCatalog,
@@ -218,7 +218,7 @@ it("has exact flat catalog order and static unique enum values, with seven edita
   expect(
     commands.filter((item) => item.group === CommandGroup.Settings),
   ).toHaveLength(
-    settingsGroups
+    availableSettingsGroups(false)
       .flatMap((group) => group.categories)
       .reduce(
         (count, category) =>

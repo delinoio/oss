@@ -15,6 +15,11 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
+// deletionWorkspaceProofVersion is the proof version written by this Worker.
+// Version 1 proofs remain readable, except that a manifest-less removed
+// version-1 proof is never trusted (see DeleteOwnedWorkspaceWithOwner).
+const deletionWorkspaceProofVersion = 2
+
 type deletionWorkspaceProof struct {
 	Version  uint32    `json:"version"`
 	Digest   string    `json:"digest"`
@@ -92,18 +97,35 @@ func (m *Manager) DeleteOwnedWorkspaceWithOwner(ctx context.Context, w domain.Se
 	root := filepath.Join(m.Root, "workspaces", string(w.SessionID))
 	stage = "retained-proof"
 	proofPath := filepath.Join(m.Root, "session-deletions", SessionDeletionObligationName(w)+"-workspace.json")
-	proof := deletionWorkspaceProof{Version: 1, Digest: w.Digest()}
+	proof := deletionWorkspaceProof{Version: deletionWorkspaceProofVersion, Digest: w.Digest()}
 	if err := migrateLegacyWorkspaceProof(m.Root, proofPath, w); err != nil {
 		return err
 	}
 	b, e := security.ReadPrivate(proofPath, 1<<20)
+	trusted := false
 	if e == nil {
-		if domain.Decode(b, &proof) != nil || proof.Version != 1 || proof.Digest != w.Digest() {
+		var loaded deletionWorkspaceProof
+		if domain.Decode(b, &loaded) != nil || loaded.Version < 1 || loaded.Version > deletionWorkspaceProofVersion || loaded.Digest != w.Digest() {
 			return domain.SessionDeletionPending()
+		}
+		if loaded.Version == 1 && loaded.Manifest == nil {
+			// An older Worker wrote a manifest-less proof, removed or not, both after
+			// a genuine cleanup and when it adopted version-1 shared evidence or an
+			// absent root for a failed-only workspace, before its copies were
+			// removed. The two are indistinguishable, so the proof is not trusted and
+			// the removal proof is re-derived from current evidence under the caller's
+			// absence policy (fail closed).
+			if m.Logger != nil {
+				m.Logger.Info("workspace_deletion_legacy_removed_proof_ignored", "session_id", w.SessionID, "deletion_id", w.DeletionID, "proof_version", loaded.Version)
+			}
+		} else {
+			proof = loaded
+			trusted = true
 		}
 	} else if !errors.Is(e, os.ErrNotExist) {
 		return domain.SessionDeletionPending()
-	} else {
+	}
+	if !trusted {
 		if _, e := os.Lstat(root); e == nil {
 			manifest, e := m.Read(w.SessionID)
 			if e != nil {
@@ -277,10 +299,18 @@ func (m *Manager) DeleteOwnedWorkspaceWithOwner(ctx context.Context, w domain.Se
 		if e := security.SyncParent(root); e != nil {
 			return domain.SafeError(e)
 		}
-		// Publish the shared evidence before this obligation's own proof so a
-		// crash between the writes never strands another device obligation.
-		if e := writeSharedWorkspaceRemoval(m.Root, w); e != nil {
-			return e
+		if proof.Manifest != nil {
+			// Publish the shared evidence before this obligation's own proof so a
+			// crash between the writes never strands another device obligation.
+			// The retained manifest is the original ownership proof; the proof is
+			// persisted before removal, so recovery still publishes.
+			if e := writeSharedWorkspaceRemoval(m.Root, w); e != nil {
+				return e
+			}
+		} else if m.Logger != nil {
+			// A failed-only preparation never owned a workspace. Its absent-root
+			// cleanup must not become original removal proof for other obligations.
+			m.Logger.InfoContext(ctx, "workspace_deletion_shared_removal_skipped", "session_id", w.SessionID, "deletion_id", w.DeletionID, "reason", "no_owned_manifest")
 		}
 		proof.Removed = true
 		if e := writeDeletionWorkspaceProof(proofPath, proof); e != nil {
@@ -288,6 +318,14 @@ func (m *Manager) DeleteOwnedWorkspaceWithOwner(ctx context.Context, w domain.Se
 		}
 	} else if _, e := os.Lstat(root); !errors.Is(e, os.ErrNotExist) {
 		return domain.SessionDeletionPending()
+	} else if proof.Manifest != nil {
+		// A crash after the removed proof but before copy removal leaves the
+		// retained manifest, and the shared evidence may still be a distrusted
+		// version-1 record. Republish version-2 evidence from the manifest so
+		// later strict obligations are not stranded.
+		if e := writeSharedWorkspaceRemoval(m.Root, w); e != nil {
+			return e
+		}
 	}
 	stage = "copy-removal"
 	if e := removeCopies(&ownerLock); e != nil {
@@ -310,20 +348,36 @@ type deletionWorkspaceRemoval struct {
 	Removed   bool      `json:"removed"`
 }
 
+// sharedWorkspaceRemovalVersion is the only evidence version that is trusted.
+// Version 1 records were also written for an absent failed-only workspace and
+// for legacy proofs without a retained manifest, so they cannot prove that an
+// owned workspace was ever removed. They are ignored and replaced on the next
+// genuine removal.
+const sharedWorkspaceRemovalVersion = 2
+
 func sharedWorkspaceRemovalPath(root string, w domain.SessionDeletionWork) string {
 	return filepath.Join(root, "session-deletions", string(w.SessionID)+"-workspace-removed.json")
 }
 
 // sharedWorkspaceRemoved reports whether another obligation of the same server,
 // session and machine already removed the shared workspace directory. A missing
-// record is false; an unreadable or foreign record keeps the obligation pending.
+// or pre-version-2 record is false; an unreadable or foreign record keeps the
+// obligation pending.
 func (m *Manager) sharedWorkspaceRemoved(w domain.SessionDeletionWork) (bool, error) {
 	raw, e := security.ReadPrivate(sharedWorkspaceRemovalPath(m.Root, w), 1<<16)
 	if errors.Is(e, os.ErrNotExist) {
 		return false, nil
 	}
 	var evidence deletionWorkspaceRemoval
-	if e != nil || domain.Decode(raw, &evidence) != nil || evidence.Version != 1 || !evidence.Removed || evidence.ServerID != w.ServerID || evidence.SessionID != w.SessionID || evidence.MachineID != w.MachineID {
+	if e == nil && domain.Decode(raw, &evidence) == nil && evidence.Version == 1 {
+		// Older Workers published this record without proving ownership of a
+		// removed workspace, so it is never adopted as original removal proof.
+		if m.Logger != nil {
+			m.Logger.Info("workspace_deletion_shared_removal_legacy_ignored", "session_id", w.SessionID, "deletion_id", w.DeletionID, "evidence_version", evidence.Version)
+		}
+		return false, nil
+	}
+	if e != nil || domain.Decode(raw, &evidence) != nil || evidence.Version != sharedWorkspaceRemovalVersion || !evidence.Removed || evidence.ServerID != w.ServerID || evidence.SessionID != w.SessionID || evidence.MachineID != w.MachineID {
 		return false, domain.SessionDeletionPending()
 	}
 	if m.Logger != nil {
@@ -333,7 +387,7 @@ func (m *Manager) sharedWorkspaceRemoved(w domain.SessionDeletionWork) (bool, er
 }
 
 func writeSharedWorkspaceRemoval(root string, w domain.SessionDeletionWork) error {
-	b, e := json.Marshal(deletionWorkspaceRemoval{Version: 1, ServerID: w.ServerID, SessionID: w.SessionID, MachineID: w.MachineID, Removed: true})
+	b, e := json.Marshal(deletionWorkspaceRemoval{Version: sharedWorkspaceRemovalVersion, ServerID: w.ServerID, SessionID: w.SessionID, MachineID: w.MachineID, Removed: true})
 	if e != nil || security.WriteAtomic(sharedWorkspaceRemovalPath(root, w), b) != nil {
 		return domain.SessionDeletionPending()
 	}
@@ -375,10 +429,13 @@ func migrateLegacyWorkspaceProof(root, proofPath string, w domain.SessionDeletio
 	} else if err != nil {
 		return domain.SessionDeletionPending()
 	}
-	if legacy.Removed {
-		// The legacy session-keyed proof recorded the shared directory's removal
-		// for this exact obligation. Preserve it as session-scoped evidence so
-		// other device obligations can verify it before the legacy file is gone.
+	if legacy.Removed && legacy.Manifest != nil {
+		// The legacy session-keyed proof retained the original manifest and
+		// recorded the shared directory's removal for this exact obligation.
+		// Preserve it as session-scoped evidence so other device obligations can
+		// verify it before the legacy file is gone. A removed proof without a
+		// manifest is ambiguous: a failed-only cleanup of an absent workspace
+		// writes the same shape, so it never becomes original removal proof.
 		if err := writeSharedWorkspaceRemoval(root, w); err != nil {
 			return err
 		}

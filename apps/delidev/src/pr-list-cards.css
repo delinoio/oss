@@ -1,11 +1,29 @@
 /* SPDX-License-Identifier: Apache-2.0 */
+/* main becomes a column while the list-layout page is visible, so the page takes
+ * the height left after the sidebar-preference notice and compact context
+ * trigger instead of a full main height that those siblings would overflow. */
+main:has(> .page.pull-requests-page[data-list-layout="true"]:not([hidden])) {
+  display: flex;
+  flex-direction: column;
+}
+main:has(> .page.pull-requests-page[data-list-layout="true"]:not([hidden]))
+  > :not(.pull-requests-page) {
+  flex-shrink: 0;
+}
 .page.pull-requests-page[data-list-layout="true"] {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  flex: 1 0 auto;
   width: 100%;
   max-width: 1120px;
   padding: 32px;
   margin-inline: 0;
   min-width: 0;
   overflow-wrap: anywhere;
+}
+.page.pull-requests-page[data-list-layout="true"] > :not(.pr-workspace) {
+  flex-shrink: 0;
 }
 .pull-requests-page[data-list-layout="true"] > h2,
 .pr-list-header h2 {
@@ -24,6 +42,11 @@
 }
 .pr-list-header p {
   font-size: 14px;
+}
+.pr-list-header .pr-list-header-applied {
+  margin-block-start: 4px;
+  color: var(--muted);
+  font-size: 12px;
 }
 .pr-list-header button {
   flex: 0 1 auto;
@@ -161,7 +184,7 @@
 }
 @media (max-width: 759px) {
   .page.pull-requests-page[data-list-layout="true"] {
-    padding: 24px 16px;
+    padding: 24px 16px 32px;
   }
   .pr-list-header button:not(.pr-list-refresh),
   .pr-list-card-footer button {

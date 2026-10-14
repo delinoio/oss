@@ -122,6 +122,111 @@ func TestCaptureServerOptionsAnchorsRelativeTLSToPhysicalCwdThroughSymlink(t *te
 	}
 }
 
+func TestCaptureServerOptionsRejectsSymlinkRotationDuringDirectoryCapture(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	releaseA, releaseB := filepath.Join(root, "releaseA"), filepath.Join(root, "releaseB")
+	for _, dir := range []string{releaseA, releaseB} {
+		if err := os.Mkdir(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	current := filepath.Join(root, "current")
+	if err := os.Symlink(releaseA, current); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	t.Chdir(current)
+	result, err := captureServerOptions(ServerOptions{TLSCertificate: "cert.pem", TLSKey: "key.pem"}, func() (workingDirectory, error) {
+		return physicalWorkingDirectoryWith(os.Stat, func() (string, error) { return current, nil }, func(path string) (string, error) {
+			// The process stays in releaseA while the retained spelling changes.
+			if err := os.Remove(current); err != nil {
+				return "", err
+			}
+			if err := os.Symlink(releaseB, current); err != nil {
+				return "", err
+			}
+			return filepath.EvalSymlinks(path)
+		})
+	})
+	if domain.SafeError(err).Code != domain.InvalidArgument || result.TLSCertificate != "" || result.TLSKey != "" {
+		t.Fatalf("rotated directory published TLS references: %+v, %v", result, err)
+	}
+}
+
+func TestCaptureServerOptionsRejectsResolvedDirectoryRemovedBeforeIdentityCheck(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows cannot rename the process working directory")
+	}
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	release := filepath.Join(root, "release")
+	if err := os.Mkdir(release, 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(release)
+	result, err := captureServerOptions(ServerOptions{TLSCertificate: "cert.pem", TLSKey: "key.pem"}, func() (workingDirectory, error) {
+		return physicalWorkingDirectoryWith(os.Stat, os.Getwd, func(path string) (string, error) {
+			physical, err := filepath.EvalSymlinks(path)
+			if err != nil {
+				return "", err
+			}
+			if err := os.Rename(release, filepath.Join(root, "moved")); err != nil {
+				return "", err
+			}
+			return physical, nil
+		})
+	})
+	if domain.SafeError(err).Code != domain.InvalidArgument || result.TLSCertificate != "" || result.TLSKey != "" {
+		t.Fatalf("unresolved directory published TLS references: %+v, %v", result, err)
+	}
+}
+
+func TestAnchorReferenceUsesOriginalWindowsDrive(t *testing.T) {
+	cwd := workingDirectory{original: `C:\current`, physical: `D:\release`}
+	var absCalls []string
+	ops := referencePathOps{
+		volumeName: func(path string) string {
+			if len(path) >= 2 && path[1] == ':' {
+				return path[:2]
+			}
+			return ""
+		},
+		isPathSeparator: func(c uint8) bool { return c == '\\' || c == '/' },
+		join: func(parts ...string) string {
+			return strings.TrimRight(parts[0], `\`) + `\` + strings.TrimLeft(parts[1], `\`)
+		},
+		clean: func(path string) string { return path },
+		abs: func(path string) (string, error) {
+			absCalls = append(absCalls, path)
+			if path != `D:cert.pem` {
+				t.Fatalf("unexpected OS drive resolution: %q", path)
+			}
+			return `D:\other\cert.pem`, nil
+		},
+	}
+	for _, test := range []struct{ reference, expected string }{
+		{`\cert.pem`, `C:\cert.pem`},
+		{`C:cert.pem`, `D:\release\cert.pem`},
+		{`c:cert.pem`, `D:\release\cert.pem`},
+		{`D:cert.pem`, `D:\other\cert.pem`},
+		{`cert.pem`, `D:\release\cert.pem`},
+	} {
+		for _, name := range []string{"certificate", "key"} {
+			got, err := anchorReferenceWith(cwd, test.reference, ops)
+			if err != nil || got != test.expected {
+				t.Fatalf("%s reference %q captured as %q, want %q: %v", name, test.reference, got, test.expected, err)
+			}
+		}
+	}
+	if len(absCalls) != 2 {
+		t.Fatalf("other-drive references called OS resolver %d times, want 2", len(absCalls))
+	}
+}
+
 func TestCaptureServerOptionsPreservesWindowsRootedAndDriveRelativeSemantics(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("rooted and drive-relative references exist only on Windows")

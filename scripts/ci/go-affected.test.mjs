@@ -46,6 +46,18 @@ const changes = (name, status = "M") => [{ path: name, status }];
 const affected = (name, status) =>
   selectAffected(inventory, changes(name, status)).packages;
 
+test("Go report runner inputs select the complete native package inventory", () => {
+  for (const name of [
+    "scripts/ci/go-test-report.mjs",
+    "scripts/ci/go-test-report.test.mjs",
+  ]) {
+    assert.deepEqual(selectAffected(inventory, changes(name)), {
+      packages: inventory.map((item) => item.path).sort(),
+      reasons: [{ path: name, reason: "shared-input" }],
+    });
+  }
+});
+
 test("source changes include reverse and subprocess consumers without unrelated durable workspace tests", () => {
   assert.deepEqual(
     affected("cmds/delidev-cli/internal/apiproxy/proxy.go"),

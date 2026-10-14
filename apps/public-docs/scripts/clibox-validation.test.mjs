@@ -37,8 +37,14 @@ function validate(script) {
   });
 }
 
-async function rejectsMutation(script, mutate, classification, hiddenValue) {
-  const file = path.join(fixtureDirectory, "doc_build/clibox/index.html");
+async function rejectsMutation(
+  script,
+  mutate,
+  classification,
+  hiddenValue,
+  page = "clibox/index.html",
+) {
+  const file = path.join(fixtureDirectory, "doc_build", page);
   const original = await readFile(file, "utf8");
   const mutated = mutate(original);
   assert.notEqual(mutated, original, "fixture must change the rendered page");
@@ -107,6 +113,34 @@ for (const region of [
     );
   });
 }
+
+test("bundlewhy pages must keep the unpublished availability notice", async () => {
+  await rejectsMutation(
+    projectValidator,
+    (html) =>
+      html.replaceAll(
+        "bundlewhy is not yet published to npm",
+        "bundlewhy release notes",
+      ),
+    /bundlewhy\/.*missing its unpublished availability notice/u,
+    undefined,
+    "bundlewhy/installation.html",
+  );
+});
+
+test("bundlewhy pages cannot claim published availability", async () => {
+  await rejectsMutation(
+    projectValidator,
+    (html) =>
+      html.replace(
+        "Version 0.1.0 is in development.",
+        "Version 0.1.0 is in development. bundlewhy is available.",
+      ),
+    /bundlewhy\/.*claims published availability/u,
+    undefined,
+    "bundlewhy/limitations.html",
+  );
+});
 
 test("the article must retain its required headings", async () => {
   await rejectsMutation(

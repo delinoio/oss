@@ -31,6 +31,7 @@ import {
 import { useRetainedMutation, useRetainedMutationIntents } from "./mutation";
 import { Problem } from "./ui";
 import { NativeInteraction } from "./native-interaction";
+import { HarnessId, harnessVersionAllowed } from "./harness-version";
 import { NativeClaudeInteraction } from "./native-claude-interaction";
 import {
   DraftAccess,
@@ -740,7 +741,7 @@ function Approval({
   );
   const compatible =
     approval.harness === "codex" &&
-    approval.version === "0.151.0" &&
+    harnessVersionAllowed(HarnessId.Codex, approval.version) &&
     ["command", "file-change", "permissions"].includes(text(native.kind));
   const closed =
     text(data.closure) !== "open" || Boolean(data.approval_response);

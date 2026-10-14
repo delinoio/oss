@@ -13,6 +13,7 @@ export enum SettingsCategory {
   Repositories = "repositories",
   ExecutionWorkers = "execution-workers",
   PairedDevices = "paired-devices",
+  Tailscale = "tailscale",
   ServerPreferences = "server-preferences",
   GitWorkflow = "git-workflow",
   Integrations = "integrations",
