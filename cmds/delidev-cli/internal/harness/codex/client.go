@@ -232,7 +232,11 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	configureOrdinaryTools(&config)
 	config.Process.Args = append(config.Process.Args, "app-server")
 	var helpers *executionHelpers
-	if config.ManagedAuthentication && config.Mode == ThreadProtocol {
+	// Managed Thread execution and the access-only quota profile both launch an
+	// original native tree whose temporary helper aliases must be retired after
+	// a joined exit. CreditProtocol and SubscriptionProtocol keep their own
+	// lifecycles and never hold this proof.
+	if (config.ManagedAuthentication && config.Mode == ThreadProtocol) || (!config.ManagedAuthentication && config.Mode == QuotaProtocol) {
 		helpers, err = prepareExecutionHelpers(home, config.Process)
 		if err != nil {
 			return nil, err
@@ -438,8 +442,10 @@ func (c *Client) CloseWithExecutionHelpers() (nativeErr, helperErr error) {
 		}
 		return nativeErr, nil
 	}
-	if c.managedHome != "" && c.mode == ThreadProtocol {
-		helperErr = domain.WithCodexDiagnostic(c.version, domain.CodexCleanup, c.executionHelpers.retire(c.managedHome, c.ownerID, c.wire.Identity()))
+	// Only a client that captured original startup proof can retire helpers, and
+	// only here, after the original native tree was joined above.
+	if c.executionHelpers != nil {
+		helperErr = domain.WithCodexDiagnostic(c.version, domain.CodexCleanup, c.executionHelpers.retire(c.home, c.ownerID, c.wire.Identity()))
 	}
 	return nativeErr, helperErr
 }
