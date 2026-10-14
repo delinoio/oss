@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http/httptest"
 	"os"
@@ -70,7 +71,7 @@ func init() {
 		if err != nil || os.MkdirAll(helperDirectory, 0700) != nil {
 			os.Exit(88)
 		}
-		for _, name := range []string{"apply_patch", "applypatch", "codex-execve-wrapper"} {
+		for _, name := range nativeFixtureHelperAliasNames(runtime.GOOS) {
 			if os.Symlink(executable, filepath.Join(helperDirectory, name)) != nil {
 				os.Exit(88)
 			}
@@ -432,7 +433,7 @@ func TestManagedExecutionAcknowledgedFencePreservesStartedJournal(t *testing.T) 
 					t.Fatal("inspection refusal omitted original authentication cleanup")
 				}
 				if fault == managedFixtureHelperExtension {
-					for _, name := range []string{"apply_patch", "applypatch", "codex-execve-wrapper"} {
+					for _, name := range nativeFixtureHelperAliasNames(runtime.GOOS) {
 						if _, err := os.Lstat(filepath.Join(client.nativeHome, "tmp", "arg0", "fixture-original-helper", name)); !os.IsNotExist(err) {
 							t.Fatal("aborted input retained an original helper", err)
 						}
@@ -440,7 +441,7 @@ func TestManagedExecutionAcknowledgedFencePreservesStartedJournal(t *testing.T) 
 					if !slices.ContainsFunc(client.events, func(event domain.ExecutionEvent) bool { return event.Kind == domain.ExecutionInputAccepted }) {
 						t.Fatal("fixture failure lost original accepted input")
 					}
-					if !bytes.Contains(logs.Bytes(), []byte(`"msg":"native_graceful_shutdown_timeout"`)) || !bytes.Contains(logs.Bytes(), []byte(`"removed_count":3`)) {
+					if !bytes.Contains(logs.Bytes(), []byte(`"msg":"native_graceful_shutdown_timeout"`)) || !bytes.Contains(logs.Bytes(), []byte(fmt.Sprintf(`"removed_count":%d`, len(nativeFixtureHelperAliasNames(runtime.GOOS))))) {
 						t.Fatal("fixture did not cover joined forced shutdown and original helper retirement")
 					}
 					reads, readErr := security.ReadPrivate(filepath.Join(client.nativeHome, "bundle-read-count"), 16)
