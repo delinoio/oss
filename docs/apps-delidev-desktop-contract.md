@@ -420,6 +420,58 @@ store) and Settings through the read-only catalog loop, both with the effective
 platform keycaps, the existing disabled treatment and the English/Korean reason; no
 button or dialog is added.
 
+#### Product route retained across reload
+
+The whole-webview reload above keeps the current top-level screen and its selected
+item. `product-route.ts` owns a typed product route in the `index.html` URL query
+string (no server path, so no native fallback is needed). The only parameters are
+`screen` (a `Surface` value), `session` and optional `sidechat` (Sessions), `item`
+(Inbox entry, Schedule or Pull requests repository), `category` (a
+`SettingsCategory`) and `tab` (a `UsageTab`). Selections are canonical entity IDs
+(`isEntityId`) and enums only, never titles, prompts, credentials, search text or
+other user content. New session, New general chat and Search keep their screen
+only; Sessions Home and every selection-free screen write no selection, so a stale
+selection is never restored. Unrelated query parameters, the path and the `#main`
+skip-link hash are preserved.
+
+`Shell` in `App.tsx` mirrors committed in-app navigation and selection into the
+query with `history.replaceState` (never `pushState`), so Back/Forward gain no
+entries; a throttled or failing write is logged (`delidev.product_route.write_failed`)
+and ignored. Each mounted screen reports its own selection to `Shell`: Inbox
+(`selectionChanged`), Schedules, Pull requests (repository), Settings
+(`categoryChanged`) and Usage (`tabChanged`, `UsageTab` in `usage-tab.ts`).
+
+On document startup `claimInitialRoute` parses the URL once per connection identity
+scope (the same server, endpoint and device identity key `App` already uses). A
+different identity never receives the previous identity's route. An unknown `screen`
+falls back to Sessions Home; malformed IDs, unknown categories and tabs, and
+parameters that do not belong to the screen are dropped. Screens without a selection
+(and the Settings category and Usage tab, which need no read) open immediately, so a
+pending route never flashes Home. A Session, Sidechat, Inbox entry, Schedule or
+repository selection stays pending until the connection is ready, then
+`product-route-restore.ts` verifies it with a fresh, uncached read through the
+current transport (`GetResource` for Session and repository, `GetSchedule`,
+`GetInboxEntry`; a Sidechat must resolve to a child of the requested parent). While
+the connection is unavailable the route stays pending, the URL keeps the original
+route, and the selection resumes only when the same connection becomes ready. A
+deleted, denied, malformed or wrong-connection selection (not found, permission
+denied, unauthenticated or an unexpected shape) clears the selection and shows the
+requested screen's list, default category or Sessions Home. A retryable read failure
+reopens the Session or repository so its own mounted retry and error state shows; a
+Schedule needs the fresh resource, so it is cleared and the list's own retry applies.
+Deliberate navigation or a new Session selection supersedes a pending selection.
+Restoration only selects and reads: no mutation is dispatched, no pending operation
+is replayed, and drafts, filters, search text, scroll, dialogs and in-memory
+presentation reset as before. Structured logs (`delidev.product_route.restore`,
+`delidev.product_route.superseded`) carry only the screen and a closed outcome.
+
+The reload shortcut, its saved override policy, capture and IME/modifier guards,
+focused external Browser ownership and the English/Korean copy are unchanged. No
+native, server, RPC, storage or migration change is involved. Regression coverage:
+`product-route.test.ts` (parse, serialize, hash and history, identity claim),
+`product-route-restore.test.tsx` (mirroring, restore per screen, fallbacks, pending
+and reload-shortcut remount).
+
 Read-only shortcut defaults yield to existing editable chords through one shared
 policy, `readOnlyShortcutSuppression` in `shortcut-preferences.ts`, keyed by
 shortcut ID and the unshifted primary key it protects. OpenTool protects `t`. A new

@@ -494,9 +494,15 @@ function transportIdentity(transport: Transport): string {
 export function PullRequests({
   active,
   openSettings,
+  restore,
+  selectionChanged,
 }: {
   active: boolean;
   openSettings: (destination?: SettingsNavigationEntry) => void;
+  /** Repository reopened by the product route after a reload. */
+  restore?: { id: string; generation: string };
+  /** Reports the selected repository ID ("" when none) for the product route. */
+  selectionChanged?: (id: string) => void;
 }) {
   const productLabel = useProductLabels();
   useLocale();
@@ -678,17 +684,31 @@ export function PullRequests({
     }
   }, [active]);
 
-  const chooseRepository = (row: Resource) => {
-    if (row.id === repositoryId) return;
+  const chooseRepository = (row: Resource) => selectRepositoryId(row.id);
+  const selectRepositoryId = (id: string) => {
+    if (id === repositoryId) return;
     setLoaded(undefined);
     setNavigation(undefined);
-    setRepositoryId(row.id);
+    setRepositoryId(id);
     setState(ItemState.Open);
     setSearch("");
     setAppliedSearch("");
     setComposing(false);
     setPageSize(PullRequestPageSize.Twenty);
   };
+  const restored = useRef("");
+  const latestSelect = useRef(selectRepositoryId);
+  latestSelect.current = selectRepositoryId;
+  useEffect(() => {
+    if (!restore || restored.current === restore.generation) return;
+    restored.current = restore.generation;
+    latestSelect.current(restore.id);
+  }, [restore]);
+  const reportSelection = useRef(selectionChanged);
+  reportSelection.current = selectionChanged;
+  useEffect(() => {
+    reportSelection.current?.(repositoryId);
+  }, [repositoryId]);
   useEffect(() => {
     const term = search.trim();
     if (!active || composing || !searchValid || term === appliedSearch) return;

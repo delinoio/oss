@@ -10,7 +10,7 @@ import {
   displayLocale,
   useLocale,
 } from "./localization";
-import { useId, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import {
   EntranceMotion,
   settleEnclosingEntrances,
@@ -57,12 +57,8 @@ import {
 } from "./usage-prices";
 import { SettingsLifetime } from "./settings-lifetime";
 import { MutationIntents } from "./mutation";
+import { UsageTab } from "./usage-tab";
 
-enum UsageTab {
-  Overview = "overview",
-  History = "history",
-  Prices = "prices",
-}
 const tabs = [UsageTab.Overview, UsageTab.History, UsageTab.Prices] as const;
 const tabLabels = {
   [UsageTab.Overview]: "usage.overview",
@@ -273,16 +269,27 @@ export function Usage({
   active,
   open,
   entry,
+  initialTab = UsageTab.Overview,
+  tabChanged,
 }: {
   active: boolean;
   open: (id: string) => void;
   entry?: UsageEntry;
+  /** Tab reopened by the product route after a reload. */
+  initialTab?: UsageTab;
+  /** Reports the selected tab for the product route. */
+  tabChanged?: (tab: UsageTab) => void;
 }) {
   const productLabel = useProductLabels();
   useLocale();
   const [detail, setDetail] = useState<PriceSelection>();
 
-  const [tab, setTab] = useState(UsageTab.Overview);
+  const [tab, setTab] = useState(initialTab);
+  const reportTab = useRef(tabChanged);
+  reportTab.current = tabChanged;
+  useEffect(() => {
+    reportTab.current?.(tab);
+  }, [tab]);
   // Explicit destination activation owns one 160ms Y4 entrance on the page; an
   // explicit internal-tab selection owns one on the content below the tab strip,
   // so the strip itself never moves. Refresh, range and source changes, polling

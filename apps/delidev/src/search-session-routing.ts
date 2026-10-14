@@ -3,7 +3,9 @@ import type { Transport } from "@connectrpc/connect";
 import type { QueryClient } from "@tanstack/react-query";
 import {
   EntityKind,
+  FailureCode,
   ResourceQuery,
+  clientFailure,
   newRequestId,
   supportsResourceSchema,
 } from "@delinoio/delidev-api-client";
@@ -20,14 +22,27 @@ export enum SearchSessionRoute {
   Unavailable = "unavailable",
 }
 
-const unavailable = (id: string, reason: string): SearchSessionResolution => {
+const unavailable = (
+  id: string,
+  reason: string,
+  transient = false,
+): SearchSessionResolution => {
   // Structured, content-free diagnostics: only the opaque session ID and reason.
   console.warn("delidev.search.session_route_unavailable", {
     sessionId: id,
     reason,
   });
-  return { route: SearchSessionRoute.Unavailable };
+  return { route: SearchSessionRoute.Unavailable, transient };
 };
+
+/** A definitive missing or denied target, as opposed to a retryable failure. */
+export function inaccessibleFailure(error: unknown): boolean {
+  return [
+    FailureCode.NotFound,
+    FailureCode.PermissionDenied,
+    FailureCode.Unauthenticated,
+  ].includes(clientFailure(error).code);
+}
 
 /** Presentation state of one pending or failed Search-result opening. */
 export enum SearchOpenStatus {
@@ -38,7 +53,11 @@ export enum SearchOpenStatus {
 export type SearchSessionResolution =
   | { route: SearchSessionRoute.TopLevel }
   | { route: SearchSessionRoute.Sidechat; parent: string; name: string }
-  | { route: SearchSessionRoute.Unavailable };
+  /**
+   * `transient` marks a read failure that may succeed on retry. It is false for
+   * a missing, denied or malformed target, which is definitively unavailable.
+   */
+  | { route: SearchSessionRoute.Unavailable; transient?: boolean };
 
 /**
  * Reads the exact target through the existing bounded GetResource operation and
@@ -100,10 +119,11 @@ export async function resolveSearchSession(
       default:
         return unavailable(id, "malformed-parent-metadata");
     }
-  } catch {
+  } catch (error) {
     // A cancelled read belongs to a superseded opening: nothing to report.
-    if (signal?.aborted) return { route: SearchSessionRoute.Unavailable };
-    return unavailable(id, "read-failed");
+    if (signal?.aborted)
+      return { route: SearchSessionRoute.Unavailable, transient: true };
+    return unavailable(id, "read-failed", !inaccessibleFailure(error));
   } finally {
     signal?.removeEventListener("abort", abort);
   }

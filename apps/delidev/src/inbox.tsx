@@ -192,12 +192,20 @@ export function Inbox({
   notificationId = "",
   notificationActivation = 0,
   openOperational,
+  restoreId = "",
+  restoreActivation = 0,
+  selectionChanged,
 }: {
   active: boolean;
   open: (sessionId: string) => void;
   notificationId?: string;
   notificationActivation?: number;
   openOperational?: (resource: Resource) => void;
+  /** Entry reopened by the product route after a reload; never redirects. */
+  restoreId?: string;
+  restoreActivation?: number;
+  /** Reports the selected entry ID ("" when none) for the product route. */
+  selectionChanged?: (id: string) => void;
 }) {
   const productLabel = useProductLabels();
   useLocale();
@@ -282,6 +290,24 @@ export function Inbox({
     setSelectedId(id);
     setReadTrigger((value) => value + 1);
   };
+
+  const lastRestoreActivation = useRef(0);
+  useEffect(() => {
+    if (!restoreId || restoreActivation === lastRestoreActivation.current)
+      return;
+    lastRestoreActivation.current = restoreActivation;
+    lastRowFocus.current = restoreId;
+    restoreRowFocus.current = false;
+    keyboardSelection.current = false;
+    setDetailEntrances((value) => value + 1);
+    setSelectedId(restoreId);
+    setReadTrigger((value) => value + 1);
+  }, [restoreId, restoreActivation]);
+  const reportSelection = useRef(selectionChanged);
+  reportSelection.current = selectionChanged;
+  useEffect(() => {
+    reportSelection.current?.(selectedId);
+  }, [selectedId]);
 
   useEffect(() => {
     if (

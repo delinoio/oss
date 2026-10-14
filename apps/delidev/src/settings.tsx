@@ -2146,6 +2146,10 @@ interface SettingsProps {
   currentDeviceId?: string;
   entryDestination?: SettingsNavigationEntry;
   destinationConsumed?: () => void;
+  /** Category reopened by the product route when this visit starts. */
+  initialCategory?: SettingsCategory;
+  /** Reports the selected category for the product route. */
+  categoryChanged?: (category: SettingsCategory) => void;
 }
 enum SettingsEntryKind {
   NewProject,
@@ -2269,6 +2273,8 @@ export function Settings({ visible = true, ...props }: SettingsProps) {
 function SettingsVisit({
   entryDestination,
   destinationConsumed,
+  initialCategory,
+  categoryChanged,
   ...props
 }: SettingsProps) {
   useLocale();
@@ -2278,8 +2284,18 @@ function SettingsVisit({
   // publisher; saved-server windows list no Tailscale category at all.
   const tailscaleAvailable = props.runnerTailscale !== undefined;
   const [selection, setSelection] = useState(() =>
-    entrySelection(entryDestination, tailscaleAvailable),
+    entryDestination || !initialCategory
+      ? entrySelection(entryDestination, tailscaleAvailable)
+      : entrySelection(
+          { category: initialCategory, generation: newRequestId() },
+          tailscaleAvailable,
+        ),
   );
+  const reportCategory = useRef(categoryChanged);
+  reportCategory.current = categoryChanged;
+  useEffect(() => {
+    reportCategory.current?.(selection.category);
+  }, [selection.category]);
   // The activation key is the category opening, so rendering, reads, edits and
   // preference changes inside the opening cannot replay the entrance.
   const entranceTarget = entranceCategories.get(selection.category);

@@ -69,6 +69,18 @@ import { Search, Settings, Surface } from "./views";
 import { NewSession, NewSessionKind } from "./new-session";
 import { Inbox } from "./inbox";
 import { Usage } from "./usage";
+import { UsageTab } from "./usage-tab";
+import {
+  claimInitialRoute,
+  writeProductRoute,
+  type ProductRoute,
+} from "./product-route";
+import {
+  readRouteInboxEntry,
+  readRouteRepository,
+  readRouteSchedule,
+  RouteReadOutcome,
+} from "./product-route-restore";
 import { Schedules } from "./schedules";
 import type { ControlLocalWorker } from "./local-worker-controls";
 import type { ReadLocalWorkerProof } from "./local-worker";
@@ -111,7 +123,33 @@ import {
   globalShortcutBindings,
 } from "./shortcuts";
 
+/** Selection from the product route that still needs a fresh verification read. */
+interface PendingSelection {
+  surface: Surface;
+  id: string;
+  sidechat?: string;
+}
+/** Per-screen selections reported by the mounted screens for the product route. */
+interface RouteSelection {
+  inbox: string;
+  schedule: string;
+  repository: string;
+  category?: SettingsCategory;
+  tab?: UsageTab;
+}
+function pendingSelectionOf(
+  route: ProductRoute | undefined,
+): PendingSelection | undefined {
+  if (!route) return undefined;
+  if (route.surface === Surface.Sessions)
+    return route.session
+      ? { surface: route.surface, id: route.session, sidechat: route.sidechat }
+      : undefined;
+  return route.item ? { surface: route.surface, id: route.item } : undefined;
+}
+
 function Shell({
+  routeScope,
   localServer,
   connectionReady,
   connectionSettings,
@@ -129,6 +167,8 @@ function Shell({
   currentDeviceId?: string;
   controlLocalWorker?: ControlLocalWorker;
   chooseRepositoryFolder?: ChooseRepositoryFolder;
+  /** Connection identity that owns the document's initial product route. */
+  routeScope: string;
   localServer?: ReactNode;
   connectionReady: boolean;
   connectionSettings?: ReactNode;
@@ -156,7 +196,13 @@ function Shell({
     [queryClient],
   );
   useLocale();
-  const [surface, setSurfaceState] = useState(Surface.Sessions);
+  // The product route in the URL (screen plus selection) survives a full webview
+  // reload. Screens without a selection open immediately; a selection waits for
+  // a fresh read through this connection before it is reopened.
+  const [initialRoute] = useState(() => claimInitialRoute(routeScope));
+  const [surface, setSurfaceState] = useState(
+    initialRoute?.surface ?? Surface.Sessions,
+  );
   useShortcutSurface(surface);
   // Home activation (a rising edge of the Sessions surface) owns one 160ms Y4
   // entrance on the welcome content. Selecting a session, reads and retries keep
@@ -270,7 +316,9 @@ function Shell({
   }>({ activation: 0 });
   const [newSessionProjectBlocked, setNewSessionProjectBlocked] =
     useState(false);
-  const [newGeneralChatActivation, setNewGeneralChatActivation] = useState(0);
+  const [newGeneralChatActivation, setNewGeneralChatActivation] = useState(
+    initialRoute?.surface === Surface.NewGeneralChat ? 1 : 0,
+  );
   const [notificationOccurrence, setNotificationOccurrence] = useState<{
     scheduleId: string;
     id: string;
@@ -278,6 +326,57 @@ function Shell({
   }>();
   const [usageEntry, setUsageEntry] = useState<UsageEntry>();
   const [settingsEntry, setSettingsEntry] = useState<SettingsNavigationEntry>();
+  const [pendingSelection, setPendingSelection] = useState(() =>
+    pendingSelectionOf(initialRoute),
+  );
+  const [routeSelection, setRouteSelection] = useState<RouteSelection>({
+    inbox: "",
+    schedule: "",
+    repository: "",
+    category: initialRoute?.category,
+    tab: initialRoute?.tab,
+  });
+  const [restoreCategory, setRestoreCategory] = useState(
+    initialRoute?.category,
+  );
+  const [inboxRestore, setInboxRestore] = useState<{
+    id: string;
+    activation: number;
+  }>();
+  const [scheduleRestore, setScheduleRestore] = useState<{
+    resource: Resource;
+    generation: string;
+  }>();
+  const [repositoryRestore, setRepositoryRestore] = useState<{
+    id: string;
+    generation: string;
+  }>();
+  const inboxSelected = useCallback(
+    (inbox: string) => setRouteSelection((current) => ({ ...current, inbox })),
+    [],
+  );
+  const scheduleSelected = useCallback(
+    (schedule: string) =>
+      setRouteSelection((current) => ({ ...current, schedule })),
+    [],
+  );
+  const repositorySelected = useCallback(
+    (repository: string) =>
+      setRouteSelection((current) => ({ ...current, repository })),
+    [],
+  );
+  const categorySelected = useCallback(
+    (category: SettingsCategory) =>
+      setRouteSelection((current) => ({ ...current, category })),
+    [],
+  );
+  const usageTabSelected = useCallback(
+    (tab: UsageTab) => setRouteSelection((current) => ({ ...current, tab })),
+    [],
+  );
+  useEffect(() => {
+    if (surface !== Surface.Settings) setRestoreCategory(undefined);
+  }, [surface]);
   const [projectCreation, setProjectCreation] = useState<{
     id: string;
     activation: number;
@@ -386,6 +485,166 @@ function Shell({
   useLayoutEffect(() => {
     openSessionRef.current = openSession;
   });
+  // A deliberate navigation away from the requested screen, or a new Session
+  // selection, supersedes the pending route selection.
+  useEffect(() => {
+    if (
+      pendingSelection &&
+      (surface !== pendingSelection.surface ||
+        (pendingSelection.surface === Surface.Sessions && selected))
+    ) {
+      console.info("delidev.product_route.superseded", {
+        surface: pendingSelection.surface,
+      });
+      setPendingSelection(undefined);
+    }
+  }, [pendingSelection, surface, selected]);
+  // Verifies the route selection with fresh reads through the current
+  // connection. It waits for connection readiness, never dispatches a mutation
+  // and reopens only what this connection can read.
+  useEffect(() => {
+    if (!pendingSelection || !connectionReady) return;
+    const pending = pendingSelection;
+    const owner = transport;
+    const controller = new AbortController();
+    const current = () =>
+      !controller.signal.aborted && latestTransport.current === owner;
+    const settle = (outcome: RouteReadOutcome | "superseded") => {
+      console.info("delidev.product_route.restore", {
+        surface: pending.surface,
+        outcome,
+      });
+      setPendingSelection(undefined);
+    };
+    void (async () => {
+      switch (pending.surface) {
+        case Surface.Sessions: {
+          const top = await resolveSearchSession(
+            queryClient,
+            owner,
+            pending.id,
+            controller.signal,
+          );
+          if (!current()) return;
+          if (top.route === SearchSessionRoute.Sidechat) {
+            settle(RouteReadOutcome.Found);
+            openSessionRef.current(pending.id, top.parent, top.name);
+            return;
+          }
+          if (top.route === SearchSessionRoute.Unavailable && !top.transient) {
+            settle(RouteReadOutcome.Missing);
+            return;
+          }
+          if (top.route === SearchSessionRoute.Unavailable) {
+            // The mounted Session view owns the existing retry and error state.
+            settle(RouteReadOutcome.Failed);
+            openSessionRef.current(pending.id);
+            return;
+          }
+          if (pending.sidechat) {
+            const child = await resolveSearchSession(
+              queryClient,
+              owner,
+              pending.sidechat,
+              controller.signal,
+            );
+            if (!current()) return;
+            if (
+              child.route === SearchSessionRoute.Sidechat &&
+              child.parent === pending.id
+            ) {
+              settle(RouteReadOutcome.Found);
+              openSessionRef.current(pending.sidechat, child.parent, child.name);
+              return;
+            }
+          }
+          settle(RouteReadOutcome.Found);
+          openSessionRef.current(pending.id);
+          return;
+        }
+        case Surface.Inbox: {
+          const read = await readRouteInboxEntry(
+            queryClient,
+            owner,
+            pending.id,
+            controller.signal,
+          );
+          if (!current()) return;
+          settle(read.outcome);
+          if (read.outcome === RouteReadOutcome.Missing) return;
+          setRouteSelection((previous) => ({ ...previous, inbox: pending.id }));
+          setInboxRestore((previous) => ({
+            id: pending.id,
+            activation: (previous?.activation ?? 0) + 1,
+          }));
+          return;
+        }
+        case Surface.Schedules: {
+          const read = await readRouteSchedule(
+            queryClient,
+            owner,
+            pending.id,
+            controller.signal,
+          );
+          if (!current()) return;
+          settle(read.outcome);
+          if (read.outcome !== RouteReadOutcome.Found) return;
+          setRouteSelection((previous) => ({
+            ...previous,
+            schedule: pending.id,
+          }));
+          setScheduleRestore({
+            resource: read.value,
+            generation: newRequestId(),
+          });
+          return;
+        }
+        case Surface.PullRequests: {
+          const read = await readRouteRepository(
+            queryClient,
+            owner,
+            pending.id,
+            controller.signal,
+          );
+          if (!current()) return;
+          settle(read.outcome);
+          // The mounted screen owns the retry and error state of a failed read.
+          if (read.outcome === RouteReadOutcome.Missing) return;
+          setRouteSelection((previous) => ({
+            ...previous,
+            repository: pending.id,
+          }));
+          setRepositoryRestore({ id: pending.id, generation: newRequestId() });
+          return;
+        }
+        default:
+          settle("superseded");
+      }
+    })();
+    return () => controller.abort();
+  }, [pendingSelection, connectionReady, transport, queryClient]);
+  // Mirror committed navigation into the URL query with history.replaceState.
+  // The URL keeps the original route until its selection has been verified.
+  const sidechatRoute =
+    selectedTabs.tab.kind === SessionTabKind.Sidechat
+      ? selectedTabs.tab.id
+      : undefined;
+  useEffect(() => {
+    if (pendingSelection) return;
+    const route: ProductRoute = { surface };
+    if (surface === Surface.Sessions && selected) {
+      route.session = selected;
+      route.sidechat = sidechatRoute;
+    } else if (surface === Surface.Inbox) route.item = routeSelection.inbox;
+    else if (surface === Surface.Schedules)
+      route.item = routeSelection.schedule;
+    else if (surface === Surface.PullRequests)
+      route.item = routeSelection.repository;
+    else if (surface === Surface.Settings)
+      route.category = routeSelection.category;
+    else if (surface === Surface.Usage) route.tab = routeSelection.tab;
+    writeProductRoute(route);
+  }, [pendingSelection, surface, selected, sidechatRoute, routeSelection]);
   // Any deliberate navigation supersedes a pending Search-result resolution.
   const open = (id: string, originalParent?: string, name?: string) => {
     supersedeSearchOpening();
@@ -824,7 +1083,8 @@ function Shell({
                             />
                           </div>
                         ))}
-                        {!selected ? (
+                        {!selected &&
+                        pendingSelection?.surface !== Surface.Sessions ? (
                           <section
                             className="page welcome"
                             {...welcomeEntrance}
@@ -914,12 +1174,17 @@ function Shell({
                           notificationId={selectedInbox}
                           notificationActivation={inboxActivation}
                           openOperational={openOperationalNotification}
+                          restoreId={inboxRestore?.id}
+                          restoreActivation={inboxRestore?.activation}
+                          selectionChanged={inboxSelected}
                         />
                       </div>
                       <Usage
                         active={surface === Surface.Usage}
                         open={open}
                         entry={usageEntry}
+                        initialTab={initialRoute?.tab}
+                        tabChanged={usageTabSelected}
                       />
                       <Schedules
                         readLocalWorker={readLocalWorker}
@@ -929,10 +1194,14 @@ function Shell({
                         clearNotificationOccurrence={() =>
                           setNotificationOccurrence(undefined)
                         }
+                        restore={scheduleRestore}
+                        selectionChanged={scheduleSelected}
                       />
                       <PullRequests
                         active={surface === Surface.PullRequests}
                         openSettings={openSettings}
+                        restore={repositoryRestore}
+                        selectionChanged={repositorySelected}
                       />
                       <Settings
                         openUsage={openAccountUsage}
@@ -947,6 +1216,8 @@ function Shell({
                         visible={surface === Surface.Settings}
                         entryDestination={settingsEntry}
                         destinationConsumed={consumeSettingsEntry}
+                        initialCategory={restoreCategory}
+                        categoryChanged={categorySelected}
                       />
                       {localServer}
                     </main>
@@ -1031,6 +1302,11 @@ export function App({
                             <SessionNameEditorProvider>
                               <SessionInboxReadBoundary ready={connectionReady}>
                                 <Shell
+                                  routeScope={
+                                    typeof connectionIdentity === "string"
+                                      ? connectionIdentity
+                                      : "transport"
+                                  }
                                   connectionReady={connectionReady}
                                   pairingAuthority={pairingAuthority}
                                   currentDeviceId={currentDeviceId}
