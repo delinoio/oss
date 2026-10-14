@@ -351,6 +351,9 @@ fn env_guards(
     reads: &[(usize, usize)],
     ignored: &[(usize, usize)],
 ) -> Vec<Option<EnvGuard>> {
+    if reads.is_empty() {
+        return Vec::new();
+    }
     let bytes = code.as_bytes();
     let mut guards = vec![None; reads.len()];
     let mut blocked = vec![false; reads.len()];
@@ -601,14 +604,17 @@ fn env_guards(
 fn scope_prefix<'a>(code: &'a str, index: usize, ignored: &[(usize, usize)]) -> &'a str {
     let mut end = code[..index].trim_end().len();
     loop {
-        let Some((start, _)) = ignored
-            .iter()
-            .rev()
-            .find(|(start, stop)| *stop == end && code[*start..*stop].starts_with("/*"))
+        let Some(comment_index) = ignored
+            .partition_point(|(_, stop)| *stop <= end)
+            .checked_sub(1)
         else {
             return &code[..end];
         };
-        end = code[..*start].trim_end().len();
+        let (start, stop) = ignored[comment_index];
+        if stop != end || !code[start..stop].starts_with("/*") {
+            return &code[..end];
+        }
+        end = code[..start].trim_end().len();
     }
 }
 
