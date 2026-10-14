@@ -43,9 +43,12 @@ type managedJournalState string
 
 const (
 	managedNotAdmitted managedJournalState = "not-admitted"
-	managedClaimed     managedJournalState = "claimed"
-	managedClosed      managedJournalState = "closed"
-	managedReported    managedJournalState = "reported"
+	// managedNotDelivered records the server's typed proof that a managed title
+	// lease was released without any credential delivery.
+	managedNotDelivered managedJournalState = "not-delivered"
+	managedClaimed      managedJournalState = "claimed"
+	managedClosed       managedJournalState = "closed"
+	managedReported     managedJournalState = "reported"
 )
 
 type managedSubscriptionJournal struct {
@@ -103,6 +106,20 @@ func takeManagedSubscription(ctx context.Context, config Config, client delidevv
 				return nil, subscription.Invalid()
 			}
 			return nil, &managedTakeNotAdmitted{problem}
+		}
+		if action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE && safe.Cause == "subscription_title_not_delivered" {
+			// The server committed and then released this exact managed title lease
+			// without returning a credential, so there is no native side effect and
+			// nothing to finish. The title reports an ordinary definite failure; the
+			// lease is never an uncertain execution.
+			claim.State = managedNotDelivered
+			if err := writeJSON(journalPath, claim); err != nil {
+				return nil, subscription.Invalid()
+			}
+			if config.Logger != nil {
+				config.Logger.InfoContext(ctx, "subscription_title_not_delivered", "account_id", account, "operation_id", operation)
+			}
+			return nil, &managedTakeNotDelivered{problem}
 		}
 		if safe.Code != domain.ResourceExhausted {
 			code := domain.SafeError(problem).Code
@@ -167,6 +184,13 @@ func (l *managedSubscriptionLease) finish(bundle []byte, cleanup, refresh, succe
 type managedTakeNotAdmitted struct{ error }
 
 func (e *managedTakeNotAdmitted) Unwrap() error { return e.error }
+
+// managedTakeNotDelivered is a definite no-delivery result for a managed title
+// whose server lease was already released. It is reported as an ordinary job
+// problem and never fences or interrupts the primary lane.
+type managedTakeNotDelivered struct{ error }
+
+func (e *managedTakeNotDelivered) Unwrap() error { return e.error }
 
 type managedReportedFailure struct{ error }
 

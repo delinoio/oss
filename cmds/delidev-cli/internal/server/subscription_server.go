@@ -66,6 +66,15 @@ func (s *Service) requestServerSubscription(ctx context.Context, req *connect.Re
 		if action != domain.SubscriptionLogin && (a.Connection == nil || state.Generation == "") {
 			return nil, subscriptionDenied()
 		}
+		if action == domain.SubscriptionRefresh {
+			// A refresh rotates the credential generation. A claimed managed title
+			// still owns the frozen generation, so the refresh waits for it.
+			if reserved, err := managedTitleReservation(tx, r.ID, ""); err != nil {
+				return nil, err
+			} else if reserved {
+				return nil, managedTitleAccountReserved()
+			}
+		}
 		now := time.Now().UTC()
 		state.ServerOperation = &domain.ServerSubscriptionOperation{ID: domain.ID(m.RequestId), Action: action, Epoch: s.subscriptionServerEpoch(), FinishID: domain.NewID(), Actor: actor, State: domain.SubscriptionPreparing, StartedAt: now, ExpiresAt: now.Add(15 * time.Minute)}
 		state.Pending = &domain.SubscriptionOperation{ID: domain.ID(m.RequestId), Action: action, Actor: actor, DeviceCode: input.DeviceCode, Phase: domain.SubscriptionQueued}
@@ -76,6 +85,9 @@ func (s *Service) requestServerSubscription(ctx context.Context, req *connect.Re
 				state.Observation.ErrorCode = domain.Canceled
 			}
 			if err := cancelAccountExecutions(tx, r.ID); err != nil {
+				return nil, err
+			}
+			if err := retireAccountQueuedTitles(tx, r.ID); err != nil {
 				return nil, err
 			}
 		}

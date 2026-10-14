@@ -59,6 +59,22 @@ func subscriptionTakeNotAdmitted() *domain.Error {
 	return problem
 }
 
+// subscriptionTitleNotDelivered is the definite result of a managed title Take
+// whose exact lease was committed and then released without any credential
+// crossing the boundary. Unlike subscriptionDenied it carries no recovery
+// authority, so the Worker can report and terminate the title normally instead
+// of treating the outcome as uncertain. The code only classifies the report
+// (Canceled for a denied or revoked title, Unavailable for a vault failure).
+func subscriptionTitleNotDelivered(code domain.Code) *domain.Error {
+	problem := domain.Fail(code, "The managed automatic title received no credentials.", "No credential was delivered and no inference was sent; keep the current title and the ready account.")
+	problem.Cause = subscriptionTitleNotDeliveredCause
+	return problem
+}
+
+// subscriptionTitleNotDeliveredCause is the typed proof the Worker accepts for a
+// released, undelivered managed title lease.
+const subscriptionTitleNotDeliveredCause = "subscription_title_not_delivered"
+
 func subscriptionActorValid(tx *store.Tx, actor domain.Principal) error {
 	if actor.Type == domain.OwnerDevice {
 		return nil
@@ -196,6 +212,15 @@ func (s *Service) RequestSubscription(ctx context.Context, req *connect.Request[
 		if action != domain.SubscriptionLogin && (a.Connection == nil || state.Generation == "") {
 			return nil, subscriptionDenied()
 		}
+		if action == domain.SubscriptionRefresh {
+			// A refresh rotates the credential generation. A claimed managed title
+			// still owns the frozen generation, so the refresh waits for it.
+			if reserved, err := managedTitleReservation(tx, r.ID, ""); err != nil {
+				return nil, err
+			} else if reserved {
+				return nil, managedTitleAccountReserved()
+			}
+		}
 		if state.ServerOperation != nil && state.ServerOperation.CleanupPhase == domain.SubscriptionCredentialCleanupConfirmed {
 			// A fresh explicit Worker login supersedes the settled server attempt.
 			// Its cleanup checkpoint cannot describe the new pending/native owner.
@@ -212,6 +237,9 @@ func (s *Service) RequestSubscription(ctx context.Context, req *connect.Request[
 				state.Observation.ErrorCode = domain.Canceled
 			}
 			if err := cancelAccountExecutions(tx, r.ID); err != nil {
+				return nil, err
+			}
+			if err := retireAccountQueuedTitles(tx, r.ID); err != nil {
 				return nil, err
 			}
 		}
@@ -474,7 +502,7 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 	}
 	defer unlock()
 	directExecution := false
-	var forkRevision uint64
+	var forkRevision, titleRevision uint64
 	result, err := s.Store.Mutate(ctx, input.Lease, "subscription.take", input, func(tx *store.Tx) (any, error) {
 		// Take retains the original observation while another lease or metadata
 		// update advances the account. Lifecycle authority is the exact still-queued
@@ -486,9 +514,48 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 		if action != domain.SubscriptionExecute && input.Revision > r.Revision {
 			return nil, domain.Fail(domain.Conflict, "The account revision has not been observed.", "Retain the original queued operation and its observed revision.")
 		}
+		// A denial before the managed title's inference claim commits rolls this
+		// transaction back: no lease, claim or credential exists. It is a definite
+		// no-delivery result (Stop, Archive, rename, logout, disablement, creator
+		// revocation, a recovery fence or a lost capability won first), so the
+		// Worker can report and settle the title instead of treating it as an
+		// uncertain execution. Once an earlier Take committed the claim, delivery
+		// is unknown and the conservative recovery denial remains. Every other job
+		// type keeps the recovery denial.
+		claimedHere := false
+		preLeaseDenied := func(job domain.Job, reason string) error {
+			if job.Type != domain.GenerateSessionTitleJob {
+				return subscriptionDenied()
+			}
+			if claimed, claimErr := tx.TitleInferenceClaimed(input.Operation); claimErr != nil || claimed && !claimedHere {
+				return subscriptionDenied()
+			}
+			s.logger.InfoContext(ctx, "subscription_title_take_denied_before_lease", "account_id", input.Account, "operation_id", input.Operation, "reason", reason)
+			return subscriptionTitleNotDelivered(domain.Canceled)
+		}
+		// accountGateDenied classifies a denial raised before the job is decoded.
+		// It reads the operation only to prove it is this Worker's own managed
+		// title; any other caller or job type keeps the generic denial.
+		accountGateDenied := func(reason string) error {
+			if action != domain.SubscriptionExecute {
+				return subscriptionDenied()
+			}
+			jobRecord, err := tx.Get(domain.JobKind, input.Operation)
+			if err != nil {
+				return subscriptionDenied()
+			}
+			job, err := store.Decode[domain.Job](jobRecord)
+			if err != nil || job.MachineID != input.Machine || job.InstanceID != input.Instance || job.AssignedDeviceID != actor.DeviceID {
+				return subscriptionDenied()
+			}
+			return preLeaseDenied(job, reason)
+		}
 		state := a.Subscription
-		if state == nil || state.RecoveryRequired {
+		if state == nil {
 			return nil, subscriptionDenied()
+		}
+		if state.RecoveryRequired {
+			return nil, accountGateDenied("recovery-fence")
 		}
 		// Execution, quota and reset-credit Take keep contention first. A fresh
 		// lifecycle Take instead proves its queued original is still admissible
@@ -521,8 +588,11 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 			if state.Pending != nil && state.Pending.Action == domain.SubscriptionRefresh {
 				return nil, domain.Fail(domain.ResourceExhausted, "The selected account is refreshing under exclusive ownership.", "Wait on this account's original operation without failover.")
 			}
+			// An accepted logout, a login, disablement or removal that won before the
+			// title's Take leaves the claimed title untouched, so this gate must
+			// return the same typed result as the other pre-lease denials.
 			if state.Pending != nil || !a.Enabled || a.Health != domain.AccountReady || a.Removal != nil || a.Connection == nil || state.Generation == "" {
-				return nil, subscriptionDenied()
+				return nil, accountGateDenied("account-state")
 			}
 			jr, err := tx.Get(domain.JobKind, input.Operation)
 			if err != nil {
@@ -531,7 +601,22 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 			job, err := store.Decode[domain.Job](jr)
 			var execution domain.ExecutionJobInput
 			if err != nil || jr.Revision != input.Revision || job.State != domain.JobClaimed || job.MachineID != input.Machine || job.InstanceID != input.Instance || job.AssignedDeviceID != actor.DeviceID {
-				return nil, subscriptionDenied()
+				if err != nil {
+					return nil, subscriptionDenied()
+				}
+				return nil, preLeaseDenied(job, "claim-lost")
+			}
+			if job.Type != domain.GenerateSessionTitleJob {
+				// A claimed managed title has no lease until its own Take, yet it owns
+				// the account's frozen generation. Any other owner that took the account
+				// in that window would advance the generation on Finish and strand the
+				// running title, so eligible work waits for the title's original custody.
+				if reserved, err := managedTitleReservation(tx, r.ID, jr.ID); err != nil {
+					return nil, err
+				} else if reserved {
+					s.logger.DebugContext(ctx, "subscription_take_deferred_for_title", "account_id", r.ID, "operation_id", jr.ID, "job_type", job.Type)
+					return nil, managedTitleAccountReserved()
+				}
 			}
 			switch job.Type {
 			case domain.ExecuteSessionJob:
@@ -575,13 +660,39 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 					return nil, err
 				}
 				execution = compact.Assignment
+			case domain.GenerateSessionTitleJob:
+				// A managed title reuses the EXECUTE lease but is admitted only by its
+				// exact immutable assignment. The one-time inference claim commits in
+				// this transaction, so a lost response can never deliver credentials or
+				// send inference again. Pre-lease denials use preLeaseDenied above.
+				authority, err := s.validateManagedTitle(tx, jr, job, managedTitleTake)
+				if err != nil {
+					switch domain.SafeError(err).Code {
+					case domain.BudgetReached:
+						return nil, err
+					case domain.PermissionDenied, domain.Unsupported:
+						return nil, preLeaseDenied(job, "authority-lost")
+					}
+					return nil, subscriptionDenied()
+				}
+				if authority.Input.Managed.Generation != state.Generation {
+					return nil, preLeaseDenied(job, "generation-changed")
+				}
+				if claimed, err := tx.ClaimTitleInference(jr.ID); err != nil || !claimed {
+					return nil, subscriptionDenied()
+				}
+				// The claim exists only inside this transaction. Any denial below
+				// rolls it back with the rest, so it is still a no-delivery result.
+				claimedHere = true
+				execution = authority.Original
+				titleRevision = jr.Revision
 			default:
 				return nil, subscriptionDenied()
 			}
 			if execution.Version == 4 {
 				_, machine, err := activeMachine(tx, input.Machine)
 				if err != nil || !slices.Contains(machine.WorkerCapabilities, domain.ManagedCodexSubscriptionsV1) || !slices.Contains(machine.WorkerCapabilities, domain.ExecutionStartupV1) {
-					return nil, subscriptionDenied()
+					return nil, preLeaseDenied(job, "capability-lost")
 				}
 				directExecution = true
 			} else if _, err := subscriptionInstallation(tx, input.Machine); err != nil {
@@ -589,10 +700,13 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 			}
 
 			if execution.AccountID != r.ID || execution.ConnectionID != a.Connection.ID || !execution.Configuration.Subscription || execution.Configuration.SubscriptionService != domain.SubscriptionChatGPT || execution.Configuration.Harness != domain.Codex {
-				return nil, subscriptionDenied()
+				return nil, preLeaseDenied(job, "assignment-mismatch")
 			}
 			if canceled, err := tx.JobCancellationRequested(jr.ID); err != nil || canceled {
-				return nil, subscriptionDenied()
+				if err != nil {
+					return nil, subscriptionDenied()
+				}
+				return nil, preLeaseDenied(job, "cancellation-requested")
 			}
 		} else if action == domain.SubscriptionQuota || action == domain.SubscriptionResetCredit {
 			op := state.Observation
@@ -629,7 +743,7 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 		if err := tx.WorkerUpdateAdmission(input.Machine); err != nil {
 			return nil, err
 		}
-		state.Lease = &domain.SubscriptionLease{ForkRevision: forkRevision, ID: input.Lease, OperationID: input.Operation, Revision: r.Revision + 1, Action: action, MachineID: input.Machine, InstanceID: input.Instance, DeviceID: actor.DeviceID, Epoch: s.subscriptionServerEpoch(), Generation: state.Generation, StartedAt: time.Now().UTC()}
+		state.Lease = &domain.SubscriptionLease{ForkRevision: forkRevision, TitleRevision: titleRevision, ID: input.Lease, OperationID: input.Operation, Revision: r.Revision + 1, Action: action, MachineID: input.Machine, InstanceID: input.Instance, DeviceID: actor.DeviceID, Epoch: s.subscriptionServerEpoch(), Generation: state.Generation, StartedAt: time.Now().UTC()}
 		if _, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
 			return nil, err
 		}
@@ -663,19 +777,39 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
+	// Every error below returns before any bundle crosses the boundary. For a
+	// managed title that is a definite no-delivery outcome, so its exact lease is
+	// released instead of fencing the account for recovery, and the caller returns
+	// the typed no-delivery result instead of the original error (whose code, for
+	// example RecoveryRequired, the Worker must treat as uncertain). When the
+	// release is unconfirmed, or for every other lease, the original error is
+	// returned and the conservative recovery fence stays.
+	definiteNoDelivery := func(reason string, original error, code domain.Code) error {
+		if titleRevision == 0 {
+			return original
+		}
+		if releaseErr := s.releaseUndeliveredTitleLease(ctx, input.Account, input.Lease, input.Machine, input.Instance, leaseRevision); releaseErr != nil {
+			// The lease stays owned, so the deferred recovery fence still applies.
+			s.logger.WarnContext(ctx, "subscription_title_lease_release_unconfirmed", "account_id", input.Account, "lease_id", input.Lease, "reason", reason, "code", domain.SafeError(releaseErr).Code)
+			return original
+		}
+		owned = false
+		s.logger.InfoContext(ctx, "subscription_title_lease_released", "account_id", input.Account, "lease_id", input.Lease, "reason", reason, "result_code", code)
+		return subscriptionTitleNotDelivered(code)
+	}
 	var bundle []byte
 	if generation != "" {
 		vault, err := s.secrets()
 		if err != nil {
-			return nil, rpc.Error(err, c)
+			return nil, rpc.Error(definiteNoDelivery("vault-unavailable", err, domain.Unavailable), c)
 		}
 		bundle, err = vault.Get(ctx, credentials.Ref{Owner: input.Account, ID: generation, Purpose: credentials.AccountLogin})
 		if err != nil {
-			return nil, rpc.Error(err, c)
+			return nil, rpc.Error(definiteNoDelivery("vault-read-failed", err, domain.Unavailable), c)
 		}
 		if _, _, err := subscription.Parse(bundle); err != nil {
 			clear(bundle)
-			return nil, rpc.Error(err, c)
+			return nil, rpc.Error(definiteNoDelivery("bundle-invalid", err, domain.Unavailable), c)
 		}
 	}
 	// Authorization after native I/O prevents revocation from winning during Get.
@@ -694,6 +828,11 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 			if canceled, err := tx.JobCancellationRequested(input.Operation); err != nil || canceled {
 				return subscriptionDenied()
 			}
+			if lease := a.Subscription.Lease; lease.TitleRevision != 0 {
+				if _, _, err := s.managedTitleLease(tx, *lease, managedTitleCustody); err != nil {
+					return subscriptionDenied()
+				}
+			}
 		} else if action == domain.SubscriptionQuota || action == domain.SubscriptionResetCredit {
 			op := a.Subscription.Observation
 			if op == nil || op.Phase != domain.SubscriptionObservationQueued || op.Generation != generation || subscriptionActorValid(tx, op.Actor) != nil || !quotaAccountReady(a) {
@@ -709,7 +848,7 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 	})
 	if err != nil {
 		clear(bundle)
-		return nil, rpc.Error(err, c)
+		return nil, rpc.Error(definiteNoDelivery("denied-before-delivery", err, domain.Canceled), c)
 	}
 	s.logger.InfoContext(ctx, "subscription_lease_granted", "account_id", input.Account, "lease_id", input.Lease, "action", action)
 	installationJSON, _ := json.Marshal(installation)
@@ -814,6 +953,9 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 			_, original, err = s.subscriptionLease(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance)
 			if err == nil && original.Subscription.Lease.Action == domain.SubscriptionExecute {
 				_, err = managedSidechatLease(tx, *original.Subscription.Lease)
+				if err == nil && original.Subscription.Lease.TitleRevision != 0 {
+					_, _, err = s.managedTitleLease(tx, *original.Subscription.Lease, managedTitleCustody)
+				}
 			}
 			return err
 		})
@@ -915,6 +1057,11 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 			if lease.Action == domain.SubscriptionExecute {
 				if _, err := managedSidechatLease(tx, *lease); err != nil {
 					return nil, err
+				}
+				if lease.TitleRevision != 0 {
+					if _, _, err := s.managedTitleLease(tx, *lease, managedTitleCustody); err != nil {
+						return nil, err
+					}
 				}
 			}
 			if state.RecoveryRequired || state.Generation != input.Generation {
@@ -1025,6 +1172,21 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 					receipt.ManagedSidechat = &domain.SubscriptionForkFinish{JobRevision: jr.Revision, Job: jr.ID, Account: r.ID, Machine: lease.MachineID, Instance: lease.InstanceID, Device: lease.DeviceID, Generation: input.Generation, Finish: domain.ID(m.RequestId)}
 				}
 			}
+			if usable && input.Cleanup && lease.Action == domain.SubscriptionExecute && lease.TitleRevision != 0 {
+				// Only a successful, independently cleaned managed title leaves the
+				// server-written receipt that publication requires.
+				// Account custody was validated above, before this transaction advanced
+				// the account generation; here only the exact job revision is bound.
+				jr, err := tx.Get(domain.JobKind, lease.OperationID)
+				if err != nil {
+					return nil, err
+				}
+				job, err := store.Decode[domain.Job](jr)
+				if err != nil || job.Type != domain.GenerateSessionTitleJob || job.State != domain.JobClaimed || jr.Revision != lease.TitleRevision || job.MachineID != lease.MachineID || job.InstanceID != lease.InstanceID || job.AssignedDeviceID != lease.DeviceID {
+					return nil, subscriptionDenied()
+				}
+				receipt.ManagedTitle = &domain.SubscriptionTitleFinish{JobRevision: jr.Revision, Job: jr.ID, Account: r.ID, Machine: lease.MachineID, Instance: lease.InstanceID, Device: lease.DeviceID, Generation: input.Generation, Finish: domain.ID(m.RequestId)}
+			}
 			return receipt, nil
 		})
 		if err != nil {
@@ -1096,6 +1258,36 @@ func cleanupSubscriptionReferences(ctx context.Context, vault accountSecrets, ow
 		}
 	}
 	return nil
+}
+
+// releaseUndeliveredTitleLease releases the exact EXECUTE lease of a managed
+// title whose TakeSubscription is returning an error after the lease committed
+// but before any credential was returned: cancellation, account logout, disable
+// or removal, an invalid vault read or a lost custody lineage. No bundle crossed
+// the boundary and no generation changed, so the account stays ready (or keeps
+// its accepted logout runnable) instead of entering recovery. The one-time
+// inference claim stays consumed, so the title can never send. The release is a
+// bounded write detached from request cancellation, so a client disconnect
+// cannot turn a definite no-delivery outcome into a recovery fence. The caller
+// holds the accounts gate.
+func (s *Service) releaseUndeliveredTitleLease(ctx context.Context, account, lease, machine, instance domain.ID, revision uint64) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	_, err := s.Store.Mutate(ctx, domain.NewID(), "subscription.title-release", struct{ Account, Lease domain.ID }{account, lease}, func(tx *store.Tx) (any, error) {
+		r, a, err := s.subscriptionLease(ctx, tx, account, lease, machine, instance)
+		if err != nil {
+			return nil, err
+		}
+		state := a.Subscription
+		held := state.Lease
+		if state.RecoveryRequired || held.Action != domain.SubscriptionExecute || held.TitleRevision == 0 || held.Revision != revision {
+			return nil, subscriptionDenied()
+		}
+		state.Lease = nil
+		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+		return accountReceipt{ID: r.ID}, err
+	})
+	return err
 }
 
 func (s *Service) markSubscriptionRecovery(id domain.ID) error {

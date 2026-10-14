@@ -379,6 +379,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if managedCapabilityExpected && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1) {
 				profile += "\x00managed-codex-fork-v1"
 			}
+			if managedCapabilityExpected && verifiedTitleProfile && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_TITLES_V1) {
+				profile += "\x00managed-codex-titles-v1"
+			}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1) {
 				profile += "\x00codex-approval-review-v1"
 			}
@@ -506,6 +509,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 			if managedCapabilityExpected && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1)
+			}
+			if managedCapabilityExpected && verifiedTitleProfile && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_TITLES_V1) {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_TITLES_V1)
 			}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1)

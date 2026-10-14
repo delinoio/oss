@@ -117,6 +117,7 @@ const (
 	RepositoryInspectionMetadataV1 WorkerCapability = "repository-inspection-metadata-v1"
 	SessionTerminalsV1             WorkerCapability = "session-terminals-v1"
 	AutomaticTitlesCodexV1         WorkerCapability = "automatic-titles-codex-v1"
+	ManagedCodexTitlesV1           WorkerCapability = "managed-codex-titles-v1"
 	SessionForwardingV1            WorkerCapability = "session-forwarding-v1"
 	ManagedCodexSubscriptionsV1    WorkerCapability = "managed-codex-subscriptions-v1"
 	NativeClaudeSubscriptionsV1    WorkerCapability = "native-claude-subscriptions-v1"
@@ -221,11 +222,44 @@ func (j Job) Validate() error {
 	return nil
 }
 
+// ManagedTitleAuthority is the version-3 branch of an immutable title
+// assignment for a protected ChatGPT subscription account. It freezes only
+// server-owned identity evidence and fabricates no API provider authority.
+type ManagedTitleAuthority struct {
+	// ActorDeviceID is the paired device that created the session. It is empty
+	// for the local owner, whose authority cannot be revoked as a device.
+	ActorDeviceID       ID                  `json:"actor_device_id,omitempty"`
+	SubscriptionService SubscriptionService `json:"subscription_service"`
+	// Generation is the settled protected credential generation observed when the
+	// first successful native turn was cleaned up. A different generation never
+	// receives this title assignment.
+	Generation ID `json:"generation"`
+	// IdentityCommitment is the server-keyed account identity lineage commitment.
+	IdentityCommitment string `json:"identity_commitment"`
+}
+
+// ManagedTitlesSupported composes the independently negotiated managed title
+// adapter with the title lane, protected subscription and direct startup
+// capabilities. No older capability alone authorizes a managed title.
+func ManagedTitlesSupported(capabilities []WorkerCapability) bool {
+	return slices.Contains(capabilities, ManagedCodexTitlesV1) && slices.Contains(capabilities, AutomaticTitlesCodexV1) && slices.Contains(capabilities, ManagedCodexSubscriptionsV1) && slices.Contains(capabilities, ExecutionStartupV1)
+}
+
+// SubscriptionTitleFinish is server-owned metadata in the original protected
+// Finish receipt of a managed title. Worker reports cannot manufacture it.
+type SubscriptionTitleFinish struct {
+	JobRevision                                                 uint64 `json:"job_revision"`
+	Job, Account, Machine, Instance, Device, Generation, Finish ID
+}
+
 // AuxiliaryTitleInput is the only public payload sent to the isolated title
 // runtime. It intentionally excludes workspace evidence, conversation history,
 // templates, project instructions and execution settings unrelated to inference.
+// Versions 1 and 2 are the historical Responses API assignments. Version 3 is
+// the protected ChatGPT subscription assignment and requires Managed.
 type AuxiliaryTitleInput struct {
 	Startup             *ExecutionStartupSelection `json:"startup,omitempty"`
+	Managed             *ManagedTitleAuthority     `json:"managed,omitempty"`
 	Version             uint32                     `json:"version"`
 	SessionID           ID                         `json:"session_id"`
 	OperationID         ID                         `json:"operation_id"`
@@ -242,8 +276,8 @@ type AuxiliaryTitleInput struct {
 	Executable          string                     `json:"executable"`
 	AccountID           ID                         `json:"account_id"`
 	ConnectionID        ID                         `json:"connection_id"`
-	ProviderID          ID                         `json:"provider_id"`
-	ProviderProtocol    APIProtocol                `json:"provider_protocol"`
+	ProviderID          ID                         `json:"provider_id,omitempty"`
+	ProviderProtocol    APIProtocol                `json:"provider_protocol,omitempty"`
 	ModelID             ID                         `json:"model_key"`
 	NativeModel         string                     `json:"native_model"`
 	Effort              string                     `json:"effort,omitempty"`
@@ -251,36 +285,81 @@ type AuxiliaryTitleInput struct {
 	Prompt              string                     `json:"prompt"`
 }
 
+// IsManaged reports whether this immutable assignment uses protected
+// subscription authentication instead of the API relay.
+func (i AuxiliaryTitleInput) IsManaged() bool { return i.Version == 3 }
+
 func (i AuxiliaryTitleInput) Validate() error {
 	if ValidateModelKey(i.ModelID) != nil {
 		return invalidObservation()
 	}
-	for _, id := range []ID{i.SessionID, i.OperationID, i.OriginalJobID, i.OriginalExecutionID, i.MachineID, i.OriginalDeviceID, i.OriginalInstanceID, i.AgentID, i.AccountID, i.ConnectionID, i.ProviderID} {
+	identities := []ID{i.SessionID, i.OperationID, i.OriginalJobID, i.OriginalExecutionID, i.MachineID, i.OriginalDeviceID, i.OriginalInstanceID, i.AgentID, i.AccountID, i.ConnectionID}
+	if i.Version != 3 {
+		identities = append(identities, i.ProviderID)
+	}
+	for _, id := range identities {
 		if id.Validate() != nil {
 			return Fail(InvalidArgument, "Invalid automatic title assignment identity.", "Preserve the original completed execution and its immutable selection.")
 		}
 	}
-	if !((i.Version == 1 && i.Startup == nil) || (i.Version == 2 && i.Startup != nil && i.Startup.Validate(Codex) == nil)) || i.NameGeneration == 0 || (i.ProjectID != "" && i.ProjectID.Validate() != nil) || i.Harness != Codex || (i.Version == 1 && !CodexVersionAllowed(i.NativeVersion)) || i.ProviderProtocol != OpenAIResponses || Text(i.Executable, "native executable", 4096, i.Version == 1) != nil || Text(i.NativeModel, "native model", 256, true) != nil || Text(i.Effort, "reasoning effort", 64, false) != nil || Text(i.ServiceTier, "service tier", 64, false) != nil || Text(i.Prompt, "first session input", MaxPromptBytes, true) != nil {
+	unsupported := func() error {
 		return Fail(Unsupported, "This automatic title assignment has no verified native profile.", "Use the pinned Codex Responses title profile without changing its original account or model.")
+	}
+	switch i.Version {
+	case 1:
+		if i.Startup != nil || i.Managed != nil || !CodexVersionAllowed(i.NativeVersion) {
+			return unsupported()
+		}
+	case 2:
+		if i.Startup == nil || i.Managed != nil || i.Startup.Validate(Codex) != nil {
+			return unsupported()
+		}
+	case 3:
+		m := i.Managed
+		if i.Startup == nil || i.Startup.Validate(Codex) != nil || i.Startup.ExecutableSHA256 == "" || m == nil || m.SubscriptionService != SubscriptionChatGPT || m.Generation.Validate() != nil || Text(m.IdentityCommitment, "account identity commitment", 256, true) != nil || (m.ActorDeviceID != "" && m.ActorDeviceID.Validate() != nil) || i.ProviderID != "" || i.ProviderProtocol != "" || i.Executable != "" || (i.NativeVersion != "" && !ValidNativeVersionMetadata(i.NativeVersion)) || !ModelKeyMatchesSource(i.ModelID, "", SubscriptionChatGPT) {
+			return unsupported()
+		}
+	default:
+		return unsupported()
+	}
+	if i.Version != 3 && i.ProviderProtocol != OpenAIResponses {
+		return unsupported()
+	}
+	if i.NameGeneration == 0 || (i.ProjectID != "" && i.ProjectID.Validate() != nil) || i.Harness != Codex || Text(i.Executable, "native executable", 4096, i.Version == 1) != nil || Text(i.NativeModel, "native model", 256, true) != nil || Text(i.Effort, "reasoning effort", 64, false) != nil || Text(i.ServiceTier, "service tier", 64, false) != nil || Text(i.Prompt, "first session input", MaxPromptBytes, true) != nil {
+		return unsupported()
 	}
 	return nil
 }
 
+// AuxiliaryTitleResult version 1 is the API relay result. Version 2 is the
+// managed result and additionally names the protected Finish whose server
+// receipt proves independent authentication cleanup before success.
 type AuxiliaryTitleResult struct {
 	Version         uint32               `json:"version"`
 	OperationID     ID                   `json:"operation_id"`
 	NameGeneration  uint64               `json:"name_generation"`
 	Title           string               `json:"title"`
 	CleanupVerified bool                 `json:"cleanup_verified"`
+	ManagedFinish   ID                   `json:"managed_finish,omitempty"`
 	UsageRecord     *ResponseUsageRecord `json:"usage_record,omitempty"`
 }
 
 func (r AuxiliaryTitleResult) Validate(input AuxiliaryTitleInput) error {
-	if r.Version != 1 || r.OperationID != input.OperationID || r.NameGeneration != input.NameGeneration || !r.CleanupVerified || Text(r.Title, "automatic session title", 256, true) != nil || strings.TrimSpace(r.Title) != r.Title || strings.ContainsAny(r.Title, "\r\n\x00") {
+	expectedVersion := uint32(1)
+	if input.IsManaged() {
+		expectedVersion = 2
+	}
+	if r.Version != expectedVersion || (input.IsManaged() != (r.ManagedFinish != "")) || (r.ManagedFinish != "" && r.ManagedFinish.Validate() != nil) || r.OperationID != input.OperationID || r.NameGeneration != input.NameGeneration || !r.CleanupVerified || Text(r.Title, "automatic session title", 256, true) != nil || strings.TrimSpace(r.Title) != r.Title || strings.ContainsAny(r.Title, "\r\n\x00") {
 		return Fail(InvalidArgument, "The automatic title output is not a valid single line.", "Retain the placeholder and do not request a repair inference.")
 	}
-	if r.UsageRecord != nil && (r.UsageRecord.Validate() != nil || r.UsageRecord.Purpose != SessionTitleUsage || r.UsageRecord.SessionID != input.SessionID || r.UsageRecord.ProjectID != input.ProjectID || r.UsageRecord.ExecutionID != input.OriginalExecutionID || r.UsageRecord.AccountID != input.AccountID || r.UsageRecord.ConnectionID != input.ConnectionID || r.UsageRecord.ProviderID != input.ProviderID || r.UsageRecord.ModelID != input.ModelID || r.UsageRecord.Harness != input.Harness || r.UsageRecord.Version != input.NativeVersion) {
-		return Fail(InvalidArgument, "Native title usage evidence is unavailable.", "Retain its unavailable accounting state; do not invent usage or cost.")
+	if u := r.UsageRecord; u != nil {
+		source := u.SubscriptionService == "" && u.ProviderID == input.ProviderID
+		if input.IsManaged() {
+			source = u.SubscriptionService == SubscriptionChatGPT && u.ProviderID == ""
+		}
+		if u.Validate() != nil || u.Purpose != SessionTitleUsage || u.SessionID != input.SessionID || u.ProjectID != input.ProjectID || u.ExecutionID != input.OriginalExecutionID || u.AccountID != input.AccountID || u.ConnectionID != input.ConnectionID || !source || u.ModelID != input.ModelID || u.Harness != input.Harness || u.Version != input.NativeVersion {
+			return Fail(InvalidArgument, "Native title usage evidence is unavailable.", "Retain its unavailable accounting state; do not invent usage or cost.")
+		}
 	}
 	return nil
 }

@@ -113,6 +113,7 @@ The standalone [Pull requests sidebar](apps-delidev-desktop-contract.md#standalo
 - [Worker workspace contract](cmds-delidev-workspace-contract.md)
 - [Session file explorer and Git comparisons](cmds-delidev-files-contract.md)
 - [Automatic session titles](cmds-delidev-session-titles-contract.md)
+- [Protected ChatGPT subscription titles](cmds-delidev-session-titles-contract.md#protected-chatgpt-subscription-titles), System 59 / Worker 32 `MANAGED_CODEX_TITLES_V1`
 - [Portable configuration](cmds-delidev-configuration-transfer-contract.md)
 - [Owned process contract](cmds-delidev-process-contract.md)
 - [Worker-owned session terminals](cmds-delidev-terminals-contract.md)

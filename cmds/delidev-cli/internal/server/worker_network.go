@@ -473,7 +473,7 @@ func (s *Service) ReportWorkerNativeRoute(ctx context.Context, req *connect.Requ
 			}
 		case domain.GenerateSessionTitleJob:
 			var input domain.AuxiliaryTitleInput
-			if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.Harness != domain.Codex || !domain.CodexVersionAllowed(input.NativeVersion) || input.OriginalExecutionID != value.ExecutionID {
+			if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.IsManaged() || input.Harness != domain.Codex || !domain.CodexVersionAllowed(input.NativeVersion) || input.OriginalExecutionID != value.ExecutionID {
 				return nil, executionDenied()
 			}
 		default:
