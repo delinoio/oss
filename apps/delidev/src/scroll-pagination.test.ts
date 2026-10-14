@@ -425,6 +425,39 @@ it("keeps the previous raw page scalars when a refresh fails", async () => {
   expect(rawTotal(chain)).toBe(4);
 });
 
+it("counts only settled successful reads so a suspended retry never looks settled", async () => {
+  const chain = new PaginationChain<Row, Payload>();
+  chain.activate();
+  await chain.refresh(reader);
+  const settled = chain.getSnapshot().settledReads;
+  expect(settled).toBe(1);
+  const failing = vi.fn<PaginationReader<Row, Payload>>(async () => {
+    throw new ConnectError("offline", Code.Unavailable);
+  });
+  await chain.reload(failing);
+  expect(chain.getSnapshot().error).toBeDefined();
+  expect(chain.getSnapshot().settledReads).toBe(settled);
+  let release!: (value: Awaited<ReturnType<typeof reader>>) => void;
+  const pending = chain.reload(
+    () =>
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+  );
+  expect(chain.getSnapshot().loading).toBe(ReadStage.Reload);
+  // Suspension cancels the pending read: loading and error are both clear, yet
+  // nothing settled.
+  chain.suspend();
+  release(await reader("", new AbortController().signal));
+  await pending;
+  expect(chain.getSnapshot().loading).toBeUndefined();
+  expect(chain.getSnapshot().error).toBeUndefined();
+  expect(chain.getSnapshot().settledReads).toBe(settled);
+  chain.activate();
+  await chain.refresh(reader);
+  expect(chain.getSnapshot().settledReads).toBe((settled ?? 0) + 1);
+});
+
 // A reader whose every call stays open until the test settles it.
 function deferredReader(label = "v", last = 2) {
   const tokens: string[] = [];

@@ -60,6 +60,10 @@ export interface PaginationSnapshot<
   nextPageToken: string;
   loading?: ReadStage;
   error?: PaginationFailure;
+  /** Monotonic count of reads accepted into a settled successful snapshot.
+   * Cancellation, suspension and failure never advance it, so callers can tell
+   * a settled read apart from a read that was merely abandoned. */
+  settledReads?: number;
 }
 export type PaginationReader<Row extends PaginationRow, Payload = never> = (
   token: string,
@@ -113,6 +117,7 @@ export class PaginationChain<Row extends PaginationRow, Payload = never> {
   private active = false;
   private protectedToken?: string;
   private retainedPayloadTokens: string[] = [];
+  private settledReads = 0;
   // Failed refresh retains only its staged display projections. Full staged
   // responses are discarded; earlier refreshed payloads restore by exact token.
   private pendingRefresh?: { pages: PaginationPage<Row>[]; window: string[] };
@@ -445,6 +450,7 @@ export class PaginationChain<Row extends PaginationRow, Payload = never> {
         })),
         loaded: true,
         nextPageToken: pages.at(-1)?.nextPageToken ?? "",
+        settledReads: ++this.settledReads,
       });
       completed = true;
     } catch (error) {
