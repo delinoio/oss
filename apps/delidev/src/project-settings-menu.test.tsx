@@ -93,25 +93,25 @@ function mount(
     <QueryClientProvider client={client}>
       <TransportProvider transport={transport}>
         <MutationIntents>
-        <SessionRowActionsProvider active={active}>
-          {ids.map((id) => (
-            <section key={id} className="sidebar-project-group">
-              <button
-                className="sidebar-project-row"
-                aria-expanded="false"
-                onClick={toggle}
-              >
-                Repeated
-              </button>
-              <button onClick={createSession}>+</button>
-              <ProjectSettingsMenu
-                projectId={id}
-                label="Repeated"
-                active={active}
-              />
-            </section>
-          ))}
-        </SessionRowActionsProvider>
+          <SessionRowActionsProvider active={active}>
+            {ids.map((id) => (
+              <section key={id} className="sidebar-project-group">
+                <button
+                  className="sidebar-project-row"
+                  aria-expanded="false"
+                  onClick={toggle}
+                >
+                  Repeated
+                </button>
+                <button onClick={createSession}>+</button>
+                <ProjectSettingsMenu
+                  projectId={id}
+                  label="Repeated"
+                  active={active}
+                />
+              </section>
+            ))}
+          </SessionRowActionsProvider>
         </MutationIntents>
       </TransportProvider>
     </QueryClientProvider>,
