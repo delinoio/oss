@@ -160,6 +160,10 @@ enum WorkerCapability {
   WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1 = 38;
   // Worker accepts retained branch prefix selection version 2 (exact JSON-style quoting).
   WORKER_CAPABILITY_BRANCH_PREFIX_EXACT_QUOTE_V1 = 65;
+  // Worker runs independent session preparation and execution jobs concurrently
+  // on one stream. The server echoes it in AttachWorkerResponse and the Worker
+  // advertises it only after observing that echo.
+  WORKER_CAPABILITY_PARALLEL_SESSIONS_V1 = 66;
   WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1 = 26;
   WORKER_CAPABILITY_NATIVE_SKILLS_V1 = 24;
   WORKER_CAPABILITY_IMAGE_INPUTS_V1 = 25;
