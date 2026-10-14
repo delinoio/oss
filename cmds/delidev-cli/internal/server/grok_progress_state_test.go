@@ -121,7 +121,7 @@ func TestGrokInitiatorRevocationClearsTheRefusalDiagnostic(t *testing.T) {
 		t.Fatal("the refusal was not recorded")
 	}
 	if _, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.grok.revoke", nil, func(tx *store.Tx) (any, error) {
-		return nil, cancelQueuedSubscriptionInitiator(tx, device)
+		return nil, cancelQueuedSubscriptionInitiator(tx, device, f.service.subscriptionServerEpoch())
 	}); err != nil {
 		t.Fatal(err)
 	}

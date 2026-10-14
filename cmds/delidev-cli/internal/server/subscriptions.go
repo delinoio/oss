@@ -90,19 +90,57 @@ func subscriptionActorValid(tx *store.Tx, actor domain.Principal) error {
 	return nil
 }
 
-// cancelServerOperation settles the pending operation's server record as
-// canceled. A canceled record never keeps a failure diagnostic, such as the
-// provisional Grok record of an earlier refused Take.
-func cancelServerOperation(state *domain.SubscriptionState) {
-	if o := state.ServerOperation; o != nil && state.Pending != nil && o.ID == state.Pending.ID {
+// cancelServerOperation settles a queued operation's server record as canceled
+// just before the cancellation removes the pending operation. A canceled record
+// never keeps a failure diagnostic, such as the provisional Grok record of an
+// earlier refused Take.
+//
+// A Grok operation is Worker-owned and has no server record until it settles, so
+// canceling one that was never claimed would otherwise leave progress with
+// neither a pending operation nor a record, and the original actor's poll would
+// be denied instead of reporting `canceled`. For a Grok account a canceled
+// record is therefore created from the pending operation when none exists, and
+// an earlier refused Take's record is replaced. A settled record of the same
+// operation is final and is kept.
+func cancelServerOperation(account *domain.Account, epoch domain.ID, now time.Time) {
+	state := account.Subscription
+	if state == nil || state.Pending == nil {
+		return
+	}
+	if account.SubscriptionService == domain.SubscriptionGrok {
+		p := state.Pending
+		settleGrokOperation(state, grokSettlement{Operation: p.ID, Action: p.Action, Actor: p.Actor, Epoch: epoch, State: domain.SubscriptionCanceled}, now)
+		return
+	}
+	if o := state.ServerOperation; o != nil && o.ID == state.Pending.ID {
 		o.State, o.GrokDiagnostic = domain.SubscriptionCanceled, nil
 	}
+}
+
+// cancelPendingLogin applies a login cancellation to the account's pending
+// operation. A queued login holds no lease, so it is removed and its server
+// record is settled as canceled; a claimed login keeps its pending operation
+// with the cancellation flag until its Worker reports Finish.
+func cancelPendingLogin(a *domain.Account, epoch domain.ID, now time.Time) error {
+	if a.Subscription == nil || a.Subscription.Pending == nil {
+		return domain.Fail(domain.Conflict, "No subscription operation is pending.", "Read current account status; cancellation never starts another operation.")
+	}
+	if a.Subscription.Pending.Action != domain.SubscriptionLogin {
+		return domain.Fail(domain.Unsupported, "Only an active login can be canceled.", "Let refresh or logout finish under exclusive ownership.")
+	}
+	if a.Subscription.Pending.Phase == domain.SubscriptionQueued {
+		cancelServerOperation(a, epoch, now)
+		a.Subscription.Pending = nil
+	} else {
+		a.Subscription.Pending.Canceled = true
+	}
+	return nil
 }
 
 // Queued lifecycle requests have not granted native authority. Settle them in
 // the same transaction as client revocation, without releasing independent or
 // claimed leases and without undoing logout's accepted execution revocation.
-func cancelQueuedSubscriptionInitiator(tx *store.Tx, device domain.ID) error {
+func cancelQueuedSubscriptionInitiator(tx *store.Tx, device, epoch domain.ID) error {
 	accounts, err := all(tx, domain.AccountKind)
 	if err != nil {
 		return err
@@ -116,7 +154,7 @@ func cancelQueuedSubscriptionInitiator(tx *store.Tx, device domain.ID) error {
 		if state == nil || state.Pending == nil || state.Pending.Actor.DeviceID != device || state.Pending.Phase != domain.SubscriptionQueued {
 			continue
 		}
-		cancelServerOperation(state)
+		cancelServerOperation(&account, epoch, time.Now().UTC())
 		if o := state.NativeOperation; o != nil && o.ID == state.Pending.ID {
 			o.State = domain.SubscriptionCanceled
 			if state.Pending.Action == domain.SubscriptionLogin && state.Lease == nil && state.Generation == "" {
@@ -292,17 +330,8 @@ func (s *Service) CancelSubscription(ctx context.Context, req *connect.Request[p
 		if err != nil {
 			return nil, err
 		}
-		if a.Subscription == nil || a.Subscription.Pending == nil {
-			return nil, domain.Fail(domain.Conflict, "No subscription operation is pending.", "Read current account status; cancellation never starts another operation.")
-		}
-		if a.Subscription.Pending.Action != domain.SubscriptionLogin {
-			return nil, domain.Fail(domain.Unsupported, "Only an active login can be canceled.", "Let refresh or logout finish under exclusive ownership.")
-		}
-		if a.Subscription.Pending.Phase == domain.SubscriptionQueued {
-			cancelServerOperation(a.Subscription)
-			a.Subscription.Pending = nil
-		} else {
-			a.Subscription.Pending.Canceled = true
+		if err := cancelPendingLogin(&a, s.subscriptionServerEpoch(), time.Now().UTC()); err != nil {
+			return nil, err
 		}
 		if _, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
 			return nil, err

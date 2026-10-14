@@ -489,9 +489,17 @@ owner's active operation:
   diagnostic, and an unconfirmed native cleanup is `failed` with a
   `cleanup` / `recovery_required` diagnostic. Progress reports `recovery-required`
   while the account is fenced.
-- Canceling a queued operation (initiator device revocation, or the shared
-  `cancelServerOperation`) marks its record `canceled` and clears any
-  `GrokDiagnostic` left by an earlier refused Take.
+- Canceling a queued, unclaimed operation (initiator device revocation, or the
+  shared `cancelPendingLogin` body that `CancelSubscription` applies once Grok
+  login can be requested; the RPC still refuses Grok accounts today) removes the
+  pending operation and settles `cancelServerOperation`'s record as `canceled`.
+  A Grok operation has no server record until it settles, so a cancellation
+  creates the `canceled` record from the pending operation when none exists and
+  replaces an earlier refused Take's provisional record, clearing its
+  `GrokDiagnostic`; the original actor's poll then reads `canceled` instead of
+  access denied. A settled record of the same operation is final and is kept.
+  Other services keep settling only an existing record. A claimed login keeps
+  its pending operation with `canceled=true` until Finish settles it.
   `SubscriptionState.Validate` rejects a `canceled` record that carries a Grok
   diagnostic, and progress never serves one.
 - A failure to remove superseded credential generations after the publication
@@ -511,6 +519,17 @@ operation, so polling never fails merely because the operation has not settled:
 | active record past its window                     | `expired`                                                  |
 | account recovery fence                            | `recovery-required`                                        |
 | any other operation ID, actor or no operation     | access denied                                              |
+
+Cancellation against each state of the original login:
+
+| State when canceled                                | Pending afterwards | Server record afterwards       | Progress                         |
+| -------------------------------------------------- | ------------------ | ------------------------------ | -------------------------------- |
+| queued, no record                                  | removed            | `canceled`, no diagnostic      | `canceled`, `canceled=true`      |
+| queued after a refused Take (`unsupported` record) | removed            | `canceled`, diagnostic cleared | `canceled`, `canceled=true`      |
+| claimed (lease held)                               | kept, `canceled`   | none until Finish              | `waiting`, `canceled=true`       |
+| queued refresh or logout                           | kept               | unchanged                      | `preparing` (cancel refused)     |
+| no pending operation                               | n/a                | unchanged                      | cancel refused (`conflict`)      |
+| already canceled (second cancel)                   | n/a                | `canceled` kept                | `canceled`; Take cannot claim it |
 
 A Take after an installation refusal is recorded or ignored as follows (the
 refusal error returned to the Worker is the same in every row):
