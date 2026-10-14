@@ -118,7 +118,12 @@ empty `key` or `refresh_token`, empty `user_id`, `principal_type` or
 after creation, and an `oidc_issuer` or `oidc_client_id` that differs from the
 key. Optional native profile fields (`email`, `first_name`,
 `profile_image_asset_id`, `team_id`, `coding_data_retention_opt_out`) are
-preserved when present and never invented when absent. `AuthFile` re-emits the
+preserved when present (including an empty string or `false`) and never invented
+when absent; an explicit JSON `null` is the wrong type and is rejected, because
+it would otherwise decode as absent and change meaning when re-emitted. Member
+names must be spelled exactly as native writes them, in both the scope entry and
+the sealed envelope: a differently cased alias is rejected rather than matched
+case-insensitively and re-emitted under the canonical name. `AuthFile` re-emits the
 native bytes semantically for Worker materialization; the caller clears them.
 The canonical encoding is compact JSON without HTML escaping, so `<`, `>` and `&`
 stay one byte, and the same encoder is used for the sealed envelope. The input

@@ -479,3 +479,78 @@ func TestOpenGrokBundleLeavesInputIntactAndBundleUsable(t *testing.T) {
 		t.Fatal("rejecting an envelope modified the caller's bytes")
 	}
 }
+
+// An explicit null for a pointer-backed optional member would decode as absent
+// and vanish on re-encode, so an accepted document would change meaning. It is
+// the wrong type and is rejected, while an empty string and false are real
+// values that survive the round trip.
+func TestParseGrokAuthFileRejectsNullOptionalMembers(t *testing.T) {
+	for _, field := range []string{"email", "first_name", "profile_image_asset_id", "team_id", "coding_data_retention_opt_out"} {
+		t.Run(field, func(t *testing.T) {
+			raw := grokFixtureFile(t, func(e map[string]any) { e[field] = nil })
+			if !bytes.Contains(raw, []byte(`"`+field+`":null`)) {
+				t.Fatal("fixture does not carry an explicit null")
+			}
+			if _, err := ParseGrokAuthFile(raw); err == nil || err.Error() != GrokBundleInvalid().Error() {
+				t.Fatal("an explicit null optional member was accepted")
+			}
+		})
+	}
+	for _, field := range []string{"key", "auth_mode", "create_time", "user_id", "principal_type", "principal_id", "refresh_token", "expires_at", "oidc_issuer", "oidc_client_id"} {
+		if _, err := ParseGrokAuthFile(grokFixtureFile(t, func(e map[string]any) { e[field] = nil })); err == nil {
+			t.Fatalf("an explicit null %s was accepted", field)
+		}
+	}
+	bundle, err := ParseGrokAuthFile(grokFixtureFile(t, func(e map[string]any) {
+		e["email"], e["first_name"], e["profile_image_asset_id"], e["team_id"], e["coding_data_retention_opt_out"] = "", "", "", "", false
+	}))
+	if err != nil {
+		t.Fatal("empty and false optional values were rejected")
+	}
+	native, err := bundle.AuthFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, member := range []string{`"email":""`, `"first_name":""`, `"profile_image_asset_id":""`, `"team_id":""`, `"coding_data_retention_opt_out":false`} {
+		if !bytes.Contains(native, []byte(member)) {
+			t.Fatalf("%s did not survive the round trip", member)
+		}
+	}
+}
+
+// encoding/json matches member names case-insensitively. A differently cased
+// spelling would be accepted and re-emitted under the canonical name, and a
+// pair of spellings would let the later one silently win, so only the exact
+// native names are accepted in both the native file and the envelope.
+func TestGrokBundleRejectsAliasedMemberSpellings(t *testing.T) {
+	for _, field := range []string{"key", "email", "refresh_token", "user_id", "oidc_issuer"} {
+		alias := strings.ToUpper(field)
+		cases := map[string]func(e map[string]any){
+			"renamed": func(e map[string]any) { e[alias] = e[field]; delete(e, field) },
+			"both":    func(e map[string]any) { e[alias] = e[field] },
+		}
+		for name, mutate := range cases {
+			if _, err := ParseGrokAuthFile(grokFixtureFile(t, mutate)); err == nil {
+				t.Fatalf("%s spelling of %s was accepted", name, field)
+			}
+		}
+	}
+	bundle, err := ParseGrokAuthFile(grokFixtureFile(t, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, account, generation := grokBundleIDs()
+	sealed, err := SealGrokBundle(server, account, generation, bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, pair := range [][2]string{{`"version"`, `"VERSION"`}, {`"kind"`, `"Kind"`}, {`"server"`, `"SERVER"`}, {`"account"`, `"Account"`}, {`"generation"`, `"GENERATION"`}, {`"auth"`, `"AUTH"`}} {
+		aliased := bytes.Replace(sealed, []byte(pair[0]), []byte(pair[1]), 1)
+		if bytes.Equal(aliased, sealed) {
+			t.Fatalf("%s is not an envelope member", pair[0])
+		}
+		if _, err := OpenGrokBundle(aliased, server, account, generation); err == nil {
+			t.Fatalf("aliased envelope member %s was accepted", pair[1])
+		}
+	}
+}

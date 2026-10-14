@@ -66,6 +66,49 @@ type grokAuthEntry struct {
 	OIDCClientID              string  `json:"oidc_client_id"`
 }
 
+// grokEntryMembers lists the exact spellings of the native scope entry members.
+// encoding/json matches struct members case-insensitively, so without an exact
+// check an aliased spelling (for example "Email" or "KEY") would be accepted and
+// then re-emitted under the canonical name, changing the document's meaning.
+var grokEntryMembers = map[string]bool{
+	"key": true, "auth_mode": true, "create_time": true, "user_id": true, "email": true,
+	"first_name": true, "profile_image_asset_id": true, "principal_type": true, "principal_id": true,
+	"team_id": true, "coding_data_retention_opt_out": true, "refresh_token": true, "expires_at": true,
+	"oidc_issuer": true, "oidc_client_id": true,
+}
+
+// grokOptionalMembers are the optional native members. They are pointer-backed,
+// so an explicit null would decode as absent and silently vanish on re-encode;
+// an explicit null is therefore the wrong type and is rejected.
+var grokOptionalMembers = map[string]bool{
+	"email": true, "first_name": true, "profile_image_asset_id": true, "team_id": true, "coding_data_retention_opt_out": true,
+}
+
+var grokEnvelopeMembers = map[string]bool{
+	"version": true, "kind": true, "server": true, "account": true, "generation": true, "auth": true,
+}
+
+// grokClosedObject reports whether data is a JSON object whose member names are
+// exactly spelled members of allowed and none of the noNull members is an
+// explicit JSON null. The raw member copies it makes are cleared before return.
+func grokClosedObject(data []byte, allowed, noNull map[string]bool) bool {
+	var members map[string]json.RawMessage
+	defer func() {
+		for _, member := range members {
+			clear(member)
+		}
+	}()
+	if domain.DecodeWithLimit(data, &members, MaxGrokBundleEnvelope) != nil {
+		return false
+	}
+	for name, member := range members {
+		if !allowed[name] || noNull[name] && string(member) == "null" {
+			return false
+		}
+	}
+	return true
+}
+
 // GrokIdentity is the parsed, non-secret ownership evidence of one login.
 type GrokIdentity struct {
 	UserID        string
@@ -204,7 +247,7 @@ func ParseGrokAuthFile(raw []byte) (GrokBundle, error) {
 		return GrokBundle{}, GrokBundleInvalid()
 	}
 	value, ok := scopes[GrokScopeKey]
-	if !ok {
+	if !ok || !grokClosedObject(value, grokEntryMembers, grokOptionalMembers) {
 		return GrokBundle{}, GrokBundleInvalid()
 	}
 	var entry grokAuthEntry
@@ -293,7 +336,8 @@ func OpenGrokBundle(raw []byte, server, account, generation domain.ID) (GrokBund
 	// The decoded document is a copy of the credential; clear it on every path,
 	// including a decode that failed after filling it.
 	defer func() { clear(envelope.Auth) }()
-	if len(raw) == 0 || len(raw) > MaxGrokBundleEnvelope || domain.DecodeWithLimit(raw, &envelope, MaxGrokBundleEnvelope) != nil {
+	if len(raw) == 0 || len(raw) > MaxGrokBundleEnvelope || !grokClosedObject(raw, grokEnvelopeMembers, nil) ||
+		domain.DecodeWithLimit(raw, &envelope, MaxGrokBundleEnvelope) != nil {
 		return GrokBundle{}, GrokBundleInvalid()
 	}
 	if envelope.Version != grokBundleVersion || envelope.Kind != grokBundleKind || envelope.Server != server || envelope.Account != account || envelope.Generation != generation {
