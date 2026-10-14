@@ -186,14 +186,17 @@ describe("restore decision tables", () => {
       RetainSession,
       RetainSidechat,
     } = SessionRestoreAction;
-    const rows: [SessionReadKind, SessionRestoreAction, SessionRestoreAction][] =
-      [
-        [TopLevel, OpenSession, VerifySidechat],
-        [SidechatOfRequestedParent, Clear, Clear],
-        [SidechatOfOtherParent, Clear, Clear],
-        [Rejected, Clear, Clear],
-        [Transient, RetainSession, RetainSidechat],
-      ];
+    const rows: [
+      SessionReadKind,
+      SessionRestoreAction,
+      SessionRestoreAction,
+    ][] = [
+      [TopLevel, OpenSession, VerifySidechat],
+      [SidechatOfRequestedParent, Clear, Clear],
+      [SidechatOfOtherParent, Clear, Clear],
+      [Rejected, Clear, Clear],
+      [Transient, RetainSession, RetainSidechat],
+    ];
     expect(rows.map(([kind]) => kind).sort()).toEqual([...kinds].sort());
     for (const [kind, alone, withSidechat] of rows)
       expect(sessionSlotTable[kind], kind).toEqual({ alone, withSidechat });
@@ -256,9 +259,9 @@ describe("restore decision tables", () => {
         transient: true,
       }),
     ).toBe(SessionReadKind.Transient);
-    expect(
-      classifySessionRead({ route: SearchSessionRoute.Unavailable }),
-    ).toBe(SessionReadKind.Rejected);
+    expect(classifySessionRead({ route: SearchSessionRoute.Unavailable })).toBe(
+      SessionReadKind.Rejected,
+    );
   });
 });
 

@@ -112,34 +112,33 @@ describe("loaded Session provenance", () => {
       sidechatParent: parent,
     });
     const ordinary = row({ workspace: "worktree" });
-    expect(loadedSessionProvenance(ordinary, ordinary.id).conversationKind).toBe(
-      ConversationKind.WorkSession,
-    );
+    expect(
+      loadedSessionProvenance(ordinary, ordinary.id).conversationKind,
+    ).toBe(ConversationKind.WorkSession);
   });
 
   it.each([
     ["a missing workspace", () => row({ name: "No workspace" })],
-    [
-      "empty Fork metadata",
-      () => row({ workspace: "worktree", fork: {} }),
-    ],
+    ["empty Fork metadata", () => row({ workspace: "worktree", fork: {} })],
     [
       "a non-positive revision",
       () => row(sidechatDocument(newRequestId()), { revision: 0n }),
     ],
     [
       "another entity kind",
-      () => row(sidechatDocument(newRequestId()), { kind: EntityKind.REPOSITORY }),
+      () =>
+        row(sidechatDocument(newRequestId()), { kind: EntityKind.REPOSITORY }),
     ],
     [
       "a mismatched owning session",
-      () => row(sidechatDocument(newRequestId()), { sessionId: newRequestId() }),
+      () =>
+        row(sidechatDocument(newRequestId()), { sessionId: newRequestId() }),
     ],
   ])("is Unknown for %s", (_name, make) => {
     const resource = make();
-    expect(loadedSessionProvenance(resource, resource.id).conversationKind).toBe(
-      ConversationKind.Unknown,
-    );
+    expect(
+      loadedSessionProvenance(resource, resource.id).conversationKind,
+    ).toBe(ConversationKind.Unknown);
   });
 
   it("is Unknown for a resource that is not the requested ID", () => {

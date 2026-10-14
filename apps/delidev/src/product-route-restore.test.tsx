@@ -576,16 +576,12 @@ describe("route fallbacks", () => {
     const value = fixture();
     route(`?screen=sessions&session=${value.sidechat.id}`);
     render(<App transport={value.transport} />);
-    expect(
-      await screen.findByText("Your sessions, in one place"),
-    ).toBeTruthy();
+    expect(await screen.findByText("Your sessions, in one place")).toBeTruthy();
     await waitFor(() => expect(search().has("session")).toBe(false));
     expect(search().has("sidechat")).toBe(false);
     expect(screen.queryByRole("tab", { name: /Side question/ })).toBeNull();
     // The Sidechat's retained parent is never opened or even read.
-    const read = value.reads.resource.mock.calls.map(
-      ([request]) => request.id,
-    );
+    const read = value.reads.resource.mock.calls.map(([request]) => request.id);
     expect(read).not.toContain(value.session.id);
     expect(value.mutated).not.toHaveBeenCalled();
   });
@@ -596,9 +592,7 @@ describe("route fallbacks", () => {
       `?screen=sessions&session=${value.foreignSidechat.id}&sidechat=${value.sidechat.id}`,
     );
     render(<App transport={value.transport} />);
-    expect(
-      await screen.findByText("Your sessions, in one place"),
-    ).toBeTruthy();
+    expect(await screen.findByText("Your sessions, in one place")).toBeTruthy();
     await waitFor(() => expect(search().has("session")).toBe(false));
     expect(search().has("sidechat")).toBe(false);
     expect(screen.queryByRole("tab", { name: /Side question/ })).toBeNull();
@@ -608,9 +602,7 @@ describe("route fallbacks", () => {
     const value = fixture();
     route(`?screen=sessions&session=${value.malformed.id}`);
     render(<App transport={value.transport} />);
-    expect(
-      await screen.findByText("Your sessions, in one place"),
-    ).toBeTruthy();
+    expect(await screen.findByText("Your sessions, in one place")).toBeTruthy();
     await waitFor(() => expect(search().has("session")).toBe(false));
   });
 
@@ -966,9 +958,7 @@ describe("route failure classification", () => {
       `?screen=sessions&session=${value.foreignSidechat.id}&sidechat=${value.sidechat.id}`,
     );
     render(<App transport={value.transport} />);
-    expect(
-      await screen.findByText("Your sessions, in one place"),
-    ).toBeTruthy();
+    expect(await screen.findByText("Your sessions, in one place")).toBeTruthy();
     await waitFor(() => expect(search().has("session")).toBe(false));
     expect(search().has("sidechat")).toBe(false);
     expect(screen.queryByRole("tab", { name: /Side question/ })).toBeNull();

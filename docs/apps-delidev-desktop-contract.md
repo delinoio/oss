@@ -486,18 +486,18 @@ or invalid Fork metadata) and `Transient` (any retryable failure). A Sidechat is
 valid only in the `sidechat` slot under a parent that this restore itself read as
 `TopLevel`; its retained original parent is never trusted unread.
 
-| `session` slot read | `session` only | with `sidechat` |
-| --- | --- | --- |
-| TopLevel | open the Session | read the `sidechat` slot (below) |
-| SidechatOfRequestedParent / SidechatOfOtherParent | clear | clear (child not read) |
-| Rejected | clear | clear (child not read) |
-| Transient | open the Session unverified (its own retry state shows) | open the requested Sidechat under the requested parent with a placeholder name |
+| `session` slot read                               | `session` only                                          | with `sidechat`                                                                |
+| ------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| TopLevel                                          | open the Session                                        | read the `sidechat` slot (below)                                               |
+| SidechatOfRequestedParent / SidechatOfOtherParent | clear                                                   | clear (child not read)                                                         |
+| Rejected                                          | clear                                                   | clear (child not read)                                                         |
+| Transient                                         | open the Session unverified (its own retry state shows) | open the requested Sidechat under the requested parent with a placeholder name |
 
-| `sidechat` slot read (parent verified `TopLevel`) | result |
-| --- | --- |
-| SidechatOfRequestedParent | open the Sidechat with its verified name |
-| TopLevel, SidechatOfOtherParent or Rejected | open the verified parent only; the `sidechat` ID leaves the URL |
-| Transient | retain the requested Sidechat under the parent (placeholder name) |
+| `sidechat` slot read (parent verified `TopLevel`) | result                                                            |
+| ------------------------------------------------- | ----------------------------------------------------------------- |
+| SidechatOfRequestedParent                         | open the Sidechat with its verified name                          |
+| TopLevel, SidechatOfOtherParent or Rejected       | open the verified parent only; the `sidechat` ID leaves the URL   |
+| Transient                                         | retain the requested Sidechat under the parent (placeholder name) |
 
 "Clear" opens nothing and removes the selection from the URL, so the requested
 screen's list shows. A `Transient` row opens its Session without a verification
