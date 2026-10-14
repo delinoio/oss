@@ -10,13 +10,19 @@ import (
 	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
 )
 
-func reconcileFailedServerLoginRuntime(ctx context.Context, root string, o domain.ServerSubscriptionOperation) error {
-	runtimeRoot := filepath.Join(root, "subscription-runtime")
+// reconcileFailedServerLoginRuntime joins the original native process of one
+// failed server login and retires its transient credential file. The permanent
+// account profile (and any historical per-operation runtime) is retained: only
+// the credential file is removed, and a process or credential uncertainty keeps
+// the operation fenced with a specific cause.
+func reconcileFailedServerLoginRuntime(ctx context.Context, scope nativeScope, o domain.ServerSubscriptionOperation) error {
+	runtimeRoot := filepath.Join(scope.Root, "subscription-runtime")
 	home := filepath.Join(runtimeRoot, "auth", string(o.ID))
 	if !o.NativeStarted {
 		// The durable claim barrier proves that a queued login never launched;
@@ -45,7 +51,46 @@ func reconcileFailedServerLoginRuntime(ctx context.Context, root string, o domai
 	if err := cleanupFailedServerLoginProbes(ctx, runtimeRoot, o.ID, true); err != nil {
 		return err
 	}
-	return cleanupFailedServerLoginDirectory(home)
+	return retireServerLoginCredentials(ctx, scope, home, o.ID)
+}
+
+// retireServerLoginCredentials removes the transient credential files of the
+// account's permanent auth profiles and of a historical per-operation runtime.
+// It never removes a directory and never follows a link.
+func retireServerLoginCredentials(ctx context.Context, scope nativeScope, legacyHome string, owner domain.ID) error {
+	if info, err := os.Lstat(legacyHome); err == nil {
+		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || security.CheckPrivateDir(legacyHome) != nil {
+			return subscriptionDenied()
+		}
+		if err := subscription.RetireCredentialFiles(legacyHome); err != nil {
+			return subscriptionDenied()
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return subscriptionDenied()
+	}
+	if scope.Profiles == nil {
+		return subscriptionDenied()
+	}
+	for _, kind := range []domain.Harness{domain.Codex, domain.ClaudeCode} {
+		key := nativeprofile.Key{Harness: kind, Purpose: nativeprofile.PurposeAuth, Account: scope.Account}
+		info, ok, err := scope.Profiles.Lookup(ctx, key)
+		if err != nil {
+			return subscriptionDenied()
+		}
+		if !ok {
+			continue
+		}
+		lease, err := scope.Profiles.Acquire(ctx, key)
+		if err != nil {
+			return err
+		}
+		err = subscription.RetireCredentialFiles(info.Root)
+		_ = lease.Close()
+		if err != nil {
+			return subscriptionDenied()
+		}
+	}
+	return nil
 }
 
 // A failed vault lookup can happen before the native opener runs. The durable
@@ -158,32 +203,6 @@ func lockFailedServerLoginControllers(ctx context.Context, processRoot string, o
 			locks = append(locks, lock)
 		}
 	}
-}
-
-func cleanupFailedServerLoginDirectory(path string) error {
-	info, err := os.Lstat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		parent := filepath.Dir(path)
-		if err := security.CheckPrivateDir(parent); errors.Is(err, os.ErrNotExist) {
-			// Native process proof was established separately. Synchronize the
-			// absent parent in its private runtime root instead of inventing a path.
-			if err := security.CheckPrivateDir(filepath.Dir(parent)); err != nil {
-				return subscriptionDenied()
-			}
-			return security.SyncParent(parent)
-		} else if err != nil {
-			return subscriptionDenied()
-		}
-		return security.SyncParent(path)
-	}
-	if err != nil || security.CheckPrivateDir(filepath.Dir(path)) != nil {
-		return subscriptionDenied()
-	}
-	info, err = security.StableStat(path)
-	if err != nil {
-		return subscriptionDenied()
-	}
-	return subscription.CleanupRuntime(path, info)
 }
 
 func cleanupFailedServerLoginProbes(ctx context.Context, runtimeRoot string, owner domain.ID, remove bool) error {

@@ -139,7 +139,7 @@ func authEnvironment(config AuthConfig) ([]string, error) {
 	if config.Version != SupportedVersion {
 		return nil, incompatible()
 	}
-	env, err := nativeEnvironment(ProbeConfig{Process: config.Process, Version: config.Version, Home: config.Home}, false)
+	env, err := nativeEnvironment(ProbeConfig{Process: config.Process, Version: config.Version, Home: config.Home})
 	if err != nil {
 		return nil, err
 	}

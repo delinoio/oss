@@ -168,7 +168,7 @@ func TestInvalidOwnerRecordAndReplacedDirectoryBlock(t *testing.T) {
 		t.Fatal(err)
 	}
 	lease.Close()
-	owner := filepath.Join(lease.Root, "owner.json")
+	owner := filepath.Join(filepath.Dir(lease.Root), "owner.json")
 	for name, body := range map[string]string{"garbage": "{", "future": `{"version":2}`, "other": `{"version":1,"id":"` + string(domain.NewID()) + `","key":{}}`} {
 		if err := os.WriteFile(owner, []byte(body), 0600); err != nil {
 			t.Fatal(err)

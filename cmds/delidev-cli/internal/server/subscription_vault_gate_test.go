@@ -47,7 +47,7 @@ func TestServerSubscriptionColdVaultSharedOwner(t *testing.T) {
 		}
 	}
 	var nativeCalls atomic.Int32
-	f.service.subscriptionOpen = func(context.Context, string, domain.ID, []byte, *slog.Logger) (serverSubscriptionNative, error) {
+	f.service.subscriptionOpen = func(context.Context, nativeScope, domain.ID, []byte, *slog.Logger) (serverSubscriptionNative, error) {
 		nativeCalls.Add(1)
 		return nil, domain.Fail(domain.Unsupported, "Synthetic native refusal.", "")
 	}
@@ -328,7 +328,7 @@ func TestServerSubscriptionOperationEndedBeforeCredentialsReconciles(t *testing.
 				}
 			}
 			var opened atomic.Int32
-			f.service.subscriptionOpen = func(context.Context, string, domain.ID, []byte, *slog.Logger) (serverSubscriptionNative, error) {
+			f.service.subscriptionOpen = func(context.Context, nativeScope, domain.ID, []byte, *slog.Logger) (serverSubscriptionNative, error) {
 				opened.Add(1)
 				return nil, domain.Fail(domain.Unsupported, "Synthetic native refusal.", "")
 			}

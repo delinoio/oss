@@ -136,7 +136,7 @@ func prepareAPIStreamMode(config APIStreamConfig, resumed bool) (process.Config,
 	// Fresh launches use discovery's empty private directories. The private
 	// closed-session handoff rechecks their retained ownership before reuse;
 	// only PATH and Windows system lookup context survive caller environment.
-	env, err := nativeEnvironment(ProbeConfig{Process: config.Process, Version: config.Version, Home: config.Home}, !resumed)
+	env, err := nativeEnvironment(ProbeConfig{Process: config.Process, Version: config.Version, Home: config.Home})
 	if err != nil {
 		return process.Config{}, err
 	}

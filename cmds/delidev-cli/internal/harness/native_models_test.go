@@ -55,7 +55,7 @@ func TestManualNativeModelsPrivateCopyAndCleanup(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "sk-unused-test-fixture")
 	root := t.TempDir()
 	scope := domain.NativeModelScope{Version: 1, MachineID: domain.NewID(), MachineRevision: 1, InstallationGeneration: 1, NativeVersion: domain.CodexProtocolVersion, Executable: binary, ExecutableSHA256: digest, AccountID: domain.NewID(), AccountRevision: 1, ConnectionID: domain.NewID(), ProviderID: domain.NewID(), Actor: domain.Principal{Type: domain.OwnerDevice}}
-	result, err := DiscoverNativeModels(context.Background(), DiscoveryConfig{Root: root, OwnerID: domain.NewID(), Logger: slog.New(slog.NewJSONHandler(io.Discard, nil))}, scope)
+	result, err := DiscoverNativeModels(context.Background(), DiscoveryConfig{Root: root, Profiles: testProfiles(t, root), OwnerID: domain.NewID(), Logger: slog.New(slog.NewJSONHandler(io.Discard, nil))}, scope)
 	if err != nil || result.Validate(false) != nil || len(result.Models) == 0 {
 		t.Fatalf("owned native observation failed: count=%d error=%v", len(result.Models), err)
 	}
@@ -67,7 +67,7 @@ func TestManualNativeModelsPrivateCopyAndCleanup(t *testing.T) {
 		t.Fatal("cleanup was not independently joined")
 	}
 	scope.ExecutableSHA256 = strings.Repeat("0", 64)
-	if _, err := DiscoverNativeModels(context.Background(), DiscoveryConfig{Root: root, OwnerID: domain.NewID()}, scope); err == nil {
+	if _, err := DiscoverNativeModels(context.Background(), DiscoveryConfig{Root: root, Profiles: testProfiles(t, root), OwnerID: domain.NewID()}, scope); err == nil {
 		t.Fatal("changed executable identity launched another observation")
 	}
 	t.Logf("owned private copy observed %d entries and removed its runtime", len(result.Models))

@@ -27,7 +27,7 @@ func TestInstalledCodexInitializationDiagnostics(t *testing.T) {
 	root, owner := t.TempDir(), domain.NewID()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	installation, err := DiscoverCodex(ctx, DiscoveryConfig{Root: root, OwnerID: owner})
+	installation, err := DiscoverCodex(ctx, DiscoveryConfig{Root: root, Profiles: testProfiles(t, root), OwnerID: owner})
 	if err != nil {
 		t.Fatal(domain.SafeError(err).Code)
 	}

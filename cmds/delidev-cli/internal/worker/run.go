@@ -395,7 +395,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				// capabilities. It reads no personal login and creates no authority.
 				probeCtx, stop := context.WithTimeout(ctx, 30*time.Second)
 				var claudeProbe bool
-				claudeProbe, err = verifyNativeClaudeSubscriptionProfile(probeCtx, config, attached.Msg.Machine)
+				claudeProbe, err = verifyNativeClaudeSubscriptionProfile(probeCtx, config, credential.MachineID, attached.Msg.Machine)
 				stop()
 				claudeCapabilityExpected = claudeProbe && supportsDeviceClaude
 				managedClaudeExpected = claudeProbe && supportsManagedClaude
@@ -1385,7 +1385,11 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 		if scope.MachineID != job.MachineID {
 			return nil, domain.NativeModelFailure()
 		}
-		result, err := harness.DiscoverNativeModels(ctx, harness.DiscoveryConfig{Root: root, OwnerID: owner, Logger: config.Logger}, scope)
+		discovery, err := discoveryConfig(config, root, owner, job.MachineID)
+		if err != nil {
+			return nil, err
+		}
+		result, err := harness.DiscoverNativeModels(ctx, discovery, scope)
 		if err != nil {
 			return nil, err
 		}
@@ -1513,7 +1517,11 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 		if err := domain.Decode(job.Input, &input); err != nil {
 			return nil, err
 		}
-		result, err := harness.Discover(ctx, harness.DiscoveryConfig{Root: root, OwnerID: owner, Logger: config.Logger}, input)
+		discovery, err := discoveryConfig(config, root, owner, job.MachineID)
+		if err != nil {
+			return nil, err
+		}
+		result, err := harness.Discover(ctx, discovery, input)
 		if err != nil {
 			return nil, err
 		}

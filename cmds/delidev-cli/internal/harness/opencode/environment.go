@@ -12,7 +12,7 @@ import (
 
 func probeEnvironment(config ProbeConfig) ([]string, error) {
 	invalid := func() error {
-		return domain.Fail(domain.InvalidArgument, "OpenCode discovery requires a fresh private runtime.", "Prepare a dedicated canonical Worker runtime before native protocol validation.")
+		return domain.Fail(domain.InvalidArgument, "OpenCode requires a canonical DeliDev-owned private profile.", "Use the persistent profile resolved by DeliDev before native protocol validation.")
 	}
 	if !filepath.IsAbs(config.Home) || filepath.Base(config.Home) != "opencode" {
 		return nil, invalid()
@@ -27,15 +27,9 @@ func probeEnvironment(config ProbeConfig) ([]string, error) {
 		if err != nil || actual != path || security.CheckPrivateDir(path) != nil {
 			return nil, invalid()
 		}
-		if name != "" {
-			entries, err := os.ReadDir(path)
-			if err != nil || len(entries) != 0 {
-				return nil, invalid()
-			}
-		}
 	}
-	// Discovery creates these empty siblings for the other native profiles.
-	// Reject every root file and unrecognized directory before native scanners
+	// A persistent profile root holds only DeliDev-created sibling
+	// directories. Reject every root file and unrecognized directory before native scanners
 	// can discover project instructions, extensions or credentials there.
 	entries, err := os.ReadDir(root)
 	if err != nil {
@@ -45,8 +39,7 @@ func probeEnvironment(config ProbeConfig) ([]string, error) {
 		switch entry.Name() {
 		case "grok", "config", "cache", "data", "state", "tmp", "codex", "claude", "opencode":
 			path := filepath.Join(root, entry.Name())
-			children, err := os.ReadDir(path)
-			if !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || security.CheckPrivateDir(path) != nil || err != nil || len(children) != 0 {
+			if !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || security.CheckPrivateDir(path) != nil {
 				return nil, invalid()
 			}
 		default:

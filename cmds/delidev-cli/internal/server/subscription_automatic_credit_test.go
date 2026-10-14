@@ -111,7 +111,7 @@ func automaticServerFixture(t *testing.T, enabled, stale bool) (*subscriptionFix
 	credit := &accessCreditNative{outcome: domain.SubscriptionReset}
 	zero := 0.0
 	credit.observed = domain.SubscriptionQuotaObservation{ObservedAt: time.Now().UTC(), Windows: []domain.SubscriptionQuotaWindow{{ID: "codex:primary", Remaining: &zero}}}
-	f.service.creditOpen = func(context.Context, string, domain.ID, codex.QuotaAuthentication, *slog.Logger) (serverCreditNative, error) {
+	f.service.creditOpen = func(context.Context, nativeScope, domain.ID, codex.QuotaAuthentication, *slog.Logger) (serverCreditNative, error) {
 		credit.mu.Lock()
 		credit.opens++
 		credit.mu.Unlock()

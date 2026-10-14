@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"slices"
 	"sync"
@@ -19,9 +18,9 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/claude"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
@@ -48,43 +47,47 @@ type managedClaudeLogin interface {
 	Close() error
 }
 
-// A non-recovery opener error proves joined native and private-file cleanup.
-// A recovery error retains the original operation and runtime for inspection.
-type managedClaudeOpener func(context.Context, string, domain.ID, *slog.Logger) (managedClaudeLogin, error)
+// A non-recovery opener error proves joined native and transient credential
+// cleanup. A recovery error retains the original operation for inspection; the
+// permanent account profile is retained by both outcomes.
+type managedClaudeOpener func(context.Context, nativeScope, domain.ID, *slog.Logger) (managedClaudeLogin, error)
 
 type serverClaudeRuntime struct {
 	*claude.SetupTokenLogin
-	home     string
-	original os.FileInfo
-	owner    domain.ID
-	logger   *slog.Logger
-	once     sync.Once
-	result   error
+	home   string
+	lease  *nativeprofile.Lease
+	owner  domain.ID
+	logger *slog.Logger
+	once   sync.Once
+	result error
 }
 
-func openManagedClaudeLogin(ctx context.Context, root string, owner domain.ID, logger *slog.Logger) (returned managedClaudeLogin, err error) {
-	runtimeRoot := filepath.Join(root, "subscription-runtime")
-	home := filepath.Join(runtimeRoot, "auth", string(owner))
-	if _, e := os.Lstat(home); !errors.Is(e, os.ErrNotExist) {
-		return nil, subscriptionDenied()
+func openManagedClaudeLogin(ctx context.Context, scope nativeScope, owner domain.ID, logger *slog.Logger) (returned managedClaudeLogin, err error) {
+	runtimeRoot := filepath.Join(scope.Root, "subscription-runtime")
+	lease, e := acquireAccountProfile(ctx, scope, domain.ClaudeCode, nativeprofile.PurposeAuth)
+	if e != nil {
+		return nil, e
+	}
+	home := lease.Root
+	defer func() {
+		if err != nil {
+			if domain.SafeError(err).Code != domain.RecoveryRequired {
+				if cleanupErr := subscription.RetireCredentialFiles(home); cleanupErr != nil {
+					logSubscriptionRuntimeCleanup(logger, owner, cleanupErr)
+					err = subscriptionDenied()
+				}
+			}
+			_ = lease.Close()
+		}
+	}()
+	if e := profileCredentialBlock(scope, lease, owner, logger, true); e != nil {
+		return nil, e
 	}
 	env, e := harness.PrivateRuntimeEnvironment(home)
 	if e != nil {
 		return nil, subscriptionDenied()
 	}
-	info, e := security.StableStat(home)
-	if e != nil {
-		return nil, subscriptionDenied()
-	}
-	defer func() {
-		if err != nil && domain.SafeError(err).Code != domain.RecoveryRequired {
-			if cleanupErr := subscription.CleanupRuntime(home, info); cleanupErr != nil {
-				logSubscriptionRuntimeCleanup(logger, owner, cleanupErr)
-				err = subscriptionDenied()
-			}
-		}
-	}()
-	installation, e := harness.DiscoverClaude(ctx, harness.DiscoveryConfig{Root: runtimeRoot, OwnerID: owner, Logger: logger})
+	installation, e := harness.DiscoverClaude(ctx, harness.DiscoveryConfig{Root: runtimeRoot, OwnerID: owner, Logger: logger, Profiles: scope.Profiles})
 	if e != nil {
 		return nil, e
 	}
@@ -101,21 +104,26 @@ func openManagedClaudeLogin(ctx context.Context, root string, owner domain.ID, l
 	if e != nil {
 		return nil, e
 	}
-	return &serverClaudeRuntime{SetupTokenLogin: login, home: home, original: info, owner: owner, logger: logger}, nil
+	return &serverClaudeRuntime{SetupTokenLogin: login, home: home, lease: lease, owner: owner, logger: logger}, nil
 }
 
-// Close joins the original child, wipes its screen buffer and removes only the
-// identity-checked private runtime. A failure keeps the operation fenced.
+// Close joins the original child, wipes its screen buffer and retires only the
+// transient credential files. The permanent account profile is retained. A
+// failure keeps the operation fenced.
 func (r *serverClaudeRuntime) Close() error {
 	r.once.Do(func() {
+		defer r.lease.Close()
 		if err := r.SetupTokenLogin.Close(); err != nil {
 			r.result = err
 			return
 		}
-		if err := subscription.CleanupRuntime(r.home, r.original); err != nil {
+		if err := subscription.RetireCredentialFiles(r.home); err != nil {
 			logSubscriptionRuntimeCleanup(r.logger, r.owner, err)
-			r.result = domain.Fail(domain.RecoveryRequired, "The private Claude login runtime could not be removed.", "Inspect the retained runtime before retrying.")
+			nativeprofile.Log(r.logger, "native_profile_credential_cleanup", r.lease.Key, r.lease.ID, nativeprofile.ReasonCredentialBlocked, "operation_id", r.owner)
+			r.result = domain.Fail(domain.RecoveryRequired, "The Claude login credential files could not be removed.", "Inspect the retained profile before retrying.")
+			return
 		}
+		nativeprofile.Log(r.logger, "native_profile_credential_cleanup", r.lease.Key, r.lease.ID, nativeprofile.ReasonCredentialCleaned, "operation_id", r.owner)
 	})
 	return r.result
 }
@@ -604,7 +612,7 @@ func (s *Service) runManagedClaudeLogin(ctx context.Context, id domain.ID, origi
 	if opener == nil {
 		opener = openManagedClaudeLogin
 	}
-	login, err := opener(ctx, s.Store.Root(), original.ID, s.logger)
+	login, err := opener(ctx, s.scopeFor(id), original.ID, s.logger)
 	if err != nil {
 		// A non-recovery opener error proves joined native and private-file cleanup.
 		return nil, false, domain.SafeError(err).Code != domain.RecoveryRequired, "", domain.NativeSubscriptionLaunch, err
@@ -1084,7 +1092,7 @@ func (s *Service) recoverManagedClaude(parent context.Context, id, operation dom
 	}
 	if o.Action == domain.SubscriptionLogin && !(restored && !o.Active()) {
 		// A restored settled login never owned a native child in this image.
-		if err := reconcileFailedServerLoginRuntime(ctx, s.Store.Root(), o); err != nil {
+		if err := reconcileFailedServerLoginRuntime(ctx, s.scopeFor(id), o); err != nil {
 			return err
 		}
 	}

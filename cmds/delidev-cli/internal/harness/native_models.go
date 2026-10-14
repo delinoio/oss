@@ -5,8 +5,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"io"
@@ -84,26 +86,25 @@ func DiscoverNativeModels(ctx context.Context, config DiscoveryConfig, scope dom
 	if err != nil || digest != scope.ExecutableSHA256 {
 		return result, domain.NativeModelFailure()
 	}
-	root := filepath.Join(config.Root, "probes")
-	if err := security.PrivateDir(root); err != nil {
-		return result, err
-	}
-	directory, err := os.MkdirTemp(root, string(config.OwnerID)+"-models-")
+	lease, err := acquireSystemProfile(ctx, config.Profiles, domain.Codex, nativeprofile.PurposeModelObservation)
 	if err != nil {
 		return result, domain.NativeModelFailure()
 	}
-	directory, err = filepath.EvalSymlinks(directory)
-	if err != nil {
-		return result, domain.NativeModelFailure()
-	}
+	defer lease.Close()
+	directory := lease.Root
 	processRoot := filepath.Join(config.Root, "processes")
+	var snapshot string
 	defer func() {
+		// The profile and its history are retained. Only the transient executable
+		// copy and the per-operation process journal are joined here.
+		if snapshot != "" {
+			if err := os.Remove(snapshot); err != nil && !errors.Is(err, os.ErrNotExist) {
+				result, returned = domain.NativeModelObservation{}, domain.Fail(domain.RecoveryRequired, "Native model observation cleanup is unconfirmed.", "Retain the original operation and reconcile its transient executable copy.")
+				return
+			}
+		}
 		if err := process.ReconcileOwner(processRoot, config.OwnerID); err != nil {
 			result, returned = domain.NativeModelObservation{}, err
-			return
-		}
-		if os.RemoveAll(directory) != nil {
-			result, returned = domain.NativeModelObservation{}, domain.Fail(domain.RecoveryRequired, "Native model observation cleanup is unconfirmed.", "Retain the original operation and reconcile its private runtime.")
 			return
 		}
 		if returned == nil {
@@ -116,7 +117,10 @@ func DiscoverNativeModels(ctx context.Context, config DiscoveryConfig, scope dom
 	}
 	// Launch an identity-checked private copy, closing the pathname replacement
 	// window between source inspection and OS process creation.
-	snapshot := filepath.Join(directory, "codex-native"+filepath.Ext(scope.Executable))
+	if err := security.PrivateDir(filepath.Join(directory, "tmp")); err != nil {
+		return result, domain.NativeModelFailure()
+	}
+	snapshot = filepath.Join(directory, "tmp", "codex-native-"+string(config.OwnerID)+filepath.Ext(scope.Executable))
 	source, err := os.Open(scope.Executable)
 	if err != nil {
 		return result, domain.NativeModelFailure()

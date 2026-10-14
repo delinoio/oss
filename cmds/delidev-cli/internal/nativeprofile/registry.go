@@ -73,6 +73,11 @@ func Open(config Config) (*Registry, error) {
 	if err := probe.Validate(); err != nil {
 		return nil, err
 	}
+	// Native processes receive profile paths in their environment, so the owner
+	// root is canonicalized once; a root that does not exist yet stays lexical.
+	if canonical, err := filepath.EvalSymlinks(config.Root); err == nil {
+		config.Root = canonical
+	}
 	return &Registry{config: config, base: filepath.Join(config.Root, "native-profiles")}, nil
 }
 
@@ -206,14 +211,37 @@ func (r *Registry) pathOf(e entry) string {
 	return r.managedPath(e.ID)
 }
 
+// homeOf is the native runtime root exposed to launch paths. Managed profiles
+// keep their owner record beside it so native scanners never see DeliDev files.
+// The directory is named after the harness.
+func (r *Registry) homeOf(e entry) string {
+	if e.Origin == OriginLegacy {
+		return r.pathOf(e)
+	}
+	return filepath.Join(r.pathOf(e), string(e.Key.Harness))
+}
+
 func (r *Registry) info(e entry, created bool) Info {
-	return Info{ID: e.ID, Key: e.Key, Origin: e.Origin, Root: r.pathOf(e), Created: created}
+	return Info{ID: e.ID, Key: e.Key, Origin: e.Origin, Root: r.homeOf(e), Created: created}
 }
 
 // verifyDirectory proves that the retained directory is still the real private
 // directory registered for the profile, never a replaced symlink.
 func (r *Registry) verifyDirectory(e entry) error {
 	root := r.pathOf(e)
+	if e.Origin == OriginManaged {
+		if err := r.verifyOne(root); err != nil {
+			return err
+		}
+		if err := r.verifyOne(r.homeOf(e)); err != nil {
+			return err
+		}
+		return r.verifyOwner(e, root)
+	}
+	return r.verifyOne(root)
+}
+
+func (r *Registry) verifyOne(root string) error {
 	if security.CheckPrivateDir(root) != nil {
 		return Failure(domain.RecoveryRequired, ReasonOwnerInvalid, "The retained native profile is not a private directory.", "Inspect the profile without following links and restore it before retrying.")
 	}
@@ -227,9 +255,10 @@ func (r *Registry) verifyDirectory(e entry) error {
 			return Failure(domain.RecoveryRequired, ReasonOwnerInvalid, "The retained native profile path is not canonical.", "Inspect the profile without following links and restore it before retrying.")
 		}
 	}
-	if e.Origin != OriginManaged {
-		return nil
-	}
+	return nil
+}
+
+func (r *Registry) verifyOwner(e entry, root string) error {
 	raw, err := security.ReadPrivate(filepath.Join(root, "owner.json"), maxOwnerBytes)
 	var owner ownerRecord
 	if err != nil || domain.Decode(raw, &owner) != nil || owner.Version != Version && owner.Version != 0 {
@@ -294,6 +323,9 @@ func (r *Registry) Acquire(ctx context.Context, key Key) (*Lease, error) {
 		if err != nil {
 			return false, err
 		}
+		if err := security.CreatePrivateDirExclusive(r.homeOf(e)); err != nil {
+			return false, Failure(domain.RecoveryRequired, ReasonOwnerInvalid, "The native profile directory could not be created.", "Inspect the owner storage root before retrying.")
+		}
 		if err := security.WriteAtomic(filepath.Join(root, "owner.json"), raw); err != nil {
 			return false, err
 		}
@@ -314,6 +346,24 @@ func (r *Registry) Acquire(ctx context.Context, key Key) (*Lease, error) {
 		return nil, err
 	}
 	return lease, nil
+}
+
+// AcquireWait retries only a busy profile until wait elapses or ctx ends. It
+// is for short accountless probes that previously used independent homes and
+// may legitimately overlap; every other failure is returned immediately.
+func (r *Registry) AcquireWait(ctx context.Context, key Key, wait time.Duration) (*Lease, error) {
+	deadline := time.Now().Add(wait)
+	for {
+		lease, err := r.Acquire(ctx, key)
+		if reason, ok := Reasoned(err); err == nil || !ok || reason != ReasonBusy || !time.Now().Before(deadline) {
+			return lease, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(25 * time.Millisecond):
+		}
+	}
 }
 
 func (r *Registry) lease(e entry, created bool) (*Lease, error) {
@@ -520,6 +570,7 @@ type DeleteScope struct {
 	Account      domain.ID
 	History      domain.ID
 	Purpose      Purpose
+	Harness      domain.Harness
 }
 
 func (s DeleteScope) matches(e entry) bool {
@@ -533,6 +584,9 @@ func (s DeleteScope) matches(e entry) bool {
 		return false
 	}
 	if s.Purpose != "" && e.Key.Purpose != s.Purpose {
+		return false
+	}
+	if s.Harness != "" && e.Key.Harness != s.Harness {
 		return false
 	}
 	if s.History != "" {

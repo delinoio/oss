@@ -1,7 +1,6 @@
 package claude
 
 import (
-	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -11,14 +10,15 @@ import (
 )
 
 func probeEnvironment(config ProbeConfig) ([]string, error) {
-	return nativeEnvironment(config, true)
+	return nativeEnvironment(config)
 }
 
-// Retained mode is private to a proved closed-session handoff. Discovery and
-// fresh execution must continue to reject every populated runtime directory.
-func nativeEnvironment(config ProbeConfig, fresh bool) ([]string, error) {
+// The runtime is a persistent DeliDev-owned profile. Ownership is proved by the
+// profile owner before this call; here only private canonical paths are
+// required and retained native caches or helper files are accepted.
+func nativeEnvironment(config ProbeConfig) ([]string, error) {
 	invalid := func() error {
-		return domain.Fail(domain.InvalidArgument, "Claude Code discovery requires a fresh private runtime.", "Prepare a dedicated canonical Worker runtime before native protocol validation.")
+		return domain.Fail(domain.InvalidArgument, "Claude Code requires a canonical DeliDev-owned private profile.", "Use the persistent profile resolved by DeliDev before native protocol validation.")
 	}
 	if !filepath.IsAbs(config.Home) {
 		return nil, invalid()
@@ -39,15 +39,6 @@ func nativeEnvironment(config ProbeConfig, fresh bool) ([]string, error) {
 		actual, err := filepath.EvalSymlinks(path)
 		if err != nil || actual != path {
 			return nil, invalid()
-		}
-		// Never probe a retained execution runtime or consume an existing login,
-		// hook, plugin, cache or settings file. Version detection uses this same
-		// empty runtime before the protocol probe.
-		if fresh && name != "" {
-			entries, err := os.ReadDir(path)
-			if err != nil || len(entries) != 0 {
-				return nil, invalid()
-			}
 		}
 	}
 	lookup := map[string]string{}

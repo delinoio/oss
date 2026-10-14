@@ -471,7 +471,7 @@ func (s *Service) runServerSubscription(parent context.Context, id domain.ID) {
 		if opener == nil {
 			opener = openServerSubscription
 		}
-		native, nativeErr = opener(ctx, s.Store.Root(), original.ID, old, s.logger)
+		native, nativeErr = opener(ctx, s.scopeFor(id), original.ID, old, s.logger)
 		if nativeErr != nil {
 			cleanup = domain.SafeError(nativeErr).Code != domain.RecoveryRequired
 		}
