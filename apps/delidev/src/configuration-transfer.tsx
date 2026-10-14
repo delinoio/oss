@@ -481,8 +481,12 @@ export function ConfigurationTransfer({
       setConfirmedMachines({});
       setPaths({});
     } catch (error) {
+      // Only a JSON.parse failure of the pasted or loaded document gets syntax
+      // guidance; the raw engine message is never shown.
       setProblem(
-        productError(error, "configuration-transfer.extra.33bf406051e7"),
+        error instanceof SyntaxError
+          ? ownedMessage("validation.4b7e1f93a2d6")
+          : productError(error, "configuration-transfer.extra.33bf406051e7"),
       );
     }
   };

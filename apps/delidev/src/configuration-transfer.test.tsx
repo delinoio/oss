@@ -25,6 +25,7 @@ import {
   ConfigurationTransfer,
   formatConfigurationReview,
 } from "./configuration-transfer";
+import { i18n } from "./localization";
 import { MutationIntents } from "./mutation";
 import { encode } from "./documents";
 
@@ -285,6 +286,94 @@ it("does not apply an old document after loading invalid replacement JSON", asyn
     screen.queryByRole("button", { name: "Apply reviewed configuration" }),
   ).toBeNull();
   expect(value.apply).not.toHaveBeenCalled();
+});
+
+const malformedJsonEnglish =
+  "The configuration document is not valid JSON. Correct the syntax or paste a current version 4 DeliDev configuration export.";
+const malformedJsonKorean =
+  "구성 문서가 올바른 JSON이 아닙니다. 구문을 수정하거나 현재 버전 4 DeliDev 구성 내보내기를 붙여넣으세요.";
+function expectGuardedLoadFailure(
+  value: ReturnType<typeof fixture>,
+  draft: string,
+  message: string,
+) {
+  const json = screen.getByRole("textbox", {
+    name: "Configuration JSON",
+  }) as HTMLTextAreaElement;
+  expect(screen.getByText(message)).toBeTruthy();
+  expect(json.value).toBe(draft);
+  expect(json.matches(":disabled")).toBe(false);
+  expect(json.readOnly).toBe(false);
+  const stages = screen.getByRole("list", {
+    name: "Configuration import stages",
+  });
+  expect(stages.querySelector('[aria-current="step"]')!.textContent).toContain(
+    "Load document",
+  );
+  expect(
+    screen.queryByRole("button", { name: "Preview configuration changes" }),
+  ).toBeNull();
+  expect(value.preview).not.toHaveBeenCalled();
+  expect(value.apply).not.toHaveBeenCalled();
+}
+
+it.each(["not-json", '{"version":4,"entries":['])(
+  "explains malformed JSON %j and keeps the draft editable at the load stage",
+  (draft) => {
+    const value = fixture();
+    render(value.view());
+    load(draft);
+    expectGuardedLoadFailure(value, draft, malformedJsonEnglish);
+    expect(
+      screen.queryByText("The configuration document could not be read."),
+    ).toBeNull();
+    load(JSON.stringify(value.bundle));
+    expect(
+      screen.getByRole("button", { name: "Preview configuration changes" }),
+    ).toBeTruthy();
+    expect(screen.queryByText(malformedJsonEnglish)).toBeNull();
+  },
+);
+
+it("shows localized malformed JSON guidance in Korean", async () => {
+  const value = fixture();
+  render(value.view());
+  await act(async () => {
+    await i18n.changeLanguage("ko");
+  });
+  try {
+    const draft = '{"version":4,';
+    fireEvent.change(screen.getByRole("textbox", { name: "설정 JSON" }), {
+      target: { value: draft },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "설정 문서 불러오기" }));
+    expect(screen.getByText(malformedJsonKorean)).toBeTruthy();
+    expect(
+      (
+        screen.getByRole("textbox", {
+          name: "설정 JSON",
+        }) as HTMLTextAreaElement
+      ).value,
+    ).toBe(draft);
+    expect(value.preview).not.toHaveBeenCalled();
+    expect(value.apply).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => {
+      await i18n.changeLanguage("en");
+    });
+  }
+});
+
+it("keeps version and shape guidance for valid JSON that is not a version 4 export", () => {
+  const value = fixture();
+  render(value.view());
+  load("{}");
+  expectGuardedLoadFailure(
+    value,
+    "{}",
+    "Use a current version 4 DeliDev configuration export. Older reset layouts cannot be imported.",
+  );
+  expect(screen.queryByText(malformedJsonEnglish)).toBeNull();
 });
 
 it("formats complete review values without changing integer or escaped string tokens", () => {
