@@ -82,6 +82,42 @@ bundle validation binds service, issuer, user and principal and rejects duplicat
 identity ownership. Native identity and complete history have a separate owned
 checkpoint. Preserve older records without granting continuation authority.
 
+### Grok bundle
+
+`internal/subscription` owns the `GrokBundle` library (no network, RPC or
+migration). A bundle holds exactly one native `$GROK_HOME/auth.json` scope entry
+for issuer `https://auth.x.ai` and client `b1a00492-073a-47ea-816f-4c329264a828`
+(key `<issuer>::<client-id>`) with `auth_mode` `oidc`. `ParseGrokAuthFile`
+rejects, with the single stable value-free `GrokBundleInvalid` error: input above
+64 KiB, duplicate or unknown fields, any other scope key or multiple entries, an
+empty `key` or `refresh_token`, empty `user_id`, `principal_type` or
+`principal_id`, unparsable RFC 3339 `create_time` or `expires_at`, an expiry not
+after creation, and an `oidc_issuer` or `oidc_client_id` that differs from the
+key. Optional native profile fields (`email`, `first_name`,
+`profile_image_asset_id`, `team_id`, `coding_data_retention_opt_out`) are
+preserved when present and never invented when absent. `AuthFile` re-emits the
+native bytes semantically for Worker materialization; the caller clears them.
+
+The vault object is the versioned envelope (`version` 1, kind
+`grok-auth-bundle`) bound to server, account and generation by `SealGrokBundle`
+and `OpenGrokBundle`; a native file, Codex bundle, Claude envelope or another
+owner fails with the same safe error. It is stored only under the existing
+`credentials.AccountLogin` ownership.
+
+`IdentityKey` is a domain-separated, length-prefixed SHA-256 over service
+`grok`, issuer, `user_id`, `principal_type` and `principal_id`; token rotation or
+profile metadata never changes it and a different principal of the same user
+yields a different key. The server persists only the server-keyed HMAC of that
+key (`grokIdentityCommitment`, 64 hex characters) as
+`SubscriptionState.IdentityCommitment`, so `uniqueSubscriptionIdentity` rejects a
+second account with the same identity and admits a different principal. The
+unkeyed key is never stored. `String`, `GoString`, `%v`/`%+v`, `slog` `LogValue`
+and JSON encoding errors reveal only the service and a 12-character opaque
+identity hash; generic JSON/text encoding of a bundle fails closed. The Codex
+Take/Finish lifecycle keeps serving only ChatGPT accounts and never a Grok
+account. Grok Take/Finish dispatch and Worker materialization arrive with the
+login and execution changes that create the first Grok accounts.
+
 ## Security
 
 Login, refresh, execution and logout share one exclusive account lease. Logout
