@@ -550,9 +550,15 @@ fn collect_parameter_names(code: &str, names: &mut Vec<String>) {
     while let Some(offset) = code[search..].find("=>") {
         let arrow = search + offset;
         search = arrow + 2;
-        let before = code[..arrow].trim_end();
-        // Skip an optional return type annotation `(a): T =>` conservatively
-        // by requiring the parameter list to end right before the arrow.
+        let mut before = code[..arrow].trim_end();
+        // A TypeScript return type `(a: T): R =>` sits between the parameter
+        // list and the arrow; step back over it to the list.
+        if !before.ends_with(')')
+            && let Some(colon) = return_type_colon(before)
+            && before[..colon].trim_end().ends_with(')')
+        {
+            before = before[..colon].trim_end();
+        }
         if before.ends_with(')') {
             let close = before.len() - 1;
             if let Some(open) = matching_backward(bytes, close, b'(', b')') {
@@ -578,6 +584,26 @@ fn collect_parameter_names(code: &str, names: &mut Vec<String>) {
             collect_binding_names(target, names);
         }
     }
+}
+
+/// Position of the `:` that starts a return-type annotation ending at the end
+/// of `before`, scanning backwards at bracket depth zero.
+fn return_type_colon(before: &str) -> Option<usize> {
+    let bytes = before.as_bytes();
+    let mut depth = 0i32;
+    for index in (0..bytes.len()).rev() {
+        match bytes[index] {
+            b')' | b']' | b'}' | b'>' => depth += 1,
+            b'(' | b'[' | b'{' | b'<' => depth -= 1,
+            b':' if depth == 0 => return Some(index),
+            b';' | b'=' | b',' if depth == 0 => return None,
+            _ => {}
+        }
+        if depth < 0 {
+            return None;
+        }
+    }
+    None
 }
 
 fn matching(bytes: &[u8], open: usize, open_byte: u8, close_byte: u8) -> Option<usize> {
@@ -992,6 +1018,15 @@ y=/process.env.F/.test(z),process.env.G"#;
             &non_code_ranges(division),
             division.find("process").unwrap()
         ));
+    }
+
+    #[test]
+    fn arrow_parameters_are_found_behind_return_type_annotations() {
+        let names = declared_names("const run = (descriptiveName: string): void => eval(code);");
+        assert!(names.contains(&"descriptiveName".to_owned()));
+        assert!(!names.contains(&"void".to_owned()));
+        let names = declared_names("const f = (inputValue): Promise<Map<string, number>> => g();");
+        assert!(names.contains(&"inputValue".to_owned()));
     }
 
     #[test]
