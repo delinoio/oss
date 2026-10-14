@@ -1006,12 +1006,6 @@ impl crate::pipeline::Backend for Backend<'_> {
     }
 
     fn emit_module(&mut self, file: &str, text: &str) -> Result<crate::pipeline::Emitted> {
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        text.hash(&mut hasher);
-        let key = (file.to_owned(), hasher.finish());
-        if let Some(emitted) = self.sizes.get(&key) {
-            return Ok(emitted.clone());
-        }
         if crate::app::bundle_mode() {
             // Bundle chunks are published as edited text, so the text itself
             // is the measured output. Parsing every candidate chunk would
@@ -1028,6 +1022,14 @@ impl crate::pipeline::Backend for Backend<'_> {
                 size: text.len(),
                 imports: crate::pipeline::static_imports(text),
             });
+        }
+        // Only transpiled sizes are cached; the bundle and JavaScript paths
+        // above measure the text directly, so hashing it there is wasted.
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        text.hash(&mut hasher);
+        let key = (file.to_owned(), hasher.finish());
+        if let Some(emitted) = self.sizes.get(&key) {
+            return Ok(emitted.clone());
         }
         let output = tsrs_api::transpile::transpile(
             text,
@@ -2073,11 +2075,14 @@ fn collect(node: Node, nodes: &mut Vec<Node>) {
 
 /// Start of the node's first token, excluding leading trivia.
 fn token_start(node: Node) -> usize {
-    tsrs_scanner::get_token_pos_of_node(
-        node.raw(),
-        get_source_file_of_node(node).raw().as_source_file_p(),
-        false,
-    ) as usize
+    token_start_in(node, get_source_file_of_node(node))
+}
+
+/// [`token_start`] for a node of a known source file. Finding the source file
+/// walks every parent, which dominated planning on deeply nested bundles.
+fn token_start_in(node: Node, source_file: Node) -> usize {
+    tsrs_scanner::get_token_pos_of_node(node.raw(), source_file.raw().as_source_file_p(), false)
+        as usize
 }
 
 #[cfg(test)]
