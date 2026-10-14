@@ -389,6 +389,7 @@ it("ignores the login text when it comes from a read error or a different code",
 
 function readFixture(options: {
   list: () => { documentJson: Uint8Array };
+  discover?: () => { documentJson: Uint8Array };
   status?: () => { capabilities: SystemCapability[] };
 }) {
   const transport = createRouterTransport((router) => {
@@ -404,13 +405,15 @@ function readFixture(options: {
         documentJson: encode({ enabled: false, state: "off", server_id: "s" }),
       }),
       listTailscaleApprovals: () => ({ documentJson: encode([]) }),
-      discoverTailscale: () => ({
-        documentJson: encode({
-          state: "running",
-          peers: [],
-          observed_at: "2026-01-01T00:00:00Z",
-        }),
-      }),
+      discoverTailscale:
+        options.discover ??
+        (() => ({
+          documentJson: encode({
+            state: "running",
+            peers: [],
+            observed_at: "2026-01-01T00:00:00Z",
+          }),
+        })),
       listTailscaleConnections: options.list,
     });
   });
@@ -436,7 +439,7 @@ function readFixture(options: {
       </QueryClientProvider>
     </TransportProvider>,
   );
-  return { current, requests };
+  return { current, requests, target };
 }
 
 it("reports an empty request list only after the list was read successfully", async () => {
@@ -472,4 +475,41 @@ it("does not report a failed capability read as an unsupported server", async ()
   await within(current).findByText("Unavailable or blocked");
   expect(within(current).queryByText(/does not support Tailscale/)).toBeNull();
   expect(within(current).getByRole("alert")).toBeTruthy();
+});
+
+it("retries both the discovery and the connection request reads from Refresh", async () => {
+  let listCalls = 0;
+  let discoverCalls = 0;
+  const { requests, target } = readFixture({
+    list: () => {
+      listCalls += 1;
+      if (listCalls === 1)
+        throw new ConnectError("Unreachable", Code.Unavailable);
+      return { documentJson: encode([]) };
+    },
+    discover: () => {
+      discoverCalls += 1;
+      return {
+        documentJson: encode({
+          state: "running",
+          peers: [],
+          observed_at: "2026-01-01T00:00:00Z",
+        }),
+      };
+    },
+  });
+  await within(requests).findByText(
+    "Connection requests could not be read. Refresh to try again.",
+  );
+  expect(listCalls).toBe(1);
+  expect(discoverCalls).toBe(1);
+  fireEvent.click(
+    await within(target).findByRole("button", { name: "Refresh" }),
+  );
+  await within(requests).findByText("No connection requests.");
+  expect(listCalls).toBe(2);
+  expect(discoverCalls).toBe(2);
+  expect(
+    within(requests).queryByText(/Connection requests could not be read/),
+  ).toBeNull();
 });

@@ -517,8 +517,13 @@ function DeviceInventory({
               </div>
               <button
                 type="button"
-                disabled={discovery.isFetching}
-                onClick={() => void discovery.refetch()}
+                disabled={discovery.isFetching || operations.isFetching}
+                onClick={() => {
+                  // Refresh is the only recovery control, so it retries every
+                  // read this category owns, including a failed request list.
+                  void discovery.refetch();
+                  void operations.refetch();
+                }}
               >
                 {copy("tailscale.refresh")}
               </button>
