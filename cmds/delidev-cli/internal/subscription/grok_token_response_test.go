@@ -3,6 +3,7 @@ package subscription_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -29,6 +30,11 @@ var tokenResponseCases = []tokenResponseCase{
 	{name: "200 trailing JSON value", trailer: ` {"x":1}`, reason: subscription.GrokReasonTokenResponse},
 	{name: "200 trailing bytes", trailer: `garbage`, reason: subscription.GrokReasonTokenResponse},
 	{name: "200 trailing comma", trailer: `,`, reason: subscription.GrokReasonTokenResponse},
+	{name: "200 duplicate member", body: `{"access_token":"a","access_token":"b","token_type":"Bearer","expires_in":3600}`, reason: subscription.GrokReasonTokenResponse},
+	{name: "200 duplicate member differing in case", body: `{"access_token":"a","ACCESS_TOKEN":"b","token_type":"Bearer","expires_in":3600}`, status: 200, reason: subscription.GrokReasonTokenResponse},
+	{name: "400 duplicate error member", status: 400, body: `{"error":"invalid_grant","error":"invalid_grant"}`, reason: subscription.GrokReasonTokenUncertain},
+	{name: "401 duplicate error member differing in case", status: 401, body: `{"error":"invalid_client","Error":"invalid_client"}`, reason: subscription.GrokReasonTokenUncertain},
+	{name: "200 not an object", body: `[{"access_token":"a"}]`, reason: subscription.GrokReasonTokenResponse},
 	{name: "400 invalid_grant", status: 400, body: `{"error":"invalid_grant"}`, reason: subscription.GrokReasonTokenRejected},
 	{name: "400 invalid_grant trailing JSON value", status: 400, body: `{"error":"invalid_grant"}`, trailer: ` {"x":1}`, reason: subscription.GrokReasonTokenUncertain},
 	{name: "400 invalid_grant trailing bytes", status: 400, body: `{"error":"invalid_grant"}`, trailer: `junk`, reason: subscription.GrokReasonTokenUncertain},
@@ -73,4 +79,48 @@ func assertTokenResponse(t *testing.T, c tokenResponseCase, err error, requests,
 	if reason, ok := subscription.GrokOAuthFailure(err); !ok || reason != c.reason {
 		t.Fatalf("reason = %v, %v; want %v", reason, err, c.reason)
 	}
+}
+
+// The identity evidence of a claimed grant is held to the same rule as the token
+// body: a claim repeated in the ID token or the userinfo response is ambiguous
+// (the decoder keeps the last one), so the evidence is refused.
+func TestGrokIdentityEvidenceRejectsRepeatedClaims(t *testing.T) {
+	t.Run("ID token", func(t *testing.T) {
+		payload := func(subjects, nonce string) string {
+			return fmt.Sprintf(`{"iss":%q,"aud":[%q],%s,"nonce":%q,"exp":%d,"iat":%d}`, subscription.GrokIssuer, subscription.GrokClientID, subjects, nonce, time.Now().Add(time.Hour).Unix(), time.Now().Unix())
+		}
+		validate := func(claims string) error {
+			idp := grokidp.New(t)
+			client, endpoints, a, grant := exchangeFixture(t, idp)
+			idp.IDTokenPayload = payload(claims, a.Nonce)
+			tokens, err := client.ExchangeCode(context.Background(), endpoints, []byte(grant.Code), a.Verifier, grant.RedirectURI)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = client.ValidateIDToken(context.Background(), endpoints, tokens.IDToken, a.Nonce)
+			return err
+		}
+		if err := validate(`"sub":"fake-user-1"`); err != nil {
+			t.Fatalf("the control ID token was refused: %v", err)
+		}
+		if validate(`"sub":"fake-user-1","sub":"someone-else"`) == nil {
+			t.Fatal("an ID token that repeats a claim was accepted")
+		}
+	})
+	t.Run("userinfo", func(t *testing.T) {
+		idp := grokidp.New(t)
+		idp.UserInfoBody = `{"sub":"fake-user-1","sub":"someone-else"}`
+		client, endpoints, a, grant := exchangeFixture(t, idp)
+		tokens, err := client.ExchangeCode(context.Background(), endpoints, []byte(grant.Code), a.Verifier, grant.RedirectURI)
+		if err != nil {
+			t.Fatal(err)
+		}
+		claims, err := client.ValidateIDToken(context.Background(), endpoints, tokens.IDToken, a.Nonce)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := client.UserInfo(context.Background(), endpoints, tokens.AccessToken, claims); err == nil {
+			t.Fatal("a userinfo response that repeats a claim was accepted")
+		}
+	})
 }

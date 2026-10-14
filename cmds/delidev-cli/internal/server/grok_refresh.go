@@ -573,9 +573,14 @@ func (s *Service) recoverGrokRefresh(ctx context.Context, id, operation domain.I
 		o.GrokDiagnostic = &domain.GrokDiagnostic{Phase: domain.GrokDiagnosticRefresh, Code: domain.Unavailable, CorrelationID: o.ID}
 		st.Pending = nil
 		st.RecoveryRequired = false
-		// The restart fenced the account; the credential was never touched.
+		// The restart fenced the account as failed whatever its health was; the
+		// credential was never touched, so the health the refresh was admitted
+		// under returns (an expired account stays expired, it is not made ready).
 		if a.Health == domain.AccountFailed {
 			a.Health = domain.AccountReady
+			if o.HealthBefore != "" {
+				a.Health = o.HealthBefore
+			}
 		}
 		if _, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
 			return nil, err

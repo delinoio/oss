@@ -162,7 +162,23 @@ func TestGrokServerRefreshStateValidation(t *testing.T) {
 	if err := settled.Subscription.Validate(settled); err != nil {
 		t.Fatalf("settled Grok refresh keeping its claim was rejected: %v", err)
 	}
+	admitted := grokServerRefreshFixture()
+	admitted.Subscription.ServerOperation.HealthBefore = AccountExpired
+	if err := admitted.Subscription.Validate(admitted); err != nil {
+		t.Fatalf("a refresh admitted under an expired account was rejected: %v", err)
+	}
 	for name, mutate := range map[string]func(*Account){
+		"unknown admitted health": func(a *Account) { a.Subscription.ServerOperation.HealthBefore = "bogus" },
+		"revoked admitted health": func(a *Account) { a.Subscription.ServerOperation.HealthBefore = AccountRevoked },
+		"admitted health on login": func(a *Account) {
+			a.Subscription.ServerOperation.Action = SubscriptionLogin
+			a.Subscription.Pending.Action = SubscriptionLogin
+			a.Subscription.ServerOperation.HealthBefore = AccountReady
+		},
+		"admitted health on another service": func(a *Account) {
+			a.SubscriptionService = SubscriptionChatGPT
+			a.Subscription.ServerOperation.HealthBefore = AccountReady
+		},
 		"claim before the lease":  func(a *Account) { a.Subscription.ServerOperation.RefreshClaimed = true },
 		"login code on a refresh": func(a *Account) { a.Subscription.ServerOperation.CodeConsumed = true },
 		"login method":            func(a *Account) { a.Subscription.ServerOperation.LoginMethod = SubscriptionBrowserCallback },
@@ -264,9 +280,21 @@ func TestGrokServerLogoutStateValidation(t *testing.T) {
 	}
 }
 
+// An unsettled logout stays identifiable whatever the health became while it
+// waited, was fenced for recovery or retries its cleanup.
+func TestGrokLoggingOutSurvivesTheHealthOfAFencedLogout(t *testing.T) {
+	for _, health := range []AccountHealth{AccountRevoked, AccountFailed} {
+		a := grokServerLogoutFixture()
+		a.Health = health
+		a.Subscription.RecoveryRequired = health == AccountFailed
+		if !a.GrokLoggingOut() {
+			t.Fatalf("an unsettled logout with health %s was not reported as logging out", health)
+		}
+	}
+}
+
 func TestGrokLoggingOutIsLimitedToAnAcceptedGrokLogout(t *testing.T) {
 	for name, mutate := range map[string]func(*Account){
-		"ready":    func(a *Account) { a.Health = AccountReady },
 		"chatgpt":  func(a *Account) { a.SubscriptionService = SubscriptionChatGPT },
 		"refresh":  func(a *Account) { a.Subscription.ServerOperation.Action = SubscriptionRefresh },
 		"no op":    func(a *Account) { a.Subscription.Pending = nil },

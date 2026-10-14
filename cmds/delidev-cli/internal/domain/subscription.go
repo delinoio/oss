@@ -253,6 +253,11 @@ type ServerSubscriptionOperation struct {
 	// token request is sent and is never cleared: a refresh whose claim exists
 	// but whose outcome was not published is uncertain and is never resent.
 	RefreshClaimed bool `json:"refresh_claimed,omitempty"`
+	// HealthBefore is the account health a Grok refresh was admitted under. A
+	// restart fences the account as failed whatever its health was, so the
+	// recovery of a refresh that never reached its claim restores this value
+	// instead of presuming the account was ready.
+	HealthBefore AccountHealth `json:"health_before,omitempty"`
 	// GrokRevocation records the durable progress of the provider revocation of a
 	// server-owned Grok logout. It is written, in its own transaction, before the
 	// one revocation request is sent and is never cleared.
@@ -280,12 +285,14 @@ func (p GrokRevocationPhase) Valid() bool {
 }
 
 // GrokLoggingOut reports whether the account is a Grok subscription account
-// whose logout has been accepted and has not settled. Readiness is revoked from
-// acceptance, so new execution is refused while the logout waits for the original
-// execution to exit, revokes the credential and confirms its cleanup.
+// whose logout has been accepted and has not settled. The retained logout
+// operation and its pending ownership decide, not the health: readiness is
+// revoked from acceptance, but an uncertain revocation or a cleanup waiting for a
+// retry settles the health to failed while the logout is still unsettled, and
+// new execution must stay refused with the same typed answer until it settles.
 func (a Account) GrokLoggingOut() bool {
 	st := a.Subscription
-	if a.Type != SubscriptionAccount || a.SubscriptionService != SubscriptionGrok || a.Health != AccountRevoked || st == nil {
+	if a.Type != SubscriptionAccount || a.SubscriptionService != SubscriptionGrok || st == nil {
 		return false
 	}
 	o := st.ServerOperation
