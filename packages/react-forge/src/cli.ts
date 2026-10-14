@@ -221,7 +221,7 @@ export async function main(args: string[]): Promise<number> {
         report.geometryQuality
           ?.map(
             (row) =>
-              `${row.geometryId}: ${row.findings.map((finding) => `${finding.code}=${finding.count}${finding.truncated ? "+" : ""}`).join(", ")}\n`,
+              `${row.geometryId}: ${row.findings.map((finding) => `${finding.code}=${finding.count}${finding.truncated ? " (samples truncated)" : ""}`).join(", ")}\n`,
           )
           .join("") ?? "";
       await write(
