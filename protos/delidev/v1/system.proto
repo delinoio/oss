@@ -54,8 +54,14 @@ message GetStatusResponse {
 
 enum SystemCapability {
   SYSTEM_CAPABILITY_UNSPECIFIED = 0;
+  // Server-owned Claude setup-token login for new accounts, without a Runner Device.
+  SYSTEM_CAPABILITY_CLAUDE_SERVER_LOGIN_V1 = 67;
+  // Server-owned Claude token execution on Workers that advertise the adapter.
+  SYSTEM_CAPABILITY_CLAUDE_MANAGED_EXECUTION_V1 = 68;
   SYSTEM_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1 = 92;
   SYSTEM_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1 = 102;
+  // Pull request List/Search pages and workspace enrichment accept up to 50 items.
+  SYSTEM_CAPABILITY_PULL_REQUEST_PAGING_50_V1 = 103;
   SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1 = 90;
   SYSTEM_CAPABILITY_TAILSCALE_CONNECTIONS_V1 = 93;
   SYSTEM_CAPABILITY_SESSION_INBOX_READ_V1 = 89;
@@ -74,6 +80,8 @@ enum SystemCapability {
   SYSTEM_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1 = 76;
 
   SYSTEM_CAPABILITY_MANAGED_CODEX_FORK_V1 = 53;
+  // Automatic session titles for protected ChatGPT subscription accounts.
+  SYSTEM_CAPABILITY_MANAGED_CODEX_TITLES_V1 = 59;
   SYSTEM_CAPABILITY_CODEX_APPROVAL_REVIEW_V1 = 55;
 
   SYSTEM_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1 = 54;

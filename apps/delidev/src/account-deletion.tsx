@@ -188,10 +188,20 @@ function terminalServerLogout(resource: Resource) {
 }
 const cleanupRecovery = (resource: Resource) =>
   pendingCredentialCleanup(resource) || terminalServerLogout(resource);
+// A settled server-token Claude login or logout records this checkpoint until
+// the server confirms that retired vault references were deleted. The server
+// rejects account deletion while any reference remains.
+function credentialCleanupPending(resource: Resource) {
+  return (
+    object(object(document(resource).subscription).server_operation)
+      .cleanup_phase === "credentials-pending"
+  );
+}
 function cleared(resource: Resource) {
   const data = document(resource),
     state = object(data.subscription);
   return (
+    !credentialCleanupPending(resource) &&
     data.health === "disconnected" &&
     !data.connection &&
     !data.removal &&
@@ -243,7 +253,11 @@ export function ChatGPTAccountDeletion({
   const hasReturnAction = !task || Boolean(task.stepId);
   useLocale();
   const service = subscriptionService(document(initial).subscription_service)!;
-  const claude = service === SubscriptionServiceId.Claude;
+  // Only a device-owned Claude account has a Runner profile. A server-token
+  // account is logged out and cleaned up through the server, like ChatGPT.
+  const managedClaude =
+    object(document(initial).subscription).claude_credential === "server-token";
+  const claude = service === SubscriptionServiceId.Claude && !managedClaude;
   const operationOf = (state: ReturnType<typeof object>) =>
     object(claude ? state.native_operation : state.server_operation);
   const transport = useTransport(),
@@ -527,6 +541,18 @@ export function ChatGPTAccountDeletion({
         object(document(result.resource).subscription),
       );
       if (
+        unchanged(result.resource, p) &&
+        credentialCleanupPending(result.resource) &&
+        operation.id === p.operation &&
+        operation.action === "logout" &&
+        operation.state === "succeeded"
+      ) {
+        // The settled logout still owes protected vault cleanup. Keep waiting for
+        // the server's retry; deletion is never submitted before it is confirmed.
+        setView({ stage: Stage.Logout });
+        return;
+      }
+      if (
         !unchanged(result.resource, p) ||
         !cleared(result.resource) ||
         operation.id !== p.operation ||
@@ -619,7 +645,11 @@ export function ChatGPTAccountDeletion({
         state = object(data.subscription),
         operation = operationOf(state),
         pendingOperation = object(state.pending);
-      if (state.recovery_required || data.removal) {
+      if (
+        state.recovery_required ||
+        data.removal ||
+        credentialCleanupPending(current)
+      ) {
         pause(
           p,
           copy("account-deletion.extra.775c54df4fb5"),
@@ -633,7 +663,9 @@ export function ChatGPTAccountDeletion({
         !status.capabilities.includes(
           claude
             ? SystemCapability.CLAUDE_SUBSCRIPTIONS_V1
-            : SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1,
+            : managedClaude
+              ? SystemCapability.CLAUDE_SERVER_LOGIN_V1
+              : SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1,
         )
       ) {
         pause(

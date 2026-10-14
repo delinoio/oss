@@ -107,6 +107,24 @@ const emptyDefinition = (): Document => ({
   overlap: Overlap.Overlap,
 });
 
+// A focus target is available only when it is connected, enabled, outside any
+// hidden or inert ancestor, and rendered: stylesheet rules such as the compact
+// opener's display:none outside the compact breakpoint leave the element
+// connected but unfocusable, so focus() on it would silently do nothing.
+function isFocusAvailable(
+  element: HTMLElement | null | undefined,
+): element is HTMLElement {
+  if (!element?.isConnected) return false;
+  if (element.matches(":disabled") || element.closest("[hidden], [inert]"))
+    return false;
+  const view = element.ownerDocument.defaultView;
+  if (!view) return false;
+  const visibility = view.getComputedStyle(element).visibility;
+  if (visibility === "hidden" || visibility === "collapse") return false;
+  for (let node: Element | null = element; node; node = node.parentElement)
+    if (view.getComputedStyle(node).display === "none") return false;
+  return true;
+}
 function hasDuplicateIds(rows: readonly { id: string }[]) {
   return new Set(rows.map((row) => row.id)).size !== rows.length;
 }
@@ -1270,6 +1288,8 @@ export function Schedules({
   const workspace = useRef<HTMLDivElement>(null);
   const deferredSave = useRef<{ row?: Resource } | undefined>(undefined);
   const focusAfterDeferredSave = useRef(false);
+  const newScheduleButton = useRef<HTMLButtonElement>(null);
+  const focusOpenerAfterCancel = useRef(false);
   const wasReviewing = useRef(false);
   const focusBeforeReview = useRef<HTMLElement | null>(null);
   useLayoutEffect(() => {
@@ -1356,6 +1376,34 @@ export function Schedules({
       ?.querySelector<HTMLElement>("button:not(:disabled)")
       ?.focus({ preventScroll: true });
   }, [editing, selected]);
+  // Cancelling the creation wizard (button or Escape) unmounts the focused
+  // control and re-enables the New schedule opener in the same commit. Return
+  // focus to that opener, or to a visible Schedules control when the sidebar is
+  // a closed compact drawer, unless focus already moved somewhere else.
+  useLayoutEffect(() => {
+    if (!focusOpenerAfterCancel.current || editing) return;
+    focusOpenerAfterCancel.current = false;
+    const current = globalThis.document.activeElement;
+    if (
+      current &&
+      current !== globalThis.document.body &&
+      current !== globalThis.document.documentElement &&
+      current.isConnected
+    )
+      return;
+    const opener = newScheduleButton.current;
+    const main = workspace.current?.closest("main");
+    const compact = (main ?? globalThis.document).querySelector<HTMLElement>(
+      ".sidebar-context-trigger",
+    );
+    // Try each candidate in order; one that is unavailable, or that does not
+    // actually take focus, falls through to the next candidate.
+    for (const candidate of [opener, compact, main]) {
+      if (!isFocusAvailable(candidate)) continue;
+      candidate.focus({ preventScroll: true });
+      if (globalThis.document.activeElement === candidate) return;
+    }
+  }, [editing]);
   const selectSchedule = (row: Resource) => {
     if (locked) return;
     if (row.id !== selected?.id)
@@ -1378,6 +1426,7 @@ export function Schedules({
         className="schedules-sidebar"
       >
         <button
+          ref={newScheduleButton}
           className="primary sidebar-action"
           disabled={locked}
           onClick={newSchedule}
@@ -1552,6 +1601,15 @@ export function Schedules({
                 else latestApplySave.current(row);
               }}
               cancel={() => {
+                // Only dismissing the creation wizard (no initial resource)
+                // returns focus to the opener; cancelling the edit of an
+                // existing schedule keeps its previous focus behavior.
+                const focused = globalThis.document.activeElement;
+                focusOpenerAfterCancel.current =
+                  editing.initial === undefined &&
+                  (!focused ||
+                    focused === globalThis.document.body ||
+                    Boolean(workspace.current?.contains(focused)));
                 setEditing(undefined);
                 setProtectedWorkflow(false);
               }}

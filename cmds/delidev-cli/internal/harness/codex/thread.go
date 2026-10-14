@@ -303,7 +303,7 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 		// roots and inherited native roots have no review-input authority.
 		return result, domain.NativeCodeReviewUnavailable()
 	}
-	if c.sidechat != "" && !sidechatSettings(settings) {
+	if c.readOnlyProfile() && !sidechatSettings(settings) {
 		return result, sidechatUnavailable()
 	}
 	if c.mode != ThreadProtocol {
@@ -335,7 +335,7 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 		return result, domain.Fail(domain.Conflict, "This native connection already owns a root thread.", "Use the retained native thread; do not start or resume another one on this connection.")
 	}
 	if c.managedHome != "" {
-		if settings.Provider != managedOpenAIProviderKey {
+		if settings.Provider != c.managedProviderKey() {
 			return result, incompatible()
 		}
 		if err := c.verifyManagedConfig(ctx, settings.Cwd); err != nil {
@@ -419,7 +419,7 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 		c.problem = threadUncertain()
 		return result, c.problem
 	}
-	if c.sidechat != "" && !sidechatEffective(*effective) {
+	if c.readOnlyProfile() && !sidechatEffective(*effective) {
 		c.problem = threadUncertain()
 		return result, c.problem
 	}

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -105,6 +106,52 @@ func TestCLIGitHubPRObservationCommandsUseExactNumberAndPage(t *testing.T) {
 			code := Run(context.Background(), args, IO{In: strings.NewReader("private-fixture-token"), Out: &output, Err: &diagnostic})
 			if code != 0 || calls != 1 {
 				t.Fatalf("PR query: %d %s calls=%d", code, output.String(), calls)
+			}
+		})
+	}
+}
+
+// TestCLIGitHubPageSizeCeilingDependsOnOperation proves that only pull request
+// list/search accepts 50 and that oversized values never reach the server.
+func TestCLIGitHubPageSizeCeilingDependsOnOperation(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		size string
+		sent bool
+	}{
+		{"pr list 50", []string{"pr", "list"}, "50", true},
+		{"pr search 50", []string{"pr", "search", "--text", "fix"}, "50", true},
+		{"pr list 51", []string{"pr", "list"}, "51", false},
+		{"issue list 20", []string{"issue", "list"}, "20", true},
+		{"issue list 21", []string{"issue", "list"}, "21", false},
+		{"issue search 50", []string{"issue", "search", "--text", "fix"}, "50", false},
+		{"pr checks 21", []string{"pr", "checks", "--number", "7"}, "21", false},
+		{"pr statuses 50", []string{"pr", "statuses", "--number", "7"}, "50", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			id := domain.NewID()
+			calls := 0
+			var sent uint32
+			peer := httptest.NewServer(connect.NewUnaryHandler(delidevv1connect.IntegrationServiceQueryRepositoryIntegrationProcedure, func(_ context.Context, r *connect.Request[pb.QueryRepositoryIntegrationRequest]) (*connect.Response[pb.QueryRepositoryIntegrationResponse], error) {
+				calls++
+				var q domain.RepositoryQuery
+				if domain.Decode(r.Msg.QueryJson, &q) == nil {
+					sent = q.PageSize
+				}
+				return nil, connect.NewError(connect.CodeUnavailable, nil)
+			}))
+			defer peer.Close()
+			args := append([]string{"--data-dir", filepath.Join(t.TempDir(), "client"), "--server", peer.URL, "--token-stdin", "github"}, c.args...)
+			args = append(args, "--repository-id", string(id), "--page-size", c.size)
+			var output, diagnostic strings.Builder
+			Run(context.Background(), args, IO{In: strings.NewReader("private-fixture-token"), Out: &output, Err: &diagnostic})
+			if (calls == 1) != c.sent {
+				t.Fatalf("request sent=%v want %v (output %s %s)", calls == 1, c.sent, output.String(), diagnostic.String())
+			}
+			if c.sent && strconv.FormatUint(uint64(sent), 10) != c.size {
+				t.Fatalf("page size changed in flight: %d", sent)
 			}
 		})
 	}

@@ -247,11 +247,6 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 	case codex.DynamicToolEvent:
 		return true, c.publishDynamicTool(ctx, event)
 	case codex.FunctionOutputEvent:
-		if !c.functionOutputsSupported {
-			// Older peers cannot validate this event kind. Keep the native
-			// observation private and let the original turn continue.
-			return true, nil
-		}
 		return true, c.publishFunctionOutput(ctx, event)
 	case codex.ToolStartedEvent, codex.ToolCompletedEvent, codex.ToolOutputEvent, codex.ToolInputEvent, codex.ToolPatchEvent:
 		return true, c.publishTool(ctx, event)

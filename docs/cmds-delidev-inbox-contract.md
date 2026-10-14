@@ -152,6 +152,9 @@ current authenticated session and initial transcript load successfully. Sidechat
 mobile, hidden conversations, failed or incomplete loads do not qualify. The
 conversation must be selected, the document visible and the product window focused.
 This is a dedicated mutation; Inbox inspection and every ordinary read remain read-only.
+Initial transcript load evidence is a successful whole-chain read of the current
+observation (Initial, Refresh or Reload), not residence of the first payload page,
+so payload eviction of the first page does not prevent a new visit's acknowledgment.
 
 The request has a UUID-v7 `request_id` and original UUID-v7 `session_id`. System
 capability `SESSION_INBOX_READ_V1 = 89` independently enables it; count-only capability

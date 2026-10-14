@@ -18,6 +18,7 @@ import {
   ResourceSchema,
   ResourceService,
   SessionService,
+  SystemCapability,
   SystemService,
   newRequestId,
   type Resource,
@@ -122,6 +123,7 @@ function fixture(
 ) {
   let failure: Code | undefined;
   let gate: Promise<void> | undefined;
+  let capabilities: SystemCapability[] = [];
   const list = vi.fn(
     async (request: { filter?: { kind: EntityKind; pageToken: string } }) => {
       if (request.filter?.kind === EntityKind.INTEGRATION && setup)
@@ -201,7 +203,11 @@ function fixture(
   const preferences = create(NotificationPreferencesSchema, { revision: 1n });
   const transport = createRouterTransport((router) => {
     router.service(SystemService, {
-      getStatus: () => ({ version: "0.1.0", protocolVersion: 1 }),
+      getStatus: () => ({
+        version: "0.1.0",
+        protocolVersion: 1,
+        capabilities,
+      }),
     });
     if (setup)
       router.service(ConfigurationService, {
@@ -230,6 +236,9 @@ function fixture(
     mutation,
     fail: (code?: Code) => {
       failure = code;
+    },
+    capabilities: (value: SystemCapability[]) => {
+      capabilities = value;
     },
     defer: (promise?: Promise<void>) => {
       gate = promise;
@@ -356,10 +365,10 @@ it("shows only the selected name and loads the selected default query automatica
   expect(row.getAttribute("aria-pressed")).toBe("true");
   expect(row.querySelector('svg[aria-hidden="true"]')).toBeTruthy();
   expect(
-    pane.getByText(
+    pane.queryByText(
       "Pull requests load automatically when you select a repository or change filters.",
     ),
-  ).toBeTruthy();
+  ).toBeNull();
   expect(pane.queryByRole("button", { name: "Load pull requests" })).toBeNull();
 
   await screen.findByText(/Original fixture title/);
@@ -371,6 +380,46 @@ it("shows only the selected name and loads the selected default query automatica
     page: 1,
     page_size: 20,
   });
+});
+
+it("ends Query options after the PR page size control in both languages without extra queries", async () => {
+  const value = fixture();
+  // A server that supports 50-item pages shows no page-size capability note.
+  value.capabilities([SystemCapability.PULL_REQUEST_PAGING_50_V1]);
+  render(<App transport={value.transport} />);
+  let pane = await open();
+  await choose(value.rows[0]);
+  await screen.findByText(/Original fixture title/);
+  await waitFor(() =>
+    expect(
+      (pane.getByLabelText("PR page size") as HTMLSelectElement).options[2]
+        .disabled,
+    ).toBe(false),
+  );
+  expect(value.query).toHaveBeenCalledTimes(1);
+  const english =
+    "Pull requests load automatically when you select a repository or change filters.";
+  const korean =
+    "저장소를 선택하거나 필터를 변경하면 풀 리퀘스트를 자동으로 불러옵니다.";
+  const queryOptions = () => {
+    const form = pane.getByLabelText("PR page size").closest("form");
+    expect(form).toBeTruthy();
+    return form as HTMLFormElement;
+  };
+  expect(queryOptions().lastElementChild?.tagName).toBe("LABEL");
+  expect(pane.queryByText(english)).toBeNull();
+  expect(pane.queryByText(korean)).toBeNull();
+
+  await act(() => i18n.changeLanguage(SupportedLanguage.Korean));
+  pane = within(
+    screen.getByRole("region", { name: "풀 리퀘스트 탐색 및 필터" }),
+  );
+  const form = pane.getByLabelText("PR 페이지 크기").closest("form");
+  expect(form?.lastElementChild?.tagName).toBe("LABEL");
+  expect(pane.queryByText(english)).toBeNull();
+  expect(pane.queryByText(korean)).toBeNull();
+  expect(value.query).toHaveBeenCalledTimes(1);
+  await act(() => i18n.changeLanguage(SupportedLanguage.English));
 });
 
 it("discloses one exact duplicate-name identity without selecting or reading it", async () => {
@@ -524,7 +573,7 @@ it("preserves selected identity and filter drafts through empty appended pages a
     target: { value: "fix" },
   });
   fireEvent.change(pane.getByLabelText("PR page size"), {
-    target: { value: "5" },
+    target: { value: "10" },
   });
   fireEvent.click(pane.getByRole("button", { name: "Load more Repositories" }));
   await waitFor(() =>
@@ -551,7 +600,7 @@ it("preserves selected identity and filter drafts through empty appended pages a
     name: "Example repository",
   });
   expect((pane.getByLabelText("PR page size") as HTMLSelectElement).value).toBe(
-    "5",
+    "10",
   );
   const tokens = value.list.mock.calls
     .filter(([request]) => request.filter?.kind === EntityKind.REPOSITORY)
@@ -578,7 +627,7 @@ it("preserves selected identity and filter drafts through empty appended pages a
     state: "closed",
     search: "fix",
     page: 1,
-    page_size: 5,
+    page_size: 10,
   });
 });
 
@@ -603,13 +652,13 @@ it("applies filters and reloads page one on return with retained controls", asyn
     pane.getByText(/displayed results belong to the last applied/),
   ).toBeTruthy();
   fireEvent.change(pane.getByLabelText("PR page size"), {
-    target: { value: "5" },
+    target: { value: "10" },
   });
   await waitFor(() =>
     expect(submitted(value, value.query.mock.calls.length - 1)).toMatchObject({
       state: "closed",
       search: "fix",
-      page_size: 5,
+      page_size: 10,
     }),
   );
   const count = value.query.mock.calls.length;
@@ -620,7 +669,7 @@ it("applies filters and reloads page one on return with retained controls", asyn
     state: "closed",
     search: "fix",
     page: 1,
-    page_size: 5,
+    page_size: 10,
   });
   await choose(second);
   expect(
@@ -781,7 +830,9 @@ it("uses standalone cards with exact UTC precision, Draft and unknown author evi
   expect(within(card).getByText("Open")).toBeTruthy();
   expect(within(card).getByText("Draft")).toBeTruthy();
   expect(within(card).getByText(/Unverified author type/)).toBeTruthy();
-  expect(card.querySelector("time")?.textContent).toBe(updated);
+  // The row shows elapsed time; the original instant stays machine-readable.
+  expect(card.querySelector("time")?.textContent).toMatch(/ago$/);
+  expect(card.querySelector("time")?.getAttribute("datetime")).toBe(updated);
   expect(screen.getByText(observed).getAttribute("datetime")).toBe(observed);
   expect(screen.getByText("Open · Page 1 · 20 per page")).toBeTruthy();
   expect(
@@ -818,7 +869,8 @@ it("uses standalone cards with exact UTC precision, Draft and unknown author evi
   expect(screen.getByRole("tooltip").textContent).toBe(
     refresh.getAttribute("aria-label"),
   );
-  expect(card.querySelector("time")?.textContent).toBe(updated);
+  expect(card.querySelector("time")?.textContent).toMatch(/전$/);
+  expect(card.querySelector("time")?.getAttribute("datetime")).toBe(updated);
   expect(screen.getByText(observed).textContent).toBe(observed);
   expect(value.query).toHaveBeenCalledTimes(1);
 });
@@ -1252,14 +1304,14 @@ it.each(["invalid", "composing"])(
       page_size: 20,
     });
     fireEvent.change(pane.getByLabelText("PR page size"), {
-      target: { value: "5" },
+      target: { value: "10" },
     });
     await waitFor(() => expect(value.query).toHaveBeenCalledTimes(4));
     expect(submitted(value, 3)).toMatchObject({
       search: "accepted",
       state: "closed",
       page: 1,
-      page_size: 5,
+      page_size: 10,
     });
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 350));
@@ -1567,4 +1619,265 @@ it("retires a hidden original opener and cleans up its native layer without read
   expect(nativeOpen.has(popup)).toBe(false);
   expect(value.get).not.toHaveBeenCalled();
   expect(value.query).not.toHaveBeenCalled();
+});
+
+const pagingNote =
+  "This server does not support 50 pull requests per page. Choose 10 or 20.";
+
+it("offers exactly 10, 20 and 50, disables 50 without the capability and never sends a 50-item request", async () => {
+  const value = fixture();
+  render(<App transport={value.transport} />);
+  const pane = await open();
+  await choose(value.rows[0]);
+  await waitFor(() => expect(value.query).toHaveBeenCalledTimes(1));
+  const select = pane.getByLabelText("PR page size") as HTMLSelectElement;
+  expect([...select.options].map((option) => option.value)).toEqual([
+    "10",
+    "20",
+    "50",
+  ]);
+  expect(select.value).toBe("20");
+  await pane.findByText(pagingNote);
+  expect(select.options[2].disabled).toBe(true);
+  expect(select.options[0].disabled || select.options[1].disabled).toBe(false);
+  fireEvent.change(select, { target: { value: "50" } });
+  expect(select.value).toBe("20");
+  fireEvent.change(select, { target: { value: "10" } });
+  await waitFor(() => expect(value.query).toHaveBeenCalledTimes(2));
+  expect(submitted(value, 1).page_size).toBe(10);
+  expect(
+    value.query.mock.calls.every(
+      ([request]) =>
+        JSON.parse(new TextDecoder().decode(request.queryJson)).page_size !==
+        50,
+    ),
+  ).toBe(true);
+});
+
+it("keeps 50 selectable with the capability and resets to one page-one request while rejecting a late old response", async () => {
+  const value = fixture();
+  value.capabilities([SystemCapability.PULL_REQUEST_PAGING_50_V1]);
+  const read = value.query.getMockImplementation()!;
+  value.query.mockImplementation(async (request) => {
+    const response = await read(request),
+      data = JSON.parse(new TextDecoder().decode(response.documentJson));
+    data.next_page = data.query.page + 1;
+    return { ...response, documentJson: encode(data) };
+  });
+  render(<App transport={value.transport} />);
+  const pane = await open();
+  await choose(value.rows[0]);
+  fireEvent.click(pane.getByRole("radio", { name: "Closed" }));
+  fireEvent.change(pane.getByLabelText("Search title and body"), {
+    target: { value: "fix" },
+  });
+  await waitFor(() =>
+    expect(
+      value.query.mock.calls.some(
+        ([request]) =>
+          JSON.parse(new TextDecoder().decode(request.queryJson)).search ===
+          "fix",
+      ),
+    ).toBe(true),
+  );
+  const select = pane.getByLabelText("PR page size") as HTMLSelectElement;
+  await waitFor(() => expect(select.options[2].disabled).toBe(false));
+  expect(pane.queryByText(pagingNote)).toBeNull();
+  await screen.findByRole("heading", { name: "#17 Original fixture title" });
+  // Accept page two, then hold a further read open across the page-size change.
+  fireEvent.click(
+    screen.getByRole("button", { name: "Load more GitHub query results" }),
+  );
+  await screen.findByRole("region", { name: "Pull request results · Page 2" });
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const afterAccepted = value.query.mock.calls.length;
+  value.query.mockImplementationOnce(async (request) => {
+    await held;
+    const response = await read(request),
+      data = JSON.parse(new TextDecoder().decode(response.documentJson));
+    data.items[0].title = "Late old response";
+    return { ...response, documentJson: encode(data) };
+  });
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Load more GitHub query results",
+    }),
+  );
+  fireEvent.change(select, { target: { value: "50" } });
+  await waitFor(() =>
+    expect(value.query.mock.calls.length).toBeGreaterThan(afterAccepted),
+  );
+  const fresh = value.query.mock.calls
+    .slice(afterAccepted)
+    .map(([request]) => JSON.parse(new TextDecoder().decode(request.queryJson)))
+    .filter((query) => query.page_size === 50);
+  expect(fresh).toEqual([
+    {
+      kind: "pull-request",
+      operation: "search",
+      state: "closed",
+      search: "fix",
+      page: 1,
+      page_size: 50,
+    },
+  ]);
+  const count = value.query.mock.calls.length;
+  await act(async () => {
+    release();
+    await held;
+  });
+  expect(screen.queryByText("Late old response")).toBeNull();
+  expect(value.query).toHaveBeenCalledTimes(count);
+  expect(
+    screen.queryByRole("region", { name: "Pull request results · Page 2" }),
+  ).toBeNull();
+  // Re-selecting the same size, rendering and a language change repeat nothing.
+  fireEvent.change(select, { target: { value: "50" } });
+  await act(() => i18n.changeLanguage(SupportedLanguage.Korean));
+  await act(() => i18n.changeLanguage(SupportedLanguage.English));
+  expect(value.query).toHaveBeenCalledTimes(count);
+});
+
+it("never sends a 50-item refresh to a same-identity reconnect peer that lacks the capability", async () => {
+  const old = fixture();
+  old.capabilities([SystemCapability.PULL_REQUEST_PAGING_50_V1]);
+  const replacement = fixture(old.rows);
+  replacement.capabilities([]);
+  const identity = {
+    currentDeviceId: newRequestId(),
+    pairingAuthority: {
+      endpoint: "http://127.0.0.1:46310",
+      serverId: newRequestId(),
+    },
+  };
+  const view = render(
+    <App transport={old.transport} {...identity} connectionEpoch={0} />,
+  );
+  const pane = await open();
+  await choose(old.rows[0]);
+  const select = pane.getByLabelText("PR page size") as HTMLSelectElement;
+  await waitFor(() => expect(select.options[2].disabled).toBe(false));
+  fireEvent.change(select, { target: { value: "50" } });
+  await waitFor(() =>
+    expect(
+      old.query.mock.calls.some(
+        ([request]) =>
+          JSON.parse(new TextDecoder().decode(request.queryJson)).page_size ===
+          50,
+      ),
+    ).toBe(true),
+  );
+  // The same server/device identity keeps the query client and its cached
+  // capability while a downgraded peer replaces the transport.
+  view.rerender(
+    <App transport={replacement.transport} {...identity} connectionEpoch={1} />,
+  );
+  await waitFor(() => expect(replacement.query).toHaveBeenCalled());
+  await waitFor(() => expect(select.value).toBe("20"));
+  await waitFor(() => expect(select.options[2].disabled).toBe(true));
+  await pane.findByText(pagingNote);
+  expect(
+    replacement.query.mock.calls.every(
+      ([request]) =>
+        JSON.parse(new TextDecoder().decode(request.queryJson)).page_size !==
+        50,
+    ),
+  ).toBe(true);
+  expect(
+    replacement.query.mock.calls.some(
+      ([request]) =>
+        JSON.parse(new TextDecoder().decode(request.queryJson)).page_size ===
+        20,
+    ),
+  ).toBe(true);
+});
+
+it("never sends a 50-item refresh after a same-token reconnect keeps the transport but downgrades the peer", async () => {
+  const value = fixture();
+  value.capabilities([SystemCapability.PULL_REQUEST_PAGING_50_V1]);
+  const identity = {
+    currentDeviceId: newRequestId(),
+    pairingAuthority: {
+      endpoint: "http://127.0.0.1:46310",
+      serverId: newRequestId(),
+    },
+  };
+  const view = render(
+    <App transport={value.transport} {...identity} connectionEpoch={0} />,
+  );
+  const pane = await open();
+  await choose(value.rows[0]);
+  const select = pane.getByLabelText("PR page size") as HTMLSelectElement;
+  await waitFor(() => expect(select.options[2].disabled).toBe(false));
+  fireEvent.change(select, { target: { value: "50" } });
+  const sizes = () =>
+    value.query.mock.calls.map(
+      ([request]) =>
+        JSON.parse(new TextDecoder().decode(request.queryJson)).page_size,
+    );
+  await waitFor(() => expect(sizes()).toContain(50));
+  const sent = sizes().length;
+  // The saved-server reconnect returned the same token, so the transport object
+  // and query client are retained while the server behind them lost the
+  // capability. Only the connection epoch changes.
+  value.capabilities([]);
+  view.rerender(
+    <App transport={value.transport} {...identity} connectionEpoch={1} />,
+  );
+  await waitFor(() => expect(select.value).toBe("20"));
+  await waitFor(() => expect(select.options[2].disabled).toBe(true));
+  await pane.findByText(pagingNote);
+  await waitFor(() => expect(sizes().slice(sent)).toContain(20));
+  expect(sizes().slice(sent)).not.toContain(50);
+});
+
+it("reports accepted progress in the header, guidance while another page exists and a distinct exhausted state", async () => {
+  const value = fixture();
+  const read = value.query.getMockImplementation()!;
+  value.query.mockImplementation(async (request) => {
+    const response = await read(request),
+      data = JSON.parse(new TextDecoder().decode(response.documentJson));
+    if (data.query.page === 1) data.next_page = 2;
+    if (data.query.page === 2) data.items[0].id = "9007199254740994";
+    return { ...response, documentJson: encode(data) };
+  });
+  const view = render(<App transport={value.transport} />);
+  await open();
+  await choose(value.rows[0]);
+  await screen.findByRole("heading", { name: "#17 Original fixture title" });
+  const header = view.container.querySelector<HTMLElement>(".pr-list-header")!;
+  expect(within(header).getByText("Open · Loaded through page 1")).toBeTruthy();
+  // The header never carries a page-size value, selector or total claim.
+  expect(header.textContent).not.toMatch(/per page|\d+ total/);
+  expect(header.querySelector("select")).toBeNull();
+  expect(
+    screen.getByText("Scroll to load more GitHub query results."),
+  ).toBeTruthy();
+  expect(
+    screen.queryByText("No further page of GitHub query results is available."),
+  ).toBeNull();
+  // A failed read does not advance accepted progress or claim exhaustion.
+  value.query.mockRejectedValueOnce(
+    new ConnectError("Synthetic read failed", Code.Unavailable),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Load more GitHub query results" }),
+  );
+  await screen.findByRole("button", { name: "Retry" });
+  expect(within(header).getByText("Open · Loaded through page 1")).toBeTruthy();
+  expect(
+    screen.queryByText("No further page of GitHub query results is available."),
+  ).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  await screen.findByRole("region", { name: "Pull request results · Page 2" });
+  expect(within(header).getByText("Open · Loaded through page 2")).toBeTruthy();
+  expect(
+    screen.getByText("No further page of GitHub query results is available."),
+  ).toBeTruthy();
+  expect(
+    screen.queryByText("Scroll to load more GitHub query results."),
+  ).toBeNull();
 });

@@ -22,7 +22,13 @@ import {
 } from "./github-scroll";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { useEffect, useId, useRef, useState } from "react";
-import { useQuery } from "@connectrpc/connect-query";
+import {
+  createQueryOptions,
+  useQuery,
+  useTransport,
+} from "@connectrpc/connect-query";
+import { useQuery as useBusinessQuery } from "@tanstack/react-query";
+import { type Transport } from "@connectrpc/connect";
 import {
   EntranceMotion,
   useActivationCount,
@@ -33,6 +39,8 @@ import {
   IntegrationQuery,
   PullRequestFixQuery,
   ResourceQuery,
+  SystemCapability,
+  SystemQuery,
   type Resource,
   newRequestId,
 } from "@delinoio/delidev-api-client";
@@ -74,6 +82,20 @@ import {
   RepositoryProfileAssociation,
 } from "./repository-association";
 import { SettingsCategory } from "./settings-category";
+import { useConnectionEpoch } from "./connection-epoch";
+
+/** Closed set of PR page sizes offered by the sidebar. Fifty needs the
+ * negotiated System capability PULL_REQUEST_PAGING_50_V1. */
+enum PullRequestPageSize {
+  Ten = 10,
+  Twenty = 20,
+  Fifty = 50,
+}
+const pageSizeChoices = [
+  PullRequestPageSize.Ten,
+  PullRequestPageSize.Twenty,
+  PullRequestPageSize.Fifty,
+];
 
 interface LoadedPullRequests {
   repositoryId: string;
@@ -458,6 +480,17 @@ function PendingPRActions() {
   );
 }
 
+const transportIdentities = new WeakMap<Transport, string>();
+/** Stable opaque identity for one transport object, used only in query keys. */
+function transportIdentity(transport: Transport): string {
+  let identity = transportIdentities.get(transport);
+  if (!identity) {
+    identity = newRequestId();
+    transportIdentities.set(transport, identity);
+  }
+  return identity;
+}
+
 export function PullRequests({
   active,
   openSettings,
@@ -489,7 +522,55 @@ export function PullRequests({
   const [search, setSearch] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
   const [composing, setComposing] = useState(false);
-  const [pageSize, setPageSize] = useState(20);
+  const [pageSize, setPageSize] = useState<number>(PullRequestPageSize.Twenty);
+  // The capability gate trusts only a GetStatus observation made through the
+  // current transport during the current connection epoch. A same-identity
+  // reconnect preserves the query client and may even keep the transport, so the
+  // observation is keyed by both: after a downgrade or peer replacement the
+  // previous peer's capabilities are unavailable in the same render and no
+  // 50-item request can reach the new peer before it answers.
+  const transport = useTransport();
+  const connectionEpoch = useConnectionEpoch();
+  const statusOptions = createQueryOptions(
+    SystemQuery.getStatus,
+    {},
+    { transport },
+  );
+  const status = useBusinessQuery({
+    ...statusOptions,
+    queryKey: [
+      ...statusOptions.queryKey,
+      {
+        pageSizeCapabilityTransport: transportIdentity(transport),
+        pageSizeCapabilityEpoch: connectionEpoch,
+      },
+    ],
+    queryFn: (context) =>
+      statusOptions.queryFn!({
+        ...context,
+        queryKey: statusOptions.queryKey,
+      } as never),
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    gcTime: 0,
+    staleTime: Infinity,
+    enabled: active,
+  });
+  const statusSettled = Boolean(status.data) || Boolean(status.error);
+  const pagingSupported = Boolean(
+    status.data?.capabilities.includes(
+      SystemCapability.PULL_REQUEST_PAGING_50_V1,
+    ),
+  );
+  // A peer without the capability never receives a 50-item request, even when
+  // 50 was chosen before the connection changed.
+  const pageSizeAllowed =
+    pageSize !== PullRequestPageSize.Fifty || pagingSupported;
+  useEffect(() => {
+    if (!pageSizeAllowed && statusSettled)
+      setPageSize(PullRequestPageSize.Twenty);
+  }, [pageSizeAllowed, statusSettled]);
   const [loaded, setLoaded] = useState<LoadedPullRequests>();
   const [navigation, setNavigation] = useState<PullRequestNavigation>();
   const closeDrawer = useCloseSidebarDrawer();
@@ -572,6 +653,7 @@ export function PullRequests({
   const searchValid = plainSearch(search.trim());
   const repositorySavePending = useRepositoryConfigurationPending(repositoryId);
   const canLoad = Boolean(
+    pageSizeAllowed &&
     !repositorySavePending &&
     active &&
     metadataConfirmed &&
@@ -605,7 +687,7 @@ export function PullRequests({
     setSearch("");
     setAppliedSearch("");
     setComposing(false);
-    setPageSize(20);
+    setPageSize(PullRequestPageSize.Twenty);
   };
   useEffect(() => {
     const term = search.trim();
@@ -833,20 +915,38 @@ export function PullRequests({
                   {copy("pull-requests.prPageSize_f04cb9")}
                   <select
                     value={pageSize}
-                    onChange={(event) =>
-                      setPageSize(Number(event.target.value))
-                    }
+                    onChange={(event) => {
+                      const size = Number(event.target.value);
+                      if (
+                        size === PullRequestPageSize.Fifty &&
+                        !pagingSupported
+                      )
+                        return;
+                      setPageSize(size);
+                    }}
                   >
-                    {[1, 5, 10, 20].map((size) => (
-                      <option key={size} value={size}>
+                    {pageSizeChoices.map((size) => (
+                      <option
+                        key={size}
+                        value={size}
+                        disabled={
+                          size === PullRequestPageSize.Fifty && !pagingSupported
+                        }
+                      >
                         {size}
                       </option>
                     ))}
                   </select>
                 </label>
-                <p className="sidebar-help">
-                  {copy("pull-requests.noGithubRequestIsMadeUntil_55d1b2")}
-                </p>
+                {!pagingSupported ? (
+                  <p className="sidebar-help">
+                    {copy(
+                      statusSettled
+                        ? "pull-requests.pageSizeUnsupported"
+                        : "pull-requests.pageSizeChecking",
+                    )}
+                  </p>
+                ) : null}
                 {loaded && filtersChanged ? (
                   <p className="sidebar-help">
                     {copy(
@@ -989,7 +1089,13 @@ export function PullRequests({
             key={loaded.scopeKey}
             selected={selected!}
             navigation={navigation}
-            active={active}
+            // A retained 50-item scope pauses until the current transport
+            // confirms the capability, so a replaced peer never receives it.
+            // This follows the loaded scope, which lags the page-size choice.
+            active={
+              active &&
+              (loaded.pageSize !== PullRequestPageSize.Fifty || pagingSupported)
+            }
             changeNavigation={setNavigation}
             pending={<PendingPRActions />}
           />

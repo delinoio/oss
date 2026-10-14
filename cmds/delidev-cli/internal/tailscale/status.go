@@ -80,6 +80,27 @@ type nativeStatus struct {
 func fail(code domain.Code) error {
 	return domain.Fail(code, "Tailscale is unavailable or its observation is unsupported.", "Inspect the installed Tailscale client and its permissions. Use manual connection or SSH setup when unavailable.")
 }
+
+// LoginRequiredMessage and LoginRequiredGuidance are the stable safe text of
+// the explicit Tailscale login failure. The desktop client recognizes this exact
+// pair (with code unavailable) to present a localized recovery panel.
+const (
+	LoginRequiredMessage  = "Tailscale login is required."
+	LoginRequiredGuidance = "Open Tailscale on this computer and sign in. Then refresh Tailscale devices and inspect the original access request."
+)
+
+// LoginRequired is returned by Enable when the installed client reports
+// NeedsLogin. It keeps code unavailable so retained-request semantics hold.
+func LoginRequired() error {
+	return domain.Fail(domain.Unavailable, LoginRequiredMessage, LoginRequiredGuidance)
+}
+
+// logLoginRequired logs only the phase; native output and identity are omitted.
+func (a Adapter) logLoginRequired(ctx context.Context) {
+	if a.Logger != nil {
+		a.Logger.WarnContext(ctx, "tailscale_access", "phase", "enable", "reason", "login_required")
+	}
+}
 func CanonicalHost(name string) (string, error) {
 	host := strings.TrimSuffix(name, ".")
 	if host == "" || len(host) > 253 || host != strings.ToLower(host) || !strings.Contains(host, ".") {

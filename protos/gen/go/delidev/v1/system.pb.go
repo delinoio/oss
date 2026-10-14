@@ -24,9 +24,15 @@ const (
 type SystemCapability int32
 
 const (
-	SystemCapability_SYSTEM_CAPABILITY_UNSPECIFIED                       SystemCapability = 0
-	SystemCapability_SYSTEM_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1         SystemCapability = 92
-	SystemCapability_SYSTEM_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1            SystemCapability = 102
+	SystemCapability_SYSTEM_CAPABILITY_UNSPECIFIED SystemCapability = 0
+	// Server-owned Claude setup-token login for new accounts, without a Runner Device.
+	SystemCapability_SYSTEM_CAPABILITY_CLAUDE_SERVER_LOGIN_V1 SystemCapability = 67
+	// Server-owned Claude token execution on Workers that advertise the adapter.
+	SystemCapability_SYSTEM_CAPABILITY_CLAUDE_MANAGED_EXECUTION_V1 SystemCapability = 68
+	SystemCapability_SYSTEM_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1   SystemCapability = 92
+	SystemCapability_SYSTEM_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1      SystemCapability = 102
+	// Pull request List/Search pages and workspace enrichment accept up to 50 items.
+	SystemCapability_SYSTEM_CAPABILITY_PULL_REQUEST_PAGING_50_V1         SystemCapability = 103
 	SystemCapability_SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1         SystemCapability = 90
 	SystemCapability_SYSTEM_CAPABILITY_TAILSCALE_CONNECTIONS_V1          SystemCapability = 93
 	SystemCapability_SYSTEM_CAPABILITY_SESSION_INBOX_READ_V1             SystemCapability = 89
@@ -36,9 +42,11 @@ const (
 	SystemCapability_SYSTEM_CAPABILITY_INLINE_WORKER_MODELS_V1           SystemCapability = 42
 	SystemCapability_SYSTEM_CAPABILITY_SESSION_STARTUP_PROGRESS_V1       SystemCapability = 74
 	// Owner/client waiting input movement and generation-bound pagination.
-	SystemCapability_SYSTEM_CAPABILITY_WAITING_QUEUE_ORDER_V1               SystemCapability = 75
-	SystemCapability_SYSTEM_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1         SystemCapability = 76
-	SystemCapability_SYSTEM_CAPABILITY_MANAGED_CODEX_FORK_V1                SystemCapability = 53
+	SystemCapability_SYSTEM_CAPABILITY_WAITING_QUEUE_ORDER_V1       SystemCapability = 75
+	SystemCapability_SYSTEM_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1 SystemCapability = 76
+	SystemCapability_SYSTEM_CAPABILITY_MANAGED_CODEX_FORK_V1        SystemCapability = 53
+	// Automatic session titles for protected ChatGPT subscription accounts.
+	SystemCapability_SYSTEM_CAPABILITY_MANAGED_CODEX_TITLES_V1              SystemCapability = 59
 	SystemCapability_SYSTEM_CAPABILITY_CODEX_APPROVAL_REVIEW_V1             SystemCapability = 55
 	SystemCapability_SYSTEM_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1         SystemCapability = 54
 	SystemCapability_SYSTEM_CAPABILITY_SIDECHAT_QUESTION_RETRY_V1           SystemCapability = 57
@@ -112,8 +120,11 @@ const (
 var (
 	SystemCapability_name = map[int32]string{
 		0:   "SYSTEM_CAPABILITY_UNSPECIFIED",
+		67:  "SYSTEM_CAPABILITY_CLAUDE_SERVER_LOGIN_V1",
+		68:  "SYSTEM_CAPABILITY_CLAUDE_MANAGED_EXECUTION_V1",
 		92:  "SYSTEM_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1",
 		102: "SYSTEM_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1",
+		103: "SYSTEM_CAPABILITY_PULL_REQUEST_PAGING_50_V1",
 		90:  "SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1",
 		93:  "SYSTEM_CAPABILITY_TAILSCALE_CONNECTIONS_V1",
 		89:  "SYSTEM_CAPABILITY_SESSION_INBOX_READ_V1",
@@ -125,6 +136,7 @@ var (
 		75:  "SYSTEM_CAPABILITY_WAITING_QUEUE_ORDER_V1",
 		76:  "SYSTEM_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1",
 		53:  "SYSTEM_CAPABILITY_MANAGED_CODEX_FORK_V1",
+		59:  "SYSTEM_CAPABILITY_MANAGED_CODEX_TITLES_V1",
 		55:  "SYSTEM_CAPABILITY_CODEX_APPROVAL_REVIEW_V1",
 		54:  "SYSTEM_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1",
 		57:  "SYSTEM_CAPABILITY_SIDECHAT_QUESTION_RETRY_V1",
@@ -186,8 +198,11 @@ var (
 	}
 	SystemCapability_value = map[string]int32{
 		"SYSTEM_CAPABILITY_UNSPECIFIED":                          0,
+		"SYSTEM_CAPABILITY_CLAUDE_SERVER_LOGIN_V1":               67,
+		"SYSTEM_CAPABILITY_CLAUDE_MANAGED_EXECUTION_V1":          68,
 		"SYSTEM_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1":            92,
 		"SYSTEM_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1":               102,
+		"SYSTEM_CAPABILITY_PULL_REQUEST_PAGING_50_V1":            103,
 		"SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1":            90,
 		"SYSTEM_CAPABILITY_TAILSCALE_CONNECTIONS_V1":             93,
 		"SYSTEM_CAPABILITY_SESSION_INBOX_READ_V1":                89,
@@ -199,6 +214,7 @@ var (
 		"SYSTEM_CAPABILITY_WAITING_QUEUE_ORDER_V1":               75,
 		"SYSTEM_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1":         76,
 		"SYSTEM_CAPABILITY_MANAGED_CODEX_FORK_V1":                53,
+		"SYSTEM_CAPABILITY_MANAGED_CODEX_TITLES_V1":              59,
 		"SYSTEM_CAPABILITY_CODEX_APPROVAL_REVIEW_V1":             55,
 		"SYSTEM_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1":         54,
 		"SYSTEM_CAPABILITY_SIDECHAT_QUESTION_RETRY_V1":           57,
@@ -3033,11 +3049,14 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\"V\n" +
 	"\x18GetBackupRestoreResponse\x12:\n" +
-	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\xc5\x1b\n" +
+	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\x86\x1d\n" +
 	"\x10SystemCapability\x12!\n" +
-	"\x1dSYSTEM_CAPABILITY_UNSPECIFIED\x10\x00\x12/\n" +
+	"\x1dSYSTEM_CAPABILITY_UNSPECIFIED\x10\x00\x12,\n" +
+	"(SYSTEM_CAPABILITY_CLAUDE_SERVER_LOGIN_V1\x10C\x121\n" +
+	"-SYSTEM_CAPABILITY_CLAUDE_MANAGED_EXECUTION_V1\x10D\x12/\n" +
 	"+SYSTEM_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1\x10\\\x12,\n" +
 	"(SYSTEM_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1\x10f\x12/\n" +
+	"+SYSTEM_CAPABILITY_PULL_REQUEST_PAGING_50_V1\x10g\x12/\n" +
 	"+SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1\x10Z\x12.\n" +
 	"*SYSTEM_CAPABILITY_TAILSCALE_CONNECTIONS_V1\x10]\x12+\n" +
 	"'SYSTEM_CAPABILITY_SESSION_INBOX_READ_V1\x10Y\x12,\n" +
@@ -3048,7 +3067,8 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"-SYSTEM_CAPABILITY_SESSION_STARTUP_PROGRESS_V1\x10J\x12,\n" +
 	"(SYSTEM_CAPABILITY_WAITING_QUEUE_ORDER_V1\x10K\x122\n" +
 	".SYSTEM_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1\x10L\x12+\n" +
-	"'SYSTEM_CAPABILITY_MANAGED_CODEX_FORK_V1\x105\x12.\n" +
+	"'SYSTEM_CAPABILITY_MANAGED_CODEX_FORK_V1\x105\x12-\n" +
+	")SYSTEM_CAPABILITY_MANAGED_CODEX_TITLES_V1\x10;\x12.\n" +
 	"*SYSTEM_CAPABILITY_CODEX_APPROVAL_REVIEW_V1\x107\x122\n" +
 	".SYSTEM_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1\x106\x120\n" +
 	",SYSTEM_CAPABILITY_SIDECHAT_QUESTION_RETRY_V1\x109\x12-\n" +

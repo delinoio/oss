@@ -3,6 +3,34 @@
 .tailscale-access {
   min-width: 0;
 }
+.tailscale-access {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 24px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.tailscale-access > * {
+  margin: 0;
+}
+.tailscale-access h2,
+.tailscale-devices h2 {
+  font-size: 18px;
+  line-height: 1.5;
+}
+.tailscale-devices {
+  margin-top: 24px;
+}
+.tailscale-devices h2 {
+  margin: 0 0 8px;
+}
+.tailscale-devices p,
+.tailscale-access p {
+  font-size: 14px;
+}
 .tailscale-list {
   list-style: none;
   padding: 0;
@@ -49,4 +77,8 @@
   .tailscale-actions {
     width: 100%;
   }
+}
+.tailscale-access .problem {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }

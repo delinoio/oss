@@ -65,3 +65,40 @@ ORDER BY j.id LIMIT ?`, after, account, account, account, limit)
 	}
 	return records, storageError(rows.Err())
 }
+
+// AccountQueuedManagedTitleJobs reads only queued protected ChatGPT title jobs
+// whose frozen assignment selected the account. Claimed and finished titles are
+// excluded: a claimed title owns its generation and settles through its own
+// custody, and API-account titles carry no managed authority.
+func (t *Tx) AccountQueuedManagedTitleJobs(account, after domain.ID, limit int) ([]Record, error) {
+	if err := account.Validate(); err != nil {
+		return nil, err
+	}
+	if after != "" {
+		if err := after.Validate(); err != nil {
+			return nil, err
+		}
+	}
+	if limit < 1 || limit > MaxPage {
+		return nil, domain.Fail(domain.InvalidArgument, "Invalid managed title cancellation page bound.", "Use a bounded account-owned page.")
+	}
+	rows, err := t.tx.QueryContext(t.ctx, `SELECT e.id,e.kind,e.revision,e.session_id,e.project_id,e.body,e.created_at,e.updated_at
+FROM jobs j JOIN entities e ON e.id=j.id
+WHERE j.id>? AND j.state='queued'
+AND json_extract(e.body,'$.type')=? AND json_extract(e.body,'$.input.managed') IS NOT NULL
+AND json_extract(e.body,'$.input.account_id')=?
+ORDER BY j.id LIMIT ?`, after, domain.GenerateSessionTitleJob, account, limit)
+	if err != nil {
+		return nil, storageError(err)
+	}
+	defer rows.Close()
+	records := []Record{}
+	for rows.Next() {
+		record, err := scan(rows)
+		if err != nil {
+			return nil, storageError(err)
+		}
+		records = append(records, record)
+	}
+	return records, storageError(rows.Err())
+}

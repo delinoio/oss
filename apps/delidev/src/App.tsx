@@ -32,6 +32,7 @@ import {
 } from "./entrance-motion";
 import type { UsageEntry } from "./usage-entry";
 import { LocalConnectionPresentationProvider } from "./local-connection-presentation";
+import { ConnectionEpochProvider } from "./connection-epoch";
 import {
   useCallback,
   useEffect,
@@ -94,6 +95,7 @@ import { SessionForkProvider } from "./session-fork";
 import { SessionStorageProvider } from "./session-storage";
 import { PRWorkflowProvider } from "./pr-workflow";
 import { ProjectCreationDialog } from "./project-creation";
+import type { PublishRunnerTailscaleSlots } from "./runner-tailscale-slots";
 import {
   ShortcutProvider,
   useShortcutHelp,
@@ -113,6 +115,7 @@ function Shell({
   connectionReady,
   connectionSettings,
   appInformationSettings,
+  runnerTailscale,
   connectionTarget,
   onConnectionHelp,
   readLocalWorker,
@@ -129,6 +132,7 @@ function Shell({
   connectionReady: boolean;
   connectionSettings?: ReactNode;
   appInformationSettings?: ReactNode;
+  runnerTailscale?: PublishRunnerTailscaleSlots;
   connectionTarget?: HTMLElement;
   onConnectionHelp?: (target: HTMLElement | undefined) => void;
   readLocalWorker?: ReadLocalWorkerProof;
@@ -918,6 +922,7 @@ function Shell({
                         readLocalWorker={readLocalWorker}
                         connectionSettings={connectionSettings}
                         appInformationSettings={appInformationSettings}
+                        runnerTailscale={runnerTailscale}
                         pairingAuthority={pairingAuthority}
                         currentDeviceId={currentDeviceId}
                         controlLocalWorker={controlLocalWorker}
@@ -947,6 +952,7 @@ export function App({
   localServer,
   connectionSettings,
   appInformationSettings,
+  runnerTailscale,
   connectionTarget,
   onConnectionHelp,
   connectionReady = true,
@@ -966,6 +972,7 @@ export function App({
   localServer?: ReactNode;
   connectionSettings?: ReactNode;
   appInformationSettings?: ReactNode;
+  runnerTailscale?: PublishRunnerTailscaleSlots;
   connectionTarget?: HTMLElement;
   onConnectionHelp?: (target: HTMLElement | undefined) => void;
   connectionReady?: boolean;
@@ -994,40 +1001,47 @@ export function App({
     <SidebarPreferenceBoundary>
       <TransportProvider transport={transport}>
         <QueryClientProvider key={connection.id} client={client}>
-          <ProductIdentityProvider>
-            <NotificationProvider>
-              <MutationIntents>
-                <SubscriptionQuotaAutoRefresh ready={connectionReady} />
-                <SessionTabsProvider>
-                  <SessionSubmissionsProvider>
-                    <ImageDraftProvider>
-                      <PRWorkflowProvider>
-                        <ShortcutProvider>
-                          <SessionNameEditorProvider>
-                            <SessionInboxReadBoundary ready={connectionReady}>
-                              <Shell
-                                connectionReady={connectionReady}
-                                pairingAuthority={pairingAuthority}
-                                currentDeviceId={currentDeviceId}
-                                controlLocalWorker={controlLocalWorker}
-                                chooseRepositoryFolder={chooseRepositoryFolder}
-                                connectionSettings={connectionSettings}
-                                appInformationSettings={appInformationSettings}
-                                connectionTarget={connectionTarget}
-                                onConnectionHelp={onConnectionHelp}
-                                localServer={localServer}
-                                readLocalWorker={readLocalWorker}
-                              />
-                            </SessionInboxReadBoundary>
-                          </SessionNameEditorProvider>
-                        </ShortcutProvider>
-                      </PRWorkflowProvider>
-                    </ImageDraftProvider>
-                  </SessionSubmissionsProvider>
-                </SessionTabsProvider>
-              </MutationIntents>
-            </NotificationProvider>
-          </ProductIdentityProvider>
+          <ConnectionEpochProvider epoch={connectionEpoch}>
+            <ProductIdentityProvider>
+              <NotificationProvider>
+                <MutationIntents>
+                  <SubscriptionQuotaAutoRefresh ready={connectionReady} />
+                  <SessionTabsProvider>
+                    <SessionSubmissionsProvider>
+                      <ImageDraftProvider>
+                        <PRWorkflowProvider>
+                          <ShortcutProvider>
+                            <SessionNameEditorProvider>
+                              <SessionInboxReadBoundary ready={connectionReady}>
+                                <Shell
+                                  connectionReady={connectionReady}
+                                  pairingAuthority={pairingAuthority}
+                                  currentDeviceId={currentDeviceId}
+                                  controlLocalWorker={controlLocalWorker}
+                                  chooseRepositoryFolder={
+                                    chooseRepositoryFolder
+                                  }
+                                  connectionSettings={connectionSettings}
+                                  appInformationSettings={
+                                    appInformationSettings
+                                  }
+                                  runnerTailscale={runnerTailscale}
+                                  connectionTarget={connectionTarget}
+                                  onConnectionHelp={onConnectionHelp}
+                                  localServer={localServer}
+                                  readLocalWorker={readLocalWorker}
+                                />
+                              </SessionInboxReadBoundary>
+                            </SessionNameEditorProvider>
+                          </ShortcutProvider>
+                        </PRWorkflowProvider>
+                      </ImageDraftProvider>
+                    </SessionSubmissionsProvider>
+                  </SessionTabsProvider>
+                </MutationIntents>
+              </NotificationProvider>
+            </ProductIdentityProvider>
+          </ConnectionEpochProvider>
         </QueryClientProvider>
       </TransportProvider>
     </SidebarPreferenceBoundary>

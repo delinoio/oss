@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { create } from "@bufbuild/protobuf";
-import { createRouterTransport } from "@connectrpc/connect";
+import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -12,6 +12,7 @@ import {
 } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import {
+  ConfigurationService,
   EntityKind,
   ResourceSchema,
   ResourceService,
@@ -20,6 +21,7 @@ import {
 import { ProjectSettingsMenu } from "./project-settings-menu";
 import { SessionRowActionsProvider } from "./session-row-actions";
 import { encode } from "./documents";
+import { MutationIntents } from "./mutation";
 beforeEach(() =>
   vi.stubGlobal(
     "ResizeObserver",
@@ -30,17 +32,38 @@ beforeEach(() =>
     },
   ),
 );
-function mount(active = true) {
+function mount(
+  active = true,
+  saveConfiguration: (request: {
+    id: string;
+    documentJson: Uint8Array;
+    schemaVersion: number;
+  }) => unknown = () => {
+    throw new ConnectError("unexpected save", Code.Internal);
+  },
+) {
   const ids = [newRequestId(), newRequestId()],
+    repositoryId = newRequestId(),
+    repository = create(ResourceSchema, {
+      id: repositoryId,
+      kind: EntityKind.REPOSITORY,
+      revision: 1n,
+      schemaVersion: 1,
+      documentJson: encode({
+        name: "Repository",
+        remote_url: "https://github.com/delinoio/oss.git",
+      }),
+    }),
     reads: string[] = [],
     toggle = vi.fn(),
     createSession = vi.fn();
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  const transport = createRouterTransport((router) =>
+  const transport = createRouterTransport((router) => {
     router.service(ResourceService, {
       getResource: (request) => {
+        if (request.id === repositoryId) return { resource: repository };
         reads.push(request.id);
         return {
           resource: create(ResourceSchema, {
@@ -50,37 +73,46 @@ function mount(active = true) {
             schemaVersion: 1,
             documentJson: encode({
               name: "Repeated",
-              repositories: [],
+              repositories: [repositoryId],
+              primary_repository: repositoryId,
               defaults: {},
             }),
           }),
         };
       },
-      listResources: () => ({ resources: [] }),
-    }),
-  );
+      listResources: (request) => ({
+        resources:
+          request.filter?.kind === EntityKind.REPOSITORY ? [repository] : [],
+      }),
+    });
+    router.service(ConfigurationService, {
+      saveConfiguration: saveConfiguration as never,
+    });
+  });
   render(
     <QueryClientProvider client={client}>
       <TransportProvider transport={transport}>
-        <SessionRowActionsProvider active={active}>
-          {ids.map((id) => (
-            <section key={id} className="sidebar-project-group">
-              <button
-                className="sidebar-project-row"
-                aria-expanded="false"
-                onClick={toggle}
-              >
-                Repeated
-              </button>
-              <button onClick={createSession}>+</button>
-              <ProjectSettingsMenu
-                projectId={id}
-                label="Repeated"
-                active={active}
-              />
-            </section>
-          ))}
-        </SessionRowActionsProvider>
+        <MutationIntents>
+          <SessionRowActionsProvider active={active}>
+            {ids.map((id) => (
+              <section key={id} className="sidebar-project-group">
+                <button
+                  className="sidebar-project-row"
+                  aria-expanded="false"
+                  onClick={toggle}
+                >
+                  Repeated
+                </button>
+                <button onClick={createSession}>+</button>
+                <ProjectSettingsMenu
+                  projectId={id}
+                  label="Repeated"
+                  active={active}
+                />
+              </section>
+            ))}
+          </SessionRowActionsProvider>
+        </MutationIntents>
       </TransportProvider>
     </QueryClientProvider>,
   );
@@ -130,4 +162,50 @@ it("inactive triggers cannot open menus or perform reads", () => {
   fireEvent.click(trigger);
   expect(screen.queryByRole("menu")).toBeNull();
   expect(reads).toEqual([]);
+});
+
+async function openAndRename(name: string): Promise<HTMLElement> {
+  const trigger = screen.getAllByRole("button", { name: /Project actions/ })[0];
+  fireEvent.click(trigger);
+  fireEvent.click(screen.getByRole("menuitem", { name: "Project settings" }));
+  const field = await screen.findByRole("textbox", { name: "Name" });
+  fireEvent.change(field, { target: { value: name } });
+  fireEvent.click(screen.getByRole("button", { name: /^Save/ }));
+  return trigger;
+}
+it("refreshes active navigation queries after a successful save and restores focus", async () => {
+  const save = vi.fn((request: { id: string; schemaVersion: number }) => ({
+    resource: create(ResourceSchema, {
+      id: request.id,
+      kind: EntityKind.PROJECT,
+      revision: 2n,
+      schemaVersion: request.schemaVersion,
+      documentJson: encode({
+        name: "Renamed",
+        repositories: [],
+        defaults: {},
+      }),
+    }),
+  }));
+  const { client } = mount(true, save);
+  const invalidate = vi.spyOn(client, "invalidateQueries");
+  const trigger = await openAndRename("Renamed");
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(invalidate).toHaveBeenCalledWith({ refetchType: "active" });
+  expect(document.activeElement).toBe(trigger);
+});
+it("does not invalidate navigation or close the dialog when a save fails", async () => {
+  const save = vi.fn(() => {
+    throw new ConnectError("rejected", Code.FailedPrecondition);
+  });
+  const { client } = mount(true, save);
+  const invalidate = vi.spyOn(client, "invalidateQueries");
+  await openAndRename("Renamed");
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+  await act(async () => {
+    await Promise.resolve();
+  });
+  expect(screen.getByRole("dialog", { name: "Project settings" })).toBeTruthy();
+  expect(invalidate).not.toHaveBeenCalled();
 });

@@ -66,7 +66,7 @@ func (s *Service) SetAutomaticResetCreditConsent(ctx context.Context, req *conne
 // promote its quota metadata into standing-consent spending authority.
 func (s *Service) originalQuotaBlock(tx *store.Tx, account domain.ID, a domain.Account, block domain.SubscriptionQuotaBlock) error {
 	st := a.Subscription
-	if block.Validate() != nil || !quotaAccountReady(a) || st.Lease == nil || st.Lease.Action != domain.SubscriptionExecute || st.Lease.Epoch != s.subscriptionServerEpoch() || st.Lease.Generation != st.Generation || st.Lease.ForkRevision != 0 {
+	if block.Validate() != nil || !quotaAccountReady(a) || st.Lease == nil || st.Lease.Action != domain.SubscriptionExecute || st.Lease.Epoch != s.subscriptionServerEpoch() || st.Lease.Generation != st.Generation || st.Lease.ForkRevision != 0 || st.Lease.TitleRevision != 0 {
 		return subscriptionDenied()
 	}
 	lease := st.Lease

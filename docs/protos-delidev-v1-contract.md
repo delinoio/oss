@@ -535,7 +535,7 @@ values. Regenerate all bindings from this combined canonical schema.
 
 ### Protocol integration
 
-- DeliDev remote-first repositories record System 37 `REMOTE_REPOSITORIES_V1` and Worker 19 `REMOTE_WORKSPACE_CLONE_V1` in the owning feature PR. Preserve System 31/32 and Worker 18 as the separate immediate-clone/listing boundary; reservations alone grant no support or Git authority.
+- DeliDev remote-first repositories use System 37 `REMOTE_REPOSITORIES_V1` and Worker 19 `REMOTE_WORKSPACE_CLONE_V1`, allocated in the ledger (which does not advertise support) and recorded in the owning feature PR. Preserve System 31/32 and Worker 18 as the separate immediate-clone/listing boundary; capability support must be negotiated before use and grants no Git authority beyond the documented clone.
 
 - Agent Worker ordered source routes follow the catalog, desktop, protocol and sessions contracts. Main reservation the originating change owns System capability 36 and SaveAgentWorkerRequest.route_models field 5; preserve capability 35. Keep schema-3 routes exclusive with legacy fields, all models/accounts referenced and saved atomically, per-source routing state updated only with a successful first claim, confirmed-exhaustion-only fallback and observed-recovery preference for later new sessions. Preserve immutable executions, old-client write protection and portable v1/v2/v3 compatibility; add no SQLite migration.
 
@@ -624,6 +624,7 @@ Record implementation status and validation results in pull requests, issues and
 - DeliDev `SystemService.GetOverview` is owner/paired-client-only. Preserve exact uint64 ownership/request/Worker counts, observation time and server UTC usage boundaries; no resource bodies, credentials, native identities or paths enter this presentation response. Worker-compatible `GetStatus` stays separate. Connected Workers require independently sampled stream presence plus current database authorization and a fresh lease; observations never authorize execution or cleanup.
 
 - DeliDev automatic titles add an opt-in session name mode and typed server capability independently of the typed Worker capability. Keep `WatchAuxiliaryWork` isolated from ordinary `WatchWork`, preserve exact current generated Go/TypeScript bindings, and follow `cmds-delidev-session-titles-contract.md` for compatibility and ownership rules.
+- Protected ChatGPT titles add System 59 `MANAGED_CODEX_TITLES_V1` and Worker 32 `MANAGED_CODEX_TITLES_V1` (recorded in `allocations.json`). They are negotiated independently of `AUTOMATIC_TITLES_V1`/`AUTOMATIC_TITLES_CODEX_V1`, reuse `TakeSubscription`/`FinishSubscription` with the EXECUTE action and add no RPC, field or migration. Older peers receive no managed assignment. Regenerate Go and TypeScript bindings with `pnpm proto:generate`.
 
 - `protos/delidev/v1` and `protos/gen/go/delidev/v1`: DeliDev authenticated Connect schemas and tool-owned Go bindings; follow `protos-delidev-v1-contract.md`. Account credentials are bounded write-only inputs; an accepted disconnect with failed cleanup returns the current account and a sanitized typed cleanup problem, preserving its original retry identity. Account validation returns the accepted sanitized non-inference observation with current account metadata; replay cannot repeat provider requests or grant readiness from an old connection.
 
@@ -1127,7 +1128,7 @@ deletion enforcement, historical quarantine, bounds and recovery evidence limits
 
 `SystemService.GetUserService` and `ControlUserService` add owner/paired-client-only, closed typed kind/action/state messages and `USER_SERVICES_V1`. Preserve exact uint64 revisions, UUID-v7 request/installation identity, actor-bound current-state receipts and correlation. The target is the server computer's own server or fixed local Worker scope; no caller path, remote Worker, native PID or credential field exists. Stop acceptance and joined controller cleanup are independent. See the [user-service contract](cmds-delidev-user-services-contract.md).
 
-System capability wire values retain `AUTOMATIC_TITLES_V1 = 1`, `SESSION_FORWARDING_V1 = 2`, `USER_SERVICES_V1 = 3`, `NATIVE_ACCOUNTING_V1 = 4`, `STOPPED_CODEX_ACCOUNT_SWITCH_V1 = 5`, `SERVER_OUTBOUND_PROXY_V1 = 6`, `MANAGED_BACKUP_RESTORE_V1 = 7`, `PERMANENT_SESSION_DELETION_V1 = 9`, `WORKSPACE_STORAGE_V1 = 11` and `CODEX_SESSION_FORK_V1 = 13`. Managed restore, native accounting, workspace storage and same-account Codex Fork use their original reserved numbers. `GetStatus` advertises each implemented capability independently. Preserve these distinct meanings and regenerate both language bindings from the schema.
+System capability wire values retain `AUTOMATIC_TITLES_V1 = 1`, `SESSION_FORWARDING_V1 = 2`, `USER_SERVICES_V1 = 3`, `NATIVE_ACCOUNTING_V1 = 4`, `STOPPED_CODEX_ACCOUNT_SWITCH_V1 = 5`, `SERVER_OUTBOUND_PROXY_V1 = 6`, `MANAGED_BACKUP_RESTORE_V1 = 7`, `PERMANENT_SESSION_DELETION_V1 = 9`, `WORKSPACE_STORAGE_V1 = 11` and `CODEX_SESSION_FORK_V1 = 13`. `MANAGED_CODEX_TITLES_V1` uses System 59 / Worker 32. Managed restore, native accounting, workspace storage and same-account Codex Fork use their original reserved numbers. `GetStatus` advertises each implemented capability independently. Preserve these distinct meanings and regenerate both language bindings from the schema.
 
 `GetStatusResponse.production_root_ready = 9` is a presence-bearing `optional bool` recorded in `protos/delidev/allocations.json` as a reservation owned by issue 3069, not in the immutable baseline. The server sets it from `updates.ProductionReady()` on every status response (false while the repository trust root is unset); omission identifies a legacy server. It does not replace or alter the `SIGNED_UPDATES_V1` capability, and both the Go and TypeScript generated clients regenerate it through the existing buf workflow.
 
@@ -1536,6 +1537,10 @@ projections follow the closed states and private/public separation in the
 [connections contract](cmds-delidev-connections-contract.md#tailscale-connections).
 No new SQLite entity or migration is introduced.
 
+## Pull request paging allocation
+
+System `PULL_REQUEST_PAGING_50_V1 = 103` independently negotiates PR List/Search `page_size` up to 50 through `QueryRepositoryIntegration` JSON and up to 50 accepted `GetPullRequestWorkspace.seed_numbers`. It adds no message, field, RPC, Worker allocation, feature flag or database migration, is independent of `PULL_REQUEST_WORKSPACE_V1 = 90`, and the server advertises it from `GetStatus`. Unsupported peers keep the 20-item limits and the desktop sends no 50-item request. Number 103 follows `CODEX_DYNAMIC_TOOLS_V1 = 102`; reconcile against current allocations before merge.
+
 ## Pull request workspace read allocation
 
 System `PULL_REQUEST_WORKSPACE_V1 = 90` independently negotiates the implemented
@@ -1586,3 +1591,7 @@ System `SERVER_SUBSCRIPTION_RESET_CREDITS_V2 = 101` is recorded and activated in
 ## Subscription cleanup recovery allocation
 
 System `SUBSCRIPTION_CLEANUP_RECOVERY_V1 = 64` independently negotiates the expansion of `ConfigurationService.DeleteConfiguration` to one terminal original ChatGPT server LOGOUT whose only remaining work is protected credential cleanup. It adds no message, field or RPC and preserves System `FAILED_SUBSCRIPTION_CLEANUP_V1 = 41`. The issue-planned value 90 was already allocated to `PULL_REQUEST_WORKSPACE_V1`, so 64 is recorded in `protos/delidev/allocations.json`. Servers advertise 64 together with 41; clients send no expanded deletion without 64. The private cleanup child gains version 3 with closed server-LOGOUT target fields and checkpoints; no database migration is added and older servers reject the unknown child version as unavailable. See the [subscription contract](cmds-delidev-subscription-contract.md#terminal-original-server-logout-cleanup-recovery) for ownership, proof and replay semantics.
+
+## Server-owned Claude token capabilities
+
+System `CLAUDE_SERVER_LOGIN_V1 = 67`, System `CLAUDE_MANAGED_EXECUTION_V1 = 68` and Worker `MANAGED_CLAUDE_EXECUTION_V1 = 41` are reserved in `allocations.json`, declared, advertised and regenerated for Go and TypeScript. They are independent of System 38 and 30 and Worker 20. No message, field or RPC is added: the existing SubscriptionService request, progress, cancel, code submission, protected Take and Finish carry the server-owned flow, and the Take response bundle carries the sealed envelope only to a Worker advertising 41. Unsupported servers show update guidance; unsupported Workers affect execution eligibility only. No SQLite migration is added.

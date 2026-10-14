@@ -18,6 +18,7 @@ export enum DocumentationSiteId {
   Clibox = "clibox",
   Pnport = "pnport",
   ReactForge = "react-forge",
+  Bundlewhy = "bundlewhy",
 }
 
 export interface DocumentationSite {
@@ -66,6 +67,11 @@ export const DOCUMENTATION_SITES = [
     id: DocumentationSiteId.ReactForge,
     label: "React Forge",
     href: "/react-forge/",
+  },
+  {
+    id: DocumentationSiteId.Bundlewhy,
+    label: "bundlewhy",
+    href: "/bundlewhy/",
   },
 ] as const satisfies readonly DocumentationSite[];
 

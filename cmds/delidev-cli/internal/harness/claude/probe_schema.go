@@ -139,6 +139,46 @@ func validateInitializeMode(raw []byte, permission, apiKeySource string, subscri
 			}
 		}
 	}
+	return validateInitializeCatalog(result)
+}
+
+// managedTokenSource is the only token source a server-owned Claude setup token
+// may report. The pinned native version reports it only for the environment
+// token and omits email, organization and subscription metadata.
+const managedTokenSource = "CLAUDE_CODE_OAUTH_TOKEN"
+
+// validateInitializeManagedToken accepts only the environment OAuth token
+// profile. Token presence alone is never readiness: the native process must
+// report that source, no API-key source and no profile identity metadata.
+func validateInitializeManagedToken(raw []byte, permission string) error {
+	var result initializeResult
+	if domain.Decode(raw, &result) != nil || result.Commands == nil ||
+		result.Account == nil || result.Account.APIProvider != "firstParty" ||
+		result.PID <= 0 || result.CurrentPermissionMode != permission || result.OutputStyle != "default" ||
+		!explicitFalse(result.RemoteControlAutoEnable) || !explicitFalse(result.RemoteControlAutoOnByDefault) || !explicitFalse(result.IDERCAutoEnableGate) ||
+		result.FastModeState != "off" || result.FastModeDisabledReason != "sdk_opt_in_required" {
+		return incompatible()
+	}
+	account := result.Account
+	if account.TokenSource != managedTokenSource || account.APIKeySource != "" || account.Email != nil || account.Organization != nil || account.SubscriptionType != nil {
+		return incompatible()
+	}
+	if err := validateNativeCommands(result.Commands); err != nil {
+		return err
+	}
+	var fields struct {
+		Account map[string]json.RawMessage `json:"account"`
+	}
+	_ = json.Unmarshal(raw, &fields)
+	for _, key := range []string{"apiKeySource", "email", "organization", "subscriptionType"} {
+		if _, declared := fields.Account[key]; declared {
+			return incompatible()
+		}
+	}
+	return validateInitializeCatalog(result)
+}
+
+func validateInitializeCatalog(result initializeResult) error {
 	if !uniqueText(result.AvailableOutputStyles, 32, 128) || !slices.Contains(result.AvailableOutputStyles, result.OutputStyle) ||
 		len(result.Agents) == 0 || len(result.Agents) > 64 || len(result.Models) == 0 || len(result.Models) > 256 {
 		return incompatible()

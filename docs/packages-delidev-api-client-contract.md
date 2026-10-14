@@ -45,6 +45,7 @@ Generated `ListResourcesRequest` exposes optional account-only provider and acco
 - `ActivityQuery` remains a generated compatibility export under the [Activity retirement contract](cmds-delidev-activity-contract.md). Authorized owner and current paired-client requests receive typed `UNSUPPORTED` with Connect `Unimplemented`; missing, invalid or revoked credentials and Worker actors retain their authentication or permission refusal. Retain original protocol numbers and generated declarations without exposing live Activity or source inspection. `ActivityCapability.PR_HANDLING_V1` is a reserved/generated compatibility declaration only; retired `ListActivity` returns `Unimplemented` without a response and cannot advertise it. Active manual PR fixes negotiate `PullRequestFixProfile.CODEX_GIT_V1` through `GetPullRequestFixCapabilities`. Independent PR handling retains exact identity strings, bigint revisions, content-version references and separate dismissal, attempt and verified outcomes.
 - `UsageQuery` exports generated summary/current-price/historical-price descriptors and the explicit price mutation. Preserve nullable decimal rates, exact amount/counter strings, separate currencies and token-basis versus native coverage. The additive summary request supports explicit day granularity and IANA zone; optional daily/model analytics are server-owned results from the same snapshot as existing totals. Only the server computes historical estimates and Other-model totals; no client-side aggregation or inferred actual cost.
 - Automatic session creation uses generated `SessionQuery.createSession` with explicit `name_mode: "automatic"` and no `name`. `SystemQuery.getStatus` exposes the typed automatic-title server capability; UI gating must use that field rather than a version guess. Session title owner/state/reason remain server-owned `Resource.document_json` fields.
+- Generated `SystemCapability.MANAGED_CODEX_TITLES_V1` (59) and `WorkerCapability.MANAGED_CODEX_TITLES_V1` (32) describe protected ChatGPT title support. Consumers gate creation only on `AUTOMATIC_TITLES_V1`; managed support is server-decided, and the client never infers title state or reason from either capability. Regenerate bindings from the schema, never by hand.
 - `createDeliDevTransport` takes an explicit server origin and caller-owned fresh token supplier. It uses binary Connect POST, server streaming and no automatic mutation retries. `newRequestId` creates UUID-v7 mutation identities; callers retain the complete original request on uncertain retries.
 - `clientFailure` preserves versioned Go problem classifications, guidance and valid correlation IDs; untyped browser/proxy errors never disclose raw exception contents.
 - `synchronizeResources` is a read-only async iterator over one resource-kind/session/project scope. It atomically replaces the consumer's scope with a coherent complete server snapshot, then emits indexed current resources or removals. It never substitutes partial lists for snapshots. The existing server snapshot limit is 200 resources and its byte budget; larger histories require a separately paginated presentation and cannot be claimed complete by this helper.
@@ -497,6 +498,10 @@ the [Tailscale protocol contract](protos-delidev-v1-contract.md#tailscale-connec
 Closed bounded JSON projections retain public observation metadata only; private
 keys, decrypted grants and protected Worker inputs stay Go-owned.
 
+## Pull request paging capability
+
+The generated `SystemCapability` enum exposes `PULL_REQUEST_PAGING_50_V1 = 103`. Desktop clients read it from `SystemQuery.getStatus` and enable the 50 option of the Pull requests page-size select only when it is advertised; they never send a 50-item List/Search or 50-seed workspace request without it. Regenerate bindings with `pnpm proto:generate`; no hand-written client export is added.
+
 ## Pull request workspace client
 
 The generated IntegrationQuery client exposes independently negotiated workspace,
@@ -532,3 +537,7 @@ grant no dispatch, media retrieval, reply retry or continuation authority.
 ## Server reset credits V2 negotiation
 
 The generated System enum includes `SERVER_SUBSCRIPTION_RESET_CREDITS_V2 = 101`. Clients require it before a new omitted-machine reset-credit consumption and never send a Runner selector with that request. Servers without it receive existing update guidance. Historical System 19 and 49 capabilities remain only for reconciling operations already accepted on those lanes. Regenerate both bindings from the reconciled schema; no new RPC or Worker capability exists.
+
+## Server-owned Claude token client
+
+The generated Go and TypeScript bindings expose `SystemCapability.CLAUDE_SERVER_LOGIN_V1`, `SystemCapability.CLAUDE_MANAGED_EXECUTION_V1` and `WorkerCapability.MANAGED_CLAUDE_EXECUTION_V1`. The desktop starts a Runner-free Claude sign-in only when the server status advertises the first; it omits `machineId` from the request, treats the account document field `subscription.claude_credential = "server-token"` as the managed mode and never receives the token in any response.

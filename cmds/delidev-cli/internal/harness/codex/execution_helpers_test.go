@@ -323,7 +323,7 @@ func TestExecutionHelpersRejectHardLinkedAlias(t *testing.T) {
 			if err := h.retire(home, h.owner, h.native); domain.SafeError(err).Code != domain.RecoveryRequired {
 				t.Fatal("hard-linked captured alias was accepted as removal", err)
 			}
-			requireHelperEntries(t, directory, "second-name", ".lock", executionHelperNames[1], executionHelperNames[2])
+			requireHelperEntries(t, directory, append([]string{"second-name", ".lock"}, executionHelperNames[1:]...)...)
 		})
 	}
 }
@@ -415,5 +415,109 @@ func TestFinishFailedStartupGatesRetirementOnJoinedCapturedProof(t *testing.T) {
 		if err := finishFailedStartup("", domain.CodexProfile, original, nil, nil, "", domain.NewID(), process.Process{}); err != error(original) {
 			t.Fatal("missing helpers changed the original error", err)
 		}
+	})
+}
+
+// useExecutionHelperProfile swaps the process-wide alias set so the Linux
+// profile is exercised on every Unix host. Tests that call it must not run in
+// parallel.
+func useExecutionHelperProfile(t *testing.T, goos string) {
+	t.Helper()
+	previous := executionHelperNames
+	executionHelperNames = executionHelperNamesFor(goos)
+	t.Cleanup(func() { executionHelperNames = previous })
+}
+
+func TestExecutionHelperNamesMatchPinnedStartupPerOS(t *testing.T) {
+	// Pinned openai/codex arg0 startup: Unix aliases everywhere, plus the Linux
+	// sandbox alias on Linux only. Windows creates .bat scripts instead.
+	unix := []string{"apply_patch", "applypatch", "codex-execve-wrapper"}
+	for goos, want := range map[string][]string{
+		"darwin":  unix,
+		"freebsd": unix,
+		"linux":   append(append([]string{}, unix...), "codex-linux-sandbox"),
+	} {
+		got := executionHelperNamesFor(goos)
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Fatalf("%s helper aliases = %v, want %v", goos, got, want)
+		}
+	}
+	if len(executionHelperNamesFor("linux")) > helperDirectoryLimit {
+		t.Fatal("alias set exceeds the bounded directory inventory")
+	}
+	if !isExecutionHelperName("apply_patch") || isExecutionHelperName("foreign-alias") {
+		t.Fatal("alias name predicate drifted")
+	}
+}
+
+func TestExecutionHelpersRetireLinuxSandboxAlias(t *testing.T) {
+	useExecutionHelperProfile(t, "linux")
+	for _, nativeRemoved := range []bool{false, true} {
+		t.Run(strconv.FormatBool(nativeRemoved), func(t *testing.T) {
+			h, home, directory := captureHelperFixture(t)
+			if len(h.aliases) != 4 {
+				t.Fatal("startup capture did not record the Linux sandbox alias", len(h.aliases))
+			}
+			requireHelperEntries(t, directory, "codex-linux-sandbox")
+			if nativeRemoved {
+				if err := os.RemoveAll(directory); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := h.retire(home, h.owner, h.native); err != nil {
+				t.Fatal(err)
+			}
+			if !nativeRemoved {
+				for _, name := range executionHelperNames {
+					if _, err := os.Lstat(filepath.Join(directory, name)); !errors.Is(err, os.ErrNotExist) {
+						t.Fatal("original alias remains", name, err)
+					}
+				}
+				requireHelperEntries(t, directory, ".lock")
+			}
+		})
+	}
+}
+
+func TestExecutionHelpersRejectChangedLinuxSandboxAlias(t *testing.T) {
+	useExecutionHelperProfile(t, "linux")
+	sandbox := func(directory string) string { return filepath.Join(directory, "codex-linux-sandbox") }
+	t.Run("missing-at-capture", func(t *testing.T) {
+		h, _, directory, _ := helperFixture(t)
+		if err := os.Remove(sandbox(directory)); err != nil {
+			t.Fatal(err)
+		}
+		if err := h.capture(process.Process{OwnerID: h.owner, PID: 1, Birth: "synthetic", ScopeDir: filepath.Join(h.home, "original-process")}); domain.SafeError(err).Code != domain.RecoveryRequired {
+			t.Fatal("Linux startup without the sandbox alias was admitted", err)
+		}
+	})
+	t.Run("retargeted-after-capture", func(t *testing.T) {
+		h, home, directory := captureHelperFixture(t)
+		if err := os.Remove(sandbox(directory)); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(filepath.Join(t.TempDir(), "foreign-target"), sandbox(directory)); err != nil {
+			t.Fatal(err)
+		}
+		if err := h.retire(home, h.owner, h.native); domain.SafeError(err).Code != domain.RecoveryRequired {
+			t.Fatal("replaced sandbox alias was accepted as removal", err)
+		}
+		// Validation precedes the first unlink, so every original remains.
+		requireHelperEntries(t, directory, executionHelperNames[:]...)
+	})
+	t.Run("renamed-after-capture", func(t *testing.T) {
+		h, home, directory := captureHelperFixture(t)
+		for _, name := range executionHelperNames[:3] {
+			if err := os.Remove(filepath.Join(directory, name)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := os.Rename(sandbox(directory), filepath.Join(directory, "renamed-sandbox")); err != nil {
+			t.Fatal(err)
+		}
+		if err := h.retire(home, h.owner, h.native); domain.SafeError(err).Code != domain.RecoveryRequired {
+			t.Fatal("renamed sandbox alias was accepted as removal", err)
+		}
+		requireHelperEntries(t, directory, "renamed-sandbox", ".lock")
 	})
 }

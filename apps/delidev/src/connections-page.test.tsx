@@ -433,3 +433,13 @@ it("presents a new Add task without remounting the retained form", async () => {
   ).toBeNull();
   expect(value.actions.pair).toHaveBeenCalledTimes(1);
 });
+
+it("publishes no Tailscale slot from the Connections page", () => {
+  const onSlots = vi.fn();
+  render(<ConnectionsPage local onSlots={onSlots} />);
+  const slots = onSlots.mock.calls.at(-1)?.[0] as ConnectionPageSlots;
+  expect(slots.current).toBeInstanceOf(HTMLElement);
+  expect(slots.saved).toBeInstanceOf(HTMLElement);
+  expect(slots.advanced).toBeInstanceOf(HTMLElement);
+  expect(Object.keys(slots).sort()).toEqual(["advanced", "current", "saved"]);
+});

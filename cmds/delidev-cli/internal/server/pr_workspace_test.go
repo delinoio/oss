@@ -3,6 +3,7 @@ package server
 
 import (
 	"context"
+	"strconv"
 	"testing"
 	"time"
 
@@ -206,6 +207,24 @@ func TestPRAvatarReadDeniesReferenceEvictedDuringFetch(t *testing.T) {
 	for _, entry := range h.f.service.prAvatars {
 		if len(entry.png) != 0 {
 			t.Fatal("evicted fetch result was published to the cache")
+		}
+	}
+}
+
+func TestPRWorkspaceSeedCeilingIsFifty(t *testing.T) {
+	s := &Service{}
+	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice, DeviceID: domain.NewID()})
+	seeds := func(count int) []string {
+		out := make([]string, 0, count)
+		for n := 1; n <= count; n++ {
+			out = append(out, strconv.Itoa(n))
+		}
+		return out
+	}
+	for _, bad := range [][]string{nil, seeds(51), {"1", "1"}, {"01"}} {
+		_, e := s.GetPullRequestWorkspace(ctx, connect.NewRequest(&pb.GetPullRequestWorkspaceRequest{RepositoryId: string(domain.NewID()), SeedNumbers: bad}))
+		if connect.CodeOf(e) != connect.CodeInvalidArgument {
+			t.Fatalf("seed list of %d was not rejected as invalid: %v", len(bad), e)
 		}
 	}
 }

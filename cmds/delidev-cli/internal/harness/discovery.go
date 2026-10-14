@@ -33,13 +33,26 @@ type DiscoveryConfig struct {
 }
 
 func Discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessDiscoveryInput) (domain.HarnessDiscoveryOutput, error) {
-	return discover(ctx, config, input, false)
+	return discover(ctx, config, input, false, "")
+}
+
+// DiscoverClaude probes only the server's installed Claude Code adapter. It
+// never registers a Worker, probes another harness or opens existing login state.
+func DiscoverClaude(ctx context.Context, config DiscoveryConfig) (domain.Installation, error) {
+	result, err := discover(ctx, config, domain.HarnessDiscoveryInput{Revision: 1, VerifyProtocol: true, Selections: domain.ExecutableSelections{Executables: []domain.ExecutableSelection{}}}, false, domain.ClaudeCode)
+	if err != nil {
+		return domain.Installation{}, err
+	}
+	if len(result.Installations) != 1 || result.Installations[0].Harness != domain.ClaudeCode {
+		return domain.Installation{}, domain.Fail(domain.Unsupported, "The server's installed Claude login adapter is unavailable.", "Install the supported Claude Code version on the server.")
+	}
+	return result.Installations[0], nil
 }
 
 // DiscoverCodex probes the server's installed adapter without registering a
 // Worker, probing other harnesses or opening any existing user authentication.
 func DiscoverCodex(ctx context.Context, config DiscoveryConfig) (domain.Installation, error) {
-	result, err := discover(ctx, config, domain.HarnessDiscoveryInput{Revision: 1, VerifyProtocol: true, Selections: domain.ExecutableSelections{Executables: []domain.ExecutableSelection{}}}, true)
+	result, err := discover(ctx, config, domain.HarnessDiscoveryInput{Revision: 1, VerifyProtocol: true, Selections: domain.ExecutableSelections{Executables: []domain.ExecutableSelection{}}}, true, "")
 	if err != nil {
 		return domain.Installation{}, err
 	}
@@ -49,7 +62,7 @@ func DiscoverCodex(ctx context.Context, config DiscoveryConfig) (domain.Installa
 	return result.Installations[0], nil
 }
 
-func discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessDiscoveryInput, onlyCodex bool) (result domain.HarnessDiscoveryOutput, returned error) {
+func discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessDiscoveryInput, onlyCodex bool, only domain.Harness) (result domain.HarnessDiscoveryOutput, returned error) {
 	root, owner := config.Root, config.OwnerID
 	codexVersion := ""
 	var codexDiagnostic *domain.CodexDiagnostic
@@ -119,6 +132,15 @@ func discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessD
 	result.Installations = input.Selections.Installations()
 	if onlyCodex {
 		result.Installations = result.Installations[:1]
+	}
+	if only != "" {
+		filtered := result.Installations[:0]
+		for _, candidate := range result.Installations {
+			if candidate.Harness == only {
+				filtered = append(filtered, candidate)
+			}
+		}
+		result.Installations = filtered
 	}
 	for index := range result.Installations {
 		if err := ctx.Err(); err != nil {

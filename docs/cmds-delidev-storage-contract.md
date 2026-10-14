@@ -295,7 +295,7 @@ both primary and auxiliary lanes, reconciles exact retained process indexes,
 and acquires the same workspace lock as preparation/execution/reads. Missing,
 foreign, busy or uncertain evidence remains pending. A missing workspace without
 original removal proof is not completion, except for positively failed preparations
-that never produced a workspace. Worker attempts are bounded to two minutes.
+that never produced a workspace. Such a failed-only cleanup finishes its own obligation but publishes no session-scoped workspace-removal evidence; only removal of an owned workspace (retained manifest) publishes it for later device obligations. Worker attempts are bounded to two minutes.
 
 Worker retained deletion state is bound to each original device obligation, not
 only to the session. The Worker keeps `session-deletions/<session>.json` solely
@@ -312,13 +312,42 @@ stays pending and is never copied to another device. The session-keyed workspace
 proof migrates together with its session proof, before the version-2 tombstone
 replaces the legacy scope, so an already completed legacy proof (which never
 reaches workspace cleanup) cannot strand another device obligation behind its
-digest. A migrated proof that recorded the removal also publishes the shared
-removal evidence below.
+digest. A migrated proof that recorded the removal and retained its original
+manifest also publishes the shared removal evidence below; a removed legacy proof
+without a manifest is ambiguous with a failed-only cleanup and publishes nothing.
 
 The managed `workspaces/<session>` directory is shared by every device obligation
 of one session and machine. When an obligation removes it, it first publishes
 content-free evidence at `session-deletions/<session>-workspace-removed.json`
-(`version`, server, session, machine, `removed`; no manifest, path or device).
+(`version` 2, server, session, machine, `removed`; no manifest, path or device).
+Version-1 evidence written by older Workers is ignored, because it may have been
+published for an absent failed-only workspace; the next genuine removal replaces it.
+This is a deliberate fail-closed trade-off: a pre-upgrade genuine removal and a
+pre-upgrade failed-only cleanup leave identical durable state (version-1 evidence
+and a manifest-less proof), so no discriminator exists. A strict obligation that
+depended only on such evidence stays pending rather than risk removing copies
+without original removal proof.
+
+Workspace cleanup also distrusts any manifest-less version-1 obligation workspace
+proof, removed or not, and re-derives it from current evidence under the caller's
+absence policy. The Worker derives that policy (absent workspace allowed only for
+positively failed preparations) from the validated job journals, which a retry
+does not re-read. The attempt that starts removal therefore persists it as
+`workspace_absence_allowed` in the obligation proof, and a retry restores that
+value. A started proof without the field, written by an earlier release, is
+strict: it never relaxes to the absent-workspace policy, so copies are removed only
+with current removal proof (a manifest, a stored snapshot manifest or version-2
+shared evidence) and otherwise stay pending.
+
+The same rule applies to the obligation-scoped workspace proof: it is written at
+version 2, and a manifest-less removed version-1 proof (which an older Worker also
+wrote after adopting version-1 shared evidence for an absent failed-only workspace,
+before removing copies) is never trusted. The proof is re-derived from current
+evidence, so such an obligation stays pending until version-2 evidence or a
+retained manifest exists. When a retained removed proof still carries its manifest
+(a crash before copy removal), recovery republishes version-2 shared evidence from
+that manifest so later strict obligations are not stranded by version-1 evidence.
+
 A later obligation whose own workspace is absent and has no stored snapshot
 manifest, and whose jobs forbid an absent workspace, adopts that removal only when
 the evidence matches its exact server, session and machine; missing, unreadable or
@@ -337,9 +366,18 @@ already vanished counts as removed, and proven absence stays absent. The Worker'
 own process-owner maintenance locks (`processes/<id>.recovery.lock`) are created by
 owner reconciliation after capture, so they alone are adopted, and only for exact
 owners: each job owner's lock right after job validation, and the session owner's
-lock right after workspace retirement, in both cases only as empty private regular
-files and only in the attempt that starts removal (a retry restores the retained
-inventory and never adopts a lock that appeared since). A lock at any other name, or one that appears after adoption, keeps cleanup
+lock right after workspace retirement. What is adopted is the object the
+reconciliation itself locked, never whatever the pathname resolves to later:
+`process.ReconcileOwnerContextBound` binds the lock to a held identity from inside
+the reconciliation (while its lock handle still pins the inode), and
+`workspace.Manager.DeleteOwnedWorkspaceWithOwner` hands the session owner's binding
+to the copy callback. Adoption accepts a binding only when it is an empty regular
+file that the name still holds (`StillAt`) and only in the attempt that starts
+removal (a retry restores the retained inventory and never adopts a lock that
+appeared since). A directory or file placed at the name after reconciliation, even
+an empty private regular file, is not that object: it keeps cleanup pending, stays
+intact with its contents, and is never recorded in the identity inventory. A lock at
+any other name, a symlink, or one that appears after adoption, keeps cleanup
 pending. The identity inventory (present objects only; every other
 inventoried path was proven absent) is retained, content-free, at
 `session-deletions/<session>-<deletion>-<device>-identities.json` before the
@@ -379,12 +417,30 @@ does not close the window. The algorithm is portable Go and is unit-tested on Un
 but it has not been run on a Windows host in this change (it is cross-compiled and
 vetted only). Objects that cannot be opened without following
 links (symlinks, sockets) are never traversed or removed through and keep cleanup
-pending. An identity whose handle was released (the budget is 1,024 held handles
-per attempt, applied both when capturing and when restoring a retained inventory
-on a retry, so thousands of present objects cannot exhaust the descriptor limit)
-or restored from storage has no held handle and is only as strong as
-its record, so inode reuse is excluded only by birth time where reported, size and
-modification time.
+pending. An identity whose handle was released or restored from storage has no held
+handle and is only as strong as its record, so inode reuse is excluded only by
+birth time where reported, size and modification time.
+
+Identity handles are optional descriptors; the locks are mandatory. Each attempt
+plans a descriptor budget before it opens any lock: it reads the soft
+`RLIMIT_NOFILE` and the descriptors already open (`/proc/self/fd` or `/dev/fd`;
+a fixed 256 stands in when they cannot be counted), reserves one job lock per
+original copy, one publication lock per present job directory, 8 descriptors of
+session-lock headroom (session, observation and snapshot-namespace locks and the
+owner maintenance lock) and 192 of transient I/O headroom, and grants at most
+1,024 identity handles from what remains. The same allowance is spent, in order,
+by the initial capture, by a restored inventory on a retry and by the maintenance
+lock bindings of owner reconciliation and adoption; an identity beyond it keeps
+only its record and the comparison semantics are unchanged. Where the platform has
+no descriptor limit (Windows) the fixed 1,024-handle cap applies. If the
+mandatory demand alone does not fit the soft limit, the attempt stays pending
+before any job or publication lock is opened, logs the counts
+(`session_deletion_descriptor_budget_exceeded`: deletion ID, limit, open
+descriptors, job and publication lock counts and reserved headroom; no paths or
+content) and never
+acknowledges completion. Locks and handles are released on success, error and
+cancellation. A 600-copy plan with 600 present journals therefore completes, and
+retries, under a 1,024-descriptor soft limit.
 
 Original manifests bind session, machine and preparation digest. Worktree cleanup
 compares actual native common/admin directories and removes only the managed linked

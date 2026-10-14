@@ -98,12 +98,13 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 		}
 	}()
 	var nativeProfile *nativeClaudeProfile
+	var managedToken *managedClaudeToken
 	nativeJoined := true
 	expectedProxyPath := "/api-proxy/v1"
 	if input.Configuration.Subscription {
 		expectedProxyPath = ""
 		var finish func(bool) error
-		nativeProfile, finish, err = beginClaudeSubscriptionExecution(ctx, config, owner, input)
+		nativeProfile, managedToken, finish, err = beginClaudeSubscriptionExecution(ctx, config, owner, input)
 		if err != nil {
 			return nil, err
 		}
@@ -153,6 +154,18 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 		Process: process.Config{StartupObserver: config.progress.native, Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: home, Env: env, Logger: logger},
 		Version: input.Installation.Version, Home: filepath.Join(home, "claude"), Workspace: lease.WorkingDirectory(), WorkspaceRoots: nativeWorkspaceRoots(manifest), SessionID: input.SessionID, Model: input.Configuration.NativeModel,
 		Permission: permission, Effort: effort, Instructions: instructions, API: claude.APIConfig{ServerOrigin: connection.Credential.Endpoint, Token: token},
+	}
+	if managedToken != nil {
+		// The token is set only in the supervised Claude child's environment. The
+		// private runtime is fresh; no device profile or relay credential exists.
+		nativeConfig.ManagedToken = managedToken.token
+		if err := security.PrivateDir(filepath.Join(manager.Root, "processes", string(owner))); err != nil {
+			return nil, err
+		}
+		managedToken.lease.journal.ExecutionStarted = true
+		if err := writeJSON(managedToken.lease.journalPath, managedToken.lease.journal); err != nil {
+			return nil, publicationUncertain()
+		}
 	}
 	if nativeProfile != nil {
 		nativeConfig.Subscription = &claude.NativeSubscriptionProfile{ID: nativeProfile.owner.Profile, Home: nativeProfile.home}
