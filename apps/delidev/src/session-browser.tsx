@@ -1228,7 +1228,10 @@ function NativeSessionBrowser({
     // A busy action drops SelectTab; busy is a dependency so the current shared
     // selection is reconciled once when the action settles.
     if (busy) return;
-    const attempt = `${profileId}:${selectedPage.id}:${state.tabs.selected}`;
+    // A replacement native view is a new reconciliation opportunity even when
+    // the shared selection and observed native tab are unchanged. This covers
+    // returning while the previous view's asynchronous Hide is still pending.
+    const attempt = `${profileId}:${selectedPage.id}:${state.tabs.selected}:${nativeView}`;
     if (reconciled.current === attempt) return;
     reconciled.current = attempt;
     void control(BrowserAction.SelectTab, selectedPage.id);

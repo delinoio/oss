@@ -1353,6 +1353,51 @@ it("retries a failed page selection once after Conversation and a new native vie
   expect(selects()).toHaveLength(2);
 });
 
+it("waits for a replacement native view before retrying a pending selection", async () => {
+  const f = fixture({ pages: 2 });
+  const base = native.getMockImplementation()!;
+  let releaseHide!: () => void;
+  let hideStarted = false;
+  native.mockImplementation(async (operation: string, args: any) => {
+    if (
+      operation === "control_browser" &&
+      args.action === "hide" &&
+      !hideStarted
+    ) {
+      hideStarted = true;
+      await new Promise<void>((resolve) => (releaseHide = resolve));
+    }
+    if (operation === "control_browser" && args.action === "select-tab")
+      throw new Error("rejected");
+    return base(operation, args);
+  });
+  mount(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(3));
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/1" }));
+  await waitFor(() => expect(calls("open_browser")).toHaveLength(1));
+  const first = calls("open_browser")[0][1];
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/2" }));
+  const selects = () =>
+    calls("control_browser").filter(([, args]) => args.action === "select-tab");
+  await waitFor(() => expect(selects()).toHaveLength(1));
+  await screen.findByText(
+    "The browser action failed. Check its address and the current server and account authorization.",
+  );
+
+  fireEvent.click(screen.getByRole("tab", { name: "Conversation" }));
+  await waitFor(() => expect(releaseHide).toBeTypeOf("function"));
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/2" }));
+  await waitFor(() => expect(selects()).toHaveLength(2));
+  expect(selects()[1][1].viewId).toBe(first.viewId);
+
+  await act(async () => releaseHide());
+  await waitFor(() => expect(calls("open_browser")).toHaveLength(2));
+  await waitFor(() => expect(selects()).toHaveLength(3));
+  expect(selects()[2][1].viewId).toBe(calls("open_browser")[1][1].viewId);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(selects()).toHaveLength(3);
+});
+
 it("retries a failed page selection after leaving for another non-page tab", async () => {
   const f = fixture({ pages: 2 });
   const base = native.getMockImplementation()!;
