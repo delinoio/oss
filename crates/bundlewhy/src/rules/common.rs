@@ -288,165 +288,162 @@ impl EnvGuard {
 /// value read in a call, assignment or another data expression is not a DCE
 /// blocker.
 fn env_guard(code: &str, start: usize, end: usize, ignored: &[(usize, usize)]) -> Option<EnvGuard> {
+    env_guards(code, &[(start, end)], ignored)
+        .into_iter()
+        .next()
+        .flatten()
+}
+
+#[derive(Clone, Copy)]
+enum ScopeContext {
+    Neutral,
+    Invalid,
+    Guard(EnvGuard),
+}
+
+struct ScanScope {
+    parent: usize,
+    context: ScopeContext,
+    pending_reads: Vec<usize>,
+}
+
+fn env_guards(
+    code: &str,
+    reads: &[(usize, usize)],
+    ignored: &[(usize, usize)],
+) -> Vec<Option<EnvGuard>> {
     let bytes = code.as_bytes();
-    let mut nesting = enclosing_nesting(bytes, start, ignored);
-    let mut index = end;
-    while index < bytes.len() {
-        if in_ranges(ignored, index) {
-            index += 1;
+    let mut guards = vec![None; reads.len()];
+    let mut blocked = vec![false; reads.len()];
+    let mut contexts = vec![ScopeContext::Neutral; reads.len()];
+    let mut scopes = vec![ScanScope {
+        parent: 0,
+        context: ScopeContext::Neutral,
+        pending_reads: Vec::new(),
+    }];
+    let mut current_scope = 0;
+    let mut next_start = 0;
+    let mut next_end = 0;
+    let mut ignored_index = 0;
+
+    for index in 0..bytes.len() {
+        while next_start < reads.len() && reads[next_start].0 == index {
+            contexts[next_start] = scopes[current_scope].context;
+            next_start += 1;
+        }
+        while next_end < reads.len() && reads[next_end].1 <= index {
+            scopes[current_scope].pending_reads.push(next_end);
+            next_end += 1;
+        }
+        while ignored_index < ignored.len() && ignored[ignored_index].1 <= index {
+            ignored_index += 1;
+        }
+        if ignored_index < ignored.len()
+            && ignored[ignored_index].0 <= index
+            && index < ignored[ignored_index].1
+        {
             continue;
         }
+
         match bytes[index] {
-            b'(' | b'[' | b'{' => nesting.push(bytes[index]),
-            b')' | b']' | b'}' => {
-                if nesting.pop().is_none() {
-                    break;
+            b'(' | b'[' | b'{' => {
+                let context =
+                    scope_context(code, index, bytes[index], scopes[current_scope].context);
+                scopes.push(ScanScope {
+                    parent: current_scope,
+                    context,
+                    pending_reads: Vec::new(),
+                });
+                current_scope = scopes.len() - 1;
+            }
+            b')' | b']' | b'}' if current_scope != 0 => {
+                let parent = scopes[current_scope].parent;
+                let pending_reads = std::mem::take(&mut scopes[current_scope].pending_reads);
+                scopes[parent].pending_reads.extend(pending_reads);
+                current_scope = parent;
+            }
+            b';' | b',' | b':' => {
+                for read in scopes[current_scope].pending_reads.drain(..) {
+                    if guards[read].is_none() {
+                        blocked[read] = true;
+                    }
                 }
             }
-            b';' | b',' | b':' if nesting.is_empty() => break,
-            b'=' if nesting.is_empty()
-                && bytes.get(index + 1) != Some(&b'=')
+            b'=' if bytes.get(index + 1) != Some(&b'=')
                 && bytes.get(index.wrapping_sub(1)) != Some(&b'=')
                 && bytes.get(index.wrapping_sub(1)) != Some(&b'!')
                 && bytes.get(index.wrapping_sub(1)) != Some(&b'<')
                 && bytes.get(index.wrapping_sub(1)) != Some(&b'>') =>
             {
-                break;
-            }
-            b'&' if nesting.is_empty() && bytes.get(index + 1) == Some(&b'&') => {
-                return Some(EnvGuard::ShortCircuitAnd);
-            }
-            b'|' if nesting.is_empty() && bytes.get(index + 1) == Some(&b'|') => {
-                return Some(EnvGuard::ShortCircuitOr);
-            }
-            b'?' if nesting.is_empty() && bytes.get(index + 1) == Some(&b'?') => {
-                return Some(EnvGuard::NullishCoalescing);
-            }
-            b'?' if nesting.is_empty() && bytes.get(index + 1) != Some(&b'.') => {
-                return Some(EnvGuard::Conditional);
-            }
-            _ => {}
-        }
-        index += 1;
-    }
-
-    // An if/while/switch test can remain in generated code without being
-    // lowered to a short-circuit operator. Reject nested calls and comma
-    // expressions whose later operand, rather than the env read, is the test.
-    let mut nested_closes = Vec::new();
-    let mut nested_non_parenthesized = false;
-    for index in (0..start).rev() {
-        if in_ranges(ignored, index) {
-            continue;
-        }
-        match bytes[index] {
-            b')' => {
-                nested_closes.push(b'(');
-                continue;
-            }
-            b']' => {
-                nested_closes.push(b'[');
-                continue;
-            }
-            b'}' => {
-                nested_closes.push(b'{');
-                continue;
-            }
-            b'(' if nested_closes.last() == Some(&b'(') => {
-                nested_closes.pop();
-                continue;
-            }
-            b'[' if nested_closes.last() == Some(&b'[') => {
-                nested_closes.pop();
-                nested_non_parenthesized = true;
-                continue;
-            }
-            b'{' if nested_closes.last() == Some(&b'{') => {
-                nested_closes.pop();
-                nested_non_parenthesized = true;
-                continue;
-            }
-            b'(' if nested_closes.is_empty() => {
-                if nested_non_parenthesized {
-                    return None;
+                for read in scopes[current_scope].pending_reads.drain(..) {
+                    if guards[read].is_none() {
+                        blocked[read] = true;
+                    }
                 }
             }
-            b'[' | b'{' if nested_closes.is_empty() => return None,
-            b';' | b'{' if nested_closes.is_empty() => break,
-            _ => continue,
-        }
-        if comma_after_read_before_closing_paren(bytes, index, end, ignored) {
-            return None;
-        }
-        let prefix = code[..index].trim_end();
-        for (keyword, guard) in [
-            ("if", EnvGuard::If),
-            ("while", EnvGuard::While),
-            ("switch", EnvGuard::Switch),
-        ] {
-            if prefix.ends_with(keyword)
-                && prefix
-                    .as_bytes()
-                    .get(..prefix.len() - keyword.len())
-                    .and_then(|prefix| prefix.last())
-                    .is_none_or(|byte| {
-                        !byte.is_ascii_alphanumeric() && *byte != b'_' && *byte != b'$'
-                    })
-            {
-                return Some(guard);
+            b'&' if bytes.get(index + 1) == Some(&b'&') => {
+                for &read in &scopes[current_scope].pending_reads {
+                    guards[read] = Some(EnvGuard::ShortCircuitAnd);
+                }
             }
-        }
-        if prefix.as_bytes().last().is_some_and(|byte| {
-            byte.is_ascii_alphanumeric() || matches!(*byte, b'_' | b'$' | b']' | b')' | b'.')
-        }) {
-            return None;
-        }
-    }
-    None
-}
-
-fn enclosing_nesting(bytes: &[u8], end: usize, ignored: &[(usize, usize)]) -> Vec<u8> {
-    let mut nesting = Vec::new();
-    let mut index = 0;
-    while index < end {
-        if in_ranges(ignored, index) {
-            index += 1;
-            continue;
-        }
-        match bytes[index] {
-            b'(' | b'[' | b'{' => nesting.push(bytes[index]),
-            b')' | b']' | b'}' => {
-                if nesting.pop().is_none() {
-                    break;
+            b'|' if bytes.get(index + 1) == Some(&b'|') => {
+                for &read in &scopes[current_scope].pending_reads {
+                    guards[read] = Some(EnvGuard::ShortCircuitOr);
+                }
+            }
+            b'?' if bytes.get(index + 1) == Some(&b'?') => {
+                for &read in &scopes[current_scope].pending_reads {
+                    guards[read] = Some(EnvGuard::NullishCoalescing);
+                }
+            }
+            b'?' if bytes.get(index + 1) != Some(&b'.') => {
+                for &read in &scopes[current_scope].pending_reads {
+                    guards[read] = Some(EnvGuard::Conditional);
                 }
             }
             _ => {}
         }
-        index += 1;
     }
-    nesting
+
+    guards
+        .into_iter()
+        .zip(contexts.into_iter().zip(blocked))
+        .map(|(guard, (context, blocked))| match context {
+            ScopeContext::Invalid => None,
+            ScopeContext::Neutral => guard,
+            ScopeContext::Guard(fallback) if !blocked => guard.or(Some(fallback)),
+            ScopeContext::Guard(_) => guard,
+        })
+        .collect()
 }
 
-fn comma_after_read_before_closing_paren(
-    bytes: &[u8],
-    open: usize,
-    end: usize,
-    ignored: &[(usize, usize)],
-) -> bool {
-    let mut depth = 0usize;
-    for (index, byte) in bytes.iter().copied().enumerate().skip(open + 1) {
-        if in_ranges(ignored, index) {
-            continue;
-        }
-        match byte {
-            b'(' | b'[' | b'{' => depth += 1,
-            b')' | b']' | b'}' if depth > 0 => depth -= 1,
-            b')' => return false,
-            b',' if index >= end && depth == 0 => return true,
-            _ => {}
+fn scope_context(code: &str, index: usize, opener: u8, parent: ScopeContext) -> ScopeContext {
+    if opener != b'(' {
+        return ScopeContext::Invalid;
+    }
+    let prefix = code[..index].trim_end();
+    for (keyword, guard) in [
+        ("if", EnvGuard::If),
+        ("while", EnvGuard::While),
+        ("switch", EnvGuard::Switch),
+    ] {
+        if prefix.ends_with(keyword)
+            && prefix
+                .as_bytes()
+                .get(..prefix.len() - keyword.len())
+                .and_then(|prefix| prefix.last())
+                .is_none_or(|byte| !byte.is_ascii_alphanumeric() && *byte != b'_' && *byte != b'$')
+        {
+            return ScopeContext::Guard(guard);
         }
     }
-    false
+    if prefix.as_bytes().last().is_some_and(|byte| {
+        byte.is_ascii_alphanumeric() || matches!(*byte, b'_' | b'$' | b']' | b')' | b'.')
+    }) {
+        ScopeContext::Invalid
+    } else {
+        parent
+    }
 }
 
 fn unresolved_env_conditions(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
@@ -491,8 +488,13 @@ fn unresolved_env_conditions(context: &mut Context<'_>, drafts: &mut Vec<Diagnos
                 Some((whole.start(), whole.end(), offset, name.as_str().to_owned()))
             })
             .collect();
-        for (start, end, offset, name) in matches {
-            let Some(guard) = env_guard(&context.chunks[index].code, start, end, &ignored) else {
+        let reads: Vec<(usize, usize)> = matches
+            .iter()
+            .map(|(start, end, _, _)| (*start, *end))
+            .collect();
+        let guards = env_guards(&context.chunks[index].code, &reads, &ignored);
+        for ((_start, _end, offset, name), guard) in matches.into_iter().zip(guards) {
+            let Some(guard) = guard else {
                 continue;
             };
             let located = context.chunk_location(index, offset);
@@ -1456,6 +1458,26 @@ y=/process.env.F/.test(z),process.env.G"#;
         assert_eq!(
             guard("process.env.VERSION?on():off()", "process.env.VERSION"),
             Some("the retained read controls a conditional (?:) branch")
+        );
+    }
+
+    #[test]
+    fn env_guard_scans_many_reads_in_one_pass() {
+        let mut code = String::new();
+        let mut reads = Vec::new();
+        for index in 0..256 {
+            let read = format!("process.env.FLAG{index}");
+            let start = code.len();
+            code.push_str(&read);
+            reads.push((start, start + read.len()));
+            code.push_str("&&run();");
+        }
+        let guards = env_guards(&code, &reads, &[]);
+        assert_eq!(guards.len(), reads.len());
+        assert!(
+            guards
+                .iter()
+                .all(|guard| matches!(guard, Some(EnvGuard::ShortCircuitAnd)))
         );
     }
 
