@@ -4,7 +4,11 @@
 const channelName = "delidev.browser.pending-close";
 const heartbeatMs = 5000;
 const expiryMs = heartbeatMs * 3;
-/** Longest a Close waits for sibling windows to acknowledge a new hold. */
+/**
+ * How long a sibling may stay silent before the Close re-checks whether it is
+ * still alive. A silent window proven alive by its liveness lock keeps being
+ * awaited; only a window without that proof is presumed gone.
+ */
 const syncTimeoutMs = 1000;
 /**
  * Without the Web Locks API there is no authoritative window list, so a Close
@@ -36,6 +40,12 @@ interface PendingCloseMessage {
   key?: string;
   /** On a Hold: the sender waits for an Ack from every known window. */
   ack?: boolean;
+  /**
+   * Unique identity of one Hold announcement. An Ack echoes it, so a delayed
+   * Ack for an earlier announcement of the same key is never credited to a
+   * later one.
+   */
+  id?: string;
   /** On an Ack: the window whose Hold is acknowledged. */
   to?: string;
 }
@@ -106,11 +116,14 @@ function isMessage(value: unknown): value is PendingCloseMessage {
     ) &&
     (message.key === undefined || typeof message.key === "string") &&
     (message.ack === undefined || typeof message.ack === "boolean") &&
+    (message.id === undefined || typeof message.id === "string") &&
     (message.to === undefined || typeof message.to === "string")
   );
 }
 
 interface Waiter {
+  /** The announcement this waiter belongs to; only its Acks count. */
+  id: string;
   /** Windows that acknowledged the Hold so far. */
   acked: Set<string>;
   /** Windows whose acknowledgement is required; null until discovery ends. */
@@ -145,6 +158,7 @@ export class PendingCloseRegistry {
   // Sibling windows seen on the channel, and the Holds still awaiting acks.
   private peers = new Set<string>();
   private syncing = new Map<string, Promise<void>>();
+  private announcements = 0;
   private waiters = new Map<string, Waiter>();
   private settledListeners = new Set<(key: string) => void>();
 
@@ -279,6 +293,11 @@ export class PendingCloseRegistry {
         holders.delete(data.window);
         if (!holders.size) this.remote.delete(key);
       }
+      // A window that announced its departure can no longer be awaited.
+      for (const waiter of this.waiters.values()) {
+        waiter.required?.delete(data.window);
+        waiter.check();
+      }
       return;
     }
     this.peers.add(data.window);
@@ -292,8 +311,10 @@ export class PendingCloseRegistry {
     if (data.kind === PendingCloseMessageKind.Ack) {
       if (data.to !== this.window || data.key === undefined) return;
       const waiter = this.waiters.get(data.key);
-      waiter?.acked.add(data.window);
-      waiter?.check();
+      // Reject an Ack that answers an earlier announcement of this key.
+      if (!waiter || waiter.id !== data.id) return;
+      waiter.acked.add(data.window);
+      waiter.check();
       return;
     }
     if (data.key === undefined) return;
@@ -308,6 +329,7 @@ export class PendingCloseRegistry {
       this.send({
         kind: PendingCloseMessageKind.Ack,
         key: data.key,
+        id: data.id,
         to: data.window,
       });
   }
@@ -333,19 +355,31 @@ export class PendingCloseRegistry {
   /**
    * Announces a new hold and resolves once every sibling window has recorded
    * it, so a sibling's reconciliation can never observe the page as unowned
-   * after the native Close ran. Siblings are the windows already seen on the
-   * channel plus, when Web Locks is available, every window currently holding
-   * a liveness lock (which covers windows whose handshake has not arrived yet).
+   * after the native Close ran. Each announcement carries a unique id that the
+   * siblings echo in their Ack, so only acknowledgements of this exact
+   * announcement count. Siblings are the windows already seen on the channel
+   * plus, when Web Locks is available, every window currently holding a
+   * liveness lock (which covers windows whose handshake has not arrived yet).
    * Without Web Locks, the Close also waits a short discovery period for
-   * windows that have not introduced themselves. A window that does not answer
-   * within the timeout is presumed gone and no longer awaited.
+   * windows that have not introduced themselves.
+   *
+   * A silent sibling is not assumed dead merely because time passed: a
+   * suspended or throttled window still holds its liveness lock and may resume
+   * and reconcile at any moment, so it stays awaited until it acknowledges,
+   * says Bye or its lock disappears. Only without a liveness source (no Web
+   * Locks, or the lock query failing) does a window that stays silent for the
+   * timeout count as gone.
    */
   private announce(key: string): Promise<void> {
     if (!this.channel) return Promise.resolve();
+    // A superseded announcement of the same key has no owner left to wait.
+    this.waiters.get(key)?.done();
     return new Promise<void>((resolve) => {
       let finished = false;
       const timers: ReturnType<typeof setTimeout>[] = [];
+      this.announcements += 1;
       const waiter: Waiter = {
+        id: `${this.window}:${this.announcements}`,
         acked: new Set(),
         required: null,
         check: () => {
@@ -358,8 +392,6 @@ export class PendingCloseRegistry {
           finished = true;
           for (const timer of timers) clearTimeout(timer);
           if (this.waiters.get(key) === waiter) this.waiters.delete(key);
-          for (const peer of waiter.required ?? [])
-            if (!waiter.acked.has(peer)) this.peers.delete(peer);
           resolve();
         },
       };
@@ -369,18 +401,39 @@ export class PendingCloseRegistry {
         timers.push(timer);
       };
       this.waiters.set(key, waiter);
-      later(waiter.done, syncTimeoutMs);
       // Every window listening now receives the Hold and answers it.
-      this.send({ kind: PendingCloseMessageKind.Hold, key, ack: true });
+      this.send({
+        kind: PendingCloseMessageKind.Hold,
+        key,
+        ack: true,
+        id: waiter.id,
+      });
       const discovered = (live: Set<string> | null) => {
         if (finished) return;
-        waiter.required = new Set([...this.peers, ...(live ?? [])]);
+        waiter.required ??= new Set([...this.peers, ...(live ?? [])]);
         waiter.check();
       };
       void this.liveWindows().then((live) => {
         if (live) discovered(live);
         else later(() => discovered(null), discoveryMs);
       });
+      // After each silent period, drop only the windows that are provably gone
+      // and keep waiting for the rest.
+      const recheck = () => {
+        if (finished) return;
+        void this.liveWindows().then((live) => {
+          if (finished) return;
+          discovered(live);
+          for (const peer of [...(waiter.required ?? [])]) {
+            if (waiter.acked.has(peer) || live?.has(peer)) continue;
+            waiter.required?.delete(peer);
+            this.peers.delete(peer);
+          }
+          waiter.check();
+          later(recheck, syncTimeoutMs);
+        });
+      };
+      later(recheck, syncTimeoutMs);
     });
   }
 
@@ -425,6 +478,7 @@ export class PendingCloseRegistry {
     owners.delete(owner);
     if (owners.size) return;
     this.local.delete(key);
+    this.waiters.get(key)?.done();
     this.send({ kind: PendingCloseMessageKind.Release, key });
     this.stopHeartbeat();
   }
@@ -437,6 +491,7 @@ export class PendingCloseRegistry {
   settle(key: string) {
     this.local.delete(key);
     this.syncing.delete(key);
+    this.waiters.get(key)?.done();
     this.send({ kind: PendingCloseMessageKind.Settled, key });
     this.stopHeartbeat();
   }
@@ -444,6 +499,7 @@ export class PendingCloseRegistry {
   private releaseAll() {
     const keys = [...this.local.keys()];
     this.local.clear();
+    for (const key of keys) this.waiters.get(key)?.done();
     for (const key of keys)
       this.send({ kind: PendingCloseMessageKind.Release, key });
     this.stopHeartbeat();

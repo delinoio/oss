@@ -355,6 +355,117 @@ describe("pending Close ownership across product windows", () => {
       await vi.advanceTimersByTimeAsync(101);
       expect(again).toBe(true);
     });
+
+    const lockSet = () => {
+      const held = new Set<string>();
+      const locks: PendingCloseLocks = {
+        request: (name, callback) => {
+          held.add(name);
+          return callback().finally(() => held.delete(name));
+        },
+        query: async () => ({ held: [...held].map((name) => ({ name })) }),
+      };
+      return { held, locks };
+    };
+
+    it("keeps waiting for a suspended sibling that still holds its lock", async () => {
+      const { held, locks } = lockSet();
+      const bus = new QueuedBus();
+      const first = new PendingCloseRegistry({
+        channel: bus.endpoint(),
+        locks,
+        window: "a",
+      });
+      const second = new PendingCloseRegistry({
+        channel: bus.endpoint(),
+        locks,
+        window: "b",
+      });
+      bus.flush();
+      let synced = false;
+      void first.hold("k", {}).then(() => (synced = true));
+      // The sibling is suspended: nothing it should process is delivered.
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(synced).toBe(false);
+      expect(second.has("k")).toBe(false);
+      bus.flush();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(second.has("k")).toBe(true);
+      expect(synced).toBe(true);
+      expect(held.has("delidev.browser.pending-close:b")).toBe(true);
+    });
+
+    it("stops waiting once a silent sibling's lock disappears", async () => {
+      const { held, locks } = lockSet();
+      const bus = new QueuedBus();
+      const first = new PendingCloseRegistry({
+        channel: bus.endpoint(),
+        locks,
+        window: "a",
+      });
+      new PendingCloseRegistry({
+        channel: bus.endpoint(),
+        locks,
+        window: "b",
+      });
+      bus.flush();
+      let synced = false;
+      void first.hold("k", {}).then(() => (synced = true));
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(synced).toBe(false);
+      held.delete("delidev.browser.pending-close:b");
+      await vi.advanceTimersByTimeAsync(1001);
+      expect(synced).toBe(true);
+    });
+
+    it("does not credit a delayed Ack to a later announcement of the same key", async () => {
+      const bus = new QueuedBus();
+      const first = new PendingCloseRegistry({
+        channel: bus.endpoint(),
+        locks: null,
+        window: "a",
+      });
+      const sibling = bus.endpoint();
+      const seen: { id?: string }[] = [];
+      sibling.onmessage = (event) => {
+        const data = event.data as { kind: string; id?: string };
+        if (data.kind === "hold") seen.push(data);
+      };
+      const ack = (id?: string) =>
+        first["receive"]({
+          scope: "delidev.browser.pending-close",
+          kind: "ack",
+          window: "z",
+          key: "k",
+          id,
+          to: "a",
+        });
+      sibling.postMessage({
+        scope: "delidev.browser.pending-close",
+        kind: "presence",
+        window: "z",
+      });
+      bus.flush();
+      const owner = {};
+      void first.hold("k", owner);
+      bus.flush();
+      const staleId = seen[0].id;
+      expect(staleId).toBeTruthy();
+      // The first Close is abandoned and a replacement starts for the page.
+      first.release("k", owner);
+      let synced = false;
+      void first.hold("k", {}).then(() => (synced = true));
+      bus.flush();
+      expect(seen[1].id).toBeTruthy();
+      expect(seen[1].id).not.toBe(staleId);
+      // The delayed Ack of the first announcement must not satisfy the second.
+      ack(staleId);
+      await vi.advanceTimersByTimeAsync(101);
+      expect(synced).toBe(false);
+      ack(seen[1].id);
+      await vi.advanceTimersByTimeAsync(101);
+      expect(synced).toBe(true);
+    });
   });
 
   describe("settled Close propagation", () => {
