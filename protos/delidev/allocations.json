@@ -8499,6 +8499,13 @@
       "newDeclaration": true
     },
     {
+      "issue": 2398,
+      "kind": "message",
+      "declaration": "ChangeAccountApiFormatRequest",
+      "member": "provider_revision",
+      "number": 7
+    },
+    {
       "issue": 964,
       "kind": "message",
       "declaration": "ChangeAccountApiFormatResponse",

@@ -54,9 +54,14 @@ The feature owns ProviderInventory capability
 reservation 8. The owner/client `AccountService.ChangeAccountApiFormat` RPC
 uses request fields mutation 1, api_protocol 2, alias 3, enabled 4,
 exclude_automatic 5 and recovery_notifications 6; its response uses account 1,
-request_id 2 and replayed 3. Reuse the existing `ApiProtocol` enum.
+request_id 2 and replayed 3. Request field provider_revision 7 carries the
+inspected Provider resource revision. Reuse the existing `ApiProtocol` enum.
 Capability 9 now activates this dedicated operation. The reservation-only PR
 granted no format change, key access or execution authority.
+Active servers reject zero or omitted provider_revision on fresh requests and
+do not reinterpret earlier receipt bytes as provider-bound evidence. An exact
+accepted revised request replays through its original actor-bound digest before
+a current Provider revision check; a changed request under that ID conflicts.
 
 The approved extension permits changing a connected API account's format while
 keeping its protected key. Go owns atomic preference/profile publication and

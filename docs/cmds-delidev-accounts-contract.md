@@ -6,6 +6,13 @@ ProviderInventory capability 9 and `ChangeAccountApiFormat` were reserved on mai
 in the originating change. The owner/client operation receives an account ID, expected revision,
 request ID, closed API protocol and editable preferences. Its transaction publishes
 all preferences and the selected profile together with an actor-bound retry receipt.
+The request also carries the exact inspected Provider resource revision. The
+transaction checks that revision against the Account's Provider identity and
+current Provider record before any preference or generation publication. An
+intervening Provider edit rejects the save without key access or a new
+generation, including when the edit is outside the selected profile. A new
+explicit inspection and request ID are required after that rejection; omitted
+Provider revisions from older clients fail safely.
 The server resolves and validates the authenticated owner/client principal before
 any receipt lookup, and that principal is part of the digested receipt input.
 An exact replay by the same actor returns current account metadata without another

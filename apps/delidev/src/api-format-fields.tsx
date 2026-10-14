@@ -29,6 +29,7 @@ interface Props {
   initial?: Resource;
   keepsFormatKey?: (ready: boolean) => void;
   saveBlocked?: (blocked: boolean) => void;
+  inspectedProviderRevision?: (revision: bigint) => void;
 }
 
 function useFormatCapability(active: boolean) {
@@ -352,6 +353,7 @@ export function AccountAPIFormatField({
   initial,
   saveBlocked,
   keepsFormatKey,
+  inspectedProviderRevision,
 }: Props) {
   useLocale();
   const labelId = useId();
@@ -362,6 +364,16 @@ export function AccountAPIFormatField({
     { enabled: active && Boolean(data.provider_id), retry: false },
   );
   const metadata = document(provider.data?.resource);
+  const observedProviderRevision =
+    !provider.error &&
+    !provider.isFetching &&
+    provider.data?.resource?.id === text(data.provider_id)
+      ? provider.data.resource.revision
+      : 0n;
+  useEffect(() => {
+    inspectedProviderRevision?.(observedProviderRevision);
+    return () => inspectedProviderRevision?.(0n);
+  }, [inspectedProviderRevision, observedProviderRevision]);
   useEffect(() => {
     keepsFormatKey?.(ready && keepsKey);
     return () => keepsFormatKey?.(false);
@@ -373,6 +385,7 @@ export function AccountAPIFormatField({
   const canChange =
     ready &&
     Boolean(originalProfile) &&
+    observedProviderRevision > 0n &&
     !provider.error &&
     !provider.isFetching &&
     !data.removal &&

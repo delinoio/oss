@@ -645,6 +645,7 @@ export function ConfigurationEditor({
     [],
   );
   const [keepsFormatKey, setKeepsFormatKey] = useState(false);
+  const [providerRevision, setProviderRevision] = useState(0n);
   const [fieldsBlocked, setFieldsBlocked] = useState(false);
   const [problem, setProblem] = useProductMessage("");
   const [nameConflict, setNameConflict] = useState(false);
@@ -1194,6 +1195,7 @@ export function ConfigurationEditor({
       selectedFormat &&
       selectedFormat !== document(source).api_protocol
     ) {
+      if (providerRevision <= 0n) return;
       void formatMutation.send({
         mutation: {
           id: source.id,
@@ -1201,6 +1203,7 @@ export function ConfigurationEditor({
           requestId: newRequestId(),
         },
         apiProtocol: apiFormatToWire(selectedFormat),
+        providerRevision,
         alias: text(data.alias),
         enabled: data.enabled === true,
         excludeAutomatic: data.exclude_automatic === true,
@@ -1371,6 +1374,7 @@ export function ConfigurationEditor({
             supportsSessionDefaults={supportsSessionDefaults}
             movementActive={active && taskVisible && !blocked && !childPending}
             keepsFormatKey={setKeepsFormatKey}
+            inspectedProviderRevision={setProviderRevision}
             initial={source}
             saveBlocked={setFieldsBlocked}
             kind={kind}
@@ -1399,6 +1403,7 @@ export function ConfigurationEditor({
                 active && taskVisible && !blocked && !childPending
               }
               keepsFormatKey={setKeepsFormatKey}
+              inspectedProviderRevision={setProviderRevision}
               initial={source}
               saveBlocked={setFieldsBlocked}
               kind={kind}

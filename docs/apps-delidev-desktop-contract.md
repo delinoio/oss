@@ -208,7 +208,10 @@ and builds do not establish installed-app interactive Keychain acceptance.
 
 With ProviderInventory capability 9, Edit AI account enables supported formats for
 connected API accounts and saves the format plus existing editable preferences
-through `ChangeAccountApiFormat`. The saved key stays in place; the help states that
+through `ChangeAccountApiFormat`. The request pins the revision of the Provider resource used to display the
+selected profile. A missing Provider read blocks saving, and a changed Provider
+revision requires a fresh read and explicit save. Uncertain retries retain the
+original revision and complete request bytes. The saved key stays in place; the help states that
 future executions use the new format, current executions retain their original
 format, and separate Validate connection is required. Saving sends no provider
 request. Provider identity and keyless/key ownership stay fixed. Without capability

@@ -11,8 +11,10 @@ The desktop-owned shared pure identity presentation at `apps/delidev/src/product
 ## Key-preserving format amendment
 
 After main reservation the originating change, ProviderInventory capability 9 owns connected API
-format changes through the dedicated atomic Account RPC. Current/retained
-server-owned connection generations share the original protected key, preserve
+format changes through the dedicated atomic Account RPC. Each new format-change
+request binds the inspected Provider resource revision, checked with Account and
+Provider identity before publication. Current and retained server-owned connection
+generations share the original protected key, preserve
 original executions and continuations, and require fresh explicit validation for
 new sessions. Capability 7 and OAuth reservation 8 keep their separate meaning.
 Follow the [account](cmds-delidev-accounts-contract.md#connected-api-format-changes),

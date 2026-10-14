@@ -30,7 +30,7 @@ import { NotificationProvider } from "./toast-notifications";
 import { document, encode } from "./documents";
 
 function fixture(supported = true, cleanup = false) {
-  const provider = create(ResourceSchema, {
+  let provider = create(ResourceSchema, {
     id: newRequestId(),
     kind: EntityKind.PROVIDER,
     revision: 1n,
@@ -162,6 +162,12 @@ function fixture(supported = true, cleanup = false) {
         await client.invalidateQueries();
       });
     },
+    observeProvider: async (resource: Resource) => {
+      provider = resource;
+      await act(async () => {
+        await client.invalidateQueries();
+      });
+    },
   };
 }
 
@@ -188,6 +194,7 @@ it("saves a connected account format with its preferences and no disconnect or k
   expect(value.changeFormat.mock.calls[0][0]).toMatchObject({
     mutation: { id: value.original.id, expectedRevision: 3n },
     apiProtocol: ApiProtocol.OPENAI_RESPONSES,
+    providerRevision: value.provider.revision,
     alias: "Kept key",
     enabled: true,
     excludeAutomatic: false,
@@ -196,6 +203,20 @@ it("saves a connected account format with its preferences and no disconnect or k
   expect(value.save).not.toHaveBeenCalled();
   expect(value.connect).not.toHaveBeenCalled();
   expect(value.disconnect).not.toHaveBeenCalled();
+});
+
+it("uses the newly inspected Provider revision for a new format request", async () => {
+  const value = fixture();
+  await screen.findByRole("option", { name: "OpenAI Responses" });
+  await value.observeProvider(
+    create(ResourceSchema, { ...value.provider, revision: 2n }),
+  );
+  const select = screen.getByRole("combobox", { name: "API format" });
+  await waitFor(() => expect(select.matches(":disabled")).toBe(false));
+  fireEvent.change(select, { target: { value: "openai-responses" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(value.changeFormat).toHaveBeenCalledTimes(1));
+  expect(value.changeFormat.mock.calls[0][0].providerRevision).toBe(2n);
 });
 
 it("adopts status-only revisions without discarding editable drafts", async () => {

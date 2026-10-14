@@ -16,6 +16,7 @@ import (
 type changeAccountFormatInput struct {
 	ID                                               domain.ID
 	Revision                                         uint64
+	ProviderRevision                                 uint64
 	Protocol                                         domain.APIProtocol
 	Alias                                            string
 	Enabled, ExcludeAutomatic, RecoveryNotifications bool
@@ -36,9 +37,18 @@ func (s *Service) ChangeAccountApiFormat(ctx context.Context, req *connect.Reque
 		return nil, rpc.Error(err, correlation)
 	}
 	meta := req.Msg.Mutation
-	input := changeAccountFormatInput{domain.ID(meta.Id), meta.ExpectedRevision, rpc.APIProtocol(req.Msg.ApiProtocol), req.Msg.Alias, req.Msg.Enabled, req.Msg.ExcludeAutomatic, req.Msg.RecoveryNotifications, actor}
+	input := changeAccountFormatInput{
+		ID: domain.ID(meta.Id), Revision: meta.ExpectedRevision,
+		ProviderRevision: req.Msg.ProviderRevision, Protocol: rpc.APIProtocol(req.Msg.ApiProtocol),
+		Alias: req.Msg.Alias, Enabled: req.Msg.Enabled,
+		ExcludeAutomatic: req.Msg.ExcludeAutomatic, RecoveryNotifications: req.Msg.RecoveryNotifications,
+		Actor: actor,
+	}
 	if !input.Protocol.API() {
 		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "Choose a supported API format.", "Select a declared provider format."), correlation)
+	}
+	if input.ProviderRevision == 0 {
+		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "The inspected provider revision is required.", "Refresh the provider profile in an updated client before changing format."), correlation)
 	}
 	unlock, err := s.lockAccounts(ctx)
 	if err != nil {
@@ -82,6 +92,14 @@ func (s *Service) ChangeAccountApiFormat(ctx context.Context, req *connect.Reque
 		}
 		if account.Type != domain.APIAccount || account.Removal != nil {
 			return nil, domain.Fail(domain.Conflict, "This account cannot change API format.", "Finish pending cleanup before editing an API account.")
+		}
+		providerRecord, e := tx.Get(domain.ProviderKind, account.ProviderID)
+		if e != nil {
+			return nil, e
+		}
+		if providerRecord.ID != account.ProviderID || providerRecord.Revision != input.ProviderRevision {
+			s.logger.WarnContext(ctx, "account_api_format_provider_revision_conflict", "account_id", input.ID, "provider_id", account.ProviderID, "expected_revision", input.ProviderRevision, "actual_revision", providerRecord.Revision)
+			return nil, domain.Fail(domain.Conflict, "The selected provider profile changed.", "Refresh the provider profile and review its API format before saving again.")
 		}
 		before, e := accountAPIProvider(tx, account)
 		if e != nil {
