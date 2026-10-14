@@ -220,9 +220,17 @@ lists) without selecting a page or taking ownership of another window's
 operation. A removal-pending (empty) inventory is authoritative: it drops this
 profile's Page descriptors the same way, without any native mutation, while a
 page owned by an unsettled original Close keeps its descriptor in every Session
-(the close is profile-scoped, so the shared tab store records the owner and a
-reconciling Session never drops that page) until the owner observes the proof or
-abandons the operation. Existing local `tabs.json` storage remains compatible; no business RPC,
+and every same-origin product window (the close is profile-scoped, so the shared
+tab store records the owner and a reconciling Session never drops that page)
+until the owner observes the proof or abandons the operation. Product windows
+have independent renderer memory, so the store announces each hold, a
+heartbeat refresh and its release over a same-origin `BroadcastChannel`
+(`delidev.browser.pending-close`). A newly opened window queries the current
+holds. A hold whose window stopped refreshing (for example after a crash)
+expires after 15 seconds, and a closing window releases its holds on `pagehide`.
+The channel carries only an opaque window identity and the profile/page key,
+never URLs or credentials; without `BroadcastChannel` the hold stays
+window-local. Existing local `tabs.json` storage remains compatible; no business RPC,
 protocol allocation, SQLite migration, dependency or browser-engine change is
 added.
 

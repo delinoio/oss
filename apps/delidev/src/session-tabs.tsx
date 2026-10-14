@@ -15,6 +15,7 @@ import {
   sameReference,
   type BaseReference,
 } from "./session-diff-model";
+import { PendingCloseRegistry } from "./session-pending-close";
 
 export enum SessionTabKind {
   Conversation = "conversation",
@@ -101,6 +102,7 @@ type ComparisonTab = Extract<SessionTab, { kind: SessionTabKind.Comparison }>;
 
 /** Connection-owned descriptors contain no resource bodies, preview bytes or requests. */
 export class SessionTabsStore {
+  constructor(private pendingCloses = new PendingCloseRegistry()) {}
   private terminals = new Map<string, TerminalPresentation>();
   terminalPresentation(id: string) {
     let value = this.terminals.get(id);
@@ -303,26 +305,20 @@ export class SessionTabsStore {
     for (const id of holders) this.closePage(id, profile, pageId);
   }
   // Unsettled original Close operations by profile/page key. The close is
-  // profile-scoped, so every Session keeps the descriptor until the owning
-  // Session observes the original proof, not only the initiating one.
-  private pendingCloses = new Map<string, Set<object>>();
+  // profile-scoped, so every Session and every same-origin product window
+  // keeps the descriptor until the owning view observes the original proof.
+  // Product windows have independent renderer memory, so the registry also
+  // exchanges its holds over a same-origin channel.
   private pendingCloseKey(profile: string, pageId: string) {
     return JSON.stringify([profile, pageId]);
   }
   /** Marks a page as owned by an unsettled Close; `owner` identifies the holder. */
   holdPendingClose(profile: string, pageId: string, owner: object) {
-    const key = this.pendingCloseKey(profile, pageId);
-    const owners = this.pendingCloses.get(key) ?? new Set<object>();
-    owners.add(owner);
-    this.pendingCloses.set(key, owners);
+    this.pendingCloses.hold(this.pendingCloseKey(profile, pageId), owner);
   }
   /** Releases one holder once its Close settled, was rejected or was abandoned. */
   releasePendingClose(profile: string, pageId: string, owner: object) {
-    const key = this.pendingCloseKey(profile, pageId);
-    const owners = this.pendingCloses.get(key);
-    if (!owners) return;
-    owners.delete(owner);
-    if (!owners.size) this.pendingCloses.delete(key);
+    this.pendingCloses.release(this.pendingCloseKey(profile, pageId), owner);
   }
   /**
    * Aligns the Page descriptors with one native inventory of the admitted
@@ -330,7 +326,7 @@ export class SessionTabsStore {
    * refresh their label; newly discovered pages are appended in inventory
    * order without being selected; descriptors the inventory no longer lists
    * (and foreign-profile descriptors) are removed unless a pending close still
-   * owns them in any Session. A restoration never opens or selects a page.
+   * owns them in any Session or product window. A restoration never opens or selects a page.
    */
   reconcilePages(
     id: string,
