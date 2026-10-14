@@ -465,10 +465,25 @@ fn env_guards(
 }
 
 fn scope_context(code: &str, index: usize, opener: u8, parent: ScopeContext) -> ScopeContext {
+    let prefix = code[..index].trim_end();
+    if opener == b'[' {
+        // A bracket after an expression is a computed member access and keeps
+        // the surrounding condition. A bracket after an operator starts an
+        // array literal, whose contents do not form a guard by themselves.
+        if prefix.as_bytes().last().is_some_and(|byte| {
+            byte.is_ascii_alphanumeric()
+                || matches!(
+                    *byte,
+                    b'_' | b'$' | b']' | b')' | b'}' | b'\'' | b'"' | b'`' | b'.'
+                )
+        }) {
+            return parent;
+        }
+        return ScopeContext::Invalid;
+    }
     if opener != b'(' {
         return ScopeContext::Invalid;
     }
-    let prefix = code[..index].trim_end();
     for (keyword, guard) in [
         ("if", EnvGuard::If),
         ("while", EnvGuard::While),
@@ -1500,6 +1515,13 @@ y=/process.env.F/.test(z),process.env.G"#;
         );
         assert_eq!(
             guard("if((process.env.VERSION))run()", "process.env.VERSION"),
+            Some("the retained read is in an if condition")
+        );
+        assert_eq!(
+            guard(
+                "if({on:true}[process.env.VERSION])run()",
+                "process.env.VERSION"
+            ),
             Some("the retained read is in an if condition")
         );
         assert_eq!(
