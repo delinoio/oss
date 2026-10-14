@@ -2760,7 +2760,9 @@ in the original protected native history and its digest, and logs record only
 shape counts. Never fetch, open, decrypt, replay or reconstruct content from a
 result observation. A Worker whose server did not negotiate the capability
 keeps the observation private and the original turn continues. That private
-path still validates the observation and retains its native item identity and
+path still validates the observation, its native item identity (non-empty, at
+most 1024 bytes) and its `started`/`completed` stage before retaining anything,
+and retains that identity and the
 completion lifecycle, so it consumes one shared native item slot, rejects an ID
 already owned by a message, tool, artifact or dynamic tool, and blocks any later
 item family from claiming that ID. It publishes no function-output event.

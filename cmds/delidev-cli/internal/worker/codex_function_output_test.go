@@ -200,3 +200,27 @@ func TestCodexPrivateFunctionOutputAllowsUnusedIDsAndTerminal(t *testing.T) {
 		t.Fatal("private output prevented independent turn completion", err)
 	}
 }
+
+func TestCodexPrivateFunctionOutputRejectsInvalidIdentityAndStageBeforeRetention(t *testing.T) {
+	cases := map[string]struct {
+		id    string
+		stage domain.FunctionOutputStage
+	}{
+		"empty id":      {id: "", stage: domain.FunctionOutputStarted},
+		"oversized id":  {id: string(make([]byte, 1025)), stage: domain.FunctionOutputStarted},
+		"unknown stage": {id: "private-output", stage: domain.FunctionOutputStage("unknown")},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			c, rpc := codexTerminalStatusFixture(t)
+			c.functionOutputsSupported = false
+			before := len(rpc.events)
+			if _, err := c.PublishCore(context.Background(), codexPrivateOutputEvent(c, tc.id, tc.stage, "private")); err == nil || !c.blocked {
+				t.Fatal("invalid private output evidence was accepted")
+			}
+			if len(c.outputs) != 0 || len(rpc.events) != before {
+				t.Fatal("invalid private output evidence changed retained state")
+			}
+		})
+	}
+}
