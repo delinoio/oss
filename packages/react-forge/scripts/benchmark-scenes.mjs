@@ -117,10 +117,11 @@ async function caseMain(format, workload, output) {
     const prepared = performance.now();
     const publication = await session.exportFile(output);
     const exported = performance.now();
+    const eventLoopUtilization = await sampleEventLoopUtilization(
+      utilization,
+      () => new Promise((done) => setTimeout(done, 10)),
+    );
     const bytes = await readFile(output);
-    // Let the 5 ms monitor observe the completed synchronous export before
-    // reading its histogram in the returned sample.
-    await new Promise((done) => setTimeout(done, 10));
     return {
       format,
       workload,
@@ -146,14 +147,18 @@ async function caseMain(format, workload, output) {
       peakRssBytes: maxRssBytes(),
       eventLoopP99Ms: round(loop.percentile(99) / 1e6),
       eventLoopMaxMs: round(loop.max / 1e6),
-      eventLoopUtilization: round(
-        performance.eventLoopUtilization(utilization).utilization,
-      ),
+      eventLoopUtilization,
     };
   } finally {
     loop.disable();
     await session.dispose();
   }
+}
+
+export async function sampleEventLoopUtilization(previous, afterSample) {
+  const sample = round(performance.eventLoopUtilization(previous).utilization);
+  await afterSample?.();
+  return sample;
 }
 
 export function assertSample(sample, format, workload, bytes) {

@@ -6,7 +6,11 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import React from "react";
-import { parseLockedUfbxVersion, runBenchmark } from "./benchmark-scenes.mjs";
+import {
+  parseLockedUfbxVersion,
+  runBenchmark,
+  sampleEventLoopUtilization,
+} from "./benchmark-scenes.mjs";
 import {
   assertTopology,
   expectedTopology,
@@ -61,6 +65,26 @@ test("fixed grids preserve topology, bytes and repeatable source content", () =>
           : [grid(expected.cells)],
       ),
     );
+  }
+});
+
+test("event-loop utilization is sampled before settling the delay monitor", async () => {
+  const original = performance.eventLoopUtilization;
+  const events = [];
+  performance.eventLoopUtilization = () => {
+    events.push("sample");
+    return { utilization: 0.75 };
+  };
+  try {
+    assert.equal(
+      await sampleEventLoopUtilization({}, () => {
+        events.push("settle");
+      }),
+      0.75,
+    );
+    assert.deepEqual(events, ["sample", "settle"]);
+  } finally {
+    performance.eventLoopUtilization = original;
   }
 });
 
