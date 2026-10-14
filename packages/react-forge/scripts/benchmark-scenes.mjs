@@ -257,6 +257,13 @@ async function inspectFbx(paths) {
   return new Map(rows.map((row) => [row.file, row]));
 }
 
+async function lockedUfbxVersion() {
+  const lockfile = await readFile(join(root, "Cargo.lock"), "utf8");
+  const match = lockfile.match(/\nname = "ufbx"\nversion = "([^"]+)"/u);
+  if (!match) throw new Error("Unable to determine the locked ufbx version.");
+  return match[1];
+}
+
 export async function runBenchmark(output, options = {}) {
   if (!output || typeof output !== "string")
     throw new Error("Expected --output <report.json>.");
@@ -273,6 +280,7 @@ export async function runBenchmark(output, options = {}) {
   );
   const cases = options.cases ?? SCENE_CASES;
   const signal = options.signal;
+  const ufbxVersion = await lockedUfbxVersion();
   await mkdir(dirname(destination), { recursive: true });
   const owned = await mkdtemp(
     join(dirname(destination), ".react-forge-scene-benchmark-"),
@@ -331,11 +339,13 @@ export async function runBenchmark(output, options = {}) {
       item.sample.independentTopology = actual;
       item.sample.validator =
         item.format === "glb"
-          ? "Khronos glTF Validator and GLB accessor parser"
-          : "ufbx 0.11.4";
+          ? `Khronos glTF Validator ${manifest.devDependencies["gltf-validator"]} and GLB accessor parser`
+          : `ufbx ${ufbxVersion}`;
     }
     if (signal?.aborted) throw new Error("Scene benchmark cancelled.");
-    const native = options.nativeProvenance ?? (await nativeBuildProvenance());
+    const native =
+      options.nativeProvenance ??
+      (await nativeBuildProvenance(sourceRevision.trim()));
     const report = {
       schemaVersion: 1,
       command:
