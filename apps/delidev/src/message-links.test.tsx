@@ -132,6 +132,18 @@ it("keeps a streaming Grok tail inert until the validated response completes", (
   expect(screen.getByRole("link").textContent).toBe(url);
 });
 
+it("keeps an interrupted Grok response tail inert after its message closes", () => {
+  const data = structuredClone(transcriptRoleFixtures().grokText) as any;
+  data.text = `Grok ${url}`;
+  data.grok_text.interruption = {
+    request_id: "01960dcb-e1fa-7000-8000-000000000099",
+    native_event_id: `${data.native_thread_id}-11`,
+  };
+  renderRows([data]);
+  expect(screen.getByText("Partial response stopped")).toBeTruthy();
+  expect(screen.getByLabelText("Grok assistant text").querySelector("a")).toBeNull();
+});
+
 it("activates URLs only in Claude text blocks and keeps reasoning inert", () => {
   const data = transcriptRoleFixtures();
   const claude = data.claude as any;

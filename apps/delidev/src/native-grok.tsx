@@ -250,7 +250,7 @@ export function NativeGrokText({ data }: { data: Document }) {
       ) : null}
       <LinkedPre
         text={data.text as string}
-        complete={data.state === "complete"}
+        complete={data.state === "complete" && v.interruption === undefined}
       />
       <Disclosure>
         <DisclosureSummary>
