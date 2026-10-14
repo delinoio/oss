@@ -132,6 +132,11 @@ pub struct SourceStore {
     pub include_content: bool,
     files: BTreeMap<String, SourceFile>,
     pub project_relative: BTreeMap<String, String>,
+    /// Source ID to project-relative path for sources whose content cannot be
+    /// compared with the live file (generated asset modules, binary files and
+    /// modules derived through an import query). A saved run only checks that
+    /// the file still exists.
+    pub existence_relative: BTreeMap<String, String>,
     pub unreadable: Vec<String>,
     /// Source text the bundler used, from source-map `sourcesContent`, keyed by
     /// resolved path. Preferred over the live file, which may have changed
@@ -182,6 +187,12 @@ fn split_query(path: &str) -> (&str, Option<&str>) {
         Some((file, rest)) => (file, Some(rest.split_once('#').map_or(rest, |(q, _)| q))),
         None => (path, None),
     }
+}
+
+/// True when `path` carries an import query, which makes it a module derived
+/// from the file instead of the file itself (for example `a.js?raw`).
+pub fn has_import_query(path: &str) -> bool {
+    split_query(path).1.is_some()
 }
 
 /// True when the import query of `path` selects a string module (`?raw`,
@@ -339,40 +350,61 @@ impl SourceStore {
         let snapshot = self.snapshots.get(&normalize(path));
         let stub = snapshot
             .is_some_and(|snapshot| is_generated_asset_module(&classified.display, snapshot));
-        let (text, sha256, stale): (Option<String>, String, bool) = match (snapshot, live) {
+        let derived = has_import_query(&classified.display);
+        // `existence_only`: the stored hash cannot be compared with the live
+        // file, so a saved run only checks that the file still exists.
+        let (text, sha256, stale, existence_only): (Option<String>, String, bool, bool) = match (
+            snapshot, live,
+        ) {
             // The snapshot is generated asset module code, or there is no
             // snapshot and the live file is not text: the two cannot be
             // compared, so the source is unverifiable and never stale.
             (Some(_), LiveRead::Bytes(bytes)) if stub => {
                 tracing::debug!(path = %classified.display, "generated asset module is not freshness-checked");
-                (None, sha256_hex(&bytes), false)
+                (None, sha256_hex(&bytes), false, true)
             }
             (None, LiveRead::Bytes(bytes)) if as_text(&bytes).is_none() => {
                 tracing::debug!(path = %classified.display, "non-text source is not freshness-checked");
-                (None, sha256_hex(&bytes), false)
+                (None, sha256_hex(&bytes), false, true)
             }
-            // A text snapshot that is not an asset module is compared with the
-            // live bytes. A live file that is no longer text is a change.
+            // A module derived through an import query (for example
+            // `Comp.vue?vue&type=style`) holds transformed code, which is
+            // not expected to equal the file.
+            (Some(snapshot), LiveRead::Bytes(_)) if derived => {
+                tracing::debug!(path = %classified.display, "derived module is not content-checked");
+                (
+                    Some(snapshot.clone()),
+                    sha256_hex(snapshot.as_bytes()),
+                    false,
+                    true,
+                )
+            }
+            // A text snapshot that is not an asset module is compared with
+            // the live bytes. A live file that is no longer text is a
+            // change.
             (Some(snapshot), LiveRead::Bytes(bytes)) => (
                 Some(snapshot.clone()),
                 sha256_hex(snapshot.as_bytes()),
                 as_text(&bytes) != Some(snapshot.as_str()),
+                false,
             ),
-            (Some(_), LiveRead::Unreadable(_)) if stub => (None, sha256_hex(b""), true),
-            (Some(_), LiveRead::NotPermitted) if stub => (None, sha256_hex(b""), false),
+            (Some(_), LiveRead::Unreadable(_)) if stub => (None, sha256_hex(b""), true, true),
+            (Some(_), LiveRead::NotPermitted) if stub => (None, sha256_hex(b""), false, true),
             (Some(snapshot), LiveRead::Unreadable(_)) => (
                 Some(snapshot.clone()),
                 sha256_hex(snapshot.as_bytes()),
                 true,
+                derived,
             ),
             (Some(snapshot), LiveRead::NotPermitted) => (
                 Some(snapshot.clone()),
                 sha256_hex(snapshot.as_bytes()),
                 false,
+                derived,
             ),
             (None, LiveRead::Bytes(bytes)) => match as_text(&bytes) {
-                Some(live) => (Some(live.to_owned()), sha256_hex(&bytes), false),
-                None => (None, sha256_hex(&bytes), false),
+                Some(live) => (Some(live.to_owned()), sha256_hex(&bytes), false, false),
+                None => (None, sha256_hex(&bytes), false, true),
             },
             (None, LiveRead::NotPermitted) => {
                 tracing::debug!(path = %classified.display, "source not vetted for live reading");
@@ -400,16 +432,17 @@ impl SourceStore {
             content_included: verifiable,
             stale,
         };
-        // Only text sources are re-hashed against the live file when a saved
-        // bundle is reopened, and against the backing file, not the module
-        // path with its import query.
-        if let (true, Some(relative)) = (
-            verifiable,
-            classify(project_root, &file_path)
-                .project_relative
-                .filter(|_| classified.project_relative.is_some()),
-        ) {
-            self.project_relative.insert(id.clone(), relative);
+        // A saved bundle is reopened against the backing file, not the module
+        // path with its import query. Text sources are re-hashed; the others
+        // only have to still exist.
+        if let Some(relative) = classify(project_root, &file_path).project_relative
+            && classified.project_relative.is_some()
+        {
+            if existence_only {
+                self.existence_relative.insert(id.clone(), relative);
+            } else if verifiable {
+                self.project_relative.insert(id.clone(), relative);
+            }
         }
         self.files.insert(key, file);
         Some((id, text))
@@ -933,8 +966,32 @@ mod tests {
 
     const SVG_TEXT: &str = "<svg xmlns=\"http://www.w3.org/2000/svg\"/>";
 
-    /// Decision matrix: file x snapshot kind x live file kind. Expected values
-    /// are (stale, content kept, listed for saved-run re-hash). A `?query` in
+    /// Observable outcome of `add_file` for one source.
+    #[derive(Debug, PartialEq, Eq)]
+    struct Outcome {
+        stale: bool,
+        content_kept: bool,
+        /// Listed for a content re-hash when a saved run is reopened.
+        rehashed: bool,
+        /// Listed for an existence check when a saved run is reopened.
+        existence_checked: bool,
+    }
+
+    const fn outcome(
+        stale: bool,
+        content_kept: bool,
+        rehashed: bool,
+        existence_checked: bool,
+    ) -> Outcome {
+        Outcome {
+            stale,
+            content_kept,
+            rehashed,
+            existence_checked,
+        }
+    }
+
+    /// Decision matrix: file x snapshot kind x live file kind. A `?query` in
     /// the file name is part of the module path; the live file is the name
     /// without it.
     #[test]
@@ -942,57 +999,198 @@ mod tests {
         use Live::*;
         use Snapshot::*;
         // (file, snapshot, live, expected)
-        type Case = (&'static str, Snapshot, Live, (bool, bool, bool));
-        let cases: &[Case] = &[
+        type Case = (&'static str, Snapshot, Live, Outcome);
+        let cases: Vec<Case> = vec![
             // Ordinary text snapshot: any difference, including a live file
             // that is no longer text, is a change.
-            ("a.js", Text, MatchingText, (false, true, true)),
-            ("a.js", Text, ChangedText, (true, true, true)),
-            ("a.js", Text, Binary, (true, true, true)),
-            ("a.js", Text, InvalidUtf8, (true, true, true)),
-            ("a.js", Text, Removed, (true, true, true)),
-            // No snapshot: text is read live; non-text is unverifiable.
-            ("a.js", None, MatchingText, (false, true, true)),
-            ("a.js", None, Binary, (false, false, false)),
-            ("a.js", None, InvalidUtf8, (false, false, false)),
+            (
+                "a.js",
+                Text,
+                MatchingText,
+                outcome(false, true, true, false),
+            ),
+            ("a.js", Text, ChangedText, outcome(true, true, true, false)),
+            ("a.js", Text, Binary, outcome(true, true, true, false)),
+            ("a.js", Text, InvalidUtf8, outcome(true, true, true, false)),
+            ("a.js", Text, Removed, outcome(true, true, true, false)),
+            // No snapshot: text is read live; non-text is unverifiable but
+            // its removal is still detected.
+            (
+                "a.js",
+                None,
+                MatchingText,
+                outcome(false, true, true, false),
+            ),
+            ("a.js", None, Binary, outcome(false, false, false, true)),
+            (
+                "a.js",
+                None,
+                InvalidUtf8,
+                outcome(false, false, false, true),
+            ),
             // Generated asset modules are never compared with the live file,
-            // whatever it holds; only removal counts as a change.
-            ("logo.png", MarkerStub, Binary, (false, false, false)),
-            ("logo.png", MarkerStub, Removed, (true, false, false)),
-            ("icon.svg", MarkerStub, MatchingText, (false, false, false)),
-            ("icon.svg", FileUrlStub, MatchingText, (false, false, false)),
-            ("icon.svg", FileUrlStub, Removed, (true, false, false)),
-            ("icon.svg", DataUrlStub, MatchingText, (false, false, false)),
-            ("icon.svg", DataUrlStub, ChangedText, (false, false, false)),
-            ("logo.png", DataUrlStub, Binary, (false, false, false)),
-            ("note.txt", RawStub, MatchingText, (false, false, false)),
+            // whatever it holds; only removal counts as a change, and a saved
+            // run keeps checking that the file exists.
+            (
+                "logo.png",
+                MarkerStub,
+                Binary,
+                outcome(false, false, false, true),
+            ),
+            (
+                "logo.png",
+                MarkerStub,
+                Removed,
+                outcome(true, false, false, true),
+            ),
+            (
+                "icon.svg",
+                MarkerStub,
+                MatchingText,
+                outcome(false, false, false, true),
+            ),
+            (
+                "icon.svg",
+                FileUrlStub,
+                MatchingText,
+                outcome(false, false, false, true),
+            ),
+            (
+                "icon.svg",
+                FileUrlStub,
+                Removed,
+                outcome(true, false, false, true),
+            ),
+            (
+                "icon.svg",
+                DataUrlStub,
+                MatchingText,
+                outcome(false, false, false, true),
+            ),
+            (
+                "icon.svg",
+                DataUrlStub,
+                ChangedText,
+                outcome(false, false, false, true),
+            ),
+            (
+                "logo.png",
+                DataUrlStub,
+                Binary,
+                outcome(false, false, false, true),
+            ),
+            (
+                "note.txt",
+                RawStub,
+                MatchingText,
+                outcome(false, false, false, true),
+            ),
             // A script whose snapshot is the asset marker text is ordinary
             // code: compared with the live file, content kept.
-            ("a.js", MarkerStub, MatchingText, (true, true, true)),
-            ("a.js", MarkerStub, Removed, (true, true, true)),
-            ("a.js", FileUrlStub, ChangedText, (true, true, true)),
-            ("a.js", DataUrlStub, ChangedText, (true, true, true)),
+            (
+                "a.js",
+                MarkerStub,
+                MatchingText,
+                outcome(true, true, true, false),
+            ),
+            (
+                "a.js",
+                MarkerStub,
+                Removed,
+                outcome(true, true, true, false),
+            ),
+            (
+                "a.js",
+                FileUrlStub,
+                ChangedText,
+                outcome(true, true, true, false),
+            ),
+            (
+                "a.js",
+                DataUrlStub,
+                ChangedText,
+                outcome(true, true, true, false),
+            ),
             // An import query that selects a string module makes a script an
             // asset module, backed by the file without the query.
-            ("a.js?raw", RawStub, MatchingText, (false, false, false)),
-            ("a.js?raw", RawStub, ChangedText, (false, false, false)),
-            ("a.js?raw", RawStub, Removed, (true, false, false)),
-            ("a.js?inline", DataUrlStub, Binary, (false, false, false)),
-            ("a.js?url", MarkerStub, MatchingText, (false, false, false)),
-            ("a.js?url#frag", FileUrlStub, Removed, (true, false, false)),
-            ("icon.svg?raw", RawStub, MatchingText, (false, false, false)),
+            (
+                "a.js?raw",
+                RawStub,
+                MatchingText,
+                outcome(false, false, false, true),
+            ),
+            (
+                "a.js?raw",
+                RawStub,
+                ChangedText,
+                outcome(false, false, false, true),
+            ),
+            (
+                "a.js?raw",
+                RawStub,
+                Removed,
+                outcome(true, false, false, true),
+            ),
+            (
+                "a.js?inline",
+                DataUrlStub,
+                Binary,
+                outcome(false, false, false, true),
+            ),
+            (
+                "a.js?url",
+                MarkerStub,
+                MatchingText,
+                outcome(false, false, false, true),
+            ),
+            (
+                "a.js?url#frag",
+                FileUrlStub,
+                Removed,
+                outcome(true, false, false, true),
+            ),
+            (
+                "icon.svg?raw",
+                RawStub,
+                MatchingText,
+                outcome(false, false, false, true),
+            ),
             (
                 "icon.svg?inline",
                 DataUrlStub,
                 Removed,
-                (true, false, false),
+                outcome(true, false, false, true),
             ),
-            // Any other query still names the file that backs the module.
-            ("a.js?v=1", Text, MatchingText, (false, true, true)),
-            ("a.js?v=1", Text, ChangedText, (true, true, true)),
-            ("a.js?v=1", Text, Removed, (true, true, true)),
-            ("a.js?v=1", None, MatchingText, (false, true, true)),
-            ("a.js?raw", None, Binary, (false, false, false)),
+            // Another import query names a module derived from the file: its
+            // transformed code is not compared, only the file must exist.
+            (
+                "a.js?v=1",
+                Text,
+                MatchingText,
+                outcome(false, true, false, true),
+            ),
+            (
+                "a.js?v=1",
+                Text,
+                ChangedText,
+                outcome(false, true, false, true),
+            ),
+            ("a.js?v=1", Text, Binary, outcome(false, true, false, true)),
+            ("a.js?v=1", Text, Removed, outcome(true, true, false, true)),
+            (
+                "a.js?v=1",
+                MarkerStub,
+                ChangedText,
+                outcome(false, true, false, true),
+            ),
+            // Without a snapshot the live file is the source, query or not.
+            (
+                "a.js?v=1",
+                None,
+                MatchingText,
+                outcome(false, true, true, false),
+            ),
+            ("a.js?raw", None, Binary, outcome(false, false, false, true)),
         ];
         for (file, snapshot, live, expected) in cases {
             let dir = tempfile::tempdir().unwrap();
@@ -1031,22 +1229,29 @@ mod tests {
             let (id, text) = store
                 .add_file(dir.path(), &path)
                 .unwrap_or_else(|| panic!("{file} {snapshot:?} {live:?} must keep a source"));
-            let listed = store.project_relative.contains_key(&id);
+            let actual = Outcome {
+                stale: !store.changed_since_build.is_empty(),
+                content_kept: text.is_some(),
+                rehashed: store.project_relative.contains_key(&id),
+                existence_checked: store.existence_relative.contains_key(&id),
+            };
             // The saved path is the backing file, never the module path with
-            // its query.
-            for relative in store.project_relative.values() {
+            // its query, and a source is listed for at most one check.
+            for relative in store
+                .project_relative
+                .values()
+                .chain(store.existence_relative.values())
+            {
                 assert_eq!(relative, disk_name, "{file} {snapshot:?} {live:?}");
             }
-            let stale = !store.changed_since_build.is_empty();
+            assert!(!(actual.rehashed && actual.existence_checked), "{file}");
             let files = store.into_files();
             assert_eq!(files.len(), 1);
-            let actual = (stale, text.is_some(), listed);
-            assert_eq!(actual, *expected, "{file} {snapshot:?} {live:?}");
-            assert_eq!(files[0].path, *file);
-            assert_eq!(files[0].stale, stale, "{file} {snapshot:?} {live:?}");
+            assert_eq!(actual, expected, "{file} {snapshot:?} {live:?}");
+            assert_eq!(files[0].path, file, "{file} {snapshot:?} {live:?}");
+            assert_eq!(files[0].stale, actual.stale, "{file} {snapshot:?} {live:?}");
             assert_eq!(
-                files[0].content_included,
-                text.is_some(),
+                files[0].content_included, actual.content_kept,
                 "{file} {snapshot:?} {live:?}"
             );
         }
@@ -1106,6 +1311,7 @@ mod tests {
         assert!(store.add_file(project.path(), &queried).is_some());
         // Outside the project nothing is listed for a saved-run recheck.
         assert!(store.project_relative.is_empty());
+        assert!(store.existence_relative.is_empty());
     }
 
     #[test]

@@ -339,6 +339,11 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
                 &output.sources,
                 &output.project_relative,
             );
+            let existence_relative = bundle::retained_relative(
+                &selection.project_root,
+                &output.sources,
+                &output.existence_relative,
+            );
             (
                 ResultBundle {
                     schema_version: SCHEMA_VERSION,
@@ -346,6 +351,7 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
                     analysis,
                     sources: output.sources,
                     project_relative,
+                    existence_relative,
                 },
                 None,
             )

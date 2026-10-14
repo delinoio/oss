@@ -42,6 +42,12 @@ pub struct ResultBundle {
     /// Source ID to safe project-relative path.
     #[serde(default)]
     pub project_relative: BTreeMap<String, String>,
+    /// Source ID to safe project-relative path for sources whose saved hash
+    /// cannot be compared with the live file (generated asset modules, binary
+    /// files and modules derived through an import query). A reopened run only
+    /// checks that the file still exists.
+    #[serde(default)]
+    pub existence_relative: BTreeMap<String, String>,
 }
 
 /// Keeps a result within the loader's size limit. When source content makes
@@ -226,7 +232,11 @@ fn validate(bundle: &ResultBundle) -> BwResult<()> {
             }
         }
     }
-    for (id, path) in &bundle.project_relative {
+    for (id, path) in bundle
+        .project_relative
+        .iter()
+        .chain(&bundle.existence_relative)
+    {
         if !ids.contains(id.as_str()) || safe_project_relative(path).is_none() {
             return Err(invalid(format!("unsafe project-relative path for {id}")));
         }
@@ -424,17 +434,28 @@ pub fn mark_stale(bundle: &mut ResultBundle) {
     };
     let mut stale = 0usize;
     for source in &mut bundle.sources {
-        let Some(relative) = bundle
-            .project_relative
-            .get(&source.id)
-            .and_then(|path| safe_project_relative(path))
-        else {
+        // A source listed for existence only (an asset module, a binary file
+        // or a derived module) keeps no comparable hash: only its removal
+        // counts.
+        let (path, existence_only) = match bundle.project_relative.get(&source.id) {
+            Some(path) => (path, false),
+            None => match bundle.existence_relative.get(&source.id) {
+                Some(path) => (path, true),
+                None => continue,
+            },
+        };
+        let Some(relative) = safe_project_relative(path) else {
             continue;
         };
         // A file that cannot be verified (too large, special, outside the
         // root) is not reported stale; only a removed file or a hash mismatch
         // is.
         let removed = std::fs::symlink_metadata(canonical_root.join(&relative)).is_err();
+        if existence_only {
+            source.stale = removed;
+            stale += usize::from(removed);
+            continue;
+        }
         let is_stale = read_project_file(&canonical_root, &relative).map_or(removed, |bytes| {
             if is_unverifiable_asset(source, &bytes) {
                 tracing::debug!(path = %source.path, "asset stub source is not freshness-checked");
@@ -487,6 +508,7 @@ mod tests {
                 ..SourceFile::default()
             }],
             project_relative: BTreeMap::new(),
+            existence_relative: BTreeMap::new(),
         }
     }
 
@@ -857,6 +879,243 @@ mod tests {
                 .count();
             assert_eq!(warnings, usize::from(*expected), "{file} {stored}");
         }
+    }
+
+    /// A source listed for an existence check keeps no comparable hash: its
+    /// content never makes it stale, only its removal does, and a restored file
+    /// clears the flag.
+    #[test]
+    fn existence_checked_sources_become_stale_only_when_removed() {
+        const PNG: &[u8] = &[0x89, b'P', b'N', b'G', 0, 0xff, 0xfe];
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(project.join("src")).unwrap();
+        let file = project.join("src/logo.png");
+        std::fs::write(&file, PNG).unwrap();
+        let mut saved = bundle();
+        saved.project_root = std::fs::canonicalize(&project)
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        // The saved hash is the hash of another revision of the file.
+        saved.sources[0].path = "src/logo.png".to_owned();
+        saved.sources[0].sha256 = sha256_hex(b"revision at analysis time");
+        saved.sources[0].content_included = false;
+        saved.analysis.sources = vec![crate::model::SourceFileSummary {
+            id: "src-0123456789abcdef".to_owned(),
+            ..crate::model::SourceFileSummary::default()
+        }];
+        saved
+            .existence_relative
+            .insert("src-0123456789abcdef".to_owned(), "src/logo.png".to_owned());
+        save(dir.path(), &saved).unwrap();
+
+        let steps: [(Option<&[u8]>, bool); 5] = [
+            (Some(PNG), false),
+            (Some(b"replaced by other bytes"), false),
+            (None, true),
+            (Some(PNG), false),
+            (None, true),
+        ];
+        for (live, expected) in steps {
+            match live {
+                Some(bytes) => std::fs::write(&file, bytes).unwrap(),
+                None => {
+                    let _ = std::fs::remove_file(&file);
+                }
+            }
+            for _ in 0..2 {
+                let loaded = load(dir.path()).unwrap();
+                assert_eq!(loaded.sources[0].stale, expected);
+                assert_eq!(loaded.analysis.sources[0].stale, expected);
+                assert_eq!(
+                    loaded
+                        .analysis
+                        .problems
+                        .iter()
+                        .filter(|entry| entry.code == "BW_SOURCE_STALE")
+                        .count(),
+                    usize::from(expected)
+                );
+            }
+        }
+    }
+
+    /// Unsafe paths in either relative map are rejected before any check.
+    #[test]
+    fn rejects_unsafe_existence_relative_paths() {
+        for path in ["../outside.png", "/etc/passwd", "src/../../x", "a\\b", ""] {
+            let mut traversal = bundle();
+            traversal
+                .existence_relative
+                .insert("src-0123456789abcdef".to_owned(), path.to_owned());
+            assert_eq!(
+                parse(&serde_json::to_vec(&traversal).unwrap())
+                    .unwrap_err()
+                    .code,
+                ErrorCode::ResultInvalid,
+                "{path:?}"
+            );
+        }
+        let mut unknown = bundle();
+        unknown
+            .existence_relative
+            .insert("src-ffffffffffffffff".to_owned(), "src/a.png".to_owned());
+        assert!(parse(&serde_json::to_vec(&unknown).unwrap()).is_err());
+        // Bundles saved before the map existed still load.
+        let mut json = serde_json::to_value(bundle()).unwrap();
+        json.as_object_mut().unwrap().remove("existenceRelative");
+        assert!(parse(&serde_json::to_vec(&json).unwrap()).is_ok());
+    }
+
+    /// Analysis to reopen: assets, binary files and query modules that existed
+    /// during the analysis are reported once they are removed, while edits to
+    /// their content never are. Query modules are checked through their backing
+    /// file.
+    #[test]
+    fn removed_assets_and_query_modules_are_reported_after_a_saved_run_is_reopened() {
+        const PNG: &[u8] = &[0x89, b'P', b'N', b'G', 0, 0xff, 0xfe];
+        const SVG: &str = "<svg xmlns=\"http://www.w3.org/2000/svg\"/>";
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(project.join("src")).unwrap();
+        let canonical = std::fs::canonicalize(&project).unwrap();
+        // (module path, backing file, bytes, snapshot)
+        let entries: &[(&str, &str, &[u8], Option<&str>)] = &[
+            // Generated stub of a PNG.
+            (
+                "src/logo.png",
+                "src/logo.png",
+                PNG,
+                Some("export default \"__VITE_ASSET__abc__\""),
+            ),
+            // Binary file read without a snapshot.
+            ("src/photo.png", "src/photo.png", PNG, None),
+            // Text asset inlined as a data URL.
+            (
+                "src/icon.svg?inline",
+                "src/icon.svg",
+                SVG.as_bytes(),
+                Some("export default \"data:image/svg+xml,%3Csvg%2F%3E\""),
+            ),
+            // A script imported as text.
+            (
+                "src/a.js?raw",
+                "src/a.js",
+                b"export const a = 1;",
+                Some("export default \"export const a = 1;\""),
+            ),
+            // An ordinary text source.
+            (
+                "src/main.js",
+                "src/main.js",
+                b"export const m = 1;",
+                Some("export const m = 1;"),
+            ),
+        ];
+        let mut store = crate::sources::SourceStore::new(true);
+        for (module, backing, bytes, snapshot) in entries {
+            std::fs::write(canonical.join(backing), bytes).unwrap();
+            let path = canonical.join(module);
+            if let Some(snapshot) = snapshot {
+                store
+                    .snapshots
+                    .insert(crate::sources::normalize(&path), (*snapshot).to_owned());
+            }
+            store.add_file(&canonical, &path).unwrap();
+        }
+        assert!(store.changed_since_build.is_empty());
+        assert_eq!(store.project_relative.len(), 1);
+        assert_eq!(store.existence_relative.len(), 4);
+        let store_project_relative = store.project_relative.clone();
+        let store_existence_relative = store.existence_relative.clone();
+        let stale_warning_count = |bundle: &ResultBundle| {
+            bundle
+                .analysis
+                .problems
+                .iter()
+                .filter(|entry| entry.code == "BW_SOURCE_STALE")
+                .count()
+        };
+        let mut saved = bundle();
+        saved.project_root = canonical.to_string_lossy().into_owned();
+        saved.sources = store.into_files();
+        saved.analysis.sources = saved.sources.iter().map(SourceFile::summary).collect();
+        // The analysis maps hold the backing files; the saved maps keep them.
+        saved.project_relative =
+            retained_relative(&canonical, &saved.sources, &store_project_relative);
+        saved.existence_relative =
+            retained_relative(&canonical, &saved.sources, &store_existence_relative);
+        assert_eq!(saved.project_relative.len(), 1);
+        assert_eq!(saved.existence_relative.len(), 4);
+        let mut backing: Vec<_> = saved
+            .project_relative
+            .values()
+            .chain(saved.existence_relative.values())
+            .map(String::as_str)
+            .collect();
+        backing.sort_unstable();
+        assert_eq!(
+            backing,
+            [
+                "src/a.js",
+                "src/icon.svg",
+                "src/logo.png",
+                "src/main.js",
+                "src/photo.png"
+            ]
+        );
+        save(dir.path(), &saved).unwrap();
+
+        let loaded = load(dir.path()).unwrap();
+        assert!(loaded.sources.iter().all(|source| !source.stale));
+        assert_eq!(stale_warning_count(&loaded), 0);
+
+        // Content edits never make an existence-checked source stale; an edit
+        // to the ordinary source does.
+        std::fs::write(canonical.join("src/logo.png"), b"other bytes").unwrap();
+        std::fs::write(canonical.join("src/icon.svg"), "<svg changed/>").unwrap();
+        std::fs::write(canonical.join("src/a.js"), "export const a = 2;").unwrap();
+        let loaded = load(dir.path()).unwrap();
+        assert_eq!(stale_warning_count(&loaded), 0);
+
+        // Removing each file reports exactly the sources it backs, once.
+        let stale_paths = |bundle: &ResultBundle| -> Vec<String> {
+            let mut paths: Vec<_> = bundle
+                .sources
+                .iter()
+                .filter(|source| source.stale)
+                .map(|source| source.path.clone())
+                .collect();
+            paths.sort_unstable();
+            paths
+        };
+        std::fs::remove_file(canonical.join("src/logo.png")).unwrap();
+        let loaded = load(dir.path()).unwrap();
+        assert_eq!(stale_paths(&loaded), ["src/logo.png"]);
+        assert_eq!(stale_warning_count(&loaded), 1);
+        std::fs::remove_file(canonical.join("src/a.js")).unwrap();
+        std::fs::remove_file(canonical.join("src/photo.png")).unwrap();
+        std::fs::remove_file(canonical.join("src/main.js")).unwrap();
+        let loaded = load(dir.path()).unwrap();
+        assert_eq!(
+            stale_paths(&loaded),
+            [
+                "src/a.js?raw",
+                "src/logo.png",
+                "src/main.js",
+                "src/photo.png"
+            ]
+        );
+        assert_eq!(stale_warning_count(&loaded), 1);
+        assert!(
+            loaded.analysis.problems.iter().any(|entry| entry.message
+                == "4 source file(s) changed or were removed since this analysis")
+        );
+        // The query module follows its backing file; restoring it clears it.
+        std::fs::write(canonical.join("src/a.js"), "export const a = 1;").unwrap();
+        let loaded = load(dir.path()).unwrap();
+        assert!(!stale_paths(&loaded).contains(&"src/a.js?raw".to_owned()));
     }
 
     #[test]

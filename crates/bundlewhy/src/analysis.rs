@@ -39,6 +39,10 @@ pub struct AnalysisOutput {
     /// Source ID to project-relative path for the sources whose live file can
     /// be re-hashed when a saved bundle is reopened (text sources only).
     pub project_relative: std::collections::BTreeMap<String, String>,
+    /// Source ID to project-relative path for the sources whose live file is
+    /// only checked for existence when a saved bundle is reopened (generated
+    /// asset modules, binary files and derived modules).
+    pub existence_relative: std::collections::BTreeMap<String, String>,
 }
 
 pub fn engine_identity(bundler: BundlerChoice, collection: &Collection) -> EngineIdentity {
@@ -353,6 +357,7 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
         ));
     }
     let project_relative = context.sources.project_relative.clone();
+    let existence_relative = context.sources.existence_relative.clone();
     let sources = context.sources.into_files();
     let partial = problems.iter().any(|entry| {
         entry.code == ErrorCode::SourceMapMissing.as_str()
@@ -413,6 +418,7 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
         analysis,
         sources,
         project_relative,
+        existence_relative,
     }
 }
 
@@ -682,6 +688,15 @@ mod tests {
         );
         // Saved-run reloads only re-hash text sources.
         assert!(!fixture.output.project_relative.contains_key(&png.id));
+        // Its removal is still detected when the saved run is reopened.
+        assert_eq!(
+            fixture
+                .output
+                .existence_relative
+                .get(&png.id)
+                .map(String::as_str),
+            Some(PNG_SOURCE)
+        );
         assert!(
             fixture
                 .output
