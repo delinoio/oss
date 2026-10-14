@@ -20,6 +20,8 @@ Rust GNU Linux binaries use the checksum-pinned AlmaLinux 9 image and the reposi
 
 Only releases whose source contains this package-distribution contract can enter the repository. Resolve the exact tag to its commit, validate source version and channel, and verify the checksum manifest and both Linux archive Sigstore bundles against the originating release workflow, exact certificate commit SHA, repository and GitHub Actions OIDC issuer. Do not backfill older releases, rebuild a published version, overwrite an existing package identity, or expose signing authority to unverified archives.
 
+The native decoder for binpm, cargo-mono, nodeup, with-watch and derun accepts only the executable and, for newly licensed archives, the complete root `LICENSE` and `NOTICE` as fixed regular members. The two text members must appear together and match the source checkout exactly. Authenticated historical executable-only archives remain readable for immutable recovery. Duplicate, link, traversal and unrelated entries remain invalid; extraction returns the unchanged executable bytes.
+
 ## Repository publication
 
 `delino-oss-packages` is the public R2 bucket. `delino-oss-packages-state` is private and stores immutable candidate records, packages, and publication journals. Recreate aptly databases from the recorded package inventory rather than depending on runner caches.

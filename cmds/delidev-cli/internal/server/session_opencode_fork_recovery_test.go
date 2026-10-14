@@ -224,7 +224,7 @@ func TestOpenCodeForkChildLostReportKeepsIndependentCreation(t *testing.T) {
 }
 
 func TestOpenCodeForkLegacyCreationRequiresExactOriginalSeed(t *testing.T) {
-	for _, change := range []string{"valid", "missing-job", "digest", "runtime", "child", "selection", "device", "marker", "valid-foreign-marker", "checkpoint", "output", "startup-path", "startup-digest", "startup-harness", "startup-missing"} {
+	for _, change := range []string{"valid", "nil-child-valid", "missing-job", "digest", "runtime", "child", "selection", "device", "marker", "valid-foreign-marker", "checkpoint", "output", "startup-path", "startup-digest", "startup-harness", "startup-missing", "nil-child-startup-path", "nil-child-startup-digest", "nil-child-startup-harness", "nil-child-startup-missing", "nil-child-seed-missing", "nil-child-snapshot", "conflicting-child"} {
 		t.Run(change, func(t *testing.T) {
 			f, child, seed := publishedOpenCodeRecoveryFork(t)
 			f.change.Session = child
@@ -259,6 +259,28 @@ func TestOpenCodeForkLegacyCreationRequiresExactOriginalSeed(t *testing.T) {
 					return nil, err
 				}
 				switch change {
+				case "nil-child-valid", "nil-child-startup-path", "nil-child-startup-digest", "nil-child-startup-harness", "nil-child-startup-missing", "nil-child-seed-missing", "nil-child-snapshot":
+					session.Fork.Startup = nil
+					if change == "nil-child-startup-path" {
+						selection.ExplicitPath += "-replacement"
+					} else if change == "nil-child-startup-digest" {
+						selection.ExecutableSHA256 = strings.Repeat("ab", 32)
+					} else if change == "nil-child-startup-harness" {
+						selection.Harness = domain.Codex
+					} else if change == "nil-child-startup-missing" {
+						current.Startup = nil
+					} else if change == "nil-child-snapshot" {
+						session.Fork.Snapshot.InputID = domain.NewID()
+					} else if change == "nil-child-seed-missing" {
+						var old domain.ForkJobInput
+						_ = domain.Decode(job.Input, &old)
+						old.Startup = nil
+						job.Input, _ = json.Marshal(old)
+						session.Fork.JobInputDigest = forkInputDigest(job.Input)
+						if _, err = tx.Put(original.Kind, original.ID, original.Revision, original.SessionID, original.ProjectID, job); err != nil {
+							return nil, err
+						}
+					}
 				case "missing-job":
 					if err = tx.Delete(original.Kind, original.ID, original.Revision); err != nil {
 						return nil, err
@@ -299,9 +321,11 @@ func TestOpenCodeForkLegacyCreationRequiresExactOriginalSeed(t *testing.T) {
 					selection.Harness = domain.Codex
 				case "startup-missing":
 					current.Startup = nil
+				case "conflicting-child":
+					session.Fork.Startup.ExplicitPath += "-replacement"
 				}
 				creation, proofErr := openCodeForkRecoveryCreation(tx, row, session, current, seed.RuntimeID, f.workerDevice)
-				if change == "valid" {
+				if change == "valid" || change == "nil-child-valid" {
 					if proofErr != nil || creation != seed.OpenCode.Fork {
 						t.Fatal("exact legacy original seed not resolved", proofErr)
 					}

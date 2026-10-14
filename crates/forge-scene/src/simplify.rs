@@ -105,40 +105,87 @@ fn edge_faces(faces: &[Face]) -> Result<BTreeMap<(u32, u32), Vec<usize>>> {
     }
     Ok(edges)
 }
+
+fn vertex_faces(faces: &[Face]) -> Result<BTreeMap<u32, Vec<usize>>> {
+    let mut vertices = BTreeMap::<u32, Vec<usize>>::new();
+    for (i, face) in faces.iter().enumerate() {
+        guarded(i)?;
+        for &vertex in face {
+            vertices.entry(vertex).or_default().push(i);
+        }
+    }
+    Ok(vertices)
+}
+
+fn canonical_face(face: Face) -> Face {
+    let mut key = face;
+    key.sort_unstable();
+    key
+}
+
+fn has_disconnected_fan(vertex: u32, faces: &[Face], incident: &[usize]) -> bool {
+    let mut links = BTreeMap::<u32, BTreeSet<u32>>::new();
+    for &index in incident {
+        let face = faces[index];
+        let neighbors: Vec<_> = face.into_iter().filter(|&id| id != vertex).collect();
+        if neighbors.len() == 2 {
+            links.entry(neighbors[0]).or_default().insert(neighbors[1]);
+            links.entry(neighbors[1]).or_default().insert(neighbors[0]);
+        }
+    }
+    let Some(&first) = links.keys().next() else {
+        return false;
+    };
+    let mut visited = BTreeSet::from([first]);
+    let mut pending = vec![first];
+    while let Some(current) = pending.pop() {
+        if let Some(neighbors) = links.get(&current) {
+            for &neighbor in neighbors {
+                if visited.insert(neighbor) {
+                    pending.push(neighbor);
+                }
+            }
+        }
+    }
+    visited.len() != links.len()
+}
+
 fn legal(
     source: u32,
     destination: u32,
     faces: &[Face],
     edges: &BTreeMap<(u32, u32), Vec<usize>>,
+    vertices: &BTreeMap<u32, Vec<usize>>,
+    face_counts: &BTreeMap<Face, usize>,
     positions: &[[f32; 3]],
     target: usize,
-) -> Result<Option<Vec<Face>>> {
+) -> Result<bool> {
     let incident = match edges.get(&edge(source, destination)) {
         Some(v) if v.len() <= 2 => v,
-        _ => return Ok(None),
+        _ => return Ok(false),
     };
     let mut link_source = BTreeSet::new();
     let mut link_destination = BTreeSet::new();
     let mut opposites = BTreeSet::new();
-    for (i, f) in faces.iter().enumerate() {
-        guarded(i)?;
-        if f.contains(&source) {
-            for &v in f {
-                if v != source {
-                    link_source.insert(v);
-                }
+    for &i in vertices.get(&source).into_iter().flatten() {
+        let f = faces[i];
+        for v in f {
+            if v != source {
+                link_source.insert(v);
             }
         }
-        if f.contains(&destination) {
-            for &v in f {
-                if v != destination {
-                    link_destination.insert(v);
-                }
+    }
+    for &i in vertices.get(&destination).into_iter().flatten() {
+        let f = faces[i];
+        for v in f {
+            if v != destination {
+                link_destination.insert(v);
             }
         }
     }
     for &i in incident {
-        for &v in &faces[i] {
+        let f = faces[i];
+        for &v in &f {
             if v != source && v != destination {
                 opposites.insert(v);
             }
@@ -149,25 +196,66 @@ fn legal(
         .copied()
         .collect();
     if common != opposites {
-        return Ok(None);
+        return Ok(false);
     }
+
+    let mut removed = 0;
+    for &i in vertices.get(&source).into_iter().flatten() {
+        let f = faces[i];
+        let next = f.map(|v| if v == source { destination } else { v });
+        if next[0] == next[1] || next[1] == next[2] || next[2] == next[0] {
+            if !f.contains(&destination) {
+                return Ok(false);
+            }
+            removed += 1;
+        } else {
+            let before = normal(f, positions);
+            let after = normal(next, positions);
+            if !(dot(after, after) > 0. && dot(before, after) > 0.) {
+                return Ok(false);
+            }
+        }
+    }
+    if faces.len() - removed < target || faces.len() - removed >= faces.len() {
+        return Ok(false);
+    }
+
+    let mut affected_counts = BTreeMap::<Face, usize>::new();
+    for &i in vertices.get(&source).into_iter().flatten() {
+        *affected_counts.entry(canonical_face(faces[i])).or_default() += 1;
+    }
+    let mut new_counts = BTreeMap::<Face, usize>::new();
+    for &i in vertices.get(&source).into_iter().flatten() {
+        let face = faces[i];
+        let next = face.map(|v| if v == source { destination } else { v });
+        if next[0] == next[1] || next[1] == next[2] || next[2] == next[0] {
+            continue;
+        }
+        let key = canonical_face(next);
+        let existing = face_counts.get(&key).copied().unwrap_or(0)
+            - affected_counts.get(&key).copied().unwrap_or(0);
+        let created = new_counts.get(&key).copied().unwrap_or(0);
+        if existing + created != 0 {
+            return Ok(false);
+        }
+        *new_counts.entry(key).or_default() += 1;
+    }
+    Ok(true)
+}
+
+fn apply_collapse(
+    source: u32,
+    destination: u32,
+    faces: &[Face],
+    edges: &BTreeMap<(u32, u32), Vec<usize>>,
+    target: usize,
+) -> Result<Option<Vec<Face>>> {
     let mut output = Vec::with_capacity(faces.len());
     for (i, &f) in faces.iter().enumerate() {
         guarded(i)?;
         let mut next = f.map(|v| if v == source { destination } else { v });
         if next[0] == next[1] || next[1] == next[2] || next[2] == next[0] {
-            // Only triangles incident to the collapsed edge may disappear.
-            if !f.contains(&source) || !f.contains(&destination) {
-                return Ok(None);
-            }
             continue;
-        }
-        if f.contains(&source) {
-            let before = normal(f, positions);
-            let after = normal(next, positions);
-            if !(dot(after, after) > 0. && dot(before, after) > 0.) {
-                return Ok(None);
-            }
         }
         output.push(std::mem::take(&mut next));
     }
@@ -183,6 +271,13 @@ fn legal(
     }
     Ok(Some(output))
 }
+
+/*
+ * The candidate legality pass uses vertex incidence rather than rescanning
+ * the complete face set for every candidate. The complete face rewrite
+ * remains a single pass for the accepted candidate, preserving source face
+ * order.
+ */
 
 /// A deliberately generous upper bound includes parsed tuples, quadrics, edge
 /// maps, candidate scanning, a trial face set, remapping, and output encoding.
@@ -316,6 +411,12 @@ pub fn simplify_geometry(
             frozen[b as usize] = true;
         }
     }
+    let original_vertices = vertex_faces(&faces)?;
+    for (&vertex, incident) in &original_vertices {
+        if has_disconnected_fan(vertex, &faces, incident) {
+            frozen[vertex as usize] = true;
+        }
+    }
     let mut coincident = BTreeMap::<[u32; 3], Vec<usize>>::new();
     for (i, &p) in g.positions.iter().enumerate() {
         guarded(i)?;
@@ -333,6 +434,12 @@ pub fn simplify_geometry(
     while faces.len() > target {
         checkpoint()?;
         let edges = edge_faces(&faces)?;
+        let vertices = vertex_faces(&faces)?;
+        let mut face_counts = BTreeMap::<Face, usize>::new();
+        for (i, &face) in faces.iter().enumerate() {
+            guarded(i)?;
+            *face_counts.entry(canonical_face(face)).or_default() += 1;
+        }
         let mut candidates = Vec::new();
         for (i, &(a, b)) in edges.keys().enumerate() {
             guarded(i)?;
@@ -351,9 +458,20 @@ pub fn simplify_geometry(
         let mut accepted = None;
         for (i, (cost, destination, source)) in candidates.into_iter().enumerate() {
             guarded(i)?;
-            if let Some(next) = legal(source, destination, &faces, &edges, &g.positions, target)? {
-                accepted = Some((cost, destination, source, next));
-                break;
+            if legal(
+                source,
+                destination,
+                &faces,
+                &edges,
+                &vertices,
+                &face_counts,
+                &g.positions,
+                target,
+            )? {
+                if let Some(next) = apply_collapse(source, destination, &faces, &edges, target)? {
+                    accepted = Some((cost, destination, source, next));
+                    break;
+                }
             }
         }
         let Some((cost, destination, source, next)) = accepted else {
@@ -646,6 +764,38 @@ mod tests {
         assert_eq!(result.output_triangles, 4);
         assert!(!result.target_reached);
         assert_eq!(result.bytes, source);
+    }
+    #[test]
+    fn tetrahedron_collapses_do_not_create_duplicate_faces() {
+        let positions = [[0., 0., 0.], [1., 0., 0.], [0., 1., 0.], [0., 0., 1.]];
+        let normals = [[0., 0., 1.]; 4];
+        let indices = [0, 2, 1, 0, 1, 3, 0, 3, 2, 1, 2, 3];
+        let source = encode(&positions, &normals, &indices);
+        let result = simplify_geometry(&source, 1, 10.).unwrap();
+        assert_eq!(result.output_triangles, 4);
+        assert!(!result.target_reached);
+        assert_eq!(result.bytes, source);
+    }
+
+    #[test]
+    fn disconnected_vertex_fans_are_frozen() {
+        let positions = [
+            [0., 0., 0.],
+            [1., 0., 0.],
+            [0., 1., 0.],
+            [0., 0., 1.],
+            [-1., 0., 0.],
+            [0., -1., 0.],
+            [0., 0., -1.],
+        ];
+        let normals = [[0., 0., 1.]; 7];
+        let indices = [
+            0, 2, 1, 0, 1, 3, 0, 3, 2, 1, 2, 3, 0, 4, 5, 0, 5, 6, 0, 6, 4, 4, 6, 5,
+        ];
+        let source = encode(&positions, &normals, &indices);
+        let result = simplify_geometry(&source, 1, 10.).unwrap();
+        let output = geometry(&result.bytes).unwrap();
+        assert!(output.positions.iter().any(|p| p == &[0., 0., 0.]));
     }
     #[test]
     fn tied_candidates_use_original_destination_then_source_ids() {

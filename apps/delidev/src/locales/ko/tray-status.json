@@ -1,5 +1,6 @@
 {
   "tray-status.close": "상태 닫기",
+  "tray-status.loading": "상태를 불러오는 중…",
   "tray-status.unavailable": "사용할 수 없음",
   "tray-status.connectionStale": "연결 관측이 오래됨",
   "tray-status.connected": "연결됨",

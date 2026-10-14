@@ -4,6 +4,8 @@ Available in npm `0.2.0`. Create and export static scenes using `createSession(F
 
 Use the same components, registered geometry/textures, transforms, measurement, and lifecycle as the [GLB guide](/react-forge/formats/glb/). Change the format to `Format.Fbx`, import the components from `@delino/react-forge/fbx`, and export to a `.fbx` destination. The result is binary FBX 7.4 with embedded textures. Generation needs no Blender, Autodesk SDK, or conversion process.
 
+The explicit [`compactGeometry` operation](/react-forge/formats/glb/#explicit-geometry-compaction-unreleased) is also available in source for FBX scenes and remains unreleased. It returns a separate geometry handle and vertex/byte counts while preserving every face. Its source handle remains usable; removing unused vertices can shrink bounds only after rendering with the returned handle.
+
 ## Compatibility profile
 
 The supported material profile targets Blender 4.5 LTS. It carries base color, metallic, roughness, normal, emissive, and opacity through the importer's legacy material properties and texture connections. Color and scalar factors are baked into embedded texture copies where the importer replaces connected values. Original registered bytes stay unchanged. Assets use meters and right-handed Y-up; camera/light axes and UV orientation are converted by the exporter.

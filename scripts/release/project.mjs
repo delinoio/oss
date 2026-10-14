@@ -28,9 +28,7 @@ const repository = "delinoio/oss";
 const botName = "delino-release-bot[bot]";
 const root = fileURLToPath(new URL("../..", import.meta.url));
 export function releaseTag(project, version) {
-  return project === Project.DeliDev
-    ? `delidev-v${version}`
-    : `${project}@v${version}`;
+  return `${project}@v${version}`;
 }
 const versions = Object.freeze({
   delidev: { kind: Kind.Rust, file: "apps/delidev/src-tauri/Cargo.toml" },

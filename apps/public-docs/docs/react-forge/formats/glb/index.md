@@ -35,6 +35,12 @@ Coordinates use meters, right-handed Y-up. `translation` and `scale` are three-e
 
 `registerGeometry()` copies typed arrays immediately. Keep large arrays in registered geometry, not React props. `registerTexture(bytesOrPath)` copies PNG/JPEG data or reads an explicit local file; URLs are not fetched. Asset handles belong to their creating session.
 
+### Explicit geometry compaction (unreleased)
+
+The unreleased API adds `await session.compactGeometry(geometry, { signal })` for GLB and FBX sessions. It returns `{ geometry, inputVertices, outputVertices, triangles, inputBytes, outputBytes }`. Render with the returned handle to use the smaller asset. The original geometry remains available for export; neither registration nor export compacts it automatically.
+
+Compaction removes unreferenced vertices and coalesces only vertices whose complete attributes, including UV seams, tangents, skin weights and morph deltas, have identical Float32 bits. It preserves triangle count, order, winding and duplicate faces. It does **not** reduce triangles or perform approximate welding. Removing unused positions can shrink measured bounds after you render with the returned handle; a scene still using the original handle retains its original bounds. The operation observes session asset and scratch limits and supports cancellation.
+
 Materials accept linear `baseColor` RGBA, `metallic`, `roughness`, `emissive` RGB, `alphaMode: AlphaMode.Opaque | AlphaMode.Blend`, and `doubleSided`. Factors range from 0 to 1. Texture properties are `baseColorTexture`, `metallicTexture`, `roughnessTexture`, `normalTexture`, and `emissiveTexture`. Base-color/emissive maps are sRGB; scalar maps use the linear red channel; normal maps are linear +Y tangent-space. UV0 uses a top-left origin and repeat wrapping. Textures require UVs; normal maps additionally require tangents. Metalness and roughness maps must have equal dimensions when used together. Opaque materials require alpha factor 1 and ignore texture alpha. Transmission, refraction, clearcoat, texture transforms, and extra UV sets are unsupported and rejected.
 
 Perspective cameras take `yfov` in radians, `aspect`, `near`, and `far`; orthographic cameras take half-extents `xmag`/`ymag`, `near`, and `far`. Directional intensity is lux; point/spot intensity is candela. Spot cone angles are radians. Lights use `KHR_lights_punctual`.

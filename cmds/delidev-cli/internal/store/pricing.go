@@ -121,11 +121,20 @@ func (t *Tx) putPricing(model domain.ID, expected uint64, id domain.ID, basis do
 		return value, domain.Fail(domain.ResourceExhausted, "The pricing basis exceeds its bound.", "Shorten its source or explicit exclusions.")
 	}
 	var latest uint64
-	if err = t.tx.QueryRowContext(t.ctx, "SELECT COALESCE(MAX(revision),0) FROM pricing_versions WHERE model_key=?", model).Scan(&latest); err != nil {
+	var latestID domain.ID
+	err = t.tx.QueryRowContext(t.ctx, "SELECT id,revision FROM pricing_versions WHERE model_key=? ORDER BY revision DESC LIMIT 1", model).Scan(&latestID, &latest)
+	if errors.Is(err, sql.ErrNoRows) {
+		latest = 0
+	} else if err != nil {
 		return value, storageError(err)
 	}
 	if latest >= 1<<63-1 {
 		return value, domain.Fail(domain.ResourceExhausted, "Pricing revision limit reached.", "Retain the original immutable versions.")
+	}
+	if current == nil && latest != 0 {
+		if err := t.retainUnknownPricingClear(latestID); err != nil {
+			return value, err
+		}
 	}
 	prov, _ := json.Marshal(provenance)
 	_, err = t.tx.ExecContext(t.ctx, "INSERT INTO pricing_versions(id,model_key,provider_id,subscription_service,revision,body,created_at,provenance) VALUES(?,?,?,?,?,?,?,?)", id, model, selected.ProviderID, selected.SubscriptionService, latest+1, body, t.now.UnixMilli(), prov)

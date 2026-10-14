@@ -7,5 +7,7 @@
   "pagination.retry": "Retry",
   "pagination.loadMore": "Load more",
   "pagination.loadMoreLabel": "Load more {{label}}",
-  "pagination.restore": "Restore previously loaded items"
+  "pagination.restore": "Restore previously loaded items",
+  "pagination.moreAvailable": "Scroll to load more {{label}}.",
+  "pagination.exhausted": "No further page of {{label}} is available."
 }

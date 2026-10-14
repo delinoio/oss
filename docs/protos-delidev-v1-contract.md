@@ -1,5 +1,15 @@
 # DeliDev v1 Connect contract
 
+## Parallel session dispatch negotiation
+
+Worker `PARALLEL_SESSIONS_V1 = 66` is an active opt-in capability. The server echoes the capability in
+`AttachWorkerResponse.supported_worker_capabilities`; a Worker advertises it only
+after observing that echo, and the machine records it only when advertised.
+Existing numeric assignments are unchanged. Go and TypeScript Worker descriptors
+expose the new enum. No public RPC, System capability, message field or SQLite
+migration is added. The [command contract](cmds-delidev-contract.md#parallel-session-dispatch)
+owns dispatch behavior.
+
 ## Branch prefix exact-quote negotiation
 
 Worker `BRANCH_PREFIX_EXACT_QUOTE_V1 = 65` is allocated and activated with
@@ -51,12 +61,21 @@ is added.
 The originating change established the complete reservations on main before activation.
 The feature owns ProviderInventory capability
 `ACCOUNT_API_FORMAT_CHANGE_V1 = 9` separately from capability 7 and OAuth
-reservation 8. The owner/client `AccountService.ChangeAccountApiFormat` RPC
+reservation 8. Capability
+`ACCOUNT_API_FORMAT_CHANGE_REVISION_V1 = 10` gates revision-bound format saves.
+The owner/client `AccountService.ChangeAccountApiFormat` RPC
 uses request fields mutation 1, api_protocol 2, alias 3, enabled 4,
 exclude_automatic 5 and recovery_notifications 6; its response uses account 1,
-request_id 2 and replayed 3. Reuse the existing `ApiProtocol` enum.
-Capability 9 now activates this dedicated operation. The reservation-only PR
-granted no format change, key access or execution authority.
+request_id 2 and replayed 3. Request field provider_revision 7 carries the
+inspected Provider resource revision. Reuse the existing `ApiProtocol` enum.
+Capability 9 now activates this dedicated operation, while capability 10 is
+required before a client enables the provider revision check. The
+reservation-only PR granted no format change, key access or execution
+authority.
+Active servers reject zero or omitted provider_revision on fresh requests and
+do not reinterpret earlier receipt bytes as provider-bound evidence. An exact
+accepted revised request replays through its original actor-bound digest before
+a current Provider revision check; a changed request under that ID conflicts.
 
 The approved extension permits changing a connected API account's format while
 keeping its protected key. Go owns atomic preference/profile publication and
@@ -69,7 +88,8 @@ exact actor/revision/request retries, and explicit Disconnect/deletion cleanup
 across all generations. Do not convert formats or change Provider identity or
 keyless credential ownership. No SQLite migration or native change is authorized.
 Capability 7 and its existing cleanup-required configuration operation remain
-unchanged; capability 9 owns the dedicated extension.
+unchanged; capability 9 owns the dedicated extension and capability 10 gates
+revision-bound provider checks.
 
 ## OAuth API format selection reservations
 
@@ -95,7 +115,7 @@ actor/login/credential ownership, once-only exchange and cleanup stay intact.
 The desktop uses one provider-metadata-driven format presentation for manual and
 OAuth connections: explicitly choose among multiple formats, or display the sole
 format. Preserve Google project binding and device approval. Existing accounts
-may use capability 9 for the key-preserving change without a new OAuth exchange;
+may use capabilities 9 and 10 for the key-preserving change without a new OAuth exchange;
 capability 7 alone requires Disconnect and confirmed cleanup before format changes. No historical
 account/execution rewrite, protocol conversion or native change is authorized.
 
@@ -430,7 +450,7 @@ Authenticated owner clients and separately authorized outbound Workers. No unaut
 
 `WorkerService` is the outbound execution boundary: an authenticated Worker attaches with a fresh process instance identity, receives bounded server-streamed work assignments, and reports results through separate unary RPCs. The server binds every assignment, acknowledgment, and result to that machine, job, and claimed process instance. A disconnect never authorizes a duplicate execution or a different-machine retry. Per-device revocation cancels active RPC contexts and rejects both later authorization and in-flight mutation commits. It atomically cancels that machine's undispatched jobs and marks claimed jobs uncertain, propagating the failure to any repository-save coordinator, session preparation and native execution/input ownership; a connection cancellation never proves an accepted native operation had no side effects. Accepted job routing remains immutable.
 
-Each outbound work stream delivers at most one unresolved assignment; later accepted jobs stay queued until the preceding report resolves. Ten-second heartbeats continue during native work. Workers receive in a separate bounded loop, cancel owned work on stream termination/revocation or 45 seconds of silence, join cleanup, and retain the durable outcome before reconnecting. A same-instance reconnect may reuse a finished journal/report identity but cannot rerun a started operation without its completion record. Half-open TCP is not continuing execution authority. `WatchWorkResponse.cancel_job_id` is a separate control for an immutable assigned job; `cancel_requested` accompanies a replayed assignment whose cancellation was already accepted. Controls never alter its revision/digest, survive server restart and target only that job. A precanceled assignment writes its completion journal without starting native work. Worker reports classify confirmed cancellation as `canceled`, while unresolved ownership remains `uncertain`.
+Each outbound work stream delivers at most one unresolved assignment unless `PARALLEL_SESSIONS_V1` was negotiated; later accepted jobs stay queued until the preceding report resolves. A negotiated stream may hold one unresolved assignment per independent session, keeps the single stream per machine instance, and sends cancellation, question, approval and steer controls only for their original `job_id`. Ten-second heartbeats continue during native work. Workers receive in a separate bounded loop, cancel owned work on stream termination/revocation or 45 seconds of silence, join cleanup, and retain the durable outcome before reconnecting. A same-instance reconnect may reuse a finished journal/report identity but cannot rerun a started operation without its completion record. Half-open TCP is not continuing execution authority. `WatchWorkResponse.cancel_job_id` is a separate control for an immutable assigned job; `cancel_requested` accompanies a replayed assignment whose cancellation was already accepted. Controls never alter its revision/digest, survive server restart and target only that job. A precanceled assignment writes its completion journal without starting native work. Worker reports classify confirmed cancellation as `canceled`, while unresolved ownership remains `uncertain`.
 
 `SystemService.GetDoctor` retains its empty request/JSON response and now returns the bounded version-2 [diagnostic report](cmds-delidev-diagnostics-contract.md), with decimal-string capacities/counts, explicit partial inventories, original-connection observations and final client authorization. No protobuf change is required; unknown report versions cannot establish health.
 
@@ -551,7 +571,7 @@ Record implementation status and validation results in pull requests, issues and
 
 - The feature image inputs follow `cmds-delidev-image-input-contract.md`. The owner permits declarations and complete activation in the same feature PR for System 45, Worker 25 and creation/enqueue attachments field 5 only. Preserve metadata-only server storage, authenticated Worker byte ownership, ordered immutable claims, original native image proofs and durable independent cleanup; no migration. Real-account, installed-native, remote-machine and platform acceptance remain owner-assigned and nonblocking for this feature.
 
-- Key-preserving API format changes follow `cmds-delidev-catalog-contract.md#key-preserving-api-format-change-reservations`: the originating change established ProviderInventory 9 and the complete ChangeAccountApiFormat RPC declarations on main before activation. Preserve capability 7, OAuth reservation 8, protected shared key references, original execution/continuation generations, new-format validation, immutable referenced profiles and all-generation explicit cleanup. No SQLite migration or native change. Reservation-only changes activate no support.
+- Key-preserving API format changes follow `cmds-delidev-catalog-contract.md#key-preserving-api-format-change-reservations`: the originating change established ProviderInventory 9 and the complete ChangeAccountApiFormat RPC declarations on main before activation; capability 10 gates revision-bound provider checks. Preserve capability 7, OAuth reservation 8, protected shared key references, original execution/continuation generations, new-format validation, immutable referenced profiles and all-generation explicit cleanup. No SQLite migration or native change. Reservation-only changes activate no support.
 
 - OAuth API format selection follows `cmds-delidev-account-oauth-contract.md#oauth-api-format-selection-reservations`: record ProviderInventory 8 and Start/attempt api_protocol fields 4/7 in the owning feature PR. Reuse the existing ApiProtocol enum; preserve original default/receipt compatibility, provider OAuth eligibility, once-only exchange, protected credentials, immutable selected profiles and confirmed cleanup. No database migration or native change. Reservations alone activate no support.
 
@@ -1536,6 +1556,10 @@ original actor, transcript and existing Device pairing receipt. Bounded JSON
 projections follow the closed states and private/public separation in the
 [connections contract](cmds-delidev-connections-contract.md#tailscale-connections).
 No new SQLite entity or migration is introduced.
+
+## Pull request paging allocation
+
+System `PULL_REQUEST_PAGING_50_V1 = 103` independently negotiates PR List/Search `page_size` up to 50 through `QueryRepositoryIntegration` JSON and up to 50 accepted `GetPullRequestWorkspace.seed_numbers`. It adds no message, field, RPC, Worker allocation, feature flag or database migration, is independent of `PULL_REQUEST_WORKSPACE_V1 = 90`, and the server advertises it from `GetStatus`. Unsupported peers keep the 20-item limits and the desktop sends no 50-item request. Number 103 follows `CODEX_DYNAMIC_TOOLS_V1 = 102`; reconcile against current allocations before merge.
 
 ## Pull request workspace read allocation
 

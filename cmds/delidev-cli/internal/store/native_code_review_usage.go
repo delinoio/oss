@@ -136,7 +136,27 @@ func (t *Tx) nativeReviewPricing(model domain.ID, observed time.Time, reported b
 			return nil, err
 		}
 		if !changed {
-			return t.ActivePricing(model)
+			hadHistory, err := t.pricingHistoryExists(model)
+			if err != nil {
+				return nil, err
+			}
+			live, err := t.ActivePricing(model)
+			if err != nil {
+				return nil, err
+			}
+			// The resolver can replace or clear a price during this transaction.
+			// Only a genuine first price may use the live fallback after such
+			// a change; earlier retained history owns older observations.
+			if hadHistory {
+				changed, err = t.pricingChangedAfter(model, observed)
+				if err != nil {
+					return nil, err
+				}
+				if changed {
+					return t.PricingAt(model, observed)
+				}
+			}
+			return live, nil
 		}
 	}
 	return t.PricingAt(model, observed)

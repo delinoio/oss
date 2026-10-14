@@ -8,9 +8,11 @@ use std::{
 
 mod animation;
 mod assets;
+mod compaction;
 mod simplify;
 pub use animation::*;
 pub use assets::{MAX_MORPHS, MorphTarget, VertexSkin};
+pub use compaction::{CompactedGeometry, compact_geometry, compaction_scratch_bytes};
 pub use forge_document::Assets;
 use forge_tree_doc::{Diagnostic, ErrorCode, Result, cancellation::checkpoint};
 use glam::{DMat4, DQuat, DVec3};
@@ -230,7 +232,9 @@ pub fn geometry(bytes: &[u8]) -> Result<Geometry> {
         .and_then(|v| ni.checked_mul(4).and_then(|i| v.checked_add(i)))
         .and_then(|v| v.checked_add(16))
         .ok_or_else(limited)?;
-    if flags > 3 || n < 3 || ni == 0 || !ni.is_multiple_of(3) || expected != bytes.len() {
+    // Public registration still requires three source vertices. A compacted
+    // triangle may legitimately reference fewer than three distinct tuples.
+    if flags > 3 || n == 0 || ni == 0 || !ni.is_multiple_of(3) || expected != bytes.len() {
         return Err(invalid("geometry"));
     }
     let mut offset = 16;

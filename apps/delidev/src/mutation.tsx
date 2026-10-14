@@ -397,6 +397,7 @@ export function useRetainedMutation<
   acknowledge?: (result: MessageShape<O>, request: MessageShape<I>) => boolean,
   retainOnError = false,
   rejected?: (request: MessageInitShape<I>) => void,
+  definitiveError?: (error: unknown) => boolean,
 ) {
   const registry = useIntentRegistry(key);
   if (!registry)
@@ -524,15 +525,17 @@ export function useRetainedMutation<
       const failure = clientFailure(error);
       // A rejected replay cannot establish whether an earlier uncertain request
       // was admitted. Keep opt-in original verification until a matching receipt.
+      const definitive = definitiveError?.(error) ?? false;
       const uncertain =
-        retainOnError ||
-        Boolean(current.uncertain && current.acknowledge) ||
-        [
-          FailureCode.Unavailable,
-          FailureCode.ServerUnavailable,
-          FailureCode.Canceled,
-          FailureCode.Internal,
-        ].includes(failure.code);
+        !definitive &&
+        (retainOnError ||
+          Boolean(current.uncertain && current.acknowledge) ||
+          [
+            FailureCode.Unavailable,
+            FailureCode.ServerUnavailable,
+            FailureCode.Canceled,
+            FailureCode.Internal,
+          ].includes(failure.code));
       registry.put(key, {
         busy: false,
         uncertain,

@@ -701,7 +701,7 @@ jobs:
       - name: Validate PostgreSQL migrations and schema readiness
         env:
           DEVHUD_TEST_DATABASE_URL: postgres://devhud:devhud@127.0.0.1:5432/devhud_api_test?sslmode=disable
-        run: go test -tags=integration ./servers/devhud-api/internal/postgres
+        run: go test -count=1 -tags=integration ./servers/devhud-api/internal/postgres
       - name: Validate health, migrations, sweeper readiness, and embedded administrator assets
         run: go test ./servers/devhud-api/...
       - name: Build local two-platform OCI layout

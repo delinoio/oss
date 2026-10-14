@@ -86,7 +86,7 @@ func (s *Service) GetPullRequestWorkspace(ctx context.Context, req *connect.Requ
 	if _, e := integrationActor(ctx); e != nil {
 		return nil, rpc.Error(e, correlation)
 	}
-	if len(req.Msg.SeedNumbers) == 0 || len(req.Msg.SeedNumbers) > 20 {
+	if len(req.Msg.SeedNumbers) == 0 || len(req.Msg.SeedNumbers) > domain.MaxPullRequestPageSize {
 		return nil, rpc.Error(prInvalid(), correlation)
 	}
 	seen := map[string]bool{}

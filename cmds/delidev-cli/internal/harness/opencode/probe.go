@@ -69,10 +69,10 @@ func Probe(ctx context.Context, config ProbeConfig) (returned error) {
 		if returned != nil {
 			config.Process.Logger.WarnContext(ctx, "OpenCode native handshake failed", "owner_id", config.Process.OwnerID, "phase", phase, "code", domain.SafeError(returned).Code)
 		} else {
-			config.Process.Logger.InfoContext(ctx, "OpenCode native handshake completed", "owner_id", config.Process.OwnerID, "profile_version", SupportedVersion)
+			config.Process.Logger.InfoContext(ctx, "OpenCode native handshake completed", "owner_id", config.Process.OwnerID, "installed_version", config.Version, "baseline_version", SupportedVersion)
 		}
 	}()
-	if config.Version != SupportedVersion {
+	if !domain.HarnessVersionAllowed(domain.OpenCode, config.Version) {
 		return incompatible()
 	}
 	phase = runtimePhase

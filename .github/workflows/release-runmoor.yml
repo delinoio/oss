@@ -73,7 +73,7 @@ jobs:
         with:
           node-version-file: .nvmrc
       - name: Test command contracts
-        run: go test ./cmds/runmoor/...
+        run: go test -count=1 ./cmds/runmoor/...
       - name: Build archive
         env:
           RELEASE_VERSION: ${{ needs.plan.outputs.version }}

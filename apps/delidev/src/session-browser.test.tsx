@@ -252,7 +252,6 @@ function Workspace({ f, active = true }: { f: Fixture; active?: boolean }) {
             handle.current?.closePage(tab.profile, tab.id);
           else tabs.store.close(f.session.id, key);
         }}
-        newPage={() => setDialog(true)}
       />
       <button type="button" onClick={() => setDialog(true)}>
         Open tool Browser
@@ -295,7 +294,7 @@ const pageCalls = (action: Request["action"]) =>
 const tabNames = () =>
   screen.getAllByRole("tab").map((tab) => tab.getAttribute("title"));
 async function openDialog() {
-  fireEvent.click(screen.getByRole("button", { name: "New browser page" }));
+  fireEvent.click(screen.getByRole("button", { name: "Open tool Browser" }));
   return screen.findByRole("dialog", { name: "New browser page" });
 }
 async function submit(dialog: HTMLElement, address: string) {
@@ -376,7 +375,7 @@ it("never creates anything while the profile is absent or the inventory is empty
   expect(native).not.toHaveBeenCalled();
 });
 
-it("opens the same address dialog from + and the Open tool entry and creates nothing on dismissal", async () => {
+it("opens the address dialog from the Open tool Browser entry and creates nothing on dismissal", async () => {
   const f = fixture({ registered: false });
   mount(f);
   const dialog = await openDialog();
@@ -1243,6 +1242,124 @@ it("reconciles only the latest shared selection once after a busy action settles
   expect(selects()[0][1]).toMatchObject({ tabId: f.model.pages[2].id });
   await new Promise((resolve) => setTimeout(resolve, 50));
   expect(selects()).toHaveLength(1);
+});
+
+it("keeps newer shared page C and reconciles native C after deferred B selection", async () => {
+  const f = fixture({ pages: 3 });
+  const base = native.getMockImplementation()!;
+  const pendingB = deferred<void>();
+  native.mockImplementation(async (operation: string, args: any) => {
+    if (
+      operation === "control_browser" &&
+      args.action === "select-tab" &&
+      args.tabId === f.model.pages[1].id
+    )
+      await pendingB.promise;
+    return base(operation, args);
+  });
+  mount(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(4));
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/1" }));
+  await waitFor(() => expect(calls("open_browser")).toHaveLength(1));
+  const selects = () =>
+    native.mock.calls.filter(
+      ([operation, args]) =>
+        operation === "control_browser" && args.action === "select-tab",
+    );
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/2" }));
+  await waitFor(() => expect(selects()).toHaveLength(1));
+  expect(selects()[0][1]).toMatchObject({ tabId: f.model.pages[1].id });
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/3" }));
+  expect(
+    screen
+      .getByRole("tab", { name: "https://fixture.test/3" })
+      .getAttribute("aria-selected"),
+  ).toBe("true");
+  expect(selects()).toHaveLength(1);
+  await act(async () => pendingB.resolve());
+  await waitFor(() => expect(selects()).toHaveLength(2));
+  expect(selects()[1][1]).toMatchObject({ tabId: f.model.pages[2].id });
+  await waitFor(() => expect(f.model.selected).toBe(f.model.pages[2].id));
+  expect(
+    screen
+      .getByRole("tab", { name: "https://fixture.test/3" })
+      .getAttribute("aria-selected"),
+  ).toBe("true");
+});
+
+it("does not reopen B after selecting Conversation during deferred B reconciliation", async () => {
+  const f = fixture({ pages: 2 });
+  const base = native.getMockImplementation()!;
+  const pendingB = deferred<void>();
+  native.mockImplementation(async (operation: string, args: any) => {
+    if (
+      operation === "control_browser" &&
+      args.action === "select-tab" &&
+      args.tabId === f.model.pages[1].id
+    )
+      await pendingB.promise;
+    return base(operation, args);
+  });
+  mount(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(3));
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/1" }));
+  await waitFor(() => expect(calls("open_browser")).toHaveLength(1));
+  const selects = () =>
+    native.mock.calls.filter(
+      ([operation, args]) =>
+        operation === "control_browser" && args.action === "select-tab",
+    );
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/2" }));
+  await waitFor(() => expect(selects()).toHaveLength(1));
+  fireEvent.click(screen.getByRole("tab", { name: "Conversation" }));
+  await act(async () => pendingB.resolve());
+  await waitFor(() =>
+    expect(native).toHaveBeenCalledWith(
+      "control_browser",
+      expect.objectContaining({ action: "hide" }),
+    ),
+  );
+  expect(selects()).toHaveLength(1);
+  expect(
+    screen
+      .getByRole("tab", { name: "Conversation" })
+      .getAttribute("aria-selected"),
+  ).toBe("true");
+  expect(calls("open_browser")).toHaveLength(1);
+});
+
+it("completes deferred reconciliation without another request when B stays selected", async () => {
+  const f = fixture({ pages: 2 });
+  const base = native.getMockImplementation()!;
+  const pendingB = deferred<void>();
+  native.mockImplementation(async (operation: string, args: any) => {
+    if (
+      operation === "control_browser" &&
+      args.action === "select-tab" &&
+      args.tabId === f.model.pages[1].id
+    )
+      await pendingB.promise;
+    return base(operation, args);
+  });
+  mount(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(3));
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/1" }));
+  await waitFor(() => expect(calls("open_browser")).toHaveLength(1));
+  const selects = () =>
+    native.mock.calls.filter(
+      ([operation, args]) =>
+        operation === "control_browser" && args.action === "select-tab",
+    );
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/2" }));
+  await waitFor(() => expect(selects()).toHaveLength(1));
+  await act(async () => pendingB.resolve());
+  await waitFor(() => expect(f.model.selected).toBe(f.model.pages[1].id));
+  expect(selects()).toHaveLength(1);
+  expect(
+    screen
+      .getByRole("tab", { name: "https://fixture.test/2" })
+      .getAttribute("aria-selected"),
+  ).toBe("true");
 });
 
 it("defers shared selection until the pending native open completes", async () => {

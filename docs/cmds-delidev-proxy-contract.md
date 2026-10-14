@@ -99,6 +99,8 @@ There are at most 16 concurrent authorized requests, with no wait queue; request
 
 - Send through the caller-selected HTTP client only (the Worker's desktop-runtime transport). Do not retry, follow redirects (a 3xx reply is a classified failure) or fall back to another address. The response header wait matches the relay (10 minutes); stream with flushing under the relay's 256 MiB bound, and abort rather than cleanly end a truncated stream. Strip hop-by-hop and forwarding headers.
 
+- Preserve the relay's accepted 15-minute lifetime after server admission. The forwarder's deadline includes a separate bounded allowance for its 30-second local body read, desktop generation proof and outbound connection setup before admission. The server's own 15-minute deadline, body/write limits and caller/execution cancellation still govern the original request; the allowance grants no replay or fallback.
+
 - Cancel and join every request, stream and the listener on `Close` (execution Stop, native exit, failure or context cancellation) before reporting cleanup success; an unconfirmed join is `recovery_required`. Log only the closed stage, code, execution and correlation identifiers, never endpoints, tokens, paths or native content.
 
 ### cmds/delidev-cli/internal/outbound constraints

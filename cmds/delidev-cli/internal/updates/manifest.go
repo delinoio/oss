@@ -22,7 +22,7 @@ import (
 const ManifestLimit = 128 << 10
 const ArtifactLimit = int64(2 << 30)
 const Repository = "delinoio/oss"
-const TagPrefix = "delidev-v"
+const TagPrefix = "delidev@v"
 const ManifestName = "delidev-update-manifest.json"
 const SignatureDomain = "delidev-update-manifest-v1\x00"
 
