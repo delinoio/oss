@@ -217,3 +217,39 @@ func TestRetireGrokAuthFileReportsHardLinkedTemporary(t *testing.T) {
 		t.Fatal("the temporary name was not unlinked")
 	}
 }
+
+func TestGrokHomeVerifiesTheBoundDirectoryIdentity(t *testing.T) {
+	home := grokHomeForTest(t)
+	bound, err := BindGrokHome(home)
+	if err != nil || bound.Path() != home || bound.Verify() != nil {
+		t.Fatal("a freshly bound home did not verify")
+	}
+	if (GrokHome{}).Verify() == nil {
+		t.Fatal("an unbound home verified")
+	}
+	if _, err := BindGrokHome(filepath.Join(t.TempDir(), "missing")); err == nil {
+		t.Fatal("a missing home was bound")
+	}
+	if err := os.Rename(home, home+".moved"); err != nil {
+		t.Fatal(err)
+	}
+	if bound.Verify() == nil {
+		t.Fatal("a home renamed away still verified")
+	}
+	if err := security.PrivateDir(home); err != nil {
+		t.Fatal(err)
+	}
+	if bound.Verify() == nil {
+		t.Fatal("a replacement directory verified as the original home")
+	}
+	// The original is only the same object again when it is back at its path.
+	if err := os.Remove(home); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(home+".moved", home); err != nil {
+		t.Fatal(err)
+	}
+	if bound.Verify() != nil {
+		t.Fatal("the original directory did not verify after it returned")
+	}
+}

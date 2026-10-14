@@ -29,9 +29,13 @@ func (l *managedSubscriptionLease) materializeGrok(grokHome string) (subscriptio
 		clear(raw)
 		l.response.Bundle = nil
 	}()
-	if err := subscription.CheckGrokHome(grokHome); err != nil {
+	// The identity of the home is bound before anything is written or accepted;
+	// Finish retires and proves absence on that same directory only.
+	home, err := subscription.BindGrokHome(grokHome)
+	if err != nil {
 		return subscription.GrokBundle{}, err
 	}
+	l.grokHome = home
 	if len(raw) == 0 {
 		if l.response.GenerationId != "" {
 			return subscription.GrokBundle{}, subscription.GrokBundleInvalid()
@@ -62,12 +66,20 @@ type grokFinishOutcome struct {
 
 // prepareGrokFinish reads the native credential file once, seals the next
 // generation when the operation succeeded, and then retires the file. Cleanup is
-// confirmed only when the file and its interrupted-write temporaries are gone,
-// so an unconfirmed retirement can never release the lease. A failed read or an
-// identity that differs from the original downgrades to an unsuccessful Finish
-// that carries no bundle.
-func prepareGrokFinish(grokHome string, server, account, generation domain.ID, action pb.SubscriptionAction, original subscription.GrokBundle, success bool) grokFinishOutcome {
+// confirmed only when the file and its interrupted-write temporaries are gone
+// and the path still names the directory the credential was materialized in, so
+// an unconfirmed retirement can never release the lease. The home is verified
+// before anything is read or removed and again after the final absence check: a
+// home that was renamed away or replaced (even by an empty directory, which
+// would read as clean) downgrades to an unsuccessful, uncleaned Finish that
+// carries no bundle, for logout as well. A failed read or an identity that
+// differs from the original also downgrades to an unsuccessful Finish.
+func prepareGrokFinish(home subscription.GrokHome, server, account, generation domain.ID, action pb.SubscriptionAction, original subscription.GrokBundle, success bool) grokFinishOutcome {
 	out := grokFinishOutcome{Success: success}
+	grokHome := home.Path()
+	if home.Verify() != nil {
+		return grokFinishOutcome{}
+	}
 	if success && action != pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT {
 		sealed, bundle, err := subscription.SealGrokFinish(grokHome, server, account, generation, original)
 		if err != nil {
@@ -81,6 +93,9 @@ func prepareGrokFinish(grokHome string, server, account, generation domain.ID, a
 	if present, err := subscription.GrokAuthFilePresent(grokHome); err != nil || present {
 		out.Cleanup = false
 	}
+	if home.Verify() != nil {
+		out.Cleanup = false
+	}
 	if !out.Cleanup {
 		// Never hand a credential back with unconfirmed local cleanup.
 		clear(out.Bundle)
@@ -92,10 +107,10 @@ func prepareGrokFinish(grokHome string, server, account, generation domain.ID, a
 // finishGrok settles one Grok lease: it prepares the outcome from the native
 // file and reports it through the generic protected Finish. refresh is true only
 // for a refresh whose native process already exited.
-func (l *managedSubscriptionLease) finishGrok(grokHome string, original subscription.GrokBundle, success bool) error {
+func (l *managedSubscriptionLease) finishGrok(original subscription.GrokBundle, success bool) error {
 	defer original.Clear()
 	action := l.journal.Action
-	outcome := prepareGrokFinish(grokHome, l.credential.ServerID, l.account, l.finishID, action, original, success)
+	outcome := prepareGrokFinish(l.grokHome, l.credential.ServerID, l.account, l.finishID, action, original, success)
 	refresh := outcome.Success && action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH
 	if l.logger != nil {
 		l.logger.LogAttrs(context.Background(), slog.LevelInfo, "grok_subscription_finish", slog.String("account_id", string(l.account)), slog.String("lease_id", l.response.LeaseId), slog.String("action", action.String()), slog.Bool("success", outcome.Success), slog.Bool("cleanup_confirmed", outcome.Cleanup))

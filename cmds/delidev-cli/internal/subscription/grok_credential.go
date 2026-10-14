@@ -40,6 +40,59 @@ func CheckGrokHome(grokHome string) error {
 	return nil
 }
 
+// GrokHome is a Grok home bound to the directory it named when the credential
+// was materialized. Every later credential operation is path based, so a home
+// that was renamed away or replaced would make a path lookup find nothing (an
+// absent parent reads as clean) or find someone else's directory. Verify proves
+// the path still names the original directory, and a caller brackets
+// retirement and the final absence check with it.
+type GrokHome struct {
+	path     string
+	identity os.FileInfo
+}
+
+// BindGrokHome validates grokHome (see CheckGrokHome) and records the identity
+// of the directory it names.
+func BindGrokHome(grokHome string) (GrokHome, error) {
+	if err := CheckGrokHome(grokHome); err != nil {
+		return GrokHome{}, err
+	}
+	identity, err := os.Lstat(grokHome)
+	if err != nil {
+		return GrokHome{}, GrokBundleInvalid()
+	}
+	// On Windows the file identity is read lazily from the path on first use, so
+	// it is forced now; later a replaced path could otherwise be recorded as the
+	// original.
+	if !os.SameFile(identity, identity) {
+		return GrokHome{}, GrokBundleInvalid()
+	}
+	return GrokHome{path: grokHome, identity: identity}, nil
+}
+
+// Path is the path the home was bound at.
+func (h GrokHome) Path() string { return h.path }
+
+// Verify reports an identity failure unless the bound path is still the same
+// private, non-linked directory it named at binding. The directory object stays
+// alive while it exists, so an equal identity cannot belong to a successor.
+func (h GrokHome) Verify() error {
+	if h.identity == nil {
+		return &RuntimeCleanupError{Stage: CleanupValidation, Reason: CleanupIdentity}
+	}
+	if err := CheckGrokHome(h.path); err != nil {
+		return &RuntimeCleanupError{Stage: CleanupValidation, Reason: CleanupFilesystem}
+	}
+	current, err := os.Lstat(h.path)
+	if err != nil {
+		return &RuntimeCleanupError{Stage: CleanupValidation, Reason: CleanupFilesystem}
+	}
+	if !os.SameFile(h.identity, current) {
+		return &RuntimeCleanupError{Stage: CleanupValidation, Reason: CleanupIdentity}
+	}
+	return nil
+}
+
 // WriteGrokAuthFile materializes the bundle as $GROK_HOME/auth.json for the
 // native child. The home must be a private directory; the file is published
 // atomically with owner-only permission, and remnants of an interrupted earlier

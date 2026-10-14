@@ -238,8 +238,15 @@ exactly one directory entry: a hard-linked `auth.json` is never sealed, and
 retiring a hard-linked file or temporary unlinks its name but reports the
 cleanup as unconfirmed because the other entry keeps the plaintext credential
 reachable. Cleanup is confirmed only when no credential file or attributed
-temporary remains; otherwise no bundle is returned and the server keeps the
-lease fenced. Native refresh, login execution and Worker-side watch dispatch for
+temporary remains in the same directory the credential was materialized in;
+otherwise no bundle is returned and the server keeps the lease fenced. The
+Worker binds the identity of the private home (`subscription.BindGrokHome`)
+before it accepts any delivery, and Finish verifies that the path still names
+that directory before it reads or removes anything and again after the final
+absence check. A home that was renamed away or replaced (even by an empty
+directory, which a path lookup reads as clean) therefore never confirms cleanup,
+for logout as well, and nothing is read from or removed in the substitute path;
+the original directory keeps its file for recovery. Native refresh, login execution and Worker-side watch dispatch for
 Grok are separate lifecycle work and are not activated by this storage contract.
 
 ## Security

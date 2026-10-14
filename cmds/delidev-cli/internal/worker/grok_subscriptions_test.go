@@ -108,6 +108,15 @@ func TestGrokMaterializationRejectsReboundEnvelopeBeforeWriting(t *testing.T) {
 	}
 }
 
+func bindGrokHome(t *testing.T, home string) subscription.GrokHome {
+	t.Helper()
+	bound, err := subscription.BindGrokHome(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return bound
+}
+
 func mustSeal(t *testing.T, server, account, generation domain.ID, bundle subscription.GrokBundle) []byte {
 	t.Helper()
 	sealed, err := subscription.SealGrokBundle(server, account, generation, bundle)
@@ -181,7 +190,7 @@ func TestPrepareGrokFinishSealsRotatedCredentialAndRetiresFile(t *testing.T) {
 	}
 
 	write(grokWorkerFile(t, "synthetic-principal-1", "two", "2026-10-14T12:00:00Z"))
-	out := prepareGrokFinish(home, server, account, generation, pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH, original, true)
+	out := prepareGrokFinish(bindGrokHome(t, home), server, account, generation, pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH, original, true)
 	if !out.Success || !out.Cleanup || len(out.Bundle) == 0 {
 		t.Fatal("a rotated credential was not sealed")
 	}
@@ -195,7 +204,7 @@ func TestPrepareGrokFinishSealsRotatedCredentialAndRetiresFile(t *testing.T) {
 
 	// A different identity in the native file is never sealed.
 	write(grokWorkerFile(t, "synthetic-principal-2", "two", "2026-10-14T12:00:00Z"))
-	out = prepareGrokFinish(home, server, account, generation, pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH, original, true)
+	out = prepareGrokFinish(bindGrokHome(t, home), server, account, generation, pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH, original, true)
 	if out.Success || len(out.Bundle) != 0 || !out.Cleanup {
 		t.Fatal("a foreign identity was sealed or the file was kept")
 	}
@@ -206,7 +215,7 @@ func TestPrepareGrokFinishSealsRotatedCredentialAndRetiresFile(t *testing.T) {
 	// Logout and a failed operation return no bundle but still retire the file.
 	for name, action := range map[string]pb.SubscriptionAction{"logout": pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT, "failed-login": pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN} {
 		write(grokWorkerFile(t, "synthetic-principal-1", "two", "2026-10-14T12:00:00Z"))
-		out = prepareGrokFinish(home, server, account, generation, action, subscription.GrokBundle{}, name == "logout")
+		out = prepareGrokFinish(bindGrokHome(t, home), server, account, generation, action, subscription.GrokBundle{}, name == "logout")
 		if len(out.Bundle) != 0 || !out.Cleanup {
 			t.Fatalf("%s returned a bundle or kept the file", name)
 		}
@@ -217,7 +226,7 @@ func TestPrepareGrokFinishSealsRotatedCredentialAndRetiresFile(t *testing.T) {
 
 	// An unparsable native file downgrades to an unsuccessful Finish.
 	write([]byte(`{"x":1}`))
-	out = prepareGrokFinish(home, server, account, generation, pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN, subscription.GrokBundle{}, true)
+	out = prepareGrokFinish(bindGrokHome(t, home), server, account, generation, pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN, subscription.GrokBundle{}, true)
 	if out.Success || len(out.Bundle) != 0 || !out.Cleanup {
 		t.Fatal("an invalid native file was reported as success")
 	}
@@ -240,7 +249,7 @@ func TestPrepareGrokFinishWithholdsBundleWhenCleanupIsUnconfirmed(t *testing.T) 
 	if err := os.Mkdir(stuck, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	out := prepareGrokFinish(home, server, account, generation, pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN, subscription.GrokBundle{}, true)
+	out := prepareGrokFinish(bindGrokHome(t, home), server, account, generation, pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN, subscription.GrokBundle{}, true)
 	if out.Cleanup || len(out.Bundle) != 0 {
 		t.Fatal("cleanup was confirmed or a bundle was returned despite an unretired remnant")
 	}
@@ -263,8 +272,87 @@ func TestPrepareGrokFinishWithholdsBundleForHardLinkedCredential(t *testing.T) {
 	if err := os.Link(path, filepath.Join(t.TempDir(), "alias.json")); err != nil {
 		t.Skip("hard links are unsupported on this platform")
 	}
-	out := prepareGrokFinish(home, server, account, generation, pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH, original, true)
+	out := prepareGrokFinish(bindGrokHome(t, home), server, account, generation, pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH, original, true)
 	if out.Success || out.Cleanup || len(out.Bundle) != 0 {
 		t.Fatal("a hard-linked credential was sealed or its cleanup was confirmed")
+	}
+}
+
+// The credential was materialized in one directory. If that directory is renamed
+// away, a path lookup finds either nothing (an absent parent reads as clean) or a
+// replacement, so cleanup is never confirmed and no bundle is returned, for a
+// logout (which never seals) as well as for a refresh. Nothing is removed from
+// the substitute path, and the original directory keeps its file for recovery.
+func TestPrepareGrokFinishRefusesARenamedOrReplacedHome(t *testing.T) {
+	server, account, generation := domain.NewID(), domain.NewID(), domain.NewID()
+	original, _ := subscription.ParseGrokAuthFile(grokWorkerFile(t, "synthetic-principal-1", "one", "2026-10-14T06:00:00Z"))
+	for name, replace := range map[string]func(t *testing.T, home string){
+		"renamed-away": func(t *testing.T, home string) {},
+		"replaced-by-empty-home": func(t *testing.T, home string) {
+			if err := security.PrivateDir(home); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"replaced-by-planted-credential": func(t *testing.T, home string) {
+			if err := security.PrivateDir(home); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(home, subscription.GrokAuthFileName), grokWorkerFile(t, "synthetic-principal-1", "planted", "2026-10-14T18:00:00Z"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		},
+	} {
+		for action, success := range map[pb.SubscriptionAction]bool{
+			pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT:  true,
+			pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH: true,
+			pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN:   false,
+		} {
+			t.Run(name+"/"+action.String(), func(t *testing.T) {
+				home := grokHome(t)
+				path := filepath.Join(home, subscription.GrokAuthFileName)
+				if err := os.WriteFile(path, grokWorkerFile(t, "synthetic-principal-1", "two", "2026-10-14T12:00:00Z"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				bound := bindGrokHome(t, home)
+				moved := home + ".moved"
+				if err := os.Rename(home, moved); err != nil {
+					t.Fatal(err)
+				}
+				replace(t, home)
+				planted, plantedErr := os.ReadFile(filepath.Join(home, subscription.GrokAuthFileName))
+				out := prepareGrokFinish(bound, server, account, generation, action, original, success)
+				if out.Cleanup || out.Success || len(out.Bundle) != 0 {
+					t.Fatal("cleanup was confirmed or a bundle was returned for a home that is no longer the original")
+				}
+				if _, err := os.Lstat(filepath.Join(moved, subscription.GrokAuthFileName)); err != nil {
+					t.Fatal("the original directory's credential was touched through the substitute path")
+				}
+				if after, err := os.ReadFile(filepath.Join(home, subscription.GrokAuthFileName)); (err == nil) != (plantedErr == nil) || !bytes.Equal(after, planted) {
+					t.Fatal("the substitute directory was modified")
+				}
+			})
+		}
+	}
+}
+
+// A lease that never bound a home has no directory to retire in, so it can
+// never confirm cleanup.
+func TestPrepareGrokFinishRefusesAnUnboundHome(t *testing.T) {
+	out := prepareGrokFinish(subscription.GrokHome{}, domain.NewID(), domain.NewID(), domain.NewID(), pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT, subscription.GrokBundle{}, true)
+	if out.Cleanup || out.Success || len(out.Bundle) != 0 {
+		t.Fatal("an unbound home confirmed cleanup")
+	}
+}
+
+// Materialization binds the home that Finish later verifies.
+func TestGrokMaterializationBindsTheHomeForFinish(t *testing.T) {
+	server, account := domain.NewID(), domain.NewID()
+	lease := grokWorkerLease(t, server, account, "", nil)
+	home := grokHome(t)
+	if _, err := lease.materializeGrok(home); err != nil {
+		t.Fatal(err)
+	}
+	if lease.grokHome.Path() != home || lease.grokHome.Verify() != nil {
+		t.Fatal("materialization did not bind the home")
 	}
 }
