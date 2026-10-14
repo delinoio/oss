@@ -206,16 +206,19 @@ and builds do not establish installed-app interactive Keychain acceptance.
 
 ## Key-preserving API format editing
 
-With ProviderInventory capability 9, Edit AI account enables supported formats for
-connected API accounts and saves the format plus existing editable preferences
-through `ChangeAccountApiFormat`. The request pins the revision of the Provider resource used to display the
-selected profile. A missing Provider read blocks saving, and a changed Provider
-revision requires a fresh read and explicit save. Uncertain retries retain the
-original revision and complete request bytes. The saved key stays in place; the help states that
+With ProviderInventory capabilities 9 and 10, Edit AI account enables supported
+formats for connected API accounts and saves the format plus existing editable
+preferences through `ChangeAccountApiFormat`. Capability 9 activates the
+operation and capability 10 gates its revision-bound Provider check, so the
+connected key-preserving operation is enabled only when both capabilities are
+advertised. The request pins the revision of the Provider resource used to
+display the selected profile. A missing Provider read blocks saving, and a
+changed Provider revision requires a fresh read and explicit save. Uncertain
+retries retain the original revision and complete request bytes. The saved key stays in place; the help states that
 future executions use the new format, current executions retain their original
 format, and separate Validate connection is required. Saving sends no provider
 request. Provider identity and keyless/key ownership stay fixed. Without capability
-9, the original capability-7 disconnect/cleanup/re-entry behavior remains.
+9 or 10, the original capability-7 disconnect/cleanup/re-entry behavior remains.
 
 Retain the existing 768px dialog, field order, checkbox controls, Provider lock,
 small-screen scrolling/fixed footer, Settings lifetime, labeled native select,
@@ -1641,7 +1644,7 @@ explicit Close, Archive and deletion retain independent native cleanup gates.
 
 - Subscription cleanup includes fully disconnected service-native accounts without synthetic login IDs. Explicit failed initial ChatGPT deletion uses the shared durable cleanup controller, preserves the original public deletion revision/receipt while checkpoint revisions advance, and never retries a terminal attempt without fresh explicit confirmation. Retain original actor/native/vault/reference checks; no new RPC, protocol allocation or migration. Follow the subscription and account contracts.
 
-- Key-preserving API format changes follow `cmds-delidev-accounts-contract.md#connected-api-format-changes` after main reservation the originating change. Capability 9 owns the atomic format/preferences RPC; preserve capability 7 and OAuth reservation 8, bounded server-owned generations sharing the original protected key, immutable original execution/continuation profiles, explicit current validation, all-generation cleanup and portable exclusions. Observation-only edits rebase protected fields/revision while retaining drafts; editable conflicts block saves. No migration, native change or format conversion.
+- Key-preserving API format changes follow `cmds-delidev-accounts-contract.md#connected-api-format-changes` after main reservation the originating change. Capability 9 owns the atomic format/preferences RPC and capability 10 gates its revision-bound Provider check; clients require both capabilities before enabling the connected operation. Preserve capability 7 and OAuth reservation 8, bounded server-owned generations sharing the original protected key, immutable original execution/continuation profiles, explicit current validation, all-generation cleanup and portable exclusions. Observation-only edits rebase protected fields/revision while retaining drafts; editable conflicts block saves. No migration, native change or format conversion.
 
 - API key format selection follows the desktop/catalog/account contracts. Require an explicit per-key format, show it in list/details/Worker compatibility, use per-format custom Provider cards and shared Form dialogs, and negotiate capability 7. Preserve exact uncertain requests, secret disposal and numeric-token account patches; capability-7 changes require disconnect and confirmed cleanup; capability-9 changes retain the protected key and original execution generations. Keyless/key-required transitions require new accounts. Keep previews outside the repository.
 
