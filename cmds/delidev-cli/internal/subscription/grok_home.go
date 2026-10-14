@@ -173,12 +173,14 @@ func (h GrokHome) writeAnchored(raw []byte) error {
 	if err == nil {
 		err = file.Sync()
 	}
+	if err == nil {
+		// The open handle stays valid across the rename on every platform, so the
+		// platform can flush the renamed entry through it.
+		err = publishGrokFile(h.root, file, temporary, GrokAuthFileName)
+	}
 	closeErr := file.Close()
 	if err == nil {
 		err = closeErr
-	}
-	if err == nil {
-		err = h.root.Rename(temporary, GrokAuthFileName)
 	}
 	if err != nil {
 		_ = h.root.Remove(temporary)

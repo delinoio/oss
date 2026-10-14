@@ -296,7 +296,17 @@ user or the default owner of objects the process creates (the Administrators
 group when the token is elevated). The owner matters because the owner of an
 object can always rewrite its DACL, so an owner-only ACE list on a foreign-owned
 directory would let that principal regain access while credentials are present.
-The Windows code is validated by cross-compilation (`GOOS=windows go vet` and
+Every publication on this path (the anchored `auth.json` replacement is the only
+one) is an `os.Root` rename relative to the held directory followed by
+`FlushFileBuffers` on the still-open renamed file, which is the anchored
+counterpart of the `MOVEFILE_WRITE_THROUGH` replacement the path-based writers
+use: the write does not return success until the renamed entry is committed, so
+a crash after success cannot leave the leased `auth.json` missing or stale. A
+directory handle cannot be flushed on Windows, and the removal of a credential
+entry has no file left to flush, so the durability of an unlink relies on NTFS
+metadata journaling; if a crash undoes an unlink the credential reappears in the
+private home, the next presence scan reports it, and the lease stays fenced
+until it is retired again. The Windows code is validated by cross-compilation (`GOOS=windows go vet` and
 `go test -c`) only, so the Windows behavior stays fail closed: any unconfirmed
 identity, owner, ACL or link count reports an unconfirmed cleanup.
 

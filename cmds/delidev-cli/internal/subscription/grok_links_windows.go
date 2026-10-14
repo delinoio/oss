@@ -18,9 +18,24 @@ const grokOpenReadFlags = 0
 // file identity is kept as metadata for the rescan.
 const grokHoldRetiredHandles = false
 
-// syncGrokDirectory is a no-op on Windows: the atomic publication uses a
-// write-through rename and a directory handle cannot be flushed.
+// syncGrokDirectory is a no-op on Windows: a directory handle cannot be
+// flushed, so the durability of a published entry comes from flushing the
+// renamed file itself (publishGrokFile).
 func syncGrokDirectory(*os.File) error { return nil }
+
+// publishGrokFile renames the written temporary over its target inside root and
+// then flushes the still-open renamed file with FlushFileBuffers. The rename is
+// anchored to the held directory (os.Root.Rename is handle-relative), and the
+// flush through the same handle is the write-through the path-based replacement
+// gets from MOVEFILE_WRITE_THROUGH: the call does not return until the file's
+// data and its updated entry are committed. Without it a crash right after the
+// publication could lose the entry while the contents were synced.
+func publishGrokFile(root *os.Root, file *os.File, from, to string) error {
+	if err := root.Rename(from, to); err != nil {
+		return err
+	}
+	return file.Sync()
+}
 
 // grokSingleLinkFile reports whether an opened credential file has exactly one
 // directory entry. Unknown metadata fails closed.

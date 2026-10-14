@@ -19,6 +19,12 @@ const grokHoldRetiredHandles = true
 // syncGrokDirectory makes entries of an open directory durable.
 func syncGrokDirectory(dir *os.File) error { return dir.Sync() }
 
+// publishGrokFile renames the written temporary over its target inside root.
+// The directory sync that follows makes the new entry durable on this platform.
+func publishGrokFile(root *os.Root, _ *os.File, from, to string) error {
+	return root.Rename(from, to)
+}
+
 // grokSingleLinkFile reports whether an opened credential file has exactly one
 // directory entry. info must be the file's own metadata. Unknown metadata fails
 // closed.
