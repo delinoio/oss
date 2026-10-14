@@ -277,6 +277,9 @@ it("accepts only the fixed Grok authorization profile", () => {
     expect(grokLoginURL(authorization(edit)), name).toBe(false);
   expect(grokLoginURL("not a url")).toBe(false);
   expect(grokLoginURL(`${loginURL}${"a".repeat(5000)}`)).toBe(false);
+  // The native receiver rejects any fragment delimiter, even an empty one.
+  expect(grokLoginURL(`${loginURL}#`)).toBe(false);
+  expect(grokLoginURL(`${loginURL}#fragment`)).toBe(false);
 });
 
 it("creates one account and one browser login despite double click, Strict Mode and polling", async () => {

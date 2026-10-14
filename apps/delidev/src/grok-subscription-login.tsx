@@ -111,7 +111,10 @@ const opaque = (value: string) => /^[A-Za-z0-9._~-]{1,512}$/.test(value);
 // and the loopback listener; the desktop only validates and opens the address.
 export function grokLoginURL(raw: string): boolean {
   try {
-    if (raw.length > 4096 || !/^[!-~]+$/.test(raw)) return false;
+    // URL.href keeps an empty "#" and the native parser rejects it, so the
+    // delimiter itself is refused here.
+    if (raw.length > 4096 || !/^[!-~]+$/.test(raw) || raw.includes("#"))
+      return false;
     const url = new URL(raw),
       query = url.searchParams;
     if (
