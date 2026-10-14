@@ -668,6 +668,138 @@ fn native_zip_named_directories_stay_native_in_inline_and_split_views() {
     }
 }
 
+#[test]
+fn nested_zip_archive_beneath_native_zip_directory_in_inline_and_split_views() {
+    for split in [false, true] {
+        for unpacked in [false, true] {
+            let root = fixture();
+            let root_path = fs::canonicalize(root.path()).unwrap();
+            let assets = root_path.join("assets.zip");
+            fs::create_dir(&assets).unwrap();
+            let archive_path = assets.join("cache.zip");
+            fs::rename(root_path.join("cache.zip"), &archive_path).unwrap();
+            if unpacked {
+                fs::remove_file(&archive_path).unwrap();
+                fs::create_dir_all(archive_path.join("node_modules/dep")).unwrap();
+                fs::write(
+                    archive_path.join("node_modules/dep/file.txt"),
+                    b"unpacked bytes",
+                )
+                .unwrap();
+            }
+            let native_file = assets.join("native.txt");
+            fs::write(&native_file, b"native bytes").unwrap();
+
+            let mut graph_data = data();
+            graph_data["packageRegistryData"][2][1][0][1]["packageLocation"] =
+                json!("./assets.zip/cache.zip/node_modules/dep/");
+            graph_data["packageRegistryData"][3][1][0][1]["packageLocation"] =
+                json!("./assets.zip/cache.zip/node_modules/@scope/pkg/");
+            if split {
+                fs::write(
+                    root_path.join(".pnp.cjs"),
+                    "const pnpDataFilepath = path.resolve(__dirname, \".pnp.data.json\");\n",
+                )
+                .unwrap();
+                fs::write(
+                    root_path.join(".pnp.data.json"),
+                    serde_json::to_vec(&graph_data).unwrap(),
+                )
+                .unwrap();
+            } else {
+                inline(&root_path, &graph_data);
+            }
+
+            let cache_root = tempfile::tempdir().unwrap();
+            let session = tempfile::tempdir().unwrap();
+            let mut view = View::new(
+                Graph::load(&root_path.join(".pnp.cjs")).unwrap(),
+                Cache::open(cache_root.path().join("cache")).unwrap(),
+                session.path().to_owned(),
+            );
+            let expected = if unpacked {
+                b"unpacked bytes".as_slice()
+            } else {
+                b"package bytes".as_slice()
+            };
+            for logical in [
+                archive_path.join("node_modules/dep/file.txt"),
+                root_path.join("node_modules/dep/file.txt"),
+            ] {
+                let dependency = view.translate(&logical).unwrap();
+                assert_eq!(fs::read(&dependency.physical).unwrap(), expected);
+                assert!(dependency.readonly, "split={split}, unpacked={unpacked}");
+            }
+            assert_eq!(session.path().join("active").is_dir(), !unpacked);
+
+            let native = view.translate(&native_file).unwrap();
+            assert_eq!(native.physical, native_file);
+            assert!(!native.readonly, "split={split}, unpacked={unpacked}");
+            fs::write(&native.physical, b"changed").unwrap();
+            assert_eq!(fs::read(&native_file).unwrap(), b"changed");
+
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            if !unpacked {
+                use std::process::Command;
+
+                let source = root_path.join("nested-zip-probe.c");
+                fs::write(
+                    &source,
+                    r#"
+#include <errno.h>
+#include <fcntl.h>
+#include <string.h>
+#include <unistd.h>
+int main(void) {
+    const char *dependencies[] = {
+        "assets.zip/cache.zip/node_modules/dep/file.txt",
+        "node_modules/dep/file.txt"
+    };
+    for (int i = 0; i < 2; ++i) {
+        int fd = open(dependencies[i], O_RDONLY);
+        if (fd < 0) return 41;
+        char bytes[14] = {0};
+        if (read(fd, bytes, 13) != 13 || strcmp(bytes, "package bytes")) return 42;
+        close(fd);
+        errno = 0;
+        if (open(dependencies[i], O_WRONLY) != -1 || errno != EROFS) return 43;
+    }
+    int native = open("assets.zip/native.txt", O_WRONLY | O_TRUNC);
+    if (native < 0 || write(native, "runtime", 7) != 7) return 44;
+    close(native);
+    return 0;
+}
+"#,
+                )
+                .unwrap();
+                let executable = root_path.join("nested-zip-probe");
+                assert!(Command::new("cc")
+                    .arg(&source)
+                    .args(["-Wall", "-Wextra", "-Werror", "-o"])
+                    .arg(&executable)
+                    .status()
+                    .unwrap()
+                    .success());
+                let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+                    .current_dir(&root_path)
+                    .arg("--cache-dir")
+                    .arg(cache_root.path().join("runtime-cache"))
+                    .args(["run", "--"])
+                    .arg(&executable)
+                    .output()
+                    .unwrap();
+                assert_eq!(
+                    result.status.code(),
+                    Some(0),
+                    "split={split} stderr={}",
+                    String::from_utf8_lossy(&result.stderr)
+                );
+                assert_eq!(fs::read(&native_file).unwrap(), b"runtime");
+            }
+        }
+    }
+}
+
 #[cfg(unix)]
 #[test]
 fn unregistered_zip_file_child_keeps_native_enotdir() {
