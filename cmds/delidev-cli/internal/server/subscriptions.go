@@ -281,7 +281,7 @@ func (s *Service) CancelSubscription(ctx context.Context, req *connect.Request[p
 		return s.cancelClaudeSubscription(ctx, req)
 	}
 	result, err := s.Store.Mutate(ctx, domain.ID(m.RequestId), "subscription.cancel", disconnectAccountInput{domain.ID(m.Id), m.ExpectedRevision}, func(tx *store.Tx) (any, error) {
-		r, a, err := subscriptionAccount(tx, domain.ID(m.Id), m.ExpectedRevision)
+		r, a, err := serverSubscriptionAccount(tx, domain.ID(m.Id), m.ExpectedRevision)
 		if err != nil {
 			return nil, err
 		}

@@ -698,3 +698,13 @@ func GrokOAuthFailure(err error) (GrokOAuthReason, bool) {
 	}
 	return "", false
 }
+
+// SuggestedName is the default account name offered after a successful login:
+// the profile email when present and valid, otherwise "Grok". It is transient
+// presentation data and is never persisted.
+func (b GrokBundle) SuggestedName() string {
+	if b.entry.Email != nil && *b.entry.Email != "" && len(*b.entry.Email) <= 256 && grokControlFree(*b.entry.Email, 256, true) {
+		return *b.entry.Email
+	}
+	return "Grok"
+}

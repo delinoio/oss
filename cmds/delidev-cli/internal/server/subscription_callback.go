@@ -96,6 +96,13 @@ func (s *Service) ForwardSubscriptionCallback(ctx context.Context, req *connect.
 	if account.Validate() != nil || operation.Validate() != nil || len(req.Msg.CallbackQuery) > 16<<10 {
 		return nil, rpc.Error(subscriptionDenied(), c)
 	}
+	// Grok callbacks go to the in-process loopback login; the Codex relay below
+	// stays unchanged for ChatGPT accounts.
+	if grok, err := s.isGrokSubscription(ctx, req.Msg.AccountId); err != nil {
+		return nil, rpc.Error(err, c)
+	} else if grok {
+		return s.forwardGrokCallback(ctx, c, actor, account, operation, req.Msg.CallbackQuery)
+	}
 	unlock, err := s.lockAccounts(ctx)
 	if err != nil {
 		return nil, rpc.Error(err, c)

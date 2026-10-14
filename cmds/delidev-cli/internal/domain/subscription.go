@@ -194,6 +194,9 @@ func (s SubscriptionState) Validate(account Account) error {
 		if o.Diagnostic != nil && (o.Diagnostic.Validate() != nil || o.Diagnostic.CorrelationID != string(o.ID) || o.State == SubscriptionSucceeded || o.State == SubscriptionPreparing || o.State == SubscriptionWaiting) {
 			return invalid()
 		}
+		if err := s.validateServerGrok(account, o); err != nil {
+			return err
+		}
 		if o.CleanupPhase == SubscriptionCredentialCleanupPending && !account.ManagedClaudeAccount() {
 			return invalid()
 		}
@@ -233,10 +236,15 @@ type ServerSubscriptionOperation struct {
 	CodeSubmissionID ID                            `json:"code_submission_id,omitempty"`
 	CodeConsumed     bool                          `json:"code_consumed,omitempty"`
 	ClaudeDiagnostic *NativeSubscriptionDiagnostic `json:"claude_diagnostic,omitempty"`
-	StartedAt        time.Time                     `json:"started_at"`
-	ExpiresAt        time.Time                     `json:"expires_at"`
-	Diagnostic       *CodexDiagnostic              `json:"diagnostic,omitempty"`
-	CleanupPhase     SubscriptionCleanupPhase      `json:"cleanup_phase,omitempty"`
+	// Optional server-owned Grok login fields. A Grok browser login reuses
+	// LoginMethod (callback), CallbackForwarded, CodeSubmissionID and
+	// CodeConsumed; GrokDiagnostic reports a failed login. They hold no URL,
+	// code, verifier, state, nonce or token.
+	GrokDiagnostic *GrokDiagnostic          `json:"grok_diagnostic,omitempty"`
+	StartedAt      time.Time                `json:"started_at"`
+	ExpiresAt      time.Time                `json:"expires_at"`
+	Diagnostic     *CodexDiagnostic         `json:"diagnostic,omitempty"`
+	CleanupPhase   SubscriptionCleanupPhase `json:"cleanup_phase,omitempty"`
 }
 
 // Cleanup checkpoints release only a failed initial server login. They cannot

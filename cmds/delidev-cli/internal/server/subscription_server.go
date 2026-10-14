@@ -49,9 +49,19 @@ func (s *Service) requestServerSubscription(ctx context.Context, req *connect.Re
 	}
 	defer unlock()
 	result, err := s.Store.Mutate(ctx, domain.ID(m.RequestId), "subscription.server.request", input, func(tx *store.Tx) (any, error) {
-		r, a, err := subscriptionAccount(tx, input.ID, input.Revision)
+		r, a, err := serverSubscriptionAccount(tx, input.ID, input.Revision)
 		if err != nil {
 			return nil, err
+		}
+		if a.SubscriptionService == domain.SubscriptionGrok {
+			// Server-owned Grok supports browser login only. The device-code method
+			// is explicit and never substituted for the browser method.
+			if action != domain.SubscriptionLogin {
+				return nil, grokLoginUnsupportedAction()
+			}
+			if input.DeviceCode {
+				return nil, grokLoginUnsupportedDevice()
+			}
 		}
 		if a.Subscription == nil {
 			a.Subscription = &domain.SubscriptionState{}
@@ -139,7 +149,7 @@ func (s *Service) serverSubscriptionProgress(ctx context.Context, req *pb.GetSub
 		if err := tx.Authorize(); err != nil {
 			return err
 		}
-		_, a, err := subscriptionAccount(tx, domain.ID(req.AccountId), 0)
+		_, a, err := serverSubscriptionAccount(tx, domain.ID(req.AccountId), 0)
 		if err != nil {
 			return err
 		}
@@ -156,7 +166,7 @@ func (s *Service) serverSubscriptionProgress(ctx context.Context, req *pb.GetSub
 		if a.Subscription.RecoveryRequired || o.Active() && o.Epoch != s.subscriptionServerEpoch() {
 			state = domain.SubscriptionRecovery
 		}
-		response = &pb.GetSubscriptionProgressResponse{Diagnostic: codexDiagnosticMessage(o.Diagnostic), State: loginState(state), Canceled: state == domain.SubscriptionCanceled || a.Subscription.Pending != nil && a.Subscription.Pending.ID == o.ID && a.Subscription.Pending.Canceled}
+		response = &pb.GetSubscriptionProgressResponse{Diagnostic: codexDiagnosticMessage(o.Diagnostic), GrokDiagnostic: grokDiagnosticMessage(o.GrokDiagnostic), State: loginState(state), Canceled: state == domain.SubscriptionCanceled || a.Subscription.Pending != nil && a.Subscription.Pending.ID == o.ID && a.Subscription.Pending.Canceled}
 		p := s.subscriptionProgress[o.ID]
 		if !p.Until.IsZero() && !time.Now().Before(p.Until) {
 			delete(s.subscriptionProgress, o.ID)
@@ -227,6 +237,7 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 			account, operation domain.ID
 			cleanup            bool
 			claude             bool
+			grok               bool
 		}
 		var candidates []candidate
 		eligible := map[domain.ID]bool{}
@@ -252,6 +263,11 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 					continue
 				} else if a.Subscription != nil && !a.Subscription.RecoveryRequired && a.Subscription.ServerOperation != nil && a.Subscription.ServerOperation.State == domain.SubscriptionPreparing && !a.Subscription.ServerOperation.NativeStarted && a.Subscription.ServerOperation.Epoch == s.subscriptionServerEpoch() && a.Subscription.Pending != nil && a.Subscription.Pending.Phase == domain.SubscriptionQueued && a.Subscription.Lease == nil {
 					candidates = append(candidates, candidate{account: r.ID})
+				} else if grokLoginNeedsRecovery(a) {
+					eligible[a.Subscription.ServerOperation.ID] = true
+					if retries[a.Subscription.ServerOperation.ID].due(now) {
+						candidates = append(candidates, candidate{account: r.ID, operation: a.Subscription.ServerOperation.ID, cleanup: true, grok: true})
+					}
 				} else if failedServerLoginNeedsCleanup(a) {
 					eligible[a.Subscription.ServerOperation.ID] = true
 					if retries[a.Subscription.ServerOperation.ID].due(now) {
@@ -288,6 +304,11 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 						}
 					} else {
 						s.runManagedClaude(child, next.account)
+					}
+				} else if next.grok {
+					if err := s.recoverGrokLogin(child, next.account, next.operation); err != nil && child.Err() == nil {
+						result.failed = true
+						s.logger.WarnContext(child, "grok_login_recovery_pending", "operation_id", next.operation, "code", domain.SafeError(err).Code)
 					}
 				} else if next.cleanup {
 					if err := s.recoverFailedServerLogin(child, next.account, next.operation); err != nil && child.Err() == nil {
@@ -360,6 +381,11 @@ func (r cleanupRetry) after(now time.Time, failed bool, base time.Duration) clea
 }
 
 func (s *Service) runServerSubscription(parent context.Context, id domain.ID) {
+	if s.isGrokServerLogin(parent, id) {
+		// Grok login is a Go-owned OAuth flow, not a native process.
+		s.runGrokLogin(parent, id)
+		return
+	}
 	var original domain.ServerSubscriptionOperation
 	var operation domain.SubscriptionOperation
 	err := s.Store.Read(parent, func(tx *store.Tx) error {
@@ -825,7 +851,7 @@ func (s *Service) markServerSubscriptionRecovery(id, operation domain.ID, diagno
 	defer unlock()
 	delete(s.subscriptionProgress, operation)
 	_, err = s.Store.Mutate(ctx, domain.NewID(), "subscription.server.recovery", struct{ Account, Operation domain.ID }{id, operation}, func(tx *store.Tx) (any, error) {
-		r, a, err := subscriptionAccount(tx, id, 0)
+		r, a, err := serverSubscriptionAccount(tx, id, 0)
 		if err != nil {
 			return nil, err
 		}

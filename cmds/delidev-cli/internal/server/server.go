@@ -17,6 +17,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/userservice"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/worker"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -196,4 +197,11 @@ type Service struct {
 	workspaceReaders              map[domain.ID]*workspaceReader
 	executionOnce                 sync.Once
 	executionAuthority            *executionAuthority
+
+	// grokOAuthTransport replaces the explicit outbound route of Grok OAuth calls
+	// in isolated tests; grokRandom replaces crypto/rand for deterministic ones.
+	grokOAuthTransport http.RoundTripper
+	grokRandom         io.Reader
+	grokLoginMu        sync.Mutex
+	grokLogins         map[domain.ID]*grokLoginFlow
 }
