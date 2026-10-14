@@ -145,7 +145,13 @@ test("DevHud PostgreSQL entrypoints rerun with a warm Go result cache", async (t
       "initialize isolated PostgreSQL",
     );
     const start = () =>
-      pgCtl(["-l", log, "-o", `-h 127.0.0.1 -p ${port} -F`, "start"]);
+      pgCtl([
+        "-l",
+        log,
+        "-o",
+        `-h 127.0.0.1 -p ${port} -k ${directory} -F`,
+        "start",
+      ]);
     expectSuccess(start(), "start isolated PostgreSQL");
     expectSuccess(
       run(commands.createdb, [
