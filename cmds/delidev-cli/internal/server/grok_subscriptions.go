@@ -34,6 +34,25 @@ func (s *Service) grokIdentityCommitment(bundle subscription.GrokBundle) string 
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
+// Bounds for mandatory Grok bookkeeping. A single-document write (a recovery
+// fence, a staged-generation retirement) is short; the post-commit removal of
+// superseded generations may delete several vault entries.
+const (
+	grokBookkeepingTimeout = 5 * time.Second
+	grokCleanupTimeout     = 30 * time.Second
+)
+
+// grokBookkeepingContext returns the context for mandatory Grok bookkeeping. It
+// keeps the request's values (correlation and logging) but is detached from its
+// cancellation and deadline, is bounded by timeout, and carries owner authority
+// instead of the Worker's: a client disconnect, a deadline, or the revocation of
+// the very Worker whose request is being settled must not stop the write that
+// keeps an unfinished lease from being stranded. Such a write runs only inside
+// this server, after the request itself has been authorized.
+func grokBookkeepingContext(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(domain.WithPrincipal(context.WithoutCancel(ctx), domain.Principal{Type: domain.OwnerDevice}), timeout)
+}
+
 // Grok Take/Finish carries the lifecycle (login, refresh, logout) of a
 // service-native Grok account. The credential moves only as the sealed
 // subscription.GrokBundle envelope under credentials.AccountLogin, bound to this
@@ -298,11 +317,12 @@ func (s *Service) takeGrokSubscription(ctx context.Context, req *connect.Request
 // generation, which stays vault-owned and is never granted (Take reads only the
 // referenced generation); the next cleanup or the logout cleanup removes it,
 // and the abort already fenced the account for recovery. The write is bounded
-// and carries no request authority (as in markSubscriptionRecovery), so neither
-// a client disconnect nor the revocation that aborted the Finish can skip it.
+// and carries no request cancellation or authority (see grokBookkeepingContext),
+// so neither a client disconnect nor the revocation that aborted the Finish can
+// skip it.
 // The caller holds the account gate.
-func (s *Service) retireUnpublishedGrokGeneration(vault accountSecrets, account, lease, generation domain.ID) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+func (s *Service) retireUnpublishedGrokGeneration(ctx context.Context, vault accountSecrets, account, lease, generation domain.ID) {
+	ctx, cancel := grokBookkeepingContext(ctx, grokBookkeepingTimeout)
 	defer cancel()
 	unreferenced := false
 	err := s.Store.Read(ctx, func(tx *store.Tx) error {
@@ -326,10 +346,17 @@ func (s *Service) retireUnpublishedGrokGeneration(vault accountSecrets, account,
 
 // fenceReplayedGrokTake marks the still-held original Grok lease
 // recovery-required so the unfinished lease is never silently stranded. The
-// caller holds the account gate. A lease that was already finished, replaced, or
-// held by another operation, device or instance is left untouched, and the
-// credential is never redistributed.
-func (s *Service) fenceReplayedGrokTake(ctx context.Context, id, lease, operation, machine, instance domain.ID, action domain.SubscriptionAction, actor domain.Principal) error {
+// write is bounded and detached from the request's cancellation and authority
+// (see grokBookkeepingContext). The caller holds the account gate. A lease that
+// was already finished, replaced, or held by another operation, device or
+// instance is left untouched, and the credential is never redistributed.
+func (s *Service) fenceReplayedGrokTake(requestCtx context.Context, id, lease, operation, machine, instance domain.ID, action domain.SubscriptionAction, actor domain.Principal) error {
+	// The fence is mandatory bookkeeping for a lease that is already claimed, so
+	// it must not depend on the replaying request: if that request is canceled or
+	// times out while the fence waits or writes, a request-bound write would
+	// return without fencing and strand the lease with no RecoveryRequired.
+	ctx, cancel := grokBookkeepingContext(requestCtx, grokBookkeepingTimeout)
+	defer cancel()
 	fenced := false
 	_, err := s.Store.Mutate(ctx, domain.NewID(), "grok.subscription.take-replay-fence", struct{ Account, Lease domain.ID }{id, lease}, func(tx *store.Tx) (any, error) {
 		r, a, err := grokSubscriptionAccount(tx, id, 0)
@@ -351,7 +378,7 @@ func (s *Service) fenceReplayedGrokTake(ctx context.Context, id, lease, operatio
 		return struct{}{}, err
 	})
 	if err == nil && fenced {
-		s.logger.WarnContext(ctx, "grok_subscription_replayed_take_fenced", "account_id", id, "lease_id", lease, "operation_id", operation)
+		s.logger.WarnContext(requestCtx, "grok_subscription_replayed_take_fenced", "account_id", id, "lease_id", lease, "operation_id", operation)
 	}
 	return err
 }
@@ -423,7 +450,7 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 		staged := false
 		defer func() {
 			if staged && returned != nil {
-				s.retireUnpublishedGrokGeneration(vault, input.Account, input.Lease, newGeneration)
+				s.retireUnpublishedGrokGeneration(ctx, vault, input.Account, input.Lease, newGeneration)
 			}
 		}()
 		var identityCommitment string
@@ -553,7 +580,10 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 		// generation, so that generation is kept. A failed removal is fenced for
 		// recovery by the owned-error guard.
 		if input.Cleanup {
-			if err := cleanupSubscriptionReferences(ctx, vault, input.Account, committed, protectedGenerations(original.Subscription)...); err != nil {
+			cleanupCtx, cancelCleanup := grokBookkeepingContext(ctx, grokCleanupTimeout)
+			err := cleanupSubscriptionReferences(cleanupCtx, vault, input.Account, committed, protectedGenerations(original.Subscription)...)
+			cancelCleanup()
+			if err != nil {
 				return nil, rpc.Error(err, c)
 			}
 		}

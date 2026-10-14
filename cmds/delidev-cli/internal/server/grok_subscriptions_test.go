@@ -773,15 +773,15 @@ func TestGrokRetireUnpublishedGenerationRequiresProofOfNonPublication(t *testing
 	if _, err := f.secrets.Put(context.Background(), ref(staged), []byte("synthetic-staged")); err != nil {
 		t.Fatal(err)
 	}
-	f.service.retireUnpublishedGrokGeneration(f.secrets, f.input.AccountID, domain.NewID(), generation)
+	f.service.retireUnpublishedGrokGeneration(context.Background(), f.secrets, f.input.AccountID, domain.NewID(), generation)
 	if _, err := f.secrets.Get(context.Background(), ref(generation)); err != nil {
 		t.Fatal("the generation the account references was removed")
 	}
-	f.service.retireUnpublishedGrokGeneration(f.secrets, domain.NewID(), domain.NewID(), staged)
+	f.service.retireUnpublishedGrokGeneration(context.Background(), f.secrets, domain.NewID(), domain.NewID(), staged)
 	if _, err := f.secrets.Get(context.Background(), ref(staged)); err != nil {
 		t.Fatal("an unreadable account did not keep the generation")
 	}
-	f.service.retireUnpublishedGrokGeneration(f.secrets, f.input.AccountID, domain.NewID(), staged)
+	f.service.retireUnpublishedGrokGeneration(context.Background(), f.secrets, f.input.AccountID, domain.NewID(), staged)
 	if _, err := f.secrets.Get(context.Background(), ref(staged)); err == nil {
 		t.Fatal("an unreferenced generation was not retired")
 	}
@@ -879,5 +879,134 @@ func TestGrokFinishStoresLargestAcceptedBundleWithinVaultLimit(t *testing.T) {
 	stored, err := f.secrets.Get(context.Background(), credentials.Ref{Owner: f.input.AccountID, ID: generation, Purpose: credentials.AccountLogin})
 	if err != nil || !bytes.Equal(stored, sealed) {
 		t.Fatal("the vault does not hold the exact sealed envelope")
+	}
+}
+
+// workerContext is a request context carrying the fixture Worker's principal.
+func (f *grokFixture) workerContext(parent context.Context) context.Context {
+	return domain.WithPrincipal(parent, domain.Principal{Type: domain.WorkerDevice, DeviceID: f.device, MachineID: f.input.MachineID})
+}
+
+// The replay fence is mandatory bookkeeping for an already claimed lease, so it
+// must complete when the replaying request is canceled or past its deadline, and
+// when the very Worker whose request is being settled was revoked meanwhile.
+func TestGrokReplayFenceIsDetachedFromTheReplayingRequest(t *testing.T) {
+	for name, request := range map[string]func(*grokFixture) (context.Context, context.CancelFunc){
+		"canceled": func(f *grokFixture) (context.Context, context.CancelFunc) {
+			ctx, cancel := context.WithCancel(f.workerContext(context.Background()))
+			cancel()
+			return ctx, cancel
+		},
+		"deadline-exceeded": func(f *grokFixture) (context.Context, context.CancelFunc) {
+			return context.WithDeadline(f.workerContext(context.Background()), time.Now().Add(-time.Second))
+		},
+		"revoked-worker": func(f *grokFixture) (context.Context, context.CancelFunc) {
+			_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.revoke-grok-worker", nil, func(tx *store.Tx) (any, error) {
+				r, err := tx.Get(domain.DeviceKind, f.device)
+				if err != nil {
+					return nil, err
+				}
+				d, err := store.Decode[domain.Device](r)
+				if err != nil {
+					return nil, err
+				}
+				d.Revoked = true
+				_, err = tx.Put(domain.DeviceKind, r.ID, r.Revision, "", "", d)
+				return nil, err
+			})
+			if err != nil {
+				f.t.Fatal(err)
+			}
+			return context.WithCancel(f.workerContext(context.Background()))
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newGrokFixture(t)
+			f.login("synthetic-principal-1")
+			op := f.queue(pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH)
+			observed, _ := f.record()
+			if _, err := f.takeWith(domain.NewID(), observed.Revision, op, pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH); err != nil {
+				t.Fatal(err)
+			}
+			_, a := f.record()
+			lease := a.Subscription.Lease
+			if lease == nil || a.Subscription.RecoveryRequired {
+				t.Fatal("the fixture did not leave an unfinished lease")
+			}
+			ctx, cancel := request(f)
+			defer cancel()
+			if err := f.service.fenceReplayedGrokTake(ctx, f.input.AccountID, lease.ID, lease.OperationID, lease.MachineID, lease.InstanceID, lease.Action, domain.Principal{Type: domain.WorkerDevice, DeviceID: lease.DeviceID, MachineID: lease.MachineID}); err != nil {
+				t.Fatalf("the fence depended on the request context: %v", err)
+			}
+			if _, a := f.record(); !a.Subscription.RecoveryRequired || a.Subscription.Lease == nil || a.Health != domain.AccountFailed {
+				t.Fatal("the unfinished lease was left stranded without RecoveryRequired")
+			}
+		})
+	}
+}
+
+// ctxRecordingSecrets records the state of the context each vault deletion saw.
+type ctxRecordingSecrets struct {
+	*accountTestSecrets
+	cancelRequest context.CancelFunc
+	canceled      []bool
+	bounded       []bool
+}
+
+func (v *ctxRecordingSecrets) Delete(ctx context.Context, ref credentials.Ref) error {
+	// The request ends while the post-commit removal is in flight.
+	if v.cancelRequest != nil {
+		v.cancelRequest()
+	}
+	_, hasDeadline := ctx.Deadline()
+	v.canceled = append(v.canceled, ctx.Err() != nil)
+	v.bounded = append(v.bounded, hasDeadline)
+	return v.accountTestSecrets.Delete(ctx, ref)
+}
+
+// The removal of the superseded generation after a committed Finish is mandatory
+// bookkeeping: a request that ends mid-removal must neither cancel it nor turn a
+// committed publication into a recovery fence, and the removal stays bounded.
+func TestGrokFinishCleanupIsDetachedFromTheRequestAndBounded(t *testing.T) {
+	f := newGrokFixture(t)
+	vault := &ctxRecordingSecrets{accountTestSecrets: f.secrets}
+	f.service.accountSecrets = vault
+	generation := f.login("synthetic-principal-1")
+	lease, err := f.take(f.queue(pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH), pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(f.workerContext(context.Background()))
+	defer cancel()
+	vault.cancelRequest = cancel
+	rotated := domain.NewID()
+	_, _ = f.service.FinishSubscription(ctx, subscriptionRequest(f.workerToken, &pb.FinishSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(rotated), Id: string(f.input.AccountID), ExpectedRevision: lease.LeaseRevision}, LeaseId: lease.LeaseId, GenerationId: lease.GenerationId, MachineId: string(f.input.MachineID), InstanceId: string(f.instance), Bundle: f.grokRotatedEnvelope(rotated), Succeeded: true, RefreshConfirmed: true, CleanupConfirmed: true}))
+	if len(vault.canceled) != 1 || vault.canceled[0] || !vault.bounded[0] {
+		t.Fatalf("the superseded-generation removal ran on the request context (canceled=%v bounded=%v)", vault.canceled, vault.bounded)
+	}
+	_, a := f.record()
+	if a.Subscription.RecoveryRequired || a.Subscription.Lease != nil || a.Subscription.Generation != rotated {
+		t.Fatal("a request ending during cleanup undid or fenced a committed publication")
+	}
+	if _, err := f.secrets.Get(context.Background(), credentials.Ref{Owner: f.input.AccountID, ID: generation, Purpose: credentials.AccountLogin}); err == nil {
+		t.Fatal("the superseded generation was not removed")
+	}
+}
+
+// Retiring an unpublished staged generation after an abort runs even when the
+// aborted request's context is already done.
+func TestGrokRetireUnpublishedGenerationSurvivesAnEndedRequest(t *testing.T) {
+	f := newGrokFixture(t)
+	f.login("synthetic-principal-1")
+	staged := domain.NewID()
+	ref := credentials.Ref{Owner: f.input.AccountID, ID: staged, Purpose: credentials.AccountLogin}
+	if _, err := f.secrets.Put(context.Background(), ref, []byte("synthetic-staged")); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(f.workerContext(context.Background()))
+	cancel()
+	f.service.retireUnpublishedGrokGeneration(ctx, f.secrets, f.input.AccountID, domain.NewID(), staged)
+	if _, err := f.secrets.Get(context.Background(), ref); err == nil {
+		t.Fatal("an ended request kept an unreferenced staged generation")
 	}
 }
