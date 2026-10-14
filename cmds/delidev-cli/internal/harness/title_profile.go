@@ -3,18 +3,18 @@ package harness
 import (
 	"context"
 	"log/slog"
-	"os"
 	"path/filepath"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
 // VerifyCodexTitleProfile proves the exact installed binary and native thread
 // protocol without logging in, opening a workspace, or sending inference.
-func VerifyCodexTitleProfile(ctx context.Context, root string, owner domain.ID, executable, expectedVersion string, logger *slog.Logger) (supported bool, returned error) {
+func VerifyCodexTitleProfile(ctx context.Context, root string, profiles *nativeprofile.Registry, owner domain.ID, executable, expectedVersion string, logger *slog.Logger) (supported bool, returned error) {
 	if err := owner.Validate(); err != nil {
 		return false, err
 	}
@@ -23,38 +23,24 @@ func VerifyCodexTitleProfile(ctx context.Context, root string, owner domain.ID, 
 		return false, nil
 	}
 	processRoot := filepath.Join(root, "processes")
-	probeRoot := filepath.Join(root, "probes")
-	for _, directory := range []string{processRoot, filepath.Join(processRoot, string(owner)), probeRoot} {
+	for _, directory := range []string{processRoot, filepath.Join(processRoot, string(owner))} {
 		if err := security.PrivateDir(directory); err != nil {
 			return false, err
 		}
 	}
-	directory, err := os.MkdirTemp(probeRoot, string(owner)+"-title-")
+	lease, err := acquireSystemProfile(ctx, profiles, domain.Codex, nativeprofile.PurposeTitleProbe)
 	if err != nil {
 		return false, err
 	}
-	if err := security.PrivateDir(directory); err != nil {
-		return false, err
-	}
-	directory, err = filepath.EvalSymlinks(directory)
-	if err != nil {
-		return false, err
-	}
-	directory, err = filepath.Abs(directory)
-	if err != nil {
-		return false, err
-	}
+	defer lease.Close()
 	defer func() {
+		// The persistent probe profile is retained; only owned processes are joined.
 		if err := process.ReconcileOwner(processRoot, owner); err != nil {
 			supported, returned = false, err
-			return
-		}
-		if err := os.RemoveAll(directory); err != nil && returned == nil {
-			supported, returned = false, domain.Fail(domain.RecoveryRequired, "The private Codex title probe could not be removed.", "Inspect the Worker's retained probe directory before retrying.")
 		}
 	}()
 
-	home := filepath.Join(directory, "codex")
+	home := lease.Root
 	env, err := probeEnvironment(home)
 	if err != nil {
 		return false, err

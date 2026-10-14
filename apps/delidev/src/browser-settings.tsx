@@ -140,7 +140,11 @@ export function BrowserSettings({ active = true }: { active?: boolean }) {
           ? copy("browser-settings.saved")
           : outcome === BrowserSaveResult.NotInstalled
             ? copy("browser-settings.notInstalled")
-            : undefined;
+            : outcome === BrowserSaveResult.DiscoveryFailed
+              ? copy("browser-settings.selectionDiscoveryFailed")
+              : outcome === BrowserSaveResult.InvalidSelection
+                ? copy("browser-settings.invalidSelection")
+                : undefined;
   return (
     <section
       className="browser-settings"
@@ -212,7 +216,10 @@ export function BrowserSettings({ active = true }: { active?: boolean }) {
         id={`${id}-status`}
         className="browser-settings-status"
         role={
-          problem || outcome === BrowserSaveResult.NotInstalled
+          problem ||
+          outcome === BrowserSaveResult.NotInstalled ||
+          outcome === BrowserSaveResult.DiscoveryFailed ||
+          outcome === BrowserSaveResult.InvalidSelection
             ? "alert"
             : "status"
         }

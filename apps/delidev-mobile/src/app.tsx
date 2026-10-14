@@ -981,49 +981,100 @@ function Connected({
               ? EntityKind.DEVICE
               : EntityKind.SESSION;
       if (pending.operation === Operation.Steer) {
-        // Steer acts on the queued input, so inspect that exact entity (the retained
-        // target is only the session ID) and never accept a session read as proof.
+        // The request ID identifies the committed Steer receipt. Check it before
+        // the queue because acceptance itself advances the queue revision.
         const request = fromJsonString(
           SteerQueuedInputRequestSchema,
           pending.request,
         );
         const original = request.mutation;
-        if (!original) throw new Error("steer-request-invalid");
-        let observed: Resource | undefined;
+        if (!original?.requestId || !original.id)
+          throw new Error("steer-request-invalid");
+        const resources = createClient(ResourceService, transport);
+        let receipt: Resource | undefined;
         try {
-          observed = (
-            await createClient(ResourceService, transport).getResource({
-              kind: EntityKind.QUEUE,
-              id: original.id,
+          receipt = (
+            await resources.getResource({
+              kind: EntityKind.STEER,
+              id: original.requestId,
             })
           ).resource;
         } catch (error) {
-          if (clientFailure(error).code === FailureCode.NotFound) {
+          const failure = clientFailure(error);
+          if (failure.code !== FailureCode.NotFound) {
             console.warn("mobile_steer_inspect", {
               operation: Operation.Steer,
-              outcome: "original_input_missing",
+              outcome: "original_receipt_read_failed",
+              code: failure.code,
+            });
+            throw error;
+          }
+        }
+        if (receipt) {
+          const attempt = supportsResourceSchema(receipt)
+            ? documentOf(receipt.documentJson)
+            : undefined;
+          if (
+            receipt.kind !== EntityKind.STEER ||
+            receipt.id !== original.requestId ||
+            receipt.schemaVersion !== 1 ||
+            receipt.sessionId !== request.sessionId ||
+            attempt?.version !== 1 ||
+            attempt.input_id !== original.id ||
+            attempt.execution_id !== request.expectedExecutionId ||
+            attempt.native_turn_id !== request.expectedTurnId
+          ) {
+            console.warn("mobile_steer_inspect", {
+              operation: Operation.Steer,
+              outcome: "original_receipt_changed",
             });
             setInspected("");
-            setError(c.steerTargetMissing);
+            setError(c.steerTargetChanged);
             return;
           }
-          throw error;
-        }
-        if (
-          !observed ||
-          !supportsResourceSchema(observed) ||
-          observed.kind !== EntityKind.QUEUE ||
-          observed.id !== original.id ||
-          observed.sessionId !== request.sessionId ||
-          observed.revision !== original.expectedRevision
-        ) {
-          console.warn("mobile_steer_inspect", {
+          console.info("mobile_steer_inspect", {
             operation: Operation.Steer,
-            outcome: "original_input_changed",
+            outcome: "original_receipt_matched",
           });
-          setInspected("");
-          setError(c.steerTargetChanged);
-          return;
+        } else {
+          // Without a receipt, only the unchanged original queue input permits
+          // retry. The retained target may be a legacy session ID.
+          let observed: Resource | undefined;
+          try {
+            observed = (
+              await resources.getResource({
+                kind: EntityKind.QUEUE,
+                id: original.id,
+              })
+            ).resource;
+          } catch (error) {
+            if (clientFailure(error).code === FailureCode.NotFound) {
+              console.warn("mobile_steer_inspect", {
+                operation: Operation.Steer,
+                outcome: "original_input_missing",
+              });
+              setInspected("");
+              setError(c.steerTargetMissing);
+              return;
+            }
+            throw error;
+          }
+          if (
+            !observed ||
+            !supportsResourceSchema(observed) ||
+            observed.kind !== EntityKind.QUEUE ||
+            observed.id !== original.id ||
+            observed.sessionId !== request.sessionId ||
+            observed.revision !== original.expectedRevision
+          ) {
+            console.warn("mobile_steer_inspect", {
+              operation: Operation.Steer,
+              outcome: "original_input_changed",
+            });
+            setInspected("");
+            setError(c.steerTargetChanged);
+            return;
+          }
         }
       } else if (pending.operation === Operation.Create) {
         await createClient(ResourceService, transport).listResources({

@@ -94,7 +94,7 @@ func (a *codeReviewAttempt) matchesTarget(t codeReviewNativeTarget) bool {
 	case domain.ReviewCommit:
 		return t.Type == "commit" && t.SHA == a.selection.Target.Reference && t.Branch == "" && t.Instructions == ""
 	case domain.ReviewCustom:
-		return t.Type == "custom" && t.Instructions == strings.TrimSpace(a.selection.Target.Instructions) && t.Branch == "" && t.SHA == ""
+		return t.Type == "custom" && t.Instructions == a.selection.Target.Instructions && t.Branch == "" && t.SHA == ""
 	}
 	return false
 }
@@ -208,11 +208,12 @@ func (c *Client) decodeCodeReviewRollout(raw []byte) (domain.NativeCodeReviewRes
 		}
 		result.Findings = append(result.Findings, finding)
 	}
-	// Validate public bounds without claiming cleanup from private parsing.
+	// Validate public structure without claiming cleanup or enforcing the
+	// aggregate encoded-size limit before joined Worker cleanup and usage.
 	checked := result
 	checked.RolloutDigest = strings.Repeat("0", 64)
 	checked.CleanupVerified = true
-	if checked.Validate() != nil {
+	if checked.ValidateStructure() != nil {
 		return domain.NativeCodeReviewResult{}, codeReviewUncertain()
 	}
 	return result, nil

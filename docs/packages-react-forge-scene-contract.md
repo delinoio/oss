@@ -22,6 +22,35 @@ Native scratch has a conservative 256 MiB preflight before allocation. Derived g
 
 ### Geometry compaction (unreleased)
 
+GLB export stores triangle indices as unsigned 16-bit values only when the largest referenced index is at most 65,534; larger values retain unsigned 32-bit storage. This changes only the serialized index buffer: Uint32 authoring, immutable registration, geometry sharing, all authored vertices and attributes, index order, topology, and animation remain unchanged. The unsigned-short maximum value 65,535 is reserved by glTF. Buffer views and chunks retain required alignment and exact payload lengths. File sizes may vary with padding and JSON metadata; this rule does not reduce polygons.
+
+`bakeParametricGeometry({uSegments,vSegments,maxTriangles,sample},{signal})` is
+an unreleased authoring helper on both scene formats. The three counts are
+required positive safe integers; no quality preset or adaptive curvature bound
+is implied. It rejects unknown fields. A preflight calculates exactly
+`V=(uSegments+1)*(vSegments+1)` vertices, `T=2*uSegments*vSegments` triangles,
+and `16+48*V+12*T` FSG1 bytes before invoking callbacks or allocating result
+arrays. Exceeding the caller's triangle cap, the 64 MiB asset limit, or the
+256 MiB aggregate reservation fails with `ResourceLimit`. Invalid options fail
+with `MalformedInput`.
+
+The helper samples `[0,1]²` in row-major order, with `v=j/vSegments` outside
+and `u=i/uSegments` inside, including both endpoints. Each cell with lower
+indices `a`, `b=a+1`, `c=a+uSegments+1`, `d=c+1` emits `(a,b,d)` and `(a,d,c)`.
+The callback supplies finite position, unit normal, top-left-convention UV,
+and orthogonal unit tangent with handedness `+1` or `-1`; native geometry
+validation enforces the geometric constraints. The method creates one surface
+with separate seam vertices. It never adds backfaces, shell walls, caps,
+smoothing, seam welds, skin or morph data, and `doubleSided` changes only
+material behavior. Raw `registerGeometry` keeps its existing vocabulary.
+
+Callbacks run synchronously on Node, once per vertex, with cancellation polled
+before each call and a yield at least every 128 samples. A promise return or
+malformed sample fails. A synchronous callback cannot be interrupted while it
+is executing. Failure, cancellation, and disposal release the reservation and
+publish no partial asset; successful results use the existing immutable
+registration path. Exports wait for pending baking and registration work.
+
 `compactGeometry(geometry, { signal? })` is an explicit, unreleased operation shared by GLB and FBX sessions. It returns a separate immutable geometry handle and input/output vertex and byte counts plus the unchanged triangle count. The safe native engine walks indices in their original order, discards unreferenced vertices, and merges referenced vertices only when the complete position, normal, optional UV/tangent, four joint indices and weights, and every morph position/optional normal delta have identical Float32 bits. Signed zero remains distinct, and hash matches require complete tuple comparison. It preserves index triplets, winding, duplicate and zero-area triangles, morph target names/order, skin bindings, materials, nodes, transforms and animation samplers. A second compaction is byte-identical and may reuse the content-addressed handle. Registration and exports never compact implicitly.
 
 Compaction reduces vertex and storage cost, not triangle count. Removing unused positions can shrink accessor bounds and measured world AABBs after a caller renders with the returned handle. The original handle and any revision-pinned export retain their original geometry and bounds. Source and output together obey existing 64 MiB per-asset and 256 MiB aggregate admission; operation-owned native scratch has a checked 256 MiB preflight and concurrent reservations. Cancellation, failure or disposal releases reservations and publishes no asset. Native result validation and cancellation checkpoints run before atomic registration. Diagnostics remain redacted render-stage metadata; counts are returned to the caller without logging vertex data or names.

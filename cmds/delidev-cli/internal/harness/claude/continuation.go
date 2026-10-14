@@ -243,3 +243,14 @@ const (
 	continuationInitializedHistory continuationPhase = "initialized-history"
 	continuationInputBarrier       continuationPhase = "input-barrier"
 )
+
+// SubscriptionSecureStorage reports whether the closed session ran with a
+// session-private history and an independent canonical secure-storage directory
+// (native subscription profile version 2).
+func (closed *ClosedAPISession) SubscriptionSecureStorage() bool {
+	if closed == nil || closed.previous == nil {
+		return false
+	}
+	subscription := closed.previous.config.Subscription
+	return subscription != nil && subscription.SecureStorageHome != ""
+}

@@ -183,7 +183,10 @@ func (r NativeCodeReviewResult) EncodedWithinOutputLimit() error {
 	return nil
 }
 
-func (r NativeCodeReviewResult) Validate() error {
+// ValidateStructure checks the complete public result except its aggregate
+// encoded-size limit. Rollout decoding uses it before Worker cleanup and usage
+// attachment; completed results must still pass Validate before publication.
+func (r NativeCodeReviewResult) ValidateStructure() error {
 	if r.Version != 1 || r.ActionID.Validate() != nil || r.Selection.Validate() != nil || r.ThreadID.Validate(Codex, NativeThreadIdentity) != nil || r.TurnID.Validate(Codex, NativeTurnIdentity) != nil || Text(r.EnteredItemID, "entered review item", 256, true) != nil || Text(r.ExitedItemID, "exited review item", 256, true) != nil || r.EnteredItemID == r.ExitedItemID || r.Findings == nil || len(r.Findings) > 64 || Text(r.Explanation, "native review explanation", 8192, false) != nil || (r.Correctness != "patch is correct" && r.Correctness != "patch is incorrect") || math.IsNaN(r.Confidence) || math.IsInf(r.Confidence, 0) || r.Confidence < 0 || r.Confidence > 1 || !reviewDigest(r.RolloutDigest) || !r.CleanupVerified {
 		return NativeCodeReviewUnavailable()
 	}
@@ -199,6 +202,13 @@ func (r NativeCodeReviewResult) Validate() error {
 		if f.Validate() != nil {
 			return NativeCodeReviewUnavailable()
 		}
+	}
+	return nil
+}
+
+func (r NativeCodeReviewResult) Validate() error {
+	if err := r.ValidateStructure(); err != nil {
+		return err
 	}
 	return r.EncodedWithinOutputLimit()
 }

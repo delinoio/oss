@@ -1,5 +1,34 @@
 # DeliDev v1 Connect contract
 
+## Shared subscription owner reservation
+
+The protocol reserves, with no behavior of their own, Worker `SHARED_SUBSCRIPTION_OWNER_V1 = 67`, Worker
+`CLAUDE_DEVICE_OWNED_MEMBERS_V1 = 68`, `TakeSubscriptionResponse.owner_lease_id = 7`,
+`FinishSubscriptionRequest.finish_scope = 11` and the new enum
+`SubscriptionFinishScope` (`UNSPECIFIED = 0`, `MEMBER = 1`, `OWNER = 2`). Capability
+67 negotiates account-owner plus execution-member ownership for managed Codex
+accounts; capability 68 negotiates the same ownership for the device-owned native
+Claude lane. Neither covers the server-owned Claude setup-token lane (Worker
+capability 41), which stays exclusive. `owner_lease_id` is empty for a founding or
+legacy singleton lease and never accompanies authentication bytes for a joined
+member. An unspecified `finish_scope` keeps the legacy singleton meaning, so old
+peers retain exclusive execution. The server echoes a capability in
+`AttachWorkerResponse.supported_worker_capabilities` only after the activating
+change; a Worker reports it only after observing that echo. Existing numeric
+assignments are unchanged. Go and TypeScript descriptors expose the new enum,
+fields and enum values. No public RPC, System capability or SQLite migration is
+added: owner and member records are an additive JSON extension of the account
+document. The [subscription contract](cmds-delidev-subscription-contract.md) owns
+the behavior.
+
+The owner/member change activates both capabilities on the server and the
+device-owned Claude Worker: the server records 67 and 68 from the Worker attach and
+echoes them in `supported_worker_capabilities`, accepts `finish_scope` and
+populates `owner_lease_id` on joined members. A Claude Worker advertises 68 only
+for a verified native Claude lane after observing that echo. No Worker advertises
+67 yet: the managed Codex Worker activation (shared app-server) is a separate,
+unimplemented change, so managed Codex execution stays exclusive per account.
+
 ## Parallel session dispatch negotiation
 
 Worker `PARALLEL_SESSIONS_V1 = 66` is an active opt-in capability. The server echoes the capability in

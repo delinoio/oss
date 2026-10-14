@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 /** App use means a visible, focused product document, regardless of the page,
  * popover or drawer that is currently open. */
@@ -14,34 +14,39 @@ export interface DocumentForegroundState {
   activation: number;
 }
 
+export interface DocumentForegroundTracker extends DocumentForegroundState {
+  /** Reconciles a synchronous foreground observation when an event was missed. */
+  reconcile: () => void;
+}
+
 /** Tracks the live visibility and focus of the current document only. Another
  * connection window has its own document, so it never inherits this state. */
-export function useDocumentForeground(): DocumentForegroundState {
+export function useDocumentForeground(): DocumentForegroundTracker {
   const [state, setState] = useState<DocumentForegroundState>(() => ({
     foreground: isDocumentForeground(),
     activation: 0,
   }));
-  useEffect(() => {
-    const update = () => {
-      const foreground = isDocumentForeground();
-      setState((previous) =>
-        previous.foreground === foreground
-          ? previous
-          : {
-              foreground,
-              activation: previous.activation + (foreground ? 1 : 0),
-            },
-      );
-    };
-    update();
-    document.addEventListener("visibilitychange", update);
-    window.addEventListener("focus", update);
-    window.addEventListener("blur", update);
-    return () => {
-      document.removeEventListener("visibilitychange", update);
-      window.removeEventListener("focus", update);
-      window.removeEventListener("blur", update);
-    };
+  const reconcile = useCallback(() => {
+    const foreground = isDocumentForeground();
+    setState((previous) =>
+      previous.foreground === foreground
+        ? previous
+        : {
+            foreground,
+            activation: previous.activation + (foreground ? 1 : 0),
+          },
+    );
   }, []);
-  return state;
+  useEffect(() => {
+    reconcile();
+    document.addEventListener("visibilitychange", reconcile);
+    window.addEventListener("focus", reconcile);
+    window.addEventListener("blur", reconcile);
+    return () => {
+      document.removeEventListener("visibilitychange", reconcile);
+      window.removeEventListener("focus", reconcile);
+      window.removeEventListener("blur", reconcile);
+    };
+  }, [reconcile]);
+  return { ...state, reconcile };
 }

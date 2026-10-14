@@ -54,7 +54,7 @@ func newServerCreditFixture(t *testing.T, details bool) (*subscriptionFixture, *
 	}
 	f.service.runServerQuota(domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice}), f.input.AccountID)
 	n := &serverCreditFixture{serverQuotaFixture: q, outcome: domain.SubscriptionReset}
-	f.service.subscriptionOpen = func(context.Context, string, domain.ID, []byte, *slog.Logger) (serverSubscriptionNative, error) {
+	f.service.subscriptionOpen = func(context.Context, nativeScope, domain.ID, []byte, *slog.Logger) (serverSubscriptionNative, error) {
 		return n, nil
 	}
 	return f, n
@@ -291,7 +291,7 @@ func TestServerCreditFencesLifecycleExecutionAndSavedInspection(t *testing.T) {
 func TestServerCreditRejectsNonDirectBeforeNativeLaunch(t *testing.T) {
 	f, n := newServerCreditFixture(t, true)
 	opens := 0
-	f.service.subscriptionOpen = func(context.Context, string, domain.ID, []byte, *slog.Logger) (serverSubscriptionNative, error) {
+	f.service.subscriptionOpen = func(context.Context, nativeScope, domain.ID, []byte, *slog.Logger) (serverSubscriptionNative, error) {
 		opens++
 		return n, nil
 	}
