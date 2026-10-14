@@ -26,6 +26,16 @@ export const ADAPTER_ID = "bundlewhy-collector-vite";
 export const ADAPTER_VERSION = "1";
 
 /**
+ * Match Vite's resolver identity for the root recorded in a collection.
+ * Vite resolves module IDs through symlinks unless preserveSymlinks is set;
+ * retaining the lexical root in that mode would make ownership and freshness
+ * checks disagree with the IDs emitted by the build.
+ */
+export function normalizeCollectionRoot(root, preserveSymlinks = false) {
+  return preserveSymlinks ? root : fs.realpathSync(root);
+}
+
+/**
  * Evaluates `build.rolldownOptions.treeshake.moduleSideEffects` for one bundled
  * module the way Rolldown does when no plugin hook set a value for it.
  *
@@ -78,7 +88,10 @@ function collectorPlugin(state) {
     enforce: "post",
     apply: "build",
     configResolved(config) {
-      state.root = config.root;
+      state.root = normalizeCollectionRoot(
+        config.root,
+        config.resolve?.preserveSymlinks === true,
+      );
       const treeshakeOption =
         config.build.rolldownOptions?.treeshake ??
         config.build.rollupOptions?.treeshake;

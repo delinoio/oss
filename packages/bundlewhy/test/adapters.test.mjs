@@ -6,6 +6,8 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { normalizeCollectionRoot } from "../../../crates/bundlewhy/adapters/vite.mjs";
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 function runAdapter(bundler, project, config, extra = {}, env = {}) {
@@ -48,6 +50,23 @@ function runAdapter(bundler, project, config, extra = {}, env = {}) {
   fs.rmSync(work, { recursive: true, force: true });
   return { status: result.status, events, collection };
 }
+
+test("vite collection root follows resolver symlink policy", () => {
+  if (process.platform === "win32") return;
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), "bundlewhy-root-"));
+  const realRoot = path.join(work, "real");
+  const lexicalRoot = path.join(work, "linked");
+  fs.mkdirSync(realRoot);
+  fs.symlinkSync(realRoot, lexicalRoot, "dir");
+
+  assert.equal(normalizeCollectionRoot(lexicalRoot), fs.realpathSync(realRoot));
+  assert.equal(
+    normalizeCollectionRoot(lexicalRoot, true),
+    lexicalRoot,
+  );
+
+  fs.rmSync(work, { recursive: true, force: true });
+});
 
 for (const [bundler, project, config] of [
   ["vite", "vite-app", "vite.config.js"],
