@@ -176,19 +176,33 @@ impl Drop for Attempt {
         }
     }
 }
-#[derive(Default)]
 pub struct OAuthHost {
     disposed: Mutex<std::collections::BTreeSet<OAuthScope>>,
     attempts: Mutex<BTreeMap<String, Attempt>>,
     epochs: Mutex<BTreeMap<String, u64>>,
     stopped: AtomicBool,
     // Remote Grok login needs the Go server to validate and forward the captured
-    // Grok callback. It does not yet, so production leaves this false and a
-    // remote Grok open is refused before any listener or browser exists.
+    // Grok callback. The server's ForwardSubscriptionCallback is service-aware
+    // for Grok, so production enables this. When false, a remote Grok open is
+    // refused before any listener or browser exists.
     grok_remote_forwarding: bool,
     // Deterministic unit scheduling after pre-admission and before attempts.
     #[cfg(test)]
     admission_barrier: Mutex<Option<Arc<std::sync::Barrier>>>,
+}
+
+impl Default for OAuthHost {
+    fn default() -> Self {
+        Self {
+            disposed: Mutex::default(),
+            attempts: Mutex::default(),
+            epochs: Mutex::default(),
+            stopped: AtomicBool::new(false),
+            grok_remote_forwarding: true,
+            #[cfg(test)]
+            admission_barrier: Mutex::default(),
+        }
+    }
 }
 
 impl OAuthHost {
@@ -2748,11 +2762,13 @@ mod claude_subscription_tests {
 // hands the code/state query to the authenticated Connect forwarder via Take.
 // A bind conflict is explicit; the port is never remapped.
 //
-// The Go server's `ForwardSubscriptionCallback` accepts only the Codex login
-// today (ChatGPT accounts, `auth.openai.com`, fixed port 1457). A captured Grok
-// callback could not be forwarded, and the one-shot code would be consumed for
-// nothing, so a remote Grok open is refused up front with
-// `NativeFailure::Incompatible` until the server gains Grok forwarding.
+// The Go server's `ForwardSubscriptionCallback` is service-aware: it delivers a
+// captured Grok callback (Grok authorization host, the state and the dynamic
+// loopback port of that login) once to the in-process login listener, so the
+// receiver enables remote forwarding by default. With forwarding disabled a
+// remote Grok open is refused up front with `NativeFailure::Incompatible`,
+// because a callback that cannot be forwarded would consume the one-shot code
+// for nothing.
 const GROK_ATTEMPT_LIFETIME: Duration = Duration::from_secs(900);
 const GROK_AUTHORIZATION_HOST: &str = "auth.x.ai";
 const GROK_AUTHORIZATION_PATH: &str = "/oauth2/authorize";
@@ -3010,12 +3026,24 @@ mod grok_subscription_tests {
         }
     }
 
-    // Production leaves remote Grok forwarding disabled; these tests exercise
-    // the receiver itself.
+    // The production default forwards remote Grok callbacks; this names that
+    // dependence explicitly for the receiver tests.
     fn remote_host() -> OAuthHost {
         let mut host = OAuthHost::default();
         host.grok_remote_forwarding = true;
         host
+    }
+
+    // The same host with forwarding disabled, as when no server can forward.
+    fn non_forwarding_host() -> OAuthHost {
+        let mut host = OAuthHost::default();
+        host.grok_remote_forwarding = false;
+        host
+    }
+
+    #[test]
+    fn production_default_enables_remote_grok_forwarding() {
+        assert!(OAuthHost::default().grok_remote_forwarding);
     }
 
     fn scope() -> OAuthScope {
@@ -3499,7 +3527,7 @@ mod grok_subscription_tests {
         let _guard = super::tests::loopback_listener_test_guard();
         let port = free_port();
         let auth = authorization(port);
-        let host = OAuthHost::default();
+        let host = non_forwarding_host();
         let result = host.control_with_browser(
             scope(),
             OAuthAction::GrokSubscriptionOpen,
