@@ -1450,10 +1450,18 @@ impl Builder<'_, '_> {
                     };
                     let outer = walk_up_outer(node);
                     let parent = outer.parent();
+                    // A call counts as a method call only when it was
+                    // dispatched; any other call through an instance
+                    // connects neither its arguments nor its result.
                     let usage = if parent.kind() == SyntaxKind::CallExpression
                         && parent.expression() == outer
                     {
-                        Usage::Call
+                        self.expr(parent);
+                        if self.dispatched.contains(&parent) {
+                            Usage::Call
+                        } else {
+                            Usage::Other
+                        }
                     } else if (parent.kind() == SyntaxKind::TaggedTemplateExpression
                         && parent.tag() == outer)
                         || parent.kind() == SyntaxKind::DeleteExpression

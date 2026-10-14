@@ -9,8 +9,10 @@
 //!   and namespace objects);
 //! - its symbol is only declared, imported, exported, constructed with `new`,
 //!   extended by another closed class, used as the right operand of
-//!   `instanceof`, or read as `C.member` (any member except `prototype`,
-//!   without writing it);
+//!   `instanceof`, or read as `C.member` without writing it, where the class
+//!   chain declares `member` as a static member or `member` is `name` or
+//!   `length` (`Function.prototype` methods such as `bind` could construct
+//!   instances);
 //! - it extends nothing or another closed class, implements nothing, has no
 //!   decorators, `declare`, `abstract`, `accessor`, overloads or parameter
 //!   properties, never uses `new.target` or `import.meta`, returns no value
@@ -23,7 +25,10 @@
 //! subclass. A construction passes its arguments to the nearest explicit
 //! constructor, `x.m(…)` dispatches on each instance that reaches `x`, and
 //! `C.m(…)` uses the summary of a static method whose every reference is a
-//! direct call with its exact arity. Methods with rest or nested-pattern
+//! direct call with its exact arity. A later prototype member replaces an
+//! earlier one of the same name, and an instance field shadows both.
+//! Members with computed (well-known symbol) names have no summary, because
+//! protocol code calls them. Methods with rest or nested-pattern
 //! parameters, `arguments`, or async or generator bodies have no summary:
 //! their arguments escape and their results are unknown. Loading a method
 //! without calling it, calling anything other than a method and `delete` or
@@ -124,7 +129,14 @@ pub(super) struct Candidate {
     parent: Option<SymbolId>,
     subclasses: Vec<Node>,
     static_uses: Vec<(&'static str, Option<Node>)>,
+    /// Names of the static members the class declares itself.
+    static_names: Vec<&'static str>,
 }
+
+/// Static reads of a class that no declared member answers and that cannot
+/// reach the constructor: `Function.prototype` methods such as `bind`,
+/// `call` or `toString` could construct instances or reveal the source.
+const SAFE_CONSTRUCTOR_READS: &[&str] = &["name", "length"];
 
 fn contains_receiver(node: Node) -> bool {
     let mut nodes = Vec::new();
@@ -357,11 +369,24 @@ impl Builder<'_, '_> {
                 return Err("reference");
             }
         }
+        let static_names = node
+            .members()
+            .iter()
+            .filter(|&member| {
+                is_static(member)
+                    && matches!(
+                        member.name().kind(),
+                        SyntaxKind::Identifier | SyntaxKind::StringLiteral
+                    )
+            })
+            .map(|member| member.name().text())
+            .collect();
         Ok(Candidate {
             symbols: symbols.into_iter().map(|(symbol, _)| symbol).collect(),
             parent,
             subclasses,
             static_uses,
+            static_names,
         })
     }
 
@@ -386,6 +411,34 @@ impl Builder<'_, '_> {
                     Err(reason) => *rejected.entry(reason).or_default() += 1,
                 }
             }
+        }
+        // `C.name` must read a static member that the class chain declares.
+        let by_symbol: HashMap<SymbolId, Node> = candidates
+            .iter()
+            .flat_map(|(&node, c)| c.symbols.iter().map(move |&symbol| (symbol, node)))
+            .collect();
+        let declared = |candidates: &HashMap<Node, Candidate>, node: Node, name: &str| {
+            let mut current = Some(node);
+            while let Some(class) = current.and_then(|node| candidates.get(&node)) {
+                if class.static_names.contains(&name) {
+                    return true;
+                }
+                current = class.parent.and_then(|p| by_symbol.get(&p).copied());
+            }
+            false
+        };
+        let unresolved: Vec<Node> = candidates
+            .iter()
+            .filter(|&(&node, c)| {
+                c.static_uses.iter().any(|&(name, _)| {
+                    !SAFE_CONSTRUCTOR_READS.contains(&name) && !declared(&candidates, node, name)
+                })
+            })
+            .map(|(&node, _)| node)
+            .collect();
+        for node in unresolved {
+            candidates.remove(&node);
+            *rejected.entry("static-reference").or_default() += 1;
         }
         loop {
             let symbols: HashSet<SymbolId> = candidates
@@ -443,8 +496,11 @@ impl Builder<'_, '_> {
                     SyntaxKind::Identifier | SyntaxKind::StringLiteral
                 )
             {
+                // A later static member replaces an earlier one.
+                let name = member.name().text();
                 let method = member.kind() == SyntaxKind::MethodDeclaration;
-                statics.push((member.name().text(), method.then_some(member)));
+                statics.retain(|(existing, _)| *existing != name);
+                statics.push((name, method.then_some(member)));
             }
             let kind = match member.kind() {
                 SyntaxKind::MethodDeclaration => Member::Method(member),
@@ -493,13 +549,12 @@ impl Builder<'_, '_> {
             }
             let key = name.text();
             match members.iter_mut().find(|(n, _)| *n == key) {
-                // Instance fields shadow prototype members; a later method
-                // replaces an earlier one.
+                // Instance fields shadow prototype members; among prototype
+                // members the later definition replaces the earlier one.
                 Some((_, existing)) => {
                     *existing = match (*existing, kind) {
                         (Member::Field, _) | (_, Member::Field) => Member::Field,
-                        (Member::Method(_), Member::Method(_)) => kind,
-                        _ => Member::Accessor,
+                        (_, later) => later,
                     };
                 }
                 None => members.push((key, kind)),
@@ -565,6 +620,9 @@ impl Builder<'_, '_> {
                         | SyntaxKind::SetAccessor
                         | SyntaxKind::Constructor
                 ) && !is_static(member)
+                    // Protocol code calls well-known-symbol members with its
+                    // own arguments and reads their results.
+                    && member.name().kind() != SyntaxKind::ComputedPropertyName
                     && summarizable(member)
                 {
                     self.summarize(member);
@@ -884,6 +942,16 @@ impl Builder<'_, '_> {
                     return UNKNOWN;
                 }
                 self.dispatch_call(node, receiver, callee.name().text())
+            }
+            SyntaxKind::ElementAccessExpression
+                if skip_outer(callee.argument_expression()).kind() == SyntaxKind::StringLiteral =>
+            {
+                let receiver = self.expr(callee.expression());
+                if receiver <= EMPTY {
+                    return UNKNOWN;
+                }
+                let name = skip_outer(callee.argument_expression()).text();
+                self.dispatch_call(node, receiver, name)
             }
             _ => UNKNOWN,
         }

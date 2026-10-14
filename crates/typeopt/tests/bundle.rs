@@ -3054,3 +3054,26 @@ fn keeps_class_members_that_unknown_code_can_observe() {
         }
     }
 }
+
+/// Edge cases of class semantics that renaming must not change; each runs
+/// in Node before and after optimization.
+#[test]
+fn keeps_behavior_of_class_member_edge_cases() {
+    let cases = [
+        // A method called through a string-literal element access.
+        r#"class C{make(){return{longProperty:1}}}const r=new C()["make"]();console.log(r.longProperty);"#,
+        // The iteration protocol looks up `next` on what
+        // `Symbol.iterator` returns.
+        r#"class It{constructor(){this.position=0}next(){return this.position<2?{value:this.position++,done:false}:{value:void 0,done:true}}}class Iterable{[Symbol.iterator](){return new It}}for(const v of new Iterable)console.log(v);"#,
+        // A later method replaces an accessor of the same name.
+        r#"class C{get make(){return()=>({longProperty:0})}make(){return{longProperty:1}}}const r=new C().make();console.log(r.longProperty);"#,
+        // A later static field replaces a static method of the same name.
+        r#"globalThis.ext=o=>o.longProperty;class C{static call(o){return 0}static call=globalThis.ext}console.log(C.call({longProperty:1}));"#,
+        // `Function.prototype` methods hand out the constructor.
+        r#"class C{constructor(){this.longProperty=1}}const B=C.bind(null);const v=new B;console.log(v.longProperty);"#,
+    ];
+    for code in cases {
+        let code = format!("{code}export{{}};");
+        run(&[("index.js", &code)]);
+    }
+}
