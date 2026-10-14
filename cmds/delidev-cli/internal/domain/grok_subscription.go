@@ -54,10 +54,13 @@ func (s SubscriptionState) validateServerGrok(account Account, o *ServerSubscrip
 		return Fail(InvalidArgument, "Invalid Grok server login ownership.", "Preserve the original server operation and its exchange claim.")
 	}
 	if account.SubscriptionService != SubscriptionGrok {
-		if o.GrokDiagnostic != nil || o.RefreshClaimed || o.GrokRevocation != "" {
+		if o.GrokDiagnostic != nil || o.RefreshClaimed || o.GrokRevocation != "" || o.HealthBefore != "" {
 			return invalid()
 		}
 		return nil
+	}
+	if o.HealthBefore != "" && (o.Action != SubscriptionRefresh || o.HealthBefore != AccountUnverified && o.HealthBefore != AccountReady && o.HealthBefore != AccountExpired && o.HealthBefore != AccountFailed) {
+		return invalid()
 	}
 	if o.GrokDiagnostic != nil && (o.GrokDiagnostic.Validate() != nil || o.GrokDiagnostic.CorrelationID != o.ID || o.State == SubscriptionSucceeded || o.State == SubscriptionPreparing || o.State == SubscriptionWaiting) {
 		return invalid()

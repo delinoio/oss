@@ -182,7 +182,7 @@ func (c GrokOAuthClient) RequestDeviceAuthorization(ctx context.Context, endpoin
 		return GrokDeviceGrant{}, failure
 	}
 	var doc map[string]json.RawMessage
-	if json.Unmarshal(raw, &doc) != nil {
+	if !grokStrictObject(raw, false) || json.Unmarshal(raw, &doc) != nil {
 		return GrokDeviceGrant{}, failure
 	}
 	defer func() {
@@ -275,7 +275,7 @@ func (c GrokOAuthClient) PollDeviceToken(ctx context.Context, endpoints GrokEndp
 		var body struct {
 			Error string `json:"error"`
 		}
-		if json.Unmarshal(raw, &body) == nil {
+		if grokStrictObject(raw, true) && json.Unmarshal(raw, &body) == nil {
 			switch body.Error {
 			case "authorization_pending":
 				return GrokTokens{}, GrokDevicePending, nil

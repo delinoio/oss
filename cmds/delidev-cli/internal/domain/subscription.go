@@ -253,6 +253,11 @@ type ServerSubscriptionOperation struct {
 	// token request is sent and is never cleared: a refresh whose claim exists
 	// but whose outcome was not published is uncertain and is never resent.
 	RefreshClaimed bool `json:"refresh_claimed,omitempty"`
+	// HealthBefore is the account health a Grok refresh was admitted under. A
+	// restart fences the account as failed whatever its health was, so the
+	// recovery of a refresh that never reached its claim restores this value
+	// instead of presuming the account was ready.
+	HealthBefore AccountHealth `json:"health_before,omitempty"`
 	// GrokRevocation records the durable progress of the provider revocation of a
 	// server-owned Grok logout. It is written, in its own transaction, before the
 	// one revocation request is sent and is never cleared.

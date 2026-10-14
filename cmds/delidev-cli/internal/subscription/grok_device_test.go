@@ -378,3 +378,35 @@ func TestGrokDevicePollRejectsTrailingDataInEveryAnswer(t *testing.T) {
 		}
 	})
 }
+
+// A repeated member makes a device answer ambiguous: the decoder keeps the last
+// one, so a repeated error could turn a rejection into a pending answer.
+func TestGrokDeviceResponsesRejectRepeatedMembers(t *testing.T) {
+	t.Run("poll answer", func(t *testing.T) {
+		for _, body := range []string{
+			`{"error":"authorization_pending","error":"access_denied"}`,
+			`{"error":"slow_down","Error":"slow_down"}`,
+		} {
+			idp := grokidp.New(t)
+			client, endpoints := deviceFixture(t, idp)
+			grant, err := client.RequestDeviceAuthorization(context.Background(), endpoints)
+			if err != nil {
+				t.Fatal(err)
+			}
+			idp.TokenStatus, idp.TokenBody = http.StatusBadRequest, body
+			_, _, err = client.PollDeviceToken(context.Background(), endpoints, grant.DeviceCode)
+			if reason, ok := subscription.GrokOAuthFailure(err); !ok || reason != subscription.GrokReasonTokenUncertain {
+				t.Fatalf("a poll answer %s was not uncertain: %v", body, err)
+			}
+			grant.Clear()
+		}
+	})
+	t.Run("authorization", func(t *testing.T) {
+		idp := grokidp.New(t)
+		idp.DeviceBody = `{"device_code":"abc","user_code":"ABCD-1234","user_code":"WXYZ-9999","verification_uri":"https://accounts.x.ai/d","expires_in":60}`
+		client, endpoints := deviceFixture(t, idp)
+		if _, err := client.RequestDeviceAuthorization(context.Background(), endpoints); err == nil {
+			t.Fatal("a device authorization that repeats a member was accepted")
+		}
+	})
+}
