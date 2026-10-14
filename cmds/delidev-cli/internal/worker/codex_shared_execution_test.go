@@ -58,6 +58,30 @@ func TestSharedCodexWorkerFencesOwnerLoss(t *testing.T) {
 	testSharedCodexWorkerSessions(t, 2, false, true)
 }
 
+func TestSharedCodexFinishWaitsForAccountGate(t *testing.T) {
+	gate := newCodexOwnerRegistry().gate(domain.NewID())
+	if err := gate.acquire(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	acquired := make(chan struct{})
+	go func() {
+		gate.acquireForFinish()
+		close(acquired)
+		gate.release()
+	}()
+	select {
+	case <-acquired:
+		t.Fatal("Finish entered while another account operation held the gate")
+	case <-time.After(50 * time.Millisecond):
+	}
+	gate.release()
+	select {
+	case <-acquired:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Finish did not enter after the account gate was released")
+	}
+}
+
 func testSharedCodexWorkerSessions(t *testing.T, count int, retry, loss bool) {
 	first := newCheckpointFixture(t)
 	root := first.root

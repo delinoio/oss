@@ -76,15 +76,11 @@ func (g *codexAccountGate) acquire(ctx context.Context) error {
 	return nil
 }
 
-func (g *codexAccountGate) acquireForFinish() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-	select {
-	case g.slot <- struct{}{}:
-		return nil
-	case <-ctx.Done():
-		return domain.SafeError(ctx.Err())
-	}
+func (g *codexAccountGate) acquireForFinish() {
+	// A member must remain queued until its Finish has settled. A timed wait
+	// can expire behind another member's bounded Finish retries or owner
+	// retirement, leaving this member marked running with nobody to retire it.
+	g.slot <- struct{}{}
 }
 
 func (g *codexAccountGate) release() { <-g.slot }
@@ -186,9 +182,7 @@ func sharedOwnerUncertain() error {
 // attached to the owner until its original process and helpers are contained.
 func (g *codexAccountGate) finishMember(owner *codexSharedOwner, member *codexSharedMember, proven bool) error {
 	defer member.close()
-	if err := g.acquireForFinish(); err != nil {
-		return sharedOwnerUncertain()
-	}
+	g.acquireForFinish()
 	defer g.release()
 	g.mu.Lock()
 	if g.owner != owner || !member.running || owner.runnable < 1 {
