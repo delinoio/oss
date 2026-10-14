@@ -65,6 +65,18 @@ export interface GeometryInput {
   skin?: { joints: Uint16Array; weights: Float32Array };
   morphTargets?: readonly MorphTargetInput[];
 }
+export interface ParametricGeometrySample {
+  position: Vec3;
+  normal: Vec3;
+  uv: readonly [number, number];
+  tangent: readonly [number, number, number, number];
+}
+export interface BakeParametricGeometryInput {
+  uSegments: number;
+  vSegments: number;
+  maxTriangles: number;
+  sample: (u: number, v: number) => ParametricGeometrySample;
+}
 export interface Material {
   baseColor?: readonly [number, number, number, number];
   metallic?: number;

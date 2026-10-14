@@ -47,6 +47,9 @@ type SubscriptionState struct {
 	Pending                *SubscriptionOperation            `json:"pending,omitempty"`
 	ServerOperation        *ServerSubscriptionOperation      `json:"server_operation,omitempty"`
 	Lease                  *SubscriptionLease                `json:"lease,omitempty"`
+	// Members are the execution members of a shared owner lease. Historical
+	// singleton accounts omit them.
+	Members []SubscriptionMember `json:"members,omitempty"`
 }
 type SubscriptionOperation struct {
 	ID         ID                 `json:"id"`
@@ -56,6 +59,10 @@ type SubscriptionOperation struct {
 	DeviceCode bool               `json:"device_code"`
 	Canceled   bool               `json:"canceled"`
 	Phase      SubscriptionPhase  `json:"phase"`
+	// QueuedBehindLease marks a lifecycle operation accepted while a lease was
+	// held. Its native operation window begins when the lifecycle Take claims
+	// it, never while it waits, so waiting cannot expire it.
+	QueuedBehindLease bool `json:"queued_behind_lease,omitempty"`
 }
 type SubscriptionLease struct {
 	ForkRevision uint64 `json:"fork_revision,omitempty"`
@@ -72,6 +79,10 @@ type SubscriptionLease struct {
 	Epoch         ID                 `json:"epoch"`
 	Generation    ID                 `json:"generation,omitempty"`
 	StartedAt     time.Time          `json:"started_at"`
+	// Shared marks the versioned account-owner representation: the lease is the
+	// owner and SubscriptionState.Members holds its execution members. A
+	// historical singleton lease omits it and keeps exclusive execution.
+	Shared bool `json:"shared,omitempty"`
 }
 
 func (s SubscriptionState) Validate(account Account) error {
@@ -148,6 +159,9 @@ func (s SubscriptionState) Validate(account Account) error {
 			return invalid()
 		}
 	}
+	if s.Lease == nil && len(s.Members) != 0 {
+		return invalid()
+	}
 	if s.Lease != nil {
 		l := s.Lease
 		for _, id := range []ID{l.ID, l.OperationID, l.MachineID, l.InstanceID, l.DeviceID, l.Epoch} {
@@ -156,6 +170,9 @@ func (s SubscriptionState) Validate(account Account) error {
 			}
 		}
 		if (l.ForkRevision != 0 || l.TitleRevision != 0) && (l.Action != SubscriptionExecute || l.ForkRevision != 0 && l.TitleRevision != 0) {
+			return invalid()
+		}
+		if !s.validateOwnership() {
 			return invalid()
 		}
 		if l.Revision == 0 || l.StartedAt.IsZero() || l.Generation != s.Generation || (l.Action != SubscriptionLogin && l.Action != SubscriptionRefresh && l.Action != SubscriptionLogout && l.Action != SubscriptionExecute && l.Action != SubscriptionQuota && l.Action != SubscriptionResetCredit) {

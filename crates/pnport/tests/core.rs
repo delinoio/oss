@@ -595,6 +595,157 @@ fn view_reads_zip_scopes_aliases_and_preserves_project_writes() {
         Code::PnportFilesystemConflict
     );
 }
+
+#[test]
+fn native_zip_named_directories_stay_native_in_inline_and_split_views() {
+    for split in [false, true] {
+        let root = directory_fixture(split);
+        let root_path = fs::canonicalize(root.path()).unwrap();
+        let assets = root_path.join("assets.zip");
+        fs::create_dir(&assets).unwrap();
+        let file = assets.join("file.txt");
+        fs::write(&file, b"native").unwrap();
+
+        let graph = Graph::load(&root_path.join(".pnp.cjs")).unwrap();
+        let cache_root = tempfile::tempdir().unwrap();
+        let session = tempfile::tempdir().unwrap();
+        let mut view = View::new(
+            graph,
+            Cache::open(cache_root.path().join("cache")).unwrap(),
+            session.path().to_owned(),
+        );
+
+        let translated_dir = view.translate(&assets).unwrap();
+        assert_eq!(translated_dir.physical, assets, "split={split}");
+        assert!(!translated_dir.readonly, "split={split}");
+        assert!(fs::metadata(&translated_dir.physical).unwrap().is_dir());
+        let translated_file = view.translate(&file).unwrap();
+        assert_eq!(translated_file.physical, file, "split={split}");
+        assert!(!translated_file.readonly, "split={split}");
+        assert_eq!(fs::read(&translated_file.physical).unwrap(), b"native");
+        assert!(view.directory_entries(&assets, &assets).unwrap().is_empty());
+        let names: Vec<_> = fs::read_dir(&translated_dir.physical)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(names, vec!["file.txt"]);
+        assert!(!session.path().join("active").exists());
+        assert_eq!(fs::read_dir(view.cache.root.join("v1")).unwrap().count(), 1);
+
+        fs::write(&translated_file.physical, b"changed").unwrap();
+        let renamed = assets.join("renamed.txt");
+        fs::rename(&translated_file.physical, &renamed).unwrap();
+        assert_eq!(fs::read(&renamed).unwrap(), b"changed");
+        fs::remove_file(&renamed).unwrap();
+        assert!(!renamed.exists());
+        assert!(!session.path().join("active").exists());
+        assert_eq!(fs::read_dir(view.cache.root.join("v1")).unwrap().count(), 1);
+
+        let ordinary_zip = root_path.join("other.zip");
+        fs::write(&ordinary_zip, b"not an archive").unwrap();
+        let child = ordinary_zip.join("child.txt");
+        let untranslated = view.translate(&child).unwrap();
+        assert_eq!(untranslated.physical, child, "split={split}");
+        #[cfg(unix)]
+        assert_eq!(
+            fs::metadata(&untranslated.physical)
+                .unwrap_err()
+                .raw_os_error(),
+            Some(libc::ENOTDIR)
+        );
+        #[cfg(not(unix))]
+        assert!(fs::metadata(&untranslated.physical).is_err());
+        assert!(!session.path().join("active").exists());
+        assert_eq!(fs::read_dir(view.cache.root.join("v1")).unwrap().count(), 1);
+
+        let dependency = view
+            .translate(&root_path.join("node_modules/dep/file.txt"))
+            .unwrap();
+        assert_eq!(fs::read(&dependency.physical).unwrap(), b"package bytes");
+        assert!(dependency.readonly, "split={split}");
+        assert!(session.path().join("active").is_dir());
+        assert_eq!(fs::read_dir(view.cache.root.join("v1")).unwrap().count(), 2);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn unregistered_zip_file_child_keeps_native_enotdir() {
+    use pnport_core::native_path::resolved_lookup;
+
+    for split in [false, true] {
+        let root = directory_fixture(split);
+        let ordinary_zip = root.path().join("other.zip");
+        fs::write(&ordinary_zip, b"not an archive").unwrap();
+        let graph = Graph::load(&root.path().join(".pnp.cjs")).unwrap();
+        assert!(resolved_lookup(&ordinary_zip.join("child.txt"), true, &graph).is_none());
+    }
+}
+
+#[test]
+fn virtual_zip_directories_keep_physical_backing_in_inline_and_split_views() {
+    for split in [false, true] {
+        let root = directory_fixture(split);
+        let root_path = fs::canonicalize(root.path()).unwrap();
+        let archive = root_path.join("cache.zip");
+        fs::remove_file(&archive).unwrap();
+        fs::create_dir_all(archive.join("node_modules/dep")).unwrap();
+        fs::write(archive.join("node_modules/dep/file.txt"), b"unpacked bytes").unwrap();
+        fs::write(archive.join("native-entry.txt"), b"native bytes").unwrap();
+
+        let cache_root = tempfile::tempdir().unwrap();
+        let session = tempfile::tempdir().unwrap();
+        let mut view = View::new(
+            Graph::load(&root_path.join(".pnp.cjs")).unwrap(),
+            Cache::open(cache_root.path().join("cache")).unwrap(),
+            session.path().to_owned(),
+        );
+
+        let translated = view
+            .translate(&root_path.join("node_modules/one/file.txt"))
+            .unwrap();
+        assert_eq!(
+            translated.physical,
+            archive.join("node_modules/dep/file.txt"),
+            "split={split}"
+        );
+        assert!(translated.readonly, "split={split}");
+        assert_eq!(fs::read(&translated.physical).unwrap(), b"unpacked bytes");
+        assert!(!session.path().join("active").exists());
+
+        let native = view.translate(&archive.join("native-entry.txt")).unwrap();
+        assert_eq!(
+            native.physical,
+            archive.join("native-entry.txt"),
+            "split={split}"
+        );
+        assert!(!native.readonly, "split={split}");
+        assert_eq!(fs::read(&native.physical).unwrap(), b"native bytes");
+    }
+}
+
+#[test]
+fn virtual_zip_suffix_requires_matching_graph_archive() {
+    for split in [false, true] {
+        let root = directory_fixture(split);
+        let root_path = fs::canonicalize(root.path()).unwrap();
+        fs::write(root_path.join("ordinary.zip"), b"not an archive").unwrap();
+        let logical = root_path.join(".yarn/__virtual__/fake/1/ordinary.zip/child");
+        let cache_root = tempfile::tempdir().unwrap();
+        let session = tempfile::tempdir().unwrap();
+        let mut view = View::new(
+            Graph::load(&root_path.join(".pnp.cjs")).unwrap(),
+            Cache::open(cache_root.path().join("cache")).unwrap(),
+            session.path().to_owned(),
+        );
+
+        let translated = view.translate(&logical).unwrap();
+        assert_eq!(translated.physical, logical, "split={split}");
+        assert!(!translated.readonly, "split={split}");
+        assert!(!session.path().join("active").exists());
+    }
+}
+
 #[test]
 fn leases_survive_cleanup_and_cache_corruption_is_not_reused() {
     const SCENARIO: &str = "PNPORT_CACHE_LEASE_SCENARIO";
