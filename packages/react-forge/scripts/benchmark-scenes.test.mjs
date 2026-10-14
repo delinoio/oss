@@ -119,7 +119,7 @@ test("scene case children do not load the GLB validator", async () => {
       }
       `,
     );
-    spawnSync(
+    const result = spawnSync(
       process.execPath,
       [
         "--experimental-loader",
@@ -135,6 +135,11 @@ test("scene case children do not load the GLB validator", async () => {
         env: { ...process.env, MARKER_PATH: marker },
         encoding: "utf8",
       },
+    );
+    assert.equal(
+      result.status,
+      0,
+      `scene child failed: ${result.stderr || result.stdout}`,
     );
     await assert.rejects(readFile(marker));
   });
