@@ -4,7 +4,8 @@
 //! Bundle-mode transformations leave code that a minifier can shorten
 //! further (folded branches such as `true?a:b`, single-use bindings, parameter
 //! names exposed by inlining). After the pipeline, every edited ES module
-//! chunk can be minified with SWC's compressor and mangler. The result is
+//! chunk can be minified with SWC's compressor and mangler when no bundle
+//! chunk can observe callable source text. The result is
 //! kept only when it compresses smaller: Brotli (quality 11) must shrink and
 //! gzip (level 9) must not grow, because minifying already-minified bundler
 //! output sometimes compresses worse. Legal comments (`/*!`, `@license`,
@@ -28,7 +29,8 @@ use swc_core::{
     ecma::{
         ast::{
             AssignExpr, AssignPat, AssignTarget, CallExpr, Callee, EsVersion, Expr, ExprOrSpread,
-            ExprStmt, Ident, ModuleItem, Pat, Program, SimpleAssignTarget, Stmt, VarDeclarator,
+            ExprStmt, Ident, MemberExpr, MemberProp, ModuleItem, ObjectPatProp, Pat, Program,
+            PropName, SimpleAssignTarget, Stmt, VarDeclarator,
         },
         codegen::{
             Config, Emitter,
@@ -339,6 +341,94 @@ pub(crate) fn better(before: Compressed, after: Compressed) -> bool {
 
 fn legal(text: &str) -> bool {
     text.starts_with('!') || text.contains("@license") || text.contains("@preserve")
+}
+
+fn definitely_not_callable(expression: &Expr) -> bool {
+    match expression {
+        Expr::Lit(
+            swc_core::ecma::ast::Lit::Num(_)
+            | swc_core::ecma::ast::Lit::Str(_)
+            | swc_core::ecma::ast::Lit::Bool(_)
+            | swc_core::ecma::ast::Lit::BigInt(_)
+            | swc_core::ecma::ast::Lit::Null(_),
+        ) => true,
+        Expr::Paren(inner) => definitely_not_callable(&inner.expr),
+        _ => false,
+    }
+}
+
+/// A source-text reflection boundary anywhere in the bundle can observe a
+/// callable defined in another chunk. Without a closed proof of the target,
+/// publication must keep every edited chunk's pre-minification text.
+pub(crate) fn may_observe_function_source(code: &str) -> bool {
+    let cm: Lrc<SourceMap> = Default::default();
+    let file = cm.new_source_file(Lrc::new(FileName::Anon), code.to_owned());
+    let mut errors = Vec::new();
+    let Ok(module) = parse_file_as_module(
+        &file,
+        Syntax::Es(EsSyntax::default()),
+        EsVersion::latest(),
+        None,
+        &mut errors,
+    ) else {
+        return true;
+    };
+    if !errors.is_empty() {
+        return true;
+    }
+    let mut scan = SourceReflection::default();
+    module.visit_with(&mut scan);
+    scan.member_to_string || scan.function_prototype
+}
+
+#[derive(Default)]
+struct SourceReflection {
+    member_to_string: bool,
+    function_prototype: bool,
+}
+
+impl Visit for SourceReflection {
+    fn visit_member_expr(&mut self, member: &MemberExpr) {
+        member.visit_children_with(self);
+        match &member.prop {
+            MemberProp::Ident(name) if name.sym == "toString" => {
+                self.member_to_string |= !definitely_not_callable(&member.obj);
+            }
+            MemberProp::Ident(name)
+                if name.sym == "prototype"
+                    && matches!(&*member.obj, Expr::Ident(object) if object.sym == "Function") =>
+            {
+                self.function_prototype = true;
+            }
+            MemberProp::Computed(computed) => {
+                let known_other_key = matches!(&*computed.expr,
+                    Expr::Lit(swc_core::ecma::ast::Lit::Str(value)) if value.value != "toString")
+                    || matches!(
+                        &*computed.expr,
+                        Expr::Lit(
+                            swc_core::ecma::ast::Lit::Num(_) | swc_core::ecma::ast::Lit::BigInt(_)
+                        )
+                    );
+                self.member_to_string |= !known_other_key && !definitely_not_callable(&member.obj);
+            }
+            _ => {}
+        }
+    }
+
+    fn visit_object_pat_prop(&mut self, property: &ObjectPatProp) {
+        property.visit_children_with(self);
+        if match property {
+            ObjectPatProp::KeyValue(key_value) => match &key_value.key {
+                PropName::Ident(name) => name.sym == "toString",
+                PropName::Str(value) => value.value == "toString",
+                _ => false,
+            },
+            ObjectPatProp::Assign(assignment) => assignment.key.id.sym == "toString",
+            ObjectPatProp::Rest(_) => false,
+        } {
+            self.member_to_string = true;
+        }
+    }
 }
 
 /// Minifies an ES module. `None` when SWC cannot parse it or emit it; the
