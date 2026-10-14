@@ -238,7 +238,9 @@ func classifyInputPart(input *sessionInput, part NativePart) (storedInputPart, i
 				continue
 			}
 			file := part.File
-			if file == nil || file.MIME != string(image.mediaType) || file.Filename != nil && *file.Filename != image.filename {
+			// The pinned input shape has no `source`; an extra native annotation
+			// means the expansion changed, so it fails closed.
+			if file == nil || file.MIME != string(image.mediaType) || file.Filename != nil && *file.Filename != image.filename || file.Source != nil {
 				return 0, 0, observerProblem()
 			}
 			if !verifyImageDataURL(file.URL, image) {

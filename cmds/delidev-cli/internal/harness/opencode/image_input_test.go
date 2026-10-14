@@ -266,7 +266,11 @@ func TestStoredImageInputFailsClosedOnEveryMutation(t *testing.T) {
 		"duplicate file part": func(p []map[string]any) []map[string]any { p[4] = nativeFilePart(t, input, 0, firstRaw); return p },
 		"third synthetic":     func(p []map[string]any) []map[string]any { p[4] = syntheticPart(3); return p },
 		"ignored synthetic":   func(p []map[string]any) []map[string]any { p[1]["ignored"] = true; return p },
-		"foreign session":     func(p []map[string]any) []map[string]any { p[2]["sessionID"] = "ses_foreign"; return p },
+		"file source metadata": func(p []map[string]any) []map[string]any {
+			p[2]["source"] = map[string]any{"type": "file", "path": "/private/worker/a.data", "text": map[string]any{"value": "", "start": 0, "end": 0}}
+			return p
+		},
+		"foreign session": func(p []map[string]any) []map[string]any { p[2]["sessionID"] = "ses_foreign"; return p },
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -366,6 +370,11 @@ func TestObserverRejectsUnexpectedInputExpansion(t *testing.T) {
 		"synthetic wrong prefix":  {nativeTextPart(syntheticPart(1)["id"].(string), "other", true)},
 		"changed original":        {nativeTextPart(fixturePartID, "changed", false)},
 		"unknown file identifier": {syntheticPart(1), func() map[string]any { v := file(0, firstRaw); v["id"] = "prt_01960dcbe1faXXXXXXXXXXXXXX"; return v }()},
+		"file source metadata": {syntheticPart(1), func() map[string]any {
+			v := file(0, firstRaw)
+			v["source"] = map[string]any{"type": "file", "path": "/private/worker/a.data", "text": map[string]any{"value": "", "start": 0, "end": 0}}
+			return v
+		}()},
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := newImageObserver(t, input)
