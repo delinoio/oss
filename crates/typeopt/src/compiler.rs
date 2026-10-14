@@ -1525,7 +1525,12 @@ fn dynamic_package_files(
         collect(file, &mut nodes);
         with_type_checker_for_file(file, |checker| {
             for reference in source_file_reference_targets(file) {
-                if let Some(target) = resolve_dynamic_package_entry(&name, &reference)
+                let target = if std::path::Path::new(&reference).is_absolute() {
+                    Some(reference)
+                } else {
+                    resolve_dynamic_package_entry(&name, &reference)
+                };
+                if let Some(target) = target
                     && !dynamic.contains(&target)
                 {
                     pending.push(target);

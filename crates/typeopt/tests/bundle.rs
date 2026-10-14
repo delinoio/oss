@@ -2133,10 +2133,11 @@ fn allows_transitive_dynamic_package_declarations() {
     fs::write(package.join("index.js"), "export const x=1;").unwrap();
     fs::write(
         package.join("index.d.ts"),
-        "/// <reference types=\"dep\" />\ntype Y = import(\"dep\").Y;\nimport Dep = \
-         require(\"dep\");\nexport type {Y};",
+        "/// <reference path=\"./shared.d.ts\" />\n/// <reference types=\"dep\" />\ntype Y = \
+         import(\"dep\").Y;\nimport Dep = require(\"dep\");\nexport type {Y};",
     )
     .unwrap();
+    fs::write(package.join("shared.d.ts"), "export type Shared = string;").unwrap();
     fs::write(
         dependency.join("package.json"),
         r#"{"name":"dep","types":"index.d.ts"}"#,
