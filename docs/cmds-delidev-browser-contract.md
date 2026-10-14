@@ -278,8 +278,12 @@ changing identity: each observed URL refreshes only the label of the existing
 exact profile/page descriptor, never its order, selection or any foreign profile
 page. When a busy action settles, the native page is reconciled once to the
 current shared selection; a failed reconciliation is not retried until the
-selection or native state changes. Reconciliation also waits until a pending
-native open has published its view, then selects the current shared page once.
+selection or native state changes. Its failed-attempt suppression ends when the
+shared selection leaves that Page, including a move to a non-page tab; an
+explicit return may retry once after an eligible presentation opens. An
+unchanged selection and native state never start an automatic retry loop.
+Reconciliation also waits until a pending native open has published its view,
+then selects the current shared page once.
 Profile explanation uses the original
 accessible Modal and native visibility boundary.
 Numeric selection has only typed, original-owner fenced
