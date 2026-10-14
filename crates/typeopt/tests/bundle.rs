@@ -25,6 +25,34 @@ fn bundle(chunks: &[(&str, &str)]) -> tempfile::TempDir {
     temp
 }
 
+fn strip_ansi(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    let mut escape = false;
+    let mut csi = false;
+    for character in input.chars() {
+        if !escape {
+            if character == '\u{1b}' {
+                escape = true;
+            } else {
+                output.push(character);
+            }
+            continue;
+        }
+        if !csi {
+            csi = character == '[';
+            if !csi {
+                escape = false;
+            }
+            continue;
+        }
+        if ('@'..='~').contains(&character) {
+            escape = false;
+            csi = false;
+        }
+    }
+    output
+}
+
 fn run_typeopt(root: &Path, extra: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_typeopt"))
         .current_dir(root)
@@ -2061,7 +2089,7 @@ fn guarded_dynamic_package_import_is_a_boundary() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stderr = strip_ansi(&String::from_utf8_lossy(&output.stderr));
     assert!(
         stderr.contains("a dynamic package import keeps the bundle chunk unchanged")
             && stderr.contains("guarded.js")
