@@ -170,11 +170,9 @@ function fixture(url = loginURL) {
               onClick={() =>
                 flow.begin(
                   SubscriptionServiceId.Grok,
-                  undefined,
-                  false,
-                  false,
-                  true,
-                )
+ undefined,
+ true,
+ )
               }
             >
               Start Grok device

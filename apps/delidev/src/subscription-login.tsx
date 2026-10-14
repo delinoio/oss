@@ -218,13 +218,12 @@ export function useSubscriptionLogin(
   const begin = (
     service: SubscriptionServiceId,
     initial?: Resource,
-    reauth = false,
-    claudeServerLogin = false,
     grokDeviceCode = false,
   ) => {
+    // Claude sign-in is always the server-owned setup-token flow; callers gate
+    // it on System capability 67 and no Runner Device ever participates.
     if (service === SubscriptionServiceId.Claude) {
-      if (!pending.current && !grok.workflow)
-        claude.begin(initial, reauth, claudeServerLogin);
+      if (!pending.current && !grok.workflow) claude.begin(initial);
       return;
     }
     if (service === SubscriptionServiceId.Grok) {

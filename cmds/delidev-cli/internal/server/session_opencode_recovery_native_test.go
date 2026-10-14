@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativetest"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/worker"
@@ -28,13 +29,7 @@ import (
 
 func nativeOpenCodeRecoveryExecutable(t *testing.T) string {
 	t.Helper()
-	binary := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
-	if binary == "" {
-		t.Skip("explicit installed OpenCode and generated loopback provider only")
-	}
-	if !filepath.IsAbs(binary) {
-		t.Fatal("native executable must be absolute")
-	}
+	binary, _ := nativetest.NativeOpenCodeExecutable(t)
 	binary, err := filepath.EvalSymlinks(binary)
 	if err != nil {
 		t.Fatal(err)
@@ -64,6 +59,9 @@ func TestManualNativeOpenCodeCompletedExecutionRecovery(t *testing.T) {
 }
 
 func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode, scenario string) {
+	// The helper caches its observation, so this only reads the version the
+	// selected binary reported; the Worker must probe it with that version.
+	_, observedVersion := nativetest.NativeOpenCodeExecutable(t)
 	workspaceType, scenario := openCodeProjectFixtureProfile(scenario)
 	projectProfile := openCodeCommittedProject
 	switch scenario {
@@ -202,7 +200,7 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 		_, _ = io.WriteString(w, strings.ReplaceAll(`data: {"id":"chatcmpl-recovery","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":20,"completion_tokens":4,"total_tokens":24}}`+"\n\ndata: [DONE]\n\n", "fixture-model", fixtureModel))
 	}))
 	defer upstream.Close()
-	f := newFirstDispatchFixtureWorkspaceProfile(t, domain.OpenCode, mode, binary, upstream.URL, fixtureModel, workspaceType, projectProfile)
+	f := newFirstDispatchFixtureObserved(t, domain.OpenCode, mode, binary, observedVersion, upstream.URL, fixtureModel, workspaceType, projectProfile)
 	if missingRead {
 		toolPath.Store(prepareOpenCodeMissingRead(t, f, permission))
 	} else if externalRejection || externalAllowance {

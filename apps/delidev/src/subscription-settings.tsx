@@ -132,12 +132,20 @@ export interface SubscriptionSettingsViewProps {
   cleanupUnavailable?: string;
   cleanupStatus?: ReactNode;
   actionsBlocked?: boolean;
+  // Notice shown with the Add-account cards; it may carry service-specific
+  // guidance such as a Claude server update.
   lifecycleUnavailable?: string;
+  // Guidance for a disabled row action or Refresh all. It never carries
+  // Add-account guidance, so it defaults to the generic lifecycle notice.
+  actionUnavailable?: string;
   selectService?: (brand: SubscriptionBrand) => void;
   serviceLoginAvailable?: (brand: SubscriptionBrand) => boolean;
   /** Secondary explicit device-code sign-in beside Add account. */
   selectDeviceCode?: (brand: SubscriptionBrand) => void;
   deviceCodeAvailable?: (brand: SubscriptionBrand) => boolean;
+  // A disabled service whose sign-in needs a server update keeps the Add
+  // account label and points to the notice instead of reading Coming soon.
+  serviceUpdateRequired?: (brand: SubscriptionBrand) => boolean;
   activeFilter?: string;
   clearFilter: () => void;
   pagination?: ReactNode;
@@ -873,10 +881,12 @@ export function SubscriptionSettingsView({
   cleanupStatus,
   actionsBlocked = false,
   lifecycleUnavailable = copy("subscription-settings.extra.f874aed4a97c"),
+  actionUnavailable = lifecycleUnavailable,
   selectService,
   serviceLoginAvailable = () => true,
   selectDeviceCode,
   deviceCodeAvailable = () => false,
+  serviceUpdateRequired = () => false,
   activeFilter,
   clearFilter,
   pagination,
@@ -1023,8 +1033,12 @@ export function SubscriptionSettingsView({
                 !refreshAll ||
                 operationBlocked(refreshAllOperation)
               }
-              title={!refreshAll ? lifecycleUnavailable : undefined}
-              aria-describedby={!refreshAll ? noticeId : undefined}
+              title={!refreshAll ? actionUnavailable : undefined}
+              aria-describedby={
+                !refreshAll && actionUnavailable === lifecycleUnavailable
+                  ? noticeId
+                  : undefined
+              }
               onClick={refreshAll}
             >
               {copy("subscription-settings.refreshAll_3c128b")}
@@ -1088,7 +1102,7 @@ export function SubscriptionSettingsView({
                 account={account}
                 now={presentationNow}
                 active={active}
-                unavailable={lifecycleUnavailable}
+                unavailable={actionUnavailable}
                 actionsBlocked={actionsBlocked}
                 openDetails={openDetails}
               />
@@ -1129,15 +1143,19 @@ export function SubscriptionSettingsView({
                 icon={SettingsActionIcon.Add}
                 type="button"
                 disabled={!addAvailable}
+                aria-describedby={
+                  serviceUpdateRequired(provider.brand) ? noticeId : undefined
+                }
                 aria-label={copy("subscription-settings.message_78735b", {
                   v0: provider.name,
-                  v1: addAvailable
-                    ? copy("subscription-settings.addAccount_ee7ee5")
-                    : copy("subscription-settings.comingSoon_4f7d64"),
+                  v1:
+                    addAvailable || serviceUpdateRequired(provider.brand)
+                      ? copy("subscription-settings.addAccount_ee7ee5")
+                      : copy("subscription-settings.comingSoon_4f7d64"),
                 })}
                 onClick={() => selectService?.(provider.brand)}
               >
-                {addAvailable
+                {addAvailable || serviceUpdateRequired(provider.brand)
                   ? copy("subscription-settings.addAccount_ee7ee5")
                   : copy("subscription-settings.comingSoon_4f7d64")}
               </SettingsActionButton>
