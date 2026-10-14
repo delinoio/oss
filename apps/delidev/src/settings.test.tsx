@@ -4660,7 +4660,9 @@ it("Connections renders no App information shortcut and starts with the connecti
   const connection = await screen.findByRole("region", {
     name: "Original native connection",
   });
-  expect(screen.queryByRole("button", { name: "Open App information" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Open App information" }),
+  ).toBeNull();
   expect(screen.queryByText("Open App information")).toBeNull();
   const panels = connection.closest(".settings-panels");
   expect(panels).not.toBeNull();
@@ -4675,7 +4677,9 @@ it("Connections falls back to the Current connection section without an App info
   const current = await screen.findByRole("region", {
     name: "Current connection",
   });
-  expect(screen.queryByRole("button", { name: "Open App information" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Open App information" }),
+  ).toBeNull();
   const panels = current.closest(".settings-panels");
   expect(panels?.firstElementChild?.firstElementChild).toBe(current);
   expect(panels?.querySelector("button")).toBeNull();
