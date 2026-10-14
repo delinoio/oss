@@ -1494,9 +1494,7 @@ it("ignores Escape while a save is pending or uncertain, keeping the draft and r
   pressEscape(screen.getByLabelText("Schedule name"));
   expect(screen.getByLabelText("Schedule name")).toBeTruthy();
   expect(
-    (
-      screen.getByLabelText("Scheduled prompt") as HTMLTextAreaElement
-    ).value,
+    (screen.getByLabelText("Scheduled prompt") as HTMLTextAreaElement).value,
   ).toBe("Review project changes");
   expect(newScheduleOpener().disabled).toBe(true);
   expect(value.save).toHaveBeenCalledOnce();
