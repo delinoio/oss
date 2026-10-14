@@ -767,7 +767,7 @@ recorded and after the vault removal.
 Every server-owned Grok operation passes through the same stages, and each cell
 below has one durable outcome. "Fenced" means the account is
 `RECOVERY_REQUIRED` (`recovery_required` set, health failed, operation retained);
-the diagnostic always carries the phase of the operation (`LOGIN` or `REFRESH`)
+the diagnostic always carries the phase of the operation (`LOGIN`, `REFRESH` or `LOGOUT`)
 and the operation as correlation id. The scanner settles only a fenced operation
 whose exchange was never claimed; a claim is never released automatically.
 
@@ -806,6 +806,8 @@ pending native-started operation.
 | exchange claim (`claimGrokExchange`, `claimGrokRefresh`)     | the claim flag may be durable although the request was never sent | the request is not sent after any claim error, so the operation settles `FAILED` with the stored credential untouched and the flag is inert on a settled operation; a claim whose commit succeeded is the only way a request is sent                                               |
 | stage (vault write of the next generation)                   | the generation may exist                                          | an unpublished generation is retired only after proving the account does not reference it                                                                                                                                                                                          |
 | publish (`grok.server.finish`, `grok.server.refresh-finish`) | the settlement may be committed                                   | re-read: a settled operation is the outcome; a still-pending one is fenced with the phase diagnostic; superseded generations are removed by the next cleanup                                                                                                                       |
+| revocation record (`grok.server.logout-revoked`)             | the confirmation may be durable                                   | the operation is fenced as recovery; a durable confirmation is a revoked kind and only repeats the cleanup, an absent one stays claimed and manual                                                                                                                                 |
+| disconnect (`grok.server.logout-disconnect`)                 | the account may already be disconnected                           | re-read: a settled operation (no pending operation, generation cleared) is the committed logout and is never rewritten to recovery; a still-pending one is fenced and the scanner repeats the cleanup                                                                              |
 
 ### Token endpoint response table
 

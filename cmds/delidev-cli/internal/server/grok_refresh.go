@@ -61,6 +61,9 @@ const (
 	grokFaultAfterRevoke             grokFaultPoint = "after_revoke"
 	grokFaultAfterRevocationRecorded grokFaultPoint = "after_revocation_recorded"
 	grokFaultAfterLogoutCleanup      grokFaultPoint = "after_logout_cleanup"
+	// grokFaultAfterLogoutDisconnect runs after a committed transaction and stands
+	// for a lost commit acknowledgement.
+	grokFaultAfterLogoutDisconnect grokFaultPoint = "after_logout_disconnect"
 )
 
 // grokFault runs the test seam at point. Only the lease and settlement points
@@ -451,8 +454,11 @@ func (s *Service) finishGrokRefresh(ctx context.Context, id domain.ID, o domain.
 // grokDiagnosticPhaseOf maps a Grok server operation action to the phase of its
 // durable diagnostic.
 func grokDiagnosticPhaseOf(action domain.SubscriptionAction) domain.GrokDiagnosticPhase {
-	if action == domain.SubscriptionRefresh {
+	switch action {
+	case domain.SubscriptionRefresh:
 		return domain.GrokDiagnosticRefresh
+	case domain.SubscriptionLogout:
+		return domain.GrokDiagnosticLogout
 	}
 	return domain.GrokDiagnosticLogin
 }
@@ -507,7 +513,13 @@ func (s *Service) markGrokRecovery(id, operation domain.ID) (bool, error) {
 		fenced = true
 		o.State = domain.SubscriptionRecovery
 		if o.GrokDiagnostic == nil {
-			o.GrokDiagnostic = &domain.GrokDiagnostic{Phase: grokDiagnosticPhaseOf(o.Action), Code: domain.RecoveryRequired, CorrelationID: o.ID}
+			code := domain.RecoveryRequired
+			if o.GrokRevocation == domain.GrokRevocationConfirmed {
+				// The provider revoked the token; only the protected cleanup is
+				// pending, so the outcome is known and the cleanup is retried.
+				code = domain.Unavailable
+			}
+			o.GrokDiagnostic = &domain.GrokDiagnostic{Phase: grokDiagnosticPhaseOf(o.Action), Code: code, CorrelationID: o.ID}
 		}
 		st.RecoveryRequired = true
 		a.Health = domain.AccountFailed

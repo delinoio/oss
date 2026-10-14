@@ -771,6 +771,16 @@ func grokDiagnosticMessage(d *domain.GrokDiagnostic) *pb.GrokDiagnostic {
 		case domain.Conflict:
 			message, guidance = "The stored Grok credential does not match the account.", "Sign in to the account again."
 		}
+	case d.Phase == domain.GrokDiagnosticLogout:
+		message, guidance = "Grok sign-out did not complete.", "Request the sign-out again."
+		switch d.Code {
+		case domain.RecoveryRequired:
+			message, guidance = "Grok sign-out has an uncertain outcome.", "Do not retry the sign-out. Inspect the account before starting another."
+		case domain.Unavailable:
+			message, guidance = "Grok sign-out services are unavailable.", "Check the server's network access to the Grok sign-in service, then try again."
+		case domain.Conflict:
+			message, guidance = "The stored Grok credential does not match the account.", "Sign in to the account again."
+		}
 	case d.Code == domain.RecoveryRequired:
 		message, guidance = "Grok sign-in has an uncertain outcome.", "Do not retry the original sign-in. Inspect the account before starting another."
 	case d.Code == domain.PermissionDenied:

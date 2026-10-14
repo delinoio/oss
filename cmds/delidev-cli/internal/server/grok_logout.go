@@ -140,7 +140,18 @@ func (s *Service) runGrokLogout(parent context.Context, id domain.ID) {
 		return struct{}{}, nil
 	})
 	unlock()
-	if err != nil || !claimed {
+	if err == nil {
+		err = s.grokFault(grokFaultAfterLease)
+	}
+	if err != nil {
+		if claimed {
+			// The lease transaction ran but its outcome is unknown: the durable
+			// operation decides whether it is fenced for the scanner.
+			s.fenceUnsettledGrokOperation(parent, id, original)
+		}
+		return
+	}
+	if !claimed {
 		return
 	}
 	s.logGrok(parent, slog.LevelInfo, "grok_logout_started", original, grokStepClaim, "account_id", id)
@@ -150,10 +161,8 @@ func (s *Service) runGrokLogout(parent context.Context, id domain.ID) {
 	bounded, stop := context.WithTimeout(domain.WithPrincipal(context.WithoutCancel(parent), domain.Principal{Type: domain.OwnerDevice}), 2*grokCleanupTimeout)
 	defer stop()
 	if err := s.finishGrokLogout(bounded, id, original, outcome); err != nil {
-		if e := s.markServerSubscriptionRecovery(id, original.ID, nil); e != nil {
-			s.logGrok(bounded, slog.LevelWarn, "grok_logout_recovery_unconfirmed", original, grokStepFinish, "code", domain.SafeError(e).Code)
-		}
 		s.logGrok(bounded, slog.LevelWarn, "grok_logout_finish_failed", original, grokStepFinish, "code", domain.SafeError(err).Code)
+		s.fenceUnsettledGrokOperation(bounded, id, original)
 	}
 }
 
@@ -403,6 +412,11 @@ func (s *Service) completeGrokLogoutCleanup(ctx context.Context, id domain.ID, o
 		}
 		return accountReceipt{ID: id}, nil
 	})
+	if err == nil {
+		// A disconnect whose commit acknowledgement is lost reports an error although
+		// the account is already disconnected; the caller re-reads the operation.
+		err = s.grokFault(grokFaultAfterLogoutDisconnect)
+	}
 	if err != nil {
 		s.logGrokCleanup(ctx, slog.LevelWarn, "grok_logout_disconnect_pending", o, "code", domain.SafeError(err).Code)
 		return err
