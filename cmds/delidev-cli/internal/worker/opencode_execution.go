@@ -82,6 +82,9 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 		if err != nil {
 			return nil, err
 		}
+		if value.Requests.Profile.Reasoning() && !config.openCodeForkReasoning {
+			return nil, executionCheckpointUncertain()
+		}
 		forkSeed = &value
 	}
 	var checkpoint *openCodeExecutionCheckpoint

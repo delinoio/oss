@@ -23,10 +23,20 @@ const maxOpenCodeForkEntries = 8192
 
 type ForkProfile string
 
-const OpenCodeGeneralChatForkV1 ForkProfile = "opencode-general-chat-v1"
+const (
+	OpenCodeGeneralChatForkV1 ForkProfile = "opencode-general-chat-v1"
+	// OpenCodeGeneralChatForkV2 keeps every v1 copy bound and additionally
+	// admits completed plain timed reasoning history.
+	OpenCodeGeneralChatForkV2 ForkProfile = "opencode-general-chat-v2"
+)
+
+// OpenCodeGeneralChat reports either closed OpenCode General Chat copy profile.
+func (p ForkProfile) OpenCodeGeneralChat() bool {
+	return p == OpenCodeGeneralChatForkV1 || p == OpenCodeGeneralChatForkV2
+}
 
 func (r PrepareRequest) forkEntryLimit() int {
-	if r.ForkProfile == OpenCodeGeneralChatForkV1 {
+	if r.ForkProfile.OpenCodeGeneralChat() {
 		return maxOpenCodeForkEntries
 	}
 	return maxForkEntries

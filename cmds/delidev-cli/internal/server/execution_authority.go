@@ -104,7 +104,7 @@ func (a *executionAuthority) checkedScope(tx *store.Tx, grant store.ExecutionGra
 		return empty, executionDenied()
 	}
 	_, machine, machineErr := activeMachine(tx, grant.MachineID)
-	if machineErr != nil || input.Configuration.Options.ApprovalsReviewer != "" && !slices.Contains(machine.WorkerCapabilities, domain.CodexApprovalReviewV1) || input.Fork != nil && input.Configuration.Harness == domain.OpenCode && !slices.Contains(machine.WorkerCapabilities, domain.OpenCodeGeneralChatForkV1) {
+	if machineErr != nil || input.Configuration.Options.ApprovalsReviewer != "" && !slices.Contains(machine.WorkerCapabilities, domain.CodexApprovalReviewV1) || input.Fork != nil && input.Configuration.Harness == domain.OpenCode && (!slices.Contains(machine.WorkerCapabilities, domain.OpenCodeGeneralChatForkV1) || input.Fork.OpenCodeProfile.Reasoning() && !slices.Contains(machine.WorkerCapabilities, domain.OpenCodeGeneralChatForkReasoningV1)) {
 		return empty, executionDenied()
 	}
 	_, session, err := sessionRecord(tx, input.SessionID)

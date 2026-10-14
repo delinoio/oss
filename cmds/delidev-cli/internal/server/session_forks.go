@@ -64,10 +64,20 @@ func forkBoundary(tx *store.Tx, id domain.ID, expected domain.NativeIdentity) (s
 		if session.Workspace != domain.GeneralChat || machine.OS == "windows" || (machine.OS != "darwin" && machine.OS != "linux") || !slices.Contains(machine.WorkerCapabilities, domain.OpenCodeGeneralChatForkV1) || input.SourceAssignment.Version != 4 && !domain.ValidNativeVersionMetadata(input.SourceAssignment.Installation.Version) {
 			return r, session, input, domain.Fail(domain.Unsupported, "This Runner Device does not support OpenCode General Chat Fork.", "Update the original Unix Runner Device and keep the completed source session.")
 		}
-		if err := validateOpenCodeForkTranscript(tx, id, input.Completion.NativeThreadID); err != nil {
+		reasoning, err := validateOpenCodeForkTranscript(tx, id, input.Completion.NativeThreadID)
+		if err != nil {
 			return r, session, input, err
 		}
 		input.Version = 2
+		// Profile v2 is selected only for a source with completed reasoning and
+		// only when the original Worker negotiated both capabilities. A v1-only
+		// Worker is rejected here, before any job, child or native session.
+		if reasoning {
+			if !slices.Contains(machine.WorkerCapabilities, domain.OpenCodeGeneralChatForkReasoningV1) {
+				return r, session, input, domain.Fail(domain.Unsupported, "This Runner Device does not support forking OpenCode history that includes reasoning.", "Update and reconnect the original Unix Runner Device and keep the completed source session.")
+			}
+			input.OpenCode = &domain.OpenCodeForkRequests{Profile: domain.OpenCodeForkProfileV2}
+		}
 	}
 	if input.SourceAssignment.Version == 4 {
 		if job.Startup == nil || job.Startup.Ready == nil || job.Startup.Failure != nil || job.Startup.Ready.Validate() != nil {
@@ -244,7 +254,12 @@ func (s *Service) ForkSession(ctx context.Context, req *connect.Request[pb.ForkS
 		input.ChildSessionID, input.RuntimeID, input.NativeRequestID = domain.NewID(), domain.NewID(), domain.NewID()
 		input.Name = identity.Name
 		if input.Version == 2 {
-			input.OpenCode = &domain.OpenCodeForkRequests{Restore: domain.NewID(), Fork: input.NativeRequestID, Move: domain.NewID(), Mark: domain.NewID(), DeleteSource: domain.NewID()}
+			// forkBoundary already chose the profile; v1 leaves it empty.
+			profile := domain.OpenCodeForkProfileV1
+			if input.OpenCode != nil {
+				profile = input.OpenCode.Profile
+			}
+			input.OpenCode = &domain.OpenCodeForkRequests{Restore: domain.NewID(), Fork: input.NativeRequestID, Move: domain.NewID(), Mark: domain.NewID(), DeleteSource: domain.NewID(), Profile: profile}
 		}
 		if err := input.Validate(); err != nil {
 			if input.Purpose == domain.SidechatFork {
@@ -392,6 +407,19 @@ func validateForkAuthority(tx *store.Tx, input domain.ForkJobInput, phase forkAu
 	if err != nil {
 		return err
 	}
+	if input.Version == 2 {
+		// The completed source cannot gain or lose reasoning; a disagreement means
+		// the retained profile no longer matches its canonical transcript.
+		if input.OpenCode == nil || now.OpenCode != nil && now.OpenCode.Profile != input.OpenCode.Profile || now.OpenCode == nil && input.OpenCode.Profile != domain.OpenCodeForkProfileV1 {
+			return forkConflict()
+		}
+		if input.OpenCode.Profile.Reasoning() {
+			_, machine, err := activeMachine(tx, input.SourceAssignment.MachineID)
+			if err != nil || !slices.Contains(machine.WorkerCapabilities, domain.OpenCodeGeneralChatForkReasoningV1) {
+				return domain.Fail(domain.Unsupported, "The original Runner Device lost OpenCode Fork reasoning support.", "Update and reconnect the original Unix Runner Device; the source stays unchanged.")
+			}
+		}
+	}
 	if now.SourceRevision != input.SourceRevision || now.SourceJobID != input.SourceJobID || now.Completion != input.Completion || now.SourceAssignment.ConfigurationDigest != input.SourceAssignment.ConfigurationDigest || source.ExecutionSelection().AccountID != input.SourceAssignment.AccountID || source.ExecutionSelection().ConnectionID != input.SourceAssignment.ConnectionID {
 		return forkConflict()
 	}
@@ -509,6 +537,7 @@ func finishSessionFork(tx *store.Tx, r store.Record, job domain.Job, revision ui
 	}
 	if input.Version == 2 {
 		child.Fork.OpenCodeCreationRequestID = input.OpenCode.Fork
+		child.Fork.OpenCodeProfile = input.OpenCode.Profile
 		child.Fork.NativeTurnID = output.NativeTurnID
 		outputDigest := forkInputDigest(raw)
 		child.Fork.OpenCodeCreationProof = &domain.OpenCodeForkCreationProof{CreationRequestID: input.OpenCode.Fork, ChildSessionID: input.ChildSessionID, JobOutputDigest: outputDigest, OriginDigest: child.Fork.OpenCodeCreationDigest(input.ChildSessionID, outputDigest)}
@@ -527,6 +556,15 @@ func finishSessionFork(tx *store.Tx, r store.Record, job domain.Job, revision ui
 	}
 	job.State, job.Output = domain.JobSucceeded, raw
 	return tx.PutJob(r.ID, revision, r.SessionID, r.ProjectID, job)
+}
+
+// openCodeForkWorkspaceProfile maps the server-selected copy profile to the
+// profile the Worker must record on the child preparation.
+func openCodeForkWorkspaceProfile(input domain.ForkJobInput) workspace.ForkProfile {
+	if input.OpenCode != nil && input.OpenCode.Profile.Reasoning() {
+		return workspace.OpenCodeGeneralChatForkV2
+	}
+	return workspace.OpenCodeGeneralChatForkV1
 }
 
 func validateForkWorkspace(input domain.ForkJobInput, preparation workspace.PrepareRequest, manifest workspace.Manifest) error {
@@ -551,7 +589,7 @@ func validateForkWorkspace(input domain.ForkJobInput, preparation workspace.Prep
 		return nil
 	}
 	if input.Workspace == domain.GeneralChat {
-		if input.Version == 2 && preparation.ForkProfile != workspace.OpenCodeGeneralChatForkV1 || input.Version == 1 && preparation.ForkProfile != "" {
+		if input.Version == 2 && preparation.ForkProfile != openCodeForkWorkspaceProfile(input) || input.Version == 1 && preparation.ForkProfile != "" {
 			return forkConflict()
 		}
 		if preparation.ForkSourcePath != source.PrimaryPath {
