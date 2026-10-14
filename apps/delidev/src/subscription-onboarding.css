@@ -111,7 +111,21 @@
   letter-spacing: 0.12em;
   user-select: all;
 }
-.grok-device-user-code:focus-visible {
+.grok-device-verification-address {
+  display: inline-block;
+  box-sizing: border-box;
+  min-height: 40px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.875rem;
+  user-select: all;
+}
+.grok-device-user-code:focus-visible,
+.grok-device-verification-address:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }

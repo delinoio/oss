@@ -55,7 +55,25 @@ enum CopyState {
 enum CopyTarget {
   Link = "link",
   Code = "code",
+  Address = "address",
 }
+const copyNotices: Record<
+  CopyTarget,
+  { copied: MessageKey; failed: MessageKey }
+> = {
+  [CopyTarget.Link]: {
+    copied: "grok-subscription.linkCopied",
+    failed: "grok-subscription.copyFailed",
+  },
+  [CopyTarget.Code]: {
+    copied: "grok-subscription.device.codeCopied",
+    failed: "grok-subscription.device.codeCopyFailed",
+  },
+  [CopyTarget.Address]: {
+    copied: "grok-subscription.device.addressCopied",
+    failed: "grok-subscription.device.addressCopyFailed",
+  },
+};
 // The explicit sign-in method chosen by the user. It never changes mid-login.
 export enum GrokLoginMethod {
   Browser = "browser",
@@ -224,6 +242,10 @@ interface View {
   urlReady: boolean;
   // Transient device code display. Never persisted, logged or cached.
   userCode?: string;
+  // The validated verification address, shown only after the native opener
+  // failed so the user can open it in any browser. Cleared on every terminal
+  // state, on a successful open and once a cancellation is accepted.
+  address?: string;
   copyState: CopyState;
   copyTarget: CopyTarget;
   canRetry: boolean;
@@ -554,6 +576,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
             browserOpened: false,
             urlReady: false,
             userCode: undefined,
+            address: undefined,
             canCancel: false,
             canRetry: false,
             canceling: false,
@@ -579,6 +602,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
                 browserOpened: false,
                 urlReady: false,
                 userCode: undefined,
+                address: undefined,
                 canRetry: false,
                 canceling: false,
               }
@@ -768,6 +792,11 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
   const copyValue = (target: CopyTarget) => {
     const p = pending.current;
     const value = target === CopyTarget.Code ? p?.userCode : p?.url;
+    if (
+      target === CopyTarget.Address &&
+      p?.method !== GrokLoginMethod.DeviceCode
+    )
+      return;
     if (!p || !live(p) || !value) return;
     const clipboard = globalThis.navigator?.clipboard;
     const settle = (copyState: CopyState) => {
@@ -808,13 +837,22 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
     void run(
       p,
       async () => {
-        await native(
-          p.opening,
-          OAuthNativeAction.GrokDeviceAuthorizationOpen,
-          "",
-          p.operation,
-          url,
-        );
+        try {
+          await native(
+            p.opening,
+            OAuthNativeAction.GrokDeviceAuthorizationOpen,
+            "",
+            p.operation,
+            url,
+          );
+        } catch (error) {
+          // The closed native opener failed: the validated address becomes
+          // selectable and copyable so it can be opened in any browser. A
+          // settled or canceling login keeps nothing on screen.
+          if (!p.terminal && !p.canceling) update(p, { address: url });
+          throw error;
+        }
+        update(p, { address: undefined });
       },
       "grok-subscription.problem.verificationOpenFailed",
     );
@@ -865,6 +903,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
           update(p, {
             problem: "grok-subscription.problem.canceling",
             canCancel: false,
+            address: undefined,
             canceling: true,
           });
         }
@@ -941,6 +980,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
       reopen={reopen}
       copyLink={() => copyValue(CopyTarget.Link)}
       copyCode={() => copyValue(CopyTarget.Code)}
+      copyAddress={() => copyValue(CopyTarget.Address)}
       openVerification={openVerification}
       cancel={cancel}
       retry={retry}
@@ -965,6 +1005,7 @@ interface OnboardingProps {
   reopen: () => void;
   copyLink: () => void;
   copyCode: () => void;
+  copyAddress: () => void;
   openVerification: () => void;
   cancel: () => void;
   retry: () => void;
@@ -979,6 +1020,37 @@ const selectContents = (element: HTMLElement) => {
   selection.removeAllRanges();
   selection.addRange(range);
 };
+// A keyboard-reachable, read-only value. Focus and Ctrl/Cmd+A select exactly
+// this value so the manual copy fallback works after a clipboard failure and
+// never needs a pointer.
+function SelectableValue(props: {
+  label: string;
+  className: string;
+  children: string;
+}) {
+  return (
+    <output
+      aria-label={props.label}
+      aria-live="off"
+      aria-readonly="true"
+      role="textbox"
+      tabIndex={0}
+      className={props.className}
+      onFocus={(event) => selectContents(event.currentTarget)}
+      onKeyDown={(event) => {
+        if (
+          (event.ctrlKey || event.metaKey) &&
+          event.key.toLowerCase() === "a"
+        ) {
+          event.preventDefault();
+          selectContents(event.currentTarget);
+        }
+      }}
+    >
+      {props.children}
+    </output>
+  );
+}
 const diagnosticVersion = (value: string) =>
   value.length <= 64 && /^[a-zA-Z0-9.+_-]+$/.test(value);
 
@@ -1069,13 +1141,9 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
       {v.copyState !== CopyState.Idle ? (
         <p role="status">
           {copy(
-            v.copyTarget === CopyTarget.Code
-              ? v.copyState === CopyState.Copied
-                ? "grok-subscription.device.codeCopied"
-                : "grok-subscription.device.codeCopyFailed"
-              : v.copyState === CopyState.Copied
-                ? "grok-subscription.linkCopied"
-                : "grok-subscription.copyFailed",
+            copyNotices[v.copyTarget][
+              v.copyState === CopyState.Copied ? "copied" : "failed"
+            ],
           )}
         </p>
       ) : null}
@@ -1131,29 +1199,23 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
           {waiting && device && v.userCode ? (
             <div className="grok-device-code">
               <p>{copy("grok-subscription.device.codeLabel")}</p>
-              <output
-                aria-label={copy("grok-subscription.device.codeAria")}
-                aria-live="off"
-                aria-readonly="true"
-                role="textbox"
-                // Keyboard users reach the code without a pointer; focus and
-                // Ctrl/Cmd+A select exactly the code so the manual copy
-                // fallback works after a clipboard failure.
-                tabIndex={0}
+              <SelectableValue
+                label={copy("grok-subscription.device.codeAria")}
                 className="grok-device-user-code"
-                onFocus={(event) => selectContents(event.currentTarget)}
-                onKeyDown={(event) => {
-                  if (
-                    (event.ctrlKey || event.metaKey) &&
-                    event.key.toLowerCase() === "a"
-                  ) {
-                    event.preventDefault();
-                    selectContents(event.currentTarget);
-                  }
-                }}
               >
                 {v.userCode}
-              </output>
+              </SelectableValue>
+            </div>
+          ) : null}
+          {waiting && device && v.address ? (
+            <div className="grok-device-code">
+              <p>{copy("grok-subscription.device.addressLabel")}</p>
+              <SelectableValue
+                label={copy("grok-subscription.device.addressAria")}
+                className="grok-device-verification-address"
+              >
+                {v.address}
+              </SelectableValue>
             </div>
           ) : null}
           {diagnostic ? (
@@ -1191,6 +1253,16 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
                 onClick={props.copyCode}
               >
                 {copy("grok-subscription.device.copyCode")}
+              </SettingsActionButton>
+            ) : null}
+            {waiting && device && v.address ? (
+              <SettingsActionButton
+                icon={SettingsActionIcon.Copy}
+                type="button"
+                disabled={!active}
+                onClick={props.copyAddress}
+              >
+                {copy("grok-subscription.device.copyAddress")}
               </SettingsActionButton>
             ) : null}
             {waiting && !device && v.browserReady && !v.canceling ? (

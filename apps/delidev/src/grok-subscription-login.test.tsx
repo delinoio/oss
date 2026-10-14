@@ -1415,10 +1415,15 @@ it("advances to naming after verified device success and drops the code", async 
 it("renders English and Korean device text and keeps the locale key sets aligned", async () => {
   const deviceKeys = [
     "grok-subscription.device.action",
+    "grok-subscription.device.addressAria",
+    "grok-subscription.device.addressCopied",
+    "grok-subscription.device.addressCopyFailed",
+    "grok-subscription.device.addressLabel",
     "grok-subscription.device.codeAria",
     "grok-subscription.device.codeCopied",
     "grok-subscription.device.codeCopyFailed",
     "grok-subscription.device.codeLabel",
+    "grok-subscription.device.copyAddress",
     "grok-subscription.device.copyCode",
     "grok-subscription.device.help.canceled",
     "grok-subscription.device.help.expired",
@@ -1843,6 +1848,153 @@ it("hides the verification page when the server accepted the cancellation", asyn
   expect(nativeOpen(f)).toHaveLength(0);
   expect(f.cancel).toHaveBeenCalledTimes(1);
 }, 20000);
+
+// Verification address cells (device flow). The address is a display-only copy
+// of the validated URL shown after the native opener failed.
+//
+//   situation                         address shown   Copy address   code
+//   waiting, nothing requested        no              no             shown
+//   native open failed                yes             yes            shown
+//   native open failed, then opened   no              no             shown
+//   open failed, cancel accepted      no              no             shown
+//   open failed, terminal state       no              no             cleared
+const addressName = () => copy("grok-subscription.device.addressAria");
+const copyAddressName = () => copy("grok-subscription.device.copyAddress");
+async function failVerificationOpen(f: ReturnType<typeof fixture>) {
+  f.native.mockRejectedValueOnce("browser-launch-failed");
+  fireEvent.click(screen.getByRole("button", { name: openName() }));
+  await screen.findByText(
+    copy("grok-subscription.problem.verificationOpenFailed"),
+  );
+}
+const addressHidden = () => {
+  expect(screen.queryByRole("textbox", { name: addressName() })).toBeNull();
+  expect(screen.queryByRole("button", { name: copyAddressName() })).toBeNull();
+};
+
+it.each([
+  ["with the embedded code", DEVICE_URL],
+  ["without an embedded code", "https://accounts.x.ai/oauth2/device"],
+])(
+  "shows a selectable, keyboard-reachable and copyable verification address after the native open failed (%s)",
+  async (_name, url) => {
+    const writeText = vi.fn(async (_value: string) => undefined);
+    Object.defineProperty(window.navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    externalOpen.mockClear();
+    const f = deviceFixture(url);
+    await startDevice(f);
+    addressHidden();
+    await failVerificationOpen(f);
+    const address = screen.getByRole("textbox", { name: addressName() });
+    expect(address.tagName).toBe("OUTPUT");
+    expect(address.textContent).toBe(url);
+    expect(address.tabIndex).toBe(0);
+    expect(address.getAttribute("aria-readonly")).toBe("true");
+    // The code and the closed native opener are unchanged.
+    expect(screen.getByText(DEVICE_CODE)).toBeTruthy();
+    expect(nativeOpen(f)).toHaveLength(1);
+    expect(externalOpen).not.toHaveBeenCalled();
+    // Focus and Ctrl/Cmd+A select exactly the address, never the page.
+    act(() => address.focus());
+    expect(window.document.activeElement).toBe(address);
+    expect(window.getSelection()?.toString()).toBe(url);
+    window.getSelection()?.removeAllRanges();
+    expect(fireEvent.keyDown(address, { key: "a", metaKey: true })).toBe(false);
+    expect(window.getSelection()?.toString()).toBe(url);
+    fireEvent.keyDown(address, { key: "z" });
+    expect(address.textContent).toBe(url);
+    // Its own copy control copies the address, not the code or the link.
+    fireEvent.click(screen.getByRole("button", { name: copyAddressName() }));
+    await screen.findByText(copy("grok-subscription.device.addressCopied"));
+    expect(writeText).toHaveBeenCalledWith(url);
+    writeText.mockRejectedValueOnce(new Error("denied"));
+    fireEvent.click(screen.getByRole("button", { name: copyAddressName() }));
+    await screen.findByText(copy("grok-subscription.device.addressCopyFailed"));
+    expect(screen.getByText(DEVICE_CODE)).toBeTruthy();
+    expect(address.textContent).toBe(url);
+  },
+  20000,
+);
+
+it("hides the verification address after a later open succeeds", async () => {
+  const f = deviceFixture();
+  await startDevice(f);
+  await failVerificationOpen(f);
+  expect(screen.getByRole("textbox", { name: addressName() })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: openName() }));
+  await waitFor(() => expect(nativeOpen(f)).toHaveLength(2));
+  await waitFor(addressHidden);
+  expect(
+    screen.queryByText(
+      copy("grok-subscription.problem.verificationOpenFailed"),
+    ),
+  ).toBeNull();
+  expect(screen.getByText(DEVICE_CODE)).toBeTruthy();
+}, 20000);
+
+it("hides the verification address once the server accepted the cancellation", async () => {
+  const f = deviceFixture();
+  await startDevice(f);
+  await failVerificationOpen(f);
+  fireEvent.click(
+    screen.getByRole("button", { name: copy("grok-subscription.cancel") }),
+  );
+  await screen.findByText(copy("grok-subscription.problem.canceling"));
+  addressHidden();
+  expect(screen.queryByRole("button", { name: openName() })).toBeNull();
+  // The code stays copyable until the terminal state clears it.
+  expect(screen.getByText(DEVICE_CODE)).toBeTruthy();
+  expect(screen.queryByText(DEVICE_URL)).toBeNull();
+}, 20000);
+
+it.each([
+  [State.EXPIRED, "grok-subscription.status.expired"],
+  [State.FAILED, "grok-subscription.status.failed"],
+  [State.CANCELED, "grok-subscription.status.canceled"],
+] as const)(
+  "clears the verification address on terminal state %s",
+  async (state, status) => {
+    const f = deviceFixture();
+    await startDevice(f);
+    await failVerificationOpen(f);
+    f.setState(state);
+    await screen.findByText(copy(status), {}, { timeout: 3000 });
+    addressHidden();
+    expect(screen.queryByText(DEVICE_URL)).toBeNull();
+    expect(screen.queryByText(DEVICE_CODE)).toBeNull();
+  },
+  20000,
+);
+
+it("keeps the verification address out of the browser flow and localized in English and Korean", async () => {
+  for (const catalog of [english, korean]) {
+    for (const key of [
+      "addressLabel",
+      "addressAria",
+      "copyAddress",
+      "addressCopied",
+      "addressCopyFailed",
+    ] as const)
+      expect(catalog[`grok-subscription.device.${key}`], key).toBeTruthy();
+  }
+  expect(korean["grok-subscription.device.copyAddress"]).not.toBe(
+    english["grok-subscription.device.copyAddress"],
+  );
+  // The failure notice points at the address that is now on screen.
+  expect(english["grok-subscription.problem.verificationOpenFailed"]).toMatch(
+    /address/,
+  );
+  expect(korean["grok-subscription.problem.verificationOpenFailed"]).toMatch(
+    /주소/,
+  );
+  const f = fixture();
+  await start(f);
+  expect(screen.queryByRole("textbox", { name: addressName() })).toBeNull();
+  expect(window.document.body.textContent).not.toContain("accounts.x.ai");
+});
 
 it("replays the exact original naming request after an uncertain failure on a settled login", async () => {
   const f = deviceFixture();

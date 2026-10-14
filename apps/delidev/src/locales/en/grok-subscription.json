@@ -52,10 +52,15 @@
   "grok-subscription.device.copyCode": "Copy code",
   "grok-subscription.device.codeCopied": "Verification code copied",
   "grok-subscription.device.codeCopyFailed": "The verification code could not be copied. Select it and copy it manually.",
+  "grok-subscription.device.addressLabel": "Or open this address in any browser:",
+  "grok-subscription.device.addressAria": "Grok verification address",
+  "grok-subscription.device.copyAddress": "Copy address",
+  "grok-subscription.device.addressCopied": "Verification address copied",
+  "grok-subscription.device.addressCopyFailed": "The verification address could not be copied. Select it and copy it manually.",
   "grok-subscription.device.help.waiting": "Open the verification page on any device, confirm this code and approve the sign-in. Return here after you finish. This code works only for this sign-in.",
   "grok-subscription.device.help.canceled": "No account was connected. Go back to AI Subscription and choose Add account or Use a device code to try again.",
   "grok-subscription.device.help.expired": "The code expired before the sign-in finished. Go back to AI Subscription and choose Use a device code to get a new one.",
   "grok-subscription.device.help.unsupported": "The server did not accept Grok device-code sign-in. Check that the server supports it, then try again.",
   "grok-subscription.device.help.failed": "The sign-in was denied or did not finish. Go back to AI Subscription and choose Add account or Use a device code to try again.",
-  "grok-subscription.problem.verificationOpenFailed": "The verification page could not be opened. Copy the code and open the page in another browser."
+  "grok-subscription.problem.verificationOpenFailed": "The verification page could not be opened. Open the address shown below in another browser and enter the code."
 }
