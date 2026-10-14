@@ -47,6 +47,20 @@ Materials accept linear `baseColor` RGBA, `metallic`, `roughness`, `emissive` RG
 
 Perspective cameras take `yfov` in radians, `aspect`, `near`, and `far`; orthographic cameras take half-extents `xmag`/`ymag`, `near`, and `far`. Directional intensity is lux; point/spot intensity is candela. Spot cone angles are radians. Lights use `KHR_lights_punctual`.
 
+## Static geometry simplification (unreleased)
+
+The following explicit API is implemented in source but **not released on npm**. It accepts a registered static geometry handle and creates a separate immutable result. Ordinary registration and export do not simplify geometry.
+
+```ts
+const result = await session.simplifyGeometry(geometry, {
+  targetTriangles: 100,
+  maxError: 0.01,
+});
+// Use result.geometry in a Mesh only if the returned counts suit your scene.
+```
+
+`targetTriangles` is a safe integer between one and the input triangle count. `maxError` is finite and nonnegative. The result includes `inputTriangles`, `outputTriangles`, `inputVertices`, `outputVertices`, `targetReached`, and `estimatedError`. A target may be unreachable because boundaries, seams, or topology must remain intact; check `targetReached` and the actual counts. `estimatedError` is an accumulated plane-quadric estimate, not a visual-quality or maximum-distance guarantee. Skin and morph geometry are unsupported; a static mesh may still be used by a node with translation, rotation, or scale animation. The source handle remains usable.
+
 ## Polygon-efficient static authoring
 
 Choose the triangle count for each physical part before you register its geometry. An indexed sheet with `u` by `v` cells has `(u + 1) * (v + 1)` vertices and `2 * u * v` triangles. The original `polygon-efficient.tsx` example in the [React Forge repository](https://github.com/delinoio/oss) uses `z = 0.1 * sin(pi * x) * sin(pi * y)` for a curved sheet. Its 6-by-16 grid has 119 vertices and 192 triangles; its 20-by-60 grid has 1,281 vertices and 2,400 triangles. Sum `indices.length / 3` across the mesh instances you intend to render. No single triangle budget fits every view or device.
