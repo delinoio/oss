@@ -35,6 +35,8 @@ Coordinates use meters, right-handed Y-up. `translation` and `scale` are three-e
 
 `registerGeometry()` copies typed arrays immediately. Keep large arrays in registered geometry, not React props. `registerTexture(bytesOrPath)` copies PNG/JPEG data or reads an explicit local file; URLs are not fetched. Asset handles belong to their creating session.
 
+GLB export packs eligible triangle indices into a smaller lossless representation while preserving every authored vertex and triangle. Continue to supply indices as `Uint32Array`; packing needs no option. Output size depends on the whole scene, so a smaller index buffer does not guarantee an exact file-size reduction.
+
 Materials accept linear `baseColor` RGBA, `metallic`, `roughness`, `emissive` RGB, `alphaMode: AlphaMode.Opaque | AlphaMode.Blend`, and `doubleSided`. Factors range from 0 to 1. Texture properties are `baseColorTexture`, `metallicTexture`, `roughnessTexture`, `normalTexture`, and `emissiveTexture`. Base-color/emissive maps are sRGB; scalar maps use the linear red channel; normal maps are linear +Y tangent-space. UV0 uses a top-left origin and repeat wrapping. Textures require UVs; normal maps additionally require tangents. Metalness and roughness maps must have equal dimensions when used together. Opaque materials require alpha factor 1 and ignore texture alpha. Transmission, refraction, clearcoat, texture transforms, and extra UV sets are unsupported and rejected.
 
 Perspective cameras take `yfov` in radians, `aspect`, `near`, and `far`; orthographic cameras take half-extents `xmag`/`ymag`, `near`, and `far`. Directional intensity is lux; point/spot intensity is candela. Spot cone angles are radians. Lights use `KHR_lights_punctual`.
