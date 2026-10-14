@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"time"
 
 	"connectrpc.com/connect"
@@ -21,7 +22,9 @@ type integrationCheck struct {
 	// scheduler displacement by a foreground read calls it; it is nil for checks
 	// that are never displaced.
 	preempt func()
-	done    chan struct{}
+	// A failed foreground join permanently revokes this request's replay grant.
+	replayFailed *atomic.Bool
+	done         chan struct{}
 }
 
 // errForegroundPreempted is the typed cancellation cause set only when a
@@ -38,7 +41,11 @@ func (s *Service) stopIntegrationCheck(ctx context.Context, id domain.ID) error 
 // displaceIntegrationCheck is stopIntegrationCheck for foreground scheduling:
 // the displaced read observes errForegroundPreempted as its cancellation cause.
 func (s *Service) displaceIntegrationCheck(ctx context.Context, id domain.ID) error {
-	return cancelAndJoinIntegrationRead(ctx, s.integrationChecks, id, true)
+	err := cancelAndJoinIntegrationRead(ctx, s.integrationChecks, id, true)
+	if err != nil {
+		s.logger.Warn("repository_integration_displacement_failed", "profile_id", id, "error_code", domain.SafeError(err).Code)
+	}
+	return err
 }
 
 func stopIntegrationRead(ctx context.Context, checks map[domain.ID]*integrationCheck, id domain.ID) error {
@@ -57,11 +64,24 @@ func cancelAndJoinIntegrationRead(ctx context.Context, checks map[domain.ID]*int
 	}
 	select {
 	case <-check.done:
+		if displace && ctx.Err() != nil {
+			if check.replayFailed != nil {
+				check.replayFailed.Store(true)
+			}
+			delete(checks, id)
+			return domain.SafeError(ctx.Err())
+		}
 		delete(checks, id)
 		return nil
 	case <-ctx.Done():
+		if displace && check.replayFailed != nil {
+			check.replayFailed.Store(true)
+		}
 		return domain.SafeError(ctx.Err())
 	case <-time.After(5 * time.Second):
+		if displace && check.replayFailed != nil {
+			check.replayFailed.Store(true)
+		}
 		return domain.Fail(domain.Unavailable, "The previous GitHub request is still stopping.", "Retry the original profile operation after its request completes.")
 	}
 }

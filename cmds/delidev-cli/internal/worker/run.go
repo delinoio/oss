@@ -1283,6 +1283,10 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 	if job.Type == domain.DiscoverRepositoryBranchesJob {
 		journalLimit = domain.MaxRepositoryBranchesJobBytes
 		decodeLimit = domain.MaxRepositoryBranchesJobBytes
+	} else if job.Type == domain.NativeCodeReviewJob {
+		// A valid 1 MiB review output needs room for the finished journal
+		// envelope. Keep the existing finite private-file bound for this job.
+		decodeLimit = journalLimit
 	}
 	raw, err := security.ReadPrivate(path, int64(journalLimit))
 	if err == nil {
@@ -1296,6 +1300,12 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 			return journal{}, err
 		}
 		if result.State == journalFinished || result.State == journalReported {
+			if job.Type == domain.NativeCodeReviewJob {
+				var input domain.NativeCodeReviewInput
+				if domain.DecodeNativeCodeReviewInput(job.Input, &input) != nil || validateNativeReviewJournalOutcome(result, input, resource) != nil {
+					return journal{}, publicationUncertain()
+				}
+			}
 			return result, nil
 		}
 		if result.State != journalStarted {
