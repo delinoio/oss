@@ -250,7 +250,7 @@ expires after 15 seconds, except that when the Web Locks API is available each
 window also holds a liveness lock named after its window identity and an expired
 hold is kept while that lock is still held, because renderer timers of a hidden
 or minimized window are throttled and are not proof of death. Without Web Locks the
-15-second expiry applies. A closing window releases its holds on `pagehide`.
+15-second expiry applies. A closing window releases its holds on `pagehide`, becomes inactive (it announces no further Hold, so a Close started after `pagehide` cannot resurrect it on siblings; a `pageshow` restored from the back/forward cache reactivates it), and cancels its liveness-lock request through an `AbortSignal` so a request that was never granted cannot hold the lock after disposal. Pending lock requests of siblings count as live windows.
 When the owning window observes the original Close proof, it broadcasts a
 `settled` message in place of a plain release: every sibling window drops the
 hold and removes the exact profile/page descriptor from all of its Sessions,

@@ -92,7 +92,7 @@ describe("pending Close ownership across product windows", () => {
   it("keeps an expired hold while its window's liveness lock is held", async () => {
     const held = new Set<string>();
     const locks: PendingCloseLocks = {
-      request: (name, callback) => {
+      request: (name, _options, callback) => {
         held.add(name);
         return callback().finally(() => held.delete(name));
       },
@@ -275,7 +275,7 @@ describe("pending Close ownership across product windows", () => {
     it("waits for a live window whose handshake has not arrived", async () => {
       const held = new Set<string>();
       const locks: PendingCloseLocks = {
-        request: (name, callback) => {
+        request: (name, _options, callback) => {
           held.add(name);
           return callback().finally(() => held.delete(name));
         },
@@ -359,7 +359,7 @@ describe("pending Close ownership across product windows", () => {
     const lockSet = () => {
       const held = new Set<string>();
       const locks: PendingCloseLocks = {
-        request: (name, callback) => {
+        request: (name, _options, callback) => {
           held.add(name);
           return callback().finally(() => held.delete(name));
         },
@@ -465,6 +465,139 @@ describe("pending Close ownership across product windows", () => {
       ack(seen[1].id);
       await vi.advanceTimersByTimeAsync(101);
       expect(synced).toBe(true);
+    });
+  });
+
+  describe("window lifecycle", () => {
+    /** A lock manager whose requests can stay pending, honoring abort. */
+    const deferredLocks = () => {
+      const held = new Set<string>();
+      const pending = new Set<string>();
+      const grants: (() => void)[] = [];
+      const locks: PendingCloseLocks = {
+        request: (name, { signal }, callback) => {
+          pending.add(name);
+          return new Promise<void>((resolve) => {
+            const grant = () => {
+              if (!pending.delete(name)) return resolve();
+              held.add(name);
+              void callback().finally(() => {
+                held.delete(name);
+                resolve();
+              });
+            };
+            signal.addEventListener("abort", () => {
+              pending.delete(name);
+              resolve();
+            });
+            grants.push(grant);
+          });
+        },
+        query: async () => ({
+          held: [...held].map((name) => ({ name })),
+          pending: [...pending].map((name) => ({ name })),
+        }),
+      };
+      return { held, pending, grants, locks };
+    };
+
+    it("withdraws a lock request that was not granted before dispose", () => {
+      const { held, pending, grants, locks } = deferredLocks();
+      const registry = new PendingCloseRegistry({
+        channel: new Bus().endpoint(),
+        locks,
+        window: "w",
+      });
+      expect(pending.size).toBe(1);
+      registry.dispose();
+      expect(pending.size).toBe(0);
+      // A late grant must not leave the lock held forever.
+      for (const grant of grants) grant();
+      expect(held.size).toBe(0);
+    });
+
+    it("does not keep a lock granted after cancellation", async () => {
+      const held = new Set<string>();
+      let granted: (() => Promise<unknown>) | undefined;
+      const locks: PendingCloseLocks = {
+        request: async (name, _options, callback) => {
+          granted = callback;
+          held.add(name);
+        },
+        query: async () => ({}),
+      };
+      const registry = new PendingCloseRegistry({
+        channel: new Bus().endpoint(),
+        locks,
+        window: "w",
+      });
+      registry.dispose();
+      // The browser grants the already-cancelled request anyway.
+      await expect(granted?.()).resolves.toBeUndefined();
+    });
+
+    it("counts a sibling's pending lock request as a live window", async () => {
+      vi.useFakeTimers();
+      try {
+        const { locks, pending } = deferredLocks();
+        const a = new PendingCloseRegistry({
+          channel: new Bus().endpoint(),
+          locks,
+          window: "a",
+        });
+        // A silent sibling requested its liveness lock but is not granted yet.
+        const name = "delidev.browser.pending-close:ghost";
+        pending.add(name);
+        let synced = false;
+        void a.hold("k", {}).then(() => (synced = true));
+        await vi.advanceTimersByTimeAsync(5_000);
+        expect(synced).toBe(false);
+        pending.delete(name);
+        await vi.advanceTimersByTimeAsync(1_100);
+        expect(synced).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("stops announcing holds once the page is hiding", () => {
+      const bus = new Bus();
+      const endpoint = bus.endpoint();
+      const registry = new PendingCloseRegistry({
+        channel: endpoint,
+        window: "w",
+      });
+      const sibling = bus.endpoint();
+      const seen: { kind: string }[] = [];
+      sibling.onmessage = (event) => seen.push(event.data as { kind: string });
+      registry.hold("before", {});
+      window.dispatchEvent(new Event("pagehide"));
+      expect(seen.at(-1)).toMatchObject({ kind: "bye" });
+      seen.length = 0;
+      // The native Close is sent after pagehide: the Hold must stay silent.
+      void registry.hold("late", {});
+      expect(seen.filter((m) => m.kind === "hold")).toEqual([]);
+      expect(registry.has("late")).toBe(true);
+      registry.dispose();
+    });
+
+    it("resumes announcing after a page restored from the cache", () => {
+      const bus = new Bus();
+      const registry = new PendingCloseRegistry({
+        channel: bus.endpoint(),
+        window: "w",
+      });
+      const sibling = bus.endpoint();
+      const seen: { kind: string }[] = [];
+      sibling.onmessage = (event) => seen.push(event.data as { kind: string });
+      window.dispatchEvent(new Event("pagehide"));
+      const restored = new Event("pageshow");
+      Object.defineProperty(restored, "persisted", { value: true });
+      window.dispatchEvent(restored);
+      expect(seen.at(-1)).toMatchObject({ kind: "query" });
+      void registry.hold("k", {});
+      expect(seen.some((m) => m.kind === "hold")).toBe(true);
+      registry.dispose();
     });
   });
 

@@ -63,8 +63,16 @@ export interface PendingCloseChannel {
  * unlike renderer timers it is not throttled while the window is hidden.
  */
 export interface PendingCloseLocks {
-  request(name: string, callback: () => Promise<unknown>): Promise<unknown>;
-  query(): Promise<{ held?: { name?: string }[] }>;
+  /** Aborting `signal` withdraws a request that has not been granted yet. */
+  request(
+    name: string,
+    options: { signal: AbortSignal },
+    callback: () => Promise<unknown>,
+  ): Promise<unknown>;
+  query(): Promise<{
+    held?: { name?: string }[];
+    pending?: { name?: string }[];
+  }>;
 }
 
 export interface PendingCloseOptions {
@@ -95,6 +103,20 @@ function defaultLocks(): PendingCloseLocks | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Names of every lock a window holds or has requested. A requested-but-pending
+ * lock still proves its window exists, so it counts as live.
+ */
+function lockNames(state: {
+  held?: { name?: string }[];
+  pending?: { name?: string }[];
+}): string[] {
+  const names: string[] = [];
+  for (const lock of [...(state.held ?? []), ...(state.pending ?? [])])
+    if (typeof lock.name === "string") names.push(lock.name);
+  return names;
 }
 
 function windowIdentity(): string {
@@ -148,12 +170,21 @@ export class PendingCloseRegistry {
   private now: () => number;
   private window: string;
   private options: PendingCloseOptions;
-  private onPageHide = () => {
-    this.releaseAll();
-    this.send({ kind: PendingCloseMessageKind.Bye });
+  /**
+   * False once the window is closing (pagehide) or the registry was disposed.
+   * An inactive registry announces nothing, so a Hold that arrives after the
+   * Bye can never resurrect this window on a sibling.
+   */
+  private active = false;
+  private onPageHide = () => this.deactivate();
+  private onPageShow = (event: Event) => {
+    // A page restored from the back/forward cache is alive again.
+    if ((event as PageTransitionEvent).persisted && !this.active)
+      this.activate();
   };
   private locks: PendingCloseLocks | null = null;
   private unlock: (() => void) | undefined;
+  private lockRequest: AbortController | undefined;
   private probing = new Set<string>();
   // Sibling windows seen on the channel, and the Holds still awaiting acks.
   private peers = new Set<string>();
@@ -180,10 +211,37 @@ export class PendingCloseRegistry {
     this.channel = channel === undefined ? defaultChannel() : channel;
     if (!this.channel) return;
     this.channel.onmessage = (event) => this.receive(event.data);
-    this.send({ kind: PendingCloseMessageKind.Query });
-    if (typeof window !== "undefined")
+    if (typeof window !== "undefined") {
       window.addEventListener("pagehide", this.onPageHide);
+      window.addEventListener("pageshow", this.onPageShow);
+    }
+    this.activate();
+  }
+
+  private activate() {
+    this.active = true;
+    this.send({ kind: PendingCloseMessageKind.Query });
     this.holdLivenessLock();
+  }
+
+  /**
+   * Marks the window inactive before anything else, then withdraws every hold,
+   * says Bye and gives up the liveness lock (including a request that was not
+   * granted yet). Used by both pagehide and disposal.
+   */
+  private deactivate() {
+    this.active = false;
+    this.releaseAll();
+    this.send({ kind: PendingCloseMessageKind.Bye });
+    this.releaseLivenessLock();
+  }
+
+  private releaseLivenessLock() {
+    this.lockRequest?.abort();
+    this.lockRequest = undefined;
+    this.unlock?.();
+    this.unlock = undefined;
+    this.locks = null;
   }
 
   private lockName(window: string) {
@@ -201,11 +259,20 @@ export class PendingCloseRegistry {
     const { locks } = this.options;
     this.locks = locks === undefined ? defaultLocks() : locks;
     if (!this.locks) return;
+    this.lockRequest?.abort();
+    const controller = new AbortController();
+    this.lockRequest = controller;
     try {
       void this.locks
         .request(
           this.lockName(this.window),
-          () => new Promise<void>((resolve) => (this.unlock = resolve)),
+          { signal: controller.signal },
+          () =>
+            new Promise<void>((resolve) => {
+              // Granted after cancellation: do not keep the lock.
+              if (controller.signal.aborted) resolve();
+              else this.unlock = resolve;
+            }),
         )
         .catch(() => undefined);
     } catch {
@@ -234,7 +301,7 @@ export class PendingCloseRegistry {
     void this.locks
       .query()
       .then((state) =>
-        settle(Boolean(state.held?.some((l) => l.name === name))),
+        settle(lockNames(state).includes(name)),
       )
       .catch(() => settle(false));
   }
@@ -245,10 +312,11 @@ export class PendingCloseRegistry {
    */
   dispose() {
     if (!this.channel) return;
-    this.releaseAll();
-    this.send({ kind: PendingCloseMessageKind.Bye });
-    if (typeof window !== "undefined")
+    this.deactivate();
+    if (typeof window !== "undefined") {
       window.removeEventListener("pagehide", this.onPageHide);
+      window.removeEventListener("pageshow", this.onPageShow);
+    }
     this.channel.onmessage = null;
     try {
       this.channel.close();
@@ -261,12 +329,11 @@ export class PendingCloseRegistry {
     this.peers.clear();
     for (const waiter of [...this.waiters.values()]) waiter.done();
     this.syncing.clear();
-    this.unlock?.();
-    this.unlock = undefined;
-    this.locks = null;
   }
 
   private send(message: Omit<PendingCloseMessage, "scope" | "window">) {
+    // A closing window must never announce a new Hold after its Bye.
+    if (!this.active && message.kind === PendingCloseMessageKind.Hold) return;
     try {
       this.channel?.postMessage({
         scope: channelName,
@@ -341,9 +408,8 @@ export class PendingCloseRegistry {
     try {
       const state = await this.locks.query();
       const live = new Set<string>();
-      for (const held of state.held ?? []) {
-        const name = held.name;
-        if (name?.startsWith(prefix) && name !== this.lockName(this.window))
+      for (const name of lockNames(state)) {
+        if (name.startsWith(prefix) && name !== this.lockName(this.window))
           live.add(name.slice(prefix.length));
       }
       return live;
@@ -371,7 +437,7 @@ export class PendingCloseRegistry {
    * timeout count as gone.
    */
   private announce(key: string): Promise<void> {
-    if (!this.channel) return Promise.resolve();
+    if (!this.channel || !this.active) return Promise.resolve();
     // A superseded announcement of the same key has no owner left to wait.
     this.waiters.get(key)?.done();
     return new Promise<void>((resolve) => {
@@ -438,7 +504,7 @@ export class PendingCloseRegistry {
   }
 
   private startHeartbeat() {
-    if (this.timer !== undefined || !this.channel) return;
+    if (this.timer !== undefined || !this.channel || !this.active) return;
     this.timer = setInterval(() => {
       for (const key of this.local.keys())
         this.send({ kind: PendingCloseMessageKind.Hold, key });
