@@ -52,6 +52,8 @@ const (
 	// the 3m prompt turn, logout 30s, post-logout models 30s and the cleanup logout
 	// 30s, rounded up. The package timeout must cover the approval wait plus this.
 	accountFixedBudget = 6 * time.Minute
+	maxAccountReply    = 16 << 10
+	expectedReply      = "ok"
 	maxAccountLine     = 16 << 10
 	maxAccountFrame    = 4 << 20
 	maxAccountOutput   = 64 << 10
@@ -609,11 +611,16 @@ type acpClient struct {
 	frames  *acpFrames
 	nextID  int
 	updates int
+	// target is the session whose assistant text is collected into reply.
+	target     string
+	reply      strings.Builder
+	replyBound bool
 }
 
 type acpMessage struct {
 	ID     json.RawMessage `json:"id,omitempty"`
 	Method string          `json:"method,omitempty"`
+	Params json.RawMessage `json:"params,omitempty"`
 	Result json.RawMessage `json:"result,omitempty"`
 	Error  *struct {
 		Code int `json:"code"`
@@ -768,6 +775,7 @@ func (c *acpClient) call(ctx context.Context, method string, params any) (json.R
 		case message.Method != "":
 			if message.Method == "session/update" {
 				c.updates++
+				c.collectReply(message.Params)
 			}
 		case string(message.ID) == want:
 			if message.Error != nil {
@@ -776,6 +784,33 @@ func (c *acpClient) call(ctx context.Context, method string, params any) (json.R
 			return message.Result, nil
 		}
 	}
+}
+
+// collectReply appends the text of an agent_message_chunk update that belongs to
+// the target session. Updates for other sessions, thoughts, tool calls and
+// non-text content are counted by the caller but never become reply text.
+func (c *acpClient) collectReply(params json.RawMessage) {
+	var decoded struct {
+		SessionID string `json:"sessionId"`
+		Update    struct {
+			Kind    string `json:"sessionUpdate"`
+			Content struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"update"`
+	}
+	if json.Unmarshal(params, &decoded) != nil || c.target == "" || decoded.SessionID != c.target {
+		return
+	}
+	if decoded.Update.Kind != "agent_message_chunk" || decoded.Update.Content.Type != "text" {
+		return
+	}
+	if c.reply.Len()+len(decoded.Update.Content.Text) > maxAccountReply {
+		c.replyBound = true
+		return
+	}
+	c.reply.WriteString(decoded.Update.Content.Text)
 }
 
 func (f *acpFrames) peek() (acpMessage, bool, error) {
@@ -804,6 +839,67 @@ func checkInitializeOffers(result json.RawMessage) error {
 		}
 	}
 	return errors.New("ACP initialize did not offer the " + cachedTokenMethod + " authentication method")
+}
+
+// checkPromptTurn requires the target session to finish with stopReason
+// end_turn and to have answered with the expected single word. A turn that
+// completes without assistant text, or answers something else (for example an
+// authentication notice), is a failure. The reply is never echoed.
+func checkPromptTurn(result json.RawMessage, reply string, overflowed bool) error {
+	var outcome struct {
+		StopReason string `json:"stopReason"`
+	}
+	if json.Unmarshal(result, &outcome) != nil || outcome.StopReason != "end_turn" {
+		return errors.New("ACP session/prompt did not finish with stopReason end_turn")
+	}
+	if overflowed {
+		return errors.New("ACP assistant reply exceeded its bound")
+	}
+	normalized := strings.ToLower(strings.Trim(strings.TrimSpace(reply), ".!\"'`"))
+	if normalized == "" {
+		return errors.New("ACP session/prompt finished without any assistant message text")
+	}
+	if normalized != expectedReply {
+		return fmt.Errorf("ACP assistant reply (%d bytes) was not the expected single word %q", len(reply), expectedReply)
+	}
+	return nil
+}
+
+// runPromptTurn drives initialize, authenticate, session/new and one prompt over
+// an already started client and validates the target session's reply.
+func runPromptTurn(ctx context.Context, client *acpClient, cwd string) error {
+	initialized, err := client.call(ctx, "initialize", map[string]any{
+		"protocolVersion": 1, "clientCapabilities": map[string]any{},
+		"clientInfo": map[string]any{"name": "delidev-account-acceptance", "version": "0.1.0"},
+	})
+	if err != nil {
+		return err
+	}
+	if err := checkInitializeOffers(initialized); err != nil {
+		return err
+	}
+	if _, err := client.call(ctx, "authenticate", map[string]any{"methodId": cachedTokenMethod}); err != nil {
+		return err
+	}
+	created, err := client.call(ctx, "session/new", map[string]any{"cwd": cwd, "mcpServers": []any{}})
+	if err != nil {
+		return err
+	}
+	var session struct {
+		SessionID string `json:"sessionId"`
+	}
+	if json.Unmarshal(created, &session) != nil || session.SessionID == "" {
+		return errors.New("ACP session/new did not return a sessionId")
+	}
+	client.target = session.SessionID
+	turn, err := client.call(ctx, "session/prompt", map[string]any{
+		"sessionId": session.SessionID,
+		"prompt":    []any{map[string]any{"type": "text", "text": "Reply with the single word " + expectedReply + ". Do not use any tools."}},
+	})
+	if err != nil {
+		return err
+	}
+	return checkPromptTurn(turn, client.reply.String(), client.replyBound)
 }
 
 func TestAccountAcceptance(t *testing.T) {
@@ -875,41 +971,8 @@ func TestAccountAcceptance(t *testing.T) {
 				t.Errorf("ACP shutdown: %v", err)
 			}
 		}()
-		initialized, err := client.call(ctx, "initialize", map[string]any{
-			"protocolVersion": 1, "clientCapabilities": map[string]any{},
-			"clientInfo": map[string]any{"name": "delidev-account-acceptance", "version": "0.1.0"},
-		})
-		if err != nil {
+		if err := runPromptTurn(ctx, client, scratch.repo); err != nil {
 			t.Fatal(err)
-		}
-		if err := checkInitializeOffers(initialized); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := client.call(ctx, "authenticate", map[string]any{"methodId": cachedTokenMethod}); err != nil {
-			t.Fatal(err)
-		}
-		created, err := client.call(ctx, "session/new", map[string]any{"cwd": scratch.repo, "mcpServers": []any{}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		var session struct {
-			SessionID string `json:"sessionId"`
-		}
-		if json.Unmarshal(created, &session) != nil || session.SessionID == "" {
-			t.Fatal("ACP session/new did not return a sessionId")
-		}
-		turn, err := client.call(ctx, "session/prompt", map[string]any{
-			"sessionId": session.SessionID,
-			"prompt":    []any{map[string]any{"type": "text", "text": "Reply with the single word ok. Do not use any tools."}},
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		var outcome struct {
-			StopReason string `json:"stopReason"`
-		}
-		if json.Unmarshal(turn, &outcome) != nil || outcome.StopReason != "end_turn" {
-			t.Fatal("ACP session/prompt did not finish with stopReason end_turn")
 		}
 		t.Logf("prompt turn completed with %d session updates", client.updates)
 	})
@@ -942,12 +1005,16 @@ func TestAccountAcceptance(t *testing.T) {
 const fakeGrokScript = `#!/bin/sh
 # Fake grok for harness tests. Usage: fake --no-auto-update COMMAND [args]
 # FAKE_GROK_PROMPT=stderr prints the device-login prompt on stderr, as the real
-# CLI does.
+# CLI does; FAKE_GROK_TURN selects the agent's prompt-turn behavior.
 cmd="$2"
 printf '%s\n' "$cmd" >> "$FAKE_GROK_LOG"
 prompt() {
   printf 'To sign in, open this URL in your browser:\n\n  https://accounts.x.ai/oauth2/device?user_code=ABCD-1234\n\nConfirm this code in your browser:\n\n  ABCD-1234\n\nWaiting for authorization...\n'
   if [ "$FAKE_GROK_LOGIN" = "evil" ]; then printf '  https://evil.example/device?user_code=ABCD-1234\n'; fi
+}
+update() {
+  # update SESSION KIND TEXT
+  printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"%s","content":{"type":"text","text":"%s"}}}}\n' "$1" "$2" "$3"
 }
 case "$cmd" in
 login)
@@ -960,6 +1027,29 @@ login)
 logout)
   rm -f "$GROK_HOME/auth.json"
   printf 'Logged out (was signed in as person@example.com)\n'
+  ;;
+agent)
+  while IFS= read -r line; do
+    id=$(printf '%s' "$line" | sed -n 's/^{"id":\([0-9][0-9]*\),.*/\1/p')
+    case "$line" in
+    *'"method":"initialize"'*)
+      printf '{"id":%s,"jsonrpc":"2.0","result":{"protocolVersion":1,"authMethods":[{"id":"cached_token"}]}}\n' "$id" ;;
+    *'"method":"authenticate"'*)
+      printf '{"id":%s,"jsonrpc":"2.0","result":{}}\n' "$id" ;;
+    *'"method":"session/new"'*)
+      printf '{"id":%s,"jsonrpc":"2.0","result":{"sessionId":"sess-1"}}\n' "$id" ;;
+    *'"method":"session/prompt"'*)
+      case "$FAKE_GROK_TURN" in
+      empty) ;;
+      unauthorized) update sess-1 agent_message_chunk "You are not authenticated. Run grok login." ;;
+      foreign) update sess-2 agent_message_chunk "ok" ;;
+      thought) update sess-1 agent_thought_chunk "ok" ;;
+      split) update sess-1 agent_message_chunk "O"; update sess-1 agent_message_chunk "k." ;;
+      *) update sess-1 agent_message_chunk "ok" ;;
+      esac
+      printf '{"id":%s,"jsonrpc":"2.0","result":{"stopReason":"end_turn"}}\n' "$id" ;;
+    esac
+  done
   ;;
 esac
 `
@@ -1238,6 +1328,73 @@ func TestNativeAccountHarnessApprovalFilterStreams(t *testing.T) {
 	_, _ = broken.Write([]byte("https://accounts.x.ai/device\nABCD-1234\n"))
 	if err := broken.Verified(); err == nil || strings.Contains(err.Error(), "ABCD") {
 		t.Fatalf("terminal write failure was not reported safely: %v", err)
+	}
+}
+
+func TestNativeAccountHarnessPromptTurnValidation(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	cases := []struct {
+		name string
+		turn string
+		want string // substring of the expected error; empty means success
+	}{
+		{"expected reply", "", ""},
+		{"reply split across chunks", "split", ""},
+		{"empty successful turn", "empty", "without any assistant message text"},
+		{"unauthorized notice", "unauthorized", "not the expected single word"},
+		{"reply for another session", "foreign", "without any assistant message text"},
+		{"non-message update only", "thought", "without any assistant message text"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			scratch, _ := fakeAccountScratch(t, "", "FAKE_GROK_TURN="+tc.turn)
+			client, closeACP, err := startACP(ctx, scratch)
+			if err != nil {
+				t.Fatal(err)
+			}
+			turnErr := runPromptTurn(ctx, client, scratch.repo)
+			if err := closeACP(); err != nil {
+				t.Fatalf("ACP shutdown: %v", err)
+			}
+			switch {
+			case tc.want == "" && turnErr != nil:
+				t.Fatalf("turn rejected: %v", turnErr)
+			case tc.want != "" && (turnErr == nil || !strings.Contains(turnErr.Error(), tc.want)):
+				t.Fatalf("turn error %v does not contain %q", turnErr, tc.want)
+			}
+			if turnErr != nil && strings.Contains(turnErr.Error(), "authenticated") {
+				t.Fatal("turn error echoed the assistant text")
+			}
+		})
+	}
+}
+
+func TestNativeAccountHarnessCheckPromptTurn(t *testing.T) {
+	endTurn := json.RawMessage(`{"stopReason":"end_turn"}`)
+	for _, reply := range []string{"ok", "Ok.", " OK\n", "\"ok\""} {
+		if err := checkPromptTurn(endTurn, reply, false); err != nil {
+			t.Fatalf("rejected %q: %v", reply, err)
+		}
+	}
+	for name, tc := range map[string]struct {
+		result json.RawMessage
+		reply  string
+		over   bool
+	}{
+		"no reply":        {endTurn, "", false},
+		"whitespace only": {endTurn, " \n", false},
+		"other reply":     {endTurn, "Please sign in", false},
+		"longer reply":    {endTurn, "ok, done", false},
+		"overflow":        {endTurn, "ok", true},
+		"refusal":         {json.RawMessage(`{"stopReason":"refusal"}`), "ok", false},
+		"cancelled":       {json.RawMessage(`{"stopReason":"cancelled"}`), "ok", false},
+		"no stop reason":  {json.RawMessage(`{}`), "ok", false},
+		"not an object":   {json.RawMessage(`[]`), "ok", false},
+	} {
+		if checkPromptTurn(tc.result, tc.reply, tc.over) == nil {
+			t.Fatalf("accepted %s", name)
+		}
 	}
 }
 

@@ -502,7 +502,12 @@ through `internal/process`. It then checks, in order:
 4. Raw ACP over `grok agent stdio`: `initialize` advertises the `cached_token`
    authentication method, `authenticate` with `cached_token` succeeds,
    `session/new` returns a `sessionId`, and one `session/prompt` in the scratch
-   repository finishes with `stopReason: "end_turn"`.
+   repository finishes with `stopReason: "end_turn"`. The assistant text is
+   collected from that session's `session/update` `agent_message_chunk` text
+   updates and must be the single word `ok` (case and surrounding punctuation
+   ignored). An empty turn, a reply for another session, non-message updates
+   only, or any other text such as an authentication notice fails the step. The
+   reply text is never logged, only its length on a mismatch.
 5. `grok logout` exits 0, removes the scratch `auth.json`, and `grok models` then
    reports `not authenticated`.
 6. The invoking user's real `auth.json` (`$GROK_HOME` or `~/.grok`) has the same
