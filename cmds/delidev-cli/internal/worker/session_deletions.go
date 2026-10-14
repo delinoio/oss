@@ -13,6 +13,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/imageinput"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/skills"
@@ -149,6 +150,9 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 		}
 		if w.Fork != nil {
 			paths = append(paths, workspace.SidechatForkClaimPath(root, w.Fork.JobID))
+		}
+		if remains, err := sessionNativeProfilesRemain(ctx, config, w); err != nil || remains {
+			return proof, domain.SessionDeletionPending()
 		}
 		for _, path := range paths {
 			if _, e := os.Lstat(path); !errors.Is(e, os.ErrNotExist) {
@@ -420,6 +424,11 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 		}
 	}
 	if err := cleanupGeneratedCopies(root, w, false); err != nil {
+		return proof, err
+	}
+	// Persistent native profiles are deleted only here, by explicit session
+	// deletion; no operation completion or age-based pruning removes them.
+	if err := deleteSessionNativeProfiles(ctx, config, w); err != nil {
 		return proof, err
 	}
 	images := imageinput.Manager{Root: root}
@@ -788,6 +797,8 @@ func sessionDeletionCopyPaths(ctx context.Context, root string, w domain.Session
 			paths = append(paths, filepath.Join(root, "runtimes", string(copy.ActionID)), filepath.Join(root, "compaction-checkpoints", string(copy.ActionID)+".json"))
 		}
 		if copy.Type == domain.GenerateSessionTitleJob {
+			// Current jobs own an exact journal; historical jobs own prefixed runtimes.
+			paths = append(paths, filepath.Join(root, "title-runtimes", string(copy.JobID)))
 			titlePrefixes[string(copy.JobID)+"-"] = true
 		}
 	}
@@ -859,4 +870,74 @@ func cleanupGeneratedCopies(root string, w domain.SessionDeletionWork, observe b
 		}
 	}
 	return nil
+}
+
+// sessionHistoryIDs lists every native history identifier a session's retained
+// copies may have bound to a persistent profile.
+func sessionHistoryIDs(w domain.SessionDeletionWork) []domain.ID {
+	var ids []domain.ID
+	add := func(id domain.ID) {
+		if id.Validate() == nil {
+			ids = append(ids, id)
+		}
+	}
+	if w.Fork != nil {
+		add(w.Fork.RuntimeID)
+	}
+	for _, f := range w.RetryForks {
+		add(f.RuntimeID)
+	}
+	for _, copy := range w.Copies {
+		add(copy.ExecutionID)
+		add(copy.ActionID)
+	}
+	return ids
+}
+
+// deleteSessionNativeProfiles removes the persistent native profiles bound to
+// one explicitly deleted session. A referenced or active profile is never
+// deleted: it keeps the deletion pending with its closed cause.
+func deleteSessionNativeProfiles(ctx context.Context, config Config, w domain.SessionDeletionWork) error {
+	registry, err := nativeProfiles(config, w.MachineID)
+	if err != nil {
+		return domain.SessionDeletionPending()
+	}
+	scopes := []nativeprofile.DeleteScope{{Conversation: w.SessionID}}
+	for _, id := range sessionHistoryIDs(w) {
+		scopes = append(scopes, nativeprofile.DeleteScope{History: id})
+	}
+	for _, scope := range scopes {
+		if _, err := registry.Delete(ctx, scope); err != nil {
+			config.Logger.WarnContext(ctx, "session_deletion_native_profile_pending", "deletion_id", w.DeletionID, "reason", nativeProfileReason(err))
+			return domain.SessionDeletionPending()
+		}
+	}
+	return nil
+}
+
+// sessionNativeProfilesRemain proves, for completed-deletion replay, that no
+// persistent profile of the deleted session was restored.
+func sessionNativeProfilesRemain(ctx context.Context, config Config, w domain.SessionDeletionWork) (bool, error) {
+	registry, err := nativeProfiles(config, w.MachineID)
+	if err != nil {
+		return true, err
+	}
+	scopes := []nativeprofile.DeleteScope{{Conversation: w.SessionID}}
+	for _, id := range sessionHistoryIDs(w) {
+		scopes = append(scopes, nativeprofile.DeleteScope{History: id})
+	}
+	for _, scope := range scopes {
+		found, err := registry.Exists(ctx, scope)
+		if err != nil || found {
+			return true, err
+		}
+	}
+	return false, nil
+}
+
+func nativeProfileReason(err error) nativeprofile.Reason {
+	if reason, ok := nativeprofile.Reasoned(err); ok {
+		return reason
+	}
+	return nativeprofile.ReasonDeleteBlocked
 }

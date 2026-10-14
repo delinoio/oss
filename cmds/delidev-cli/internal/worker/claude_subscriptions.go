@@ -15,6 +15,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/claude"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
@@ -36,6 +37,7 @@ type nativeClaudeProfile struct {
 	config       claude.AuthConfig
 	managedLease *managedSubscriptionLease
 	newProfile   bool
+	registry     *nativeprofile.Registry
 	// historyVersion is set only on a shared-owner member's view of the owner's
 	// profile. It selects canonical-profile (1) or session-private (2) history.
 	historyVersion claudeProfileVersion
@@ -119,8 +121,17 @@ func openClaudeProfile(config Config, credential Credential, account, profile do
 		return nil, err
 	}
 	auth := claude.AuthConfig{Version: installation.Version, Home: filepath.Join(root, "claude"), Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: root, Env: env, Logger: config.Logger}}
+	// Register the durable profile in place so the shared registry owns its
+	// deletion and reference semantics; nothing is moved or rewritten.
+	profiles, err := nativeProfiles(config, credential.MachineID)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := profiles.RegisterLegacy(context.Background(), nativeprofile.Key{Harness: domain.ClaudeCode, Purpose: nativeprofile.PurposeAuth, Account: account}, filepath.ToSlash(filepath.Join("native-claude", string(credential.ServerID), string(account), string(profile)))); err != nil {
+		return nil, err
+	}
 	ok = true
-	return &nativeClaudeProfile{root: root, home: auth.Home, original: info, lock: lock, owner: observed, config: auth, newProfile: create}, nil
+	return &nativeClaudeProfile{root: root, home: auth.Home, original: info, lock: lock, owner: observed, config: auth, newProfile: create, registry: profiles}, nil
 }
 func (p *nativeClaudeProfile) close() error {
 	// A shared-owner member's view holds no lock: the owner keeps the profile lock
@@ -137,7 +148,15 @@ func (p *nativeClaudeProfile) logout(ctx context.Context) error {
 	// The official CLI removes its scoped secure-store login. Whole-profile
 	// removal then deletes only this owned directory without inspecting token
 	// files. Native history cannot grant Resume after this connection is retired.
-	return subscription.CleanupRuntime(p.root, p.original)
+	// Logout is the explicit account action that owns this profile's deletion.
+	if err := subscription.CleanupRuntime(p.root, p.original); err != nil {
+		return err
+	}
+	if p.registry != nil {
+		_, err := p.registry.Delete(context.Background(), nativeprofile.DeleteScope{Account: p.owner.Account, Purpose: nativeprofile.PurposeAuth, Harness: domain.ClaudeCode})
+		return err
+	}
+	return nil
 }
 func (p *nativeClaudeProfile) identity(ctx context.Context, config Config) (*pb.NativeSubscriptionIdentity, error) {
 	status, err := claude.ReadAuthStatus(ctx, p.config)
@@ -430,7 +449,7 @@ func runClaudeAccount(ctx context.Context, config Config, client delidevv1connec
 
 // Admission verifies the installed original CLI against a disposable empty
 // profile. It never probes a personal login or creates subscription authority.
-func verifyNativeClaudeSubscriptionProfile(ctx context.Context, config Config, resource *pb.Resource) (bool, error) {
+func verifyNativeClaudeSubscriptionProfile(ctx context.Context, config Config, machineID domain.ID, resource *pb.Resource) (bool, error) {
 	var machine domain.Machine
 	if resource == nil || domain.Decode(resource.DocumentJson, &machine) != nil {
 		return false, subscription.Invalid()
@@ -448,21 +467,20 @@ func verifyNativeClaudeSubscriptionProfile(ctx context.Context, config Config, r
 	if installation == nil {
 		return false, nil
 	}
-	base := filepath.Join(config.Root, "native-claude")
-	if err := security.PrivateDir(base); err != nil {
+	profiles, err := nativeProfiles(config, machineID)
+	if err != nil {
 		return false, err
 	}
-	root, err := os.MkdirTemp(base, "probe-")
+	lease, err := profiles.AcquireWait(ctx, nativeprofile.Key{Harness: domain.ClaudeCode, Purpose: nativeprofile.PurposeDiscovery}, 30*time.Second)
 	if err != nil {
-		return false, domain.SafeError(err)
+		return false, err
 	}
+	// The accountless probe profile is persistent and never holds credentials.
+	defer lease.Close()
+	root := lease.Root
 	env, err := harness.PrivateRuntimeEnvironment(root)
 	if err != nil {
 		return false, err
-	}
-	info, err := os.Stat(root)
-	if err != nil {
-		return false, subscription.Invalid()
 	}
 	auth := claude.AuthConfig{Version: installation.Version, Home: filepath.Join(root, "claude"), Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: domain.NewID(), Executable: installation.ResolvedPath, Cwd: root, Env: env, Logger: config.Logger}}
 	err = claude.VerifyAuthVersion(ctx, auth)
@@ -475,9 +493,6 @@ func verifyNativeClaudeSubscriptionProfile(ctx context.Context, config Config, r
 	}
 	if err != nil && domain.SafeError(err).Code == domain.RecoveryRequired {
 		return false, err
-	}
-	if cleanupErr := subscription.CleanupRuntime(root, info); cleanupErr != nil {
-		return false, cleanupErr
 	}
 	return err == nil, err
 }

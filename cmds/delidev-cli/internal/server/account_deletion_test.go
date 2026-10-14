@@ -69,7 +69,7 @@ func TestChatGPTAccountDeletionRequiresConfirmedOriginalLogout(t *testing.T) {
 			if cleanupFails {
 				native.closeError = domain.Fail(domain.RecoveryRequired, "Fixture cleanup is unconfirmed.", "Retain its original owner.")
 			}
-			f.service.subscriptionOpen = func(context.Context, string, domain.ID, []byte, *slog.Logger) (serverSubscriptionNative, error) {
+			f.service.subscriptionOpen = func(context.Context, nativeScope, domain.ID, []byte, *slog.Logger) (serverSubscriptionNative, error) {
 				return native, nil
 			}
 			done := make(chan struct{})

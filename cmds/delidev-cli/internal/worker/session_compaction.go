@@ -241,15 +241,19 @@ func executeSessionCompaction(ctx context.Context, config Config, owner domain.I
 	if err != nil || !filepath.IsAbs(executable) || resolved != executable {
 		return nil, domain.CompactionUncertain()
 	}
-	runtimeRoot := filepath.Join(config.Root, "runtimes")
-	if err := security.PrivateDir(runtimeRoot); err != nil {
-		return nil, domain.SafeError(err)
+	if _, err := createOperationJournal(config.Root, i.ActionID); err != nil {
+		return nil, err
 	}
-	home := filepath.Join(runtimeRoot, string(i.ActionID))
-	if _, err := os.Lstat(home); !errors.Is(err, os.ErrNotExist) {
-		return nil, domain.CompactionUncertain()
+	profile, err := continuationProfile(ctx, config, i.Assignment.MachineID, domain.ClaudeCode, historyAccount(i.Restore), i.Restore.Continuation.HistoryExecutionID, i.ActionID)
+	if err != nil {
+		return nil, err
 	}
-	env, err := harness.PrivateRuntimeEnvironment(home)
+	defer func() {
+		if err := profile.Close(); err != nil && returned == nil {
+			output, returned = nil, domain.CompactionUncertain()
+		}
+	}()
+	env, err := harness.PrivateRuntimeEnvironment(profile.Root)
 	if err != nil {
 		return nil, domain.SafeError(err)
 	}

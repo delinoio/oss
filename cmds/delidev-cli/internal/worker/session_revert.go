@@ -137,18 +137,24 @@ func recoverSessionRevert(ctx context.Context, config Config, job domain.Job, re
 	if err != nil {
 		return nil, err
 	}
-	home := filepath.Join(config.Root, "runtimes", string(input.Restore.Continuation.HistoryExecutionID), "codex")
+	// Recovery reconciles inside the history's persistent profile; no disposable
+	// recovery home is allocated.
+	profile, err := continuationProfile(ctx, config, request.MachineID, domain.Codex, historyAccount(input.Restore), input.Restore.Continuation.HistoryExecutionID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if e := profile.Close(); e != nil && returned == nil {
+			output, returned = nil, fail()
+		}
+	}()
+	home := filepath.Join(profile.Root, "codex")
 	// Neither protected credentials nor a live API grant may be restored during
 	// observation. The original cleanup receipt and closed owner are independent.
 	if _, err := os.Lstat(filepath.Join(home, "auth.json")); !errors.Is(err, os.ErrNotExist) {
 		return nil, fail()
 	}
-	recoveryHome := filepath.Join(config.Root, "runtimes", string(config.execution.Assignment.Id))
-	env, err := harness.PrivateRuntimeEnvironment(recoveryHome)
-	if err != nil {
-		return nil, err
-	}
-	env, err = replaceCodexHome(env, home)
+	env, err := harness.PrivateRuntimeEnvironment(profile.Root)
 	if err != nil {
 		return nil, err
 	}

@@ -215,7 +215,7 @@ func (s *Service) runServerCredit(parent context.Context, id domain.ID) {
 		if opener == nil {
 			opener = openServerSubscription
 		}
-		native, openErr := opener(ctx, s.Store.Root(), original.AttemptID, bundle, s.logger)
+		native, openErr := opener(ctx, s.scopeFor(id), original.AttemptID, bundle, s.logger)
 		consumeErr = openErr
 		if native == nil {
 			cleanup = openErr != nil && domain.SafeError(openErr).Code != domain.RecoveryRequired

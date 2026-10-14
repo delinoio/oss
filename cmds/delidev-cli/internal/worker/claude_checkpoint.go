@@ -149,7 +149,10 @@ func ReadClaudeExecutionCheckpoint(ctx context.Context, root string, ref Executi
 	if err != nil {
 		return nil, err
 	}
-	historyRoot := filepath.Join(root, "runtimes", string(ref.HistoryExecutionID))
+	historyRoot, err := historyNativeRoot(ctx, root, ref.MachineID, domain.ClaudeCode, ref.AccountID, ref.HistoryExecutionID)
+	if err != nil {
+		return nil, err
+	}
 	if !slices.Equal(config.WorkspaceRoots, ref.WorkspaceRoots) || config.SessionID != ref.SessionID || config.Process.OwnerID != ref.JobID || config.Process.Directory != filepath.Join(root, "processes") || config.Process.Cwd != historyRoot || config.Home != filepath.Join(historyRoot, "claude") {
 		return nil, executionCheckpointUncertain()
 	}

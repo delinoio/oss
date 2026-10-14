@@ -1070,3 +1070,14 @@ execution, queued input or routing state. The existing structured blocked event
 records the closed cause with the code; quota blocks are not storage failures.
 No messages, prompts, account content or native output enter logs.
 This optional metadata adds no RPC, allocation, schema, migration or backfill.
+
+## Native histories and persistent profiles
+
+A session's native history lives in persistent conversation profiles resolved by
+session, account and purpose, never by execution identifier. Continuation,
+compaction, Revert, Sidechat and native review reuse the retained history through
+registry-bound execution and action identifiers; per-operation journals under
+`runtimes/<id>` stay fresh and exclusive. Existing sessions keep their original
+history: legacy `runtimes/<id>` histories are registered in place, not moved or
+merged. Session deletion removes the session's profiles only after owners join.
+See the [harness contract](cmds-delidev-harness-contract.md#persistent-native-profiles).

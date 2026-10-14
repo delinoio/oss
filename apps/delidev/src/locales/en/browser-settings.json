@@ -18,6 +18,8 @@
   "browser-settings.noBrowsers": "No other browsers that open web links were found. The system default browser is still available.",
   "browser-settings.unavailableSaved": "A saved browser is not installed. Its links will not open until you choose another browser.",
   "browser-settings.notInstalled": "That browser is no longer installed. Refresh the list and choose another browser.",
+  "browser-settings.selectionDiscoveryFailed": "Installed browsers could not be checked. Your saved browser settings were not changed. Refresh the browser list and try again.",
+  "browser-settings.invalidSelection": "That browser choice is invalid. Your saved browser settings were not changed. Choose another browser.",
   "browser-settings.webUnavailable": "Browser selection is available only in the DeliDev desktop app.",
   "browser-settings.readFailed": "Browser settings could not be read. Reload them before trying again.",
   "browser-settings.invalidDocument": "The saved browser settings are damaged and were not changed. Reset them to use the system default browser for all links.",

@@ -66,8 +66,13 @@ func (f *managedWorkerRPC) FinishSubscription(_ context.Context, req *connect.Re
 	if !req.Msg.CleanupConfirmed {
 		f.t.Error("controlled process/home cleanup was not confirmed")
 	}
+	// The permanent account profile is retained; completion requires only that
+	// the transient credential file was retired and no disposable home exists.
 	if _, err := os.Lstat(filepath.Join(f.root, "managed-auth", string(f.lease))); !os.IsNotExist(err) {
-		f.t.Error("completion preceded owned home removal", err)
+		f.t.Error("a disposable per-lease home was allocated", err)
+	}
+	if matches, _ := filepath.Glob(filepath.Join(f.root, "native-profiles", "p", "*", "codex", "codex", "auth.json")); len(matches) != 0 {
+		f.t.Error("completion preceded transient credential retirement")
 	}
 	f.finish = &pb.FinishSubscriptionRequest{Mutation: req.Msg.Mutation, GenerationId: req.Msg.GenerationId, CleanupConfirmed: req.Msg.CleanupConfirmed, RefreshConfirmed: req.Msg.RefreshConfirmed, Succeeded: req.Msg.Succeeded}
 	f.finishBundle = bytes.Clone(req.Msg.Bundle)
@@ -115,8 +120,15 @@ func TestManagedExecutionAuthenticationCleanup(t *testing.T) {
 				file.Close()
 			}
 			err := cleanupExecutionAuthentication(home, bundle, bundle)
-			if (err == nil) != (mode == "clean") {
+			// A native-created helper link is ordinary retained data: it is never
+			// followed and never blocks cleanup. Copied tokens and oversized files do.
+			if (err == nil) != (mode == "clean" || mode == "symlink") {
 				t.Fatalf("cleanup %s: %v", mode, err)
+			}
+			if mode == "symlink" {
+				if _, statErr := os.Lstat(filepath.Join(home, "history")); statErr != nil {
+					t.Fatal("cleanup removed a retained helper link", statErr)
+				}
 			}
 		})
 	}
@@ -159,7 +171,14 @@ func (f *managedWorkerRPC) ClaimSubscriptionObservation(_ context.Context, req *
 	return connect.NewResponse(&pb.ClaimSubscriptionObservationResponse{OperationJson: raw}), nil
 }
 func (f *managedWorkerRPC) PublishSubscriptionObservation(_ context.Context, req *connect.Request[pb.PublishSubscriptionObservationRequest]) (*connect.Response[pb.PublishSubscriptionObservationResponse], error) {
-	raw, err := os.ReadFile(filepath.Join(f.root, "managed-auth", string(f.lease), "codex", "consume-key"))
+	keys, _ := filepath.Glob(filepath.Join(f.root, "native-profiles", "p", "*", "codex", "codex", "consume-key"))
+	var raw []byte
+	var err error
+	if len(keys) == 1 {
+		raw, err = os.ReadFile(keys[0])
+	} else {
+		err = fs.ErrNotExist
+	}
 	if err != nil || string(raw) != req.Msg.OperationId {
 		f.t.Fatal("native consumption did not use the original official operation key", err)
 	}

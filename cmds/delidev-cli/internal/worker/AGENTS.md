@@ -41,3 +41,9 @@
 - [DeliDev native usage ledger](../../../../docs/cmds-delidev-usage-contract.md)
 - [DeliDev current-user service contract](../../../../docs/cmds-delidev-user-services-contract.md)
 - [DeliDev Worker workspace contract](../../../../docs/cmds-delidev-workspace-contract.md)
+
+## Persistent native profiles
+
+- Resolve every native home through `internal/nativeprofile`; do not allocate per-execution or temporary native homes. Keep the fresh `runtimes/<id>` or `title-runtimes/<job>` directory only as the operation journal.
+- Retire only transient credential files after a joined operation; retain history, caches and native-created helper links, and delete profiles only through explicit session, account or storage deletion.
+- Follow the [persistent native profiles contract](../../../../docs/cmds-delidev-harness-contract.md#persistent-native-profiles).

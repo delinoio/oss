@@ -119,3 +119,96 @@ func TestRuntimeCleanupRejectsSymlinkAndReplacedIdentity(t *testing.T) {
 		})
 	}
 }
+
+// An interrupted atomic credential write leaves its temporary name beside the
+// target. That remnant holds a plaintext bundle, so it must block reuse and be
+// retired with the credential files.
+func credentialRemnant(t *testing.T, profile, name string) string {
+	t.Helper()
+	target := filepath.Join(profile, filepath.FromSlash(name))
+	if err := security.PrivateDir(filepath.Dir(target)); err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.CreateTemp(filepath.Dir(target), security.OwnedTemporaryPrefix(target))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.WriteString(`{"tokens":{"access_token":"secret"}}`); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return file.Name()
+}
+
+func TestInterruptedCredentialWriteBlocksReuseAndIsRetired(t *testing.T) {
+	for _, name := range CredentialFiles {
+		t.Run(name, func(t *testing.T) {
+			profile := t.TempDir()
+			helper := filepath.Join(profile, "history.jsonl")
+			if err := os.WriteFile(helper, []byte("kept"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			remnant := credentialRemnant(t, profile, name)
+			present, err := CredentialFilePresent(profile)
+			if err != nil || !present {
+				t.Fatalf("a credential temporary was considered clean: %v %v", present, err)
+			}
+			if err := RetireCredentialFiles(profile); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Lstat(remnant); !os.IsNotExist(err) {
+				t.Fatal("the credential temporary survived retirement")
+			}
+			if present, err := CredentialFilePresent(profile); err != nil || present {
+				t.Fatalf("profile still blocked: %v %v", present, err)
+			}
+			if raw, err := os.ReadFile(helper); err != nil || string(raw) != "kept" {
+				t.Fatal("retirement changed retained data")
+			}
+		})
+	}
+}
+
+func TestCredentialWriteRetiresEarlierInterruptedTemporaries(t *testing.T) {
+	profile := t.TempDir()
+	name := CredentialFiles[0]
+	remnant := credentialRemnant(t, profile, name)
+	target := filepath.Join(profile, filepath.FromSlash(name))
+	if err := WriteCredentialFile(target, []byte("new")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(remnant); !os.IsNotExist(err) {
+		t.Fatal("an earlier credential temporary survived the next write")
+	}
+	if raw, err := os.ReadFile(target); err != nil || string(raw) != "new" {
+		t.Fatalf("credential file not written: %v", err)
+	}
+	entries, err := os.ReadDir(filepath.Dir(target))
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("temporary files remain: %v %v", entries, err)
+	}
+}
+
+func TestCredentialTemporaryThatIsNotRegularBlocksWithoutRemoval(t *testing.T) {
+	profile := t.TempDir()
+	name := CredentialFiles[0]
+	target := filepath.Join(profile, filepath.FromSlash(name))
+	if err := security.PrivateDir(filepath.Dir(target)); err != nil {
+		t.Fatal(err)
+	}
+	special := filepath.Join(filepath.Dir(target), security.OwnedTemporaryPrefix(target)+"dir")
+	if err := os.Mkdir(special, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CredentialFilePresent(profile); err == nil {
+		t.Fatal("a non-regular credential temporary was accepted")
+	}
+	if err := RetireCredentialFiles(profile); err == nil {
+		t.Fatal("a non-regular credential temporary was retired")
+	}
+	if _, err := os.Lstat(special); err != nil {
+		t.Fatal("the unexpected entry was removed")
+	}
+}
