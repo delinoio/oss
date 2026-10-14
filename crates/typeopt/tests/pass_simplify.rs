@@ -777,6 +777,41 @@ fn bare_core_looking_packages_do_not_prove_host_identity() {
 }
 
 #[test]
+fn bare_core_looking_runtime_forms_keep_intrinsic_guards() {
+    let packages = package(
+        "process",
+        "Array.prototype.slice = function () { return [9]; };\nexport const ready = true;\n",
+        "export declare const ready: boolean;\n",
+    );
+    let cases: [&[(&str, &str)]; 3] = [
+        &[(
+            "main.ts",
+            "export {};\nawait import(\"process\");\nconsole.log(JSON.stringify([1].slice()));\n",
+        )],
+        &[
+            (
+                "main.ts",
+                "import \"./bridge.ts\";\nconsole.log(JSON.stringify([1].slice()));\n",
+            ),
+            ("bridge.ts", "export * from \"process\";\n"),
+        ],
+        &[
+            (
+                "main.ts",
+                "import \"./bridge.cjs\";\nconsole.log(JSON.stringify([1].slice()));\n",
+            ),
+            ("bridge.cjs", "require(\"process\");\n"),
+        ],
+    ];
+    for app in cases {
+        let files = with_packages(app, &packages);
+        // Node loads its host module; an alternate resolver can load the
+        // package, so the intrinsic guard is still required.
+        assert_slice_preserved(&files, "[1]\n");
+    }
+}
+
+#[test]
 fn ambient_bare_core_name_does_not_prove_host_identity() {
     let files: &[(&str, &str)] = &[
         (
@@ -786,6 +821,22 @@ fn ambient_bare_core_name_does_not_prove_host_identity() {
         ("host.d.ts", "declare module \"http\";\n"),
     ];
     let (temp, report) = run(files, &[IS]);
+    assert_eq!(applied(&report, IS), 0, "{report:#}");
+    assert!(emitted(temp.path(), "main.ts").contains(".slice()"));
+    assert!(skipped_reasons(&report, IS).contains(&"intrinsic_may_be_replaced".to_owned()));
+}
+
+#[test]
+fn ambient_json_suffix_does_not_prove_data_identity() {
+    let files: &[(&str, &str)] = &[
+        (
+            "main.ts",
+            "import \"missing.json\";\nconsole.log(JSON.stringify([1].slice()));\n",
+        ),
+        ("ambient.d.ts", "declare module \"missing.json\";\n"),
+    ];
+    let temp = project(files);
+    let report = optimize(temp.path(), &args(&only(&[IS])));
     assert_eq!(applied(&report, IS), 0, "{report:#}");
     assert!(emitted(temp.path(), "main.ts").contains(".slice()"));
     assert!(skipped_reasons(&report, IS).contains(&"intrinsic_may_be_replaced".to_owned()));
