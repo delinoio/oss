@@ -19,11 +19,25 @@ export const bindingFilename = (host) => `react-forge.${host.id}.node`;
 
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
-export const sourceRevision = () =>
-  execFileSync("git", ["rev-parse", "HEAD"], {
-    cwd: repositoryRoot,
+function assertCleanSourceTree(cwd) {
+  const status = execFileSync(
+    "git",
+    ["status", "--porcelain=v1", "--untracked-files=all"],
+    { cwd, encoding: "utf8" },
+  ).trim();
+  if (status)
+    throw new Error(
+      "Cannot record React Forge native build provenance from a dirty source tree.",
+    );
+}
+
+export const sourceRevision = (cwd = repositoryRoot) => {
+  assertCleanSourceTree(cwd);
+  return execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd,
     encoding: "utf8",
   }).trim();
+};
 
 export async function writeNativeBuildProvenance(
   output,
