@@ -203,7 +203,10 @@ function accessFixture(options: {
   failure: () => ConnectError;
   discoveryState?: string;
   accessReadFailure?: () => ConnectError;
+  // 1-based read count from which the read fails (after earlier successes).
+  accessReadFailFrom?: number;
 }) {
+  let reads = 0;
   const set = vi.fn((_: { requestId: string; enabled: boolean }) => {
     throw options.failure();
   });
@@ -222,13 +225,18 @@ function accessFixture(options: {
     });
     router.service(TailscaleService, {
       getTailscaleAccess: () => {
-        if (options.accessReadFailure) throw options.accessReadFailure();
+        reads += 1;
+        if (
+          options.accessReadFailure &&
+          reads >= (options.accessReadFailFrom ?? 1)
+        )
+          throw options.accessReadFailure();
         return {
-          documentJson: encode({
-            enabled: false,
-            state: "off",
-            server_id: "s",
-          }),
+          documentJson: encode(
+            options.accessReadFailFrom
+              ? { enabled: true, state: "ready", server_id: "s" }
+              : { enabled: false, state: "off", server_id: "s" },
+          ),
         };
       },
       listTailscaleApprovals: () => ({ documentJson: encode([]) }),
@@ -404,12 +412,18 @@ function checkFailure(
 }
 function checkFixture(options: {
   failure?: () => ConnectError;
+  // 1-based check attempt from which the failure applies (default: the first).
+  failFrom?: number;
+  // 1-based discovery read from which discovery fails (default: never).
+  discoveryFailFrom?: number;
   peerOverrides?: Record<string, unknown>;
 }) {
   let attempts = 0;
+  let discoveries = 0;
   const check = vi.fn(() => {
     attempts += 1;
-    if (options.failure) throw options.failure();
+    if (options.failure && attempts >= (options.failFrom ?? 1))
+      throw options.failure();
     return {
       documentJson: encode({
         version: 1,
@@ -430,23 +444,31 @@ function checkFixture(options: {
         documentJson: encode({ enabled: false, state: "off", server_id: "s" }),
       }),
       listTailscaleApprovals: () => ({ documentJson: encode([]) }),
-      discoverTailscale: () => ({
-        documentJson: encode({
-          state: "running",
-          peers: [
-            {
-              id: "peer-1",
-              name: DEVICE,
-              host: "peer.example",
-              ownership: "own",
-              online: true,
-              shared_to: false,
-              ...options.peerOverrides,
-            },
-          ],
-          observed_at: "2026-01-01T00:00:00Z",
-        }),
-      }),
+      discoverTailscale: () => {
+        discoveries += 1;
+        if (
+          options.discoveryFailFrom &&
+          discoveries >= options.discoveryFailFrom
+        )
+          throw new ConnectError("Discovery failed", Code.Unavailable);
+        return {
+          documentJson: encode({
+            state: "running",
+            peers: [
+              {
+                id: "peer-1",
+                name: DEVICE,
+                host: "peer.example",
+                ownership: "own",
+                online: true,
+                shared_to: false,
+                ...options.peerOverrides,
+              },
+            ],
+            observed_at: "2026-01-01T00:00:00Z",
+          }),
+        };
+      },
       checkTailscale: check,
     });
   });
@@ -631,4 +653,74 @@ it("keeps the accepting state and actions after a successful check", async () =>
   expect(await screen.findByText("DeliDev: Accepting requests")).toBeTruthy();
   expect(rowAlert()).toBeNull();
   expect(screen.getByRole("button", { name: "Connect" })).toBeTruthy();
+});
+
+// Stale-data class (issue 3687 review): TanStack Query keeps the previous data
+// next to a newer error, so the latest result must control status and actions.
+const actionNames = ["Connect", "Register Worker"];
+const refusedFailure = () =>
+  checkFailure("Original safe message.", "unavailable", "connection_refused");
+
+it("lets a refused retry replace the cached accepting state and actions", async () => {
+  const f = checkFixture({ failure: refusedFailure, failFrom: 2 });
+  await runCheck();
+  expect(await screen.findByText("DeliDev: Accepting requests")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Connect" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Check" }));
+  expect(await screen.findByText("DeliDev: Could not connect")).toBeTruthy();
+  expect(screen.queryByText("DeliDev: Accepting requests")).toBeNull();
+  for (const name of actionNames)
+    expect(screen.queryByRole("button", { name })).toBeNull();
+  expect(
+    screen.getByText(`Could not connect to DeliDev on ${DEVICE}.`),
+  ).toBeTruthy();
+  expect(f.attempts()).toBe(2);
+});
+
+it("lets any later check failure replace the cached accepting state", async () => {
+  checkFixture({
+    failure: () =>
+      checkFailure("Original safe message.", "unavailable", "timeout"),
+    failFrom: 2,
+  });
+  await runCheck();
+  await screen.findByText("DeliDev: Accepting requests");
+  fireEvent.click(screen.getByRole("button", { name: "Check" }));
+  expect(
+    await screen.findByText("DeliDev: Unavailable or blocked"),
+  ).toBeTruthy();
+  expect(screen.queryByText("DeliDev: Accepting requests")).toBeNull();
+  for (const name of actionNames)
+    expect(screen.queryByRole("button", { name })).toBeNull();
+  expect(rowAlert()).not.toBeNull();
+});
+
+it("ignores the cached inventory and its peers after a failed refresh", async () => {
+  checkFixture({ discoveryFailFrom: 2 });
+  expect(await screen.findByText("Tailscale connected")).toBeTruthy();
+  expect(screen.getByText(DEVICE)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  await waitFor(() =>
+    expect(screen.queryByText("Tailscale connected")).toBeNull(),
+  );
+  expect(screen.getByText("Unavailable or blocked")).toBeTruthy();
+  expect(screen.queryByText(DEVICE)).toBeNull();
+  expect(screen.queryByRole("button", { name: "Check" })).toBeNull();
+  expect(document.querySelector("[role='alert']")).not.toBeNull();
+});
+
+it("treats cached access as unknown when the latest access read fails", async () => {
+  accessFixture({
+    failure: () => unavailable("Unused", "Unused"),
+    accessReadFailure: () => unavailable("Read failed", "Retry the read."),
+    accessReadFailFrom: 2,
+  });
+  // The first read succeeded with access on; a failing refetch is triggered by
+  // the polling interval while the Local view is current.
+  expect(await screen.findByText("Tailscale access: On")).toBeTruthy();
+  await waitFor(() => expect(accessAlert()).not.toBeNull(), { timeout: 4000 });
+  expect(screen.queryByText("Tailscale access: On")).toBeNull();
+  expect(
+    screen.getByText("Tailscale access: Setup or cleanup required"),
+  ).toBeTruthy();
 });

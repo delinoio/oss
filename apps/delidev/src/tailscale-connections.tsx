@@ -230,8 +230,12 @@ export function TailscaleConnections({
     () => setAcceptedAccess(decode<Access>(accessRead.data?.documentJson)),
     [accessRead.data],
   );
-  const access =
-    acceptedAccess ?? decode<Access>(accessRead.data?.documentJson);
+  // A failed latest read leaves TanStack Query holding the previous data next to
+  // the new error. The latest result controls: the cached access state never
+  // outranks the current read failure, so status and actions treat it as unknown.
+  const access = accessRead.error
+    ? undefined
+    : (acceptedAccess ?? decode<Access>(accessRead.data?.documentJson));
   const accessMutation = useRetainedMutation(
     "tailscale:access",
     TailscaleQuery.setTailscaleAccess,
@@ -462,7 +466,12 @@ function DeviceInventory({
   const cancelBlocked =
     cancel.busy || cancel.uncertain || Boolean(cancel.input);
   const retainedHelpId = "tailscale-retained-request-help";
-  const inventory = decode<Inventory>(discovery.data?.documentJson);
+  // A failed refresh keeps the previous inventory in the query next to the new
+  // error. The latest result controls status and peer actions, so the cached
+  // inventory is ignored while the current query has an error.
+  const inventory = discovery.error
+    ? undefined
+    : decode<Inventory>(discovery.data?.documentJson);
   const original = decode<Approval[]>(operations.data?.documentJson) ?? [];
   const retained = accepted
     ? [accepted, ...original.filter((a) => a.id !== accepted.id)]
@@ -657,9 +666,13 @@ function PeerRow({
       gcTime: 0,
     },
   );
-  const identity = checked
-    ? decode<Identity>(check.data?.documentJson)
-    : undefined;
+  // A failed manual re-check keeps the previous identity in the query next to
+  // the new error. The latest result controls the status text and the Connect
+  // and Register Worker actions, so cached identity is ignored on error.
+  const identity =
+    checked && !check.error
+      ? decode<Identity>(check.data?.documentJson)
+      : undefined;
   useEffect(() => setChecked(false), [peer.host, peer.online]);
   const cause = checkCause(check.error);
   return (
