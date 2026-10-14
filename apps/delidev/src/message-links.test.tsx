@@ -71,6 +71,14 @@ it("uses original generic message completion and keeps unknown tails inert", () 
   expect(screen.getByRole("link").textContent).toBe(url);
 });
 
+it("treats legacy generic messages without a state as complete", () => {
+  const data = transcriptRoleFixtures();
+  const legacy = { ...data.assistant, text: `Legacy ${url}` };
+  delete (legacy as Record<string, unknown>).state;
+  renderRows([legacy]);
+  expect(screen.getByRole("link").textContent).toBe(url);
+});
+
 it("keeps unknown roles and tool, artifact and progress records inert", () => {
   const rows = [
     { role: "unknown", state: "complete", text: `Unknown ${url}` },

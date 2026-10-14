@@ -637,6 +637,10 @@ export const TranscriptItem = memo(function TranscriptItem({
       : textRole && data.role === "assistant"
         ? " message-assistant"
         : "";
+  const complete =
+    data.state === undefined ||
+    data.state === "complete" ||
+    data.state === "completed";
   const message = (
     <article
       className={`message${roleClass}`}
@@ -666,7 +670,7 @@ export const TranscriptItem = memo(function TranscriptItem({
         roleClass ? (
           <LinkedPre
             text={text(data.text)}
-            complete={data.state === "complete" || data.state === "completed"}
+            complete={complete}
           />
         ) : (
           <pre>{text(data.text)}</pre>
