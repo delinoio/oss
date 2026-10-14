@@ -24,6 +24,8 @@ The scene contract also defines an unreleased budgeted parametric surface helper
 for both formats. Callers choose explicit tessellation and a triangle ceiling;
 the helper adds no adaptive quality or hidden surface faces.
 
+An additive, unreleased caller-defined geometry budget policy warns or rejects on the export-pinned scene before GLB/FBX serialization. It shares the scene analysis counts and does not impose a default polygon ceiling. Its API and publication semantics are in [GLB/FBX scenes and animation](packages-react-forge-scene-contract.md).
+
 ## Project ID
 
 `react-forge` (`ProjectId::ReactForge`). Product name: **React Forge**. The public npm package is `@delino/react-forge`; its CLI executable is `react-forge`.

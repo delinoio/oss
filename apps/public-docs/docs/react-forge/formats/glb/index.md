@@ -90,6 +90,30 @@ Use `snapshot()` for a settled revision and targets. `measure(handle, { revision
 
 The source implementation adds `await session.analyze({ revision?, signal? })`. It settles the scene and returns an immutable report before any export. Use its `meshCount`, `referencedGeometryCount`, `uniqueVertexCount`, `uniqueTriangleCount`, `instanceVertexCount`, `instanceTriangleCount`, `registeredGeometryBytes`, `referencedGeometryBytes`, and `unusedGeometryCount` to distinguish shared geometry storage from authored mesh instances. The `meshes` array lists node IDs, vertex and triangle counts, and geometry instance counts, largest triangle count first. Ties keep authored depth-first order. The byte counts describe registered geometry data, not GPU memory or final GLB size. An explicit stale revision fails. Transforms, materials, animation and camera/light nodes do not multiply topology. This feature is not in the released `0.2.0` static API; check [release status](/react-forge/releases) for availability.
 
+### Caller geometry budgets (unreleased)
+
+Trusted task code can choose limits before creating a GLB or FBX session:
+
+```ts
+import { createSession, Format, SceneBudgetAction } from "@delino/react-forge";
+
+const session = createSession(Format.Glb, {
+  geometryBudget: {
+    action: SceneBudgetAction.Warn,
+    maxSceneTriangles: 10_000,
+    maxMeshTriangles: 2_000,
+    maxMeshCount: 100,
+  },
+});
+const unsubscribe = session.onSceneWarning((warning) => {
+  // warning has format, revision, metric, actual and limit.
+});
+```
+
+Set at least one threshold; each must be a nonnegative safe integer. `maxSceneTriangles` counts every authored Mesh instance, including repeated uses of one registered geometry. `maxMeshTriangles` applies to each Mesh, and `maxMeshCount` counts Mesh nodes. Equality passes. Unused registered geometry, transforms, materials, cameras, lights and animation playback do not increase topology counts. With no `geometryBudget`, exports keep their current behavior. Native byte and tree ceilings still apply.
+
+`SceneBudgetAction.Warn` preserves geometry and export bytes. Buffer export reports warnings through the listener; file export also returns a `warnings` array when violations exist. CLI text reports warnings on stderr, CLI JSON and MCP export include structured warnings. A warning can occur before a later cancellation or file error, so check the export's publication result before treating the file as committed. `SceneBudgetAction.Error` stops before serialization and preserves an existing destination. It raises `resource_limit` with `context.sceneBudget` for the first violation and `published: false`. `analyze()` reports every `budgetViolations` entry without enforcing the policy. To recover, render a smaller scene or create a session with a different caller policy, then export explicitly. This option is implemented in source and is not part of the released `0.2.0` static API; check [release status](/react-forge/releases) before using it from npm.
+
 Registered geometry/textures together and each output are capped at 256 MiB. Individual geometry/texture data is capped at 64 MiB; textures at 64 million pixels. The existing 16 MiB, 20,000-node, depth-48 React tree limits remain. Unsupported inputs produce errors instead of being silently dropped.
 
 For Blender's FBX material profile and interchange limitations, see [FBX](/react-forge/formats/fbx/). A successful structural validator does not replace checking your exported model in the application that will consume it.

@@ -1,5 +1,9 @@
 export * from "./scene/components.js";
-export { SceneSession } from "./scene/session.js";
+export {
+  SceneSession,
+  SceneBudgetAction,
+  SceneBudgetMetric,
+} from "./scene/session.js";
 export type {
   SceneGeometry,
   SceneAnalysis,
@@ -9,4 +13,7 @@ export type {
   GeometryCompaction,
   SimplifyGeometryOptions,
   SimplifyGeometryResult,
+  SceneGeometryBudget,
+  SceneBudgetViolation,
+  SceneBudgetWarning,
 } from "./scene/session.js";

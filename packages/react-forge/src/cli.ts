@@ -1,4 +1,4 @@
-import type { SceneSession } from "./scene/session.js";
+import type { SceneSession, SceneBudgetWarning } from "./scene/session.js";
 import { matchesOutputExtension } from "./output-extension.js";
 import { extname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -71,6 +71,8 @@ export async function main(args: string[]): Promise<number> {
     controller.abort();
   };
   let session: DocumentSession | FigmaSession | SceneSession | undefined;
+  let unsubscribeWarning: (() => void) | undefined;
+  const warnings: SceneBudgetWarning[] = [];
   process.on("SIGINT", interrupt);
   process.on("SIGTERM", terminate);
   if (process.platform === "win32") process.on("SIGBREAK", interrupt);
@@ -213,10 +215,22 @@ export async function main(args: string[]): Promise<number> {
         ErrorCode.MalformedInput,
         "Output extension must match the document session format.",
       );
+    if (session.format === Format.Glb || session.format === Format.Fbx)
+      unsubscribeWarning = (session as SceneSession).onSceneWarning(
+        (warning) => {
+          warnings.push(warning);
+        },
+      );
     const result = await session.exportFile(output as string, {
       overwrite: flags.has("--overwrite"),
       signal: controller.signal,
     });
+    if (!json)
+      for (const warning of warnings)
+        await write(
+          process.stderr,
+          `scene_budget_exceeded: ${warning.metric} ${warning.actual} exceeds ${warning.limit}${warning.nodeId ? ` at ${warning.nodeId}` : ""} (revision ${warning.revision}).\n`,
+        );
     await write(
       process.stdout,
       json
@@ -232,14 +246,21 @@ export async function main(args: string[]): Promise<number> {
             ErrorCode.Render,
             "Task execution failed. Correct the task and retry.",
           );
+    if (!json)
+      for (const warning of warnings)
+        await write(
+          process.stderr,
+          `scene_budget_exceeded: ${warning.metric} ${warning.actual} exceeds ${warning.limit}${warning.nodeId ? ` at ${warning.nodeId}` : ""} (revision ${warning.revision}).\n`,
+        );
     await write(
       json ? process.stdout : process.stderr,
       json
-        ? `${JSON.stringify({ ok: false, error: safe.toJSON() })}\n`
+        ? `${JSON.stringify({ ok: false, error: safe.toJSON(), ...(warnings.length > 0 && { warnings }) })}\n`
         : `${safe.code}: ${safe.message}\n`,
     );
     return cancelled || 1;
   } finally {
+    unsubscribeWarning?.();
     await session?.dispose();
     process.off("SIGINT", interrupt);
     process.off("SIGTERM", terminate);

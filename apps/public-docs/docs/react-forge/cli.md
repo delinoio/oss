@@ -31,6 +31,8 @@ The [SFX format](/react-forge/formats/sfx/) adds `Format.Wav` tasks with `.wav` 
 
 `react-forge analyze <entry.tsx> [--data <json>] [--json]` runs a trusted task that returns a GLB or FBX `SceneSession`, waits for its settled revision, and prints topology totals plus up to ten largest mesh node IDs. `--json` returns the complete report, including all mesh rows. The command itself does not export or publish. Task code runs with your permissions and can explicitly perform its own effects. This command is implemented in source but is not yet in the released npm package.
 
+In the unreleased source extension, a GLB/FBX task can set a [caller geometry budget](/react-forge/formats/glb/#caller-geometry-budgets-unreleased) when it creates its session. `run` writes Warn-mode budget notices to stderr in text mode and includes structured warnings in JSON results. A warning may precede a later failed export, so check the publication result. The CLI has no budget flags; the trusted task owns the policy.
+
 ## Animated scene tasks (unreleased)
 
 With the unreleased animation extension, return a `SceneSession` from the same
