@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http/httptest"
 	"os"
@@ -70,7 +71,7 @@ func init() {
 		if err != nil || os.MkdirAll(helperDirectory, 0700) != nil {
 			os.Exit(88)
 		}
-		for _, name := range []string{"apply_patch", "applypatch", "codex-execve-wrapper"} {
+		for _, name := range nativeFixtureHelperAliasNames(runtime.GOOS) {
 			if os.Symlink(executable, filepath.Join(helperDirectory, name)) != nil {
 				os.Exit(88)
 			}
@@ -293,7 +294,7 @@ func TestManagedExecutionCapturesRotatedBundleBeforeNativeClose(t *testing.T) {
 				t.Fatal(err)
 			}
 			credential := Credential{Version: 1, Type: domain.WorkerDevice, Endpoint: server.URL, ServerID: domain.NewID(), DeviceID: domain.NewID(), PairingID: domain.NewID(), MachineID: f.input.MachineID, Token: token}
-			client := &managedExecutionPublicationRPC{nativeHome: filepath.Join(f.root, "runtimes", string(f.input.ExecutionID), "codex"), fault: managedFixtureHelpers}
+			client := &managedExecutionPublicationRPC{nativeHome: profileNativeHome(t, f.root, f.input), fault: managedFixtureHelpers}
 			publication := &PublicationConfig{Credential: credential, Instance: f.job.InstanceID, Assignment: resource, Client: client}
 			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 			defer cancel()
@@ -307,7 +308,7 @@ func TestManagedExecutionCapturesRotatedBundleBeforeNativeClose(t *testing.T) {
 				if len(client.startupReports) < 1 || client.startupReports[0].State != pb.ExecutionStartupState_EXECUTION_STARTUP_STATE_READY || len(client.startupReports) > 2 {
 					t.Fatal("v4 startup did not publish original ready evidence", client.startupReports)
 				}
-				home := filepath.Join(f.root, "runtimes", string(f.input.ExecutionID), "codex")
+				home := profileNativeHome(t, f.root, f.input)
 				if _, statErr := os.Stat(filepath.Join(home, "startup-initialized")); statErr != nil {
 					t.Fatal("original native process did not initialize", statErr)
 				}
@@ -336,7 +337,7 @@ func TestManagedExecutionCapturesRotatedBundleBeforeNativeClose(t *testing.T) {
 			default:
 				t.Fatal("managed completion omitted protected write-back")
 			}
-			home := filepath.Join(f.root, "runtimes", string(f.input.ExecutionID), "codex")
+			home := profileNativeHome(t, f.root, f.input)
 			if _, err := os.Lstat(filepath.Join(home, "auth.json")); !os.IsNotExist(err) {
 				t.Fatal("managed completion retained plaintext authentication")
 			}
@@ -398,7 +399,7 @@ func TestManagedExecutionAcknowledgedFencePreservesStartedJournal(t *testing.T) 
 				t.Fatal(err)
 			}
 			credential := Credential{Version: 1, Type: domain.WorkerDevice, Endpoint: server.URL, ServerID: domain.NewID(), DeviceID: domain.NewID(), PairingID: domain.NewID(), MachineID: f.input.MachineID, Token: token}
-			client := &managedExecutionPublicationRPC{nativeHome: filepath.Join(f.root, "runtimes", string(f.input.ExecutionID), "codex"), fault: fault}
+			client := &managedExecutionPublicationRPC{nativeHome: profileNativeHome(t, f.root, f.input), fault: fault}
 
 			if err := security.PrivateDir(filepath.Join(f.root, "jobs")); err != nil {
 				t.Fatal(err)
@@ -432,7 +433,7 @@ func TestManagedExecutionAcknowledgedFencePreservesStartedJournal(t *testing.T) 
 					t.Fatal("inspection refusal omitted original authentication cleanup")
 				}
 				if fault == managedFixtureHelperExtension {
-					for _, name := range []string{"apply_patch", "applypatch", "codex-execve-wrapper"} {
+					for _, name := range nativeFixtureHelperAliasNames(runtime.GOOS) {
 						if _, err := os.Lstat(filepath.Join(client.nativeHome, "tmp", "arg0", "fixture-original-helper", name)); !os.IsNotExist(err) {
 							t.Fatal("aborted input retained an original helper", err)
 						}
@@ -440,13 +441,31 @@ func TestManagedExecutionAcknowledgedFencePreservesStartedJournal(t *testing.T) 
 					if !slices.ContainsFunc(client.events, func(event domain.ExecutionEvent) bool { return event.Kind == domain.ExecutionInputAccepted }) {
 						t.Fatal("fixture failure lost original accepted input")
 					}
-					if !bytes.Contains(logs.Bytes(), []byte(`"msg":"native_graceful_shutdown_timeout"`)) || !bytes.Contains(logs.Bytes(), []byte(`"removed_count":3`)) {
+					if !bytes.Contains(logs.Bytes(), []byte(`"msg":"native_graceful_shutdown_timeout"`)) || !bytes.Contains(logs.Bytes(), []byte(fmt.Sprintf(`"removed_count":%d`, len(nativeFixtureHelperAliasNames(runtime.GOOS))))) {
 						t.Fatal("fixture did not cover joined forced shutdown and original helper retirement")
 					}
 					reads, readErr := security.ReadPrivate(filepath.Join(client.nativeHome, "bundle-read-count"), 16)
 					if readErr != nil || string(reads) != "1" {
 						t.Fatal("aborted input replayed final bundle capture", readErr)
 					}
+				}
+				return
+			}
+			if fault == managedFixtureHelperUnknown || fault == managedFixtureHelperLate {
+				// A native-created link that the original startup proof did not own is
+				// ordinary retained profile data: it is never followed or removed and
+				// no longer keeps the credential lease unconfirmed.
+				if err != nil || !client.reported {
+					t.Fatal("a retained helper link blocked ordinary completion", err)
+				}
+				select {
+				case finish := <-authentication.finished:
+					defer clear(finish.Bundle)
+					if !finish.Succeeded || !finish.CleanupConfirmed {
+						t.Fatal("retained helper link kept authentication cleanup unconfirmed")
+					}
+				default:
+					t.Fatal("protected execution completion was not reported")
 				}
 				return
 			}
@@ -517,4 +536,16 @@ func assertInspectionFailureLog(t *testing.T, raw []byte, job, execution, sessio
 	if found != 1 {
 		t.Fatal("native fixture did not reach exactly one inspection failure diagnostic", found)
 	}
+}
+
+// profileNativeHome resolves the persistent native home that an execution of
+// input uses, creating the profile when it does not exist yet.
+func profileNativeHome(t *testing.T, root string, input domain.ExecutionJobInput) string {
+	t.Helper()
+	lease, err := executionProfile(context.Background(), Config{Root: root}, domain.Codex, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lease.Close()
+	return filepath.Join(lease.Root, "codex")
 }

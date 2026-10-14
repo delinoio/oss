@@ -105,15 +105,21 @@ Prompt text is never logged.
 Foreground return and connection refresh perform reads only. Explicit retry requires inspection of current
 server state and confirmation; it never changes a retained request or selection.
 Steer operates on an already queued input and its original revision, execution
-and native turn. Inspecting a pending Steer reads the original queue input
-(EntityKind.QUEUE at the retained request's mutation ID), never the session, and
-enables retry only when the observed resource has the same ID, queue kind,
-supported schema, original session ID and original expected revision. A missing,
-foreign-session or revised input keeps retry disabled, shows localized guidance
-and leaves the retained request unchanged; no replacement request is generated.
-Existing pending records need no migration because the ID is derived from the
-retained request, not its stored target. Stop and Resume require current
-observations and confirmation.
+and native turn. Explicit pending-Steer inspection first reads the Steer resource
+at the retained request ID. Its supported schema, resource ID/kind/session and
+document version/input/execution/native-turn identities must match the unchanged
+original request. A matching committed receipt permits confirmed replay even
+when acceptance revised or removed the original queue input. If the receipt is
+absent, inspection reads the original queue input (EntityKind.QUEUE at the
+retained request's mutation ID), never the session, and permits retry only when
+its ID, kind, supported schema, session and revision still match. A mismatching
+receipt, failed read, or missing, foreign-session or revised unreceipted input
+keeps retry disabled, shows localized guidance and leaves the retained request
+unchanged. Inspection never dispatches a mutation or generates a replacement
+request. Confirmed retry sends the original protobuf JSON and request ID and
+clears only that pending record after success. Existing pending records need no
+migration because both lookup IDs come from the retained request, not its stored
+target. Stop and Resume require current observations and confirmation.
 Question and approval responses retain the original interaction revision.
 Question controls follow the original request family: ordinary questions show
 custom text only when `other` is true or no options are offered, native OpenCode

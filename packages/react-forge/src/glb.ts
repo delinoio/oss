@@ -6,4 +6,5 @@ export type {
   SceneMeshAnalysis,
   SceneSessionOptions,
   AnimationSample,
+  GeometryCompaction,
 } from "./scene/session.js";

@@ -109,3 +109,22 @@ export class ShortcutCapture {
   }
 }
 export const shortcutCapture = new ShortcutCapture();
+
+/**
+ * Counts Settings capture keydown listeners that currently own the next chord.
+ * The window-level reload owner runs in the capture phase before the document
+ * listener of Settings, so it consults this marker to leave R to the recorder.
+ */
+let captureListeners = 0;
+export function shortcutCaptureListening(): boolean {
+  return captureListeners > 0;
+}
+export function markShortcutCaptureListening(): () => void {
+  captureListeners++;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    captureListeners--;
+  };
+}

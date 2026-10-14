@@ -72,15 +72,16 @@ mod app {
     /// Bundle chunks that an HTML page loads as a classic script.
     static BUNDLE_CLASSIC: std::sync::OnceLock<std::collections::BTreeSet<String>> =
         std::sync::OnceLock::new();
-    /// Bundle chunks that a boundary chunk can import, each with the boundary
-    /// chunk that reaches it. They stay unchanged and keep their names.
+    /// Bundle chunks that an operator-excluded chunk can import, each with the
+    /// excluded chunk that reaches it. They stay unchanged and keep their
+    /// names: the excluded chunk keeps importing the original names.
     static BUNDLE_FROZEN: std::sync::OnceLock<std::collections::BTreeMap<String, String>> =
         std::sync::OnceLock::new();
     pub(crate) fn set_bundle_frozen(frozen: std::collections::BTreeMap<String, String>) {
         let _ = BUNDLE_FROZEN.set(frozen);
     }
-    /// Chunks frozen because a boundary chunk can import them, with the
-    /// causing boundary chunk, in path order.
+    /// Chunks frozen because an excluded chunk can import them, with the
+    /// causing excluded chunk, in path order.
     pub(crate) fn bundle_frozen() -> impl Iterator<Item = (&'static String, &'static String)> {
         BUNDLE_FROZEN.get().into_iter().flatten()
     }
@@ -95,15 +96,26 @@ mod app {
     /// operator, or not known to be an ES module (a classic script shares
     /// its top-level bindings with other scripts). `.mjs` files, chunks with
     /// ESM statements and chunks that a chunk or an HTML module script loads
-    /// are ES modules. A chunk that a boundary chunk can import is a boundary
-    /// as well: the boundary keeps importing its original name.
-    pub(crate) fn bundle_boundary(path: &str, esm_statements: bool) -> bool {
-        BUNDLE_FROZEN
-            .get()
-            .is_some_and(|frozen| frozen.contains_key(path))
-            || BUNDLE_EXCLUDE
+    /// are ES modules. A chunk that an excluded chunk can import is a boundary
+    /// as well: the excluded chunk keeps importing its original name.
+    /// Whether `--bundle-exclude` matches a bundle chunk.
+    pub(crate) fn bundle_excluded(path: &str) -> bool {
+        BUNDLE_EXCLUDE
             .get()
             .is_some_and(|patterns| patterns.iter().any(|p| path.contains(p.as_str())))
+    }
+    /// Whether a bundle chunk stays byte-for-byte unchanged under its original
+    /// name: excluded by the operator, or importable by an excluded chunk.
+    /// Other boundary chunks are never edited by a pass, but their references
+    /// to renamed chunks are rewritten like those of any text asset.
+    pub(crate) fn bundle_pinned(path: &str) -> bool {
+        bundle_excluded(path)
+            || BUNDLE_FROZEN
+                .get()
+                .is_some_and(|frozen| frozen.contains_key(path))
+    }
+    pub(crate) fn bundle_boundary(path: &str, esm_statements: bool) -> bool {
+        bundle_pinned(path)
             // A chunk that any page loads as a classic script shares its
             // top-level bindings as globals there, even if it is also
             // imported as a module.
@@ -327,19 +339,18 @@ mod app {
         // Check mode stages into a temporary directory as well, so it reports
         // the same size and publication blockers as output mode.
         let boundaries = compiler.bundle_boundaries();
+        // Only pinned chunks stay byte-for-byte unchanged in publication;
+        // other boundary chunks take part in reference rewriting.
+        let pinned: std::collections::BTreeSet<String> = boundaries
+            .into_iter()
+            .filter(|chunk| bundle_pinned(chunk))
+            .collect();
         let scratch = tempfile::tempdir().context("cannot create a check staging directory")?;
         let destination = args
             .out_dir
             .clone()
             .unwrap_or_else(|| scratch.path().join("out"));
-        let staged = bundle::stage(
-            &dir,
-            &destination,
-            &snapshot,
-            &outcome,
-            &analyzed,
-            &boundaries,
-        )?;
+        let staged = bundle::stage(&dir, &destination, &snapshot, &outcome, &analyzed, &pinned)?;
         // Original chunks kept for encoded or boundary references are
         // published next to the optimized graph; the report discloses them.
         report.size.retained = staged.retained_bytes;

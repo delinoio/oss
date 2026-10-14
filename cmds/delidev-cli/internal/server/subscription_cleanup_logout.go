@@ -157,7 +157,7 @@ func (s *Service) cleanupServerLogoutLocked(ctx context.Context, parent, child d
 		// The claim barrier set NativeStarted before the original logout ran; its
 		// settled metadata cleared the flag only after joined native closure.
 		original.NativeStarted = true
-		if err := reconcileFailedServerLoginRuntime(ctx, s.Store.Root(), original); err != nil {
+		if err := reconcileFailedServerLoginRuntime(ctx, s.scopeFor(in.AccountID), original); err != nil {
 			retain(serverLogoutCleanupPhaseNative, err)
 			return out, err
 		}

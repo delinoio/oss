@@ -6,6 +6,8 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cpus, release } from "node:os";
 import { monitorEventLoopDelay, performance } from "node:perf_hooks";
+import platforms from "../src/native-platforms.json" with { type: "json" };
+import { readNativeBuildProvenance } from "./native-build-provenance.mjs";
 
 const exec = promisify(execFile);
 const file = fileURLToPath(import.meta.url);
@@ -156,6 +158,15 @@ if (process.argv[2] === "--case") {
       : undefined;
   if (!output || process.argv.length !== 4)
     throw new Error("Usage: benchmark.mjs --output <report.json>");
+  const host = platforms.find(
+    (item) =>
+      item.platform === process.platform && item.architecture === process.arch,
+  );
+  if (!host) throw new Error("Unsupported React Forge benchmark host.");
+  const nativeProfile = await readNativeBuildProvenance(
+    fileURLToPath(new URL("../dist/", import.meta.url)),
+    host,
+  );
   const samples = [];
   for (const workload of ["representative", "preserved_edit", "near_limit"]) {
     for (const format of formats) {
@@ -182,7 +193,7 @@ if (process.argv[2] === "--case") {
     node: process.version,
     react: "19.2.8",
     reconciler: "0.33.0",
-    nativeProfile: "dev",
+    nativeProfile,
     warmup: "Fresh Node process per case; shared OS caches may be warm",
     samples,
     guarantee: "Observations only; no numerical SLO",

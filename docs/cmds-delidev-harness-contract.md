@@ -1,5 +1,23 @@
 # DeliDev native harness adapter contract
 
+## Claude native subscription profile versions
+
+`NativeSubscriptionProfile` version 1 (no `SecureStorageHome`) is the historical
+canonical profile: `CLAUDE_CONFIG_DIR` and `CLAUDE_SECURESTORAGE_CONFIG_DIR` are
+both the canonical `claude` directory. Version 2 sets `CLAUDE_CONFIG_DIR` to the
+session-private `claude` directory (it must equal the stream's own home) and
+`CLAUDE_SECURESTORAGE_CONFIG_DIR` to a different canonical `claude` directory; both
+must be existing private directories named `claude`. The adapter passes directory
+names only and never opens the secure-storage directory. The checkpoint
+configuration digest of version 1 is unchanged; version 2 hashes the private
+history directory, the secure-storage directory and a closed mode marker
+independently. The pinned `2.1.236` secure-storage-scoped renewal, locked reread
+and compare-and-swap behavior is an implementation observation of the original
+CLI, validated here only with scripted fixtures and not as real renewal or
+cross-platform acceptance. The
+[subscription contract](cmds-delidev-subscription-contract.md#shared-account-owner-and-execution-members)
+owns the owner/member behavior.
+
 ## Scope
 
 `cmds/delidev-cli/internal/harness` owns Worker-native installation discovery and protocol adapters. All four the feature harnesses remain required: Codex, Claude Code, OpenCode and Grok Build. This contract records implemented boundaries without reducing the complete [requirements](cmds-delidev-requirements.md).
@@ -21,6 +39,8 @@ Codex `0.151.0` API and Claude `2.1.236` API now publish the bounded original ch
 ### Cross-fragment protected value guard
 
 Per-frame protected-value checks (`security.ProtectedJSON.Safe`) cannot see a value split across ordered streamed fragments. `security.ProtectedStream` is the shared bounded matcher for one independent logical stream: it matches the same finite literal and Base64 forms across fragment boundaries, keeps only the trailing bytes that are still a proper prefix of a protected form (never the whole stream), and returns `ErrProtectedStreamValue` before the fragment that would complete a form is released. It is finite reflection protection like `ProtectedJSON`, not a guarantee against arbitrary native transformations.
+
+For partial JSON, the matcher also compares decoded string bytes across literal characters, short escapes, Unicode escapes and surrogate pairs. It withholds the original raw suffix, including an incomplete escape, until that suffix cannot complete a protected form. Matching state and holdback remain bounded by protected-form length and JSON escape expansion. A malformed escape fails closed without publishing its private suffix.
 
 - Matching state is scoped to the exact original stream identity (Claude content block, OpenCode session/message/part, Grok response message). Independent blocks, parts, parents and children never share state, and a new stream starts empty.
 - Fragments keep their original order. A safe prefix is released immediately, the unresolved suffix is folded into the next released fragment, and nothing is rewritten, redacted or replaced.
@@ -2719,6 +2739,8 @@ The original request and private intent are retained before side effects. Unknow
 
 The complete encoded `NativeCodeReviewResult`, including every `usage_records` entry, must fit the 1 MiB `domain.MaxWorkerJobOutputBytes` Worker job output ceiling. `NativeCodeReviewResult.Validate` marshals the result and counts encoded JSON bytes (an escaped character counts at its encoded size, not its raw string length), so a result larger than the ceiling is rejected with `resource_exhausted` after the per-field bounds. The Worker applies the same check after joined cleanup and before `review-result.json` is written or any successful output is returned. The over-limit path keeps the native send classification (no no-send proof is produced), never truncates findings and returns a typed problem so `ReportWork` settles the job as uncertain; response usage receipts were already published during the review and stay retained. The generic job output ceiling is unchanged.
 
+The rollout decoder compares custom entered-review instructions with the exact frozen instructions sent to `review/start`, including surrounding whitespace. It validates the result's public structure before cleanup without applying the aggregate encoded-size limit. The Worker applies that limit only to the complete result after joined cleanup and usage attachment. Native-review finished and reported journals allow the bounded 1 MiB output plus their envelope within the existing 2 MiB private journal read and decode bound; other job types retain their own decode limits. Retained journal bytes and original report identity remain authoritative on retry.
+
 When the generic job journal of a native review is still `started` after a Worker crash, recovery first consults the private `jobs/<job>/review-result.json` written atomically with the completed result. The file is reused only when it is within the Worker output ceiling, is byte-identical to the canonical encoding of a decoded `NativeCodeReviewResult` that passes `Validate` (including `cleanup_verified: true`), carries the original action ID and selected target, and every usage record binds to the original source session, project, account, connection, provider/subscription service, model, context revision and contiguous sequence. A verified file settles the journal as finished with those exact bytes as output and no problem, keeps the original report identity and never calls the native adapter, so no second `review/start` is possible and the terminal report is published once through the normal observation replay. A missing, malformed, oversized, non-canonical, action/target/usage-mismatched or cleanup-unverified file keeps the `recovery_required` problem without fabricating success. Other job types and already finished or reported journals do not consult the file.
 
 When the original review completes and the post-callback target comparison then finds drift (`Conflict`), the Worker reports a typed stale-cleanup proof (`NativeCodeReviewStaleProof`: `version` 1, the original `action_id`, `stale: true`, `cleanup_verified: true`) as output, not as a bare problem. It is emitted only after the native child, workspace observation and managed authentication are joined; every other post-send failure stays an uncertain problem. Before the Worker returns the proof it atomically retains the exact canonical bytes in the private `jobs/<job>/review-stale-proof.json`; when retention fails the proof is not used and the uncertain problem stands. If the generic job journal is still `started` after a crash and no `review-result.json` exists, recovery reuses that file under the same rules as a retained result (within the output ceiling, byte-identical to the canonical encoding of a valid `NativeCodeReviewStaleProof`, bound to the original action ID) and settles the journal as finished with those bytes and no problem, so the accepted Archive settles without any native call; a missing or unverifiable file keeps `recovery_required`. A verified stale settlement logs only `native_code_review_stale_cleanup_verified`, never `native_code_review_unconfirmed`. The server accepts the proof only for the same action and only after the Exited lifecycle was published. It stores the job as `failed` with a `Conflict` problem and the proof as retained output, so `GetNativeCodeReview` reports `stale`, no findings are published, and the proof is never a successful result. That verified cleanup settles an accepted pending Archive to Archived without changing the original Archive control receipt. A bare `Conflict` problem, `RecoveryRequired` and `Uncertain` outcomes carry no proof and keep Archive pending. No outcome authorizes a second native send. Rolling upgrade: deploy the server before Workers; an older Worker keeps reporting a bare `Conflict`, which leaves Archive pending as before.
@@ -2727,9 +2749,9 @@ Stop, Archive and account disconnection fence new Ready admission and inference.
 
 ## Original managed Codex helper retirement
 
-Managed Codex Thread initialization retains the private original process-bound helper proof under the [subscription cleanup contract](cmds-delidev-subscription-contract.md#original-managed-codex-execution-helpers). Pin the canonical home, retained native directory identities, canonical verified executable identity and prelaunch bounded directory inventory before launch. Capture and validate the exact original Unix `apply_patch`, `applypatch` and `codex-execve-wrapper` aliases after initialized startup and before thread input admission. This proof is private, in memory and unavailable to historical runtime recovery, other execution owners or public RPCs. Windows regular batch scripts and other aliases grant no removal authority.
+Managed Codex Thread initialization and the access-only `QuotaProtocol` profile retain the private original process-bound helper proof under the [subscription cleanup contract](cmds-delidev-subscription-contract.md#original-managed-codex-execution-helpers). Pin the canonical home, retained native directory identities, canonical verified executable identity and prelaunch bounded directory inventory before launch. Capture and validate the exact original Unix `apply_patch`, `applypatch` and `codex-execve-wrapper` aliases, plus `codex-linux-sandbox` on Linux only, after initialized startup and before thread input admission. This proof is private, in memory and unavailable to historical runtime recovery, other execution owners or public RPCs. Windows regular batch scripts and other aliases grant no removal authority.
 
-A failed managed Thread startup that fails after helper capture follows the same order: join the original native tree through graceful close, then retire the captured proof with the captured home, execution owner and process identity before releasing proof handles, so aliases that survive graceful close are removed. A failed join never infers retirement success and retains the release-only result. A retirement failure is joined with the original startup error as `recovery-required`, which makes the Worker retain the credential lease; the original startup diagnostic and each cleanup failure stay independent. The failure also carries a closed joined-tree marker (`NativeJoinedHelperRetirementFailed`) so every managed Worker caller (execution, compaction, fork, native code review) still runs the independent unused-original `auth.json` comparison/removal and retained-credential scan after the confirmed join while keeping cleanup unconfirmed and the lease retained; an unmarked recovery-required startup failure skips both. Failures before capture hold no retirement authority and keep release-only cleanup, and a retired proof is never retired again. Closure returns original process-join and helper-retirement results independently. Only a joined original native tree permits retirement through retained no-follow parent operations. Changed/foreign entries, missing startup proof and failed removal/synchronization remain recovery-required. Native destructor absence requires its unchanged retained original parent; basename lookup at cleanup cannot adopt entries. Original-basename absence is never sufficient on its own: before accepting it, a bounded scan of the retained parent (for the helper directory) and of the retained helper directory (for aliases) must find no entry carrying a captured identity under another basename. A renamed directory, a renamed alias or an alias hard-linked under a second basename leaves cleanup unconfirmed (`identity-changed` or `alias-changed`, or `inventory-invalid` when the scan exceeds the inventory limit) without deleting the surviving entry or adopting its basename. Preserve unrelated native files, lock files and history. The Worker must still run final original authentication comparison/removal and the complete unchanged bounded raw/encoded-credential scan after process join if helper retirement fails. Helper cleanup cannot settle native execution, input, history or credential ownership alone. Accepted-input native failures remain failed with once-only reporting and no replay even when both cleanup owners succeed. No capability, public protocol, migration or automatic historical-account recovery is introduced.
+The access-only quota profile (`ManagedAuthentication=false`, `QuotaProtocol`) prepares the proof before native launch with its canonical `CODEX_HOME` and captures it after initialized startup, before `config/read` verification, external authentication or any quota read; `Client.Close` retires the unchanged captured aliases once, after `CloseGracefully` confirms the join, for any client that holds captured proof. A quota client never holds a managed home, so the server `serverQuotaRuntime.Close` continues to check `auth.json` absence and run `subscription.CleanupRuntime` only after helper retirement succeeds. `CreditProtocol` and `SubscriptionProtocol` hold no proof. Historical quota runtimes cannot reconstruct it and stay fenced. A failed managed Thread or quota startup that fails after helper capture follows the same order: join the original native tree through graceful close, then retire the captured proof with the captured home, execution owner and process identity before releasing proof handles, so aliases that survive graceful close are removed. A failed join never infers retirement success and retains the release-only result. A retirement failure is joined with the original startup error as `recovery-required`, which makes the Worker retain the credential lease; the original startup diagnostic and each cleanup failure stay independent. The failure also carries a closed joined-tree marker (`NativeJoinedHelperRetirementFailed`) so every managed Worker caller (execution, compaction, fork, native code review) still runs the independent unused-original `auth.json` comparison/removal and retained-credential scan after the confirmed join while keeping cleanup unconfirmed and the lease retained; an unmarked recovery-required startup failure skips both. Failures before capture hold no retirement authority and keep release-only cleanup, and a retired proof is never retired again. Closure returns original process-join and helper-retirement results independently. Only a joined original native tree permits retirement through retained no-follow parent operations. Changed/foreign entries, missing startup proof and failed removal/synchronization remain recovery-required. Native destructor absence requires its unchanged retained original parent; basename lookup at cleanup cannot adopt entries. Original-basename absence is never sufficient on its own: before accepting it, a bounded scan of the retained parent (for the helper directory) and of the retained helper directory (for aliases) must find no entry carrying a captured identity under another basename. A renamed directory, a renamed alias or an alias hard-linked under a second basename leaves cleanup unconfirmed (`identity-changed` or `alias-changed`, or `inventory-invalid` when the scan exceeds the inventory limit) without deleting the surviving entry or adopting its basename. Preserve unrelated native files, lock files and history. The Worker must still run final original authentication comparison/removal and the complete unchanged bounded raw/encoded-credential scan after process join if helper retirement fails. Helper cleanup cannot settle native execution, input, history or credential ownership alone. Accepted-input native failures remain failed with once-only reporting and no replay even when both cleanup owners succeed. No capability, public protocol, migration or automatic historical-account recovery is introduced.
 
 ## Codex native function outputs
 
@@ -2860,3 +2882,172 @@ The separate `CreditProtocol` profile is available only to the server-owned Syst
 The `setup-token` adapter starts the pinned CLI on a bounded PTY (50 rows, 1000 columns) without `CI`, with `TERM=xterm-256color`, a verified no-op `BROWSER` opener (Windows and any host without one fail closed as unsupported instead of letting the child open the server user's browser) and none of the API, bearer, endpoint, proxy or login sources. Its URL profile is separate from auth-login: host `claude.com`, path `/cai/oauth/authorize`, the pinned client, S256 PKCE, `code=true`, the manual code callback and exactly the `user:inference` scope. The screen parser removes terminal escapes, accepts only delimited candidates, requires identical addresses and one distinct `sk-ant-oat01-` token with the completion marker, and releases the token at most once after a successful joined exit.
 
 Managed execution adds a token to the private stream configuration. The child environment keeps only owned paths, sets `CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST=1` (the pinned CLI then strips the token from tool and hook subprocesses) and the private secure-store directory, removes every inherited API, bearer, endpoint and descriptor source and never uses `--bare`. Initialization must report the `CLAUDE_CODE_OAUTH_TOKEN` token source with no API-key source and no email, organization or subscription metadata; token presence alone is not readiness. Checkpoints of this mode are distinct from relay and device-profile checkpoints. Real setup-token output and consumption were verified only against source strings and synthetic fixtures, not a real account.
+
+## Persistent native profiles
+
+`internal/nativeprofile` is the single owner and resolver of DeliDev-owned native
+homes. Every Codex, Claude Code, OpenCode and Grok launch path resolves its home
+through it instead of allocating a disposable per-execution or temporary
+directory. It is private versioned state of one owner storage root: the server
+and each Worker keep their own registry and never share or import profiles, and
+a Worker's machine identity is part of its ownership.
+
+A profile is resolved from a semantic `Key`: owner kind, optional server
+identity, optional Worker machine identity, harness, a typed `Purpose`, the
+account and (for conversation purposes) the logical conversation. Execution,
+request or attempt identifiers never appear in a key. Credential rotation does
+not change a key or path. The closed purposes are:
+
+| Scope                | Purposes                                                                      | Required key fields            |
+| -------------------- | ----------------------------------------------------------------------------- | ------------------------------ |
+| system (accountless) | `discovery`, `model_observation`, `title_probe`                               | harness                        |
+| account              | `auth`, `quota`, `credit`, `subscription_probe`                               | harness, account               |
+| conversation         | `conversation`, `fork`, `compaction`, `revert`, `sidechat`, `title`, `review` | harness, account, conversation |
+
+Layout below `<root>/native-profiles/`: `registry.json` (versioned registry,
+`registry.lock`), `locks/<profile-id>.lock`, `migrations/<kind>-<operation>.json`
+(migration receipts) and `p/<profile-id>/` for DeliDev-created profiles, with the
+versioned `owner.json` beside the native home `p/<profile-id>/<harness>/`. The
+native home never contains DeliDev files, so native scanners see only native
+state. Profile identifiers are canonical UUID v7. Resolving a key creates the
+profile once and afterwards returns the same path, including after an owner
+restart. An invalid owner record, a replaced or non-private directory, an
+incompatible registry or owner version, or a held lock blocks with a closed
+cause (`owner_invalid`, `incompatible_version`, `registry_invalid`,
+`profile_busy`) and never rewrites, repairs or falls back to another directory.
+`Acquire` takes the profile lock for the duration of one operation; accountless
+probes may wait a bounded time for an overlapping probe of the same harness.
+
+Concurrent conversations of one account use distinct profiles, so configuration,
+credentials and native history are never shared; access-only quota and credit
+profiles are separate from the managed `auth` profile and never contain managed
+authentication. Supported admission and native concurrency limits are
+unchanged. Adapters verify and reuse owned state: probe and execution
+environments no longer require empty directories, only canonical private paths.
+Every launch revalidates its model, instructions, account generation and route;
+a previous run's settings are never inherited.
+
+### Operation journals stay per operation
+
+A fresh `runtimes/<operation-id>/` (or `title-runtimes/<job-id>/`) directory
+remains the exclusive per-operation journal for replay protection and for
+small immutable checkpoints (`native-completion.json`, `fork-completion.json`,
+revert claims, `title-intent.json`). It is separate from the profile and never
+holds native state for migrated launch paths. Process ownership journals under
+`processes/<owner>` are likewise per operation. Completing, failing or
+cancelling an operation never deletes a profile and never requires helper
+removal.
+
+### Completion, credentials and retained data
+
+Process completion, credential cleanup and profile retention are separate. After
+a joined operation the owner retires only the exact transient credential files
+(`codex/auth.json`, `claude/.credentials.json`) and keeps configuration,
+history, caches and native-created helper symlinks. Helper links are never
+followed, are not treated as credential state, and do not block a later Refresh
+or eligible operation. A live or unjoined process, an unremoved credential file
+or an invalid owner still blocks the owning operation with a specific safe
+cause (`process_uncertain`, `credential_file_present`, `owner_invalid`). The
+OS vault stays authoritative; the registry stores no secret.
+
+Credential files are written only through `subscription.WriteCredentialFile`,
+whose temporary name is attributed to its target (`.pending-<target>-*`, via
+`security.OwnedTemporaryPrefix`). A crash between the temporary write and the
+rename therefore leaves an attributable plaintext remnant: the presence check
+(`CredentialFilePresent`) reports it as `credential_file_present`, retirement
+(`RetireCredentialFiles`, including account deletion) removes it, a non-regular
+entry with that name blocks without being removed, and the next credential write
+to the same target retires an earlier remnant before writing.
+
+The transient executable copy of a native model observation is created by
+exactly one attempt (`O_EXCL`) and removed only after that operation's owned
+processes are joined; an unproven owner keeps the copy and the failure. A retry
+of the same operation replaces a retained copy only after the owner is joined (an
+owner with no process journal never launched a process).
+
+### Registry lifecycle and validation
+
+Profile creation is all-or-nothing from the caller's view. If any step after the
+profile directory was created fails (including publishing `registry.json`), the
+lease is closed; the new directory is rolled back unless the on-disk registry
+proves the entry became durable, in which case it is kept (unlocked) so the next
+resolution reuses it. Loading a registry validates every entry against the
+owning root: owner kind, server identity and Worker machine identity must equal
+the current owner, and every legacy `path` must be a normalized, local,
+slash-separated path below the owner root outside `native-profiles/` (the same
+rule registration applies). A restored root under another identity, or an entry
+with an absolute, parent-traversing or non-normalized path, is `registry_invalid`
+for the whole root and is never repaired.
+
+### History binding and legacy registration
+
+Each conversation profile records the execution, action and fork-runtime
+identifiers whose native history it retains (the first identifier is permanent;
+the oldest later identifier is evicted at 64). Continuation, compaction, Fork,
+Revert, inspection and checkpoint readers resolve a history identifier through
+the registry. An identifier from before persistent profiles resolves to its
+verified legacy `runtimes/<id>` directory, which is registered in place: nothing
+is moved, merged or rewritten, and no native database is merged. A directory
+may be registered for one key only.
+
+### Deletion ownership
+
+A profile is deleted only by explicit session, account or storage deletion:
+session deletion removes the profiles bound to the session's conversation and
+history identifiers after their owners have joined; Claude subscription logout
+removes the account's profile; explicit server account deletion removes every
+server-owned profile of the account (`auth`, `quota`, `credit`,
+`subscription_probe` and their native caches) before the deletion is
+acknowledged. A profile that is referenced (registry references) or active
+(locked) is never deleted and keeps the deletion pending. When one scope matches
+several profiles, removals that already completed stay committed but any matching
+profile that is locked, referenced or unremovable makes the whole deletion return
+an error (`profile_busy`, `referenced` or `delete_blocked`), so no caller proves a
+deletion while a matching profile remains. There is no age-based pruning.
+
+### Legacy access-only quota migration
+
+A prior-epoch uncertain access-only quota or credit attempt whose per-operation
+runtime was retained (original aliases, empty original process index, no auth or
+probe files, no live controller) is settled once, as failed, through an
+idempotent versioned migration receipt (`verified`, then `settled`). The proof
+requires the retained process index, a joined original owner, a bounded
+secret-remnant check (no credential file names, token fields or JWT-like
+content; links are counted but never followed) and unchanged account,
+connection, generation and operation identity. The directory and its helper
+links are left untouched. Only the eligible obsolete captured credential
+reference is retired, balances and timestamps are unchanged, and the old request
+is never replayed. Missing ownership, process, credential or vault proof, a
+changed identity or an unreadable receipt keeps the original fence. A later
+ordinary Refresh makes a new observation through the account's permanent quota
+profile.
+
+### Logging
+
+Profile events use the structured fields `profile_id`, `owner`, `harness`,
+`purpose` and a closed `reason` (`created`, `reused`, `registered_legacy`,
+`history_recorded`, `profile_busy`, `owner_invalid`, `incompatible_version`,
+`registry_invalid`, `credential_file_present`, `credential_cleaned`,
+`credential_cleanup_blocked`, `process_uncertain`, `helper_retained`,
+`referenced`, `deleted`, `delete_blocked`, `create_rolled_back`, `migration_verified`,
+`migration_settled`). Logs never contain secrets, native contents or paths.
+
+### OpenCode execution-family status
+
+OpenCode discovery and protocol probes use the persistent accountless
+`discovery` profile. OpenCode execution, continuation, compaction and Fork still
+keep their immutable per-execution runtimes (`runtimes/<id>`), because their
+native checkpoints digest the complete runtime tree and copy the database
+forward into an empty, different runtime. Moving them to persistent profiles
+requires an in-place resume profile and a retained-configuration inspection
+verified against the pinned native; neither is part of the migrated paths. These
+runtimes remain legacy evidence: they are never auto-pruned, and session
+deletion still removes them with the session.
+
+## Native version admission baselines
+
+Claude Code `2.1.236`, OpenCode `1.18.32` and Grok Build `1.0.41` are minimum SemVer baselines, not exact versions. `domain.HarnessVersionAllowed` (built on `domain.VersionAtLeast`) admits a version only when it is a valid bounded SemVer whose precedence is at or above the harness baseline. Prerelease versions follow standard SemVer precedence (`2.1.237-rc.1` is admitted and `2.1.236-rc.1` is not) and build metadata is ignored. Malformed and lower versions return `unsupported` from the explicit discovery probes before any native launch. Codex keeps `CodexVersionAllowed`.
+
+Admission never establishes protocol, account or execution readiness. An admitted installation still passes the harness's existing bounded native protocol, effective-settings, account, ownership and cleanup checks on the actual executable, and a changed method, field or setting fails with a typed native-validation error before any input or credential delivery with verified cleanup. Probe logs record the observed `installed_version` and the `baseline_version`. Direct version-4 execution keeps its version-independent admission and gains no numeric gate. Legacy execution, continuation and claim paths (versions 1 to 3) use the same `HarnessVersionAllowed` rule instead of exact equality. The pinned fixtures and installed-macOS evidence described in this contract remain evidence for the baseline only.
+
+Retained native records keep the observed executable version (`ExecutionPublisher.NativeVersion()`), which can be newer than the baseline. Every desktop validator of such a record (Claude, OpenCode and Grok interaction requests, Codex approvals, native usage observations and child records) must apply the same per-harness minimum-version rule through the single shared frontend predicate `harnessVersionAllowed` in `apps/delidev/src/harness-version.ts`, which mirrors `HarnessVersionAllowed` (and applies the Codex minimum `0.151.0`). A renderer validator must never compare a record version for equality with a baseline constant: that would present a newer admitted installation's question, permission request or usage as unavailable with no response controls. Unsupported-installation messages on the server, Worker and desktop (including `claudeSubscriptionInstallation` and the subagent and model-settings copy) must not name a fixed version.

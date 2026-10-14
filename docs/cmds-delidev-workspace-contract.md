@@ -1,5 +1,16 @@
 # DeliDev Worker workspace contract
 
+## Retained member workspaces under a shared owner
+
+A shared-owner execution member releases its workspace lease only after its own
+native process and descendants are proven closed. When that proof is unavailable
+(for example a Stop without exact `thread/closed` plus independent descendant
+closure), the member is reported as retained: its workspace and cleanup ownership
+stay with the account owner until final owner containment closes, siblings keep
+running, and the retained workspace is neither deleted nor reused. Retention is
+not a completed Stop. See the
+[subscription contract](cmds-delidev-subscription-contract.md#shared-account-owner-and-execution-members).
+
 ## Frozen repository checkout names
 
 New Worktree session and Schedule acceptance freezes each registered Repository name as optional `directory_name` in the version-1 RepositorySpec. PreparedRepository must preserve that exact field. The primary checkout and initial terminal/agent cwd use `workspaces/<session UUID>/<directory_name>`. Repository UUIDs retain identity and snapshot indexing. Omitted historical fields retain UUID paths, serialized omission and original digests. Accepted requests (including a Wait schedule occurrence, which retains its frozen names until release) and independent Forks never consult later registration names; Fork inherits each original frozen field. Local, General Chat and Sidechat keep their original path and ownership rules.
@@ -78,7 +89,7 @@ The pinned URL is the configured credential-free source saved with the repositor
 
 Local preparation uses existing checkouts and their current HEAD/tree, including a valid unborn branch before the first commit, with no fetch, branch change, commit creation, or worktree creation. A configured remote URL must match the Worker-verified source identity of the selected checkout before publication. It requires matching execution/origin machine IDs derived by the server from the creation client's secondary paired Worker authentication. General Chat creates an independent session-owned directory without Git. The primary path is the designated primary repository or the General Chat directory.
 
-Preparation serializes by session while independent sessions can proceed concurrently. Git work is bounded and occurs outside database transactions. A durable ownership manifest is written before side effects; readiness is published only after every repository succeeds. Identical retries reuse a ready manifest; changed input cannot overwrite it. Partial preparation rolls back only the recorded owned resources after joined process termination. Managed clones require original native root commitments, including incomplete clone roots; unknown ownership stays pending. Failed cleanup retains a recoverable manifest; explicit retry cannot delete a ready workspace. Session Stop/Archive now cancel queued or claimed preparation through the owning job and retain ready workspaces. Active harness lifecycle and snapshot cleanup use separate product operations. Failure to acquire/inspect an existing ownership scope or persist its initial journal is uncertainty, not proof that cleanup completed; only confirmed rollback may permit another preparation attempt.
+Preparation serializes by session while independent sessions can proceed concurrently; with `PARALLEL_SESSIONS_V1` negotiated the Worker also runs their assignments concurrently under the [parallel session dispatch](cmds-delidev-contract.md#parallel-session-dispatch) rules. Git work is bounded and occurs outside database transactions. A durable ownership manifest is written before side effects; readiness is published only after every repository succeeds. Identical retries reuse a ready manifest; changed input cannot overwrite it. Partial preparation rolls back only the recorded owned resources after joined process termination. Managed clones require original native root commitments, including incomplete clone roots; unknown ownership stays pending. Failed cleanup retains a recoverable manifest; explicit retry cannot delete a ready workspace. Session Stop/Archive now cancel queued or claimed preparation through the owning job and retain ready workspaces. Active harness lifecycle and snapshot cleanup use separate product operations. Failure to acquire/inspect an existing ownership scope or persist its initial journal is uncertainty, not proof that cleanup completed; only confirmed rollback may permit another preparation attempt.
 
 ## Preparation recovery
 

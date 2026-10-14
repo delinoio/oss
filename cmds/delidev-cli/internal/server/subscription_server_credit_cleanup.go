@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 )
 
@@ -55,7 +56,7 @@ func (s *Service) reconcileRetainedServerCredits(ctx context.Context) error {
 
 func (s *Service) reconcileRetainedServerCredit(ctx context.Context, account domain.ID, operation domain.ServerCreditOperation) error {
 	if !operation.CleanupConfirmed {
-		if err := reconcileAccessOnlyRuntime(ctx, s.Store.Root(), "credit", operation.AttemptID); err != nil {
+		if err := reconcileAccessOnlyRuntime(ctx, s.scopeFor(account), legacyAccessOnly{Kind: nativeprofile.ReceiptLegacyCredit, Directory: "credit", Purpose: nativeprofile.PurposeCredit, Account: account, Connection: operation.ConnectionID, Generation: operation.Generation, Operation: operation.AttemptID}); err != nil {
 			return err
 		}
 	}
@@ -105,5 +106,8 @@ func (s *Service) reconcileRetainedServerCredit(ctx context.Context, account dom
 		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
 		return struct{}{}, err
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	return markLegacyAccessOnlySettled(ctx, s.scopeFor(account), legacyAccessOnly{Kind: nativeprofile.ReceiptLegacyCredit, Directory: "credit", Purpose: nativeprofile.PurposeCredit, Account: account, Connection: operation.ConnectionID, Generation: operation.Generation, Operation: operation.AttemptID})
 }

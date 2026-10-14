@@ -1,5 +1,6 @@
 {
   "tray-status.close": "Close status",
+  "tray-status.loading": "Loading status…",
   "tray-status.unavailable": "Unavailable",
   "tray-status.connectionStale": "Connection observation is stale",
   "tray-status.connected": "Connected",

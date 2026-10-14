@@ -349,7 +349,7 @@ Codex responses retain one immutable UUID, acceptance timestamp, `queued` state 
 
 Competing responses serialize through the interaction revision and only one is accepted. Acceptance does not send native input. Native or terminal closure changes an unsent queued response to `canceled`, retaining both the original questions and accepted answer content; replaying its reference-only receipt cannot requeue it. Send-intent journaling and delivery/uncertainty publication now have their separate Worker transitions below; native acceptance now uses the exact live output evidence below; lost-event/history reconciliation remains required.
 
-The outbound work stream now emits metadata-only question response controls for its active immutable job independently of the ordinary job queue. Controls are deduplicated and bounded to the execution's 4,096-interaction limit; later jobs remain queued, and cancellation/heartbeats stay live. The authenticated `ClaimQuestionResponse` Worker RPC transitions exactly one queued response to `claimed`, recording the original claim request/job/machine/instance/device and timestamp. It returns original non-secret answer content only after checking current execution authority both at mutation and read-back, including exact receipt replay; receipts contain the interaction reference only. A new claim cannot adopt an already claimed response. The production Worker consumes these controls through a bounded, lifecycle-joined response controller.
+The outbound work stream now emits metadata-only question response controls for its active immutable job independently of the ordinary job queue. Controls are deduplicated and bounded to the execution's 4,096-interaction limit; later jobs remain queued (a stream with negotiated parallel sessions keeps an independent control set, bound and sent-state per assigned job, so a response for one session never satisfies, cancels or exhausts another), and cancellation/heartbeats stay live. The authenticated `ClaimQuestionResponse` Worker RPC transitions exactly one queued response to `claimed`, recording the original claim request/job/machine/instance/device and timestamp. It returns original non-secret answer content only after checking current execution authority both at mutation and read-back, including exact receipt replay; receipts contain the interaction reference only. A new claim cannot adopt an already claimed response. The production Worker consumes these controls through a bounded, lifecycle-joined response controller.
 
 Native or terminal closure of a claimed response changes it to `uncertain`, retains both original question/answer and claim, and atomically pauses further sends with required recovery. This transition does not overwrite a separately observed terminal outcome. Lost Worker ownership likewise marks claimed responses uncertain and cancels still-queued responses, but cannot manufacture native request closure. No claim retry after closure, uncertainty, cancellation, stale heartbeat, revocation or replacement returns answer content or permits a resend.
 
@@ -1070,3 +1070,14 @@ execution, queued input or routing state. The existing structured blocked event
 records the closed cause with the code; quota blocks are not storage failures.
 No messages, prompts, account content or native output enter logs.
 This optional metadata adds no RPC, allocation, schema, migration or backfill.
+
+## Native histories and persistent profiles
+
+A session's native history lives in persistent conversation profiles resolved by
+session, account and purpose, never by execution identifier. Continuation,
+compaction, Revert, Sidechat and native review reuse the retained history through
+registry-bound execution and action identifiers; per-operation journals under
+`runtimes/<id>` stay fresh and exclusive. Existing sessions keep their original
+history: legacy `runtimes/<id>` histories are registered in place, not moved or
+merged. Session deletion removes the session's profiles only after owners join.
+See the [harness contract](cmds-delidev-harness-contract.md#persistent-native-profiles).

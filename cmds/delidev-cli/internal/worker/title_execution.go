@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -109,28 +108,24 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 	if input.IsManaged() {
 		return executeManagedSessionTitle(ctx, config, jobID, job, input)
 	}
-	runtimeRoot := filepath.Join(config.Root, "title-runtimes")
-	if err := security.PrivateDir(runtimeRoot); err != nil {
-		return nil, err
-	}
-	home, err := os.MkdirTemp(runtimeRoot, string(jobID)+"-")
+	journal, err := createTitleJournal(config.Root, jobID)
 	if err != nil {
 		return nil, err
 	}
-	cleanup := newTitleFinalizer(home, jobID, config.Logger)
+	// The persistent per-conversation title profile outlives the operation and
+	// is released only after the native tree is joined by the finalizer below.
+	profile, err := titleProfile(ctx, config, input)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := profile.Close(); err != nil && returned == nil {
+			output, returned = nil, publicationUncertain()
+		}
+	}()
+	cleanup := newTitleFinalizer(journal, jobID, config.Logger)
 	defer cleanup.finish(&output, &returned)
-	if err := security.PrivateDir(home); err != nil {
-		return nil, err
-	}
-	home, err = filepath.EvalSymlinks(home)
-	if err != nil {
-		return nil, err
-	}
-	home, err = filepath.Abs(home)
-	if err != nil {
-		return nil, err
-	}
-	cleanup.home = home
+	home := profile.Root
 	processRoot := filepath.Join(config.Root, "processes")
 	workdir := filepath.Join(home, "work")
 	if err := security.PrivateDir(workdir); err != nil {
@@ -157,7 +152,7 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 	digest := sha256.Sum256([]byte(token))
 	intent := titleIntent{Version: 1, JobID: jobID, OperationID: input.OperationID, RegistrationID: domain.NewID(), ThreadRequestID: domain.NewID(), InputID: domain.NewID(), TurnRequestID: domain.NewID(), TokenDigest: hex.EncodeToString(digest[:])}
 	intentBytes, err := json.Marshal(intent)
-	if err != nil || security.WriteAtomic(filepath.Join(home, "title-intent.json"), intentBytes) != nil {
+	if err != nil || security.WriteAtomic(filepath.Join(journal, "title-intent.json"), intentBytes) != nil {
 		return nil, publicationUncertain()
 	}
 	attempt, cancelRegistration := context.WithTimeout(ctx, 30*time.Second)
@@ -179,7 +174,8 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 		API:     &codex.APIConfig{ServerOrigin: connection.Credential.Endpoint, Token: token, TitleProfile: true},
 		Process: process.Config{Directory: processRoot, OwnerID: jobID, Executable: resolved, Cwd: workdir, Env: env, Logger: config.Logger},
 	}
-	proxy, err := openCodexNativeProxy(ctx, config, input.OriginalExecutionID)
+	nativeRoute := captureNativeRoute(config)
+	proxy, err := openCodexNativeProxy(ctx, config, input.OriginalExecutionID, nativeRoute)
 	if proxy != nil {
 		cleanup.closeProxy = proxy.Close
 	}
@@ -192,7 +188,7 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 	} else {
 		// The title profile follows the same relocated Local runtime as the
 		// conversation; the forwarder and proxy are mutually exclusive.
-		forwarder, err := openCodexNativeForwarder(ctx, config, input.OriginalExecutionID, token, true)
+		forwarder, err := openCodexNativeForwarder(ctx, config, input.OriginalExecutionID, token, true, nativeRoute)
 		if forwarder != nil {
 			cleanup.closeProxy = forwarder.Close
 		}

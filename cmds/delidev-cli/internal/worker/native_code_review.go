@@ -19,6 +19,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeforward"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
@@ -183,11 +184,26 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 		nativeSent = true
 		return nil, publicationUncertain()
 	}
-	env, err := harness.PrivateRuntimeEnvironment(home)
+	// The per-action directory is only the fresh operation journal; the review
+	// runs inside the conversation's persistent review profile.
+	if security.CreatePrivateDirExclusive(home) != nil {
+		nativeSent = true
+		return nil, publicationUncertain()
+	}
+	profile, err := conversationProfile(ctx, config, input.Source.MachineID, nativeprofile.Key{Harness: domain.Codex, Purpose: nativeprofile.PurposeReview, Account: input.Source.AccountID, Conversation: input.Source.SessionID}, input.ActionID)
 	if err != nil {
 		return nil, err
 	}
-	nativeHome := filepath.Join(home, "codex")
+	defer func() {
+		if err := profile.Close(); err != nil && returned == nil {
+			output, returned = nil, publicationUncertain()
+		}
+	}()
+	env, err := harness.PrivateRuntimeEnvironment(profile.Root)
+	if err != nil {
+		return nil, err
+	}
+	nativeHome := filepath.Join(profile.Root, "codex")
 	if security.PrivateDir(nativeHome) != nil {
 		return nil, publicationUncertain()
 	}
@@ -254,7 +270,7 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 		if err := validateManagedAuthenticationHome(nativeHome, manifest.WorkspaceRoots()); err != nil {
 			return nil, err
 		}
-		if security.WriteAtomic(filepath.Join(nativeHome, "auth.json"), managed.response.Bundle) != nil {
+		if subscription.WriteCredentialFile(filepath.Join(nativeHome, "auth.json"), managed.response.Bundle) != nil {
 			return nil, subscription.Invalid()
 		}
 	}
@@ -288,7 +304,8 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 			nativeConfig.ManagedAuthentication = true
 			nativeConfig.QuotaObserver = managed.publishRollingQuota
 		} else {
-			proxy, err = openCodexNativeProxy(nativeCtx, config, input.ActionID)
+			nativeRoute := captureNativeRoute(config)
+			proxy, err = openCodexNativeProxy(nativeCtx, config, input.ActionID, nativeRoute)
 			if err != nil {
 				return err
 			}
@@ -296,7 +313,7 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 				nativeConfig.API.LoopbackProxyURL = proxy.NativeURL()
 				nativeConfig.Process.ProtectedValues = append(protected, proxy.ProtectedValues()...)
 			} else {
-				forwarder, err = openCodexNativeForwarder(nativeCtx, config, input.ActionID, token, false)
+				forwarder, err = openCodexNativeForwarder(nativeCtx, config, input.ActionID, token, false, nativeRoute)
 				if err != nil {
 					return err
 				}
@@ -560,6 +577,42 @@ func finalizeNativeReviewResult(ctx context.Context, logger *slog.Logger, jobRoo
 	}
 	logger.InfoContext(ctx, "native_code_review_completed", "findings", len(result.Findings), "responses", len(result.UsageRecords), "cleanup_verified", true)
 	return output, nil
+}
+
+// validateNativeReviewJournalOutcome keeps the larger journal envelope from
+// weakening the review output's own bound or adopting changed completion bytes.
+func validateNativeReviewJournalOutcome(record journal, input domain.NativeCodeReviewInput, resource *pb.Resource) error {
+	if len(record.Output) == 0 {
+		if record.Problem != nil {
+			return nil
+		}
+		return publicationUncertain()
+	}
+	if record.Problem != nil || len(record.Output) > domain.MaxWorkerJobOutputBytes {
+		return publicationUncertain()
+	}
+	canonical := func(value any) bool {
+		raw, err := json.Marshal(value)
+		return err == nil && bytes.Equal(raw, record.Output)
+	}
+	var result domain.NativeCodeReviewResult
+	if domain.DecodeWithLimit(record.Output, &result, domain.MaxWorkerJobOutputBytes) == nil && result.Validate() == nil && canonical(result) && result.ActionID == input.ActionID && result.Selection.Target == input.Target {
+		for index, usage := range result.UsageRecords {
+			if usage.ContextRevision != input.ContextRevision || usage.SessionID != input.Source.SessionID || usage.ProjectID != domain.ID(resource.ProjectId) || usage.ExecutionID != input.ActionID || usage.AccountID != input.Source.AccountID || usage.ConnectionID != input.Source.ConnectionID || usage.ProviderID != input.Source.Configuration.ProviderID || usage.SubscriptionService != input.Source.Configuration.SubscriptionService || usage.ModelID != input.Source.Configuration.ModelID || usage.Harness != domain.Codex || usage.Sequence != uint64(index+1) {
+				return publicationUncertain()
+			}
+		}
+		return nil
+	}
+	var rejected domain.NativeCodeReviewRejectedProof
+	if domain.DecodeWithLimit(record.Output, &rejected, domain.MaxWorkerJobOutputBytes) == nil && rejected.Validate() == nil && canonical(rejected) && rejected.ActionID == input.ActionID {
+		return nil
+	}
+	var stale domain.NativeCodeReviewStaleProof
+	if domain.DecodeWithLimit(record.Output, &stale, domain.MaxWorkerJobOutputBytes) == nil && stale.Validate() == nil && canonical(stale) && stale.ActionID == input.ActionID {
+		return nil
+	}
+	return publicationUncertain()
 }
 
 // recoverNativeReviewResult settles a native review whose generic job journal

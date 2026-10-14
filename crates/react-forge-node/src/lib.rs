@@ -11,7 +11,10 @@ mod docx;
 mod pdf;
 mod pptx;
 mod scene;
-pub use scene::{SceneAssetOperation, validate_scene_asset};
+pub use scene::{
+    NativeCompactedGeometry, SceneAssetOperation, SceneCompactionOperation, compact_scene_geometry,
+    validate_scene_asset,
+};
 mod sfx;
 mod sprite;
 mod xlsx;

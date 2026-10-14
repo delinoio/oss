@@ -84,10 +84,12 @@ active content region; Conversation/drafts remain mounted and inert while
 inactive. The former Browser split, compact overlay, Expand/Restore presentation
 and Browser picker are superseded.
 
-The workspace tab strip ends with an ordinary New browser page `+` button. It is
-not a tab or numeric-shortcut position and stays reachable beside the scrolling
-tabs. The `+` button and the Open tool Browser row open the same compact
-`Modal` (480px maximum, viewport-bounded, 40px controls, 8px corners, English and
+The workspace tab strip is followed by the single Open tool `+` button (the
+SessionToolMenu trigger, localized accessible name and title Open tool / 도구 열기).
+It is not a tab or numeric-shortcut position, stays reachable beside the
+scrolling tabs and never creates a page directly; the tab bar renders no direct
+New browser page button. The Open tool dialog's Browser row is the only entry to the
+compact `Modal` (480px maximum, viewport-bounded, 40px controls, 8px corners, English and
 Korean "New browser page / 새 브라우저 페이지"). It shows the existing
 account-sharing explanation, one labelled Address field (focused on opening, with
 focus trapped and the opener restored on dismissal), Cancel and Open page. Opening
@@ -276,8 +278,12 @@ changing identity: each observed URL refreshes only the label of the existing
 exact profile/page descriptor, never its order, selection or any foreign profile
 page. When a busy action settles, the native page is reconciled once to the
 current shared selection; a failed reconciliation is not retried until the
-selection or native state changes. Reconciliation also waits until a pending
-native open has published its view, then selects the current shared page once.
+selection or native state changes. Its failed-attempt suppression ends when the
+shared selection leaves that Page, including a move to a non-page tab; an
+explicit return may retry once after an eligible presentation opens. An
+unchanged selection and native state never start an automatic retry loop.
+Reconciliation also waits until a pending native open has published its view,
+then selects the current shared page once.
 Profile explanation uses the original
 accessible Modal and native visibility boundary.
 Numeric selection has only typed, original-owner fenced

@@ -20,6 +20,8 @@ fn main() {
             "read_appearance",
             "read_sidebar_preference",
             "update_sidebar_preference",
+            "read_navigation_preference",
+            "update_navigation_preference",
             "read_date_format",
             "update_date_format",
             "shortcut_capture_native",

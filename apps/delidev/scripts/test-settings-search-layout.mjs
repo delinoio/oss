@@ -642,6 +642,13 @@ try {
         // Departure closes the visit; entry restores the ordinary subscription category.
         await input.fill("");
         await page.locator('[data-settings-category="appearance"]').click();
+        // Usage is reached through the More popover while it is unpinned.
+        await page
+          .getByRole("button", {
+            name: language === "ko" ? "더보기" : "More",
+            exact: true,
+          })
+          .click();
         await page
           .getByRole("button", {
             name: language === "ko" ? "사용량" : "Usage",

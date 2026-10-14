@@ -123,6 +123,27 @@ it.each([
   expect(container.querySelector("pre, input, button")).toBeNull();
 });
 
+it.each(["1.18.33", "1.19.0", "2.0.0-rc.1", "1.18.32+build.5"])(
+  "presents a newer admitted OpenCode request recorded at %s",
+  (version) => {
+    const data = fixture();
+    data.opencode.version = version;
+    render(<NativeInteraction data={data} />);
+    expect(screen.queryByText(/unavailable or inconsistent/)).toBeNull();
+    expect(screen.getByText(question.text)).toBeTruthy();
+  },
+);
+
+it.each(["1.18.31", "1.18.32-rc.1"])(
+  "refuses an OpenCode request recorded below the baseline at %s",
+  (version) => {
+    const data = fixture();
+    data.opencode.version = version;
+    render(<NativeInteraction data={data} />);
+    expect(screen.getByText(/unavailable or inconsistent/)).toBeTruthy();
+  },
+);
+
 it("refuses mixed response authority rather than rendering another harness form", () => {
   const { container } = render(
     <NativeInteraction

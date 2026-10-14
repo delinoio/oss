@@ -46,7 +46,19 @@ const (
 	WorkerCapability_WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1       WorkerCapability = 27
 	WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1        WorkerCapability = 38
 	// Worker accepts retained branch prefix selection version 2 (exact JSON-style quoting).
-	WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_EXACT_QUOTE_V1   WorkerCapability = 65
+	WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_EXACT_QUOTE_V1 WorkerCapability = 65
+	// Worker runs independent session preparation and execution jobs concurrently
+	// on one stream. The server echoes it in AttachWorkerResponse and the Worker
+	// advertises it only after observing that echo.
+	WorkerCapability_WORKER_CAPABILITY_PARALLEL_SESSIONS_V1 WorkerCapability = 66
+	// Reserved: the Worker holds one account-owner lease per managed Codex account
+	// and runs independent sessions as execution members of that owner. Allocated
+	// without active behavior until the owner/member change activates it.
+	WorkerCapability_WORKER_CAPABILITY_SHARED_SUBSCRIPTION_OWNER_V1 WorkerCapability = 67
+	// Reserved: the Worker runs managed Claude device-owned members with
+	// session-private history and one canonical native secure-storage owner.
+	// Allocated without active behavior until the Claude member change activates it.
+	WorkerCapability_WORKER_CAPABILITY_CLAUDE_DEVICE_OWNED_MEMBERS_V1 WorkerCapability = 68
 	WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1      WorkerCapability = 26
 	WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1               WorkerCapability = 24
 	WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1                WorkerCapability = 25
@@ -98,6 +110,9 @@ var (
 		27: "WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1",
 		38: "WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1",
 		65: "WORKER_CAPABILITY_BRANCH_PREFIX_EXACT_QUOTE_V1",
+		66: "WORKER_CAPABILITY_PARALLEL_SESSIONS_V1",
+		67: "WORKER_CAPABILITY_SHARED_SUBSCRIPTION_OWNER_V1",
+		68: "WORKER_CAPABILITY_CLAUDE_DEVICE_OWNED_MEMBERS_V1",
 		26: "WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1",
 		24: "WORKER_CAPABILITY_NATIVE_SKILLS_V1",
 		25: "WORKER_CAPABILITY_IMAGE_INPUTS_V1",
@@ -145,6 +160,9 @@ var (
 		"WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1":       27,
 		"WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1":        38,
 		"WORKER_CAPABILITY_BRANCH_PREFIX_EXACT_QUOTE_V1":         65,
+		"WORKER_CAPABILITY_PARALLEL_SESSIONS_V1":                 66,
+		"WORKER_CAPABILITY_SHARED_SUBSCRIPTION_OWNER_V1":         67,
+		"WORKER_CAPABILITY_CLAUDE_DEVICE_OWNED_MEMBERS_V1":       68,
 		"WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1":            26,
 		"WORKER_CAPABILITY_NATIVE_SKILLS_V1":                     24,
 		"WORKER_CAPABILITY_IMAGE_INPUTS_V1":                      25,
@@ -4725,7 +4743,7 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\x12_cache_write_inputB\t\n" +
 	"\a_outputB\x13\n" +
 	"\x11_reasoning_outputB\b\n" +
-	"\x06_total*\xb9\x11\n" +
+	"\x06_total*\xcf\x12\n" +
 	"\x10WorkerCapability\x12!\n" +
 	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x121\n" +
 	"-WORKER_CAPABILITY_MANAGED_CLAUDE_EXECUTION_V1\x10)\x12,\n" +
@@ -4746,7 +4764,10 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"6WORKER_CAPABILITY_CODEX_SESSION_REVERT_TARGET_PROOF_V1\x10@\x124\n" +
 	"0WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1\x10\x1b\x123\n" +
 	"/WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1\x10&\x122\n" +
-	".WORKER_CAPABILITY_BRANCH_PREFIX_EXACT_QUOTE_V1\x10A\x12/\n" +
+	".WORKER_CAPABILITY_BRANCH_PREFIX_EXACT_QUOTE_V1\x10A\x12*\n" +
+	"&WORKER_CAPABILITY_PARALLEL_SESSIONS_V1\x10B\x122\n" +
+	".WORKER_CAPABILITY_SHARED_SUBSCRIPTION_OWNER_V1\x10C\x124\n" +
+	"0WORKER_CAPABILITY_CLAUDE_DEVICE_OWNED_MEMBERS_V1\x10D\x12/\n" +
 	"+WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1\x10\x1a\x12&\n" +
 	"\"WORKER_CAPABILITY_NATIVE_SKILLS_V1\x10\x18\x12%\n" +
 	"!WORKER_CAPABILITY_IMAGE_INPUTS_V1\x10\x19\x120\n" +

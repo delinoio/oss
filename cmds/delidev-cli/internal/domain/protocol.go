@@ -1,5 +1,7 @@
 package domain
 
+import "golang.org/x/mod/semver"
+
 type NativeProtocol string
 
 const (
@@ -22,6 +24,36 @@ const (
 // readiness. Every accepted installation still requires its native handshake.
 func CodexVersionAllowed(version string) bool {
 	return ValidNativeVersionMetadata(version)
+}
+
+// VersionAtLeast reports whether version is a valid SemVer whose precedence is
+// at or above baseline. Build metadata never affects precedence. Prereleases
+// follow standard SemVer precedence, so 2.1.237-rc.1 is above 2.1.236 while
+// 2.1.236-rc.1 is below it. Malformed versions are never admitted.
+func VersionAtLeast(version, baseline string) bool {
+	if !ValidInstallationVersion(version) || !ValidInstallationVersion(baseline) {
+		return false
+	}
+	v, b := "v"+version, "v"+baseline
+	return semver.IsValid(v) && semver.IsValid(b) && semver.Compare(v, b) >= 0
+}
+
+// HarnessVersionAllowed is the explicit discovery and legacy (execution input
+// versions 1-3) admission rule for Claude, OpenCode and Grok: any valid SemVer
+// at or above the pinned baseline may attempt the real native checks. Passing
+// it never establishes protocol, account or execution readiness. Codex keeps
+// CodexVersionAllowed and direct version-4 execution has no numeric gate.
+func HarnessVersionAllowed(harness Harness, version string) bool {
+	switch harness {
+	case ClaudeCode:
+		return VersionAtLeast(version, ClaudeProtocolVersion)
+	case OpenCode:
+		return VersionAtLeast(version, OpenCodeProtocolVersion)
+	case GrokBuild:
+		return VersionAtLeast(version, GrokProtocolVersion)
+	default:
+		return false
+	}
 }
 
 type ProtocolState string

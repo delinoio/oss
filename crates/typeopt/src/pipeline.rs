@@ -137,6 +137,13 @@ pub fn bundle_static_imports(code: &str) -> Vec<String> {
     let mut imports = Vec::new();
     let mut at = 0;
     while at < bytes.len() {
+        // Skip to the next byte that can start a keyword. The gate scans
+        // every candidate chunk, so a per-byte prefix comparison over a
+        // multi-megabyte chunk dominated bundle-mode run time.
+        match bytes[at..].iter().position(|&b| b == b'f' || b == b'i') {
+            Some(offset) => at += offset,
+            None => break,
+        }
         // Compare bytes: `at` can be inside a multi-byte character.
         let keyword = if bytes[at..].starts_with(b"from") {
             4

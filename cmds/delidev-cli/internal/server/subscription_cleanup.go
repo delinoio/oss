@@ -105,7 +105,7 @@ func (s *Service) cleanupFailedServerLoginCheckpointLocked(ctx context.Context, 
 	result = failedServerLoginOutcome(a, result)
 	if o.CleanupPhase != domain.SubscriptionNativeCleanupConfirmed {
 		if !nativeConfirmed {
-			if err := reconcileFailedServerLoginRuntime(ctx, s.Store.Root(), *o); err != nil {
+			if err := reconcileFailedServerLoginRuntime(ctx, s.scopeFor(id), *o); err != nil {
 				return "", err
 			}
 		}

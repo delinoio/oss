@@ -25,23 +25,33 @@ export enum FailureCode {
 export enum FailureCause {
   QuotaExhausted = "quota_exhausted",
   ConfigurationNameConflict = "configuration_name_conflict",
+  // Check-only Tailscale probe causes proven by the server (see the connections
+  // contract). They never carry hostnames, URLs or native error text.
+  TailscaleConnectionRefused = "tailscale_connection_refused",
+  TailscaleTimeout = "tailscale_timeout",
+  TailscaleCertificateInvalid = "tailscale_certificate_invalid",
+  TailscaleUnexpectedHttp = "tailscale_unexpected_http",
+  TailscaleInvalidIdentity = "tailscale_invalid_identity",
 }
+
+// Explicit closed code/cause pairs. Any other combination projects to undefined.
+const failureCausePairs: ReadonlyArray<readonly [FailureCode, FailureCause]> = [
+  [FailureCode.MissingInput, FailureCause.QuotaExhausted],
+  [FailureCode.Conflict, FailureCause.ConfigurationNameConflict],
+  [FailureCode.Unavailable, FailureCause.TailscaleConnectionRefused],
+  [FailureCode.Unavailable, FailureCause.TailscaleTimeout],
+  [FailureCode.Unavailable, FailureCause.TailscaleCertificateInvalid],
+  [FailureCode.Unavailable, FailureCause.TailscaleUnexpectedHttp],
+  [FailureCode.Unsupported, FailureCause.TailscaleInvalidIdentity],
+];
 
 /** Closed code/cause projection shared by RPC and retained Session problems. */
 export function failureCause(
   code: unknown,
   cause: unknown,
 ): FailureCause | undefined {
-  if (
-    code === FailureCode.MissingInput &&
-    cause === FailureCause.QuotaExhausted
-  )
-    return FailureCause.QuotaExhausted;
-  if (
-    code === FailureCode.Conflict &&
-    cause === FailureCause.ConfigurationNameConflict
-  )
-    return FailureCause.ConfigurationNameConflict;
+  for (const [pairCode, pairCause] of failureCausePairs)
+    if (code === pairCode && cause === pairCause) return pairCause;
   return undefined;
 }
 

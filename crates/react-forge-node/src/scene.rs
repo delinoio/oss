@@ -76,3 +76,53 @@ pub fn validate_scene_asset(
         cancelled: cancellation.flag.clone(),
     }))
 }
+
+#[napi(object)]
+pub struct NativeCompactedGeometry {
+    pub bytes: Buffer,
+    pub input_vertices: u32,
+    pub output_vertices: u32,
+    pub triangles: u32,
+}
+
+pub struct SceneCompactionOperation {
+    bytes: Vec<u8>,
+    cancelled: Arc<AtomicBool>,
+}
+
+impl Task for SceneCompactionOperation {
+    type JsValue = NativeCompactedGeometry;
+    type Output = forge_scene::CompactedGeometry;
+
+    fn compute(&mut self) -> napi::Result<Self::Output> {
+        forge_tree_doc::cancellation::with_cancellation(self.cancelled.clone(), || {
+            forge_tree_doc::cancellation::checkpoint()?;
+            forge_scene::compact_geometry(&self.bytes)
+        })
+        .map_err(native_error)
+    }
+
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> napi::Result<Self::JsValue> {
+        if self.cancelled.load(Ordering::Acquire) {
+            return Err(cancelled());
+        }
+        Ok(NativeCompactedGeometry {
+            bytes: output.bytes.into(),
+            input_vertices: output.input_vertices,
+            output_vertices: output.output_vertices,
+            triangles: output.triangles,
+        })
+    }
+}
+
+#[napi]
+pub fn compact_scene_geometry(
+    bytes: Buffer,
+    cancellation: &Cancellation,
+) -> napi::Result<AsyncTask<SceneCompactionOperation>> {
+    forge_scene::compaction_scratch_bytes(&bytes).map_err(native_error)?;
+    Ok(AsyncTask::new(SceneCompactionOperation {
+        bytes: bytes.to_vec(),
+        cancelled: cancellation.flag.clone(),
+    }))
+}

@@ -135,16 +135,20 @@ jobs:
           fi
 
           cp "$source_binary" "dist/${binary_name}"
+          cp "LICENSE" "NOTICE" "dist/"
+          cmp -s "LICENSE" "dist/LICENSE"
+          cmp -s "NOTICE" "dist/NOTICE"
 
           if [ "${{ matrix.asset_os }}" = "windows" ]; then
             cp "$source_binary" "dist/with-watch.exe"
-            pwsh -NoLogo -NoProfile -Command "Compress-Archive -Path dist/with-watch.exe -DestinationPath dist/${artifact_name}"
+            pwsh -NoLogo -NoProfile -Command "Compress-Archive -Path dist/with-watch.exe,dist/LICENSE,dist/NOTICE -DestinationPath dist/${artifact_name}"
             rm -f "dist/with-watch.exe"
           else
             cp "$source_binary" "dist/with-watch"
-            tar -C dist -czf "dist/${artifact_name}" with-watch
+            tar -C dist -czf "dist/${artifact_name}" with-watch LICENSE NOTICE
             rm -f "dist/with-watch"
           fi
+          rm -f "dist/LICENSE" "dist/NOTICE"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7

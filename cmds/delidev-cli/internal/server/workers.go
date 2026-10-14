@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"slices"
 	"time"
@@ -104,6 +105,12 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 			capabilities = append(capabilities, domain.BranchPrefixInstructionsV1)
 		case pb.WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_EXACT_QUOTE_V1:
 			capabilities = append(capabilities, domain.BranchPrefixExactQuoteV1)
+		case pb.WorkerCapability_WORKER_CAPABILITY_PARALLEL_SESSIONS_V1:
+			capabilities = append(capabilities, domain.ParallelSessionsV1)
+		case pb.WorkerCapability_WORKER_CAPABILITY_SHARED_SUBSCRIPTION_OWNER_V1:
+			capabilities = append(capabilities, domain.SharedSubscriptionOwnerV1)
+		case pb.WorkerCapability_WORKER_CAPABILITY_CLAUDE_DEVICE_OWNED_MEMBERS_V1:
+			capabilities = append(capabilities, domain.ClaudeDeviceOwnedMembersV1)
 
 		case pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1:
 			capabilities = append(capabilities, domain.OpenCodeGoSubscriptionsV1)
@@ -293,7 +300,7 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 		return nil, rpc.Error(err, correlation)
 	}
 	s.logger.InfoContext(ctx, "worker attached", "machine_id", machine, "instance_id", instance, "replayed", result.Replayed)
-	response := connect.NewResponse(&pb.AttachWorkerResponse{Machine: rpc.Resource(record), ServerId: string(s.Identity.ServerID), SupportedWorkerCapabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_REVIEW_V1, pb.WorkerCapability_WORKER_CAPABILITY_NAMED_WORKSPACE_DIRECTORIES_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1, pb.WorkerCapability_WORKER_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1, pb.WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_REVERT_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_REVERT_TARGET_PROOF_V1, pb.WorkerCapability_WORKER_CAPABILITY_SIDECHAT_QUESTION_RETRY_V1, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_TITLES_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1, pb.WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1, pb.WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_EXACT_QUOTE_V1, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_CLONE_V1, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1, pb.WorkerCapability_WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_API_PROXY_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CLAUDE_EXECUTION_V1}})
+	response := connect.NewResponse(&pb.AttachWorkerResponse{Machine: rpc.Resource(record), ServerId: string(s.Identity.ServerID), SupportedWorkerCapabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_REVIEW_V1, pb.WorkerCapability_WORKER_CAPABILITY_NAMED_WORKSPACE_DIRECTORIES_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1, pb.WorkerCapability_WORKER_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1, pb.WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_REVERT_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_REVERT_TARGET_PROOF_V1, pb.WorkerCapability_WORKER_CAPABILITY_SIDECHAT_QUESTION_RETRY_V1, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_TITLES_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1, pb.WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1, pb.WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_EXACT_QUOTE_V1, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_CLONE_V1, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1, pb.WorkerCapability_WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_API_PROXY_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CLAUDE_EXECUTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_PARALLEL_SESSIONS_V1, pb.WorkerCapability_WORKER_CAPABILITY_SHARED_SUBSCRIPTION_OWNER_V1, pb.WorkerCapability_WORKER_CAPABILITY_CLAUDE_DEVICE_OWNED_MEMBERS_V1}})
 	var networkStatus domain.WorkerNetworkStatus
 	if err := s.Store.Read(ctx, func(tx *store.Tx) error {
 		if err := tx.Authorize(); err != nil {
@@ -319,6 +326,54 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
 }
+
+// workerInFlight is the exact per-job dispatch context of one assignment sent
+// on a Worker stream. Control state is never shared between jobs, so an event
+// for one job cannot satisfy, cancel or exhaust the bounds of another.
+type workerInFlight struct {
+	session              domain.ID
+	parallelLane         bool
+	cancellationSent     bool
+	responseControlsSent map[domain.ID]bool
+	steerControlsSent    map[domain.ID]bool
+}
+
+func newWorkerInFlight(session domain.ID, parallelLane bool) *workerInFlight {
+	return &workerInFlight{session: session, parallelLane: parallelLane, responseControlsSent: map[domain.ID]bool{}, steerControlsSent: map[domain.ID]bool{}}
+}
+
+// workerJobControls holds the pending controls read for one in-flight job.
+type workerJobControls struct {
+	id        domain.ID
+	flight    *workerInFlight
+	cancel    bool
+	questions []*pb.QuestionResponseControl
+	approvals []*pb.ApprovalResponseControl
+	steer     *pb.SteerInputControl
+}
+
+// parallelSessionJob reports whether a primary job may use the negotiated
+// parallel lane. Only session-scoped preparation and native execution do. Every
+// other primary job keeps the serial lane and its single unresolved assignment.
+func parallelSessionJob(record store.Record, job domain.Job) bool {
+	return record.SessionID != "" && (job.Type == domain.PrepareWorkspaceJob || job.Type == domain.ExecuteSessionJob)
+}
+
+// workerParallelSessions reads the capability negotiated by the current attach.
+// Peers that did not negotiate it keep the original singleton dispatch.
+func (s *Service) workerParallelSessions(ctx context.Context, machine domain.ID) (bool, error) {
+	var negotiated bool
+	err := s.Store.Read(ctx, func(tx *store.Tx) error {
+		_, current, err := activeMachine(tx, machine)
+		if err != nil {
+			return err
+		}
+		negotiated = slices.Contains(current.WorkerCapabilities, domain.ParallelSessionsV1)
+		return nil
+	})
+	return negotiated, err
+}
+
 func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWorkRequest], stream *connect.ServerStream[pb.WatchWorkResponse]) error {
 	correlation := req.Header().Get(rpc.CorrelationHeader)
 	if err := workerActor(ctx, req.Msg.MachineId, req.Msg.InstanceId); err != nil {
@@ -331,6 +386,10 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 		}
 	}()
 	if err := s.Store.Heartbeat(ctx, machine, instance); err != nil {
+		return rpc.Error(err, correlation)
+	}
+	parallel, err := s.workerParallelSessions(ctx, machine)
+	if err != nil {
 		return rpc.Error(err, correlation)
 	}
 	ctx, cancel := context.WithCancel(ctx)
@@ -382,31 +441,80 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 		// heartbeat wait remain reachable. Retry from the saved predecessor.
 		after = id
 	}
+	// blocked keeps later jobs of a skipped session behind it, so parallel
+	// dispatch cannot reorder one session's accepted jobs. otherSkipped records
+	// whether any skip needs a store-change retry; lane-busy skips are retried
+	// only when a live assignment retires.
+	blocked := map[domain.ID]bool{}
+	otherSkipped := false
 	retryDependencies := func() {
 		if dependencyBlocked {
 			after, dependencyBlocked = dependencyAfter, false
 		}
+		clear(blocked)
+		otherSkipped = false
 	}
-	var inFlight domain.ID
-	var cancellationSent domain.ID
-	responseControlsSent := map[domain.ID]bool{}
-	steerControlsSent := map[domain.ID]bool{}
+	// Legacy peers keep one unresolved assignment. A negotiated parallel stream
+	// tracks one exact context per assigned job and never preclaims more work
+	// than the independent lane rules admit.
+	inFlight := map[domain.ID]*workerInFlight{}
+	skipSession := func(record store.Record, busy bool) {
+		if record.SessionID != "" {
+			blocked[record.SessionID] = true
+		}
+		if !busy {
+			otherSkipped = true
+		}
+		skipDependency(record.ID)
+	}
+	retireJob := func(job domain.ID, reason string) {
+		flight := inFlight[job]
+		delete(inFlight, job)
+		retryDependencies()
+		if flight != nil {
+			s.logger.InfoContext(ctx, "worker_job_retired", "machine_id", machine, "instance_id", instance, "job_id", job, "session_id", flight.session, "reason", reason, "in_flight", len(inFlight))
+		}
+	}
+	serialBusy := func() bool {
+		for _, flight := range inFlight {
+			if !flight.parallelLane {
+				return true
+			}
+		}
+		return false
+	}
+	sessionBusy := func(session domain.ID) bool {
+		if session == "" {
+			return false
+		}
+		for _, flight := range inFlight {
+			if flight.session == session {
+				return true
+			}
+		}
+		return false
+	}
+	s.logger.InfoContext(ctx, "worker_stream_opened", "machine_id", machine, "instance_id", instance, "parallel_sessions", parallel)
+	defer func() {
+		// Owned claimed jobs stay claimed for explicit reconciliation; they are
+		// never redispatched or replayed by the closed stream.
+		s.logger.InfoContext(context.WithoutCancel(ctx), "worker_stream_closed", "machine_id", machine, "instance_id", instance, "parallel_sessions", parallel, "in_flight", len(inFlight))
+	}()
 	wake := workerStoreWake{store: s.Store}
 	for {
 		changed := wake.channel()
 		var records []store.Record
-		var cancelJob domain.ID
-		var responseControls []*pb.QuestionResponseControl
-		var approvalControls []*pb.ApprovalResponseControl
-		var steerControl *pb.SteerInputControl
+		var controls []workerJobControls
 		err := s.Store.Read(ctx, func(tx *store.Tx) error {
 			if err := currentInstance(tx, machine, instance); err != nil {
 				return err
 			}
-			// Keep receiving heartbeats while the Worker performs this operation,
-			// but do not preclaim later jobs into a blocked native-input backlog.
-			if inFlight != "" {
-				record, err := tx.Get(domain.JobKind, inFlight)
+			// Keep receiving heartbeats while the Worker performs this operation.
+			// Legacy streams do not preclaim later jobs into a blocked native-input
+			// backlog; parallel streams only claim jobs their lane rules admit.
+			for _, jobID := range slices.Sorted(maps.Keys(inFlight)) {
+				flight := inFlight[jobID]
+				record, err := tx.Get(domain.JobKind, jobID)
 				if err != nil {
 					return err
 				}
@@ -414,30 +522,34 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 				if err != nil {
 					return err
 				}
-				if job.State == domain.JobClaimed && job.InstanceID == instance {
-					requested, err := tx.JobCancellationRequested(inFlight)
+				if job.State != domain.JobClaimed || job.InstanceID != instance {
+					retireJob(jobID, "left_claimed")
+					continue
+				}
+				pending := workerJobControls{id: jobID, flight: flight}
+				requested, err := tx.JobCancellationRequested(jobID)
+				if err != nil {
+					return err
+				}
+				if requested && !flight.cancellationSent {
+					pending.cancel = true
+				}
+				if !requested {
+					pending.questions, err = s.pendingQuestionResponses(tx, record, job, flight.responseControlsSent)
+					if err == nil {
+						pending.approvals, err = s.pendingApprovalResponses(tx, record, job, flight.responseControlsSent)
+					}
+					if err == nil {
+						pending.steer, err = s.pendingSteer(tx, record, job, flight.steerControlsSent)
+					}
 					if err != nil {
 						return err
 					}
-					if requested && cancellationSent != inFlight {
-						cancelJob = inFlight
-					}
-					if !requested {
-						responseControls, err = s.pendingQuestionResponses(tx, record, job, responseControlsSent)
-						if err == nil {
-							approvalControls, err = s.pendingApprovalResponses(tx, record, job, responseControlsSent)
-						}
-						if err == nil {
-							steerControl, err = s.pendingSteer(tx, record, job, steerControlsSent)
-						}
-					}
-					return err
 				}
-				retryDependencies()
-				inFlight = ""
-				cancellationSent = ""
-				responseControlsSent = map[domain.ID]bool{}
-				steerControlsSent = map[domain.ID]bool{}
+				controls = append(controls, pending)
+			}
+			if len(inFlight) != 0 && !parallel {
+				return nil
 			}
 			if err := tx.WorkerUpdateAdmission(machine); err != nil {
 				return nil
@@ -455,38 +567,41 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 		if err != nil {
 			return rpc.Error(err, correlation)
 		}
-		if cancelJob != "" {
-			if err := send(&pb.WatchWorkResponse{CancelJobId: string(cancelJob)}); err != nil {
-				return err
+		for _, pending := range controls {
+			flight := pending.flight
+			if pending.cancel {
+				if err := send(&pb.WatchWorkResponse{CancelJobId: string(pending.id)}); err != nil {
+					return err
+				}
+				flight.cancellationSent = true
 			}
-			cancellationSent = cancelJob
-		}
-		for _, control := range responseControls {
-			if len(responseControlsSent) >= domain.MaxExecutionInteractions {
-				return rpc.Error(domain.Fail(domain.ResourceExhausted, "The execution response control bound is reached.", "Reconcile its original interactions without replaying native answers."), correlation)
+			for _, control := range pending.questions {
+				if len(flight.responseControlsSent) >= domain.MaxExecutionInteractions {
+					return rpc.Error(domain.Fail(domain.ResourceExhausted, "The execution response control bound is reached.", "Reconcile its original interactions without replaying native answers."), correlation)
+				}
+				if err := send(&pb.WatchWorkResponse{QuestionResponse: control}); err != nil {
+					return err
+				}
+				flight.responseControlsSent[domain.ID(control.ResponseId)] = true
 			}
-			if err := send(&pb.WatchWorkResponse{QuestionResponse: control}); err != nil {
-				return err
+			for _, control := range pending.approvals {
+				if len(flight.responseControlsSent) >= domain.MaxExecutionInteractions {
+					return rpc.Error(domain.Fail(domain.ResourceExhausted, "The execution response control bound is reached.", "Reconcile its original interactions without replaying native answers."), correlation)
+				}
+				if err := send(&pb.WatchWorkResponse{ApprovalResponse: control}); err != nil {
+					return err
+				}
+				flight.responseControlsSent[domain.ID(control.ResponseId)] = true
 			}
-			responseControlsSent[domain.ID(control.ResponseId)] = true
-		}
-		for _, control := range approvalControls {
-			if len(responseControlsSent) >= domain.MaxExecutionInteractions {
-				return rpc.Error(domain.Fail(domain.ResourceExhausted, "The execution response control bound is reached.", "Reconcile its original interactions without replaying native answers."), correlation)
+			if pending.steer != nil {
+				if len(flight.steerControlsSent) >= domain.MaxExecutionSteers {
+					return rpc.Error(steerConflict(), correlation)
+				}
+				if err := send(&pb.WatchWorkResponse{SteerInput: pending.steer}); err != nil {
+					return err
+				}
+				flight.steerControlsSent[domain.ID(pending.steer.SteerId)] = true
 			}
-			if err := send(&pb.WatchWorkResponse{ApprovalResponse: control}); err != nil {
-				return err
-			}
-			responseControlsSent[domain.ID(control.ResponseId)] = true
-		}
-		if steerControl != nil {
-			if len(steerControlsSent) >= domain.MaxExecutionSteers {
-				return rpc.Error(steerConflict(), correlation)
-			}
-			if err := send(&pb.WatchWorkResponse{SteerInput: steerControl}); err != nil {
-				return err
-			}
-			steerControlsSent[domain.ID(steerControl.SteerId)] = true
 		}
 		assigned := false
 		waitForNetwork := false
@@ -502,6 +617,21 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 				after = record.ID
 				continue
 			}
+			if _, live := inFlight[record.ID]; live {
+				// A dependency rescan can revisit a job this stream already sent.
+				after = record.ID
+				continue
+			}
+			if parallel && job.State == domain.JobQueued {
+				// Preserve per-session order and exclusion: a session with a skipped
+				// or in-flight job runs nothing else, and serial-lane jobs wait for
+				// the one serial slot without stalling unrelated sessions.
+				lane := parallelSessionJob(record, job)
+				if record.SessionID != "" && (blocked[record.SessionID] || sessionBusy(record.SessionID)) || !lane && serialBusy() {
+					skipSession(record, true)
+					continue
+				}
+			}
 			if job.State == domain.JobQueued && job.Type == domain.WorkspaceStorageJob {
 				var storageInput workspace.StorageRequest
 				if workspace.DecodeStorageRequest(job.Input, &storageInput) != nil {
@@ -516,7 +646,7 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 					return rpc.Error(err, correlation)
 				}
 				if pending && (storageInput.Action == workspace.StorageCleanup || storageInput.Action == workspace.StorageRecover) {
-					skipDependency(record.ID)
+					skipSession(record, false)
 					continue
 				}
 			}
@@ -670,7 +800,7 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 					s.logger.InfoContext(ctx, "sidechat_retry_preclaim_rejected", "job_id", record.ID, "generation_id", releasedRetry, "code", job.Problem.Code)
 				}
 				if claimDependencyBlocked {
-					skipDependency(record.ID)
+					skipSession(record, false)
 					continue
 				}
 			}
@@ -683,22 +813,33 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 				}); err != nil {
 					return rpc.Error(err, correlation)
 				}
+				lane := parallel && parallelSessionJob(record, job)
+				if parallel && !lane && serialBusy() || parallel && sessionBusy(record.SessionID) {
+					// A claimed job is re-sent only to a stream that has no conflicting
+					// live assignment for its serial slot or session.
+					skipSession(record, true)
+					continue
+				}
 				if err := send(&pb.WatchWorkResponse{Job: rpc.WorkerAssignment(record), CancelRequested: cancelRequested}); err != nil {
 					return err
 				}
-				inFlight = record.ID
+				flight := newWorkerInFlight(record.SessionID, lane)
+				flight.cancellationSent = cancelRequested
+				inFlight[record.ID] = flight
+				s.logger.InfoContext(ctx, "worker_job_dispatched", "machine_id", machine, "instance_id", instance, "job_id", record.ID, "session_id", record.SessionID, "type", job.Type, "parallel_lane", lane, "in_flight", len(inFlight))
 				assigned = true
-				if cancelRequested {
-					cancellationSent = record.ID
-				}
 				after = record.ID
-				break
+				if !parallel {
+					break
+				}
+				continue
 			}
 			after = record.ID
 		}
 		if assigned {
-			// The assigned job remains the sole in-flight operation. A later
-			// terminal report restores the dependency cursor before another scan.
+			// Legacy streams keep the assigned job as the sole in-flight operation.
+			// A later terminal report restores the dependency cursor before another
+			// scan. Parallel streams rescan immediately for further admitted work.
 			wake.consume()
 			continue
 		}
@@ -713,7 +854,9 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 			return rpc.Error(ctx.Err(), correlation)
 		case <-changed:
 			wake.consume()
-			retryDependencies()
+			if !parallel || otherSkipped {
+				retryDependencies()
+			}
 		case <-ticker.C:
 			wake.consume()
 			retryDependencies()

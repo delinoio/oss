@@ -6,6 +6,8 @@ Use the same components, registered geometry/textures, transforms, measurement, 
 
 The unreleased [`SceneSession.analyze()` report](/react-forge/formats/glb/#scene-complexity-analysis-unreleased) also works for FBX. It reports unique registered geometry and authored mesh-instance topology before export, using the same revision and row ordering as GLB. The counts do not estimate rendering speed or GPU memory; check [release status](/react-forge/releases) before using this API from npm.
 
+The explicit [`compactGeometry` operation](/react-forge/formats/glb/#explicit-geometry-compaction-unreleased) is also available in source for FBX scenes and remains unreleased. It returns a separate geometry handle and vertex/byte counts while preserving every face. Its source handle remains usable; removing unused vertices can shrink bounds only after rendering with the returned handle.
+
 ## Compatibility profile
 
 The supported material profile targets Blender 4.5 LTS. It carries base color, metallic, roughness, normal, emissive, and opacity through the importer's legacy material properties and texture connections. Color and scalar factors are baked into embedded texture copies where the importer replaces connected values. Original registered bytes stay unchanged. Assets use meters and right-handed Y-up; camera/light axes and UV orientation are converted by the exporter.

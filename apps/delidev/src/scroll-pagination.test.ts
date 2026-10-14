@@ -791,3 +791,75 @@ it("keeps observation evidence across a failed additional page inside the same v
   await chain.retry(reader);
   expect(chain.getSnapshot().observed).toBe(true);
 });
+
+it("latches a failed read through retry and reload until a read settles successfully", async () => {
+  const chain = new PaginationChain<Row, Payload>();
+  chain.activate();
+  await chain.refresh(reader);
+  expect(chain.getSnapshot().unrecovered).toBeUndefined();
+  // A healthy background refresh never sets the latch.
+  await chain.refresh(reader);
+  expect(chain.getSnapshot().unrecovered).toBeUndefined();
+  const failed = vi.fn<PaginationReader<Row, Payload>>(async () => {
+    throw new ConnectError("offline", Code.Unavailable);
+  });
+  await chain.refresh(failed);
+  expect(chain.getSnapshot().error).toBeTruthy();
+  expect(chain.getSnapshot().loaded).toBe(true);
+  expect(chain.getSnapshot().unrecovered).toBe(true);
+  // Retry clears the error but keeps the stale snapshot latched while loading,
+  // and a retry that fails again keeps it.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  const stalled = vi.fn<PaginationReader<Row, Payload>>(async () => {
+    await held;
+    throw new ConnectError("still offline", Code.Unavailable);
+  });
+  const pending = chain.retry(stalled);
+  expect(chain.getSnapshot().loading).toBe(ReadStage.Refresh);
+  expect(chain.getSnapshot().error).toBeUndefined();
+  expect(chain.getSnapshot().unrecovered).toBe(true);
+  release();
+  await pending;
+  expect(chain.getSnapshot().error).toBeTruthy();
+  expect(chain.getSnapshot().unrecovered).toBe(true);
+  // The successful retry is the only thing that clears the latch.
+  let releaseRetry!: () => void;
+  const heldRetry = new Promise<void>((resolve) => (releaseRetry = resolve));
+  const recovering = chain.retry(async (token, signal) => {
+    await heldRetry;
+    return reader(token, signal);
+  });
+  expect(chain.getSnapshot().loading).toBe(ReadStage.Refresh);
+  expect(chain.getSnapshot().unrecovered).toBe(true);
+  releaseRetry();
+  await recovering;
+  expect(chain.getSnapshot().error).toBeUndefined();
+  expect(chain.getSnapshot().loading).toBeUndefined();
+  expect(chain.getSnapshot().unrecovered).toBeUndefined();
+});
+
+it("keeps the failed-read latch through a Reload and clears it with the chain", async () => {
+  const chain = new PaginationChain<Row, Payload>();
+  chain.activate();
+  await chain.refresh(reader);
+  const failed = vi.fn<PaginationReader<Row, Payload>>(async () => {
+    throw new ConnectError("offline", Code.Unavailable);
+  });
+  await chain.refresh(failed);
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  const reloading = chain.reload(async (token, signal) => {
+    await held;
+    return reader(token, signal);
+  });
+  expect(chain.getSnapshot().loading).toBe(ReadStage.Reload);
+  expect(chain.getSnapshot().unrecovered).toBe(true);
+  release();
+  await reloading;
+  expect(chain.getSnapshot().unrecovered).toBeUndefined();
+  await chain.refresh(failed);
+  expect(chain.getSnapshot().unrecovered).toBe(true);
+  chain.reset();
+  expect(chain.getSnapshot().unrecovered).toBeUndefined();
+});

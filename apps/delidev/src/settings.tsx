@@ -62,6 +62,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   useId,
@@ -603,6 +604,7 @@ export function ConfigurationEditor({
     false,
   );
   const notifications = useNotifications();
+  const queryClient = useQueryClient();
   const inline =
     kind === EntityKind.SETTINGS &&
     presentation === ConfigurationEditorPresentation.InlineServerPreferences;
@@ -645,6 +647,7 @@ export function ConfigurationEditor({
     [],
   );
   const [keepsFormatKey, setKeepsFormatKey] = useState(false);
+  const [providerRevision, setProviderRevision] = useState(0n);
   const [fieldsBlocked, setFieldsBlocked] = useState(false);
   const [problem, setProblem] = useProductMessage("");
   const [nameConflict, setNameConflict] = useState(false);
@@ -864,7 +867,30 @@ export function ConfigurationEditor({
           apiFormatToWire(apiFormat(document(result.account).api_protocol)!) ===
             request.apiProtocol),
       ),
+    false,
+    undefined,
+    (error) => clientFailure(error).code === FailureCode.Conflict,
   );
+  useEffect(() => {
+    if (
+      !formatMutation.error ||
+      clientFailure(formatMutation.error).code !== FailureCode.Conflict
+    )
+      return;
+    const providerId = text(data.provider_id);
+    if (!providerId) return;
+    console.info("delidev.settings.account_format_provider_refetch", {
+      providerId,
+    });
+    void queryClient.invalidateQueries({
+      queryKey: createConnectQueryKey({
+        schema: ResourceQuery.getResource,
+        input: { kind: EntityKind.PROVIDER, id: providerId },
+        cardinality: "finite",
+      }),
+      refetchType: "active",
+    });
+  }, [data.provider_id, formatMutation.error, queryClient]);
   const polled = current.data?.resource;
   const latest = inline
     ? latestServerPreferences(
@@ -1194,6 +1220,7 @@ export function ConfigurationEditor({
       selectedFormat &&
       selectedFormat !== document(source).api_protocol
     ) {
+      if (providerRevision <= 0n) return;
       void formatMutation.send({
         mutation: {
           id: source.id,
@@ -1201,6 +1228,7 @@ export function ConfigurationEditor({
           requestId: newRequestId(),
         },
         apiProtocol: apiFormatToWire(selectedFormat),
+        providerRevision,
         alias: text(data.alias),
         enabled: data.enabled === true,
         excludeAutomatic: data.exclude_automatic === true,
@@ -1371,6 +1399,7 @@ export function ConfigurationEditor({
             supportsSessionDefaults={supportsSessionDefaults}
             movementActive={active && taskVisible && !blocked && !childPending}
             keepsFormatKey={setKeepsFormatKey}
+            inspectedProviderRevision={setProviderRevision}
             initial={source}
             saveBlocked={setFieldsBlocked}
             kind={kind}
@@ -1399,6 +1428,7 @@ export function ConfigurationEditor({
                 active && taskVisible && !blocked && !childPending
               }
               keepsFormatKey={setKeepsFormatKey}
+              inspectedProviderRevision={setProviderRevision}
               initial={source}
               saveBlocked={setFieldsBlocked}
               kind={kind}
@@ -1740,6 +1770,7 @@ enum SettingsArea {
   Network,
   Configuration,
   Diagnostics,
+  Tailscale,
   Notifications,
   Transfer,
   Integrations,
@@ -1906,6 +1937,15 @@ export const settingsCategories: Record<
     kind: EntityKind.DEVICE,
     area: SettingsArea.Configuration,
   },
+  [SettingsCategory.Tailscale]: {
+    get label() {
+      return copy("settings.tailscale");
+    },
+    get description() {
+      return copy("settings.tailscaleDescription");
+    },
+    area: SettingsArea.Tailscale,
+  },
   [SettingsCategory.ServerPreferences]: {
     get label() {
       return copy("settings.serverPreferences_eba66b");
@@ -1991,6 +2031,7 @@ export const settingsGroups: {
     categories: [
       SettingsCategory.ExecutionWorkers,
       SettingsCategory.PairedDevices,
+      SettingsCategory.Tailscale,
     ],
   },
   {
@@ -2008,6 +2049,34 @@ export const settingsGroups: {
     ],
   },
 ];
+
+/**
+ * Tailscale is hosted only by the original local desktop window, which supplies
+ * the `runnerTailscale` publisher. Saved-server windows list no Tailscale
+ * category, search target or command, so every catalog derives from this one
+ * availability-filtered view of `settingsGroups`.
+ */
+export function availableSettingsGroups(
+  tailscaleAvailable: boolean,
+): typeof settingsGroups {
+  return settingsGroups.map((group) => ({
+    ...group,
+    categories: group.categories.filter(
+      (category) =>
+        category !== SettingsCategory.Tailscale || tailscaleAvailable,
+    ),
+  }));
+}
+// An unavailable Tailscale destination (for example a stale entry replayed into
+// a saved-server window) opens Runner Devices instead of an empty page.
+function reachableCategory(
+  category: SettingsCategory,
+  tailscaleAvailable: boolean,
+): SettingsCategory {
+  return category === SettingsCategory.Tailscale && !tailscaleAvailable
+    ? SettingsCategory.ExecutionWorkers
+    : category;
+}
 
 const settingsIcons: Record<SettingsCategory, string> = {
   [SettingsCategory.AppInformation]:
@@ -2035,6 +2104,8 @@ const settingsIcons: Record<SettingsCategory, string> = {
   [SettingsCategory.ExecutionWorkers]:
     "M3 4h18v13H3zM8 21h8m-4-4v4M7 8h4m-4 4h10",
   [SettingsCategory.PairedDevices]: "M7 3h10v18H7zM10 6h4m-4 12h4",
+  [SettingsCategory.Tailscale]:
+    "M12 5h.01M12 12h.01M12 19h.01M5 5h.01M5 12h.01M5 19h.01M19 5h.01M19 12h.01M19 19h.01",
   [SettingsCategory.GitWorkflow]:
     "M6 4v6m0 0a3 3 0 1 0 0 6m0-6h7a3 3 0 1 1 0 6h5m-12 0v4",
   [SettingsCategory.ServerPreferences]:
@@ -2111,7 +2182,7 @@ type NavigateSettings = (
 // itself only with its own approved contract text.
 // Surface categories move their whole content column and every task opened in
 // them. Heading categories contain persistent portal hosts or native controllers
-// (Connections, App information, Runner Devices), so only the static category heading moves and
+// (Connections, App information, Runner Devices, Tailscale), so only the static category heading moves and
 // tasks present their own heading entrance.
 const entranceCategories: ReadonlyMap<SettingsCategory, EntranceTarget> =
   new Map([
@@ -2132,19 +2203,23 @@ const entranceCategories: ReadonlyMap<SettingsCategory, EntranceTarget> =
     [SettingsCategory.Repositories, EntranceTarget.Surface],
     [SettingsCategory.Integrations, EntranceTarget.Surface],
     [SettingsCategory.ExecutionWorkers, EntranceTarget.Heading],
+    [SettingsCategory.Tailscale, EntranceTarget.Heading],
     [SettingsCategory.Diagnostics, EntranceTarget.Heading],
     [SettingsCategory.AppInformation, EntranceTarget.Heading],
   ]);
 
 function entrySelection(
-  destination?: SettingsNavigationEntry,
+  destination: SettingsNavigationEntry | undefined,
+  tailscaleAvailable: boolean,
 ): SettingsSelection {
   if (typeof destination === "object")
     return {
-      category:
+      category: reachableCategory(
         destination.category === SettingsCategory.GitWorkflow
           ? SettingsCategory.ProjectDefaults
           : destination.category,
+        tailscaleAvailable,
+      ),
       key: newRequestId(),
       entry:
         destination.resourceId && destination.resourceKind
@@ -2199,8 +2274,11 @@ function SettingsVisit({
   useLocale();
   const closeDrawer = useCloseSidebarDrawer();
   const [searchRequest, setSearchRequest] = useState<SettingsSearchRequest>();
+  // Only the original local desktop window supplies the Tailscale presentation
+  // publisher; saved-server windows list no Tailscale category at all.
+  const tailscaleAvailable = props.runnerTailscale !== undefined;
   const [selection, setSelection] = useState(() =>
-    entrySelection(entryDestination),
+    entrySelection(entryDestination, tailscaleAvailable),
   );
   // The activation key is the category opening, so rendering, reads, edits and
   // preference changes inside the opening cannot replay the entrance.
@@ -2209,16 +2287,22 @@ function SettingsVisit({
     selection.key,
     entranceTarget !== undefined,
   );
+  const visibleGroups = useMemo(
+    () => availableSettingsGroups(tailscaleAvailable),
+    [tailscaleAvailable],
+  );
   const initialDestination = useRef(entryDestination);
   const handledDestination = useRef<SettingsNavigationEntry | undefined>(
     undefined,
   );
   const navigate = useCallback<NavigateSettings>(
     (category, entry) => {
-      category =
+      category = reachableCategory(
         category === SettingsCategory.GitWorkflow
           ? SettingsCategory.ProjectDefaults
-          : category;
+          : category,
+        tailscaleAvailable,
+      );
       setSearchRequest(undefined);
       closeDrawer();
       setSelection((current) =>
@@ -2227,7 +2311,7 @@ function SettingsVisit({
           : { category, entry, key: newRequestId() },
       );
     },
-    [closeDrawer],
+    [closeDrawer, tailscaleAvailable],
   );
   useEffect(() => {
     if (!entryDestination) {
@@ -2239,10 +2323,15 @@ function SettingsVisit({
     if (initialDestination.current === entryDestination)
       initialDestination.current = undefined;
     else {
-      const target = entrySelection(entryDestination);
+      const target = entrySelection(entryDestination, tailscaleAvailable);
       navigate(target.category, target.entry);
     }
-    if (typeof entryDestination === "object")
+    // A target inside an unavailable category has nothing to focus.
+    if (
+      typeof entryDestination === "object" &&
+      reachableCategory(entryDestination.category, tailscaleAvailable) ===
+        entryDestination.category
+    )
       setSearchRequest({
         category:
           entryDestination.category === SettingsCategory.GitWorkflow
@@ -2252,7 +2341,7 @@ function SettingsVisit({
         generation: entryDestination.generation,
       });
     destinationConsumed?.();
-  }, [destinationConsumed, entryDestination, navigate]);
+  }, [destinationConsumed, entryDestination, navigate, tailscaleAvailable]);
   return (
     <>
       <SidebarSurface
@@ -2262,7 +2351,7 @@ function SettingsVisit({
         showHeading={false}
       >
         <SettingsSearch
-          categories={settingsGroups.flatMap((group) =>
+          categories={visibleGroups.flatMap((group) =>
             group.categories.map((category) => ({
               category,
               label: settingsCategories[category].label,
@@ -2278,7 +2367,7 @@ function SettingsVisit({
             aria-label={copy("settings.settingsCategories_b9ed95")}
             data-settings-groups
           >
-            {settingsGroups.map((group) => (
+            {visibleGroups.map((group) => (
               <section className="settings-nav-group" key={group.label}>
                 <h2>
                   {copy(
@@ -2898,9 +2987,11 @@ function SettingsWorkspace({
                         ? "settings-content settings-app-information"
                         : area === SettingsArea.Diagnostics
                           ? "settings-content settings-connections"
-                          : area === SettingsArea.KeyboardShortcuts
-                            ? "settings-content settings-shortcuts"
-                            : "settings-content"
+                          : area === SettingsArea.Tailscale
+                            ? "settings-content settings-tailscale"
+                            : area === SettingsArea.KeyboardShortcuts
+                              ? "settings-content settings-shortcuts"
+                              : "settings-content"
           }
           aria-label={copy("settings.settingsContent_e4dcd3")}
         >
@@ -3090,14 +3181,6 @@ function SettingsWorkspace({
                     : null}
                   {area === SettingsArea.Diagnostics ? (
                     <div>
-                      <SettingsActionButton
-                        icon={SettingsActionIcon.Inspect}
-                        onClick={() =>
-                          navigate(SettingsCategory.AppInformation)
-                        }
-                      >
-                        {copy("settings.appInformation.navigate")}
-                      </SettingsActionButton>
                       {connectionSettings ?? (
                         <section
                           data-settings-search-target="current-connection"
@@ -3107,6 +3190,11 @@ function SettingsWorkspace({
                           <p>{copy("settings.connectionUnavailable")}</p>
                         </section>
                       )}
+                    </div>
+                  ) : null}
+                  {area === SettingsArea.Tailscale && runnerTailscale ? (
+                    <div>
+                      <RunnerTailscalePresentation publish={runnerTailscale} />
                     </div>
                   ) : null}
                   {area === SettingsArea.Configuration ? (
@@ -3316,11 +3404,6 @@ function SettingsWorkspace({
                               label={copy("settings.settingsPages_05ec05")}
                             />
                           </div>
-                          {runnerTailscale ? (
-                            <RunnerTailscalePresentation
-                              publish={runnerTailscale}
-                            />
-                          ) : null}
                         </>
                       ) : hasSpecializedPanel ? null : (
                         <>

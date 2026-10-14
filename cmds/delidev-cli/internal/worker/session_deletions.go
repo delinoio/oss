@@ -13,6 +13,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/imageinput"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/skills"
@@ -29,7 +30,12 @@ type sessionDeletionProof struct {
 	// IdentityInventory marks a proof whose removal start retained an identity
 	// inventory. A started proof without it was written by an earlier release.
 	IdentityInventory bool `json:"identity_inventory,omitempty"`
-	Complete          bool `json:"complete"`
+	// WorkspaceAbsenceAllowed records the absence policy that was derived from the
+	// validated job journals by the attempt that started removal. A retry skips
+	// journal validation, so it restores this value instead of re-deriving a
+	// permissive default. A started proof without it fails closed (strict).
+	WorkspaceAbsenceAllowed bool `json:"workspace_absence_allowed,omitempty"`
+	Complete                bool `json:"complete"`
 }
 
 // sessionDeletionPath is the session-level admission tombstone. Its existence
@@ -145,6 +151,9 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 		if w.Fork != nil {
 			paths = append(paths, workspace.SidechatForkClaimPath(root, w.Fork.JobID))
 		}
+		if remains, err := sessionNativeProfilesRemain(ctx, config, w); err != nil || remains {
+			return proof, domain.SessionDeletionPending()
+		}
 		for _, path := range paths {
 			if _, e := os.Lstat(path); !errors.Is(e, os.ErrNotExist) {
 				return proof, domain.SessionDeletionPending()
@@ -186,6 +195,16 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 	if sessionDeletionAfterCaptureHook != nil {
 		sessionDeletionAfterCaptureHook()
 	}
+	allowAbsentWorkspace := w.Fork == nil
+	if proof.RemovalStarted {
+		// A retry does not revalidate the job journals that justified an absent
+		// workspace. Only the policy persisted by the attempt that started removal
+		// may relax it; a proof from an earlier release is strict (fail closed).
+		allowAbsentWorkspace = allowAbsentWorkspace && proof.WorkspaceAbsenceAllowed
+		if !allowAbsentWorkspace {
+			config.Logger.InfoContext(ctx, "session_deletion_workspace_absence_strict", "deletion_id", w.DeletionID, "persisted_policy", proof.WorkspaceAbsenceAllowed)
+		}
+	}
 	startRemoval := func() error {
 		if proof.RemovalStarted {
 			return nil
@@ -195,9 +214,9 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 		}
 		proof.RemovalStarted = true
 		proof.IdentityInventory = true
+		proof.WorkspaceAbsenceAllowed = allowAbsentWorkspace
 		return writeJSON(path, proof)
 	}
-	allowAbsentWorkspace := w.Fork == nil
 	if w.Fork != nil && !proof.RemovalStarted {
 		if _, err := executionCheckpointPath(root, w.Fork.RuntimeID); err != nil {
 			return proof, domain.SessionDeletionPending()
@@ -405,6 +424,11 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 		}
 	}
 	if err := cleanupGeneratedCopies(root, w, false); err != nil {
+		return proof, err
+	}
+	// Persistent native profiles are deleted only here, by explicit session
+	// deletion; no operation completion or age-based pruning removes them.
+	if err := deleteSessionNativeProfiles(ctx, config, w); err != nil {
 		return proof, err
 	}
 	images := imageinput.Manager{Root: root}
@@ -773,6 +797,8 @@ func sessionDeletionCopyPaths(ctx context.Context, root string, w domain.Session
 			paths = append(paths, filepath.Join(root, "runtimes", string(copy.ActionID)), filepath.Join(root, "compaction-checkpoints", string(copy.ActionID)+".json"))
 		}
 		if copy.Type == domain.GenerateSessionTitleJob {
+			// Current jobs own an exact journal; historical jobs own prefixed runtimes.
+			paths = append(paths, filepath.Join(root, "title-runtimes", string(copy.JobID)))
 			titlePrefixes[string(copy.JobID)+"-"] = true
 		}
 	}
@@ -844,4 +870,74 @@ func cleanupGeneratedCopies(root string, w domain.SessionDeletionWork, observe b
 		}
 	}
 	return nil
+}
+
+// sessionHistoryIDs lists every native history identifier a session's retained
+// copies may have bound to a persistent profile.
+func sessionHistoryIDs(w domain.SessionDeletionWork) []domain.ID {
+	var ids []domain.ID
+	add := func(id domain.ID) {
+		if id.Validate() == nil {
+			ids = append(ids, id)
+		}
+	}
+	if w.Fork != nil {
+		add(w.Fork.RuntimeID)
+	}
+	for _, f := range w.RetryForks {
+		add(f.RuntimeID)
+	}
+	for _, copy := range w.Copies {
+		add(copy.ExecutionID)
+		add(copy.ActionID)
+	}
+	return ids
+}
+
+// deleteSessionNativeProfiles removes the persistent native profiles bound to
+// one explicitly deleted session. A referenced or active profile is never
+// deleted: it keeps the deletion pending with its closed cause.
+func deleteSessionNativeProfiles(ctx context.Context, config Config, w domain.SessionDeletionWork) error {
+	registry, err := nativeProfiles(config, w.MachineID)
+	if err != nil {
+		return domain.SessionDeletionPending()
+	}
+	scopes := []nativeprofile.DeleteScope{{Conversation: w.SessionID}}
+	for _, id := range sessionHistoryIDs(w) {
+		scopes = append(scopes, nativeprofile.DeleteScope{History: id})
+	}
+	for _, scope := range scopes {
+		if _, err := registry.Delete(ctx, scope); err != nil {
+			config.Logger.WarnContext(ctx, "session_deletion_native_profile_pending", "deletion_id", w.DeletionID, "reason", nativeProfileReason(err))
+			return domain.SessionDeletionPending()
+		}
+	}
+	return nil
+}
+
+// sessionNativeProfilesRemain proves, for completed-deletion replay, that no
+// persistent profile of the deleted session was restored.
+func sessionNativeProfilesRemain(ctx context.Context, config Config, w domain.SessionDeletionWork) (bool, error) {
+	registry, err := nativeProfiles(config, w.MachineID)
+	if err != nil {
+		return true, err
+	}
+	scopes := []nativeprofile.DeleteScope{{Conversation: w.SessionID}}
+	for _, id := range sessionHistoryIDs(w) {
+		scopes = append(scopes, nativeprofile.DeleteScope{History: id})
+	}
+	for _, scope := range scopes {
+		found, err := registry.Exists(ctx, scope)
+		if err != nil || found {
+			return true, err
+		}
+	}
+	return false, nil
+}
+
+func nativeProfileReason(err error) nativeprofile.Reason {
+	if reason, ok := nativeprofile.Reasoned(err); ok {
+		return reason
+	}
+	return nativeprofile.ReasonDeleteBlocked
 }

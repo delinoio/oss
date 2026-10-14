@@ -82,7 +82,9 @@ The shared presentation validator accepts only exact HTTPS `github.com` official
 
 ## PR and Issue Queries
 
-`QueryRepositoryIntegration` accepts the configured local repository UUID, schema version 1 and strict query JSON. Kinds are `pull-request` or `issue`; operations are `list`, `search` and `detail`. List/search select `open`, `closed` or `all`, a one-based page at most 10,000 and a page size 1–20. Detail requires only a canonical positive decimal item number. Search accepts bounded plain letter/number/space/hyphen/underscore/period terms; it does not expose GitHub's query language. The adapter quotes individual terms, supplies its own exact `repo`, kind, title/body and optional state qualifiers, and rejects a constructed query over GitHub's 256-byte limit. Search cannot override repository scope.
+`QueryRepositoryIntegration` accepts the configured local repository UUID, schema version 1 and strict query JSON. Kinds are `pull-request` or `issue`; operations are `list`, `search` and `detail`. List/search select `open`, `closed` or `all`, a one-based page at most 10,000 and a page size 1–20 (1–50 for `pull-request` List/Search only, see below). Detail requires only a canonical positive decimal item number. Search accepts bounded plain letter/number/space/hyphen/underscore/period terms; it does not expose GitHub's query language. The adapter quotes individual terms, supplies its own exact `repo`, kind, title/body and optional state qualifiers, and rejects a constructed query over GitHub's 256-byte limit. Search cannot override repository scope.
+
+Pull-request List/Search page sizes extend to 50 under System capability `PULL_REQUEST_PAGING_50_V1`; `RepositoryQuery.Validate` accepts 1–50 for kind `pull-request` operations `list` and `search` only. Issue List/Search, PR Checks and Statuses (and Commits) keep their 1–20 ceilings, the CLI `github` size check is operation dependent (`--page-size` up to 50 for `pr list|search`, 20 otherwise), and Search still enforces `(page-1)*page_size < 1000`, so size 50 stops at page 20. A provider page larger than the requested size, an oversized response (1 MiB) or an incomplete observation keeps its explicit failure or incomplete handling and is never truncated into successful evidence.
 
 Every query refreshes the selected token's identity and exact repository metadata. Search additionally reads the matching repository feature endpoint, because GitHub search itself documents no fine-grained permission requirement. No identity-only result, unrelated feature, system token, response URL or older access observation grants query authority. The same one-per-profile/eight-global bounded owner, cancellation and post-read authorization/repository-revision/generation checks serve content reads. Negotiated workspace and avatar enrichment uses the bounded serialized queue with foreground selection/tab priority described below. Queries persist no receipt, content, page state or authorization grant.
 
@@ -560,14 +562,16 @@ the selected PR's retained scope also disposes the selection and clears the
 avatar cache before new observations render; same-scope enrichment keeps it, and
 a change of the provider repository node ID alone never disposes it.
 
+System capability `PULL_REQUEST_PAGING_50_V1 = 103` independently negotiates 50-item PR List/Search pages together with 50-seed workspace enrichment. The server advertises it once both limits are accepted end to end. The provider-read cap of 40 is preserved (two initial reads plus one detail read per seed), so a 50-seed observation usually reaches `read_limit` and returns the existing explicit `incomplete` state with the readable nodes; that counts as working enrichment and is never an error or silent truncation. A desktop connected to a server without the capability keeps 10/20 and never sends a 50-item request, so server-first rollout keeps older peers working.
+
 System capability `PULL_REQUEST_WORKSPACE_V1` negotiates three independent reads:
 `GetPullRequestWorkspace`, `ListPullRequestCommits` and `ReadPullRequestAvatar`.
 Legacy List/Search documents, shared CLI inspection, rules, CI, reviewer and
 remediation operations remain unchanged. Unsupported peers retain a flat list,
 Description/Diff/Reviews and explicit unsupported stacks/Commits notices.
 
-Workspace requests bind the original local repository revision and at most 20
-accepted-page PR numbers. Repository scope comes only from the authenticated
+Workspace requests bind the original local repository revision and at most 50
+accepted-page PR numbers (`GetPullRequestWorkspace`, `PRWorkspace.Validate` and the adapter all accept 1–50 distinct seeds and reject 51; the 100-node, depth-20, 40-provider-read, 30-second and 1 MiB bounds are unchanged). Repository scope comes only from the authenticated
 identity and numeric repository metadata reads, which fail the request when
 unavailable or invalid; every accepted seed, including the first, is then read as
 an ordinary detail, so an unreadable seed in any position leaves a readable
@@ -653,7 +657,11 @@ and avatar/commit/detail reads are never resumed. The interrupted attempt first
 finishes completely (token cleared, completion signal closed). The foreground
 read then runs and releases the profile before the resumed attempt is admitted
 behind every pending same-profile foreground read, so exactly one read owns the
-profile at a time. Each resumed attempt reauthorizes the original actor and
+profile at a time. If the foreground caller cancels its join wait or the
+five-second join bound expires, the original workspace request terminates; the
+typed cancellation alone cannot authorize another provider attempt. A safe
+structured event records the failed displacement without token or provider
+content. Each resumed attempt reauthorizes the original actor and
 verifies the original repository revision, profile and token generation before
 reading; any change, revocation, shutdown, parent cancellation, provider
 failure, malformed observation or exhausted limit terminates the request without
@@ -676,4 +684,8 @@ persistent data is added. Content-free structured logs record
 `repository_integration_read_preempted`, `pull_request_workspace_requeued`,
 `pull_request_workspace_resumed` and `pull_request_workspace_finished`, each with
 the original `correlation_id` and `attempt_count` (the final log also carries
-`outcome` and `error_code`).
+`outcome` and `error_code`). The preempted event identifies the interrupted
+admission, including when one request is displaced more than once. The single
+finished event records the full RPC result after observation validation and
+bounded response construction, so malformed observations and response-limit
+failures report their terminal domain codes rather than provider success.

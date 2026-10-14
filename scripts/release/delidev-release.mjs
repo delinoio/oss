@@ -45,6 +45,7 @@ export function identity(version, revision) {
     excludedTargets: ["windows-amd64", "windows-arm64"],
   };
 }
+const tagRefPrefix = `refs/tags/${releaseTag(Project.DeliDev, "")}`;
 export function sourceIdentity({
   repository,
   event,
@@ -58,10 +59,10 @@ export function sourceIdentity({
     repository === "delinoio/oss" &&
       event === "push" &&
       typeof ref === "string" &&
-      ref.startsWith("refs/tags/delidev-v"),
+      ref.startsWith(tagRefPrefix),
     "DeliDev release requires a first-party tag push",
   );
-  const expected = identity(ref.slice("refs/tags/delidev-v".length), revision);
+  const expected = identity(ref.slice(tagRefPrefix.length), revision);
   requireValue(
     head === revision &&
       tagRevision === revision &&

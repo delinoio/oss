@@ -15,6 +15,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/claude"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
@@ -36,6 +37,10 @@ type nativeClaudeProfile struct {
 	config       claude.AuthConfig
 	managedLease *managedSubscriptionLease
 	newProfile   bool
+	registry     *nativeprofile.Registry
+	// historyVersion is set only on a shared-owner member's view of the owner's
+	// profile. It selects canonical-profile (1) or session-private (2) history.
+	historyVersion claudeProfileVersion
 }
 
 func claudeProfileRoot(root string, credential Credential, account, profile domain.ID) (string, error) {
@@ -51,7 +56,7 @@ func openClaudeProfile(config Config, credential Credential, account, profile do
 	if err != nil {
 		return nil, err
 	}
-	if installation.Harness != domain.ClaudeCode || installation.Version != claude.SupportedVersion || installation.ResolvedPath == "" {
+	if installation.Harness != domain.ClaudeCode || !domain.HarnessVersionAllowed(domain.ClaudeCode, installation.Version) || installation.ResolvedPath == "" {
 		return nil, subscription.Invalid()
 	}
 	executable, err := filepath.EvalSymlinks(installation.ResolvedPath)
@@ -116,10 +121,26 @@ func openClaudeProfile(config Config, credential Credential, account, profile do
 		return nil, err
 	}
 	auth := claude.AuthConfig{Version: installation.Version, Home: filepath.Join(root, "claude"), Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: root, Env: env, Logger: config.Logger}}
+	// Register the durable profile in place so the shared registry owns its
+	// deletion and reference semantics; nothing is moved or rewritten.
+	profiles, err := nativeProfiles(config, credential.MachineID)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := profiles.RegisterLegacy(context.Background(), nativeprofile.Key{Harness: domain.ClaudeCode, Purpose: nativeprofile.PurposeAuth, Account: account}, filepath.ToSlash(filepath.Join("native-claude", string(credential.ServerID), string(account), string(profile)))); err != nil {
+		return nil, err
+	}
 	ok = true
-	return &nativeClaudeProfile{root: root, home: auth.Home, original: info, lock: lock, owner: observed, config: auth, newProfile: create}, nil
+	return &nativeClaudeProfile{root: root, home: auth.Home, original: info, lock: lock, owner: observed, config: auth, newProfile: create, registry: profiles}, nil
 }
-func (p *nativeClaudeProfile) close() error { return p.lock.Close() }
+func (p *nativeClaudeProfile) close() error {
+	// A shared-owner member's view holds no lock: the owner keeps the profile lock
+	// for its whole lifetime.
+	if p.lock == nil {
+		return nil
+	}
+	return p.lock.Close()
+}
 func (p *nativeClaudeProfile) logout(ctx context.Context) error {
 	if err := claude.LogoutSubscription(ctx, p.config); err != nil {
 		return err
@@ -127,7 +148,15 @@ func (p *nativeClaudeProfile) logout(ctx context.Context) error {
 	// The official CLI removes its scoped secure-store login. Whole-profile
 	// removal then deletes only this owned directory without inspecting token
 	// files. Native history cannot grant Resume after this connection is retired.
-	return subscription.CleanupRuntime(p.root, p.original)
+	// Logout is the explicit account action that owns this profile's deletion.
+	if err := subscription.CleanupRuntime(p.root, p.original); err != nil {
+		return err
+	}
+	if p.registry != nil {
+		_, err := p.registry.Delete(context.Background(), nativeprofile.DeleteScope{Account: p.owner.Account, Purpose: nativeprofile.PurposeAuth, Harness: domain.ClaudeCode})
+		return err
+	}
+	return nil
 }
 func (p *nativeClaudeProfile) identity(ctx context.Context, config Config) (*pb.NativeSubscriptionIdentity, error) {
 	status, err := claude.ReadAuthStatus(ctx, p.config)
@@ -189,6 +218,14 @@ func (p *nativeClaudeProfile) identity(ctx context.Context, config Config) (*pb.
 	return &pb.NativeSubscriptionIdentity{ProfileId: string(p.owner.Profile), IdentityCommitment: commitment}, nil
 }
 func (l *managedSubscriptionLease) finishClaude(identity *pb.NativeSubscriptionIdentity, cleanup, success bool) error {
+	return l.finishClaudeScoped(identity, cleanup, success, pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_UNSPECIFIED, l.response.LeaseRevision)
+}
+
+// finishClaudeScoped reports one Finish. The unspecified scope settles a
+// singleton lease. A member scope releases or retains exactly one execution member
+// of a shared owner, and the owner scope retires the owner with the owner's own
+// revision after its last runnable member.
+func (l *managedSubscriptionLease) finishClaudeScoped(identity *pb.NativeSubscriptionIdentity, cleanup, success bool, scope pb.SubscriptionFinishScope, revision uint64) error {
 	l.journal.State = managedClosed
 	l.journal.Cleanup = cleanup
 	l.journal.Success = success
@@ -201,13 +238,28 @@ func (l *managedSubscriptionLease) finishClaude(identity *pb.NativeSubscriptionI
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	response, err := l.client.FinishSubscription(ctx, authenticated(l.credential, &pb.FinishSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(l.finishID), Id: string(l.account), ExpectedRevision: l.response.LeaseRevision}, LeaseId: l.response.LeaseId, GenerationId: l.response.GenerationId, MachineId: string(l.credential.MachineID), InstanceId: string(l.instance), NativeIdentity: identity, CleanupConfirmed: cleanup, Succeeded: success}))
+	response, err := l.client.FinishSubscription(ctx, authenticated(l.credential, &pb.FinishSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(l.finishID), Id: string(l.account), ExpectedRevision: revision}, LeaseId: l.response.LeaseId, GenerationId: l.response.GenerationId, MachineId: string(l.credential.MachineID), InstanceId: string(l.instance), NativeIdentity: identity, CleanupConfirmed: cleanup, Succeeded: success, FinishScope: scope}))
 	if err != nil {
 		return rpc.ClientError(err)
 	}
 	var account domain.Account
-	if response.Msg.Account == nil || domain.Decode(response.Msg.Account.DocumentJson, &account) != nil || account.Subscription == nil || account.Subscription.Lease != nil && string(account.Subscription.Lease.ID) == l.response.LeaseId {
+	if response.Msg.Account == nil || domain.Decode(response.Msg.Account.DocumentJson, &account) != nil || account.Subscription == nil {
 		return &managedExecutionUncertain{subscription.Invalid()}
+	}
+	state := account.Subscription
+	leaseID := domain.ID(l.response.LeaseId)
+	switch scope {
+	case pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_MEMBER:
+		// An acknowledged member Finish leaves the owner in place. The member is
+		// gone when its closure was proven and retained otherwise.
+		member, present := state.Member(leaseID)
+		if state.Lease == nil || !state.Lease.Shared || cleanup && present || !cleanup && (!present || member.State != domain.SubscriptionMemberRetained) {
+			return &managedExecutionUncertain{subscription.Invalid()}
+		}
+	default:
+		if state.Lease != nil && (state.Lease.ID == leaseID || state.Lease.Shared && state.Lease.ID == domain.ID(l.response.OwnerLeaseId)) {
+			return &managedExecutionUncertain{subscription.Invalid()}
+		}
 	}
 	l.journal.State = managedReported
 	if err := writeJSON(l.journalPath, l.journal); err != nil {
@@ -216,8 +268,6 @@ func (l *managedSubscriptionLease) finishClaude(identity *pb.NativeSubscriptionI
 	return nil
 }
 func runClaudeAccount(ctx context.Context, config Config, client delidevv1connect.SubscriptionServiceClient, credential Credential, instance, account domain.ID, revision uint64, op domain.SubscriptionOperation) (returned error) {
-	bounded, cancel := context.WithTimeout(ctx, 15*time.Minute)
-	defer cancel()
 	action := pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN
 	if op.Action == domain.SubscriptionRefresh {
 		action = pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH
@@ -225,21 +275,25 @@ func runClaudeAccount(ctx context.Context, config Config, client delidevv1connec
 	if op.Action == domain.SubscriptionLogout {
 		action = pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT
 	}
-	lease, err := takeManagedSubscription(bounded, config, client, credential, instance, account, op.ID, revision, action)
+	// An operation queued behind a live shared owner waits inside Take for as
+	// long as the owner's members run. Its lifetime begins at the grant, exactly
+	// like the server's rebased operation window, so the wait is bound only by the
+	// watch context and the server's own decision to stop admitting the Take.
+	lease, err := takeManagedSubscription(ctx, config, client, credential, instance, account, op.ID, revision, action)
 	if err != nil {
 		return err
 	}
+	bounded, cancel := context.WithTimeout(ctx, 15*time.Minute)
+	defer cancel()
 	cleanup, success := false, false
 	var identity *pb.NativeSubscriptionIdentity
 	phase := domain.NativeSubscriptionRuntime
-	versionVerified := false
+	// observedVersion is the executable version reported by discovery. It is
+	// never replaced by the pinned baseline.
+	observedVersion := ""
 	defer func() {
 		if returned != nil {
-			detected := ""
-			if versionVerified {
-				detected = claude.SupportedVersion
-			}
-			diagnostic := &pb.NativeSubscriptionDiagnostic{DetectedVersion: detected, RequiredVersion: claude.SupportedVersion, Phase: pb.NativeSubscriptionDiagnosticPhase(phase), Code: string(domain.SafeError(returned).Code), CorrelationId: string(op.ID)}
+			diagnostic := &pb.NativeSubscriptionDiagnostic{DetectedVersion: observedVersion, RequiredVersion: domain.ClaudeProtocolVersion, Phase: pb.NativeSubscriptionDiagnosticPhase(phase), Code: string(domain.SafeError(returned).Code), CorrelationId: string(op.ID)}
 			reportCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
 			_, _ = client.PublishSubscriptionProgress(reportCtx, authenticated(credential, &pb.PublishSubscriptionProgressRequest{AccountId: string(account), LeaseId: lease.response.LeaseId, MachineId: string(credential.MachineID), InstanceId: string(instance), State: pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_FAILED, NativeDiagnostic: diagnostic}))
 			stop()
@@ -257,6 +311,9 @@ func runClaudeAccount(ctx context.Context, config Config, client delidevv1connec
 	var installation domain.Installation
 	if domain.Decode(lease.response.InstallationJson, &installation) != nil {
 		return subscription.Invalid()
+	}
+	if domain.ValidInstallationVersion(installation.Version) {
+		observedVersion = installation.Version
 	}
 	profile, err := openClaudeProfile(config, credential, account, domain.ID(lease.response.NativeProfileId), installation, domain.ID(lease.response.LeaseId), op.Action == domain.SubscriptionLogin)
 	if err != nil {
@@ -283,7 +340,6 @@ func runClaudeAccount(ctx context.Context, config Config, client delidevv1connec
 	if err := claude.VerifyAuthVersion(bounded, profile.config); err != nil {
 		return err
 	}
-	versionVerified = true
 	phase = domain.NativeSubscriptionLogin
 	if op.Action == domain.SubscriptionLogout {
 		phase = domain.NativeSubscriptionCleanup
@@ -393,7 +449,7 @@ func runClaudeAccount(ctx context.Context, config Config, client delidevv1connec
 
 // Admission verifies the installed original CLI against a disposable empty
 // profile. It never probes a personal login or creates subscription authority.
-func verifyNativeClaudeSubscriptionProfile(ctx context.Context, config Config, resource *pb.Resource) (bool, error) {
+func verifyNativeClaudeSubscriptionProfile(ctx context.Context, config Config, machineID domain.ID, resource *pb.Resource) (bool, error) {
 	var machine domain.Machine
 	if resource == nil || domain.Decode(resource.DocumentJson, &machine) != nil {
 		return false, subscription.Invalid()
@@ -401,7 +457,7 @@ func verifyNativeClaudeSubscriptionProfile(ctx context.Context, config Config, r
 	var installation *domain.Installation
 	for i := range machine.Installations {
 		candidate := &machine.Installations[i]
-		if candidate.Harness == domain.ClaudeCode && candidate.Version == claude.SupportedVersion && candidate.ProtocolVerified && candidate.State == domain.InstallationDetected && candidate.Problem == nil && candidate.Protocol != nil && candidate.Protocol.State == domain.ProtocolVerified && candidate.Protocol.Problem == nil {
+		if candidate.Harness == domain.ClaudeCode && domain.HarnessVersionAllowed(domain.ClaudeCode, candidate.Version) && candidate.ProtocolVerified && candidate.State == domain.InstallationDetected && candidate.Problem == nil && candidate.Protocol != nil && candidate.Protocol.State == domain.ProtocolVerified && candidate.Protocol.Problem == nil {
 			if installation != nil {
 				return false, subscription.Invalid()
 			}
@@ -411,21 +467,20 @@ func verifyNativeClaudeSubscriptionProfile(ctx context.Context, config Config, r
 	if installation == nil {
 		return false, nil
 	}
-	base := filepath.Join(config.Root, "native-claude")
-	if err := security.PrivateDir(base); err != nil {
+	profiles, err := nativeProfiles(config, machineID)
+	if err != nil {
 		return false, err
 	}
-	root, err := os.MkdirTemp(base, "probe-")
+	lease, err := profiles.AcquireWait(ctx, nativeprofile.Key{Harness: domain.ClaudeCode, Purpose: nativeprofile.PurposeDiscovery}, 30*time.Second)
 	if err != nil {
-		return false, domain.SafeError(err)
+		return false, err
 	}
+	// The accountless probe profile is persistent and never holds credentials.
+	defer lease.Close()
+	root := lease.Root
 	env, err := harness.PrivateRuntimeEnvironment(root)
 	if err != nil {
 		return false, err
-	}
-	info, err := os.Stat(root)
-	if err != nil {
-		return false, subscription.Invalid()
 	}
 	auth := claude.AuthConfig{Version: installation.Version, Home: filepath.Join(root, "claude"), Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: domain.NewID(), Executable: installation.ResolvedPath, Cwd: root, Env: env, Logger: config.Logger}}
 	err = claude.VerifyAuthVersion(ctx, auth)
@@ -438,9 +493,6 @@ func verifyNativeClaudeSubscriptionProfile(ctx context.Context, config Config, r
 	}
 	if err != nil && domain.SafeError(err).Code == domain.RecoveryRequired {
 		return false, err
-	}
-	if cleanupErr := subscription.CleanupRuntime(root, info); cleanupErr != nil {
-		return false, cleanupErr
 	}
 	return err == nil, err
 }
@@ -459,6 +511,9 @@ func (m *managedClaudeToken) clear() {
 }
 
 func beginClaudeSubscriptionExecution(ctx context.Context, config Config, owner domain.ID, input domain.ExecutionJobInput) (*nativeClaudeProfile, *managedClaudeToken, func(bool) error, error) {
+	if config.claudeMembers && config.claudeOwners != nil {
+		return beginClaudeSharedExecution(ctx, config, owner, input)
+	}
 	connection := config.execution
 	client, closeHTTP, err := subscriptionRPC(ctx, config, connection.Credential)
 	if err != nil {
@@ -470,24 +525,7 @@ func beginClaudeSubscriptionExecution(ctx context.Context, config Config, owner 
 		return nil, nil, nil, err
 	}
 	if len(lease.response.Bundle) != 0 {
-		// Only a server-owned token account delivers a sealed envelope. It is bound
-		// to this server, account and settled generation and carries no profile.
-		managed := &managedClaudeToken{lease: lease}
-		finish := func(joined bool) error {
-			defer closeHTTP()
-			managed.clear()
-			return lease.finishClaude(nil, joined, joined)
-		}
-		opened, openErr := subscription.OpenClaudeToken(lease.response.Bundle, connection.Credential.ServerID, input.AccountID, domain.ID(lease.response.GenerationId))
-		clear(lease.response.Bundle)
-		if openErr != nil || domain.ID(lease.response.NativeProfileId) != "" {
-			opened.Clear()
-			_ = finish(false)
-			return nil, nil, nil, subscription.ClaudeTokenInvalid()
-		}
-		managed.token = opened.Token
-		config.Logger.InfoContext(ctx, "claude_managed_lease_taken", "account_id", input.AccountID, "lease_id", lease.response.LeaseId)
-		return nil, managed, finish, nil
+		return claudeTokenExecution(config, input, lease, closeHTTP)
 	}
 	var profile *nativeClaudeProfile
 	finish := func(joined bool) error {
@@ -567,19 +605,33 @@ func runClaudeRecovery(ctx context.Context, config Config, client delidevv1conne
 			return err
 		}
 	}
+	if original.Shared {
+		// A lost shared owner is cleaned as one whole owner/member set: every
+		// member's process owner is joined before the canonical profile is touched.
+		if err := reconcileSharedClaudeMembers(ctx, config, state.Members); err != nil {
+			return err
+		}
+	}
 	if journal.CleanupFinish == "" {
 		journal.CleanupFinish = domain.NewID()
 		if err := writeJSON(path, journal); err != nil {
 			return subscription.Invalid()
 		}
 	}
-	if !journal.Cleanup || journal.NativeIdentity != "" {
+	// A lost shared owner always cleans the canonical profile: the founding
+	// member's per-session Cleanup and NativeIdentity say nothing about the
+	// owner's shared authentication, so only the owner-level claim counts.
+	profileCleanupPending := !journal.Cleanup || journal.NativeIdentity != ""
+	if original.Shared {
+		profileCleanupPending = !journal.OwnerProfileCleaned
+	}
+	if profileCleanupPending {
 		root, err := claudeProfileRoot(config.Root, credential, accountID, state.NativeProfileID)
 		if err != nil {
 			return err
 		}
 		_, statErr := os.Lstat(root)
-		noNative := !journal.NativeStarted && original.Action == domain.SubscriptionLogin && errors.Is(statErr, os.ErrNotExist)
+		noNative := !original.Shared && !journal.NativeStarted && original.Action == domain.SubscriptionLogin && errors.Is(statErr, os.ErrNotExist)
 		if !noNative {
 			if config.nativeClaudeInstallation == nil {
 				return subscription.Invalid()
@@ -602,12 +654,20 @@ func runClaudeRecovery(ctx context.Context, config Config, client delidevv1conne
 		journal.Success = false
 		journal.NativeIdentity = ""
 		journal.State = managedClosed
+		journal.OwnerProfileCleaned = original.Shared
 		if err := writeJSON(path, journal); err != nil {
 			return subscription.Invalid()
 		}
 	}
 	lease := &managedSubscriptionLease{client: client, credential: credential, instance: original.InstanceID, account: accountID, finishID: journal.CleanupFinish, journalPath: path, journal: journal, response: &pb.TakeSubscriptionResponse{LeaseId: string(original.ID), GenerationId: string(original.Generation), LeaseRevision: original.Revision}}
-	config.Logger.InfoContext(ctx, "claude_subscription_original_cleanup_confirmed", "lease_id", original.ID, "account_id", accountID)
+	config.Logger.InfoContext(ctx, "claude_subscription_original_cleanup_confirmed", "lease_id", original.ID, "account_id", accountID, "shared_owner", original.Shared, "members", len(state.Members))
+	if original.Shared {
+		if err := lease.finishClaudeScoped(nil, true, false, pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_OWNER, original.Revision); err != nil {
+			return err
+		}
+		settleSharedClaudeMemberJournals(config, state.Members)
+		return nil
+	}
 	return lease.finishClaude(nil, true, false)
 }
 
@@ -655,4 +715,27 @@ func runManagedClaudeRecovery(ctx context.Context, config Config, client delidev
 	lease := &managedSubscriptionLease{client: client, credential: credential, instance: original.InstanceID, account: accountID, finishID: journal.CleanupFinish, journalPath: path, journal: journal, response: &pb.TakeSubscriptionResponse{LeaseId: string(original.ID), GenerationId: string(original.Generation), LeaseRevision: original.Revision}}
 	config.Logger.InfoContext(ctx, "claude_managed_original_cleanup_confirmed", "lease_id", original.ID, "account_id", accountID, "pre_delivery", preDelivery)
 	return lease.finishClaude(nil, true, false)
+}
+
+// claudeTokenExecution handles a server-owned setup-token lease. Only that lane
+// delivers a sealed envelope; it is bound to this server, account and settled
+// generation, carries no profile and always keeps exclusive custody.
+func claudeTokenExecution(config Config, input domain.ExecutionJobInput, lease *managedSubscriptionLease, closeHTTP func()) (*nativeClaudeProfile, *managedClaudeToken, func(bool) error, error) {
+	connection := config.execution
+	managed := &managedClaudeToken{lease: lease}
+	finish := func(joined bool) error {
+		defer closeHTTP()
+		managed.clear()
+		return lease.finishClaude(nil, joined, joined)
+	}
+	opened, openErr := subscription.OpenClaudeToken(lease.response.Bundle, connection.Credential.ServerID, input.AccountID, domain.ID(lease.response.GenerationId))
+	clear(lease.response.Bundle)
+	if openErr != nil || domain.ID(lease.response.NativeProfileId) != "" {
+		opened.Clear()
+		_ = finish(false)
+		return nil, nil, nil, subscription.ClaudeTokenInvalid()
+	}
+	managed.token = opened.Token
+	config.Logger.InfoContext(context.Background(), "claude_managed_lease_taken", "account_id", input.AccountID, "lease_id", lease.response.LeaseId)
+	return nil, managed, finish, nil
 }

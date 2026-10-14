@@ -447,6 +447,9 @@ func (s *Service) runServerSubscription(parent context.Context, id domain.ID) {
 	nativeStarted := false
 	version, phase := "", domain.CodexRuntime
 	var native serverSubscriptionNative
+	if s.beforeServerSubscriptionCredentials != nil {
+		s.beforeServerSubscriptionCredentials()
+	}
 	_, old, nativeErr := s.serverSubscriptionCredentials(ctx, id, original.Generation)
 	if nativeErr != nil && operation.Action == domain.SubscriptionLogin && original.Generation == "" {
 		// No opener or native write ran. Verify the narrower pre-native absence
@@ -471,7 +474,7 @@ func (s *Service) runServerSubscription(parent context.Context, id domain.ID) {
 		if opener == nil {
 			opener = openServerSubscription
 		}
-		native, nativeErr = opener(ctx, s.Store.Root(), original.ID, old, s.logger)
+		native, nativeErr = opener(ctx, s.scopeFor(id), original.ID, old, s.logger)
 		if nativeErr != nil {
 			cleanup = domain.SafeError(nativeErr).Code != domain.RecoveryRequired
 		}

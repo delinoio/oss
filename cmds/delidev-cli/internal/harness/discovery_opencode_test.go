@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 )
 
@@ -77,7 +78,7 @@ func discoverOpenCode(t *testing.T, binary string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	var logs bytes.Buffer
-	output, err := Discover(ctx, DiscoveryConfig{Root: root, OwnerID: owner, Logger: slog.New(slog.NewJSONHandler(&logs, nil))}, input)
+	output, err := Discover(ctx, DiscoveryConfig{Root: root, Profiles: testProfiles(t, root), OwnerID: owner, Logger: slog.New(slog.NewJSONHandler(&logs, nil))}, input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,9 +92,12 @@ func discoverOpenCode(t *testing.T, binary string) {
 	if err := process.ReconcileOwner(filepath.Join(root, "processes"), owner); err != nil {
 		t.Fatal(err)
 	}
-	entries, err := os.ReadDir(filepath.Join(root, "probes"))
-	if err != nil || len(entries) != 0 {
-		t.Fatal("completed OpenCode probe runtime retained")
+	// The accountless probe profile is persistent; no disposable probe directory is allocated.
+	if _, err := os.Stat(filepath.Join(root, "probes")); err == nil {
+		t.Fatal("a disposable OpenCode probe directory was allocated")
+	}
+	if _, ok, err := testProfiles(t, root).Lookup(context.Background(), nativeprofile.Key{Harness: domain.OpenCode, Purpose: nativeprofile.PurposeDiscovery}); err != nil || !ok {
+		t.Fatal("persistent OpenCode probe profile was not retained")
 	}
 }
 

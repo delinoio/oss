@@ -1,7 +1,11 @@
 import { spawn } from "node:child_process";
-import { mkdir, copyFile } from "node:fs/promises";
+import { mkdir, copyFile, rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import platforms from "../src/native-platforms.json" with { type: "json" };
+import {
+  bindingFilename,
+  writeNativeBuildProvenance,
+} from "./native-build-provenance.mjs";
 
 const host = platforms.find(
   (host) =>
@@ -56,9 +60,19 @@ try {
   if (code !== 0) throw new Error("React Forge native build failed.");
   const output = new URL("../dist/", import.meta.url);
   await mkdir(output, { recursive: true });
+  // Remove provenance before replacing the binding so a failed copy cannot
+  // leave an old record that appears to describe the new bytes.
+  await rm(new URL("../dist/release/native-build.json", import.meta.url), {
+    force: true,
+  });
   await copyFile(
     `${target}/${host.target}/${release ? "release" : "debug"}/${host.library}`,
-    new URL(`react-forge.${host.id}.node`, output),
+    new URL(bindingFilename(host), output),
+  );
+  await writeNativeBuildProvenance(
+    fileURLToPath(output),
+    host,
+    release ? "release" : "dev",
   );
 } finally {
   process.off("SIGINT", interrupt);

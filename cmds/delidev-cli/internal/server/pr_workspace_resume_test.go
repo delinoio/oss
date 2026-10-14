@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -33,6 +34,18 @@ func (c *countingPATs) Get(ctx context.Context, ref credentials.PATRef) ([]byte,
 	return c.integrationSecrets.Get(ctx, ref)
 }
 
+type failAfterPATs struct {
+	*countingPATs
+	calls atomic.Int32
+}
+
+func (f *failAfterPATs) Get(ctx context.Context, ref credentials.PATRef) ([]byte, error) {
+	if f.calls.Add(1) == 2 {
+		return nil, domain.Fail(domain.Unavailable, "The fixture token store failed.", "Retry the request.")
+	}
+	return f.countingPATs.Get(ctx, ref)
+}
+
 type workspaceProviderFunc func(ctx context.Context, call int, token []byte, budget *gh.WorkspaceBudget) (gh.WorkspaceObservation, error)
 
 type scriptedWorkspaces struct {
@@ -58,6 +71,38 @@ func (b *syncBuffer) String() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.buf.String()
+}
+
+func (b *syncBuffer) records(t *testing.T, name string) []map[string]any {
+	t.Helper()
+	var matches []map[string]any
+	for _, line := range strings.Split(strings.TrimSpace(b.String()), "\n") {
+		if line == "" {
+			continue
+		}
+		var record map[string]any
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			t.Fatal("invalid JSON log", err)
+		}
+		if record["msg"] == name {
+			matches = append(matches, record)
+		}
+	}
+	return matches
+}
+
+func requireWorkspaceEvents(t *testing.T, logs *syncBuffer, name string, counts ...int) []map[string]any {
+	t.Helper()
+	records := logs.records(t, name)
+	if len(records) != len(counts) {
+		t.Fatalf("%s: got %d records, want %d: %s", name, len(records), len(counts), logs.String())
+	}
+	for i, record := range records {
+		if record["attempt_count"] != float64(counts[i]) || record["correlation_id"] != "correlation-3361" {
+			t.Fatalf("%s record %d lost admission count or correlation: %+v", name, i, record)
+		}
+	}
+	return records
 }
 
 type eventLog struct {
@@ -269,6 +314,13 @@ func TestWorkspaceResumesAfterForegroundDisplacement(t *testing.T) {
 			t.Fatal("missing structured log", want, log)
 		}
 	}
+	requireWorkspaceEvents(t, h.logs, "repository_integration_read_preempted", 1)
+	requireWorkspaceEvents(t, h.logs, "pull_request_workspace_requeued", 1)
+	requireWorkspaceEvents(t, h.logs, "pull_request_workspace_resumed", 2)
+	finished := requireWorkspaceEvents(t, h.logs, "pull_request_workspace_finished", 2)
+	if finished[0]["outcome"] != string(workspaceOutcomeSucceeded) || finished[0]["error_code"] != "" {
+		t.Fatal("successful final log did not reflect the complete response", finished[0])
+	}
 	for _, leak := range []string{"workspace-resume-token", "partial_first"} {
 		if strings.Contains(log, leak) {
 			t.Fatal("log carries content", leak)
@@ -362,6 +414,98 @@ func TestWorkspaceResumptionKeepsForegroundPriorityAndFrozenDeadline(t *testing.
 	}
 	if remaining := time.Until(deadlines[0]); remaining > integrationActiveBound {
 		t.Fatal("active deadline exceeds its bound", remaining)
+	}
+	requireWorkspaceEvents(t, h.logs, "repository_integration_read_preempted", 1, 2)
+	requireWorkspaceEvents(t, h.logs, "pull_request_workspace_requeued", 1, 2)
+	requireWorkspaceEvents(t, h.logs, "pull_request_workspace_resumed", 2, 3)
+	requireWorkspaceEvents(t, h.logs, "pull_request_workspace_finished", 3)
+}
+
+func TestWorkspaceFailedForegroundJoinCannotReplay(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		cancel bool
+	}{
+		{name: "foreground caller canceled", cancel: true},
+		{name: "join timeout"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			entered, canceled, release := make(chan struct{}), make(chan struct{}), make(chan struct{})
+			h := newWorkspaceHarness(t, func(ctx context.Context, _ int, _ []byte, _ *gh.WorkspaceBudget) (gh.WorkspaceObservation, error) {
+				close(entered)
+				<-ctx.Done()
+				close(canceled)
+				<-release
+				return observation("interrupted"), ctx.Err()
+			})
+			pending := h.start(h.ctx)
+			waitFor(t, "workspace provider", entered)
+			fgCtx, cancel := context.WithCancel(h.ctx)
+			defer cancel()
+			var foregroundCalls atomic.Int32
+			foreground := make(chan error, 1)
+			go func() {
+				_, err := h.f.service.withRepositoryIntegration(fgCtx, domain.ID(h.repo.Id), "detail", "foreground", func(context.Context, []byte, repositoryIntegrationSelection) error {
+					foregroundCalls.Add(1)
+					return nil
+				})
+				foreground <- err
+			}()
+			waitFor(t, "workspace cancellation", canceled)
+			if tc.cancel {
+				cancel()
+			}
+			select {
+			case err := <-foreground:
+				if err == nil {
+					t.Fatal("failed foreground displacement succeeded")
+				}
+			case <-time.After(7 * time.Second):
+				t.Fatal("foreground join did not terminate")
+			}
+			close(release)
+			r := h.await(pending)
+			if r.response != nil || connect.CodeOf(r.err) != connect.CodeUnavailable || foregroundCalls.Load() != 0 || h.provider.calls.Load() != 1 || h.tokens.gets.Load()-h.baseGets != 1 {
+				t.Fatal("failed foreground join replayed or published workspace", r.err, foregroundCalls.Load(), h.provider.calls.Load(), h.tokens.gets.Load()-h.baseGets)
+			}
+			if len(h.logs.records(t, "repository_integration_displacement_failed")) != 1 {
+				t.Fatal("failed displacement has no structured evidence")
+			}
+			finished := requireWorkspaceEvents(t, h.logs, "pull_request_workspace_finished", 1)
+			if finished[0]["outcome"] != string(workspaceOutcomeFailed) {
+				t.Fatal("failed displacement logged success", finished[0])
+			}
+			if queued, foreground := h.counters(); queued != 0 || foreground != 0 {
+				t.Fatal("queue counters leaked", queued, foreground)
+			}
+		})
+	}
+}
+
+func TestWorkspaceFailureAfterForegroundJoinLogsDisplacementFailure(t *testing.T) {
+	entered := make(chan struct{})
+	h := newWorkspaceHarness(t, func(ctx context.Context, _ int, _ []byte, _ *gh.WorkspaceBudget) (gh.WorkspaceObservation, error) {
+		close(entered)
+		<-ctx.Done()
+		return observation("interrupted"), ctx.Err()
+	})
+	h.f.service.integrationSecrets = &failAfterPATs{countingPATs: h.tokens}
+	pending := h.start(h.ctx)
+	waitFor(t, "workspace provider", entered)
+	foreground := h.foreground("detail", nil, nil)
+	if err := <-foreground; domain.SafeError(err).Code != domain.Unavailable {
+		t.Fatalf("foreground token failure had unexpected code: %v", err)
+	}
+	r := h.await(pending)
+	if r.response != nil || connect.CodeOf(r.err) != connect.CodeUnavailable || h.provider.calls.Load() != 1 {
+		t.Fatal("failed foreground caller replayed or published workspace", r.err, h.provider.calls.Load())
+	}
+	if len(h.events.snapshot()) != 0 {
+		t.Fatal("foreground read started after token acquisition failed", h.events.snapshot())
+	}
+	records := h.logs.records(t, "repository_integration_displacement_failed")
+	if len(records) != 1 || records[0]["error_code"] != string(domain.Unavailable) {
+		t.Fatal("failed displacement was not logged with its terminal code", records)
 	}
 }
 
@@ -566,21 +710,22 @@ func TestWorkspaceSuspendedRequestTerminatesWhenScopeChanges(t *testing.T) {
 // Scenario 5: only the typed scheduler cause is replayed.
 func TestWorkspaceOnlySchedulerDisplacementIsReplayed(t *testing.T) {
 	cases := []struct {
-		name string
-		fn   workspaceProviderFunc
-		code connect.Code
+		name       string
+		fn         workspaceProviderFunc
+		code       connect.Code
+		domainCode domain.Code
 	}{
 		{"provider failure", func(context.Context, int, []byte, *gh.WorkspaceBudget) (gh.WorkspaceObservation, error) {
 			return gh.WorkspaceObservation{}, domain.Fail(domain.Unavailable, "Provider failed.", "Retry.")
-		}, connect.CodeUnavailable},
+		}, connect.CodeUnavailable, domain.Unavailable},
 		{"malformed observation", func(context.Context, int, []byte, *gh.WorkspaceBudget) (gh.WorkspaceObservation, error) {
 			malformed := observation("bad")
 			malformed.Nodes = nil
 			return malformed, nil
-		}, connect.CodeFailedPrecondition},
+		}, connect.CodeFailedPrecondition, domain.RecoveryRequired},
 		{"untyped cancellation", func(context.Context, int, []byte, *gh.WorkspaceBudget) (gh.WorkspaceObservation, error) {
 			return gh.WorkspaceObservation{}, context.Canceled
-		}, connect.CodeCanceled},
+		}, connect.CodeCanceled, domain.Canceled},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -595,8 +740,35 @@ func TestWorkspaceOnlySchedulerDisplacementIsReplayed(t *testing.T) {
 			if !strings.Contains(h.logs.String(), `"attempt_count":1`) {
 				t.Fatal("final outcome log lacks attempt count")
 			}
+			finished := requireWorkspaceEvents(t, h.logs, "pull_request_workspace_finished", 1)
+			if finished[0]["outcome"] != string(workspaceOutcomeFailed) || finished[0]["error_code"] != string(tc.domainCode) {
+				t.Fatal("final log disagrees with RPC failure", finished[0])
+			}
 		})
 	}
+	t.Run("response limit", func(t *testing.T) {
+		h := newWorkspaceHarness(t, func(context.Context, int, []byte, *gh.WorkspaceBudget) (gh.WorkspaceObservation, error) {
+			value := observation("large")
+			now, no := time.Now().UTC(), false
+			for i := 101; i < 151; i++ {
+				number := strconv.Itoa(i)
+				item := domain.RepositoryItem{IdentitySource: domain.RepositoryPullRequestIdentity, Provider: domain.GitHubCom, Kind: domain.RepositoryPullRequest, ID: number, NodeID: "PR_" + number, Number: number, Title: strings.Repeat("\x01", 4096), State: domain.RepositoryItemOpen, CreatedAt: now, UpdatedAt: now, URL: domain.RepositoryItemURL("fixture-owner", "repo", domain.RepositoryPullRequest, number), Draft: &no, Merged: &no, BaseRef: "main", BaseSHA: strings.Repeat("a", 40), HeadRef: "feature", HeadSHA: strings.Repeat("b", 40)}
+				if err := item.ValidateWorkspaceNode(value.Repository, domain.RepositoryQuery{Kind: domain.RepositoryPullRequest, Operation: domain.RepositoryDetail, Number: number}); err != nil {
+					t.Error("response limit fixture has an invalid node", number, err)
+				}
+				value.Nodes = append(value.Nodes, domain.PRWorkspaceNode{Item: item, Seed: i == 101 || i == 102})
+			}
+			return value, nil
+		})
+		r := h.await(h.start(h.ctx))
+		if r.response != nil || connect.CodeOf(r.err) != connect.CodeResourceExhausted || h.provider.calls.Load() != 1 {
+			t.Fatal("oversized valid workspace was published or replayed", r.err, h.provider.calls.Load())
+		}
+		finished := requireWorkspaceEvents(t, h.logs, "pull_request_workspace_finished", 1)
+		if finished[0]["outcome"] != string(workspaceOutcomeFailed) || finished[0]["error_code"] != string(domain.ResourceExhausted) {
+			t.Fatal("response limit logged success", finished[0])
+		}
+	})
 	t.Run("profile cleanup cancellation", func(t *testing.T) {
 		entered := make(chan struct{})
 		h := newWorkspaceHarness(t, func(ctx context.Context, _ int, _ []byte, _ *gh.WorkspaceBudget) (gh.WorkspaceObservation, error) {
@@ -699,7 +871,7 @@ func TestResumedAdmissionKeepsLimits(t *testing.T) {
 		return h, &integrationResume{initialized: true, scope: selected, activeDeadline: time.Now().Add(time.Minute)}
 	}
 	admit := func(h *workspaceHarness, resume *integrationResume) error {
-		_, err := h.f.service.admitRepositoryIntegration(h.ctx, domain.ID(h.repo.Id), "workspace", "limits", resume, func(context.Context, []byte, repositoryIntegrationSelection) error {
+		_, err := h.f.service.admitRepositoryIntegration(h.ctx, domain.ID(h.repo.Id), "workspace", "limits", 1, resume, func(context.Context, []byte, repositoryIntegrationSelection) error {
 			t.Error("read admitted despite a limit")
 			return nil
 		})

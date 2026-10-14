@@ -64,6 +64,10 @@ func (s *Service) RecoverSessionExecution(ctx context.Context, req *connect.Requ
 			if prior.SessionID != sr.ID || job.Type != domain.RecoverExecutionJob || job.ParentID != expectedParent || (session.CompactionJobID == "" && session.Execution != nil && job.ParentID != session.Execution.JobID) {
 				return nil, domain.ExecutionRecoveryUncertain()
 			}
+			if session.SidechatActiveRetry != "" && session.Execution != nil && session.Execution.ExecutionID == execution && session.Execution.CleanupVerified && job.State == domain.JobSucceeded {
+				s.logger.WarnContext(ctx, "session_execution_recovery_rejected", "session_id", sr.ID, "phase", "older-sidechat-recovery", "execution_id", execution, "sidechat_active_retry", session.SidechatActiveRetry, "prior_recovery_job", prior.ID)
+				return nil, domain.ExecutionRecoveryUncertain()
+			}
 			if job.State == domain.JobQueued || job.State == domain.JobClaimed {
 				return sessionReceipt{SessionID: sr.ID}, nil
 			}
@@ -363,11 +367,15 @@ func finishExecutionRecovery(tx *store.Tx, record store.Record, job domain.Job) 
 		}
 		session.Execution.CleanupVerified = true
 		session.Recovery, session.ActiveExecutionID = domain.NoRecovery, ""
+		// A newer retry owner still needs its own cleanup proof.
+		if session.SidechatActiveRetry != "" {
+			session.Recovery = domain.NeedsRecovery
+		}
 		// The retained problem belongs to the newer owner while it remains active.
 		if session.Problem != nil && session.Problem.Code == domain.RecoveryRequired && session.SidechatActiveRetry == "" {
 			session.Problem = nil
 		}
-		if session.Archive == domain.ArchivePending {
+		if session.Archive == domain.ArchivePending && session.SidechatActiveRetry == "" {
 			session.Archive = domain.Archived
 		}
 		if pendingInitialSessionTitle(session, retryInput) {
@@ -438,7 +446,7 @@ func openCodeForkRecoveryCreation(tx *store.Tx, row store.Record, session domain
 	expected, _ := json.Marshal(seed.Snapshot)
 	selected, _ := json.Marshal(f.Startup)
 	originalSelection, _ := json.Marshal(seed.Startup)
-	if !bytes.Equal(actual, expected) || !bytes.Equal(selected, originalSelection) {
+	if !bytes.Equal(actual, expected) || f.Startup != nil && !bytes.Equal(selected, originalSelection) {
 		return "", domain.ExecutionRecoveryUncertain()
 	}
 	// Older children may have no retained selection; the surviving original seed
