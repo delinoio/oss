@@ -309,3 +309,88 @@ func TestVerifySharedCodexHomeCreatesNothing(t *testing.T) {
 		t.Fatal("verification registered the account home")
 	}
 }
+
+// An exclusive continuation (and the founding owner) must free the shared
+// account home before the Finish that lets the server admit the next holder.
+// The publish callback models the continuation's retried Take being admitted at
+// that moment: it must find the lock free and the hold already released.
+func TestPublishAfterReleaseFreesSharedHomeBeforeFinish(t *testing.T) {
+	config, machine := profileTestConfig(t)
+	account := domain.NewID()
+	seedSharedCodexHistory(t, config, account)
+	ctx := context.Background()
+	hold, err := holdSharedCodexHome(ctx, config, machine, account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// While the hold exists another holder is blocked with the busy cause.
+	if _, err := holdSharedCodexHome(ctx, config, machine, account); err == nil {
+		t.Fatal("two holders locked the shared account home")
+	}
+	published := false
+	releaseErr, publishErr := publishAfterRelease(hold, func() error {
+		published = true
+		if hold.lease != nil {
+			t.Error("the hold still owned the lock when Finish was published")
+		}
+		next, err := holdSharedCodexHome(ctx, config, machine, account)
+		if err != nil {
+			t.Errorf("the admitted continuation met a held lock: %v", err)
+			return nil
+		}
+		return next.release()
+	})
+	if !published || releaseErr != nil || publishErr != nil {
+		t.Fatalf("published=%v release=%v publish=%v", published, releaseErr, publishErr)
+	}
+	// Releasing again, and releasing a missing hold, are no-ops.
+	if err := hold.release(); err != nil {
+		t.Fatal(err)
+	}
+	var none *sharedHomeHold
+	if err := none.release(); err != nil {
+		t.Fatal(err)
+	}
+	releaseErr, publishErr = publishAfterRelease(none, func() error { return nil })
+	if releaseErr != nil || publishErr != nil {
+		t.Fatalf("a missing hold blocked the publication: %v %v", releaseErr, publishErr)
+	}
+}
+
+// A failed release verification never skips the Finish, because the account
+// lease must not stay held for a lock that was already closed. The failure is
+// reported next to the publish outcome and is verified again by the next call.
+func TestPublishAfterReleaseReportsUnverifiedReleaseAndStillPublishes(t *testing.T) {
+	config, machine := profileTestConfig(t)
+	account := domain.NewID()
+	home, _ := seedSharedCodexHistory(t, config, account)
+	ctx := context.Background()
+	hold, err := holdSharedCodexHome(ctx, config, machine, account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved := home + "-moved"
+	if err := os.Rename(home, moved); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(moved, home); err != nil {
+		t.Skip("symlinks unavailable")
+	}
+	published := false
+	releaseErr, publishErr := publishAfterRelease(hold, func() error { published = true; return nil })
+	if !published || publishErr != nil {
+		t.Fatalf("Finish was skipped: published=%v err=%v", published, publishErr)
+	}
+	if releaseErr == nil || !hold.unverified {
+		t.Fatalf("an unverifiable release was reported as verified: %v", releaseErr)
+	}
+	if err := os.Remove(home); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(moved, home); err != nil {
+		t.Fatal(err)
+	}
+	if err := hold.release(); err != nil || hold.unverified {
+		t.Fatalf("a repaired home was not verified on retry: %v", err)
+	}
+}

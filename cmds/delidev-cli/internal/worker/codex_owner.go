@@ -10,7 +10,6 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
@@ -99,8 +98,9 @@ type codexSharedOwner struct {
 	runtime *codex.SharedRuntime
 	home    string
 	// profile is the registry lock of the shared account history home. The
-	// founding owner holds it until the owner retires.
-	profile                *nativeprofile.Lease
+	// founding owner holds it until the owner retires and releases it, verified,
+	// before the owner Finish is published.
+	profile                *sharedHomeHold
 	initial                []byte
 	latest                 []byte
 	unregisterObservations func()
@@ -337,9 +337,18 @@ func (o *codexSharedOwner) reportOwner(last *codexSharedMember) error {
 	if o.runtime == nil && o.clean {
 		bundle = o.initial
 	}
-	err := withFreshClient(o.config, last.lease, func() error {
-		return last.lease.finishCodexScopedRetry(bundle, o.clean, success, pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_OWNER, o.lease.response.LeaseRevision)
+	// The server frees the account lease when it commits the owner Finish, which
+	// admits an exclusive continuation that is already retrying its Take. Release
+	// and verify the profile lock first so that continuation never meets
+	// profile_busy. Retries of an uncertain Finish find the lock already free.
+	releaseErr, err := publishAfterRelease(o.profile, func() error {
+		return withFreshClient(o.config, last.lease, func() error {
+			return last.lease.finishCodexScopedRetry(bundle, o.clean, success, pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_OWNER, o.lease.response.LeaseRevision)
+		})
 	})
+	if releaseErr != nil && o.config.Logger != nil {
+		o.config.Logger.Warn("codex_shared_owner_profile_release_failed", "account_id", o.lease.account, "owner_lease_id", o.lease.leaseID())
+	}
 	if err != nil {
 		if codexFinishOutcomeUnknown(err) {
 			o.gate.mu.Lock()
@@ -356,7 +365,6 @@ func (o *codexSharedOwner) reportOwner(last *codexSharedMember) error {
 	}
 	o.pendingOwner = nil
 	o.gate.mu.Unlock()
-	o.releaseProfile()
 	if o.config.Logger != nil {
 		o.config.Logger.Info("codex_shared_owner_retired", "account_id", o.lease.account, "owner_lease_id", o.lease.leaseID(), "cleanup_confirmed", o.clean)
 	}
@@ -381,15 +389,3 @@ func (o *codexSharedOwner) accountHome(root string) (string, error) {
 }
 
 func (o *codexSharedOwner) ownerProcessID() domain.ID { return o.lease.leaseID() }
-
-// releaseProfile releases the registry lock of the shared account history
-// home. It only unlocks: history, caches and helper files stay retained.
-func (o *codexSharedOwner) releaseProfile() {
-	if o.profile == nil {
-		return
-	}
-	if err := o.profile.Close(); err != nil && o.config.Logger != nil {
-		o.config.Logger.Warn("codex_shared_owner_profile_release_failed", "account_id", o.lease.account, "owner_lease_id", o.lease.leaseID())
-	}
-	o.profile = nil
-}

@@ -2964,7 +2964,13 @@ The founding owner takes the profile lock when it is founded and releases only
 the lock when the owner retires; joined members rely on that lock and take none.
 An exclusive continuation of a version 2 account history takes the same lock, so
 a shared owner and an exclusive run can never write the home at once; a held lock
-blocks with `profile_busy`. Retained rollouts, caches and helper links never
+blocks with `profile_busy`. The server frees the account lease when it commits
+the owner Finish (or the exclusive run's Finish), which admits a continuation
+that is already retrying its Take. The Worker therefore releases the lock and
+verifies that it can be taken again before it publishes that Finish, including
+every retry of an uncertain Finish, so the admitted continuation never meets
+`profile_busy`. Member Finishes leave the lock with the owner. A release that
+cannot be verified is logged and reported but never skips the Finish. Retained rollouts, caches and helper links never
 block a later owner. An unremoved `auth.json` still blocks the next founder
 through the credential check. The profile has no conversation or history
 identifier, so session deletion never removes it; no automatic age-based pruning

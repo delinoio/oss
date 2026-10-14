@@ -224,6 +224,9 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	}
 	var checkpoint CodexExecutionCheckpoint
 	var compacted *codex.CompactedCheckpoint
+	// accountHold is the shared account home lock of an exclusive version 2
+	// continuation. It is released, verified, before the managed Finish.
+	var accountHold *sharedHomeHold
 	if c := input.Continuation; c != nil {
 		rawDigest, err := hex.DecodeString(c.PromptDigest)
 		if err != nil || len(rawDigest) != sha256.Size {
@@ -257,17 +260,18 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			nativeHome = checkpoint.AccountHome
 			// An exclusive continuation of the account history locks the same
 			// registered profile that a shared owner holds, so both can never
-			// write the home at once.
-			accountProfile, err := acquireSharedCodexHome(ctx, config, input.MachineID, input.AccountID)
+			// write the home at once. The managed Finish releases it first.
+			hold, err := holdSharedCodexHome(ctx, config, input.MachineID, input.AccountID)
 			if err != nil {
 				return nil, err
 			}
-			if accountProfile.Root != nativeHome {
-				_ = accountProfile.Close()
+			if hold.root() != nativeHome {
+				_ = hold.release()
 				return nil, executionCheckpointUncertain()
 			}
+			accountHold = hold
 			defer func() {
-				if err := accountProfile.Close(); err != nil {
+				if err := accountHold.release(); err != nil {
 					output, returned = nil, config.startup.cleanupFailure(returned, err)
 				}
 			}()
@@ -373,7 +377,17 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			// ownership. Only a captured bundle or the verified unused original,
 			// together with independent cleanup, permits ordinary job reporting.
 			conclusive := managedCleanup && (managedSuccess || managedUnusedOriginal)
-			if err := managed.finish(managedLatest, managedCleanup, false, managedSuccess); err != nil {
+			// The server frees the account lease when it commits Finish, so the
+			// shared home lock is released and verified before that request: a
+			// continuation already retrying its Take would otherwise be admitted
+			// and meet profile_busy.
+			releaseErr, err := publishAfterRelease(accountHold, func() error {
+				return managed.finish(managedLatest, managedCleanup, false, managedSuccess)
+			})
+			if releaseErr != nil {
+				output, returned = nil, config.startup.cleanupFailure(returned, releaseErr)
+			}
+			if err != nil {
 				output, returned = nil, &managedExecutionUncertain{err}
 			} else if !conclusive {
 				if returned == nil {
@@ -460,7 +474,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		if sharedCodex && sharedFounder {
 			// The founding owner locks the registered account home until the
 			// owner retires; joined members rely on that lock.
-			sharedOwner.profile, err = acquireSharedCodexHome(ctx, config, input.MachineID, input.AccountID)
+			sharedOwner.profile, err = holdSharedCodexHome(ctx, config, input.MachineID, input.AccountID)
 			if err != nil {
 				return nil, err
 			}

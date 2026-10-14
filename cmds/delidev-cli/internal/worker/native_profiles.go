@@ -323,6 +323,79 @@ func acquireSharedCodexHome(ctx context.Context, config Config, machine, account
 	return lease, nil
 }
 
+// sharedHomeHold is a held lock of the registered shared Codex account home. A
+// founding shared owner and an exclusive continuation of the account history
+// each hold one, and each must release it before it publishes the Finish that
+// lets the server admit the next holder.
+type sharedHomeHold struct {
+	config  Config
+	machine domain.ID
+	account domain.ID
+	lease   *nativeprofile.Lease
+	// unverified is set once the lock was closed and cleared only after a probe
+	// proved that the lock is free again.
+	unverified bool
+}
+
+// holdSharedCodexHome locks the shared Codex account home.
+func holdSharedCodexHome(ctx context.Context, config Config, machine, account domain.ID) (*sharedHomeHold, error) {
+	lease, err := acquireSharedCodexHome(ctx, config, machine, account)
+	if err != nil {
+		return nil, err
+	}
+	return &sharedHomeHold{config: config, machine: machine, account: account, lease: lease}, nil
+}
+
+// root is the registered home path the hold locks.
+func (h *sharedHomeHold) root() string { return h.lease.Root }
+
+// release closes the lock and verifies that a new holder can take it. It only
+// unlocks: history, caches and helper files stay retained. It is idempotent and
+// safe on a nil hold; a failed verification is reported again by the next call.
+func (h *sharedHomeHold) release() error {
+	if h == nil {
+		return nil
+	}
+	var closeErr error
+	if h.lease != nil {
+		closeErr, h.lease, h.unverified = h.lease.Close(), nil, true
+	}
+	if !h.unverified {
+		return nil
+	}
+	probe, err := acquireSharedCodexHome(context.Background(), h.config, h.machine, h.account)
+	if err != nil {
+		h.log("shared_codex_home_release_unverified", err)
+		return errors.Join(closeErr, err)
+	}
+	probeErr := probe.Close()
+	h.unverified = false
+	if closeErr != nil || probeErr != nil {
+		h.log("shared_codex_home_release_failed", errors.Join(closeErr, probeErr))
+		return errors.Join(closeErr, probeErr)
+	}
+	return nil
+}
+
+func (h *sharedHomeHold) log(event string, err error) {
+	if h.config.Logger != nil {
+		reason, _ := nativeprofile.Reasoned(err)
+		h.config.Logger.Warn(event, "account_id", h.account, "reason", reason)
+	}
+}
+
+// publishAfterRelease runs publish, the Finish that frees the account lease on
+// the server, only after the shared home lock was released and verified. The
+// server commits the lease removal before the Worker could release afterwards,
+// and a continuation already retrying its Take would then be admitted while the
+// lock is still held and fail with profile_busy. A release failure is returned
+// next to the publish outcome and never skips the publish: the lease must not
+// be held for a lock that is already closed.
+func publishAfterRelease(hold *sharedHomeHold, publish func() error) (releaseErr, publishErr error) {
+	releaseErr = hold.release()
+	return releaseErr, publish()
+}
+
 // verifySharedCodexHome checks a checkpoint-bound shared home against the
 // registry without registering or creating anything. An unregistered legacy
 // home passes; a registered one must resolve to the same path.
