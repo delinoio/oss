@@ -36,7 +36,7 @@ func (p RevertedContext) validate() error {
 // changed replacement history never authorizes another native mutation.
 func (c *Client) RevertThread(ctx context.Context, action domain.ID, source ContinuationCheckpoint, target HistoricalInput, before domain.ID, claim func(RevertIntent) error) (result CompactedCheckpoint, returned error) {
 	defer c.recordFailure(ctx, domain.CodexHistory, &returned)
-	if !c.revertHistory || action.Validate() != nil || before.Validate() != nil || target.ID.Validate() != nil || source.validate(ResumeAfterTerminal) != nil {
+	if !c.revertHistory || action.Validate() != nil || before.Validate() != nil || target.ID.Validate() != nil || source.validate(ResumeAfterTerminal) != nil || !revertSourceWithinBound(source) {
 		return result, compactionUncertain()
 	}
 	if err := c.acquireControl(ctx); err != nil {
@@ -77,7 +77,7 @@ func (c *Client) RevertThread(ctx context.Context, action domain.ID, source Cont
 	intent := RevertIntent{Version: 1, ActionID: action, Source: source, Target: target, BeforeTurnID: before, ExpectedHistory: slices.Clone(history[:index])}
 	// Refuse before the claim callback when the private intent could not be
 	// persisted; this keeps the failure a positive no-send proof.
-	if encoded, e := json.Marshal(intent); e != nil || len(encoded) > MaxRevertIntentBytes-revertIntentEnvelopeReserve {
+	if encoded, e := json.Marshal(intent); e != nil || len(encoded) > MaxRevertIntentBytes-revertClaimWrapperReserve {
 		return result, compactionUncertain()
 	}
 	if err := claim(intent); err != nil {
@@ -200,12 +200,28 @@ func (c *Client) verifyRevertedContinuation(ctx context.Context, request domain.
 }
 
 const (
-	// MaxRevertIntentBytes bounds the persisted private Revert intent file. It
-	// holds the largest profile-aware retained history plus the claim envelope.
-	MaxRevertIntentBytes = enlargedNativeFrameBytes + 1<<20
-	// revertIntentEnvelopeReserve leaves room for the owner's claim wrapper.
+	// MaxRevertSourceBytes bounds the encoded source continuation checkpoint a
+	// Revert intent may carry. It equals the worker's persisted execution
+	// checkpoint ceiling, so every persisted source checkpoint is admissible
+	// while a larger in-memory one cannot make the intent unpersistable.
+	MaxRevertSourceBytes = 1 << 20
+	// revertIntentEnvelopeReserve covers the target, identifiers and field names
+	// of the intent beside its source checkpoint and retained history.
 	revertIntentEnvelopeReserve = 64 << 10
+	// revertClaimWrapperReserve leaves room for the owner's claim wrapper.
+	revertClaimWrapperReserve = 4 << 10
+	// MaxRevertIntentBytes bounds the persisted private Revert intent file. It
+	// holds the largest profile-aware retained history, the bounded source
+	// checkpoint and the intent envelope.
+	MaxRevertIntentBytes = enlargedNativeFrameBytes + MaxRevertSourceBytes + revertIntentEnvelopeReserve
 )
+
+// revertSourceWithinBound refuses a source checkpoint whose encoding could push
+// an otherwise admissible retained history past the intent file ceiling.
+func revertSourceWithinBound(source ContinuationCheckpoint) bool {
+	encoded, err := json.Marshal(source)
+	return err == nil && len(encoded) <= MaxRevertSourceBytes
+}
 
 // RevertIntent is a private exact send claim. Recovery can only inspect it.
 type RevertIntent struct {

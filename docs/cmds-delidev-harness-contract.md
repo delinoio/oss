@@ -2745,7 +2745,8 @@ admitted native frame because they never enter that projection. Retained-history
 scans (context inspection, compaction, continuation and Revert) use an aggregate
 budget of `max(4 MiB, native frame limit)`, so an output admitted by the enlarged
 16 MiB frame is not rejected by the aggregate; Fork keeps its own 4 MiB bound and
-the private Revert intent file is bounded at 17 MiB. See
+the private Revert intent file is bounded at 17 MiB plus a 64 KiB envelope
+(16 MiB history, 1 MiB source checkpoint). See
 `cmds-delidev-compaction-contract.md` for the exact-budget and no-send rules.
 
 The app-server removes `input_image` and `input_audio` entries from

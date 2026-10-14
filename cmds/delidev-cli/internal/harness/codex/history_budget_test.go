@@ -232,3 +232,30 @@ func TestRevertScanBudgetCountsRetainedItemsNotPageEnvelopes(t *testing.T) {
 		t.Fatal("transport envelopes above their own bound were admitted")
 	}
 }
+
+func TestRevertRefusesSourceCheckpointAboveIntentEnvelopeBeforeClaim(t *testing.T) {
+	c, capture, source, ids, inputs := revertFixture(t, "ready")
+	if !revertSourceWithinBound(source) {
+		t.Fatal("ordinary source checkpoint was refused")
+	}
+	// A checkpoint with many maximum-length context item IDs encodes far above
+	// the persisted execution-checkpoint ceiling the intent envelope assumes.
+	large := source
+	records := make([]ContextRecord, 0, 600)
+	for n := range 600 {
+		records = append(records, ContextRecord{Trigger: AutomaticCompaction, TurnID: domain.NewID(), LiveItemID: fmt.Sprintf("%01024d", n), HistoryItemID: fmt.Sprintf("%01024d", n)})
+	}
+	large.Context = &ContinuationContextCheckpoint{Version: 1, TurnsCount: 1, HistoryDigest: strings.Repeat("0", 64), RolloutPath: "/private/original", RolloutDigest: strings.Repeat("0", 64), Records: records}
+	if revertSourceWithinBound(large) {
+		t.Fatal("source checkpoint above the intent envelope bound was admitted")
+	}
+	claimed := false
+	_, err := c.RevertThread(context.Background(), domain.NewID(), large, inputs[2], ids[2], func(RevertIntent) error { claimed = true; return nil })
+	assertCode(t, err, domain.RecoveryRequired)
+	if claimed || len(requestsOf(t, capture, "thread/revert")) != 0 {
+		t.Fatal("oversized source reached the claim or the native send")
+	}
+	if MaxRevertIntentBytes < enlargedNativeFrameBytes+MaxRevertSourceBytes+revertIntentEnvelopeReserve {
+		t.Fatal("intent ceiling cannot hold the largest history and source checkpoint")
+	}
+}

@@ -51,3 +51,11 @@ func TestRevertIntentPersistsHistoryAboveCompactionCheckpointBound(t *testing.T)
 		})
 	}
 }
+
+func TestRevertSourceBoundCoversEveryPersistedExecutionCheckpoint(t *testing.T) {
+	// The source of a Revert intent is read from a persisted execution
+	// checkpoint, so the intent envelope must admit anything that can be stored.
+	if codex.MaxRevertSourceBytes < maxExecutionCheckpointBytes {
+		t.Fatal("Revert source bound is below the persisted execution checkpoint ceiling", codex.MaxRevertSourceBytes, maxExecutionCheckpointBytes)
+	}
+}

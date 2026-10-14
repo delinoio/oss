@@ -495,10 +495,13 @@ budget passes and one more byte fails safely as `recovery-required`; the frame
 limit, 128 turns, 4,096 items, unique item/cursor identities and malformed-output
 rejection are unchanged. Fork keeps its separate 4 MiB bound.
 The private Revert intent file (`native-revert-intent.json`) persists the
-complete expected prefix and has its own 17 MiB bound (the 16 MiB largest budget
-plus a 1 MiB claim envelope), above the 10 MiB compaction checkpoint ceiling. The
-harness refuses before the claim callback when the encoded intent would exceed
-that bound, which remains a positive no-send failure. The package-level intent
+complete expected prefix and has its own bound of 17 MiB plus 64 KiB (the 16 MiB
+largest history budget, a 1 MiB source continuation checkpoint and a 64 KiB intent
+envelope), above the 10 MiB compaction checkpoint ceiling. The 1 MiB source bound
+equals the persisted execution checkpoint ceiling, so every persisted source
+checkpoint is admissible; the harness refuses a larger encoded source checkpoint,
+and an encoded intent that would exceed the file bound, before the claim callback.
+Both refusals remain positive no-send failures. The package-level intent
 verifier cannot know the writing client's profile and accepts at most the 16 MiB
 ceiling; the writing client enforces its own profile budget first.
 Unknown, partial or changed evidence retains quarantine. Allocation and version
