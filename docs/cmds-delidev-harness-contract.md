@@ -2967,12 +2967,12 @@ Checkpoint readers verify the home through a read-only registry lookup that
 takes no lock and creates no file or directory, so it also works on a
 read-only Worker root:
 
-| Registry state                           | Registered path | Verification                       |
-| ---------------------------------------- | --------------- | ---------------------------------- |
-| `native-profiles/` or the file is absent | none            | passes; nothing is created         |
-| registry present, key unregistered       | none            | passes; the legacy home is allowed |
-| registry present, key registered         | the derived one | passes                             |
-| registry present, key registered         | another path    | recovery required                  |
+| Registry state                           | Registered path | Verification                           |
+| ---------------------------------------- | --------------- | -------------------------------------- |
+| `native-profiles/` or the file is absent | none            | passes; nothing is created             |
+| registry present, key unregistered       | none            | passes; the legacy home is allowed     |
+| registry present, key registered         | the derived one | passes                                 |
+| registry present, key registered         | another path    | recovery required                      |
 | registry directory not private or a link | n/a             | recovery required (`registry_invalid`) |
 | registry file unreadable or invalid      | n/a             | recovery required (`registry_invalid`) |
 
@@ -3017,14 +3017,14 @@ be told apart from a lock that was never released, so that release stays
 unverified. A probe whose own close fails is never taken for free either: the hold
 stays unverified and the next call probes again.
 
-| Close and probe                                    | Release      |
-| -------------------------------------------------- | ------------ |
-| clean close, probe takes and closes the lock       | verified     |
-| clean close, another holder meets the probe        | verified (handoff) |
-| failed close, probe takes and closes the lock      | verified; the close error is reported once |
-| failed close, another holder meets the probe       | not verified |
-| probe takes the lock but its close fails           | not verified; retried by the next call |
-| probe fails for another cause, such as a replaced home | not verified |
+| Close and probe                                        | Release                                    |
+| ------------------------------------------------------ | ------------------------------------------ |
+| clean close, probe takes and closes the lock           | verified                                   |
+| clean close, another holder meets the probe            | verified (handoff)                         |
+| failed close, probe takes and closes the lock          | verified; the close error is reported once |
+| failed close, another holder meets the probe           | not verified                               |
+| probe takes the lock but its close fails               | not verified; retried by the next call     |
+| probe fails for another cause, such as a replaced home | not verified                               |
 
 The release and the Finish settle as follows. The owner path is the founding
 owner retiring through its last member; the exclusive path is a version 2
