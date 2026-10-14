@@ -60,7 +60,10 @@ for (const target of targets) {
   );
   const result = spawnSync(
     process.execPath,
-    [path.join(repoRoot, "crates/bundlewhy/adapters", `${target.bundler}.mjs`), requestPath],
+    [
+      path.join(repoRoot, "crates/bundlewhy/adapters", `${target.bundler}.mjs`),
+      requestPath,
+    ],
     {
       cwd: projectRoot,
       encoding: "utf8",
