@@ -129,6 +129,15 @@ other action are refused. Grok lifecycle work is not pushed to Workers through
 the subscription watch until the managed Grok Worker capability is declared and
 negotiated.
 
+Installation admission happens only at Take, inside the claiming transaction, and
+the verified observation it returns is the only one the lease uses. Harness
+discovery may replace the Runner Device's installation list at any time (missing,
+failed, duplicated or newly unsupported), so a claimed lease is never re-gated on
+installation metadata: the exact stored Worker, instance, epoch and lease can
+always report Finish, including confirmed cleanup that releases the lease. Finish
+still requires the current Worker instance, the stored owner binding and the
+frozen lease generation and revision.
+
 Finish opens the returned envelope against this server, the account and the
 generation the Finish creates, so a bundle sealed for another server, account or
 generation, a native file, a Codex bundle or an empty bundle is refused and

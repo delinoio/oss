@@ -103,7 +103,11 @@ func grokSubscriptionInstallation(tx *store.Tx, machine domain.ID) (domain.Insta
 
 // grokSubscriptionLeaseView resolves the exact singleton Grok lease for the
 // authenticated Worker. Every owner binding (Runner, device, instance, epoch)
-// is checked against the stored lease.
+// is checked against the stored lease. Installation admission belongs to Take
+// alone: harness discovery may replace the Runner Device's installation list at
+// any time, and the Worker may already have joined the original native process
+// and removed its local credential, so a claimed lease is never re-gated on
+// mutable installation metadata and the original owner can always report Finish.
 func (s *Service) grokSubscriptionLeaseView(ctx context.Context, tx *store.Tx, id, lease, machine, instance domain.ID) (store.Record, domain.Account, domain.SubscriptionLease, error) {
 	r, a, err := grokSubscriptionAccount(tx, id, 0)
 	if err != nil {
@@ -119,9 +123,6 @@ func (s *Service) grokSubscriptionLeaseView(ctx context.Context, tx *store.Tx, i
 		return r, a, domain.SubscriptionLease{}, subscriptionDenied()
 	}
 	if err := currentInstance(tx, machine, instance); err != nil {
-		return r, a, *l, err
-	}
-	if _, err := grokSubscriptionInstallation(tx, machine); err != nil {
 		return r, a, *l, err
 	}
 	return r, a, *l, nil
@@ -149,6 +150,9 @@ func (s *Service) takeGrokSubscription(ctx context.Context, req *connect.Request
 		return nil, rpc.Error(grokUnsupported(), c)
 	}
 	owned := false
+	// admitted is the installation verified in the claiming transaction. It is
+	// the only installation observation this lease ever uses.
+	var admitted domain.Installation
 	defer func() {
 		if returned != nil && owned {
 			if err := s.markSubscriptionRecovery(input.Account); err != nil {
@@ -176,7 +180,8 @@ func (s *Service) takeGrokSubscription(ctx context.Context, req *connect.Request
 		if err := currentInstance(tx, input.Machine, input.Instance); err != nil {
 			return nil, err
 		}
-		if _, err := grokSubscriptionInstallation(tx, input.Machine); err != nil {
+		installation, err := grokSubscriptionInstallation(tx, input.Machine)
+		if err != nil {
 			return nil, err
 		}
 		if err := tx.WorkerUpdateAdmission(input.Machine); err != nil {
@@ -208,6 +213,7 @@ func (s *Service) takeGrokSubscription(ctx context.Context, req *connect.Request
 		}
 		op.Phase = domain.SubscriptionClaimed
 		st.Lease = &domain.SubscriptionLease{ID: input.Lease, OperationID: input.Operation, Revision: r.Revision + 1, Action: action, MachineID: input.Machine, InstanceID: input.Instance, DeviceID: actor.DeviceID, Epoch: s.subscriptionServerEpoch(), Generation: st.Generation, StartedAt: time.Now().UTC()}
+		admitted = installation
 		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
 		return accountReceipt{ID: r.ID}, err
 	})
@@ -222,12 +228,10 @@ func (s *Service) takeGrokSubscription(ctx context.Context, req *connect.Request
 	owned = true
 	var generation domain.ID
 	var leaseRevision uint64
-	var installation domain.Installation
 	err = s.Store.Read(ctx, func(tx *store.Tx) error {
-		_, a, view, err := s.grokSubscriptionLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance)
+		_, _, view, err := s.grokSubscriptionLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance)
 		if err == nil {
-			generation, leaseRevision = a.Subscription.Generation, view.Revision
-			installation, err = grokSubscriptionInstallation(tx, input.Machine)
+			generation, leaseRevision = view.Generation, view.Revision
 		}
 		return err
 	})
@@ -273,7 +277,7 @@ func (s *Service) takeGrokSubscription(ctx context.Context, req *connect.Request
 		clear(bundle)
 		return nil, rpc.Error(err, c)
 	}
-	installationJSON, _ := json.Marshal(installation)
+	installationJSON, _ := json.Marshal(admitted)
 	s.logger.InfoContext(ctx, "grok_subscription_lease_granted", "account_id", input.Account, "lease_id", input.Lease, "operation_id", input.Operation, "action", action, "bundle_delivered", len(bundle) != 0)
 	return connect.NewResponse(&pb.TakeSubscriptionResponse{LeaseId: string(input.Lease), GenerationId: string(generation), Bundle: bundle, LeaseRevision: leaseRevision, InstallationJson: installationJSON}), nil
 }

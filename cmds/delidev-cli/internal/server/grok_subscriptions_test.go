@@ -454,6 +454,55 @@ func TestGrokTakeRequiresPinnedSubscriptionVersion(t *testing.T) {
 	f.login("synthetic-principal-1")
 }
 
+// Harness discovery replaces the installation list at any time. A lease that
+// Take already claimed must stay finishable by its exact original owner, so the
+// Worker can report cleanup and release the account.
+func TestGrokFinishSurvivesInstallationRediscoveryAfterTake(t *testing.T) {
+	rediscovery := map[string]func(*[]domain.Installation){
+		"missing": func(i *[]domain.Installation) { *i = nil },
+		"failed": func(i *[]domain.Installation) {
+			(*i)[0].State = domain.InstallationFailed
+			(*i)[0].ProtocolVerified = false
+		},
+		"duplicated":   func(i *[]domain.Installation) { *i = append(*i, (*i)[0]) },
+		"unsupported":  func(i *[]domain.Installation) { (*i)[0].Version = "1.0.47" },
+		"unverified":   func(i *[]domain.Installation) { (*i)[0].ProtocolVerified = false },
+		"stale-legacy": func(i *[]domain.Installation) { (*i)[0].Version = domain.GrokProtocolVersion },
+	}
+	for name, edit := range rediscovery {
+		t.Run(name+"/success", func(t *testing.T) {
+			f := newGrokFixture(t)
+			lease, err := f.take(f.queue(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN), pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.setGrokInstallation(t, edit)
+			generation := domain.NewID()
+			if _, err := f.finishWith(lease, generation, f.sealed(t, f.input.AccountID, generation, "synthetic-principal-1"), true, false, true); err != nil {
+				t.Fatalf("Finish failed after installation rediscovery: %v", err)
+			}
+			_, a := f.record()
+			if a.Subscription.Lease != nil || a.Subscription.RecoveryRequired || a.Subscription.Generation != generation || a.Connection == nil {
+				t.Fatal("the original owner could not complete its lease after rediscovery")
+			}
+		})
+		t.Run(name+"/cleanup-only", func(t *testing.T) {
+			f := newGrokFixture(t)
+			lease, err := f.take(f.queue(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN), pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.setGrokInstallation(t, edit)
+			if _, err := f.finishWith(lease, domain.NewID(), nil, false, false, true); err != nil {
+				t.Fatalf("confirmed cleanup could not release the lease after rediscovery: %v", err)
+			}
+			if _, a := f.record(); a.Subscription.Lease != nil || a.Subscription.RecoveryRequired {
+				t.Fatal("the lease stayed fenced after confirmed cleanup")
+			}
+		})
+	}
+}
+
 func (f *grokFixture) start2(action pb.SubscriptionAction) (*pb.RequestSubscriptionResponse, error) {
 	r, _ := f.record()
 	response, err := f.client.RequestSubscription(context.Background(), subscriptionRequest(f.service.Identity.Token, &pb.RequestSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(r.ID), ExpectedRevision: r.Revision}, MachineId: string(f.input.MachineID), Action: action}))
