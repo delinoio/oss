@@ -776,6 +776,16 @@ replays the request (see the
 The Claude device-profile directory is registered in place and removed only by
 its logout.
 
+Explicit deletion of a server account removes every server-owned profile of that
+account (`auth`, `quota`, `credit`, `subscription_probe` with their native
+caches) in the same locked admission step that checks credential references and
+before the account record is deleted; a busy, referenced or unremovable profile
+rejects the deletion so the same request can be retried, and a logout alone
+still retains the profiles. Transient credential files include the
+target-attributed temporary files of an interrupted credential write
+(`.pending-<target>-*`): they block reuse as `credential_file_present` and are
+retired with the credential files, including during account deletion.
+
 ## Claude native version admission and diagnostics
 
 Server-owned setup-token login, Runner subscription selection and the Worker lifecycle admit any verified Claude Code installation whose valid SemVer precedence is at or above the pinned `2.1.236` baseline, using `domain.HarnessVersionAllowed`. Admission only permits the real native protocol, settings, authentication and cleanup checks to run. The `claude auth` and `--version` verification compares the executable output with the observed installation version, never with the baseline constant. A malformed or lower version stays unsupported before any native launch.

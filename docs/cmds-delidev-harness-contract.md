@@ -2930,6 +2930,35 @@ or an invalid owner still blocks the owning operation with a specific safe
 cause (`process_uncertain`, `credential_file_present`, `owner_invalid`). The
 OS vault stays authoritative; the registry stores no secret.
 
+Credential files are written only through `subscription.WriteCredentialFile`,
+whose temporary name is attributed to its target (`.pending-<target>-*`, via
+`security.OwnedTemporaryPrefix`). A crash between the temporary write and the
+rename therefore leaves an attributable plaintext remnant: the presence check
+(`CredentialFilePresent`) reports it as `credential_file_present`, retirement
+(`RetireCredentialFiles`, including account deletion) removes it, a non-regular
+entry with that name blocks without being removed, and the next credential write
+to the same target retires an earlier remnant before writing.
+
+The transient executable copy of a native model observation is created by
+exactly one attempt (`O_EXCL`) and removed only after that operation's owned
+processes are joined; an unproven owner keeps the copy and the failure. A retry
+of the same operation replaces a retained copy only after the owner is joined (an
+owner with no process journal never launched a process).
+
+### Registry lifecycle and validation
+
+Profile creation is all-or-nothing from the caller's view. If any step after the
+profile directory was created fails (including publishing `registry.json`), the
+lease is closed; the new directory is rolled back unless the on-disk registry
+proves the entry became durable, in which case it is kept (unlocked) so the next
+resolution reuses it. Loading a registry validates every entry against the
+owning root: owner kind, server identity and Worker machine identity must equal
+the current owner, and every legacy `path` must be a normalized, local,
+slash-separated path below the owner root outside `native-profiles/` (the same
+rule registration applies). A restored root under another identity, or an entry
+with an absolute, parent-traversing or non-normalized path, is `registry_invalid`
+for the whole root and is never repaired.
+
 ### History binding and legacy registration
 
 Each conversation profile records the execution, action and fork-runtime
@@ -2946,9 +2975,15 @@ may be registered for one key only.
 A profile is deleted only by explicit session, account or storage deletion:
 session deletion removes the profiles bound to the session's conversation and
 history identifiers after their owners have joined; Claude subscription logout
-removes the account's profile. A profile that is referenced (registry
-references) or active (locked) is never deleted and keeps the deletion pending.
-There is no age-based pruning.
+removes the account's profile; explicit server account deletion removes every
+server-owned profile of the account (`auth`, `quota`, `credit`,
+`subscription_probe` and their native caches) before the deletion is
+acknowledged. A profile that is referenced (registry references) or active
+(locked) is never deleted and keeps the deletion pending. When one scope matches
+several profiles, removals that already completed stay committed but any matching
+profile that is locked, referenced or unremovable makes the whole deletion return
+an error (`profile_busy`, `referenced` or `delete_blocked`), so no caller proves a
+deletion while a matching profile remains. There is no age-based pruning.
 
 ### Legacy access-only quota migration
 
@@ -2974,7 +3009,7 @@ Profile events use the structured fields `profile_id`, `owner`, `harness`,
 `history_recorded`, `profile_busy`, `owner_invalid`, `incompatible_version`,
 `registry_invalid`, `credential_file_present`, `credential_cleaned`,
 `credential_cleanup_blocked`, `process_uncertain`, `helper_retained`,
-`referenced`, `deleted`, `delete_blocked`, `migration_verified`,
+`referenced`, `deleted`, `delete_blocked`, `create_rolled_back`, `migration_verified`,
 `migration_settled`). Logs never contain secrets, native contents or paths.
 
 ### OpenCode execution-family status
