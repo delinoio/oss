@@ -66,7 +66,6 @@ test("warm Go caches cannot hide async-commit-hook command regressions", (t) => 
   const directory = mkdtempSync(join(tmpdir(), "ach-go-cache-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const checkout = join(directory, "checkout");
-  const cache = join(directory, "go-cache");
   const counter = join(directory, "executions");
   mkdirSync(join(checkout, "cmds", "async-commit-hook", "integration"), {
     recursive: true,
@@ -125,7 +124,6 @@ func TestCommand(t *testing.T) {
   );
   const env = {
     ...process.env,
-    GOCACHE: cache,
     GOWORK: "off",
     GOFLAGS: "",
     GOTOOLCHAIN: "local",
