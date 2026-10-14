@@ -710,10 +710,6 @@ export function useSubscriptionLogin(
     available: Boolean(native),
     hide: claude.workflow ? claude.hide : grok.workflow ? grok.leave : leave,
     show: claude.show,
-    leave: claude.workflow
-      ? claude.leave
-      : grok.workflow
-        ? grok.leave
-        : leave,
+    leave: claude.workflow ? claude.leave : grok.workflow ? grok.leave : leave,
   };
 }

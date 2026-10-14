@@ -1120,13 +1120,13 @@ export function SubscriptionAccounts({
               : brand === SubscriptionBrand.Grok
                 ? grokLoginCapable && flow.available
                 : brand === SubscriptionBrand.Claude &&
-                flow.available &&
-                (status.data?.capabilities.includes(
-                  SystemCapability.CLAUDE_SUBSCRIPTIONS_V1,
-                ) === true ||
-                  status.data?.capabilities.includes(
-                    SystemCapability.CLAUDE_SERVER_LOGIN_V1,
-                  ) === true)
+                  flow.available &&
+                  (status.data?.capabilities.includes(
+                    SystemCapability.CLAUDE_SUBSCRIPTIONS_V1,
+                  ) === true ||
+                    status.data?.capabilities.includes(
+                      SystemCapability.CLAUDE_SERVER_LOGIN_V1,
+                    ) === true)
         }
         pagination={
           <ScrollContinuation

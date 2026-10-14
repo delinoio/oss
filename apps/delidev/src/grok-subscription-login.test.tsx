@@ -220,9 +220,9 @@ afterEach(async () => {
 
 it("accepts only the fixed Grok authorization profile", () => {
   expect(grokLoginURL(loginURL)).toBe(true);
-  expect(grokLoginURL(authorization((u) => u.searchParams.delete("scope")))).toBe(
-    true,
-  );
+  expect(
+    grokLoginURL(authorization((u) => u.searchParams.delete("scope"))),
+  ).toBe(true);
   const rejected: Record<string, (url: URL) => void> = {
     host: (u) => {
       u.host = "auth.example.com";
@@ -249,7 +249,10 @@ it("accepts only the fixed Grok authorization profile", () => {
     redirectHost: (u) =>
       u.searchParams.set("redirect_uri", "http://localhost:43817/callback"),
     redirectPath: (u) =>
-      u.searchParams.set("redirect_uri", "http://127.0.0.1:43817/auth/callback"),
+      u.searchParams.set(
+        "redirect_uri",
+        "http://127.0.0.1:43817/auth/callback",
+      ),
     redirectPort: (u) =>
       u.searchParams.set("redirect_uri", "http://127.0.0.1:80/callback"),
     redirectLeadingZero: (u) =>
@@ -349,12 +352,17 @@ it("reopens the original browser binding, copies the link and cancels through th
     screen.getByRole("button", { name: copy("grok-subscription.cancel") }),
   );
   await waitFor(() => expect(f.cancel).toHaveBeenCalledTimes(1));
-  await screen.findByText(copy("grok-subscription.status.canceled"), {}, {
-    timeout: 3000,
-  });
+  await screen.findByText(
+    copy("grok-subscription.status.canceled"),
+    {},
+    {
+      timeout: 3000,
+    },
+  );
   expect(actions(f, OAuthNativeAction.Dispose).length).toBeGreaterThan(0);
-  expect(screen.queryByRole("button", { name: copy("grok-subscription.cancel") }))
-    .toBeNull();
+  expect(
+    screen.queryByRole("button", { name: copy("grok-subscription.cancel") }),
+  ).toBeNull();
 });
 
 it("shows a copy failure without exposing the link", async () => {
@@ -407,10 +415,14 @@ it("advances to naming only after verified success, prefilling and focusing the 
     {},
     { timeout: 3000 },
   );
-  expect((input as HTMLInputElement).value).toBe("grok.fixture@example.invalid");
+  expect((input as HTMLInputElement).value).toBe(
+    "grok.fixture@example.invalid",
+  );
   await waitFor(() => expect(window.document.activeElement).toBe(input));
   expect(
-    screen.getByText(copy("grok-subscription.status.success")).closest("[role=status]"),
+    screen
+      .getByText(copy("grok-subscription.status.success"))
+      .closest("[role=status]"),
   ).toBeTruthy();
   expect(actions(f, OAuthNativeAction.Dispose).length).toBeGreaterThan(0);
   fireEvent.change(input, { target: { value: "Edited Grok" } });
@@ -441,18 +453,23 @@ it("falls back to the default name when no valid suggestion exists", async () =>
 it.each([
   ["operation", { operation: newRequestId() }],
   ["generation", { generation: newRequestId() }],
-])("does not name an account whose %s cannot be verified", async (_name, change) => {
-  const f = fixture();
-  await start(f);
-  f.success(change);
-  await screen.findByText(
-    copy("grok-subscription.problem.statusUnconfirmed"),
-    {},
-    { timeout: 3000 },
-  );
-  expect(screen.queryByLabelText(copy("grok-subscription.accountName"))).toBeNull();
-  expect(f.save).toHaveBeenCalledTimes(1);
-});
+])(
+  "does not name an account whose %s cannot be verified",
+  async (_name, change) => {
+    const f = fixture();
+    await start(f);
+    f.success(change);
+    await screen.findByText(
+      copy("grok-subscription.problem.statusUnconfirmed"),
+      {},
+      { timeout: 3000 },
+    );
+    expect(
+      screen.queryByLabelText(copy("grok-subscription.accountName")),
+    ).toBeNull();
+    expect(f.save).toHaveBeenCalledTimes(1);
+  },
+);
 
 it.each([
   [State.CANCELED, "canceled", "canceled"],
@@ -474,10 +491,16 @@ it.each([
     expect(
       screen.getByText(copy(`grok-subscription.help.${help}` as never)),
     ).toBeTruthy();
-    expect(screen.queryByRole("button", { name: copy("grok-subscription.openBrowser") }))
-      .toBeNull();
-    expect(screen.queryByRole("button", { name: copy("grok-subscription.copyLink") }))
-      .toBeNull();
+    expect(
+      screen.queryByRole("button", {
+        name: copy("grok-subscription.openBrowser"),
+      }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", {
+        name: copy("grok-subscription.copyLink"),
+      }),
+    ).toBeNull();
     expect(actions(f, OAuthNativeAction.Dispose).length).toBeGreaterThan(0);
     // A terminal state never starts a replacement login.
     expect(f.login).toHaveBeenCalledTimes(1);
@@ -497,7 +520,11 @@ it("has distinct English and Korean text for every state", async () => {
   await i18n.changeLanguage(SupportedLanguage.Korean);
   render(f.view());
   fireEvent.click(screen.getByRole("button", { name: "Start Grok" }));
-  await screen.findByRole("button", { name: korean["grok-subscription.openBrowser"] }, { timeout: 3000 });
+  await screen.findByRole(
+    "button",
+    { name: korean["grok-subscription.openBrowser"] },
+    { timeout: 3000 },
+  );
   expect(screen.getByRole("status").textContent).toContain(
     korean["grok-subscription.status.waiting"],
   );
@@ -513,15 +540,15 @@ it("refuses a malformed original authorization without opening a browser", async
     { timeout: 3000 },
   );
   expect(actions(f, OAuthNativeAction.GrokSubscriptionOpen)).toHaveLength(0);
-  expect(screen.queryByRole("button", { name: copy("grok-subscription.copyLink") }))
-    .toBeNull();
+  expect(
+    screen.queryByRole("button", { name: copy("grok-subscription.copyLink") }),
+  ).toBeNull();
 });
 
 it("presents the receiver's Incompatible refusal for remote desktops and keeps the link copyable", async () => {
   const f = fixture();
   f.native.mockImplementation(async (_scope, action) => {
-    if (action === OAuthNativeAction.GrokSubscriptionOpen)
-      throw "incompatible";
+    if (action === OAuthNativeAction.GrokSubscriptionOpen) throw "incompatible";
     return { generation: "" };
   });
   render(f.view());
@@ -622,8 +649,11 @@ it("ends a definitively refused request without offering a replacement login", a
   expect(
     screen.getByText(copy("grok-subscription.problem.requestUnconfirmed")),
   ).toBeTruthy();
-  expect(screen.queryByRole("button", { name: copy("grok-subscription.retryOriginal") }))
-    .toBeNull();
+  expect(
+    screen.queryByRole("button", {
+      name: copy("grok-subscription.retryOriginal"),
+    }),
+  ).toBeNull();
   expect(f.login).toHaveBeenCalledTimes(1);
   expect(f.progress).not.toHaveBeenCalled();
 });
@@ -632,7 +662,9 @@ it("keeps the Grok row unchanged without capability 39 and enables Add account w
   async function row(capabilities: SystemCapability[]) {
     const transport = createRouterTransport((router) => {
       router.service(SystemService, { getStatus: () => ({ capabilities }) });
-      router.service(ResourceService, { listResources: () => ({ resources: [] }) });
+      router.service(ResourceService, {
+        listResources: () => ({ resources: [] }),
+      });
     });
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
@@ -661,7 +693,9 @@ it("keeps the Grok row unchanged without capability 39 and enables Add account w
   }
   const label = (state: string) =>
     copy("subscription-settings.message_78735b", { v0: "Grok", v1: state });
-  const without = await row([SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1]);
+  const without = await row([
+    SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,
+  ]);
   const disabled = await screen.findByRole("button", {
     name: label(copy("subscription-settings.comingSoon_4f7d64")),
   });

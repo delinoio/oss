@@ -178,10 +178,7 @@ interface Pending {
   retry?: () => Promise<void>;
 }
 
-export function useGrokSubscriptionLogin(
-  active: boolean,
-  changed: () => void,
-) {
+export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
   useLocale();
   const transport = useTransport(),
     opening = useSettingsOpening(),
@@ -359,7 +356,11 @@ export function useGrokSubscriptionLogin(
         if (!live(p)) return;
         if (
           result.requestId !== create.mutation.requestId ||
-          !serviceAccount(result.resource, undefined, SubscriptionServiceId.Grok)
+          !serviceAccount(
+            result.resource,
+            undefined,
+            SubscriptionServiceId.Grok,
+          )
         )
           throw new Error("Invalid created account");
         p.account = result.resource;
@@ -628,8 +629,9 @@ export function useGrokSubscriptionLogin(
         if (!live(p)) return;
         if (
           !request &&
-          text(object(object(document(current).subscription).server_operation).id) !==
-            p.operation
+          text(
+            object(object(document(current).subscription).server_operation).id,
+          ) !== p.operation
         )
           throw new Error("Original cancellation ownership changed");
         request ??= {
@@ -708,7 +710,12 @@ export function useGrokSubscriptionLogin(
     const p = pending.current;
     const original = p?.retry;
     if (p && original)
-      void run(p, original, "grok-subscription.problem.requestUnconfirmed", true);
+      void run(
+        p,
+        original,
+        "grok-subscription.problem.requestUnconfirmed",
+        true,
+      );
   };
 
   const p = pending.current;
@@ -815,7 +822,10 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
         role="status"
       >
         {inFlight ? (
-          <span className="subscription-onboarding-spinner" aria-hidden="true" />
+          <span
+            className="subscription-onboarding-spinner"
+            aria-hidden="true"
+          />
         ) : null}
         {naming ? <span aria-hidden="true">✓</span> : null}
         {copy(statusKeys[v.stage])}
