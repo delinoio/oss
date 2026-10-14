@@ -1632,6 +1632,20 @@ fn relative_application_file(ctx: &Ctx, importer: &str, specifier: &str) -> bool
 /// Local names of loaders returned by `createRequire` from the host module.
 /// This intentionally recognizes a bounded set of direct aliases. Unknown
 /// loader calls are not used as evidence that an intrinsic is intact.
+fn is_host_module_expression(expression: Node, host_modules: &HashSet<String>) -> bool {
+    let expression = skip_outer(expression);
+    if expression.kind() == SyntaxKind::Identifier {
+        return host_modules.contains(expression.text());
+    }
+    expression.kind() == SyntaxKind::CallExpression
+        && skip_outer(expression.expression()).kind() == SyntaxKind::Identifier
+        && skip_outer(expression.expression()).text() == "require"
+        && expression
+            .arguments()
+            .first()
+            .is_some_and(|argument| matches!(argument.text(), "node:module" | "module"))
+}
+
 fn created_require_loaders(nodes: &[Node]) -> HashSet<String> {
     let mut factories = HashSet::new();
     let mut host_modules = HashSet::new();
@@ -1728,8 +1742,7 @@ fn created_require_loaders(nodes: &[Node]) -> HashSet<String> {
                 (callee.kind() == SyntaxKind::Identifier && factories.contains(callee.text()))
                     || (callee.kind() == SyntaxKind::PropertyAccessExpression
                         && callee.name().text() == "createRequire"
-                        && skip_outer(callee.expression()).kind() == SyntaxKind::Identifier
-                        && host_modules.contains(skip_outer(callee.expression()).text()))
+                        && is_host_module_expression(callee.expression(), &host_modules))
             };
             let from_loader =
                 init.kind() == SyntaxKind::Identifier && loaders.contains(init.text());
