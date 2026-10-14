@@ -27,6 +27,7 @@
   "optimization.concatenateModules": "undefined",
   "optimization.sideEffects": "undefined",
   "optimization.usedExports": "undefined",
+  "optimization.providedExports": "undefined",
   "optimization.splitChunks": "undefined",
   "original mode": "production",
   "original devtool": "undefined"
