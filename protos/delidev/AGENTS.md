@@ -8,12 +8,6 @@
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
-## OpenCode General Chat Fork capabilities
-
-- System 26 / Worker 15 `OPENCODE_GENERAL_CHAT_FORK_V1` own the plain-text profile `opencode-general-chat-v1`. System 104 / Worker 69 `OPENCODE_GENERAL_CHAT_FORK_REASONING_V1` independently add profile `opencode-general-chat-v2` (completed plain timed reasoning history).
-- Never reuse 26/15 for reasoning. A v2 peer must hold both pairs, a v1-only Worker must keep rejecting reasoning sources before any child exists, and v1 job, receipt and checkpoint bytes must stay unchanged.
-- Allocate new numbers from `allocations.json` at change time; the [protocol contract](../../docs/protos-delidev-v1-contract.md) and the [fork contract](../../docs/cmds-delidev-forks-contract.md) own the semantics.
-
 ## Owning contracts
 
 - [API account browser OAuth](../../docs/cmds-delidev-account-oauth-contract.md)
