@@ -777,6 +777,20 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
         let (Some(list), Some(whole)) = (captures.get(1), captures.get(0)) else {
             continue;
         };
+        // `if (eval) {`, `while (eval) {` and similar are conditions, not
+        // parameter lists. `catch (eval) {` does bind `eval`.
+        let keyword = code[..whole.start()]
+            .trim_end()
+            .rsplit(|character: char| {
+                !(character.is_alphanumeric() || character == '_' || character == '$')
+            })
+            .next()
+            .unwrap_or("");
+        if whole.as_str().ends_with('{')
+            && matches!(keyword, "if" | "while" | "for" | "switch" | "with")
+        {
+            continue;
+        }
         let mut names = Vec::new();
         for parameter in split_top_level(list.as_str(), b',') {
             let target = split_top_level(binding_target(parameter), b':')[0]
@@ -995,6 +1009,16 @@ y=/process.env.F/.test(z),process.env.G"#;
         assert_eq!(
             direct_eval_line("{ let eval = g; } eval(w);"),
             Some((0, 18))
+        );
+        // Control-flow conditions are not parameter lists.
+        assert_eq!(direct_eval_line("if (eval) { eval(code); }"), Some((0, 12)));
+        assert_eq!(
+            direct_eval_line("while (eval) { eval(code); }"),
+            Some((0, 15))
+        );
+        assert_eq!(
+            direct_eval_line("try {} catch (eval) { eval(code); }"),
+            None
         );
     }
 
