@@ -6998,14 +6998,67 @@ accessible text and expanded source remain available. Keep the 36px target, shar
 native keyboard behavior and visible focus. The resting row has no background,
 border, rounded box, shadow, Artifact label, raw kind or routine completion badge.
 
-Expanded content retains the same summary row and plain inert source text beside
-one subtle vertical rule with approximately 20px indentation. Show Initial
-observation, Streamed observations and Final observation only when they contain
-supplied text. Keep summary/content families, original part indices, delta kinds,
-order and exact Unicode/whitespace separate. Never merge, deduplicate, generate
-summaries, split sentences or reconstruct content from deltas. Empty records keep
-the disclosure and show **No reasoning content was supplied.** / **제공된 생각
-과정이 없습니다.** when expanded. No hidden reasoning recovery is implied.
+Expanded content retains the same summary row and shows exactly one plain inert
+text body beneath it, beside one subtle vertical rule with approximately 20px
+indentation, an 8px gap below the row, 13px neutral text, about 1.45 line height
+and wrapping with no horizontal overflow. It shows no Initial observation,
+Streamed observations or Final observation heading, no part-index label and no
+raw delta kind or index. The body comes from the first source family with
+non-whitespace text, in this order: completed content parts, streamed
+`reasoning-content` deltas in sequence order, started content parts, completed
+summary parts, streamed `reasoning-summary` deltas in sequence order, started
+summary parts. Families are never combined, so a completed content snapshot
+replaces the streamed body instead of extending it, and the UI never claims a
+snapshot was reconstructed from deltas. The selected parts are joined for display
+only: whitespace at a part boundary collapses to one space; a boundary without
+whitespace receives one space except before closing punctuation or quotes and
+after opening punctuation or quotes (best effort, so a word split across chunks
+can be separated). Punctuation roles are fixed by character:
+
+- Closing, attached to the previous part: `. , ; : ! ? ) ] } % …`, `»`, `”`
+  (U+201D) and the CJK and Korean closers `、 。 ， ． ： ； ！ ？ ） ］ ｝ 」 』 】
+〉 》 〕 〗 ｣ ｡ ､`.
+- Opening, attached to the next part: `( [ {`, `«`, `“` (U+201C), `‘`
+  (U+2018), `¡ ¿` and the CJK and Korean openers `「 『 【 〈 《 （ ［ ｛ 〔 〖 ｢`.
+- Every other character, including dashes, `/` and `・`, gets the normal space.
+- Curly double quotes follow the English convention (U+201C opens, U+201D
+  closes) and never change the straight double quote state; other quoting
+  conventions are not detected. Straight double quotes alternate between
+  opening and closing. U+2018 opens a quote unless it starts a word-initial
+  elision such as `‘tis`, where it is an apostrophe.
+
+The straight single quote and the curly closing quote U+2019 are both quotes and
+apostrophes, so they are classified by joiner state. For a part that starts with
+one of them, with `depth` as the number of unclosed single quotes:
+
+| Boundary before the part                                            | Part starts with                                                  | Result                                             |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------- | -------------------------------------------------- |
+| Whitespace, opening punctuation, an opening quote or the body start | `'` followed by an elision                                        | apostrophe                                         |
+| Same                                                                | `'` otherwise                                                     | opens a quote                                      |
+| Same                                                                | U+2019 followed by an elision                                     | apostrophe                                         |
+| Same                                                                | U+2019 otherwise                                                  | closes a quote when `depth > 0`, else apostrophe   |
+| None, after a word or punctuation                                   | `'` or U+2019 followed by an elision                              | apostrophe, one space                              |
+| Same                                                                | `'` followed by a contraction suffix (`s t re ve ll d m`)         | no space; closes when `depth > 0`, else apostrophe |
+| Same                                                                | `'` with `depth > 0`, not followed by a word or opening character | no space; closes a quote                           |
+| Same                                                                | `'` otherwise                                                     | one space; opens a quote                           |
+| Same                                                                | U+2019 otherwise                                                  | no space; closes when `depth > 0`, else apostrophe |
+
+Elisions, introduced by `'`, U+2018 or U+2019, are `tis`, `twas`, `em`, `cause` and `til`, each not followed by a letter
+or digit, and a two-digit year such as `90s`, not followed by another digit or a
+quote, so `He wrote` + `’tis done` reads `He wrote ’tis done` and `called` + `'foo'` reads
+`called 'foo'`. Inside a part, an apostrophe between two word characters never
+opens or closes a quote. A straight single quote or U+2019 preceded by
+whitespace, opening punctuation or an opening quote is an apostrophe for an
+elision, an opening quote for `'`, and a closing quote or apostrophe for U+2019.
+Elsewhere it closes a quote when `depth > 0` and is an apostrophe otherwise.
+Apostrophes never change `depth`.
+
+Whitespace inside a part, every non-whitespace character and
+the retained record (families, original indices, sequence numbers and exact
+strings) are unchanged. The component never generates summaries, Markdown,
+translations or logs of reasoning text. When no family has text the disclosure
+shows **No reasoning content was supplied.** / **제공된 생각 과정이 없습니다.**
+when expanded. No hidden reasoning recovery is implied.
 
 The original default is collapsed; the existing `reasoning_disclosure` Expanded
 and Collapsed preferences govern initial mount. Explicit user choices and focus
