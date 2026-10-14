@@ -36,6 +36,13 @@ pub struct AnalysisInput<'a> {
 pub struct AnalysisOutput {
     pub analysis: Analysis,
     pub sources: Vec<SourceFile>,
+    /// Source ID to project-relative path for the sources whose live file can
+    /// be re-hashed when a saved bundle is reopened (text sources only).
+    pub project_relative: std::collections::BTreeMap<String, String>,
+    /// Source ID to project-relative path for the sources whose live file is
+    /// only checked for existence when a saved bundle is reopened (generated
+    /// asset modules, binary files and derived modules).
+    pub existence_relative: std::collections::BTreeMap<String, String>,
 }
 
 pub fn engine_identity(bundler: BundlerChoice, collection: &Collection) -> EngineIdentity {
@@ -349,6 +356,8 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
             "Locations for these files are shown without source content.",
         ));
     }
+    let project_relative = context.sources.project_relative.clone();
+    let existence_relative = context.sources.existence_relative.clone();
     let sources = context.sources.into_files();
     let partial = problems.iter().any(|entry| {
         entry.code == ErrorCode::SourceMapMissing.as_str()
@@ -405,7 +414,12 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
         mode: ReportMode::Live,
         tool_version: env!("CARGO_PKG_VERSION").to_owned(),
     };
-    AnalysisOutput { analysis, sources }
+    AnalysisOutput {
+        analysis,
+        sources,
+        project_relative,
+        existence_relative,
+    }
 }
 
 #[cfg(test)]
@@ -436,6 +450,17 @@ mod tests {
         include_sources: bool,
         edit: impl Fn(&mut serde_json::Value),
     ) -> Fixture {
+        run_fixture_patched(bundler, include_sources, edit, |_, _| {})
+    }
+
+    /// Like `run_fixture_with`, with a hook that may rewrite the copied build
+    /// directory. It receives the build directory and the project path.
+    fn run_fixture_patched(
+        bundler: BundlerChoice,
+        include_sources: bool,
+        edit: impl Fn(&mut serde_json::Value),
+        patch_build: impl Fn(&Path, &str),
+    ) -> Fixture {
         let fixture_root = manifest_dir().join("tests/fixtures").join(bundler.as_str());
         let project = manifest_dir()
             .join("../../packages/bundlewhy/fixtures")
@@ -455,6 +480,7 @@ mod tests {
             std::fs::create_dir_all(target.parent().unwrap()).unwrap();
             std::fs::write(&target, relocate(&std::fs::read_to_string(&entry).unwrap())).unwrap();
         }
+        patch_build(&build, &project_text);
         let mut value: serde_json::Value = serde_json::from_str(&relocate(
             &std::fs::read_to_string(fixture_root.join("collect.json")).unwrap(),
         ))
@@ -592,6 +618,94 @@ mod tests {
         );
 
         common_assertions(analysis);
+    }
+
+    #[test]
+    fn vite_png_asset_stub_is_neither_stale_nor_stored_as_content() {
+        const PNG_SOURCE: &str = "src/assets/logo.png";
+        let stub = "export default \"__VITE_ASSET__Vx9kQ1__\"";
+        let fixture = run_fixture_patched(
+            BundlerChoice::Vite,
+            true,
+            |value| {
+                let modules = value["modules"].as_array_mut().unwrap();
+                let mut png = modules
+                    .iter()
+                    .find(|module| {
+                        module["path"]
+                            .as_str()
+                            .is_some_and(|path| path.contains("/src/effects/"))
+                    })
+                    .unwrap()
+                    .clone();
+                let project = png["packageDir"].as_str().unwrap().to_owned();
+                let path = format!("{project}/{PNG_SOURCE}");
+                png["id"] = path.clone().into();
+                png["path"] = path.into();
+                png["isEntry"] = false.into();
+                modules.push(png);
+            },
+            |build, project| {
+                let map_path = build.join("assets/index-BHjrzQLH.js.map");
+                let mut map: serde_json::Value =
+                    serde_json::from_str(&std::fs::read_to_string(&map_path).unwrap()).unwrap();
+                map["sources"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(format!("{project}/{PNG_SOURCE}").into());
+                map["sourcesContent"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(stub.into());
+                std::fs::write(&map_path, serde_json::to_string(&map).unwrap()).unwrap();
+            },
+        );
+        let analysis = &fixture.output.analysis;
+        assert!(
+            !analysis
+                .problems
+                .iter()
+                .any(|entry| entry.code == "BW_SOURCE_STALE"),
+            "{:?}",
+            analysis.problems
+        );
+        let png = fixture
+            .output
+            .sources
+            .iter()
+            .find(|source| source.path == PNG_SOURCE)
+            .expect("the PNG keeps its source entry");
+        assert!(!png.stale);
+        assert!(png.content.is_empty());
+        assert!(!png.content_included);
+        assert!(!png.id.is_empty());
+        assert!(
+            fixture
+                .output
+                .sources
+                .iter()
+                .all(|source| !source.content.contains("__VITE_ASSET__"))
+        );
+        // Saved-run reloads only re-hash text sources.
+        assert!(!fixture.output.project_relative.contains_key(&png.id));
+        // Its removal is still detected when the saved run is reopened.
+        assert_eq!(
+            fixture
+                .output
+                .existence_relative
+                .get(&png.id)
+                .map(String::as_str),
+            Some(PNG_SOURCE)
+        );
+        assert!(
+            fixture
+                .output
+                .sources
+                .iter()
+                .filter(|source| source.origin == crate::model::SourceOrigin::Project)
+                .filter(|source| source.id != png.id)
+                .all(|source| fixture.output.project_relative.contains_key(&source.id))
+        );
     }
 
     #[test]
