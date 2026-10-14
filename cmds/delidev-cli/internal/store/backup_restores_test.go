@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -985,4 +986,77 @@ func TestBackupRestoreQuarantinesHistoricalSubscriptionCleanup(t *testing.T) {
 		return nil, nil
 	})
 	assertCode(t, err, domain.RecoveryRequired)
+}
+
+// A claimed Grok refresh may already have spent the refresh token at the
+// provider. Restoring an image that predates the claim could resend that token,
+// so the claimed refresh, its recovery fence and its pending operation all block
+// restore until the operation settles.
+func TestBackupRestoreBlocksAnUnsettledGrokRefresh(t *testing.T) {
+	grokRefresh := func(settle func(*domain.Account)) domain.Account {
+		now := time.Now().UTC()
+		operation := domain.NewID()
+		generation := domain.NewID()
+		a := domain.Account{Alias: "grok", Type: domain.SubscriptionAccount, SubscriptionService: domain.SubscriptionGrok, Health: domain.AccountReady, Connection: &domain.AccountConnection{ID: domain.NewID(), Authentication: domain.SubscriptionAuth, ConnectedAt: now}, Subscription: &domain.SubscriptionState{
+			Generation: generation, IdentityCommitment: strings.Repeat("b", 64),
+			Pending:         &domain.SubscriptionOperation{ID: operation, Action: domain.SubscriptionRefresh, Actor: domain.Principal{Type: domain.OwnerDevice}, Phase: domain.SubscriptionClaimed},
+			ServerOperation: &domain.ServerSubscriptionOperation{ID: operation, Epoch: domain.NewID(), FinishID: domain.NewID(), Generation: generation, Action: domain.SubscriptionRefresh, Actor: domain.Principal{Type: domain.OwnerDevice}, State: domain.SubscriptionPreparing, NativeStarted: true, RefreshClaimed: true, StartedAt: now, ExpiresAt: now.Add(15 * time.Minute)},
+		}}
+		settle(&a)
+		return a
+	}
+	for _, test := range []struct {
+		name    string
+		settle  func(*domain.Account)
+		allowed bool
+	}{
+		{"claimed", func(*domain.Account) {}, false},
+		{"recovery fence", func(a *domain.Account) {
+			a.Subscription.RecoveryRequired = true
+			a.Subscription.ServerOperation.State = domain.SubscriptionRecovery
+			a.Health = domain.AccountFailed
+		}, false},
+		{"settled", func(a *domain.Account) {
+			a.Subscription.Pending = nil
+			a.Subscription.ServerOperation.NativeStarted = false
+			a.Subscription.ServerOperation.State = domain.SubscriptionSucceeded
+		}, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			s, root, ctx, in, original := restoreFixture(t)
+			account := grokRefresh(test.settle)
+			_, err := s.Mutate(ctx, domain.NewID(), "fixture-grok-refresh", nil, func(tx *Tx) (any, error) {
+				return tx.Put(domain.AccountKind, domain.NewID(), 0, "", "", account)
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			in.ExpectedRevision, err = s.RestoreRevision(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			source := filepath.Join(root, "backups", string(in.Backup.ID)+".sqlite")
+			before, err := os.ReadFile(source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, _, err = s.RestoreBackup(ctx, domain.NewID(), in)
+			if test.allowed {
+				if err != nil {
+					t.Fatal("a settled refresh blocked restore", err)
+				}
+			} else {
+				if domain.SafeError(err).Code != domain.RecoveryRequired || s.RestoreFrozen() {
+					t.Fatal("an unsettled refresh did not preserve the live epoch", err)
+				}
+				if _, err := s.Get(ctx, domain.ProjectKind, original); err != nil {
+					t.Fatal("live state changed", err)
+				}
+			}
+			after, err := os.ReadFile(source)
+			if err != nil || !bytes.Equal(before, after) {
+				t.Fatal("restore changed the source image", err)
+			}
+		})
+	}
 }
