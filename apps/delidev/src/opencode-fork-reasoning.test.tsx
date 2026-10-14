@@ -326,7 +326,9 @@ it.each([
       router.service(SystemService, {
         getStatus: () => ({
           capabilities: [
-            ...(baseSystem ? [SystemCapability.OPENCODE_GENERAL_CHAT_FORK_V1] : []),
+            ...(baseSystem
+              ? [SystemCapability.OPENCODE_GENERAL_CHAT_FORK_V1]
+              : []),
             SystemCapability.OPENCODE_GENERAL_CHAT_FORK_REASONING_V1,
           ],
         }),
@@ -343,7 +345,9 @@ it.each([
       {
         wrapper: ({ children }: { children: ReactNode }) => (
           <TransportProvider transport={transport}>
-            <QueryClientProvider client={client}>{children}</QueryClientProvider>
+            <QueryClientProvider client={client}>
+              {children}
+            </QueryClientProvider>
           </TransportProvider>
         ),
       },
