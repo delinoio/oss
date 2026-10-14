@@ -67,13 +67,27 @@ func resolve(t *testing.T) (outcome, string, string, []string) {
 	return result, path, version, recorder.logs
 }
 
-func fakeOpenCode(t *testing.T, body string) string {
+// fakeOpenCode writes a fake executable whose script is the fixed body. The
+// body must be a static string: it is shell source, so no path, environment
+// value or other dynamic data may be concatenated into it. Pass dynamic values
+// through data, which the script reads as files from "$data" (the script's own
+// directory) and never evaluates, for example
+// IFS= read -r value < "$data/name".
+func fakeOpenCode(t *testing.T, body string, data ...map[string]string) string {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("fake shell executables are not available on Windows")
 	}
-	path := filepath.Join(t.TempDir(), "opencode")
-	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+body+"\n"), 0o700); err != nil {
+	directory := t.TempDir()
+	for _, files := range data {
+		for name, content := range files {
+			if err := os.WriteFile(filepath.Join(directory, name), []byte(content+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	path := filepath.Join(directory, "opencode")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\ndata=$(dirname \"$0\")\n"+body+"\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	return path
@@ -161,12 +175,32 @@ func TestNativeOpenCodeExecutableRelativePathFails(t *testing.T) {
 // provider or user configuration and the OpenCode updater disabled.
 func TestNativeOpenCodeExecutableUsesPrivateEnvironment(t *testing.T) {
 	t.Setenv("DELIDEV_NATIVE_TEST_LEAK", "1")
-	script := `[ -z "$DELIDEV_NATIVE_TEST_LEAK" ] && [ "$OPENCODE_DISABLE_AUTOUPDATE" = true ] && [ "$HOME" != "` + os.Getenv("HOME") + `" ] && printf '1.18.32\n'`
-	t.Setenv(nativetest.OpenCodeExecutableEnv, fakeOpenCode(t, script))
+	t.Setenv(nativetest.OpenCodeExecutableEnv, fakeOpenCode(t, privateEnvironmentScript, map[string]string{"home": os.Getenv("HOME")}))
 	if got, _, version, logs := resolve(t); got != outcomeRun || version != "1.18.32" {
 		t.Fatalf("outcome=%s version=%q logs=%v", got, version, logs)
 	}
 }
+
+// The inherited HOME is data for the fake executable, never shell source. A
+// HOME full of quotes and command substitutions must neither break the script
+// nor run anything.
+func TestNativeOpenCodeExecutableTreatsInheritedHomeAsData(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "executed")
+	hostile := "/home/it's \"quoted\" $(touch " + marker + ") `touch " + marker + "` ; touch " + marker + " #"
+	t.Setenv("HOME", hostile)
+	t.Setenv("DELIDEV_NATIVE_TEST_LEAK", "1")
+	t.Setenv(nativetest.OpenCodeExecutableEnv, fakeOpenCode(t, privateEnvironmentScript, map[string]string{"home": hostile}))
+	if got, _, version, logs := resolve(t); got != outcomeRun || version != "1.18.32" {
+		t.Fatalf("outcome=%s version=%q logs=%v", got, version, logs)
+	}
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("shell metacharacters in the inherited HOME were executed")
+	}
+}
+
+// privateEnvironmentScript is static; the inherited HOME arrives as the "home" data file.
+const privateEnvironmentScript = `IFS= read -r inherited_home < "$data/home"
+[ -z "$DELIDEV_NATIVE_TEST_LEAK" ] && [ "$OPENCODE_DISABLE_AUTOUPDATE" = true ] && [ "$HOME" != "$inherited_home" ] && printf '1.18.32\n'`
 
 func TestPrivateRuntimeEnvironmentMatchesHarness(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "home")

@@ -115,9 +115,46 @@ func TestDiscoveryVerifiesOpenCodeWithoutExecution(t *testing.T) {
 	discoverOpenCode(t, executable, domain.OpenCodeProtocolVersion)
 }
 
+// openCodeVersionWrapperScript is a fixed script: it contains no dynamic value.
+// The reported version and the real executable live in sibling data files that
+// the script reads as data, so no path, version or environment value is ever
+// interpolated into shell source. The --version branch mirrors the pinned
+// binary, which creates its config directory even for version output.
+const openCodeVersionWrapperScript = `#!/bin/sh
+here=$(dirname "$0")
+if [ "$1" = "--version" ]; then
+	mkdir -p "$HOME/config/opencode"
+	cat "$here/version"
+	exit 0
+fi
+IFS= read -r target < "$here/target"
+exec "$target" "$@"
+`
+
+// writeOpenCodeVersionWrapper creates an executable "opencode" in dir that
+// reports version for --version and otherwise delegates to target.
+func writeOpenCodeVersionWrapper(t *testing.T, dir, version, target string) string {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range map[string]string{"version": version + "\n", "target": target + "\n"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	wrapper := filepath.Join(dir, "opencode")
+	if err := os.WriteFile(wrapper, []byte(openCodeVersionWrapperScript), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return wrapper
+}
+
 // TestDiscoveryAdmitsNewerOpenCodeVersion proves that a binary above the
 // baseline is admitted and reported with its own observed version. The wrapper
 // only rewrites the --version line; the protocol behavior is the in-process fake.
+// The hostile case places the wrapper and its target under paths full of shell
+// metacharacters; any interpolation of those paths would break or run them.
 func TestDiscoveryAdmitsNewerOpenCodeVersion(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell wrapper executables are not available on Windows")
@@ -127,12 +164,31 @@ func TestDiscoveryAdmitsNewerOpenCodeVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 	const newer = "1.18.33"
-	wrapper := filepath.Join(t.TempDir(), "opencode")
-	script := "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then\n\tmkdir -p \"$HOME/config/opencode\"\n\tprintf '%s\\n' '" + newer + "'\n\texit 0\nfi\nexec '" + executable + "' \"$@\"\n"
-	if err := os.WriteFile(wrapper, []byte(script), 0o700); err != nil {
-		t.Fatal(err)
+	for _, test := range []struct{ name, directory string }{
+		{"plain", "wrapper"},
+		{"hostile-path", "it's \"quoted\" $(touch pwned) `touch pwned` ; * \\ done"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			dir := filepath.Join(root, test.directory)
+			target := executable
+			if test.name == "hostile-path" {
+				target = filepath.Join(dir, "target's $(touch pwned) `touch pwned`")
+				if err := os.MkdirAll(dir, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(executable, target); err != nil {
+					t.Skipf("symlinks are unavailable: %v", err)
+				}
+			}
+			discoverOpenCode(t, writeOpenCodeVersionWrapper(t, dir, newer, target), newer)
+			for _, marker := range []string{filepath.Join(root, "pwned"), filepath.Join(dir, "pwned"), "pwned"} {
+				if _, err := os.Stat(marker); err == nil {
+					t.Fatalf("shell metacharacters in a path were executed: %s", marker)
+				}
+			}
+		})
 	}
-	discoverOpenCode(t, wrapper, newer)
 }
 
 func TestManualNativeOpenCodeDiscovery(t *testing.T) {
