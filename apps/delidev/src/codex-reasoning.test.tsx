@@ -6,7 +6,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CodexReasoning,
   codexReasoning,
@@ -366,6 +366,305 @@ it.each([
   [[], ""],
 ])("keeps quotes readable across part boundaries for %j", (parts, expected) => {
   expect(joinReasoningParts(parts)).toBe(expected);
+});
+// Decision table for the part-boundary joiner. Every punctuation and quote
+// character class has a fixed role or a contextual rule; each cell is tested.
+const SQ = "'";
+const LSQ = "‘";
+const RSQ = "’";
+const LDQ = "“";
+const RDQ = "”";
+const closers = Array.from(
+  ".,;:!?)]}%…»”、。，．：；！？）］｝」』】〉》〕〗｣｡､",
+);
+const openers = Array.from("([{«“‘¡¿「『【〈《（［｛〔〖｢");
+describe.each(closers.map((char) => [char]))(
+  "closing punctuation %s",
+  (char) => {
+    it.each([
+      [["a", char], `a${char}`],
+      [["a", `${char}b`], `a${char}b`],
+      [["a", char, "b"], `a${char} b`],
+      [[`a${char}`, "b"], `a${char} b`],
+      [["a", ` ${char}`], `a ${char}`],
+      [["a ", char], `a ${char}`],
+      [["a", "\n", char], `a ${char}`],
+      [["(", char], `(${char}`],
+    ])("joins %j", (parts, expected) => {
+      expect(joinReasoningParts(parts)).toBe(expected);
+    });
+  },
+);
+describe.each(openers.map((char) => [char]))(
+  "opening punctuation %s",
+  (char) => {
+    it.each([
+      [["a", char, "b"], `a ${char}b`],
+      [["a", `${char}b`], `a ${char}b`],
+      [[`a${char}`, "b"], `a${char}b`],
+      [["a", char, " b"], `a ${char} b`],
+      [["a", ` ${char}`, "b"], `a ${char}b`],
+      [[char, "a"], `${char}a`],
+      [[char, char, "a"], `${char}${char}a`],
+      [["a", char, "b", ".", "c"], `a ${char}b. c`],
+    ])("joins %j", (parts, expected) => {
+      expect(joinReasoningParts(parts)).toBe(expected);
+    });
+  },
+);
+it.each([
+  [["a", "-", "b"], "a - b"],
+  [["a", "—", "b"], "a — b"],
+  [["a", "/", "b"], "a / b"],
+  [["a", "・", "b"], "a ・ b"],
+  [["한", "글"], "한 글"],
+  [["あ", "い"], "あ い"],
+  [["　a", "b　", "c"], "a b c"],
+  [["a ", "b"], "a b"],
+])("keeps neutral boundary characters spaced for %j", (parts, expected) => {
+  expect(joinReasoningParts(parts)).toBe(expected);
+});
+it.each([
+  // Curly double quotes keep fixed roles: opening U+201C, closing U+201D.
+  [["say", `${LDQ}hi${RDQ}`], `say ${LDQ}hi${RDQ}`],
+  [["say", LDQ, "hi", RDQ, "now"], `say ${LDQ}hi${RDQ} now`],
+  [[`say ${LDQ}hi`, `${RDQ} now`], `say ${LDQ}hi${RDQ} now`],
+  [["say", RDQ], `say${RDQ}`],
+  [[`say ${RDQ}`, "x"], `say ${RDQ} x`],
+  [["say", ` ${RDQ}`], `say ${RDQ}`],
+  [[`say ${LDQ}`, "x"], `say ${LDQ}x`],
+  [
+    ["say", `${LDQ}a${RDQ}`, `${LDQ}b${RDQ}`],
+    `say ${LDQ}a${RDQ} ${LDQ}b${RDQ}`,
+  ],
+  // Curly double quotes never change the straight double quote parity.
+  [[`${LDQ}a${RDQ}`, '"b"'], `${LDQ}a${RDQ} "b"`],
+  [['"a"', `${LDQ}b${RDQ}`], `"a" ${LDQ}b${RDQ}`],
+  // Straight double quotes alternate between opening and closing.
+  [["say", '"hi"'], 'say "hi"'],
+  [["say", '"hi', '"', "now"], 'say "hi" now'],
+  [['say "hi', '" now'], 'say "hi" now'],
+  [['"a"', '"b"'], '"a" "b"'],
+  [['say "a', '"b'], 'say "a"b'],
+  [["(", '"', "x", '"', ")"], '("x")'],
+  [["say", '"'], 'say "'],
+  [['say "', "x", '"', "now"], 'say "x" now'],
+  [["say", ' "', "x"], 'say "x'],
+  // Curly single quotes keep ‘ opening; ’ closes an open quote.
+  [["say", `${LSQ}hi${RSQ}`], `say ${LSQ}hi${RSQ}`],
+  [["say", LSQ, "hi", RSQ, "now"], `say ${LSQ}hi${RSQ} now`],
+  [[`say ${LSQ}hi`, `${RSQ} now`], `say ${LSQ}hi${RSQ} now`],
+  [["say", `${LSQ}hi`, RSQ, "now"], `say ${LSQ}hi${RSQ} now`],
+  [
+    [`${LDQ}He said ${LSQ}`, "hi", `${RSQ}${RDQ}`],
+    `${LDQ}He said ${LSQ}hi${RSQ}${RDQ}`,
+  ],
+  [["그는", LSQ, "안녕", RSQ, "라고"], `그는 ${LSQ}안녕${RSQ} 라고`],
+  [["그는", SQ, "안녕", SQ, "라고"], `그는 ${SQ}안녕${SQ} 라고`],
+  [["그는", `${LDQ}안녕${RDQ}`, "라고"], `그는 ${LDQ}안녕${RDQ} 라고`],
+])("keeps double and curly quotes readable for %j", (parts, expected) => {
+  expect(joinReasoningParts(parts)).toBe(expected);
+});
+// Word-initial elisions: the straight quote, U+2018 and U+2019 are all
+// apostrophes there, so they never open or close a span.
+describe.each([[SQ], [LSQ], [RSQ]])("leading elision quote %s", (q) => {
+  const elisions = ["tis", "twas", "em", "cause", "til", "90s", "90", "00s"];
+  it.each(elisions)("treats %s as a word-initial elision", (word) => {
+    // Unspaced after a word, explicitly spaced, and after the start of the body.
+    expect(joinReasoningParts(["He wrote", `${q}${word} done`])).toBe(
+      `He wrote ${q}${word} done`,
+    );
+    expect(joinReasoningParts(["He wrote ", `${q}${word}`])).toBe(
+      `He wrote ${q}${word}`,
+    );
+    expect(joinReasoningParts(["He wrote", ` ${q}${word}`])).toBe(
+      `He wrote ${q}${word}`,
+    );
+    expect(joinReasoningParts([`${q}${word} done`])).toBe(`${q}${word} done`);
+    expect(joinReasoningParts(["Done.", `${q}${word}`])).toBe(
+      `Done. ${q}${word}`,
+    );
+    expect(joinReasoningParts(["See (", `${q}${word})`])).toBe(
+      `See (${q}${word})`,
+    );
+    expect(joinReasoningParts([`He said ${LDQ}`, `${q}${word}${RDQ}`])).toBe(
+      `He said ${LDQ}${q}${word}${RDQ}`,
+    );
+    expect(joinReasoningParts(["He said", ' "', `${q}${word}`, '"'])).toBe(
+      `He said "${q}${word}"`,
+    );
+  });
+  it.each(elisions)(
+    "does not open or close a quote for the %s elision",
+    (word) => {
+      // An apostrophe leaves the quote depth untouched: a following lone
+      // straight quote still opens a new span (depth 0) ...
+      expect(joinReasoningParts(["a", `${q}${word}`, SQ])).toBe(
+        `a ${q}${word} ${SQ}`,
+      );
+      // ... and a quote that is open stays open until its own closer.
+      expect(joinReasoningParts([`a ${SQ}b`, `${q}${word}`, SQ])).toBe(
+        `a ${SQ}b ${q}${word}${SQ}`,
+      );
+    },
+  );
+});
+// A part that starts with a straight or curly apostrophe-like quote. U+2019
+// never opens a span; U+2018 opening outside elisions is covered above.
+describe.each([[SQ], [RSQ]])("leading single quote %s", (q) => {
+  it.each(["tisk", "emu", "9", "1990", "90'", `90${RSQ}`, ""])(
+    "does not treat %j as an elision",
+    (word) => {
+      // Straight quotes open a new span; curly closing quotes attach to the
+      // previous word.
+      expect(joinReasoningParts(["He wrote", `${q}${word} done`])).toBe(
+        q === SQ ? `He wrote ${q}${word} done` : `He wrote${q}${word} done`,
+      );
+    },
+  );
+  it("attaches a contraction suffix to the previous word", () => {
+    for (const suffix of ["s", "t", "re", "ve", "ll", "d", "m"]) {
+      expect(joinReasoningParts(["It", `${q}${suffix}`, "fine"])).toBe(
+        `It${q}${suffix} fine`,
+      );
+    }
+    expect(joinReasoningParts(["It", `${q}s`])).toBe(`It${q}s`);
+  });
+  it("closes a quote that is open and otherwise stays an apostrophe", () => {
+    expect(joinReasoningParts([`called ${SQ}foo`, q])).toBe(
+      `called ${SQ}foo${q}`,
+    );
+    expect(joinReasoningParts([`called ${SQ}foo`, `${q} now`])).toBe(
+      `called ${SQ}foo${q} now`,
+    );
+    expect(joinReasoningParts([`called ${SQ}foo`, `${q}.`])).toBe(
+      `called ${SQ}foo${q}.`,
+    );
+    expect(joinReasoningParts([`called ${LSQ}foo`, q])).toBe(
+      `called ${LSQ}foo${q}`,
+    );
+    expect(joinReasoningParts(["dogs", `${q} bowl`])).toBe(
+      q === SQ ? `dogs ${q} bowl` : `dogs${q} bowl`,
+    );
+    expect(joinReasoningParts(["dogs", ` ${q}`, "bowl"])).toBe(
+      q === SQ ? `dogs ${q}bowl` : `dogs ${q} bowl`,
+    );
+  });
+  it("tracks the quote depth after a closing leading quote", () => {
+    // Closed: the following lone quote opens a new span.
+    expect(joinReasoningParts([`a ${SQ}b`, q, SQ])).toBe(`a ${SQ}b${q} ${SQ}`);
+    // At depth zero a curly quote is an apostrophe and never closes anything;
+    // a straight quote opens a span, so the next straight quote nests.
+    expect(joinReasoningParts(["dogs", q, SQ])).toBe(
+      q === SQ ? `dogs ${q}${SQ}` : `dogs${q} ${SQ}`,
+    );
+  });
+  it("keeps a leading quote after opening punctuation or quotes", () => {
+    expect(joinReasoningParts(["Open (", `${q}x)`])).toBe(`Open (${q}x)`);
+    expect(joinReasoningParts([`He said ${LDQ}`, `${q}hi${q}`, RDQ])).toBe(
+      `He said ${LDQ}${q}hi${q}${RDQ}`,
+    );
+    expect(joinReasoningParts([`nested ${LSQ}`, q])).toBe(`nested ${LSQ}${q}`);
+  });
+});
+describe("trailing single quote", () => {
+  it.each([
+    // After a space: straight quotes open, curly ’ is an apostrophe or closer.
+    [[`called ${SQ}`, "foo"], `called ${SQ}foo`],
+    [[`called ${RSQ}`, "foo"], `called ${RSQ} foo`],
+    [[`called ${LSQ}`, "foo"], `called ${LSQ}foo`],
+    [[`(${SQ}`, "foo"], `(${SQ}foo`],
+    // After a word: apostrophe or closer, never opening.
+    [[`dogs${SQ}`, "bowl"], `dogs${SQ} bowl`],
+    [[`dogs${RSQ}`, "bowl"], `dogs${RSQ} bowl`],
+    [[`called ${SQ}foo${SQ}`, "now"], `called ${SQ}foo${SQ} now`],
+    [[`called ${SQ}foo${RSQ}`, "now"], `called ${SQ}foo${RSQ} now`],
+    [[`called ${LSQ}foo${RSQ}`, "now"], `called ${LSQ}foo${RSQ} now`],
+    [[`called ${LSQ}foo${SQ}`, "now"], `called ${LSQ}foo${SQ} now`],
+    // After punctuation.
+    [[`end.${SQ}`, "next"], `end.${SQ} next`],
+    [[`end.${RSQ}`, "next"], `end.${RSQ} next`],
+    // Right after another opening quote.
+    [[`${LDQ}${SQ}`, "x"], `${LDQ}${SQ}x`],
+    [[`"${SQ}`, "x"], `"${SQ}x`],
+    [[`${SQ}${SQ}`, "x"], `${SQ}${SQ}x`],
+  ])("joins %j", (parts, expected) => {
+    expect(joinReasoningParts(parts)).toBe(expected);
+  });
+});
+it("keeps U+2018 opening unless it starts a word-initial elision", () => {
+  // Opening: the lone straight quote after it closes the span.
+  expect(joinReasoningParts([`He wrote ${LSQ}tisk`, SQ])).toBe(
+    `He wrote ${LSQ}tisk${SQ}`,
+  );
+  expect(joinReasoningParts(["He wrote", `${LSQ}hi${RSQ}`, SQ])).toBe(
+    `He wrote ${LSQ}hi${RSQ} ${SQ}`,
+  );
+  // Elision in the middle of a part: no span is opened.
+  expect(joinReasoningParts([`it ${LSQ}tis`, SQ])).toBe(`it ${LSQ}tis ${SQ}`);
+  expect(joinReasoningParts([`x${LSQ}tis`, SQ])).toBe(`x${LSQ}tis${SQ}`);
+});
+it("does not open a span for a mid-part curly apostrophe elision", () => {
+  // One part, quote open: the ’tis after a space is an apostrophe, not a closer.
+  expect(joinReasoningParts([`${LSQ}it ${RSQ}tis ${RSQ}`, SQ])).toBe(
+    `${LSQ}it ${RSQ}tis ${RSQ} ${SQ}`,
+  );
+});
+// Exhaustive invariants over every ordered combination of tokens that cover
+// each quote and punctuation class, in all positions and with whitespace.
+describe("part joining invariants", () => {
+  const tokens = [
+    "a",
+    "한",
+    " ",
+    "a ",
+    " a",
+    ".",
+    "(",
+    SQ,
+    LSQ,
+    RSQ,
+    '"',
+    LDQ,
+    RDQ,
+    `${SQ}tis`,
+    `${RSQ}tis`,
+    `${SQ}s`,
+    `${RSQ}s`,
+    `${SQ}90s`,
+    `${RSQ}90s`,
+    "「",
+    "」",
+    "。",
+    "",
+  ];
+  const strip = (text: string) => text.replace(/\s/gu, "");
+  const check = (parts: string[]) => {
+    const joined = joinReasoningParts(parts);
+    // Never adds, drops, reorders or rewrites a non-whitespace character.
+    expect(strip(joined)).toBe(strip(parts.join("")));
+    // Never leaves outer whitespace, and only a single space joins two parts.
+    expect(joined).toBe(joined.trim());
+    expect(joined).not.toMatch(/ {2}/u);
+    // Whitespace inside a part is preserved: each trimmed part appears in order.
+    let from = 0;
+    for (const part of parts) {
+      const core = part.trim();
+      if (core.length === 0) continue;
+      const at = joined.indexOf(core, from);
+      expect(at).toBeGreaterThanOrEqual(from);
+      from = at + core.length;
+    }
+  };
+  it("holds for every sequence of up to three tokens", () => {
+    for (const x of tokens) {
+      check([x]);
+      for (const y of tokens) {
+        check([x, y]);
+        for (const z of tokens) check([x, y, z]);
+      }
+    }
+  });
 });
 it("joins very large quote-heavy parts without quadratic work", () => {
   const quotes = "'".repeat(200000);
