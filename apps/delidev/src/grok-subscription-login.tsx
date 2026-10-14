@@ -128,7 +128,10 @@ const opaque = (value: string) => /^[A-Za-z0-9._~-]{1,512}$/.test(value);
 // and the loopback listener; the desktop only validates and opens the address.
 export function grokLoginURL(raw: string): boolean {
   try {
-    if (raw.length > 4096 || !/^[!-~]+$/.test(raw)) return false;
+    // URL.href keeps an empty "#" and the native parser rejects it, so the
+    // delimiter itself is refused here.
+    if (raw.length > 4096 || !/^[!-~]+$/.test(raw) || raw.includes("#"))
+      return false;
     const url = new URL(raw),
       query = url.searchParams;
     if (
@@ -174,10 +177,13 @@ export function grokLoginURL(raw: string): boolean {
 
 // Validates the transient device verification address and user code pair. The
 // address must be the fixed xAI device page; an embedded user_code must equal
-// the displayed code so the page and the screen can never disagree.
+// the displayed code so the page and the screen can never disagree. A query
+// delimiter requires exactly that one parameter: URL.href keeps an empty "?" or
+// "#" while the native parser rejects both, so neither may pass here.
 export function grokDeviceVerification(raw: string, code: string): boolean {
   try {
-    if (raw.length > 512 || !/^[!-~]+$/.test(raw)) return false;
+    if (raw.length > 512 || !/^[!-~]+$/.test(raw) || raw.includes("#"))
+      return false;
     if (!deviceCodePattern.test(code)) return false;
     const url = new URL(raw),
       query = url.searchParams;
@@ -191,11 +197,12 @@ export function grokDeviceVerification(raw: string, code: string): boolean {
       url.pathname !== "/oauth2/device"
     )
       return false;
+    if (!raw.includes("?")) return true;
     const keys = [...query.keys()];
     return (
-      keys.every((key) => key === "user_code") &&
-      keys.length <= 1 &&
-      (!query.has("user_code") || query.get("user_code") === code)
+      keys.length === 1 &&
+      keys[0] === "user_code" &&
+      query.get("user_code") === code
     );
   } catch {
     return false;

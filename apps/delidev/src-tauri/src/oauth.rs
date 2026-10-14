@@ -3198,6 +3198,62 @@ mod grok_subscription_tests {
         }
     }
 
+    // The renderer (apps/delidev/src/grok-subscription-login.tsx) runs the same
+    // table, so both layers agree on every URL.
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct DeviceVerificationCase {
+        name: String,
+        url: String,
+        native: bool,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct AuthorizationCase {
+        name: String,
+        url: String,
+        valid: bool,
+    }
+
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct UrlFixtures {
+        device_verification: Vec<DeviceVerificationCase>,
+        authorization: Vec<AuthorizationCase>,
+    }
+
+    fn url_fixtures() -> UrlFixtures {
+        serde_json::from_str(include_str!("../../src/grok-url-validation-fixtures.json")).unwrap()
+    }
+
+    #[test]
+    fn device_validator_matches_the_shared_url_table() {
+        let fixtures = url_fixtures();
+        assert!(fixtures.device_verification.len() > 20);
+        for row in fixtures.device_verification {
+            assert_eq!(
+                validate_grok_device_authorization(&row.url).is_ok(),
+                row.native,
+                "{}",
+                row.name
+            );
+        }
+    }
+
+    #[test]
+    fn authorization_validator_matches_the_shared_url_table() {
+        let fixtures = url_fixtures();
+        assert!(fixtures.authorization.len() > 20);
+        for row in fixtures.authorization {
+            assert_eq!(
+                validate_grok_subscription_authorization(&row.url).is_ok(),
+                row.valid,
+                "{}",
+                row.name
+            );
+        }
+    }
+
     const DEVICE_PAGE: &str = "https://accounts.x.ai/oauth2/device";
     const DEVICE_WITH_CODE: &str = "https://accounts.x.ai/oauth2/device?user_code=ABCD-1234";
 

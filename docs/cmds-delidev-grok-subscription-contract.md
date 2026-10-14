@@ -58,7 +58,13 @@ honors RFC 8628 pending, slow-down, denial and expiry. The desktop opens the
 device verification page only through the closed native
 `grok-device-authorization-open` action (fixed `https://accounts.x.ai/oauth2/device`
 with at most one `user_code` query value), which uses the system default browser
-and never the General/Local link destinations.
+and never the General/Local link destinations. Without a `user_code` the URL has
+no query at all: an empty `?` or `#` delimiter is rejected. The renderer
+predicates (`grokLoginURL`, `grokDeviceVerification`) and the native validators
+(`validate_grok_subscription_authorization`, `validate_grok_device_authorization`)
+run the shared case table `apps/delidev/src/grok-url-validation-fixtures.json`
+in both TypeScript and Rust tests, so the two layers cannot disagree; the
+renderer additionally requires the URL's `user_code` to equal the displayed code.
 
 The trusted native receiver (`apps/delidev/src-tauri/src/oauth.rs`) exposes
 `grok-subscription-open` and `grok-subscription-reopen` for the server-returned

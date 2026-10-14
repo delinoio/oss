@@ -33,6 +33,7 @@ import {
   grokDeviceVerification,
   grokLoginURL,
 } from "./grok-subscription-login";
+import urlValidationFixtures from "./grok-url-validation-fixtures.json";
 import { copy, i18n, SupportedLanguage } from "./localization";
 import { SettingsLifetime } from "./settings-lifetime";
 import { SubscriptionAccounts } from "./subscription-accounts";
@@ -786,6 +787,42 @@ it("accepts only the fixed accounts.x.ai device verification page and matching c
   ];
   for (const [name, url, code] of rejected)
     expect(grokDeviceVerification(url, code), name).toBe(false);
+});
+
+interface DeviceVerificationCase {
+  name: string;
+  url: string;
+  userCode: string;
+  native: boolean;
+  renderer: boolean;
+}
+interface AuthorizationCase {
+  name: string;
+  url: string;
+  valid: boolean;
+}
+const urlFixtures = urlValidationFixtures as {
+  deviceVerification: DeviceVerificationCase[];
+  authorization: AuthorizationCase[];
+};
+
+// The same table drives the native Rust tests in src-tauri/src/oauth.rs, so the
+// renderer predicate and the native validator cannot drift apart.
+it("matches the shared device verification URL table", () => {
+  expect(urlFixtures.deviceVerification.length).toBeGreaterThan(20);
+  for (const row of urlFixtures.deviceVerification)
+    expect(grokDeviceVerification(row.url, row.userCode), row.name).toBe(
+      row.renderer,
+    );
+  // Every row the native host rejects is also rejected by the renderer.
+  for (const row of urlFixtures.deviceVerification)
+    if (!row.native) expect(row.renderer, row.name).toBe(false);
+});
+
+it("matches the shared Grok authorization URL table", () => {
+  expect(urlFixtures.authorization.length).toBeGreaterThan(20);
+  for (const row of urlFixtures.authorization)
+    expect(grokLoginURL(row.url), row.name).toBe(row.valid);
 });
 
 it("sends one deviceCode login despite double click, Strict Mode and polling and shows the transient code", async () => {
