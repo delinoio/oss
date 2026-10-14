@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useEffect, useId, useState } from "react";
-import { createConnectQueryKey, useQuery } from "@connectrpc/connect-query";
+import { useCallback, useEffect, useId, useState } from "react";
+import {
+  createConnectQueryKey,
+  useQuery,
+  useTransport,
+} from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   DeviceType,
@@ -41,6 +45,15 @@ interface Peer {
   online: boolean;
   shared_to: boolean;
 }
+// A peer the visit queue may check automatically: exactly the peers whose
+// manual Check control is enabled.
+const checkEligible = (peer: Peer) => peer.online && !peer.shared_to;
+interface QueuedPeer {
+  id: string;
+  host: string;
+}
+const queuedAndEligible = (queued: QueuedPeer, peer: Peer) =>
+  queued.id === peer.id && queued.host === peer.host && checkEligible(peer);
 interface Inventory {
   state: string;
   peers: Peer[];
@@ -195,16 +208,46 @@ function approvalLabel(state: ApprovalState) {
   return copy(keys[state] ?? "tailscale.uncertain");
 }
 
-// This controller stays with the original Local connection. The Runner Devices
-// presentation supplies the access and devices slots; leaving it disposes
-// discovery while exact accepted requests and approvals remain owned.
+// The stored access intent (Access.enabled) and the observed Access.state are
+// separate facts. Only the Ready state is ever presented as ready.
+enum AccessStatus {
+  Loading = "loading",
+  Unavailable = "unavailable",
+  Off = "off",
+  Ready = "ready",
+  ActionNeeded = "action-needed",
+  SetupRequired = "setup-required",
+}
+function accessStatus(access: Access | undefined, pending: boolean) {
+  if (!access) return pending ? AccessStatus.Loading : AccessStatus.Unavailable;
+  if (access.state === "ready") return AccessStatus.Ready;
+  if (access.state === "off") return AccessStatus.Off;
+  return access.enabled
+    ? AccessStatus.ActionNeeded
+    : AccessStatus.SetupRequired;
+}
+const accessStatusCopy = {
+  [AccessStatus.Loading]: "tailscale.accessLoading",
+  [AccessStatus.Unavailable]: "tailscale.unavailable",
+  [AccessStatus.Off]: "tailscale.off",
+  [AccessStatus.Ready]: "tailscale.ready",
+  [AccessStatus.ActionNeeded]: "tailscale.actionNeeded",
+  [AccessStatus.SetupRequired]: "tailscale.setupRequired",
+} as const;
+
+// This controller stays with the original Local connection. The Tailscale
+// category presentation supplies the access (This computer), devices and
+// requests slots; leaving it disposes discovery while exact accepted requests
+// and approvals remain owned.
 export function TailscaleConnections({
   current,
   target,
+  requests,
   onPaired,
 }: {
   current?: HTMLElement;
   target?: HTMLElement;
+  requests?: HTMLElement;
   onPaired: () => void;
 }) {
   useLocale();
@@ -258,6 +301,7 @@ export function TailscaleConnections({
       setDismissed(undefined);
     },
   );
+  const accessState = accessStatus(access, accessRead.isPending);
   const approvals = decode<Approval[]>(inbox.data?.documentJson) ?? [];
   const approval = approvals.find(
     (a) => a.state === ApprovalState.Pending && a.id !== dismissed,
@@ -265,73 +309,114 @@ export function TailscaleConnections({
   return (
     <>
       <PersistentConnectionView target={current} hidden>
-        {supported ? (
-          <section className="tailscale-access" aria-labelledby={accessHeading}>
-            <h2 id={accessHeading}>{copy("tailscale.access")}</h2>
-            <p role="status">
-              {copy("tailscale.access")}:{" "}
-              {access?.state === "ready"
-                ? copy("tailscale.on")
-                : access?.state === "off"
-                  ? copy("tailscale.off")
-                  : copy("tailscale.setupRequired")}
-            </p>
-            {access?.origin ? (
-              <p className="tailscale-identity">{access.origin}</p>
-            ) : null}
-            <button
-              type="button"
-              disabled={accessMutation.busy || accessUnknown}
-              onClick={() =>
-                access?.enabled
-                  ? void accessMutation.send({
-                      requestId: newRequestId(),
-                      enabled: false,
-                    })
-                  : setConfirmation(true)
-              }
-            >
-              {access?.enabled
-                ? copy("tailscale.disable")
-                : copy("tailscale.enable")}
-            </button>
-            {!accessRead.error && isLoginRequired(accessMutation.error) ? (
-              <LoginRequiredProblem error={accessMutation.error} />
-            ) : (
-              <Problem
-                error={
-                  accessRead.error ??
-                  accessMutation.error ??
-                  inbox.error ??
-                  decisions.error
-                }
-              />
-            )}
-            {decisions.uncertain ? (
-              <button type="button" onClick={() => void decisions.retry()}>
-                {copy("tailscale.reconcile")}
-              </button>
-            ) : null}
-            {accessMutation.uncertain ? (
-              <button type="button" onClick={() => void accessMutation.retry()}>
-                {copy("tailscale.reconcile")}
-              </button>
-            ) : null}
-          </section>
-        ) : null}
-      </PersistentConnectionView>
-      <PersistentConnectionView target={target} hidden>
-        {target ? (
-          <section className="tailscale-devices">
-            <h2>{copy("tailscale.devices")}</h2>
+        {current ? (
+          <section
+            className="tailscale-section tailscale-access"
+            aria-labelledby={accessHeading}
+            data-settings-search-target="tailscale-computer"
+          >
+            <h2 id={accessHeading}>{copy("tailscale.thisComputer")}</h2>
             {supported ? (
-              <DeviceInventory access={access} onPaired={onPaired} />
+              <>
+                <p className="tailscale-help">
+                  {copy("tailscale.computerHelp")}
+                </p>
+                <dl className="tailscale-facts">
+                  {access ? (
+                    <div>
+                      <dt>{copy("tailscale.intent")}</dt>
+                      <dd>
+                        {access.enabled
+                          ? copy("tailscale.intentEnabled")
+                          : copy("tailscale.intentDisabled")}
+                      </dd>
+                    </div>
+                  ) : null}
+                  <div>
+                    <dt>{copy("tailscale.status")}</dt>
+                    <dd role="status" data-access-status={accessState}>
+                      {copy(accessStatusCopy[accessState])}
+                    </dd>
+                  </div>
+                </dl>
+                {accessState === AccessStatus.ActionNeeded ? (
+                  <p className="tailscale-guidance">
+                    {copy("tailscale.setupGuidance")}
+                  </p>
+                ) : null}
+                {access?.origin ? (
+                  <p className="tailscale-identity">{access.origin}</p>
+                ) : null}
+                <button
+                  type="button"
+                  disabled={accessMutation.busy || accessUnknown}
+                  onClick={() =>
+                    access?.enabled
+                      ? void accessMutation.send({
+                          requestId: newRequestId(),
+                          enabled: false,
+                        })
+                      : setConfirmation(true)
+                  }
+                >
+                  {access?.enabled
+                    ? copy("tailscale.disable")
+                    : copy("tailscale.enable")}
+                </button>
+                {access?.enabled ? (
+                  <p className="tailscale-note">
+                    {copy("tailscale.disableNote")}
+                  </p>
+                ) : null}
+                {!accessRead.error && isLoginRequired(accessMutation.error) ? (
+                  <LoginRequiredProblem error={accessMutation.error} />
+                ) : (
+                  <Problem
+                    error={
+                      accessRead.error ??
+                      accessMutation.error ??
+                      inbox.error ??
+                      decisions.error
+                    }
+                  />
+                )}
+                {decisions.uncertain ? (
+                  <button type="button" onClick={() => void decisions.retry()}>
+                    {copy("tailscale.reconcile")}
+                  </button>
+                ) : null}
+                {accessMutation.uncertain ? (
+                  <button
+                    type="button"
+                    onClick={() => void accessMutation.retry()}
+                  >
+                    {copy("tailscale.reconcile")}
+                  </button>
+                ) : null}
+              </>
+            ) : status.isPending ? (
+              <p role="status">{copy("tailscale.loading")}</p>
+            ) : status.error ? (
+              // A failed capability read is not evidence that the server lacks
+              // Tailscale support.
+              <>
+                <p role="status">{copy("tailscale.unavailable")}</p>
+                <Problem error={status.error} />
+              </>
             ) : (
               <p>{copy("tailscale.unsupported")}</p>
             )}
           </section>
         ) : null}
       </PersistentConnectionView>
+      {supported && (target || requests) ? (
+        <DeviceInventory
+          access={access}
+          onPaired={onPaired}
+          devices={target}
+          requests={requests}
+        />
+      ) : null}
       {confirmation ? (
         <Modal
           title={copy("tailscale.enable")}
@@ -419,12 +504,19 @@ export function TailscaleConnections({
     </>
   );
 }
+// Owns discovery, retained connection requests and the begin, resume and cancel
+// mutations. It presents the devices and requests regions through two stable
+// portal hosts so the same state feeds both sections of the category.
 function DeviceInventory({
   access,
   onPaired,
+  devices,
+  requests,
 }: {
   access?: Access;
   onPaired: () => void;
+  devices?: HTMLElement;
+  requests?: HTMLElement;
 }) {
   useLocale();
   const discovery = useQuery(TailscaleQuery.discoverTailscale, {});
@@ -478,129 +570,255 @@ function DeviceInventory({
   const inventory = discovery.error
     ? undefined
     : decode<Inventory>(discovery.data?.documentJson);
+  // Automatic availability checks belong to this mount, which is exactly one
+  // visit of the devices presentation: leaving the category unmounts it and
+  // reopening starts fresh. The queue is snapshotted once from the first
+  // successful running inventory, so rerenders, Strict Mode replay, focus,
+  // reconnect and Refresh never restart or extend it.
+  const [queue, setQueue] = useState<readonly QueuedPeer[]>();
+  const [settled, setSettled] = useState<readonly string[]>([]);
+  useEffect(() => {
+    if (queue || !discovery.isSuccess || discovery.isFetching) return;
+    if (inventory?.state !== "running") return;
+    const next = inventory.peers
+      .filter(checkEligible)
+      .map(({ id, host }) => ({ id, host }));
+    setQueue(next);
+  }, [queue, discovery.isSuccess, discovery.isFetching, inventory]);
+  const markSettled = useCallback(
+    (id: string) =>
+      setSettled((prev) => (prev.includes(id) ? prev : [...prev, id])),
+    [],
+  );
+  // Peers whose automatic read is in flight, reported by their rows. An entry
+  // that stops being eligible keeps its read running until it ends, so the
+  // queue waits for it instead of starting the next peer's read alongside it.
+  const [reading, setReading] = useState<readonly string[]>([]);
+  const markReading = useCallback(
+    (id: string, busy: boolean) =>
+      setReading((prev) =>
+        busy
+          ? prev.includes(id)
+            ? prev
+            : [...prev, id]
+          : prev.includes(id)
+            ? prev.filter((other) => other !== id)
+            : prev,
+      ),
+    [],
+  );
+  // Queue entries that went offline, vanished or changed host leave the visit
+  // queue for good: a later Refresh that restores the peer never re-enters it,
+  // so it is only checkable manually for the rest of the visit.
+  const [dropped, setDropped] = useState<readonly string[]>([]);
+  const currentPeers = inventory?.peers ?? [];
+  const live = (q: QueuedPeer) =>
+    !dropped.includes(q.id) &&
+    currentPeers.some((p) => queuedAndEligible(q, p));
+  useEffect(() => {
+    if (!queue || !inventory) return;
+    const invalid = queue
+      .filter(
+        (q) =>
+          !dropped.includes(q.id) &&
+          !inventory.peers.some((p) => queuedAndEligible(q, p)),
+      )
+      .map((q) => q.id);
+    if (invalid.length) setDropped((prev) => [...prev, ...invalid]);
+  }, [queue, inventory, dropped]);
+  // Serial advance: only the first queued peer that is still live and has not
+  // settled is checked, and only after every invalidated entry's read ended.
+  const waiting = queue?.some(
+    (q) => !live(q) && !settled.includes(q.id) && reading.includes(q.id),
+  );
+  const activeId = waiting
+    ? undefined
+    : queue?.find((q) => !settled.includes(q.id) && live(q))?.id;
   const original = decode<Approval[]>(operations.data?.documentJson) ?? [];
   const retained = accepted
     ? [accepted, ...original.filter((a) => a.id !== accepted.id)]
     : original;
   return (
     <>
-      <p>{copy("tailscale.help")}</p>
-      <button
-        type="button"
-        disabled={discovery.isFetching}
-        onClick={() => void discovery.refetch()}
-      >
-        {copy("tailscale.refresh")}
-      </button>
-      <p role="status">
-        {discovery.isPending
-          ? copy("tailscale.loading")
-          : inventory?.state === "running"
-            ? copy("tailscale.connected")
-            : inventory?.state === "logged-out"
-              ? copy("tailscale.loggedOut")
-              : inventory?.state === "machine-approval"
-                ? copy("tailscale.machineApproval")
-                : inventory?.state === "stopped"
-                  ? copy("tailscale.stopped")
-                  : inventory?.state === "starting"
-                    ? copy("tailscale.starting")
-                    : copy("tailscale.unavailable")}
-      </p>
-      <Problem error={discovery.error} />
-      {inventory?.state === "running" && inventory.peers.length === 0 ? (
-        <p>{copy("tailscale.empty")}</p>
-      ) : null}
-      <ul className="tailscale-list">
-        {inventory?.peers.map((peer) => (
-          <PeerRow
-            key={peer.id}
-            peer={peer}
-            workerEnabled={access?.state === "ready"}
-            choose={(role) => setSelected({ peer, role })}
-          />
-        ))}
-      </ul>
-      <Problem
-        error={start.error ?? resume.error ?? cancel.error ?? operations.error}
-      />
-      {start.uncertain ? (
-        <button type="button" onClick={() => void start.retry()}>
-          {copy("tailscale.reconcile")}
-        </button>
-      ) : null}
-      {resume.uncertain ? (
-        <button
-          type="button"
-          disabled={resume.busy}
-          onClick={() => void resume.retry()}
-        >
-          {copy("tailscale.retryResume")}
-        </button>
-      ) : null}
-      {cancel.uncertain ? (
-        <button
-          type="button"
-          disabled={cancel.busy}
-          onClick={() => void cancel.retry()}
-        >
-          {copy("tailscale.retryCancel")}
-        </button>
-      ) : null}
-      {resume.uncertain || cancel.uncertain ? (
-        <p id={retainedHelpId} role="status">
-          {copy("tailscale.retainedRequestHelp")}
-        </p>
-      ) : null}
-      {retained.length ? (
-        <section>
-          <h3>{copy("tailscale.operations")}</h3>
-          <ul className="tailscale-list">
-            {retained.map((a) => (
-              <li key={a.id}>
-                <strong>{a.name || a.origin}</strong>
-                <p role="status">{approvalLabel(a.state)}</p>
-                {a.code ? (
-                  <>
-                    <p>{copy("tailscale.matchingCode")}</p>
-                    <strong className="tailscale-code">{a.code}</strong>
-                  </>
-                ) : null}
-                <p className="tailscale-identity">{a.origin}</p>
-                {a.state === ApprovalState.Pending ||
-                a.state === ApprovalState.Approved ||
-                a.state === ApprovalState.Uncertain ? (
-                  <button
-                    type="button"
-                    disabled={resumeBlocked}
-                    aria-describedby={
-                      resume.uncertain ? retainedHelpId : undefined
+      <PersistentConnectionView target={devices} hidden>
+        {devices ? (
+          <section
+            className="tailscale-section tailscale-devices"
+            aria-labelledby="tailscale-devices-heading"
+            data-settings-search-target="tailscale-devices"
+          >
+            <h2 id="tailscale-devices-heading">
+              {copy("tailscale.tailnetDevices")}
+            </h2>
+            <p className="tailscale-help">{copy("tailscale.help")}</p>
+            <div className="tailscale-toolbar">
+              <div>
+                <span className="tailscale-label">
+                  {copy("tailscale.client")}
+                </span>
+                <p role="status">
+                  {discovery.isPending
+                    ? copy("tailscale.loading")
+                    : inventory?.state === "running"
+                      ? copy("tailscale.connected")
+                      : inventory?.state === "logged-out"
+                        ? copy("tailscale.loggedOut")
+                        : inventory?.state === "machine-approval"
+                          ? copy("tailscale.machineApproval")
+                          : inventory?.state === "stopped"
+                            ? copy("tailscale.stopped")
+                            : inventory?.state === "starting"
+                              ? copy("tailscale.starting")
+                              : copy("tailscale.unavailable")}
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={discovery.isFetching || operations.isFetching}
+                onClick={() => {
+                  // Refresh is the only recovery control, so it retries every
+                  // read this category owns, including a failed request list.
+                  void discovery.refetch();
+                  void operations.refetch();
+                }}
+              >
+                {copy("tailscale.refresh")}
+              </button>
+            </div>
+            <Problem error={discovery.error} />
+            {inventory?.state === "running" && inventory.peers.length === 0 ? (
+              <p>{copy("tailscale.empty")}</p>
+            ) : null}
+            <ul className="tailscale-list">
+              {inventory?.peers.map((peer) => {
+                const queued = queue?.find(
+                  (q) => !dropped.includes(q.id) && queuedAndEligible(q, peer),
+                );
+                const active = queued !== undefined && queued.id === activeId;
+                return (
+                  <PeerRow
+                    key={peer.id}
+                    peer={peer}
+                    workerEnabled={access?.state === "ready"}
+                    choose={(role) => setSelected({ peer, role })}
+                    automatic={
+                      active ||
+                      (queued !== undefined && settled.includes(peer.id))
                     }
-                    onClick={() => void resume.send({ requestId: a.id })}
-                  >
-                    {copy("tailscale.reconcile")}
-                  </button>
-                ) : null}
-                {a.state === ApprovalState.Pending ? (
-                  <button
-                    type="button"
-                    disabled={cancelBlocked}
-                    aria-describedby={
-                      cancel.uncertain ? retainedHelpId : undefined
-                    }
-                    onClick={() => void cancel.send({ requestId: a.id })}
-                  >
-                    {copy("tailscale.cancel")}
-                  </button>
-                ) : null}
-                {a.state === ApprovalState.Completed ? (
-                  <p>{copy("tailscale.completedHelp")}</p>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
+                    active={active}
+                    onSettled={markSettled}
+                    onReading={markReading}
+                  />
+                );
+              })}
+            </ul>
+          </section>
+        ) : null}
+      </PersistentConnectionView>
+      <PersistentConnectionView target={requests} hidden>
+        {requests ? (
+          <section
+            className="tailscale-section tailscale-requests"
+            aria-labelledby="tailscale-requests-heading"
+            data-settings-search-target="tailscale-requests"
+          >
+            <h2 id="tailscale-requests-heading">
+              {copy("tailscale.requests")}
+            </h2>
+            <p className="tailscale-help">{copy("tailscale.requestsHelp")}</p>
+            <Problem
+              error={
+                start.error ?? resume.error ?? cancel.error ?? operations.error
+              }
+            />
+            {start.uncertain ? (
+              <button type="button" onClick={() => void start.retry()}>
+                {copy("tailscale.reconcile")}
+              </button>
+            ) : null}
+            {resume.uncertain ? (
+              <button
+                type="button"
+                disabled={resume.busy}
+                onClick={() => void resume.retry()}
+              >
+                {copy("tailscale.retryResume")}
+              </button>
+            ) : null}
+            {cancel.uncertain ? (
+              <button
+                type="button"
+                disabled={cancel.busy}
+                onClick={() => void cancel.retry()}
+              >
+                {copy("tailscale.retryCancel")}
+              </button>
+            ) : null}
+            {resume.uncertain || cancel.uncertain ? (
+              <p id={retainedHelpId} role="status">
+                {copy("tailscale.retainedRequestHelp")}
+              </p>
+            ) : null}
+            {retained.length ? (
+              <ul className="tailscale-list">
+                {retained.map((a) => (
+                  <li key={a.id}>
+                    <div>
+                      <strong>{a.name || a.origin}</strong>
+                      <p role="status">{approvalLabel(a.state)}</p>
+                      {a.code ? (
+                        <>
+                          <p>{copy("tailscale.matchingCode")}</p>
+                          <strong className="tailscale-code">{a.code}</strong>
+                        </>
+                      ) : null}
+                      <p className="tailscale-identity">{a.origin}</p>
+                      {a.state === ApprovalState.Completed ? (
+                        <p>{copy("tailscale.completedHelp")}</p>
+                      ) : null}
+                    </div>
+                    <div className="tailscale-actions">
+                      {a.state === ApprovalState.Pending ||
+                      a.state === ApprovalState.Approved ||
+                      a.state === ApprovalState.Uncertain ? (
+                        <button
+                          type="button"
+                          disabled={resumeBlocked}
+                          aria-describedby={
+                            resume.uncertain ? retainedHelpId : undefined
+                          }
+                          onClick={() => void resume.send({ requestId: a.id })}
+                        >
+                          {copy("tailscale.reconcile")}
+                        </button>
+                      ) : null}
+                      {a.state === ApprovalState.Pending ? (
+                        <button
+                          type="button"
+                          disabled={cancelBlocked}
+                          aria-describedby={
+                            cancel.uncertain ? retainedHelpId : undefined
+                          }
+                          onClick={() => void cancel.send({ requestId: a.id })}
+                        >
+                          {copy("tailscale.cancel")}
+                        </button>
+                      ) : null}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : operations.isPending ? (
+              <p role="status">{copy("tailscale.requestsLoading")}</p>
+            ) : operations.data ? (
+              <p>{copy("tailscale.requestsEmpty")}</p>
+            ) : (
+              // The list was never read, so it cannot be reported as empty.
+              <p role="status">{copy("tailscale.requestsUnavailable")}</p>
+            )}
+          </section>
+        ) : null}
+      </PersistentConnectionView>
       {selected ? (
         <Modal
           title={
@@ -652,60 +870,99 @@ function PeerRow({
   peer,
   choose,
   workerEnabled,
+  automatic,
+  active,
+  onSettled,
+  onReading,
 }: {
   peer: Peer;
   choose: (role: DeviceType) => void;
   workerEnabled: boolean;
+  // The visit queue has started (or finished) the automatic check of this peer.
+  automatic: boolean;
+  // This peer is the one automatic check currently owning the queue.
+  active: boolean;
+  onSettled: (id: string) => void;
+  // Reports whether this row has a check read in flight.
+  onReading: (id: string, busy: boolean) => void;
 }) {
   useLocale();
-  // A check belongs to the peer's host and online state when it was requested.
-  // Deriving `checked` from that key invalidates the check in the same render
-  // that observes a discovery change, so no stale result can show for a frame.
-  const peerKey = JSON.stringify([peer.host, peer.online]);
-  const [checkedKey, setCheckedKey] = useState<string>();
-  // A key that no longer matches the peer is cleared in the same render, not
-  // kept: otherwise a peer that returns to the checked host and online state
-  // (online to offline to online, or host A to B to A) would match it again and
-  // re-enable the query without an explicit Check.
-  if (checkedKey !== undefined && checkedKey !== peerKey)
-    setCheckedKey(undefined);
-  const checked = checkedKey === peerKey;
+  const [checked, setChecked] = useState(false);
+  const enabled = checked || automatic;
+  // A check result describes the peer as observed when it was read. Any change
+  // to the observed host, online state or sharing leaves the earlier result
+  // (success or failure) behind: it is hidden at once, the manual opt-in is
+  // cleared and the cached entry is reset, so a later Check always sends a
+  // fresh read instead of re-exposing the old approval or error.
+  const observation = JSON.stringify([peer.host, peer.online, peer.shared_to]);
+  const [observed, setObserved] = useState(observation);
+  const [discard, setDiscard] = useState(false);
+  if (observed !== observation) {
+    setObserved(observation);
+    setChecked(false);
+    setDiscard(true);
+  }
   const queryClient = useQueryClient();
+  const transport = useTransport();
   // Checking is an explicit single-peer read. Unmount cancels it; cached online
   // metadata never establishes DeliDev support or enables another peer's action.
   const check = useQuery(
     TailscaleQuery.checkTailscale,
     { peerId: peer.id },
     {
-      enabled: checked,
+      enabled,
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       staleTime: Infinity,
       gcTime: 0,
     },
   );
-  // Changed host or online state invalidates the check. The disabled query would
-  // otherwise keep its cached identity or error under the same peer ID and serve
-  // it again on the next Check, so the cached result is dropped with the check.
+  // Every displayed value reads the query only for the current check. A failed
+  // check (automatic or manual) keeps the previous identity next to the new
+  // error, so the latest result controls: cached identity is ignored on error,
+  // and an invalidated result hides both identity and error.
+  const checkError = enabled && !discard ? check.error : undefined;
+  const identity =
+    enabled && !discard && !check.error
+      ? decode<Identity>(check.data?.documentJson)
+      : undefined;
+  const cause = checkCause(checkError);
+  // An invalidated result is reset only once no read is in flight: the queue
+  // waits for that read to end, so it is allowed to finish and then discarded.
   useEffect(() => {
+    if (!discard || check.isFetching) return;
+    if (check.status === "pending") {
+      setDiscard(false);
+      return;
+    }
     void queryClient.resetQueries({
       queryKey: createConnectQueryKey({
         schema: TailscaleQuery.checkTailscale,
         input: { peerId: peer.id },
+        transport,
         cardinality: "finite",
       }),
+      exact: true,
     });
-  }, [queryClient, peer.id, peerKey]);
-  // Every displayed value reads the query only for the current check. A failed
-  // manual re-check keeps the previous identity next to the new error, so the
-  // latest result controls: cached identity is ignored on error.
-  const fetching = checked && check.isFetching;
-  const checkError = checked ? check.error : undefined;
-  const identity =
-    checked && !check.error
-      ? decode<Identity>(check.data?.documentJson)
-      : undefined;
-  const cause = checkCause(checkError);
+  }, [
+    discard,
+    check.isFetching,
+    check.status,
+    queryClient,
+    transport,
+    peer.id,
+  ]);
+  // The active automatic check is done once its read is no longer in flight and
+  // has produced a result or an error (including a check that a manual click
+  // already finished); the queue then advances to the next peer.
+  const settledRead = !check.isFetching && check.status !== "pending";
+  useEffect(() => {
+    if (active && settledRead) onSettled(peer.id);
+  }, [active, settledRead, onSettled, peer.id]);
+  useEffect(() => {
+    onReading(peer.id, check.isFetching);
+  }, [check.isFetching, onReading, peer.id]);
+  useEffect(() => () => onReading(peer.id, false), [onReading, peer.id]);
   return (
     <li>
       <div>
@@ -716,24 +973,32 @@ function PeerRow({
         </p>
         <p role="status">
           {copy("tailscale.delidev")}:{" "}
-          {fetching
-            ? copy("tailscale.checking")
-            : identity?.approval
-              ? copy("tailscale.accepting")
-              : checked
-                ? cause === FailureCause.TailscaleConnectionRefused
-                  ? copy("tailscale.couldNotConnect")
-                  : copy("tailscale.unavailable")
-                : copy("tailscale.notChecked")}
+          {check.isFetching ? (
+            <>
+              {copy("tailscale.checking")}
+              <span className="tailscale-progress" aria-hidden="true" />
+            </>
+          ) : identity?.approval ? (
+            copy("tailscale.accepting")
+          ) : enabled ? (
+            cause === FailureCause.TailscaleConnectionRefused ? (
+              copy("tailscale.couldNotConnect")
+            ) : (
+              copy("tailscale.unavailable")
+            )
+          ) : (
+            copy("tailscale.notChecked")
+          )}
         </p>
       </div>
       <div className="tailscale-actions">
         <button
           type="button"
-          disabled={!peer.online || peer.shared_to || fetching}
-          onClick={() =>
-            checked ? void check.refetch() : setCheckedKey(peerKey)
-          }
+          disabled={!peer.online || peer.shared_to || check.isFetching}
+          onClick={() => {
+            setChecked(true);
+            if (enabled) void check.refetch();
+          }}
         >
           {copy("tailscale.check")}
         </button>

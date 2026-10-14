@@ -38,6 +38,16 @@ import {
 import { SessionTerminals } from "./session-terminals";
 import { ShortcutProvider } from "./shortcut-provider";
 
+const native = vi.hoisted(() => ({
+  invoke: vi.fn(),
+  isTauri: vi.fn(() => false),
+  screenOpened: vi.fn(),
+}));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: native.invoke,
+  isTauri: native.isTauri,
+}));
+
 // Component tests use a text fixture; real Ghostty parser/CSP acceptance runs in
 // the external Chrome fixture. This adapter exercises input ownership only.
 vi.mock("./terminal-emulator", () => ({
@@ -47,7 +57,9 @@ vi.mock("./terminal-emulator", () => ({
     _resized: unknown,
     _unavailable: unknown,
     tabShortcut?: (event: KeyboardEvent) => boolean,
+    openLink?: (url: string) => void,
   ) => {
+    native.screenOpened(openLink);
     const output = document.createElement("pre"),
       field = document.createElement("textarea");
     field.setAttribute("aria-label", "Terminal input");
@@ -88,6 +100,102 @@ vi.mock("./terminal-emulator", () => ({
     };
   },
 }));
+
+it.each([{ nativeAvailable: false }, { nativeAvailable: true }])(
+  "admits terminal URL opening only with native capability ($nativeAvailable)",
+  async ({ nativeAvailable }) => {
+    native.isTauri.mockReturnValue(nativeAvailable);
+    native.invoke.mockReset();
+    native.screenOpened.mockClear();
+    native.invoke.mockRejectedValue("browser-unavailable");
+    const session = create(ResourceSchema, {
+      id: newRequestId(),
+      kind: EntityKind.SESSION,
+      schemaVersion: 1,
+      revision: 1n,
+      documentJson: encode({ archive: "active" }),
+    });
+    const terminal = create(ResourceSchema, {
+      id: newRequestId(),
+      kind: EntityKind.TERMINAL,
+      sessionId: session.id,
+      schemaVersion: 1,
+      revision: 1n,
+      documentJson: encode({ state: "running" }),
+    });
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const transport = createRouterTransport((router) => {
+      router.service(SystemService, {
+        getStatus: () => ({
+          capabilities: [SystemCapability.SESSION_TERMINALS_V1],
+        }),
+      });
+      router.service(ResourceService, {
+        listResources: () => ({ resources: [terminal] }),
+      });
+      router.service(TerminalService, {
+        watchTerminalOutput: async function* () {
+          yield {
+            epoch: newRequestId(),
+            sequence: 1n,
+            data: new TextEncoder().encode("https://example.com/"),
+            terminal,
+          };
+          await held;
+        },
+      });
+    });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const view = render(
+      <QueryClientProvider client={client}>
+        <TransportProvider transport={transport}>
+          <MutationIntents>
+            <SessionTerminals session={session} close={() => {}} />
+          </MutationIntents>
+        </TransportProvider>
+      </QueryClientProvider>,
+    );
+    try {
+      fireEvent.click(await screen.findByRole("tab", { name: /Terminal 1/ }));
+      const output = await screen.findByText("https://example.com/");
+      await waitFor(() => expect(native.screenOpened).toHaveBeenCalled());
+      const openLink = native.screenOpened.mock.lastCall?.[0] as
+        ((url: string) => void) | undefined;
+      if (!nativeAvailable) {
+        expect(openLink).toBeUndefined();
+        fireEvent.mouseMove(output);
+        fireEvent.click(output);
+        expect(output.closest("[data-link]")).toBeNull();
+        expect(native.invoke).not.toHaveBeenCalled();
+        expect(screen.queryByRole("alert")).toBeNull();
+      } else {
+        expect(openLink).toBeTypeOf("function");
+        await act(async () => openLink?.("https://example.com/"));
+        expect(native.invoke).toHaveBeenCalledExactlyOnceWith(
+          "open_external_url",
+          { url: "https://example.com/" },
+        );
+        expect((await screen.findByRole("alert")).textContent).toContain(
+          "not installed",
+        );
+        fireEvent.click(
+          screen.getByRole("button", { name: "Dismiss link error" }),
+        );
+        expect(screen.queryByRole("alert")).toBeNull();
+      }
+    } finally {
+      view.unmount();
+      release();
+      client.clear();
+      native.isTauri.mockReturnValue(false);
+    }
+  },
+);
 
 it("retries the exact creation request and reattaches without another shell", async () => {
   const session = create(ResourceSchema, {
@@ -2459,6 +2567,7 @@ function navigationFixture(options: { rejectFirst?: boolean } = {}) {
     return (
       <>
         <button onClick={() => setDeparted(true)}>Depart session</button>
+        <button onClick={() => setDeparted(false)}>Return to session</button>
         <button
           onClick={() =>
             setIntent({ requestId: newRequestId(), revision: session.revision })
@@ -2515,6 +2624,14 @@ function navigationFixture(options: { rejectFirst?: boolean } = {}) {
           kind: SessionTabKind.Terminal,
           id: origin.id,
         }),
+      );
+    },
+    depart() {
+      fireEvent.click(screen.getByRole("button", { name: "Depart session" }));
+    },
+    returnToSession() {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Return to session" }),
       );
     },
     hold() {
@@ -2724,7 +2841,41 @@ it("still selects the terminal admitted by the toolbar reuse-or-create gesture f
   }
 });
 
-it("does not select the additional terminal after Session departure", async () => {
+it.each(["button", "primary+T"] as const)(
+  "preserves the origin terminal after Session departure and return before %s creation acknowledgment",
+  async (trigger) => {
+    const f = navigationFixture();
+    try {
+      f.openOrigin();
+      const input = await screen.findByRole("textbox", {
+        name: "Terminal input",
+      });
+      await waitFor(() => expect(f.createButton().disabled).toBe(false));
+      const release = f.hold();
+      if (trigger === "button") fireEvent.click(f.createButton());
+      else expect(fireEvent.keyDown(input, primaryT)).toBe(false);
+      await waitFor(() => expect(f.createTerminal).toHaveBeenCalledOnce());
+      f.depart();
+      f.returnToSession();
+      expect(f.selected()).toBe(f.keyOf(f.origin.id));
+      const returnedInput = await screen.findByRole("textbox", {
+        name: "Terminal input",
+      });
+      await waitFor(() => expect(document.activeElement).toBe(returnedInput));
+      await act(async () => release());
+      await waitFor(() => expect(f.addedTab()).not.toBeNull());
+      expect(f.addedTab()!.textContent).toMatch(/^Terminal 3/);
+      expect(f.selected()).toBe(f.keyOf(f.origin.id));
+      expect(document.activeElement).toBe(returnedInput);
+      expect(f.createTerminal).toHaveBeenCalledOnce();
+      expect(f.controlTerminal).not.toHaveBeenCalled();
+    } finally {
+      f.cleanup();
+    }
+  },
+);
+
+it("retains a terminal acknowledged while the Session is absent for explicit opening", async () => {
   const f = navigationFixture();
   try {
     f.openOrigin();
@@ -2733,11 +2884,43 @@ it("does not select the additional terminal after Session departure", async () =
     const release = f.hold();
     fireEvent.click(f.createButton());
     await waitFor(() => expect(f.createTerminal).toHaveBeenCalledOnce());
-    fireEvent.click(screen.getByRole("button", { name: "Depart session" }));
+    f.depart();
     await act(async () => release());
+    f.returnToSession();
+    await waitFor(() => expect(f.addedTab()).not.toBeNull());
+    expect(f.addedTab()!.textContent).toMatch(/^Terminal 3/);
+    expect(f.selected()).toBe(f.keyOf(f.origin.id));
+    f.navigate((store, id) =>
+      store.open(id, { kind: SessionTabKind.Terminal, id: f.added.id }),
+    );
+    expect(f.selected()).toBe(f.keyOf(f.added.id));
+    expect(f.createTerminal).toHaveBeenCalledOnce();
+    expect(f.controlTerminal).not.toHaveBeenCalled();
+  } finally {
+    f.cleanup();
+  }
+});
+
+it("keeps exact additional-creation retry bytes after Session departure and return", async () => {
+  const f = navigationFixture({ rejectFirst: true });
+  try {
+    f.openOrigin();
+    await screen.findByRole("textbox", { name: "Terminal input" });
+    await waitFor(() => expect(f.createButton().disabled).toBe(false));
+    fireEvent.click(f.createButton());
+    const retry = await screen.findByRole("button", {
+      name: "Retry the same terminal creation",
+      hidden: true,
+    });
+    const originalRequest = f.createTerminal.mock.calls[0]![0];
+    f.depart();
+    f.returnToSession();
+    fireEvent.click(retry);
+    await waitFor(() => expect(f.createTerminal).toHaveBeenCalledTimes(2));
+    expect(f.createTerminal.mock.calls[1]![0]).toEqual(originalRequest);
     await waitFor(() => expect(f.addedTab()).not.toBeNull());
     expect(f.selected()).toBe(f.keyOf(f.origin.id));
-    expect(f.createTerminal).toHaveBeenCalledOnce();
+    expect(f.controlTerminal).not.toHaveBeenCalled();
   } finally {
     f.cleanup();
   }

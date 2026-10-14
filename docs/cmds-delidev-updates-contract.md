@@ -14,7 +14,7 @@ Authorized owners and paired clients; original paired Workers; release maintaine
 
 ## Interfaces and Contracts
 
-Authenticated owner/client checks and exact candidate/revision acceptance use InstallationService and `delidev update`. Only stable `delidev-v<semver>` GitHub Releases in `delinoio/oss` supply manifests. A signed manifest covers the complete six-target desktop and six-target Worker inventory, source revision, protocol, byte lengths and SHA-256. Native installation requires a trusted-window confirmation. Worker installation waits for joined active execution, auxiliary, terminal and forwarding ownership. Neither path replaces a live server or a harness.
+Authenticated owner/client checks and exact candidate/revision acceptance use InstallationService and `delidev update`. Only stable `delidev@v<semver>` GitHub Releases (the historical `delidev-v<semver>` namespace is ignored by release selection, artifact URL verification and redirect checks) in `delinoio/oss` supply manifests. A signed manifest covers the complete six-target desktop and six-target Worker inventory, source revision, protocol, byte lengths and SHA-256. Native installation requires a trusted-window confirmation. Worker installation waits for joined active execution, auxiliary, terminal and forwarding ownership. Neither path replaces a live server or a harness.
 
 Independent System capabilities 28 (signed updates), 29 (SSH setup) and Worker capability 17 are reserved for this feature in the owning feature PR. Update and SSH metadata use EntityKind 33/34. Reservations alone grant no capability. Shared reservations reached main first; complete independent feature PRs merge after their implemented dependencies.
 
@@ -278,7 +278,7 @@ Instruction-file updates in this requirement apply only to changes in developmen
 ### Download-only automated release exception
 
 The owner-authorized automatic release workflow may publish a stable
-`delidev-v<semver>` release containing macOS/Linux x64/arm64 desktop and CLI/Worker
+`delidev@v<semver>` release containing macOS/Linux x64/arm64 desktop and CLI/Worker
 files while Windows production signing is unavailable. Such releases are strictly
 download-only: they contain no `delidev-update-manifest.json` and provide no updater
 candidate. The existing verifier still requires all twelve desktop/Worker entries;

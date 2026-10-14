@@ -9620,6 +9620,13 @@
       "number": 65
     },
     {
+      "issue": 3465,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_PARALLEL_SESSIONS_V1",
+      "number": 66
+    },
+    {
       "issue": 1980,
       "kind": "enum",
       "declaration": "SystemCapability",

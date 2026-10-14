@@ -735,6 +735,8 @@ test("a readback regression fails the portable fixture command and CI aggregate"
     "scripts/release/linux-packages",
     "scripts/release/runmoor.mjs",
     "packaging/linux/pins.json",
+    "LICENSE",
+    "NOTICE",
   ]) {
     const target = join(cwd, path);
     mkdirSync(dirname(target), { recursive: true });

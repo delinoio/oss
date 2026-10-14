@@ -107,11 +107,13 @@ jobs:
 
           CGO_ENABLED=0 GOOS="${{ matrix.goos }}" GOARCH="${{ matrix.goarch }}" \
             go build -trimpath -ldflags="-s -w" -o "$output_name" ./cmds/derun
+          test -s "LICENSE"
+          test -s "NOTICE"
 
           if [ "${{ matrix.goos }}" = "windows" ]; then
-            zip -j "dist/${artifact_name}" "$output_name"
+            zip -j "dist/${artifact_name}" "$output_name" "LICENSE" "NOTICE"
           else
-            tar -czf "dist/${artifact_name}" "$output_name"
+            tar -czf "dist/${artifact_name}" "$output_name" "LICENSE" "NOTICE"
           fi
 
       - name: Upload artifact

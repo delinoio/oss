@@ -27,6 +27,91 @@ func fixtureToken() string {
 	return apiproxy.TokenPrefix + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32))
 }
 
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
+
+func TestNativeForwardPreparationKeepsRelayLifetime(t *testing.T) {
+	for _, scenario := range []struct {
+		name, body                        string
+		bodyDelay, proofDelay, relayDelay time.Duration
+		wantAbort                         bool
+	}{
+		{name: "buffer and proof", body: "{}", bodyDelay: 70 * time.Millisecond, proofDelay: 50 * time.Millisecond, relayDelay: 80 * time.Millisecond},
+		{name: "proof only", body: "{}", proofDelay: 70 * time.Millisecond, relayDelay: 80 * time.Millisecond},
+		{name: "relay exceeds its deadline", body: "{}", proofDelay: 30 * time.Millisecond, relayDelay: 300 * time.Millisecond, wantAbort: true},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			var sends atomic.Int32
+			transport := roundTripFunc(func(request *http.Request) (*http.Response, error) {
+				select {
+				case <-time.After(scenario.proofDelay):
+				case <-request.Context().Done():
+					return nil, request.Context().Err()
+				}
+				sends.Add(1)
+				reader, writer := io.Pipe()
+				go func() {
+					_, _ = io.WriteString(writer, "data: heartbeat\n\n")
+					select {
+					case <-time.After(scenario.relayDelay):
+						_, _ = io.WriteString(writer, "data: complete\n\n")
+						_ = writer.Close()
+					case <-request.Context().Done():
+						_ = writer.CloseWithError(request.Context().Err())
+					}
+				}()
+				return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"text/event-stream"}}, Body: reader}, nil
+			})
+			f := open(t, Config{Origin: closedOrigin(t), Client: &http.Client{Transport: transport}, relayTimeout: 100 * time.Millisecond, preparationAllowance: 160 * time.Millisecond})
+			var body io.Reader = strings.NewReader(scenario.body)
+			if scenario.bodyDelay > 0 {
+				reader, writer := io.Pipe()
+				body = reader
+				go func() {
+					time.Sleep(scenario.bodyDelay)
+					_, _ = io.WriteString(writer, scenario.body)
+					_ = writer.Close()
+				}()
+			}
+			request, err := http.NewRequest(http.MethodPost, f.NativeOrigin()+responsesPath, body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request.Header.Set("Authorization", "Bearer "+fixtureToken())
+			response, err := (&http.Client{}).Do(request)
+			if scenario.wantAbort {
+				if response != nil {
+					got, readErr := io.ReadAll(response.Body)
+					_ = response.Body.Close()
+					if response.StatusCode == http.StatusOK && readErr == nil {
+						t.Fatalf("expired relay appeared complete: %q", got)
+					}
+				} else if err == nil {
+					t.Fatal("expired relay had neither response nor abort")
+				}
+				if sends.Load() != 1 {
+					t.Fatal("expired relay was sent again")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, readErr := io.ReadAll(response.Body)
+			_ = response.Body.Close()
+			if readErr != nil || response.StatusCode != http.StatusOK || sends.Load() != 1 {
+				t.Fatalf("status=%d sends=%d body=%q read=%v", response.StatusCode, sends.Load(), got, readErr)
+			}
+			if string(got) != "data: heartbeat\n\ndata: complete\n\n" {
+				t.Fatalf("incomplete relay response %q", got)
+			}
+		})
+	}
+}
+
 // relocation models one same-server move: the immutable pairing origin A is
 // retired (closed or occupied) and the authenticated runtime B is current.
 type relocation struct {

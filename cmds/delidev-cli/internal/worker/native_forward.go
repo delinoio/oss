@@ -24,12 +24,12 @@ const nativeForwardHeaderTimeout = 10*time.Minute + 30*time.Second
 // forwarded request uses the Worker's selected desktop transport, which proves
 // the current runtime generation and wraps the execution bearer before any
 // bearer transmission; the pairing address is never a fallback.
-func openCodexNativeForwarder(ctx context.Context, config Config, execution domain.ID, token string, titleProfile bool) (*nativeforward.Forwarder, error) {
+func openCodexNativeForwarder(ctx context.Context, config Config, execution domain.ID, token string, titleProfile bool, snapshot *networkSnapshot) (*nativeforward.Forwarder, error) {
 	connection := config.execution
 	if connection == nil {
 		return nil, nil
 	}
-	if config.network != nil && config.network.current().bundle.Route.Profile.Mode != domain.ProxyDirect {
+	if snapshot != nil && snapshot.bundle.Route.Profile.Mode != domain.ProxyDirect {
 		return nil, nil
 	}
 	credential := connection.Credential
@@ -45,7 +45,7 @@ func openCodexNativeForwarder(ctx context.Context, config Config, execution doma
 	if !following {
 		return nil, nil
 	}
-	client, closeIdle, err := networkHTTPClientForHeaders(ctx, config, credential, nativeForwardHeaderTimeout)
+	client, closeIdle, err := networkHTTPClientForNativeRoute(ctx, config, credential, snapshot, nativeForwardHeaderTimeout)
 	if err != nil {
 		logNativeForwardRefused(ctx, config, execution, err)
 		return nil, err

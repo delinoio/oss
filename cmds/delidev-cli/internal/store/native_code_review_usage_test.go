@@ -350,3 +350,185 @@ func TestNativeReviewObservationFallbacksAndClamp(t *testing.T) {
 		t.Fatal("a future observation must be clamped to the commit time", got.CreatedAt)
 	}
 }
+
+func TestNativeReviewPricingLegacyClearRemainsUnknownAfterReactivationAndRestart(t *testing.T) {
+	f := newReviewPricingFixture(t)
+	first := preparePrice(t, f.s, f.record)
+	f.clear()
+	if _, err := f.s.db.Exec("DELETE FROM metadata WHERE key=?", pricingClearedKey(first.ID)); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	f.setPricingTimes(now.Add(-4*time.Hour), time.Time{})
+	second := f.activate(0, "20")
+	if _, err := f.s.db.Exec("UPDATE pricing_versions SET created_at=? WHERE id=?", now.Add(-time.Hour).UnixMilli(), second.ID); err != nil {
+		t.Fatal(err)
+	}
+	var marker string
+	if err := f.s.db.QueryRow("SELECT value FROM metadata WHERE key=?", pricingUnknownClearKey(first.ID)).Scan(&marker); err != nil || marker != `{"version":1}` {
+		t.Fatal("reactivation did not retain the unknown legacy clear", err, marker)
+	}
+
+	gap := f.record
+	gap.ObservedAt = now.Add(-90 * time.Minute)
+	gapID := domain.NewID()
+	f.publish(gap, gapID)
+	if got := f.receipt(gapID); got.Pricing != nil || got.Estimate.Coverage != domain.EstimateUnavailable || got.Estimate.PricingID != "" {
+		t.Fatal("legacy gap acquired an unsupported price", got)
+	}
+	budget := f.budget("")
+	if budget.UnavailableResponses != 1 || budget.CompleteResponses != 0 {
+		t.Fatal("legacy gap did not contribute one unavailable budget response", budget)
+	}
+
+	root := f.s.root
+	if err := f.s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	f.s = reopened
+	if err := f.s.Read(context.Background(), func(tx *Tx) error {
+		price, err := tx.PricingAt(f.record.ModelID, gap.ObservedAt)
+		if err == nil && price != nil {
+			t.Fatal("restart lost the unknown-clear boundary")
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	third := f.activate(second.Revision, "30")
+	if third.ID == second.ID {
+		t.Fatal("third activation did not create a new price")
+	}
+	replay := gap
+	replay.Sequence++
+	replay.ObservedAt = now
+	if retained, duplicate := f.publish(replay, domain.NewID()); !duplicate || retained != gapID {
+		t.Fatal("legacy gap replay changed receipt identity")
+	}
+	if got := f.receipt(gapID); got.Pricing != nil || got.Estimate.Coverage != domain.EstimateUnavailable || f.budget("") != budget {
+		t.Fatal("later activation repriced or recharged the legacy gap", got)
+	}
+
+	after := f.record
+	after.Usage.ResponseDigest = strings.Repeat("e", 64)
+	after.ObservedAt = now.Add(-30 * time.Minute)
+	afterID := domain.NewID()
+	f.publish(after, afterID)
+	if got := f.receipt(afterID); got.Pricing == nil || got.Pricing.ID != second.ID {
+		t.Fatal("observation after reactivation did not select its eligible price", got.Pricing)
+	}
+	if err := f.s.Read(context.Background(), func(tx *Tx) error {
+		price, err := tx.PricingAt(f.record.ModelID, gap.ObservedAt)
+		if err == nil && price != nil {
+			t.Fatal("subsequent activation lost the unknown-clear boundary")
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNativeReviewPricingFreshResolverKeepsObservationTimePricing(t *testing.T) {
+	for _, mode := range []string{"replace", "clear"} {
+		t.Run(mode, func(t *testing.T) {
+			f := newReviewPricingFixture(t)
+			first := preparePrice(t, f.s, f.record)
+			now := time.Now().UTC().Truncate(time.Millisecond)
+			f.setPricingTimes(now.Add(-2*time.Hour), time.Time{})
+			var replacement PricingVersion
+			f.s.SetAutomaticPricing(func(tx *Tx, model domain.ModelIdentity) error {
+				if mode == "clear" {
+					return tx.ClearActivePricing(model)
+				}
+				basis := pricingFixture()
+				rate := "20"
+				basis.InputPerMillion = &rate
+				var err error
+				replacement, err = tx.PutPricing(model.Key(), first.Revision, domain.NewID(), basis)
+				return err
+			})
+			record := f.record
+			record.ObservedAt = now.Add(-time.Second)
+			id := domain.NewID()
+			f.publish(record, id)
+			got := f.receipt(id)
+			if got.Pricing == nil || got.Pricing.ID != first.ID || got.Estimate.PricingID != first.ID || got.Estimate.KnownAmount != "0.000065" {
+				t.Fatal("resolver mutation changed the observation-time estimate", got)
+			}
+			if total := f.budget("USD"); total.CompleteResponses != 1 || total.KnownAmount != "0.000065" {
+				t.Fatal("resolver mutation changed the budget contribution", total)
+			}
+			var active *PricingVersion
+			if err := f.s.Read(context.Background(), func(tx *Tx) error {
+				var err error
+				active, err = tx.RetainedActivePricing(f.record.ModelID)
+				return err
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if mode == "replace" && (active == nil || active.ID != replacement.ID) || mode == "clear" && active != nil {
+				t.Fatal("resolver mutation did not persist independently", active)
+			}
+			if mode == "clear" {
+				afterClear := f.record
+				afterClear.Usage.ResponseDigest = strings.Repeat("f", 64)
+				afterClear.ObservedAt = time.Now().UTC().Truncate(time.Millisecond)
+				afterID := domain.NewID()
+				f.publish(afterClear, afterID)
+				if next := f.receipt(afterID); next.Pricing != nil || next.Estimate.Coverage != domain.EstimateUnavailable {
+					t.Fatal("observation after resolver clear borrowed an old price", next)
+				}
+			}
+			budget := f.budget("USD")
+			replay := record
+			replay.Sequence++
+			replay.ObservedAt = time.Now().UTC()
+			if retained, duplicate := f.publish(replay, domain.NewID()); !duplicate || retained != id {
+				t.Fatal("resolver receipt replay changed identity")
+			}
+			if again := f.receipt(id); again.Pricing == nil || again.Pricing.ID != first.ID || again.Estimate.KnownAmount != "0.000065" || f.budget("USD") != budget {
+				t.Fatal("resolver receipt replay repriced or recharged", again)
+			}
+		})
+	}
+}
+
+func TestNativeReviewPricingFreshResolverFirstUseOnlyWithoutPriorHistory(t *testing.T) {
+	for _, priorClear := range []bool{false, true} {
+		t.Run(map[bool]string{false: "first-use", true: "prior-clear"}[priorClear], func(t *testing.T) {
+			f := newReviewPricingFixture(t)
+			if priorClear {
+				preparePrice(t, f.s, f.record)
+				f.clear()
+				f.setPricingTimes(time.Now().UTC().Add(-2*time.Hour), time.Now().UTC().Add(-time.Hour))
+			}
+			var created PricingVersion
+			f.s.SetAutomaticPricing(func(tx *Tx, model domain.ModelIdentity) error {
+				basis := pricingFixture()
+				rate := "20"
+				basis.InputPerMillion = &rate
+				var err error
+				created, err = tx.PutPricing(model.Key(), 0, domain.NewID(), basis)
+				return err
+			})
+			record := f.record
+			record.ObservedAt = time.Now().UTC().Truncate(time.Millisecond).Add(-time.Second)
+			id := domain.NewID()
+			f.publish(record, id)
+			got := f.receipt(id)
+			if priorClear {
+				if got.Pricing != nil || got.Estimate.Coverage != domain.EstimateUnavailable {
+					t.Fatal("prior cleared history borrowed a new live price", got)
+				}
+			} else if got.Pricing == nil || got.Pricing.ID != created.ID || got.Estimate.PricingID != created.ID {
+				t.Fatal("genuine first use lost live resolution", got)
+			}
+		})
+	}
+}

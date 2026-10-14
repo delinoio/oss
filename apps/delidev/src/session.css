@@ -983,29 +983,14 @@
   box-shadow: none;
 }
 /* The strip, item, label, selected and close visuals come from tab-strip.css.
-   The New browser page button follows the last tab, and the tab strip alone
-   scrolls when tabs exceed the available width. */
+   The Open tool + button follows the last tab, and the tab strip alone scrolls
+   when tabs exceed the available width. */
 .session-tabs {
   flex: 0 1 auto;
-}
-.session-workspace .session-new-page {
-  display: flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  min-width: 40px;
-  height: 40px;
-  min-height: 40px;
-  padding: 0;
-  border-radius: 8px;
-  font-size: 20px;
-  line-height: 1;
 }
 .session-tool-popup {
   position: relative;
   flex: none;
-  margin-inline-start: auto;
 }
 .session-workspace .session-tool-popup > button {
   display: flex;

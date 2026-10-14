@@ -25,6 +25,7 @@ export enum ShortcutId {
   OpenTerminals = "open-terminals",
   TerminalCreate = "terminal-create",
   Help = "help",
+  ReloadPage = "reload-page",
   NewSession = "new-session",
   SessionFocus = "session-focus",
   SessionSend = "session-send",
@@ -57,6 +58,8 @@ export const globalShortcutBindings = {
   [ShortcutId.OpenSettings]: [{ key: ",", primary: true }],
   [ShortcutId.Help]: [{ key: "?", ariaKey: "/", ariaShift: true }],
   [ShortcutId.NewSession]: [{ key: "n", primary: true, shift: true }],
+  // Read-only window-level action owned above the connected App.
+  [ShortcutId.ReloadPage]: [{ key: "r", primary: true }],
 } as const;
 export const sessionShortcutBindings = {
   [ShortcutId.OpenTool]: [{ key: "t", primary: true }],
