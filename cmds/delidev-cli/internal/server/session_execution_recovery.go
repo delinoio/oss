@@ -446,7 +446,7 @@ func openCodeForkRecoveryCreation(tx *store.Tx, row store.Record, session domain
 	expected, _ := json.Marshal(seed.Snapshot)
 	selected, _ := json.Marshal(f.Startup)
 	originalSelection, _ := json.Marshal(seed.Startup)
-	if !bytes.Equal(actual, expected) || !bytes.Equal(selected, originalSelection) {
+	if !bytes.Equal(actual, expected) || f.Startup != nil && !bytes.Equal(selected, originalSelection) {
 		return "", domain.ExecutionRecoveryUncertain()
 	}
 	// Older children may have no retained selection; the surviving original seed

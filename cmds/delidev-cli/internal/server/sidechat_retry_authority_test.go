@@ -242,11 +242,77 @@ func deliverRetryExecutionFixture(t *testing.T, child *continuationFixture) {
 	}
 }
 
-func registerRetryExecutionFixture(f *continuationFixture) error {
+func retryRegistrationRequestFixture(f *continuationFixture) *pb.RegisterExecutionRequest {
 	token := apiproxy.TokenPrefix + strings.Repeat("x", 32) + string(domain.NewID())
 	digest := sha256.Sum256([]byte(token))
-	_, err := f.workerClient.RegisterExecution(context.Background(), ownerRequest(f.workerIdentity, &pb.RegisterExecutionRequest{Mutation: acctMutation(f.job, domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, CredentialDigest: digest[:]}))
+	return &pb.RegisterExecutionRequest{Mutation: acctMutation(f.job, domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, CredentialDigest: digest[:]}
+}
+
+func registerRetryExecutionFixture(f *continuationFixture) error {
+	_, err := f.workerClient.RegisterExecution(context.Background(), ownerRequest(f.workerIdentity, retryRegistrationRequestFixture(f)))
 	return err
+}
+
+func TestSidechatQuestionRetryRegistrationReplayRechecksRevokedActor(t *testing.T) {
+	for _, bound := range []bool{false, true} {
+		name := "after registration"
+		if bound {
+			name = "after thread binding"
+		}
+		t.Run(name, func(t *testing.T) {
+			_, child := completedRetrySidechatFixture(t)
+			client, generation, input := pairedClientRetryFixture(t, child)
+			deliverRetryExecutionFixture(t, child)
+			request := retryRegistrationRequestFixture(child)
+			original, err := child.workerClient.RegisterExecution(context.Background(), ownerRequest(child.workerIdentity, request))
+			if err != nil || original.Msg.Replayed {
+				t.Fatal("original retry grant failed", err)
+			}
+			if bound {
+				child.thread = domain.ID(child.input.Fork.NativeThreadID)
+				event := domain.ExecutionEvent{Version: 1, ExecutionID: child.input.ExecutionID, Sequence: 1, Kind: domain.ExecutionThreadBound, NativeThreadID: string(child.thread), Observed: &domain.ObservedExecutionSettings{Model: child.input.Configuration.NativeModel, Permission: domain.PermissionReadOnly, ApprovalPolicy: "never"}}
+				raw, _ := json.Marshal(event)
+				if _, err := child.workerClient.PublishExecution(context.Background(), ownerRequest(child.workerIdentity, &pb.PublishExecutionRequest{Mutation: acctMutation(child.job, domain.NewID()), MachineId: child.machine.Id, InstanceId: child.workerInstance, EventJson: raw})); err != nil {
+					t.Fatal("binding did not publish", err)
+				}
+			}
+			before, _ := store.Decode[domain.Session](child.refresh(t))
+			device, err := child.service.Store.Get(context.Background(), domain.DeviceKind, client)
+			if err != nil {
+				t.Fatal(err)
+			}
+			doctorPut(t, child.service, domain.DeviceKind, client, device.Revision, domain.Device{Type: domain.ClientDevice, Revoked: true})
+			if _, err := child.workerClient.RegisterExecution(context.Background(), ownerRequest(child.workerIdentity, request)); connect.CodeOf(err) != connect.CodePermissionDenied {
+				t.Fatal("original receipt replay accepted revoked actor", err)
+			}
+			after, _ := store.Decode[domain.Session](child.refresh(t))
+			if after.SidechatActiveRetry != generation.ID || after.SidechatCurrentAnswer != before.SidechatCurrentAnswer || after.SidechatRetries[0].Fork == nil || after.SidechatRetries[0].Fork.RuntimeID != input.RuntimeID || after.SidechatRetries[0].Completed {
+				t.Fatal("denied replay released runtime or changed selected answer")
+			}
+		})
+	}
+}
+
+func TestSidechatQuestionRetryRegistrationReplayKeepsOriginalGrant(t *testing.T) {
+	_, child := completedRetrySidechatFixture(t)
+	pairedClientRetryFixture(t, child)
+	deliverRetryExecutionFixture(t, child)
+	request := retryRegistrationRequestFixture(child)
+	for attempt := 0; attempt < 2; attempt++ {
+		response, err := child.workerClient.RegisterExecution(context.Background(), ownerRequest(child.workerIdentity, request))
+		if err != nil || response.Msg.Replayed != (attempt == 1) {
+			t.Fatal("valid actor lost exact registration replay", err)
+		}
+	}
+	if err := child.service.Store.Read(context.Background(), func(tx *store.Tx) error {
+		grant, err := tx.ExecutionGrant(request.CredentialDigest)
+		if err != nil || grant.JobID != domain.ID(child.job.Id) || grant.ExecutionID != child.input.ExecutionID || grant.InstanceID != domain.ID(child.workerInstance) {
+			return executionDenied()
+		}
+		return nil
+	}); err != nil {
+		t.Fatal("replay replaced original grant", err)
+	}
 }
 
 func TestSidechatQuestionRetryExecutionRechecksInitiatingActor(t *testing.T) {
