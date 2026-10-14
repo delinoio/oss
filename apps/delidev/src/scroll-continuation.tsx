@@ -102,9 +102,6 @@ export function ScrollContinuation({
         // The continuation control is a sibling of the single-row strip, so
         // its vertical rectangle cannot identify the loaded horizontal tail.
         const tail = horizontalTail?.current;
-        // Retained or newly created rows can follow the reached history. They
-        // must not turn selection reveal into an automatic history read.
-        if (tail && tail !== container.lastElementChild) return;
         if (
           container.clientWidth > 0 &&
           (() => {
@@ -117,16 +114,22 @@ export function ScrollContinuation({
             }
             const tailBounds = tail.getBoundingClientRect(),
               containerBounds = container.getBoundingClientRect();
-            if (tailBounds.width <= 0 || containerBounds.width <= 0)
+            if (tailBounds.width <= 0 || containerBounds.width <= 0) {
+              // Test DOMs can omit layout geometry. Keep synthetic rows from
+              // becoming a false end-of-history signal in that fallback.
+              if (tail !== container.lastElementChild) return Infinity;
               return (
                 container.scrollWidth -
                 container.scrollLeft -
                 container.clientWidth
               );
-            const tailEnd =
-              container.scrollLeft + tailBounds.right - containerBounds.left;
-            if (tailEnd < container.scrollLeft) return Infinity;
-            return tailEnd - container.scrollLeft - container.clientWidth;
+            }
+            if (
+              tailBounds.right < containerBounds.left ||
+              tailBounds.right > containerBounds.right + continuationDistance
+            )
+              return Infinity;
+            return containerBounds.right - tailBounds.right;
           })() <= continuationDistance
         )
           append();

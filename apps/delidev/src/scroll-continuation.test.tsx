@@ -129,6 +129,123 @@ it("fills an underfilled horizontal strip only until its loaded tail overflows",
   fireEvent.scroll(view.container.firstElementChild!);
   expect(read).toHaveBeenCalledTimes(2);
 });
+
+it("measures the reached horizontal tail when synthetic children follow it", async () => {
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(40);
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(320);
+  vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockImplementation(
+    function (this: HTMLElement) {
+      return this.matches(".synthetic-tail-list") ? 700 : 0;
+    },
+  );
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: HTMLElement) {
+      if (this.matches(".synthetic-tail-list")) {
+        return {
+          top: 0,
+          bottom: 40,
+          left: 0,
+          right: 320,
+          width: 320,
+          height: 40,
+          x: 0,
+          y: 0,
+          toJSON: () => ({}),
+        };
+      }
+      if (this.tagName === "P") {
+        const container = this.parentElement!;
+        const index = [...container.querySelectorAll("p")].indexOf(
+          this as HTMLParagraphElement,
+        );
+        const right = (index + 1) * 100 - container.scrollLeft;
+        return {
+          top: 0,
+          bottom: 40,
+          left: right - 100,
+          right,
+          width: 100,
+          height: 40,
+          x: right - 100,
+          y: 0,
+          toJSON: () => ({}),
+        };
+      }
+      return {
+        top: 0,
+        bottom: 0,
+        left: 0,
+        right: 0,
+        width: 0,
+        height: 0,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      };
+    },
+  );
+
+  function SyntheticTailList() {
+    const root = useRef<HTMLDivElement>(null);
+    const tail = useRef<HTMLParagraphElement>(null);
+    const read = useMemo<PaginationReader<Row>>(
+      () => async (token) => ({
+        rows: Array.from({ length: 5 }, (_, index) => ({
+          id: `${token || "first"}-${index}`,
+          revision: 1n,
+        })),
+        nextPageToken: token ? "" : "next",
+      }),
+      [],
+    );
+    const query = usePaginationChain("synthetic-tail", true, read);
+    return (
+      <div className="synthetic-tail-list" ref={root}>
+        {query.rows.map((row, index) => (
+          <p
+            key={row.id}
+            ref={index === query.rows.length - 1 ? tail : undefined}
+          >
+            {row.id}
+          </p>
+        ))}
+        <button type="button">Selected terminal</button>
+        <ScrollContinuation
+          axis={ContinuationAxis.Horizontal}
+          horizontalTail={tail}
+          query={query}
+          label="items"
+          root={root}
+          active
+        />
+      </div>
+    );
+  }
+
+  const view = renderValue(<SyntheticTailList />);
+  const strip = view.container.querySelector<HTMLElement>(
+    ".synthetic-tail-list",
+  )!;
+  await screen.findByText("first-4");
+  expect(strip.scrollLeft).toBe(0);
+  expect(screen.queryByText("next-4")).toBeNull();
+
+  // Revealing the synthetic child leaves the reached history tail behind the
+  // viewport edge, so it must not trigger another history read.
+  strip.scrollLeft = 380;
+  fireEvent.scroll(strip);
+  await act(async () => {
+    await Promise.resolve();
+  });
+  expect(screen.queryByText("next-4")).toBeNull();
+
+  // Scrolling back until the reached history tail is at the edge resumes
+  // automatic paging even though the synthetic child remains mounted after it.
+  strip.scrollLeft = 180;
+  fireEvent.scroll(strip);
+  await screen.findByText("next-4");
+});
+
 function renderValue(value: ReactNode) {
   return render(
     <QueryClientProvider client={new QueryClient()}>
