@@ -566,7 +566,8 @@ impl Project {
                     }
                     continue;
                 }
-                let dynamic = node.kind() == SyntaxKind::CallExpression;
+                let dynamic = node.kind() == SyntaxKind::CallExpression
+                    && node.expression().kind() == SyntaxKind::ImportKeyword;
                 let specifier = match node.kind() {
                     SyntaxKind::ImportDeclaration | SyntaxKind::ExportDeclaration => {
                         node.module_specifier()

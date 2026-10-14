@@ -2058,6 +2058,31 @@ fn rejects_imports_outside_the_bundle() {
 }
 
 #[test]
+fn rejects_static_commonjs_package_requires() {
+    for source in [
+        r#"require("pkg");console.log(1);"#,
+        r#"{const require=globalThis.require;require("pkg");}"#,
+    ] {
+        let temp = bundle(&[("index.js", source)]);
+        let package = temp.path().join("node_modules/pkg");
+        fs::create_dir_all(&package).unwrap();
+        fs::write(
+            package.join("package.json"),
+            r#"{"name":"pkg","main":"index.js"}"#,
+        )
+        .unwrap();
+        fs::write(package.join("index.js"), "module.exports=1;").unwrap();
+        let output = run_typeopt(temp.path(), &[]);
+        assert!(!output.status.success());
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("outside the bundle directory"),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+#[test]
 fn rejects_relative_imports_hidden_by_dynamic_package_boundary() {
     let temp = bundle(&[(
         "sub/index.js",
