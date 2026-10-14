@@ -342,7 +342,7 @@ impl Project {
                  {specifier:?}); bundle mode needs a self-contained bundle"
             );
         }
-        if let Some(outside) = project.application_file_outside(dir) {
+        if let Some(outside) = project.application_file_outside(dir, &dynamic_packages) {
             bail!(
                 "a bundle chunk imports a module outside the bundle directory, which cannot be \
                  published: {outside}"
@@ -471,14 +471,58 @@ impl Project {
 
     /// A program file outside `dir` other than the bundled standard
     /// libraries: a chunk import resolved to a sibling file, a package or a
-    /// declaration elsewhere. The bundle is not a closed program then.
-    fn application_file_outside(&self, dir: &std::path::Path) -> Option<String> {
+    /// declaration elsewhere. Declarations reached only through a dynamic
+    /// package import are intentionally outside the closed runtime bundle;
+    /// they are skipped here because that import remains an unresolved
+    /// boundary.
+    fn application_file_outside(
+        &self,
+        dir: &std::path::Path,
+        dynamic_packages: &BTreeMap<String, Paths>,
+    ) -> Option<String> {
         let _scope = enter_program(Some(&self.version));
+        let dynamic_roots = Self::dynamic_package_roots(dir, dynamic_packages);
         source_files()
             .into_iter()
             .map(|file| source_file_info(file).file_name.clone())
             .filter(|name| !name.starts_with("bundled:"))
+            .filter(|name| {
+                !dynamic_roots
+                    .iter()
+                    .any(|root| std::path::Path::new(name).starts_with(root))
+            })
             .find(|name| !std::path::Path::new(name).starts_with(dir))
+    }
+
+    /// Return package roots whose files are compiler inputs only because a
+    /// literal dynamic import leaves the package unresolved at runtime.
+    fn dynamic_package_roots(
+        dir: &std::path::Path,
+        dynamic_packages: &BTreeMap<String, Paths>,
+    ) -> BTreeSet<std::path::PathBuf> {
+        let mut roots = BTreeSet::new();
+        let dir = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
+        for specifier in dynamic_packages.values().flat_map(|paths| paths.iter()) {
+            let mut parts = specifier.split('/');
+            let package = match parts.next() {
+                Some(scope) if scope.starts_with('@') => {
+                    let Some(name) = parts.next() else { continue };
+                    format!("{scope}/{name}")
+                }
+                Some(name) => name.to_owned(),
+                None => continue,
+            };
+            let mut ancestor = Some(dir.as_path());
+            while let Some(root) = ancestor {
+                let lexical = root.join("node_modules").join(&package);
+                roots.insert(lexical.clone());
+                if let Ok(canonical) = lexical.canonicalize() {
+                    roots.insert(canonical);
+                }
+                ancestor = root.parent();
+            }
+        }
+        roots
     }
 
     /// Bundle chunks that another chunk imports with an import or export

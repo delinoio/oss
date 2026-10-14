@@ -2046,10 +2046,15 @@ fn guarded_dynamic_package_import_is_a_boundary() {
     fs::create_dir_all(&package).unwrap();
     fs::write(
         package.join("package.json"),
-        r#"{"name":"pkg","type":"module","main":"index.js"}"#,
+        r#"{"name":"pkg","type":"module","main":"index.js","types":"index.d.ts"}"#,
     )
     .unwrap();
     fs::write(package.join("index.js"), "export const x=1;").unwrap();
+    fs::write(
+        package.join("index.d.ts"),
+        "export declare const x: number;",
+    )
+    .unwrap();
     let output = run_typeopt(temp.path(), &[]);
     assert!(
         output.status.success(),
