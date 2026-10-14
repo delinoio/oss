@@ -23,8 +23,8 @@ const (
 )
 
 // GrokSubscriptionBaselineVersion is the minimum Grok Build SemVer for the
-// planned subscription profile. It is a declared baseline only; newer releases
-// are validated natively and never rejected by number alone.
+// subscription profile. Newer releases are validated natively and never rejected
+// by number alone.
 const GrokSubscriptionBaselineVersion = "1.0.46"
 
 // CodexVersionAllowed permits an actual native attempt, not inferred protocol
@@ -46,9 +46,10 @@ func VersionAtLeast(version, baseline string) bool {
 }
 
 // GrokSubscriptionVersionAllowed reports whether version is a valid SemVer at
-// or above GrokSubscriptionBaselineVersion. It is intentionally not wired into
-// any capability, discovery or execution path; the subscription flow adopts it
-// only together with native validation of the actual account profile.
+// or above GrokSubscriptionBaselineVersion. It gates only protected Take
+// admission of a Grok lease and is intentionally not wired into any capability,
+// discovery or execution path; the remaining subscription flow adopts it only
+// together with native validation of the actual account profile.
 func GrokSubscriptionVersionAllowed(version string) bool {
 	return VersionAtLeast(version, GrokSubscriptionBaselineVersion)
 }

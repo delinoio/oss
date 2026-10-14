@@ -2,9 +2,14 @@
 
 ## Scope
 
-This contract owns the planned Grok Build subscription lifecycle (not yet
-implemented or advertised; only the protocol identifiers below are declared) in
-`cmds/delidev-cli`, its Connect interface and the desktop AI Subscription flow.
+This contract owns the Grok Build subscription lifecycle in `cmds/delidev-cli`,
+its Connect interface and the desktop AI Subscription flow. Implementation is
+partial and nothing is advertised. Implemented: the protocol identifiers below
+(declared only), the bound credential bundle library, the protected-vault
+generations, the protected Take/Finish lease handlers on the server and the
+Worker-side credential custody described under Storage. Not activated: the
+capability advertisement, native OAuth login and refresh execution, Worker-side
+watch dispatch, the remote callback forwarding and Grok execution.
 The subscription profile declares `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) as its minimum SemVer baseline. `domain.GrokSubscriptionVersionAllowed` admits a valid SemVer at or above it (prereleases of the baseline are below it) and gates protected Take admission of a Grok lease; no capability, discovery or execution path references it. Newer releases are validated natively, not rejected by number. The API and history baseline stays `domain.GrokProtocolVersion` (`1.0.41`); the known Grok Build 1.0.52 inspection failure is a separate limitation and does not change these baselines. Reservation support is separate
 from implemented support and actual account/platform acceptance.
 
@@ -39,9 +44,10 @@ owning feature change advertises and activates them:
   HISTORY 10 and CLEANUP 11.
 
 These ledger reservations grant no authentication, execution, active schema or
-capability advertisement. Existing System 30/35/36/37 and Worker 19 ownership
-remains unchanged. The implementation reuses Request/Progress/Cancel/Callback
-and protected Take/Finish Subscription RPCs. The selected account service and
+capability advertisement; the unadvertised storage and lease layer under Storage
+does not depend on them. Existing System 30/35/36/37 and Worker 19 ownership
+remains unchanged. The planned login reuses Request/Progress/Cancel/Callback
+and protected Take/Finish Subscription RPCs (Take/Finish are implemented for Grok accounts). The selected account service and
 `device_code` choose the flow; methods never switch automatically.
 
 The fixed official xAI OAuth profile validates PKCE, state, nonce and tokens.

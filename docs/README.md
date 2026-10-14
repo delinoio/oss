@@ -102,7 +102,7 @@ Record new implementation status, validation results and unresolved limits in pu
 - [Account lifecycle](cmds-delidev-accounts-contract.md)
 - [Managed Codex subscriptions](cmds-delidev-subscription-contract.md)
 - [OpenCode Go subscriptions](cmds-delidev-opencode-go-subscription-contract.md)
-- [Grok Build subscriptions (planned)](cmds-delidev-grok-subscription-contract.md)
+- [Grok Build subscriptions (storage and lease layer implemented; login, execution and advertisement planned)](cmds-delidev-grok-subscription-contract.md)
 - [Provider inspection](cmds-delidev-providers-contract.md)
 - [Provider and model catalog](cmds-delidev-catalog-contract.md)
 - [Native Codex model observations (pending)](cmds-delidev-native-models-contract.md)
