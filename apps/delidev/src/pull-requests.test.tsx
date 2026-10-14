@@ -382,7 +382,8 @@ it("ends Query options after the PR page size control in both languages without 
   expect(value.query).toHaveBeenCalledTimes(1);
   const english =
     "Pull requests load automatically when you select a repository or change filters.";
-  const korean = "저장소를 선택하거나 필터를 변경하면 풀 리퀘스트를 자동으로 불러옵니다.";
+  const korean =
+    "저장소를 선택하거나 필터를 변경하면 풀 리퀘스트를 자동으로 불러옵니다.";
   const queryOptions = () => {
     const form = pane.getByLabelText("PR page size").closest("form");
     expect(form).toBeTruthy();
