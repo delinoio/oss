@@ -431,11 +431,20 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
     }
 
     set_stage(RunStage::Saving, "Saving results");
+    let saving_started = Instant::now();
+    // Size fitting serializes the result and is part of saving; the stored
+    // duration covers it. The final write cannot be inside the file it
+    // writes, so the run log and progress report the total after it.
+    bundle::fit_within_limit(&mut result_bundle)?;
     result_bundle.analysis.finished_at = now();
     result_bundle.analysis.duration_ms =
         u32::try_from(started.elapsed().as_millis()).unwrap_or(u32::MAX);
-    bundle::fit_within_limit(&mut result_bundle)?;
     bundle::save(&run_dir, &result_bundle)?;
+    log.event(
+        "stage",
+        json!({ "stage": "saving", "durationMs": saving_started.elapsed().as_millis() as u64 }),
+    );
+    let total_ms = u32::try_from(started.elapsed().as_millis()).unwrap_or(u32::MAX);
     let status = result_bundle.analysis.status;
     if matches!(status, RunStatus::Complete) {
         let _ = std::fs::remove_file(run_dir.join(INCOMPLETE_MARKER));
@@ -444,7 +453,7 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
         "run-finished",
         json!({
             "status": status,
-            "durationMs": result_bundle.analysis.duration_ms,
+            "durationMs": total_ms,
             "diagnostics": result_bundle.analysis.diagnostics.len(),
             "problems": result_bundle.analysis.problems.iter().map(|entry| entry.code.clone()).collect::<Vec<_>>(),
         }),
@@ -458,7 +467,7 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
         served.progress.stage = RunStage::Finished;
         served.progress.message = String::new();
         served.progress.cancellable = false;
-        served.progress.elapsed_ms = result_bundle.analysis.duration_ms;
+        served.progress.elapsed_ms = total_ms;
         served.analysis = Some(served_analysis);
         served.sources = result_bundle.sources.clone();
     });
