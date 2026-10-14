@@ -314,6 +314,12 @@ export async function runBenchmark(output, options = {}) {
   const cases = options.cases ?? SCENE_CASES;
   const signal = options.signal;
   const ufbxVersion = await lockedUfbxVersion();
+  const readNativeProvenance = async () => {
+    const configured =
+      options.nativeProvenance ?? nativeBuildProvenance(sourceRevision.trim());
+    return typeof configured === "function" ? configured() : configured;
+  };
+  const initialNative = { ...(await readNativeProvenance()) };
   await mkdir(dirname(destination), { recursive: true });
   const owned = await mkdtemp(
     join(dirname(destination), ".react-forge-scene-benchmark-"),
@@ -380,9 +386,14 @@ export async function runBenchmark(output, options = {}) {
     if (signal?.aborted) throw new Error("Scene benchmark cancelled.");
     await (options.javascriptProvenance ??
       javascriptBuildProvenance(sourceRevision.trim()));
-    const native =
-      options.nativeProvenance ??
-      (await nativeBuildProvenance(sourceRevision.trim()));
+    const native = await readNativeProvenance();
+    if (
+      native.nativeBuildProfile !== initialNative.nativeBuildProfile ||
+      native.nativeBindingSha256 !== initialNative.nativeBindingSha256
+    )
+      throw new Error(
+        "React Forge native build changed during scene benchmark.",
+      );
     const report = {
       schemaVersion: 1,
       command:

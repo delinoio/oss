@@ -325,6 +325,20 @@ test("a verified sample publishes schema one atomically and an invalid destinati
         .outputBytes,
       17,
     );
+    let nativeReads = 0;
+    await assert.rejects(
+      runBenchmark(join(dir, "changed-native-report.json"), {
+        cases: [{ format: "glb", workload: "small" }],
+        caseFile: child,
+        verifyArtifact: () => expectedTopology("small"),
+        javascriptProvenance: {},
+        nativeProvenance: () => ({
+          nativeBuildProfile: nativeReads++ === 0 ? "test" : "release",
+          nativeBindingSha256: "0".repeat(64),
+        }),
+      }),
+      /native build changed/i,
+    );
     await assert.rejects(
       runBenchmark(dir, {
         cases: [{ format: "glb", workload: "small" }],
