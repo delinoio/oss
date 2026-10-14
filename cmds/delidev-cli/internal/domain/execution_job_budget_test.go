@@ -45,3 +45,14 @@ func TestExecutionJobInputMeasuresEscapedPrompt(t *testing.T) {
 		t.Fatal("escaped prompt was not measured after JSON escaping", len(a), len(b))
 	}
 }
+
+func TestExecutionJobInputReserveCoversEscapedExecutablePath(t *testing.T) {
+	path := ExecutionStartupSelection{Harness: Codex, ExplicitPath: strings.Repeat("<", 4096)}
+	raw, err := json.Marshal(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) > ExecutionExecutablePathReserveBytes+ExecutionJobInputScalarReserveBytes {
+		t.Fatal("reserve does not cover the escaped maximum executable path", len(raw))
+	}
+}

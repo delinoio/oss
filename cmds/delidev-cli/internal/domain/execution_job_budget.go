@@ -15,11 +15,17 @@ const (
 	// field the store adds to the same document after queueing: claim identity,
 	// startup records, problems and timestamps.
 	ExecutionJobWrapperReserveBytes = 16 << 10
-	// ExecutionJobInputReserveBytes covers the bounded scalar fields of
-	// ExecutionJobInput: generated identities, the configuration digest, the
-	// startup selection (including an explicit executable path), retry and
-	// capability flags.
-	ExecutionJobInputReserveBytes = 16 << 10
+	// ExecutionJobInputScalarReserveBytes covers the bounded scalar fields of
+	// ExecutionJobInput other than the explicit executable path: generated
+	// identities, the configuration digest, retry and capability flags.
+	ExecutionJobInputScalarReserveBytes = 12 << 10
+	// ExecutionExecutablePathReserveBytes covers an explicit executable path at
+	// its accepted 4,096-byte maximum after JSON escaping, where each '<', '>' or
+	// '&' byte expands to a six-byte escape.
+	ExecutionExecutablePathReserveBytes = 4096 * 6
+	// ExecutionJobInputReserveBytes is the total reserve for the bounded scalar
+	// fields of ExecutionJobInput, including the startup selection.
+	ExecutionJobInputReserveBytes = ExecutionJobInputScalarReserveBytes + ExecutionExecutablePathReserveBytes
 	// ExecutionConfigurationReserveBytes covers the bounded model, provider,
 	// native identity, routing, option and branch-prefix fields of the frozen
 	// execution configuration that are resolved only at dispatch.
