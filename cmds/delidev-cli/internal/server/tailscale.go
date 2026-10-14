@@ -54,6 +54,11 @@ const (
 	// tailnetRecoveryWindow is how long after ExpiresAt an approval record stays
 	// retained and an Approved Worker setup can still be recovered.
 	tailnetRecoveryWindow = 24 * time.Hour
+	// tailnetRequestClockSkew is the largest amount by which a request ID's
+	// embedded creation time may lead the target's clock. Newer IDs are refused,
+	// and the lower staleness bound is tightened by the same amount so a skewed
+	// ID can never outlive the retention of its own record.
+	tailnetRequestClockSkew = 5 * time.Minute
 	// tailnetApprovalLimit is the maximum retained records per approvals directory.
 	tailnetApprovalLimit = 256
 	// tailnetHostPendingLimit is the maximum live unapproved Pending records one
@@ -162,7 +167,7 @@ func tailnetReclaimable(v tailnetRecord, now time.Time) bool {
 	return false
 }
 
-// tailnetRequestIDStale reports whether a request ID is too old to name a fresh
+// tailnetRequestIDStale reports whether a request ID cannot name a fresh
 // approval request. Reclamation deletes a record once its recovery window ends,
 // which also removes the only evidence that the ID was already used, so a later
 // retry of the requester's original journal would otherwise create a new record
@@ -170,8 +175,13 @@ func tailnetReclaimable(v tailnetRecord, now time.Time) bool {
 // embeds its creation time in the first 48 bits (milliseconds since the Unix
 // epoch), and a request is created no earlier than its ID, so an ID older than
 // the request lifetime plus the recovery window can only name a record that was
-// retained and may since have been reclaimed. Retained records are matched by ID
-// before this check, so exact replays inside the window are unaffected.
+// retained and may since have been reclaimed. An ID dated beyond the allowed
+// clock skew is refused too: otherwise a far-future ID would stay admissible
+// after its record was reclaimed. The skew also shortens the age limit, so an ID
+// admitted with the maximum lead (and therefore a record that expires that much
+// later than the ID suggests) is already stale when its record is reclaimed.
+// Retained records are matched by ID before this check, so exact replays inside
+// the window are unaffected.
 func tailnetRequestIDStale(id domain.ID, now time.Time) bool {
 	parsed, err := uuid.Parse(string(id))
 	if err != nil || parsed.Version() != 7 {
@@ -180,7 +190,10 @@ func tailnetRequestIDStale(id domain.ID, now time.Time) bool {
 	var stamp [8]byte
 	copy(stamp[2:], parsed[:6])
 	created := time.UnixMilli(int64(binary.BigEndian.Uint64(stamp[:])))
-	return now.After(created.Add(tailnetRequestLifetime + tailnetRecoveryWindow))
+	if created.After(now.Add(tailnetRequestClockSkew)) {
+		return true
+	}
+	return now.After(created.Add(tailnetRequestLifetime + tailnetRecoveryWindow - tailnetRequestClockSkew))
 }
 
 type tailnetOutgoing struct {

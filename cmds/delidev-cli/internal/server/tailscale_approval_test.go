@@ -123,7 +123,7 @@ func newOutgoingWorker(t *testing.T, requester, target *tailnetPeerFixture) tail
 		t.Fatal(err)
 	}
 	actor, _ := domain.PrincipalFrom(requester.owner)
-	v := tailnetOutgoing{Version: 1, ID: domain.NewID(), PeerID: "peer", Name: "worker one", Role: pb.DeviceType_DEVICE_TYPE_WORKER, Actor: actor, Origin: target.origin, ServerID: target.s.Identity.ServerID, PrivateKey: private, PublicKey: public, ProfileID: domain.NewID(), GrantRequest: domain.NewID()}
+	v := tailnetOutgoing{Version: 1, ID: tailnetIDAt(t, requester.s.tailnetClock()), PeerID: "peer", Name: "worker one", Role: pb.DeviceType_DEVICE_TYPE_WORKER, Actor: actor, Origin: target.origin, ServerID: target.s.Identity.ServerID, PrivateKey: private, PublicKey: public, ProfileID: domain.NewID(), GrantRequest: domain.NewID()}
 	if err := requester.s.writeOutgoing(v); err != nil {
 		t.Fatal(err)
 	}
@@ -383,17 +383,17 @@ func TestTailnetHostCannotConsumeEveryApprovalSlot(t *testing.T) {
 	clock := &tailnetClock{now: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)}
 	target := newTailnetPeer(t, "target", clock)
 	for i := 0; i < tailnetHostPendingLimit; i++ {
-		if err := tailnetRequest(t, target, domain.NewID(), "100.64.0.1"); err != nil {
+		if err := tailnetRequest(t, target, tailnetIDAt(t, clock.Now()), "100.64.0.1"); err != nil {
 			t.Fatal(err)
 		}
 	}
-	assertCode(t, tailnetRequest(t, target, domain.NewID(), "100.64.0.1"), connect.CodeResourceExhausted)
-	if err := tailnetRequest(t, target, domain.NewID(), "100.64.0.2"); err != nil {
+	assertCode(t, tailnetRequest(t, target, tailnetIDAt(t, clock.Now()), "100.64.0.1"), connect.CodeResourceExhausted)
+	if err := tailnetRequest(t, target, tailnetIDAt(t, clock.Now()), "100.64.0.2"); err != nil {
 		t.Fatalf("another host must still be admitted: %v", err)
 	}
 	// Once the first host's requests expire they no longer count as live.
 	clock.Advance(tailnetRequestLifetime + time.Second)
-	if err := tailnetRequest(t, target, domain.NewID(), "100.64.0.1"); err != nil {
+	if err := tailnetRequest(t, target, tailnetIDAt(t, clock.Now()), "100.64.0.1"); err != nil {
 		t.Fatalf("expired requests must stop counting against the host: %v", err)
 	}
 }
@@ -404,7 +404,7 @@ func TestTailnetReplayOfRetainedRequestBypassesAdmission(t *testing.T) {
 	var first domain.ID
 	_, public, _ := tailscale.NewKey()
 	for i := 0; i < tailnetHostPendingLimit; i++ {
-		id := domain.NewID()
+		id := tailnetIDAt(t, clock.Now())
 		if first == "" {
 			first = id
 		}
@@ -438,20 +438,20 @@ func TestTailnetFullDirectoryReclaimsAfterRecoveryWindowAndRestart(t *testing.T)
 	target := newTailnetPeer(t, "target", clock)
 	// 256 unauthenticated requests from distinct hosts that are never approved.
 	for i := 0; i < tailnetApprovalLimit; i++ {
-		if err := tailnetRequest(t, target, domain.NewID(), fmt.Sprintf("100.64.%d.%d", i/200, i%200+1)); err != nil {
+		if err := tailnetRequest(t, target, tailnetIDAt(t, clock.Now()), fmt.Sprintf("100.64.%d.%d", i/200, i%200+1)); err != nil {
 			t.Fatalf("request %d: %v", i, err)
 		}
 	}
-	assertCode(t, tailnetRequest(t, target, domain.NewID(), "100.100.0.1"), connect.CodeResourceExhausted)
+	assertCode(t, tailnetRequest(t, target, tailnetIDAt(t, clock.Now()), "100.100.0.1"), connect.CodeResourceExhausted)
 	// Expired but inside the recovery window: still retained.
 	clock.Advance(tailnetRequestLifetime + time.Hour)
-	assertCode(t, tailnetRequest(t, target, domain.NewID(), "100.100.0.1"), connect.CodeResourceExhausted)
+	assertCode(t, tailnetRequest(t, target, tailnetIDAt(t, clock.Now()), "100.100.0.1"), connect.CodeResourceExhausted)
 	if n := len(approvalFiles(t, target)); n != tailnetApprovalLimit {
 		t.Fatalf("records inside the recovery window must be retained, got %d", n)
 	}
 	clock.Advance(tailnetRecoveryWindow)
 	target.restart(clock)
-	if err := tailnetRequest(t, target, domain.NewID(), "100.100.0.1"); err != nil {
+	if err := tailnetRequest(t, target, tailnetIDAt(t, clock.Now()), "100.100.0.1"); err != nil {
 		t.Fatalf("a legitimate request must be admitted once capacity is reclaimable after restart: %v", err)
 	}
 	if n := len(approvalFiles(t, target)); n != 1 {
@@ -644,12 +644,12 @@ func TestTailnetIngressBoundsApprovalsPerOriginatingPeerBehindServe(t *testing.T
 	clock := &tailnetClock{now: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)}
 	target := newTailnetPeer(t, "target", clock)
 	for i := 0; i < tailnetHostPendingLimit; i++ {
-		if err := serveRequest(t, target, "100.64.0.1", domain.NewID()); err != nil {
+		if err := serveRequest(t, target, "100.64.0.1", tailnetIDAt(t, clock.Now())); err != nil {
 			t.Fatal(err)
 		}
 	}
-	assertCode(t, serveRequest(t, target, "100.64.0.1", domain.NewID()), connect.CodeResourceExhausted)
-	if err := serveRequest(t, target, "100.64.0.2", domain.NewID()); err != nil {
+	assertCode(t, serveRequest(t, target, "100.64.0.1", tailnetIDAt(t, clock.Now())), connect.CodeResourceExhausted)
+	if err := serveRequest(t, target, "100.64.0.2", tailnetIDAt(t, clock.Now())); err != nil {
 		t.Fatalf("a different originating peer behind the same Serve proxy must still be admitted: %v", err)
 	}
 	var digests = map[string]int{}
@@ -755,18 +755,42 @@ func tailnetIDAt(t *testing.T, at time.Time) domain.ID {
 func TestTailnetRequestIDStaleBoundary(t *testing.T) {
 	created := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	id := tailnetIDAt(t, created)
-	edge := created.Add(tailnetRequestLifetime + tailnetRecoveryWindow)
+	edge := created.Add(tailnetRequestLifetime + tailnetRecoveryWindow - tailnetRequestClockSkew)
 	if tailnetRequestIDStale(id, edge) {
-		t.Fatal("the last instant of the recovery window must still admit the ID")
+		t.Fatal("the last instant of the shortened age limit must still admit the ID")
 	}
 	if !tailnetRequestIDStale(id, edge.Add(time.Millisecond)) {
-		t.Fatal("an ID older than the recovery window must be stale")
+		t.Fatal("an ID older than the age limit must be stale")
 	}
-	if tailnetRequestIDStale(tailnetIDAt(t, created.Add(48*time.Hour)), created) {
-		t.Fatal("a future-dated ID is not older than the window")
+	if tailnetRequestIDStale(tailnetIDAt(t, created.Add(tailnetRequestClockSkew)), created) {
+		t.Fatal("an ID leading the clock by exactly the allowed skew must be admitted")
+	}
+	if !tailnetRequestIDStale(tailnetIDAt(t, created.Add(tailnetRequestClockSkew+time.Millisecond)), created) {
+		t.Fatal("an ID leading the clock beyond the allowed skew must be stale")
+	}
+	if !tailnetRequestIDStale(tailnetIDAt(t, created.Add(48*time.Hour)), created) {
+		t.Fatal("a far-future ID must be refused so it cannot outlive record reclamation")
 	}
 	if !tailnetRequestIDStale(domain.ID("not-a-uuid"), created) || !tailnetRequestIDStale(domain.ID(uuid.New().String()), created) {
 		t.Fatal("a non-v7 identifier must never be admitted")
+	}
+}
+
+// A maximally skewed ID admitted just before the limit must already be stale
+// once its record becomes reclaimable.
+func TestTailnetSkewedRequestIDIsStaleWhenRecordReclaimable(t *testing.T) {
+	admitted := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	id := tailnetIDAt(t, admitted.Add(tailnetRequestClockSkew))
+	if tailnetRequestIDStale(id, admitted) {
+		t.Fatal("the maximally skewed ID must be admitted when first seen")
+	}
+	record := tailnetRecord{Approval: tailscale.Approval{State: tailscale.Denied, ExpiresAt: admitted.Add(tailnetRequestLifetime)}}
+	reclaimable := admitted.Add(tailnetRequestLifetime + tailnetRecoveryWindow + time.Millisecond)
+	if !tailnetReclaimable(record, reclaimable) {
+		t.Fatal("the record must be reclaimable after the recovery window")
+	}
+	if !tailnetRequestIDStale(id, reclaimable) {
+		t.Fatal("the ID must be stale once its record is reclaimable")
 	}
 }
 
@@ -798,7 +822,7 @@ func TestTailnetReclaimedRequestIDCannotBeRecreated(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.clock.Advance(tailnetRecoveryWindow)
-	if err := tailnetRequest(t, f.target, domain.NewID(), "100.64.0.50"); err != nil {
+	if err := tailnetRequest(t, f.target, tailnetIDAt(t, f.clock.Now()), "100.64.0.50"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(f.target.s.tailnetPath(f.outgoing.ID)); !errors.Is(err, os.ErrNotExist) {

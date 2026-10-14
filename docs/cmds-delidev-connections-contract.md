@@ -185,7 +185,10 @@ approvals directory; foreign or malformed entries still count toward capacity an
 are left in place, and outgoing journals and Worker scopes are never visited.
 Reclamation deletes the only evidence that a request ID was used, so creating a
 record also requires the canonical UUID v7 request ID's embedded creation time to
-be no older than the five-minute lifetime plus the recovery window. A retry of an
+be no more than a five-minute clock skew ahead of the target's clock and no older
+than the five-minute lifetime plus the recovery window minus that skew. The skew
+allowance keeps an ID with a future-dated timestamp from outliving reclamation of
+its record. A retry of an
 original journal whose request was reclaimed (for example after a lost first
 response) is refused with Conflict and creates no record, key or expiry under the
 reused ID. Retained records are matched by ID first, so exact replays inside the
