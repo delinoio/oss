@@ -22,25 +22,6 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
 )
 
-// Access-only quota fixture modes. They create the same native-style helper
-// aliases as the managed Thread helper modes right after initialization.
-const (
-	quotaHelperPrefix       = "quota-helpers-"
-	quotaHelperReady        = quotaHelperPrefix + "ready"
-	quotaHelperReadFail     = quotaHelperPrefix + "readfail"
-	quotaHelperForeignStore = quotaHelperPrefix + "foreign-store"
-	quotaHelperStoreTamper  = quotaHelperForeignStore + "-tamper"
-	quotaHelperEOFTamper    = quotaHelperPrefix + "eof-tamper"
-	quotaHelperEOFRename    = quotaHelperPrefix + "eof-rename"
-	quotaHelperEOFHardLink  = quotaHelperPrefix + "eof-hardlink"
-	quotaHelperEOFForeign   = quotaHelperPrefix + "eof-foreign"
-	quotaHelperReadyHang    = quotaHelperReady + "-hang"
-)
-
-func isHelperFixtureMode(mode string) bool {
-	return strings.HasPrefix(mode, helperFixturePrefix) || strings.HasPrefix(mode, quotaHelperPrefix)
-}
-
 // mutateQuotaHelperFixtureAtEOF runs in the fixture native process after stdin
 // EOF and before exit. It models a native tree that leaves, or alters, its
 // original helper entries at shutdown.
