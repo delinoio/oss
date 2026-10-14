@@ -29,8 +29,9 @@ import (
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
-// Server-owned Grok browser login. The Go server implements the OAuth
-// authorization-code flow itself (PKCE S256, state, nonce, token exchange and
+// Server-owned Grok login. The Go server implements the OAuth
+// authorization-code flow (browser) and the RFC 8628 device authorization grant
+// (device, see grok_device.go) itself (PKCE S256, state, nonce, token exchange and
 // ID-token validation) against the fixed xAI profile and produces a sealed
 // subscription.GrokBundle. No native Grok process takes part in login.
 //
@@ -60,6 +61,8 @@ const (
 	grokStepIDToken   grokLoginStep = "id_token"
 	grokStepUserInfo  grokLoginStep = "userinfo"
 	grokStepMapping   grokLoginStep = "mapping"
+	grokStepDevice    grokLoginStep = "device_authorization"
+	grokStepPoll      grokLoginStep = "poll"
 	grokStepFinish    grokLoginStep = "finish"
 )
 
@@ -247,10 +250,6 @@ func serverSubscriptionAccount(tx *store.Tx, id domain.ID, revision uint64) (sto
 	return subscriptionAccount(tx, id, revision)
 }
 
-func grokLoginUnsupportedDevice() *domain.Error {
-	return domain.Fail(domain.Unsupported, "Grok device-code login is not available.", "Use browser login; methods never switch automatically.")
-}
-
 func grokLoginUnsupportedAction() *domain.Error {
 	return domain.Fail(domain.Unsupported, "Only Grok login and refresh are available on the server.", "Use login or refresh; logout is separate lifecycle work.")
 }
@@ -291,6 +290,7 @@ func (s *Service) logGrok(ctx context.Context, level slog.Level, message string,
 // never sends one twice.
 func (s *Service) runGrokLogin(parent context.Context, id domain.ID) {
 	var original domain.ServerSubscriptionOperation
+	device := false
 	err := s.Store.Read(parent, func(tx *store.Tx) error {
 		_, a, err := grokSubscriptionAccount(tx, id, 0)
 		if err != nil {
@@ -300,6 +300,7 @@ func (s *Service) runGrokLogin(parent context.Context, id domain.ID) {
 			return subscriptionDenied()
 		}
 		original = *a.Subscription.ServerOperation
+		device = a.Subscription.Pending.DeviceCode
 		return nil
 	})
 	if err != nil {
@@ -340,7 +341,7 @@ func (s *Service) runGrokLogin(parent context.Context, id domain.ID) {
 	if err != nil || !original.NativeStarted {
 		return
 	}
-	s.logGrok(parent, slog.LevelInfo, "grok_login_started", original, grokStepClaim, "account_id", id)
+	s.logGrok(parent, slog.LevelInfo, "grok_login_started", original, grokStepClaim, "account_id", id, "method", grokLoginMethodName(device))
 	ctx, cancel := context.WithDeadline(parent, original.ExpiresAt)
 	defer cancel()
 	checked := make(chan struct{})
@@ -370,7 +371,12 @@ func (s *Service) runGrokLogin(parent context.Context, id domain.ID) {
 			}
 		}
 	}()
-	outcome := s.grokLoginSteps(ctx, parent, id, original)
+	var outcome grokOutcome
+	if device {
+		outcome = s.grokDeviceLoginSteps(ctx, parent, id, original)
+	} else {
+		outcome = s.grokLoginSteps(ctx, parent, id, original)
+	}
 	cancel()
 	<-checked
 	bounded, stop := context.WithTimeout(domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice}), 30*time.Second)
@@ -443,7 +449,7 @@ func (s *Service) grokLoginSteps(ctx, parent context.Context, id domain.ID, orig
 		s.logGrok(ctx, slog.LevelInfo, "grok_login_denied", original, grokStepCallback)
 		return fail(domain.SubscriptionFailed, domain.PermissionDenied, grokStepCallback)
 	}
-	if err := s.claimGrokExchange(ctx, id, original); err != nil {
+	if err := s.claimGrokExchange(ctx, id, original, domain.SubscriptionBrowserCallback); err != nil {
 		if ctx.Err() != nil {
 			return interrupted(grokStepExchange)
 		}
@@ -464,23 +470,47 @@ func (s *Service) grokLoginSteps(ctx, parent context.Context, id domain.ID, orig
 		s.logGrok(ctx, slog.LevelWarn, "grok_login_exchange_uncertain", original, grokStepExchange, "reason", reason)
 		return fail(domain.SubscriptionRecovery, domain.RecoveryRequired, grokStepExchange)
 	}
-	claims, err := client.ValidateIDToken(ctx, endpoints, tokens.IDToken, authorization.Nonce)
+	return s.grokBundleOutcome(ctx, client, endpoints, tokens, authorization.Nonce, false, original)
+}
+
+// grokBundleOutcome turns the tokens of a claimed exchange into the login
+// outcome: it verifies the ID token, reads userinfo and maps the bundle. Browser
+// and device login share it, so the same token response yields the same bundle.
+// The browser nonce is compared with the ID token's; the device grant has none.
+func (s *Service) grokBundleOutcome(ctx context.Context, client subscription.GrokOAuthClient, endpoints subscription.GrokEndpoints, tokens subscription.GrokTokens, nonce string, device bool, original domain.ServerSubscriptionOperation) grokOutcome {
+	fail := func(code domain.Code, step grokLoginStep) grokOutcome {
+		return grokOutcome{state: domain.SubscriptionFailed, code: code, step: step, claimed: true}
+	}
+	var claims subscription.GrokClaims
+	var err error
+	if device {
+		claims, err = client.ValidateDeviceIDToken(ctx, endpoints, tokens.IDToken)
+	} else {
+		claims, err = client.ValidateIDToken(ctx, endpoints, tokens.IDToken, nonce)
+	}
 	if err != nil {
 		reason, _ := subscription.GrokOAuthFailure(err)
 		s.logGrok(ctx, slog.LevelWarn, "grok_login_id_token_rejected", original, grokStepIDToken, "reason", reason)
-		return fail(domain.SubscriptionFailed, domain.Unauthenticated, grokStepIDToken)
+		return fail(domain.Unauthenticated, grokStepIDToken)
 	}
 	info, err := client.UserInfo(ctx, endpoints, tokens.AccessToken, claims)
 	if err != nil {
 		s.logGrok(ctx, slog.LevelWarn, "grok_login_userinfo_failed", original, grokStepUserInfo)
-		return fail(domain.SubscriptionFailed, domain.Unavailable, grokStepUserInfo)
+		return fail(domain.Unavailable, grokStepUserInfo)
 	}
 	bundle, err := subscription.BuildGrokBundle(time.Now(), tokens, claims, info)
 	if err != nil {
 		s.logGrok(ctx, slog.LevelWarn, "grok_login_mapping_failed", original, grokStepMapping)
-		return fail(domain.SubscriptionFailed, domain.InvalidArgument, grokStepMapping)
+		return fail(domain.InvalidArgument, grokStepMapping)
 	}
 	return grokOutcome{bundle: bundle, state: domain.SubscriptionSucceeded, step: grokStepMapping, claimed: true}
+}
+
+func grokLoginMethodName(device bool) string {
+	if device {
+		return "device"
+	}
+	return "browser"
 }
 
 // publishGrokLoginProgress validates the authorization URL against the fixed
@@ -524,8 +554,9 @@ func (s *Service) publishGrokLoginProgress(ctx context.Context, id domain.ID, o 
 
 // claimGrokExchange persists the exchange claim before the token request is
 // sent. After it commits, the operation can only ever settle as an outcome of
-// that one request; a crash or cancellation leaves recovery, never a resend.
-func (s *Service) claimGrokExchange(ctx context.Context, id domain.ID, o domain.ServerSubscriptionOperation) error {
+// that request (the one token request of a browser login, the first token poll
+// of a device login); a crash or cancellation leaves recovery, never a resend.
+func (s *Service) claimGrokExchange(ctx context.Context, id domain.ID, o domain.ServerSubscriptionOperation, method domain.SubscriptionLoginMethod) error {
 	unlock, err := s.lockAccounts(ctx)
 	if err != nil {
 		return err
@@ -544,7 +575,7 @@ func (s *Service) claimGrokExchange(ctx context.Context, id domain.ID, o domain.
 		if current.CodeSubmissionID == "" {
 			current.CodeSubmissionID = domain.NewID()
 		}
-		current.LoginMethod = domain.SubscriptionBrowserCallback
+		current.LoginMethod = method
 		current.CodeConsumed = true
 		if _, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
 			return nil, err

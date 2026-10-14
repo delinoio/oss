@@ -470,18 +470,18 @@ func TestServerSubscriptionBrowserCallbackAllowlist(t *testing.T) {
 	for _, callback := range []string{"http://localhost:1457/auth/callback", "http://127.0.0.1:1457/auth/callback"} {
 		authorization := strings.Replace(serverFixtureURL, "http%3A%2F%2Flocalhost%3A1457%2Fauth%2Fcallback", url.QueryEscape(callback), 1)
 		actual, state, ok := serverLoginCallback(authorization)
-		if !ok || actual != callback || state != serverFixtureState || !validServerLoginProgress(authorization, "") {
+		if !ok || actual != callback || state != serverFixtureState || !validServerLoginProgress(domain.SubscriptionChatGPT, authorization, "") {
 			t.Fatal("registered original callback was rejected")
 		}
 	}
 	for _, callback := range []string{"http://127.1:1457/auth/callback", "http://2130706433:1457/auth/callback", "http://[::1]:1457/auth/callback", "http://localhost:1455/auth/callback", "http://127.0.0.1:1457/other", "http://localhost.evil.invalid:1457/auth/callback", "https://127.0.0.1:1457/auth/callback", "http://user@localhost:1457/auth/callback", "http://localhost:1457/auth/callback#fragment"} {
 		authorization := strings.Replace(serverFixtureURL, "http%3A%2F%2Flocalhost%3A1457%2Fauth%2Fcallback", url.QueryEscape(callback), 1)
-		if validServerLoginProgress(authorization, "") {
+		if validServerLoginProgress(domain.SubscriptionChatGPT, authorization, "") {
 			t.Fatal("unregistered callback was accepted")
 		}
 	}
 	for _, authorization := range []string{serverFixtureURL + "&redirect_uri=http%3A%2F%2F127.0.0.1%3A1457%2Fauth%2Fcallback", serverFixtureURL + "&state=" + serverFixtureState, strings.Replace(serverFixtureURL, serverFixtureState, "invalid.state-value-1234", 1), strings.Replace(serverFixtureURL, serverFixtureState, "short", 1), strings.Replace(serverFixtureURL, "auth.openai.com", "external.invalid", 1)} {
-		if validServerLoginProgress(authorization, "") {
+		if validServerLoginProgress(domain.SubscriptionChatGPT, authorization, "") {
 			t.Fatal("malformed original authorization was accepted")
 		}
 	}

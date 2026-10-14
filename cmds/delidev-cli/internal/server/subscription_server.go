@@ -54,13 +54,11 @@ func (s *Service) requestServerSubscription(ctx context.Context, req *connect.Re
 			return nil, err
 		}
 		if a.SubscriptionService == domain.SubscriptionGrok {
-			// Server-owned Grok supports browser login and refresh. The device-code
-			// method is explicit and never substituted for the browser method.
+			// Server-owned Grok supports browser login, device-code login and
+			// refresh. The method is the explicit device_code flag: a device
+			// request never falls back to the browser method or the reverse.
 			if action == domain.SubscriptionLogout {
 				return nil, grokLoginUnsupportedAction()
-			}
-			if input.DeviceCode {
-				return nil, grokLoginUnsupportedDevice()
 			}
 		}
 		if a.Subscription == nil {
@@ -589,7 +587,7 @@ func (s *Service) runServerSubscription(parent context.Context, id domain.ID) {
 }
 
 func (s *Service) publishServerSubscriptionProgress(ctx context.Context, id domain.ID, o domain.ServerSubscriptionOperation, url, code string) error {
-	if !validServerLoginProgress(url, code) {
+	if !validServerLoginProgress(domain.SubscriptionChatGPT, url, code) {
 		s.logger.WarnContext(ctx, "server_subscription_login_url_rejected", "operation_id", o.ID, "code", domain.RecoveryRequired)
 		return subscriptionDenied()
 	}

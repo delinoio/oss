@@ -15,8 +15,9 @@ import (
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
 
-// The Grok Build wire identifiers are declared but must stay unadvertised and
-// inert until the owning feature activates them.
+// The Grok Build wire identifiers are declared. System 39 (server-owned login:
+// browser and device code together) is advertised; System 40 and Worker 21
+// stay unadvertised and inert until Grok execution activates them.
 const (
 	grokSystemLoginReservation     = pb.SystemCapability(39)
 	grokSystemExecutionReservation = pb.SystemCapability(40)
@@ -29,19 +30,21 @@ func TestGrokReservationsAreDeclaredWithLedgerNumbers(t *testing.T) {
 	}
 }
 
-// System 39 stays unadvertised until the server-owned browser login, the device
-// login and the opt-in real-account acceptance run are all complete. The browser
-// login itself is implemented (grok_login.go) but its real run is not performed.
-func TestGrokReservationsAreNotAdvertisedByStatus(t *testing.T) {
+// System 39 is advertised once the server-owned browser login and the device
+// login are both implemented (decision D1): a client sees one capability for
+// both methods. System 40 (execution) stays unadvertised. Neither the real
+// account acceptance run nor execution is claimed by this capability.
+func TestGrokLoginIsAdvertisedAndExecutionIsNot(t *testing.T) {
 	f := newManagedClaudeFixture(t)
 	status, err := f.service.GetStatus(context.Background(), connect.NewRequest(&pb.GetStatusRequest{}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, capability := range []pb.SystemCapability{grokSystemLoginReservation, grokSystemExecutionReservation} {
-		if slices.Contains(status.Msg.Capabilities, capability) {
-			t.Fatalf("status advertised the unactivated capability %d", capability)
-		}
+	if !slices.Contains(status.Msg.Capabilities, grokSystemLoginReservation) {
+		t.Fatal("status does not advertise Grok login capability 39")
+	}
+	if slices.Contains(status.Msg.Capabilities, grokSystemExecutionReservation) {
+		t.Fatal("status advertised the unactivated Grok execution capability 40")
 	}
 	if !slices.Contains(status.Msg.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_CLAUDE_SUBSCRIPTIONS_V1) {
 		t.Fatal("existing capability 38 is no longer advertised")

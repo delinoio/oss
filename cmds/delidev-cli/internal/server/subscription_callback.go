@@ -17,6 +17,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
@@ -53,7 +54,20 @@ func serverLoginCallback(authorization string) (string, string, bool) {
 	}
 	return callback, state, true
 }
-func validServerLoginProgress(authorization, code string) bool {
+
+// validServerLoginProgress validates the transient login presentation of one
+// service. A device login (code present) accepts the service's own approval
+// hosts; ChatGPT also accepts the browser authorization callback URL. Grok
+// device login accepts only the xAI verification host and the same user code
+// shape; Grok browser URLs are validated by the Grok driver itself.
+func validServerLoginProgress(service domain.SubscriptionService, authorization, code string) bool {
+	if service == domain.SubscriptionGrok {
+		if code == "" {
+			return false
+		}
+		u, err := url.Parse(authorization)
+		return err == nil && len(authorization) <= 8192 && u.Scheme == "https" && u.Host == subscription.GrokVerificationHost && u.User == nil && u.Fragment == "" && subscriptionUserCode.MatchString(code)
+	}
 	if code != "" {
 		u, err := url.Parse(authorization)
 		return err == nil && len(authorization) <= 8192 && u.Scheme == "https" && (u.Host == "auth.openai.com" || u.Host == "chatgpt.com") && u.User == nil && u.Fragment == "" && subscriptionUserCode.MatchString(code)

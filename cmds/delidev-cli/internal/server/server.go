@@ -202,6 +202,8 @@ type Service struct {
 	// in isolated tests; grokRandom replaces crypto/rand for deterministic ones.
 	grokOAuthTransport http.RoundTripper
 	grokRandom         io.Reader
+	// grokClock replaces the device login poll clock in tests.
+	grokClock grokClock
 	// grokRefreshFault is a test seam that runs at named points of a server-owned
 	// Grok refresh. Production code leaves it nil.
 	grokRefreshFault func(grokRefreshFaultPoint)

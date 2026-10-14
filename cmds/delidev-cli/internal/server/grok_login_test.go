@@ -282,13 +282,13 @@ func TestGrokLoginBrowserFlowCompletesWithAFakeProvider(t *testing.T) {
 	}
 }
 
-func TestGrokServerLoginRejectsDeviceCodeAndOtherActions(t *testing.T) {
+func TestGrokServerLoginRejectsUnsupportedActions(t *testing.T) {
 	g := newGrokLoginFixture(t)
 	r, _ := g.record()
 	for name, request := range map[string]*pb.RequestSubscriptionRequest{
-		"device code": {Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN, DeviceCode: true},
-		"refresh":     {Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH},
-		"logout":      {Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT},
+		"device code refresh": {Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH, DeviceCode: true},
+		"refresh":             {Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH},
+		"logout":              {Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT},
 	} {
 		request.Mutation = &pb.Mutation{RequestId: string(domain.NewID()), Id: string(r.ID), ExpectedRevision: r.Revision}
 		_, err := g.client.RequestSubscription(context.Background(), subscriptionRequest(g.service.Identity.Token, request))
