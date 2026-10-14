@@ -13,9 +13,16 @@ const (
 	// root that prefixes every prepared path. The server cannot observe it before
 	// preparation; the dispatch-time recheck of the real bytes stays authoritative.
 	ManifestWorkerRootReserveBytes = 512
-	// UnresolvedReferenceNameReserveBytes bounds a Git reference resolved by the
-	// Worker (default branch) when the accepted request left it unspecified.
-	UnresolvedReferenceNameReserveBytes = 256
+	// UnresolvedReferenceNameReserveBytes is the accepted maximum of a Git
+	// reference name the Worker may resolve (default branch) when the accepted
+	// request left it unspecified.
+	UnresolvedReferenceNameReserveBytes = 1024
+	// UnresolvedRemoteNameReserveBytes is the accepted maximum of a Git remote
+	// name the Worker may resolve when the request left the remote unspecified.
+	UnresolvedRemoteNameReserveBytes = 256
+	// unresolvedNameFill is a character that encoding/json expands to a six-byte
+	// escape, so discovered names are budgeted at their worst escaped size.
+	unresolvedNameFill = "<"
 )
 
 // MaxManifestBytes returns an upper bound of the serialized Manifest a Worker
@@ -73,7 +80,7 @@ func (r PrepareRequest) MaxManifestBytes() (int, error) {
 func (r PrepareRequest) unresolvedReference(spec RepositorySpec) domain.Reference {
 	remote := spec.PreferredRemote
 	if remote == "" {
-		remote = "origin"
+		remote = strings.Repeat(unresolvedNameFill, UnresolvedRemoteNameReserveBytes)
 	}
-	return domain.Reference{Type: domain.RemoteBranch, Name: strings.Repeat("b", UnresolvedReferenceNameReserveBytes), Remote: remote}
+	return domain.Reference{Type: domain.RemoteBranch, Name: strings.Repeat(unresolvedNameFill, UnresolvedReferenceNameReserveBytes), Remote: remote}
 }

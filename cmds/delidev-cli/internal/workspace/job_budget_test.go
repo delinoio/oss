@@ -82,3 +82,25 @@ func TestMaxManifestBytesGeneralChat(t *testing.T) {
 		t.Fatal("unexpected General Chat manifest bound", bound, err)
 	}
 }
+
+func TestMaxManifestBytesReservesUnresolvedReferenceMaximum(t *testing.T) {
+	request := budgetRequest(1, "https://github.com/fixture/repo.git", domain.Worktree)
+	request.Repositories[0].Starting = domain.Reference{}
+	request.Repositories[0].Base = domain.Reference{}
+	bound, err := request.MaxManifestBytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A Worker may resolve the longest accepted branch and remote names, and
+	// every '<' or '>' expands to six bytes after JSON escaping.
+	resolved := domain.Reference{Type: domain.RemoteBranch, Name: strings.Repeat(">", 1024), Remote: strings.Repeat("&", 256)}
+	if resolved.Validate(false) != nil {
+		t.Fatal("fixture reference is not an accepted maximum")
+	}
+	request.Repositories[0].Starting, request.Repositories[0].Base = resolved, resolved
+	raw, _ := json.Marshal(realisticManifest(request, "/home/user/.local/share/delidev"))
+	request.Repositories[0].Starting, request.Repositories[0].Base = domain.Reference{}, domain.Reference{}
+	if bound < len(raw) {
+		t.Fatalf("bound %d is below the manifest with maximum resolved references %d", bound, len(raw))
+	}
+}
