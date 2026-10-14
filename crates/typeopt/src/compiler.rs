@@ -566,6 +566,10 @@ impl Project {
                     }
                     continue;
                 }
+                let commonjs_require = node.kind() == SyntaxKind::CallExpression
+                    && with_type_checker_for_file(file, |checker| {
+                        is_require_callee(checker, node.expression())
+                    });
                 let dynamic = node.kind() == SyntaxKind::CallExpression
                     && node.expression().kind() == SyntaxKind::ImportKeyword;
                 let specifier = match node.kind() {
@@ -577,7 +581,7 @@ impl Project {
                     {
                         node.arguments().iter().next().unwrap_or(Node::NIL)
                     }
-                    SyntaxKind::CallExpression if is_require_callee(node.expression()) => {
+                    SyntaxKind::CallExpression if commonjs_require => {
                         node.arguments().iter().next().unwrap_or(Node::NIL)
                     }
                     _ => continue,
@@ -1602,7 +1606,7 @@ fn dynamic_package_files(
                     {
                         (node.arguments().iter().next().unwrap_or(Node::NIL), false)
                     }
-                    SyntaxKind::CallExpression if is_require_callee(node.expression()) => {
+                    SyntaxKind::CallExpression if is_require_callee(checker, node.expression()) => {
                         (node.arguments().iter().next().unwrap_or(Node::NIL), true)
                     }
                     _ => continue,
@@ -2157,10 +2161,27 @@ fn is_import_scripts_callee(callee: Node) -> bool {
     }
 }
 
-/// Whether a call's callee is the CommonJS `require` function.
-fn is_require_callee(callee: Node) -> bool {
+/// Whether a call's callee resolves to the global CommonJS `require` function.
+///
+/// A local binding can reuse the conventional name without loading a module;
+/// only unresolved names and ambient declarations represent the host-provided
+/// CommonJS function in bundle mode.
+fn is_require_callee(checker: &mut Checker, callee: Node) -> bool {
     let callee = skip_parentheses(callee);
-    callee.kind() == SyntaxKind::Identifier && callee.text() == "require"
+    if callee.kind() != SyntaxKind::Identifier || callee.text() != "require" {
+        return false;
+    }
+    let symbol = checker.get_symbol_at_location(callee);
+    if symbol.is_nil() {
+        return true;
+    }
+    checker.sym(symbol).declarations.iter().all(|&declaration| {
+        let source = source_file_info(get_source_file_of_node(declaration)).file_name;
+        source.starts_with("bundled:")
+            || source.ends_with(".d.ts")
+            || has_syntactic_modifier(declaration, ModifierFlags::Ambient)
+            || has_syntactic_modifier(declaration.parent(), ModifierFlags::Ambient)
+    })
 }
 
 /// The expression inside any number of enclosing parentheses.
