@@ -239,7 +239,7 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 	}
 	if c.pendingEvent == nil {
 		for {
-			event, err := c.wire.Next(ctx)
+			event, err := c.nextNativeEvent(ctx)
 			if err != nil {
 				return Event{}, err
 			}
@@ -337,6 +337,16 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 	}
 	event.EmittedAtMS = native.EmittedAtMS
 	return event, nil
+}
+
+func (c *Client) nextNativeEvent(ctx context.Context) (nativewire.Event, error) {
+	if c.sharedEvents == nil {
+		return c.wire.Next(ctx)
+	}
+	if c.sharedQueue == nil {
+		return nativewire.Event{}, sharedEventUncertain()
+	}
+	return c.sharedEvents.next(ctx, c.sharedQueue)
 }
 func privateNative(event nativewire.Event) Event {
 	return Event{Kind: NativeExtensionEvent, Native: &event, ExtensionStage: validationStage(event.Method)}

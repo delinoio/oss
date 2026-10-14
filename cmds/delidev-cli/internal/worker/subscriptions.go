@@ -101,7 +101,12 @@ func takeManagedSubscription(ctx context.Context, config Config, client delidevv
 // registered the granted lease locally and calls the returned release. A waiting
 // retry never holds it, so a finishing sibling can still retire the owner. The
 // returned release is always safe to call.
-func takeManagedSubscriptionAdmitted(ctx context.Context, config Config, client delidevv1connect.SubscriptionServiceClient, credential Credential, instance, account, operation domain.ID, revision uint64, action pb.SubscriptionAction, gate *claudeAccountGate) (*managedSubscriptionLease, func(), error) {
+type subscriptionAdmissionGate interface {
+	acquire(context.Context) error
+	release()
+}
+
+func takeManagedSubscriptionAdmitted(ctx context.Context, config Config, client delidevv1connect.SubscriptionServiceClient, credential Credential, instance, account, operation domain.ID, revision uint64, action pb.SubscriptionAction, gate subscriptionAdmissionGate) (*managedSubscriptionLease, func(), error) {
 	held := false
 	release := func() {
 		if held {

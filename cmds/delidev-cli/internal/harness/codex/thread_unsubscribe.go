@@ -28,7 +28,7 @@ func (c *Client) UnsubscribeAndWait(ctx context.Context, requestID domain.ID) (r
 	// Set the expectation before the send. The notification may reach the
 	// event queue before the response to thread/unsubscribe does.
 	c.unsubscribing = true
-	response, err := c.wire.Call(ctx, requestID, "thread/unsubscribe", struct {
+	response, err := c.call(ctx, requestID, "thread/unsubscribe", struct {
 		ThreadID domain.ID `json:"threadId"`
 	}{c.thread})
 	<-c.control

@@ -28,7 +28,7 @@ func (c *Client) readModelList(ctx context.Context, hidden bool) (diagnosticResu
 	models := []domain.NativeModel{}
 	bytes := 0
 	for pages := 0; pages <= domain.MaxNativeModels; pages++ {
-		response, err := c.wire.Call(ctx, domain.NewID(), "model/list", struct {
+		response, err := c.call(ctx, domain.NewID(), "model/list", struct {
 			Cursor        *string `json:"cursor"`
 			Limit         uint32  `json:"limit"`
 			IncludeHidden bool    `json:"includeHidden"`
@@ -128,7 +128,7 @@ func (c *Client) verifyModelObservation(ctx context.Context) error {
 	if c.modelObservation == "" {
 		return nil
 	}
-	response, err := c.wire.Call(ctx, domain.NewID(), "config/read", struct {
+	response, err := c.call(ctx, domain.NewID(), "config/read", struct {
 		IncludeLayers bool `json:"includeLayers"`
 	}{false})
 	if err != nil {
