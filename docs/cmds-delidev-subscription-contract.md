@@ -104,7 +104,7 @@ distributes those bytes. These are mock and fixture results for pinned Claude
 Code `2.1.236`, not real simultaneous renewal, owner-crash or cross-platform
 acceptance.
 
-*Profile versions.* Version 1 keeps one canonical directory as native
+_Profile versions._ Version 1 keeps one canonical directory as native
 configuration, history and secure storage. A retained version 1 history keeps its
 exact checkpoint bytes and digest and continues only in the canonical directory,
 one session at a time per account on the Worker. Version 2 gives every session a
