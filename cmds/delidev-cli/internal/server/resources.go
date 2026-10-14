@@ -9,6 +9,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
@@ -509,6 +510,7 @@ const (
 	configurationDeleteReferences  configurationDeletePhase = "references"
 	configurationDeleteAccount     configurationDeletePhase = "account-state"
 	configurationDeleteCredentials configurationDeletePhase = "credentials"
+	configurationDeleteProfiles    configurationDeletePhase = "native-profiles"
 	configurationDeleteCommit      configurationDeletePhase = "commit"
 )
 
@@ -653,7 +655,34 @@ func (s *Service) checkAccountDeletionLocked(ctx context.Context, request, id st
 				return protectedAccountDeletion
 			}
 		}
+		// Explicit account deletion owns the account's permanent server profiles
+		// (auth, quota, credit and subscription probes with their native caches).
+		// They are removed before the deletion can be acknowledged; a busy,
+		// referenced or unremovable profile keeps the account and the request
+		// pending so the same request can be retried.
+		phase(configurationDeleteProfiles)
+		if err := s.deleteAccountNativeProfiles(ctx, domain.ID(id)); err != nil {
+			return err
+		}
 	}
+	return nil
+}
+
+// deleteAccountNativeProfiles removes every server-owned native profile of one
+// account. Any matching profile that survives returns an error.
+func (s *Service) deleteAccountNativeProfiles(ctx context.Context, account domain.ID) error {
+	registry, err := s.nativeProfiles()
+	if err != nil {
+		s.logger.WarnContext(ctx, "account_native_profiles_unavailable", "account_id", account)
+		return subscriptionDenied()
+	}
+	removed, err := registry.Delete(ctx, nativeprofile.DeleteScope{Account: account})
+	if err != nil {
+		reason, _ := nativeprofile.Reasoned(err)
+		s.logger.WarnContext(ctx, "account_native_profiles_pending", "account_id", account, "removed", removed, "reason", reason)
+		return err
+	}
+	s.logger.InfoContext(ctx, "account_native_profiles_deleted", "account_id", account, "removed", removed)
 	return nil
 }
 func deleteConfigurationTx(tx *store.Tx, kind domain.Kind, id domain.ID, revision uint64) error {
