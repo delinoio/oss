@@ -12,7 +12,7 @@ import (
 )
 
 func TestBackupRestoreRequiresSettledSubscriptionOwnership(t *testing.T) {
-	for _, phase := range []string{"queued", "claimed", "recovery", "settled"} {
+	for _, phase := range []string{"queued", "claimed", "recovery", "shared-owner", "settled"} {
 		t.Run(phase, func(t *testing.T) {
 			s, _, ctx, in, _ := restoreFixture(t)
 			id, machine := domain.NewID(), domain.NewID()
@@ -23,6 +23,13 @@ func TestBackupRestoreRequiresSettledSubscriptionOwnership(t *testing.T) {
 			if phase == "claimed" {
 				state.Pending.Phase = domain.SubscriptionClaimed
 				state.Lease = &domain.SubscriptionLease{ID: domain.NewID(), OperationID: state.Pending.ID, Revision: 1, Action: state.Pending.Action, MachineID: machine, DeviceID: domain.NewID(), InstanceID: domain.NewID(), Epoch: domain.NewID(), Generation: state.Generation, StartedAt: time.Now().UTC()}
+			}
+			if phase == "shared-owner" {
+				// A live shared owner with members is never settled, even when no
+				// lifecycle operation is pending.
+				operation, lease := domain.NewID(), domain.NewID()
+				state.Lease = &domain.SubscriptionLease{ID: lease, OperationID: operation, Revision: 1, Action: domain.SubscriptionExecute, MachineID: machine, DeviceID: domain.NewID(), InstanceID: domain.NewID(), Epoch: domain.NewID(), Generation: state.Generation, StartedAt: time.Now().UTC(), Shared: true}
+				state.Members = []domain.SubscriptionMember{{LeaseID: lease, OperationID: operation, Revision: 1, State: domain.SubscriptionMemberRunning, AdmittedAt: time.Now().UTC()}, {LeaseID: domain.NewID(), OperationID: domain.NewID(), Revision: 2, State: domain.SubscriptionMemberRetained, AdmittedAt: time.Now().UTC()}}
 			}
 			state.RecoveryRequired = phase == "recovery"
 			account := domain.Account{Alias: "fixture", SubscriptionService: domain.SubscriptionChatGPT, Type: domain.SubscriptionAccount, Health: domain.AccountReady, Connection: &domain.AccountConnection{ID: domain.NewID(), Authentication: domain.SubscriptionAuth, ConnectedAt: time.Now().UTC()}, Subscription: state}

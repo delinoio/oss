@@ -22,6 +22,11 @@ added: owner and member records are an additive JSON extension of the account
 document. The [subscription contract](cmds-delidev-subscription-contract.md) owns
 the behavior.
 
+The owner/member change activates capability 67: the server records it from the
+Worker attach and echoes it in `supported_worker_capabilities`, accepts
+`finish_scope` and populates `owner_lease_id` on joined members. Capability 68
+stays reserved until the device-owned Claude change activates it.
+
 ## Parallel session dispatch negotiation
 
 Worker `PARALLEL_SESSIONS_V1 = 66` is an active opt-in capability. The server echoes the capability in

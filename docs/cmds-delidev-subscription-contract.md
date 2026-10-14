@@ -1,5 +1,92 @@
 # DeliDev native subscriptions
 
+## Shared account owner and execution members
+
+Issue 3466 replaces account-wide execution exclusivity with a durable account
+owner plus execution members for the managed Codex lane, negotiated by Worker
+`SHARED_SUBSCRIPTION_OWNER_V1 = 67` (reserved in the
+[protocol contract](protos-delidev-v1-contract.md)). Independent sessions that
+use one account on its original Runner Device run concurrently, including more
+than four, with no session-count cap, setting or queue depth. Account lifecycle
+authority stays exclusive.
+
+**Representation.** Account JSON gains an additive, versioned extension. A lease
+with `shared = true` is the account owner and `members` holds one record per
+execution member (lease identifier, session job, admission revision, `running` or
+`retained`, admission time). The owner is bound to the original account and
+connection, Runner, device, Worker instance, server epoch and credential
+generation. Exactly one member owns each session job; the founding member shares
+the owner's lease identifier. Historical accounts omit both fields and keep the
+singleton lease and its original receipts unchanged. A singleton lease never
+carries members, and a shared lease never carries a Fork or title revision.
+Validation rejects duplicate jobs or lease identifiers, an unknown member state,
+a non-execute owner and members without an owner. There is no SQLite migration:
+the extension is account document JSON.
+
+**Negotiation.** Only a Worker whose current attach advertised capability 67 (and
+therefore observed the server's echo) can found or join a shared owner. Every
+other peer keeps one exclusive singleton lease and receives the historical
+`ResourceExhausted` refusal behind any live lease. A downgraded or replaced
+instance cannot join an owner bound to another instance or device.
+
+**Admission.** The first negotiated execute Take on an idle account founds the
+owner and receives the one protected bundle. A later execute Take on the live
+owner from the same Runner, device, instance, epoch and generation joins as a
+member and receives no authentication: the response carries `owner_lease_id`
+and an empty bundle, so DeliDev never distributes a second copy of a refresh
+token. All existing job, assignment, cancellation, Stop, recovery-fence, budget
+and account-state checks apply per member. Pending login, reauthentication,
+refresh or logout, a native observation, a recovery fence, a draining owner (no
+runnable member) or an exclusive server operation refuses new members. A joined
+member whose admission fails after commit is released alone with the typed
+`subscription_member_not_admitted` result and never fences siblings. Fork,
+compaction, native review, managed title, quota and reset-credit work keep
+exclusive singleton custody and wait while a shared owner is live, so their
+receipts and generation proofs keep their original meaning.
+
+**Finish.** `FinishSubscription` carries an explicit `finish_scope`. A `MEMBER`
+Finish releases exactly one running member, carries no authentication, never
+reads or writes the vault, never rotates the generation and never touches a
+sibling. Confirmed cleanup removes the member. Unconfirmed native or descendant
+closure (for example a Stop whose `thread/closed` or descendant proof is
+missing) marks the member `retained`: it stops being runnable and holds no
+execution authority, but its cleanup ownership and workspace stay with the owner
+until final owner containment closes. Retention is not a completed Stop. An
+`OWNER` Finish retires the owner only when no other member is runnable; it
+performs the single generation-specific writeback, releases retained members with
+the owner and clears the lease. A legacy-scope Finish cannot settle a shared
+owner and a scoped Finish cannot settle a singleton. A failed or unconfirmed
+owner Finish keeps the existing recovery fence, so credentials remain until
+confirmed settlement.
+
+**Lifecycle.** Login, reauthentication and explicit refresh close new member
+admission when accepted and take lifecycle authority only after the owner and
+every member (including retained cleanup) have drained, because the lifecycle
+Take is refused while any lease exists. Logout keeps immediate readiness
+revocation, cancels every account execution, joins every member's ownership and
+only then runs the canonical native logout and credential deletion.
+
+**Loss and recovery.** Loss of the shared owner (Worker stream, instance or
+epoch) fences the account once, which fences every member: no member Finish,
+admission, observation or credential write is accepted, no other process adopts
+the owner and no input replays. Doctor, account deletion, database restore and
+recovery treat any live lease, including a shared owner and its members, as
+unsettled and cannot clear or reuse its credentials; a restored image retains the
+owner/member set as quarantined evidence under a recovery fence. Structured logs
+(`subscription_lease_granted`, `subscription_member_finished`,
+`subscription_member_released_undelivered`, `subscription_shared_owner_lost`)
+carry account, lease, operation and counts only, never authentication, prompts or
+native content.
+
+**Scope boundary.** The server-owned Claude setup-token lane (Worker capability
+41, `claude_credential = server-token`) is explicitly outside the owner/member
+model and stays exclusive: it delivers a static server-held token inside one
+protected Take response, which conflicts with the rule that no member receives
+authentication bytes. OpenCode Go keeps its independent key-backed relay. Grok
+Build is not activated. Mock and build evidence for this model is not real-account,
+real-renewal or cross-platform acceptance; that acceptance is future work and is
+not performed.
+
 ## Direct execution startup
 
 [Direct startup](cmds-delidev-execution-startup-contract.md) removes manual installation inspection and separate execution probes from new negotiated assignments. Initialize the actual selected process and validate its protocol, credential mode and settings before input. Optional observed version metadata cannot grant or deny execution by numeric comparison. Existing protected generation, original account lease, server-owned OAuth and credential write-back/cleanup remain required; readiness never grants login, account refresh or credential ownership.
@@ -49,8 +136,9 @@ subscription authentication with no API-key source. Reauthentication reuses the
 same owned profile and identity, creates a new generation and preserves the
 connection ID. A different native identity cannot replace that account.
 
-One exclusive account lease serializes login, reauthentication, execution and
-logout. Login/reauthentication cannot enter behind another lease. Logout may
+One account lease serializes login, reauthentication, execution and
+logout; negotiated managed Codex execution instead shares the lease as an owner
+with concurrent members (see the shared account owner section). Login/reauthentication cannot enter behind another lease. Logout may
 queue behind execution after atomically revoking readiness and canceling that
 execution. Execution checks the service/model/harness, dedicated capability,
 original owner Runner, profile and generation before consuming an input. Wrong

@@ -70,6 +70,19 @@ func (s *Service) originalQuotaBlock(tx *store.Tx, account domain.ID, a domain.A
 		return subscriptionDenied()
 	}
 	lease := st.Lease
+	if lease.Shared {
+		// A shared owner holds one job per running member. The retained session
+		// progress names the exact job whose member must still be running.
+		_, current, err := sessionRecord(tx, block.SessionID)
+		if err != nil || current.Execution == nil {
+			return subscriptionDenied()
+		}
+		view, ok := st.LeaseForOperation(domain.ID(current.Execution.JobID))
+		if !ok {
+			return subscriptionDenied()
+		}
+		lease = &view
+	}
 	_, machine, err := activeMachine(tx, lease.MachineID)
 	if err != nil || !slices.Contains(machine.WorkerCapabilities, domain.CodexQuotaBlockV1) || quotaObservationMachine(tx, a, lease.MachineID, s.subscriptionServerEpoch()) != nil {
 		return subscriptionDenied()
