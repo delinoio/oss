@@ -455,11 +455,18 @@ current transport (`GetResource` for Session and repository, `GetSchedule`,
 the connection is unavailable the route stays pending, the URL keeps the original
 route, and the selection resumes only when the same connection becomes ready. A
 deleted, denied, malformed or wrong-connection selection (not found, permission
-denied, unauthenticated or an unexpected shape) clears the selection and shows the
+denied, unauthenticated, an unexpected shape or an invalid envelope with a
+non-positive revision or an unsupported schema version, checked the same way for
+every restored kind) clears the selection and shows the
 requested screen's list, default category or Sessions Home. A retryable read failure
 reopens the Session or repository so its own mounted retry and error state shows; a
 Schedule needs the fresh resource, so it is cleared and the list's own retry applies.
-Deliberate navigation or a new Session selection supersedes a pending selection.
+Deliberate navigation, or any selection made on the pending screen while its
+read is still running (a Session, Inbox entry, Schedule or repository), supersedes
+the pending selection: the read is cancelled and its late result is discarded, so
+it never overwrites the user's explicit choice. A new top-level screen or selection
+must report through `Shell`, be added to the route parser, serializer and restore
+tests, and follow the same envelope and supersession rules.
 Restoration only selects and reads: no mutation is dispatched, no pending operation
 is replayed, and drafts, filters, search text, scroll, dialogs and in-memory
 presentation reset as before. Structured logs (`delidev.product_route.restore`,
@@ -470,7 +477,8 @@ focused external Browser ownership and the English/Korean copy are unchanged. No
 native, server, RPC, storage or migration change is involved. Regression coverage:
 `product-route.test.ts` (parse, serialize, hash and history, identity claim),
 `product-route-restore.test.tsx` (mirroring, restore per screen, fallbacks, pending
-and reload-shortcut remount).
+routes, reload-shortcut remount, envelope validation per kind and slow-read supersession
+per kind).
 
 Read-only shortcut defaults yield to existing editable chords through one shared
 policy, `readOnlyShortcutSuppression` in `shortcut-preferences.ts`, keyed by
