@@ -593,7 +593,9 @@ it("holds the read-only Reload page default back for an R override, a pending re
       chord: { key: "r", shift: false },
     },
   } as const;
-  expect(readOnlyShortcutSuppression(ShortcutId.ReloadPage, {})).toBeUndefined();
+  expect(
+    readOnlyShortcutSuppression(ShortcutId.ReloadPage, {}),
+  ).toBeUndefined();
   expect(readOnlyShortcutSuppression(ShortcutId.ReloadPage, override)).toBe(
     "shortcuts.reloadSuppressed",
   );
@@ -628,9 +630,13 @@ it("holds the read-only Reload page default back for an R override, a pending re
   expect(parseShortcutOverrides(override)).toEqual(override);
   expect(shortcutConflicts(override)).toEqual([]);
   expect(
-    editableShortcutCatalog.some((action) => action.id === ShortcutId.ReloadPage),
+    editableShortcutCatalog.some(
+      (action) => action.id === ShortcutId.ReloadPage,
+    ),
   ).toBe(false);
   expect(
-    readOnlyShortcutCatalog.some((action) => action.id === ShortcutId.ReloadPage),
+    readOnlyShortcutCatalog.some(
+      (action) => action.id === ShortcutId.ReloadPage,
+    ),
   ).toBe(true);
 });

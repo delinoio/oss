@@ -769,7 +769,9 @@ it("reloads the product window from the identity-read and window-context recover
     expect(pressReload().defaultPrevented).toBe(true);
     expect(stub.reload).toHaveBeenCalledTimes(1);
     fail = false;
-    fireEvent.click(screen.getByRole("button", { name: "Retry window context" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Retry window context" }),
+    );
     await screen.findByText(/Reading this window/);
     pressReload();
     expect(stub.reload).toHaveBeenCalledTimes(2);
@@ -833,7 +835,9 @@ it("reloads the product window once from the connected top-level screens", async
       "Schedules",
       "Settings",
     ]) {
-      const button = screen.queryByRole("button", { name: new RegExp(`^${name}`) });
+      const button = screen.queryByRole("button", {
+        name: new RegExp(`^${name}`),
+      });
       expect(button, name).toBeTruthy();
       fireEvent.click(button!);
       pressReload();
