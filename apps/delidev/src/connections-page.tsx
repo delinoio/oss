@@ -8,7 +8,6 @@ import "./connections-page.css";
 export interface ConnectionPageSlots {
   current: HTMLElement;
   saved?: HTMLElement;
-  tailscale?: HTMLElement;
   advanced: HTMLElement;
 }
 // This host moves without changing portal identity. Controllers and their exact
@@ -58,7 +57,6 @@ export function ConnectionsPage({
   useLocale();
   const current = useRef<HTMLDivElement>(null),
     saved = useRef<HTMLDivElement>(null),
-    tailscale = useRef<HTMLDivElement>(null),
     advanced = useRef<HTMLDivElement>(null);
   const [attention, setAttention] = useState(false);
   useLayoutEffect(() => {
@@ -66,7 +64,6 @@ export function ConnectionsPage({
     onSlots({
       current: current.current,
       saved: saved.current ?? undefined,
-      tailscale: tailscale.current ?? undefined,
       advanced: advanced.current,
     });
     const observe = () =>
@@ -100,10 +97,7 @@ export function ConnectionsPage({
         <div className="connections-current" ref={current} />
       </section>
       {local ? (
-        <>
-          <div ref={tailscale} />
-          <div ref={saved} />
-        </>
+        <div ref={saved} />
       ) : null}
       {attention ? (
         <p className="connections-attention" role="status">

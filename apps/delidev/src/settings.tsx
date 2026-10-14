@@ -165,6 +165,10 @@ import {
 import type { ReadLocalWorkerProof } from "./local-worker";
 import { SettingsLifetime, useSettingsOpening } from "./settings-lifetime";
 import {
+  RunnerTailscalePresentation,
+  type PublishRunnerTailscaleSlots,
+} from "./runner-tailscale-slots";
+import {
   EntranceTarget,
   useEntranceActivation,
   type EntranceProps,
@@ -2064,6 +2068,7 @@ interface SettingsProps {
   chooseRepositoryFolder?: ChooseRepositoryFolder;
   connectionSettings?: React.ReactNode;
   appInformationSettings?: React.ReactNode;
+  runnerTailscale?: PublishRunnerTailscaleSlots;
   pairingAuthority?: PairingAuthority;
   visible?: boolean;
   controlLocalWorker?: ControlLocalWorker;
@@ -2106,7 +2111,7 @@ type NavigateSettings = (
 // itself only with its own approved contract text.
 // Surface categories move their whole content column and every task opened in
 // them. Heading categories contain persistent portal hosts or native controllers
-// (Connections, App information), so only the static category heading moves and
+// (Connections, App information, Runner Devices), so only the static category heading moves and
 // tasks present their own heading entrance.
 const entranceCategories: ReadonlyMap<SettingsCategory, EntranceTarget> =
   new Map([
@@ -2126,7 +2131,7 @@ const entranceCategories: ReadonlyMap<SettingsCategory, EntranceTarget> =
     [SettingsCategory.Projects, EntranceTarget.Surface],
     [SettingsCategory.Repositories, EntranceTarget.Surface],
     [SettingsCategory.Integrations, EntranceTarget.Surface],
-    [SettingsCategory.ExecutionWorkers, EntranceTarget.Surface],
+    [SettingsCategory.ExecutionWorkers, EntranceTarget.Heading],
     [SettingsCategory.Diagnostics, EntranceTarget.Heading],
     [SettingsCategory.AppInformation, EntranceTarget.Heading],
   ]);
@@ -2342,6 +2347,7 @@ function SettingsVisit({
 function SettingsWorkspace({
   openUsage,
   connectionSettings,
+  runnerTailscale,
   visible = true,
   controlLocalWorker,
   readLocalWorker,
@@ -3310,6 +3316,11 @@ function SettingsWorkspace({
                               label={copy("settings.settingsPages_05ec05")}
                             />
                           </div>
+                          {runnerTailscale ? (
+                            <RunnerTailscalePresentation
+                              publish={runnerTailscale}
+                            />
+                          ) : null}
                         </>
                       ) : hasSpecializedPanel ? null : (
                         <>
