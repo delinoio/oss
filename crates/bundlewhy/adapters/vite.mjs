@@ -31,6 +31,7 @@ function collectorPlugin(state) {
     enforce: "post",
     apply: "build",
     configResolved(config) {
+      state.root = config.root;
       state.resolved = {
         minify: config.build.minify,
         sourcemap: config.build.sourcemap,
@@ -147,6 +148,7 @@ await runAdapter(async (request) => {
   const vite = await importFile(vitePackage.require.resolve("vite"));
 
   const state = {
+    root: null,
     resolved: null,
     collection: null,
     outputs: 0,
@@ -275,7 +277,7 @@ await runAdapter(async (request) => {
     engineDetails: { rolldownVersion: vite.rolldownVersion },
     overrides,
     configFile: request.configFile,
-    context: request.projectRoot,
+    context: state.root ?? request.projectRoot,
     configSummary,
     libraryBuild: Boolean(resolved.lib),
     ssrBuild: Boolean(resolved.ssr),
