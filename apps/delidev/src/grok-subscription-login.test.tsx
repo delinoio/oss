@@ -1049,7 +1049,8 @@ const openVerification = () =>
 async function pollTwice(f: ReturnType<typeof fixture>) {
   const before = f.progress.mock.calls.length;
   await waitFor(
-    () => expect(f.progress.mock.calls.length).toBeGreaterThanOrEqual(before + 2),
+    () =>
+      expect(f.progress.mock.calls.length).toBeGreaterThanOrEqual(before + 2),
     { timeout: 4000 },
   );
 }
