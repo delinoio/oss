@@ -853,7 +853,9 @@ blocks) is unchanged.
   commitment.
 - **Recovery on the original Worker.** A restart, a lost Worker instance or a
   replayed Take fences the lease (`RecoveryRequired`). The watch then delivers
-  that account only to a Worker that negotiated 21 and owns the lease; the Worker
+  that account only to a Worker that negotiated 21 and owns the lease (the same
+  Runner Device and the same device credential: a second valid credential of the
+  machine is never sent the record, because its recovery Finish would be refused); the Worker
   validates its journal, joins the owned process, retires the credential left in
   the recorded home and reports a Finish with confirmed cleanup, no success and
   no credential from the original instance. The server accepts that Finish across

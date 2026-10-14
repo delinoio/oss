@@ -4,6 +4,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"net/http"
 	"slices"
@@ -14,6 +15,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
@@ -561,12 +563,18 @@ func TestGrokExecutionWorkerCapabilityIsAdmittedOnlyWhenEnabled(t *testing.T) {
 // delivers the account document.
 func (f *grokExecutionFixture) watched(t *testing.T) bool {
 	t.Helper()
+	return f.watchedWith(t, f.workerToken)
+}
+
+// watchedWith runs the same watch pass with the given Worker credential.
+func (f *grokExecutionFixture) watchedWith(t *testing.T, token string) bool {
+	t.Helper()
 	// A current Worker also negotiates execution startup, so the watch needs no
 	// Codex installation.
 	f.setCapabilities(t, domain.ManagedGrokSubscriptionsV1, domain.ExecutionStartupV1)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	stream, err := f.client.WatchSubscription(ctx, subscriptionRequest(f.workerToken, &pb.WatchSubscriptionRequest{MachineId: string(f.input.MachineID), InstanceId: string(f.instance)}))
+	stream, err := f.client.WatchSubscription(ctx, subscriptionRequest(token, &pb.WatchSubscriptionRequest{MachineId: string(f.input.MachineID), InstanceId: string(f.instance)}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -598,6 +606,49 @@ func TestGrokWatchDeliversOnlyTheOriginalWorkersFencedExecuteLease(t *testing.T)
 	}
 	if !f.watched(t) {
 		t.Fatal("the fenced execute lease was not delivered to the original Worker for cleanup")
+	}
+}
+
+// pairSecondDevice stores a second Worker credential for the same Runner Device
+// (machine) and returns its token.
+func (f *grokExecutionFixture) pairSecondDevice(t *testing.T) string {
+	t.Helper()
+	token, err := security.RandomToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	device := domain.NewID()
+	digest := sha256.Sum256([]byte(token))
+	_, err = f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.grok.second-device", device, func(tx *store.Tx) (any, error) {
+		if _, err := tx.Put(domain.DeviceKind, device, 0, "", "", domain.Device{Name: "Second Worker", Type: domain.WorkerDevice, MachineID: f.input.MachineID}); err != nil {
+			return nil, err
+		}
+		return struct{}{}, tx.PutCredential(device, digest[:])
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return token
+}
+
+// The recovery Finish requires the exact device that owns the lease, so a second
+// valid credential of the same machine must never be sent the fenced record: it
+// could not settle it and would fail and reconnect forever.
+func TestGrokWatchDeliversTheFencedLeaseOnlyToTheOwningDevice(t *testing.T) {
+	f := newGrokExecutionFixture(t)
+	jobs := f.prepareJobs(0)
+	if _, err := f.takeJob(jobs[0]); err != nil {
+		t.Fatal(err)
+	}
+	other := f.pairSecondDevice(t)
+	if err := f.service.retainLostSubscriptionLeases(f.input.MachineID, f.instance, true); err != nil {
+		t.Fatal(err)
+	}
+	if f.watchedWith(t, other) {
+		t.Fatal("the fenced execute lease was delivered to another device of the same machine")
+	}
+	if !f.watched(t) {
+		t.Fatal("the fenced execute lease was not delivered to its owning device")
 	}
 }
 

@@ -368,6 +368,10 @@ func (s *Service) WatchSubscription(ctx context.Context, req *connect.Request[pb
 	if err := workerActor(ctx, req.Msg.MachineId, req.Msg.InstanceId); err != nil {
 		return rpc.Error(err, c)
 	}
+	// A fenced Grok execute lease is delivered only to the Runner Device
+	// credential that owns it: the recovery Finish requires that exact device, so a
+	// second valid credential of the same machine could never settle the record.
+	watcher, _ := domain.PrincipalFrom(ctx)
 	defer func() {
 		if err := s.retainLostSubscriptionLeases(domain.ID(req.Msg.MachineId), domain.ID(req.Msg.InstanceId), false); err != nil {
 			s.logger.Warn("subscription_owner_loss_unconfirmed", "code", domain.SafeError(err).Code)
@@ -421,9 +425,10 @@ func (s *Service) WatchSubscription(ctx context.Context, req *connect.Request[pb
 				}
 				// Grok lifecycle work (login, refresh, logout) is not pushed to any
 				// Worker. The only Grok work a Worker watches is the cleanup of its own
-				// fenced execute lease, and only after it negotiated Worker 21.
+				// fenced execute lease (same machine and same device credential), and
+				// only after it negotiated Worker 21.
 				if a.SubscriptionService == domain.SubscriptionGrok {
-					if state := a.Subscription; slices.Contains(machine.WorkerCapabilities, domain.ManagedGrokSubscriptionsV1) && state != nil && state.RecoveryRequired && state.Lease != nil && state.Lease.Action == domain.SubscriptionExecute && !state.Lease.Shared && state.Lease.MachineID == domain.ID(req.Msg.MachineId) {
+					if state := a.Subscription; slices.Contains(machine.WorkerCapabilities, domain.ManagedGrokSubscriptionsV1) && state != nil && state.RecoveryRequired && state.Lease != nil && state.Lease.Action == domain.SubscriptionExecute && !state.Lease.Shared && state.Lease.MachineID == domain.ID(req.Msg.MachineId) && state.Lease.DeviceID == watcher.DeviceID {
 						records = append(records, r)
 						if len(records) == 4 {
 							break
