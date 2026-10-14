@@ -57,6 +57,10 @@ import {
 } from "./github-items";
 import { Problem } from "./ui";
 import {
+  NavigationIntentSource,
+  useNavigationIntent,
+} from "./navigation-intent";
+import {
   SettingsEntryDestination,
   type SettingsNavigationEntry,
 } from "./settings";
@@ -505,6 +509,7 @@ export function PullRequests({
   selectionChanged?: (id: string) => void;
 }) {
   const productLabel = useProductLabels();
+  const navigationIntent = useNavigationIntent();
   useLocale();
   // Explicit destination activation (first entry, or returning to this retained
   // page) owns one 160ms Y4 entrance on the page content. Repository and state
@@ -684,7 +689,12 @@ export function PullRequests({
     }
   }, [active]);
 
-  const chooseRepository = (row: Resource) => selectRepositoryId(row.id);
+  // Only a user's choice is a navigation intent; the route restore selects the
+  // repository through `selectRepositoryId` without registering one.
+  const chooseRepository = (row: Resource) => {
+    navigationIntent(NavigationIntentSource.RepositorySelect);
+    selectRepositoryId(row.id);
+  };
   const selectRepositoryId = (id: string) => {
     if (id === repositoryId) return;
     setLoaded(undefined);

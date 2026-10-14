@@ -19,6 +19,7 @@ import {
   ResourceSchema,
   ResourceService,
   ScheduleService,
+  SearchService,
   SessionService,
   SystemService,
   newRequestId,
@@ -31,6 +32,7 @@ import { resetProductRouteClaim } from "./product-route";
 import { ReloadShortcutOwner } from "./reload-shortcut";
 import { ShortcutPreferenceProvider } from "./shortcut-preference-controller";
 import { SettingsCategory } from "./settings-category";
+import { NavigationIntentSource } from "./navigation-intent";
 import { Surface } from "./surface";
 import { UsageTab } from "./usage-tab";
 
@@ -244,6 +246,27 @@ function fixture() {
         return { view };
       },
       getNotificationPreferences: () => ({ preferences }),
+    });
+    router.service(SearchService, {
+      searchConversations: () => ({
+        hits: [
+          {
+            sessionName: "Searched session",
+            message: create(ResourceSchema, {
+              id: newRequestId(),
+              sessionId: other.id,
+              kind: EntityKind.MESSAGE,
+              revision: 1n,
+              schemaVersion: 1,
+              documentJson: encode({
+                role: "assistant",
+                text: "Match in Searched session",
+                state: "completed",
+              }),
+            }),
+          },
+        ],
+      }),
     });
     router.service(ScheduleService, {
       listSchedules: () => ({ schedules: [schedule, otherSchedule] }),
@@ -1201,19 +1224,17 @@ describe("navigation intent supersedes a restore settling in the same tick", () 
     expect(search().has("item")).toBe(false);
   });
 
-  it("treats a selection key pressed before the read settles as navigation", async () => {
+  it("treats a keyboard activation of a row before the read settles as navigation", async () => {
     const value = fixture();
     const release = value.hold(value.inboxEntry.id);
     route(`?screen=inbox&item=${value.inboxEntry.id}`);
     render(<App transport={value.transport} />);
     await waitFor(() => expect(value.reads.inbox).toHaveBeenCalled());
-    await act(async () => {
-      fireEvent.keyDown(document.body, { key: "ArrowDown" });
-      release();
-    });
-    await act(async () => {});
-    expect(search().has("item")).toBe(false);
-    expect(search().get("screen")).toBe(Surface.Inbox);
+    // A keyboard activation reaches the row handler as a click with no pointer.
+    await clickAndSettle(await screen.findByText(/Other session/), release);
+    await waitFor(() =>
+      expect(search().get("item")).toBe(value.otherInboxEntry.id),
+    );
   });
 
   it("still restores when nothing is chosen while the read is slow", async () => {
@@ -1276,4 +1297,289 @@ describe("reload shortcut remount", () => {
     expect(search().get("item")).toBe(value.schedule.id);
     expect(value.mutated).not.toHaveBeenCalled();
   });
+});
+
+const intentLog = "delidev.product_route.navigation_intent";
+const registeredSources = (info: { mock: { calls: unknown[][] } }) =>
+  info.mock.calls
+    .filter(([message]) => message === intentLog)
+    .map(([, detail]) => (detail as { source: NavigationIntentSource }).source);
+
+describe("controls that are not navigation keep a pending selection", () => {
+  it("keeps a waiting Schedule selection after a refresh or an unrelated click and key, then restores it when the connection is ready", async () => {
+    // jsdom has no native layout observer; the paginated list reads it on refresh.
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    const info = vi.spyOn(console, "info");
+    const value = fixture();
+    route(`?screen=schedules&item=${value.schedule.id}`);
+    const view = render(
+      <App transport={value.transport} connectionReady={false} />,
+    );
+    await act(async () => {});
+    await screen.findByText(
+      "Select a schedule from the sidebar to inspect its details and retained history.",
+    );
+    // A retry-style refresh, a click on inert content and selection keys are not
+    // navigation: none of them registers an intent or cancels the restore.
+    fireEvent.click(await screen.findByRole("button", { name: "Refresh" }));
+    fireEvent.click(document.body);
+    fireEvent.keyDown(document.body, { key: "Enter" });
+    fireEvent.keyDown(document.body, { key: "ArrowDown" });
+    fireEvent.keyDown(document.body, { key: "k", ctrlKey: true });
+    await act(async () => {});
+    expect(registeredSources(info)).toEqual([]);
+    expect(search().get("item")).toBe(value.schedule.id);
+    expect(value.reads.schedule).not.toHaveBeenCalled();
+    view.rerender(<App transport={value.transport} connectionReady />);
+    expect(
+      await screen.findByRole("heading", { name: "Restored schedule" }),
+    ).toBeTruthy();
+    expect(search().get("item")).toBe(value.schedule.id);
+    expect(registeredSources(info)).toEqual([]);
+    expect(value.mutated).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it("keeps a waiting Inbox selection after a refresh click and restores it when ready", async () => {
+    const info = vi.spyOn(console, "info");
+    const value = fixture();
+    route(`?screen=inbox&item=${value.inboxEntry.id}`);
+    const view = render(
+      <App transport={value.transport} connectionReady={false} />,
+    );
+    await act(async () => {});
+    fireEvent.click(await screen.findByRole("button", { name: "Refresh" }));
+    await act(async () => {});
+    expect(registeredSources(info)).toEqual([]);
+    expect(search().get("item")).toBe(value.inboxEntry.id);
+    expect(value.reads.inbox).not.toHaveBeenCalled();
+    view.rerender(<App transport={value.transport} connectionReady />);
+    await waitFor(() => expect(value.reads.inbox).toHaveBeenCalled());
+    await act(async () => {});
+    expect(search().get("item")).toBe(value.inboxEntry.id);
+    expect(registeredSources(info)).toEqual([]);
+  });
+
+  it("keeps a waiting repository selection after a click on the page and restores it when ready", async () => {
+    const value = fixture();
+    route(`?screen=pull-requests&item=${value.repository.id}`);
+    const view = render(
+      <App transport={value.transport} connectionReady={false} />,
+    );
+    await act(async () => {});
+    fireEvent.click(document.body);
+    await act(async () => {});
+    expect(search().get("item")).toBe(value.repository.id);
+    view.rerender(<App transport={value.transport} connectionReady />);
+    await waitFor(() => expect(value.reads.resource).toHaveBeenCalled());
+    await act(async () => {});
+    expect(search().get("item")).toBe(value.repository.id);
+  });
+});
+
+describe("every navigation handler registers an intent and cancels a pending restore", () => {
+  // Each driver renders the real application and performs the user action of
+  // one handler. The record is keyed by the closed enum, so adding a handler
+  // source without a driver fails typecheck and cannot silently skip the token.
+  const drivers: Record<
+    NavigationIntentSource,
+    (value: ReturnType<typeof fixture>) => Promise<void>
+  > = {
+    [NavigationIntentSource.Surface]: async () => {
+      fireEvent.click(
+        await rail().findByRole("button", { name: "Pull requests" }),
+      );
+    },
+    [NavigationIntentSource.SessionOpen]: async () => {
+      fireEvent.click(await screen.findByText("Other session"));
+    },
+    [NavigationIntentSource.SessionTab]: async (value) => {
+      await screen.findByRole("tab", { name: /Side question/ });
+      const unselected = screen
+        .getAllByRole("tab")
+        .find((tab) => tab.getAttribute("aria-selected") === "false");
+      expect(unselected).toBeTruthy();
+      fireEvent.click(unselected!);
+    },
+    [NavigationIntentSource.SearchResult]: async () => {
+      fireEvent.click(await screen.findByRole("button", { name: "Search" }));
+      const input = await screen.findByRole("textbox", {
+        name: "Search conversations",
+      });
+      fireEvent.change(input, { target: { value: "match" } });
+      fireEvent.submit(input.closest("form")!);
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Searched session" }),
+      );
+    },
+    [NavigationIntentSource.ProjectCreation]: async () => {
+      fireEvent.click(await screen.findByRole("button", { name: "New project" }));
+    },
+    [NavigationIntentSource.InboxSelect]: async () => {
+      fireEvent.click(await screen.findByText(/Other session/));
+    },
+    [NavigationIntentSource.InboxClose]: async () => {
+      fireEvent.click(await screen.findByText(/Other session/));
+      fireEvent.click(
+        await screen.findByRole("button", { name: /back to inbox/i }),
+      );
+    },
+    [NavigationIntentSource.ScheduleSelect]: async () => {
+      fireEvent.click(await screen.findByText("Chosen schedule"));
+    },
+    [NavigationIntentSource.ScheduleNew]: async () => {
+      fireEvent.click(
+        await screen.findByRole("button", { name: "New schedule" }),
+      );
+    },
+    [NavigationIntentSource.ScheduleEdit]: async () => {
+      fireEvent.click(await screen.findByText("Chosen schedule"));
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Edit schedule" }),
+      );
+    },
+    [NavigationIntentSource.ScheduleClose]: async () => {
+      fireEvent.click(await screen.findByText("Chosen schedule"));
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Back to schedules" }),
+      );
+    },
+    [NavigationIntentSource.RepositorySelect]: async () => {
+      fireEvent.click(await screen.findByText("Chosen repository"));
+    },
+    [NavigationIntentSource.SettingsCategory]: async () => {
+      await screen.findByRole("navigation", { name: "Settings categories" });
+      const categories = [
+        ...document.querySelectorAll<HTMLButtonElement>(
+          "[data-settings-category]",
+        ),
+      ];
+      const next = categories.find(
+        (button) => button.getAttribute("aria-current") !== "page",
+      );
+      expect(next).toBeTruthy();
+      fireEvent.click(next!);
+    },
+    [NavigationIntentSource.UsageTab]: async () => {
+      fireEvent.click(await screen.findByRole("tab", { name: "Model prices" }));
+    },
+  };
+  // The screen each driver starts from.
+  const startRoutes: Partial<
+    Record<NavigationIntentSource, (value: ReturnType<typeof fixture>) => string>
+  > = {
+    [NavigationIntentSource.SessionOpen]: (value) =>
+      `?screen=sessions&session=${value.session.id}`,
+    [NavigationIntentSource.SessionTab]: (value) =>
+      `?screen=sessions&session=${value.session.id}&sidechat=${value.sidechat.id}`,
+    [NavigationIntentSource.InboxSelect]: () => "?screen=inbox",
+    [NavigationIntentSource.InboxClose]: () => "?screen=inbox",
+    [NavigationIntentSource.ScheduleSelect]: () => "?screen=schedules",
+    [NavigationIntentSource.ScheduleNew]: () => "?screen=schedules",
+    [NavigationIntentSource.ScheduleEdit]: () => "?screen=schedules",
+    [NavigationIntentSource.ScheduleClose]: () => "?screen=schedules",
+    [NavigationIntentSource.RepositorySelect]: () => "?screen=pull-requests",
+    [NavigationIntentSource.SettingsCategory]: () => "?screen=settings",
+    [NavigationIntentSource.UsageTab]: () => "?screen=usage",
+  };
+
+  it("has a driver for every handler source", () => {
+    expect(Object.keys(drivers).sort()).toEqual(
+      Object.values(NavigationIntentSource).sort(),
+    );
+  });
+
+  it.each(Object.values(NavigationIntentSource))(
+    "registers the %s intent",
+    async (source) => {
+      const info = vi.spyOn(console, "info");
+      const value = fixture();
+      const start = startRoutes[source];
+      if (start) route(start(value));
+      render(<App transport={value.transport} />);
+      // A restore or initial read may settle first; only the user action counts.
+      await act(async () => {});
+      await screen.findByRole("navigation", { name: "Primary navigation" });
+      info.mockClear();
+      await drivers[source](value);
+      await act(async () => {});
+      expect(registeredSources(info)).toContain(source);
+    },
+  );
+
+  it.each([
+    [
+      "an Inbox row",
+      NavigationIntentSource.InboxSelect,
+      (value: ReturnType<typeof fixture>) =>
+        `?screen=inbox&item=${value.inboxEntry.id}`,
+      async () => {
+        fireEvent.click(await screen.findByText(/Other session/));
+      },
+      (value: ReturnType<typeof fixture>) => value.otherInboxEntry.id,
+    ],
+    [
+      "a Schedule row",
+      NavigationIntentSource.ScheduleSelect,
+      (value: ReturnType<typeof fixture>) =>
+        `?screen=schedules&item=${value.schedule.id}`,
+      async () => {
+        fireEvent.click(await screen.findByText("Chosen schedule"));
+      },
+      (value: ReturnType<typeof fixture>) => value.otherSchedule.id,
+    ],
+    [
+      "New schedule",
+      NavigationIntentSource.ScheduleNew,
+      (value: ReturnType<typeof fixture>) =>
+        `?screen=schedules&item=${value.schedule.id}`,
+      async () => {
+        fireEvent.click(
+          await screen.findByRole("button", { name: "New schedule" }),
+        );
+      },
+      () => undefined,
+    ],
+    [
+      "a repository row",
+      NavigationIntentSource.RepositorySelect,
+      (value: ReturnType<typeof fixture>) =>
+        `?screen=pull-requests&item=${value.repository.id}`,
+      async () => {
+        fireEvent.click(await screen.findByText("Chosen repository"));
+      },
+      (value: ReturnType<typeof fixture>) => value.otherRepository.id,
+    ],
+  ])(
+    "cancels a pending restore when %s is activated while the connection is not ready",
+    async (_name, source, startRoute, activate, expectedItem) => {
+      const info = vi.spyOn(console, "info");
+      const value = fixture();
+      route(startRoute(value));
+      const view = render(
+        <App transport={value.transport} connectionReady={false} />,
+      );
+      await act(async () => {});
+      await activate();
+      expect(registeredSources(info)).toContain(source);
+      expect(info).toHaveBeenCalledWith("delidev.product_route.restore", {
+        outcome: "superseded",
+      });
+      // The cancelled restore never resumes once the connection is ready.
+      view.rerender(<App transport={value.transport} connectionReady />);
+      await act(async () => {});
+      expect(
+        screen.queryByRole("heading", { name: "Restored schedule" }),
+      ).toBeNull();
+      expect(search().get("item") ?? undefined).toBe(expectedItem(value));
+      expect(value.mutated).not.toHaveBeenCalled();
+    },
+  );
 });

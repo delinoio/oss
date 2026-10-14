@@ -196,6 +196,10 @@ import { RepositoryIcon, RepositoryRow } from "./repository-list";
 import { ToastKind, useNotifications } from "./toast-notifications";
 import "./api-account.css";
 import {
+  NavigationIntentSource,
+  useNavigationIntent,
+} from "./navigation-intent";
+import {
   SettingsTasks,
   SettingsTaskBackground,
   SettingsTaskDialog,
@@ -2279,6 +2283,7 @@ function SettingsVisit({
 }: SettingsProps) {
   useLocale();
   const closeDrawer = useCloseSidebarDrawer();
+  const navigationIntent = useNavigationIntent();
   const [searchRequest, setSearchRequest] = useState<SettingsSearchRequest>();
   // Only the original local desktop window supplies the Tailscale presentation
   // publisher; saved-server windows list no Tailscale category at all.
@@ -2311,7 +2316,9 @@ function SettingsVisit({
   const handledDestination = useRef<SettingsNavigationEntry | undefined>(
     undefined,
   );
-  const navigate = useCallback<NavigateSettings>(
+  // Applies a category without registering a navigation intent: the shell-driven
+  // destination below already registered one when it opened Settings.
+  const applyCategory = useCallback<NavigateSettings>(
     (category, entry) => {
       category = reachableCategory(
         category === SettingsCategory.GitWorkflow
@@ -2329,6 +2336,15 @@ function SettingsVisit({
     },
     [closeDrawer, tailscaleAvailable],
   );
+  // Every category a user chooses, from the category list, a search result or a
+  // link inside a category, is a navigation intent.
+  const navigate = useCallback<NavigateSettings>(
+    (category, entry) => {
+      navigationIntent(NavigationIntentSource.SettingsCategory);
+      applyCategory(category, entry);
+    },
+    [navigationIntent, applyCategory],
+  );
   useEffect(() => {
     if (!entryDestination) {
       handledDestination.current = undefined;
@@ -2340,7 +2356,7 @@ function SettingsVisit({
       initialDestination.current = undefined;
     else {
       const target = entrySelection(entryDestination, tailscaleAvailable);
-      navigate(target.category, target.entry);
+      applyCategory(target.category, target.entry);
     }
     // A target inside an unavailable category has nothing to focus.
     if (
@@ -2357,7 +2373,7 @@ function SettingsVisit({
         generation: entryDestination.generation,
       });
     destinationConsumed?.();
-  }, [destinationConsumed, entryDestination, navigate, tailscaleAvailable]);
+  }, [destinationConsumed, entryDestination, applyCategory, tailscaleAvailable]);
   return (
     <>
       <SidebarSurface

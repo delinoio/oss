@@ -58,6 +58,10 @@ import {
 import { SettingsLifetime } from "./settings-lifetime";
 import { MutationIntents } from "./mutation";
 import { UsageTab } from "./usage-tab";
+import {
+  NavigationIntentSource,
+  useNavigationIntent,
+} from "./navigation-intent";
 
 const tabs = [UsageTab.Overview, UsageTab.History, UsageTab.Prices] as const;
 const tabLabels = {
@@ -281,6 +285,7 @@ export function Usage({
   tabChanged?: (tab: UsageTab) => void;
 }) {
   const productLabel = useProductLabels();
+  const navigationIntent = useNavigationIntent();
   useLocale();
   const [detail, setDetail] = useState<PriceSelection>();
 
@@ -297,6 +302,7 @@ export function Usage({
   const [tabSelections, setTabSelections] = useState(0);
   const selectTab = (next: UsageTab) => {
     if (next === tab) return;
+    navigationIntent(NavigationIntentSource.UsageTab);
     setTab(next);
     setTabSelections((count) => count + 1);
   };

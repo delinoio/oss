@@ -71,6 +71,10 @@ import { Inbox } from "./inbox";
 import { Usage } from "./usage";
 import { UsageTab } from "./usage-tab";
 import {
+  NavigationIntentProvider,
+  NavigationIntentSource,
+} from "./navigation-intent";
+import {
   claimInitialRoute,
   writeProductRoute,
   type ProductRoute,
@@ -257,10 +261,13 @@ function Shell({
   const [pendingSelection, setPendingSelection] = useState(() =>
     pendingSelectionOf(initialRoute),
   );
-  // The one monotonic navigation-intent token. Every user-driven navigation or
-  // selection bumps it synchronously, in the handler itself and never from an
-  // effect: a surface change, a Session/Sidechat/Inbox/Schedule/repository
-  // selection, a new-item, editor or review opener, a tab change. A pending
+  // The one monotonic navigation-intent token. Every handler that changes the
+  // surface, the selection or the tab, or opens a new-item, editor, review or
+  // project destination, bumps it synchronously, in the handler itself and never
+  // from an effect. Shell handlers call `userNavigated` directly; child screens
+  // call it through `useNavigationIntent` from their own navigation handlers.
+  // Retry, reconnect, refresh, dismiss and copy controls never bump it, so they
+  // cannot supersede a selection that waits for its connection. A pending
   // route restore captures the token when it starts and compares it when its
   // read settles, before any state change, Session opening or URL write, so a
   // slow read can never override a choice made after it began, even when it
@@ -268,8 +275,12 @@ function Shell({
   const navigationIntent = useRef(0);
   const restoreAbort = useRef<AbortController>(undefined);
   const restorePending = useRef(pendingSelection !== undefined);
-  const userNavigated = useCallback(() => {
+  const userNavigated = useCallback((source: NavigationIntentSource) => {
     navigationIntent.current += 1;
+    console.info("delidev.product_route.navigation_intent", {
+      source,
+      restorePending: restorePending.current,
+    });
     restoreAbort.current?.abort();
     restoreAbort.current = undefined;
     if (!restorePending.current) return;
@@ -279,42 +290,6 @@ function Shell({
     });
     setPendingSelection(undefined);
   }, []);
-  // In-screen controls (list rows, New schedule, occurrence review, editors,
-  // tabs) live in child components. A capture-phase listener on the window sees
-  // their activation, and the keys that move a selection or run a shortcut,
-  // before any handler runs, so those choices advance the same token.
-  useLayoutEffect(() => {
-    const navigationKeys = new Set([
-      "Enter",
-      " ",
-      "ArrowUp",
-      "ArrowDown",
-      "ArrowLeft",
-      "ArrowRight",
-      "Home",
-      "End",
-      "PageUp",
-      "PageDown",
-    ]);
-    const modifierKeys = new Set(["Control", "Alt", "Meta", "Shift"]);
-    const activated = () => userNavigated();
-    const keyed = (event: KeyboardEvent) => {
-      if (modifierKeys.has(event.key)) return;
-      if (
-        navigationKeys.has(event.key) ||
-        event.ctrlKey ||
-        event.metaKey ||
-        event.altKey
-      )
-        userNavigated();
-    };
-    window.addEventListener("click", activated, true);
-    window.addEventListener("keydown", keyed, true);
-    return () => {
-      window.removeEventListener("click", activated, true);
-      window.removeEventListener("keydown", keyed, true);
-    };
-  }, [userNavigated]);
 
   const searchIntent = useRef(0);
   const searchAbort = useRef<AbortController>(undefined);
@@ -346,7 +321,7 @@ function Shell({
   };
   // Every surface change a handler requests is a navigation intent.
   const setSurface = (next: Surface) => {
-    userNavigated();
+    userNavigated(NavigationIntentSource.Surface);
     showSurface(next);
   };
   useEffect(() => {
@@ -551,7 +526,7 @@ function Shell({
     setDrawerOpen(false);
   };
   const openSession = (id: string, originalParent?: string, name?: string) => {
-    userNavigated();
+    userNavigated(NavigationIntentSource.SessionOpen);
     showSession(id, originalParent, name);
   };
   const openSessionRef = useRef(openSession);
@@ -700,7 +675,7 @@ function Shell({
   // A never-visited Sidechat result carries only its child ID, so its original
   // parent is read from retained metadata before the host is chosen.
   const openSearchResult = (id: string) => {
-    userNavigated();
+    userNavigated(NavigationIntentSource.SearchResult);
     if (tabs.parent(id)) {
       open(id);
       return;
@@ -773,7 +748,7 @@ function Shell({
     [],
   );
   const openNewProject = () => {
-    userNavigated();
+    userNavigated(NavigationIntentSource.ProjectCreation);
     setDrawerOpen(false);
     setProjectCreation((current) =>
       current
@@ -942,6 +917,7 @@ function Shell({
       target.focus({ preventScroll: true });
   }, [surface, drawerOpen, settingsEntry]);
   return (
+    <NavigationIntentProvider value={userNavigated}>
     <LocalConnectionPresentationProvider
       target={connectionTarget}
       inline={!connectionReady}
@@ -1278,6 +1254,7 @@ function Shell({
         </RunnerPreferenceProvider>
       </RunnerRemediationProvider>
     </LocalConnectionPresentationProvider>
+    </NavigationIntentProvider>
   );
 }
 

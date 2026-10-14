@@ -40,6 +40,10 @@ import {
 import { document, object, text } from "./documents";
 import { useRetainedMutation } from "./mutation";
 import { Failure, Problem } from "./ui";
+import {
+  NavigationIntentSource,
+  useNavigationIntent,
+} from "./navigation-intent";
 import { Interaction } from "./interactions";
 import { currentInboxSource, inboxResponseCurrent } from "./inbox-source";
 import {
@@ -208,6 +212,7 @@ export function Inbox({
   selectionChanged?: (id: string) => void;
 }) {
   const productLabel = useProductLabels();
+  const navigationIntent = useNavigationIntent();
   useLocale();
   const emptyFilters = {
     source: InboxSource.UNSPECIFIED,
@@ -279,6 +284,7 @@ export function Inbox({
   };
   const selectItem = (id: string, keyboard = false) => {
     if (!id) return;
+    navigationIntent(NavigationIntentSource.InboxSelect);
     lastRowFocus.current = id;
     restoreRowFocus.current = false;
     keyboardSelection.current =
@@ -541,6 +547,7 @@ export function Inbox({
     });
 
   const closeDetail = () => {
+    navigationIntent(NavigationIntentSource.InboxClose);
     restoreRowFocus.current = true;
     setSelectedId("");
     setDetailRead(undefined);

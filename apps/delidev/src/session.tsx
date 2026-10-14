@@ -229,6 +229,10 @@ import {
 } from "./sidechat-retry";
 import { SessionTools } from "./session-tools";
 import { SessionStorageAction } from "./session-storage";
+import {
+  NavigationIntentSource,
+  useNavigationIntent,
+} from "./navigation-intent";
 import { SessionLifetimeUsage } from "./session-lifetime-usage";
 import { SessionPullRequests } from "./session-pull-requests";
 import {
@@ -955,6 +959,7 @@ export function SessionView({
   openRunnerSettings?: () => void;
 }) {
   const productLabel = useProductLabels();
+  const navigationIntent = useNavigationIntent();
   useLocale();
   const tabs = useSessionTabs(id);
   const conversationActive =
@@ -2460,7 +2465,10 @@ export function SessionView({
               id={id}
               tabs={tabs.tabs}
               selected={tabs.selected}
-              select={(key) => tabs.store.select(id, key)}
+              select={(key) => {
+                navigationIntent(NavigationIntentSource.SessionTab);
+                tabs.store.select(id, key);
+              }}
               close={closeTab}
               closeAria={shortcuts.aria(ShortcutId.SessionCloseTab)}
             />

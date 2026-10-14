@@ -78,6 +78,10 @@ import {
   type ScheduleCreationProps,
 } from "./schedule-creation";
 import { SidebarSurface, useCloseSidebarDrawer } from "./sidebar-context";
+import {
+  NavigationIntentSource,
+  useNavigationIntent,
+} from "./navigation-intent";
 
 enum Overlap {
   Overlap = "overlap",
@@ -1296,6 +1300,7 @@ export function Schedules({
     EntranceMotion.Y4,
   );
   const closeDrawer = useCloseSidebarDrawer();
+  const navigationIntent = useNavigationIntent();
   const reviewingNotification = Boolean(notificationOccurrence);
   // The notification occurrence destination is exclusive, so the sidebar
   // interactions and list reads stop together with the hidden workspace.
@@ -1424,6 +1429,7 @@ export function Schedules({
   }, [editing]);
   const selectSchedule = (row: Resource) => {
     if (locked) return;
+    navigationIntent(NavigationIntentSource.ScheduleSelect);
     if (row.id !== selected?.id)
       setEntries((current) => ({ ...current, count: current.count + 1 }));
     setSelected(row);
@@ -1431,6 +1437,7 @@ export function Schedules({
   };
   const newSchedule = () => {
     if (locked) return;
+    navigationIntent(NavigationIntentSource.ScheduleNew);
     setEntries((current) => ({ ...current, count: current.count + 1 }));
     setSelected(undefined);
     setEditing({ key: newRequestId() });
@@ -1640,11 +1647,13 @@ export function Schedules({
               active={workspaceActive}
               open={open}
               close={() => {
+                navigationIntent(NavigationIntentSource.ScheduleClose);
                 setSelected(undefined);
                 setProtectedWorkflow(false);
                 result.refresh();
               }}
               edit={(initial) => {
+                navigationIntent(NavigationIntentSource.ScheduleEdit);
                 setSelected(undefined);
                 setEditing({ initial, key: newRequestId() });
               }}
