@@ -630,3 +630,98 @@ func TestGrokExecutionWithAnUnacknowledgedFinishIsUncertain(t *testing.T) {
 		}
 	})
 }
+
+// A missing or replaced home does not prove the credential gone: the original
+// directory may have been renamed away with the plaintext inside. Recovery
+// confirms cleanup only when no credential was ever written, the Worker already
+// retired it, or the directory at the path is the one the lease bound.
+func TestGrokRecoveryDoesNotConfirmCleanupOfAHomeItCannotProve(t *testing.T) {
+	recover := func(t *testing.T, f *grokExecutionServer, run *grokSubscriptionRun) error {
+		t.Helper()
+		run.closeHTTP()
+		_ = run.lease.grokHome.Close()
+		account, _ := f.fencedAccount(t, run)
+		client := delidevv1connect.NewSubscriptionServiceClient(httptest.NewServer(nil).Client(), f.credential.Endpoint)
+		return runGrokRecovery(context.Background(), f.config, client, f.credential, f.account, account)
+	}
+	materialized := func(t *testing.T) (*grokExecutionServer, *grokSubscriptionRun) {
+		t.Helper()
+		f := newGrokExecutionServer(t)
+		run, err := f.begin(t)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := run.prepare(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		f.nativeRotate(t)
+		return f, run
+	}
+	t.Run("renamed away after the credential was written", func(t *testing.T) {
+		f, run := materialized(t)
+		moved := f.home + ".moved"
+		if err := os.Rename(f.home, moved); err != nil {
+			t.Fatal(err)
+		}
+		if err := recover(t, f, run); err == nil {
+			t.Fatal("cleanup was confirmed for a home that was renamed away with the credential inside")
+		}
+		if len(f.finishes) != 0 {
+			t.Fatal("a cleanup-confirmed Finish was reported")
+		}
+		if _, err := os.Lstat(filepath.Join(moved, subscription.GrokAuthFileName)); err != nil {
+			t.Fatal("the test did not leave the renamed credential in place")
+		}
+	})
+	t.Run("replaced by another directory", func(t *testing.T) {
+		f, run := materialized(t)
+		if run.lease.journal.GrokHomeIdentity == "" {
+			t.Skip("the platform exposes no directory identity")
+		}
+		moved := f.home + ".moved"
+		if err := os.Rename(f.home, moved); err != nil {
+			t.Fatal(err)
+		}
+		if err := security.PrivateDir(f.home); err != nil {
+			t.Fatal(err)
+		}
+		if err := recover(t, f, run); err == nil {
+			t.Fatal("cleanup was confirmed for a successor of the original home")
+		}
+		if len(f.finishes) != 0 {
+			t.Fatal("a cleanup-confirmed Finish was reported")
+		}
+	})
+	t.Run("missing before any credential was written", func(t *testing.T) {
+		f := newGrokExecutionServer(t)
+		run, err := f.begin(t)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.RemoveAll(f.home); err != nil {
+			t.Fatal(err)
+		}
+		if err := recover(t, f, run); err != nil {
+			t.Fatalf("a home that never held a credential blocked recovery: %v", err)
+		}
+	})
+	t.Run("retired by the Worker before a lost Finish", func(t *testing.T) {
+		f, run := materialized(t)
+		f.failFinishWithConnect = true
+		if err := run.finish(true); err == nil {
+			t.Fatal("the lost Finish was acknowledged")
+		}
+		if !run.lease.journal.GrokRetired {
+			t.Fatal("the confirmed retirement was not journaled")
+		}
+		f.failFinishWithConnect = false
+		if err := os.RemoveAll(f.home); err != nil {
+			t.Fatal(err)
+		}
+		account, _ := f.fencedAccount(t, run)
+		client := delidevv1connect.NewSubscriptionServiceClient(httptest.NewServer(nil).Client(), f.credential.Endpoint)
+		if err := runGrokRecovery(context.Background(), f.config, client, f.credential, f.account, account); err != nil {
+			t.Fatalf("recovery of a retired credential was blocked: %v", err)
+		}
+	})
+}

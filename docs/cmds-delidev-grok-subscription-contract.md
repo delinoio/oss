@@ -879,7 +879,13 @@ blocks) is unchanged.
   and instance, and releases the lease under the current generation and restores
   health; a refresh, login or logout lease, a different instance, a successful
   or credential-bearing report and unconfirmed cleanup stay refused. Recovery
-  never retakes the lease, starts a native process or replays input.
+  never retakes the lease, starts a native process or replays input. The Worker
+  journals the identity of the home it bound and whether it already retired the
+  credential: a recorded home that is missing confirms cleanup only if no
+  credential was ever written or the Worker retired it, and a directory at the path
+  that is not the one the lease bound is never cleaned as if it were, because the
+  original may have been renamed away with the plaintext inside (the lease then
+  stays fenced for manual inspection).
 - **Continuation.** Only the first input of a General Chat workspace runs, as in
   the API lane: a continuation, fork or repository workspace is `Unsupported`.
   Grok records at `domain.GrokProtocolVersion` (`1.0.41`) and version-1 results

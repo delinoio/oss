@@ -4,6 +4,7 @@
 package subscription
 
 import (
+	"fmt"
 	"os"
 	"syscall"
 )
@@ -59,4 +60,13 @@ func grokUnlinkedFileLinked(file *os.File) bool {
 // another name of the retained file.
 func grokSameEntry(_ *os.Root, _ string, entry, retained os.FileInfo) bool {
 	return os.SameFile(entry, retained)
+}
+
+// grokFileIdentity is the device and inode of an opened directory.
+func grokFileIdentity(info os.FileInfo) string {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("%d:%d", uint64(stat.Dev), uint64(stat.Ino))
 }

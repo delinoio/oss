@@ -174,5 +174,8 @@ func (l *managedSubscriptionLease) finishGrokExecution(original subscription.Gro
 	if l.logger != nil {
 		l.logger.LogAttrs(context.Background(), slog.LevelInfo, "grok_subscription_execution_finish", slog.String("phase", "EXECUTION"), slog.String("step", "finish"), slog.String("account_id", string(l.account)), slog.String("lease_id", l.response.LeaseId), slog.Bool("credential_written", attempted), slog.Bool("process_joined", joined), slog.Bool("success", outcome.Success), slog.Bool("cleanup_confirmed", outcome.Cleanup))
 	}
+	// Confirmed retirement is journaled before the Finish, so a lost Finish can be
+	// recovered even if the home is gone by then.
+	l.journal.GrokRetired = outcome.Cleanup
 	return l.finish(outcome.Bundle, outcome.Cleanup, false, outcome.Success)
 }

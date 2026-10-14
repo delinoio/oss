@@ -102,6 +102,7 @@ func beginGrokSubscriptionExecution(ctx context.Context, config Config, owner do
 	// The home path is retained so the original Worker can retire a credential it
 	// left behind, even after a restart.
 	lease.journal.GrokHome = grokHome
+	lease.journal.GrokHomeIdentity = home.Identity()
 	if err := writeJSON(lease.journalPath, lease.journal); err != nil {
 		return abort(subscription.Invalid())
 	}
@@ -203,8 +204,13 @@ func runGrokRecovery(ctx context.Context, config Config, client delidevv1connect
 	}
 	cleaned := true
 	if journal.GrokHome != "" {
-		if _, statErr := os.Lstat(journal.GrokHome); !errors.Is(statErr, os.ErrNotExist) {
-			cleaned = retireRecordedGrokHome(journal.GrokHome)
+		if _, statErr := os.Lstat(journal.GrokHome); errors.Is(statErr, os.ErrNotExist) {
+			// A missing home proves the credential gone only when none was ever
+			// written or the Worker already retired it: the directory may instead
+			// have been renamed away with the plaintext still inside.
+			cleaned = !journal.ExecutionStarted || journal.GrokRetired
+		} else {
+			cleaned = retireRecordedGrokHome(journal.GrokHome, journal.GrokHomeIdentity)
 		}
 	}
 	if !cleaned {
@@ -224,14 +230,21 @@ func runGrokRecovery(ctx context.Context, config Config, client delidevv1connect
 }
 
 // retireRecordedGrokHome retires auth.json, its lock file and attributed
-// temporaries from a recorded private home and reports whether the cleanup is
+// temporaries from a recorded private home (identity is the journaled identity of
+// the directory the lease bound) and reports whether the cleanup is
 // confirmed. A home that cannot be bound safely is never confirmed.
-func retireRecordedGrokHome(grokHome string) bool {
+func retireRecordedGrokHome(grokHome, identity string) bool {
 	home, err := subscription.BindGrokHome(grokHome)
 	if err != nil {
 		return false
 	}
 	defer home.Close()
+	// A directory at the recorded path that is not the one the lease bound may be a
+	// successor of a renamed original; cleaning it proves nothing about the
+	// original, so cleanup stays unconfirmed.
+	if identity != "" && home.Identity() != "" && home.Identity() != identity {
+		return false
+	}
 	if home.Verify() != nil || home.RetireAuthFile() != nil {
 		return false
 	}

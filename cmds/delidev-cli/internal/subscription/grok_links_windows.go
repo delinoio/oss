@@ -79,3 +79,7 @@ func grokSameEntry(root *os.Root, name string, _, retained os.FileInfo) bool {
 	info, err := file.Stat()
 	return err != nil || os.SameFile(info, retained)
 }
+
+// grokFileIdentity has no portable textual form on Windows; recovery then relies
+// on the existence and retirement checks alone.
+func grokFileIdentity(os.FileInfo) string { return "" }

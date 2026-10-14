@@ -66,6 +66,17 @@ func BindGrokHome(grokHome string) (GrokHome, error) {
 	return home, nil
 }
 
+// Identity is a stable textual identity of the bound directory (device and inode
+// where the platform exposes them) that a Worker may journal, so a later recovery
+// can tell the original directory from a successor at the same path. It is empty
+// where the platform offers no such identity.
+func (h GrokHome) Identity() string {
+	if h.identity == nil {
+		return ""
+	}
+	return grokFileIdentity(h.identity)
+}
+
 // Path is the path the home was bound at. It is for the native child's
 // environment and for diagnostics only; no operation of GrokHome uses it to
 // reach a file.

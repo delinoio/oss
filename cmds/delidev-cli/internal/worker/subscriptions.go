@@ -86,6 +86,12 @@ type managedSubscriptionJournal struct {
 	// GrokHome is the private native home of a Grok execute lease. Recovery by
 	// the original Worker retires a credential left in it.
 	GrokHome string `json:"grok_home,omitempty"`
+	// GrokHomeIdentity is the identity of the home directory the lease bound, and
+	// GrokRetired records that the Worker retired the credential from it before its
+	// Finish. Recovery confirms cleanup of a missing or replaced home only with
+	// them.
+	GrokHomeIdentity string `json:"grok_home_identity,omitempty"`
+	GrokRetired      bool   `json:"grok_retired,omitempty"`
 }
 
 func subscriptionRPC(ctx context.Context, config Config, credential Credential) (delidevv1connect.SubscriptionServiceClient, func(), error) {
