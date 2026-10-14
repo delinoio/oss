@@ -95,7 +95,7 @@ boundary when revalidated against `domain.GrokSubscriptionBaselineVersion` (`1.0
 
 The desktop browser flow is implemented in `apps/delidev/src/grok-subscription-login.tsx` and enabled only when the server advertises System capability 39. The explicit `Use a device code` action beside Add account (same capability, no separate device capability) sends `device_code` true once, displays the validated transient `accounts.x.ai` verification page and user code with Copy code and Open verification page (system default browser through the closed native action), and clears them on every terminal state; see the subscription Settings contract. The approved desktop flow preserves service order, existing marks, navigation
 and theme. Add account starts browser login; Use a device code is explicit.
-Waiting offers reopen/copy/open-page/cancel as appropriate. Confirmed success
+Waiting offers reopen/copy/open-page/cancel as appropriate: reopen is hidden after the `Incompatible` refusal, and no cancel, open or reopen action is offered once the server acknowledged cancellation (copying the link or code stays available until the terminal state). Confirmed success
 advances to account naming. Preparing, waiting, canceled, expired, failed and
 recovery remain distinct. Exact original-request retry does not create a new
 login. Polling, reconnection and Strict Mode grant no mutation authority.

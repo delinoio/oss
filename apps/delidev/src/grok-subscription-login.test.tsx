@@ -41,6 +41,8 @@ import { useSubscriptionLogin } from "./subscription-login";
 import { MutationIntents } from "./mutation";
 import english from "./locales/en/grok-subscription.json";
 import korean from "./locales/ko/grok-subscription.json";
+import englishClaude from "./locales/en/claude-subscription.json";
+import koreanClaude from "./locales/ko/claude-subscription.json";
 
 const externalOpen = vi.hoisted(() => vi.fn(async (_url: string) => undefined));
 vi.mock("./external-links", async (original) => ({
@@ -126,7 +128,9 @@ function fixture(url = loginURL) {
     suggestedName: suggested,
     generation,
   }));
-  const cancel = vi.fn(() => ({ account: current }));
+  const cancel = vi.fn((_request: { mutation?: { requestId: string } }) => ({
+    account: current,
+  }));
   const forward = vi.fn((_request: { operationId: string }) => ({
     accepted: true,
   }));
@@ -333,6 +337,11 @@ it("creates one account and one browser login despite double click, Strict Mode 
   );
   expect(actions(f, OAuthNativeAction.SubscriptionOpen)).toHaveLength(0);
   expect(actions(f, OAuthNativeAction.Take).length).toBeGreaterThan(0);
+  // The browser opened: the guidance may say so.
+  expect(screen.getByText(copy("grok-subscription.help.waiting"))).toBeTruthy();
+  expect(
+    screen.queryByText(copy("grok-subscription.help.waitingLink")),
+  ).toBeNull();
   // Progress holds the sign-in link: it never reaches the shared query cache.
   expect(
     f.client
@@ -572,6 +581,11 @@ it("refuses a malformed original authorization without opening a browser", async
   expect(
     screen.queryByRole("button", { name: copy("grok-subscription.copyLink") }),
   ).toBeNull();
+  // Nothing opened and no link is offered, so no waiting guidance claims either.
+  expect(screen.queryByText(copy("grok-subscription.help.waiting"))).toBeNull();
+  expect(
+    screen.queryByText(copy("grok-subscription.help.waitingLink")),
+  ).toBeNull();
 });
 
 it("presents the receiver's Incompatible refusal for remote desktops and keeps the link copyable", async () => {
@@ -591,6 +605,182 @@ it("presents the receiver's Incompatible refusal for remote desktops and keeps t
     screen.getByRole("button", { name: copy("grok-subscription.copyLink") }),
   ).toBeTruthy();
   expect(actions(f, OAuthNativeAction.GrokSubscriptionOpen)).toHaveLength(1);
+  // The closed refusal leaves no native binding, so reopening is never offered,
+  // not even after later polls observe the same waiting login. The guidance
+  // does not claim a browser opened; it points at the copyable link.
+  expect(
+    screen.getByText(copy("grok-subscription.help.waitingLink")),
+  ).toBeTruthy();
+  expect(screen.queryByText(copy("grok-subscription.help.waiting"))).toBeNull();
+  expect(
+    screen.queryByRole("button", {
+      name: copy("grok-subscription.openBrowser"),
+    }),
+  ).toBeNull();
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 1300));
+  });
+  expect(
+    screen.queryByRole("button", {
+      name: copy("grok-subscription.openBrowser"),
+    }),
+  ).toBeNull();
+  expect(
+    screen.getByRole("button", { name: copy("grok-subscription.copyLink") }),
+  ).toBeTruthy();
+  expect(actions(f, OAuthNativeAction.GrokSubscriptionOpen)).toHaveLength(1);
+  expect(actions(f, OAuthNativeAction.GrokSubscriptionReopen)).toHaveLength(0);
+  expect(actions(f, OAuthNativeAction.Take)).toHaveLength(0);
+});
+
+it("stops offering Open browser again when a reopen meets the Incompatible refusal", async () => {
+  const f = fixture();
+  f.native.mockImplementation(async (_scope, action) => {
+    if (action === OAuthNativeAction.GrokSubscriptionOpen)
+      throw "browser-launch-failed";
+    if (action === OAuthNativeAction.GrokSubscriptionReopen)
+      throw "incompatible";
+    return { generation: "" };
+  });
+  render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Start Grok" }));
+  await screen.findByText(
+    copy("grok-subscription.problem.browserFailed"),
+    {},
+    { timeout: 3000 },
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: copy("grok-subscription.openBrowser") }),
+  );
+  await screen.findByText(copy("grok-subscription.problem.remoteUnsupported"));
+  expect(
+    screen.queryByRole("button", {
+      name: copy("grok-subscription.openBrowser"),
+    }),
+  ).toBeNull();
+  expect(
+    screen.getByRole("button", { name: copy("grok-subscription.copyLink") }),
+  ).toBeTruthy();
+  expect(actions(f, OAuthNativeAction.GrokSubscriptionReopen)).toHaveLength(1);
+});
+
+it("sends one cancel mutation, keeps polling and stops offering Cancel and Open browser again once the server acknowledged it", async () => {
+  const f = fixture();
+  await start(f);
+  const progressCalls = f.progress.mock.calls.length;
+  fireEvent.click(
+    screen.getByRole("button", { name: copy("grok-subscription.cancel") }),
+  );
+  await screen.findByText(copy("grok-subscription.problem.canceling"));
+  expect(f.cancel).toHaveBeenCalledTimes(1);
+  // Copying the link opens nothing, so it stays until the terminal state.
+  const hidden = (copyRemains: boolean) => {
+    for (const name of [
+      "grok-subscription.cancel",
+      "grok-subscription.openBrowser",
+      "grok-subscription.retryOriginal",
+    ] as const)
+      expect(
+        screen.queryByRole("button", { name: copy(name) }),
+        name,
+      ).toBeNull();
+    const link = screen.queryByRole("button", {
+      name: copy("grok-subscription.copyLink"),
+    });
+    if (copyRemains) expect(link).toBeTruthy();
+    else expect(link).toBeNull();
+  };
+  hidden(true);
+  // The server still reports the login as waiting: polling continues but a
+  // poll never re-offers Cancel.
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 2300));
+  });
+  expect(f.progress.mock.calls.length).toBeGreaterThan(progressCalls);
+  hidden(true);
+  expect(f.cancel).toHaveBeenCalledTimes(1);
+  // The terminal state replaces the notice and still offers nothing.
+  f.setState(State.CANCELED);
+  await screen.findByText(
+    copy("grok-subscription.status.canceled"),
+    {},
+    { timeout: 3000 },
+  );
+  hidden(false);
+  expect(f.cancel).toHaveBeenCalledTimes(1);
+  expect(f.login).toHaveBeenCalledTimes(1);
+});
+
+it("never opens a browser or takes a callback for a login whose cancellation was acknowledged first", async () => {
+  const f = fixture();
+  f.setState(State.PREPARING);
+  render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Start Grok" }));
+  fireEvent.click(
+    await screen.findByRole(
+      "button",
+      { name: copy("grok-subscription.cancel") },
+      { timeout: 3000 },
+    ),
+  );
+  await screen.findByText(copy("grok-subscription.problem.canceling"));
+  // The server now reports the login as waiting before it reports cancellation.
+  f.setState(State.WAITING);
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 2300));
+  });
+  expect(actions(f, OAuthNativeAction.GrokSubscriptionOpen)).toHaveLength(0);
+  expect(actions(f, OAuthNativeAction.Take)).toHaveLength(0);
+  expect(f.cancel).toHaveBeenCalledTimes(1);
+  for (const name of [
+    "grok-subscription.cancel",
+    "grok-subscription.openBrowser",
+  ] as const)
+    expect(screen.queryByRole("button", { name: copy(name) }), name).toBeNull();
+});
+
+it("replays an uncertain cancel only through Retry original request and never as a second cancel", async () => {
+  const f = fixture();
+  await start(f);
+  f.cancel.mockImplementationOnce(() => {
+    throw typedFailure(Code.Internal, FailureCode.Internal);
+  });
+  const cancel = screen.getByRole("button", {
+    name: copy("grok-subscription.cancel"),
+  });
+  fireEvent.click(cancel);
+  const retry = await screen.findByRole("button", {
+    name: copy("grok-subscription.retryOriginal"),
+  });
+  expect(
+    screen.getByText(copy("grok-subscription.problem.cancelUnconfirmed")),
+  ).toBeTruthy();
+  // Cancel stays visible but disabled while the original request is unresolved.
+  expect(
+    (
+      screen.getByRole("button", {
+        name: copy("grok-subscription.cancel"),
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  fireEvent.click(
+    screen.getByRole("button", { name: copy("grok-subscription.cancel") }),
+  );
+  expect(f.cancel).toHaveBeenCalledTimes(1);
+  fireEvent.click(retry);
+  await screen.findByText(copy("grok-subscription.problem.canceling"));
+  expect(f.cancel).toHaveBeenCalledTimes(2);
+  expect(f.cancel.mock.calls[1][0].mutation?.requestId).toBe(
+    f.cancel.mock.calls[0][0].mutation?.requestId,
+  );
+  expect(
+    screen.queryByRole("button", { name: copy("grok-subscription.cancel") }),
+  ).toBeNull();
+  expect(
+    screen.queryByRole("button", {
+      name: copy("grok-subscription.retryOriginal"),
+    }),
+  ).toBeNull();
 });
 
 it("shows a generic browser failure and recovers through Open browser again", async () => {
@@ -605,6 +795,11 @@ it("shows a generic browser failure and recovers through Open browser again", as
     {},
     { timeout: 3000 },
   );
+  // The open failed: the guidance points at the link instead of claiming it opened.
+  expect(
+    screen.getByText(copy("grok-subscription.help.waitingLink")),
+  ).toBeTruthy();
+  expect(screen.queryByText(copy("grok-subscription.help.waiting"))).toBeNull();
   fireEvent.click(
     screen.getByRole("button", { name: copy("grok-subscription.openBrowser") }),
   );
@@ -614,6 +809,11 @@ it("shows a generic browser failure and recovers through Open browser again", as
     ),
   );
   expect(actions(f, OAuthNativeAction.GrokSubscriptionOpen)).toHaveLength(1);
+  // A successful reopen is the first time the browser opened.
+  await screen.findByText(copy("grok-subscription.help.waiting"));
+  expect(
+    screen.queryByText(copy("grok-subscription.help.waitingLink")),
+  ).toBeNull();
 });
 
 it("forwards one native callback and never sends it again", async () => {
@@ -1674,3 +1874,125 @@ it("replays the exact original naming request after an uncertain failure on a se
   expect(saves[2][0].mutation.requestId).toBe(saves[1][0].mutation.requestId);
   expect(document(f.current())).toMatchObject({ alias: "Edited Grok" });
 }, 20000);
+
+it.each([[SupportedLanguage.English], [SupportedLanguage.Korean]] as const)(
+  "names the real Claude and Grok sign-in state in the connect notice (%s)",
+  async (language) => {
+    await i18n.changeLanguage(language);
+    const claude = SystemCapability.CLAUDE_SERVER_LOGIN_V1,
+      grok = SystemCapability.GROK_SUBSCRIPTION_LOGIN_V1;
+    // Every cell of Claude capability x Grok capability x native control.
+    const cells: [
+      string,
+      SystemCapability[],
+      boolean,
+      (
+        | "claude-subscription.availability"
+        | "claude-subscription.availabilityGrokAvailable"
+        | "claude-subscription.serverUpdateRequired"
+        | "claude-subscription.serverUpdateRequiredGrokAvailable"
+      ),
+    ][] = [
+      [
+        "claude+grok+native",
+        [claude, grok],
+        true,
+        "claude-subscription.availabilityGrokAvailable",
+      ],
+      [
+        "claude+grok, no native",
+        [claude, grok],
+        false,
+        "claude-subscription.availability",
+      ],
+      ["claude only", [claude], true, "claude-subscription.availability"],
+      [
+        "grok only",
+        [grok],
+        true,
+        "claude-subscription.serverUpdateRequiredGrokAvailable",
+      ],
+      [
+        "grok only, no native",
+        [grok],
+        false,
+        "claude-subscription.serverUpdateRequired",
+      ],
+      ["neither", [], true, "claude-subscription.serverUpdateRequired"],
+    ];
+    for (const [name, extra, withNative, key] of cells) {
+      const transport = createRouterTransport((router) => {
+        router.service(SystemService, {
+          getStatus: () => ({
+            capabilities: [
+              SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,
+              ...extra,
+            ],
+          }),
+        });
+        router.service(ResourceService, {
+          listResources: () => ({ resources: [] }),
+        });
+      });
+      const client = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+      });
+      const body = (
+        <SettingsLifetime>
+          {() => (
+            <MutationIntents>
+              <SubscriptionAccounts
+                active
+                editAccount={vi.fn()}
+                deleteAccount={vi.fn()}
+              />
+            </MutationIntents>
+          )}
+        </SettingsLifetime>
+      );
+      const view = render(
+        <TransportProvider transport={transport}>
+          <QueryClientProvider client={client}>
+            {withNative ? (
+              <OAuthNativeProvider
+                control={vi.fn(async () => ({ generation: newRequestId() }))}
+              >
+                {body}
+              </OAuthNativeProvider>
+            ) : (
+              body
+            )}
+          </QueryClientProvider>
+        </TransportProvider>,
+      );
+      const notice = await screen.findByText(copy(key), {}, { timeout: 3000 });
+      expect(notice.className, name).toBe("subscription-unavailable");
+      const grokReady = key.endsWith("GrokAvailable");
+      expect(
+        copy(key).includes(
+          language === SupportedLanguage.English
+            ? "not available yet"
+            : "아직 지원하지",
+        ),
+        name,
+      ).toBe(!grokReady);
+      view.unmount();
+      client.clear();
+    }
+  },
+);
+
+it("keeps the Claude-only update notice free of Grok state in English and Korean", () => {
+  for (const catalog of [englishClaude, koreanClaude]) {
+    expect(
+      catalog["claude-subscription.serverUpdateRequiredClaudeOnly"],
+    ).not.toMatch(/Grok/);
+    // The two Grok-aware notices extend the Claude-only sentence.
+    expect(
+      catalog["claude-subscription.serverUpdateRequiredGrokAvailable"],
+    ).toContain(catalog["claude-subscription.serverUpdateRequiredClaudeOnly"]);
+    expect(catalog["claude-subscription.serverUpdateRequired"]).toContain(
+      catalog["claude-subscription.serverUpdateRequiredClaudeOnly"],
+    );
+  }
+});

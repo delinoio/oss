@@ -13,6 +13,7 @@
   "grok-subscription.status.recovery": "원래 Grok 로그인 결과를 복구해야 합니다",
   "grok-subscription.status.failed": "Grok 로그인을 완료하지 못했습니다",
   "grok-subscription.help.waiting": "브라우저에서 Grok 로그인 페이지가 열렸습니다. 로그인을 마친 뒤 이 화면으로 돌아오세요. 로그인 링크를 복사해 다른 브라우저에서 열 수도 있습니다.",
+  "grok-subscription.help.waitingLink": "브라우저에서 로그인 페이지가 열리지 않았습니다. 로그인 링크를 브라우저에 붙여넣어 Grok에 로그인한 뒤 이 화면으로 돌아오세요.",
   "grok-subscription.help.canceled": "연결된 계정이 없습니다. AI 구독으로 돌아가 계정 추가를 선택해 다시 시도하세요.",
   "grok-subscription.help.expired": "로그인이 끝나기 전에 로그인 시간이 지났습니다. AI 구독으로 돌아가 계정 추가를 선택해 다시 시도하세요.",
   "grok-subscription.help.unsupported": "서버가 Grok 브라우저 로그인을 받아들이지 않았습니다. 서버가 Grok 로그인을 지원하는지 확인한 뒤 다시 시도하세요.",
