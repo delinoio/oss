@@ -113,10 +113,41 @@ key (`grokIdentityCommitment`, 64 hex characters) as
 second account with the same identity and admits a different principal. The
 unkeyed key is never stored. `String`, `GoString`, `%v`/`%+v`, `slog` `LogValue`
 and JSON encoding errors reveal only the service and a 12-character opaque
-identity hash; generic JSON/text encoding of a bundle fails closed. The Codex
-Take/Finish lifecycle keeps serving only ChatGPT accounts and never a Grok
-account. Grok Take/Finish dispatch and Worker materialization arrive with the
-login and execution changes that create the first Grok accounts.
+identity hash; generic JSON/text encoding of a bundle fails closed.
+
+Protected Take/Finish dispatches by account service. The Codex lifecycle keeps
+serving only ChatGPT accounts and refuses every Grok account; a Grok account uses
+its own singleton-lease lifecycle for login, refresh and logout. Take claims the
+exact queued original, requires one verified Grok Build installation on the
+selected Runner Device, and returns the stored envelope (empty for a fresh login)
+only after the server re-opens it against its own identity, the account and the
+stored generation. A Grok execute Take, a member or owner Finish scope, and any
+other action are refused. Grok lifecycle work is not pushed to Workers through
+the subscription watch until the managed Grok Worker capability is declared and
+negotiated.
+
+Finish opens the returned envelope against this server, the account and the
+generation the Finish creates, so a bundle sealed for another server, account or
+generation, a native file, a Codex bundle or an empty bundle is refused and
+fences the account for recovery. Login derives the identity commitment and
+rejects a duplicate owner before staging; refresh and later Finish calls require
+the stored commitment to match, and refresh additionally requires the same
+identity with a later expiry and a changed key or refresh token. The new
+generation is staged under `credentials.AccountLogin` before the account
+document points to it; superseded generations and every generation after logout
+are removed, and an unconfirmed cleanup keeps the lease fenced.
+
+Worker custody mirrors this. The Worker opens the delivered envelope against its
+own server, the account and the delivered generation, then writes
+`$GROK_HOME/auth.json` atomically with owner-only permission into a private,
+non-linked home, clears the in-memory envelope, and writes nothing when the
+envelope is rebound. After the native process exits it reads the file once,
+seals the next generation (bound to the Finish request identifier) only when the
+original identity is unchanged, and retires the file and interrupted-write
+temporaries. Cleanup is confirmed only when no credential file or attributed
+temporary remains; otherwise no bundle is returned and the server keeps the
+lease fenced. Native refresh, login execution and Worker-side watch dispatch for
+Grok are separate lifecycle work and are not activated by this storage contract.
 
 ## Security
 

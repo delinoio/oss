@@ -303,36 +303,45 @@ func RetireCredentialFiles(root string) error {
 
 func retireCredentialFilesWithSync(root string, syncParent func(string) error) error {
 	for _, name := range CredentialFiles {
-		real, err := credentialParentReal(root, name)
-		if err != nil {
+		if err := retireCredentialFile(root, name, syncParent); err != nil {
 			return err
 		}
-		if !real {
-			continue
-		}
-		if err := retireCredentialTemporariesWithSync(root, name, syncParent); err != nil {
-			return err
-		}
-		path := filepath.Join(root, filepath.FromSlash(name))
-		info, err := os.Lstat(path)
-		if os.IsNotExist(err) {
-			if err := syncParent(path); err != nil {
-				return &RuntimeCleanupError{Stage: CleanupSync, Reason: CleanupFilesystem}
-			}
-			continue
-		}
-		if err != nil {
-			return &RuntimeCleanupError{Stage: CleanupAuthFile, Reason: CleanupFilesystem}
-		}
-		if !info.Mode().IsRegular() {
-			return &RuntimeCleanupError{Stage: CleanupAuthFile, Reason: CleanupNotRegular}
-		}
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			return &RuntimeCleanupError{Stage: CleanupAuthFile, Reason: CleanupFilesystem}
-		}
+	}
+	return nil
+}
+
+// retireCredentialFile removes one credential file and its target-attributed
+// temporaries below root, proving the parent directory is real first.
+func retireCredentialFile(root, name string, syncParent func(string) error) error {
+	real, err := credentialParentReal(root, name)
+	if err != nil {
+		return err
+	}
+	if !real {
+		return nil
+	}
+	if err := retireCredentialTemporariesWithSync(root, name, syncParent); err != nil {
+		return err
+	}
+	path := filepath.Join(root, filepath.FromSlash(name))
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
 		if err := syncParent(path); err != nil {
 			return &RuntimeCleanupError{Stage: CleanupSync, Reason: CleanupFilesystem}
 		}
+		return nil
+	}
+	if err != nil {
+		return &RuntimeCleanupError{Stage: CleanupAuthFile, Reason: CleanupFilesystem}
+	}
+	if !info.Mode().IsRegular() {
+		return &RuntimeCleanupError{Stage: CleanupAuthFile, Reason: CleanupNotRegular}
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return &RuntimeCleanupError{Stage: CleanupAuthFile, Reason: CleanupFilesystem}
+	}
+	if err := syncParent(path); err != nil {
+		return &RuntimeCleanupError{Stage: CleanupSync, Reason: CleanupFilesystem}
 	}
 	return nil
 }
