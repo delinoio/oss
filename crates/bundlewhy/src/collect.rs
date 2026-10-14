@@ -61,6 +61,9 @@ pub struct CollectedModule {
     pub exports: Option<Vec<String>>,
     pub used_exports: Option<Vec<String>>,
     pub module_side_effects: Option<String>,
+    /// What the configured `treeshake.moduleSideEffects` decides for the
+    /// module: `true`, `false`, `null` (no verdict) or a value summary.
+    pub treeshake_side_effects: Option<String>,
     pub input_format: Option<String>,
     pub module_type: Option<String>,
     pub rendered_length: u64,

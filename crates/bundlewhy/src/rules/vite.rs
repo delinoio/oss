@@ -55,29 +55,48 @@ fn side_effect_retained(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
         }
         let display = context.module_display(module);
         let located = context.module_location(module, 0, 0);
-        let side_effects = module.module_side_effects.as_deref().unwrap_or("null");
-        let package_side_effects = module
-            .package_side_effects
-            .as_deref()
-            .unwrap_or("not declared");
-        let declaration = SideEffectDeclaration::from_collected(side_effects, package_side_effects);
+        let values = DeclaredValues {
+            module: module.module_side_effects.as_deref().unwrap_or("null"),
+            option: module.treeshake_side_effects.as_deref().unwrap_or("null"),
+            package: module
+                .package_side_effects
+                .as_deref()
+                .unwrap_or("not declared"),
+        };
+        let declaration = SideEffectDeclaration::from_collected(&values);
         // The title feeds the diagnostic ID, so it stays the same however the
         // declaration changes and one retained module keeps one ID.
         let title = format!("{display} is retained although none of its exports is used");
         let (status, summary) = match declaration {
-            // An explicit effect declaration is itself the engine-visible
-            // reason the module is kept.
-            SideEffectDeclaration::Effectful => (
+            // An effect declaration is itself the engine-visible reason the
+            // module is kept.
+            SideEffectDeclaration::Effectful(source) => (
                 EvidenceStatus::Confirmed,
                 format!(
                     "Rolldown rendered {} bytes of this module although none of its exports is \
-                     used. The module or its package declares side effects, so Rolldown keeps it.",
-                    module.rendered_length
+                     used. {} declares side effects for it, so Rolldown keeps it.",
+                    module.rendered_length,
+                    source.subject()
+                ),
+            ),
+            // A side-effect-free module is discarded when nothing uses it, so
+            // the retention points to another use of the module.
+            SideEffectDeclaration::Free(source) => (
+                EvidenceStatus::Inferred,
+                format!(
+                    "Rolldown rendered {} bytes of this module although none of its exports is \
+                     used, and {} declares it side-effect free. Rolldown may discard such a \
+                     module even when its code has side effects, so another use of the module \
+                     probably keeps it, but Rolldown did not report why.",
+                    module.rendered_length,
+                    source.subject()
                 ),
             ),
             // Rolldown reports no retention reason for rendered modules, so
             // the cause stays an inference from the observed facts.
-            _ => (
+            SideEffectDeclaration::Analyzed
+            | SideEffectDeclaration::Undeclared
+            | SideEffectDeclaration::Unresolved(_) => (
                 EvidenceStatus::Inferred,
                 format!(
                     "Rolldown rendered {} bytes of this module although none of its exports is \
@@ -87,7 +106,7 @@ fn side_effect_retained(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
                 ),
             ),
         };
-        let (outcome, declared_detail) = declaration.condition(side_effects, package_side_effects);
+        let (outcome, declared_detail) = declaration.condition(&values);
         let mut evidence = vec![
             Evidence::new(
                 MODULE_INFO,
@@ -107,13 +126,21 @@ fn side_effect_retained(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
                 ),
             ),
         ];
-        if declaration != SideEffectDeclaration::Effectful {
-            evidence.push(Evidence::new(
+        match declaration {
+            SideEffectDeclaration::Effectful(_) => {}
+            SideEffectDeclaration::Free(_) => evidence.push(Evidence::new(
+                INFERENCE,
+                EvidenceStatus::Inferred,
+                "Rolldown reports no retention reason; a remaining use of the module is inferred \
+                 from its retained bytes, because a side-effect-free module is discarded when \
+                 nothing uses it",
+            )),
+            _ => evidence.push(Evidence::new(
                 INFERENCE,
                 EvidenceStatus::Inferred,
                 "Rolldown reports no retention reason; top-level side effects are inferred from \
                  the retained bytes",
-            ));
+            )),
         }
         drafts.push(DiagnosticDraft {
             rule: RuleId::ViteSideEffectRetained,
@@ -148,119 +175,218 @@ fn side_effect_retained(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
     }
 }
 
-/// What the collected `moduleSideEffects` and package `sideEffects` values
-/// say about a module that Rolldown rendered without any used export.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum SideEffectDeclaration {
-    /// The effective declaration is side-effect free (`false`): the module
-    /// value, or the package value when the module value is unspecified.
-    Free,
-    /// The effective declaration is effectful (`true` or `no-treeshake`),
-    /// chosen with the same module-over-package precedence.
-    Effectful,
-    /// An array summary or unrecognized value cannot be matched to this file.
-    Unresolved,
-    /// Nothing is declared; Rolldown infers the effects from the code.
-    Undeclared,
+/// The collected values that Rolldown consults, in precedence order, to decide
+/// whether a module has side effects.
+struct DeclaredValues<'a> {
+    /// `moduleSideEffects` from `getModuleInfo()`: the value a resolve, load or
+    /// transform hook set for the module (`null` when no hook set one).
+    module: &'a str,
+    /// What the configured `treeshake.moduleSideEffects` decides for the module
+    /// (`null` when it gives no verdict).
+    option: &'a str,
+    /// The `sideEffects` field of the nearest `package.json`.
+    package: &'a str,
 }
 
-impl SideEffectDeclaration {
-    /// Rolldown gives a `moduleSideEffects` value set by a resolve, load or
-    /// transform hook precedence over the package `sideEffects` field, so the
-    /// collected module value is the effective decision. The package value
-    /// applies only when the module value is unspecified (`null`).
-    fn from_collected(module: &str, package: &str) -> Self {
-        match module {
-            "false" => Self::Free,
-            "true" | "no-treeshake" => Self::Effectful,
-            "null" | "undefined" => match package {
-                "false" => Self::Free,
-                "true" => Self::Effectful,
-                "not declared" => Self::Undeclared,
-                // Array summaries and unrecognized values prove nothing either way.
-                _ => Self::Unresolved,
-            },
-            // An unrecognized module value cannot be matched to the package value.
-            _ => Self::Unresolved,
+impl DeclaredValues<'_> {
+    fn describe(&self) -> String {
+        format!(
+            "moduleSideEffects: {}; treeshake.moduleSideEffects: {}; package sideEffects: {}",
+            self.module, self.option, self.package
+        )
+    }
+}
+
+/// Where the effective side-effect declaration comes from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DeclarationSource {
+    /// A `moduleSideEffects` value that a plugin hook set for the module.
+    Hook,
+    /// The configured `build.rolldownOptions.treeshake.moduleSideEffects`.
+    TreeshakeOption,
+    /// The `sideEffects` field of the nearest `package.json`.
+    Package,
+}
+
+impl DeclarationSource {
+    /// The declaration as the subject of a sentence.
+    fn subject(self) -> &'static str {
+        match self {
+            Self::Hook => "A plugin's moduleSideEffects value",
+            Self::TreeshakeOption => "The configured treeshake.moduleSideEffects",
+            Self::Package => "The package sideEffects field",
         }
     }
 
-    fn condition(self, module: &str, package: &str) -> (ConditionOutcome, String) {
-        let values = format!("moduleSideEffects: {module}; package sideEffects: {package}");
+    /// The declaration with the precedence that makes it the effective one.
+    fn label(self) -> &'static str {
         match self {
-            Self::Free => {
-                // The module value wins when it is set, so only it is named
-                // then.
-                let source = if module == "false" {
-                    "moduleSideEffects"
-                } else {
-                    "package sideEffects"
-                };
-                (
-                    ConditionOutcome::Met,
-                    format!("Declared side-effect free by {source}; {values}"),
-                )
+            Self::Hook => {
+                "a plugin's moduleSideEffects value, which takes precedence over \
+                 treeshake.moduleSideEffects and package sideEffects"
             }
-            Self::Effectful => {
-                let source = if matches!(module, "true" | "no-treeshake") {
-                    if package == "false" {
-                        "moduleSideEffects, which takes precedence over package sideEffects: false"
-                    } else {
-                        "moduleSideEffects"
-                    }
-                } else {
-                    "package sideEffects"
-                };
-                (
-                    ConditionOutcome::Unmet,
-                    format!("Side effects are declared by {source}; {values}"),
-                )
+            Self::TreeshakeOption => {
+                "treeshake.moduleSideEffects, which takes precedence over package sideEffects"
             }
-            Self::Unresolved => (
-                ConditionOutcome::Unknown,
+            Self::Package => "package sideEffects",
+        }
+    }
+}
+
+/// What the collected values say about a module that Rolldown rendered without
+/// any used export, following Rolldown's precedence: a `moduleSideEffects`
+/// value that a hook set, then the configured `treeshake.moduleSideEffects`,
+/// then the package `sideEffects` field, then Rolldown's own code analysis.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SideEffectDeclaration {
+    /// The effective declaration is side-effect free (`false`).
+    Free(DeclarationSource),
+    /// The effective declaration keeps the module (`true` from the configured
+    /// option or the package, or `"no-treeshake"` from a hook).
+    Effectful(DeclarationSource),
+    /// A hook returned `true`, which asks Rolldown for its default analysis of
+    /// the code and skips the configured option and the package field.
+    Analyzed,
+    /// Nothing is declared; Rolldown infers the effects from the code.
+    Undeclared,
+    /// The collected value cannot be matched to this file, so the effective
+    /// declaration is unknown.
+    Unresolved(DeclarationSource),
+}
+
+impl SideEffectDeclaration {
+    fn from_collected(values: &DeclaredValues<'_>) -> Self {
+        use DeclarationSource::{Hook, Package, TreeshakeOption};
+        match values.module {
+            "false" => Self::Free(Hook),
+            "no-treeshake" => Self::Effectful(Hook),
+            "true" => Self::Analyzed,
+            "null" | "undefined" => match values.option {
+                "false" => Self::Free(TreeshakeOption),
+                "true" => Self::Effectful(TreeshakeOption),
+                // No verdict from the option: Rolldown falls back to the package.
+                "null" => match values.package {
+                    "false" => Self::Free(Package),
+                    "true" => Self::Effectful(Package),
+                    "not declared" => Self::Undeclared,
+                    // List summaries and unrecognized values prove nothing either way.
+                    _ => Self::Unresolved(Package),
+                },
+                // A function or an unrecognized option shape is not evaluated.
+                _ => Self::Unresolved(TreeshakeOption),
+            },
+            // An unrecognized hook value cannot be matched to the other values.
+            _ => Self::Unresolved(Hook),
+        }
+    }
+
+    fn condition(self, values: &DeclaredValues<'_>) -> (ConditionOutcome, String) {
+        let values = values.describe();
+        match self {
+            Self::Free(source) => (
+                ConditionOutcome::Met,
+                format!("Declared side-effect free by {}; {values}", source.label()),
+            ),
+            Self::Effectful(source) => (
+                ConditionOutcome::Unmet,
+                format!("Side effects are declared by {}; {values}", source.label()),
+            ),
+            Self::Analyzed => (
+                ConditionOutcome::Unmet,
                 format!(
-                    "The collected summary cannot show whether this file is declared side-effect \
-                     free; {values}"
+                    "A plugin's moduleSideEffects: true asks Rolldown to analyze the code and \
+                     skips treeshake.moduleSideEffects and package sideEffects; {values}"
                 ),
             ),
             Self::Undeclared => (
                 ConditionOutcome::Unmet,
                 format!("No side-effect declaration (null means inferred from code); {values}"),
             ),
+            Self::Unresolved(source) => {
+                let reason = match source {
+                    DeclarationSource::Hook => {
+                        "the plugin's moduleSideEffects value is not recognized"
+                    }
+                    DeclarationSource::TreeshakeOption => {
+                        "treeshake.moduleSideEffects is a value bundlewhy does not evaluate"
+                    }
+                    DeclarationSource::Package => {
+                        "a package sideEffects value cannot be matched to this file"
+                    }
+                };
+                (
+                    ConditionOutcome::Unknown,
+                    format!(
+                        "The collected summary cannot show whether this file is declared \
+                         side-effect free: {reason}; {values}"
+                    ),
+                )
+            }
         }
     }
 
     fn direction(self) -> &'static str {
         match self {
-            Self::Free => {
+            Self::Free(_) => {
                 "The module is already declared side-effect free, so adding a declaration will not \
                  help. Check which importers still use it, such as side-effect imports, namespace \
                  or re-export use, or an entry, and remove that use if it is unneeded. If no \
                  importer uses it, report the retained module to the bundler."
             }
-            Self::Effectful => {
+            Self::Effectful(DeclarationSource::Hook) => {
                 "Move top-level side effects into an exported function that callers invoke \
-                 explicitly, or narrow the side-effect declaration (a plugin's moduleSideEffects \
-                 value or the \"sideEffects\" list in package.json) to the files that do have side \
-                 effects."
+                 explicitly, or change the plugin that returns moduleSideEffects \"no-treeshake\" \
+                 for this file so that it covers only the files that do have side effects."
             }
-            Self::Unresolved => {
-                "Check whether this file is covered by the \"sideEffects\" list in package.json. \
-                 If it is not listed, add the declaration only when the module has no needed side \
-                 effect; otherwise move top-level side effects into an exported function that \
-                 callers invoke explicitly."
+            Self::Effectful(DeclarationSource::TreeshakeOption) => {
+                "Move top-level side effects into an exported function that callers invoke \
+                 explicitly, or narrow build.rolldownOptions.treeshake.moduleSideEffects so that \
+                 it marks only the files that do have side effects."
+            }
+            Self::Effectful(DeclarationSource::Package) => {
+                "Move top-level side effects into an exported function that callers invoke \
+                 explicitly, or narrow the \"sideEffects\" declaration in package.json (a blanket \
+                 true) to the files that do have side effects."
+            }
+            Self::Analyzed => {
+                "Move top-level side effects into an exported function that callers invoke \
+                 explicitly, or stop the plugin from returning moduleSideEffects: true for this \
+                 file. That value makes Rolldown analyze the code and skip both \
+                 treeshake.moduleSideEffects and the package \"sideEffects\" field, so declaring \
+                 the package side-effect free will not help."
             }
             Self::Undeclared => {
                 "Move top-level side effects into an exported function that callers invoke \
                  explicitly, or declare the package side-effect free with \"sideEffects\": false \
                  (or a list of files that do have side effects) in package.json."
             }
+            Self::Unresolved(DeclarationSource::Hook) => {
+                "Check the plugin that sets moduleSideEffects for this file; its value was not \
+                 recognized. If the module has no needed side effect, make the plugin declare it \
+                 side-effect free; otherwise move top-level side effects into an exported function \
+                 that callers invoke explicitly."
+            }
+            Self::Unresolved(DeclarationSource::TreeshakeOption) => {
+                "Check what build.rolldownOptions.treeshake.moduleSideEffects decides for this \
+                 file; it takes precedence over the package \"sideEffects\" field. If it marks the \
+                 file as having side effects and the module has no needed side effect, narrow it. \
+                 Otherwise move top-level side effects into an exported function that callers \
+                 invoke explicitly."
+            }
+            Self::Unresolved(DeclarationSource::Package) => {
+                "Rolldown treats a file that the package \"sideEffects\" list does not cover as \
+                 side-effect free, so a retained file is most likely covered by an entry of the \
+                 list. Find the entry that matches it and narrow or remove that entry if the \
+                 module has no needed side effect; adding the file to the list would declare the \
+                 opposite. Otherwise move top-level side effects into an exported function that \
+                 callers invoke explicitly."
+            }
         }
     }
 
     fn safety(self) -> &'static str {
         match self {
-            Self::Free => {
+            Self::Free(_) => {
                 "Do not remove an importer that evaluates the module for its effect (polyfills, \
                  registrations, CSS imports); the effect would be silently lost."
             }
@@ -474,59 +600,102 @@ fn tree_shaking_disabled_finding(context: &mut Context<'_>, drafts: &mut Vec<Dia
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        DeclarationSource::{Hook, Package, TreeshakeOption},
+        SideEffectDeclaration::{Analyzed, Effectful, Free, Undeclared, Unresolved},
+        *,
+    };
 
     #[test]
     fn side_effect_declaration_precedence_table() {
-        use SideEffectDeclaration::{Effectful, Free, Undeclared, Unresolved};
-        // (moduleSideEffects, package sideEffects, effective declaration)
+        // (hook moduleSideEffects, treeshake.moduleSideEffects, package
+        // sideEffects, effective declaration), following Rolldown's order:
+        // hook value, configured option, package field, code analysis.
         let table = [
-            // A set module value wins over every package value.
-            ("false", "not declared", Free),
-            ("false", "false", Free),
-            ("false", "true", Free),
-            ("false", "[array of 2]", Free),
-            ("true", "not declared", Effectful),
-            ("true", "false", Effectful),
-            ("true", "true", Effectful),
-            ("true", "[array of 2]", Effectful),
-            ("no-treeshake", "not declared", Effectful),
-            ("no-treeshake", "false", Effectful),
-            ("no-treeshake", "true", Effectful),
-            ("no-treeshake", "[array of 2]", Effectful),
-            // An unspecified module value falls back to the package value.
-            ("null", "false", Free),
-            ("null", "true", Effectful),
-            ("null", "not declared", Undeclared),
-            ("null", "[array of 2]", Unresolved),
-            ("undefined", "false", Free),
-            ("undefined", "not declared", Undeclared),
-            // Unrecognized module summaries prove nothing either way.
-            ("[array of 2]", "false", Unresolved),
-            ("[function]", "true", Unresolved),
-            ("[object]", "not declared", Unresolved),
+            // A hook value wins over the option and every package value.
+            ("false", "true", "true", Free(Hook)),
+            ("false", "false", "not declared", Free(Hook)),
+            ("false", "null", "[array of 2]", Free(Hook)),
+            ("no-treeshake", "false", "false", Effectful(Hook)),
+            ("no-treeshake", "null", "not declared", Effectful(Hook)),
+            // `true` asks for the default analysis and skips option and package.
+            ("true", "false", "false", Analyzed),
+            ("true", "null", "false", Analyzed),
+            ("true", "true", "true", Analyzed),
+            ("true", "[function]", "[array of 2]", Analyzed),
+            // Without a hook value the configured option decides next.
+            ("null", "false", "true", Free(TreeshakeOption)),
+            ("null", "false", "not declared", Free(TreeshakeOption)),
+            ("undefined", "false", "[array of 2]", Free(TreeshakeOption)),
+            ("null", "true", "false", Effectful(TreeshakeOption)),
+            ("null", "true", "not declared", Effectful(TreeshakeOption)),
+            ("null", "[function]", "false", Unresolved(TreeshakeOption)),
+            ("null", "[array of 2]", "true", Unresolved(TreeshakeOption)),
+            // No verdict from the option falls back to the package field.
+            ("null", "null", "false", Free(Package)),
+            ("undefined", "null", "false", Free(Package)),
+            ("null", "null", "true", Effectful(Package)),
+            ("null", "null", "not declared", Undeclared),
+            ("undefined", "null", "not declared", Undeclared),
+            ("null", "null", "[array of 2]", Unresolved(Package)),
+            ("null", "null", "src/*.js", Unresolved(Package)),
+            // Unrecognized hook values prove nothing either way.
+            ("[array of 2]", "null", "false", Unresolved(Hook)),
+            ("[function]", "false", "true", Unresolved(Hook)),
+            ("[object]", "null", "not declared", Unresolved(Hook)),
         ];
-        for (module, package, expected) in table {
-            let declaration = SideEffectDeclaration::from_collected(module, package);
-            assert_eq!(declaration, expected, "{module} / {package}");
-            let (outcome, detail) = declaration.condition(module, package);
-            let expected_outcome = match expected {
-                Free => ConditionOutcome::Met,
-                Effectful | Undeclared => ConditionOutcome::Unmet,
-                Unresolved => ConditionOutcome::Unknown,
+        for (module, option, package, expected) in table {
+            let values = DeclaredValues {
+                module,
+                option,
+                package,
             };
-            assert_eq!(outcome, expected_outcome, "{module} / {package}");
-            assert!(
-                detail.contains(module) && detail.contains(package),
-                "{detail}"
-            );
+            let declaration = SideEffectDeclaration::from_collected(&values);
+            assert_eq!(declaration, expected, "{module} / {option} / {package}");
+            let (outcome, detail) = declaration.condition(&values);
+            let expected_outcome = match expected {
+                Free(_) => ConditionOutcome::Met,
+                Effectful(_) | Analyzed | Undeclared => ConditionOutcome::Unmet,
+                Unresolved(_) => ConditionOutcome::Unknown,
+            };
+            assert_eq!(outcome, expected_outcome, "{module} / {option} / {package}");
+            for value in [module, option, package] {
+                assert!(detail.contains(value), "{detail}");
+            }
         }
     }
 
     #[test]
-    fn module_override_is_named_in_the_condition_detail() {
-        let declaration = SideEffectDeclaration::from_collected("true", "false");
-        let (_, detail) = declaration.condition("true", "false");
-        assert!(detail.contains("takes precedence over package sideEffects"));
+    fn declaration_source_is_named_with_its_precedence() {
+        let values = DeclaredValues {
+            module: "no-treeshake",
+            option: "null",
+            package: "false",
+        };
+        let (_, detail) = SideEffectDeclaration::from_collected(&values).condition(&values);
+        assert!(detail.contains("takes precedence over treeshake.moduleSideEffects and package"));
+        let values = DeclaredValues {
+            module: "null",
+            option: "false",
+            package: "true",
+        };
+        let (_, detail) = SideEffectDeclaration::from_collected(&values).condition(&values);
+        assert!(
+            detail.contains("treeshake.moduleSideEffects, which takes precedence over package")
+        );
+    }
+
+    #[test]
+    fn guidance_matches_the_unresolved_source() {
+        let package = Unresolved(Package).direction();
+        assert!(package.contains("most likely covered"));
+        assert!(package.contains("narrow or remove that entry"));
+        assert!(!package.contains("add the declaration"));
+        let option = Unresolved(TreeshakeOption).direction();
+        assert!(option.contains("build.rolldownOptions.treeshake.moduleSideEffects"));
+        assert!(!option.contains("covered"));
+        let hook = Unresolved(Hook).direction();
+        assert!(hook.contains("plugin"));
+        assert!(!hook.contains("covered"));
     }
 }
