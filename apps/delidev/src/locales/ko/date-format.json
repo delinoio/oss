@@ -18,5 +18,13 @@
   "timestamp.minute": "1분 전",
   "timestamp.minutes": "{{count}}분 전",
   "timestamp.hour": "1시간 전",
-  "timestamp.hours": "{{count}}시간 전"
+  "timestamp.hours": "{{count}}시간 전",
+  "timestamp.day": "1일 전",
+  "timestamp.days": "{{count}}일 전",
+  "timestamp.week": "1주 전",
+  "timestamp.weeks": "{{count}}주 전",
+  "timestamp.month": "1개월 전",
+  "timestamp.months": "{{count}}개월 전",
+  "timestamp.year": "1년 전",
+  "timestamp.years": "{{count}}년 전"
 }

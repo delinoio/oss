@@ -90,7 +90,8 @@ export function Timestamp({
         notify,
         active &&
           (mode === TimestampMode.Ordinary ||
-            mode === TimestampMode.QuotaCountdown)
+            mode === TimestampMode.QuotaCountdown ||
+            mode === TimestampMode.Relative)
           ? instant
           : undefined,
         mode,
