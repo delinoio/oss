@@ -11,6 +11,13 @@ export const Project = Object.freeze({
   Runmoor: "runmoor",
   Clibox: "clibox",
 });
+const legacyArchiveProjects = new Set([
+  Project.Binpm,
+  Project.CargoMono,
+  Project.Nodeup,
+  Project.WithWatch,
+  Project.Derun,
+]);
 export const Channel = Object.freeze({ Stable: "stable", Preview: "preview" });
 export const Architecture = Object.freeze({ Amd64: "amd64", Arm64: "arm64" });
 export const Mode = Object.freeze({ DryRun: "dry-run", Publish: "publish" });
@@ -112,8 +119,11 @@ export function checksumFor(manifest, name) {
 export function extractExecutable(bytes, project) {
   // Decode only regular ustar entries into memory. Never extract archive-controlled paths.
   const tar = gunzipSync(bytes, { maxOutputLength: 256 * 1024 * 1024 });
-  const allowed =
-    project === Project.Runmoor ? [project, "README.md", "LICENSE"] : [project];
+  const allowed = legacyArchiveProjects.has(project)
+    ? [project, "LICENSE", "NOTICE"]
+    : project === Project.Runmoor
+      ? [project, "README.md", "LICENSE"]
+      : [project];
   const entries = new Map();
   let offset = 0;
   while (offset + 512 <= tar.length) {
@@ -153,6 +163,20 @@ export function extractExecutable(bytes, project) {
       tar.subarray(offset).every((byte) => byte === 0),
     "INVALID_ARCHIVE_END",
   );
+  if (legacyArchiveProjects.has(project)) {
+    // Authenticated historical releases contain only the executable. Future
+    // releases must carry both complete texts from their source checkout.
+    const hasLicense = entries.has("LICENSE");
+    requireValue(hasLicense === entries.has("NOTICE"), "INVALID_ARCHIVE_ENTRY");
+    if (hasLicense)
+      for (const name of ["LICENSE", "NOTICE"])
+        requireValue(
+          entries
+            .get(name)
+            .equals(readFileSync(new URL(`../../../${name}`, import.meta.url))),
+          "INVALID_ARCHIVE_PAYLOAD",
+        );
+  }
   return entries.get(project);
 }
 export function inspectElf(

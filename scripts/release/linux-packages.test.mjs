@@ -1,8 +1,15 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  rmSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { gzipSync } from "node:zlib";
 import {
   identity,
   Channel,
@@ -32,6 +39,37 @@ import { verifyPublicObject } from "./linux-packages/public-readback.mjs";
 
 const revision = "a".repeat(40);
 const fingerprint = "A".repeat(40);
+const license = readFileSync(new URL("../../LICENSE", import.meta.url));
+const notice = readFileSync(new URL("../../NOTICE", import.meta.url));
+
+function legacyArchive(entries) {
+  const blocks = [];
+  for (const { name, data, mode = 0o644, type = 48 } of entries) {
+    const header = Buffer.alloc(512);
+    header.write(name, 0, 100, "utf8");
+    const octal = (value, offset, width) =>
+      header.write(
+        `${value.toString(8).padStart(width - 1, "0")}\0`,
+        offset,
+        width,
+        "ascii",
+      );
+    octal(mode, 100, 8);
+    octal(0, 108, 8);
+    octal(0, 116, 8);
+    octal(data.length, 124, 12);
+    octal(0, 136, 12);
+    header.fill(32, 148, 156);
+    header[156] = type;
+    header.write("ustar\0", 257, 6);
+    header.write("00", 263, 2);
+    const sum = header.reduce((total, byte) => total + byte, 0);
+    header.write(`${sum.toString(8).padStart(6, "0")}\0 `, 148, 8, "ascii");
+    blocks.push(header, data, Buffer.alloc((512 - (data.length % 512)) % 512));
+  }
+  blocks.push(Buffer.alloc(1024));
+  return gzipSync(Buffer.concat(blocks));
+}
 function fixture(project = "binpm", version = "1.2.3") {
   const plan = identity({ project, version, revision });
   const files = ["amd64", "arm64"].flatMap((architecture) =>
@@ -186,6 +224,42 @@ test("archive reader rejects non-executable and corrupted payloads", () => {
   const corrupt = archive(entries);
   corrupt[corrupt.length - 10] ^= 255;
   assert.throws(() => extractExecutable(corrupt, "runmoor"));
+});
+test("legacy Linux archives accept licensed and authenticated historical shapes only", () => {
+  for (const project of [
+    "binpm",
+    "cargo-mono",
+    "nodeup",
+    "with-watch",
+    "derun",
+  ]) {
+    const executable = {
+      name: project,
+      data: Buffer.from(`binary:${project}`),
+      mode: 0o755,
+    };
+    const terms = [
+      { name: "LICENSE", data: license },
+      { name: "NOTICE", data: notice },
+    ];
+    for (const entries of [[executable], [executable, ...terms]])
+      assert.deepEqual(
+        extractExecutable(legacyArchive(entries), project),
+        executable.data,
+      );
+    for (const entries of [
+      [executable, terms[0]],
+      [executable, terms[1]],
+      [executable, ...terms, terms[0]],
+      [executable, executable, ...terms],
+      [executable, ...terms, { name: "README.md", data: notice }],
+      [executable, { ...terms[0], name: "../LICENSE" }, terms[1]],
+      [executable, { ...terms[0], type: 49 }, terms[1]],
+      [executable, { ...terms[0], data: Buffer.from("short") }, terms[1]],
+      [executable, terms[0], { ...terms[1], data: Buffer.from("short") }],
+    ])
+      assert.throws(() => extractExecutable(legacyArchive(entries), project));
+  }
 });
 test("ELF checks reject wrong architecture, newer libc, runtime paths and CPU requirements", () => {
   const elf = Buffer.alloc(64);

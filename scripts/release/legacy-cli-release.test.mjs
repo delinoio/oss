@@ -5,12 +5,14 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { extractExecutable } from "./linux-packages/model.mjs";
 import {
   artifactNames,
   findRelease,
@@ -43,6 +45,154 @@ function temporary(t) {
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   return directory;
 }
+function workflowScript(source, name) {
+  const lines = source.split("\n");
+  const step = lines.findIndex((line) => line.trim() === `- name: ${name}`);
+  assert.ok(step >= 0, `${name} step exists`);
+  const run = lines.findIndex(
+    (line, index) => index > step && line === "        run: |",
+  );
+  assert.ok(run > step, `${name} shell body exists`);
+  const body = [];
+  for (let index = run + 1; index < lines.length; index++) {
+    if (lines[index] && !lines[index].startsWith("          ")) break;
+    body.push(lines[index].slice(10));
+  }
+  return body.join("\n");
+}
+test("legacy workflow archive steps retain executable names and complete terms", (t) => {
+  const license = readFileSync(new URL("../../LICENSE", import.meta.url));
+  const notice = readFileSync(new URL("../../NOTICE", import.meta.url));
+  const directory = temporary(t);
+  const tools = path.join(directory, "tools");
+  mkdirSync(tools);
+  writeFileSync(
+    path.join(tools, "pwsh"),
+    `#!/usr/bin/env node
+const { execFileSync } = require("node:child_process");
+const command = process.argv.at(-1);
+const match = /^Compress-Archive -Path ([^ ]+) -DestinationPath (.+)$/u.exec(command);
+if (!match) process.exit(1);
+execFileSync("zip", ["-j", match[2], ...match[1].split(",")]);
+`,
+    { mode: 0o755 },
+  );
+  writeFileSync(
+    path.join(tools, "go"),
+    `#!/usr/bin/env bash
+set -euo pipefail
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "-o" ]; then
+    shift
+    cp "$FIXTURE_BINARY" "$1"
+    exit 0
+  fi
+  shift
+done
+exit 1
+`,
+    { mode: 0o755 },
+  );
+
+  for (const project of [
+    "binpm",
+    "cargo-mono",
+    "nodeup",
+    "with-watch",
+    "derun",
+  ]) {
+    const source = readFileSync(
+      new URL(
+        `../../.github/workflows/release-${project}.yml`,
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const packageScript = workflowScript(
+      source,
+      project === "derun" ? "Build derun" : "Package artifact",
+    );
+    for (const os of ["linux", "windows"]) {
+      const fixture = path.join(directory, `${project}-${os}`);
+      const target =
+        os === "windows" ? "x86_64-pc-windows-gnu" : "x86_64-unknown-linux-gnu";
+      const binary = Buffer.from(`fixture:${project}:${os}`);
+      mkdirSync(fixture);
+      writeFileSync(path.join(fixture, "LICENSE"), license);
+      writeFileSync(path.join(fixture, "NOTICE"), notice);
+      const sourceBinary = path.join(fixture, "fixture-binary");
+      writeFileSync(sourceBinary, binary, { mode: 0o755 });
+      const release = path.join(fixture, "target", target, "release");
+      mkdirSync(release, { recursive: true });
+      writeFileSync(
+        path.join(release, `${project}${os === "windows" ? ".exe" : ""}`),
+        binary,
+        { mode: 0o755 },
+      );
+      const matrix = {
+        target,
+        asset_os: os,
+        asset_arch: "amd64",
+        archive_ext: os === "windows" ? "zip" : "tar.gz",
+        goos: os,
+        goarch: "amd64",
+      };
+      const script = packageScript.replace(
+        /\$\{\{\s*matrix\.([a-z_]+)\s*\}\}/gu,
+        (_, key) => {
+          assert.ok(Object.hasOwn(matrix, key), `known matrix key ${key}`);
+          return matrix[key];
+        },
+      );
+      assert.doesNotMatch(script, /\$\{\{/u);
+      execFileSync("bash", ["-e", "-c", script], {
+        cwd: fixture,
+        env: {
+          ...process.env,
+          PATH: `${tools}${path.delimiter}${process.env.PATH}`,
+          FIXTURE_BINARY: sourceBinary,
+        },
+      });
+      const archiveName = `${project}-${os}-amd64.${matrix.archive_ext}`;
+      const archivePath = path.join(fixture, "dist", archiveName);
+      const executable =
+        project === "nodeup" && os === "windows"
+          ? "nodeup-windows-amd64.exe"
+          : `${project}${os === "windows" ? ".exe" : ""}`;
+      const list =
+        os === "windows"
+          ? execFileSync("unzip", ["-Z1", archivePath], { encoding: "utf8" })
+          : execFileSync("tar", ["-tzf", archivePath], { encoding: "utf8" });
+      assert.deepEqual(
+        list.trim().split("\n").sort(),
+        [executable, "LICENSE", "NOTICE"].sort(),
+      );
+      for (const [name, expected] of [
+        [executable, binary],
+        ["LICENSE", license],
+        ["NOTICE", notice],
+      ]) {
+        const actual =
+          os === "windows"
+            ? execFileSync("unzip", ["-p", archivePath, name])
+            : execFileSync("tar", ["-xOzf", archivePath, name]);
+        assert.deepEqual(actual, expected, `${project} ${os} ${name}`);
+      }
+      // macOS bsdtar may add PAX metadata; the Linux release runner uses GNU tar.
+      if (os === "linux" && process.platform === "linux")
+        assert.deepEqual(
+          extractExecutable(readFileSync(archivePath), project),
+          binary,
+        );
+      assert.ok(
+        !readdirSync(path.join(fixture, "dist")).some(
+          (name) => name === "LICENSE" || name === "NOTICE",
+        ),
+        `${project} keeps license members inside the archive`,
+      );
+    }
+  }
+});
 function fixture(t, project = "binpm", state = "public") {
   const plan = planFor(project);
   const directory = temporary(t);

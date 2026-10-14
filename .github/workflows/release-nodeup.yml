@@ -135,14 +135,18 @@ jobs:
           fi
 
           cp "$source_binary" "dist/${binary_name}"
+          cp "LICENSE" "NOTICE" "dist/"
+          cmp -s "LICENSE" "dist/LICENSE"
+          cmp -s "NOTICE" "dist/NOTICE"
 
           if [ "${{ matrix.asset_os }}" = "windows" ]; then
-            pwsh -NoLogo -NoProfile -Command "Compress-Archive -Path dist/${binary_name} -DestinationPath dist/${artifact_name}"
+            pwsh -NoLogo -NoProfile -Command "Compress-Archive -Path dist/${binary_name},dist/LICENSE,dist/NOTICE -DestinationPath dist/${artifact_name}"
           else
             cp "dist/${binary_name}" dist/nodeup
-            tar -C dist -czf "dist/${artifact_name}" nodeup
+            tar -C dist -czf "dist/${artifact_name}" nodeup LICENSE NOTICE
             rm -f dist/nodeup
           fi
+          rm -f "dist/LICENSE" "dist/NOTICE"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
