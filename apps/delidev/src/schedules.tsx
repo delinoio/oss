@@ -1590,11 +1590,15 @@ export function Schedules({
                 else latestApplySave.current(row);
               }}
               cancel={() => {
+                // Only dismissing the creation wizard (no initial resource)
+                // returns focus to the opener; cancelling the edit of an
+                // existing schedule keeps its previous focus behavior.
                 const focused = globalThis.document.activeElement;
                 focusOpenerAfterCancel.current =
-                  !focused ||
-                  focused === globalThis.document.body ||
-                  Boolean(workspace.current?.contains(focused));
+                  editing.initial === undefined &&
+                  (!focused ||
+                    focused === globalThis.document.body ||
+                    Boolean(workspace.current?.contains(focused)));
                 setEditing(undefined);
                 setProtectedWorkflow(false);
               }}

@@ -1446,6 +1446,24 @@ it("restores New schedule focus after the Cancel button as well", () => {
   expect(value.save).not.toHaveBeenCalled();
 });
 
+it("keeps focus behavior unchanged when cancelling the edit of an existing schedule", async () => {
+  const value = fixture();
+  render(value.view(<Schedules active open={() => {}} />));
+  fireEvent.click(
+    await screen.findByRole("button", { name: /Weekday review/ }),
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "Edit schedule" }));
+  const cancel = screen.getByRole("button", { name: "Cancel schedule edit" });
+  cancel.focus();
+  expect(globalThis.document.activeElement).toBe(cancel);
+  fireEvent.click(cancel);
+  expect(screen.queryByLabelText("Scheduled prompt")).toBeNull();
+  // Only dismissing the creation wizard restores the New schedule opener.
+  expect(newScheduleOpener().disabled).toBe(false);
+  expect(globalThis.document.activeElement).not.toBe(newScheduleOpener());
+  expect(value.save).not.toHaveBeenCalled();
+});
+
 it.each([1, 2, 3])(
   "closes the idle wizard with Escape from step index %s with the Cancel cleanup",
   async (step) => {
