@@ -170,7 +170,11 @@ superseded child is unmapped before any handle or generation changes, and a page
 nobody presents is never displayed. Failures before admission are returned as a
 typed `not-admitted` error and prove nothing changed; any later failure is
 retained on the receipt or surfaces as an uncertain reply that only observation of
-the original operation settles. `open_browser` takes a page ID instead of an
+the original operation settles. Admission includes an identical replay of a
+retained operation: once the replay is accepted, a failed observation of the
+original operation (including a host stop racing in before the read) is an
+`uncertain` reply, never `not-admitted`, and never repeats the mutation; observing
+the same operation ID settles it. `open_browser` takes a page ID instead of an
 address and moves the shared profile selection to that retained page;
 `control_browser` can no longer create or close a page.
 
