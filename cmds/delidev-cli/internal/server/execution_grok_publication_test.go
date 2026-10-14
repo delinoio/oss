@@ -147,7 +147,7 @@ func TestGrokRegistrationRejectsUnimplementedProfiles(t *testing.T) {
 	}{
 		{name: "responses", protocol: domain.OpenAIResponses},
 		{name: "messages", protocol: domain.AnthropicMessages},
-		{name: "version", configure: func(i *domain.ExecutionJobInput) { i.Installation.Version = "1.0.42" }},
+		{name: "version", configure: func(i *domain.ExecutionJobInput) { i.Installation.Version = "1.0.40" }},
 		{name: "protocol-discovery", configure: func(i *domain.ExecutionJobInput) { i.Installation.ProtocolVerified = false }},
 		{name: "effort", configure: func(i *domain.ExecutionJobInput) { i.Configuration.Effort = "high" }},
 		{name: "subagent-model", configure: func(i *domain.ExecutionJobInput) { i.Configuration.Options.SubagentModel = "other-model" }},

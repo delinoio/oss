@@ -3,10 +3,13 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/claude"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
 func claudeProtectedTextFixture(t *testing.T) (*ClaudeContentPublisher, *openCodeBindingRPC, func(claude.ContentEvent) (bool, error)) {
@@ -84,5 +87,55 @@ func TestClaudeContentRejectsMalformedWithheldAndHeldObservations(t *testing.T) 
 				t.Fatal("malformed private holdback observation was accepted or published")
 			}
 		})
+	}
+}
+
+func TestClaudeToolPublisherKeepsEscapedProtectedInputPrivate(t *testing.T) {
+	c, rpc := newClaudeContentFixture(t)
+	if err := c.PublishInput(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	publish := func(event claude.ContentEvent) {
+		t.Helper()
+		if handled, err := c.PublishObservation(context.Background(), claudeContentObservation(c, event)); !handled || err != nil {
+			t.Fatal("original tool observation was not accepted", err)
+		}
+	}
+	publish(claude.ContentEvent{Kind: claude.ProviderMessageStarted})
+	zero := uint32(0)
+	publish(claude.ContentEvent{Kind: claude.ContentStarted, Index: &zero, Block: &claude.NativeContentBlock{Kind: claude.ToolUseBlock, Tool: &claude.NativeTool{ID: "tool_escaped", Name: "Write", Input: json.RawMessage(`{}`)}}})
+	stream := security.NewProtectedJSON([]string{"abc"}).NewStream(security.StreamJSONText)
+	parts := []string{`{"value":"`, `\u00`, `61b`, `c"}`}
+	for index, part := range parts {
+		released, err := stream.Push(part)
+		if index == len(parts)-1 {
+			if !errors.Is(err, security.ErrProtectedStreamValue) || released != "" {
+				t.Fatal("completing fragment left the original guard", err)
+			}
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		event := claude.ContentEvent{Kind: claude.ContentChanged, Index: &zero, DeltaKind: claude.ToolInputDelta}
+		if released == "" {
+			event.Withheld = true
+		} else {
+			event.Delta = &released
+		}
+		publish(event)
+	}
+	var appended strings.Builder
+	for _, raw := range rpc.events {
+		var event domain.ExecutionEvent
+		if err := json.Unmarshal(raw, &event); err != nil {
+			t.Fatal(err)
+		}
+		if event.ClaudeTool != nil && event.ClaudeTool.Mutation == domain.ClaudeToolInputAppend && event.ClaudeTool.Delta != nil {
+			appended.WriteString(*event.ClaudeTool.Delta)
+		}
+	}
+	if !strings.HasPrefix(strings.Join(parts, ""), appended.String()) || strings.Contains(appended.String(), `\u0061bc`) || len(appended.String()) >= len(`{"value":"\u0061bc`) {
+		t.Fatal("tool publisher exposed a complete decodable protected value")
 	}
 }

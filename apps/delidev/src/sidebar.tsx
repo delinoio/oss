@@ -14,6 +14,11 @@ import {
   DisclosureDensity,
 } from "./disclosure";
 import { SubscriptionRail } from "./subscription-rail";
+import { SidebarMore } from "./sidebar-more";
+import {
+  NavigationPreferenceBoundary,
+  useNavigationPreference,
+} from "./navigation-preference";
 import {
   SessionRowActions,
   SessionRowActionsProvider,
@@ -28,6 +33,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ComponentProps,
   type RefObject,
   type MouseEvent,
   type ReactNode,
@@ -1023,7 +1029,18 @@ function ProjectGroup({
   );
 }
 
-export function Sidebar({
+export function Sidebar(props: SidebarProps) {
+  // App owns the device preference; isolated callers get the in-memory owner.
+  return (
+    <NavigationPreferenceBoundary>
+      <SidebarContent {...props} />
+    </NavigationPreferenceBoundary>
+  );
+}
+
+type SidebarProps = ComponentProps<typeof SidebarContent>;
+
+function SidebarContent({
   collapsed = false,
   motionReady = false,
   motionScope,
@@ -1073,6 +1090,7 @@ export function Sidebar({
   setDrawerOpen?: (open: boolean) => void;
 }) {
   const productLabel = useProductLabels();
+  const usagePinned = useNavigationPreference().snapshot.usage_pinned;
   const disclosureContentId3 = useId();
   useLocale();
   const [compact, setCompact] = useState(
@@ -1605,17 +1623,24 @@ export function Sidebar({
               current={surface === Surface.PullRequests}
               onClick={() => navigate(Surface.PullRequests)}
             />
-            <SidebarButton
-              label={copy("sidebar.usage_8d5982")}
-              icon="usage"
-              current={surface === Surface.Usage}
-              onClick={() => navigate(Surface.Usage)}
-            />
+            {usagePinned ? (
+              <SidebarButton
+                label={copy("sidebar.usage_8d5982")}
+                icon="usage"
+                current={surface === Surface.Usage}
+                onClick={() => navigate(Surface.Usage)}
+              />
+            ) : null}
             <SidebarButton
               label={copy("sidebar.schedules_221ff1")}
               icon="schedules"
               current={surface === Surface.Schedules}
               onClick={() => navigate(Surface.Schedules)}
+            />
+            <SidebarMore
+              usageActive={surface === Surface.Usage}
+              openUsage={() => navigate(Surface.Usage)}
+              drawerOpen={compact && drawerOpen}
             />
             <span className="sidebar-rail-spacer" />
             <SubscriptionRail

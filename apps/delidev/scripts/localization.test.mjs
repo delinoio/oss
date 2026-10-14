@@ -42,6 +42,7 @@ const technicalLiterals = new Set([
   "Active rulesets API",
   "Commit statuses API",
   "DeliDev",
+  "Tailscale",
   "GitHub",
   "Classic",
   "Fine grained",

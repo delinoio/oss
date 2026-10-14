@@ -258,7 +258,7 @@ func TestProbeRejectsProfileAndRuntimeBeforeLaunch(t *testing.T) {
 			config, _ := fixtureConfig(t, "valid")
 			switch change {
 			case "version":
-				config.Version = "1.0.42"
+				config.Version = "1.0.40"
 			case "cwd":
 				config.Process.Cwd = filepath.Dir(config.Process.Cwd)
 			case "home":
@@ -323,5 +323,57 @@ func TestManualNativeGrokInitialization(t *testing.T) {
 	}
 	if _, err := os.Lstat(filepath.Join(config.Home, "auth.json")); !os.IsNotExist(err) {
 		t.Fatal("probe created authentication state")
+	}
+}
+
+// TestProbeAdmitsNewerVersionsToRealNativeChecks proves that a SemVer at or above
+// the baseline reaches the same native checks, while malformed or lower
+// versions stop before any process launch.
+func TestProbeAdmitsNewerVersionsToRealNativeChecks(t *testing.T) {
+	for _, version := range []string{"1.0.41", "1.0.42", "2.0.0-rc.1", "1.0.41+build.7"} {
+		t.Run("admit-"+version, func(t *testing.T) {
+			config, logs := fixtureConfig(t, "valid")
+			config.Version = version
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := Probe(ctx, config); err != nil {
+				t.Fatalf("probe: %v; logs: %s", err, logs.String())
+			}
+			if !strings.Contains(logs.String(), version) {
+				t.Fatal("observed installed version was not logged")
+			}
+			if err := process.ReconcileOwner(config.Process.Directory, config.Process.OwnerID); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+	for _, version := range []string{"", "v1.0.42", "1.0.40", "1.0.41-rc.1", "not-a-version", "1.0.42.0"} {
+		t.Run("reject-"+version, func(t *testing.T) {
+			config, _ := fixtureConfig(t, "valid")
+			config.Version = version
+			err := Probe(context.Background(), config)
+			if err == nil || domain.SafeError(err).Code != domain.Unsupported {
+				t.Fatalf("version %q outcome: %v", version, err)
+			}
+			if _, statErr := os.Stat(config.Process.Directory); !os.IsNotExist(statErr) {
+				t.Fatal("rejected version launched a process")
+			}
+		})
+	}
+}
+
+// TestProbeNewerVersionStillFailsChangedNativeBehavior proves admission does not
+// bypass the native protocol or settings validation.
+func TestProbeNewerVersionStillFailsChangedNativeBehavior(t *testing.T) {
+	config, logs := fixtureConfig(t, "inventory-nonempty")
+	config.Version = "1.0.42"
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	err := Probe(ctx, config)
+	if err == nil || domain.SafeError(err).Code != domain.Unsupported {
+		t.Fatalf("changed native behavior outcome: %v; logs: %s", err, logs.String())
+	}
+	if err := process.ReconcileOwner(config.Process.Directory, config.Process.OwnerID); err != nil {
+		t.Fatal(err)
 	}
 }

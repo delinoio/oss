@@ -13,11 +13,10 @@ import (
 
 // Bind one immutable route before native startup. The manager's later pointer
 // replacement is irrelevant to this runtime and cannot rewrite its environment.
-func openCodexNativeProxy(ctx context.Context, config Config, execution domain.ID) (*nativeproxy.Proxy, error) {
-	if config.network == nil {
+func openCodexNativeProxy(ctx context.Context, config Config, execution domain.ID, snapshot *networkSnapshot) (*nativeproxy.Proxy, error) {
+	if snapshot == nil {
 		return nil, nil
 	}
-	snapshot := config.network.current()
 	if snapshot.bundle.Route.Profile.Mode == domain.ProxyDirect {
 		return nil, nil
 	}

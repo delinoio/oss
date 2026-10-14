@@ -26,6 +26,7 @@ pub mod date_format;
 pub mod external_url;
 pub mod image_export;
 pub mod language;
+pub mod navigation_preference;
 pub mod oauth;
 pub mod provider_guidance;
 pub mod quota_countdown;

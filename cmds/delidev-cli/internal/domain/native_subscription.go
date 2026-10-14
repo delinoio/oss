@@ -44,7 +44,10 @@ type NativeSubscriptionOperation struct {
 	Diagnostic       *NativeSubscriptionDiagnostic `json:"diagnostic,omitempty"`
 }
 type NativeSubscriptionDiagnostic struct {
-	DetectedVersion string                  `json:"detected_version,omitempty"`
+	// DetectedVersion is the observed executable version, never the baseline.
+	DetectedVersion string `json:"detected_version,omitempty"`
+	// RequiredVersion is the pinned minimum baseline kept for wire
+	// compatibility. Clients must not present it as an exact requirement.
 	RequiredVersion string                  `json:"required_version"`
 	Phase           NativeSubscriptionPhase `json:"phase"`
 	Code            Code                    `json:"code"`

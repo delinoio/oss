@@ -353,7 +353,7 @@ test("Source and tap tokens are separately scoped and project release triggers r
       source(`.github/workflows/release-${project}.yml`),
     );
     if (project === Project.DeliDev) {
-      assert.deepEqual(release.on.push.tags, ["delidev-v*"]);
+      assert.deepEqual(release.on.push.tags, ["delidev@v*"]);
       assert.equal(release.jobs.package.environment, undefined);
       assert.equal(release.jobs.sign.environment, "delidev-release");
       continue;

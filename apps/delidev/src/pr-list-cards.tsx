@@ -3,7 +3,7 @@ import {
   useProductLabels,
   productResourceName,
 } from "./product-identity-labels";
-import { Timestamp, TimestampMode } from "./timestamp-display";
+import { Timestamp, TimestampMode, TimestampText } from "./timestamp-display";
 import {
   useEffect,
   useId,
@@ -18,6 +18,7 @@ import type { Resource } from "@delinoio/delidev-api-client";
 import { items, object, text, type Document } from "./documents";
 import {
   ItemKind,
+  ItemState,
   QueryOperation,
   type GitHubQuery,
 } from "./github-query-model";
@@ -121,12 +122,18 @@ export function PRListHeader({
   reading,
   reloadRequired = false,
   refresh,
+  query,
+  loadedPage,
 }: {
   selected: Resource;
   pending?: ReactNode;
   reading: boolean;
   reloadRequired?: boolean;
   refresh: () => void;
+  /** The applied list/search query; never carries a page size to the header. */
+  query?: GitHubQuery;
+  /** Number of the latest accepted page of the current chain, when any. */
+  loadedPage?: number;
 }) {
   const productLabel = useProductLabels();
   useLocale();
@@ -136,6 +143,23 @@ export function PRListHeader({
         <div>
           <h2>{copy("pull-requests.pullRequests_d9e3f2")}</h2>
           <p>{productResourceName(productLabel, selected)}</p>
+          {query ? (
+            <p className="pr-list-header-applied">
+              {copy(
+                query.state === ItemState.Closed
+                  ? "pull-requests.closed_c21ead"
+                  : query.state === ItemState.All
+                    ? "pull-requests.all_a52ace"
+                    : "pull-requests.open_ed077f",
+              )}
+              {query.operation === QueryOperation.Search ? (
+                <> · {copy("pr-cards.search", { terms: query.search })}</>
+              ) : null}
+              {loadedPage ? (
+                <> · {copy("pr-cards.loadedThrough", { page: loadedPage })}</>
+              ) : null}
+            </p>
+          ) : null}
         </div>
         <PRRefreshButton
           disabled={reading || reloadRequired}
@@ -255,10 +279,16 @@ export function PRListCards({
                     ) : null}
                   </p>
                   <p>
-                    {copy("pr-cards.updated")}:{" "}
-                    <Timestamp
-                      value={text(item.updated_at)}
-                      mode={TimestampMode.Exact}
+                    <TimestampText
+                      id="pr-cards.updatedRelative"
+                      values={{
+                        time: (
+                          <Timestamp
+                            value={text(item.updated_at)}
+                            mode={TimestampMode.Relative}
+                          />
+                        ),
+                      }}
                     />
                   </p>
                 </div>

@@ -612,3 +612,51 @@ func TestWorkspaceStillRejectsOversizeProviderBody(t *testing.T) {
 		t.Fatal("oversize body admitted as a node", e, value.State)
 	}
 }
+
+func foreignForkRefs(count int) map[int][2]string {
+	refs := map[int][2]string{}
+	for n := 1; n <= count; n++ {
+		refs[n] = [2]string{"base" + strconv.Itoa(n), "head" + strconv.Itoa(n)}
+	}
+	return refs
+}
+func foreignFork(_ int, item map[string]any) {
+	item["head"].(map[string]any)["repo"] = map[string]any{"id": 99, "node_id": "R_99", "name": "fork", "full_name": "fork-owner/fork", "owner": map[string]any{"login": "fork-owner"}, "private": true, "default_branch": "main", "clone_url": "https://github.com/fork-owner/fork.git", "ssh_url": "git@github.com:fork-owner/fork.git"}
+}
+
+// TestWorkspaceAcceptsFiftySeedsAndKeepsProviderReadBound proves that 50 seeds
+// are accepted while the cumulative provider-read cap still turns the excess
+// into the explicit incomplete state, never an error or a silent truncation.
+func TestWorkspaceAcceptsFiftySeedsAndKeepsProviderReadBound(t *testing.T) {
+	seeds := make([]string, 0, 50)
+	for n := 1; n <= 50; n++ {
+		seeds = append(seeds, strconv.Itoa(n))
+	}
+	budget := NewWorkspaceBudget()
+	c := workspaceFixture(t, foreignForkRefs(50), foreignFork)
+	value, e := c.WorkspaceWithBudget(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", seeds, budget)
+	if e != nil {
+		t.Fatal("fifty distinct seeds rejected", e)
+	}
+	if value.State != domain.PRWorkspaceIncomplete || budget.Reads() > workspaceProviderReads {
+		t.Fatal("provider read bound was not enforced", value.State, budget.Reads())
+	}
+	limited := false
+	for _, reason := range value.Reasons {
+		limited = limited || reason == "read_limit"
+	}
+	if !limited || len(value.Nodes) == 0 || len(value.Nodes) >= 50 {
+		t.Fatal("excess seeds were not reported as incomplete", value.Reasons, len(value.Nodes))
+	}
+}
+
+func TestWorkspaceRejectsMoreThanFiftySeeds(t *testing.T) {
+	seeds := make([]string, 0, 51)
+	for n := 1; n <= 51; n++ {
+		seeds = append(seeds, strconv.Itoa(n))
+	}
+	c := workspaceFixture(t, foreignForkRefs(51), foreignFork)
+	if _, e := c.Workspace(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", seeds); e == nil {
+		t.Fatal("fifty-one seeds accepted")
+	}
+}

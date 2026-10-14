@@ -76,7 +76,7 @@ A rerun accepted before a startup failure shows its run ID, diagnostic, recovery
 
 - Public documentation is owned by `apps/public-docs/docs/async-commit-hook`, and installers are maintained in `scripts/install`. The UI links to https://oss.delino.io/async-commit-hook.
 
-- `build:embedded` is the sole producer of command webassets/dist: clear the previous embed before building, validate real hashed assets and copy only after success. Include license files; never substitute a placeholder bundle.
+- `build:embedded` is the sole producer of command webassets/dist: clear the previous embed before building, validate real hashed assets and copy only after success. Include license files; never substitute a placeholder bundle. The uncached CI-only `ci:embedded` task invokes that same build after the app's `ci:check` completes; direct `build:embedded` remains available for other consumers.
 
 - Run-list rows use the optional server check count, falling back to checks.length only for older responses; opening a row retrieves complete execution details.
 
