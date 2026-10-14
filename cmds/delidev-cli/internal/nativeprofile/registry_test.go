@@ -1060,3 +1060,248 @@ func TestCheckLegacyReportsConflictsWithoutChangingTheRegistry(t *testing.T) {
 	}
 	_ = lease.Close()
 }
+
+// RegisterLegacyCreating is all-or-nothing for the directory it creates. Every
+// row states the starting disk and registry state, how the registry publication
+// behaves and the resulting disk state, registry state and returned error.
+func TestRegisterLegacyCreatingTimeline(t *testing.T) {
+	type publication int
+	const (
+		publishOK        publication = iota
+		publishFails                 // nothing reaches the registry file
+		publishAmbiguous             // the file is written, then the call reports failure
+		publishUnproven              // the call fails and the registry becomes unreadable
+	)
+	type start int
+	const (
+		homeAbsent start = iota
+		homePresent
+		homeAbsentEntryBound
+		homeAbsentKeyElsewhere
+		homeAbsentPathElsewhere
+		homeAbsentParentIsFile
+		homeSymlink
+	)
+	rows := []struct {
+		name        string
+		start       start
+		publication publication
+		wantErr     bool
+		wantReason  Reason
+		wantDir     bool // the directory exists afterwards
+		wantEntry   bool // the key is registered afterwards (when the registry is readable)
+		retryOK     bool // a retry with a healthy publication succeeds
+	}{
+		{"absent, publication ok", homeAbsent, publishOK, false, "", true, true, true},
+		{"absent, publication fails", homeAbsent, publishFails, true, "", false, false, true},
+		{"absent, publication ambiguous but durable", homeAbsent, publishAmbiguous, true, "", true, true, true},
+		{"absent, publication fails and registry unreadable", homeAbsent, publishUnproven, true, "", true, false, true},
+		{"present, publication ok", homePresent, publishOK, false, "", true, true, true},
+		{"present, publication fails", homePresent, publishFails, true, "", true, false, true},
+		{"present, publication ambiguous", homePresent, publishAmbiguous, true, "", true, true, true},
+		{"absent, entry already bound", homeAbsentEntryBound, publishFails, false, "", false, true, true},
+		{"absent, key bound to another path", homeAbsentKeyElsewhere, publishOK, true, ReasonKeyConflict, false, true, false},
+		{"absent, path bound to another key", homeAbsentPathElsewhere, publishOK, true, ReasonKeyConflict, false, false, false},
+		{"absent, parent is a file", homeAbsentParentIsFile, publishOK, true, ReasonOwnerInvalid, false, false, false},
+		{"symlink at the path", homeSymlink, publishOK, true, ReasonLegacyUnverified, true, false, false},
+	}
+	for _, row := range rows {
+		row := row
+		t.Run(row.name, func(t *testing.T) {
+			root := testRoot(t)
+			r, _ := workerRegistry(t, root, nil)
+			ctx := context.Background()
+			account := domain.NewID()
+			key := Key{Harness: domain.Codex, Purpose: PurposeSharedOwner, Account: account}
+			relative := "runtimes/accounts/" + string(account) + "/codex"
+			home := filepath.Join(root, filepath.FromSlash(relative))
+			marker := filepath.Join(home, "history.txt")
+			switch row.start {
+			case homePresent:
+				if err := security.PrivateDir(home); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(marker, []byte("kept"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			case homeAbsentEntryBound:
+				if err := security.PrivateDir(home); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := r.RegisterLegacy(ctx, key, relative); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Remove(home); err != nil {
+					t.Fatal(err)
+				}
+			case homeAbsentKeyElsewhere:
+				other := relative + "-restored"
+				if err := security.PrivateDir(filepath.Join(root, filepath.FromSlash(other))); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := r.RegisterLegacy(ctx, key, other); err != nil {
+					t.Fatal(err)
+				}
+			case homeAbsentPathElsewhere:
+				if err := security.PrivateDir(home); err != nil {
+					t.Fatal(err)
+				}
+				otherKey := conversationKey(account, domain.NewID())
+				if _, err := r.RegisterLegacy(ctx, otherKey, relative); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Remove(home); err != nil {
+					t.Fatal(err)
+				}
+			case homeAbsentParentIsFile:
+				if err := security.PrivateDir(filepath.Join(root, "runtimes")); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(root, "runtimes", "accounts"), []byte("file"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			case homeSymlink:
+				target := filepath.Join(root, "elsewhere")
+				if err := security.PrivateDir(target); err != nil {
+					t.Fatal(err)
+				}
+				if err := security.PrivateDir(filepath.Dir(home)); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(target, home); err != nil {
+					t.Skip("symlinks unavailable")
+				}
+			}
+			original := writeRegistryFile
+			t.Cleanup(func() { writeRegistryFile = original })
+			switch row.publication {
+			case publishFails:
+				writeRegistryFile = func(string, []byte) error { return errors.New("injected registry publication failure") }
+			case publishAmbiguous:
+				writeRegistryFile = func(path string, raw []byte) error {
+					if err := original(path, raw); err != nil {
+						return err
+					}
+					return errors.New("injected directory sync failure")
+				}
+			case publishUnproven:
+				writeRegistryFile = func(path string, raw []byte) error {
+					_ = os.WriteFile(path, []byte("{"), 0600)
+					return errors.New("injected registry publication failure")
+				}
+			}
+			info, err := r.RegisterLegacyCreating(ctx, key, relative)
+			writeRegistryFile = original
+			if (err != nil) != row.wantErr {
+				t.Fatalf("error = %v, want error %v", err, row.wantErr)
+			}
+			if row.wantReason != "" {
+				if reason, ok := Reasoned(err); !ok || reason != row.wantReason {
+					t.Fatalf("reason = %v, want %s: %v", reason, row.wantReason, err)
+				}
+			}
+			if err == nil && info.Root != home {
+				t.Fatalf("root = %q, want %q", info.Root, home)
+			}
+			_, statErr := os.Lstat(home)
+			if (statErr == nil) != row.wantDir {
+				t.Fatalf("directory exists = %v, want %v", statErr == nil, row.wantDir)
+			}
+			if row.start == homePresent {
+				if raw, err := os.ReadFile(marker); err != nil || string(raw) != "kept" {
+					t.Fatal("an existing home was changed", err)
+				}
+			}
+			if row.publication != publishUnproven {
+				if _, ok, lookupErr := r.Lookup(ctx, key); lookupErr != nil || ok != row.wantEntry {
+					t.Fatalf("registered = %v (%v), want %v", ok, lookupErr, row.wantEntry)
+				}
+			}
+			if row.start == homeAbsentParentIsFile || row.start == homeAbsentKeyElsewhere || row.start == homeAbsentPathElsewhere {
+				if _, err := os.Lstat(home); err == nil {
+					t.Fatal("a rejected registration created the home")
+				}
+			}
+			if row.publication == publishUnproven {
+				// The registry could not prove the entry absent, so the empty home
+				// stays. After the registry is restored, a retry registers that same
+				// empty directory and nothing else.
+				if err := os.Remove(filepath.Join(root, "native-profiles", "registry.json")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			again, err := r.RegisterLegacyCreating(ctx, key, relative)
+			if (err == nil) != row.retryOK {
+				t.Fatalf("retry error = %v, want success %v", err, row.retryOK)
+			}
+			if err == nil {
+				if again.Root != home {
+					t.Fatalf("retry root = %q, want %q", again.Root, home)
+				}
+				if row.start != homeAbsentEntryBound {
+					if err := security.CheckPrivateDir(home); err != nil {
+						t.Fatalf("retry left no private home: %v", err)
+					}
+				}
+			}
+		})
+	}
+}
+
+// A failed creation removes only an empty directory: history that appeared in
+// the home before the rollback is never deleted.
+func TestRegisterLegacyCreatingRollbackNeverRemovesRetainedFiles(t *testing.T) {
+	root := testRoot(t)
+	r, _ := workerRegistry(t, root, nil)
+	ctx := context.Background()
+	account := domain.NewID()
+	key := Key{Harness: domain.Codex, Purpose: PurposeSharedOwner, Account: account}
+	relative := "runtimes/accounts/" + string(account) + "/codex"
+	home := filepath.Join(root, filepath.FromSlash(relative))
+	original := writeRegistryFile
+	t.Cleanup(func() { writeRegistryFile = original })
+	writeRegistryFile = func(string, []byte) error {
+		// Something wrote into the home between creation and rollback.
+		if err := os.WriteFile(filepath.Join(home, "late.txt"), []byte("late"), 0600); err != nil {
+			t.Error(err)
+		}
+		return errors.New("injected registry publication failure")
+	}
+	if _, err := r.RegisterLegacyCreating(ctx, key, relative); err == nil {
+		t.Fatal("a failed publication was reported as success")
+	}
+	if raw, err := os.ReadFile(filepath.Join(home, "late.txt")); err != nil || string(raw) != "late" {
+		t.Fatal("rollback removed retained files", err)
+	}
+}
+
+// LegacyDurable reports whether the registry proves an in-place registration.
+func TestLegacyDurableReportsProofOnly(t *testing.T) {
+	root := testRoot(t)
+	r, _ := workerRegistry(t, root, nil)
+	ctx := context.Background()
+	account := domain.NewID()
+	key := Key{Harness: domain.ClaudeCode, Purpose: PurposeAuth, Account: account}
+	relative := "native-claude/" + string(account)
+	if durable, known := r.LegacyDurable(ctx, key, relative); durable || !known {
+		t.Fatalf("an unregistered key = (%v, %v)", durable, known)
+	}
+	if err := security.PrivateDir(filepath.Join(root, filepath.FromSlash(relative))); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.RegisterLegacy(ctx, key, relative); err != nil {
+		t.Fatal(err)
+	}
+	if durable, known := r.LegacyDurable(ctx, key, relative); !durable || !known {
+		t.Fatalf("a registered key = (%v, %v)", durable, known)
+	}
+	if durable, known := r.LegacyDurable(ctx, key, relative+"-other"); durable || !known {
+		t.Fatalf("a key bound to another path = (%v, %v)", durable, known)
+	}
+	if err := os.WriteFile(filepath.Join(root, "native-profiles", "registry.json"), []byte("{"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if durable, known := r.LegacyDurable(ctx, key, relative); durable || known {
+		t.Fatalf("an unreadable registry = (%v, %v)", durable, known)
+	}
+}

@@ -988,7 +988,9 @@ The managed shared Codex owner's account-wide history home
 retires (see the
 [harness contract](cmds-delidev-harness-contract.md#shared-codex-owner-account-home)).
 The Claude device-profile directory is registered in place and removed only by
-its logout.
+its logout, except that a login which fails before the registry proves the new
+entry durable removes the directory it just created (see the
+[harness contract](cmds-delidev-harness-contract.md#shared-codex-owner-account-home)).
 If native removal completes before the registry deletion is durable, original
 logout recovery may clear only the matching absent Claude auth registration
 after joined process cleanup. It does not reopen the deleted home or repeat

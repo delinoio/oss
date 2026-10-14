@@ -2960,6 +2960,40 @@ registry. Only in-place registration creates its entry. Acquiring an unregistere
 creates no managed profile directory or registry entry, while acquiring an entry
 that was already registered in place locks it normally.
 
+Creation and registration of a new account home are all-or-nothing. The
+registry creates the empty private directory itself, under its own lock and only
+after it accepted the key and the path, so no concurrent resolution can observe
+or adopt a half-created home. If publishing the registry then fails, the empty
+directory is removed again unless the registry is re-read and proves that the
+entry became durable. A write that failed late but left the entry durable keeps
+the directory and reports the error; the retry is idempotent. A registry that is
+unreadable after the failure cannot prove the entry absent, so the empty
+directory is kept rather than orphaning a registered home. Removal is not
+recursive, so history that appeared in the directory is never deleted, and an
+existing directory is never created, repaired or removed. Missing parent
+directories stay because they hold no history.
+
+| Starting state                                    | Registry publication                | Directory afterwards | Entry afterwards | Result                                  |
+| ------------------------------------------------- | ----------------------------------- | -------------------- | ---------------- | --------------------------------------- |
+| home absent, key unregistered                     | succeeds                            | created              | registered       | success                                 |
+| home absent, key unregistered                     | fails, nothing written              | removed              | absent           | error; retry creates it again           |
+| home absent, key unregistered                     | fails after the entry became durable | kept                | registered       | error; retry is idempotent              |
+| home absent, key unregistered                     | fails and the registry is unreadable | kept (empty)        | unproven         | error; retry registers the same empty home |
+| home present, key unregistered                    | succeeds                            | untouched            | registered       | success                                 |
+| home present, key unregistered                    | fails                               | untouched            | absent           | error; history is never removed         |
+| home absent, key already registered at that path  | none needed                         | not created          | registered       | resolution rejects a missing registered home |
+| home absent, key or path registered elsewhere     | none attempted                      | not created          | unchanged        | `key_conflict`                          |
+| home absent, a parent is not a directory          | none attempted                      | not created          | absent           | `owner_invalid`                         |
+| home is a link or not private                     | none attempted                      | untouched            | absent           | recovery required (`legacy_unverified`) |
+
+The Claude device-profile directory is the other path that creates a directory
+and then registers it in place, and it follows the same rule: a login that
+creates a new profile directory holds the profile lock, and when any step before
+a durable registration fails it removes the directory it created unless the
+registry proves the entry durable or cannot prove either way. The directory holds
+no credential at that point, and the retry of the same profile identifier is not
+blocked by an unregistered leftover. An existing profile is never rolled back.
+
 The founding owner takes the profile lock when it is founded and releases only
 the lock when the owner retires; joined members rely on that lock and take none.
 An exclusive continuation of a version 2 account history takes the same lock, so

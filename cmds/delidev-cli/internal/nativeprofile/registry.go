@@ -511,6 +511,25 @@ func (r *Registry) Lookup(ctx context.Context, key Key) (Info, bool, error) {
 // Nothing is moved, merged or rewritten. Registering the same directory for the
 // same key again is idempotent.
 func (r *Registry) RegisterLegacy(ctx context.Context, key Key, relative string, histories ...domain.ID) (Info, error) {
+	return r.registerLegacy(ctx, key, relative, false, histories)
+}
+
+// RegisterLegacyCreating is RegisterLegacy for a fixed directory that may not
+// exist yet, such as the history home of a new account. When key is unregistered
+// and the directory is absent, this call creates the private directory while it
+// holds the registry lock, after the registry accepted the key and the path.
+// Creation and registration are all-or-nothing: a directory this call created
+// is removed again, without recursion, unless its registry entry is proven
+// durable. A publication whose outcome cannot be proven keeps the empty
+// directory because removing a registered home would be worse. Missing parent
+// directories stay; they hold no history. An existing directory is never
+// created, repaired or removed: it is registered or rejected exactly as
+// RegisterLegacy does, and a registered key creates nothing.
+func (r *Registry) RegisterLegacyCreating(ctx context.Context, key Key, relative string, histories ...domain.ID) (Info, error) {
+	return r.registerLegacy(ctx, key, relative, true, histories)
+}
+
+func (r *Registry) registerLegacy(ctx context.Context, key Key, relative string, create bool, histories []domain.ID) (Info, error) {
 	key, err := r.normalize(key)
 	if err != nil {
 		return Info{}, err
@@ -525,7 +544,24 @@ func (r *Registry) RegisterLegacy(ctx context.Context, key Key, relative string,
 		}
 	}
 	var result Info
-	err = r.withRegistry(ctx, func(file *registryFile) (bool, error) {
+	// made is the directory this call created and the entry it belongs to; both
+	// stay set only until the registry publication proves durable.
+	var made string
+	var added *entry
+	rollback := func() {
+		if made == "" || added == nil {
+			return
+		}
+		if info, statErr := os.Lstat(made); statErr == nil && info.IsDir() {
+			if rmErr := os.Remove(made); rmErr != nil {
+				Log(r.config.Logger, "native_profile_rollback_blocked", added.Key, added.ID, ReasonDeleteBlocked)
+				return
+			}
+		}
+		Log(r.config.Logger, "native_profile_rolled_back", added.Key, added.ID, ReasonCreateRolledBack)
+		made = ""
+	}
+	err = r.withRegistryPublish(ctx, func(file *registryFile) (bool, error) {
 		if historyOwnedByOther(file.Profiles, key, histories) {
 			return false, historyConflict()
 		}
@@ -542,7 +578,19 @@ func (r *Registry) RegisterLegacy(ctx context.Context, key Key, relative string,
 			return false, Failure(domain.ResourceExhausted, ReasonRegistryInvalid, "The native profile registry is full.", "Delete unused sessions or accounts before creating more profiles.")
 		}
 		e := entry{ID: domain.NewID(), Key: key, Origin: OriginLegacy, Path: clean, CreatedAt: time.Now().UTC()}
+		if create {
+			added = &e
+			created, createErr := r.createLegacyDirectory(r.pathOf(e))
+			if created {
+				made = r.pathOf(e)
+			}
+			if createErr != nil {
+				rollback()
+				return false, createErr
+			}
+		}
 		if err := r.verifyDirectory(e); err != nil {
+			rollback()
 			return false, Failure(domain.RecoveryRequired, ReasonLegacyUnverified, "The legacy native history directory could not be verified.", "Keep the original history and inspect it without following links.")
 		}
 		mergeHistories(&e, histories)
@@ -550,8 +598,71 @@ func (r *Registry) RegisterLegacy(ctx context.Context, key Key, relative string,
 		result = r.info(e, false)
 		Log(r.config.Logger, "native_profile_registered", key, e.ID, ReasonRegisteredLegacy)
 		return true, nil
+	}, func(error) {
+		if made == "" || added == nil {
+			return
+		}
+		// The registry could not be published after this call created the
+		// directory. A rename that failed late (for example a directory sync) may
+		// still have made the entry durable; keep the directory in that case and
+		// whenever the registry cannot prove the entry absent.
+		durable, loadErr := r.load()
+		if loadErr != nil {
+			Log(r.config.Logger, "native_profile_publish_unproven", added.Key, added.ID, ReasonRegistryInvalid)
+			return
+		}
+		for _, existing := range durable.Profiles {
+			if existing.ID == added.ID {
+				Log(r.config.Logger, "native_profile_publish_durable", added.Key, added.ID, ReasonRegistryInvalid)
+				return
+			}
+		}
+		rollback()
 	})
-	return result, err
+	if err != nil {
+		return Info{}, err
+	}
+	return result, nil
+}
+
+// createLegacyDirectory creates the private leaf directory of a legacy path
+// when it is absent and reports whether this call created it. An existing path
+// of any kind is left untouched for verification. A failure after the leaf was
+// created removes it again.
+func (r *Registry) createLegacyDirectory(path string) (bool, error) {
+	if _, err := os.Lstat(path); err == nil {
+		return false, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return false, Failure(domain.RecoveryRequired, ReasonOwnerInvalid, "The native profile directory could not be created.", "Inspect the owner storage root before retrying.")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return false, Failure(domain.RecoveryRequired, ReasonOwnerInvalid, "The native profile directory could not be created.", "Inspect the owner storage root before retrying.")
+	}
+	if err := security.CreatePrivateDirExclusive(path); err != nil {
+		created := false
+		if info, statErr := os.Lstat(path); statErr == nil && info.IsDir() && !errors.Is(err, os.ErrExist) {
+			// The directory appeared but could not be made private; it is this
+			// call's own leftover.
+			created = true
+		}
+		return created, Failure(domain.RecoveryRequired, ReasonOwnerInvalid, "The native profile directory could not be created.", "Inspect the owner storage root before retrying.")
+	}
+	return true, nil
+}
+
+// LegacyDurable reports whether key is registered in place at relative. known
+// is false when the registry cannot prove either answer, for example when it is
+// unreadable or busy; callers must then keep what they created. A key or path
+// that is registered elsewhere proves that no entry for key at relative exists.
+func (r *Registry) LegacyDurable(ctx context.Context, key Key, relative string) (durable, known bool) {
+	_, bound, err := r.CheckLegacy(ctx, key, relative)
+	if err == nil {
+		return bound, true
+	}
+	if reason, ok := Reasoned(err); ok && reason == ReasonKeyConflict {
+		return false, true
+	}
+	return false, false
 }
 
 // legacyBinding applies the registration conflict rules without changing
