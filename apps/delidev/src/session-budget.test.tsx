@@ -105,7 +105,10 @@ function fixture() {
 it("sets an exact optional budget and exposes unavailable evidence without claiming zero or compliance", async () => {
   const f = fixture();
   render(f.renderView());
-  await screen.findByText("No estimated-cost budget is configured.");
+  await screen.findByText("Not set");
+  expect(
+    screen.queryByText("No estimated-cost budget is configured."),
+  ).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Edit session budget" }));
   fireEvent.click(
     screen.getByRole("checkbox", { name: "Enable estimated-cost budget" }),
@@ -246,7 +249,7 @@ it("requires explicit rebasing of a retained stale draft and sends an explicit r
     screen.getByRole("button", { name: "Use latest revision with this draft" }),
   );
   fireEvent.click(screen.getByRole("button", { name: "Save session budget" }));
-  await screen.findByText("No estimated-cost budget is configured.");
+  await screen.findByText("Not set");
   expect(f.write.mock.calls[0][0]).toMatchObject({
     mutation: { expectedRevision: 3n },
     change: { case: "remove", value: true },
@@ -351,7 +354,7 @@ it("reports Pending for a retained successful view while a reread is in flight",
   );
   // The retained view stays displayed and controllers stay mounted.
   expect(
-    screen.getByText("No estimated-cost budget is configured."),
+    screen.getByText("Not set"),
   ).toBeTruthy();
   release();
   await waitFor(() =>

@@ -55,9 +55,7 @@
   "execution-configuration.weight_0d7216": "<s0/> · 가중치 <s1/>",
   "execution-configuration.savedAccountOrderIsUnavailable_e54c4a": "저장된 계정 순서를 확인할 수 없습니다.",
   "execution-configuration.appliedDelidevInstructions_f2bcde": "적용된 DeliDev 지침",
-  "execution-configuration.readOnlyAdditionalInstructionsFromThis_8850cd": "이 세션에 저장된 템플릿의 읽기 전용 추가 지침입니다. 내부 하네스 프롬프트는 표시하지 않습니다.",
   "execution-configuration.appliedInstructionTextIsUnavailable_b0a185": "적용된 지침 텍스트를 확인할 수 없습니다.",
-  "execution-configuration.noAdditionalDelidevInstructionsWereSelected_7b2306": "추가 DeliDev 지침이 선택되지 않았습니다.",
   "execution-configuration.appliedInstructionTemplateOrder_be0ff4": "적용된 지침 템플릿 순서",
   "execution-configuration.templateRevision_10577b": "템플릿 <s0/> · <s1/> · 리비전 <s2/>",
   "execution-configuration.savedTemplateTextIsUnavailable_95e25e": "저장된 템플릿 텍스트를 확인할 수 없습니다.",
@@ -69,5 +67,6 @@
   "execution-configuration.extra.5852e0c77d3d": "사용자 선언 모델 메타데이터",
   "execution-configuration.extra.643fd990f260": "계정 사용 불가",
   "execution-configuration.extra.ccd130d59f4b": "참조 사용 불가",
-  "execution-configuration.attribute.e9ae418fcc27": "결합된 적용 지침"
+  "execution-configuration.attribute.e9ae418fcc27": "결합된 적용 지침",
+  "execution-configuration.noneSelected": "선택 안 됨"
 }

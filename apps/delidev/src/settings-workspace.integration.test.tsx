@@ -566,7 +566,7 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
     expect(enableBudget.checked).toBe(false);
   }
   await saveBudgetAndRecoverRevision(
-    "No estimated-cost budget is configured.",
+    "Not set",
     undefined,
   );
   expect(

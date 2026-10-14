@@ -55,9 +55,7 @@
   "execution-configuration.weight_0d7216": "<s0/> · weight <s1/>",
   "execution-configuration.savedAccountOrderIsUnavailable_e54c4a": "Saved account order is unavailable.",
   "execution-configuration.appliedDelidevInstructions_f2bcde": "Applied DeliDev instructions",
-  "execution-configuration.readOnlyAdditionalInstructionsFromThis_8850cd": "Read-only additional instructions from this session's saved templates. Internal harness prompts are not shown.",
   "execution-configuration.appliedInstructionTextIsUnavailable_b0a185": "Applied instruction text is unavailable.",
-  "execution-configuration.noAdditionalDelidevInstructionsWereSelected_7b2306": "No additional DeliDev instructions were selected.",
   "execution-configuration.appliedInstructionTemplateOrder_be0ff4": "Applied instruction template order",
   "execution-configuration.templateRevision_10577b": "Template <s0/> · <s1/> · revision <s2/>",
   "execution-configuration.savedTemplateTextIsUnavailable_95e25e": "Saved template text is unavailable.",
@@ -69,5 +67,6 @@
   "execution-configuration.extra.5852e0c77d3d": "User-declared model metadata",
   "execution-configuration.extra.643fd990f260": "Unavailable account",
   "execution-configuration.extra.ccd130d59f4b": "Unavailable reference",
-  "execution-configuration.attribute.e9ae418fcc27": "Combined applied instructions"
+  "execution-configuration.attribute.e9ae418fcc27": "Combined applied instructions",
+  "execution-configuration.noneSelected": "None selected"
 }
