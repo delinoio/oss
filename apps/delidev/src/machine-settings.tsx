@@ -9,7 +9,12 @@ import {
 } from "./settings-action";
 import { SettingsTaskDismissButton } from "./settings-task";
 import { statusLabel } from "./product-status";
-import { LocalizedText, copy, useLocale } from "./localization";
+import {
+  LocalizedText,
+  copy,
+  useLocale,
+  type MessageKey,
+} from "./localization";
 import { SettingsTaskActions } from "./settings-task";
 import { useCloseSettingsTask } from "./settings-task-context";
 import {
@@ -39,7 +44,12 @@ import {
   type Resource,
 } from "@delinoio/delidev-api-client";
 import { document, encode, items, object, text } from "./documents";
-import { claudeVersionAllowed } from "./harness-version";
+import { installationVersionAllowed } from "./harness-version";
+import {
+  OpenCodeInstallationCause,
+  openCodeInstallationCause,
+  type RunnerExclusion,
+} from "./runner-observation";
 import { Harness, TextField } from "./configuration-fields";
 import { ObservedJob, useJobObservation } from "./jobs";
 import { useRetainedMutation } from "./mutation";
@@ -297,6 +307,33 @@ export function useMachineSettingsController(
     ],
   );
 }
+/**
+ * Copy key for an installation exclusion cause. Claude and OpenCode have
+ * harness-specific guidance; every other harness keeps the shared copy. OpenCode
+ * update guidance applies only to a detected under-baseline version, and a
+ * protocol profile mismatch never asks for an update. No key names a numeric
+ * version baseline.
+ */
+export function installationCauseCopyKey(
+  harness: string,
+  cause: RunnerExclusion,
+  detectedVersion?: string,
+): MessageKey {
+  if (harness === Harness.Claude)
+    return `claude-subscription.excluded.${cause}`;
+  if (harness === Harness.OpenCode) {
+    switch (openCodeInstallationCause(cause, detectedVersion)) {
+      case OpenCodeInstallationCause.BelowBaseline:
+        return "machine-settings.opencode.excluded.version";
+      case OpenCodeInstallationCause.ProtocolProfileMismatch:
+        return "machine-settings.opencode.excluded.protocolUnsupported";
+      case OpenCodeInstallationCause.InvalidInstallation:
+      case OpenCodeInstallationCause.Other:
+        break;
+    }
+  }
+  return `machine-settings.excluded.${cause}`;
+}
 export type MachineSettingsController = ReturnType<
   typeof useMachineSettingsController
 >;
@@ -454,9 +491,7 @@ export function MachineSettingsView({
                 ? { cause: "unavailable" as const }
                 : installationObservation(
                     installation,
-                    harness === Harness.Claude
-                      ? claudeVersionAllowed
-                      : undefined,
+                    installationVersionAllowed(harness),
                   );
             return (
               <article className="result" key={index}>
@@ -493,9 +528,11 @@ export function MachineSettingsView({
                 {observation.cause ? (
                   <InlineRemediation
                     summary={copy(
-                      harness === Harness.Claude
-                        ? `claude-subscription.excluded.${observation.cause}`
-                        : `machine-settings.excluded.${observation.cause}`,
+                      installationCauseCopyKey(
+                        harness,
+                        observation.cause,
+                        observation.detectedVersion,
+                      ),
                     )}
                   />
                 ) : (
