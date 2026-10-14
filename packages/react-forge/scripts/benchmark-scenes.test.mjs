@@ -123,8 +123,8 @@ test("scene case children do not load the GLB validator", async () => {
       process.execPath,
       [
         "--experimental-loader",
-        loader,
-        process.platform === "win32" ? pathToFileURL(file).href : file,
+        process.platform === "win32" ? pathToFileURL(loader).href : loader,
+        file,
         "--case",
         "fbx",
         "small",
