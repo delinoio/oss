@@ -2,9 +2,7 @@
 package subscription
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"net/http"
 )
 
@@ -18,29 +16,30 @@ const GrokRevocationEndpoint = GrokIssuer + "/oauth2/revoke"
 type GrokRevocation string
 
 const (
-	// GrokRevoked reports that the provider acknowledged the revocation (HTTP 200).
+	// GrokRevoked reports that the provider acknowledged the request (HTTP 200).
+	// RFC 7009 answers 200 both for a revoked token and for a submitted token that
+	// was already invalid, so a 200 proves the token unusable either way.
 	GrokRevoked GrokRevocation = "revoked"
-	// GrokAlreadyInvalid reports that the provider already refused the token as
-	// invalid, expired or revoked. The token is unusable, so the outcome counts as
-	// revoked.
-	GrokAlreadyInvalid GrokRevocation = "already-invalid"
 )
 
 // Settled reports whether the outcome proves the refresh token unusable.
-func (r GrokRevocation) Settled() bool { return r == GrokRevoked || r == GrokAlreadyInvalid }
+func (r GrokRevocation) Settled() bool { return r == GrokRevoked }
 
 // Revoke asks the provider to revoke one refresh token as a public client
 // (token, token_type_hint=refresh_token and client_id only; no client secret, no
 // Authorization header). It sends exactly one request and never retries or
 // follows a redirect.
 //
-// A 200 response is GrokRevoked (RFC 7009 answers 200 for an unknown token as
-// well). A 400 or 401 response whose OAuth error is invalid_token or
-// invalid_grant is GrokAlreadyInvalid. Any other 4xx response is a definite
-// refusal (GrokReasonRevokeRejected): the provider did not revoke the token.
-// A transport failure, timeout, cancellation, oversized body, 5xx response or
-// unexpected status is GrokReasonRevokeUncertain: the token may or may not be
-// revoked. The error carries only a closed reason, never a token or a body.
+// Only a 200 response is GrokRevoked. RFC 7009 (section 2.2) answers 200 for an
+// invalid submitted token too, so an error response means the request itself was
+// refused (for example a client identity or validation mismatch) and proves
+// nothing about the token: a 400 or 401 body, even invalid_grant or
+// invalid_token, is not a proof that the token is unusable elsewhere. Every 4xx
+// response is a definite refusal (GrokReasonRevokeRejected): the provider did not
+// revoke the token, and the caller keeps the stored credential. A transport
+// failure, timeout, cancellation, oversized body, 5xx response or unexpected
+// status is GrokReasonRevokeUncertain: the token may or may not be revoked. The
+// error carries only a closed reason, never a token or a body.
 func (c GrokOAuthClient) Revoke(ctx context.Context, refreshToken []byte) (GrokRevocation, error) {
 	payload := grokForm([][2][]byte{
 		{[]byte("token"), refreshToken},
@@ -56,14 +55,6 @@ func (c GrokOAuthClient) Revoke(ctx context.Context, refreshToken []byte) (GrokR
 	switch {
 	case status == http.StatusOK:
 		return GrokRevoked, nil
-	case status == http.StatusBadRequest || status == http.StatusUnauthorized:
-		var body struct {
-			Error string `json:"error"`
-		}
-		if json.NewDecoder(bytes.NewReader(raw)).Decode(&body) == nil && (body.Error == "invalid_token" || body.Error == "invalid_grant") {
-			return GrokAlreadyInvalid, nil
-		}
-		return "", grokFailure(GrokReasonRevokeRejected)
 	case status >= 400 && status < 500:
 		return "", grokFailure(GrokReasonRevokeRejected)
 	default:

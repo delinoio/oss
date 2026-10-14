@@ -30,24 +30,34 @@ func TestGrokReservationsAreDeclaredWithLedgerNumbers(t *testing.T) {
 	}
 }
 
-// System 39 is advertised once the server-owned browser login and the device
-// login are both implemented (decision D1): a client sees one capability for
-// both methods. System 40 (execution) stays unadvertised. Neither the real
-// account acceptance run nor execution is claimed by this capability.
-func TestGrokLoginIsAdvertisedAndExecutionIsNot(t *testing.T) {
+// System 39 (server-owned login: browser and device code together) is one
+// capability for both methods, advertised only behind the explicit
+// Config.GrokSubscriptionLogin switch. The implementation is complete without
+// it, but no client can start a Grok login yet, so the default is off. System 40
+// (execution) is never advertised by this switch. Neither real-account acceptance
+// nor execution is claimed by capability 39.
+func TestGrokLoginAdvertisementFollowsTheExplicitSwitch(t *testing.T) {
 	f := newManagedClaudeFixture(t)
-	status, err := f.service.GetStatus(context.Background(), connect.NewRequest(&pb.GetStatusRequest{}))
-	if err != nil {
-		t.Fatal(err)
+	capabilities := func() []pb.SystemCapability {
+		t.Helper()
+		status, err := f.service.GetStatus(context.Background(), connect.NewRequest(&pb.GetStatusRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return status.Msg.Capabilities
 	}
-	if !slices.Contains(status.Msg.Capabilities, grokSystemLoginReservation) {
-		t.Fatal("status does not advertise Grok login capability 39")
-	}
-	if slices.Contains(status.Msg.Capabilities, grokSystemExecutionReservation) {
-		t.Fatal("status advertised the unactivated Grok execution capability 40")
-	}
-	if !slices.Contains(status.Msg.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_CLAUDE_SUBSCRIPTIONS_V1) {
-		t.Fatal("existing capability 38 is no longer advertised")
+	for _, enabled := range []bool{false, true} {
+		f.service.grokLogin = enabled
+		got := capabilities()
+		if slices.Contains(got, grokSystemLoginReservation) != enabled {
+			t.Fatalf("capability 39 advertised = %v with the switch %v", !enabled, enabled)
+		}
+		if slices.Contains(got, grokSystemExecutionReservation) {
+			t.Fatal("status advertised the unactivated Grok execution capability 40")
+		}
+		if !slices.Contains(got, pb.SystemCapability_SYSTEM_CAPABILITY_CLAUDE_SUBSCRIPTIONS_V1) {
+			t.Fatal("existing capability 38 is no longer advertised")
+		}
 	}
 }
 
@@ -93,5 +103,23 @@ func TestGrokDiagnosticIsNotPopulatedForCodexProgress(t *testing.T) {
 	awaitServerFixture(t, done)
 	if p := f.progressFor(op.OperationId); p.GrokDiagnostic != nil || p.State != pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_SUCCEEDED {
 		t.Fatal("settled progress populated grok_diagnostic")
+	}
+}
+
+// The login and execution switches are independent: each advertises only its own
+// capability, in every combination.
+func TestGrokCapabilitySwitchesAreIndependent(t *testing.T) {
+	f := newManagedClaudeFixture(t)
+	for _, login := range []bool{false, true} {
+		for _, execution := range []bool{false, true} {
+			f.service.grokLogin, f.service.grokExecution = login, execution
+			status, err := f.service.GetStatus(context.Background(), connect.NewRequest(&pb.GetStatusRequest{}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if slices.Contains(status.Msg.Capabilities, grokSystemLoginReservation) != login || slices.Contains(status.Msg.Capabilities, grokSystemExecutionReservation) != execution {
+				t.Fatalf("login=%v execution=%v advertised the wrong capabilities", login, execution)
+			}
+		}
 	}
 }

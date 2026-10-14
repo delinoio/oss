@@ -32,13 +32,14 @@ func (g *grokLoginFixture) logout(t *testing.T) *pb.RequestSubscriptionResponse 
 
 // crashLogoutAt runs a requested logout and ends it at the named point, as a
 // process crash would.
-func (g *grokLoginFixture) crashLogoutAt(t *testing.T, point grokRefreshFaultPoint) *pb.RequestSubscriptionResponse {
+func (g *grokLoginFixture) crashLogoutAt(t *testing.T, point grokFaultPoint) *pb.RequestSubscriptionResponse {
 	t.Helper()
 	op := g.serverStart(logoutAction)
-	g.service.grokRefreshFault = func(p grokRefreshFaultPoint) {
+	g.service.grokFaultHook = func(p grokFaultPoint) error {
 		if p == point {
 			panic(grokCrash{})
 		}
+		return nil
 	}
 	crashed := false
 	func() {
@@ -52,7 +53,7 @@ func (g *grokLoginFixture) crashLogoutAt(t *testing.T, point grokRefreshFaultPoi
 		}()
 		g.service.runServerSubscription(ownerContext(), g.input.AccountID)
 	}()
-	g.service.grokRefreshFault = nil
+	g.service.grokFaultHook = nil
 	if !crashed {
 		t.Fatalf("the logout never reached %s", point)
 	}
@@ -163,27 +164,16 @@ func (g *grokLoginFixture) requireNoLogoutLeak(t *testing.T, op *pb.RequestSubsc
 	}
 }
 
-func TestGrokLogoutAlreadyInvalidTokenCountsAsRevoked(t *testing.T) {
-	for name, body := range map[string]string{"invalid_token": `{"error":"invalid_token"}`, "invalid_grant": `{"error":"invalid_grant"}`} {
-		t.Run(name, func(t *testing.T) {
-			g := newGrokLoginFixture(t)
-			g.connected(t)
-			g.idp.RevokeStatus, g.idp.RevokeBody = http.StatusBadRequest, body
-			g.logout(t)
-			if g.idp.RevokeRequests() != 1 {
-				t.Fatal("expected one revocation request")
-			}
-			g.requireDisconnected(t)
-		})
-	}
-}
-
 func TestGrokLogoutUnprovenRevocationLeavesRecoveryAndKeepsTheBundle(t *testing.T) {
 	for name, scenario := range map[string]struct {
 		status int
 		body   string
 	}{
-		"definite-4xx":   {http.StatusBadRequest, `{"error":"invalid_client"}`},
+		"definite-4xx": {http.StatusBadRequest, `{"error":"invalid_client"}`},
+		// RFC 7009 answers 200 for an invalid token, so an error response is a
+		// refused request and never proof that the token is unusable elsewhere.
+		"invalid-grant":  {http.StatusBadRequest, `{"error":"invalid_grant"}`},
+		"invalid-token":  {http.StatusUnauthorized, `{"error":"invalid_token"}`},
 		"forbidden":      {http.StatusForbidden, ``},
 		"server-error":   {http.StatusInternalServerError, ``},
 		"unavailable":    {http.StatusServiceUnavailable, ``},
@@ -240,7 +230,7 @@ func TestGrokLogoutTimeoutOrShutdownDuringRevocationIsUncertain(t *testing.T) {
 
 func TestGrokLogoutCrashPointsNeverResendOrDeleteWithoutRecoveryState(t *testing.T) {
 	for _, scenario := range []struct {
-		point    grokRefreshFaultPoint
+		point    grokFaultPoint
 		phase    domain.GrokRevocationPhase
 		resolves bool
 		requests int
@@ -621,5 +611,31 @@ func TestGrokCleanupFailedLoginSelection(t *testing.T) {
 	}
 	if disconnectedSubscription(claimed) || failedCleanupCandidate(claimed) || grokLoginNeedsRecovery(claimed) {
 		t.Fatal("a claimed Grok login was selected for cleanup")
+	}
+}
+
+// A Runner Device cannot carry a Grok lifecycle request: RequestSubscription with
+// a machine_id enters the Codex gate, which refuses Grok accounts before any
+// mutation. A machine-scoped logout therefore never creates a Worker-routed
+// operation that the revoked-generation guard of Take would reject.
+func TestGrokMachineScopedRequestsAreRefusedBeforeAnyMutation(t *testing.T) {
+	for _, action := range []pb.SubscriptionAction{
+		pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN,
+		pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH,
+		logoutAction,
+	} {
+		t.Run(action.String(), func(t *testing.T) {
+			g := newGrokLoginFixture(t)
+			g.connected(t)
+			before, account := g.record()
+			_, err := g.client.RequestSubscription(context.Background(), subscriptionRequest(g.service.Identity.Token, &pb.RequestSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(before.ID), ExpectedRevision: before.Revision}, Action: action, MachineId: string(g.input.MachineID)}))
+			if err == nil {
+				t.Fatal("a machine-scoped Grok request was accepted")
+			}
+			after, current := g.record()
+			if after.Revision != before.Revision || current.Health != account.Health || current.Subscription.Pending != nil || current.Subscription.ServerOperation.Action != domain.SubscriptionLogin {
+				t.Fatal("a refused machine-scoped Grok request changed the account")
+			}
+		})
 	}
 }

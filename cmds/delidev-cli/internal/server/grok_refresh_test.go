@@ -51,13 +51,14 @@ func (g *grokLoginFixture) refresh(t *testing.T) *pb.RequestSubscriptionResponse
 }
 
 // crashAt runs a requested refresh and ends it at the named point.
-func (g *grokLoginFixture) crashAt(t *testing.T, point grokRefreshFaultPoint) *pb.RequestSubscriptionResponse {
+func (g *grokLoginFixture) crashAt(t *testing.T, point grokFaultPoint) *pb.RequestSubscriptionResponse {
 	t.Helper()
 	op := g.serverStart(pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH)
-	g.service.grokRefreshFault = func(p grokRefreshFaultPoint) {
+	g.service.grokFaultHook = func(p grokFaultPoint) error {
 		if p == point {
 			panic(grokCrash{})
 		}
+		return nil
 	}
 	crashed := false
 	func() {
@@ -71,7 +72,7 @@ func (g *grokLoginFixture) crashAt(t *testing.T, point grokRefreshFaultPoint) *p
 		}()
 		g.service.runServerSubscription(ownerContext(), g.input.AccountID)
 	}()
-	g.service.grokRefreshFault = nil
+	g.service.grokFaultHook = nil
 	if !crashed {
 		t.Fatalf("the refresh never reached %s", point)
 	}
@@ -331,7 +332,7 @@ func TestGrokRefreshWritesTheClaimBeforeTheTokenRequestAndHoldsTheLease(t *testi
 // recovery; after staging the vault holds an unreferenced generation and the
 // account still needs recovery; after the commit the outcome is proven.
 func TestGrokRefreshFaultInjectionSendsOneRequestAndFencesUncertainOutcomes(t *testing.T) {
-	for _, point := range []grokRefreshFaultPoint{grokFaultAfterClaim, grokFaultAfterResponse, grokFaultAfterStage} {
+	for _, point := range []grokFaultPoint{grokFaultAfterClaim, grokFaultAfterResponse, grokFaultAfterStage} {
 		t.Run(string(point), func(t *testing.T) {
 			g := newGrokLoginFixture(t)
 			before := g.connected(t)

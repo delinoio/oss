@@ -129,6 +129,11 @@ func (g *grokLoginFixture) cancelLogin(t *testing.T) {
 }
 
 // callback performs one loopback request with an optional Host override.
+// callback delivers one request to a login's loopback listener. The listener
+// closes as soon as it accepts the callback, so a loaded host can reset the
+// connection after the code was taken: tests that expect an accepted callback
+// accept a transport error and assert the login outcome instead of the browser
+// response, and only a delivered response must have the expected status.
 func callback(port int, method, pathAndQuery, host string) (int, error) {
 	request, err := http.NewRequest(method, fmt.Sprintf("http://127.0.0.1:%d%s", port, pathAndQuery), nil)
 	if err != nil {
@@ -238,7 +243,7 @@ func TestGrokLoginBrowserFlowCompletesWithAFakeProvider(t *testing.T) {
 	}
 	requireOpen(t, run.port)
 	grant := g.idp.Approve(t, run.url)
-	if status, err := callback(run.port, http.MethodGet, run.good(grant.Code), ""); err != nil || status != http.StatusOK {
+	if status, err := callback(run.port, http.MethodGet, run.good(grant.Code), ""); err == nil && status != http.StatusOK {
 		t.Fatalf("callback: %d %v", status, err)
 	}
 	g.awaitDone(t, run)
@@ -428,7 +433,7 @@ func TestGrokLoginUncertainExchangeRequiresRecoveryAndIsNeverResent(t *testing.T
 			setup(g.idp)
 			run := g.begin(t)
 			grant := g.idp.Approve(t, run.url)
-			if status, err := callback(run.port, http.MethodGet, run.good(grant.Code), ""); err != nil || status != http.StatusOK {
+			if status, err := callback(run.port, http.MethodGet, run.good(grant.Code), ""); err == nil && status != http.StatusOK {
 				t.Fatalf("callback: %d %v", status, err)
 			}
 			g.awaitDone(t, run)
@@ -483,7 +488,7 @@ func TestGrokLoginCancelDuringExchangeRequiresRecovery(t *testing.T) {
 	g.idp.TokenEntered = make(chan struct{}, 1)
 	run := g.begin(t)
 	grant := g.idp.Approve(t, run.url)
-	if status, err := callback(run.port, http.MethodGet, run.good(grant.Code), ""); err != nil || status != http.StatusOK {
+	if status, err := callback(run.port, http.MethodGet, run.good(grant.Code), ""); err == nil && status != http.StatusOK {
 		t.Fatalf("callback: %d %v", status, err)
 	}
 	select {
@@ -599,7 +604,7 @@ func (g *grokLoginFixture) loginAs(t *testing.T) (*grokRun, domain.Account) {
 	t.Helper()
 	run := g.begin(t)
 	grant := g.idp.Approve(t, run.url)
-	if status, err := callback(run.port, http.MethodGet, run.good(grant.Code), ""); err != nil || status != http.StatusOK {
+	if status, err := callback(run.port, http.MethodGet, run.good(grant.Code), ""); err == nil && status != http.StatusOK {
 		t.Fatalf("callback: %d %v", status, err)
 	}
 	g.awaitDone(t, run)

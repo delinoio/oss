@@ -66,6 +66,14 @@ func (s *Service) requestServerSubscription(ctx context.Context, req *connect.Re
 		if action != domain.SubscriptionLogin && (a.Connection == nil || state.Generation == "") {
 			return nil, subscriptionDenied()
 		}
+		if action == domain.SubscriptionRefresh && a.SubscriptionService == domain.SubscriptionGrok && a.Health == domain.AccountRevoked {
+			// A Grok account stays revoked from the acceptance of its logout until a
+			// logout settles. A logout that failed before its revocation claim leaves
+			// the account connected and revoked; a refresh would publish a new
+			// generation that can never restore readiness, so only another logout
+			// may follow.
+			return nil, grokRefreshAfterFailedLogout()
+		}
 		if action == domain.SubscriptionRefresh {
 			// A refresh rotates the credential generation. A claimed managed title
 			// still owns the frozen generation, so the refresh waits for it.
@@ -260,6 +268,11 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 					if retries[a.Subscription.ServerOperation.ID].due(now) {
 						candidates = append(candidates, candidate{account: r.ID, operation: a.Subscription.ServerOperation.ID, cleanup: true, grok: true, logout: true})
 					}
+				} else if grokRefreshNeedsRecovery(a) {
+					eligible[a.Subscription.ServerOperation.ID] = true
+					if retries[a.Subscription.ServerOperation.ID].due(now) {
+						candidates = append(candidates, candidate{account: r.ID, operation: a.Subscription.ServerOperation.ID, cleanup: true, grok: true, refresh: true})
+					}
 				} else if grokLoginNeedsRecovery(a) {
 					eligible[a.Subscription.ServerOperation.ID] = true
 					if retries[a.Subscription.ServerOperation.ID].due(now) {
@@ -308,7 +321,12 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 						s.logger.WarnContext(child, "grok_logout_recovery_pending", "phase", grokLogPhaseCleanup, "operation_id", next.operation, "code", domain.SafeError(err).Code)
 					}
 				} else if next.grok {
-					if err := s.recoverGrokLogin(child, next.account, next.operation); err != nil && child.Err() == nil {
+					if next.refresh {
+						if err := s.recoverGrokRefresh(child, next.account, next.operation); err != nil && child.Err() == nil {
+							result.failed = true
+							s.logger.WarnContext(child, "grok_refresh_recovery_pending", "operation_id", next.operation, "code", domain.SafeError(err).Code)
+						}
+					} else if err := s.recoverGrokLogin(child, next.account, next.operation); err != nil && child.Err() == nil {
 						result.failed = true
 						s.logger.WarnContext(child, "grok_login_recovery_pending", "operation_id", next.operation, "code", domain.SafeError(err).Code)
 					}

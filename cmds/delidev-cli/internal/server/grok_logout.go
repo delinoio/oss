@@ -27,7 +27,7 @@ import (
 //  3. read: the stored generation is opened against this server and account;
 //  4. claim: GrokRevocationClaimed is written durably, in its own transaction;
 //  5. send: exactly one revocation request, with no retry;
-//  6. confirm: a revoked or already-invalid token is recorded durably as
+//  6. confirm: a token the provider acknowledged (HTTP 200) is recorded durably as
 //     GrokRevocationConfirmed together with SubscriptionState.RevokedGeneration;
 //  7. clean: only now every protected generation is deleted from the vault and
 //     the account is published as disconnected.
@@ -45,6 +45,12 @@ const (
 
 	grokStepRevoke grokLoginStep = "revoke"
 )
+
+// grokRefreshAfterFailedLogout is the typed problem of a refresh requested while
+// the account is revoked by a logout that has not settled.
+func grokRefreshAfterFailedLogout() *domain.Error {
+	return domain.Fail(domain.Conflict, "This Grok account is signing out.", "Request the sign-out again; a refresh is refused until a sign-out has settled.")
+}
 
 // grokLogoutKind classifies an interrupted Grok logout by what it proved.
 type grokLogoutKind int
@@ -140,7 +146,18 @@ func (s *Service) runGrokLogout(parent context.Context, id domain.ID) {
 		return struct{}{}, nil
 	})
 	unlock()
-	if err != nil || !claimed {
+	if err == nil {
+		err = s.grokFault(grokFaultAfterLease)
+	}
+	if err != nil {
+		if claimed {
+			// The lease transaction ran but its outcome is unknown: the durable
+			// operation decides whether it is fenced for the scanner.
+			s.fenceUnsettledGrokOperation(parent, id, original)
+		}
+		return
+	}
+	if !claimed {
 		return
 	}
 	s.logGrok(parent, slog.LevelInfo, "grok_logout_started", original, grokStepClaim, "account_id", id)
@@ -150,10 +167,8 @@ func (s *Service) runGrokLogout(parent context.Context, id domain.ID) {
 	bounded, stop := context.WithTimeout(domain.WithPrincipal(context.WithoutCancel(parent), domain.Principal{Type: domain.OwnerDevice}), 2*grokCleanupTimeout)
 	defer stop()
 	if err := s.finishGrokLogout(bounded, id, original, outcome); err != nil {
-		if e := s.markServerSubscriptionRecovery(id, original.ID, nil); e != nil {
-			s.logGrok(bounded, slog.LevelWarn, "grok_logout_recovery_unconfirmed", original, grokStepFinish, "code", domain.SafeError(e).Code)
-		}
 		s.logGrok(bounded, slog.LevelWarn, "grok_logout_finish_failed", original, grokStepFinish, "code", domain.SafeError(err).Code)
+		s.fenceUnsettledGrokOperation(bounded, id, original)
 	}
 }
 
@@ -190,7 +205,7 @@ func (s *Service) grokLogoutSteps(ctx context.Context, id domain.ID, original do
 	}
 	outcome.claimed = true
 	s.logGrok(ctx, slog.LevelInfo, "grok_logout_revocation_claimed", original, grokStepClaim)
-	s.grokFault(grokFaultAfterRevokeClaim)
+	_ = s.grokFault(grokFaultAfterRevokeClaim)
 	transport, closeTransport := s.grokOAuthRoundTripper()
 	defer closeTransport()
 	client := subscription.GrokOAuthClient{Transport: transport}
@@ -204,7 +219,7 @@ func (s *Service) grokLogoutSteps(ctx context.Context, id domain.ID, original do
 		s.logGrok(ctx, slog.LevelWarn, "grok_logout_revocation_unproven", original, grokStepRevoke, "reason", reason)
 		return uncertain(grokStepRevoke)
 	}
-	s.grokFault(grokFaultAfterRevoke)
+	_ = s.grokFault(grokFaultAfterRevoke)
 	s.logGrok(ctx, slog.LevelInfo, "grok_logout_revoked", original, grokStepRevoke, "result", result)
 	return grokLogoutOutcome{state: domain.SubscriptionSucceeded, step: grokStepRevoke, claimed: true, revoked: true}
 }
@@ -237,7 +252,13 @@ func (s *Service) claimGrokRevocation(ctx context.Context, id domain.ID, o domai
 		}
 		return struct{}{}, nil
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	// A claim whose commit acknowledgement is lost reports an error although the
+	// claim is durable; settlement re-reads the claim instead of trusting this
+	// error.
+	return s.grokFault(grokFaultAfterRevokeClaimCommit)
 }
 
 // grokLogoutDiagnostic builds the durable diagnostic of a failed or uncertain
@@ -258,7 +279,7 @@ func (s *Service) finishGrokLogout(ctx context.Context, id domain.ID, o domain.S
 	if err := s.recordGrokRevocation(ctx, id, o); err != nil {
 		return err
 	}
-	s.grokFault(grokFaultAfterRevocationRecorded)
+	_ = s.grokFault(grokFaultAfterRevocationRecorded)
 	return s.completeGrokLogoutCleanup(ctx, id, o)
 }
 
@@ -272,7 +293,6 @@ func (s *Service) settleGrokLogoutWithoutRevocation(ctx context.Context, id doma
 		return err
 	}
 	defer unlock()
-	diagnostic := grokLogoutDiagnostic(o, outcome.state, outcome.code)
 	_, err = s.Store.Mutate(ctx, o.FinishID, "grok.server.logout-finish", struct {
 		Account, Operation domain.ID
 		State              domain.SubscriptionLoginState
@@ -286,7 +306,15 @@ func (s *Service) settleGrokLogoutWithoutRevocation(ctx context.Context, id doma
 		if st == nil || st.ServerOperation == nil || st.ServerOperation.ID != o.ID || !st.ServerOperation.NativeStarted || st.Generation != o.Generation || st.RecoveryRequired || st.Pending == nil || st.Pending.ID != o.ID {
 			return nil, subscriptionDenied()
 		}
-		st.ServerOperation.GrokDiagnostic = diagnostic
+		// The durable claim decides, not the error that reported the claim: a claim
+		// whose commit acknowledgement was lost is still a claim, and the token may
+		// be sent by a later logout once the pending operation is cleared. Such a
+		// failure is therefore uncertain, never a plain failed logout.
+		outcome := outcome
+		if st.ServerOperation.GrokRevocation != "" && outcome.state != domain.SubscriptionRecovery {
+			outcome.state, outcome.code, outcome.claimed = domain.SubscriptionRecovery, domain.RecoveryRequired, true
+		}
+		st.ServerOperation.GrokDiagnostic = grokLogoutDiagnostic(o, outcome.state, outcome.code)
 		if outcome.state == domain.SubscriptionRecovery {
 			st.RecoveryRequired = true
 			a.Health = domain.AccountFailed
@@ -377,7 +405,7 @@ func (s *Service) completeGrokLogoutCleanup(ctx context.Context, id domain.ID, o
 		s.logGrokCleanup(ctx, slog.LevelWarn, "grok_logout_cleanup_pending", o, "code", domain.SafeError(err).Code)
 		return err
 	}
-	s.grokFault(grokFaultAfterLogoutCleanup)
+	_ = s.grokFault(grokFaultAfterLogoutCleanup)
 	_, err = s.Store.Mutate(ctx, domain.NewID(), "grok.server.logout-disconnect", struct{ Account, Operation domain.ID }{id, o.ID}, func(tx *store.Tx) (any, error) {
 		r, a, err := grokSubscriptionAccount(tx, id, 0)
 		if err != nil {
@@ -403,6 +431,11 @@ func (s *Service) completeGrokLogoutCleanup(ctx context.Context, id domain.ID, o
 		}
 		return accountReceipt{ID: id}, nil
 	})
+	if err == nil {
+		// A disconnect whose commit acknowledgement is lost reports an error although
+		// the account is already disconnected; the caller re-reads the operation.
+		err = s.grokFault(grokFaultAfterLogoutDisconnect)
+	}
 	if err != nil {
 		s.logGrokCleanup(ctx, slog.LevelWarn, "grok_logout_disconnect_pending", o, "code", domain.SafeError(err).Code)
 		return err

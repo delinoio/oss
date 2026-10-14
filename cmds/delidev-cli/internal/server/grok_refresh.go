@@ -42,28 +42,41 @@ const (
 	grokStepCleanup  grokLoginStep = "cleanup"
 )
 
-// grokRefreshFaultPoint names a point of the refresh at which tests may inject a
-// crash. A hook that panics simulates the process ending there: nothing after
-// the point runs and the durable state is whatever had been committed.
-type grokRefreshFaultPoint string
+// grokFaultPoint names a point of a server-owned Grok operation at which tests
+// may inject a crash or a failed write. A hook that panics simulates the process
+// ending there: nothing after the point runs and the durable state is whatever
+// had been committed.
+type grokFaultPoint string
 
 const (
-	grokFaultAfterClaim    grokRefreshFaultPoint = "after_claim"
-	grokFaultAfterResponse grokRefreshFaultPoint = "after_response"
-	grokFaultAfterStage    grokRefreshFaultPoint = "after_stage"
-	grokFaultAfterPersist  grokRefreshFaultPoint = "after_persist"
+	// grokFaultAfterLease runs after the lease transaction (login and refresh).
+	grokFaultAfterLease    grokFaultPoint = "after_lease"
+	grokFaultAfterClaim    grokFaultPoint = "after_claim"
+	grokFaultAfterResponse grokFaultPoint = "after_response"
+	grokFaultAfterStage    grokFaultPoint = "after_stage"
+	grokFaultAfterPersist  grokFaultPoint = "after_persist"
 
 	// Logout fault points.
-	grokFaultAfterRevokeClaim        grokRefreshFaultPoint = "after_revoke_claim"
-	grokFaultAfterRevoke             grokRefreshFaultPoint = "after_revoke"
-	grokFaultAfterRevocationRecorded grokRefreshFaultPoint = "after_revocation_recorded"
-	grokFaultAfterLogoutCleanup      grokRefreshFaultPoint = "after_logout_cleanup"
+	grokFaultAfterRevokeClaim        grokFaultPoint = "after_revoke_claim"
+	grokFaultAfterRevoke             grokFaultPoint = "after_revoke"
+	grokFaultAfterRevocationRecorded grokFaultPoint = "after_revocation_recorded"
+	grokFaultAfterLogoutCleanup      grokFaultPoint = "after_logout_cleanup"
+	// grokFaultAfterRevokeClaimCommit and grokFaultAfterLogoutDisconnect run after
+	// a committed transaction and stand for a lost commit acknowledgement.
+	grokFaultAfterRevokeClaimCommit grokFaultPoint = "after_revoke_claim_commit"
+	grokFaultAfterLogoutDisconnect  grokFaultPoint = "after_logout_disconnect"
 )
 
-func (s *Service) grokFault(point grokRefreshFaultPoint) {
-	if s.grokRefreshFault != nil {
-		s.grokRefreshFault(point)
+// grokFault runs the test seam at point. Only the lease and settlement points
+// (after_lease, after_stage, after_persist) act on the returned error: it stands
+// for a write whose outcome is reported as failed, and after_lease and
+// after_persist stand for a commit whose acknowledgement was lost although the
+// transaction committed.
+func (s *Service) grokFault(point grokFaultPoint) error {
+	if s.grokFaultHook != nil {
+		return s.grokFaultHook(point)
 	}
+	return nil
 }
 
 // grokServerAction reports the action of the queued server operation of a Grok
@@ -135,7 +148,18 @@ func (s *Service) runGrokRefresh(parent context.Context, id domain.ID) {
 		return struct{}{}, nil
 	})
 	unlock()
-	if err != nil || !original.NativeStarted {
+	if err == nil {
+		err = s.grokFault(grokFaultAfterLease)
+	}
+	if err != nil {
+		if original.NativeStarted {
+			// The lease transaction ran but its outcome is unknown: the durable
+			// operation decides whether it is fenced for the scanner.
+			s.fenceUnsettledGrokOperation(parent, id, original)
+		}
+		return
+	}
+	if !original.NativeStarted {
 		return
 	}
 	s.logGrok(parent, slog.LevelInfo, "grok_refresh_started", original, grokStepClaim, "account_id", id)
@@ -145,10 +169,8 @@ func (s *Service) runGrokRefresh(parent context.Context, id domain.ID) {
 	bounded, stop := context.WithTimeout(domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice}), 30*time.Second)
 	defer stop()
 	if err := s.finishGrokRefresh(bounded, id, original, &outcome); err != nil {
-		if e := s.markServerSubscriptionRecovery(id, original.ID, nil); e != nil {
-			s.logGrok(bounded, slog.LevelWarn, "grok_refresh_recovery_unconfirmed", original, grokStepFinish, "code", domain.SafeError(e).Code)
-		}
 		s.logGrok(bounded, slog.LevelWarn, "grok_refresh_finish_failed", original, grokStepFinish, "code", domain.SafeError(err).Code)
+		s.fenceUnsettledGrokOperation(bounded, id, original)
 	}
 	outcome.bundle.Clear()
 }
@@ -211,7 +233,7 @@ func (s *Service) grokRefreshSteps(ctx, parent context.Context, id domain.ID, or
 	}
 	outcome.claimed = true
 	s.logGrok(ctx, slog.LevelInfo, "grok_refresh_exchange_claimed", original, grokStepClaim)
-	s.grokFault(grokFaultAfterClaim)
+	_ = s.grokFault(grokFaultAfterClaim)
 	refreshToken := current.RefreshTokenBytes()
 	tokens, err := client.Refresh(ctx, refreshToken)
 	clear(refreshToken)
@@ -229,7 +251,7 @@ func (s *Service) grokRefreshSteps(ctx, parent context.Context, id domain.ID, or
 		s.logGrok(ctx, slog.LevelWarn, "grok_refresh_exchange_uncertain", original, grokStepExchange, "reason", reason)
 		return uncertain(grokStepExchange)
 	}
-	s.grokFault(grokFaultAfterResponse)
+	_ = s.grokFault(grokFaultAfterResponse)
 	claims, info, err := client.RefreshedClaims(ctx, endpoints, tokens)
 	if err != nil {
 		reason, _ := subscription.GrokOAuthFailure(err)
@@ -354,7 +376,9 @@ func (s *Service) finishGrokRefresh(ctx context.Context, id domain.ID, o domain.
 		if e != nil {
 			return e
 		}
-		s.grokFault(grokFaultAfterStage)
+		if e := s.grokFault(grokFaultAfterStage); e != nil {
+			return e
+		}
 	}
 	diagnostic := grokRefreshDiagnosticFor(o, result, code)
 	rejected := outcome.rejected
@@ -403,7 +427,9 @@ func (s *Service) finishGrokRefresh(ctx context.Context, id domain.ID, o domain.
 	if err != nil {
 		return err
 	}
-	s.grokFault(grokFaultAfterPersist)
+	if err := s.grokFault(grokFaultAfterPersist); err != nil {
+		return err
+	}
 	if result != domain.SubscriptionRecovery {
 		keep := o.Generation
 		if success {
@@ -424,6 +450,89 @@ func (s *Service) finishGrokRefresh(ctx context.Context, id domain.ID, o domain.
 	}
 	s.logGrok(ctx, level, "grok_refresh_finished", o, grokStepFinish, "state", result, "code", code, "claimed", outcome.claimed)
 	return nil
+}
+
+// grokDiagnosticPhaseOf maps a Grok server operation action to the phase of its
+// durable diagnostic.
+func grokDiagnosticPhaseOf(action domain.SubscriptionAction) domain.GrokDiagnosticPhase {
+	switch action {
+	case domain.SubscriptionRefresh:
+		return domain.GrokDiagnosticRefresh
+	case domain.SubscriptionLogout:
+		return domain.GrokDiagnosticLogout
+	}
+	return domain.GrokDiagnosticLogin
+}
+
+// fenceUnsettledGrokOperation runs after a finish returned an error. The error
+// does not say whether the settling transaction committed (a commit
+// acknowledgement can be lost after the transaction committed), so the durable
+// operation decides: a settled operation is the committed outcome and stays as it
+// is, and one that is still pending is fenced recovery-required with its own
+// diagnostic. It never rewrites a committed settlement.
+func (s *Service) fenceUnsettledGrokOperation(ctx context.Context, id domain.ID, o domain.ServerSubscriptionOperation) {
+	fenced, err := s.markGrokRecovery(id, o.ID)
+	switch {
+	case err != nil:
+		s.logGrok(ctx, slog.LevelWarn, "grok_recovery_unconfirmed", o, grokStepFinish, "code", domain.SafeError(err).Code)
+	case fenced:
+		s.logGrok(ctx, slog.LevelWarn, "grok_operation_fenced", o, grokStepFinish)
+	default:
+		s.logGrok(ctx, slog.LevelInfo, "grok_settlement_reconciled", o, grokStepFinish)
+	}
+}
+
+// markGrokRecovery fences a Grok server operation that is still pending, records
+// the diagnostic of its phase (code recovery_required, the operation as
+// correlation id) and reports whether it fenced anything. An operation of another
+// id is refused; one that is no longer the account's pending operation has
+// settled and is left untouched.
+func (s *Service) markGrokRecovery(id, operation domain.ID) (bool, error) {
+	ctx, cancel := context.WithTimeout(domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice}), 5*time.Second)
+	defer cancel()
+	unlock, err := s.lockAccounts(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer unlock()
+	fenced := false
+	_, err = s.Store.Mutate(ctx, domain.NewID(), "grok.server.recovery", struct{ Account, Operation domain.ID }{id, operation}, func(tx *store.Tx) (any, error) {
+		fenced = false
+		r, a, err := grokSubscriptionAccount(tx, id, 0)
+		if err != nil {
+			return nil, err
+		}
+		st := a.Subscription
+		if st == nil || st.ServerOperation == nil || st.ServerOperation.ID != operation {
+			return nil, subscriptionDenied()
+		}
+		o := st.ServerOperation
+		if st.Pending == nil || st.Pending.ID != operation || !o.NativeStarted {
+			// The settling transaction committed.
+			return struct{}{}, nil
+		}
+		fenced = true
+		o.State = domain.SubscriptionRecovery
+		if o.GrokDiagnostic == nil {
+			code := domain.RecoveryRequired
+			if o.GrokRevocation == domain.GrokRevocationConfirmed {
+				// The provider revoked the token; only the protected cleanup is
+				// pending, so the outcome is known and the cleanup is retried.
+				code = domain.Unavailable
+			}
+			o.GrokDiagnostic = &domain.GrokDiagnostic{Phase: grokDiagnosticPhaseOf(o.Action), Code: code, CorrelationID: o.ID}
+		}
+		st.RecoveryRequired = true
+		a.Health = domain.AccountFailed
+		if _, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
+			return nil, err
+		}
+		return struct{}{}, nil
+	})
+	if err == nil && fenced {
+		delete(s.subscriptionProgress, operation)
+	}
+	return fenced && err == nil, err
 }
 
 // grokRefreshNeedsRecovery selects an interrupted Grok refresh whose exchange

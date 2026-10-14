@@ -43,9 +43,11 @@ func TestGrokRevokeClassifiesEveryOutcome(t *testing.T) {
 		settled bool
 	}{
 		{"ok", http.StatusOK, "", subscription.GrokRevoked, "", true},
-		{"invalid-token", http.StatusBadRequest, `{"error":"invalid_token"}`, subscription.GrokAlreadyInvalid, "", true},
-		{"invalid-grant", http.StatusBadRequest, `{"error":"invalid_grant"}`, subscription.GrokAlreadyInvalid, "", true},
-		{"unauthorized-invalid-token", http.StatusUnauthorized, `{"error":"invalid_token"}`, subscription.GrokAlreadyInvalid, "", true},
+		{"invalid-token", http.StatusBadRequest, `{"error":"invalid_token"}`, "", subscription.GrokReasonRevokeRejected, false},
+		{"invalid-grant", http.StatusBadRequest, `{"error":"invalid_grant"}`, "", subscription.GrokReasonRevokeRejected, false},
+		{"invalid-grant-with-trailing-data", http.StatusBadRequest, `{"error":"invalid_grant"} {"x":1}`, "", subscription.GrokReasonRevokeRejected, false},
+		{"unauthorized-invalid-token", http.StatusUnauthorized, `{"error":"invalid_token"}`, "", subscription.GrokReasonRevokeRejected, false},
+		{"ok-with-an-error-body", http.StatusOK, `{"error":"invalid_grant"}`, subscription.GrokRevoked, "", true},
 		{"invalid-client", http.StatusUnauthorized, `{"error":"invalid_client"}`, "", subscription.GrokReasonRevokeRejected, false},
 		{"unsupported-token-type", http.StatusBadRequest, `{"error":"unsupported_token_type"}`, "", subscription.GrokReasonRevokeRejected, false},
 		{"bad-request-without-error", http.StatusBadRequest, `not json`, "", subscription.GrokReasonRevokeRejected, false},

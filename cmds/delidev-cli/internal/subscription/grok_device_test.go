@@ -79,8 +79,17 @@ func TestGrokDeviceAuthorizationRejectsUnsafeGrants(t *testing.T) {
 		"credentials in the url":    func(i *grokidp.IdP) { i.DeviceVerification = "https://user@accounts.x.ai/oauth2/device" },
 		"complete url wrong host":   func(i *grokidp.IdP) { i.DeviceCompleteURI = "https://auth.x.ai/oauth2/device?user_code=ABCD-1234" },
 		"complete url other code":   func(i *grokidp.IdP) { i.DeviceCompleteURI = "https://accounts.x.ai/oauth2/device?user_code=ZZZZ-9999" },
-		"complete url extra query": func(i *grokidp.IdP) {
-			i.DeviceCompleteURI = "https://accounts.x.ai/oauth2/device?user_code=ABCD-1234&x=1"
+		"complete url without the user code": func(i *grokidp.IdP) {
+			i.DeviceCompleteURI = "https://accounts.x.ai/oauth2/device?source=cli"
+		},
+		"complete url repeated parameter": func(i *grokidp.IdP) {
+			i.DeviceCompleteURI = "https://accounts.x.ai/oauth2/device?user_code=ABCD-1234&source=cli&source=web"
+		},
+		"complete url control character": func(i *grokidp.IdP) {
+			i.DeviceCompleteURI = "https://accounts.x.ai/oauth2/device?user_code=ABCD-1234&source=c%0Ali"
+		},
+		"complete url unsafe parameter name": func(i *grokidp.IdP) {
+			i.DeviceCompleteURI = "https://accounts.x.ai/oauth2/device?user_code=ABCD-1234&a%20b=1"
 		},
 		"lowercase user code":  func(i *grokidp.IdP) { i.DeviceUserCode = "abcd-1234" },
 		"short user code":      func(i *grokidp.IdP) { i.DeviceUserCode = "AB" },
@@ -291,9 +300,81 @@ func TestGrokUserCodeAndVerificationURLValidators(t *testing.T) {
 			t.Fatalf("user code %q accepted", bad)
 		}
 	}
-	for _, bad := range []string{"", "https://accounts.x.ai", "https://accounts.x.ai:8443/d", "https://accounts.x.ai/d#frag", "https://accounts.x.ai/d?other=1", "ftp://accounts.x.ai/d", "https://accounts.x.ai.evil/d"} {
+	for _, bad := range []string{"", "https://accounts.x.ai", "https://accounts.x.ai:8443/d", "https://accounts.x.ai/d#frag", "ftp://accounts.x.ai/d", "https://accounts.x.ai.evil/d"} {
 		if _, ok := subscription.GrokVerificationURL(bad, ""); ok {
 			t.Fatalf("verification URL %q accepted", bad)
 		}
 	}
+}
+
+// The complete verification URI is the provider's own shortcut: a routing or
+// tracking parameter next to the correct user code must not abort the whole device
+// authorization, and the safe parameters are preserved.
+func TestGrokDeviceAuthorizationAcceptsSafeExtraParametersInTheCompleteURI(t *testing.T) {
+	for name, complete := range map[string]string{
+		"source":          "https://accounts.x.ai/oauth2/device?user_code=ABCD-1234&source=cli",
+		"before the code": "https://accounts.x.ai/oauth2/device?source=cli&user_code=ABCD-1234",
+		"several":         "https://accounts.x.ai/oauth2/device?user_code=ABCD-1234&source=cli&utm_campaign=grok-build&lang=en-US",
+	} {
+		t.Run(name, func(t *testing.T) {
+			idp := grokidp.New(t)
+			idp.DeviceCompleteURI = complete
+			client, endpoints := deviceFixture(t, idp)
+			grant, err := client.RequestDeviceAuthorization(context.Background(), endpoints)
+			if err != nil {
+				t.Fatalf("a complete URI with safe extra parameters aborted the authorization: %v", err)
+			}
+			defer grant.Clear()
+			if grant.VerificationURL != complete || grant.UserCode != "ABCD-1234" {
+				t.Fatal("the complete verification URI was altered")
+			}
+		})
+	}
+	for _, good := range []string{"https://accounts.x.ai/d?other=1", "https://accounts.x.ai/d?user_code=ABCD-1234&source=cli"} {
+		if _, ok := subscription.GrokVerificationURL(good, "ABCD-1234"); !ok {
+			t.Fatalf("verification URL %q rejected", good)
+		}
+	}
+}
+
+// The device poll shares the token response rules: a definitive answer is one
+// whole JSON object. An OAuth error object followed by other data is not
+// definitive, because the device code may have been redeemed; it must stay
+// uncertain instead of being read as pending, slow_down, denied or expired.
+func TestGrokDevicePollRejectsTrailingDataInEveryAnswer(t *testing.T) {
+	for _, answer := range []string{"authorization_pending", "slow_down", "access_denied", "expired_token", "invalid_grant"} {
+		for _, trailer := range []string{` {"x":1}`, `junk`} {
+			t.Run(answer+trailer, func(t *testing.T) {
+				idp := grokidp.New(t)
+				idp.DeviceScript = []string{answer}
+				idp.TokenTrailer = trailer
+				client, endpoints := deviceFixture(t, idp)
+				grant, err := client.RequestDeviceAuthorization(context.Background(), endpoints)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer grant.Clear()
+				_, _, err = client.PollDeviceToken(context.Background(), endpoints, grant.DeviceCode)
+				if reason, ok := subscription.GrokOAuthFailure(err); !ok || reason != subscription.GrokReasonTokenUncertain {
+					t.Fatalf("an %s answer with trailing data was not uncertain: %v", answer, err)
+				}
+			})
+		}
+	}
+	t.Run("whole objects stay definitive", func(t *testing.T) {
+		idp := grokidp.New(t)
+		idp.DeviceScript = []string{"authorization_pending", "slow_down", "access_denied", "expired_token"}
+		client, endpoints := deviceFixture(t, idp)
+		grant, err := client.RequestDeviceAuthorization(context.Background(), endpoints)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer grant.Clear()
+		want := []subscription.GrokDevicePoll{subscription.GrokDevicePending, subscription.GrokDeviceSlowDown, subscription.GrokDeviceDenied, subscription.GrokDeviceExpired}
+		for _, w := range want {
+			if _, got, err := client.PollDeviceToken(context.Background(), endpoints, grant.DeviceCode); err != nil || got != w {
+				t.Fatalf("poll = %v, %v; want %v", got, err, w)
+			}
+		}
+	})
 }
