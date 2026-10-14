@@ -66,6 +66,18 @@ export function verifyBundle(file, bundle, plan) {
 }
 export function downloadRelease(plan, output) {
   const api = (endpoint) => JSON.parse(command("gh", ["api", endpoint]));
+  const readSourceFile = (name) => {
+    const response = api(
+      `repos/delinoio/oss/contents/${name}?ref=${plan.revision}`,
+    );
+    requireValue(
+      response.type === "file" &&
+        response.encoding === "base64" &&
+        typeof response.content === "string",
+      "INVALID_SOURCE_FILE",
+    );
+    return Buffer.from(response.content, "base64");
+  };
   let object = api(
     `repos/delinoio/oss/git/ref/tags/${encodeURIComponent(plan.tag)}`,
   ).object;
@@ -111,6 +123,11 @@ export function downloadRelease(plan, output) {
       .includes("./.github/workflows/release-linux-packages.yml"),
     "RELEASE_PREDATES_PACKAGE_SUPPORT",
   );
+  const terms = ["binpm", "cargo-mono", "nodeup", "with-watch", "derun"].includes(
+    plan.project,
+  )
+    ? { license: readSourceFile("LICENSE"), notice: readSourceFile("NOTICE") }
+    : null;
   const commit = api(`repos/delinoio/oss/commits/${plan.revision}`);
   const epoch = Math.floor(Date.parse(commit.commit.committer.date) / 1000);
   requireValue(
@@ -140,7 +157,7 @@ export function downloadRelease(plan, output) {
     requireValue(sha256(bytes) === hashes[arch], "ARCHIVE_CHECKSUM_MISMATCH");
     verifyBundle(file, `${file}.sigstore.json`, plan);
     const executable = path.join(output, `${plan.project}-${arch}`);
-    writeFileSync(executable, extractExecutable(bytes, plan.project), {
+    writeFileSync(executable, extractExecutable(bytes, plan.project, terms), {
       mode: 0o755,
     });
     binaries[arch] = {

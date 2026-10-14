@@ -244,7 +244,10 @@ test("legacy Linux archives accept licensed and authenticated historical shapes 
     ];
     for (const entries of [[executable], [executable, ...terms]])
       assert.deepEqual(
-        extractExecutable(legacyArchive(entries), project),
+        extractExecutable(legacyArchive(entries), project, {
+          license,
+          notice,
+        }),
         executable.data,
       );
     for (const entries of [
@@ -258,8 +261,33 @@ test("legacy Linux archives accept licensed and authenticated historical shapes 
       [executable, { ...terms[0], data: Buffer.from("short") }, terms[1]],
       [executable, terms[0], { ...terms[1], data: Buffer.from("short") }],
     ])
-      assert.throws(() => extractExecutable(legacyArchive(entries), project));
+      assert.throws(() =>
+        extractExecutable(legacyArchive(entries), project, { license, notice }),
+      );
   }
+});
+test("legacy archive terms are compared with the supplied source revision", () => {
+  const executable = {
+    name: "binpm",
+    data: Buffer.from("binary:binpm"),
+    mode: 0o755,
+  };
+  const sourceTerms = {
+    license: Buffer.from("license at the selected revision"),
+    notice: Buffer.from("notice at the selected revision"),
+  };
+  const archive = legacyArchive([
+    executable,
+    { name: "LICENSE", data: sourceTerms.license },
+    { name: "NOTICE", data: sourceTerms.notice },
+  ]);
+  assert.deepEqual(
+    extractExecutable(archive, "binpm", sourceTerms),
+    executable.data,
+  );
+  assert.throws(() =>
+    extractExecutable(archive, "binpm", { license, notice }),
+  );
 });
 test("ELF checks reject wrong architecture, newer libc, runtime paths and CPU requirements", () => {
   const elf = Buffer.alloc(64);

@@ -181,7 +181,10 @@ exit 1
       // macOS bsdtar may add PAX metadata; the Linux release runner uses GNU tar.
       if (os === "linux" && process.platform === "linux")
         assert.deepEqual(
-          extractExecutable(readFileSync(archivePath), project),
+          extractExecutable(readFileSync(archivePath), project, {
+            license,
+            notice,
+          }),
           binary,
         );
       assert.ok(

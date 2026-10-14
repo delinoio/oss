@@ -116,7 +116,7 @@ export function checksumFor(manifest, name) {
   requireValue(entry, "MISSING_CHECKSUM");
   return entry.hash;
 }
-export function extractExecutable(bytes, project) {
+export function extractExecutable(bytes, project, terms = null) {
   // Decode only regular ustar entries into memory. Never extract archive-controlled paths.
   const tar = gunzipSync(bytes, { maxOutputLength: 256 * 1024 * 1024 });
   const allowed = legacyArchiveProjects.has(project)
@@ -168,14 +168,20 @@ export function extractExecutable(bytes, project) {
     // releases must carry both complete texts from their source checkout.
     const hasLicense = entries.has("LICENSE");
     requireValue(hasLicense === entries.has("NOTICE"), "INVALID_ARCHIVE_ENTRY");
-    if (hasLicense)
+    if (hasLicense) {
+      requireValue(
+        terms?.license instanceof Uint8Array &&
+          terms.notice instanceof Uint8Array,
+        "ARCHIVE_TERMS_CONTEXT_REQUIRED",
+      );
       for (const name of ["LICENSE", "NOTICE"])
         requireValue(
           entries
             .get(name)
-            .equals(readFileSync(new URL(`../../../${name}`, import.meta.url))),
+            .equals(name === "LICENSE" ? terms.license : terms.notice),
           "INVALID_ARCHIVE_PAYLOAD",
         );
+    }
   }
   return entries.get(project);
 }
