@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useEffect, useId, useState } from "react";
-import { useQuery } from "@connectrpc/connect-query";
+import { createConnectQueryKey, useQuery } from "@connectrpc/connect-query";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   DeviceType,
   FailureCause,
@@ -652,7 +653,13 @@ function PeerRow({
   workerEnabled: boolean;
 }) {
   useLocale();
-  const [checked, setChecked] = useState(false);
+  // A check belongs to the peer's host and online state when it was requested.
+  // Deriving `checked` from that key invalidates the check in the same render
+  // that observes a discovery change, so no stale result can show for a frame.
+  const peerKey = JSON.stringify([peer.host, peer.online]);
+  const [checkedKey, setCheckedKey] = useState<string>();
+  const checked = checkedKey === peerKey;
+  const queryClient = useQueryClient();
   // Checking is an explicit single-peer read. Unmount cancels it; cached online
   // metadata never establishes DeliDev support or enables another peer's action.
   const check = useQuery(
@@ -666,15 +673,28 @@ function PeerRow({
       gcTime: 0,
     },
   );
-  // A failed manual re-check keeps the previous identity in the query next to
-  // the new error. The latest result controls the status text and the Connect
-  // and Register Worker actions, so cached identity is ignored on error.
+  // Changed host or online state invalidates the check. The disabled query would
+  // otherwise keep its cached identity or error under the same peer ID and serve
+  // it again on the next Check, so the cached result is dropped with the check.
+  useEffect(() => {
+    void queryClient.resetQueries({
+      queryKey: createConnectQueryKey({
+        schema: TailscaleQuery.checkTailscale,
+        input: { peerId: peer.id },
+        cardinality: "finite",
+      }),
+    });
+  }, [queryClient, peer.id, peerKey]);
+  // Every displayed value reads the query only for the current check. A failed
+  // manual re-check keeps the previous identity next to the new error, so the
+  // latest result controls: cached identity is ignored on error.
+  const fetching = checked && check.isFetching;
+  const checkError = checked ? check.error : undefined;
   const identity =
     checked && !check.error
       ? decode<Identity>(check.data?.documentJson)
       : undefined;
-  useEffect(() => setChecked(false), [peer.host, peer.online]);
-  const cause = checkCause(check.error);
+  const cause = checkCause(checkError);
   return (
     <li>
       <div>
@@ -685,7 +705,7 @@ function PeerRow({
         </p>
         <p role="status">
           {copy("tailscale.delidev")}:{" "}
-          {check.isFetching
+          {fetching
             ? copy("tailscale.checking")
             : identity?.approval
               ? copy("tailscale.accepting")
@@ -699,8 +719,10 @@ function PeerRow({
       <div className="tailscale-actions">
         <button
           type="button"
-          disabled={!peer.online || peer.shared_to || check.isFetching}
-          onClick={() => (checked ? void check.refetch() : setChecked(true))}
+          disabled={!peer.online || peer.shared_to || fetching}
+          onClick={() =>
+            checked ? void check.refetch() : setCheckedKey(peerKey)
+          }
         >
           {copy("tailscale.check")}
         </button>
@@ -729,13 +751,13 @@ function PeerRow({
       {cause ? (
         <div className="tailscale-check-cause">
           <CheckCauseProblem
-            error={check.error}
+            error={checkError}
             cause={cause}
             device={peer.name}
           />
         </div>
       ) : (
-        <Problem error={check.error} />
+        <Problem error={checkError} />
       )}
     </li>
   );

@@ -417,12 +417,20 @@ function checkFixture(options: {
   // 1-based discovery read from which discovery fails (default: never).
   discoveryFailFrom?: number;
   peerOverrides?: Record<string, unknown>;
+  // Peer fields for a 1-based discovery read, merged over peerOverrides.
+  peerAtDiscovery?: (discovery: number) => Record<string, unknown>;
+  // The failure applies only while the 1-based check attempt is at most this.
+  failUntil?: number;
 }) {
   let attempts = 0;
   let discoveries = 0;
   const check = vi.fn(() => {
     attempts += 1;
-    if (options.failure && attempts >= (options.failFrom ?? 1))
+    if (
+      options.failure &&
+      attempts >= (options.failFrom ?? 1) &&
+      attempts <= (options.failUntil ?? Infinity)
+    )
       throw options.failure();
     return {
       documentJson: encode({
@@ -463,6 +471,7 @@ function checkFixture(options: {
                 online: true,
                 shared_to: false,
                 ...options.peerOverrides,
+                ...options.peerAtDiscovery?.(discoveries),
               },
             ],
             observed_at: "2026-01-01T00:00:00Z",
@@ -723,4 +732,72 @@ it("treats cached access as unknown when the latest access read fails", async ()
   expect(
     screen.getByText("Tailscale access: Setup or cleanup required"),
   ).toBeTruthy();
+});
+
+// Invalidated-check class (issue 3687 review): a changed host or online state
+// resets the check, so neither the cached failure nor the cached identity may
+// show or be served again for the new peer state.
+const movedHost = (discovery: number) =>
+  discovery >= 2 ? { host: "moved.example" } : {};
+const refresh = () =>
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+
+it("drops the cached cause diagnosis when discovery changes the peer host", async () => {
+  checkFixture({
+    failure: refusedFailure,
+    failUntil: 1,
+    peerAtDiscovery: movedHost,
+  });
+  await runCheck();
+  expect(
+    await screen.findByText(`Could not connect to DeliDev on ${DEVICE}.`),
+  ).toBeTruthy();
+  refresh();
+  expect(await screen.findByText("DeliDev: Not checked")).toBeTruthy();
+  expect(screen.queryByText(/Could not connect to DeliDev on/)).toBeNull();
+  expect(screen.queryByText("DeliDev: Could not connect")).toBeNull();
+  expect(rowAlert()).toBeNull();
+});
+
+it("drops a cached generic failure when discovery changes the peer online state", async () => {
+  checkFixture({
+    failure: () =>
+      checkFailure("Original safe message.", "unavailable", "dns_failure"),
+    peerAtDiscovery: (discovery) => ({ online: discovery < 2 }),
+  });
+  await runCheck();
+  await waitFor(() => expect(rowAlert()).not.toBeNull());
+  refresh();
+  expect(await screen.findByText("DeliDev: Not checked")).toBeTruthy();
+  expect(rowAlert()).toBeNull();
+  expect(screen.queryByText("DeliDev: Unavailable or blocked")).toBeNull();
+});
+
+it("runs a fresh check after the host changed instead of serving the cached failure", async () => {
+  const f = checkFixture({
+    failure: refusedFailure,
+    failUntil: 1,
+    peerAtDiscovery: movedHost,
+  });
+  await runCheck();
+  await screen.findByText(`Could not connect to DeliDev on ${DEVICE}.`);
+  refresh();
+  await screen.findByText("DeliDev: Not checked");
+  await runCheck();
+  expect(await screen.findByText("DeliDev: Accepting requests")).toBeTruthy();
+  expect(f.attempts()).toBe(2);
+  expect(rowAlert()).toBeNull();
+});
+
+it("drops the cached identity and its actions when discovery changes the peer host", async () => {
+  const f = checkFixture({ peerAtDiscovery: movedHost });
+  await runCheck();
+  expect(await screen.findByText("DeliDev: Accepting requests")).toBeTruthy();
+  refresh();
+  expect(await screen.findByText("DeliDev: Not checked")).toBeTruthy();
+  for (const name of actionNames)
+    expect(screen.queryByRole("button", { name })).toBeNull();
+  await runCheck();
+  expect(await screen.findByText("DeliDev: Accepting requests")).toBeTruthy();
+  expect(f.attempts()).toBe(2);
 });
