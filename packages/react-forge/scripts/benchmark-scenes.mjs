@@ -245,23 +245,29 @@ function runChild(script, args, signal) {
   });
 }
 
-async function inspectFbx(paths) {
+async function inspectFbx(paths, signal) {
   if (!paths.length) return new Map();
-  const { stdout } = await execFile(
-    "cargo",
-    [
-      "run",
-      "--locked",
-      "--quiet",
-      "-p",
-      "forge-fbx",
-      "--example",
-      "inspect_benchmark",
-      "--",
-      ...paths,
-    ],
-    { cwd: root, maxBuffer: 1024 * 1024 },
-  );
+  let stdout;
+  try {
+    ({ stdout } = await execFile(
+      "cargo",
+      [
+        "run",
+        "--locked",
+        "--quiet",
+        "-p",
+        "forge-fbx",
+        "--example",
+        "inspect_benchmark",
+        "--",
+        ...paths,
+      ],
+      { cwd: root, maxBuffer: 1024 * 1024, signal },
+    ));
+  } catch (error) {
+    if (signal?.aborted) throw new Error("Scene benchmark cancelled.");
+    throw error;
+  }
   const rows = JSON.parse(stdout);
   if (!Array.isArray(rows) || rows.length !== paths.length)
     throw new Error("Incomplete independent FBX inspection.");
@@ -335,6 +341,7 @@ export async function runBenchmark(output, options = {}) {
         pending
           .filter((item) => item.format === "fbx")
           .map((item) => item.artifact),
+        signal,
       );
     for (const item of pending) {
       const expected = expectedTopology(item.workload);
