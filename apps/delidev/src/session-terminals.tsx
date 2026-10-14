@@ -55,6 +55,7 @@ import {
   ExternalLinkFailure,
   externalLinkFailure,
   externalLinkFailureMessages,
+  externalLinksAvailable,
   openExternalUrl,
 } from "./external-links";
 import "./external-links.css";
@@ -1089,15 +1090,17 @@ function TerminalView({
           },
           unavailable,
           tabShortcut,
-          (url) => {
-            // One click is one launch request; native code validates and
-            // classifies the URL and never retries or falls back.
-            setLinkFailure(undefined);
-            openExternalUrl(url).catch((failure) => {
-              if (!disposed && alive.current)
-                setLinkFailure(externalLinkFailure(failure));
-            });
-          },
+          externalLinksAvailable()
+            ? (url) => {
+                // One click is one launch request; native code validates and
+                // classifies the URL and never retries or falls back.
+                setLinkFailure(undefined);
+                openExternalUrl(url).catch((failure) => {
+                  if (!disposed && alive.current)
+                    setLinkFailure(externalLinkFailure(failure));
+                });
+              }
+            : undefined,
         );
         focusPending.current = true;
         setReady(true);
