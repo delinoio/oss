@@ -220,3 +220,26 @@ func TestPrepareGrokFinishWithholdsBundleWhenCleanupIsUnconfirmed(t *testing.T) 
 		t.Fatal("cleanup was confirmed or a bundle was returned despite an unretired remnant")
 	}
 }
+
+// A native process can leave another directory entry for auth.json. Unlinking
+// the name in the private home would not remove the credential, so Finish
+// neither seals it nor confirms cleanup.
+func TestPrepareGrokFinishWithholdsBundleForHardLinkedCredential(t *testing.T) {
+	server, account, generation := domain.NewID(), domain.NewID(), domain.NewID()
+	home := grokHome(t)
+	path := filepath.Join(home, subscription.GrokAuthFileName)
+	original, err := subscription.ParseGrokAuthFile(grokWorkerFile(t, "synthetic-principal-1", "one", "2026-10-14T06:00:00Z"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, grokWorkerFile(t, "synthetic-principal-1", "two", "2026-10-14T12:00:00Z"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(path, filepath.Join(t.TempDir(), "alias.json")); err != nil {
+		t.Skip("hard links are unsupported on this platform")
+	}
+	out := prepareGrokFinish(home, server, account, generation, pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH, original, true)
+	if out.Success || out.Cleanup || len(out.Bundle) != 0 {
+		t.Fatal("a hard-linked credential was sealed or its cleanup was confirmed")
+	}
+}

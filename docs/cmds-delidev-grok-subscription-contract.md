@@ -188,7 +188,11 @@ non-linked home, clears the in-memory envelope, and writes nothing when the
 envelope is rebound. After the native process exits it reads the file once,
 seals the next generation (bound to the Finish request identifier) only when the
 original identity is unchanged, and retires the file and interrupted-write
-temporaries. Cleanup is confirmed only when no credential file or attributed
+temporaries. The file must be a regular, bounded, non-symlinked entry with
+exactly one directory entry: a hard-linked `auth.json` is never sealed, and
+retiring a hard-linked file or temporary unlinks its name but reports the
+cleanup as unconfirmed because the other entry keeps the plaintext credential
+reachable. Cleanup is confirmed only when no credential file or attributed
 temporary remains; otherwise no bundle is returned and the server keeps the
 lease fenced. Native refresh, login execution and Worker-side watch dispatch for
 Grok are separate lifecycle work and are not activated by this storage contract.

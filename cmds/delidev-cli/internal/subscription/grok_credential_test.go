@@ -155,3 +155,65 @@ func TestGrokRefreshedRequiresSameIdentityAndRotation(t *testing.T) {
 		t.Fatal("an empty original was accepted")
 	}
 }
+
+// A second directory entry keeps the plaintext credential reachable after the
+// file's own name is retired, so such a file is never sealed and its cleanup is
+// never confirmed.
+func TestGrokAuthFileRejectsHardLinkedCredential(t *testing.T) {
+	home := grokHomeForTest(t)
+	path := filepath.Join(home, GrokAuthFileName)
+	bundle, err := ParseGrokAuthFile(grokFixtureFile(t, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteGrokAuthFile(home, bundle); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(t.TempDir(), "alias.json")
+	if err := os.Link(path, alias); err != nil {
+		t.Skip("hard links are unsupported on this platform")
+	}
+	if _, err := ReadGrokAuthFile(home); err == nil || err.Error() != GrokBundleInvalid().Error() {
+		t.Fatal("a hard-linked auth.json was read")
+	}
+	server, account, generation := domain.NewID(), domain.NewID(), domain.NewID()
+	if _, _, err := SealGrokFinish(home, server, account, generation, bundle); err == nil {
+		t.Fatal("a hard-linked auth.json was sealed")
+	}
+	if present, err := GrokAuthFilePresent(home); err == nil || !present {
+		t.Fatal("a hard-linked credential was reported clean")
+	}
+	// The name in the private home is still unlinked, but the surviving entry
+	// makes the retirement unconfirmed.
+	if err := RetireGrokAuthFile(home); err == nil {
+		t.Fatal("retirement of a hard-linked credential was confirmed")
+	}
+	if _, err := os.Lstat(path); !os.IsNotExist(err) {
+		t.Fatal("the hard-linked name was not unlinked")
+	}
+	if _, err := os.Stat(alias); err != nil {
+		t.Fatal("retirement removed the other directory entry")
+	}
+	if present, err := GrokAuthFilePresent(home); err != nil || present {
+		t.Fatal("the home still reports a credential after the name was unlinked")
+	}
+}
+
+// An interrupted write's temporary can be hard linked as well.
+func TestRetireGrokAuthFileReportsHardLinkedTemporary(t *testing.T) {
+	home := grokHomeForTest(t)
+	temporary := filepath.Join(home, security.OwnedTemporaryPrefix(filepath.Join(home, GrokAuthFileName))+"old")
+	if err := os.WriteFile(temporary, []byte(grokTestRefresh), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(t.TempDir(), "alias.tmp")
+	if err := os.Link(temporary, alias); err != nil {
+		t.Skip("hard links are unsupported on this platform")
+	}
+	if err := RetireGrokAuthFile(home); err == nil {
+		t.Fatal("retirement of a hard-linked temporary was confirmed")
+	}
+	if entries, _ := os.ReadDir(home); len(entries) != 0 {
+		t.Fatal("the temporary name was not unlinked")
+	}
+}

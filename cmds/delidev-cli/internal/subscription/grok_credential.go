@@ -68,7 +68,9 @@ func ReadGrokAuthFile(grokHome string) (GrokBundle, error) {
 	}
 	defer file.Close()
 	opened, err := file.Stat()
-	if err != nil || !os.SameFile(info, opened) {
+	// A second directory entry would keep the plaintext credential reachable
+	// after the file is retired, so a linked file is never sealed.
+	if err != nil || !os.SameFile(info, opened) || !grokSingleLinkFile(file, opened) {
 		return GrokBundle{}, GrokBundleInvalid()
 	}
 	raw, err := io.ReadAll(io.LimitReader(file, MaxGrokAuthFile+1))
@@ -99,14 +101,59 @@ func GrokAuthFilePresent(grokHome string) (bool, error) {
 	if !info.Mode().IsRegular() {
 		return true, &RuntimeCleanupError{Stage: CleanupValidation, Reason: CleanupNotRegular}
 	}
+	// Removing one name of a multiply linked file does not remove the
+	// credential, so it is never reported as clean.
+	if !grokSingleLinkPath(filepath.Join(grokHome, GrokAuthFileName), info) {
+		return true, &RuntimeCleanupError{Stage: CleanupValidation, Reason: CleanupIdentity}
+	}
 	return true, nil
 }
 
 // RetireGrokAuthFile removes only the credential file and its attributed
 // temporaries. The caller has already joined the native process and its
 // descendants; the native lock and every other file are left to runtime cleanup.
+// A credential file or temporary with another directory entry is still unlinked
+// here, but retirement then reports an unconfirmed cleanup because the other
+// entry keeps the plaintext credential reachable.
 func RetireGrokAuthFile(grokHome string) error {
-	return retireCredentialFile(grokHome, GrokAuthFileName, security.SyncParent)
+	linked, probeErr := grokCredentialLinked(grokHome)
+	if err := retireCredentialFile(grokHome, GrokAuthFileName, security.SyncParent); err != nil {
+		return err
+	}
+	if probeErr != nil {
+		return probeErr
+	}
+	if linked {
+		return &RuntimeCleanupError{Stage: CleanupAuthFile, Reason: CleanupIdentity}
+	}
+	return nil
+}
+
+// grokCredentialLinked reports whether the credential file or one of its
+// attributed temporaries has more than one directory entry.
+func grokCredentialLinked(grokHome string) (bool, error) {
+	temporaries, real, err := credentialTemporaries(grokHome, GrokAuthFileName)
+	if err != nil || !real {
+		return false, err
+	}
+	linked := false
+	for _, candidate := range temporaries {
+		if info, err := os.Lstat(candidate); err == nil && !grokSingleLinkPath(candidate, info) {
+			linked = true
+		}
+	}
+	path := filepath.Join(grokHome, GrokAuthFileName)
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return linked, nil
+	}
+	if err != nil {
+		return linked, &RuntimeCleanupError{Stage: CleanupAuthFile, Reason: CleanupFilesystem}
+	}
+	if info.Mode().IsRegular() && !grokSingleLinkPath(path, info) {
+		linked = true
+	}
+	return linked, nil
 }
 
 // SealGrokFinish reads the native credential file and seals it as the Finish
