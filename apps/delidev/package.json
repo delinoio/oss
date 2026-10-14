@@ -49,7 +49,8 @@
     "test:unit:4": "vitest run --exclude \"**/*.integration.test.*\" --shard=4/4",
     "test:integration:4": "vitest run .integration.test. --shard=4/4",
     "ci:qa": "node --test scripts/qa/*.test.mjs",
-    "test:command-menu-layout": "node scripts/test-command-menu-layout.mjs"
+    "test:command-menu-layout": "node scripts/test-command-menu-layout.mjs",
+    "test:app-information-layout": "node scripts/test-app-information-layout.mjs"
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.14.0",
