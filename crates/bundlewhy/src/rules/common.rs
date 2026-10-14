@@ -259,6 +259,18 @@ fn in_ranges(ranges: &[(usize, usize)], offset: usize) -> bool {
     index > 0 && offset < ranges[index - 1].1
 }
 
+fn next_code_byte(bytes: &[u8], start: usize, ignored: &[(usize, usize)]) -> Option<u8> {
+    let mut index = start;
+    while index < bytes.len() {
+        if in_ranges(ignored, index) || bytes[index].is_ascii_whitespace() {
+            index += 1;
+        } else {
+            return Some(bytes[index]);
+        }
+    }
+    None
+}
+
 #[derive(Clone, Copy)]
 enum EnvGuard {
     ShortCircuitAnd,
@@ -306,6 +318,7 @@ struct ScanScope {
     parent: usize,
     context: ScopeContext,
     pending_reads: Vec<usize>,
+    arrow_expression: bool,
 }
 
 fn env_guards(
@@ -321,6 +334,7 @@ fn env_guards(
         parent: 0,
         context: ScopeContext::Neutral,
         pending_reads: Vec::new(),
+        arrow_expression: false,
     }];
     let mut current_scope = 0;
     let mut next_start = 0;
@@ -346,6 +360,19 @@ fn env_guards(
             continue;
         }
 
+        if scopes[current_scope].arrow_expression
+            && matches!(bytes[index], b',' | b';' | b')' | b']' | b'}')
+        {
+            let parent = scopes[current_scope].parent;
+            let pending_reads = std::mem::take(&mut scopes[current_scope].pending_reads);
+            // An expression-bodied arrow evaluates to a function object at
+            // the enclosing expression. Do not let its unguarded reads flow
+            // into an enclosing branch operator. Guards found inside the
+            // arrow body remain recorded on their own reads.
+            drop(pending_reads);
+            current_scope = parent;
+        }
+
         match bytes[index] {
             b'(' | b'[' | b'{' => {
                 let context =
@@ -354,6 +381,7 @@ fn env_guards(
                     parent: current_scope,
                     context,
                     pending_reads: Vec::new(),
+                    arrow_expression: false,
                 });
                 current_scope = scopes.len() - 1;
             }
@@ -368,6 +396,17 @@ fn env_guards(
                     if guards[read].is_none() {
                         blocked[read] = true;
                     }
+                }
+            }
+            b'=' if bytes.get(index + 1) == Some(&b'>') => {
+                if next_code_byte(bytes, index + 2, ignored) != Some(b'{') {
+                    scopes.push(ScanScope {
+                        parent: current_scope,
+                        context: ScopeContext::Neutral,
+                        pending_reads: Vec::new(),
+                        arrow_expression: true,
+                    });
+                    current_scope = scopes.len() - 1;
                 }
             }
             b'=' if bytes.get(index + 1) != Some(&b'=')
@@ -406,6 +445,11 @@ fn env_guards(
             }
             _ => {}
         }
+    }
+
+    while scopes[current_scope].arrow_expression {
+        let parent = scopes[current_scope].parent;
+        current_scope = parent;
     }
 
     guards
@@ -1465,6 +1509,10 @@ y=/process.env.F/.test(z),process.env.G"#;
         assert_eq!(
             guard("process.env.VERSION??fallback", "process.env.VERSION"),
             Some("the retained read controls a ?? fallback branch")
+        );
+        assert_eq!(
+            guard("(()=>process.env.VERSION)&&run()", "process.env.VERSION"),
+            None
         );
     }
 
