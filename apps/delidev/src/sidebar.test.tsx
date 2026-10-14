@@ -2649,3 +2649,31 @@ it("re-places an open More popover when a failure notice makes it taller", async
     height.mockRestore();
   }
 });
+
+it("dismisses More when Shift+Tab moves focus to the opener but not for a press on it", async () => {
+  mountSidebar({ ...emptyLists });
+  await screen.findByRole("button", { name: "Sessions" });
+  const more = screen.getByRole("button", { name: "More" });
+  fireEvent.click(more);
+  const usage = screen.getByRole("button", { name: "Usage" });
+  expect(document.activeElement).toBe(usage);
+  // A press on the opener blurs the list, and the click that follows toggles it.
+  fireEvent.pointerDown(more);
+  fireEvent.focusOut(usage, { relatedTarget: more });
+  expect(screen.getByRole("dialog", { name: "More" })).toBeTruthy();
+  fireEvent.click(more);
+  expect(screen.queryByRole("dialog", { name: "More" })).toBeNull();
+  // Keyboard focus movement from the first row to the opener is an exit.
+  fireEvent.click(more);
+  fireEvent.keyDown(screen.getByRole("button", { name: "Usage" }), {
+    key: "Tab",
+    shiftKey: true,
+  });
+  more.focus();
+  fireEvent.focusOut(screen.getByRole("button", { name: "Usage" }), {
+    relatedTarget: more,
+  });
+  expect(screen.queryByRole("dialog", { name: "More" })).toBeNull();
+  expect(more.getAttribute("aria-expanded")).toBe("false");
+  expect(document.activeElement).toBe(more);
+});

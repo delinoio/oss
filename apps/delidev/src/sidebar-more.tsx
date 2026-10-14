@@ -79,6 +79,10 @@ export function SidebarMore({
   const pin = useRef<HTMLButtonElement>(null);
   // The mounted popover's placement routine, shared by every size change.
   const placement = useRef<(() => void) | undefined>(undefined);
+  // True after a Tab key moved focus inside the list and until the next pointer
+  // press. It tells keyboard focus movement from a press on the opener, which
+  // also blurs the list but must keep toggling it.
+  const keyboardFocus = useRef(false);
   const close = (restoreFocus: boolean) => {
     setOpen(false);
     if (restoreFocus) trigger.current?.focus();
@@ -101,6 +105,7 @@ export function SidebarMore({
     place();
     element.querySelector<HTMLButtonElement>("button")?.focus();
     const dismiss = (event: PointerEvent) => {
+      keyboardFocus.current = false;
       const target = event.target as Node;
       if (element.contains(target) || opener.contains(target)) return;
       // A control that receives the click keeps the focus it is about to take.
@@ -155,6 +160,7 @@ export function SidebarMore({
           aria-label={copy("sidebar.more")}
           className="sidebar-more-popover"
           onKeyDown={(event) => {
+            if (event.key === "Tab") keyboardFocus.current = true;
             if (event.key === "Escape") {
               event.preventDefault();
               event.stopPropagation();
@@ -188,10 +194,13 @@ export function SidebarMore({
             const next = event.relatedTarget as Node | null;
             // Focus that leaves for another control dismisses the list without
             // taking focus back. Window blur and removed buttons (null) do not.
+            // The opener counts only when a key moved focus to it (Shift+Tab
+            // from the first row): a press on it blurs the list too, and its
+            // own click then toggles the list.
             if (
               next &&
               !popup.current?.contains(next) &&
-              !trigger.current?.contains(next)
+              (!trigger.current?.contains(next) || keyboardFocus.current)
             )
               setOpen(false);
           }}
