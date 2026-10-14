@@ -1051,6 +1051,9 @@ impl crate::pipeline::Backend for Backend<'_> {
                     // error, including TypeScript-only syntax in a chunk,
                     // rolls the responsible bundle back.
                     let name = source_file_info(file).file_name.clone();
+                    if crate::app::bundle_dynamic_file(&name) {
+                        continue;
+                    }
                     let baseline = self.project.semantic_baseline.borrow();
                     let before = baseline.get(&name).map_or(&[][..], Vec::as_slice);
                     if !get_syntactic_diagnostics(file).is_empty()

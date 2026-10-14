@@ -2101,7 +2101,20 @@ fn resolves_explicit_runtime_import_before_declaration_substitution() {
 /// must not block analysis of the closed application bundle.
 #[test]
 fn ignores_syntax_diagnostics_in_dynamic_only_package_files() {
-    let temp = bundle(&[("index.js", r#"if(false)import("pkg");console.log(1);"#)]);
+    let temp = bundle(&[
+        (
+            "index.js",
+            r#"import{value}from"./settings.js";import"./guarded.js";console.log(value(3).verticalSpacing);"#,
+        ),
+        (
+            "guarded.js",
+            r#"if(false)import("pkg");export const answer=1;"#,
+        ),
+        (
+            "settings.js",
+            r#"function value(n){return{verticalSpacing:n,horizontalSpacing:n*2}}export{value};"#,
+        ),
+    ]);
     let package = temp.path().join("dist/node_modules/pkg");
     fs::create_dir_all(&package).unwrap();
     fs::write(
@@ -2116,6 +2129,7 @@ fn ignores_syntax_diagnostics_in_dynamic_only_package_files() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
+    assert!(!out(temp.path(), "settings.js").contains("verticalSpacing"));
 }
 
 #[test]
