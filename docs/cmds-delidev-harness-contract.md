@@ -3014,13 +3014,15 @@ runtime was retained (original aliases, empty original process index, no auth or
 probe files, no live controller) is settled once, as failed, through an
 idempotent versioned migration receipt (`verified`, then `settled`). The proof
 requires the retained process index, a joined original owner, a bounded
-secret-remnant check (no credential file names, token fields or JWT-like
-content; links are counted but never followed) and unchanged account,
+secret-remnant check of every byte of each permitted regular file, within the
+existing cumulative 64 MiB limit (no credential file names, token fields or
+JWT-like content; links are counted but never followed), and unchanged account,
 connection, generation and operation identity. The directory and its helper
 links are left untouched. Only the eligible obsolete captured credential
 reference is retired, balances and timestamps are unchanged, and the old request
 is never replayed. Missing ownership, process, credential or vault proof, a
-changed identity or an unreadable receipt keeps the original fence. A later
+changed identity, an unreadable or size-changed retained file, an exceeded bound,
+or an unreadable receipt keeps the original fence. A later
 ordinary Refresh makes a new observation through the account's permanent quota
 profile.
 
