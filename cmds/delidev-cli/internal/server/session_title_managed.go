@@ -334,7 +334,8 @@ func managedTitleAccountBusy(tx *store.Tx, accountID domain.ID, account domain.A
 // The reservation lapses as soon as the title can no longer Take: a committed
 // inference claim (the lease or the immutable receipt carries custody from
 // there), a requested cancellation, or a Worker process that is no longer the
-// live claiming instance. Revocation and instance replacement also settle the
+// live claiming instance or a Worker that no longer reports the managed title
+// profile. Revocation and instance replacement also settle the
 // job itself, so a dead Worker never stalls the account.
 func managedTitleReservation(tx *store.Tx, account domain.ID, except domain.ID) (bool, error) {
 	var after domain.ID
@@ -373,6 +374,21 @@ func managedTitleReservation(tx *store.Tx, account domain.ID, except domain.ID) 
 				return false, err
 			}
 			if instance == "" || instance != job.InstanceID || seen.After(time.Now().UTC().Add(time.Second)) || time.Since(seen) > domain.WorkerConnectionTimeout {
+				continue
+			}
+			// A same-instance reattach without the managed title profile can no
+			// longer pass Take (new authority requires the current capability set),
+			// so the title cannot start custody. Its own Take then receives the
+			// definite no-delivery result and settles it, while the account stays
+			// available instead of waiting for the heartbeat to expire.
+			_, machine, err := activeMachine(tx, job.MachineID)
+			if err != nil {
+				if domain.SafeError(err).Code == domain.Internal {
+					return false, err
+				}
+				continue
+			}
+			if !domain.ManagedTitlesSupported(machine.WorkerCapabilities) {
 				continue
 			}
 			return true, nil

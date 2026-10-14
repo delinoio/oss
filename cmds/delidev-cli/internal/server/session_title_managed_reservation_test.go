@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"slices"
 	"testing"
 	"time"
 
@@ -121,6 +122,19 @@ func TestManagedTitleReservationLapsesWhenTitleCannotTake(t *testing.T) {
 		},
 		"worker-stale": func(f *managedTitleFixture, tx *store.Tx) error {
 			return tx.SetWorkerInstance(f.input.MachineID, f.instance, time.Now().UTC().Add(-2*domain.WorkerConnectionTimeout))
+		},
+		"capability-lost": func(f *managedTitleFixture, tx *store.Tx) error {
+			r, err := tx.Get(domain.MachineKind, f.input.MachineID)
+			if err != nil {
+				return err
+			}
+			m, err := store.Decode[domain.Machine](r)
+			if err != nil {
+				return err
+			}
+			m.WorkerCapabilities = slices.DeleteFunc(slices.Clone(m.WorkerCapabilities), func(c domain.WorkerCapability) bool { return c == domain.ManagedCodexTitlesV1 })
+			_, err = tx.Put(domain.MachineKind, r.ID, r.Revision, "", "", m)
+			return err
 		},
 		"settled-uncertain": func(f *managedTitleFixture, tx *store.Tx) error {
 			r, err := tx.Get(domain.JobKind, f.titleJob)
