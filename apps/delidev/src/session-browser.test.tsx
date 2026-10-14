@@ -1276,7 +1276,7 @@ it("defers shared selection until the pending native open completes", async () =
   expect(selects()).toHaveLength(1);
 });
 
-it("does not retry a failed shared-selection reconciliation without a new selection", async () => {
+it("suppresses an unchanged failure but retries after selecting the native page and returning", async () => {
   const f = fixture({ pages: 2 });
   const base = native.getMockImplementation()!;
   native.mockImplementation(async (operation: string, args: any) => {
@@ -1300,6 +1300,92 @@ it("does not retry a failed shared-selection reconciliation without a new select
   );
   await new Promise((resolve) => setTimeout(resolve, 80));
   expect(selects()).toHaveLength(1);
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/1" }));
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/2" }));
+  await waitFor(() => expect(selects()).toHaveLength(2));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(selects()).toHaveLength(2);
+});
+
+it("retries a failed page selection once after Conversation and a new native view", async () => {
+  const f = fixture({ pages: 2 });
+  const base = native.getMockImplementation()!;
+  let fail = true;
+  native.mockImplementation(async (operation: string, args: any) => {
+    if (
+      operation === "control_browser" &&
+      args.action === "select-tab" &&
+      fail
+    ) {
+      fail = false;
+      throw new Error("rejected");
+    }
+    return base(operation, args);
+  });
+  mount(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(3));
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/1" }));
+  await waitFor(() => expect(calls("open_browser")).toHaveLength(1));
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/2" }));
+  const selects = () =>
+    calls("control_browser").filter(([, args]) => args.action === "select-tab");
+  await waitFor(() => expect(selects()).toHaveLength(1));
+  await screen.findByText(
+    "The browser action failed. Check its address and the current server and account authorization.",
+  );
+  expect(f.model.selected).toBe(f.model.pages[0].id);
+
+  fireEvent.click(screen.getByRole("tab", { name: "Conversation" }));
+  await waitFor(() =>
+    expect(
+      calls("control_browser").some(([, args]) => args.action === "hide"),
+    ).toBe(true),
+  );
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/2" }));
+  await waitFor(() => expect(calls("open_browser")).toHaveLength(2));
+  await waitFor(() => expect(selects()).toHaveLength(2));
+  expect(selects().map(([, args]) => args.tabId)).toEqual([
+    f.model.pages[1].id,
+    f.model.pages[1].id,
+  ]);
+  await waitFor(() => expect(f.model.selected).toBe(f.model.pages[1].id));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(selects()).toHaveLength(2);
+});
+
+it("retries a failed page selection after leaving for another non-page tab", async () => {
+  const f = fixture({ pages: 2 });
+  const base = native.getMockImplementation()!;
+  native.mockImplementation(async (operation: string, args: any) => {
+    if (operation === "control_browser" && args.action === "select-tab")
+      throw new Error("rejected");
+    return base(operation, args);
+  });
+  const captured = mountWithRetainedSession(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(3));
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/1" }));
+  await waitFor(() => expect(calls("open_browser")).toHaveLength(1));
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/2" }));
+  const selects = () =>
+    calls("control_browser").filter(([, args]) => args.action === "select-tab");
+  await waitFor(() => expect(selects()).toHaveLength(1));
+  await screen.findByText(
+    "The browser action failed. Check its address and the current server and account authorization.",
+  );
+
+  act(() =>
+    captured.store?.open(f.session.id, { kind: SessionTabKind.Diagnostics }),
+  );
+  await waitFor(() =>
+    expect(
+      calls("control_browser").some(([, args]) => args.action === "hide"),
+    ).toBe(true),
+  );
+  expect(selects()).toHaveLength(1);
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/2" }));
+  await waitFor(() => expect(selects()).toHaveLength(2));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(selects()).toHaveLength(2);
 });
 
 it("refreshes owned shared labels from observed URLs without selecting or navigating", async () => {

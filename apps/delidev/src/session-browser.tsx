@@ -463,6 +463,7 @@ function NativeSessionBrowser({
   // The last shared-selection reconciliation sent natively, so a failed
   // SelectTab is never retried without a new selection or native state.
   const reconciled = useRef("");
+  const reconciledSelection = useRef("");
   // The view ID whose native child exists. `presentation` is claimed when an
   // open starts, so selection reconciliation waits for this to be published.
   const [nativeView, setNativeView] = useState("");
@@ -1201,6 +1202,15 @@ function NativeSessionBrowser({
     }
   };
   useEffect(() => {
+    const selection = selectedPage
+      ? sessionTabKey({ kind: SessionTabKind.Page, ...selectedPage })
+      : "";
+    if (reconciledSelection.current !== selection) {
+      // A failed attempt belongs to one continuous shared selection, including
+      // departures to non-page tabs while the browser manager stays mounted.
+      reconciledSelection.current = selection;
+      reconciled.current = "";
+    }
     if (
       !presentation.current ||
       nativeView !== presentation.current ||
@@ -1225,6 +1235,7 @@ function NativeSessionBrowser({
   }, [
     active,
     selectedPage?.id,
+    selectedPage?.profile,
     profileId,
     state?.tabs.selected,
     busy,
