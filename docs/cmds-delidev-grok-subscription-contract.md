@@ -484,16 +484,16 @@ Every native command and the scratch `git init` run under a context created for
 that step alone, from `context.Background()`; no step inherits what an earlier
 step left over. The budgets are:
 
-| Step               | Command or context                                                                      | Budget                                     |
-| ------------------ | --------------------------------------------------------------------------------------- | ------------------------------------------ |
-| Setup              | `git init` of the scratch repository                                                    | 30s (`Setup`)                              |
-| Version            | `grok --version`                                                                        | 30s (`Version`)                            |
-| Login              | `grok login --device-auth`                                                              | approval wait (5m default, 10s-30m)        |
-| Models             | `grok models` while logged in                                                           | 30s (`Models`)                             |
-| ACP prompt turn    | `grok agent stdio` start, `initialize`, `authenticate`, `session/new`, `session/prompt` | 3m (`Prompt`, one shared budget by design) |
-| Logout             | `grok logout`                                                                           | 30s (`Logout`)                             |
-| Post-logout models | `grok models` after the logout                                                          | 30s (`PostLogoutModels`)                   |
-| Cleanup            | the cleanup `grok logout`                                                               | 30s (`Cleanup`)                            |
+| Step               | Command or context                                                                                      | Budget                                     |
+| ------------------ | ------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| Setup              | `git init` of the scratch repository                                                                    | 30s (`Setup`)                              |
+| Version            | `grok --version`                                                                                        | 30s (`Version`)                            |
+| Login              | `grok login --device-auth`                                                                              | approval wait (5m default, 10s-30m)        |
+| Models             | `grok models` while logged in                                                                           | 30s (`Models`)                             |
+| ACP prompt turn    | `grok agent stdio` start, `initialize`, `authenticate`, `session/new`, `session/prompt`, reply settling | 3m (`Prompt`, one shared budget by design) |
+| Logout             | `grok logout`                                                                                           | 30s (`Logout`)                             |
+| Post-logout models | `grok models` after the logout                                                                          | 30s (`PostLogoutModels`)                   |
+| Cleanup            | the cleanup `grok logout`                                                                               | 30s (`Cleanup`)                            |
 
 The non-login budgets sum to 6 minutes, which `accountFixedBudget` (7 minutes)
 must cover; `TestNativeAccountHarnessFixedBudgetCoversEveryStep` and
@@ -528,7 +528,24 @@ through `internal/process`. It then checks, in order:
    updates and must be the single word `ok` (case and surrounding punctuation
    ignored). An empty turn, a reply for another session, non-message updates
    only, or any other text such as an authentication notice fails the step. The
-   reply text is never logged, only its length on a mismatch.
+   reply text is never logged, only its length on a mismatch. The agent may send
+   the `session/prompt` response before its final `session/update` text frames,
+   so the client keeps reading after the response (refusing any late agent
+   request with `-32601`, as it does while waiting) and validates only once the
+   target session's accumulated text has stopped changing for 2 seconds. With no
+   text yet, it waits up to 20 seconds for the first frame; text that is still
+   changing after 20 seconds fails with `ACP assistant reply did not stabilize`.
+   Both bounds sit inside the 3-minute `Prompt` budget, and an agent exit ends
+   the wait early. This mirrors the official xAI headless client example, which
+   waits for the accumulated text length to stabilize after the prompt result.
+   `TestNativeAccountHarnessPromptTurnValidation` (fake `grok`: update before the
+   response, update after it, several late chunks, a late agent request, no
+   update, a never-stabilizing stream) and `TestNativeAccountHarnessFrameOrderings`
+   (in-process agent: a notification and an agent request before and after the
+   response of each of `initialize`, `authenticate`, `session/new` and
+   `session/prompt`, plus text, no-text, foreign-session, wrong-text and
+   agent-exit rows) pin every ordering. The suite sends no `session/cancel`, and
+   `logout` is a plain CLI command rather than a JSON-RPC pair.
 5. `grok logout` exits 0, removes the scratch `auth.json`, and `grok models` then
    reports `not authenticated`.
 6. The invoking user's real `auth.json` (`$GROK_HOME` or `~/.grok`) has the same

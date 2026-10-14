@@ -59,6 +59,13 @@ const (
 	maxAccountFrame    = 4 << 20
 	maxAccountOutput   = 64 << 10
 	cachedTokenMethod  = "cached_token"
+	// The agent may send the session/prompt response before the final
+	// session/update text frames, so the client keeps reading after the response.
+	// Once the target session has produced text, the reply is settled when its
+	// length has not changed for accountReplyQuiet; until then, and in total, the
+	// wait is bounded by accountReplyLimit. Both sit inside the Prompt budget.
+	accountReplyQuiet = 2 * time.Second
+	accountReplyLimit = 20 * time.Second
 )
 
 // accountBudgets is the deadline of every non-approval step. Each step creates
@@ -800,6 +807,9 @@ type acpClient struct {
 	target     string
 	reply      strings.Builder
 	replyBound bool
+	// quiet and limit are the reply settling bounds (see settleReply).
+	quiet time.Duration
+	limit time.Duration
 }
 
 type acpMessage struct {
@@ -911,7 +921,7 @@ func startACP(ctx context.Context, s *accountScratch) (*acpClient, func() error,
 		}
 		return nil, nil, errors.New("ACP process could not resume: " + describeNativeError(err))
 	}
-	return &acpClient{handle: handle, frames: frames}, closer, nil
+	return &acpClient{handle: handle, frames: frames, quiet: accountReplyQuiet, limit: accountReplyLimit}, closer, nil
 }
 
 func (c *acpClient) send(value any) error {
@@ -928,7 +938,9 @@ func (c *acpClient) send(value any) error {
 
 // call sends one request and waits for its response. Notifications are
 // counted, and any agent-initiated request is refused with -32601 so an
-// unexpected permission or filesystem request cannot hang the turn.
+// unexpected permission or filesystem request cannot hang the turn. Frames that
+// arrive before the response are handled in arrival order; frames that arrive
+// after it stay queued for the next call or for settleReply.
 func (c *acpClient) call(ctx context.Context, method string, params any) (json.RawMessage, error) {
 	c.nextID++
 	id := c.nextID
@@ -954,22 +966,115 @@ func (c *acpClient) call(ctx context.Context, method string, params any) (json.R
 			}
 			continue
 		}
-		switch {
-		case message.Method != "" && len(message.ID) > 0:
-			refusal := map[string]any{"jsonrpc": "2.0", "id": json.RawMessage(message.ID), "error": map[string]any{"code": -32601, "message": "not supported by the acceptance client"}}
-			if err := c.send(refusal); err != nil {
-				return nil, fmt.Errorf("ACP %s: could not refuse an agent request: %w", method, err)
+		if message.Method != "" {
+			if err := c.dispatch(method, message); err != nil {
+				return nil, err
 			}
-		case message.Method != "":
-			if message.Method == "session/update" {
-				c.updates++
-				c.collectReply(message.Params)
-			}
-		case string(message.ID) == want:
+			continue
+		}
+		if string(message.ID) == want {
 			if message.Error != nil {
 				return nil, fmt.Errorf("ACP %s returned JSON-RPC error code %d", method, message.Error.Code)
 			}
 			return message.Result, nil
+		}
+	}
+}
+
+// dispatch handles one agent-initiated frame (a request or a notification),
+// whichever side of a response it arrived on: requests are refused, session
+// updates are counted and their reply text collected.
+func (c *acpClient) dispatch(during string, message acpMessage) error {
+	if len(message.ID) > 0 {
+		refusal := map[string]any{"jsonrpc": "2.0", "id": json.RawMessage(message.ID), "error": map[string]any{"code": -32601, "message": "not supported by the acceptance client"}}
+		if err := c.send(refusal); err != nil {
+			return fmt.Errorf("ACP %s: could not refuse an agent request: %w", during, err)
+		}
+		return nil
+	}
+	if message.Method == "session/update" {
+		c.updates++
+		c.collectReply(message.Params)
+	}
+	return nil
+}
+
+// settleReply keeps reading frames after the session/prompt response, because
+// the agent is free to send the final session/update text frames after it (the
+// official xAI headless client example likewise waits for the accumulated text
+// length to stabilize after the prompt result). The reply is settled when it is
+// non-empty and has not changed for c.quiet, when the agent exits, or, with no
+// text at all, when c.limit passes (checkPromptTurn then reports the empty
+// reply). A reply that is still changing after c.limit is a failure. Late agent
+// requests are refused exactly as call does. Only the length of the reply is
+// ever reported.
+func (c *acpClient) settleReply(ctx context.Context) error {
+	limit := time.NewTimer(c.limit)
+	defer limit.Stop()
+	lastLen, lastBound := c.reply.Len(), c.replyBound
+	lastChange := time.Now()
+	for {
+		for {
+			message, ok, fault := c.frames.pop()
+			if fault != nil {
+				return fmt.Errorf("ACP reply settling: %w", fault)
+			}
+			if !ok {
+				break
+			}
+			if message.Method != "" {
+				if err := c.dispatch("reply settling", message); err != nil {
+					return err
+				}
+			}
+		}
+		if c.reply.Len() != lastLen || c.replyBound != lastBound {
+			lastLen, lastBound, lastChange = c.reply.Len(), c.replyBound, time.Now()
+		}
+		var quiet <-chan time.Time
+		var quietTimer *time.Timer
+		if lastLen > 0 || lastBound {
+			quietTimer = time.NewTimer(c.quiet - time.Since(lastChange))
+			quiet = quietTimer.C
+		}
+		stop := func() {
+			if quietTimer != nil {
+				quietTimer.Stop()
+			}
+		}
+		select {
+		case <-c.frames.notify:
+			stop()
+		case <-quiet:
+			// A frame that raced with the timer restarts the check.
+			if _, more, _ := c.frames.peek(); more {
+				continue
+			}
+			return nil
+		case <-limit.C:
+			stop()
+			if lastLen > 0 || lastBound {
+				return fmt.Errorf("ACP assistant reply did not stabilize within %s", c.limit)
+			}
+			return nil
+		case <-ctx.Done():
+			stop()
+			return errors.New("ACP reply settling: timed out or canceled")
+		case <-c.handle.Done():
+			stop()
+			// Frames written before exit are still queued; take them and stop.
+			for {
+				message, ok, fault := c.frames.pop()
+				if fault != nil {
+					return fmt.Errorf("ACP reply settling: %w", fault)
+				}
+				if !ok {
+					return nil
+				}
+				if message.Method != "" {
+					_ = c.dispatch("reply settling", message)
+				}
+			}
 		}
 	}
 }
@@ -1087,6 +1192,10 @@ func runPromptTurn(ctx context.Context, client *acpClient, cwd string) error {
 	if err != nil {
 		return err
 	}
+	// The response may precede the last text frames; settle before judging.
+	if err := client.settleReply(ctx); err != nil {
+		return err
+	}
 	return checkPromptTurn(turn, client.reply.String(), client.replyBound)
 }
 
@@ -1161,7 +1270,8 @@ func TestAccountAcceptance(t *testing.T) {
 const fakeGrokScript = `#!/bin/sh
 # Fake grok for harness tests. Usage: fake --no-auto-update COMMAND [args]
 # FAKE_GROK_PROMPT=stderr prints the device-login prompt on stderr, as the real
-# CLI does; FAKE_GROK_TURN selects the agent's prompt-turn behavior.
+# CLI does; FAKE_GROK_TURN selects the agent's prompt-turn behavior, including
+# whether session/update text frames arrive before or after the response.
 cmd="$2"
 printf '%s\n' "$cmd" >> "$FAKE_GROK_LOG"
 prompt() {
@@ -1205,15 +1315,23 @@ agent)
     *'"method":"session/new"'*)
       printf '{"id":%s,"jsonrpc":"2.0","result":{"sessionId":"sess-1"}}\n' "$id" ;;
     *'"method":"session/prompt"'*)
+      respond() { printf '{"id":%s,"jsonrpc":"2.0","result":{"stopReason":"end_turn"}}\n' "$id"; }
       case "$FAKE_GROK_TURN" in
-      empty) ;;
-      unauthorized) update sess-1 agent_message_chunk "You are not authenticated. Run grok login." ;;
-      foreign) update sess-2 agent_message_chunk "ok" ;;
-      thought) update sess-1 agent_thought_chunk "ok" ;;
-      split) update sess-1 agent_message_chunk "O"; update sess-1 agent_message_chunk "k." ;;
-      *) update sess-1 agent_message_chunk "ok" ;;
+      empty) respond ;;
+      unauthorized) update sess-1 agent_message_chunk "You are not authenticated. Run grok login."; respond ;;
+      foreign) update sess-2 agent_message_chunk "ok"; respond ;;
+      thought) update sess-1 agent_thought_chunk "ok"; respond ;;
+      split) update sess-1 agent_message_chunk "O"; update sess-1 agent_message_chunk "k."; respond ;;
+      late) respond; sleep 0.2; update sess-1 agent_message_chunk "ok" ;;
+      latesplit) respond; sleep 0.1; update sess-1 agent_message_chunk "O"; sleep 0.1; update sess-1 agent_message_chunk "k"; sleep 0.1; update sess-1 agent_message_chunk "." ;;
+      lateforeign) respond; sleep 0.2; update sess-2 agent_message_chunk "ok" ;;
+      laterequest) respond; printf '{"jsonrpc":"2.0","id":"perm-1","method":"session/request_permission","params":{}}\n'; sleep 0.1; update sess-1 agent_message_chunk "ok" ;;
+      never)
+        respond
+        i=0
+        while [ "$i" -lt 200 ]; do update sess-1 agent_message_chunk "o"; sleep 0.05; i=$((i+1)); done ;;
+      *) update sess-1 agent_message_chunk "ok"; respond ;;
       esac
-      printf '{"id":%s,"jsonrpc":"2.0","result":{"stopReason":"end_turn"}}\n' "$id" ;;
     esac
   done
   ;;
@@ -1500,17 +1618,28 @@ func TestNativeAccountHarnessApprovalFilterStreams(t *testing.T) {
 func TestNativeAccountHarnessPromptTurnValidation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
+	const (
+		quiet = 600 * time.Millisecond
+		limit = 4 * time.Second
+		short = 500 * time.Millisecond // nothing more will arrive
+	)
 	cases := []struct {
-		name string
-		turn string
-		want string // substring of the expected error; empty means success
+		name  string
+		turn  string
+		limit time.Duration // zero means the default limit
+		want  string        // substring of the expected error; empty means success
 	}{
-		{"expected reply", "", ""},
-		{"reply split across chunks", "split", ""},
-		{"empty successful turn", "empty", "without any assistant message text"},
-		{"unauthorized notice", "unauthorized", "not the expected single word"},
-		{"reply for another session", "foreign", "without any assistant message text"},
-		{"non-message update only", "thought", "without any assistant message text"},
+		{name: "update before response", turn: ""},
+		{name: "reply split across chunks before the response", turn: "split"},
+		{name: "update after response", turn: "late"},
+		{name: "several late chunks", turn: "latesplit"},
+		{name: "late agent request and late chunk", turn: "laterequest"},
+		{name: "no update at all", turn: "empty", limit: short, want: "without any assistant message text"},
+		{name: "unauthorized notice", turn: "unauthorized", want: "not the expected single word"},
+		{name: "reply for another session", turn: "foreign", limit: short, want: "without any assistant message text"},
+		{name: "late reply for another session", turn: "lateforeign", limit: short, want: "without any assistant message text"},
+		{name: "non-message update only", turn: "thought", limit: short, want: "without any assistant message text"},
+		{name: "stream that never stabilizes", turn: "never", limit: 1500 * time.Millisecond, want: "did not stabilize"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1519,7 +1648,13 @@ func TestNativeAccountHarnessPromptTurnValidation(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			client.quiet, client.limit = quiet, limit
+			if tc.limit != 0 {
+				client.limit = tc.limit
+			}
+			started := time.Now()
 			turnErr := runPromptTurn(ctx, client, scratch.repo)
+			elapsed := time.Since(started)
 			if err := closeACP(); err != nil {
 				t.Fatalf("ACP shutdown: %v", err)
 			}
@@ -1531,6 +1666,11 @@ func TestNativeAccountHarnessPromptTurnValidation(t *testing.T) {
 			}
 			if turnErr != nil && strings.Contains(turnErr.Error(), "authenticated") {
 				t.Fatal("turn error echoed the assistant text")
+			}
+			// The wait after the response is bounded by the limit, plus the
+			// process round trips before it.
+			if elapsed > client.limit+20*time.Second {
+				t.Fatalf("turn took %s, the reply wait is not bounded by %s", elapsed, client.limit)
 			}
 		})
 	}
@@ -1965,6 +2105,217 @@ func TestNativeAccountHarnessACPUncertaintyMatrix(t *testing.T) {
 				t.Fatalf("uncertain = %v (%v), want %v", got, scratch.uncertainErr(), tc.wantUncertain)
 			}
 			assertCleanupMatches(t, scratch, tc.wantUncertain)
+		})
+	}
+}
+
+// agentStep is one frame an in-process agent delivers, after a pause.
+type agentStep struct {
+	after time.Duration
+	frame string
+}
+
+// orderedAgent is an in-process native handle that answers the four ACP
+// requests of the prompt turn (initialize, authenticate, session/new,
+// session/prompt) and lets each test place extra frames before or after the
+// matching response. It records how the client answered agent requests.
+type orderedAgent struct {
+	frames *acpFrames
+	// extra returns the frames to deliver before and after the response to one
+	// request; it may return nil for both.
+	extra func(method string) (before, after []agentStep)
+	// exitAfter closes Done once every frame of the session/prompt request has
+	// been delivered, as an agent that exits right after its last update does.
+	exitAfter bool
+
+	mu       sync.Mutex
+	refusals []string
+	stop     chan struct{}
+	done     chan struct{}
+	once     sync.Once
+}
+
+func newOrderedAgent(extra func(method string) (before, after []agentStep)) *orderedAgent {
+	return &orderedAgent{
+		frames: &acpFrames{notify: make(chan struct{}, 1)},
+		extra:  extra,
+		stop:   make(chan struct{}),
+		done:   make(chan struct{}),
+	}
+}
+
+func (a *orderedAgent) Resume() error     { return nil }
+func (a *orderedAgent) CloseInput() error { return nil }
+func (a *orderedAgent) Wait() error       { return nil }
+func (a *orderedAgent) Done() <-chan struct{} {
+	return a.done
+}
+func (a *orderedAgent) Close() error {
+	a.once.Do(func() { close(a.stop) })
+	return nil
+}
+
+func (a *orderedAgent) Write(p []byte) (int, error) {
+	var request struct {
+		ID     json.RawMessage `json:"id"`
+		Method string          `json:"method"`
+		Error  *struct {
+			Code int `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(p, &request); err != nil {
+		return 0, err
+	}
+	if request.Method == "" {
+		// The client's answer to an agent request.
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		if request.Error == nil || request.Error.Code != -32601 {
+			a.refusals = append(a.refusals, "unexpected answer")
+		} else {
+			a.refusals = append(a.refusals, string(request.ID))
+		}
+		return len(p), nil
+	}
+	results := map[string]string{
+		"initialize":     `{"protocolVersion":1,"authMethods":[{"id":"cached_token"}]}`,
+		"authenticate":   `{}`,
+		"session/new":    `{"sessionId":"sess-1"}`,
+		"session/prompt": `{"stopReason":"end_turn"}`,
+	}
+	result, ok := results[request.Method]
+	if !ok {
+		return 0, fmt.Errorf("unexpected request %s", request.Method)
+	}
+	before, after := a.extra(request.Method)
+	steps := append([]agentStep{}, before...)
+	steps = append(steps, agentStep{frame: fmt.Sprintf(`{"id":%s,"jsonrpc":"2.0","result":%s}`, request.ID, result)})
+	steps = append(steps, after...)
+	go func() {
+		for _, step := range steps {
+			if step.after > 0 {
+				select {
+				case <-time.After(step.after):
+				case <-a.stop:
+					return
+				}
+			}
+			_, _ = a.frames.Write([]byte(step.frame + "\n"))
+		}
+		if a.exitAfter && request.Method == "session/prompt" {
+			close(a.done)
+		}
+	}()
+	return len(p), nil
+}
+
+func (a *orderedAgent) refused() []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]string(nil), a.refusals...)
+}
+
+func updateFrame(session, kind, text string) string {
+	return fmt.Sprintf(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"%s","content":{"type":"text","text":"%s"}}}}`, session, kind, text)
+}
+
+func agentRequestFrame(id string) string {
+	return fmt.Sprintf(`{"jsonrpc":"2.0","id":"%s","method":"session/request_permission","params":{}}`, id)
+}
+
+// TestNativeAccountHarnessFrameOrderings pins that every request/response pair
+// of the prompt turn tolerates notifications and agent requests on either side
+// of its response. A notification or agent request that precedes a response is
+// handled while waiting for it; one that follows is handled by the next call, or
+// for the last call (session/prompt) by settleReply. Session/cancel is not part
+// of the suite, and logout is a plain CLI command, not a JSON-RPC pair.
+func TestNativeAccountHarnessFrameOrderings(t *testing.T) {
+	const (
+		quiet = 400 * time.Millisecond
+		limit = 3 * time.Second
+	)
+	type outcome struct {
+		updates  int      // session/update frames the client must have counted
+		refusals []string // agent request ids the client must have refused, in order
+		err      string   // substring of the turn error; empty means success
+	}
+	ok := updateFrame("sess-1", "agent_message_chunk", "ok")
+	note := updateFrame("sess-1", "available_commands_update", "x")
+	late := 40 * time.Millisecond
+	type steps = func(method string) (before, after []agentStep)
+	// onlyFor places frames around the response to one method; the prompt then
+	// answers with its text before its response.
+	onlyFor := func(method string, before, after []agentStep) steps {
+		return func(got string) ([]agentStep, []agentStep) {
+			switch got {
+			case method:
+				return before, after
+			case "session/prompt":
+				return []agentStep{{frame: ok}}, nil
+			}
+			return nil, nil
+		}
+	}
+	// promptOnly places frames around the response to session/prompt.
+	promptOnly := func(before, after []agentStep) steps {
+		return func(got string) ([]agentStep, []agentStep) {
+			if got == "session/prompt" {
+				return before, after
+			}
+			return nil, nil
+		}
+	}
+	type row struct {
+		name      string
+		extra     steps
+		exitAfter bool
+		want      outcome
+	}
+	var cases []row
+	for _, method := range []string{"initialize", "authenticate", "session/new"} {
+		cases = append(cases,
+			row{method + ": notification before the response", onlyFor(method, []agentStep{{frame: note}}, nil), false, outcome{updates: 2}},
+			row{method + ": notification after the response", onlyFor(method, nil, []agentStep{{after: late, frame: note}}), false, outcome{updates: 2}},
+			row{method + ": agent request before the response", onlyFor(method, []agentStep{{frame: agentRequestFrame("r1")}}, nil), false, outcome{updates: 1, refusals: []string{`"r1"`}}},
+			row{method + ": agent request after the response", onlyFor(method, nil, []agentStep{{after: late, frame: agentRequestFrame("r2")}}), false, outcome{updates: 1, refusals: []string{`"r2"`}}},
+		)
+	}
+	cases = append(cases,
+		row{"session/prompt: text before the response", promptOnly([]agentStep{{frame: ok}}, nil), false, outcome{updates: 1}},
+		row{"session/prompt: text after the response", promptOnly(nil, []agentStep{{after: late, frame: ok}}), false, outcome{updates: 1}},
+		row{"session/prompt: chunks on both sides of the response", promptOnly([]agentStep{{frame: updateFrame("sess-1", "agent_message_chunk", "O")}}, []agentStep{{after: late, frame: updateFrame("sess-1", "agent_message_chunk", "k")}}), false, outcome{updates: 2}},
+		row{"session/prompt: several late chunks", promptOnly(nil, []agentStep{{after: late, frame: updateFrame("sess-1", "agent_message_chunk", "O")}, {after: late, frame: updateFrame("sess-1", "agent_message_chunk", "k")}, {after: late, frame: updateFrame("sess-1", "agent_message_chunk", ".")}}), false, outcome{updates: 3}},
+		row{"session/prompt: agent request before the response", promptOnly([]agentStep{{frame: agentRequestFrame("r3")}, {frame: ok}}, nil), false, outcome{updates: 1, refusals: []string{`"r3"`}}},
+		row{"session/prompt: agent request after the response", promptOnly(nil, []agentStep{{after: late, frame: agentRequestFrame("r4")}, {after: late, frame: ok}}), false, outcome{updates: 1, refusals: []string{`"r4"`}}},
+		row{"session/prompt: notification after the text", promptOnly([]agentStep{{frame: ok}}, []agentStep{{after: late, frame: note}}), false, outcome{updates: 2}},
+		row{"session/prompt: agent exits after its last late chunk", promptOnly(nil, []agentStep{{after: late, frame: ok}}), true, outcome{updates: 1}},
+		row{"session/prompt: no text at all", promptOnly(nil, nil), false, outcome{err: "without any assistant message text"}},
+		row{"session/prompt: only a late notification", promptOnly(nil, []agentStep{{after: late, frame: note}}), false, outcome{updates: 1, err: "without any assistant message text"}},
+		row{"session/prompt: late text for another session", promptOnly(nil, []agentStep{{after: late, frame: updateFrame("sess-2", "agent_message_chunk", "ok")}}), false, outcome{updates: 1, err: "without any assistant message text"}},
+		row{"session/prompt: late wrong text", promptOnly(nil, []agentStep{{after: late, frame: updateFrame("sess-1", "agent_message_chunk", "nope")}}), false, outcome{updates: 1, err: "not the expected single word"}},
+	)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel() // each row owns its in-process agent and client
+			agent := newOrderedAgent(tc.extra)
+			agent.exitAfter = tc.exitAfter
+			defer agent.Close()
+			client := &acpClient{handle: agent, frames: agent.frames, quiet: quiet, limit: limit}
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+			defer cancel()
+			err := runPromptTurn(ctx, client, t.TempDir())
+			switch {
+			case tc.want.err == "" && err != nil:
+				t.Fatalf("turn rejected: %v", err)
+			case tc.want.err != "" && (err == nil || !strings.Contains(err.Error(), tc.want.err)):
+				t.Fatalf("turn error %v does not contain %q", err, tc.want.err)
+			}
+			if client.updates != tc.want.updates {
+				t.Fatalf("counted %d session updates, want %d", client.updates, tc.want.updates)
+			}
+			if got := agent.refused(); strings.Join(got, ",") != strings.Join(tc.want.refusals, ",") {
+				t.Fatalf("refused agent requests %v, want %v", got, tc.want.refusals)
+			}
 		})
 	}
 }
