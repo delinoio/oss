@@ -115,6 +115,11 @@ function simplificationScratchBytes(bytes: Buffer): number {
   return scratch;
 }
 
+function geometryHasDeformation(bytes: Buffer): boolean {
+  if (bytes.toString("ascii", 0, 4) !== "FSG2") return false;
+  return bytes.readUInt32LE(8) !== 0 || bytes.readUInt32LE(12) !== 0;
+}
+
 /** Independent 3D lifecycle; shares React and atomic local publication with documents. */
 export class SceneSession {
   readonly documentId = v7();
@@ -348,7 +353,9 @@ export class SceneSession {
         "Geometry is not registered.",
       );
     const indexOffset = source.subarray(0, 4).toString() === "FSG2" ? 28 : 12;
+    const vertexOffset = source.subarray(0, 4).toString() === "FSG2" ? 24 : 8;
     const inputTriangles = source.readUInt32LE(indexOffset) / 3;
+    const inputVertices = source.readUInt32LE(vertexOffset);
     if (
       !Number.isSafeInteger(options.targetTriangles) ||
       options.targetTriangles < 1 ||
@@ -357,7 +364,8 @@ export class SceneSession {
       options.maxError < 0
     )
       throw malformed();
-    const scratch = simplificationScratchBytes(source);
+    const noOp = options.targetTriangles === inputTriangles;
+    const scratch = noOp ? 0 : simplificationScratchBytes(source);
     // A changed result is at most as large as the source. A known no-op does
     // not allocate a derived asset, so it remains admissible at the limit.
     const reserve =
@@ -374,6 +382,28 @@ export class SceneSession {
     this.scratchReserved += scratch;
     const task = this.track(Stage.Layout, async () => {
       try {
+        if (noOp) {
+          await Promise.resolve();
+          checkSignal(signal);
+          if (geometryHasDeformation(source))
+            throw new ForgeError(
+              ErrorCode.UnsupportedEdit,
+              "Skinned or morphed geometry cannot be simplified.",
+            );
+          return Object.freeze({
+            geometry: Object.freeze({
+              assetId: handle.assetId,
+              documentId: this.documentId,
+              kind: SceneAssetKind.Geometry,
+            }),
+            inputTriangles,
+            outputTriangles: inputTriangles,
+            inputVertices,
+            outputVertices: inputVertices,
+            targetReached: true,
+            estimatedError: 0,
+          });
+        }
         const result = await simplifySceneGeometry(
           source,
           options.targetTriangles,

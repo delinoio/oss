@@ -159,6 +159,10 @@ for (const format of [Format.Glb, Format.Fbx] as const) {
         ];
         const morph = await session.registerGeometry(withMorph);
         await assert.rejects(
+          session.simplifyGeometry(morph, { targetTriangles: 8, maxError: 1 }),
+          (error: ForgeError) => error.code === ErrorCode.UnsupportedEdit,
+        );
+        await assert.rejects(
           session.simplifyGeometry(morph, { targetTriangles: 6, maxError: 1 }),
           (error: ForgeError) => error.code === ErrorCode.UnsupportedEdit,
         );
@@ -168,6 +172,10 @@ for (const format of [Format.Glb, Format.Fbx] as const) {
         for (let i = 0; i < 9; i++) weights[i * 4] = 1;
         withSkin.skin = { joints, weights };
         const skin = await session.registerGeometry(withSkin);
+        await assert.rejects(
+          session.simplifyGeometry(skin, { targetTriangles: 8, maxError: 1 }),
+          (error: ForgeError) => error.code === ErrorCode.UnsupportedEdit,
+        );
         await assert.rejects(
           session.simplifyGeometry(skin, { targetTriangles: 6, maxError: 1 }),
           (error: ForgeError) => error.code === ErrorCode.UnsupportedEdit,
@@ -235,6 +243,32 @@ sceneTest(
     }
   },
 );
+
+sceneTest("known no-op simplification skips scratch admission", async () => {
+  const session = createSession(Format.Glb);
+  const indices = new Uint32Array(700_002);
+  for (let i = 0; i < indices.length; i += 3) {
+    indices[i] = 0;
+    indices[i + 1] = 1;
+    indices[i + 2] = 2;
+  }
+  try {
+    const source = await session.registerGeometry({
+      positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]),
+      normals: new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]),
+      indices,
+    });
+    const result = await session.simplifyGeometry(source, {
+      targetTriangles: indices.length / 3,
+      maxError: 0,
+    });
+    assert.equal(result.geometry.assetId, source.assetId);
+    assert.equal(result.outputTriangles, indices.length / 3);
+    assert.equal(result.targetReached, true);
+  } finally {
+    await session.dispose();
+  }
+});
 
 sceneTest(
   "mid-operation cancellation leaves source usable and releases admission",
