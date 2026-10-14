@@ -271,6 +271,19 @@ fn next_code_byte(bytes: &[u8], start: usize, ignored: &[(usize, usize)]) -> Opt
     None
 }
 
+fn asi_terminates(bytes: &[u8], index: usize, ignored: &[(usize, usize)]) -> bool {
+    let Some(next) = next_code_byte(bytes, index + 1, ignored) else {
+        return true;
+    };
+    match next {
+        b'+' => next_code_byte(bytes, index + 2, ignored) != Some(b'+'),
+        b'-' => next_code_byte(bytes, index + 2, ignored) != Some(b'-'),
+        b'!' | b'%' | b'&' | b'(' | b')' | b'*' | b',' | b'.' | b'/' | b':' | b';' | b'<'
+        | b'=' | b'>' | b'?' | b'[' | b']' | b'^' | b'{' | b'}' | b'|' | b'~' => false,
+        _ => true,
+    }
+}
+
 #[derive(Clone, Copy)]
 enum EnvGuard {
     ShortCircuitAnd,
@@ -388,6 +401,19 @@ fn env_guards(
             drop(pending_reads);
             drop(conditional_pending);
             current_scope = parent;
+        }
+
+        if bytes[index] == b'\n' && asi_terminates(bytes, index, ignored) {
+            for read in scopes[current_scope].pending_reads.drain(..) {
+                if guards[read].is_none() {
+                    blocked[read] = true;
+                }
+            }
+            for read in scopes[current_scope].conditional_pending.drain(..) {
+                if guards[read].is_none() {
+                    blocked[read] = true;
+                }
+            }
         }
 
         match bytes[index] {
@@ -1745,6 +1771,18 @@ y=/process.env.F/.test(z),process.env.G"#;
                 "process.env.VERSION"
             ),
             Some("the retained read controls a conditional (?:) branch")
+        );
+        assert_eq!(
+            guard("process.env.VERSION\nready&&run()", "process.env.VERSION"),
+            None
+        );
+        assert_eq!(
+            guard("process.env.VERSION\n&&run()", "process.env.VERSION"),
+            Some("the retained read controls a && short-circuit branch")
+        );
+        assert_eq!(
+            guard("if (process.env.VERSION\n) run()", "process.env.VERSION"),
+            Some("the retained read is in an if condition")
         );
     }
 
