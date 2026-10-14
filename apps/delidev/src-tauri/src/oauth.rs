@@ -170,7 +170,7 @@ struct Attempt {
 }
 impl Drop for Attempt {
     fn drop(&mut self) {
-        self.shared.stop.store(true, Ordering::Release);
+        crate::browser_opener::retire(&self.shared.stop);
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
@@ -231,7 +231,7 @@ impl OAuthHost {
             .iter()
             .filter(|opening| retired(&opening.scope))
         {
-            opening.cancel.store(true, Ordering::Release);
+            crate::browser_opener::retire(&opening.cancel);
         }
     }
 

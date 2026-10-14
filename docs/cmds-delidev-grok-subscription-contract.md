@@ -110,9 +110,24 @@ listener, but every admitted dispatch owns a per-opening cancellation flag that
 the native host registers under the same lock that Dispose, window close,
 `stop` and revocation exhaustion hold. Admission therefore either refuses a
 retired scope, a stale epoch or a stopped host, or registers a dispatch that the
-following retirement cancels; the dispatcher checks that flag immediately before
-it starts the browser process and while it waits for it. The flag is never the
-host-wide stop flag, and an unrelated opening or window is never cancelled.
+following retirement cancels. The dispatcher checks that flag and starts the
+browser process under one commit lock, and every retirement of a dispatch flag
+(`browser_opener::retire`) stores under that same lock, so retirement and the
+commit-to-spawn transition are mutually exclusive: a retirement either lands
+first and refuses the dispatch, or waits until the process exists. A process
+that was spawned and then retired is terminated while it runs, and a dispatch
+whose retirement completed before the process finished never reports success
+(`Stopped`); a launcher that already handed the page to the browser cannot be
+recalled. The flag is never the host-wide stop flag, and an unrelated opening or
+window is never cancelled.
+
+| Retirement point                                | Process       | Dispatch result        |
+| ----------------------------------------------- | ------------- | ---------------------- |
+| before the commit                               | never started | `Stopped`              |
+| while committing (blocked on the commit lock)   | spawned       | `Stopped`, terminated  |
+| after the spawn, launcher running or exited     | terminated    | `Stopped`              |
+| after a successful exit, before the final check | exited        | `Stopped`, not success |
+| after the dispatch returned                     | exited        | unchanged (`Ok`)       |
 
 | Server stage | Retry closure               | Verification open                                                  | Leave (Back, unmount, abort) / terminal state                                                     |
 | ------------ | --------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
