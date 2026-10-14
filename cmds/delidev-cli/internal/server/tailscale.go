@@ -243,6 +243,9 @@ func (s *Service) DiscoverTailscale(ctx context.Context, req *connect.Request[pb
 	return connect.NewResponse(&pb.DiscoverTailscaleResponse{DocumentJson: tailnetJSON(v)}), nil
 }
 func (s *Service) tailnetPeer(ctx context.Context, id string) (tailscale.Peer, error) {
+	if s.tailnetPeerLookup != nil {
+		return s.tailnetPeerLookup(ctx, id)
+	}
 	v, err := s.tailnetRead(ctx)
 	if err != nil {
 		return tailscale.Peer{}, err
@@ -277,25 +280,53 @@ func tailnetIdentityRejection() error {
 	return failure
 }
 
+// probeTailnet selects the cause-aware probe only for the explicit Check.
+func (s *Service) probeTailnet(ctx context.Context, origin string, out any, withCause bool) error {
+	if s.tailnetProbe != nil {
+		return s.tailnetProbe(ctx, origin, out, withCause)
+	}
+	if withCause {
+		return tailscale.CheckProbe(ctx, origin, out)
+	}
+	return tailscale.Probe(ctx, origin, out)
+}
+
+// CheckTailscale is the only handler that exposes the Check-only probe causes.
 func (s *Service) CheckTailscale(ctx context.Context, req *connect.Request[pb.CheckTailscaleRequest]) (*connect.Response[pb.CheckTailscaleResponse], error) {
-	peer, err := s.tailnetPeer(ctx, req.Msg.PeerId)
+	v, err := s.checkTailnetPeer(ctx, req.Msg.PeerId, true)
 	if err != nil {
-		return nil, rpc.Error(err, "")
-	}
-	origin, _ := tailscale.Origin(peer.Host)
-	var v tailnetIdentity
-	if err := tailscale.CheckProbe(ctx, origin, &v); err != nil {
-		// Only the closed cause is logged; hostnames, URLs and native error text
-		// stay out of diagnostics.
-		s.logger.WarnContext(ctx, "tailscale_check", "phase", "probe", "code", domain.SafeError(err).Code, "cause", tailscale.ProbeCauseOf(err))
-		return nil, rpc.Error(err, "")
-	}
-	if !v.compatible(origin) {
-		s.logger.WarnContext(ctx, "tailscale_check", "phase", "identity", "code", domain.Unsupported, "cause", tailscale.ProbeInvalidIdentity)
-		return nil, rpc.Error(tailnetIdentityRejection(), "")
+		return nil, err
 	}
 	return connect.NewResponse(&pb.CheckTailscaleResponse{DocumentJson: tailnetJSON(v)}), nil
 }
+
+// checkTailnetPeer revalidates one admitted peer identity. withCause selects the
+// explicit Check contract: only then may the closed tailscale_* causes cross the
+// wire. Every other caller (for example Begin) uses the generic probe so its
+// mutation error never carries a Check-only cause.
+func (s *Service) checkTailnetPeer(ctx context.Context, peerID string, withCause bool) (tailnetIdentity, error) {
+	var v tailnetIdentity
+	peer, err := s.tailnetPeer(ctx, peerID)
+	if err != nil {
+		return v, rpc.Error(err, "")
+	}
+	origin, _ := tailscale.Origin(peer.Host)
+	if err := s.probeTailnet(ctx, origin, &v, withCause); err != nil {
+		// Only the closed cause is logged; hostnames, URLs and native error text
+		// stay out of diagnostics.
+		s.logger.WarnContext(ctx, "tailscale_check", "phase", "probe", "with_cause", withCause, "code", domain.SafeError(err).Code, "cause", tailscale.ProbeCauseOf(err))
+		return v, rpc.Error(err, "")
+	}
+	if !v.compatible(origin) {
+		s.logger.WarnContext(ctx, "tailscale_check", "phase", "identity", "with_cause", withCause, "code", domain.Unsupported, "cause", tailscale.ProbeInvalidIdentity)
+		if !withCause {
+			return v, rpc.Error(tailnetFailure(domain.Unsupported), "")
+		}
+		return v, rpc.Error(tailnetIdentityRejection(), "")
+	}
+	return v, nil
+}
+
 func (s *Service) GetTailscaleAccess(ctx context.Context, req *connect.Request[pb.GetTailscaleAccessRequest]) (*connect.Response[pb.GetTailscaleAccessResponse], error) {
 	if s.tailscale == nil {
 		return nil, rpc.Error(tailnetFailure(domain.Unsupported), "")
@@ -691,13 +722,9 @@ func (s *Service) BeginTailscaleConnection(ctx context.Context, req *connect.Req
 	}
 	v, err := s.readOutgoing(id)
 	if errors.Is(err, os.ErrNotExist) {
-		checked, err := s.CheckTailscale(ctx, connect.NewRequest(&pb.CheckTailscaleRequest{PeerId: m.PeerId}))
+		identity, err := s.checkTailnetPeer(ctx, m.PeerId, false)
 		if err != nil {
 			return nil, err
-		}
-		var identity tailnetIdentity
-		if json.Unmarshal(checked.Msg.DocumentJson, &identity) != nil {
-			return nil, rpc.Error(tailnetFailure(domain.Unsupported), "")
 		}
 		if err := security.PrivateDir(filepath.Join(s.tailnetRoot(), "outgoing")); err != nil {
 			return nil, rpc.Error(err, "")

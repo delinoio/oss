@@ -122,6 +122,11 @@ which emits `unavailable` with `timeout`) can never collide with it; the cause-a
 probe and `invalid_identity` rejection are reachable only from `CheckTailscale`, and a
 Go test rejects any other emitter of these values. `CheckTailscale` uses a cause-aware probe
 while the shared `Probe` used by access enable keeps its current generic errors.
+`BeginTailscaleConnection` also revalidates the peer identity before it creates a journal, but it
+uses the generic probe and the generic unsupported identity failure: a Begin mutation error
+never carries any `tailscale_*` cause, so no handler other than `CheckTailscale` can surface a
+Check-only outcome. The shared server revalidation takes an explicit with-cause flag that only
+`CheckTailscale` sets, and Go tests cover every cause for both handlers.
 Normal TLS, one request, no redirect and no proxy are unchanged. A cause is set
 only when proven: `tailscale_connection_refused` from `syscall.ECONNREFUSED` (and the Windows
 `WSAECONNREFUSED` code) through `errors.Is/As`; `tailscale_timeout` from the request's own
