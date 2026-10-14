@@ -306,6 +306,9 @@ it("accepts only the fixed Grok authorization profile", () => {
     expect(grokLoginURL(authorization(edit)), name).toBe(false);
   expect(grokLoginURL("not a url")).toBe(false);
   expect(grokLoginURL(`${loginURL}${"a".repeat(5000)}`)).toBe(false);
+  // The native receiver rejects any fragment delimiter, even an empty one.
+  expect(grokLoginURL(`${loginURL}#`)).toBe(false);
+  expect(grokLoginURL(`${loginURL}#fragment`)).toBe(false);
 });
 
 it("creates one account and one browser login despite double click, Strict Mode and polling", async () => {
@@ -1082,6 +1085,27 @@ it("ends a definitively refused request without offering a replacement login", a
   ).toBeNull();
   expect(f.login).toHaveBeenCalledTimes(1);
   expect(f.progress).not.toHaveBeenCalled();
+});
+
+it("rejects a created account whose alias differs from the requested name before any login starts", async () => {
+  const f = fixture();
+  f.save.mockImplementationOnce(async (request) => ({
+    requestId: request.mutation.requestId,
+    resource: create(ResourceSchema, {
+      ...f.current(),
+      documentJson: encode({ ...document(f.current()), alias: "Renamed" }),
+    }),
+  }));
+  render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Start Grok" }));
+  // The receipt is not accepted: nothing is adopted, so the original request is
+  // retained for an explicit replay and no login request is sent.
+  await screen.findByRole("button", {
+    name: copy("grok-subscription.retryOriginal"),
+  });
+  expect(f.login).not.toHaveBeenCalled();
+  expect(f.progress).not.toHaveBeenCalled();
+  expect(f.changed).not.toHaveBeenCalled();
 });
 
 it("replaces the unconfirmed request notice when an uncertain start replay is refused definitively", async () => {
@@ -1924,6 +1948,20 @@ it("offers Use a device code beside Add account only with capability 39 and star
   without.rendered.unmount();
   without.client.clear();
 
+  // Inventory capability 17 is required too: capability 39 alone offers no
+  // device action, exactly like Add account.
+  const noInventory = await render39([
+    SystemCapability.GROK_SUBSCRIPTION_LOGIN_V1,
+  ]);
+  await waitFor(() => expect(noInventory.f.progress).not.toHaveBeenCalled());
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  });
+  expect(screen.queryByRole("button", { name: deviceLabel })).toBeNull();
+  expect(noInventory.f.save).not.toHaveBeenCalled();
+  noInventory.rendered.unmount();
+  noInventory.client.clear();
+
   const present = await render39([
     SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,
     SystemCapability.GROK_SUBSCRIPTION_LOGIN_V1,
@@ -1947,8 +1985,10 @@ it("offers Use a device code beside Add account only with capability 39 and star
   present.client.clear();
 });
 
-// Device login state table (renderer half). Rows are the server stage, columns
-// the pending work and the way the screen can leave; every cell has a test.
+// Device login state table (renderer half), abridged from the generated state
+// machine in grok-login-machine.ts (the source of truth, tested for every phase
+// and event pair). Rows are the server stage, columns the pending work and the
+// way the screen can leave; every cell has a test here too.
 //
 //   stage      retry closure   verification open   leave (Back/unmount/abort) | terminal
 //   PREPARING  none            hidden              no native call             | n/a
@@ -2588,12 +2628,29 @@ it.each([[SupportedLanguage.English], [SupportedLanguage.Korean]] as const)(
         | "claude-subscription.serverUpdateRequired"
         | "claude-subscription.serverUpdateRequiredGrokAvailable"
       ),
+      boolean?,
     ][] = [
       [
         "claude+grok+native",
         [claude, grok],
         true,
         "claude-subscription.availabilityGrokAvailable",
+      ],
+      // Grok Add account also needs inventory capability 17, so the notice
+      // never claims a sign-in that the disabled row cannot start.
+      [
+        "claude+grok+native, no inventory",
+        [claude, grok],
+        true,
+        "claude-subscription.availability",
+        false,
+      ],
+      [
+        "grok only, no inventory",
+        [grok],
+        true,
+        "claude-subscription.serverUpdateRequired",
+        false,
       ],
       [
         "claude+grok, no native",
@@ -2616,12 +2673,14 @@ it.each([[SupportedLanguage.English], [SupportedLanguage.Korean]] as const)(
       ],
       ["neither", [], true, "claude-subscription.serverUpdateRequired"],
     ];
-    for (const [name, extra, withNative, key] of cells) {
+    for (const [name, extra, withNative, key, withInventory = true] of cells) {
       const transport = createRouterTransport((router) => {
         router.service(SystemService, {
           getStatus: () => ({
             capabilities: [
-              SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,
+              ...(withInventory
+                ? [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1]
+                : []),
               ...extra,
             ],
           }),

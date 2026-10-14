@@ -83,6 +83,8 @@ const copyNotices: Record<
     failed: "grok-subscription.device.addressCopyFailed",
   },
 };
+// The account is created with this alias and keeps it until the naming step.
+const grokDefaultAlias = "Grok";
 const copiedNoticeMilliseconds = 4000;
 const pollIntervalMilliseconds = 1000;
 
@@ -434,7 +436,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
     pending.current = p;
     setView({
       machine: p.machine,
-      name: "Grok",
+      name: grokDefaultAlias,
       suggested: false,
       busy: false,
       copyState: CopyState.Idle,
@@ -446,7 +448,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
       kind: EntityKind.ACCOUNT,
       schemaVersion: 2,
       documentJson: encode({
-        alias: "Grok",
+        alias: grokDefaultAlias,
         subscription_service: SubscriptionServiceId.Grok,
         type: "subscription",
         enabled: true,
@@ -472,7 +474,8 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
             result.resource,
             undefined,
             SubscriptionServiceId.Grok,
-          )
+          ) ||
+          document(result.resource).alias !== grokDefaultAlias
         )
           throw new Error("Invalid created account");
         p.account = result.resource;
@@ -548,7 +551,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
           update(p, {
             name: subscriptionNameValid(progress.suggestedName)
               ? progress.suggestedName
-              : "Grok",
+              : grokDefaultAlias,
             suggested: subscriptionNameValid(progress.suggestedName),
             diagnostic: undefined,
           });
