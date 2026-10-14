@@ -2859,16 +2859,17 @@ fn composes_maps_of_minified_chunks() {
         serde_json::json!(["src/settings.ts"]),
         "{map:#}"
     );
-    // The exported name in the minified code maps to the source line of
-    // the export statement.
+    // Function names stay (they are observable), so the minified
+    // declaration of `describeSettings` maps to its source line.
     let decoded =
         sourcemap::SourceMap::from_slice(out(temp.path(), "settings.js.map").as_bytes()).unwrap();
     let column = published
-        .find("describeSettings")
-        .expect("export name kept") as u32;
+        .find("function describeSettings")
+        .map(|at| at + "function ".len())
+        .expect("function name kept") as u32;
     let token = decoded.lookup_token(0, column).expect("mapped");
     assert_eq!(token.get_source(), Some("src/settings.ts"));
-    assert_eq!(token.get_src_line(), 8, "{published}\n{map:#}");
+    assert_eq!(token.get_src_line(), 4, "{published}\n{map:#}");
 }
 
 /// Chunks that typeopt does not edit are never minified.
