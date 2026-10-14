@@ -119,7 +119,9 @@ test("build and package jobs fetch their LFS inputs", () => {
     );
     for (const name of jobs) {
       const checkouts = workflow.jobs[name].steps.filter(
-        (step) => step.uses === "actions/checkout@v6",
+        (step) =>
+          step.uses ===
+          "actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
       );
       assert.equal(checkouts.length, 1, `${filename}: ${name}: checkout count`);
       assert.equal(
