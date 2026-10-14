@@ -571,6 +571,8 @@ function checkFixture(options: {
   failFrom?: number;
   // 1-based discovery read from which discovery fails (default: never).
   discoveryFailFrom?: number;
+  // 1-based discovery read after which discovery succeeds again.
+  discoveryFailUntil?: number;
   peerOverrides?: Record<string, unknown>;
   // Peer fields for a 1-based discovery read, merged over peerOverrides.
   peerAtDiscovery?: (discovery: number) => Record<string, unknown>;
@@ -611,7 +613,8 @@ function checkFixture(options: {
         discoveries += 1;
         if (
           options.discoveryFailFrom &&
-          discoveries >= options.discoveryFailFrom
+          discoveries >= options.discoveryFailFrom &&
+          discoveries <= (options.discoveryFailUntil ?? Infinity)
         )
           throw new ConnectError("Discovery failed", Code.Unavailable);
         return {
@@ -882,7 +885,9 @@ it("ignores the cached inventory and its peers after a failed refresh", async ()
     expect(screen.queryByText("Tailscale connected")).toBeNull(),
   );
   expect(screen.getByText("Unavailable or blocked")).toBeTruthy();
-  expect(screen.queryByText(DEVICE)).toBeNull();
+  // The rows stay mounted (see the visit-queue tests) but are hidden from
+  // presentation and assistive technology.
+  expect(screen.queryByRole("list")).toBeNull();
   expect(screen.queryByRole("button", { name: "Check" })).toBeNull();
   expect(document.querySelector("[role='alert']")).not.toBeNull();
 });
@@ -1080,4 +1085,89 @@ it("restores the access action after a later successful read", async () => {
     { timeout: 4000 },
   );
   expect(accessButton().textContent).toBe("Disable access");
+});
+
+// Visit-queue ownership class (issue 3687 review): a failed discovery refresh
+// hides the cached peers but keeps their rows mounted. Their check queries use
+// gcTime 0, so unmounting them would discard settled automatic results and a
+// later successful Refresh would issue the Check again without user action.
+const peerRow = () =>
+  document.querySelector<HTMLElement>(".tailscale-list > li");
+const settleDiscoveries = async (f: { discoveries: () => number }, n: number) => {
+  await waitFor(() => expect(f.discoveries()).toBe(n));
+  // Give any wrongly re-enabled check time to be issued.
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  });
+};
+
+it("does not repeat a settled automatic check after a failed refresh recovers", async () => {
+  const f = checkFixture({ discoveryFailFrom: 2, discoveryFailUntil: 2 });
+  expect(await screen.findByText("DeliDev: Accepting requests")).toBeTruthy();
+  const row = peerRow();
+  expect(f.attempts()).toBe(1);
+  refresh();
+  await settleDiscoveries(f, 2);
+  await waitFor(() => expect(screen.queryByRole("list")).toBeNull());
+  // The same row element stays mounted while its presentation is suppressed.
+  expect(peerRow()).toBe(row);
+  expect(row?.closest("ul")?.hidden).toBe(true);
+  refresh();
+  await settleDiscoveries(f, 3);
+  expect(await screen.findByText("DeliDev: Accepting requests")).toBeTruthy();
+  expect(peerRow()).toBe(row);
+  expect(row?.closest("ul")?.hidden).toBe(false);
+  expect(f.attempts()).toBe(1);
+});
+
+it("keeps a failed automatic check manual after a failed refresh recovers", async () => {
+  const f = checkFixture({
+    failure: refusedFailure,
+    failUntil: 1,
+    discoveryFailFrom: 2,
+    discoveryFailUntil: 2,
+  });
+  expect(
+    await screen.findByText(`Could not connect to DeliDev on ${DEVICE}.`),
+  ).toBeTruthy();
+  refresh();
+  await settleDiscoveries(f, 2);
+  refresh();
+  await settleDiscoveries(f, 3);
+  expect(
+    await screen.findByText(`Could not connect to DeliDev on ${DEVICE}.`),
+  ).toBeTruthy();
+  // No automatic retry; the user retries manually.
+  expect(f.attempts()).toBe(1);
+  await runCheck();
+  expect(await screen.findByText("DeliDev: Accepting requests")).toBeTruthy();
+  expect(f.attempts()).toBe(2);
+});
+
+it("does not repeat a settled automatic check across repeated refresh failures", async () => {
+  const f = checkFixture({ discoveryFailFrom: 2, discoveryFailUntil: 3 });
+  expect(await screen.findByText("DeliDev: Accepting requests")).toBeTruthy();
+  refresh();
+  await settleDiscoveries(f, 2);
+  refresh();
+  await settleDiscoveries(f, 3);
+  refresh();
+  await settleDiscoveries(f, 4);
+  expect(await screen.findByText("DeliDev: Accepting requests")).toBeTruthy();
+  expect(f.attempts()).toBe(1);
+});
+
+it("never checks a peer that went offline during a failed refresh when discovery recovers", async () => {
+  const f = checkFixture({
+    discoveryFailFrom: 2,
+    discoveryFailUntil: 2,
+    peerAtDiscovery: (discovery) => ({ online: discovery < 3 }),
+  });
+  expect(await screen.findByText("DeliDev: Accepting requests")).toBeTruthy();
+  refresh();
+  await settleDiscoveries(f, 2);
+  refresh();
+  await settleDiscoveries(f, 3);
+  expect(await screen.findByText("DeliDev: Not checked")).toBeTruthy();
+  expect(f.attempts()).toBe(1);
 });

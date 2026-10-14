@@ -566,10 +566,12 @@ function DeviceInventory({
   const retainedHelpId = "tailscale-retained-request-help";
   // A failed refresh keeps the previous inventory in the query next to the new
   // error. The latest result controls status and peer actions, so the cached
-  // inventory is ignored while the current query has an error.
-  const inventory = discovery.error
-    ? undefined
-    : decode<Inventory>(discovery.data?.documentJson);
+  // inventory is ignored while the current query has an error. The retained
+  // snapshot below only keeps the peer rows (and their gcTime 0 check queries)
+  // mounted, hidden, so a settled automatic check is never discarded and issued
+  // again after a later successful Refresh.
+  const retainedInventory = decode<Inventory>(discovery.data?.documentJson);
+  const inventory = discovery.error ? undefined : retainedInventory;
   // Automatic availability checks belong to this mount, which is exactly one
   // visit of the devices presentation: leaving the category unmounts it and
   // reopening starts fresh. The queue is snapshotted once from the first
@@ -689,8 +691,8 @@ function DeviceInventory({
             {inventory?.state === "running" && inventory.peers.length === 0 ? (
               <p>{copy("tailscale.empty")}</p>
             ) : null}
-            <ul className="tailscale-list">
-              {inventory?.peers.map((peer) => {
+            <ul className="tailscale-list" hidden={Boolean(discovery.error)}>
+              {retainedInventory?.peers.map((peer) => {
                 const queued = queue?.find(
                   (q) => !dropped.includes(q.id) && queuedAndEligible(q, peer),
                 );
