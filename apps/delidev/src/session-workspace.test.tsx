@@ -1977,9 +1977,7 @@ it.each(
         expect(
           within(progress).getAllByText("Waiting for response").length,
         ).toBeGreaterThan(0);
-        expect(screen.getByRole("textbox", { name: "Message" })).toBe(
-          composer,
-        );
+        expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
         expect(document.activeElement).toBe(composer);
         gate.held.release();
         // Unchanged pages: still nothing flashes after the read settles.
@@ -2002,7 +2000,10 @@ it.each([
   {
     read: "transcript" as const,
     name: "a new assistant response",
-    rows: (f: ReturnType<typeof fixture>, user: ReturnType<typeof create<typeof ResourceSchema>>) => [
+    rows: (
+      f: ReturnType<typeof fixture>,
+      user: ReturnType<typeof create<typeof ResourceSchema>>,
+    ) => [
       user,
       create(ResourceSchema, {
         id: newRequestId(),
