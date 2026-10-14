@@ -774,6 +774,14 @@ function PaginatedQueryResult({ active = true, ...props }: QueryProps) {
       )
       .filter(Boolean);
   })();
+  // Progress is the number of the latest accepted page in the current chain.
+  // Pending and failed reads never reach chain.pages, so they cannot advance it.
+  const latest = chain.pages.at(-1),
+    acceptedPage = latest
+      ? latest.token
+        ? Number(latest.token)
+        : props.query.page
+      : undefined;
   return (
     <div
       ref={bindRoot}
@@ -797,6 +805,8 @@ function PaginatedQueryResult({ active = true, ...props }: QueryProps) {
             props.workspace?.reset();
             chain.refreshExplicit();
           }}
+          query={props.query}
+          loadedPage={acceptedPage}
         />
       ) : null}
       {props.standaloneCards && chain.loading ? (
@@ -831,6 +841,7 @@ function PaginatedQueryResult({ active = true, ...props }: QueryProps) {
               observe={observeWorkspace}
               selected={props.selected}
               enabled={props.workspace.supported && active}
+              active={active}
               chosen={props.workspace.selection}
               choose={props.workspace.choose}
             />
@@ -897,6 +908,7 @@ function PaginatedQueryResult({ active = true, ...props }: QueryProps) {
         root={root}
         active={active}
         label={copy("github-items.githubQueryResults_66fac2")}
+        showProgress={Boolean(props.standaloneCards)}
       />
     </div>
   );

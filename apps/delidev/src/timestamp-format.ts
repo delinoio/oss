@@ -73,6 +73,21 @@ export function timestampInstant(value: string): number | undefined {
   return rfc3339Instant(value);
 }
 
+/** Render the original RFC3339 instant as `YYYY-MM-DD HH:mm:ss[.fraction] UTC`.
+ * The fraction digits are copied from the source so nanosecond evidence is
+ * never rounded; offsets convert only the whole-second wall time. Invalid
+ * values return undefined so callers never present unverified evidence. */
+export function formatUtcInstant(value: string): string | undefined {
+  const instant = timestampInstant(value);
+  if (instant === undefined) return;
+  const wall = new Date(Math.floor(instant / 1000) * 1000)
+    .toISOString()
+    .slice(0, 19)
+    .replace("T", " ");
+  const fraction = /^[^.]*\.(\d+)/.exec(value)?.[1];
+  return `${wall}${fraction ? `.${fraction}` : ""} UTC`;
+}
+
 export function nextTimestampTransition(
   instant: number,
   now: number,

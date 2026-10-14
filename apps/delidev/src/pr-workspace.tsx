@@ -65,6 +65,7 @@ import {
   paginationError,
   useGitHubScrollRoot,
 } from "./github-scroll";
+import { usePRRowTime } from "./pr-row-time";
 import "./pr-workspace.css";
 
 export type PRPage = { data: Document; query: GitHubQuery };
@@ -258,6 +259,121 @@ function Enrichment({
     </>
   );
 }
+/** Decorative leading glyph; the textual title carries the accessible name. */
+function PullRequestGlyph() {
+  return (
+    <svg
+      className="pr-row-icon"
+      aria-hidden="true"
+      focusable="false"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="6" cy="6" r="2" />
+      <circle cx="18" cy="18" r="2" />
+      <path d="M6 8v10a4 4 0 0 0 4 4M18 16V8a4 4 0 0 0-4-4h-2" />
+      <path d="m12 2-2 2 2 2" />
+    </svg>
+  );
+}
+/** One compact row: title first, then textual evidence, then the relative
+ * update time. The exact UTC instant is a tooltip owned by this row. */
+function PRRow({
+  node,
+  depth,
+  stack,
+  selected,
+  enabled,
+  chosen,
+  context,
+  active,
+  choose,
+}: {
+  node: Document;
+  depth: number;
+  stack: boolean;
+  selected: Resource;
+  enabled: boolean;
+  chosen: boolean;
+  context: boolean;
+  active: boolean;
+  choose: (button: HTMLButtonElement) => void;
+}) {
+  useLocale();
+  const item = object(node.item),
+    author = object(item.author),
+    number = text(item.number),
+    time = usePRRowTime(text(item.updated_at));
+  return (
+    <article
+      className="pr-workspace-row"
+      data-stack={stack}
+      data-child={depth > 0}
+      data-selected={chosen}
+      style={{ marginInlineStart: `${depth * 12}px` }}
+    >
+      <button
+        type="button"
+        data-pr-number={number}
+        aria-pressed={chosen}
+        onClick={(event) => choose(event.currentTarget)}
+        {...time.buttonProps}
+      >
+        <span className="pr-row-title" role="heading" aria-level={3}>
+          <PullRequestGlyph />#{number} {text(item.title)}
+        </span>
+        <span className="pr-row-meta">
+          <span className="pr-list-state" data-state={text(item.state)}>
+            {copy(
+              item.state === "closed"
+                ? "pull-requests.closed_c21ead"
+                : "pull-requests.open_ed077f",
+            )}
+          </span>
+          {item.draft ? <span>{copy("pr-cards.draft")}</span> : null}
+          {stack ? (
+            <span className="pr-stack-badge">{copy("pr-workspace.stack")}</span>
+          ) : null}
+          {context ? <span>{copy("pr-workspace.context")}</span> : null}
+          <span className="pr-row-author">
+            <Avatar
+              selected={selected}
+              reference={text(node.avatar_reference)}
+              enabled={enabled}
+            />
+            <span>
+              {text(author.login) || copy("github-items.extra.a326f4758492")}
+              {author.kind === "unknown" ? (
+                <> · {copy("pr-cards.unverifiedAuthor")}</>
+              ) : null}
+            </span>
+          </span>
+          <PRCounts value={node.counts} />
+        </span>
+        <span className="pr-row-updated" ref={time.timeRef} {...time.timeProps}>
+          <TimestampText
+            id="pr-cards.updatedRelative"
+            values={{
+              time: (
+                <Timestamp
+                  value={text(item.updated_at)}
+                  mode={TimestampMode.Relative}
+                  active={active}
+                  nativeTitle={false}
+                />
+              ),
+            }}
+          />
+        </span>
+      </button>
+      {time.tooltip}
+    </article>
+  );
+}
 export function PRWorkspaceRows({
   pages,
   selected,
@@ -269,6 +385,7 @@ export function PRWorkspaceRows({
   allSeeds,
   residentSeeds,
   previous,
+  active = true,
 }: {
   pages: PRPage[];
   selected: Resource;
@@ -282,6 +399,8 @@ export function PRWorkspaceRows({
    * instance's own pages. */
   residentSeeds?: string[];
   previous?: boolean;
+  /** Surface activity: hidden surfaces stop subscribing to the presentation clock. */
+  active?: boolean;
 }) {
   useLocale();
   const seeds = pages.flatMap((page) =>
@@ -395,84 +514,35 @@ export function PRWorkspaceRows({
       ) : null}
       {conflict ? <p role="status">{copy("pr-workspace.ambiguous")}</p> : null}
       {ordered.map(({ node, depth, stack }) => {
-        const item = object(node.item),
-          author = object(item.author),
-          number = text(item.number);
+        const number = text(object(node.item).number);
         return (
-          <article
+          <PRRow
             key={number}
-            className="pr-workspace-row"
-            data-stack={stack}
-            data-child={depth > 0}
-            data-selected={chosen === number}
-            style={{ marginInlineStart: `${depth * 12}px` }}
-          >
-            <button
-              type="button"
-              data-pr-number={number}
-              aria-pressed={chosen === number}
-              onClick={(event) =>
-                choose(
-                  {
-                    number,
-                    node,
-                    scope:
-                      scopes.get(number) ??
-                      pages.find((page) =>
-                        items(page.data.items).some(
-                          (raw) => object(raw).number === number,
-                        ),
-                      )?.data,
-                  },
-                  event.currentTarget,
-                )
-              }
-            >
-              <span className="pr-row-labels">
-                <span className="pr-list-state" data-state={text(item.state)}>
-                  {copy(
-                    item.state === "closed"
-                      ? "pull-requests.closed_c21ead"
-                      : "pull-requests.open_ed077f",
-                  )}
-                </span>
-                {item.draft ? <span>{copy("pr-cards.draft")}</span> : null}
-                {stack ? (
-                  <span className="pr-stack-badge">
-                    {copy("pr-workspace.stack")}
-                  </span>
-                ) : null}
-                {!matching.has(number) ? (
-                  <span>{copy("pr-workspace.context")}</span>
-                ) : null}
-              </span>
-              <span className="pr-row-title" role="heading" aria-level={3}>
-                #{number} {text(item.title)}
-              </span>
-              <span className="pr-row-author">
-                <Avatar
-                  selected={selected}
-                  reference={text(node.avatar_reference)}
-                  enabled={enabled}
-                />
-                <span>
-                  {text(author.login) ||
-                    copy("github-items.extra.a326f4758492")}
-                  {author.kind === "unknown" ? (
-                    <> · {copy("pr-cards.unverifiedAuthor")}</>
-                  ) : null}
-                </span>
-                <PRCounts value={node.counts} />
-              </span>
-              <span>
-                {copy("pr-cards.updated")}:{" "}
-                <Timestamp
-                  value={text(item.updated_at)}
-                  mode={TimestampMode.Exact}
-                />
-              </span>
-            </button>
-          </article>
+            node={node}
+            depth={depth}
+            stack={stack}
+            selected={selected}
+            enabled={enabled}
+            chosen={chosen === number}
+            context={!matching.has(number)}
+            active={active}
+            choose={(button) =>
+              choose(
+                {
+                  number,
+                  node,
+                  scope:
+                    scopes.get(number) ??
+                    pages.find((page) =>
+                      items(page.data.items).some(
+                        (raw) => object(raw).number === number,
+                      ),
+                    )?.data,
+                },
+                button,
+              )
+            }
+          />
         );
       })}
     </section>

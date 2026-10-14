@@ -25,6 +25,11 @@
 .pr-list-header p {
   font-size: 14px;
 }
+.pr-list-header .pr-list-header-applied {
+  margin-block-start: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
 .pr-list-header button {
   flex: 0 1 auto;
   min-height: 40px;

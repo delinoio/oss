@@ -235,8 +235,14 @@ retain their explicit modes. Catalog interpolation uses inert React timestamp
 slots so locale and display-clock updates do not stringify or remount them.
 
 `TimestampMode.Relative` is an explicit elapsed-time mode used only by the PR
-detail Updated field (`pr-cards.updatedRelative`, "Updated {{time}}" / "{{time}}
-업데이트"). For nonnegative ages it reuses the now/minute/hour labels and adds
+detail Updated field and the standalone PR list rows (`pr-cards.updatedRelative`,
+"Updated {{time}}" / "{{time}} 업데이트"). List rows additionally show the exact
+UTC instant (`YYYY-MM-DD HH:mm:ss[.fraction] UTC`, not localized) in a tooltip.
+The list also adds `pr-cards.loadedThrough` ("Loaded through page {{page}}" /
+"{{page}}페이지까지 불러옴"), the opt-in `pagination.moreAvailable` and
+`pagination.exhausted` continuation texts and the page-size guidance
+`pull-requests.pageSizeUnsupported` / `pull-requests.pageSizeChecking` in both
+catalogs. The former `pr-cards.updated` ("Updated (UTC)") key is removed. For nonnegative ages it reuses the now/minute/hour labels and adds
 catalog day/week/month/year singular and plural forms (`timestamp.day` through
 `timestamp.years`; Korean 일/주/개월/년 전). Day is 24 hours, week 7 days, month
 30 days and year 365 days; the label changes exactly at 60 seconds, 60 minutes,
