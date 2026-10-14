@@ -200,7 +200,7 @@ func settleGrokOperation(st *domain.SubscriptionState, in grokSettlement, now ti
 // later Take at a supported installation supersedes this record. The write is
 // bookkeeping bounded and detached from the refused request, so it also
 // persists when the request is canceled. The caller holds the account gate.
-func (s *Service) recordGrokTakeRefusal(requestCtx context.Context, account, operation, machine domain.ID, d *domain.GrokDiagnostic) {
+func (s *Service) recordGrokTakeRefusal(requestCtx context.Context, account, operation, machine domain.ID, action domain.SubscriptionAction, d *domain.GrokDiagnostic) {
 	ctx, cancel := grokBookkeepingContext(requestCtx, grokBookkeepingTimeout)
 	defer cancel()
 	recorded := false
@@ -209,14 +209,14 @@ func (s *Service) recordGrokTakeRefusal(requestCtx context.Context, account, ope
 		if err != nil {
 			return nil, err
 		}
+		// The refusal is validated again here because the refused Take's own
+		// transaction rolled back: the operation, action and Runner Device must
+		// still be the account's exact queued original.
+		p := grokTakeRefusalTarget(tx, a, operation, machine, action)
+		if p == nil {
+			return struct{}{}, nil
+		}
 		st := a.Subscription
-		if st == nil || st.RecoveryRequired || st.Lease != nil || st.Pending == nil {
-			return struct{}{}, nil
-		}
-		p := st.Pending
-		if p.ID != operation || p.MachineID != machine || p.Phase != domain.SubscriptionQueued || p.Canceled {
-			return struct{}{}, nil
-		}
 		if !settleGrokOperation(st, grokSettlement{Operation: operation, Action: p.Action, Actor: p.Actor, Epoch: s.subscriptionServerEpoch(), State: domain.SubscriptionUnsupported, Diagnostic: d}, time.Now().UTC()) {
 			return struct{}{}, nil
 		}

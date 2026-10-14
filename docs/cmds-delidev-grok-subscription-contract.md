@@ -474,8 +474,14 @@ owner's active operation:
 - A refused protected Take records the admission diagnostic (`discovery`,
   `version` or `profile`) with state `unsupported` (`recordGrokTakeRefusal`). The
   operation stays queued and claimable; the next successful Take clears the
-  record. Only the operation's own queued, unclaimed Pending on the requesting
-  Runner Device is annotated.
+  record. Only a Take that addresses the account's own operation exactly may
+  annotate it (`grokTakeRefusalTarget`, checked in the refused transaction and
+  again in the recording transaction): the same operation ID, lifecycle action
+  and Runner Device, still queued and uncanceled, on an account that is not
+  leased or fenced, whose lifecycle shape (login without a credential; refresh
+  and logout with the connected generation) and initiating actor would
+  otherwise admit the claim. Every other Take is refused with the same
+  admission error and leaves no trace on any operation.
 - Finish settles inside its own transaction: a succeeded login or refresh is
   `succeeded` with the committed generation, a succeeded logout is `succeeded`
   without one, a cancellation is `canceled` without a diagnostic, a Worker-reported
@@ -505,6 +511,20 @@ operation, so polling never fails merely because the operation has not settled:
 | active record past its window                     | `expired`                                                  |
 | account recovery fence                            | `recovery-required`                                        |
 | any other operation ID, actor or no operation     | access denied                                              |
+
+A Take after an installation refusal is recorded or ignored as follows (the
+refusal error returned to the Worker is the same in every row):
+
+| Take addresses                                                                               | Recorded on the account                        | Progress afterwards          |
+| -------------------------------------------------------------------------------------------- | ---------------------------------------------- | ---------------------------- |
+| the queued original (same ID, action, machine)                                               | `unsupported` + diagnostic                     | `unsupported` + diagnostic   |
+| the original ID with another lifecycle action                                                | nothing                                        | `preparing`                  |
+| the original action on another Runner Device                                                 | nothing (rejected as Worker identity mismatch) | `preparing`                  |
+| another operation ID                                                                         | nothing                                        | `preparing` (original)       |
+| a canceled queued original                                                                   | nothing                                        | `preparing`, `canceled=true` |
+| an original whose lifecycle shape is not admitted (for example login on a connected account) | nothing                                        | `preparing`                  |
+| a claimed original (lease held)                                                              | nothing                                        | `waiting`                    |
+| any Take while the account is fenced for recovery                                            | nothing                                        | `recovery-required`          |
 
 A succeeded operation's progress response carries `generation` (the generation
 the account still references) so the onboarding controller can name the account;

@@ -149,6 +149,41 @@ func (s *Service) grokSubscriptionLeaseView(ctx context.Context, tx *store.Tx, i
 	return r, a, *l, nil
 }
 
+// grokOriginalTake reports whether a Take addresses exactly the account's
+// pending operation: the same operation ID, lifecycle action and Runner Device,
+// still queued. Cancellation is classified separately by the caller.
+func grokOriginalTake(op *domain.SubscriptionOperation, operation, machine domain.ID, action domain.SubscriptionAction) bool {
+	return op != nil && op.ID == operation && op.Action == action && op.MachineID == machine && op.Phase == domain.SubscriptionQueued
+}
+
+// grokLifecycleShape reports whether the account can start the action: login
+// starts from no credential, refresh and logout require the connected account's
+// current generation.
+func grokLifecycleShape(a *domain.Account, action domain.SubscriptionAction) bool {
+	st := a.Subscription
+	if action == domain.SubscriptionLogin {
+		return a.Connection == nil && st.Generation == ""
+	}
+	return a.Connection != nil && st.Generation != ""
+}
+
+// grokTakeRefusalTarget returns the pending operation that a refused Take may
+// annotate with its admission diagnostic: only the account's own queued,
+// uncanceled operation, addressed by the Take's exact operation ID, lifecycle
+// action and Runner Device, on an account that is not leased or fenced and
+// whose lifecycle shape and initiating actor would otherwise admit the claim.
+// Every other Take is refused without leaving a trace on any operation.
+func grokTakeRefusalTarget(tx *store.Tx, a domain.Account, operation, machine domain.ID, action domain.SubscriptionAction) *domain.SubscriptionOperation {
+	st := a.Subscription
+	if st == nil || st.RecoveryRequired || st.Lease != nil || !grokOriginalTake(st.Pending, operation, machine, action) || st.Pending.Canceled {
+		return nil
+	}
+	if !grokLifecycleShape(&a, action) || subscriptionActorValid(tx, st.Pending.Actor) != nil {
+		return nil
+	}
+	return st.Pending
+}
+
 func (s *Service) takeGrokSubscription(ctx context.Context, req *connect.Request[pb.TakeSubscriptionRequest]) (response *connect.Response[pb.TakeSubscriptionResponse], returned error) {
 	c := req.Header().Get(rpc.CorrelationHeader)
 	m := req.Msg.Mutation
@@ -207,8 +242,15 @@ func (s *Service) takeGrokSubscription(ctx context.Context, req *connect.Request
 		installation, err := grokSubscriptionInstallation(tx, input.Machine)
 		if err != nil {
 			if d := domain.GrokErrorDiagnostic(err); d != nil {
-				refusal = d
-				s.logger.WarnContext(ctx, "grok_subscription_take_installation_refused", "account_id", input.Account, "operation_id", input.Operation, "phase", d.Phase, "code", d.Code, "installed_version", d.DetectedVersion, "supported_version", d.SupportedVersion)
+				// The installation refusal is returned for every Take, but only a
+				// Take that addresses the account's own queued operation exactly
+				// may annotate it; any other Take would otherwise attach a false
+				// terminal failure to an operation it does not own.
+				recordable := grokTakeRefusalTarget(tx, a, input.Operation, input.Machine, action) != nil
+				if recordable {
+					refusal = d
+				}
+				s.logger.WarnContext(ctx, "grok_subscription_take_installation_refused", "account_id", input.Account, "operation_id", input.Operation, "action", action, "refusal_recorded", recordable, "phase", d.Phase, "code", d.Code, "installed_version", d.DetectedVersion, "supported_version", d.SupportedVersion)
 			}
 			return nil, err
 		}
@@ -221,7 +263,7 @@ func (s *Service) takeGrokSubscription(ctx context.Context, req *connect.Request
 		if op == nil || op.ID != input.Operation {
 			return nil, subscriptionTakeNotAdmitted()
 		}
-		original := op.Action == action && op.MachineID == input.Machine && op.Phase == domain.SubscriptionQueued
+		original := grokOriginalTake(op, input.Operation, input.Machine, action)
 		if original && op.Canceled {
 			return nil, subscriptionTakeNotAdmitted()
 		}
@@ -231,9 +273,7 @@ func (s *Service) takeGrokSubscription(ctx context.Context, req *connect.Request
 		if !original {
 			return nil, subscriptionDenied()
 		}
-		// Lifecycle shape: login starts from no credential, refresh and logout
-		// require the connected account's current generation.
-		if action == domain.SubscriptionLogin && (a.Connection != nil || st.Generation != "") || action != domain.SubscriptionLogin && (a.Connection == nil || st.Generation == "") {
+		if !grokLifecycleShape(&a, action) {
 			return nil, subscriptionDenied()
 		}
 		if err := subscriptionActorValid(tx, op.Actor); err != nil {
@@ -251,7 +291,7 @@ func (s *Service) takeGrokSubscription(ctx context.Context, req *connect.Request
 	})
 	if err != nil {
 		if refusal != nil {
-			s.recordGrokTakeRefusal(ctx, input.Account, input.Operation, input.Machine, refusal)
+			s.recordGrokTakeRefusal(ctx, input.Account, input.Operation, input.Machine, action, refusal)
 		}
 		return nil, rpc.Error(err, c)
 	}
