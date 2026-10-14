@@ -420,7 +420,7 @@ function NativeManagedSubscriptionAccount({
       !status.error &&
       !status.isFetching &&
       !claudeServerLogin ? (
-        <p>{copy("claude-subscription.serverUpdateRequired")}</p>
+        <p>{copy("claude-subscription.serverUpdateRequiredClaudeOnly")}</p>
       ) : null}
       {state.recovery_required === true ? (
         <InlineRemediation
@@ -722,11 +722,6 @@ export function SubscriptionAccounts({
   // actions and Refresh all keep the generic notice, so a missing Claude
   // capability never reads as the reason a ChatGPT quota refresh or another
   // service's disconnect is unavailable.
-  const lifecycleNotice = copy(
-    claudeUpdateRequired
-      ? "claude-subscription.serverUpdateRequired"
-      : "claude-subscription.availability",
-  );
   const actionUnavailable = copy("subscription-settings.extra.f874aed4a97c");
   const refreshInventory = useRef<() => void>(() => {});
   // Login/status authority stays active while its own presentation pauses only
@@ -810,6 +805,19 @@ export function SubscriptionAccounts({
     status.data?.capabilities.includes(
       SystemCapability.GROK_SUBSCRIPTION_LOGIN_V1,
     ) === true;
+  // The connect notice names each provider's real state: Claude needs System
+  // capability 67, and Grok needs capability 39 plus the same native browser
+  // control that enables its Add account row (serviceLoginAvailable below).
+  const grokSignInAvailable = grokLoginCapable && flow.available;
+  const lifecycleNotice = copy(
+    claudeUpdateRequired
+      ? grokSignInAvailable
+        ? "claude-subscription.serverUpdateRequiredGrokAvailable"
+        : "claude-subscription.serverUpdateRequired"
+      : grokSignInAvailable
+        ? "claude-subscription.availabilityGrokAvailable"
+        : "claude-subscription.availability",
+  );
   const accountOperationsBlocked = Boolean(
     selected ||
     goIntent ||
@@ -1153,7 +1161,7 @@ export function SubscriptionAccounts({
             : brand === SubscriptionBrand.ChatGPT
               ? loginCapable && flow.available
               : brand === SubscriptionBrand.Grok
-                ? grokLoginCapable && flow.available
+                ? grokSignInAvailable
                 : brand === SubscriptionBrand.Claude &&
                   flow.available &&
                   status.data?.capabilities.includes(

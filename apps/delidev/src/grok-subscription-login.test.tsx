@@ -36,6 +36,8 @@ import { useSubscriptionLogin } from "./subscription-login";
 import { MutationIntents } from "./mutation";
 import english from "./locales/en/grok-subscription.json";
 import korean from "./locales/ko/grok-subscription.json";
+import englishClaude from "./locales/en/claude-subscription.json";
+import koreanClaude from "./locales/ko/claude-subscription.json";
 
 const CHALLENGE = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
 function authorization(edit: (url: URL) => void = () => {}) {
@@ -714,4 +716,103 @@ it("keeps the Grok row unchanged without capability 39 and enables Add account w
   });
   present.view.unmount();
   present.client.clear();
+});
+
+it.each([
+  [SupportedLanguage.English],
+  [SupportedLanguage.Korean],
+] as const)(
+  "names the real Claude and Grok sign-in state in the connect notice (%s)",
+  async (language) => {
+    await i18n.changeLanguage(language);
+    const claude = SystemCapability.CLAUDE_SERVER_LOGIN_V1,
+      grok = SystemCapability.GROK_SUBSCRIPTION_LOGIN_V1;
+    // Every cell of Claude capability x Grok capability x native control.
+    const cells: [
+      string,
+      SystemCapability[],
+      boolean,
+      | "claude-subscription.availability"
+      | "claude-subscription.availabilityGrokAvailable"
+      | "claude-subscription.serverUpdateRequired"
+      | "claude-subscription.serverUpdateRequiredGrokAvailable",
+    ][] = [
+      ["claude+grok+native", [claude, grok], true, "claude-subscription.availabilityGrokAvailable"],
+      ["claude+grok, no native", [claude, grok], false, "claude-subscription.availability"],
+      ["claude only", [claude], true, "claude-subscription.availability"],
+      ["grok only", [grok], true, "claude-subscription.serverUpdateRequiredGrokAvailable"],
+      ["grok only, no native", [grok], false, "claude-subscription.serverUpdateRequired"],
+      ["neither", [], true, "claude-subscription.serverUpdateRequired"],
+    ];
+    for (const [name, extra, withNative, key] of cells) {
+      const transport = createRouterTransport((router) => {
+        router.service(SystemService, {
+          getStatus: () => ({
+            capabilities: [
+              SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,
+              ...extra,
+            ],
+          }),
+        });
+        router.service(ResourceService, {
+          listResources: () => ({ resources: [] }),
+        });
+      });
+      const client = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+      });
+      const body = (
+        <SettingsLifetime>
+          {() => (
+            <MutationIntents>
+              <SubscriptionAccounts
+                active
+                editAccount={vi.fn()}
+                deleteAccount={vi.fn()}
+              />
+            </MutationIntents>
+          )}
+        </SettingsLifetime>
+      );
+      const view = render(
+        <TransportProvider transport={transport}>
+          <QueryClientProvider client={client}>
+            {withNative ? (
+              <OAuthNativeProvider
+                control={vi.fn(async () => ({ generation: newRequestId() }))}
+              >
+                {body}
+              </OAuthNativeProvider>
+            ) : (
+              body
+            )}
+          </QueryClientProvider>
+        </TransportProvider>,
+      );
+      const notice = await screen.findByText(copy(key), {}, { timeout: 3000 });
+      expect(notice.className, name).toBe("subscription-unavailable");
+      const grokReady = key.endsWith("GrokAvailable");
+      expect(
+        copy(key).includes(language === SupportedLanguage.English ? "not available yet" : "아직 지원하지"),
+        name,
+      ).toBe(!grokReady);
+      view.unmount();
+      client.clear();
+    }
+  },
+);
+
+it("keeps the Claude-only update notice free of Grok state in English and Korean", () => {
+  for (const catalog of [englishClaude, koreanClaude]) {
+    expect(catalog["claude-subscription.serverUpdateRequiredClaudeOnly"]).not.toMatch(
+      /Grok/,
+    );
+    // The two Grok-aware notices extend the Claude-only sentence.
+    expect(catalog["claude-subscription.serverUpdateRequiredGrokAvailable"]).toContain(
+      catalog["claude-subscription.serverUpdateRequiredClaudeOnly"],
+    );
+    expect(catalog["claude-subscription.serverUpdateRequired"]).toContain(
+      catalog["claude-subscription.serverUpdateRequiredClaudeOnly"],
+    );
+  }
 });
