@@ -363,8 +363,14 @@ impl View {
                     });
                 let graph_owned =
                     self.graph.is_location_ancestor(&archive) || virtual_archive_owned;
-                if !graph_owned || archive.is_dir() {
+                if !graph_owned {
                     self.native_backing(logical.clone())
+                } else if archive.is_dir() {
+                    // A graph-owned virtual ZIP can be backed by an unpacked
+                    // native directory. Keep that physical backing path so
+                    // directory fixtures and unplugged packages remain
+                    // addressable without creating a cache lease.
+                    (archive.join(info.zip_path), true)
                 } else {
                     if !self.leases.contains_key(&archive) {
                         let lease = self.cache.materialize_with_wait(&archive, wait)?;

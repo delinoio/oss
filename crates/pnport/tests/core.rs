@@ -683,6 +683,38 @@ fn unregistered_zip_file_child_keeps_native_enotdir() {
 }
 
 #[test]
+fn virtual_zip_directories_keep_physical_backing_in_inline_and_split_views() {
+    for split in [false, true] {
+        let root = directory_fixture(split);
+        let root_path = fs::canonicalize(root.path()).unwrap();
+        let archive = root_path.join("cache.zip");
+        fs::remove_file(&archive).unwrap();
+        fs::create_dir_all(archive.join("node_modules/dep")).unwrap();
+        fs::write(archive.join("node_modules/dep/file.txt"), b"unpacked bytes").unwrap();
+
+        let cache_root = tempfile::tempdir().unwrap();
+        let session = tempfile::tempdir().unwrap();
+        let mut view = View::new(
+            Graph::load(&root_path.join(".pnp.cjs")).unwrap(),
+            Cache::open(cache_root.path().join("cache")).unwrap(),
+            session.path().to_owned(),
+        );
+
+        let translated = view
+            .translate(&root_path.join("node_modules/one/file.txt"))
+            .unwrap();
+        assert_eq!(
+            translated.physical,
+            archive.join("node_modules/dep/file.txt"),
+            "split={split}"
+        );
+        assert!(translated.readonly, "split={split}");
+        assert_eq!(fs::read(&translated.physical).unwrap(), b"unpacked bytes");
+        assert!(!session.path().join("active").exists());
+    }
+}
+
+#[test]
 fn virtual_zip_suffix_requires_matching_graph_archive() {
     for split in [false, true] {
         let root = directory_fixture(split);
