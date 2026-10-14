@@ -25,8 +25,20 @@ type deletionWorkspaceProof struct {
 // DeleteOwnedWorkspace holds the same lock as preparation, execution and reads.
 // Its external proof retains the original manifest across a crash during Git
 // worktree removal. Local paths are never traversed or deleted.
-func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDeletionWork, allowAbsent bool, removeCopies func() error) (returned error) {
+func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDeletionWork, allowAbsent bool, removeCopies func() error) error {
+	return m.DeleteOwnedWorkspaceWithOwner(ctx, w, allowAbsent, func(*security.PathIdentity) error { return removeCopies() })
+}
+
+// DeleteOwnedWorkspaceWithOwner is DeleteOwnedWorkspace whose copy callback also
+// receives the session owner's maintenance lock object when this call reconciled
+// the owner (the lock the reconciliation itself locked or created, bound while
+// its handle was open). The pointer is never nil; the identity is not present
+// when no reconciliation ran. A callback that adopts the object must call Take
+// on it, otherwise the workspace closes it when the callback returns.
+func (m *Manager) DeleteOwnedWorkspaceWithOwner(ctx context.Context, w domain.SessionDeletionWork, allowAbsent bool, removeCopies func(owner *security.PathIdentity) error) (returned error) {
 	stage := "validate"
+	var ownerLock security.PathIdentity
+	defer func() { ownerLock.Close() }()
 	defer func() {
 		if m.Logger != nil {
 			code := domain.Code("")
@@ -147,9 +159,11 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 		stage = "owned-processes"
 		processRoot := filepath.Join(m.Root, "processes", string(w.SessionID))
 		if _, e := os.Lstat(processRoot); e == nil {
-			if e := process.ReconcileOwnerContext(ctx, git.ProcessRoot, w.SessionID); e != nil {
+			bound, e := process.ReconcileOwnerContextBound(ctx, git.ProcessRoot, w.SessionID)
+			if e != nil {
 				return e
 			}
+			ownerLock = bound
 		} else if !errors.Is(e, os.ErrNotExist) {
 			return domain.SessionDeletionPending()
 		}
@@ -284,7 +298,7 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 		return domain.SessionDeletionPending()
 	}
 	stage = "copy-removal"
-	if e := removeCopies(); e != nil {
+	if e := removeCopies(&ownerLock); e != nil {
 		return e
 	}
 	// Retain only a non-content cleanup acknowledgement after all copies commit.

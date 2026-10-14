@@ -317,6 +317,10 @@ Managed subscriptions remain unsupported until their protected lifecycle exists.
 
 Automatic titles reuse the successful original execution executable path/hash with the native Responses profile. Worker attachment performs no title probe; the actual auxiliary process validates its protocol. For each title, a separate private Codex runtime validates effective provider/model, zero request/stream retries, ephemeral credentials, read-only sandbox and approval-never settings before sending the single first-message request. The title run accepts no tool, interaction or auxiliary native event; it rejects malformed/oversized/multiline output without repair. The 30-second inference and 4 KiB raw-text bounds apply, and process cleanup plus private runtime removal must finish before success publication. See the [automatic title contract](cmds-delidev-session-titles-contract.md) for assignment ownership and evidence limits.
 
+### Codex managed automatic title profile
+
+Protected ChatGPT titles run the original startup-proven executable with `ManagedAuthentication` and the private `ManagedTitle` profile. Codex rejects overrides of the reserved built-in `openai` provider, so the profile selects the alias `delidev_chatgpt_title`: OpenAI display name, Responses wire protocol, ChatGPT-authenticated requests, the native default base URL, websockets disabled and `request_max_retries=0`, `stream_max_retries=0`. The alias names no base URL, key, header, query or credential command. The thread uses fixed instructions in an empty private workspace with a read-only sandbox, approval `never`, `project_doc_max_bytes=0`, disabled web search, empty MCP/plugin/hook/notify tables and the Sidechat denial list plus `shell_tool`, `unified_exec_tty`, `view_image`, `sleep_tool`, `write_stdin_approval` and `skill_search`. `config/read` must report the exact merged provider shape (a closed set: the six required fields, known inert fields only as null or absent, and a disabled standalone web-search flag; any other key is refused), retry limits and ambient-instruction settings, and `experimentalFeature/list` must report every denied flag observed off before any input; a missing or enabled flag, inherited provider authority or unobserved retry limit is refused as `unsupported` before sending. The pinned profile reports `unified_exec` enabled even when configured off; it is a transport of the disabled shell tool. Codex cannot disable `update_plan`, so any tool, interaction or unexpected native event fails the title closed and discards its text. See the [title contract](cmds-delidev-session-titles-contract.md#protected-chatgpt-subscription-titles).
+
 ### Codex JSON-RPC stdio transport
 
 The internal `nativewire` connection consumes newline-delimited JSON-RPC on distinct native stdout and stdin streams and discards raw stderr. It validates UTF-8, unique JSON keys, required envelope discrimination, request identity type and protocol version, and preserves byte-fragmented Unicode. Codex's optional bounded `emittedAtMs` notification field is retained as provenance, not an ordering or deduplication identity. Unknown envelope shapes fail instead of being silently interpreted.
@@ -2741,7 +2745,16 @@ or `file_id` alternative and the optional closed detail; conflicting
 alternatives, null detail, unknown fields, duplicate keys, malformed Unicode
 escapes and oversized documents require recovery. The public projection is
 bounded to 512 KiB; private locator and ciphertext bytes may use the whole
-admitted native frame because they never enter that projection.
+admitted native frame because they never enter that projection. Retained-history
+scans (context inspection, compaction, continuation and Revert) use an aggregate
+budget of `max(4 MiB, native frame limit)`, so an output admitted by the enlarged
+16 MiB frame is not rejected by the aggregate; Fork keeps its own 4 MiB bound and
+the private Revert intent file is bounded at 17 MiB plus a 64 KiB envelope
+(16 MiB history, 1 MiB source checkpoint). The `image_history` frame profile
+reapplies the enlarged frame to managed compaction, Revert and credential-free
+Revert recovery clients of a session whose original execution froze native image
+generation; it never enables generation. See
+`cmds-delidev-compaction-contract.md` for the exact-budget and no-send rules.
 
 The app-server removes `input_image` and `input_audio` entries from
 `item/started` and `item/completed` notifications. When the client owns a
@@ -2759,7 +2772,13 @@ encrypted-content presence only. Locator values and opaque encrypted bytes stay
 in the original protected native history and its digest, and logs record only
 shape counts. Never fetch, open, decrypt, replay or reconstruct content from a
 result observation. A Worker whose server did not negotiate the capability
-keeps the observation private and the original turn continues.
+keeps the observation private and the original turn continues. That private
+path still validates the observation, its native item identity (non-empty, at
+most 1024 bytes) and its `started`/`completed` stage before retaining anything,
+and retains that identity and the
+completion lifecycle, so it consumes one shared native item slot, rejects an ID
+already owned by a message, tool, artifact or dynamic tool, and blocks any later
+item family from claiming that ID. It publishes no function-output event.
 
 The lifecycle digest covers the authoritative history item, including private
 locator and ciphertext bytes, not the media-stripped notification.
@@ -2835,3 +2854,9 @@ produce a continuation checkpoint or later input authority.
 The separate `CreditProtocol` profile is available only to the server-owned System 101 credit lane. It shares the [quota-only external authentication](#quota-only-external-chatgpt-authentication--issue-1854) boundary: experimental API support, disabled plugins, ephemeral credentials, the verified official OpenAI provider, configuration verified before credentials, and only an access token, account and plan supplied to one external `account/login/start`. The once-only closed login completion is validated and discarded, every `account/chatgptAuthTokens/refresh` request is refused with the fixed safe error, and no managed auth file, ID or refresh token, authentication renewal or credential write-back exists. Native readiness, the configured Direct route and the executable digest are verified for the actual server process; an unsupported profile fails without a Worker fallback.
 
 `ConsumeExternalResetCredit` requires the server's durable send claim and sends one official `account/rateLimitResetCredit/consume` request with the original UUIDv7 `idempotencyKey` and the immutable credit or count-only selection. A valid closed outcome is checkpointed through the server callback before one separate omitted-params `account/rateLimits/read`; a checkpoint or read failure returns the outcome with an independent read error, so it cannot erase consumption. The quota-only `QuotaProtocol` profile stays read-only and rejects consumption. The client is single use and joins its notification reader before cleanup. Independent original-process and private-file cleanup remain required.
+
+### Claude Code setup-token and managed token execution
+
+The `setup-token` adapter starts the pinned CLI on a bounded PTY (50 rows, 1000 columns) without `CI`, with `TERM=xterm-256color`, a verified no-op `BROWSER` opener (Windows and any host without one fail closed as unsupported instead of letting the child open the server user's browser) and none of the API, bearer, endpoint, proxy or login sources. Its URL profile is separate from auth-login: host `claude.com`, path `/cai/oauth/authorize`, the pinned client, S256 PKCE, `code=true`, the manual code callback and exactly the `user:inference` scope. The screen parser removes terminal escapes, accepts only delimited candidates, requires identical addresses and one distinct `sk-ant-oat01-` token with the completion marker, and releases the token at most once after a successful joined exit.
+
+Managed execution adds a token to the private stream configuration. The child environment keeps only owned paths, sets `CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST=1` (the pinned CLI then strips the token from tool and hook subprocesses) and the private secure-store directory, removes every inherited API, bearer, endpoint and descriptor source and never uses `--bare`. Initialization must report the `CLAUDE_CODE_OAUTH_TOKEN` token source with no API-key source and no email, organization or subscription metadata; token presence alone is not readiness. Checkpoints of this mode are distinct from relay and device-profile checkpoints. Real setup-token output and consumption were verified only against source strings and synthetic fixtures, not a real account.

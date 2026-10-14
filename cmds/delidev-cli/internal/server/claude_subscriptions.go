@@ -30,7 +30,8 @@ func (s *Service) isClaudeSubscription(ctx context.Context, id string) (bool, er
 }
 func claudeSubscriptionAccount(tx *store.Tx, id domain.ID, revision uint64) (store.Record, domain.Account, error) {
 	r, a, err := accountFromTx(tx, id, revision)
-	if err == nil && (a.Type != domain.SubscriptionAccount || a.SubscriptionService != domain.SubscriptionClaude || a.ProviderID != "") {
+	// Device-owned lifecycle never adopts a server-token account.
+	if err == nil && (a.Type != domain.SubscriptionAccount || a.SubscriptionService != domain.SubscriptionClaude || a.ProviderID != "" || a.Subscription != nil && a.Subscription.ManagedClaude()) {
 		err = subscriptionDenied()
 	}
 	return r, a, err
@@ -559,6 +560,11 @@ func (s *Service) SubmitSubscriptionLoginCode(ctx context.Context, req *connect.
 	defer clear(req.Msg.Code)
 	if err := validateAccountMutation(m); err != nil {
 		return nil, rpc.Error(err, c)
+	}
+	if _, managed, err := s.claudeAccountMode(ctx, m.Id); err != nil {
+		return nil, rpc.Error(err, c)
+	} else if managed {
+		return s.submitManagedClaudeCode(ctx, req)
 	}
 	actor, err := claudeActor(ctx)
 	if err != nil {

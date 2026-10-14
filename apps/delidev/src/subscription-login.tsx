@@ -214,9 +214,10 @@ export function useSubscriptionLogin(
     service: SubscriptionServiceId,
     initial?: Resource,
     reauth = false,
+    claudeServerLogin = false,
   ) => {
     if (service === SubscriptionServiceId.Claude) {
-      if (!pending.current) claude.begin(initial, reauth);
+      if (!pending.current) claude.begin(initial, reauth, claudeServerLogin);
       return;
     }
     if (claude.workflow) return;

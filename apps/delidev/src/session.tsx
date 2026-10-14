@@ -1303,7 +1303,7 @@ export function SessionView({
       messages.loaded &&
       !messages.error &&
       !messages.isFetching &&
-      messages.payloadPages.some((page) => page.token === ""),
+      messages.observed,
     ),
   );
   // A toolbar gesture can precede the initial session snapshot. Capture its
@@ -1760,6 +1760,37 @@ export function SessionView({
         readDocument(row).closure === "open"
       );
     }) || requestsOpen;
+  // A read failure stays sticky until a later read settles successfully. An
+  // explicit Retry or Reload clears the error as soon as it starts, so the
+  // retained empty snapshot must not look like a healthy empty tray while
+  // recovery is still pending (including a stalled read). Suspending the chain
+  // (for example by switching sessions) cancels that read without settling it,
+  // so only an advanced settled-read count releases the latch. A healthy
+  // background Refresh never sets this flag.
+  const requestsFailed = useRef(false);
+  const requestsFailedAt = useRef<number | undefined>(undefined);
+  const requestsFailure = useRef(interactions.error);
+  if (interactions.error) {
+    requestsFailed.current = true;
+    requestsFailedAt.current = interactions.settledReads;
+    requestsFailure.current = interactions.error;
+  } else if (
+    requestsFailed.current &&
+    interactions.settledReads !== requestsFailedAt.current &&
+    !interactions.isPending
+  )
+    requestsFailed.current = false;
+  // Retry and Reload clear the error as soon as they start, which would unmount
+  // the recovery control and its keyboard focus. While the latched read is in
+  // flight, keep presenting the prior failure so the control stays mounted
+  // (disabled by the pending read) until the read settles.
+  const requestsRecovery: typeof interactions =
+    requestsFailed.current &&
+    !interactions.error &&
+    interactions.loading &&
+    requestsFailure.current
+      ? { ...interactions, error: requestsFailure.current }
+      : interactions;
   const confirmedEmptyRequests = completeEmptyInteractionTray({
     loaded: Boolean(interactions.data),
     loading: Boolean(
@@ -1768,6 +1799,7 @@ export function SessionView({
       interactions.loading !== ReadStage.Reload,
     ),
     failed:
+      requestsFailed.current ||
       Boolean(interactions.error || live.error) ||
       live.state !== ConnectionState.Live,
     continuation: Boolean(interactions.nextPageToken),
@@ -2759,7 +2791,7 @@ export function SessionView({
                           ref={requestsRoot}
                           className="session-tray-content"
                         >
-                          <Failure failure={interactions.error?.failure} />
+                          <Failure failure={requestsRecovery.error?.failure} />
                           <ScrollPayloadWindow
                             identity={paginationIdentity}
                             revision={paginationRevision}
@@ -2802,7 +2834,7 @@ export function SessionView({
                               questionReceipt(requestId, projection),
                           )}
                           <ScrollContinuation
-                            query={interactions}
+                            query={requestsRecovery}
                             root={requestsRoot}
                             active={conversationActive && requestsExpanded}
                             label={copy("session.requestPages_d06a30")}

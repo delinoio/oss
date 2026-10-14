@@ -281,7 +281,7 @@ func TestNativeClaudeWorkerLoginCancelAndOriginalRecovery(t *testing.T) {
 				f.config.execution = &PublicationConfig{Credential: f.credential, Instance: instance, Assignment: &pb.Resource{Revision: 3}}
 				f.mu.Unlock()
 				locked = false
-				owned, complete, err := beginClaudeSubscriptionExecution(ctx, f.config, domain.NewID(), domain.ExecutionJobInput{AccountID: f.account, Installation: f.installation})
+				owned, _, complete, err := beginClaudeSubscriptionExecution(ctx, f.config, domain.NewID(), domain.ExecutionJobInput{AccountID: f.account, Installation: f.installation})
 				if err != nil || owned == nil {
 					t.Fatal("original native subscription execution could not acquire its profile", err)
 				}

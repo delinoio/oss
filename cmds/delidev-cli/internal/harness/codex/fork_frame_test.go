@@ -17,6 +17,12 @@ import (
 type largeHistoryTurn struct {
 	ID      domain.ID `json:"id"`
 	Outputs [][]int   `json:"outputs"`
+	// ImagesOnly makes every part an input_image; ClientID and Prompt bind the
+	// original user input; ContextItemID adds an original contextCompaction item.
+	ImagesOnly    bool      `json:"imagesOnly,omitempty"`
+	ClientID      domain.ID `json:"clientId,omitempty"`
+	Prompt        string    `json:"prompt,omitempty"`
+	ContextItemID string    `json:"contextItemId,omitempty"`
 }
 
 // frameProfileFixture opens the enlarged original decoder profile. The fixture
@@ -29,6 +35,14 @@ func frameProfileFixture(t *testing.T, turns []largeHistoryTurn) *Client {
 // framePaddedFixture also pads the page envelope with an unused cursor of the
 // given length, which adds page bytes but no turn bytes.
 func framePaddedFixture(t *testing.T, turns []largeHistoryTurn, cursorPad int) *Client {
+	t.Helper()
+	c, _ := framePaddedBoundFixture(t, turns, cursorPad)
+	return c
+}
+
+// framePaddedBoundFixture also returns the resumed thread binding so callers can
+// derive exact continuation checkpoints.
+func framePaddedBoundFixture(t *testing.T, turns []largeHistoryTurn, cursorPad int) (*Client, ThreadResult) {
 	t.Helper()
 	config := fixtureConfig(t, "thread-managed-image-enabled")
 	config.Mode, config.ManagedAuthentication, config.EnableImageGeneration = ThreadProtocol, true, true
@@ -49,11 +63,12 @@ func framePaddedFixture(t *testing.T, turns []largeHistoryTurn, cursorPad int) *
 	}
 	settings := threadSettings(t)
 	settings.Provider = "openai"
-	if _, err := c.ResumeThread(ctx, domain.NewID(), domain.NewID(), settings); err != nil {
+	bound, err := c.ResumeThread(ctx, domain.NewID(), domain.NewID(), settings)
+	if err != nil {
 		t.Fatal(err)
 	}
 	fixtureSignal(t, c, "large-history", map[string]any{"turns": turns, "cursorPad": cursorPad})
-	return c
+	return c, bound
 }
 
 func repeatedTurns(count int, fields ...int) []largeHistoryTurn {

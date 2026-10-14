@@ -111,7 +111,7 @@ func (u ResponseUsageRecord) Validate() error {
 		if u.ProviderID.Validate() != nil {
 			return invalidObservation()
 		}
-	} else if u.SubscriptionService != SubscriptionChatGPT || u.ProviderID != "" || u.Purpose == SessionTitleUsage {
+	} else if u.SubscriptionService != SubscriptionChatGPT || u.ProviderID != "" {
 		return invalidObservation()
 	}
 	if (u.Purpose != "" && u.Purpose != ConversationUsage && u.Purpose != SessionTitleUsage && u.Purpose != NativeCodeReviewUsage) || (u.ProjectID != "" && u.ProjectID.Validate() != nil) || u.Harness != Codex || (u.Version != "" && !ValidNativeVersionMetadata(u.Version)) || ID(u.ThreadID).Validate() != nil || (u.CompactionSourceTurn == "" && ID(u.TurnID).Validate() != nil) || u.Sequence == 0 || u.Sequence > MaxExecutionEvents {

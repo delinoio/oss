@@ -25,10 +25,25 @@ func openPathIdentity(path string) (*os.File, PathIdentityRecord, error) {
 		}
 		return nil, PathIdentityRecord{}, e
 	}
-	var data windows.ByHandleFileInformation
-	if e := windows.GetFileInformationByHandle(h, &data); e != nil {
+	record, e := recordFromHandle(h)
+	if e != nil {
 		windows.CloseHandle(h)
 		return nil, PathIdentityRecord{}, e
+	}
+	f := os.NewFile(uintptr(h), path)
+	if record.Kind == ObjectSymlink {
+		// Reparse points are never traversed or removed through; keep no handle.
+		f.Close()
+		return nil, record, nil
+	}
+	return f, record, nil
+}
+
+// recordFromHandle derives the identity of the object behind an open handle.
+func recordFromHandle(h windows.Handle) (PathIdentityRecord, error) {
+	var data windows.ByHandleFileInformation
+	if e := windows.GetFileInformationByHandle(h, &data); e != nil {
+		return PathIdentityRecord{}, e
 	}
 	record := PathIdentityRecord{
 		Device:  uint64(data.VolumeSerialNumber),
@@ -45,11 +60,19 @@ func openPathIdentity(path string) (*os.File, PathIdentityRecord, error) {
 		record.Size = int64(data.FileSizeHigh)<<32 | int64(data.FileSizeLow)
 		record.ModTimeNS = data.LastWriteTime.Nanoseconds()
 	}
-	f := os.NewFile(uintptr(h), path)
-	if record.Kind == ObjectSymlink {
-		// Reparse points are never traversed or removed through; keep no handle.
-		f.Close()
-		return nil, record, nil
+	return record, nil
+}
+
+// lockRecord describes the object a Lock holds open, read from its handle.
+func lockRecord(f *os.File) (PathIdentityRecord, error) {
+	conn, e := f.SyscallConn()
+	if e != nil {
+		return PathIdentityRecord{}, e
 	}
-	return f, record, nil
+	var record PathIdentityRecord
+	var recordErr error
+	if e := conn.Control(func(fd uintptr) { record, recordErr = recordFromHandle(windows.Handle(fd)) }); e != nil {
+		return PathIdentityRecord{}, e
+	}
+	return record, recordErr
 }

@@ -63,6 +63,11 @@ func acceptSubscriptionObservation(tx *store.Tx, r store.Record, a domain.Accoun
 	if op.ConnectionID != a.Connection.ID || op.Generation != a.Subscription.Generation || op.Validate() != nil {
 		return domain.Fail(domain.Conflict, "The confirmed account generation changed.", "Read the current account and confirm the original operation again before sending.")
 	}
+	if reserved, err := managedTitleReservation(tx, r.ID, ""); err != nil {
+		return err
+	} else if reserved {
+		return managedTitleAccountReserved()
+	}
 	if a.Subscription.Lease != nil && (a.Subscription.Lease.Action != domain.SubscriptionExecute || a.Subscription.Lease.MachineID != op.MachineID) {
 		return subscriptionDenied()
 	}

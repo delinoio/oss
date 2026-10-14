@@ -486,7 +486,7 @@ func TestFailedServerLoginCleanupAllowsFreshWorkerLogin(t *testing.T) {
 	}
 }
 
-func TestFailedServerLoginMaintenanceDoesNotRepeatFailedCleanup(t *testing.T) {
+func TestFailedServerLoginMaintenanceBacksOffFailedCleanup(t *testing.T) {
 	f, _ := legacyFailedServerLogin(t, false)
 	f.secrets.referenceError = domain.Fail(domain.Unavailable, "Fixture vault unavailable.", "Retry after restart.")
 	ctx, stop := context.WithCancel(failedLoginContext())
@@ -505,13 +505,49 @@ func TestFailedServerLoginMaintenanceDoesNotRepeatFailedCleanup(t *testing.T) {
 			f.secrets.mu.Unlock()
 			_, a := f.record()
 			if attempts != 1 || !a.Subscription.RecoveryRequired || a.Subscription.Pending == nil {
-				t.Fatal("failed cleanup was repeated or released its fence")
+				t.Fatal("failed cleanup was retried before its backoff or released its fence")
 			}
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal("maintenance did not attempt original cleanup")
+}
+
+func TestFailedServerLoginMaintenanceRetriesCleanupAfterATransientFailure(t *testing.T) {
+	f, operation := legacyFailedServerLogin(t, false)
+	f.service.serverCleanupRetryBase = 20 * time.Millisecond
+	f.secrets.mu.Lock()
+	f.secrets.referenceError = domain.Fail(domain.Unavailable, "Fixture vault unavailable.", "Retry the cleanup.")
+	f.secrets.mu.Unlock()
+	ctx, stop := context.WithCancel(failedLoginContext())
+	done := make(chan struct{})
+	go func() { defer close(done); f.service.runServerSubscriptions(ctx) }()
+	defer func() { stop(); awaitServerFixture(t, done) }()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		f.secrets.mu.Lock()
+		attempts := f.secrets.enumerations
+		f.secrets.mu.Unlock()
+		if attempts >= 3 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("maintenance stopped retrying a failed cleanup")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	f.secrets.mu.Lock()
+	f.secrets.referenceError = nil
+	f.secrets.mu.Unlock()
+	for time.Now().Before(deadline) {
+		_, a := f.record()
+		if a.Subscription.ServerOperation.ID == operation && a.Subscription.ServerOperation.CleanupPhase == domain.SubscriptionCredentialCleanupConfirmed {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("a recovered vault did not complete the cleanup in the same server process")
 }
 
 func TestFailedServerLoginCleanupKeepsRetainedReferences(t *testing.T) {

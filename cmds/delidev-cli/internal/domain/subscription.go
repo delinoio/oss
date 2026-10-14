@@ -32,6 +32,7 @@ type SubscriptionState struct {
 	ServerQuota            *ServerQuotaOperation             `json:"server_quota,omitempty"`
 	ServerQuotaGeneration  ID                                `json:"server_quota_generation,omitempty"`
 	NativeProfileID        ID                                `json:"native_profile_id,omitempty"`
+	ClaudeCredential       ClaudeCredentialMode              `json:"claude_credential,omitempty"`
 	NativeOperation        *NativeSubscriptionOperation      `json:"native_operation,omitempty"`
 	OwnerMachineID         ID                                `json:"owner_machine_id,omitempty"`
 	Observation            *SubscriptionObservationOperation `json:"observation,omitempty"`
@@ -57,17 +58,20 @@ type SubscriptionOperation struct {
 	Phase      SubscriptionPhase  `json:"phase"`
 }
 type SubscriptionLease struct {
-	ForkRevision uint64             `json:"fork_revision,omitempty"`
-	ID           ID                 `json:"id"`
-	OperationID  ID                 `json:"operation_id"`
-	Revision     uint64             `json:"revision"`
-	Action       SubscriptionAction `json:"action"`
-	MachineID    ID                 `json:"machine_id"`
-	InstanceID   ID                 `json:"instance_id"`
-	DeviceID     ID                 `json:"device_id"`
-	Epoch        ID                 `json:"epoch"`
-	Generation   ID                 `json:"generation,omitempty"`
-	StartedAt    time.Time          `json:"started_at"`
+	ForkRevision uint64 `json:"fork_revision,omitempty"`
+	// TitleRevision binds an EXECUTE lease to the exact claimed managed title
+	// job revision, exactly as ForkRevision binds a managed Fork.
+	TitleRevision uint64             `json:"title_revision,omitempty"`
+	ID            ID                 `json:"id"`
+	OperationID   ID                 `json:"operation_id"`
+	Revision      uint64             `json:"revision"`
+	Action        SubscriptionAction `json:"action"`
+	MachineID     ID                 `json:"machine_id"`
+	InstanceID    ID                 `json:"instance_id"`
+	DeviceID      ID                 `json:"device_id"`
+	Epoch         ID                 `json:"epoch"`
+	Generation    ID                 `json:"generation,omitempty"`
+	StartedAt     time.Time          `json:"started_at"`
 }
 
 func (s SubscriptionState) Validate(account Account) error {
@@ -151,7 +155,7 @@ func (s SubscriptionState) Validate(account Account) error {
 				return invalid()
 			}
 		}
-		if l.ForkRevision != 0 && l.Action != SubscriptionExecute {
+		if (l.ForkRevision != 0 || l.TitleRevision != 0) && (l.Action != SubscriptionExecute || l.ForkRevision != 0 && l.TitleRevision != 0) {
 			return invalid()
 		}
 		if l.Revision == 0 || l.StartedAt.IsZero() || l.Generation != s.Generation || (l.Action != SubscriptionLogin && l.Action != SubscriptionRefresh && l.Action != SubscriptionLogout && l.Action != SubscriptionExecute && l.Action != SubscriptionQuota && l.Action != SubscriptionResetCredit) {
@@ -173,7 +177,10 @@ func (s SubscriptionState) Validate(account Account) error {
 		if o.Diagnostic != nil && (o.Diagnostic.Validate() != nil || o.Diagnostic.CorrelationID != string(o.ID) || o.State == SubscriptionSucceeded || o.State == SubscriptionPreparing || o.State == SubscriptionWaiting) {
 			return invalid()
 		}
-		if o.CleanupPhase != "" {
+		if o.CleanupPhase == SubscriptionCredentialCleanupPending && !account.ManagedClaudeAccount() {
+			return invalid()
+		}
+		if o.CleanupPhase != "" && o.CleanupPhase != SubscriptionCredentialCleanupPending {
 			if o.Action != SubscriptionLogin || o.Generation != "" || account.Connection != nil || s.Generation != "" || s.IdentityCommitment != "" || s.Lease != nil || s.OwnerMachineID != "" || s.Observation != nil || s.ServerCredit != nil || s.ResetCredits != nil || o.State == SubscriptionSucceeded || o.State == SubscriptionPreparing || o.State == SubscriptionWaiting || (o.CleanupPhase != SubscriptionNativeCleanupConfirmed && o.CleanupPhase != SubscriptionCredentialCleanupConfirmed) {
 				return invalid()
 			}
@@ -194,19 +201,25 @@ func (s SubscriptionState) Validate(account Account) error {
 // Server operations retain no executable paths, login URLs, codes or identity
 // suggestions. NativeStarted is the independent server credential lease.
 type ServerSubscriptionOperation struct {
-	ID                ID                       `json:"id"`
-	Action            SubscriptionAction       `json:"action"`
-	Epoch             ID                       `json:"epoch"`
-	FinishID          ID                       `json:"finish_id"`
-	Generation        ID                       `json:"generation,omitempty"`
-	Actor             Principal                `json:"actor"`
-	State             SubscriptionLoginState   `json:"state"`
-	NativeStarted     bool                     `json:"native_started"`
-	CallbackForwarded bool                     `json:"callback_forwarded"`
-	StartedAt         time.Time                `json:"started_at"`
-	ExpiresAt         time.Time                `json:"expires_at"`
-	Diagnostic        *CodexDiagnostic         `json:"diagnostic,omitempty"`
-	CleanupPhase      SubscriptionCleanupPhase `json:"cleanup_phase,omitempty"`
+	ID                ID                     `json:"id"`
+	Action            SubscriptionAction     `json:"action"`
+	Epoch             ID                     `json:"epoch"`
+	FinishID          ID                     `json:"finish_id"`
+	Generation        ID                     `json:"generation,omitempty"`
+	Actor             Principal              `json:"actor"`
+	State             SubscriptionLoginState `json:"state"`
+	NativeStarted     bool                   `json:"native_started"`
+	CallbackForwarded bool                   `json:"callback_forwarded"`
+	// Optional server-owned Claude setup-token fields. Historical Codex server
+	// operations omit them and retain their representation.
+	LoginMethod      SubscriptionLoginMethod       `json:"login_method,omitempty"`
+	CodeSubmissionID ID                            `json:"code_submission_id,omitempty"`
+	CodeConsumed     bool                          `json:"code_consumed,omitempty"`
+	ClaudeDiagnostic *NativeSubscriptionDiagnostic `json:"claude_diagnostic,omitempty"`
+	StartedAt        time.Time                     `json:"started_at"`
+	ExpiresAt        time.Time                     `json:"expires_at"`
+	Diagnostic       *CodexDiagnostic              `json:"diagnostic,omitempty"`
+	CleanupPhase     SubscriptionCleanupPhase      `json:"cleanup_phase,omitempty"`
 }
 
 // Cleanup checkpoints release only a failed initial server login. They cannot
@@ -216,6 +229,10 @@ type SubscriptionCleanupPhase string
 const (
 	SubscriptionNativeCleanupConfirmed     SubscriptionCleanupPhase = "native-confirmed"
 	SubscriptionCredentialCleanupConfirmed SubscriptionCleanupPhase = "credentials-confirmed"
+	// SubscriptionCredentialCleanupPending is written with a settled server-token
+	// Claude login or logout. It records that vault references still need
+	// retirement and is cleared only after that deletion is confirmed.
+	SubscriptionCredentialCleanupPending SubscriptionCleanupPhase = "credentials-pending"
 )
 
 type SubscriptionLoginState string

@@ -203,7 +203,11 @@ func (a *executionAuthority) checkedScope(tx *store.Tx, grant store.ExecutionGra
 		if state == nil || state.RecoveryRequired || state.Lease == nil {
 			return empty, executionDenied()
 		}
-		if input.Configuration.Harness == domain.ClaudeCode && (state.OwnerMachineID != grant.MachineID || state.NativeProfileID == "" || !slices.Contains(machine.WorkerCapabilities, domain.NativeClaudeSubscriptionsV1)) {
+		if input.Configuration.Harness == domain.ClaudeCode && state.ManagedClaude() {
+			if !slices.Contains(machine.WorkerCapabilities, domain.ManagedClaudeExecutionV1) {
+				return empty, executionDenied()
+			}
+		} else if input.Configuration.Harness == domain.ClaudeCode && (state.OwnerMachineID != grant.MachineID || state.NativeProfileID == "" || !slices.Contains(machine.WorkerCapabilities, domain.NativeClaudeSubscriptionsV1)) {
 			return empty, executionDenied()
 		}
 		lease := state.Lease
@@ -801,7 +805,9 @@ func (s *Service) RegisterExecution(ctx context.Context, req *connect.Request[pb
 			grant.ExecutionID = input.ActionID
 		} else if job.Type == domain.GenerateSessionTitleJob {
 			var input domain.AuxiliaryTitleInput
-			if domain.Decode(job.Input, &input) != nil || input.Validate() != nil {
+			// A managed title has no API relay registration; its one-time inference
+			// claim is committed only by TakeSubscription.
+			if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.IsManaged() {
 				return nil, executionDenied()
 			}
 			grant.ExecutionID = input.OriginalExecutionID
