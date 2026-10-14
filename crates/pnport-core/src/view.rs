@@ -349,7 +349,12 @@ impl View {
                 // The .zip suffix also occurs on native directories and files.
                 // Extract only a graph-owned archive file; retain native lookup
                 // and mutation behavior for every other path.
-                if !self.graph.is_location_ancestor(&archive) || archive.is_dir() {
+                // Virtual package locations use a physical archive path that is
+                // absent from the graph's virtual location-ancestor index. The
+                // package lookup still proves ownership for those paths.
+                let graph_owned = self.graph.is_location_ancestor(&archive)
+                    || (info.virtual_segments.is_some() && self.graph.package(&logical).is_some());
+                if !graph_owned || archive.is_dir() {
                     self.native_backing(logical.clone())
                 } else {
                     if !self.leases.contains_key(&archive) {
