@@ -84,6 +84,8 @@ type Client struct {
 	logger               *slog.Logger
 	control              chan struct{}
 	thread               domain.ID
+	unsubscribing        bool
+	threadClosed         bool
 	problem              *domain.Error
 	remoteControlRefusal *remoteControlPolicyViolation
 	mode                 ProtocolMode

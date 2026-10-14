@@ -117,6 +117,7 @@ const (
 	TurnStartedEvent              EventKind = "turn-started"
 	TurnCompletedEvent            EventKind = "turn-completed"
 	ThreadStatusEvent             EventKind = "thread-status"
+	ThreadClosedEvent             EventKind = "thread-closed"
 	TextDeltaEvent                EventKind = "text-delta"
 	MessageStartedEvent           EventKind = "message-started"
 	MessageCompletedEvent         EventKind = "message-completed"

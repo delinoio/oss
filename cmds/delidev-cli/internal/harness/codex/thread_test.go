@@ -32,6 +32,27 @@ type threadFixture struct {
 }
 
 func (f *threadFixture) handle(id json.RawMessage, method string, raw json.RawMessage, write func(json.RawMessage, any)) bool {
+	if method == "thread/unsubscribe" && strings.HasPrefix(f.mode, "thread-unsubscribe-") {
+		var params struct {
+			ThreadID domain.ID `json:"threadId"`
+		}
+		if domain.Decode(raw, &params) != nil || f.thread == nil || params.ThreadID != f.thread["id"].(domain.ID) {
+			os.Exit(46)
+		}
+		status := "unsubscribed"
+		if f.mode == "thread-unsubscribe-status" {
+			status = "notSubscribed"
+		}
+		write(id, map[string]any{"status": status})
+		if f.mode == "thread-unsubscribe-closed" || f.mode == "thread-unsubscribe-foreign" {
+			thread := params.ThreadID
+			if f.mode == "thread-unsubscribe-foreign" {
+				thread = domain.NewID()
+			}
+			f.notify("thread/closed", map[string]any{"threadId": thread})
+		}
+		return true
+	}
 	if f.handleNativeCodeReview(id, method, raw, write) {
 		return true
 	}
