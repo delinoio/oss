@@ -10,6 +10,8 @@ description = "Experimental conservative TypeScript property optimizer"
 anyhow.workspace = true
 clap = { version = "4", features = ["derive"] }
 ctrlc = "3"
+brotli = { version = "8", default-features = false, features = ["std"] }
+flate2.workspace = true
 libc.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json = "1"

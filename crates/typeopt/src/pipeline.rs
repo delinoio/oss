@@ -289,6 +289,70 @@ pub fn source_offset(mut offset: usize, chain: &[Vec<Edit>]) -> usize {
     offset
 }
 
+/// Bytes of context on each side of an edit that the compressed-size check
+/// compresses. Deflate's window is 32 KiB, so changes farther away barely
+/// affect how the edited text compresses.
+const COMPRESSION_CONTEXT: usize = 16 * 1024;
+
+/// Offset `offset` of the original text in the text that `edits` (sorted,
+/// against the original) produce, for a position outside every edit.
+fn forward_offset(offset: usize, edits: &[Edit]) -> usize {
+    let mut shifted = offset as isize;
+    for edit in edits {
+        if edit.end > offset || edit.start >= offset {
+            break;
+        }
+        shifted += edit.replacement.len() as isize - (edit.end - edit.start) as isize;
+    }
+    shifted.max(0) as usize
+}
+
+/// Deflate and Brotli sizes of the text around `spans` (`(start, length)` in
+/// `text`), each widened by [`COMPRESSION_CONTEXT`] and merged when they
+/// overlap. Both encoders run at fixed settings, so the result is
+/// deterministic.
+fn compressed_context(text: &str, spans: &mut [(usize, usize)]) -> (usize, usize) {
+    use std::io::Write as _;
+    spans.sort_unstable();
+    let mut windows: Vec<(usize, usize)> = Vec::new();
+    for &(start, length) in spans.iter() {
+        let mut from = start.saturating_sub(COMPRESSION_CONTEXT).min(text.len());
+        let mut to = (start + length + COMPRESSION_CONTEXT).min(text.len());
+        while !text.is_char_boundary(from) {
+            from -= 1;
+        }
+        while !text.is_char_boundary(to) {
+            to += 1;
+        }
+        match windows.last_mut() {
+            Some(last) if from <= last.1 => last.1 = last.1.max(to),
+            _ => windows.push((from, to)),
+        }
+    }
+    let mut context = Vec::new();
+    for (from, to) in windows {
+        context.extend_from_slice(&text.as_bytes()[from..to]);
+    }
+    let mut deflate = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::best());
+    let deflated = deflate
+        .write_all(&context)
+        .ok()
+        .and_then(|()| deflate.finish().ok())
+        .map_or(usize::MAX, |bytes| bytes.len());
+    let mut brotli = Vec::new();
+    // Quality 9 tracks the shipped quality 11 closely at a fraction of its
+    // cost; quality 11 per candidate made large bundles several times slower
+    // and its greedy rejections blocked enabling transformations.
+    let parameters = brotli::enc::BrotliEncoderParams {
+        quality: 9,
+        lgwin: 22,
+        ..Default::default()
+    };
+    let brotlied = brotli::BrotliCompress(&mut &context[..], &mut brotli, &parameters)
+        .map_or(usize::MAX, |_| brotli.len());
+    (deflated, brotlied)
+}
+
 /// Two edits conflict when their ranges intersect or they start at the same
 /// offset, where application order would be ambiguous.
 fn conflicts(a: &Edit, b: &Edit) -> bool {
@@ -345,6 +409,9 @@ impl<B: Backend> Gate<'_, B> {
             let mut merged_files = Vec::new();
             let mut insertions = Vec::new();
             let mut uses_residual = false;
+            let mut compressed_before = (0usize, 0usize);
+            let mut compressed_after = (0usize, 0usize);
+            let compression = crate::app::bundle_mode();
             for (file, mut edits) in by_file {
                 edits.sort();
                 for pair in edits.windows(2) {
@@ -357,7 +424,7 @@ impl<B: Backend> Gate<'_, B> {
                 let current = self.current(&file)?;
                 before += current.size;
                 let mut merged = self.accepted.get(&file).cloned().unwrap_or_default();
-                merged.extend(edits);
+                merged.extend(edits.iter().cloned());
                 merged.sort();
                 let text = apply(&self.texts[&file], &merged)?;
                 let emitted = self.backend.emit_module(&file, &text).map_err(|error| {
@@ -391,6 +458,26 @@ impl<B: Backend> Gate<'_, B> {
                     }
                 }
                 after += emitted.size;
+                if compression {
+                    // The text before this candidate and the edited text,
+                    // compared around the candidate's own edits.
+                    let accepted = self.accepted.get(&file).map_or(&[][..], Vec::as_slice);
+                    let previous = apply(&self.texts[&file], accepted)?;
+                    let mut before_spans: Vec<(usize, usize)> = edits
+                        .iter()
+                        .map(|e| (forward_offset(e.start, accepted), e.end - e.start))
+                        .collect();
+                    let mut after_spans: Vec<(usize, usize)> = edits
+                        .iter()
+                        .map(|e| (forward_offset(e.start, &merged), e.replacement.len()))
+                        .collect();
+                    let before = compressed_context(&previous, &mut before_spans);
+                    let after = compressed_context(&text, &mut after_spans);
+                    compressed_before.0 += before.0;
+                    compressed_before.1 += before.1;
+                    compressed_after.0 += after.0;
+                    compressed_after.1 += after.1;
+                }
                 merged_files.push((file, merged, emitted));
             }
             if !insertions.is_empty() {
@@ -410,6 +497,22 @@ impl<B: Backend> Gate<'_, B> {
                 continue;
             }
             if after >= before {
+                return Ok(Decision::Reject(Reason::NoSizeBenefit));
+            }
+            // Shipped bundles are compressed: a bundle that shortens the text
+            // but makes it compress worse is no benefit.
+            if compression
+                && (compressed_after.0 > compressed_before.0
+                    || compressed_after.1 > compressed_before.1)
+            {
+                tracing::trace!(
+                    pass = %candidate.pass,
+                    deflate_before = compressed_before.0,
+                    deflate_after = compressed_after.0,
+                    brotli_before = compressed_before.1,
+                    brotli_after = compressed_after.1,
+                    "bundle rejected: compressed size grows"
+                );
                 return Ok(Decision::Reject(Reason::NoSizeBenefit));
             }
             if uses_residual
@@ -822,6 +925,42 @@ fn same_specifier(source: &str, emitted: &str) -> bool {
 mod tests {
     use super::*;
     use crate::plan::FileEdit;
+
+    #[test]
+    fn forward_offsets_skip_earlier_edits_only() {
+        let edits = [
+            Edit {
+                start: 2,
+                end: 4,
+                replacement: "xyz".into(),
+            },
+            Edit {
+                start: 10,
+                end: 10,
+                replacement: "ab".into(),
+            },
+        ];
+        // Before every edit, after the first, and at the insertion point.
+        assert_eq!(forward_offset(1, &edits), 1);
+        assert_eq!(forward_offset(6, &edits), 7);
+        assert_eq!(forward_offset(10, &edits), 11);
+        assert_eq!(forward_offset(12, &edits), 15);
+    }
+
+    #[test]
+    fn compressed_context_measures_the_text_around_edits() {
+        let repetitive = "abcdefgh".repeat(10_000);
+        let mixed: String = (0..80_000u32)
+            .map(|i| char::from(b'a' + (i.wrapping_mul(2_654_435_761) >> 27) as u8 % 26))
+            .collect();
+        let (deflate_a, brotli_a) = compressed_context(&repetitive, &mut [(40_000, 1)]);
+        let (deflate_b, brotli_b) = compressed_context(&mixed, &mut [(40_000, 1)]);
+        assert!(deflate_a < deflate_b && brotli_a < brotli_b);
+        // Overlapping windows merge; distant ones add their own context.
+        let (near, _) = compressed_context(&mixed, &mut [(40_000, 1), (40_010, 1)]);
+        let (far, _) = compressed_context(&mixed, &mut [(1_000, 1), (70_000, 1)]);
+        assert!(near < far, "{near} {far}");
+    }
 
     /// Test-only backend: candidates come from a fixed script, size is byte
     /// length and a module "fails" type checking when it contains `BAD`.

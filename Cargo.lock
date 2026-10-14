@@ -10989,8 +10989,10 @@ name = "typeopt"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "brotli",
  "clap",
  "ctrlc",
+ "flate2",
  "libc",
  "serde",
  "serde_json",
