@@ -440,7 +440,7 @@ func newUnreferencedGrokLoginFixture(t *testing.T) *grokLoginFixture {
 	return g
 }
 
-func TestGrokDeletionRequiresAConfirmedLogoutFirst(t *testing.T) {
+func TestGrokDeleteRequiresAConfirmedLogoutFirst(t *testing.T) {
 	g := newUnreferencedGrokLoginFixture(t)
 	g.connected(t)
 	_, connected := g.record()
@@ -458,7 +458,7 @@ func TestGrokDeletionRequiresAConfirmedLogoutFirst(t *testing.T) {
 	}
 }
 
-func TestGrokDeletionIsBlockedByUnprovenAndUnconfirmedLogouts(t *testing.T) {
+func TestGrokDeleteIsBlockedByUnprovenAndUnconfirmedLogouts(t *testing.T) {
 	g := newUnreferencedGrokLoginFixture(t)
 	g.connected(t)
 	g.idp.RevokeStatus = http.StatusInternalServerError
@@ -573,7 +573,7 @@ func TestGrokWorkerLogoutWithoutRevocationFencesInsteadOfDeleting(t *testing.T) 
 // Grok bundles are protected credentials for the batch cleanup: a connected
 // account and a logout whose revocation is unproven are never selected, and the
 // bundle is not touched; a settled logout is an ordinary disconnected account.
-func TestGrokBatchCleanupTreatsTheBundleAsProtected(t *testing.T) {
+func TestGrokCleanupTreatsTheBundleAsProtected(t *testing.T) {
 	g := newGrokLoginFixture(t)
 	excludeUnrelatedBatchFixture(t, g.subscriptionFixture)
 	before := g.connected(t)
@@ -590,7 +590,7 @@ func TestGrokBatchCleanupTreatsTheBundleAsProtected(t *testing.T) {
 	}
 }
 
-func TestGrokSettledLogoutIsAnOrdinaryDisconnectedAccount(t *testing.T) {
+func TestGrokCleanupSettledLogoutIsAnOrdinaryDisconnectedAccount(t *testing.T) {
 	g := newGrokLoginFixture(t)
 	g.connected(t)
 	g.logout(t)
@@ -604,7 +604,7 @@ func TestGrokSettledLogoutIsAnOrdinaryDisconnectedAccount(t *testing.T) {
 // A Grok login that never produced a credential is an ordinary disconnected
 // account; a claimed login that is still unsettled holds a recovery fence and is
 // excluded from every cleanup selection.
-func TestGrokFailedLoginCleanupSelection(t *testing.T) {
+func TestGrokCleanupFailedLoginSelection(t *testing.T) {
 	now := time.Now().UTC()
 	operation := domain.NewID()
 	failed := domain.Account{Type: domain.SubscriptionAccount, SubscriptionService: domain.SubscriptionGrok, Health: domain.AccountDisconnected, Subscription: &domain.SubscriptionState{
