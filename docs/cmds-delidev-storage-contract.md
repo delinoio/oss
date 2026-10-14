@@ -388,12 +388,30 @@ does not close the window. The algorithm is portable Go and is unit-tested on Un
 but it has not been run on a Windows host in this change (it is cross-compiled and
 vetted only). Objects that cannot be opened without following
 links (symlinks, sockets) are never traversed or removed through and keep cleanup
-pending. An identity whose handle was released (the budget is 1,024 held handles
-per attempt, applied both when capturing and when restoring a retained inventory
-on a retry, so thousands of present objects cannot exhaust the descriptor limit)
-or restored from storage has no held handle and is only as strong as
-its record, so inode reuse is excluded only by birth time where reported, size and
-modification time.
+pending. An identity whose handle was released or restored from storage has no held
+handle and is only as strong as its record, so inode reuse is excluded only by
+birth time where reported, size and modification time.
+
+Identity handles are optional descriptors; the locks are mandatory. Each attempt
+plans a descriptor budget before it opens any lock: it reads the soft
+`RLIMIT_NOFILE` and the descriptors already open (`/proc/self/fd` or `/dev/fd`;
+a fixed 256 stands in when they cannot be counted), reserves one job lock per
+original copy, one publication lock per present job directory, 8 descriptors of
+session-lock headroom (session, observation and snapshot-namespace locks and the
+owner maintenance lock) and 192 of transient I/O headroom, and grants at most
+1,024 identity handles from what remains. The same allowance is spent, in order,
+by the initial capture, by a restored inventory on a retry and by the maintenance
+lock bindings of owner reconciliation and adoption; an identity beyond it keeps
+only its record and the comparison semantics are unchanged. Where the platform has
+no descriptor limit (Windows) the fixed 1,024-handle cap applies. If the
+mandatory demand alone does not fit the soft limit, the attempt stays pending
+before any job or publication lock is opened, logs the counts
+(`session_deletion_descriptor_budget_exceeded`: deletion ID, limit, open
+descriptors, job and publication lock counts and reserved headroom; no paths or
+content) and never
+acknowledges completion. Locks and handles are released on success, error and
+cancellation. A 600-copy plan with 600 present journals therefore completes, and
+retries, under a 1,024-descriptor soft limit.
 
 Original manifests bind session, machine and preparation digest. Worktree cleanup
 compares actual native common/admin directories and removes only the managed linked

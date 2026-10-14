@@ -344,7 +344,7 @@ func TestSessionDeletionRestoreAppliesHandleBudget(t *testing.T) {
 		}
 		return total, held
 	}
-	unlimited, err := prepareSessionCopyIdentities(context.Background(), c, root, w, true, true)
+	unlimited, err := prepareSessionCopyIdentities(context.Background(), c, root, w, &identityBudget{remaining: 1 << 20}, true, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -353,10 +353,7 @@ func TestSessionDeletionRestoreAppliesHandleBudget(t *testing.T) {
 	if total < 3 || held != total {
 		t.Fatal("fixture needs several present objects", total, held)
 	}
-	previous := maxHeldIdentityHandles
-	maxHeldIdentityHandles = 2
-	t.Cleanup(func() { maxHeldIdentityHandles = previous })
-	limited, err := prepareSessionCopyIdentities(context.Background(), c, root, w, true, true)
+	limited, err := prepareSessionCopyIdentities(context.Background(), c, root, w, &identityBudget{remaining: 2}, true, true)
 	if err != nil {
 		t.Fatal(err)
 	}

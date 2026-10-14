@@ -173,7 +173,11 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 	// the path with this capture, so an object swapped in during or after
 	// validation is never adopted. A started attempt reuses the identities
 	// persisted before its first removal instead of capturing a fresh baseline.
-	validated, e := prepareSessionCopyIdentities(ctx, config, root, w, proof.RemovalStarted, proof.IdentityInventory)
+	budget, e := planSessionDescriptorBudget(ctx, config, root, w)
+	if e != nil {
+		return proof, domain.SessionDeletionPending()
+	}
+	validated, e := prepareSessionCopyIdentities(ctx, config, root, w, budget, proof.RemovalStarted, proof.IdentityInventory)
 	if e != nil {
 		config.Logger.WarnContext(ctx, "session_deletion_identity_capture_failed", "deletion_id", w.DeletionID, "code", domain.SafeError(e).Code)
 		return proof, domain.SessionDeletionPending()
@@ -265,6 +269,9 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 				if e != nil {
 					return proof, e
 				}
+				// A binding is one more identity handle: it counts against the same
+				// budget, and a released one still compares by its record.
+				budget.retain(&bound)
 				jobMaintenance = append(jobMaintenance, &maintenanceBinding{owner: copy.JobID, identity: bound})
 			} else if !errors.Is(e, os.ErrNotExist) {
 				return proof, domain.SessionDeletionPending()
@@ -330,7 +337,9 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 			// no legitimate new lock to acquire, so a lock that appeared since
 			// stays foreign.
 			if !proof.RemovalStarted && sessionOwner.Present() {
-				sessionMaintenance := []*maintenanceBinding{{owner: w.SessionID, identity: sessionOwner.Take()}}
+				bound := sessionOwner.Take()
+				budget.retain(&bound)
+				sessionMaintenance := []*maintenanceBinding{{owner: w.SessionID, identity: bound}}
 				defer closeMaintenanceBindings(sessionMaintenance)
 				if e := adoptMaintenanceLocks(root, validated, sessionMaintenance); e != nil {
 					return e
@@ -513,10 +522,12 @@ var (
 	sessionDeletionBeforeAdoptionHook func(lockPath string)
 )
 
-// maxHeldIdentityHandles bounds the descriptors one attempt keeps open. Beyond it
-// an identity keeps only its record: removal still opens the path and compares
-// it, but inode reuse is then excluded only by the record (birth time, size and
-// modification time where reported), not by a held handle.
+// maxHeldIdentityHandles caps the optional identity handles one attempt keeps
+// open, whatever the process descriptor limit leaves after the mandatory locks
+// (see planSessionDescriptorBudget). Beyond the budget an identity keeps only its
+// record: removal still opens the path and compares it, but inode reuse is then
+// excluded only by the record (birth time, size and modification time where
+// reported), not by a held handle.
 var maxHeldIdentityHandles = 1024
 
 // maxSessionIdentityBytes bounds the retained identity file.
@@ -542,7 +553,7 @@ func sessionIdentityPath(root string, w domain.SessionDeletionWork) string {
 // inventory (inventoried) and has lost it fails closed. Only a started proof
 // written by an earlier release, which never recorded one, captures afresh with
 // the authority that release granted.
-func prepareSessionCopyIdentities(ctx context.Context, config Config, root string, w domain.SessionDeletionWork, started, inventoried bool) (map[string]security.PathIdentity, error) {
+func prepareSessionCopyIdentities(ctx context.Context, config Config, root string, w domain.SessionDeletionWork, budget *identityBudget, started, inventoried bool) (map[string]security.PathIdentity, error) {
 	identities := map[string]security.PathIdentity{}
 	if started {
 		raw, e := security.ReadPrivate(sessionIdentityPath(root, w), maxSessionIdentityBytes)
@@ -556,8 +567,11 @@ func prepareSessionCopyIdentities(ctx context.Context, config Config, root strin
 			if domain.DecodeBounded(raw, &file, maxSessionIdentityBytes) != nil || file.Version != 1 || file.Digest != w.Digest() {
 				return nil, domain.SessionDeletionPending()
 			}
-			restored := 0
 			for relative, record := range file.Paths {
+				if e := ctx.Err(); e != nil {
+					closeSessionCopyIdentities(identities)
+					return nil, domain.SafeError(e)
+				}
 				if !filepath.IsLocal(relative) {
 					closeSessionCopyIdentities(identities)
 					return nil, domain.SessionDeletionPending()
@@ -569,11 +583,7 @@ func prepareSessionCopyIdentities(ctx context.Context, config Config, root strin
 					return nil, e
 				}
 				// Restoring obeys the same descriptor budget as the first capture.
-				if identity.Held() {
-					if restored++; restored > maxHeldIdentityHandles {
-						identity.Release()
-					}
-				}
+				budget.retain(&identity)
 				identities[path] = identity
 			}
 			return identities, nil
@@ -587,7 +597,6 @@ func prepareSessionCopyIdentities(ctx context.Context, config Config, root strin
 	if e != nil {
 		return nil, e
 	}
-	held := 0
 	for _, path := range paths {
 		if e := ctx.Err(); e != nil {
 			closeSessionCopyIdentities(identities)
@@ -598,11 +607,7 @@ func prepareSessionCopyIdentities(ctx context.Context, config Config, root strin
 			closeSessionCopyIdentities(identities)
 			return nil, e
 		}
-		if identity.Held() {
-			if held++; held > maxHeldIdentityHandles {
-				identity.Release()
-			}
-		}
+		budget.retain(&identity)
 		identities[path] = identity
 	}
 	return identities, nil
