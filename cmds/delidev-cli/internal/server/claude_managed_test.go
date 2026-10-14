@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -395,6 +396,28 @@ func TestManagedClaudeRequestAuthorizationAndNewAccountOnly(t *testing.T) {
 	}
 	if _, da := device.record(); da.Subscription != nil && (da.Subscription.ManagedClaude() || da.Subscription.NativeOperation != nil) {
 		t.Fatal("the rejected Runner login changed the account")
+	}
+}
+
+// TestManagedClaudeRunnerBoundSignInIsRetiredBeforeManagedRouting covers an
+// existing server-token account: routing sends it to the managed handler first,
+// which must report the same typed retirement result as the Runner lane.
+func TestManagedClaudeRunnerBoundSignInIsRetiredBeforeManagedRouting(t *testing.T) {
+	for _, action := range []pb.SubscriptionAction{pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN, pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH} {
+		t.Run(action.String(), func(t *testing.T) {
+			f := newManagedClaudeFixture(t)
+			f.connect()
+			beforeRecord, before := f.record()
+			_, err := f.client.RequestSubscription(context.Background(), subscriptionRequest(f.service.Identity.Token, &pb.RequestSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(beforeRecord.ID), ExpectedRevision: beforeRecord.Revision}, MachineId: string(f.input.MachineID), Action: action}))
+			problem := domain.SafeError(rpc.ClientError(err))
+			if problem.Code != domain.Unsupported || problem.Message == "" || problem.Guidance == "" {
+				t.Fatalf("machine-bound %s on a server-token account was not rejected as unsupported with guidance: %+v", action, problem)
+			}
+			afterRecord, after := f.record()
+			if afterRecord.Revision != beforeRecord.Revision || !reflect.DeepEqual(before.Subscription, after.Subscription) {
+				t.Fatal("a rejected machine-bound request changed the server-token account")
+			}
+		})
 	}
 }
 
