@@ -247,7 +247,25 @@ async function chooseRunner() {
   return start;
 }
 
+// The entrance settles through a 240 ms wall-clock fallback when animationend
+// never arrives (jsdom runs no animations). Slow CI workers can exceed that
+// budget between awaits, so the tests drive settling only through the explicit
+// animationend dispatch and never race the fallback timer.
+const ENTRANCE_FALLBACK_MS = 240;
+let timeoutSpy: ReturnType<typeof vi.spyOn> | undefined;
+
 beforeEach(() => {
+  const realSetTimeout = window.setTimeout.bind(window);
+  timeoutSpy = vi
+    .spyOn(window, "setTimeout")
+    .mockImplementation(((
+      handler: TimerHandler,
+      delay?: number,
+      ...args: unknown[]
+    ) =>
+      delay === ENTRANCE_FALLBACK_MS
+        ? 0
+        : realSetTimeout(handler, delay, ...args)) as typeof window.setTimeout);
   vi.stubGlobal("matchMedia", () => ({
     matches: false,
     addEventListener: () => {},
@@ -255,6 +273,7 @@ beforeEach(() => {
   }));
 });
 afterEach(() => {
+  timeoutSpy?.mockRestore();
   vi.unstubAllGlobals();
   delete document.documentElement.dataset.animation;
 });
