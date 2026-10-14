@@ -194,3 +194,34 @@ func TestOwnedRemovalPublishesEvidenceAndUnreadableEvidenceStaysPending(t *testi
 		t.Fatal("reappearing root was adopted", err)
 	}
 }
+
+// Version-1 shared evidence was also written by older Workers for an absent
+// failed-only workspace, so an upgraded Worker must not adopt it. A genuine
+// removal replaces it with version-2 evidence that later obligations accept.
+func TestLegacyVersionOneRemovalEvidenceIsIgnored(t *testing.T) {
+	ctx := context.Background()
+	m := manager(t)
+	if err := m.initialize(); err != nil {
+		t.Fatal(err)
+	}
+	if err := security.PrivateDir(filepath.Join(m.Root, "session-deletions")); err != nil {
+		t.Fatal(err)
+	}
+	session, machine, server := domain.NewID(), domain.NewID(), domain.NewID()
+	strict := absentObligation(server, session, machine, strings.Repeat("cd", 32))
+	evidencePath := sharedWorkspaceRemovalPath(m.Root, strict)
+	legacy := []byte(`{"version":1,"server_id":"` + string(server) + `","session_id":"` + string(session) + `","machine_id":"` + string(machine) + `","removed":true}`)
+	if err := security.WriteAtomic(evidencePath, legacy); err != nil {
+		t.Fatal(err)
+	}
+	called := false
+	if err := (&Manager{Root: m.Root, Logger: m.Logger}).DeleteOwnedWorkspace(ctx, strict, false, func() error { called = true; return nil }); err == nil || called {
+		t.Fatal("version-1 removal evidence was adopted", err)
+	}
+	if err := writeSharedWorkspaceRemoval(m.Root, strict); err != nil {
+		t.Fatal(err)
+	}
+	if err := (&Manager{Root: m.Root, Logger: m.Logger}).DeleteOwnedWorkspace(ctx, strict, false, func() error { called = true; return nil }); err != nil || !called {
+		t.Fatal("version-2 removal evidence was rejected", err)
+	}
+}

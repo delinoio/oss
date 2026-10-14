@@ -312,13 +312,16 @@ stays pending and is never copied to another device. The session-keyed workspace
 proof migrates together with its session proof, before the version-2 tombstone
 replaces the legacy scope, so an already completed legacy proof (which never
 reaches workspace cleanup) cannot strand another device obligation behind its
-digest. A migrated proof that recorded the removal also publishes the shared
-removal evidence below.
+digest. A migrated proof that recorded the removal and retained its original
+manifest also publishes the shared removal evidence below; a removed legacy proof
+without a manifest is ambiguous with a failed-only cleanup and publishes nothing.
 
 The managed `workspaces/<session>` directory is shared by every device obligation
 of one session and machine. When an obligation removes it, it first publishes
 content-free evidence at `session-deletions/<session>-workspace-removed.json`
-(`version`, server, session, machine, `removed`; no manifest, path or device).
+(`version` 2, server, session, machine, `removed`; no manifest, path or device).
+Version-1 evidence written by older Workers is ignored, because it may have been
+published for an absent failed-only workspace; the next genuine removal replaces it.
 A later obligation whose own workspace is absent and has no stored snapshot
 manifest, and whose jobs forbid an absent workspace, adopts that removal only when
 the evidence matches its exact server, session and machine; missing, unreadable or

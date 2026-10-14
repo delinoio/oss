@@ -304,20 +304,36 @@ type deletionWorkspaceRemoval struct {
 	Removed   bool      `json:"removed"`
 }
 
+// sharedWorkspaceRemovalVersion is the only evidence version that is trusted.
+// Version 1 records were also written for an absent failed-only workspace and
+// for legacy proofs without a retained manifest, so they cannot prove that an
+// owned workspace was ever removed. They are ignored and replaced on the next
+// genuine removal.
+const sharedWorkspaceRemovalVersion = 2
+
 func sharedWorkspaceRemovalPath(root string, w domain.SessionDeletionWork) string {
 	return filepath.Join(root, "session-deletions", string(w.SessionID)+"-workspace-removed.json")
 }
 
 // sharedWorkspaceRemoved reports whether another obligation of the same server,
 // session and machine already removed the shared workspace directory. A missing
-// record is false; an unreadable or foreign record keeps the obligation pending.
+// or pre-version-2 record is false; an unreadable or foreign record keeps the
+// obligation pending.
 func (m *Manager) sharedWorkspaceRemoved(w domain.SessionDeletionWork) (bool, error) {
 	raw, e := security.ReadPrivate(sharedWorkspaceRemovalPath(m.Root, w), 1<<16)
 	if errors.Is(e, os.ErrNotExist) {
 		return false, nil
 	}
 	var evidence deletionWorkspaceRemoval
-	if e != nil || domain.Decode(raw, &evidence) != nil || evidence.Version != 1 || !evidence.Removed || evidence.ServerID != w.ServerID || evidence.SessionID != w.SessionID || evidence.MachineID != w.MachineID {
+	if e == nil && domain.Decode(raw, &evidence) == nil && evidence.Version == 1 {
+		// Older Workers published this record without proving ownership of a
+		// removed workspace, so it is never adopted as original removal proof.
+		if m.Logger != nil {
+			m.Logger.Info("workspace_deletion_shared_removal_legacy_ignored", "session_id", w.SessionID, "deletion_id", w.DeletionID, "evidence_version", evidence.Version)
+		}
+		return false, nil
+	}
+	if e != nil || domain.Decode(raw, &evidence) != nil || evidence.Version != sharedWorkspaceRemovalVersion || !evidence.Removed || evidence.ServerID != w.ServerID || evidence.SessionID != w.SessionID || evidence.MachineID != w.MachineID {
 		return false, domain.SessionDeletionPending()
 	}
 	if m.Logger != nil {
@@ -327,7 +343,7 @@ func (m *Manager) sharedWorkspaceRemoved(w domain.SessionDeletionWork) (bool, er
 }
 
 func writeSharedWorkspaceRemoval(root string, w domain.SessionDeletionWork) error {
-	b, e := json.Marshal(deletionWorkspaceRemoval{Version: 1, ServerID: w.ServerID, SessionID: w.SessionID, MachineID: w.MachineID, Removed: true})
+	b, e := json.Marshal(deletionWorkspaceRemoval{Version: sharedWorkspaceRemovalVersion, ServerID: w.ServerID, SessionID: w.SessionID, MachineID: w.MachineID, Removed: true})
 	if e != nil || security.WriteAtomic(sharedWorkspaceRemovalPath(root, w), b) != nil {
 		return domain.SessionDeletionPending()
 	}
@@ -369,10 +385,13 @@ func migrateLegacyWorkspaceProof(root, proofPath string, w domain.SessionDeletio
 	} else if err != nil {
 		return domain.SessionDeletionPending()
 	}
-	if legacy.Removed {
-		// The legacy session-keyed proof recorded the shared directory's removal
-		// for this exact obligation. Preserve it as session-scoped evidence so
-		// other device obligations can verify it before the legacy file is gone.
+	if legacy.Removed && legacy.Manifest != nil {
+		// The legacy session-keyed proof retained the original manifest and
+		// recorded the shared directory's removal for this exact obligation.
+		// Preserve it as session-scoped evidence so other device obligations can
+		// verify it before the legacy file is gone. A removed proof without a
+		// manifest is ambiguous: a failed-only cleanup of an absent workspace
+		// writes the same shape, so it never becomes original removal proof.
 		if err := writeSharedWorkspaceRemoval(root, w); err != nil {
 			return err
 		}
