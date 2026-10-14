@@ -122,15 +122,24 @@ func validateInitializeResult(raw []byte, cwd string, profile *apiProfile) error
 		!nativeUUID(result.Meta.AgentID, 5) || !nativeUUID(result.Meta.InstanceID, 4) || result.Meta.FeedbackTraceOffer {
 		return incompatible()
 	}
-	authMethods := []string{"grok.com"}
+	authMethods := []string{authMethodBrowser}
 	if profile == nil {
 		if !isNull(result.Meta.DefaultAuth) || !emptyArray(result.Meta.ModelState.Models) {
 			return incompatible()
 		}
 	} else {
-		authMethods = []string{"xai.api_key", "grok.com"}
+		// The API profile advertises xai.api_key and defaults to it. The managed
+		// subscription profile advertises the credential-file method that a home
+		// holding auth.json offers; its default is that method or unset.
+		authMethods = []string{authMethodAPIKey, authMethodBrowser}
+		defaultMethod := authMethodAPIKey
+		if profile.subscription {
+			authMethods = []string{authMethodCachedToken, authMethodBrowser}
+			defaultMethod = authMethodCachedToken
+		}
 		var auth string
-		if decode(result.Meta.DefaultAuth, &auth) != nil || auth != "xai.api_key" || result.Meta.ModelState.Current != selectedModel || validateModels(result.Meta.ModelState.Models, *profile) != nil {
+		defaultOK := decode(result.Meta.DefaultAuth, &auth) == nil && auth == defaultMethod || profile.subscription && isNull(result.Meta.DefaultAuth)
+		if !defaultOK || result.Meta.ModelState.Current != selectedModel || validateModels(result.Meta.ModelState.Models, *profile) != nil {
 			return incompatible()
 		}
 	}

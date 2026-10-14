@@ -35,6 +35,7 @@ const (
 	runtimeInspectPhase   probePhase = "runtime-inspect"
 	workspaceInspectPhase probePhase = "workspace-inspect"
 	authenticatePhase     probePhase = "authenticate"
+	credentialPhase       probePhase = "credential"
 	launchPhase           probePhase = "launch"
 	initializePhase       probePhase = "initialize"
 	cleanupPhase          probePhase = "cleanup"
@@ -46,6 +47,18 @@ func incompatible() *domain.Error {
 
 func probeUnavailable() *domain.Error {
 	return domain.Fail(domain.Unavailable, "Grok Build did not complete native initialization.", "Inspect the selected Worker installation and refresh protocol discovery.")
+}
+
+// authenticateUnavailable is the typed result of a failed subscription
+// credential handshake. It never carries the native or transport explanation;
+// only the caller's own cancellation keeps its distinct classification.
+func authenticateUnavailable(cause error) *domain.Error {
+	if cause != nil {
+		if safe := domain.SafeError(cause); safe.Code == domain.Canceled {
+			return safe
+		}
+	}
+	return domain.Fail(domain.Unavailable, "Grok Build did not accept the managed subscription credential.", "Reconnect the Grok subscription account; no other credential was tried.")
 }
 
 func probeCleanupRequired() *domain.Error {

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -103,4 +104,23 @@ func probeEnvironment(config ProbeConfig) ([]string, error) {
 		}
 	}
 	return env, nil
+}
+
+// loopbackBlockedVariables are the endpoint overrides that keep discovery and
+// API execution away from hosted services. Only managed subscription execution
+// removes them, because the native process must reach its own endpoints.
+var loopbackBlockedVariables = []string{"GROK_XAI_API_BASE_URL", "GROK_MODELS_BASE_URL", "GROK_MODELS_LIST_URL"}
+
+// withoutLoopbackBlocks returns env without the three loopback endpoint blocks.
+// Every other isolation variable, including HOME, USERPROFILE, XDG_*, APPDATA,
+// TMPDIR, GROK_HOME and the GROK_{CLAUDE,CURSOR}_*_ENABLED=0 set, is kept.
+func withoutLoopbackBlocks(env []string) []string {
+	kept := make([]string, 0, len(env))
+	for _, entry := range env {
+		key, _, _ := strings.Cut(entry, "=")
+		if !slices.Contains(loopbackBlockedVariables, key) {
+			kept = append(kept, entry)
+		}
+	}
+	return kept
 }

@@ -51,7 +51,14 @@ func apiFixtureProcess() {
 		_ = json.NewEncoder(os.Stdout).Encode(report)
 		os.Exit(0)
 	}
-	if os.Getenv(credentialVariable) != apiFixtureToken || os.Getenv("XAI_API_KEY") != "" || os.Getenv("HTTPS_PROXY") != "" || os.Getenv("NODE_OPTIONS") != "" {
+	// A materialized credential file marks the managed subscription lane: the
+	// launched process then has no scoped key and no loopback endpoint block.
+	subscription := subscriptionFixtureCredential(root)
+	if subscription {
+		if !subscriptionFixtureEnvironment(root) {
+			os.Exit(50)
+		}
+	} else if os.Getenv(credentialVariable) != apiFixtureToken || os.Getenv("XAI_API_KEY") != "" || os.Getenv("HTTPS_PROXY") != "" || os.Getenv("NODE_OPTIONS") != "" || os.Getenv("GROK_XAI_API_BASE_URL") != "http://127.0.0.1:1" || os.Getenv("GROK_MODELS_BASE_URL") != "http://127.0.0.1:1" || os.Getenv("GROK_MODELS_LIST_URL") != "http://127.0.0.1:1/models" {
 		os.Exit(50)
 	}
 	scanner := bufio.NewScanner(os.Stdin)
@@ -88,6 +95,10 @@ func apiFixtureProcess() {
 			meta["defaultAuthMethodId"] = "xai.api_key"
 			meta["modelState"] = map[string]any{"currentModelId": selectedModel, "availableModels": fixtureAPIModels()}
 			value["authMethods"] = []any{map[string]any{"id": "xai.api_key", "name": "API", "description": "Private API advertisement"}, map[string]any{"id": "grok.com", "name": "Grok", "description": "Private subscription advertisement"}}
+			if subscription {
+				meta["defaultAuthMethodId"] = "cached_token"
+				value["authMethods"] = []any{map[string]any{"id": "cached_token", "name": "Cached token", "description": "Cached token from the private home"}, map[string]any{"id": "grok.com", "name": "Grok", "description": "Private subscription advertisement"}}
+			}
 			if strings.HasPrefix(mode, "reflect-init-") {
 				value["authMethods"].([]any)[0].(map[string]any)["description"] = reflectedFixtureValue(os.Getenv(credentialVariable), strings.TrimPrefix(mode, "reflect-init-"))
 			}
@@ -99,8 +110,19 @@ func apiFixtureProcess() {
 			}
 			result = value
 		case "authenticate":
-			if string(request.Params) != `{"methodId":"xai.api_key","_meta":{"headless":true}}` {
+			expected := `{"methodId":"xai.api_key","_meta":{"headless":true}}`
+			if subscription {
+				expected = `{"methodId":"cached_token","_meta":{"headless":true}}`
+			}
+			if string(request.Params) != expected {
 				os.Exit(52)
+			}
+			if mode == "auth-exit" {
+				os.Exit(0)
+			}
+			if mode == "auth-rejected" {
+				_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"jsonrpc": "2.0", "id": request.ID, "error": map[string]any{"code": -32000, "message": "private-auth-sentinel account@example.invalid"}})
+				continue
 			}
 			if mode == "auth-extension" {
 				result = map[string]any{"token": "private-auth-sentinel"}
