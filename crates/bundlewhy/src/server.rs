@@ -873,10 +873,7 @@ mod tests {
             b"<html>",
             |file, bytes| {
                 file.write_all(bytes)?;
-                Err(Error::new(
-                    ErrorKind::Other,
-                    "injected finalization failure",
-                ))
+                Err(Error::other("injected finalization failure"))
             },
             |path| std::fs::remove_file(path),
         )
