@@ -1608,16 +1608,71 @@ fn refresh_precache_revisions(
     files_under(root, &mut files)?;
     files.sort();
 
-    let mut refreshed = 0;
-    for file in &files {
-        let name = file.file_name().unwrap().to_string_lossy();
-        let script = file
-            .extension()
-            .is_some_and(|e| e == "js" || e == "mjs" || e == "cjs");
-        if !script || pinned.contains(file) || hashed_name(&name).is_some() {
+    let eligible = files
+        .iter()
+        .filter(|file| {
+            let name = file.file_name().unwrap().to_string_lossy();
+            let script = file
+                .extension()
+                .is_some_and(|e| e == "js" || e == "mjs" || e == "cjs");
+            script && !pinned.contains(*file) && hashed_name(&name).is_none()
+        })
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let mut dependencies = BTreeMap::new();
+    for file in &eligible {
+        let Ok(text) = std::fs::read_to_string(file) else {
             continue;
+        };
+        let directory = file.parent().unwrap_or(root);
+        let targets = precache_entries(&text)
+            .into_iter()
+            .filter(|(_, _, _, trusted)| *trusted)
+            .filter_map(|(url, _, _, _)| precache_target(root, directory, &url))
+            .filter(|target| eligible.contains(target))
+            .collect::<Vec<_>>();
+        dependencies.insert(file.clone(), targets);
+    }
+
+    fn visit_manifest(
+        file: &Path,
+        dependencies: &BTreeMap<PathBuf, Vec<PathBuf>>,
+        visiting: &mut BTreeSet<PathBuf>,
+        visited: &mut BTreeSet<PathBuf>,
+        order: &mut Vec<PathBuf>,
+    ) {
+        if visited.contains(file) {
+            return;
         }
-        let Ok(mut text) = std::fs::read_to_string(file) else {
+        if !visiting.insert(file.to_path_buf()) {
+            return;
+        }
+        if let Some(targets) = dependencies.get(file) {
+            for target in targets {
+                visit_manifest(target, dependencies, visiting, visited, order);
+            }
+        }
+        visiting.remove(file);
+        visited.insert(file.to_path_buf());
+        order.push(file.to_path_buf());
+    }
+
+    let mut ordered = Vec::with_capacity(eligible.len());
+    let mut visiting = BTreeSet::new();
+    let mut visited = BTreeSet::new();
+    for file in &eligible {
+        visit_manifest(
+            file,
+            &dependencies,
+            &mut visiting,
+            &mut visited,
+            &mut ordered,
+        );
+    }
+
+    let mut refreshed = 0;
+    for file in ordered {
+        let Ok(mut text) = std::fs::read_to_string(&file) else {
             continue;
         };
         let directory = file.parent().unwrap_or(root);
@@ -1641,11 +1696,11 @@ fn refresh_precache_revisions(
             ensure!(
                 end > start || !trusted,
                 "cannot refresh empty precache revision in {}",
-                relative_display(root, file)
+                relative_display(root, &file)
             );
             if end == start {
                 tracing::debug!(
-                    manifest = %relative_display(root, file),
+                    manifest = %relative_display(root, &file),
                     target = %relative_display(root, &staged),
                     "skipped an empty revision from an ambiguous precache call"
                 );
@@ -1661,7 +1716,7 @@ fn refresh_precache_revisions(
             refreshed += 1;
             changed = true;
             tracing::debug!(
-                manifest = %relative_display(root, file),
+                manifest = %relative_display(root, &file),
                 target = %relative_display(root, &staged),
                 "refreshed a precache revision of a changed file"
             );

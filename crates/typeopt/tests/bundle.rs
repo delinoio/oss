@@ -2981,6 +2981,36 @@ fn refreshes_formatted_precache_entries() {
     assert_eq!(published.len(), sw.len());
 }
 
+#[test]
+fn refreshes_nested_precache_manifests_in_dependency_order() {
+    use sha2::{Digest, Sha256};
+
+    let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
+    chunks.push((
+        "a-sw.js",
+        r#"self.workbox.precacheAndRoute([{url:"z-sw.js",revision:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]);"#,
+    ));
+    chunks.push((
+        "z-sw.js",
+        r#"self.workbox.precacheAndRoute([{url:"index.html",revision:"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}]);"#,
+    ));
+    let temp = bundle(&chunks);
+    optimize(temp.path(), &[]);
+
+    let z_sw = out(temp.path(), "z-sw.js");
+    let a_sw = out(temp.path(), "a-sw.js");
+    let digest = Sha256::digest(z_sw.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    assert!(
+        a_sw.contains(&format!("revision:\"{}\"", &digest[..32])),
+        "{a_sw}"
+    );
+    assert!(!a_sw.contains("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), "{a_sw}");
+    assert!(!z_sw.contains("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"), "{z_sw}");
+}
+
 /// A precache URL that leaves the bundle directory is ignored: typeopt never
 /// reads outside the staged output for it.
 #[test]
