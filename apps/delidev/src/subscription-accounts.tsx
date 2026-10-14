@@ -813,9 +813,10 @@ export function SubscriptionAccounts({
       SystemCapability.GROK_SUBSCRIPTION_LOGIN_V1,
     ) === true;
   // The connect notice names each provider's real state: Claude needs System
-  // capability 67, and Grok needs capability 39 plus the same native browser
-  // control that enables its Add account row (serviceLoginAvailable below).
-  const grokSignInAvailable = grokLoginCapable && flow.available;
+  // capability 67, and Grok needs capability 39 plus the same inventory
+  // capability 17 and native browser control that enable its Add account row
+  // (selectService and serviceLoginAvailable below).
+  const grokSignInAvailable = capable && grokLoginCapable && flow.available;
   const lifecycleNotice = copy(
     claudeUpdateRequired
       ? grokSignInAvailable

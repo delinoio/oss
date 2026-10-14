@@ -1419,12 +1419,29 @@ it.each([[SupportedLanguage.English], [SupportedLanguage.Korean]] as const)(
         | "claude-subscription.serverUpdateRequired"
         | "claude-subscription.serverUpdateRequiredGrokAvailable"
       ),
+      boolean?,
     ][] = [
       [
         "claude+grok+native",
         [claude, grok],
         true,
         "claude-subscription.availabilityGrokAvailable",
+      ],
+      // Grok Add account also needs inventory capability 17, so the notice
+      // never claims a sign-in that the disabled row cannot start.
+      [
+        "claude+grok+native, no inventory",
+        [claude, grok],
+        true,
+        "claude-subscription.availability",
+        false,
+      ],
+      [
+        "grok only, no inventory",
+        [grok],
+        true,
+        "claude-subscription.serverUpdateRequired",
+        false,
       ],
       [
         "claude+grok, no native",
@@ -1447,12 +1464,14 @@ it.each([[SupportedLanguage.English], [SupportedLanguage.Korean]] as const)(
       ],
       ["neither", [], true, "claude-subscription.serverUpdateRequired"],
     ];
-    for (const [name, extra, withNative, key] of cells) {
+    for (const [name, extra, withNative, key, withInventory = true] of cells) {
       const transport = createRouterTransport((router) => {
         router.service(SystemService, {
           getStatus: () => ({
             capabilities: [
-              SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,
+              ...(withInventory
+                ? [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1]
+                : []),
               ...extra,
             ],
           }),
