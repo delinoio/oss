@@ -441,3 +441,41 @@ func TestParseGrokAuthFileRejectsInputThatCannotBeReencoded(t *testing.T) {
 		t.Fatal("a file whose canonical encoding exceeds the bound was accepted")
 	}
 }
+
+// The envelope's embedded document is parsed in place and cleared afterwards, so
+// opening must neither alias nor modify the caller's sealed bytes, and the
+// returned bundle must stay usable after the working copy is cleared.
+func TestOpenGrokBundleLeavesInputIntactAndBundleUsable(t *testing.T) {
+	bundle, err := ParseGrokAuthFile(grokFixtureFile(t, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, account, generation := grokBundleIDs()
+	sealed, err := SealGrokBundle(server, account, generation, bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := bytes.Clone(sealed)
+	opened, err := OpenGrokBundle(sealed, server, account, generation)
+	if err != nil {
+		t.Fatal("sealed bundle did not open")
+	}
+	if !bytes.Equal(sealed, before) {
+		t.Fatal("opening modified the caller's sealed bytes")
+	}
+	if !opened.Equal(bundle) || opened.entry.Key != grokTestKey || opened.entry.RefreshToken != grokTestRefresh {
+		t.Fatal("the opened bundle lost credential material")
+	}
+	native, err := opened.AuthFile()
+	if err != nil || !bytes.Contains(native, []byte(grokTestRefresh)) {
+		t.Fatal("the opened bundle cannot be materialized")
+	}
+	// A rejected envelope still fails with the stable error and no mutation.
+	rebound := bytes.Clone(sealed)
+	if _, err := OpenGrokBundle(rebound, server, account, domain.NewID()); err == nil || err.Error() != GrokBundleInvalid().Error() {
+		t.Fatal("a rebound envelope was not rejected with the safe error")
+	}
+	if !bytes.Equal(rebound, sealed) {
+		t.Fatal("rejecting an envelope modified the caller's bytes")
+	}
+}

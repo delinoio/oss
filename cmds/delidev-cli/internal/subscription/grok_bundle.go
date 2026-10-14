@@ -193,6 +193,13 @@ func ParseGrokAuthFile(raw []byte) (GrokBundle, error) {
 		return GrokBundle{}, GrokBundleInvalid()
 	}
 	var scopes map[string]json.RawMessage
+	// The decoded scope entries are copies of the credential document; clear
+	// them on every return path.
+	defer func() {
+		for _, scope := range scopes {
+			clear(scope)
+		}
+	}()
 	if domain.DecodeWithLimit(raw, &scopes, MaxGrokAuthFile) != nil || len(scopes) != 1 {
 		return GrokBundle{}, GrokBundleInvalid()
 	}
@@ -283,14 +290,19 @@ func SealGrokBundle(server, account, generation domain.ID, bundle GrokBundle) ([
 // server or generation fails with the same safe error.
 func OpenGrokBundle(raw []byte, server, account, generation domain.ID) (GrokBundle, error) {
 	var envelope grokBundleEnvelope
+	// The decoded document is a copy of the credential; clear it on every path,
+	// including a decode that failed after filling it.
+	defer func() { clear(envelope.Auth) }()
 	if len(raw) == 0 || len(raw) > MaxGrokBundleEnvelope || domain.DecodeWithLimit(raw, &envelope, MaxGrokBundleEnvelope) != nil {
 		return GrokBundle{}, GrokBundleInvalid()
 	}
-	defer clear(envelope.Auth)
 	if envelope.Version != grokBundleVersion || envelope.Kind != grokBundleKind || envelope.Server != server || envelope.Account != account || envelope.Generation != generation {
 		return GrokBundle{}, GrokBundleInvalid()
 	}
-	return ParseGrokAuthFile(bytes.Clone(envelope.Auth))
+	// ParseGrokAuthFile retains no reference to its input, so the envelope's own
+	// buffer is parsed in place and cleared by the deferred call above; no second
+	// copy of the credential document is made.
+	return ParseGrokAuthFile(envelope.Auth)
 }
 
 // GrokBundleEnvelope reports whether raw has the Grok envelope discriminator

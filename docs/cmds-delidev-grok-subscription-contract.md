@@ -131,7 +131,12 @@ envelope bound.
 The vault object is the versioned envelope (`version` 1, kind
 `grok-auth-bundle`) bound to server, account and generation by `SealGrokBundle`
 and `OpenGrokBundle`; a native file, Codex bundle, Claude envelope or another
-owner fails with the same safe error. It is stored only under the existing
+owner fails with the same safe error. Opening parses the envelope's embedded
+document in place and clears every byte buffer the parser owns on every return
+path (the decoded envelope member, the decoded scope entries and, in the shared
+strict JSON decoder, no whole-document string copies are made); only the
+immutable parsed field strings and the JSON decoder's internal read buffer
+remain until garbage collection, which Go cannot clear. It is stored only under the existing
 `credentials.AccountLogin` ownership.
 
 `IdentityKey` is a domain-separated, length-prefixed SHA-256 over service
