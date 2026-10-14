@@ -33,8 +33,10 @@ const (
 	PurposeCredit            Purpose = "credit"
 	PurposeSubscriptionProbe Purpose = "subscription_probe"
 	// PurposeSharedOwner is the account-wide Codex history home shared by the
-	// members of one managed Codex account owner. It is registered in place at
-	// its fixed per-account path and never holds a per-conversation history.
+	// members of one managed Codex account owner. It is valid only for the Codex
+	// harness, is registered in place at its fixed per-account path through
+	// RegisterLegacy, is never created by Acquire, and never holds a
+	// per-conversation history.
 	PurposeSharedOwner Purpose = "shared_owner"
 	// Conversation purposes are keyed by account and a logical native history.
 	PurposeConversation Purpose = "conversation"
@@ -64,6 +66,20 @@ var purposeScopes = map[Purpose]Scope{
 
 // Scope returns the key scope required by the purpose, or false when unknown.
 func (p Purpose) Scope() (Scope, bool) { s, ok := purposeScopes[p]; return s, ok }
+
+// RegisteredOnly reports whether profiles of the purpose enter the registry
+// only through RegisterLegacy. Acquire never creates a managed profile for
+// them; it only locks an entry that was already registered in place.
+func (p Purpose) RegisteredOnly() bool { return p == PurposeSharedOwner }
+
+// harnessAllowed reports whether the purpose is defined for the harness. Every
+// purpose except the registered-only shared owner is defined for all harnesses.
+func (p Purpose) harnessAllowed(h domain.Harness) bool {
+	if p == PurposeSharedOwner {
+		return h == domain.Codex
+	}
+	return true
+}
 
 // OwnerKind identifies whether the server or a Worker owns a storage root.
 type OwnerKind string
@@ -97,7 +113,7 @@ func (k Key) Validate() error {
 		return invalidKey()
 	}
 	scope, ok := k.Purpose.Scope()
-	if !ok {
+	if !ok || !k.Purpose.harnessAllowed(k.Harness) {
 		return invalidKey()
 	}
 	switch k.Owner {

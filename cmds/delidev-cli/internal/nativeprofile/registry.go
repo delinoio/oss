@@ -373,6 +373,12 @@ func (r *Registry) Acquire(ctx context.Context, key Key) (*Lease, error) {
 				return false, nil
 			}
 		}
+		if key.Purpose.RegisteredOnly() {
+			// A registered-only purpose names a pre-registry directory that is
+			// registered in place; creating a managed profile would fork its
+			// history, so nothing is created and the key stays unregistered.
+			return false, Failure(domain.NotFound, ReasonLegacyUnverified, "The native profile is not registered.", "Register the existing native history before acquiring it.")
+		}
 		if len(file.Profiles) >= maxProfiles {
 			return false, Failure(domain.ResourceExhausted, ReasonRegistryInvalid, "The native profile registry is full.", "Delete unused sessions or accounts before creating more profiles.")
 		}

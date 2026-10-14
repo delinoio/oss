@@ -2950,6 +2950,13 @@ account home. A directory that is not a real private directory, or a
 registration for another path, blocks with a recovery-required failure and is
 never repaired or recreated.
 
+`shared_owner` is a registered-only purpose that is defined for the `codex`
+harness alone: a key for any other harness is invalid, including in a restored
+registry. Only in-place registration creates its entry. Acquiring an unregistered
+`shared_owner` key is rejected with the closed `legacy_unverified` cause and
+creates no managed profile directory or registry entry, while acquiring an entry
+that was already registered in place locks it normally.
+
 The founding owner takes the profile lock when it is founded and releases only
 the lock when the owner retires; joined members rely on that lock and take none.
 An exclusive continuation of a version 2 account history takes the same lock, so

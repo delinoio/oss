@@ -873,3 +873,139 @@ func TestSharedOwnerPurposeIsAccountScopedAndRegistersInPlace(t *testing.T) {
 		t.Fatal("registration changed retained history")
 	}
 }
+
+// keyFor builds a valid key of the purpose's scope for the harness.
+func keyFor(purpose Purpose, harness domain.Harness, account, conversation domain.ID) Key {
+	scope, _ := purpose.Scope()
+	key := Key{Harness: harness, Purpose: purpose}
+	if scope != ScopeSystem {
+		key.Account = account
+	}
+	if scope == ScopeConversation {
+		key.Conversation = conversation
+	}
+	return key
+}
+
+// Every purpose is checked against every harness through every registry entry
+// point. The registered-only shared owner purpose is defined for Codex alone;
+// it is never created by Acquire, but an entry registered in place is locked
+// and looked up like any other profile.
+func TestPurposeHarnessMatrixAcrossAcquireRegisterLegacyAndLookup(t *testing.T) {
+	ctx := context.Background()
+	harnesses := []domain.Harness{domain.Codex, domain.ClaudeCode, domain.OpenCode, domain.GrokBuild}
+	for purpose := range purposeScopes {
+		for _, harness := range harnesses {
+			purpose, harness := purpose, harness
+			t.Run(string(purpose)+"/"+string(harness), func(t *testing.T) {
+				root := testRoot(t)
+				r, _ := workerRegistry(t, root, nil)
+				key := keyFor(purpose, harness, domain.NewID(), domain.NewID())
+				defined := purpose != PurposeSharedOwner || harness == domain.Codex
+				relative := "retained/" + string(purpose) + "-" + string(harness)
+				home := filepath.Join(root, filepath.FromSlash(relative))
+				if err := security.PrivateDir(home); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(home, "history"), []byte("kept"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := r.normalize(key); (err == nil) != defined {
+					t.Fatalf("Validate defined=%v err=%v", defined, err)
+				}
+				if !defined {
+					if _, err := r.Acquire(ctx, key); err == nil {
+						t.Fatal("Acquire accepted an undefined purpose for the harness")
+					}
+					if _, err := r.RegisterLegacy(ctx, key, relative); err == nil {
+						t.Fatal("RegisterLegacy accepted an undefined purpose for the harness")
+					}
+					if _, _, err := r.Lookup(ctx, key); err == nil {
+						t.Fatal("Lookup accepted an undefined purpose for the harness")
+					}
+					return
+				}
+				if _, ok, err := r.Lookup(ctx, key); err != nil || ok {
+					t.Fatalf("an unseen key was found: %v", err)
+				}
+				lease, err := r.Acquire(ctx, key)
+				if purpose.RegisteredOnly() {
+					if err == nil {
+						_ = lease.Close()
+						t.Fatal("Acquire created a registered-only profile")
+					}
+					if reason, ok := Reasoned(err); !ok || reason != ReasonLegacyUnverified {
+						t.Fatalf("Acquire failed without the closed cause: %v", err)
+					}
+					if _, ok, _ := r.Lookup(ctx, key); ok {
+						t.Fatal("a rejected Acquire registered the key")
+					}
+					if entries, _ := os.ReadDir(filepath.Join(root, "native-profiles", "p")); len(entries) != 0 {
+						t.Fatalf("a rejected Acquire left %d profile directories", len(entries))
+					}
+				} else {
+					if err != nil || lease.Origin != OriginManaged || !lease.Created {
+						t.Fatalf("Acquire did not create a managed profile: %v", err)
+					}
+					_ = lease.Close()
+					// A managed key keeps its single identity; a second registration
+					// of retained history for it is a conflict.
+					if _, err := r.RegisterLegacy(ctx, key, relative); err == nil {
+						t.Fatal("RegisterLegacy replaced a managed profile")
+					}
+					return
+				}
+				info, err := r.RegisterLegacy(ctx, key, relative)
+				if err != nil || info.Origin != OriginLegacy || info.Root != home {
+					t.Fatalf("RegisterLegacy: %+v %v", info, err)
+				}
+				found, ok, err := r.Lookup(ctx, key)
+				if err != nil || !ok || found.ID != info.ID {
+					t.Fatalf("Lookup after registration: %v", err)
+				}
+				locked, err := r.Acquire(ctx, key)
+				if err != nil || locked.ID != info.ID || locked.Root != home || locked.Created {
+					t.Fatalf("Acquire of the registered entry: %v", err)
+				}
+				defer locked.Close()
+				if raw, err := os.ReadFile(filepath.Join(home, "history")); err != nil || string(raw) != "kept" {
+					t.Fatal("registration changed retained history")
+				}
+			})
+		}
+	}
+}
+
+// A restored registry that binds the shared owner purpose to a non-Codex
+// harness is invalid as a whole and is never rewritten.
+func TestRegistryLoadRejectsSharedOwnerForOtherHarnesses(t *testing.T) {
+	root := testRoot(t)
+	r, _ := workerRegistry(t, root, nil)
+	account := domain.NewID()
+	relative := "runtimes/accounts/" + string(account) + "/codex"
+	if err := security.PrivateDir(filepath.Join(root, filepath.FromSlash(relative))); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.RegisterLegacy(context.Background(), Key{Harness: domain.Codex, Purpose: PurposeSharedOwner, Account: account}, relative); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(r.registryPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	tampered := bytes.Replace(raw, []byte(`"harness":"codex"`), []byte(`"harness":"claude-code"`), 1)
+	if bytes.Equal(raw, tampered) {
+		t.Fatalf("registry encoding changed: %s", raw)
+	}
+	if err := os.WriteFile(r.registryPath(), tampered, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := r.Lookup(context.Background(), Key{Harness: domain.Codex, Purpose: PurposeSharedOwner, Account: account}); err == nil {
+		t.Fatal("a shared owner entry for another harness was loaded")
+	} else if reason, ok := Reasoned(err); !ok || reason != ReasonRegistryInvalid {
+		t.Fatalf("restored registry was not rejected as invalid: %v", err)
+	}
+	if after, _ := os.ReadFile(r.registryPath()); !bytes.Equal(after, tampered) {
+		t.Fatal("the invalid registry was rewritten")
+	}
+}
