@@ -2419,3 +2419,90 @@ fn freezes_same_named_chunks_in_other_directories() {
     let after = run_asset(&out_dir, "index-");
     assert_eq!(before.stdout, after.stdout);
 }
+
+// ---------------------------------------------------------------------------
+// call-inlining in bundle chunks
+// ---------------------------------------------------------------------------
+
+/// Unwritten `let` and `var` functions are inlined like `const` ones.
+#[test]
+fn inlines_unwritten_let_and_var_functions() {
+    let (temp, report) = run(&[
+        (
+            "index.js",
+            r#"import{run as r}from"./lib.js";console.log(r(2),r(5));"#,
+        ),
+        (
+            "lib.js",
+            r#"var twice=function(n){return n*2};let inc=n=>n+1;function run(x){return inc(twice(x))+inc(x)}export{run};"#,
+        ),
+    ]);
+    assert!(applied(&report, "call-inlining") >= 2, "{report:#}");
+    let lib = out(temp.path(), "lib.js");
+    assert!(!lib.contains("twice(") && !lib.contains("inc("), "{lib}");
+}
+
+/// A `var` in a nested block may be uninitialized at a site after the
+/// block, where the call throws.
+#[test]
+fn keeps_calls_of_var_functions_in_nested_blocks() {
+    let (temp, _) = run(&[
+        (
+            "index.js",
+            r#"import{run as r}from"./lib.js";try{console.log(r(true,1),r(false,1))}catch(e){console.log(e.constructor.name)}"#,
+        ),
+        (
+            "lib.js",
+            r#"function run(c,x){if(c){var f=function(n){return n+1}}return f(x)}export{run};"#,
+        ),
+    ]);
+    assert!(out(temp.path(), "lib.js").contains("f(x)"));
+}
+
+/// Unchecked chunks do not need matching inferred types, and missing
+/// arguments become `void 0`.
+#[test]
+fn inlines_calls_regardless_of_inferred_types_and_missing_arguments() {
+    let (temp, report) = run(&[
+        ("index.js", r#"import{show as s}from"./lib.js";s();"#),
+        (
+            "lib.js",
+            r#"function len(s){return s.length}function pick(a,b){return b===void 0?a:b}function show(){console.log(len([1,2]),len("abc"),pick(3),pick(3,4))}export{show};"#,
+        ),
+    ]);
+    // One bundle per target function covers all of its sites.
+    assert!(applied(&report, "call-inlining") >= 2, "{report:#}");
+    let lib = out(temp.path(), "lib.js");
+    assert!(!lib.contains("len(") && !lib.contains("pick("), "{lib}");
+}
+
+/// Assignments to properties and free bindings are inlined with their
+/// evaluation order; writes to parameters are not.
+#[test]
+fn inlines_assignments_but_not_parameter_writes() {
+    let (temp, report) = run(&[
+        ("index.js", r#"import{show as s}from"./lib.js";s();"#),
+        (
+            "lib.js",
+            r#"let count=0;function bump(o,v){return o.total+=v}function last(o,v){return o.last=v}function init(o){return o.v??=7}function tick(){return count++}function next(n){return n+=1}function show(){const s={total:1,last:0,v:null};console.log(bump(s,3),last(s,4),init(s),init(s),tick(),tick(),count);let a=1;console.log(next(a),a,s.total,s.last,s.v)}export{show};"#,
+        ),
+    ]);
+    assert!(applied(&report, "call-inlining") >= 4, "{report:#}");
+    let lib = out(temp.path(), "lib.js");
+    assert!(!lib.contains("bump(") && !lib.contains("tick("), "{lib}");
+    assert!(lib.contains("next(a)"), "{lib}");
+}
+
+/// An argument that reads a binding the body writes is read before the
+/// write; inlining would read it after.
+#[test]
+fn keeps_calls_whose_body_writes_an_argument_binding() {
+    let (temp, _) = run(&[
+        ("index.js", r#"import{show as s}from"./lib.js";s();"#),
+        (
+            "lib.js",
+            r#"let n=0;function reset(x){return n=1,x}function show(){console.log(reset(n),n)}export{show};"#,
+        ),
+    ]);
+    assert!(out(temp.path(), "lib.js").contains("reset(n)"));
+}
