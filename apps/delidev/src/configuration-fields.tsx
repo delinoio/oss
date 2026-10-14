@@ -1697,6 +1697,7 @@ interface FieldsProps {
   movementActive?: boolean;
   initial?: Resource;
   keepsFormatKey?: (ready: boolean) => void;
+  inspectedProviderRevision?: (revision: bigint) => void;
   saveBlocked?: (blocked: boolean) => void;
   data: Document;
   change: (value: Document) => void;

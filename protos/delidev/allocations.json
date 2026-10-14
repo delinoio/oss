@@ -8451,6 +8451,13 @@
       "number": 9
     },
     {
+      "issue": 2398,
+      "kind": "enum",
+      "declaration": "ProviderInventoryCapability",
+      "member": "PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_API_FORMAT_CHANGE_REVISION_V1",
+      "number": 10
+    },
+    {
       "issue": 964,
       "kind": "message",
       "declaration": "ChangeAccountApiFormatRequest",
@@ -8497,6 +8504,13 @@
       "member": "recovery_notifications",
       "number": 6,
       "newDeclaration": true
+    },
+    {
+      "issue": 2398,
+      "kind": "message",
+      "declaration": "ChangeAccountApiFormatRequest",
+      "member": "provider_revision",
+      "number": 7
     },
     {
       "issue": 964,
