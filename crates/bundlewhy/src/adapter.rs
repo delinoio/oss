@@ -78,6 +78,9 @@ enum AdapterEvent {
     Done {},
 }
 
+/// How long buffered output is drained after the adapter exits.
+const PIPE_DRAIN: Duration = Duration::from_secs(2);
+
 /// Longest stdout line kept; longer project output is discarded while the
 /// pipe keeps draining. Protocol frames are far shorter.
 const MAX_STDOUT_LINE: usize = 1024 * 1024;
@@ -352,37 +355,70 @@ pub async fn run(
     let mut lines = BoundedLines::new(stdout);
     let mut reported_error: Option<BwError> = None;
     let mut cancelled = false;
+    let mut exit_status: Option<std::io::Result<std::process::ExitStatus>> = None;
+    let mut handle_line = |line: &str, reported_error: &mut Option<BwError>| {
+        match line
+            .strip_prefix(&frame_prefix)
+            .ok_or(())
+            .and_then(|frame| serde_json::from_str::<AdapterEvent>(frame).map_err(drop))
+        {
+            Ok(AdapterEvent::Progress { stage, message }) => {
+                tracing::debug!(stage = %stage, %message, "adapter progress");
+                on_progress(RunStage::from_adapter(&stage), message);
+            }
+            Ok(AdapterEvent::Engine { package, version }) => {
+                tracing::info!(%package, %version, "engine detected");
+            }
+            Ok(AdapterEvent::Error {
+                code,
+                message,
+                recovery,
+            }) => {
+                tracing::debug!(%code, "adapter reported error");
+                *reported_error = Some(BwError::new(
+                    ErrorCode::from_adapter(&code),
+                    message,
+                    recovery,
+                ));
+            }
+            Ok(AdapterEvent::Done {}) => tracing::debug!("adapter finished"),
+            // Bundler plugins may print to stdout; ignore non-protocol lines.
+            Err(()) => tracing::debug!(length = line.len(), "ignored non-protocol adapter output"),
+        }
+    };
     loop {
         tokio::select! {
             line = lines.next_line() => {
                 match line {
-                    Ok(Some(line)) => match line
-                        .strip_prefix(&frame_prefix)
-                        .ok_or(())
-                        .and_then(|frame| serde_json::from_str::<AdapterEvent>(frame).map_err(drop))
-                    {
-                        Ok(AdapterEvent::Progress { stage, message }) => {
-                            tracing::debug!(stage = %stage, %message, "adapter progress");
-                            on_progress(RunStage::from_adapter(&stage), message);
-                        }
-                        Ok(AdapterEvent::Engine { package, version }) => {
-                            tracing::info!(%package, %version, "engine detected");
-                        }
-                        Ok(AdapterEvent::Error { code, message, recovery }) => {
-                            tracing::debug!(%code, "adapter reported error");
-                            reported_error = Some(BwError::new(ErrorCode::from_adapter(&code), message, recovery));
-                        }
-                        Ok(AdapterEvent::Done {}) => tracing::debug!("adapter finished"),
-                        // Bundler plugins may print to stdout; ignore non-protocol lines.
-                        Err(_) => tracing::debug!(length = line.len(), "ignored non-protocol adapter output"),
-                    },
+                    Ok(Some(line)) => handle_line(&line, &mut reported_error),
                     Ok(None) | Err(_) => break,
                 }
+            }
+            // A descendant spawned by a plugin can keep the pipes open after
+            // the adapter exits; the adapter's own exit ends the run.
+            status = child.wait(), if exit_status.is_none() => {
+                exit_status = Some(status);
+                break;
             }
             () = cancel.wait() => {
                 cancelled = true;
                 break;
             }
+        }
+    }
+    if exit_status.is_some() && !cancelled {
+        // Read frames still buffered in the pipe, but never wait for EOF from
+        // descendants indefinitely.
+        let drained = tokio::time::timeout(PIPE_DRAIN, async {
+            while let Ok(Some(line)) = lines.next_line().await {
+                handle_line(&line, &mut reported_error);
+            }
+        })
+        .await;
+        if drained.is_err() {
+            tracing::warn!(
+                "adapter output pipe still open after exit; a build process may still be running"
+            );
         }
     }
 
@@ -414,14 +450,23 @@ pub async fn run(
         return Err(cancelled_error());
     }
 
-    let status = child.wait().await.map_err(|error| {
+    let status = match exit_status {
+        Some(status) => status,
+        None => child.wait().await,
+    }
+    .map_err(|error| {
         BwError::new(
             ErrorCode::BuildFailed,
             format!("Adapter process failed: {error}"),
             "Start a new run.",
         )
     })?;
-    let stderr_text = stderr_task.await.unwrap_or_default();
+    // Bounded like stdout: a descendant may hold stderr open too.
+    let stderr_text = tokio::time::timeout(PIPE_DRAIN, stderr_task)
+        .await
+        .ok()
+        .and_then(Result::ok)
+        .unwrap_or_default();
     if cancel.is_cancelled() {
         return Err(cancelled_error());
     }
@@ -492,6 +537,57 @@ mod tests {
         let path = Path::new(std::ffi::OsStr::from_bytes(b"/tmp/bad-\xff"));
         assert_eq!(utf8_path(path).unwrap_err().code, ErrorCode::Usage);
         assert_eq!(utf8_path(Path::new("/tmp/ok")).unwrap(), "/tmp/ok");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn adapter_exit_ends_the_run_even_when_a_descendant_holds_the_pipes() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        let collect = dir.path().join("collect.json");
+        let fake_node = dir.path().join("fake-node.sh");
+        std::fs::write(
+            &fake_node,
+            format!(
+                r#"#!/bin/sh
+if [ "$1" = "--version" ]; then echo v24.0.0; exit 0; fi
+token=$(sed -n 's/.*"protocolToken":"\([0-9a-f]*\)".*/\1/p' "$2")
+echo '{{"collectVersion":1,"bundler":"vite"}}' > '{}'
+sleep 30 &
+echo "BUNDLEWHY-FRAME $token {{\"event\":\"done\"}}"
+exit 0
+"#,
+                collect.display()
+            ),
+        )
+        .unwrap();
+        let mut permissions = std::fs::metadata(&fake_node).unwrap().permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
+        std::fs::set_permissions(&fake_node, permissions).unwrap();
+        let selection = Selection {
+            project_root: project,
+            project_name: "p".to_owned(),
+            bundler: crate::engine::BundlerChoice::Vite,
+            config_file: None,
+        };
+        let options = AdapterOptions {
+            config_name: None,
+            allow_unsupported_engine: false,
+            node: fake_node,
+        };
+        let task = run(
+            dir.path(),
+            &selection,
+            &options,
+            Arc::new(CancelSignal::default()),
+            |_, _| {},
+        );
+        let collection = tokio::time::timeout(Duration::from_secs(10), task)
+            .await
+            .expect("run must not hang")
+            .unwrap();
+        assert_eq!(collection.bundler, "vite");
     }
 
     #[test]
