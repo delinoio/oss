@@ -66,7 +66,14 @@ const category = (name: string) =>
 const escape = (dialog: Element) =>
   fireEvent(dialog, new Event("cancel", { cancelable: true }));
 
-function fixture(options: { holdLogin?: boolean; connected?: boolean } = {}) {
+function fixture(
+  options: {
+    holdLogin?: boolean;
+    connected?: boolean;
+    serverLogin?: boolean;
+  } = {},
+) {
+  const serverLogin = options.serverLogin ?? true;
   const machine = create(ResourceSchema, {
     id: newRequestId(),
     kind: EntityKind.MACHINE,
@@ -123,7 +130,6 @@ function fixture(options: { holdLogin?: boolean; connected?: boolean } = {}) {
     release = resolve;
   });
   const generation = newRequestId(),
-    profile = newRequestId(),
     browser = newRequestId();
   const save = vi.fn((request) => {
     current = create(ResourceSchema, {
@@ -142,9 +148,8 @@ function fixture(options: { holdLogin?: boolean; connected?: boolean } = {}) {
       documentJson: encode({
         ...accountDocument(current),
         subscription: {
-          owner_machine_id: machine.id,
-          native_profile_id: profile,
-          native_operation: { id: operation },
+          claude_credential: "server-token",
+          server_operation: { id: operation },
           pending: { id: operation },
         },
       }),
@@ -183,6 +188,7 @@ function fixture(options: { holdLogin?: boolean; connected?: boolean } = {}) {
           SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,
           SystemCapability.CLAUDE_SUBSCRIPTIONS_V1,
           SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1,
+          ...(serverLogin ? [SystemCapability.CLAUDE_SERVER_LOGIN_V1] : []),
         ],
       }),
     });
@@ -235,18 +241,6 @@ async function openClaudeLogin() {
   fireEvent.click(add);
   await waitFor(() => expect(taskDialog()).not.toBeNull());
 }
-async function chooseRunner() {
-  const runner = await screen.findByRole("combobox", { name: "Runner Device" });
-  fireEvent.click(runner);
-  await screen.findByRole("option", { name: "Remote Linux" });
-  fireEvent.click(screen.getByRole("option", { name: "Remote Linux" }));
-  const start = screen.getByRole("button", { name: "Start sign-in" });
-  await waitFor(() =>
-    expect((start as HTMLButtonElement).disabled).toBe(false),
-  );
-  return start;
-}
-
 beforeEach(() => {
   vi.stubGlobal("matchMedia", () => ({
     matches: false,
@@ -351,13 +345,16 @@ it("does not play the AI Subscription entrance when Animation is Off at activati
   expect(column().getAttribute("data-entrance")).toBeNull();
 });
 
-it("keeps one login entrance across a user step and a held login response, and dismisses with Escape", async () => {
+it("keeps one login entrance across a held login response, and dismisses with Escape", async () => {
   const f = fixture({ holdLogin: true });
   await openClaudeLogin();
   const dialog = taskDialog()!;
   const header = taskHeader();
   expect(dialog.hasAttribute("data-entrance")).toBe(false);
   expect(header.getAttribute("data-entrance")).toBe("y4");
+  // The deliberate Add account click starts the server-owned request without a
+  // Runner selection step, and holds the login response.
+  expect(screen.queryByRole("combobox", { name: "Runner Device" })).toBeNull();
   dispatch(header);
   const mutations: string[] = [];
   const observer = new MutationObserver((records) =>
@@ -367,13 +364,10 @@ it("keeps one login entrance across a user step and a held login response, and d
     attributes: true,
     attributeFilter: ["data-entrance"],
   });
-  // Advance the original user-owned stage and hold the login response.
-  const start = await chooseRunner();
-  expect(taskDialog()).toBe(dialog);
-  fireEvent.click(start);
   await waitFor(() => expect(f.login).toHaveBeenCalledTimes(1));
+  expect(f.login.mock.calls[0][0].machineId).toBe("");
+  expect(taskDialog()).toBe(dialog);
   expect(taskHeader()).toBe(header);
-  expect(header.getAttribute("data-entrance")).toBeNull();
   // Escape hides the retained original operation immediately: no replay, no
   // cancellation, and the held reply cannot reopen the task.
   escape(dialog);
@@ -402,35 +396,45 @@ it("keeps one login entrance across a user step and a held login response, and d
   expect(f.save).toHaveBeenCalledTimes(1);
 });
 
-it("disposes the native OAuth owner on dismissal before any login starts", async () => {
-  const f = fixture();
-  await openClaudeLogin();
-  // Choosing the Runner is a user step inside the same window: no new entrance.
-  const header = taskHeader();
-  expect(header.getAttribute("data-entrance")).toBe("y4");
-  await chooseRunner();
-  expect(taskHeader()).toBe(header);
-  expect(header.getAttribute("data-entrance")).toBe("y4");
-  const disposed = f.native.mock.calls.filter(
-    (call) => call[1] === OAuthNativeAction.Dispose,
-  ).length;
-  escape(taskDialog()!);
-  expect(taskDialog()).toBeNull();
-  await waitFor(() =>
-    expect(
-      f.native.mock.calls.filter(
-        (call) => call[1] === OAuthNativeAction.Dispose,
-      ),
-    ).toHaveLength(disposed + 1),
-  );
-  expect(f.login).not.toHaveBeenCalled();
-  expect(f.save).not.toHaveBeenCalled();
-  // A fresh explicit Add account plays a fresh entrance.
-  const add = screen.getByRole("button", { name: "Claude · Add account" });
-  await waitFor(() => expect((add as HTMLButtonElement).disabled).toBe(false));
+it("keeps Claude Add account disabled with update guidance and opens no Runner selector without capability 67", async () => {
+  const f = fixture({ serverLogin: false });
+  category(unoptedSettingsCategory);
+  category("AI Subscription");
+  dispatch(column());
+  const add = await screen.findByRole("button", {
+    name: "Claude · Add account",
+  });
+  await screen.findByText(/Claude sign-in needs a server update/);
+  expect((add as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(add);
-  await waitFor(() => expect(taskDialog()).not.toBeNull());
-  expect(taskHeader().getAttribute("data-entrance")).toBe("y4");
+  expect(taskDialog()).toBeNull();
+  expect(screen.queryByRole("combobox", { name: "Runner Device" })).toBeNull();
+  expect(f.save).not.toHaveBeenCalled();
+  expect(f.login).not.toHaveBeenCalled();
+  // Grok stays the disabled Coming soon row.
+  expect(
+    (
+      screen.getByRole("button", {
+        name: /Grok · Coming soon/,
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+});
+
+it("shows the server-owned sign-in notice with capability 67", async () => {
+  fixture();
+  category(unoptedSettingsCategory);
+  category("AI Subscription");
+  dispatch(column());
+  await screen.findByText(
+    "Claude sign-in runs on this server. Grok sign-in is not available yet.",
+  );
+  expect(screen.queryByText(/selected Runner Device/)).toBeNull();
+  expect(screen.queryByText(/needs a server update/)).toBeNull();
+  const add = await screen.findByRole("button", {
+    name: "Claude · Add account",
+  });
+  await waitFor(() => expect((add as HTMLButtonElement).disabled).toBe(false));
 });
 
 it("plays one manage window entrance and ignores refetches", async () => {

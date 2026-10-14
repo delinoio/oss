@@ -180,10 +180,8 @@ it("keeps Sign in for a server-token account whose first login did not connect",
   ).toBeNull();
 });
 
-it("reconnects a logged-out device-owned account through its Runner wizard instead of the server flow", async () => {
-  // A device-owned logout clears the profile and owner but keeps the native
-  // operation, so the server refuses to convert it into a server-token account.
-  const loggedOut = create(ResourceSchema, {
+function deviceOwnedAccount(connected: boolean) {
+  return create(ResourceSchema, {
     id: newRequestId(),
     kind: EntityKind.ACCOUNT,
     revision: 4n,
@@ -193,35 +191,88 @@ it("reconnects a logged-out device-owned account through its Runner wizard inste
       type: "subscription",
       subscription_service: "claude",
       enabled: true,
-      health: "disconnected",
+      health: connected ? "ready" : "disconnected",
+      ...(connected ? { connection: { id: newRequestId() } } : {}),
       subscription: {
+        owner_machine_id: newRequestId(),
+        native_profile_id: newRequestId(),
+        generation: newRequestId(),
         native_operation: {
           id: newRequestId(),
-          action: "logout",
+          action: connected ? "login" : "logout",
           state: "succeeded",
         },
       },
     }),
   });
+}
+
+it("connects a new server-owned account for a logged-out device-owned account without a Runner wizard", async () => {
+  // A device-owned logout clears the profile and owner but keeps the native
+  // operation, so the server refuses to convert it into a server-token account.
   const value = mount(
     [
       SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,
       SystemCapability.CLAUDE_SUBSCRIPTIONS_V1,
       SystemCapability.CLAUDE_SERVER_LOGIN_V1,
     ],
-    loggedOut,
+    deviceOwnedAccount(false),
   );
-  const signIn = await screen.findByRole("button", { name: /^Sign in to/ });
+  const connect = await screen.findByRole("button", {
+    name: "Connect new account",
+  });
   await waitFor(() =>
-    expect((signIn as HTMLButtonElement).disabled).toBe(false),
+    expect((connect as HTMLButtonElement).disabled).toBe(false),
   );
-  expect(
-    screen.queryByRole("button", { name: "Connect new account" }),
-  ).toBeNull();
-  fireEvent.click(signIn);
-  // The Runner wizard asks for a Runner Device and starts no server operation.
-  await screen.findByText("Select a Runner Device");
+  expect(screen.queryByRole("button", { name: /^Sign in to/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Sign in again" })).toBeNull();
+  expect(screen.queryByText("Select a Runner Device")).toBeNull();
   expect(value.logout).not.toHaveBeenCalled();
+});
+
+it("disables reconnection with server-update guidance when capability 67 is absent", async () => {
+  const value = mount(
+    [
+      SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,
+      SystemCapability.CLAUDE_SUBSCRIPTIONS_V1,
+    ],
+    deviceOwnedAccount(false),
+  );
+  const connect = await screen.findByRole("button", {
+    name: "Connect new account",
+  });
+  expect((connect as HTMLButtonElement).disabled).toBe(true);
+  await screen.findByText(/Claude sign-in needs a server update/);
+  expect(screen.queryByRole("button", { name: /^Sign in to/ })).toBeNull();
+  expect(screen.queryByText("Select a Runner Device")).toBeNull();
+  expect(value.logout).not.toHaveBeenCalled();
+});
+
+it("keeps a connected device-owned account manageable without Runner reauthentication", async () => {
+  const value = mount(
+    [
+      SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,
+      SystemCapability.CLAUDE_SUBSCRIPTIONS_V1,
+      SystemCapability.CLAUDE_SERVER_LOGIN_V1,
+    ],
+    deviceOwnedAccount(true),
+  );
+  const out = await screen.findByRole("button", { name: "Log out" });
+  await waitFor(() => expect((out as HTMLButtonElement).disabled).toBe(false));
+  expect(screen.queryByRole("button", { name: "Sign in again" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: /Refresh login|Reauthenticate/i }),
+  ).toBeNull();
+  expect(screen.queryByRole("button", { name: /^Sign in to/ })).toBeNull();
+  // Logout keeps its original Runner binding.
+  fireEvent.click(out);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Confirm logout" }),
+  );
+  await waitFor(() => expect(value.logout).toHaveBeenCalled());
+  const request = value.logout.mock.calls[0][0];
+  expect(request.action).toBe(SubscriptionAction.LOGOUT);
+  expect(request.machineId).not.toBe("");
 });
 
 it("starts the server flow for a never-used Claude account", async () => {

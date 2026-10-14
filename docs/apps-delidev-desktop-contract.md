@@ -2344,7 +2344,6 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - Image composers follow `cmds-delidev-image-input-contract.md` and `apps-delidev-desktop-contract.md#image-inputs`. `image-input.ts` owns bounded original-byte validation and complete reference/receipt verification; `image-drafts.tsx` owns connection-identity drafts, exact staging/recovery and original Runner cleanup. Preserve independent first-message/General Chat/Session drafts across navigation, Settings and reconnect; dispose bytes/object URLs on identity change. Keep typed references separate from document JSON, require READY and matching ordered admission receipts, restage changed Runner/operation selections, and retain uncertain requests without edits. `image-attachments.tsx` owns ordered accessible previews and authenticated digest-verified history readback with explicit retry; queued edits retain immutable refs and image-bound Steer remains disabled. System 45/Worker 25 and the original execution harness are advisory frontend gates; native modality proof remains backend-owned. The isolated image browser fixture grants no native/account acceptance and must stay outside product bundles.
 
-- `claude-runners-layout.fixture.tsx` is isolated bounded synthetic Runner inventory evidence. Keep its marker outside product bundles; disabled options and manual steps never grant Runner eligibility or native/account acceptance.
 
 - `runner-observation.ts` owns bounded closed presentation evidence, without changing the original Runner eligibility predicate. The shared Runner provider retains one exact machine controller across presenter close and same-identity readiness changes; full Settings inspection preserves Updates and network tools. Exact-machine pending or uncertain inspection retains consuming-flow gates. SessionTools likewise retains one original controller; the owning conversation failure exposes its eligible recovery action and original confirmation within the same session, including Info for constrained layouts. Account reads older than retained acknowledgments cannot enable fresh lifecycle actions, while original uncertain retries and durable cleanup retain their own authority.
 
@@ -5618,12 +5617,14 @@ AI Subscription offers the explicit capability-41 Auto cleanup action under the 
 
 ## Claude subscription task and native browser ownership
 
-System 38 and original Worker 20 independently enable the approved Claude
-subscription flow in the existing 960px Settings task dialog. Preserve the
-Runner Device → Sign in → Account name order, explicit once-only Start,
-conditional masked approval input, success-bound default Claude naming and
-Later retention. Management exposes the owner Runner, Sign in again and
-logout. X/Escape hide retained work; only explicit Cancel sign-in cancels it.
+System 67 enables the approved server-owned Claude sign-in flow in the existing
+960px Settings task dialog. Preserve the Sign in → Account name order, the
+once-only Add account click, conditional masked approval input, success-bound
+default Claude naming and Later retention. No Runner Device step, Runner
+reauthentication or fallback for servers without System 67 exists; System 38 and
+original Worker 20 remain only for device-owned Claude execution and logout.
+Management exposes the owner Runner of a device-owned account and logout.
+X/Escape hide retained work; only explicit Cancel sign-in cancels it.
 The existing task host owns focus, scrolling, responsive stacking and hidden
 operation restoration. See the [subscription Settings contract](apps-delidev-subscription-settings-contract.md#claude-account-onboarding-and-management).
 

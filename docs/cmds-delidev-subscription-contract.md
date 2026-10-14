@@ -225,8 +225,10 @@ Claude branch. An original Worker advertises 20 only after verifying installed
 Claude Code at or above the pinned `2.1.236` SemVer baseline through an isolated empty profile and confirmed cleanup.
 A reserved number or ordinary installation observation never grants this lane.
 
-An owner or authorized paired client explicitly selects a local or remote
-Runner Device for login. `claude auth login --claudeai`, `auth status` and
+Fresh machine-bound Claude login (`LOGIN`) and reauthentication (`REFRESH`) are retired: `requestClaudeSubscription` rejects them, including requests from the CLI and other clients, with `Unsupported` and server-owned sign-in guidance before it creates an operation or changes account state. The rejection runs inside the `Store.Mutate` closure after the request-receipt check, so a request accepted before the retirement still replays through its original receipt, reconciles through progress, cancellation and original Worker cleanup, and admits no new operation. Machine-bound `LOGOUT` of an existing device-owned account, execution, deletion, progress, cancellation and Take/Finish/recovery paths are unchanged. Claude login for new accounts is the [server-owned setup-token flow](#server-owned-claude-setup-token-accounts) under System 67.
+
+For accounts and operations accepted before the retirement, an owner or authorized paired client selects the original
+Runner Device. `claude auth login --claudeai`, `auth status` and
 `auth logout` run on that Worker with an account-specific private
 `CLAUDE_CONFIG_DIR` and matching secure-storage directory. DeliDev reconstructs
 the native environment; personal profiles, imported/external tokens,
@@ -955,7 +957,7 @@ Keep loading, unavailable/update, unknown, zero, positive and unlimited states d
 
 ## Server-owned Claude setup-token accounts
 
-System `CLAUDE_SERVER_LOGIN_V1 = 67` and `CLAUDE_MANAGED_EXECUTION_V1 = 68` and Worker `MANAGED_CLAUDE_EXECUTION_V1 = 41` are independent of capabilities 38, 20 and 30. A new Claude account whose first `RequestSubscription` omits the machine becomes `subscription.claude_credential = "server-token"`; device-owned accounts, ChatGPT and API flows are unchanged, and no existing profile is inspected, imported, migrated or converted. Reconnection is new-account-only: a connected, logged-out or device-owned account is never given a server credential, and the token is never replaced.
+System `CLAUDE_SERVER_LOGIN_V1 = 67` and `CLAUDE_MANAGED_EXECUTION_V1 = 68` and Worker `MANAGED_CLAUDE_EXECUTION_V1 = 41` are independent of capabilities 38, 20 and 30. A new Claude account whose first `RequestSubscription` omits the machine becomes `subscription.claude_credential = "server-token"`; device-owned accounts keep execution and machine-bound logout, ChatGPT and API flows are unchanged, and no existing profile is inspected, imported, migrated or converted. A machine-bound Claude `LOGIN` or `REFRESH` is rejected as unsupported, so a device-owned account can never sign in again. Reconnection is new-account-only: a connected, logged-out or device-owned account is never given a server credential, and the token is never replaced.
 
 The server runs the installed, verified Claude Code (SemVer precedence at or above the `2.1.236` baseline) `setup-token` on a PTY in a private runtime under `subscription-runtime/auth/<operation>` with an isolated environment. It requires a joined successful native exit and exactly one distinct, fully validated emitted token. The final PTY capture need not contain the native success heading. The server bounds and privately retains the screen, and never exposes the token or approval code in the UI, logs, transcripts, resources, progress documents or ordinary RPC responses. Safe failure logs may record only closed parser conditions and counts, never native screen text or token bytes. Once the single-use approval code is delivered to that child, the server never polls for or redelivers it; the operation stays pending until the original child exits, is canceled or expires. Unknown, malformed, ambiguous or oversized output, a rejected code, a non-zero exit or uncertain cleanup cannot connect the account. The progress response reuses the existing fields: browser-code login method, original URL, generation, default name `Claude` and the closed native diagnostic.
 

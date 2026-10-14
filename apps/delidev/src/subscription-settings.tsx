@@ -135,6 +135,9 @@ export interface SubscriptionSettingsViewProps {
   lifecycleUnavailable?: string;
   selectService?: (brand: SubscriptionBrand) => void;
   serviceLoginAvailable?: (brand: SubscriptionBrand) => boolean;
+  // A disabled service whose sign-in needs a server update keeps the Add
+  // account label and points to the notice instead of reading Coming soon.
+  serviceUpdateRequired?: (brand: SubscriptionBrand) => boolean;
   activeFilter?: string;
   clearFilter: () => void;
   pagination?: ReactNode;
@@ -872,6 +875,7 @@ export function SubscriptionSettingsView({
   lifecycleUnavailable = copy("subscription-settings.extra.f874aed4a97c"),
   selectService,
   serviceLoginAvailable = () => true,
+  serviceUpdateRequired = () => false,
   activeFilter,
   clearFilter,
   pagination,
@@ -1130,16 +1134,21 @@ export function SubscriptionSettingsView({
                 disabled={
                   !selectService || !serviceLoginAvailable(provider.brand)
                 }
+                aria-describedby={
+                  serviceUpdateRequired(provider.brand) ? noticeId : undefined
+                }
                 aria-label={copy("subscription-settings.message_78735b", {
                   v0: provider.name,
                   v1:
-                    selectService && serviceLoginAvailable(provider.brand)
+                    (selectService && serviceLoginAvailable(provider.brand)) ||
+                    serviceUpdateRequired(provider.brand)
                       ? copy("subscription-settings.addAccount_ee7ee5")
                       : copy("subscription-settings.comingSoon_4f7d64"),
                 })}
                 onClick={() => selectService?.(provider.brand)}
               >
-                {selectService && serviceLoginAvailable(provider.brand)
+                {(selectService && serviceLoginAvailable(provider.brand)) ||
+                serviceUpdateRequired(provider.brand)
                   ? copy("subscription-settings.addAccount_ee7ee5")
                   : copy("subscription-settings.comingSoon_4f7d64")}
               </SettingsActionButton>

@@ -304,7 +304,7 @@ Workspace storage exposes original-job snapshot, usage preview, cleanup, inspect
 - [DeliDev signed updates](cmds-delidev-updates-contract.md)
 - [DeliDev SSH Worker setup](cmds-delidev-ssh-setup-contract.md)
 
-AI Subscription browser login and naming compose across Go server ownership, generated Connect capability 30 and trusted native window callbacks. Account identity is independent of Runner Devices; execution/quota still retain their original Worker selection and credential leases. ChatGPT login precedes optional naming. Claude independently selects its owning Runner under capability 38 and then uses login/name steps; Grok remains unsupported (System 39/40, Worker 21 and progress field 10 are declared in the protos but unadvertised, with no server or Worker behavior). Follow the subscription, desktop and protocol contracts and distinguish fixtures/builds from actual account/packaged-platform acceptance. Shared reservations reached main in the originating change; this optional JSON amendment adds no migration.
+AI Subscription browser login and naming compose across Go server ownership, generated Connect capability 30 and trusted native window callbacks. Account identity is independent of Runner Devices; execution/quota still retain their original Worker selection and credential leases. ChatGPT login precedes optional naming. Claude sign-in is server-owned under capability 67 with login/name steps and never selects a Runner Device (capability 38 and the original Runner remain only for existing device-owned accounts' execution and logout); Grok remains unsupported (System 39/40, Worker 21 and progress field 10 are declared in the protos but unadvertised, with no server or Worker behavior). Follow the subscription, desktop and protocol contracts and distinguish fixtures/builds from actual account/packaged-platform acceptance. Shared reservations reached main in the originating change; this optional JSON amendment adds no migration.
 
 Ordered account source routing follows the catalog, desktop, sessions, protocol and
 portable configuration contracts. One Harness retains source-specific models and
@@ -324,8 +324,8 @@ their original ownership and alone grant no support.
 The originating change established System 38, Worker 20 and the complete protocol declaration
 closure on main before implementation. The extension composes the existing
 subscription, desktop, harness, protocol and storage owners. Claude Code
-at or above the pinned `2.1.236` SemVer baseline owns login/status/logout and execution in an original account-specific
-profile on the explicitly selected local or remote Runner. The server retains
+at or above the pinned `2.1.236` SemVer baseline owns status/logout and execution of existing device-owned accounts in an original account-specific
+profile on its original local or remote Runner. Fresh machine-bound Claude login and reauthentication are rejected by the server; new Claude sign-in is server-owned (System 67). The server retains
 only opaque profile/owner/generation/operation metadata and a keyed identity
 commitment; native credentials never transfer. One exclusive lease serializes
 lifecycle and execution, and original cleanup gates logout/deletion/recovery.

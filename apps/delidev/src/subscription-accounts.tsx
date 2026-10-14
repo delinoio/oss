@@ -216,6 +216,14 @@ function NativeManagedSubscriptionAccount({
       (Boolean(text(serverOperation.id)) &&
         (serverOperation.action !== "login" ||
           serverOperation.state === "succeeded")));
+  // A disconnected Claude account that was ever used, whether server-token or
+  // device-owned, never signs in again: reconnecting connects a new
+  // server-owned account. Existing device-owned credentials are never converted
+  // and no Runner Device takes part in Claude sign-in.
+  const claudeConnectsNew =
+    service === SubscriptionServiceId.Claude &&
+    !connected &&
+    (connectsNewAccount || (!managedClaude && !neverUsedClaude));
   const supported =
     serviceSupported &&
     (service === SubscriptionServiceId.Claude
@@ -402,6 +410,14 @@ function NativeManagedSubscriptionAccount({
           }
         />
       ) : null}
+      {service === SubscriptionServiceId.Claude &&
+      !connected &&
+      status.isSuccess &&
+      !status.error &&
+      !status.isFetching &&
+      !claudeServerLogin ? (
+        <p>{copy("claude-subscription.serverUpdateRequired")}</p>
+      ) : null}
       {state.recovery_required === true ? (
         <InlineRemediation
           summary={
@@ -410,7 +426,7 @@ function NativeManagedSubscriptionAccount({
         />
       ) : null}
       <SettingsTaskActions className="">
-        {!connected && connectsNewAccount ? (
+        {claudeConnectsNew ? (
           <SettingsActionButton
             icon={SettingsActionIcon.Connect}
             type="button"
@@ -423,8 +439,9 @@ function NativeManagedSubscriptionAccount({
                 refreshLock.current
               )
                 return;
-              // A new account is created; this account is never signed in again.
-              flow.begin(service, undefined, false, true);
+              // A new server-owned account is created; this account is never
+              // signed in again.
+              flow.begin(service);
             }}
           >
             {copy("claude-subscription.server.connectNew")}
@@ -433,18 +450,22 @@ function NativeManagedSubscriptionAccount({
           <SettingsActionButton
             icon={SettingsActionIcon.Connect}
             type="button"
-            disabled={!ready || !flow.available}
+            disabled={
+              !ready ||
+              !flow.available ||
+              (service === SubscriptionServiceId.Claude && !claudeServerLogin)
+            }
             onClick={() => {
-              if (!ready || !flow.available || refreshLock.current) return;
-              // Only a server-token account or a never-used Claude account takes
-              // the server flow; a logged-out device-owned account keeps its
-              // Runner reconnection because the server never converts it.
-              flow.begin(
-                service,
-                current,
-                false,
-                claudeServerLogin && (managedClaude || neverUsedClaude),
-              );
+              if (
+                !ready ||
+                !flow.available ||
+                (service === SubscriptionServiceId.Claude &&
+                  !claudeServerLogin) ||
+                refreshLock.current
+              )
+                return;
+              // Only a never-used Claude account takes the server-owned flow.
+              flow.begin(service, current);
             }}
           >
             <LocalizedText
@@ -454,23 +475,17 @@ function NativeManagedSubscriptionAccount({
           </SettingsActionButton>
         ) : (
           <>
-            {managedClaude ? null : (
+            {service === SubscriptionServiceId.Claude ? null : (
               <SettingsActionButton
                 icon={SettingsActionIcon.Inspect}
                 type="button"
                 disabled={!ready}
                 onClick={() => {
                   if (!ready || refreshLock.current) return;
-                  if (service === SubscriptionServiceId.Claude)
-                    flow.begin(service, current, true);
-                  else request(SubscriptionAction.REFRESH);
+                  request(SubscriptionAction.REFRESH);
                 }}
               >
-                {copy(
-                  service === SubscriptionServiceId.Claude
-                    ? "claude-subscription.reauth"
-                    : "subscription-accounts.refreshLogin_85188a",
-                )}
+                {copy("subscription-accounts.refreshLogin_85188a")}
               </SettingsActionButton>
             )}
             <SettingsActionButton
@@ -694,6 +709,16 @@ export function SubscriptionAccounts({
     status.data?.capabilities.includes(
       SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,
     ) === true;
+  // Claude sign-in is server-owned: only System capability 67 enables it.
+  const claudeServerLoginAdvertised = status.data
+    ? status.data.capabilities.includes(SystemCapability.CLAUDE_SERVER_LOGIN_V1)
+    : undefined;
+  const claudeUpdateRequired = claudeServerLoginAdvertised === false;
+  const lifecycleNotice = copy(
+    claudeUpdateRequired
+      ? "claude-subscription.serverUpdateRequired"
+      : "claude-subscription.availability",
+  );
   const refreshInventory = useRef<() => void>(() => {});
   // Login/status authority stays active while its own presentation pauses only
   // the background inventory reader. The callback uses the current reader.
@@ -1026,7 +1051,7 @@ export function SubscriptionAccounts({
                       key={row.id}
                       account={account}
                       now={now}
-                      unavailable={copy("claude-subscription.availability")}
+                      unavailable={lifecycleNotice}
                       actionsBlocked={blocked}
                       openDetails={openDetails}
                     />
@@ -1072,7 +1097,10 @@ export function SubscriptionAccounts({
           if (status.error) void status.refetch();
           if (capable && (rows.error || !validPage)) void rows.refetch();
         }}
-        lifecycleUnavailable={copy("claude-subscription.availability")}
+        lifecycleUnavailable={lifecycleNotice}
+        serviceUpdateRequired={(brand) =>
+          brand === SubscriptionBrand.Claude && claudeUpdateRequired
+        }
         selectService={
           capable && !blocked
             ? (brand) => {
@@ -1086,16 +1114,13 @@ export function SubscriptionAccounts({
                 ) {
                   setGoIntent(true);
                   setGoCreate(true);
-                } else if (service && flow.available)
-                  flow.begin(
-                    service,
-                    undefined,
-                    false,
-                    service === SubscriptionServiceId.Claude &&
-                      status.data?.capabilities.includes(
-                        SystemCapability.CLAUDE_SERVER_LOGIN_V1,
-                      ) === true,
-                  );
+                } else if (
+                  service === SubscriptionServiceId.Claude &&
+                  claudeServerLoginAdvertised !== true
+                ) {
+                  // Without capability 67 there is no Claude sign-in path.
+                  return;
+                } else if (service && flow.available) flow.begin(service);
               }
             : undefined
         }
@@ -1108,12 +1133,9 @@ export function SubscriptionAccounts({
               ? loginCapable && flow.available
               : brand === SubscriptionBrand.Claude &&
                 flow.available &&
-                (status.data?.capabilities.includes(
-                  SystemCapability.CLAUDE_SUBSCRIPTIONS_V1,
-                ) === true ||
-                  status.data?.capabilities.includes(
-                    SystemCapability.CLAUDE_SERVER_LOGIN_V1,
-                  ) === true)
+                status.data?.capabilities.includes(
+                  SystemCapability.CLAUDE_SERVER_LOGIN_V1,
+                ) === true
         }
         pagination={
           <ScrollContinuation

@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 import { StrictMode } from "react";
 import { create } from "@bufbuild/protobuf";
-import { createRouterTransport } from "@connectrpc/connect";
+import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
   configure,
   fireEvent,
   render,
@@ -15,6 +16,7 @@ import { expect, it, vi } from "vitest";
 import {
   ConfigurationService,
   EntityKind,
+  NativeSubscriptionDiagnosticSchema,
   ResourceSchema,
   ResourceService,
   SubscriptionLoginMethod,
@@ -93,11 +95,13 @@ function fixture(dialog = false) {
     });
     return { account: current, operationId: operation };
   });
+  let diagnostic: ReturnType<typeof create<typeof NativeSubscriptionDiagnosticSchema>> | undefined;
   const progress = vi.fn(() => ({
     state,
     url: state === SubscriptionLoginState.WAITING ? progressURL : "",
     loginMethod: SubscriptionLoginMethod.BROWSER_CODE,
     generation,
+    nativeDiagnostic: diagnostic,
   }));
   const submit = vi.fn(async (request) => {
     request.code.fill(0);
@@ -151,9 +155,7 @@ function fixture(dialog = false) {
           <button onClick={flow.show}>View original operation</button>
         ) : (
           <button
-            onClick={() =>
-              flow.begin(SubscriptionServiceId.Claude, undefined, false, true)
-            }
+            onClick={() => flow.begin(SubscriptionServiceId.Claude)}
           >
             Add Claude
           </button>
@@ -184,6 +186,16 @@ function fixture(dialog = false) {
     submit,
     cancel,
     native,
+    unsupported: (version: string) => {
+      state = SubscriptionLoginState.UNSUPPORTED;
+      diagnostic = create(NativeSubscriptionDiagnosticSchema, {
+        detectedVersion: version,
+        requiredVersion: "2.1.236",
+        phase: 4,
+        code: "unsupported",
+        correlationId: newRequestId(),
+      });
+    },
     setURL: (value: string) => {
       progressURL = value;
     },
@@ -375,4 +387,52 @@ it("uses the setup-token profile separately from the auth-login profile", () => 
   expect(
     claudeSetupTokenURL(setupURL.replace("claude.com", "other.invalid")),
   ).toBe(false);
+});
+
+it("does not retransmit approval input after an uncertain result", async () => {
+  const f = fixture();
+  f.submit.mockImplementation(async (request) => {
+    request.code.fill(0);
+    throw new ConnectError("Fixture lost reply", Code.Unavailable);
+  });
+  await start(f);
+  const input = screen.getByLabelText("Approval code") as HTMLInputElement;
+  fireEvent.change(input, {
+    target: { value: "fixture-approval#original-state" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Submit code" }));
+  await waitFor(() => expect(f.submit).toHaveBeenCalledTimes(1));
+  expect(input.value).toBe("");
+  expect(input.disabled).toBe(true);
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+  });
+  expect(f.submit).toHaveBeenCalledTimes(1);
+  expect(
+    screen.queryByRole("button", { name: "Retry original request" }),
+  ).toBeNull();
+  expect(
+    JSON.stringify(
+      f.client
+        .getQueryCache()
+        .getAll()
+        .map((q) => q.state.data),
+      (_key, value) => (typeof value === "bigint" ? value.toString() : value),
+    ),
+  ).not.toContain("fixture-approval");
+});
+
+it("shows only observed validation details for a newer prerelease Claude Code", async () => {
+  const f = fixture();
+  f.unsupported("2.1.237-rc.1");
+  render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Add Claude" }));
+  await screen.findByText("Claude Code validation did not complete.");
+  expect(f.login).toHaveBeenCalledTimes(1);
+  expect(screen.getByText("2.1.237-rc.1")).toBeTruthy();
+  expect(screen.getByText("Native launch")).toBeTruthy();
+  expect(screen.getByText("unsupported")).toBeTruthy();
+  expect(screen.queryByText("Required version")).toBeNull();
+  expect(screen.queryByText(/2\.1\.236/)).toBeNull();
+  expect(screen.getByRole("button", { name: "Back" })).toBeTruthy();
 });

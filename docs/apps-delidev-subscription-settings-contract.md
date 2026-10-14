@@ -2,7 +2,7 @@
 
 ## Scope
 
-The feature owns the compact AI Subscription presentation; composes its independent service identity in `subscription-accounts.tsx`, `subscription-settings.tsx` and `subscription-catalog.ts`. The shared Settings application screen, 17 categories, stable `subscription-accounts` category ID and short AI Subscription label remain authoritative under [the desktop contract](apps-delidev-desktop-contract.md). The category description is “Manage your subscriptions and connect more accounts.” Managed Codex login/cancel/refresh/logout uses authenticated SubscriptionService and the independent server credential owner. Native quota and reset-credit operations belong to ; Claude lifecycle uses its independent capability 38 and original Runner; unsupported Grok lifecycle remains explicit. Account preferences, native authentication, quota observation and real-account/platform acceptance remain independent.
+The feature owns the compact AI Subscription presentation; composes its independent service identity in `subscription-accounts.tsx`, `subscription-settings.tsx` and `subscription-catalog.ts`. The shared Settings application screen, 17 categories, stable `subscription-accounts` category ID and short AI Subscription label remain authoritative under [the desktop contract](apps-delidev-desktop-contract.md). The category description is “Manage your subscriptions and connect more accounts.” Managed Codex login/cancel/refresh/logout uses authenticated SubscriptionService and the independent server credential owner. Native quota and reset-credit operations belong to ; Claude sign-in is server-owned under independent capability 67 and never uses a Runner Device; capability 38 and the original Runner remain only for device-owned Claude execution and logout; unsupported Grok lifecycle remains explicit. Account preferences, native authentication, quota observation and real-account/platform acceptance remain independent.
 
 ## Runtime and Language
 
@@ -113,39 +113,13 @@ The approved 1280×800 preview illustrates initialization failure; it is not obs
 
 ## Claude account onboarding and management
 
-This Runner-bound wizard applies to device-owned accounts and to servers without System capability 67. A server advertising 67 creates new accounts through [Server-owned Claude sign-in](#server-owned-claude-sign-in) instead.
+Claude sign-in is server-owned only. New Claude accounts connect through [Server-owned Claude sign-in](#server-owned-claude-sign-in) and System `CLAUDE_SERVER_LOGIN_V1 = 67`. No Settings control starts a Runner-bound Claude login or reauthentication: there is no Runner Device selection step, Runner remediation, Sign in again action or fallback for servers without capability 67. The server rejects fresh machine-bound Claude LOGIN and REFRESH requests with unsupported guidance; see the [subscription contract](cmds-delidev-subscription-contract.md).
 
-Claude Add account requires inventory 17, System `CLAUDE_SUBSCRIPTIONS_V1 = 38`
-and trusted native browser control. The existing 720px wizard Settings task dialog
-shows Runner Device → Sign in → Account name. Opening the task does not save an
-account or start authentication. Select one local/remote machine advertising
-Worker `NATIVE_CLAUDE_SUBSCRIPTIONS_V1 = 20` with the single verified original
-Claude Code installation whose SemVer precedence is at or above the pinned
-`2.1.236` baseline (stable or prerelease; build metadata ignored). Eligibility
-uses the shared frontend predicate mirroring the Go `VersionAtLeast` rule and
-never claims protocol readiness. Bounded Runner pages and explicit refresh
-retain current selection semantics; discovery metadata alone cannot enable it.
-One explicit Start sign-in saves default disconnected Claude metadata and
-submits one sticky original login request. Duplicate clicks, Strict Mode,
-reconnect and progress polling cannot create another account or operation.
+The Connect a subscription helper text is capability-aware, in English and Korean. With capability 67 the English text is "Claude sign-in runs on this server. Grok sign-in is not available yet." Without capability 67 (including a server that advertises only capability 38), the text states that Claude sign-in needs a server update. The Claude Add account button keeps its label and layout but is disabled, is described by that notice and opens no dialog or Runner selector. While the capability read is unresolved the neutral first text is shown and Add account stays disabled. Grok remains the disabled Coming soon row; layout, marks, colors and navigation are unchanged.
 
-Login shows the selected Runner and opens the official CLI's original URL
-through the lifetime/window/server-bound native browser action. Open browser
-again is explicit and reuses that same binding. Only the native browser-code
-method shows the masked Approval code input. The input remains outside React
-state, shared query/mutation caches, persistence and logs; hide clears unsent
-input. Submit clears the DOM value immediately and zeroizes the outgoing buffer
-when the request finishes. An uncertain result keeps the original one-time
-claim and permits no second code or automatic replay. No DeliDev callback/code
-exchange is involved.
+Existing device-owned Claude accounts stay visible and manageable. Their management view shows the original owner Runner, Log out (capability 38 and the original owner Runner), execution and deletion. It offers no Sign in or Sign in again action, connected or disconnected. A disconnected device-owned account whose native operation is retained shows Connect new account, which creates a new server-owned account when capability 67 is advertised and is disabled with the server-update notice otherwise. Existing credentials are never converted. Only a never-used Claude account (no profile, owner Runner, generation, lease, pending, native or server operation) keeps Sign in through the server-owned flow.
 
-Success requires fresh original operation, account/profile owner, generation
-and connection proof before the Account name step. Focus moves once to the
-default `Claude` name; user edits use the exact alias-only patch. Save account
-name and Later both retain the connected account. Management displays the
-original owner Runner, Sign in again and logout. Reauthentication targets that
-same profile/machine and may not move authentication. Claude shows no quota or
-reset-credit controls.
+Management displays the owner Runner for device-owned accounts. Claude shows no quota or reset-credit controls.
 
 X, Escape and Back hide an active task through the existing shared task host;
 its original controller keeps observing accepted work. The subscriptions view
@@ -153,7 +127,7 @@ offers View original operation to reopen a hidden task without starting another
 login. Explicit Cancel sign-in
 requests cancellation and waits for original cleanup. Category/Settings
 departure disposes presentation/native browser authority without canceling
-accepted Worker work. Failed, expired, unsupported, permission and recovery
+accepted work. Failed, expired, unsupported, permission and recovery
 states use ordinary status/alert text with closed safe diagnostic
 version/phase/code/correlation fields. They never expose native output, URLs,
 identities or automatic retries. Unknown acceptance retains only the original
@@ -191,7 +165,7 @@ With System `SUBSCRIPTION_CLEANUP_RECOVERY_V1 = 64`, the same task also accepts 
 
 AI Subscription (`SettingsCategory.SubscriptionAccounts`) opts in to the shared 160ms Y4 entrance owned by `apps-delidev-desktop-contract.md#settings-category-and-task-entrance` with target `Surface`: the standard Settings heading and the whole subscription inventory move once per explicit category opening, and every task window opened inside the category (Claude and ChatGPT login, Manage subscription, OpenCode Go) plays one entrance on its task header. The native task `<dialog>` host and its body never receive the transform.
 
-- Replay safety: step advance, Runner selection, approval or name entry, held or late login responses, progress polling, native OAuth callbacks, refetch, pagination and existing progress spinners never restart an entrance. The logout confirmation is a step of the Manage window and does not open a second window. Failed-login cleanup is an inline status disclosure and does not animate.
+- Replay safety: step advance, approval or name entry, held or late login responses, progress polling, native OAuth callbacks, refetch, pagination and existing progress spinners never restart an entrance. The logout confirmation is a step of the Manage window and does not open a second window. Failed-login cleanup is an inline status disclosure and does not animate.
 - Retained Claude login: hiding the task (Escape or the header close) unmounts the window without cancelling the original operation; only an explicit View original operation mounts a new window with one new entrance. A late response never reopens the task, opens a browser, performs follow-up deletion or restores focus.
 - Disposal: Escape and close dismiss immediately, and the native OAuth `Dispose` path runs exactly as before. Dismissal, focus, RPC, drafts and request ownership never wait for the motion, and there is no exit animation.
 - The exact paid-credit balance overlay settles an in-flight enclosing entrance before placing and measures its anchor again afterwards.
@@ -208,8 +182,6 @@ The desktop contract's the feature rail independently reads saved subscription r
 ## Inline failure ownership
 
 Subscription onboarding, management and deletion preserve typed safe causes and original recovery actions in their current task. API/OAuth failures retain selected provider/account/profile, original request and once-only exchange authority; native authorization and immutable referenced profiles remain independent. Cleanup uncertainty never permits replacement login, logout or deletion. Terminal attempts retain fresh explicit confirmation where required.
-
-Claude selection retains bounded original machine observations and the typed inventory error. Loading, failed reads, final successful emptiness, current-page exclusions, continuation and stale or malformed evidence remain distinct. Excluded machines expose only validated closed enabled/capability/installation/version/protocol facts; raw native output and paths do not become diagnosis. Selection still requires capability 20 and exactly one verified Claude Code 2.1.236 installation, with unchanged protocol, account owner and server checks. Claude selection exposes no Inspect this Runner shortcut or shortcut-owned dialog for selected or excluded machines. Protocol guidance directs explicit diagnostic work through Runner Devices. Keep the shared original Runner controller, explicit installation/path/protocol diagnostics and original session failure recovery. Pending and uncertain inspections from a retained diagnostic surface still block conflicting Start/save effects for the exact machine; removing presentation grants no eligibility or automatic inspection.
 
 ## Server quota controls
 
@@ -381,11 +353,11 @@ Reset-credit Review, Confirm and consumption require System 101 and always send 
 
 ## Server-owned Claude sign-in
 
-When the server advertises System `CLAUDE_SERVER_LOGIN_V1 = 67`, one deliberate Add account click for Claude creates a new account and starts exactly one server-owned setup-token sign-in without a Runner Device. The wizard shows only Sign in and Account name; it never shows Runner selection, Runner remediation or capability-20 guidance. A server without capability 67 keeps the Runner-bound flow; an account that already carries `subscription.claude_credential = "server-token"` is managed and shown update guidance when the server lacks the capability.
+When the server advertises System `CLAUDE_SERVER_LOGIN_V1 = 67`, one deliberate Add account click for Claude creates a new account and starts exactly one server-owned setup-token sign-in without a Runner Device. The wizard shows only Sign in and Account name; it never shows Runner selection, Runner remediation or capability-20 guidance. A server without capability 67 offers no Claude login path: Add account is disabled with server-update guidance and no Runner selector opens, even when capability 38 is advertised. An account that already carries `subscription.claude_credential = "server-token"` is managed and shown update guidance when the server lacks the capability.
 
 The waiting state shows the heading, the status, Open browser again, Back, Cancel sign-in and the header X. The original CLI authorization address is validated against the setup-token profile (the shared host, path and client, the single `user:inference` scope, `code=true` and the manual code callback; the auth-login profile and any localhost callback are rejected) and opened only through the trusted native browser binding, once, and again only through the original binding. The approval-code field is a write-only password input shown only for the code method, claimed once and cleared on hide and submit. X, Escape and Back hide the task and never cancel it; reopening, polling, reconnecting and duplicate clicks replay the retained account and request and start no other operation. Explicit Cancel sign-in waits for server cleanup.
 
-Success is accepted only when the refreshed account is a server-token account whose `server_operation` is the original operation, whose generation equals the progress generation, and which has no native profile or owner Runner. It advances once to Account name with focus, default name `Claude`; Save and Later keep the connected account. The management view states that the token expires, supports no Remote Control or Claude connectors and cannot be renewed, offers no Sign in again and states that reconnection connects a new account. A logged-out or otherwise settled server-token account shows Connect new account, which starts the new-account sign-in and never submits a login for the existing account; only an account whose first login did not connect keeps Sign in. A logged-out device-owned Claude account (one that retains its native operation, whether or not capability 67 is advertised) keeps its Runner wizard for Sign in: only a server-token account or a never-used Claude account (no profile, owner Runner, generation, lease, pending, native or server operation) takes the server flow, mirroring the server's first-login admission. Log out and deletion use the server without a machine. A settled server-token logout that still carries the `credentials-pending` cleanup checkpoint is not cleared: deletion keeps waiting in the logout stage, submits no delete request and shows no failure until the server confirms vault cleanup and clears the checkpoint, and opening deletion for an already logged-out account with the checkpoint pauses with the protected-resource cleanup message. English and Korean text, light and dark themes, 1280x800, 480x800 and 200% zoom keep the existing task-dialog layout.
+Success is accepted only when the refreshed account is a server-token account whose `server_operation` is the original operation, whose generation equals the progress generation, and which has no native profile or owner Runner. It advances once to Account name with focus, default name `Claude`; Save and Later keep the connected account. The management view states that the token expires, supports no Remote Control or Claude connectors and cannot be renewed, offers no Sign in again and states that reconnection connects a new account. A logged-out or otherwise settled server-token account shows Connect new account, which starts the new-account sign-in and never submits a login for the existing account; only an account whose first login did not connect keeps Sign in. A logged-out device-owned Claude account (one that retains its native operation) shows Connect new account instead of a Runner Sign in, and that action is disabled with server-update guidance without capability 67: only a server-token account or a never-used Claude account (no profile, owner Runner, generation, lease, pending, native or server operation) signs in on the existing account, mirroring the server's first-login admission. Log out and deletion use the server without a machine. A settled server-token logout that still carries the `credentials-pending` cleanup checkpoint is not cleared: deletion keeps waiting in the logout stage, submits no delete request and shows no failure until the server confirms vault cleanup and clears the checkpoint, and opening deletion for an already logged-out account with the checkpoint pauses with the protected-resource cleanup message. English and Korean text, light and dark themes, 1280x800, 480x800 and 200% zoom keep the existing task-dialog layout.
 
 ## Claude validation failure presentation
 

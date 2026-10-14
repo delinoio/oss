@@ -87,7 +87,6 @@ same-identity disconnections retain the existing App and pending intents.
 
 ### apps/delidev/scripts constraints
 
-- `test-claude-runners-layout.mjs` validates bounded Claude Runner exclusion, read failure and partial/stale/malformed evidence in English/Korean and narrow/zoom layouts. Preserve original eligibility and inspection counters; fixture checks do not establish native installation or real-account acceptance.
 
 - `test-session-actions-layout.mjs` validates synthetic sidebar execution colors, sibling menu geometry, no-navigation opening and keyboard/focus in English/Korean, light/dark and wide/narrow/effective 200% viewports. Build/server/browser state stays outside the checkout and is disposed. Use host Playwright/Chrome; the fixture grants no native CEF, account or platform acceptance.
 
