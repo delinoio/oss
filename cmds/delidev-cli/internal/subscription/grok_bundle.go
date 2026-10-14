@@ -80,7 +80,6 @@ type GrokIdentity struct {
 type GrokBundle struct {
 	entry    grokAuthEntry
 	identity GrokIdentity
-	created  time.Time
 }
 
 // Identity returns the parsed identity fields (no credential material).
@@ -205,7 +204,7 @@ func ParseGrokAuthFile(raw []byte) (GrokBundle, error) {
 	if entry.TeamID != nil {
 		identity.TeamID = *entry.TeamID
 	}
-	return GrokBundle{entry: entry, identity: identity, created: created}, nil
+	return GrokBundle{entry: entry, identity: identity}, nil
 }
 
 // AuthFile returns the native auth.json bytes (one scope entry) for Worker
