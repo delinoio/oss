@@ -53,8 +53,9 @@ export function ScrollContinuation({
    * show a distinct end state once the accepted chain has no next page. A
    * pending or failed read never counts as exhaustion. */
   showProgress?: boolean;
-  /** The last reached history row when synthetic rows follow the loaded tail. */
-  horizontalTail?: RefObject<HTMLElement | null>;
+  /** The last reached history row when synthetic rows follow the loaded tail.
+   * Pass null when the loaded range has no visible history tail. */
+  horizontalTail?: RefObject<HTMLElement | null> | null;
 }) {
   const sidebarActivity = useSidebarActivity();
   active = active && sidebarActivity;
@@ -106,6 +107,7 @@ export function ScrollContinuation({
           container.clientWidth > 0 &&
           (() => {
             if (!tail) {
+              if (horizontalTail === null) return Infinity;
               return (
                 container.scrollWidth -
                 container.scrollLeft -

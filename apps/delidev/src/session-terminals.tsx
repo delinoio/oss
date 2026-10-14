@@ -954,7 +954,7 @@ export function SessionTerminals({
       </div>
       <ScrollContinuation
         axis={ContinuationAxis.Horizontal}
-        horizontalTail={historyTail}
+        horizontalTail={historyTailId ? historyTail : null}
         showInitial={!(list.loaded && list.loading === ReadStage.Refresh)}
         query={list}
         root={listRoot}

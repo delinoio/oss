@@ -146,6 +146,38 @@ it("fills an underfilled horizontal strip only until its loaded tail overflows",
   expect(read).toHaveBeenCalledTimes(2);
 });
 
+it("does not page when the horizontal history tail is absent", async () => {
+  horizontalViewport();
+  const read = vi.fn<PaginationReader<Row>>(async () => ({
+    rows: [],
+    nextPageToken: "next",
+  }));
+  function SyntheticOnly() {
+    const root = useRef<HTMLDivElement>(null);
+    const query = usePaginationChain("synthetic-only", true, read);
+    return (
+      <div ref={root}>
+        <button type="button">Selected terminal</button>
+        <ScrollContinuation
+          axis={ContinuationAxis.Horizontal}
+          horizontalTail={null}
+          query={query}
+          label="items"
+          root={root}
+          active
+        />
+      </div>
+    );
+  }
+
+  renderValue(<SyntheticOnly />);
+  await waitFor(() => expect(read).toHaveBeenCalledOnce());
+  await act(async () => {
+    await Promise.resolve();
+  });
+  expect(read).toHaveBeenCalledOnce();
+});
+
 it("measures the reached horizontal tail when synthetic children follow it", async () => {
   vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(40);
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(320);
