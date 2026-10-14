@@ -40,9 +40,3 @@
 - [DeliDev native usage ledger](../../../../docs/cmds-delidev-usage-contract.md)
 - [DeliDev current-user service contract](../../../../docs/cmds-delidev-user-services-contract.md)
 - [DeliDev Worker workspace contract](../../../../docs/cmds-delidev-workspace-contract.md)
-
-## Native subscription ownership rules
-
-- A shared account owner (`lease.shared`) and its `members` are admitted only for Workers that negotiated the lane's capability and only for execute-session jobs. Old peers, lifecycle operations, quota/credit observations, Fork, compaction, review, title and server-token Claude work keep exclusive singleton leases.
-- A joined member never receives authentication. A member Finish never reads or writes credentials, rotates a generation or touches a sibling; only the owner Finish after the last runnable member performs the single writeback.
-- Treat any live lease, including a shared owner and its members, as unsettled for lifecycle, Doctor, deletion, backup, restore and recovery. Keep Finish request identities for historical scopes unchanged so existing receipts replay.
