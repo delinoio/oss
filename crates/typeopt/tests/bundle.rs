@@ -443,25 +443,41 @@ fn keeps_chunks_that_use_eval_or_import_scripts_as_values() {
     }
 }
 
-/// Debug logging names the rule that made each chunk a boundary.
+/// Debug logging names each chunk's own rule before boundary reach, while
+/// frozen-only chunks explain why they remain unchanged.
 #[test]
 fn logs_the_rule_that_makes_a_chunk_a_boundary() {
     let temp = bundle(&[
         (
             "index.js",
-            r#"import"./evaluating.js";import"./loading.js";console.log(1);"#,
+            r#"import"./vendor.js";import"./classic.js";import"./loading.js";console.log(1);"#,
+        ),
+        (
+            "vendor.js",
+            r#"import"./evaluating.js";import"./reached.js";console.log(2);"#,
         ),
         (
             "evaluating.js",
             r#"const e=eval;console.log(e("1"));export{};"#,
         ),
+        ("reached.js", r#"console.log(3);export{};"#),
+        ("classic.js", r#"console.log(4);"#),
         (
             "loading.js",
             r#"globalThis.__never&&self.importScripts("a.js");export{};"#,
         ),
     ]);
-    let output = run_typeopt(temp.path(), &[]);
-    assert!(output.status.success());
+    fs::write(
+        temp.path().join("dist/index.html"),
+        r#"<script src="classic.js"></script><script type="module" src="index.js"></script>"#,
+    )
+    .unwrap();
+    let output = run_typeopt(temp.path(), &["--bundle-exclude", "vendor.js"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let log = String::from_utf8_lossy(&output.stderr);
     let line = |chunk: &str| {
         log.lines()
@@ -470,7 +486,33 @@ fn logs_the_rule_that_makes_a_chunk_a_boundary() {
             .to_string()
     };
     assert!(line("evaluating.js").contains("eval-reference"), "{log}");
+    assert!(line("reached.js").contains("boundary-reachable"), "{log}");
+    assert!(
+        line("vendor.js").contains("excluded-or-classic-script"),
+        "{log}"
+    );
+    assert!(
+        line("classic.js").contains("excluded-or-classic-script"),
+        "{log}"
+    );
     assert!(line("loading.js").contains("import-scripts-call"), "{log}");
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let frozen = report["frozen_chunks"].as_array().unwrap();
+    assert_eq!(frozen.len(), 2, "{report:#}");
+    let reached = frozen
+        .iter()
+        .find(|chunk| chunk["file"].as_str().unwrap().ends_with("reached.js"))
+        .unwrap();
+    assert!(reached["boundary"].as_str().unwrap().ends_with("vendor.js"));
+    assert_eq!(reached["reason"], "boundary_reachable");
+    for name in ["vendor.js", "classic.js", "evaluating.js", "reached.js"] {
+        assert_eq!(
+            fs::read(temp.path().join("dist").join(name)).unwrap(),
+            fs::read(temp.path().join("out").join(name)).unwrap(),
+            "{name}"
+        );
+    }
+    same_behavior(temp.path());
 }
 
 /// A `with` statement keeps its chunk unchanged. Modules are strict code, so

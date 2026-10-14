@@ -472,7 +472,7 @@ impl Project {
                     );
                     return Some(name);
                 }
-                if crate::app::bundle_boundary(&name, esm) {
+                if crate::app::bundle_excluded_or_classic(&name, esm) {
                     tracing::debug!(
                         chunk = %name,
                         rule = "excluded-or-classic-script",
@@ -480,13 +480,23 @@ impl Project {
                     );
                     return Some(name);
                 }
-                let rule = syntax_boundary_rule(&nodes)?;
-                tracing::debug!(
-                    chunk = %name,
-                    rule = rule.as_str(),
-                    "bundle chunk is a boundary"
-                );
-                Some(name)
+                if let Some(rule) = syntax_boundary_rule(&nodes) {
+                    tracing::debug!(
+                        chunk = %name,
+                        rule = rule.as_str(),
+                        "bundle chunk is a boundary"
+                    );
+                    return Some(name);
+                }
+                if crate::app::bundle_frozen_chunk(&name) {
+                    tracing::debug!(
+                        chunk = %name,
+                        rule = "boundary-reachable",
+                        "bundle chunk is a boundary"
+                    );
+                    return Some(name);
+                }
+                None
             })
             .collect()
     }
