@@ -194,7 +194,10 @@ function fixture(options: Options = {}) {
       checkTailscale: async (request) => {
         calls.check(request);
         checkState.active += 1;
-        checkState.maxActive = Math.max(checkState.maxActive, checkState.active);
+        checkState.maxActive = Math.max(
+          checkState.maxActive,
+          checkState.active,
+        );
         try {
           if (options.holdChecks)
             await new Promise<void>((resolve) =>
@@ -307,7 +310,9 @@ function fixture(options: Options = {}) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  const Wrapper = options.strict ? StrictMode : ({ children }: { children: React.ReactNode }) => <>{children}</>;
+  const Wrapper = options.strict
+    ? StrictMode
+    : ({ children }: { children: React.ReactNode }) => <>{children}</>;
   render(
     <Wrapper>
       <TransportProvider transport={transport}>
@@ -773,8 +778,12 @@ it("checks only online peers that are not shared to this tailnet user", async ()
   await within(row).findByText(/Accepting requests/);
   await idle();
   expect(checkedIds(calls)).toEqual(["peer-1", "peer-2"]);
-  expect(within(await rowOf("Offline peer")).getByText(/Not checked/)).toBeTruthy();
-  expect(within(await rowOf("Shared peer")).getByText(/Not checked/)).toBeTruthy();
+  expect(
+    within(await rowOf("Offline peer")).getByText(/Not checked/),
+  ).toBeTruthy();
+  expect(
+    within(await rowOf("Shared peer")).getByText(/Not checked/),
+  ).toBeTruthy();
   expect(mutations(calls)).toEqual(quiet);
 });
 
@@ -796,7 +805,9 @@ it("keeps Check as a single-peer manual retry after an automatic failure or unap
   expect(
     within(failed).queryByRole("button", { name: "Register Worker" }),
   ).toBeNull();
-  expect(within(accepted).getByRole("button", { name: "Connect" })).toBeTruthy();
+  expect(
+    within(accepted).getByRole("button", { name: "Connect" }),
+  ).toBeTruthy();
   fireEvent.click(within(failed).getByRole("button", { name: "Check" }));
   await waitFor(() =>
     expect(checkedIds(calls)).toEqual(["peer-1", "peer-2", "peer-1"]),
@@ -819,7 +830,9 @@ it("drops the queue when the category is left and starts a fresh visit on reopen
   await waitFor(() => expect(checkedIds(calls)).toEqual(["peer-1"]));
   category(AWAY);
   await waitFor(() =>
-    expect(screen.queryByRole("heading", { name: "Devices on your tailnet" })).toBeNull(),
+    expect(
+      screen.queryByRole("heading", { name: "Devices on your tailnet" }),
+    ).toBeNull(),
   );
   release("peer-1");
   await idle();

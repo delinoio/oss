@@ -580,7 +580,8 @@ function DeviceInventory({
                     workerEnabled={access?.state === "ready"}
                     choose={(role) => setSelected({ peer, role })}
                     automatic={
-                      active || (queued !== undefined && settled.includes(peer.id))
+                      active ||
+                      (queued !== undefined && settled.includes(peer.id))
                     }
                     active={active}
                     onSettled={markSettled}
@@ -801,11 +802,13 @@ function PeerRow({
               {copy("tailscale.checking")}
               <span className="tailscale-progress" aria-hidden="true" />
             </>
-          ) : identity?.approval
-            ? copy("tailscale.accepting")
-            : enabled
-              ? copy("tailscale.unavailable")
-              : copy("tailscale.notChecked")}
+          ) : identity?.approval ? (
+            copy("tailscale.accepting")
+          ) : enabled ? (
+            copy("tailscale.unavailable")
+          ) : (
+            copy("tailscale.notChecked")
+          )}
         </p>
       </div>
       <div className="tailscale-actions">
