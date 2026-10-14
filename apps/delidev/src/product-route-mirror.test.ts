@@ -49,7 +49,11 @@ describe("product route mirror table", () => {
   const surfaceRows: Array<[Surface, ProductRoute]> = [
     [
       Surface.Sessions,
-      { surface: Surface.Sessions, session: ids.session, sidechat: ids.sidechat },
+      {
+        surface: Surface.Sessions,
+        session: ids.session,
+        sidechat: ids.sidechat,
+      },
     ],
     [Surface.Inbox, { surface: Surface.Inbox, item: ids.inbox }],
     [Surface.Schedules, { surface: Surface.Schedules, item: ids.schedule }],

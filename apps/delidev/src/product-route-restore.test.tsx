@@ -1166,14 +1166,18 @@ describe("route failure classification", () => {
       );
       // Give the child's pane time to load and judge itself.
       await new Promise((resolve) => setTimeout(resolve, 100));
-      expect(screen.queryByRole("tab", { name: /Nested side question/ })).toBeNull();
+      expect(
+        screen.queryByRole("tab", { name: /Nested side question/ }),
+      ).toBeNull();
       expect(search().get("sidechat")).toBe(value.nestedSidechat.id);
       releaseParent();
       expect(
         await screen.findByText("Your sessions, in one place"),
       ).toBeTruthy();
       await waitFor(() => expect(search().has("sidechat")).toBe(false));
-      expect(screen.queryByRole("tab", { name: /Nested side question/ })).toBeNull();
+      expect(
+        screen.queryByRole("tab", { name: /Nested side question/ }),
+      ).toBeNull();
     });
 
     it("ends only the placeholder when the Sidechat itself was deleted under a transiently unreadable parent", async () => {
@@ -1207,9 +1211,9 @@ describe("route failure classification", () => {
         expect(search().get("sidechat")).toBe(value.nestedSidechat.id),
       );
       // Selecting the tab is a navigation; the provisional pair still ends.
-      const tab = screen.queryAllByRole("tab").find(
-        (candidate) => !/Conversation/.test(candidate.textContent ?? ""),
-      );
+      const tab = screen
+        .queryAllByRole("tab")
+        .find((candidate) => !/Conversation/.test(candidate.textContent ?? ""));
       if (tab) fireEvent.click(tab);
       expect(
         await screen.findByText("Your sessions, in one place"),

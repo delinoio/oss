@@ -1386,8 +1386,7 @@ export function SessionView({
     if (session?.id === id) {
       const kind = loadedSessionProvenance(session, id).conversationKind;
       verifyRestored(
-        kind !== ConversationKind.Sidechat &&
-          kind !== ConversationKind.Unknown,
+        kind !== ConversationKind.Sidechat && kind !== ConversationKind.Unknown,
       );
     } else if (definitiveFailure) verifyRestored(false);
   }, [embedded, id, session, verifyRestored, definitiveFailure]);

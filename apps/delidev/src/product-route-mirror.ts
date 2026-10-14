@@ -95,13 +95,12 @@ export const surfaceSlots: Readonly<Record<Surface, readonly RouteSlot[]>> = {
 };
 
 /** Which screen reports the item of each item-bearing surface. */
-export const itemSources: Readonly<
-  Partial<Record<Surface, RouteItemSource>>
-> = {
-  [Surface.Inbox]: RouteItemSource.Inbox,
-  [Surface.Schedules]: RouteItemSource.Schedule,
-  [Surface.PullRequests]: RouteItemSource.Repository,
-};
+export const itemSources: Readonly<Partial<Record<Surface, RouteItemSource>>> =
+  {
+    [Surface.Inbox]: RouteItemSource.Inbox,
+    [Surface.Schedules]: RouteItemSource.Schedule,
+    [Surface.PullRequests]: RouteItemSource.Repository,
+  };
 
 /**
  * Whether the Schedules selection is visible. The occurrence review hides the
