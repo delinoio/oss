@@ -526,6 +526,21 @@ exhaustion. Existing versioned ErrorDetail, safe message/guidance and correlatio
 validation remain unchanged. No generated protocol field or compatibility
 allocation is added; older documents and clients keep their generic fallback.
 
+## Tailscale check failure causes
+
+`FailureCause` also contains `TailscaleConnectionRefused`
+(`tailscale_connection_refused`), `TailscaleTimeout` (`tailscale_timeout`),
+`TailscaleCertificateInvalid` (`tailscale_certificate_invalid`),
+`TailscaleUnexpectedHttp` (`tailscale_unexpected_http`) and
+`TailscaleInvalidIdentity` (`tailscale_invalid_identity`). The wire values are
+namespaced because the causes are Check-only: generic values such as `timeout`
+(emitted with `unavailable` by the Codex app-server handshake) must never decode as
+a Tailscale cause. `failureCause` uses one explicit closed code/cause allowlist:
+`unavailable` pairs with the first four and `unsupported` pairs only with
+`tailscale_invalid_identity`. Any other code, an unknown or unnamespaced cause
+and untyped transport text project to `undefined`. The causes carry no hostname,
+URL, status body, certificate or native error text, and no protocol field changes.
+
 ## Original Codex dynamic tools
 
 Generated System 102 and Worker 63 declarations retain existing service paths.
