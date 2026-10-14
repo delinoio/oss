@@ -42,7 +42,12 @@ import {
   type SessionTabsStore,
 } from "./session-tabs";
 import { SessionView } from "./session";
-import { ShortcutProvider } from "./shortcut-provider";
+import {
+  ShortcutProvider,
+  useShortcutHelp,
+  useShortcutSurface,
+} from "./shortcut-provider";
+import { Surface } from "./surface";
 import { sourceModelKey } from "./source-model-key-fixture";
 import {
   ShortcutPreferenceProvider,
@@ -87,6 +92,8 @@ function fixture(
       archive: "active",
       dispatch: "blocked",
       recovery: "none",
+      // Terminal creation requires a ready workspace; callers override it.
+      ...(terminalMode ? { preparation: { state: "ready" } } : {}),
       ...extra,
       ...(problem
         ? {
@@ -2344,70 +2351,250 @@ it("verified terminal removal skips intervening Files and selects the original l
   }
 });
 
-it.each([false, true])(
-  "retains initial terminal toolbar intent until session load unless departed (%s)",
-  async (departed) => {
-    let release = () => {};
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+it("keeps Terminals unavailable before the Session loads and never opens it automatically afterwards", async () => {
+  let release = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const f = fixture(
+    BudgetState.ALLOW_INCOMPLETE,
+    false,
+    {},
+    () => [],
+    true,
+    gate,
+  );
+  const view = render(f.view());
+  try {
+    expect(
+      screen.queryByRole("heading", { name: "Original session" }),
+    ).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+    const terminals = screen.getByRole("menuitem", { name: "Terminals" });
+    expect(terminals.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(terminals);
+    await act(async () => release());
+    await screen.findByRole("heading", { name: "Original session" });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(f.terminalWatches).not.toHaveBeenCalled();
+    expect(f.terminalCreate).not.toHaveBeenCalled();
+    expect(screen.queryByRole("tab", { name: "Terminal 1" })).toBeNull();
+  } finally {
+    view.unmount();
+    release();
+    f.releaseTerminal();
+    f.client.clear();
+  }
+});
+
+// Selects the Sessions shortcut surface and exposes the Help opener that the
+// application shell normally owns.
+function SessionHelpHost({ children }: { children: ReactNode }) {
+  useShortcutSurface(Surface.Sessions);
+  const openHelp = useShortcutHelp();
+  return (
+    <>
+      <button onClick={openHelp}>Help opener</button>
+      {children}
+    </>
+  );
+}
+
+const preparationUpdate = (
+  f: ReturnType<typeof fixture>,
+  revision: bigint,
+  state: string,
+) =>
+  f.publish({
+    ...f.session,
+    revision,
+    documentJson: encode({
+      ...readDocument(f.session),
+      preparation: { state },
+    }),
+  });
+
+it.each(["missing", "pending", "failed", "canceled", "uncertain", "stale"])(
+  "disables Terminals with a hover-only reason while preparation is %s and re-enables it without opening",
+  async (state) => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
     const f = fixture(
       BudgetState.ALLOW_INCOMPLETE,
       false,
-      {},
+      { preparation: state === "missing" ? undefined : { state } },
       () => [],
       true,
-      gate,
     );
-    const view = render(f.view());
+    const view = render(
+      <ShortcutProvider>
+        <SessionHelpHost>{f.view()}</SessionHelpHost>
+      </ShortcutProvider>,
+    );
     try {
-      const openTerminal = () => {
-        fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
-        fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
-      };
+      const composer = await screen.findByRole("textbox", { name: "Message" });
+      fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+      const terminals = screen.getByRole("menuitem", { name: "Terminals" });
+      expect(terminals.hasAttribute("disabled")).toBe(true);
+      const tooltip = screen.getByRole("tooltip", { hidden: true });
+      expect(tooltip.textContent).toBe("Available when workspace is ready.");
+      expect(terminals.getAttribute("aria-describedby")).toBe(tooltip.id);
+      // The reason is hover-only and lives outside the keyboard order.
+      expect(tooltip.getAttribute("data-visible")).toBe("false");
+      expect(tooltip.closest("button")).toBeNull();
+      const wrapper = terminals.closest(".session-tool-hint")!;
+      expect(wrapper.querySelector("button")).toBe(terminals);
+      fireEvent.mouseEnter(wrapper);
+      expect(tooltip.getAttribute("data-visible")).toBe("true");
+      fireEvent.mouseLeave(wrapper);
+      expect(tooltip.getAttribute("data-visible")).toBe("false");
+      expect(document.activeElement).toBe(
+        screen.getByRole("menuitem", { name: "Diff" }),
+      );
+      fireEvent.click(terminals);
+      expect(screen.queryByRole("tab", { name: "Terminal 1" })).toBeNull();
+      fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+      // The shortcut creates no intent and Help reports the readiness reason.
+      composer.focus();
+      fireEvent.keyDown(composer, {
+        key: "`",
+        code: "Backquote",
+        ctrlKey: true,
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Help opener" }));
+      const help = await screen.findByRole("dialog", {
+        name: "Keyboard shortcuts",
+      });
       expect(
-        screen.queryByRole("heading", { name: "Original session" }),
-      ).toBeNull();
-      openTerminal();
-      openTerminal();
+        within(help).getByText("Available when workspace is ready."),
+      ).toBeTruthy();
+      fireEvent.keyDown(help, { key: "Escape" });
+      await new Promise((resolve) => setTimeout(resolve, 50));
       expect(f.terminalWatches).not.toHaveBeenCalled();
       expect(f.terminalCreate).not.toHaveBeenCalled();
-      // A later explicit pane selection departs from the unsent intent.
-      if (departed) {
-        fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
-        fireEvent.click(screen.getByRole("menuitem", { name: "Files" }));
-      }
-      await act(async () => release());
-      await screen.findByRole("heading", { name: "Original session" });
-      if (departed) {
-        expect(f.terminalWatches).not.toHaveBeenCalled();
+      // Readiness re-enables the row but opens nothing by itself.
+      act(() => preparationUpdate(f, 8n, "ready"));
+      fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+      await waitFor(() =>
         expect(
           screen
-            .getByRole("tab", { name: "Files" })
-            .getAttribute("aria-selected"),
-        ).toBe("true");
-        expect(screen.queryByRole("tab", { name: "Terminal 1" })).toBeNull();
-      } else {
-        await waitFor(() =>
-          expect(f.terminalWatches).toHaveBeenCalledWith(f.terminals[0]!.id),
-        );
-        expect(
-          screen
-            .getByRole("tab", { name: "Terminal 1" })
-            .getAttribute("aria-selected"),
-        ).toBe("true");
-        expect(f.terminalWatches).toHaveBeenCalledOnce();
-      }
-      expect(f.terminalCreate).toHaveBeenCalledTimes(departed ? 0 : 1);
-      expect(f.terminalControl).not.toHaveBeenCalled();
+            .getByRole("menuitem", { name: "Terminals" })
+            .hasAttribute("disabled"),
+        ).toBe(false),
+      );
+      expect(screen.queryByRole("tooltip", { hidden: true })).toBeNull();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(f.terminalCreate).not.toHaveBeenCalled();
+      expect(screen.queryByRole("tab", { name: "Terminal 1" })).toBeNull();
+      // A fresh gesture follows the original reuse-or-create flow once.
+      fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+      composer.focus();
+      fireEvent.keyDown(composer, {
+        key: "`",
+        code: "Backquote",
+        ctrlKey: true,
+      });
+      await waitFor(() => expect(f.terminalCreate).toHaveBeenCalledTimes(1));
     } finally {
       view.unmount();
-      release();
       f.releaseTerminal();
       f.client.clear();
     }
   },
 );
+
+it("localizes the Terminals readiness reason and keeps the Sidechat reason distinct", async () => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+  const f = fixture(
+    BudgetState.ALLOW_INCOMPLETE,
+    false,
+    { preparation: { state: "pending" } },
+    () => [],
+    true,
+  );
+  const view = render(
+    <ShortcutProvider>
+      <SessionHelpHost>{f.view()}</SessionHelpHost>
+    </ShortcutProvider>,
+  );
+  try {
+    await screen.findByRole("textbox", { name: "Message" });
+    await act(() => i18n.changeLanguage("ko"));
+    fireEvent.click(screen.getByRole("button", { name: "도구 열기" }));
+    expect(screen.getByRole("tooltip", { hidden: true }).textContent).toBe(
+      "작업공간 준비가 끝나면 터미널을 사용할 수 있습니다.",
+    );
+  } finally {
+    await act(() => i18n.changeLanguage("en"));
+    view.unmount();
+    f.releaseTerminal();
+    f.client.clear();
+  }
+  const sidechat = fixture(
+    BudgetState.ALLOW_INCOMPLETE,
+    false,
+    {
+      preparation: { state: "pending" },
+      fork: { sidechat_parent_snapshot: {} },
+    },
+    () => [],
+    true,
+  );
+  const second = render(
+    <ShortcutProvider>
+      <SessionHelpHost>{sidechat.view()}</SessionHelpHost>
+    </ShortcutProvider>,
+  );
+  try {
+    await screen.findByRole("textbox", { name: "Message" });
+    fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+    expect(
+      screen
+        .getByRole("menuitem", { name: "Terminals" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    expect(screen.queryByRole("tooltip", { hidden: true })).toBeNull();
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    fireEvent.click(screen.getByRole("button", { name: "Help opener" }));
+    const help = await screen.findByRole("dialog", {
+      name: "Keyboard shortcuts",
+    });
+    expect(
+      within(help).getByText(
+        "Terminals are unavailable in a read-only Sidechat.",
+      ),
+    ).toBeTruthy();
+    expect(
+      within(help).queryByText("Available when workspace is ready."),
+    ).toBeNull();
+  } finally {
+    second.unmount();
+    sidechat.releaseTerminal();
+    sidechat.client.clear();
+  }
+});
+
+it("blocks additional terminal creation and preserves existing tabs while preparation is not ready", async () => {
+  const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, {}, () => [], true);
+  const view = render(f.view());
+  try {
+    await screen.findByRole("heading", { name: "Original session" });
+    fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
+    await screen.findByRole("tab", { name: "Terminal 1" });
+    const plus = await screen.findByRole("button", { name: "Create terminal" });
+    await waitFor(() => expect(plus).toHaveProperty("disabled", false));
+    const created = f.terminalCreate.mock.calls.length;
+    act(() => preparationUpdate(f, 8n, "pending"));
+    await waitFor(() => expect(plus).toHaveProperty("disabled", true));
+    fireEvent.click(plus);
+    expect(f.terminalCreate).toHaveBeenCalledTimes(created);
+    expect(screen.getByRole("tab", { name: "Terminal 1" })).toBeTruthy();
+  } finally {
+    view.unmount();
+    f.releaseTerminal();
+    f.client.clear();
+  }
+});
 
 it("keeps the current pane with a non-modal opening strip, coalesces gestures and then selects the verified terminal", async () => {
   const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, {}, () => [], true);
