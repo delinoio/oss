@@ -784,9 +784,9 @@ fn collect_binding_names(pattern: &str, names: &mut Vec<String>) {
     }
 }
 
-/// Source ranges in which a binding named `eval` is visible: the enclosing
-/// block of a `const`/`let`/`var`/`function eval` declaration, or the body of
-/// a function or arrow whose parameter list binds `eval`.
+/// Source ranges in which a binding named `eval` is visible. Lexical
+/// declarations use their block, while `var` uses its containing function.
+/// A named function expression binds its name only inside its own body.
 fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, usize)> {
     let mut masked = source.as_bytes().to_vec();
     for (start, end) in ignored {
@@ -818,11 +818,48 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
             .min_by_key(|(open, close)| close - open)
             .map_or((0, bytes.len()), |(open, close)| (*open, *close))
     };
+    // The lexical scan does not parse JavaScript. Match function bodies by
+    // balancing their parameter lists, then use the already paired braces.
+    // This keeps nested `var` declarations inside the nearest function.
+    let function =
+        Regex::new(r"\bfunction(?:\s*\*)?(?:\s+[A-Za-z_$][\w$]*)?").expect("static regex");
+    let function_bodies: Vec<(usize, (usize, usize))> = function
+        .find_iter(&code)
+        .filter_map(|found| {
+            let mut cursor = found.end();
+            while bytes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
+                cursor += 1;
+            }
+            if bytes.get(cursor) != Some(&b'(') {
+                return None;
+            }
+            let mut depth = 0usize;
+            while let Some(byte) = bytes.get(cursor) {
+                match byte {
+                    b'(' => depth += 1,
+                    b')' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            cursor += 1;
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+                cursor += 1;
+            }
+            if depth != 0 {
+                return None;
+            }
+            while bytes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
+                cursor += 1;
+            }
+            let body = blocks.iter().find(|(open, _)| *open == cursor).copied()?;
+            Some((found.start(), body))
+        })
+        .collect();
+    let mut bodies: Vec<(usize, usize)> = function_bodies.iter().map(|(_, body)| *body).collect();
     let mut scopes = Vec::new();
-    let declaration = Regex::new(r"\b(?:const|let|var|function)\s+eval\b").expect("static regex");
-    for found in declaration.find_iter(&code) {
-        scopes.push(enclosing(found.start()));
-    }
     // Parameter lists followed by a body: `(...) {` or `(...) =>`.
     let parameters = Regex::new(r"\(([^()]*)\)\s*(?:=>|\{)").expect("static regex");
     for captures in parameters.captures_iter(&code) {
@@ -851,18 +888,31 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
                 .trim_start_matches("...");
             collect_binding_names(target, &mut names);
         }
-        if names.iter().any(|name| name == "eval") {
-            let body = whole.end();
-            let end = if whole.as_str().ends_with('{') {
-                blocks
-                    .iter()
-                    .find(|(open, _)| *open == body - 1)
-                    .map_or(bytes.len(), |(_, close)| *close)
-            } else {
+        let body = whole.end();
+        let open = if whole.as_str().ends_with('{') {
+            Some(body - 1)
+        } else {
+            code[body..]
+                .bytes()
+                .position(|byte| !byte.is_ascii_whitespace())
+                .map(|offset| body + offset)
+                .filter(|open| bytes.get(*open) == Some(&b'{'))
+        };
+        let block = open.and_then(|open| blocks.iter().find(|(start, _)| *start == open).copied());
+        let end = block.map_or_else(
+            || {
                 code[body..]
                     .find([';', '\n'])
                     .map_or(bytes.len(), |offset| body + offset)
-            };
+            },
+            |(_, close)| close,
+        );
+        if let Some(block) = block
+            && keyword != "catch"
+        {
+            bodies.push(block);
+        }
+        if names.iter().any(|name| name == "eval") {
             scopes.push((list.start(), end));
         }
     }
@@ -873,7 +923,52 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
             .map_or(bytes.len(), |offset| found.end() + offset);
         scopes.push((found.start(), end));
     }
+    let single_arrow = Regex::new(r"\b[A-Za-z_$][\w$]*\s*=>\s*\{").expect("static regex");
+    for found in single_arrow.find_iter(&code) {
+        let open = found.end() - 1;
+        if let Some(body) = blocks.iter().find(|(start, _)| *start == open) {
+            bodies.push(*body);
+        }
+    }
+    let declaration = Regex::new(r"\b(const|let|var|function)\s+eval\b").expect("static regex");
+    for captures in declaration.captures_iter(&code) {
+        let (Some(found), Some(kind)) = (captures.get(0), captures.get(1)) else {
+            continue;
+        };
+        let scope = match kind.as_str() {
+            "var" => bodies
+                .iter()
+                .filter(|(open, close)| *open < found.start() && found.start() < *close)
+                .min_by_key(|(open, close)| close - open)
+                .copied()
+                .unwrap_or((0, bytes.len())),
+            "function" if named_function_is_expression(&code, found.start()) => function_bodies
+                .iter()
+                .find(|(start, _)| *start == found.start())
+                .map_or_else(
+                    || enclosing(found.start()),
+                    |(_, body)| (found.start(), body.1),
+                ),
+            _ => enclosing(found.start()),
+        };
+        scopes.push(scope);
+    }
     scopes
+}
+
+fn named_function_is_expression(code: &str, start: usize) -> bool {
+    let prefix = code[..start].trim_end();
+    let prefix = prefix.strip_suffix("async").unwrap_or(prefix).trim_end();
+    let preceding = prefix.as_bytes().last().copied();
+    if preceding.is_some_and(|byte| b"=([,:?!+-*/%&|^~".contains(&byte)) {
+        return true;
+    }
+    matches!(
+        prefix
+            .rsplit(|character: char| !(character.is_alphanumeric() || character == '_'))
+            .next(),
+        Some("return" | "throw" | "yield" | "await" | "void")
+    )
 }
 
 fn direct_eval_line(source: &str) -> Option<(u32, u32)> {
@@ -1027,6 +1122,50 @@ fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn eval_rule_drafts(source: &str, engine_reports_eval: bool) -> Vec<DiagnosticDraft> {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let source_path = root.join("src/main.js");
+        let build_dir = root.join("build");
+        std::fs::create_dir_all(source_path.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(&build_dir).unwrap();
+        std::fs::write(&source_path, source).unwrap();
+        std::fs::write(build_dir.join("main.js"), "const longLocalName = 1;").unwrap();
+        let module_id = source_path.to_string_lossy().into_owned();
+        let collection = crate::collect::Collection {
+            default_minifier: true,
+            minify_enabled: true,
+            logs: if engine_reports_eval {
+                vec![crate::collect::EngineLog {
+                    code: Some("EVAL".to_owned()),
+                    id: Some(module_id.clone()),
+                    ..crate::collect::EngineLog::default()
+                }]
+            } else {
+                Vec::new()
+            },
+            modules: vec![CollectedModule {
+                id: module_id,
+                path: Some(source_path.to_string_lossy().into_owned()),
+                included: true,
+                chunks: vec!["main.js".to_owned()],
+                ..CollectedModule::default()
+            }],
+            ..crate::collect::Collection::default()
+        };
+        let chunk = crate::chunks::Chunk::load(&build_dir, "main.js", None, true, root).unwrap();
+        let mut context = Context::new(
+            &collection,
+            root.to_path_buf(),
+            "app".to_owned(),
+            vec![chunk],
+            crate::sources::SourceStore::new(true),
+        );
+        let mut drafts = Vec::new();
+        direct_eval_mangling(&mut context, &mut drafts);
+        drafts
+    }
 
     fn package_module(
         id: &str,
@@ -1242,6 +1381,67 @@ y=/process.env.F/.test(z),process.env.G"#;
             direct_eval_line("try {} catch (eval) { eval(code); }"),
             None
         );
+    }
+
+    #[test]
+    fn named_function_expression_eval_shadows_only_its_body() {
+        assert_eq!(
+            direct_eval_line("const helper = function eval() { return 1; }; eval(code);"),
+            Some((0, 46))
+        );
+        assert_eq!(
+            direct_eval_line("const helper = function eval() { return eval(code); };"),
+            None
+        );
+        assert_eq!(
+            direct_eval_line("function eval(code) { return code; } eval(code);"),
+            None
+        );
+        let source = "const helper = function eval() { return eval(code); };\nconst longLocalName \
+                      = 1;\neval('longLocalName');";
+        assert_eq!(direct_eval_line(source), Some((2, 0)));
+        let drafts = eval_rule_drafts(source, false);
+        assert_eq!(drafts.len(), 1);
+        assert_eq!(drafts[0].rule, RuleId::DirectEvalBlocksMangling);
+        assert_eq!(drafts[0].status, EvidenceStatus::Inferred);
+        assert_eq!(drafts[0].located.location.as_ref().unwrap().line, 3);
+    }
+
+    #[test]
+    fn var_eval_uses_the_containing_function_scope() {
+        let shadowed = "function run() { if (condition) { var eval = helper; } eval(code); }";
+        assert_eq!(direct_eval_line(shadowed), None);
+        assert_eq!(
+            direct_eval_line(&format!("{shadowed}\nfunction other() {{ eval(code); }}")),
+            Some((1, 19))
+        );
+        assert_eq!(
+            direct_eval_line("function run() { if (true) { let eval = helper; } eval(code); }"),
+            Some((0, 50))
+        );
+        assert_eq!(
+            direct_eval_line("function run() { if (true) { const eval = helper; } eval(code); }"),
+            Some((0, 52))
+        );
+        assert_eq!(direct_eval_line("{ var eval = helper; } eval(code);"), None);
+        for source in [
+            "const run = () => { var eval = helper; eval(code); }; eval(code);",
+            "const run = value => { var eval = helper; eval(code); }; eval(code);",
+        ] {
+            assert_eq!(
+                direct_eval_line(source),
+                Some((
+                    0,
+                    u32::try_from(source.rfind("eval(code)").unwrap()).unwrap()
+                ))
+            );
+        }
+        let source = "function run() { if (condition) { var eval = helper; } const longLocalName \
+                      = 1; return eval(code); }";
+        assert!(eval_rule_drafts(source, false).is_empty());
+        let reported = eval_rule_drafts(source, true);
+        assert_eq!(reported.len(), 1);
+        assert_eq!(reported[0].status, EvidenceStatus::Confirmed);
     }
 
     #[test]
