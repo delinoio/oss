@@ -5,16 +5,22 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
+	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
 
 func nativeReviewResultFixture(t *testing.T, action domain.ID) domain.NativeCodeReviewResult {
@@ -87,6 +93,40 @@ func TestNativeReviewResultOverCeilingIsRejectedBeforeRetention(t *testing.T) {
 	}
 }
 
+func TestNativeCodeReviewEscapeHeavyResultFinalizesOnlyWithinEncodedLimit(t *testing.T) {
+	for _, body := range []string{"<", "x"} {
+		t.Run(body, func(t *testing.T) {
+			result := nativeReviewResultFixture(t, domain.NewID())
+			result.Findings = make([]domain.NativeCodeReviewFinding, 22)
+			for i := range result.Findings {
+				result.Findings[i] = domain.NativeCodeReviewFinding{Title: "finding", Body: strings.Repeat(body, 8192), Confidence: 0.9, Priority: 1, Path: "file.go", StartLine: 3, EndLine: 4}
+			}
+			if err := result.ValidateStructure(); err != nil {
+				t.Fatalf("structurally valid completed result rejected: %v", err)
+			}
+			root := nativeReviewJobRoot(t)
+			output, err := finalizeNativeReviewResult(context.Background(), slog.New(slog.DiscardHandler), root, result)
+			path := filepath.Join(root, nativeReviewResultFile)
+			if body == "<" {
+				if err == nil || domain.SafeError(err).Code != domain.ResourceExhausted || output != nil {
+					t.Fatalf("escaped over-limit result lost typed size error: %v", err)
+				}
+				if _, statErr := os.Lstat(path); !os.IsNotExist(statErr) {
+					t.Fatal("over-limit output was retained")
+				}
+				return
+			}
+			if err != nil || len(output) == 0 || len(output) > domain.MaxWorkerJobOutputBytes {
+				t.Fatalf("plain in-limit result was not finalized: %v", err)
+			}
+			var retained domain.NativeCodeReviewResult
+			if domain.Decode(output, &retained) != nil || len(retained.Findings) != 22 || len(retained.UsageRecords) != 1 {
+				t.Fatal("finalized review lost findings or original usage")
+			}
+		})
+	}
+}
+
 type nativeReviewRecoveryFixture struct {
 	root     string
 	instance domain.ID
@@ -145,6 +185,218 @@ func (f *nativeReviewRecoveryFixture) result(t *testing.T) domain.NativeCodeRevi
 		t.Fatal("recovery result fixture rejected", err)
 	}
 	return result
+}
+
+func (f *nativeReviewRecoveryFixture) resultAtSize(t *testing.T, target int) domain.NativeCodeReviewResult {
+	t.Helper()
+	result := f.result(t)
+	result.Findings = make([]domain.NativeCodeReviewFinding, 64)
+	for i := range result.Findings {
+		result.Findings[i] = domain.NativeCodeReviewFinding{Title: strings.Repeat("t", 1024), Body: strings.Repeat("b", 8192), Confidence: 0.5, Priority: 1, Path: "src/main.go", StartLine: 1, EndLine: 2}
+	}
+	result.Explanation = strings.Repeat("x", 8192)
+	raw, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	remaining := target - len(raw)
+	if remaining < 0 {
+		t.Fatalf("plain result already exceeds target: %d", len(raw))
+	}
+	for i := range result.Findings {
+		body := []byte(result.Findings[i].Body)
+		position := 0
+		for remaining >= 5 && position < len(body) {
+			body[position] = '<'
+			remaining -= 5
+			position++
+		}
+		for remaining > 0 && position < len(body) {
+			body[position] = '"'
+			remaining--
+			position++
+		}
+		result.Findings[i].Body = string(body)
+		if remaining == 0 {
+			break
+		}
+	}
+	raw, err = json.Marshal(result)
+	if err != nil || remaining != 0 || len(raw) != target || result.Validate() != nil {
+		t.Fatalf("could not build valid %d-byte result: actual=%d remaining=%d err=%v", target, len(raw), remaining, err)
+	}
+	return result
+}
+
+func TestNativeCodeReviewFinishedJournalReadsFullBoundedOutput(t *testing.T) {
+	for _, target := range []int{domain.MaxWorkerJobOutputBytes - 1, domain.MaxWorkerJobOutputBytes} {
+		for _, state := range []journalState{journalFinished, journalReported} {
+			t.Run(string(state)+"/"+strconv.Itoa(target), func(t *testing.T) {
+				f := newNativeReviewRecoveryFixture(t)
+				output, err := json.Marshal(f.resultAtSize(t, target))
+				if err != nil {
+					t.Fatal(err)
+				}
+				original := f.original
+				original.State, original.Output = state, output
+				path := filepath.Join(f.root, "jobs", string(f.id)+".json")
+				if err := writeJSON(path, original); err != nil {
+					t.Fatal(err)
+				}
+				stored, err := os.ReadFile(path)
+				if err != nil || len(stored) <= domain.MaxWorkerJobOutputBytes || len(stored) >= 2<<20 {
+					t.Fatalf("journal envelope did not fit finite private bound: %d bytes, %v", len(stored), err)
+				}
+				got := f.run(t)
+				if got.State != state || got.ReportID != original.ReportID || got.Problem != nil || !bytes.Equal(got.Output, output) {
+					t.Fatalf("bounded completion was not replayed: state=%s report=%s problem=%v output_bytes=%d", got.State, got.ReportID, got.Problem, len(got.Output))
+				}
+			})
+		}
+	}
+}
+
+func TestNativeCodeReviewRecoveredFullResultRemainsReadable(t *testing.T) {
+	for _, target := range []int{domain.MaxWorkerJobOutputBytes - 1, domain.MaxWorkerJobOutputBytes} {
+		t.Run(strconv.Itoa(target), func(t *testing.T) {
+			f := newNativeReviewRecoveryFixture(t)
+			output, err := json.Marshal(f.resultAtSize(t, target))
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.retain(t, output)
+			recovered := f.run(t)
+			if recovered.State != journalFinished || recovered.Problem != nil || recovered.ReportID != f.original.ReportID || !bytes.Equal(recovered.Output, output) {
+				t.Fatalf("retained result was not recovered: state=%s report=%s problem=%v", recovered.State, recovered.ReportID, recovered.Problem)
+			}
+			replay := f.run(t)
+			if replay.State != journalFinished || replay.ReportID != recovered.ReportID || !bytes.Equal(replay.Output, output) {
+				t.Fatal("finished near-limit journal was not readable on retry")
+			}
+		})
+	}
+}
+
+type nativeReviewFinishedReplayClient struct {
+	delidevv1connect.WorkerServiceClient
+	observed *pb.PublishNativeCodeReviewRequest
+	reported *pb.ReportWorkRequest
+}
+
+func (c *nativeReviewFinishedReplayClient) PublishNativeCodeReview(_ context.Context, request *connect.Request[pb.PublishNativeCodeReviewRequest]) (*connect.Response[pb.PublishNativeCodeReviewResponse], error) {
+	c.observed = request.Msg
+	return connect.NewResponse(&pb.PublishNativeCodeReviewResponse{Revision: 2}), nil
+}
+
+func (c *nativeReviewFinishedReplayClient) ReportWork(_ context.Context, request *connect.Request[pb.ReportWorkRequest]) (*connect.Response[pb.ReportWorkResponse], error) {
+	if c.observed == nil {
+		return nil, fmt.Errorf("terminal report preceded retained observation")
+	}
+	c.reported = request.Msg
+	return connect.NewResponse(&pb.ReportWorkResponse{}), nil
+}
+
+func TestNativeCodeReviewFinishedJournalReplaysObservationAndReport(t *testing.T) {
+	f := newNativeReviewRecoveryFixture(t)
+	output, err := json.Marshal(f.resultAtSize(t, domain.MaxWorkerJobOutputBytes))
+	if err != nil {
+		t.Fatal(err)
+	}
+	completed := f.original
+	completed.State, completed.Output = journalFinished, output
+	path := filepath.Join(f.root, "jobs", string(f.id)+".json")
+	if err := writeJSON(path, completed); err != nil {
+		t.Fatal(err)
+	}
+	credential := Credential{MachineID: f.job.MachineID, ServerID: domain.NewID(), DeviceID: domain.NewID()}
+	observation := &pb.PublishNativeCodeReviewRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: f.resource.Id, ExpectedRevision: f.resource.Revision}, MachineId: string(credential.MachineID), InstanceId: string(f.instance), ItemId: "original-entered-item"}
+	wire, err := proto.Marshal(observation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := nativeReviewPublication{Version: 1, AssignmentDigest: executionInputDigest(f.resource.DocumentJson), ServerID: credential.ServerID, DeviceID: credential.DeviceID, Request: wire}
+	if err := writeJSON(filepath.Join(f.root, "jobs", string(f.id), "review-observation-000001.json"), entry); err != nil {
+		t.Fatal(err)
+	}
+	client := &nativeReviewFinishedReplayClient{}
+	config := Config{Root: f.root, Logger: slog.New(slog.DiscardHandler)}
+	if err := runAndReportJob(context.Background(), config, client, credential, f.instance, assignment{context: context.Background(), cancel: func() {}}, f.resource, f.job); err != nil {
+		t.Fatal(err)
+	}
+	if !proto.Equal(client.observed, observation) || client.reported == nil || !bytes.Equal(client.reported.OutputJson, output) || client.reported.Mutation.RequestId != string(completed.ReportID) {
+		t.Fatal("replay changed the retained observation, output, or report identity")
+	}
+	reported := f.run(t)
+	if reported.State != journalReported || reported.ReportID != completed.ReportID || !bytes.Equal(reported.Output, output) {
+		t.Fatal("reported near-limit review journal was not retained")
+	}
+}
+
+func TestNativeCodeReviewFinishedJournalRejectsInvalidBoundsAndIdentity(t *testing.T) {
+	for _, kind := range []string{"oversized output", "foreign action", "malformed output", "oversized journal"} {
+		t.Run(kind, func(t *testing.T) {
+			f := newNativeReviewRecoveryFixture(t)
+			result := f.resultAtSize(t, domain.MaxWorkerJobOutputBytes)
+			if kind == "oversized output" {
+				for i := range result.Findings {
+					if strings.Contains(result.Findings[i].Body, "b") {
+						result.Findings[i].Body = strings.Replace(result.Findings[i].Body, "b", "\"", 1)
+						break
+					}
+				}
+			}
+			if kind == "foreign action" {
+				result.ActionID = domain.NewID()
+				for i := range result.UsageRecords {
+					result.UsageRecords[i].ExecutionID = result.ActionID
+				}
+				if err := result.Validate(); err != nil {
+					t.Fatalf("foreign result fixture must remain structurally valid: %v", err)
+				}
+			}
+			output, err := json.Marshal(result)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if kind == "oversized output" && len(output) != domain.MaxWorkerJobOutputBytes+1 {
+				t.Fatal("invalid output fixture did not exceed the ceiling by one")
+			}
+			if kind == "malformed output" {
+				output = []byte(`{"incomplete":`)
+			}
+			finished := f.original
+			finished.State, finished.Output = journalFinished, output
+			path := filepath.Join(f.root, "jobs", string(f.id)+".json")
+			if kind == "malformed output" {
+				// A malformed RawMessage cannot be marshaled through writeJSON.
+				encoded, err := json.Marshal(f.original)
+				if err != nil {
+					t.Fatal(err)
+				}
+				encoded = append(encoded[:len(encoded)-1], []byte(`,"state":"finished","output":{"incomplete":}`)...)
+				if err := security.WriteAtomic(path, encoded); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				if err := writeJSON(path, finished); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if kind == "oversized journal" {
+				stored, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				stored = append(stored, bytes.Repeat([]byte(" "), (2<<20)-len(stored)+1)...)
+				if err := security.WriteAtomic(path, stored); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := runJob(context.Background(), Config{Root: f.root}, f.instance, f.resource, f.job); err == nil {
+				t.Fatal("unverifiable finished review journal was accepted")
+			}
+		})
+	}
 }
 
 func (f *nativeReviewRecoveryFixture) retain(t *testing.T, raw []byte) {

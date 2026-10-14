@@ -562,6 +562,42 @@ func finalizeNativeReviewResult(ctx context.Context, logger *slog.Logger, jobRoo
 	return output, nil
 }
 
+// validateNativeReviewJournalOutcome keeps the larger journal envelope from
+// weakening the review output's own bound or adopting changed completion bytes.
+func validateNativeReviewJournalOutcome(record journal, input domain.NativeCodeReviewInput, resource *pb.Resource) error {
+	if len(record.Output) == 0 {
+		if record.Problem != nil {
+			return nil
+		}
+		return publicationUncertain()
+	}
+	if record.Problem != nil || len(record.Output) > domain.MaxWorkerJobOutputBytes {
+		return publicationUncertain()
+	}
+	canonical := func(value any) bool {
+		raw, err := json.Marshal(value)
+		return err == nil && bytes.Equal(raw, record.Output)
+	}
+	var result domain.NativeCodeReviewResult
+	if domain.DecodeWithLimit(record.Output, &result, domain.MaxWorkerJobOutputBytes) == nil && result.Validate() == nil && canonical(result) && result.ActionID == input.ActionID && result.Selection.Target == input.Target {
+		for index, usage := range result.UsageRecords {
+			if usage.ContextRevision != input.ContextRevision || usage.SessionID != input.Source.SessionID || usage.ProjectID != domain.ID(resource.ProjectId) || usage.ExecutionID != input.ActionID || usage.AccountID != input.Source.AccountID || usage.ConnectionID != input.Source.ConnectionID || usage.ProviderID != input.Source.Configuration.ProviderID || usage.SubscriptionService != input.Source.Configuration.SubscriptionService || usage.ModelID != input.Source.Configuration.ModelID || usage.Harness != domain.Codex || usage.Sequence != uint64(index+1) {
+				return publicationUncertain()
+			}
+		}
+		return nil
+	}
+	var rejected domain.NativeCodeReviewRejectedProof
+	if domain.DecodeWithLimit(record.Output, &rejected, domain.MaxWorkerJobOutputBytes) == nil && rejected.Validate() == nil && canonical(rejected) && rejected.ActionID == input.ActionID {
+		return nil
+	}
+	var stale domain.NativeCodeReviewStaleProof
+	if domain.DecodeWithLimit(record.Output, &stale, domain.MaxWorkerJobOutputBytes) == nil && stale.Validate() == nil && canonical(stale) && stale.ActionID == input.ActionID {
+		return nil
+	}
+	return publicationUncertain()
+}
+
 // recoverNativeReviewResult settles a native review whose generic job journal
 // is still started only when the durable review-result.json written by
 // finalizeNativeReviewResult is present and bound to this exact assignment.
