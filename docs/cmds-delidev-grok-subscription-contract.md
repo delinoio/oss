@@ -467,6 +467,20 @@ owner's active operation:
   committed replaces the succeeded record with a `cleanup` diagnostic
   (`recordGrokCleanupFailure`).
 
+`GetSubscriptionProgress` (`grokProgressView`) maps every state of one original
+operation, so polling never fails merely because the operation has not settled:
+
+| Account record | Progress state |
+| --- | --- |
+| queued Pending, no `ServerOperation` | `preparing` |
+| claimed Pending, no `ServerOperation` | `waiting` (`canceled=true` once cancellation is requested) |
+| refused Take (`unsupported` record, still queued) | `unsupported` with the admission diagnostic |
+| settled `succeeded` / `failed` | the record's state, diagnostic and committed generation |
+| settled `canceled` | `canceled`; a canceled record never carries a diagnostic |
+| active record past its window | `expired` |
+| account recovery fence | `recovery-required` |
+| any other operation ID, actor or no operation | access denied |
+
 A succeeded operation's progress response carries `generation` (the generation
 the account still references) so the onboarding controller can name the account;
 Grok produces no suggested name. The version label is the Runner Device's single

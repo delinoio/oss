@@ -232,6 +232,75 @@ func (s *Service) recordGrokCleanupFailure(requestCtx context.Context, account, 
 	s.logger.WarnContext(ctx, "grok_subscription_cleanup_failure_recorded", "account_id", account, "operation_id", operation, "phase", d.Phase, "code", d.Code)
 }
 
+// grokProgress is the presentation of one Grok lifecycle operation.
+type grokProgress struct {
+	State      domain.SubscriptionLoginState
+	Canceled   bool
+	Diagnostic *domain.GrokDiagnostic
+	Generation domain.ID
+}
+
+// grokProgressView maps the account's operation records to the progress the
+// original actor may read. It returns the owning actor and false when the
+// operation is not the account's original one.
+//
+// A Grok operation is worker-owned and has no ServerOperation until it settles
+// (or until a refused Take records its provisional outcome), so the record
+// alone cannot describe an operation that is still queued or claimed. Every
+// transition maps as follows:
+//
+//	queued, no record                 -> preparing
+//	claimed, no record                -> waiting
+//	queued or claimed, canceled flag  -> unchanged state with canceled=true
+//	take refused (unsupported record) -> unsupported with the original diagnostic
+//	finished (succeeded/failed/...)   -> the record's state and diagnostic
+//	canceled record                   -> canceled, never a failure diagnostic
+//	expired (record past its window)  -> expired
+//	account recovery fence            -> recovery-required
+func grokProgressView(st *domain.SubscriptionState, operation string, connected bool, epoch domain.ID, now time.Time) (grokProgress, domain.Principal, bool) {
+	if st == nil {
+		return grokProgress{}, domain.Principal{}, false
+	}
+	pending := st.Pending
+	if pending != nil && string(pending.ID) != operation {
+		pending = nil
+	}
+	o := st.ServerOperation
+	if o == nil || string(o.ID) != operation {
+		if pending == nil {
+			return grokProgress{}, domain.Principal{}, false
+		}
+		view := grokProgress{State: domain.SubscriptionPreparing, Canceled: pending.Canceled}
+		if pending.Phase == domain.SubscriptionClaimed {
+			view.State = domain.SubscriptionWaiting
+		}
+		if st.RecoveryRequired {
+			view.State = domain.SubscriptionRecovery
+		}
+		return view, pending.Actor, true
+	}
+	state := o.State
+	if st.RecoveryRequired || o.Active() && o.Epoch != epoch {
+		state = domain.SubscriptionRecovery
+	}
+	if (state == domain.SubscriptionPreparing || state == domain.SubscriptionWaiting) && !o.ExpiresAt.After(now) {
+		state = domain.SubscriptionExpired
+	}
+	view := grokProgress{State: state, Canceled: state == domain.SubscriptionCanceled || pending != nil && pending.Canceled}
+	// A canceled operation never carries a failure diagnostic, even if a stale
+	// one survived from an earlier refused Take.
+	if o.State != domain.SubscriptionCanceled {
+		view.Diagnostic = o.GrokDiagnostic
+	}
+	// A succeeded login or refresh reports the generation its Finish committed,
+	// so the client can name the connected account. Grok produces no suggested
+	// name, and the generation is withheld unless the account still references it.
+	if state == domain.SubscriptionSucceeded && connected && o.Generation != "" && st.Generation == o.Generation {
+		view.Generation = o.Generation
+	}
+	return view, o.Actor, true
+}
+
 // grokSubscriptionProgress reports the original Grok operation's state, its
 // safe diagnostic and, once it succeeded, the committed generation. It never
 // carries URLs, codes or identity, and the Codex
@@ -253,30 +322,17 @@ func (s *Service) grokSubscriptionProgress(ctx context.Context, req *connect.Req
 		if err != nil {
 			return err
 		}
-		st := a.Subscription
-		if st == nil || st.ServerOperation == nil || string(st.ServerOperation.ID) != req.Msg.OperationId || st.ServerOperation.Actor != actor {
+		view, owner, ok := grokProgressView(a.Subscription, req.Msg.OperationId, a.Connection != nil, s.subscriptionServerEpoch(), time.Now().UTC())
+		if !ok || owner != actor {
 			return subscriptionDenied()
 		}
-		o := st.ServerOperation
-		if err := subscriptionActorValid(tx, o.Actor); err != nil {
+		if err := subscriptionActorValid(tx, owner); err != nil {
 			return err
 		}
-		state := o.State
-		if st.RecoveryRequired || o.Active() && o.Epoch != s.subscriptionServerEpoch() {
-			state = domain.SubscriptionRecovery
-		}
-		if (state == domain.SubscriptionPreparing || state == domain.SubscriptionWaiting) && !o.ExpiresAt.After(time.Now().UTC()) {
-			state = domain.SubscriptionExpired
-		}
-		response.State = loginState(state)
-		response.Canceled = state == domain.SubscriptionCanceled || st.Pending != nil && st.Pending.ID == o.ID && st.Pending.Canceled
-		response.GrokDiagnostic = grokDiagnosticMessage(o.GrokDiagnostic)
-		// A succeeded login or refresh reports the generation its Finish committed,
-		// so the client can name the connected account. Grok produces no suggested
-		// name, and the generation is withheld unless the account still references it.
-		if state == domain.SubscriptionSucceeded && a.Connection != nil && o.Generation != "" && st.Generation == o.Generation {
-			response.Generation = string(o.Generation)
-		}
+		response.State = loginState(view.State)
+		response.Canceled = view.Canceled
+		response.GrokDiagnostic = grokDiagnosticMessage(view.Diagnostic)
+		response.Generation = string(view.Generation)
 		return nil
 	})
 	if err != nil {
