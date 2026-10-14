@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"slices"
 	"time"
 
 	"connectrpc.com/connect"
@@ -53,16 +54,26 @@ func grokBookkeepingContext(ctx context.Context, timeout time.Duration) (context
 	return context.WithTimeout(domain.WithPrincipal(context.WithoutCancel(ctx), domain.Principal{Type: domain.OwnerDevice}), timeout)
 }
 
-// Grok Take/Finish carries the lifecycle (login, refresh, logout) of a
+// Grok Take/Finish carries the lifecycle (login, refresh, logout) and, when the
+// server enabled Grok subscription execution, the execute lease of a
 // service-native Grok account. The credential moves only as the sealed
 // subscription.GrokBundle envelope under credentials.AccountLogin, bound to this
-// server, the account and one credential generation. Execution is a separate
-// contract: a Grok execute Take is refused here, and the Codex lifecycle keeps
-// refusing every Grok account through subscriptionAccount.
+// server, the account and one credential generation. An execute lease is always
+// the account's exclusive singleton lease: a second execution of the same
+// account waits for the first one's cleanup, and separate accounts run in
+// parallel. The Codex lifecycle keeps refusing every Grok account through
+// subscriptionAccount.
 
-// grokLifecycleActions are the only actions a Grok lease can carry today.
-func grokLifecycleAction(action domain.SubscriptionAction) bool {
-	return action == domain.SubscriptionLogin || action == domain.SubscriptionRefresh || action == domain.SubscriptionLogout
+// grokLeaseAction reports whether a Grok lease can carry action. Execute is
+// admitted only when grokExecutionEnabled holds.
+func (s *Service) grokLeaseAction(action domain.SubscriptionAction) bool {
+	switch action {
+	case domain.SubscriptionLogin, domain.SubscriptionRefresh, domain.SubscriptionLogout:
+		return true
+	case domain.SubscriptionExecute:
+		return s.grokExecution
+	}
+	return false
 }
 
 func grokUnsupported() *domain.Error {
@@ -165,6 +176,93 @@ func (s *Service) grokSubscriptionLeaseView(ctx context.Context, tx *store.Tx, i
 	return r, a, *l, nil
 }
 
+// grokExecutionAdmission validates an execute Take of the exact claimed
+// execute-session job. The account must be a connected, enabled and ready Grok
+// subscription account with a current generation and no queued lifecycle work
+// (a queued logout blocks new execution); the selected Runner Device must
+// negotiate Worker capability 21 and hold one verified installation at or above
+// the subscription baseline; and the job must be the claimed original of this
+// Worker instance with the account, connection and Grok subscription
+// configuration it was created with. The job revision is the Take's expected
+// revision, matching the other execution leases.
+func (s *Service) grokExecutionAdmission(tx *store.Tx, r store.Record, a domain.Account, job, machine, instance domain.ID, revision uint64, actor domain.Principal) (domain.Installation, error) {
+	st := a.Subscription
+	// denied logs a closed reason without any job, path or identity value.
+	denied := func(reason string) (domain.Installation, error) {
+		s.logger.Warn("grok_subscription_execute_denied", "phase", "EXECUTION", "account_id", r.ID, "operation_id", job, "reason", reason)
+		return domain.Installation{}, subscriptionDenied()
+	}
+	switch {
+	case st.Pending != nil:
+		return denied("lifecycle_queued")
+	case !a.Enabled || a.Health != domain.AccountReady || a.Removal != nil:
+		return denied("account_not_ready")
+	case a.Connection == nil || st.Generation == "":
+		return denied("account_not_connected")
+	}
+	_, m, err := activeMachine(tx, machine)
+	if err != nil {
+		return domain.Installation{}, err
+	}
+	if !slices.Contains(m.WorkerCapabilities, domain.ManagedGrokSubscriptionsV1) {
+		return domain.Installation{}, domain.Fail(domain.Unsupported, "The selected Runner Device cannot execute Grok subscriptions.", "Update and verify its managed Grok profile before sending input.")
+	}
+	installation, err := grokSubscriptionInstallation(tx, machine)
+	if err != nil {
+		return domain.Installation{}, err
+	}
+	jr, err := tx.Get(domain.JobKind, job)
+	if err != nil {
+		return domain.Installation{}, err
+	}
+	stored, err := store.Decode[domain.Job](jr)
+	if err != nil || jr.Revision != revision {
+		return denied("job_revision")
+	}
+	var execution domain.ExecutionJobInput
+	switch {
+	case stored.Type != domain.ExecuteSessionJob || stored.State != domain.JobClaimed:
+		return denied("job_state")
+	case stored.MachineID != machine || stored.InstanceID != instance || stored.AssignedDeviceID != actor.DeviceID:
+		return denied("job_owner")
+	case domain.Decode(stored.Input, &execution) != nil || execution.Validate() != nil:
+		return denied("job_input")
+	case execution.AccountID != r.ID || execution.ConnectionID != a.Connection.ID:
+		return denied("job_account")
+	case !execution.Configuration.Subscription || execution.Configuration.SubscriptionService != domain.SubscriptionGrok || execution.Configuration.Harness != domain.GrokBuild:
+		return denied("job_profile")
+	}
+	if canceled, err := tx.JobCancellationRequested(jr.ID); err != nil || canceled {
+		return denied("job_canceled")
+	}
+	return installation, nil
+}
+
+// grokExecuteRecoveryView resolves the fenced execute lease for the original
+// Worker's cleanup. It binds the exact lease, Runner Device, original instance
+// and device, and deliberately ignores the server epoch and the machine's
+// current instance: a restart or a reattachment is exactly what fenced the
+// lease. Only an execute lease without members can be cleaned this way.
+func (s *Service) grokExecuteRecoveryView(ctx context.Context, tx *store.Tx, id, lease, machine, instance domain.ID) (store.Record, domain.Account, error) {
+	r, a, err := grokSubscriptionAccount(tx, id, 0)
+	if err != nil {
+		return r, a, err
+	}
+	st := a.Subscription
+	actor, _ := domain.PrincipalFrom(ctx)
+	if st == nil || !st.RecoveryRequired || st.Lease == nil || len(st.Members) != 0 {
+		return r, a, subscriptionDenied()
+	}
+	l := st.Lease
+	if l.ID != lease || l.Action != domain.SubscriptionExecute || l.Shared || actor.Type != domain.WorkerDevice || actor.DeviceID != l.DeviceID || actor.MachineID != machine || l.MachineID != machine || l.InstanceID != instance {
+		return r, a, subscriptionDenied()
+	}
+	if _, _, err := activeMachine(tx, machine); err != nil {
+		return r, a, err
+	}
+	return r, a, nil
+}
+
 func (s *Service) takeGrokSubscription(ctx context.Context, req *connect.Request[pb.TakeSubscriptionRequest]) (response *connect.Response[pb.TakeSubscriptionResponse], returned error) {
 	c := req.Header().Get(rpc.CorrelationHeader)
 	m := req.Msg.Mutation
@@ -182,14 +280,14 @@ func (s *Service) takeGrokSubscription(ctx context.Context, req *connect.Request
 	if input.Operation.Validate() != nil || action == "" {
 		return nil, rpc.Error(subscriptionDenied(), c)
 	}
-	if !grokLifecycleAction(action) {
-		// Readiness is revoked from the acceptance of a logout, so new execution is
-		// refused with a typed unavailable problem while it waits, revokes and
-		// cleans up. Any other unsupported work keeps its generic refusal.
-		if s.grokAccountLoggingOut(ctx, input.Account) {
-			s.logger.WarnContext(ctx, "grok_subscription_take_logging_out", "phase", grokLogPhaseLogout, "account_id", input.Account, "action", action)
-			return nil, rpc.Error(grokLoggingOut(), c)
-		}
+	// Readiness is revoked from the acceptance of a logout, so new execution is
+	// refused with a typed unavailable problem while it waits, revokes and
+	// cleans up.
+	if action == domain.SubscriptionExecute && s.grokLeaseAction(action) && s.grokAccountLoggingOut(ctx, input.Account) {
+		s.logger.WarnContext(ctx, "grok_subscription_take_logging_out", "phase", grokLogPhaseLogout, "account_id", input.Account, "action", action)
+		return nil, rpc.Error(grokLoggingOut(), c)
+	}
+	if !s.grokLeaseAction(action) {
 		s.logger.WarnContext(ctx, "grok_subscription_take_unsupported_action", "account_id", input.Account, "action", action)
 		return nil, rpc.Error(grokUnsupported(), c)
 	}
@@ -217,6 +315,27 @@ func (s *Service) takeGrokSubscription(ctx context.Context, req *connect.Request
 		st := a.Subscription
 		if st == nil || st.RecoveryRequired {
 			return nil, subscriptionDenied()
+		}
+		if action == domain.SubscriptionExecute {
+			// Contention is classified first, like every other execution Take, so a
+			// busy account makes the waiting session retry instead of failing.
+			if st.Lease != nil {
+				return nil, domain.Fail(domain.ResourceExhausted, "The selected account is exclusively leased.", "Wait for its original cleanup; never switch accounts automatically.")
+			}
+			if err := currentInstance(tx, input.Machine, input.Instance); err != nil {
+				return nil, err
+			}
+			installation, err := s.grokExecutionAdmission(tx, r, a, input.Operation, input.Machine, input.Instance, input.Revision, actor)
+			if err != nil {
+				return nil, err
+			}
+			if err := tx.WorkerUpdateAdmission(input.Machine); err != nil {
+				return nil, err
+			}
+			st.Lease = &domain.SubscriptionLease{ID: input.Lease, OperationID: input.Operation, Revision: r.Revision + 1, Action: action, MachineID: input.Machine, InstanceID: input.Instance, DeviceID: actor.DeviceID, Epoch: s.subscriptionServerEpoch(), Generation: st.Generation, StartedAt: time.Now().UTC()}
+			admitted = installation
+			_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+			return accountReceipt{ID: r.ID}, err
 		}
 		if input.Revision > r.Revision {
 			return nil, domain.Fail(domain.Conflict, "The account revision has not been observed.", "Retain the original queued operation and its observed revision.")
@@ -321,6 +440,14 @@ func (s *Service) takeGrokSubscription(ctx context.Context, req *connect.Request
 		_, a, _, err := s.grokSubscriptionLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance)
 		if err != nil || a.Subscription.RecoveryRequired {
 			return subscriptionDenied()
+		}
+		if action == domain.SubscriptionExecute {
+			// An execution has no queued operation; its original job must still be
+			// live after the vault read.
+			if canceled, err := tx.JobCancellationRequested(input.Operation); err != nil || canceled {
+				return subscriptionDenied()
+			}
+			return nil
 		}
 		op := a.Subscription.Pending
 		if op == nil || op.Canceled || subscriptionActorValid(tx, op.Actor) != nil {
@@ -449,11 +576,24 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 	}
 	if !replayed {
 		var original domain.Account
+		// recovery is the original Worker's cleanup of an execute lease that a
+		// restart, a lost instance or a replayed Take fenced. It crosses the fence
+		// only with confirmed cleanup, no success and no credential, and it never
+		// publishes anything. The ordinary lease view is tried first, so an
+		// unfenced lease is settled by the ordinary path.
+		recoveryShape := input.Cleanup && !input.Success && !input.Refresh && len(req.Msg.Bundle) == 0
+		recovery := false
 		err = s.Store.Read(ctx, func(tx *store.Tx) error {
 			if err := tx.Authorize(); err != nil {
 				return err
 			}
+			var err error
 			_, original, _, err = s.grokSubscriptionLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance)
+			if recoveryShape && (err != nil || original.Subscription.RecoveryRequired) {
+				if _, fenced, recoveryErr := s.grokExecuteRecoveryView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance); recoveryErr == nil {
+					original, err, recovery = fenced, nil, true
+				}
+			}
 			return err
 		})
 		if err != nil {
@@ -465,11 +605,13 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 		// original lease; only that lease's exact Worker, instance and epoch (checked
 		// by the lease view above) may report Finish again. Every other fence blocks.
 		retry := lease.Action == domain.SubscriptionLogout && state.RecoveryRequired
-		if state.RecoveryRequired && !retry || state.Generation != input.Generation || lease.Generation != input.Generation || lease.Revision != input.Revision {
+		if recovery {
+			s.logger.WarnContext(ctx, "grok_subscription_execute_recovery_cleanup", "account_id", input.Account, "lease_id", input.Lease)
+		} else if state.RecoveryRequired && !retry || state.Generation != input.Generation || lease.Generation != input.Generation || lease.Revision != input.Revision {
 			return nil, rpc.Error(subscriptionDenied(), c)
 		}
-		owned = true
-		usable := input.Success && input.Cleanup && (lease.Action != domain.SubscriptionRefresh || input.Refresh)
+		owned = !recovery
+		usable := !recovery && input.Success && input.Cleanup && (lease.Action != domain.SubscriptionRefresh || input.Refresh)
 		// The bundle is deleted only after the provider revoked its refresh token.
 		if lease.Action == domain.SubscriptionLogout && (state.RevokedGeneration == "" || state.RevokedGeneration != lease.Generation) {
 			usable = false
@@ -492,6 +634,9 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 			}
 		}()
 		var identityCommitment string
+		// unchanged is true for an execute lease whose native process left the
+		// credential exactly as delivered: nothing is staged or published.
+		unchanged := false
 		if usable && lease.Action != domain.SubscriptionLogout {
 			// The envelope is bound to the generation this Finish creates, so a
 			// bundle taken for another account, server or generation is refused.
@@ -515,26 +660,33 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 					return nil, rpc.Error(err, c)
 				}
 			}
-			if lease.Action == domain.SubscriptionRefresh {
+			if lease.Action == domain.SubscriptionRefresh || lease.Action == domain.SubscriptionExecute {
 				oldRaw, err := vault.Get(ctx, credentials.Ref{Owner: input.Account, ID: state.Generation, Purpose: credentials.AccountLogin})
 				if err != nil {
 					return nil, rpc.Error(err, c)
 				}
 				old, err := subscription.OpenGrokBundle(oldRaw, s.Identity.ServerID, input.Account, state.Generation)
 				clear(oldRaw)
-				if err == nil {
+				if err == nil && lease.Action == domain.SubscriptionExecute && old.Equal(bundle) {
+					unchanged = true
+				} else if err == nil {
+					// A refresh and an execution that rotated natively must publish a
+					// later expiry with a changed key or refresh token.
 					err = subscription.GrokRefreshed(old, bundle)
 				}
 				old.Clear()
 				if err != nil {
+					s.logger.WarnContext(ctx, "grok_subscription_finish_bundle_rejected", "account_id", input.Account, "lease_id", input.Lease, "operation_id", lease.OperationID, "action", lease.Action)
 					return nil, rpc.Error(err, c)
 				}
 			}
-			// Only the exact authenticated Worker lease can stage this freshly
-			// produced native bundle. No owner/client import endpoint exists.
-			staged = true
-			if _, err := vault.Put(ctx, credentials.Ref{Owner: input.Account, ID: newGeneration, Purpose: credentials.AccountLogin}, req.Msg.Bundle); err != nil {
-				return nil, rpc.Error(err, c)
+			if !unchanged {
+				// Only the exact authenticated Worker lease can stage this freshly
+				// produced native bundle. No owner/client import endpoint exists.
+				staged = true
+				if _, err := vault.Put(ctx, credentials.Ref{Owner: input.Account, ID: newGeneration, Purpose: credentials.AccountLogin}, req.Msg.Bundle); err != nil {
+					return nil, rpc.Error(err, c)
+				}
 			}
 		}
 		// The superseded generation stays referenced and readable until the
@@ -546,12 +698,19 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 			if err := tx.Authorize(); err != nil {
 				return nil, err
 			}
-			r, a, _, err := s.grokSubscriptionLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance)
+			var r store.Record
+			var a domain.Account
+			var err error
+			if recovery {
+				r, a, err = s.grokExecuteRecoveryView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance)
+			} else {
+				r, a, _, err = s.grokSubscriptionLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance)
+			}
 			if err != nil {
 				return nil, err
 			}
 			state := a.Subscription
-			if state.RecoveryRequired && lease.Action != domain.SubscriptionLogout || state.Generation != input.Generation {
+			if !recovery && (state.RecoveryRequired && lease.Action != domain.SubscriptionLogout || state.Generation != input.Generation) {
 				return nil, subscriptionDenied()
 			}
 			if lease.Action == domain.SubscriptionLogout && (state.RevokedGeneration == "" || state.RevokedGeneration != lease.Generation) {
@@ -570,14 +729,23 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 					return nil, err
 				}
 			}
-			if !input.Cleanup || !usable && lease.Action != domain.SubscriptionLogin {
+			if !input.Cleanup || !usable && lease.Action != domain.SubscriptionLogin && lease.Action != domain.SubscriptionExecute {
 				// Keep the lease and old generation denied. Neither an error nor a
 				// process timeout establishes safe refresh-token redistribution.
 				state.RecoveryRequired = true
 				a.Health = domain.AccountFailed
 			} else {
+				// A confirmed execute cleanup releases the lease even when the native
+				// process left no usable credential or was recovered after a restart:
+				// the stored generation stays current and nothing is redistributed.
 				state.Lease = nil
 				state.Members = nil
+				if recovery {
+					state.RecoveryRequired = false
+					if a.Health == domain.AccountFailed && a.Connection != nil {
+						a.Health = domain.AccountReady
+					}
+				}
 				if state.Pending != nil && state.Pending.ID == lease.OperationID {
 					state.Pending = nil
 				}
@@ -586,7 +754,11 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 					state.RecoveryRequired = false
 					state.RevokedGeneration = ""
 				}
-				if usable && lease.Action != domain.SubscriptionLogout {
+				if usable && lease.Action == domain.SubscriptionExecute {
+					if !unchanged {
+						state.Generation = newGeneration
+					}
+				} else if usable && lease.Action != domain.SubscriptionLogout {
 					state.Generation = newGeneration
 					state.IdentityCommitment = identityCommitment
 					state.OwnerMachineID = lease.MachineID

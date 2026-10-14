@@ -388,7 +388,7 @@ func (s *Service) WatchSubscription(ctx context.Context, req *connect.Request[pb
 			if err != nil {
 				return err
 			}
-			if !slices.Contains(machine.WorkerCapabilities, domain.ManagedCodexSubscriptionsV1) && !slices.Contains(machine.WorkerCapabilities, domain.ManagedClaudeExecutionV1) {
+			if !slices.Contains(machine.WorkerCapabilities, domain.ManagedCodexSubscriptionsV1) && !slices.Contains(machine.WorkerCapabilities, domain.ManagedClaudeExecutionV1) && !slices.Contains(machine.WorkerCapabilities, domain.ManagedGrokSubscriptionsV1) {
 				return subscriptionDenied()
 			}
 			// A current adapter may wait for explicitly accepted lifecycle work
@@ -419,9 +419,16 @@ func (s *Service) WatchSubscription(ctx context.Context, req *connect.Request[pb
 					}
 					continue
 				}
-				// Grok lifecycle work is not pushed to any Worker until the managed Grok
-				// Worker capability is declared and negotiated.
+				// Grok lifecycle work (login, refresh, logout) is not pushed to any
+				// Worker. The only Grok work a Worker watches is the cleanup of its own
+				// fenced execute lease, and only after it negotiated Worker 21.
 				if a.SubscriptionService == domain.SubscriptionGrok {
+					if state := a.Subscription; slices.Contains(machine.WorkerCapabilities, domain.ManagedGrokSubscriptionsV1) && state != nil && state.RecoveryRequired && state.Lease != nil && state.Lease.Action == domain.SubscriptionExecute && !state.Lease.Shared && state.Lease.MachineID == domain.ID(req.Msg.MachineId) {
+						records = append(records, r)
+						if len(records) == 4 {
+							break
+						}
+					}
 					continue
 				}
 				if a.SubscriptionService == domain.SubscriptionClaude && !slices.Contains(machine.WorkerCapabilities, domain.NativeClaudeSubscriptionsV1) || a.SubscriptionService == domain.SubscriptionChatGPT && !slices.Contains(machine.WorkerCapabilities, domain.ManagedCodexSubscriptionsV1) {

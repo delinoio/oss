@@ -50,6 +50,11 @@ type Config struct {
 	// fixtures from contacting the official catalog endpoints. Production
 	// startup leaves this false so maintenance remains enabled.
 	DisableBackgroundMaintenanceForTesting bool
+	// GrokSubscriptionExecution is the single switch that advertises System
+	// capability 40 and admits Worker capability 21. It stays false until the
+	// native Grok Build subscription profile is verified with a real account on
+	// the current stable release; no product entry point sets it yet.
+	GrokSubscriptionExecution bool
 
 	accountSecrets               accountSecrets
 	disableCatalogMaintenance    bool
@@ -171,32 +176,34 @@ type Service struct {
 	credentialRuntimeCheck        func(context.Context) error
 	accountChecks                 map[domain.ID]map[domain.ID]accountCheck
 	accountSecrets                accountSecrets
-	ownedVault                    *credentials.Vault
-	Store                         *store.Store
-	Identity                      security.Identity
-	Endpoint                      Endpoint
-	logger                        *slog.Logger
-	stop                          context.CancelFunc
-	stopping                      atomic.Bool
-	backupRestoresMu              sync.Mutex
-	backupRestoresContext         context.Context
-	backupRestoresCancel          context.CancelFunc
-	backupRestoresClosing         bool
-	backupRestoresJobs            sync.WaitGroup
-	connectionsMu                 sync.Mutex
-	connections                   map[domain.ID]map[domain.ID]context.CancelFunc
-	pairAttempts                  map[string]attemptWindow
-	workerStreams                 map[domain.ID]workerStream
-	auxiliaryStreams              map[domain.ID]workerStream
-	forwardsOnce                  sync.Once
-	forwardEpoch                  domain.ID
-	forwardsMu                    sync.Mutex
-	forwardRelays                 map[domain.ID]*forwardRelay
-	forwardLanes                  map[domain.ID]*forwardLane
-	workspaceReadsMu              sync.Mutex
-	workspaceReaders              map[domain.ID]*workspaceReader
-	executionOnce                 sync.Once
-	executionAuthority            *executionAuthority
+	// grokExecution mirrors Config.GrokSubscriptionExecution.
+	grokExecution         bool
+	ownedVault            *credentials.Vault
+	Store                 *store.Store
+	Identity              security.Identity
+	Endpoint              Endpoint
+	logger                *slog.Logger
+	stop                  context.CancelFunc
+	stopping              atomic.Bool
+	backupRestoresMu      sync.Mutex
+	backupRestoresContext context.Context
+	backupRestoresCancel  context.CancelFunc
+	backupRestoresClosing bool
+	backupRestoresJobs    sync.WaitGroup
+	connectionsMu         sync.Mutex
+	connections           map[domain.ID]map[domain.ID]context.CancelFunc
+	pairAttempts          map[string]attemptWindow
+	workerStreams         map[domain.ID]workerStream
+	auxiliaryStreams      map[domain.ID]workerStream
+	forwardsOnce          sync.Once
+	forwardEpoch          domain.ID
+	forwardsMu            sync.Mutex
+	forwardRelays         map[domain.ID]*forwardRelay
+	forwardLanes          map[domain.ID]*forwardLane
+	workspaceReadsMu      sync.Mutex
+	workspaceReaders      map[domain.ID]*workspaceReader
+	executionOnce         sync.Once
+	executionAuthority    *executionAuthority
 
 	// grokOAuthTransport replaces the explicit outbound route of Grok OAuth calls
 	// in isolated tests; grokRandom replaces crypto/rand for deterministic ones.

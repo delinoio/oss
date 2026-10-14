@@ -258,6 +258,11 @@ func checkedExecutionConfiguration(tx *store.Tx, session domain.Session, machine
 				return empty, domain.Fail(domain.PermissionDenied, "This Claude account belongs to another Runner Device.", "Select the Runner Device that owns its native login before sending input.")
 			}
 		}
+		if c.Harness == domain.GrokBuild {
+			// Managed Grok accounts run only on a Runner Device that negotiated the
+			// independently enabled Worker capability.
+			capability = domain.ManagedGrokSubscriptionsV1
+		}
 		if !slices.Contains(machine.WorkerCapabilities, capability) {
 			return empty, domain.Fail(domain.Unsupported, "The selected Runner Device cannot execute this native subscription.", "Update and verify its native subscription profile before sending input.")
 		}

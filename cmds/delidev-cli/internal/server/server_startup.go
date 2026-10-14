@@ -160,7 +160,7 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result err
 	}
 	child, stop := context.WithCancel(ctx)
 	defer stop()
-	service := &Service{releaseVerifier: config.releaseVerifier, releaseFactory: config.releaseFactory, userServiceBackend: config.userServiceBackend, userServiceOptions: serviceOptions, Store: state, Identity: identity, Endpoint: Endpoint{URL: protocol + "://" + listener.Addr().String(), ServerID: identity.ServerID, Version: rpc.Version, ProtocolVersion: rpc.ProtocolVersion, StartedAt: time.Now().UTC()}, logger: config.Logger, stop: stop, accountSecrets: config.accountSecrets}
+	service := &Service{releaseVerifier: config.releaseVerifier, releaseFactory: config.releaseFactory, userServiceBackend: config.userServiceBackend, userServiceOptions: serviceOptions, Store: state, Identity: identity, Endpoint: Endpoint{URL: protocol + "://" + listener.Addr().String(), ServerID: identity.ServerID, Version: rpc.Version, ProtocolVersion: rpc.ProtocolVersion, StartedAt: time.Now().UTC()}, logger: config.Logger, stop: stop, accountSecrets: config.accountSecrets, grokExecution: config.GrokSubscriptionExecution}
 	service.tailnetStartWorker = config.TailnetStartWorker
 	service.tailscale, err = tailscale.Open(child, filepath.Join(state.Root(), "tailscale"), identity.ServerID, config.Logger, service.tailnetIngress)
 	if err != nil {

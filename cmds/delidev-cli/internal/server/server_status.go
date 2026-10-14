@@ -22,6 +22,9 @@ func (s *Service) GetStatus(ctx context.Context, req *connect.Request[pb.GetStat
 	if s.tailscale != nil {
 		response.Msg.Capabilities = append(response.Msg.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_TAILSCALE_CONNECTIONS_V1)
 	}
+	if s.grokExecution {
+		response.Msg.Capabilities = append(response.Msg.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_GROK_SUBSCRIPTION_EXECUTION_V1)
+	}
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
 }
