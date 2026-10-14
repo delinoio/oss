@@ -35,6 +35,7 @@ import {
   sessionTabKey,
   useSessionTabs,
   useSessionTabsStore,
+  SessionTabsStore as SessionTabsStoreImpl,
   type SessionTabsStore,
 } from "./session-tabs";
 
@@ -1769,6 +1770,43 @@ it.each(invalidProofs)(
     expect(screen.getByRole("button", { name: "Check status" })).toBeTruthy();
     expect(pageCalls("close")).toHaveLength(1);
     expect(pageCalls("create")).toHaveLength(0);
+  },
+  SLOW_TEST,
+);
+
+it(
+  "does not settle a Close from a removal-pending reply that still lists the page",
+  async () => {
+    const f = fixture({ pages: 1 });
+    f.model.outcome = "lose-reply";
+    mount(f);
+    await waitFor(() => expect(tabNames()).toHaveLength(2));
+    const loaded = f.model.pages.map((page) => ({ ...page }));
+    const settled = vi.spyOn(
+      SessionTabsStoreImpl.prototype,
+      "closePageEverywhere",
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close fixture.test/1 tab" }),
+    );
+    const alert = await screen.findByRole("alert");
+    f.model.removalPending = true;
+    // No admission is found, and the host still lists the page next to
+    // removal_pending: the normalized empty inventory must not prove absence.
+    rewriteObserve(() => ({
+      state: {
+        tabs: { tabs: loaded, selected: loaded[0].id },
+        removal_pending: true,
+      },
+      receipt: null,
+    }));
+    fireEvent.click(
+      within(alert).getByRole("button", { name: "Check status" }),
+    );
+    await waitFor(() => expect(pageCalls("observe").length).toBeGreaterThan(0));
+    await settle(500);
+    expect(settled).not.toHaveBeenCalled();
+    settled.mockRestore();
   },
   SLOW_TEST,
 );

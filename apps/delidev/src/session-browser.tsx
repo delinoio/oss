@@ -97,6 +97,11 @@ interface PageReceipt {
 interface PageInventory {
   state: BrowserState;
   receipt: PageReceipt | null;
+  /**
+   * Set when a removal-pending reply was normalized to an empty inventory: the
+   * page ids the host actually listed, kept only to prove an absent Close.
+   */
+  rawPageIds?: string[];
 }
 /** The one in-flight explicit page operation and its original identity. */
 interface PageOperation {
@@ -186,6 +191,7 @@ function pendingInventory(value: PageInventory): PageInventory {
   return {
     ...value,
     state: { ...value.state, tabs: { tabs: [], selected: "" } },
+    rawPageIds: value.state.tabs.tabs.map((page) => page.id),
   };
 }
 
@@ -751,7 +757,10 @@ function NativeSessionBrowser({
         observeInventory(value, profileId);
         if (
           original.action === PageAction.Close &&
-          !value.state.tabs.tabs.some((page) => page.id === original.page_id)
+          // The raw listing, not the normalized empty inventory, proves absence.
+          !(
+            value.rawPageIds ?? value.state.tabs.tabs.map((page) => page.id)
+          ).includes(original.page_id!)
         ) {
           tabsStore.closePageEverywhere(profileId, original.page_id!);
           finishOperation();

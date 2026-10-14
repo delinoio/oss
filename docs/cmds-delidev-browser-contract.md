@@ -255,7 +255,7 @@ When the owning window observes the original Close proof, it broadcasts a
 `settled` message in place of a plain release: every sibling window drops the
 hold and removes the exact profile/page descriptor from all of its Sessions,
 including retained or inactive ones that run no inventory poll. A rejected or
-abandoned Close only releases the hold and never removes a descriptor.
+abandoned Close only releases the hold and never removes a descriptor. A removal-pending reply is normalized to an empty inventory for reconciliation, but the raw listing is kept to prove a Close: an observation with no receipt settles the Close only when the raw reply no longer lists the page, otherwise only this operation is released.
 A discarded tab store (for example when the connection identity remounts the
 provider) disposes its registry: it releases its holds, detaches the `pagehide`
 listener and closes the channel, and a replayed mount reconnects it.
