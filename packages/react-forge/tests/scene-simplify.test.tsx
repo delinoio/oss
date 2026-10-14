@@ -142,6 +142,15 @@ for (const format of [Format.Glb, Format.Fbx] as const) {
             other.simplifyGeometry(source, { targetTriangles: 6, maxError: 0 }),
           (error: ForgeError) => error.code === ErrorCode.InvalidTarget,
         );
+        assert.throws(
+          () =>
+            session.simplifyGeometry(
+              source,
+              { targetTriangles: 6, maxError: 0 },
+              { signal: 1 } as never,
+            ),
+          (error: ForgeError) => error.code === ErrorCode.MalformedInput,
+        );
         const aborted = new AbortController();
         aborted.abort();
         assert.throws(
@@ -152,6 +161,15 @@ for (const format of [Format.Glb, Format.Fbx] as const) {
               { signal: aborted.signal },
             ),
           (error: ForgeError) => error.code === ErrorCode.Cancelled,
+        );
+        assert.throws(
+          () =>
+            session.simplifyGeometry(
+              source,
+              { targetTriangles: 6, maxError: 0 },
+              { signal: aborted.signal, extra: true } as never,
+            ),
+          (error: ForgeError) => error.code === ErrorCode.MalformedInput,
         );
         const withMorph = grid();
         withMorph.morphTargets = [

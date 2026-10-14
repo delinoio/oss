@@ -326,12 +326,12 @@ export class SceneSession {
     options: SimplifyGeometryOptions,
     control: { signal?: AbortSignal } = {},
   ): Promise<SimplifyGeometryResult> {
-    const signal = this.signal(control?.signal);
-    checkSignal(signal);
     if (
       !control ||
       typeof control !== "object" ||
       Object.keys(control).some((key) => key !== "signal") ||
+      (control.signal !== undefined &&
+        !(control.signal instanceof AbortSignal)) ||
       !options ||
       typeof options !== "object" ||
       Object.keys(options).some(
@@ -339,6 +339,8 @@ export class SceneSession {
       )
     )
       throw malformed();
+    const signal = this.signal(control.signal);
+    checkSignal(signal);
     if (
       !handle ||
       handle.kind !== SceneAssetKind.Geometry ||
