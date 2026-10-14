@@ -24,6 +24,17 @@ type initializeResult struct {
 	IDERCAutoEnableGate          *bool           `json:"ide_rc_auto_enable_gate"`
 	FastModeState                string          `json:"fast_mode_state"`
 	FastModeDisabledReason       string          `json:"fast_mode_disabled_reason"`
+
+	// Claude Code 2.1.287 additions. They are optional so earlier verified
+	// profiles keep passing; raw messages distinguish absent from null. The
+	// pending request lists are control-response envelope members, not here.
+	AnalyticsDisabled               json.RawMessage `json:"analytics_disabled"`
+	Capabilities                    json.RawMessage `json:"capabilities"`
+	FeedbackMode                    json.RawMessage `json:"feedback_mode"`
+	RemoteControlAvailable          json.RawMessage `json:"remote_control_available"`
+	RemoteControlAutoConnectDefault json.RawMessage `json:"remote_control_auto_connect_default"`
+	SessionState                    json.RawMessage `json:"session_state"`
+	UserOutputStylesDir             json.RawMessage `json:"user_output_styles_dir"`
 }
 
 type nativeCommand struct {
@@ -61,19 +72,10 @@ type probeModel struct {
 }
 
 func validateInitialize(raw []byte, expected domain.ID) error {
-	var message struct {
-		Type     string `json:"type"`
-		Response *struct {
-			Subtype   string          `json:"subtype"`
-			RequestID domain.ID       `json:"request_id"`
-			Response  json.RawMessage `json:"response,omitempty"`
-			Error     json.RawMessage `json:"error,omitempty"`
-		} `json:"response"`
-	}
-	if domain.Decode(raw, &message) != nil || message.Type != "control_response" || message.Response == nil || message.Response.RequestID != expected {
+	response, err := decodeControlResponse(raw)
+	if err != nil || domain.ID(response.RequestID) != expected {
 		return incompatible()
 	}
-	response := message.Response
 	if response.Subtype == "error" && len(response.Error) != 0 && len(response.Response) == 0 {
 		var message *string
 		if json.Unmarshal(response.Error, &message) != nil || message == nil {
@@ -99,7 +101,7 @@ func validateInitializeMode(raw []byte, permission, apiKeySource string, subscri
 	if apiKeySource != "" {
 		tokenSource = "ANTHROPIC_AUTH_TOKEN"
 	}
-	if domain.Decode(raw, &result) != nil || result.Commands == nil ||
+	if !requireExactNativeKeys(raw, &result) || domain.Decode(raw, &result) != nil || result.Commands == nil ||
 		result.Account == nil || result.Account.APIProvider != "firstParty" ||
 		result.PID <= 0 || result.CurrentPermissionMode != permission || result.OutputStyle != "default" ||
 		!explicitFalse(result.RemoteControlAutoEnable) || !explicitFalse(result.RemoteControlAutoOnByDefault) || !explicitFalse(result.IDERCAutoEnableGate) ||
@@ -152,7 +154,7 @@ const managedTokenSource = "CLAUDE_CODE_OAUTH_TOKEN"
 // report that source, no API-key source and no profile identity metadata.
 func validateInitializeManagedToken(raw []byte, permission string) error {
 	var result initializeResult
-	if domain.Decode(raw, &result) != nil || result.Commands == nil ||
+	if !requireExactNativeKeys(raw, &result) || domain.Decode(raw, &result) != nil || result.Commands == nil ||
 		result.Account == nil || result.Account.APIProvider != "firstParty" ||
 		result.PID <= 0 || result.CurrentPermissionMode != permission || result.OutputStyle != "default" ||
 		!explicitFalse(result.RemoteControlAutoEnable) || !explicitFalse(result.RemoteControlAutoOnByDefault) || !explicitFalse(result.IDERCAutoEnableGate) ||
@@ -179,6 +181,9 @@ func validateInitializeManagedToken(raw []byte, permission string) error {
 }
 
 func validateInitializeCatalog(result initializeResult) error {
+	if err := validateInitializeExtensions(result); err != nil {
+		return err
+	}
 	if !uniqueText(result.AvailableOutputStyles, 32, 128) || !slices.Contains(result.AvailableOutputStyles, result.OutputStyle) ||
 		len(result.Agents) == 0 || len(result.Agents) > 64 || len(result.Models) == 0 || len(result.Models) > 256 {
 		return incompatible()
