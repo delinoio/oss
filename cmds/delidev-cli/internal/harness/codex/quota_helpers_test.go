@@ -6,6 +6,7 @@ package codex
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -17,6 +18,8 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
 )
 
 // Access-only quota fixture modes. They create the same native-style helper
@@ -98,6 +101,22 @@ func requireNoHelperSymlinks(t *testing.T, home string) {
 	}
 }
 
+// runtimeRootOf is the private runtime directory that owns the quota Codex home
+// and that the server cleanup removes after the native tree is joined.
+func runtimeRootOf(t *testing.T, config Config) (string, os.FileInfo) {
+	t.Helper()
+	root := filepath.Dir(config.Home)
+	// The server runtime root is a private directory; mirror that boundary.
+	if err := os.Chmod(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	info, err := security.StableStat(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return root, info
+}
+
 func requireNoManagedAuthFile(t *testing.T, config Config) {
 	t.Helper()
 	if _, err := os.Lstat(filepath.Join(config.Home, "auth.json")); !os.IsNotExist(err) {
@@ -129,6 +148,7 @@ func TestQuotaOpenCapturesHelpersBeforeAnyAuthenticationOrRead(t *testing.T) {
 
 func TestQuotaCloseRetiresHelpersOnceAfterSuccessfulRead(t *testing.T) {
 	config, logs := quotaHelperConfig(t, quotaHelperReady)
+	root, original := runtimeRootOf(t, config)
 	client, err := openQuotaHelperClient(t, config)
 	if err != nil {
 		t.Fatal(err)
@@ -159,10 +179,18 @@ func TestQuotaCloseRetiresHelpersOnceAfterSuccessfulRead(t *testing.T) {
 	if err := process.ReconcileOwner(config.Process.Directory, config.Process.OwnerID); err != nil {
 		t.Fatal(err)
 	}
+	// The unchanged strict runtime cleanup now accepts the retired runtime.
+	if err := subscription.CleanupRuntime(root, original); err != nil {
+		t.Fatal("retired quota runtime was not removable", err)
+	}
+	if _, err := os.Lstat(root); !os.IsNotExist(err) {
+		t.Fatal("retired quota runtime remained after cleanup", err)
+	}
 }
 
 func TestQuotaCloseRetiresHelpersAfterFailedRead(t *testing.T) {
 	config, logs := quotaHelperConfig(t, quotaHelperReadFail)
+	root, original := runtimeRootOf(t, config)
 	client, err := openQuotaHelperClient(t, config)
 	if err != nil {
 		t.Fatal(err)
@@ -179,6 +207,11 @@ func TestQuotaCloseRetiresHelpersAfterFailedRead(t *testing.T) {
 	requireNoHelperSymlinks(t, config.Home)
 	if retirementLogs(logs) != 1 {
 		t.Fatal("failed read did not retire helpers exactly once")
+	}
+	if err := subscription.CleanupRuntime(root, original); err != nil {
+		var f *subscription.RuntimeCleanupError
+		errors.As(err, &f)
+		t.Fatalf("runtime after a failed read was not removable %s %s", f.Stage, f.Reason)
 	}
 }
 
@@ -276,6 +309,15 @@ func TestQuotaCloseKeepsCleanupUncertainWithoutProofOrOnChangedEntries(t *testin
 			}
 			if retirementLogs(logs) != 1 {
 				t.Fatal("retirement must settle exactly once")
+			}
+			if tc.name != "foreign-entry" {
+				// Strict runtime cleanup keeps refusing the surviving symlinks, so the
+				// quota owner stays uncertain and nothing is deleted.
+				root, original := runtimeRootOf(t, config)
+				var failure *subscription.RuntimeCleanupError
+				if err := subscription.CleanupRuntime(root, original); !errors.As(err, &failure) || failure.Reason != subscription.CleanupSymlink {
+					t.Fatal("unretired aliases did not keep the generic symlink refusal", err)
+				}
 			}
 			if err := process.ReconcileOwner(config.Process.Directory, config.Process.OwnerID); err != nil {
 				t.Fatal(err)
