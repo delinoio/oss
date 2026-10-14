@@ -217,7 +217,10 @@ type ExportReferenceInit = {
 };
 
 /** Builds an export reference; no export path means module scope. */
-export function exportReference({ module, exportPath = [] }: ExportReferenceInit) {
+export function exportReference({
+  module,
+  exportPath = [],
+}: ExportReferenceInit) {
   return {
     module,
     exportPath,

@@ -75,36 +75,36 @@ Rspack diagnostics that already carry module dependency paths (`rspack/side-effe
 
 Collection (adapter version `2`, `collectVersion` stays `1`): the Rspack adapter taps the `moduleGraph` hook of `experiments.RsdoctorPlugin` (`moduleGraphFeatures: ['graph']`, `chunkGraphFeatures: false`, `exportUsageGraph: true`) and stores the optional collection field `exportUsage { available, reason, skippedEdges, edges }`. Each edge is `{ consumer: { module, export }, provider: { module, export }, dependencyId, location }`; `export` is an export path array or `null` for module or namespace scope. Rspack reports edges as positional tuples whose module keys are only valid inside the same payload; the adapter maps keys to stats module identifiers through that payload. Plugin API access is internal and unstable, so every access is guarded.
 
-| Situation | Collection result |
-| --- | --- |
-| Hook, API and graph work | `available: true` with sorted, de-duplicated edges |
-| `experiments.RsdoctorPlugin` or `getCompilationHooks` is missing | `available: false` with a reason; no plugin override is recorded |
-| The project already configures `RsdoctorPlugin` | `available: false` with a reason; bundlewhy adds no second instance |
-| Plugin construction fails, the hook is missing or throws | `available: false` with a one-line reason; the build continues |
-| The hook never delivers the graph | `available: false` |
-| The payload lacks `modules` or `exportUsageEdges` as lists | `available: false` |
-| A tuple is short, has an unknown module key, an empty or non-string export path | The edge is skipped and counted in `skippedEdges` |
-| An edge endpoint is not a collected module (for example a concatenated module container) | The edge is skipped and counted in `skippedEdges` |
-| More than 100000 edges | `available: false`; no edges are stored |
+| Situation                                                                                | Collection result                                                   |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Hook, API and graph work                                                                 | `available: true` with sorted, de-duplicated edges                  |
+| `experiments.RsdoctorPlugin` or `getCompilationHooks` is missing                         | `available: false` with a reason; no plugin override is recorded    |
+| The project already configures `RsdoctorPlugin`                                          | `available: false` with a reason; bundlewhy adds no second instance |
+| Plugin construction fails, the hook is missing or throws                                 | `available: false` with a one-line reason; the build continues      |
+| The hook never delivers the graph                                                        | `available: false`                                                  |
+| The payload lacks `modules` or `exportUsageEdges` as lists                               | `available: false`                                                  |
+| A tuple is short, has an unknown module key, an empty or non-string export path          | The edge is skipped and counted in `skippedEdges`                   |
+| An edge endpoint is not a collected module (for example a concatenated module container) | The edge is skipped and counted in `skippedEdges`                   |
+| More than 100000 edges                                                                   | `available: false`; no edges are stored                             |
 
 Reasons are one line of at most 200 characters and never quote source content. A collection without `exportUsage` (older adapter versions) deserializes with the field absent.
 
 Analysis: `Context` indexes edges by provider export. For a diagnostic module, the traversal starts from every edge whose provider is an export of that module and follows edges toward consumers: the next edge must provide exactly the current outermost consumer's export (module and export path equal). A named export is never linked to a module-scope reference of the same module, so a gap in Rspack's edges ends the chain instead of being bridged. Chains are produced breadth first (shortest first) from edges sorted by provider, consumer, dependency ID and location, so input order never changes the result. Chains are stored from the outermost consumer to the diagnostic module. The traversal never infers function calls; a `null` export stays module scope.
 
-| Limit | Value | Effect |
-| --- | --- | --- |
-| Chains per diagnostic | 5 | More chains stop the search; `truncation = PATH_COUNT` |
-| Edges per chain | 24 | The chain ends `TRUNCATED`; `truncation = DEPTH` |
+| Limit                           | Value | Effect                                                            |
+| ------------------------------- | ----- | ----------------------------------------------------------------- |
+| Chains per diagnostic           | 5     | More chains stop the search; `truncation = PATH_COUNT`            |
+| Edges per chain                 | 24    | The chain ends `TRUNCATED`; `truncation = DEPTH`                  |
 | Chain extensions per diagnostic | 10000 | Remaining chains end `TRUNCATED`; `truncation = EXPANSION_BUDGET` |
 
 `truncation` records the first limit reached; `NONE` means nothing was cut. A chain ends `ROOT` when no edge consumes its first export, `CYCLE` when the next edge would revisit an export already in the chain (the closing edge is included as the first edge, and a self-referencing edge ends the chain once), and `TRUNCATED` at a limit. A chain whose root is reached does not prove that no other consumer exists.
 
-| Diagnostic situation | `export_usage` |
-| --- | --- |
-| Collection has no `exportUsage` | `UNAVAILABLE`, collection not recorded |
-| Collection `available: false` | `UNAVAILABLE` with the adapter reason |
-| No edge provides an export of the module (for example a module loaded only through `import()`) | `UNAVAILABLE`, no edge reported |
-| At least one edge | `AVAILABLE` with chains, the truncation marker and, when `skippedEdges > 0`, a note disclosing the unmapped edges |
+| Diagnostic situation                                                                           | `export_usage`                                                                                                    |
+| ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Collection has no `exportUsage`                                                                | `UNAVAILABLE`, collection not recorded                                                                            |
+| Collection `available: false`                                                                  | `UNAVAILABLE` with the adapter reason                                                                             |
+| No edge provides an export of the module (for example a module loaded only through `import()`) | `UNAVAILABLE`, no edge reported                                                                                   |
+| At least one edge                                                                              | `AVAILABLE` with chains, the truncation marker and, when `skippedEdges > 0`, a note disclosing the unmapped edges |
 
 Unavailable export usage never changes the diagnostic's status, evidence, conditions or module dependency paths. Saved bundles validate `export_usage` on load (`BW_RESULT_INVALID`): a specified state, no paths when unavailable, at least one and at most 5 chains when available, a specified truncation marker, 1 to 24 edges per chain, a specified chain end (`TRUNCATED` requires a truncation marker other than `NONE`), a non-empty module on every reference, a named reference with a non-empty export path and a module-scope reference with none, and consecutive edges where each provider equals the next consumer. A bundle without the field opens unchanged. `--exclude-sources` keeps export usage because it holds module display paths, dependency IDs and positions, not source text.
 

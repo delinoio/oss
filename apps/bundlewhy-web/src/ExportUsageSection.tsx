@@ -40,7 +40,10 @@ export function truncationExplanation(
 
 /** Names the export of a reference without implying a function call. */
 export function describeExport(reference: ExportReference): string {
-  if (reference.scope === ExportScope.NAMED && reference.exportPath.length > 0) {
+  if (
+    reference.scope === ExportScope.NAMED &&
+    reference.exportPath.length > 0
+  ) {
     return `export ${reference.exportPath.join(".")}`;
   }
   return "module or namespace scope (no named export)";
@@ -118,8 +121,8 @@ export function ExportUsageSection({ usage }: { usage: ExportUsage }) {
         Each edge is an export dependency that Rspack reported for the
         diagnostic build. bundlewhy only follows those edges from this module
         toward its consumers; the order and the selection of chains are derived
-        by bundlewhy. A chain does not show runtime execution, removable code
-        or byte savings.
+        by bundlewhy. A chain does not show runtime execution, removable code or
+        byte savings.
       </p>
       {available ? (
         <>

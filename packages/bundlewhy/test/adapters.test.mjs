@@ -376,7 +376,11 @@ test("rspack adapter collects export usage edges for every import shape", () => 
   // Branch: a second consumer of the same provider export.
   assert.ok(edgeOf(collection, "exports/chain-b.js", "exports/leaf.js"));
   // Namespace: the provider side has no named export.
-  const namespace = edgeOf(collection, "exports/namespace.js", "exports/leaf.js");
+  const namespace = edgeOf(
+    collection,
+    "exports/namespace.js",
+    "exports/leaf.js",
+  );
   assert.equal(namespace.provider.export, null);
   // Cycle: both directions are reported.
   assert.ok(edgeOf(collection, "exports/leaf.js", "exports/cycle-back.js"));
@@ -399,7 +403,11 @@ test("rspack adapter collects export usage edges for every import shape", () => 
 });
 
 test("rspack adapter records the added plugin as a collection override", () => {
-  const { collection } = runAdapter("rspack", "rspack-app", "rspack.config.mjs");
+  const { collection } = runAdapter(
+    "rspack",
+    "rspack-app",
+    "rspack.config.mjs",
+  );
   assert.ok(
     collection.overrides.some(
       (entry) =>
@@ -413,7 +421,9 @@ test("rspack adapter records the added plugin as a collection override", () => {
 });
 
 test("export usage collection leaves no source text in the output", () => {
-  const work = fs.mkdtempSync(path.join(os.tmpdir(), "bundlewhy-adapter-test-"));
+  const work = fs.mkdtempSync(
+    path.join(os.tmpdir(), "bundlewhy-adapter-test-"),
+  );
   const projectRoot = path.join(root, "fixtures/rspack-app");
   const request = {
     projectRoot,
@@ -565,7 +575,11 @@ test("decodeExportUsageEdges refuses graphs above the edge limit", () => {
     String(index),
     null,
   ]);
-  const result = decodeExportUsageEdges(raw, decodeIdentifiers, decodeCollected);
+  const result = decodeExportUsageEdges(
+    raw,
+    decodeIdentifiers,
+    decodeCollected,
+  );
   assert.equal(result.available, false);
   assert.match(result.reason, /more than/);
   assert.deepEqual(result.edges, []);
@@ -603,7 +617,11 @@ function wrappedProject({ config = null } = {}) {
   fs.mkdirSync(core, { recursive: true });
   fs.writeFileSync(
     path.join(core, "package.json"),
-    JSON.stringify({ name: "@rspack/core", version: "2.2.9", main: "index.cjs" }),
+    JSON.stringify({
+      name: "@rspack/core",
+      version: "2.2.9",
+      main: "index.cjs",
+    }),
   );
   fs.writeFileSync(
     path.join(core, "index.cjs"),
@@ -696,7 +714,9 @@ for (const [mode, expected, addsPlugin] of [
     fs.rmSync(dir, { recursive: true, force: true });
     // The build and the rest of the collection are unaffected.
     assert.equal(status, 0, JSON.stringify(events));
-    assert.ok(collection.modules.some((module) => module.path?.endsWith("value.js")));
+    assert.ok(
+      collection.modules.some((module) => module.path?.endsWith("value.js")),
+    );
     assert.equal(collection.exportUsage.available, false);
     assert.match(collection.exportUsage.reason, expected);
     assert.deepEqual(collection.exportUsage.edges, []);
@@ -726,6 +746,11 @@ export default {
   fs.rmSync(dir, { recursive: true, force: true });
   assert.equal(status, 0, JSON.stringify(events));
   assert.equal(collection.exportUsage.available, false);
-  assert.match(collection.exportUsage.reason, /already configures RsdoctorPlugin/);
-  assert.ok(!collection.overrides.some((entry) => entry.includes("RsdoctorPlugin")));
+  assert.match(
+    collection.exportUsage.reason,
+    /already configures RsdoctorPlugin/,
+  );
+  assert.ok(
+    !collection.overrides.some((entry) => entry.includes("RsdoctorPlugin")),
+  );
 });

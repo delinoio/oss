@@ -35,7 +35,9 @@ describe("export usage section", () => {
     expect(items[1].textContent).toContain("export bar");
     expect(items[1].textContent).toContain("Dependency ID 37");
     const [first, second] = items.map((item) => item.textContent ?? "");
-    expect(first.indexOf("src/main.ts")).toBeLessThan(first.indexOf("src/lib.ts"));
+    expect(first.indexOf("src/main.ts")).toBeLessThan(
+      first.indexOf("src/lib.ts"),
+    );
     expect(second.indexOf("src/lib.ts")).toBeLessThan(
       second.indexOf("src/shared.ts"),
     );
@@ -119,7 +121,10 @@ describe("export usage section", () => {
   it("explains how each chain ends", () => {
     const ends: [ExportUsagePathEnd, RegExp][] = [
       [ExportUsagePathEnd.ROOT, /Chain start: Rspack reported no earlier edge/],
-      [ExportUsagePathEnd.CYCLE, /returns to an export that is already in this chain/],
+      [
+        ExportUsagePathEnd.CYCLE,
+        /returns to an export that is already in this chain/,
+      ],
       [ExportUsagePathEnd.TRUNCATED, /stopped at a limit before the start/],
       [ExportUsagePathEnd.UNSPECIFIED, /end of this chain was not recorded/],
     ];
@@ -203,9 +208,7 @@ describe("export usage section", () => {
         note: "3 engine edge(s) involve modules that bundlewhy could not identify and are not shown.",
       }),
     );
-    expect(
-      screen.getByText(/3 engine edge\(s\) involve modules/),
-    ).toBeTruthy();
+    expect(screen.getByText(/3 engine edge\(s\) involve modules/)).toBeTruthy();
     expect(pathItems()).toHaveLength(2);
   });
 
