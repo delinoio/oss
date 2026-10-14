@@ -312,7 +312,8 @@ export function installationCauseCopyKey(
   harness: string,
   cause: RunnerExclusion,
 ): MessageKey {
-  if (harness === Harness.Claude) return `claude-subscription.excluded.${cause}`;
+  if (harness === Harness.Claude)
+    return `claude-subscription.excluded.${cause}`;
   if (
     harness === Harness.OpenCode &&
     (cause === "version" || cause === "protocolUnsupported")

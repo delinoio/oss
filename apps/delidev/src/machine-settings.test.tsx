@@ -4,7 +4,13 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, renderHook, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import {
   EntityKind,
@@ -386,9 +392,8 @@ it.each([
 
 it("keeps OpenCode update guidance free of numeric baselines in both languages", async () => {
   for (const locale of ["en", "ko"]) {
-    const messages = (
-      await import(`./locales/${locale}/machine-settings.json`)
-    ).default as Record<string, string>;
+    const messages = (await import(`./locales/${locale}/machine-settings.json`))
+      .default as Record<string, string>;
     for (const cause of ["version", "protocolUnsupported"]) {
       const message = messages[`machine-settings.opencode.excluded.${cause}`];
       expect(message).toContain("opencode upgrade");
