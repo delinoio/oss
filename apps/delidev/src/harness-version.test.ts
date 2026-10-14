@@ -73,7 +73,13 @@ it("applies one minimum-version rule per harness to retained native records", ()
       expect(harnessVersionAllowed(harness, newer), `${harness} ${newer}`).toBe(
         true,
       );
-    for (const rejected of [lower, `${baseline}-rc.1`, "unknown", "", undefined])
+    for (const rejected of [
+      lower,
+      `${baseline}-rc.1`,
+      "unknown",
+      "",
+      undefined,
+    ])
       expect(
         harnessVersionAllowed(harness, rejected),
         `${harness} ${String(rejected)}`,

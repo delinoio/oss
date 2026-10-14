@@ -272,7 +272,9 @@ it("offers the original decision for a newer admitted Codex approval version", a
   });
   render(value.view());
   expect(
-    screen.queryByText("This native approval version is not supported. The original request is preserved."),
+    screen.queryByText(
+      "This native approval version is not supported. The original request is preserved.",
+    ),
   ).toBeNull();
   fireEvent.change(screen.getByRole("combobox", { name: "Decision" }), {
     target: { value: "1" },
@@ -294,7 +296,9 @@ it("refuses a Codex approval version below the baseline", () => {
   });
   render(value.view());
   expect(
-    screen.getByText("This native approval version is not supported. The original request is preserved."),
+    screen.getByText(
+      "This native approval version is not supported. The original request is preserved.",
+    ),
   ).toBeTruthy();
 });
 
