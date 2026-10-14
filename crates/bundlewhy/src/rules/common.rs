@@ -280,6 +280,7 @@ enum EnvGuard {
     If,
     While,
     Switch,
+    For,
 }
 
 impl EnvGuard {
@@ -292,6 +293,7 @@ impl EnvGuard {
             Self::If => "the retained read is in an if condition",
             Self::While => "the retained read is in a while condition",
             Self::Switch => "the retained read is in a switch condition",
+            Self::For => "the retained read is in a for condition",
         }
     }
 }
@@ -312,6 +314,14 @@ enum ScopeContext {
     Neutral,
     Invalid,
     Guard(EnvGuard),
+    For(ForClause),
+}
+
+#[derive(Clone, Copy)]
+enum ForClause {
+    Initializer,
+    Test,
+    Update,
 }
 
 struct ScanScope {
@@ -399,7 +409,32 @@ fn env_guards(
                 scopes[parent].pending_reads.extend(pending_reads);
                 current_scope = parent;
             }
-            b';' | b',' => {
+            b';' => {
+                let context = scopes[current_scope].context;
+                match context {
+                    ScopeContext::For(ForClause::Test) => {
+                        for read in scopes[current_scope].pending_reads.drain(..) {
+                            if guards[read].is_none() {
+                                guards[read] = Some(EnvGuard::For);
+                            }
+                        }
+                    }
+                    _ => {
+                        for read in scopes[current_scope].pending_reads.drain(..) {
+                            if guards[read].is_none() {
+                                blocked[read] = true;
+                            }
+                        }
+                    }
+                }
+                if let ScopeContext::For(clause) = context {
+                    scopes[current_scope].context = ScopeContext::For(match clause {
+                        ForClause::Initializer => ForClause::Test,
+                        ForClause::Test | ForClause::Update => ForClause::Update,
+                    });
+                }
+            }
+            b',' => {
                 for read in scopes[current_scope].pending_reads.drain(..) {
                     if guards[read].is_none() {
                         blocked[read] = true;
@@ -484,6 +519,8 @@ fn env_guards(
             ScopeContext::Neutral => guard,
             ScopeContext::Guard(fallback) if !blocked => guard.or(Some(fallback)),
             ScopeContext::Guard(_) => guard,
+            ScopeContext::For(ForClause::Test) if !blocked => guard.or(Some(EnvGuard::For)),
+            ScopeContext::For(_) => guard,
         })
         .collect()
 }
@@ -527,6 +564,17 @@ fn scope_context(
     }
     if opener != b'(' {
         return ScopeContext::Invalid;
+    }
+    if prefix.ends_with("for")
+        && prefix
+            .as_bytes()
+            .get(..prefix.len() - "for".len())
+            .and_then(|prefix| prefix.last())
+            .is_none_or(|byte| {
+                !byte.is_ascii_alphanumeric() && *byte != b'_' && *byte != b'$' && *byte != b'.'
+            })
+    {
+        return ScopeContext::For(ForClause::Initializer);
     }
     for (keyword, guard) in [
         ("if", EnvGuard::If),
@@ -1608,6 +1656,27 @@ y=/process.env.F/.test(z),process.env.G"#;
                 "process.env.VERSION"
             ),
             Some("the retained read controls a && short-circuit branch")
+        );
+        assert_eq!(
+            guard(
+                "for (; process.env.VERSION; ) work()",
+                "process.env.VERSION"
+            ),
+            Some("the retained read is in a for condition")
+        );
+        assert_eq!(
+            guard(
+                "for (process.env.VERSION; ; ) work()",
+                "process.env.VERSION"
+            ),
+            None
+        );
+        assert_eq!(
+            guard(
+                "for (; ; process.env.VERSION) work()",
+                "process.env.VERSION"
+            ),
+            None
         );
     }
 
