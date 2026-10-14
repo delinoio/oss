@@ -169,6 +169,10 @@ message TakeSubscriptionResponse {
   bytes installation_json = 5;
   // Opaque original-Runner profile reference, never authentication bytes.
   string native_profile_id = 6;
+  // Reserved: the account-owner lease a negotiated execution member joined. It is
+  // empty for a founding or legacy singleton lease. A member response never
+  // carries authentication bytes.
+  string owner_lease_id = 7;
 }
 message PublishSubscriptionProgressRequest {
   string account_id = 1;
@@ -196,6 +200,17 @@ message FinishSubscriptionRequest {
   bool refresh_confirmed = 8;
   bool succeeded = 9;
   NativeSubscriptionIdentity native_identity = 10;
+  // Reserved: which ownership a negotiated Finish releases. Unspecified keeps the
+  // legacy singleton meaning.
+  SubscriptionFinishScope finish_scope = 11;
+}
+// Reserved: ownership released by one FinishSubscription request.
+enum SubscriptionFinishScope {
+  SUBSCRIPTION_FINISH_SCOPE_UNSPECIFIED = 0;
+  // Releases only the exact execution member and never touches credentials.
+  SUBSCRIPTION_FINISH_SCOPE_MEMBER = 1;
+  // Retires the account owner after its last runnable member and writes back.
+  SUBSCRIPTION_FINISH_SCOPE_OWNER = 2;
 }
 message FinishSubscriptionResponse {
   Resource account = 1;

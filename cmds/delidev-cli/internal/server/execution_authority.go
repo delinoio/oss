@@ -210,8 +210,8 @@ func (a *executionAuthority) checkedScope(tx *store.Tx, grant store.ExecutionGra
 		} else if input.Configuration.Harness == domain.ClaudeCode && (state.OwnerMachineID != grant.MachineID || state.NativeProfileID == "" || !slices.Contains(machine.WorkerCapabilities, domain.NativeClaudeSubscriptionsV1)) {
 			return empty, executionDenied()
 		}
-		lease := state.Lease
-		if lease.Action != domain.SubscriptionExecute || lease.OperationID != grant.JobID || lease.MachineID != grant.MachineID || lease.InstanceID != grant.InstanceID || lease.DeviceID != grant.DeviceID || lease.Epoch != a.service.subscriptionServerEpoch() || lease.Generation != state.Generation {
+		lease, owned := state.LeaseForOperation(grant.JobID)
+		if !owned || lease.Action != domain.SubscriptionExecute || lease.OperationID != grant.JobID || lease.MachineID != grant.MachineID || lease.InstanceID != grant.InstanceID || lease.DeviceID != grant.DeviceID || lease.Epoch != a.service.subscriptionServerEpoch() || lease.Generation != state.Generation {
 			return empty, executionDenied()
 		}
 	}
