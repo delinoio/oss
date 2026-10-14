@@ -349,6 +349,41 @@ the trigger and the OpenTool shortcut stay inert while the connection is
 unavailable. Restoring readiness never reopens the dialog; only an
 explicit user action does. Session drafts and pending operations are untouched.
 
+The read-only Reload page / 페이지 새로고침 action (`ShortcutId.ReloadPage`) uses primary+R
+(Command+R on the local macOS renderer, Control+R on Windows/Linux, chosen by
+`shortcutPlatform()`) and reloads the current product webview once per eligible key
+press. `ReloadShortcutOwner` (`reload-shortcut.tsx`) owns it: `Desktop` mounts it above
+`App` and under `ShortcutPreferenceProvider`, so the identity-read, local startup,
+saved-connection, disconnected recovery and every connected top-level screen receive
+it. It listens on `window` in the capture phase with `bindingMatches` against the
+shared `globalShortcutBindings` declaration, so it runs before terminal hosts, product
+inputs and ordinary dispatch, and works from text fields, terminal input events that
+reach the renderer and open product modals. An accepted event is `preventDefault`-ed
+and `stopImmediatePropagation`-ed before reload, so no field submission or terminal
+byte is delivered. Only the exact chord is accepted: plain R, Shift, Alt, AltGraph,
+the wrong-platform modifier, IME composition/keyCode 229, repeat and already handled
+events are ignored. While a Settings shortcut capture listener is installed
+(`shortcutCaptureListening()` in `shortcut-capture.ts`), the owner stays out so R is
+recorded as the chord. The default calls `window.location.reload()`; no native menu
+accelerator, RPC, Browser reload bridge, storage or migration is added, the focused
+external Browser CEF content keeps its own key ownership, and nothing is logged beyond
+existing safe classifications.
+
+Reload page is a read-only entry in `readOnlyShortcutCatalog` (Common group, Global
+scope) and in `readOnlyShortcutPolicies` with key `r`: a committed editable unshifted
+primary+R override suppresses it in every scope with the localized
+`shortcuts.reloadSuppressed` reason. It stays inactive (`shortcuts.preferencesPending`)
+until the first saved-preference read settles, and it fails closed for every
+preference problem except Unavailable (`ReadFailed`, `InvalidDocument`,
+`UnsupportedVersion`, `OutcomeUnknown`, `WriteFailed`, `Changed`) with
+`shortcuts.reloadUnverified` until a successful reinspection clears the problem
+(`shortcutSnapshotVerified`); problem Unavailable uses the default binding. Saved
+bytes and the seven editable IDs are untouched. Help lists the action through a
+`ShortcutExecution.Native` definition registered by `App` (never dispatched by the
+store) and Settings through the read-only catalog loop, both with the effective
+platform keycaps, the existing disabled treatment and the English/Korean reason; no
+button or dialog is added.
+
 Read-only shortcut defaults yield to existing editable chords through one shared
 policy, `readOnlyShortcutSuppression` in `shortcut-preferences.ts`, keyed by
 shortcut ID and the unshifted primary key it protects. OpenTool protects `t`. A new
