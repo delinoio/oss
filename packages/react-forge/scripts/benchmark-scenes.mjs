@@ -119,6 +119,9 @@ async function caseMain(format, workload, output) {
     const publication = await session.exportFile(output);
     const exported = performance.now();
     const bytes = await readFile(output);
+    // Let the 5 ms monitor observe the completed synchronous export before
+    // reading its histogram in the returned sample.
+    await new Promise((done) => setTimeout(done, 10));
     return {
       format,
       workload,
