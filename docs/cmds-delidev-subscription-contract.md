@@ -55,7 +55,8 @@ execution authority, but its cleanup ownership and workspace stay with the owner
 until final owner containment closes. Retention is not a completed Stop. An
 `OWNER` Finish retires the owner only when no other member is runnable; it
 performs the single generation-specific writeback, releases retained members with
-the owner and clears the lease. A legacy-scope Finish cannot settle a shared
+the owner and clears the lease. Only `UNSPECIFIED` keeps the legacy singleton meaning; any other unrecognized
+scope value is rejected with `InvalidArgument` before the Finish is processed. A legacy-scope Finish cannot settle a shared
 owner and a scoped Finish cannot settle a singleton. A failed or unconfirmed
 owner Finish keeps the existing recovery fence, so credentials remain until
 confirmed settlement.

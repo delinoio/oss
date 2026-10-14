@@ -1044,6 +1044,11 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 	if err := validateAccountMutation(m); err != nil {
 		return nil, rpc.Error(err, c)
 	}
+	scope, err := subscriptionFinishScope(req.Msg.FinishScope)
+	if err != nil {
+		s.logger.Warn("subscription_finish_scope_rejected", "account_id", m.Id, "finish_scope", int32(req.Msg.FinishScope))
+		return nil, rpc.Error(err, c)
+	}
 	if matched, err := s.isClaudeSubscription(ctx, m.Id); err != nil {
 		return nil, rpc.Error(err, c)
 	} else if matched {
@@ -1060,7 +1065,7 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 	if len(req.Msg.Bundle) > subscription.MaxBundle {
 		return nil, rpc.Error(subscription.Invalid(), c)
 	}
-	input := subscriptionFinishInput{domain.ID(m.Id), domain.ID(req.Msg.LeaseId), domain.ID(req.Msg.MachineId), domain.ID(req.Msg.InstanceId), domain.ID(req.Msg.GenerationId), s.accountCommitment(domain.ID(m.RequestId), req.Msg.Bundle), m.ExpectedRevision, req.Msg.CleanupConfirmed, req.Msg.RefreshConfirmed, req.Msg.Succeeded, subscriptionFinishScope(req.Msg.FinishScope)}
+	input := subscriptionFinishInput{domain.ID(m.Id), domain.ID(req.Msg.LeaseId), domain.ID(req.Msg.MachineId), domain.ID(req.Msg.InstanceId), domain.ID(req.Msg.GenerationId), s.accountCommitment(domain.ID(m.RequestId), req.Msg.Bundle), m.ExpectedRevision, req.Msg.CleanupConfirmed, req.Msg.RefreshConfirmed, req.Msg.Succeeded, scope}
 	unlock, err := s.lockAccounts(ctx)
 	if err != nil {
 		return nil, rpc.Error(err, c)
@@ -1600,13 +1605,20 @@ func compactionLeaseCapabilities(capabilities []domain.WorkerCapability, compact
 	return machineCapabilityContains(capabilities, domain.NativeSessionCompactionV1) && machineCapabilityContains(capabilities, domain.CodexSessionCompactionV1)
 }
 
-func subscriptionFinishScope(value pb.SubscriptionFinishScope) domain.SubscriptionFinishScope {
+// subscriptionFinishScope maps the wire scope to the domain scope. Only
+// UNSPECIFIED keeps the historical singleton meaning. Protobuf preserves unknown
+// numeric enum values, so any other value (a malformed request or a future
+// peer's scope) fails closed instead of inheriting the credential-writing
+// legacy Finish.
+func subscriptionFinishScope(value pb.SubscriptionFinishScope) (domain.SubscriptionFinishScope, error) {
 	switch value {
+	case pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_UNSPECIFIED:
+		return domain.SubscriptionFinishLegacy, nil
 	case pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_MEMBER:
-		return domain.SubscriptionFinishMember
+		return domain.SubscriptionFinishMember, nil
 	case pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_OWNER:
-		return domain.SubscriptionFinishOwner
+		return domain.SubscriptionFinishOwner, nil
 	default:
-		return domain.SubscriptionFinishLegacy
+		return domain.SubscriptionFinishLegacy, domain.Fail(domain.InvalidArgument, "The subscription finish scope is not supported.", "Send an unspecified, member or owner finish scope that this server understands.")
 	}
 }

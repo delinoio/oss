@@ -693,3 +693,44 @@ func TestLegacyFinishReceiptIdentityIsUnchanged(t *testing.T) {
 		t.Fatal("a scoped Finish must bind its scope into the receipt identity")
 	}
 }
+
+func TestUnknownFinishScopeFailsClosedForSingletonLease(t *testing.T) {
+	if scope, err := subscriptionFinishScope(pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_UNSPECIFIED); err != nil || scope != domain.SubscriptionFinishLegacy {
+		t.Fatal("UNSPECIFIED must keep the legacy singleton scope", scope, err)
+	}
+	for _, unknown := range []pb.SubscriptionFinishScope{3, 99, -1} {
+		if _, err := subscriptionFinishScope(unknown); domain.SafeError(err).Code != domain.InvalidArgument {
+			t.Fatal("an unknown finish scope was accepted", unknown, err)
+		}
+	}
+	for name, f := range map[string]*memberFixture{"codex": newMemberFixture(t, false)} {
+		jobs := f.prepareJobs(0)
+		lease, err := f.takeJob(jobs[0])
+		if err != nil {
+			t.Fatal(name, err)
+		}
+		defer clear(lease.Bundle)
+		_, before := f.record()
+		f.secrets.mu.Lock()
+		puts, deletes := f.secrets.puts, f.secrets.deletes
+		f.secrets.mu.Unlock()
+		bundle := subscriptionTestBundle("fixture-account", "must-not-write-unknown-scope", time.Now().UTC())
+		_, err = f.finishScope(lease, lease.LeaseRevision, pb.SubscriptionFinishScope(99), lease.GenerationId, bundle, true, true)
+		clear(bundle)
+		if domain.SafeError(rpc.ClientError(err)).Code != domain.InvalidArgument {
+			t.Fatal(name, "a singleton Finish with an unknown scope was not rejected", err)
+		}
+		_, after := f.record()
+		f.secrets.mu.Lock()
+		changed := f.secrets.puts != puts || f.secrets.deletes != deletes
+		f.secrets.mu.Unlock()
+		if changed || after.Subscription.Lease == nil || after.Subscription.Lease.ID != before.Subscription.Lease.ID || after.Subscription.Generation != before.Subscription.Generation {
+			t.Fatal(name, "an unknown finish scope settled the singleton lease or touched credentials")
+		}
+	}
+	// The device-owned Claude Finish path rejects the same value before any lease lookup.
+	claude := newClaudeMemberFixture(t, false)
+	if _, err := claude.finishScope(&pb.TakeSubscriptionResponse{LeaseId: string(domain.NewID())}, 1, pb.SubscriptionFinishScope(99), string(domain.NewID()), nil, true, true); domain.SafeError(rpc.ClientError(err)).Code != domain.InvalidArgument {
+		t.Fatal("a Claude Finish with an unknown scope was not rejected", err)
+	}
+}

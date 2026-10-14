@@ -751,6 +751,10 @@ func (s *Service) finishClaudeSubscription(ctx context.Context, req *connect.Req
 	if len(msg.Bundle) != 0 || msg.RefreshConfirmed {
 		return nil, rpc.Error(subscriptionDenied(), c)
 	}
+	scope, err := subscriptionFinishScope(msg.FinishScope)
+	if err != nil {
+		return nil, rpc.Error(err, c)
+	}
 	profile, identity := domain.ID(""), ""
 	if msg.NativeIdentity != nil {
 		profile = domain.ID(msg.NativeIdentity.ProfileId)
@@ -759,7 +763,7 @@ func (s *Service) finishClaudeSubscription(ctx context.Context, req *connect.Req
 			return nil, rpc.Error(subscriptionDenied(), c)
 		}
 	}
-	input := claudeFinishInput{domain.ID(m.Id), domain.ID(msg.LeaseId), domain.ID(msg.MachineId), domain.ID(msg.InstanceId), domain.ID(msg.GenerationId), profile, identity, m.ExpectedRevision, msg.CleanupConfirmed, msg.Succeeded, subscriptionFinishScope(msg.FinishScope)}
+	input := claudeFinishInput{domain.ID(m.Id), domain.ID(msg.LeaseId), domain.ID(msg.MachineId), domain.ID(msg.InstanceId), domain.ID(msg.GenerationId), profile, identity, m.ExpectedRevision, msg.CleanupConfirmed, msg.Succeeded, scope}
 	unlock, err := s.lockAccounts(ctx)
 	if err != nil {
 		return nil, rpc.Error(err, c)
