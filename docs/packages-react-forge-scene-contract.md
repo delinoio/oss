@@ -10,6 +10,8 @@ The GLB/FBX extension adds generation-only local scenes. `packages/react-forge` 
 
 `registerGeometry` copies Float32 position/normal arrays, optional Float32 UV/tangents, and Uint32 triangle indices. Normals/tangents must be unit length, tangent xyz orthogonal to the normal, and tangent w is +1 or -1. UV0 uses glTF's top-left convention, repeat wrapping and linear filtering. Normal maps require UVs and tangents; any texture requires UVs. `registerTexture` accepts explicit regular local files or copied PNG/JPEG bytes. Handles cannot cross sessions. Binary arrays remain registered assets rather than React JSON props.
 
+GLB export stores triangle indices as unsigned 16-bit values only when the largest referenced index is at most 65,534; larger values retain unsigned 32-bit storage. This changes only the serialized index buffer: Uint32 authoring, immutable registration, geometry sharing, all authored vertices and attributes, index order, topology, and animation remain unchanged. The unsigned-short maximum value 65,535 is reserved by glTF. Buffer views and chunks retain required alignment and exact payload lengths. File sizes may vary with padding and JSON metadata; this rule does not reduce polygons.
+
 `bakeParametricGeometry({uSegments,vSegments,maxTriangles,sample},{signal})` is
 an unreleased authoring helper on both scene formats. The three counts are
 required positive safe integers; no quality preset or adaptive curvature bound
