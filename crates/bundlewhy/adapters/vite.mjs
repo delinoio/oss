@@ -31,8 +31,9 @@ export const ADAPTER_VERSION = "1";
  *
  * Returns "true" or "false" when the option decides the module, "null" when it
  * gives no verdict (the default `true` and an unmatched rule list, so Rolldown
- * falls back to the package `sideEffects` field), or a value summary for
- * options that bundlewhy does not evaluate (functions and unknown shapes).
+ * continues with the package `sideEffects` field and its own code analysis),
+ * or a value summary for options that bundlewhy does not evaluate (functions
+ * and unknown shapes).
  */
 export function configuredModuleSideEffects(option, id) {
   if (option === undefined || option === true) return "null";
@@ -40,10 +41,9 @@ export function configuredModuleSideEffects(option, id) {
   // Rolldown normalizes this to "external modules are side-effect free, local
   // modules have side effects"; the collected modules are bundled ones.
   if (option === "no-external") return "true";
-  if (!Array.isArray(option) || option.length === 0) {
-    return summarizeValue(option);
-  }
+  if (!Array.isArray(option)) return summarizeValue(option);
   // A list of module IDs: listed modules have side effects, all others do not.
+  // Rolldown reads an empty list the same way, so no module has side effects.
   if (option.every((entry) => typeof entry === "string")) {
     return String(option.includes(id));
   }
