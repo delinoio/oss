@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -84,16 +83,7 @@ func TestSessionDeletionCompletesUnderDescriptorSoftLimit(t *testing.T) {
 func runDescriptorLimitedDeletion(t *testing.T, scenario string) {
 	c, w, _, _ := deletionWorkerFixture(t, domain.GeneralChat)
 	w = addDeletionCopies(t, c, w, descriptorChildCopies)
-	var limit syscall.Rlimit
-	if err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &limit); err != nil {
-		t.Fatal(err)
-	}
-	if limit.Max < descriptorChildLimit {
-		t.Skip("hard descriptor limit is below the fixture limit")
-	}
-	if err := syscall.Setrlimit(syscall.RLIMIT_NOFILE, &syscall.Rlimit{Cur: descriptorChildLimit, Max: limit.Max}); err != nil {
-		t.Skip("cannot lower the descriptor soft limit", err)
-	}
+	lowerDescriptorSoftLimit(t, descriptorChildLimit)
 	usage := security.CurrentDescriptorUsage()
 	if !usage.LimitKnown || usage.Limit != descriptorChildLimit || !usage.OpenKnown || usage.Open >= 100 {
 		t.Fatal("fixture does not run under the intended limit", usage)
