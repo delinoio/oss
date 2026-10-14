@@ -269,7 +269,14 @@ pub fn analyze(prepared: &Prepared<'_>) -> Result<SceneAnalysis> {
     }
     for (id, bytes) in prepared.assets {
         checkpoint()?;
-        let mut is_geometry = prepared.geometries.contains_key(id) || id.starts_with("geometry:");
+        let mut is_geometry = prepared.geometries.contains_key(id);
+        if !is_geometry && id.starts_with("geometry:") {
+            is_geometry = match geometry(bytes) {
+                Ok(_) => true,
+                Err(error) if error.code == ErrorCode::Cancelled => return Err(error),
+                Err(_) => false,
+            };
+        }
         if !is_geometry
             && !prepared.textures.contains_key(id)
             && !prepared.samplers.contains_key(id)
@@ -829,6 +836,7 @@ mod tests {
         let assets = Assets::from([
             ("g".to_owned(), bytes.clone()),
             ("unused".to_owned(), bytes.clone()),
+            ("geometry:invalid".to_owned(), b"not-geometry".to_vec()),
         ]);
         let prepared = prepare(&scene, &assets).unwrap();
         let report = analyze(&prepared).unwrap();
