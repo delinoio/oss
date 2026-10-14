@@ -100,7 +100,25 @@ export function inspectGlb(bytes) {
   let meshes = 0;
   let instanceVertices = 0;
   let instanceTriangles = 0;
-  for (const node of glb.nodes ?? []) {
+  const sceneIndex = glb.scene ?? 0;
+  const roots = glb.scenes?.[sceneIndex]?.nodes;
+  if (!Array.isArray(roots)) throw new Error("Missing default GLB scene.");
+  const pending = [...roots];
+  const visited = new Set();
+  while (pending.length) {
+    const nodeIndex = pending.pop();
+    if (!Number.isSafeInteger(nodeIndex) || nodeIndex < 0)
+      throw new Error("Invalid GLB scene node.");
+    if (visited.has(nodeIndex)) continue;
+    visited.add(nodeIndex);
+    const node = glb.nodes?.[nodeIndex];
+    if (!node || typeof node !== "object")
+      throw new Error("Invalid GLB scene node.");
+    if (node.children !== undefined) {
+      if (!Array.isArray(node.children))
+        throw new Error("Invalid GLB node children.");
+      pending.push(...node.children);
+    }
     if (node.mesh === undefined) continue;
     const primitives = glb.meshes?.[node.mesh]?.primitives;
     if (!Array.isArray(primitives) || primitives.length !== 1)

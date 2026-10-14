@@ -64,10 +64,18 @@ test("fixed grids preserve topology, bytes and repeatable source content", () =>
   }
 });
 
-function glb(indexCount, componentType = 5125, binaryLength = 0) {
+function glb(
+  indexCount,
+  componentType = 5125,
+  binaryLength = 0,
+  nodes = [{ mesh: 0 }],
+  sceneNodes = [0],
+) {
   const json = Buffer.from(
     JSON.stringify({
-      nodes: [{ mesh: 0 }],
+      scene: 0,
+      scenes: [{ nodes: sceneNodes }],
+      nodes,
       meshes: [
         {
           primitives: [
@@ -114,6 +122,12 @@ test("independent GLB counts reject an extra face but allow narrower indices", (
     () => assertTopology(inspectGlb(glb(387)), expected),
     /triangle/i,
   );
+});
+
+test("independent GLB counts traverse only the selected scene graph", () => {
+  const expected = expectedTopology("small");
+  const orphaned = glb(384, 5125, 0, [{ mesh: 0 }, { mesh: 0 }], [0]);
+  assertTopology(inspectGlb(orphaned), expected);
 });
 
 test("malformed CLI options fail without publishing a report", async () => {
