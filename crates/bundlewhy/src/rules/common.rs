@@ -377,8 +377,13 @@ fn env_guards(
 
         match bytes[index] {
             b'(' | b'[' | b'{' => {
-                let context =
-                    scope_context(code, index, bytes[index], scopes[current_scope].context);
+                let context = scope_context(
+                    code,
+                    index,
+                    bytes[index],
+                    scopes[current_scope].context,
+                    ignored,
+                );
                 scopes.push(ScanScope {
                     parent: current_scope,
                     context,
@@ -480,8 +485,28 @@ fn env_guards(
         .collect()
 }
 
-fn scope_context(code: &str, index: usize, opener: u8, parent: ScopeContext) -> ScopeContext {
-    let prefix = code[..index].trim_end();
+fn scope_prefix<'a>(code: &'a str, index: usize, ignored: &[(usize, usize)]) -> &'a str {
+    let mut end = code[..index].trim_end().len();
+    loop {
+        let Some((start, _)) = ignored
+            .iter()
+            .rev()
+            .find(|(start, stop)| *stop == end && code[*start..*stop].starts_with("/*"))
+        else {
+            return &code[..end];
+        };
+        end = code[..*start].trim_end().len();
+    }
+}
+
+fn scope_context(
+    code: &str,
+    index: usize,
+    opener: u8,
+    parent: ScopeContext,
+    ignored: &[(usize, usize)],
+) -> ScopeContext {
+    let prefix = scope_prefix(code, index, ignored);
     if opener == b'[' {
         // A bracket after an expression is a computed member access and keeps
         // the surrounding condition. A bracket after an operator starts an
@@ -1543,6 +1568,13 @@ y=/process.env.F/.test(z),process.env.G"#;
         assert_eq!(
             guard(
                 "if(ready?process.env.VERSION:false)run()",
+                "process.env.VERSION"
+            ),
+            Some("the retained read is in an if condition")
+        );
+        assert_eq!(
+            guard(
+                "if/*!license*/(process.env.VERSION)run()",
                 "process.env.VERSION"
             ),
             Some("the retained read is in an if condition")
