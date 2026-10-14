@@ -188,6 +188,7 @@ import {
   SessionIconKind,
   SessionNotice,
   SessionProblemNotice,
+  sessionStreamFailureTitle,
   SessionNoticeSeverity,
 } from "./session-presentation";
 import "./session.css";
@@ -2949,7 +2950,7 @@ export function SessionView({
                   >
                     {live.error || live.state === ConnectionState.Failed ? (
                       <SessionNotice
-                        title={copy("session.connectionTitle")}
+                        title={sessionStreamFailureTitle(live.error?.code)}
                         details={(opener) => showInfo(opener)}
                       >
                         <p>{connectionLabel}</p>

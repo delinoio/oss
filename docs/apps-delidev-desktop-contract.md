@@ -6779,7 +6779,13 @@ details. The exact `missing_input` plus `quota_exhausted` pair shows Usage limit
 reached and localized complete-exhaustion guidance. Legacy, unknown, malformed or
 mismatched causes retain a generic heading and visible safe evidence; message
 text never establishes exhaustion. Authentication, connection, definitive startup,
-budget and uncertain recovery have distinct localized headings. Connection
+budget and uncertain recovery have distinct localized headings. The live stream
+card derives its heading from the typed failure code of the snapshot or watch
+observation (authentication for `unauthenticated`, connection for
+`unavailable`/`server_unavailable`, and the connection heading as the fallback
+for unclassified or every other code, including recovery, budget and quota
+classifications), never from message text; its message,
+guidance, Info target and alert announcement are unchanged. Connection
 refresh retains its original failed-observation gate and only reobserves.
 Show details opens the original Info target, including Budget and Recovery.
 No card grants sign-in, account switching, reset, send, Resume or new retry authority.
