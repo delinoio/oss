@@ -578,3 +578,192 @@ it("plays a Saved server task heading once for an explicit request inside the sl
   expect(open.hasAttribute("data-entrance")).toBe(false);
   target.remove();
 });
+
+// Dismissal belongs to the retained task, not to the host that displayed it.
+const dismissedTasks = [
+  {
+    open: /^Add server$/,
+    title: "Add a server connection",
+    field: "Connection name",
+  },
+  {
+    open: /^Rename Saved server/,
+    title: "Rename Saved server",
+    field: "New connection name",
+  },
+  {
+    open: /^Remove Saved server/,
+    title: "Confirm connection removal",
+    field: undefined,
+  },
+];
+const bodyHidden = (node: HTMLElement) => Boolean(node.closest("[hidden]"));
+it.each(
+  dismissedTasks.flatMap((task) =>
+    ["Close", "Escape"].map((dismissal) => ({ ...task, dismissal })),
+  ),
+)(
+  "keeps dismissed $title hidden in the fallback dialog after $dismissal until Continue",
+  async ({ open, title, field, dismissal }) => {
+    const value = fixture();
+    const target = document.createElement("div");
+    document.body.append(target);
+    const view = render(
+      <SavedConnections
+        visible
+        close={() => {}}
+        actions={value.actions}
+        target={target}
+      />,
+    );
+    await screen.findByRole("button", { name: "Open Saved server" });
+    fireEvent.click(screen.getByRole("button", { name: open }));
+    const dialog = screen.getByRole("dialog", {
+      name: title,
+    }) as HTMLDialogElement;
+    const input = field
+      ? (screen.getByLabelText(field) as HTMLInputElement)
+      : undefined;
+    if (input) fireEvent.change(input, { target: { value: "Retained draft" } });
+    if (dismissal === "Close")
+      fireEvent.click(screen.getByRole("button", { name: `Close ${title}` }));
+    else fireEvent(dialog, new Event("cancel", { cancelable: true }));
+    expect(dialog.open).toBe(false);
+    // Move to the main-window fallback host.
+    view.rerender(
+      <SavedConnections visible close={() => {}} actions={value.actions} />,
+    );
+    target.remove();
+    expect(dialog.open).toBe(false);
+    if (input) expect(bodyHidden(input)).toBe(true);
+    else
+      expect(
+        bodyHidden(screen.getByText(/closes all windows/i, { exact: false })),
+      ).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: `Continue ${title}` }));
+    expect(
+      screen.queryByRole("button", { name: `Continue ${title}` }),
+    ).toBeNull();
+    if (input) {
+      expect(screen.getByLabelText(field!)).toBe(input);
+      expect(bodyHidden(input)).toBe(false);
+      expect(input.value).toBe("Retained draft");
+    } else {
+      expect(
+        bodyHidden(screen.getByText(/closes all windows/i, { exact: false })),
+      ).toBe(false);
+    }
+    expect(screen.queryAllByRole("button", { name: /Continue/ })).toHaveLength(
+      0,
+    );
+    expect(value.pair).not.toHaveBeenCalled();
+    expect(value.rename).not.toHaveBeenCalled();
+    expect(value.remove).not.toHaveBeenCalled();
+    expect(value.open).not.toHaveBeenCalled();
+  },
+);
+it("retains an in-flight pairing when its dismissed Add moves to the fallback dialog", async () => {
+  const value = fixture();
+  let complete!: () => void;
+  value.pair.mockImplementation(
+    (id: string) =>
+      new Promise((resolve) => {
+        complete = () => resolve({ ...value.profile, id });
+      }),
+  );
+  const target = document.createElement("div");
+  document.body.append(target);
+  const view = render(
+    <SavedConnections
+      visible
+      close={() => {}}
+      actions={value.actions}
+      target={target}
+    />,
+  );
+  await screen.findByRole("button", { name: "Open Saved server" });
+  fireEvent.click(screen.getByRole("button", { name: "Add server" }));
+  const name = screen.getByLabelText("Connection name") as HTMLInputElement;
+  fireEvent.change(name, { target: { value: "Pending server" } });
+  fireEvent.change(screen.getByLabelText("Private client pairing document"), {
+    target: { value: value.grant },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Pair this server" }));
+  expect(value.pair).toHaveBeenCalledTimes(1);
+  const original = value.pair.mock.calls[0];
+  fireEvent.click(
+    screen.getByRole("button", { name: "Close Add a server connection" }),
+  );
+  view.rerender(
+    <SavedConnections visible close={() => {}} actions={value.actions} />,
+  );
+  target.remove();
+  expect(bodyHidden(name)).toBe(true);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Continue Add a server connection" }),
+  );
+  expect(bodyHidden(name)).toBe(false);
+  expect(name.value).toBe("Pending server");
+  expect(name.disabled).toBe(true);
+  expect(value.pair).toHaveBeenCalledTimes(1);
+  expect(value.pair.mock.calls[0]).toEqual(original);
+  complete();
+  await screen.findByText(/client pairing is saved/);
+  expect(value.pair).toHaveBeenCalledTimes(1);
+});
+it("does not leave a completed dismissed Add hidden for the fallback dialog", async () => {
+  const value = fixture();
+  let complete!: () => void;
+  value.pair.mockImplementation(
+    (id: string) =>
+      new Promise((resolve) => {
+        complete = () => resolve({ ...value.profile, id });
+      }),
+  );
+  const target = document.createElement("div");
+  document.body.append(target);
+  const view = render(
+    <SavedConnections
+      visible
+      close={() => {}}
+      actions={value.actions}
+      target={target}
+    />,
+  );
+  await screen.findByRole("button", { name: "Open Saved server" });
+  fireEvent.click(screen.getByRole("button", { name: "Add server" }));
+  fireEvent.change(screen.getByLabelText("Connection name"), {
+    target: { value: "Pending server" },
+  });
+  fireEvent.change(screen.getByLabelText("Private client pairing document"), {
+    target: { value: value.grant },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Pair this server" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Close Add a server connection" }),
+  );
+  complete();
+  await waitFor(() => expect(screen.queryByText(/saving/i)).toBeNull());
+  await waitFor(() =>
+    expect(
+      (screen.getByRole("button", { name: "Add server" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false),
+  );
+  view.rerender(
+    <SavedConnections visible close={() => {}} actions={value.actions} />,
+  );
+  target.remove();
+  expect(bodyHidden(screen.getByLabelText("Connection name"))).toBe(false);
+  expect(
+    screen.queryByRole("button", { name: "Continue Add a server connection" }),
+  ).toBeNull();
+});
+it("keeps the initial fallback Add form available without a prior task", async () => {
+  const value = fixture();
+  render(<SavedConnections visible close={() => {}} actions={value.actions} />);
+  await screen.findByRole("button", { name: "Open Saved server" });
+  expect(bodyHidden(screen.getByLabelText("Connection name"))).toBe(false);
+  expect(screen.queryByRole("button", { name: /^Continue/ })).toBeNull();
+  expect(value.pair).not.toHaveBeenCalled();
+});
