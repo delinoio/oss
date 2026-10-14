@@ -90,6 +90,15 @@ func subscriptionActorValid(tx *store.Tx, actor domain.Principal) error {
 	return nil
 }
 
+// cancelServerOperation settles the pending operation's server record as
+// canceled. A canceled record never keeps a failure diagnostic, such as the
+// provisional Grok record of an earlier refused Take.
+func cancelServerOperation(state *domain.SubscriptionState) {
+	if o := state.ServerOperation; o != nil && state.Pending != nil && o.ID == state.Pending.ID {
+		o.State, o.GrokDiagnostic = domain.SubscriptionCanceled, nil
+	}
+}
+
 // Queued lifecycle requests have not granted native authority. Settle them in
 // the same transaction as client revocation, without releasing independent or
 // claimed leases and without undoing logout's accepted execution revocation.
@@ -107,9 +116,7 @@ func cancelQueuedSubscriptionInitiator(tx *store.Tx, device domain.ID) error {
 		if state == nil || state.Pending == nil || state.Pending.Actor.DeviceID != device || state.Pending.Phase != domain.SubscriptionQueued {
 			continue
 		}
-		if o := state.ServerOperation; o != nil && o.ID == state.Pending.ID {
-			o.State = domain.SubscriptionCanceled
-		}
+		cancelServerOperation(state)
 		if o := state.NativeOperation; o != nil && o.ID == state.Pending.ID {
 			o.State = domain.SubscriptionCanceled
 			if state.Pending.Action == domain.SubscriptionLogin && state.Lease == nil && state.Generation == "" {
@@ -292,9 +299,7 @@ func (s *Service) CancelSubscription(ctx context.Context, req *connect.Request[p
 			return nil, domain.Fail(domain.Unsupported, "Only an active login can be canceled.", "Let refresh or logout finish under exclusive ownership.")
 		}
 		if a.Subscription.Pending.Phase == domain.SubscriptionQueued {
-			if o := a.Subscription.ServerOperation; o != nil && o.ID == a.Subscription.Pending.ID {
-				o.State = domain.SubscriptionCanceled
-			}
+			cancelServerOperation(a.Subscription)
 			a.Subscription.Pending = nil
 		} else {
 			a.Subscription.Pending.Canceled = true

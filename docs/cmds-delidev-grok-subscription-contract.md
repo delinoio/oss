@@ -463,6 +463,11 @@ owner's active operation:
   diagnostic, and an unconfirmed native cleanup is `failed` with a
   `cleanup` / `recovery_required` diagnostic. Progress reports `recovery-required`
   while the account is fenced.
+- Canceling a queued operation (initiator device revocation, or the shared
+  `cancelServerOperation`) marks its record `canceled` and clears any
+  `GrokDiagnostic` left by an earlier refused Take.
+  `SubscriptionState.Validate` rejects a `canceled` record that carries a Grok
+  diagnostic, and progress never serves one.
 - A failure to remove superseded credential generations after the publication
   committed replaces the succeeded record with a `cleanup` diagnostic
   (`recordGrokCleanupFailure`).

@@ -2,10 +2,12 @@
 package server
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
@@ -92,5 +94,76 @@ func TestGrokProgressReportsAnActiveOperationBeforeItSettles(t *testing.T) {
 	}
 	if p := f.progressFor(op.OperationId); p.State != pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_CANCELED || !p.Canceled || p.GrokDiagnostic != nil {
 		t.Fatalf("finished canceled operation progress: %v", p)
+	}
+}
+
+// Revoking the initiating client device cancels its queued operation through
+// cancelQueuedSubscriptionInitiator, which must not keep the failure diagnostic
+// that an earlier refused Take recorded.
+func TestGrokInitiatorRevocationClearsTheRefusalDiagnostic(t *testing.T) {
+	f := newGrokFixture(t)
+	f.setGrokInstallation(t, func(installations *[]domain.Installation) { (*installations)[0].Version = "1.0.45" })
+	op := f.queue(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
+	device := domain.NewID()
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.grok.client-initiator", nil, func(tx *store.Tx) (any, error) {
+		r, a, err := accountFromTx(tx, f.input.AccountID, 0)
+		if err != nil {
+			return nil, err
+		}
+		a.Subscription.Pending.Actor = domain.Principal{Type: domain.ClientDevice, DeviceID: device}
+		return tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := f.seedRefusal(t, op.OperationId)
+	if a.Subscription.ServerOperation == nil || a.Subscription.ServerOperation.GrokDiagnostic == nil {
+		t.Fatal("the refusal was not recorded")
+	}
+	if _, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.grok.revoke", nil, func(tx *store.Tx) (any, error) {
+		return nil, cancelQueuedSubscriptionInitiator(tx, device)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	a = f.assertGrokOperationValid(t)
+	if a.Subscription.Pending != nil || a.Subscription.ServerOperation.State != domain.SubscriptionCanceled || a.Subscription.ServerOperation.GrokDiagnostic != nil {
+		t.Fatalf("revocation left a stale diagnostic: %+v", a.Subscription.ServerOperation)
+	}
+}
+
+func (f *grokFixture) seedRefusal(t *testing.T, operation string) domain.Account {
+	t.Helper()
+	r, a := f.record()
+	_ = r
+	d := domain.GrokErrorDiagnostic(grokAdmissionFailure(&domain.Installation{Harness: domain.GrokBuild, State: domain.InstallationDetected, Version: "1.0.45"}))
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.grok.refusal", nil, func(tx *store.Tx) (any, error) {
+		rec, acct, err := accountFromTx(tx, f.input.AccountID, 0)
+		if err != nil {
+			return nil, err
+		}
+		p := acct.Subscription.Pending
+		settleGrokOperation(acct.Subscription, grokSettlement{Operation: p.ID, Action: p.Action, Actor: p.Actor, Epoch: f.service.subscriptionServerEpoch(), State: domain.SubscriptionUnsupported, Diagnostic: d}, time.Now().UTC())
+		return tx.Put(domain.AccountKind, rec.ID, rec.Revision, "", "", acct)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, a = f.record()
+	return a
+}
+
+// The domain invariant forbids a failure diagnostic on a canceled record.
+func TestGrokCanceledRecordRejectsADiagnostic(t *testing.T) {
+	f := newGrokFixture(t)
+	op := f.queue(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
+	a := f.seedRefusal(t, op.OperationId)
+	a.Subscription.ServerOperation.State = domain.SubscriptionCanceled
+	if a.Subscription.Validate(a) == nil {
+		t.Fatal("a canceled operation with a failure diagnostic validated")
+	}
+	a.Subscription.ServerOperation.GrokDiagnostic = nil
+	a.Subscription.Pending = nil
+	if err := a.Subscription.Validate(a); err != nil {
+		t.Fatal(err)
 	}
 }
