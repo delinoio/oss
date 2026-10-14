@@ -326,6 +326,28 @@ describe("source viewer", () => {
     ).toBeTruthy();
   });
 
+  it("describes legacy stale source state accurately", async () => {
+    const source = create(SourceFileSchema, {
+      ...fixtureSource(),
+      revisionEvidence: SourceRevisionEvidence.UNSPECIFIED,
+      stale: true,
+      sha256: "legacy-hash",
+    });
+    await renderAnalysis(fixtureAnalysis(), {
+      getSourceFile: () => ({ source }),
+    });
+    fireEvent.click(screen.getByRole("button", { name: "View full source" }));
+    const dialog = await screen.findByRole("dialog", { name: "src/main.ts" });
+    expect(
+      within(dialog).getByText(
+        "The current source file differs from or was removed since this analysis.",
+      ),
+    ).toBeTruthy();
+    expect(
+      within(dialog).queryByText("The source file was removed since this analysis."),
+    ).toBeNull();
+  });
+
   it("labels source text without a build snapshot as unverified", async () => {
     const source = create(SourceFileSchema, {
       ...fixtureSource(),

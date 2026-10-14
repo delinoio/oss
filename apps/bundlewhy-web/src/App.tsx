@@ -1243,7 +1243,9 @@ function SourceDialog({
               <p>
                 {file.revisionEvidence === SourceRevisionEvidence.BUILD_SNAPSHOT
                   ? "The current file differs from the version that was analyzed."
-                  : "The source file was removed since this analysis."}
+                  : file.revisionEvidence === SourceRevisionEvidence.UNSPECIFIED
+                    ? "The current source file differs from or was removed since this analysis."
+                    : "The source file was removed since this analysis."}
               </p>
             </div>
           ) : null}
