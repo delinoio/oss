@@ -420,6 +420,9 @@ pub fn export(prepared: &Prepared<'_>) -> Result<Vec<u8>> {
         root["buffers"] = json!([{"byteLength":w.bin.len()}]);
     }
     if root.get("textures").is_some() {
+        // Preserve the existing repeat-wrapping contract. Texture-atlas
+        // callers that need edge isolation must inset their UVs instead of
+        // changing sampler behavior for every textured scene.
         root["samplers"] = json!([{"magFilter":9729,"minFilter":9987,"wrapS":10497,"wrapT":10497}]);
     }
     if !w.lights.is_empty() {

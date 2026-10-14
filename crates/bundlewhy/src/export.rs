@@ -85,7 +85,8 @@ pub fn escape_script_json(json: &str) -> String {
 }
 
 /// Renders a self-contained interactive report that loads no external
-/// resources.
+/// resources. Source and summary stale flags and the `BW_SOURCE_STALE` warning
+/// are kept as observed at export time, independent of `include_sources`.
 pub fn render(
     ui_html: &str,
     analysis: &Analysis,
@@ -105,13 +106,30 @@ pub fn render(
                 source.content.clear();
                 source.content_included = false;
             }
-            source.stale = false;
             source
         })
         .collect();
     for summary in &mut analysis.sources {
         summary.content_included = include_sources && summary.content_included;
-        summary.stale = false;
+    }
+    // Stale flags stay as observed at export time: an export is a snapshot and
+    // never rechecks project files. A legacy or in-memory analysis can carry
+    // several stale warnings; keep only the most recent one.
+    let stale_code = crate::error::ErrorCode::SourceStale.as_str();
+    let stale_warnings = analysis
+        .problems
+        .iter()
+        .filter(|entry| entry.code == stale_code)
+        .count();
+    if stale_warnings > 1 {
+        let mut skip = stale_warnings - 1;
+        analysis.problems.retain(|entry| {
+            if entry.code != stale_code || skip == 0 {
+                return true;
+            }
+            skip -= 1;
+            false
+        });
     }
     if !include_sources {
         // A run analyzed with sources can still carry build errors that quote
@@ -207,5 +225,90 @@ mod tests {
         let with_sources = render(ui, &analysis, &sources, true);
         assert!(with_sources.contains("secret"));
         assert!(with_sources.contains("snippetSecret"));
+    }
+
+    fn embedded_payload(html: &str) -> serde_json::Value {
+        let marker = "id=\"bundlewhy-report\">";
+        let start = html.find(marker).unwrap() + marker.len();
+        let end = start + html[start..].find("</script>").unwrap();
+        serde_json::from_str(&html[start..end]).unwrap()
+    }
+
+    fn stale_problem(message: &str) -> crate::model::Problem {
+        crate::model::Problem {
+            code: "BW_SOURCE_STALE".to_owned(),
+            message: message.to_owned(),
+            ..crate::model::Problem::default()
+        }
+    }
+
+    #[test]
+    fn export_keeps_stale_flags_and_a_single_warning_for_both_source_modes() {
+        let ui = "<html><head></head><body></body></html>";
+        let mut analysis = Analysis {
+            schema_version: 1,
+            status: RunStatus::Complete,
+            sources: vec![crate::model::SourceFileSummary {
+                id: "src-0".to_owned(),
+                stale: true,
+                content_included: true,
+                ..crate::model::SourceFileSummary::default()
+            }],
+            ..Analysis::default()
+        };
+        analysis.problems.push(stale_problem("build-time"));
+        analysis.problems.push(crate::model::Problem {
+            code: "BW_SOURCE_UNREADABLE".to_owned(),
+            ..crate::model::Problem::default()
+        });
+        analysis.problems.push(stale_problem("load-time"));
+        let sources = vec![SourceFile {
+            id: "src-0".to_owned(),
+            stale: true,
+            content: "secret".to_owned(),
+            content_included: true,
+            ..SourceFile::default()
+        }];
+        for include_sources in [true, false] {
+            let payload = embedded_payload(&render(ui, &analysis, &sources, include_sources));
+            let problems = payload["analysis"]["problems"].as_array().unwrap();
+            let codes: Vec<_> = problems
+                .iter()
+                .map(|p| p["code"].as_str().unwrap())
+                .collect();
+            assert_eq!(codes, ["BW_SOURCE_UNREADABLE", "BW_SOURCE_STALE"]);
+            assert_eq!(problems[1]["message"], "load-time");
+            assert_eq!(payload["analysis"]["sources"][0]["stale"], true);
+            assert_eq!(payload["sources"][0]["stale"], true);
+        }
+    }
+
+    #[test]
+    fn export_adds_no_stale_warning_or_flags_when_nothing_is_stale() {
+        let ui = "<html><head></head><body></body></html>";
+        let analysis = Analysis {
+            schema_version: 1,
+            status: RunStatus::Complete,
+            sources: vec![crate::model::SourceFileSummary {
+                id: "src-0".to_owned(),
+                ..crate::model::SourceFileSummary::default()
+            }],
+            ..Analysis::default()
+        };
+        let sources = vec![SourceFile {
+            id: "src-0".to_owned(),
+            ..SourceFile::default()
+        }];
+        for include_sources in [true, false] {
+            let payload = embedded_payload(&render(ui, &analysis, &sources, include_sources));
+            assert!(
+                payload["analysis"]["problems"]
+                    .as_array()
+                    .unwrap()
+                    .is_empty()
+            );
+            assert_eq!(payload["analysis"]["sources"][0]["stale"], false);
+            assert_eq!(payload["sources"][0]["stale"], false);
+        }
     }
 }
