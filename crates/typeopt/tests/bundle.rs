@@ -25,6 +25,34 @@ fn bundle(chunks: &[(&str, &str)]) -> tempfile::TempDir {
     temp
 }
 
+fn strip_ansi(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    let mut escape = false;
+    let mut csi = false;
+    for character in input.chars() {
+        if !escape {
+            if character == '\u{1b}' {
+                escape = true;
+            } else {
+                output.push(character);
+            }
+            continue;
+        }
+        if !csi {
+            csi = character == '[';
+            if !csi {
+                escape = false;
+            }
+            continue;
+        }
+        if ('@'..='~').contains(&character) {
+            escape = false;
+            csi = false;
+        }
+    }
+    output
+}
+
 fn run_typeopt(root: &Path, extra: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_typeopt"))
         .current_dir(root)
@@ -2008,6 +2036,13 @@ fn rejects_imports_outside_the_bundle() {
     let output = run_typeopt(temp.path(), &[]);
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("outside the bundle directory"));
+    let protocol_relative = bundle(&[(
+        "index.js",
+        r#"if(false)import("//cdn.example.com/app.js");console.log(1);"#,
+    )]);
+    let output = run_typeopt(protocol_relative.path(), &[]);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("outside the bundle directory"));
     let package = bundle(&[("index.js", r#"import{x}from"pkg";console.log(x);"#)]);
     let module = package.path().join("node_modules/pkg");
     fs::create_dir_all(&module).unwrap();
@@ -2020,6 +2055,469 @@ fn rejects_imports_outside_the_bundle() {
     let output = run_typeopt(package.path(), &[]);
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("outside the bundle directory"));
+}
+
+#[test]
+fn rejects_static_commonjs_package_requires() {
+    let temp = bundle(&[("index.js", r#"require("pkg");console.log(1);"#)]);
+    let package = temp.path().join("node_modules/pkg");
+    fs::create_dir_all(&package).unwrap();
+    fs::write(
+        package.join("package.json"),
+        r#"{"name":"pkg","main":"index.js"}"#,
+    )
+    .unwrap();
+    fs::write(package.join("index.js"), "module.exports=1;").unwrap();
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("outside the bundle directory"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn ignores_shadowed_commonjs_package_requires() {
+    for source in [
+        r#"{const require=globalThis.require;require("pkg");}"#,
+        r#"function run(require){require("pkg")}run(globalThis.require);"#,
+    ] {
+        let temp = bundle(&[("index.js", source)]);
+        let output = run_typeopt(temp.path(), &[]);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+#[test]
+fn rejects_relative_imports_hidden_by_dynamic_package_boundary() {
+    let temp = bundle(&[(
+        "sub/index.js",
+        r#"import{x}from"../../node_modules/pkg/index";if(false)import("pkg");console.log(x);"#,
+    )]);
+    let package = temp.path().join("node_modules/pkg");
+    fs::create_dir_all(&package).unwrap();
+    fs::write(
+        package.join("package.json"),
+        r#"{"name":"pkg","type":"module","main":"index.js"}"#,
+    )
+    .unwrap();
+    fs::write(package.join("index.js"), "export const x=1;").unwrap();
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("outside the bundle directory"));
+}
+
+/// An explicit runtime extension must keep its runtime file linked even when
+/// TypeScript can resolve a sibling declaration file first.
+#[test]
+fn resolves_explicit_runtime_import_before_declaration_substitution() {
+    let temp = bundle(&[
+        (
+            "index.js",
+            r#"import{make}from"./dep.js";console.log(make(3).verticalSpacing);"#,
+        ),
+        (
+            "dep.js",
+            "export function make(n){return{verticalSpacing:n,horizontalSpacing:n*2}}",
+        ),
+        (
+            "dep.d.ts",
+            "export declare function make(n:number): {verticalSpacing:number};",
+        ),
+    ]);
+    let original = fs::read_to_string(temp.path().join("dist/dep.js")).unwrap();
+    let output = run_typeopt(temp.path(), &["--bundle-exclude", "index.js"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(out(temp.path(), "dep.js"), original);
+}
+
+/// An extensionless runtime import must prefer its chunk over a sibling
+/// declaration file when TypeScript resolves the declaration first.
+#[test]
+fn resolves_extensionless_runtime_import_before_declaration_substitution() {
+    let temp = bundle(&[
+        (
+            "index.js",
+            r#"import{make}from"./dep";console.log(make(3).verticalSpacing);"#,
+        ),
+        (
+            "dep.js",
+            "export function make(n){return{verticalSpacing:n,horizontalSpacing:n*2}}",
+        ),
+        (
+            "dep.d.ts",
+            "export declare function make(n:number): {verticalSpacing:number};",
+        ),
+    ]);
+    let original = fs::read_to_string(temp.path().join("dist/dep.js")).unwrap();
+    let output = run_typeopt(temp.path(), &["--bundle-exclude", "index.js"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(out(temp.path(), "dep.js"), original);
+}
+
+/// A syntax error in a file reached only through a dynamic package boundary
+/// must not block analysis of the closed application bundle.
+#[test]
+fn ignores_syntax_diagnostics_in_dynamic_only_package_files() {
+    let temp = bundle(&[
+        (
+            "index.js",
+            r#"import{value}from"./settings.js";import"./guarded.js";console.log(value(3).verticalSpacing);"#,
+        ),
+        (
+            "guarded.js",
+            r#"if(false)import("pkg");export const answer=1;"#,
+        ),
+        (
+            "settings.js",
+            r#"function value(n){return{verticalSpacing:n,horizontalSpacing:n*2}}export{value};"#,
+        ),
+    ]);
+    let package = temp.path().join("node_modules/pkg");
+    fs::create_dir_all(&package).unwrap();
+    fs::write(
+        package.join("package.json"),
+        r#"{"name":"pkg","type":"module","main":"index.js"}"#,
+    )
+    .unwrap();
+    fs::write(package.join("index.js"), "export const = 1;").unwrap();
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!out(temp.path(), "settings.js").contains("verticalSpacing"));
+}
+
+/// A dynamic package declaration cannot suppress diagnostics for an explicit
+/// bundle root that it references.
+#[test]
+fn checks_dynamic_package_references_to_bundle_roots() {
+    let temp = bundle(&[
+        ("index.js", r#"if(false)import("pkg");console.log(1);"#),
+        ("root.js", "export const = 1;"),
+    ]);
+    let package = temp.path().join("dist/node_modules/pkg");
+    fs::create_dir_all(&package).unwrap();
+    fs::write(
+        package.join("package.json"),
+        r#"{"name":"pkg","type":"module","main":"../../root.js"}"#,
+    )
+    .unwrap();
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(
+        !output.status.success(),
+        "malformed bundle root was published"
+    );
+    assert!(!temp.path().join("out").exists());
+}
+
+#[test]
+fn allows_transitive_dynamic_package_declarations() {
+    let temp = bundle(&[("index.js", r#"if(false)import("pkg");console.log(1);"#)]);
+    let package = temp.path().join("node_modules/pkg");
+    let dependency = temp.path().join("node_modules/dep");
+    fs::create_dir_all(&package).unwrap();
+    fs::create_dir_all(&dependency).unwrap();
+    fs::write(
+        package.join("package.json"),
+        r#"{"name":"pkg","type":"module","main":"index.js","types":"index.d.ts"}"#,
+    )
+    .unwrap();
+    fs::write(package.join("index.js"), "export const x=1;").unwrap();
+    fs::write(
+        package.join("index.d.ts"),
+        "/// <reference path=\"./shared.d.ts\" />\n/// <reference types=\"dep\" />\ntype Y = \
+         import(\"dep\").Y;\nimport Dep = require(\"dep\");\nexport type {Y};",
+    )
+    .unwrap();
+    fs::write(package.join("shared.d.ts"), "export type Shared = string;").unwrap();
+    fs::write(
+        dependency.join("package.json"),
+        r#"{"name":"dep","types":"index.d.ts"}"#,
+    )
+    .unwrap();
+    fs::write(
+        dependency.join("index.d.ts"),
+        "export declare const y:number;",
+    )
+    .unwrap();
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn allows_transitive_dynamic_package_commonjs_requires() {
+    let temp = bundle(&[("index.js", r#"if(false)import("pkg");console.log(1);"#)]);
+    let package = temp.path().join("node_modules/pkg");
+    fs::create_dir_all(&package).unwrap();
+    fs::write(
+        package.join("package.json"),
+        r#"{"name":"pkg","main":"index.js"}"#,
+    )
+    .unwrap();
+    fs::write(
+        package.join("index.js"),
+        r#"module.exports=require("./helper.js");"#,
+    )
+    .unwrap();
+    fs::write(package.join("helper.js"), "module.exports={value:1};").unwrap();
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A malformed import type in a declaration reached only through a dynamic
+/// package boundary must be skipped without panicking during dependency walk.
+#[test]
+fn ignores_malformed_dynamic_package_import_types() {
+    let temp = bundle(&[("index.js", r#"if(false)import("pkg");console.log(1);"#)]);
+    let package = temp.path().join("node_modules/pkg");
+    fs::create_dir_all(&package).unwrap();
+    fs::write(
+        package.join("package.json"),
+        r#"{"name":"pkg","type":"module","main":"index.js","types":"index.d.ts"}"#,
+    )
+    .unwrap();
+    fs::write(package.join("index.js"), "export const value=1;").unwrap();
+    fs::write(package.join("index.d.ts"), "export type T = import(Foo).T;").unwrap();
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A package loaded only by a guarded dynamic import is an unchanged
+/// boundary; an independent chunk can still be optimized.
+#[test]
+fn guarded_dynamic_package_import_is_a_boundary() {
+    let chunks = [
+        (
+            "index.js",
+            r#"import{value}from"./settings.js";globalThis.window={};const guarded=await import("./guarded.js");console.log(value(3).verticalSpacing,guarded.answer);"#,
+        ),
+        (
+            "guarded.js",
+            r#"import{answer}from"./shared.js";if(typeof window>"u"){await import("fs/promises");await import("pkg")}export{answer};"#,
+        ),
+        ("shared.js", r#"const answer=42;export{answer};"#),
+        (
+            "settings.js",
+            r#"function value(n){return{verticalSpacing:n,horizontalSpacing:n*2}}export{value};"#,
+        ),
+    ];
+    let temp = bundle(&chunks);
+    let package = temp.path().join("node_modules/pkg");
+    fs::create_dir_all(&package).unwrap();
+    fs::write(
+        package.join("package.json"),
+        r#"{"name":"pkg","type":"module","main":"index.js","types":"index.d.ts"}"#,
+    )
+    .unwrap();
+    fs::write(package.join("index.js"), "export const x=1;").unwrap();
+    fs::write(
+        package.join("index.d.ts"),
+        "export declare const x: number;",
+    )
+    .unwrap();
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = strip_ansi(&String::from_utf8_lossy(&output.stderr));
+    assert!(
+        stderr.contains("a dynamic package import keeps the bundle chunk unchanged")
+            && stderr.contains("guarded.js")
+            && stderr.contains("specifier=\"fs/promises\"")
+            && stderr.contains("specifier=\"pkg\""),
+        "{stderr}"
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(
+        report["frozen_chunks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|chunk| chunk["file"].as_str().unwrap().ends_with("shared.js")),
+        "{report:#}"
+    );
+    for name in ["guarded.js", "shared.js"] {
+        assert_eq!(
+            fs::read(temp.path().join("dist").join(name)).unwrap(),
+            fs::read(temp.path().join("out").join(name)).unwrap(),
+            "{name}"
+        );
+    }
+    assert!(saved(&report) > 0, "{report:#}");
+    assert_ne!(out(temp.path(), "settings.js"), chunks[3].1);
+    same_behavior(temp.path());
+
+    let check = Command::new(env!("CARGO_BIN_EXE_typeopt"))
+        .current_dir(temp.path())
+        .args(["--bundle", "dist", "--check", "--verbose"])
+        .output()
+        .unwrap();
+    assert!(
+        check.status.success(),
+        "{}",
+        String::from_utf8_lossy(&check.stderr)
+    );
+    let check_report: Value = serde_json::from_slice(&check.stdout).unwrap();
+    assert_eq!(check_report["size"], report["size"]);
+    assert_eq!(check_report["frozen_chunks"], report["frozen_chunks"]);
+}
+
+/// A dynamic package specifier that resembles a hashed chunk name keeps its
+/// original text when publication rehashes another chunk.
+#[test]
+fn preserves_hashed_dynamic_package_specifiers() {
+    let chunks = [
+        (
+            "index-AAAAAAAA.js",
+            r#"import{value}from"./settings-BBBBBBBB.js";import("./guarded-CCCCCCCC.js");console.log(value(3).verticalSpacing);"#,
+        ),
+        (
+            "guarded-CCCCCCCC.js",
+            r#"if(false)import("settings-BBBBBBBB.js");export const answer=1;"#,
+        ),
+        (
+            "settings-BBBBBBBB.js",
+            r#"function value(n){return{verticalSpacing:n,horizontalSpacing:n*2}}export{value};"#,
+        ),
+    ];
+    let temp = bundle(&chunks);
+    let package = temp.path().join("node_modules/settings-BBBBBBBB.js");
+    fs::create_dir_all(&package).unwrap();
+    fs::write(
+        package.join("package.json"),
+        r#"{"name":"settings-BBBBBBBB.js","type":"module","main":"index.js"}"#,
+    )
+    .unwrap();
+    fs::write(package.join("index.js"), "export const value=1;").unwrap();
+
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        out(temp.path(), "guarded-CCCCCCCC.js"),
+        chunks[1].1,
+        "dynamic package specifier was rewritten"
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(saved(&report) > 0, "{report:#}");
+}
+
+/// An excluded chunk keeps a dynamically importing dependency and its imports
+/// under their original names, so publication cannot split the module graph.
+#[test]
+fn excluded_chunks_freeze_dynamic_package_boundaries() {
+    let temp = bundle(&[
+        (
+            "assets/index-AAAAAAAA.js",
+            r#"import"./vendor-DDDDDDDD.js";import{value}from"./settings-BBBBBBBB.js";console.log(value(3).verticalSpacing);"#,
+        ),
+        (
+            "assets/vendor-DDDDDDDD.js",
+            r#"import"./dynamic-CCCCCCCC.js";export const vendor=1;"#,
+        ),
+        (
+            "assets/dynamic-CCCCCCCC.js",
+            r#"import{value}from"./settings-BBBBBBBB.js";if(false)import("pkg");export const dynamic=value(4);"#,
+        ),
+        (
+            "assets/settings-BBBBBBBB.js",
+            r#"function value(n){return{verticalSpacing:n,horizontalSpacing:n*2}}export{value};"#,
+        ),
+    ]);
+    let package = temp.path().join("node_modules/pkg");
+    fs::create_dir_all(&package).unwrap();
+    fs::write(
+        package.join("package.json"),
+        r#"{"name":"pkg","type":"module","main":"index.js"}"#,
+    )
+    .unwrap();
+    fs::write(package.join("index.js"), "export const value=1;").unwrap();
+
+    let report = optimize(temp.path(), &["--bundle-exclude", "vendor-"]);
+    for chunk in [
+        "vendor-DDDDDDDD.js",
+        "dynamic-CCCCCCCC.js",
+        "settings-BBBBBBBB.js",
+    ] {
+        assert_eq!(
+            fs::read(temp.path().join("out/assets").join(chunk)).unwrap(),
+            fs::read(temp.path().join("dist/assets").join(chunk)).unwrap(),
+            "{chunk}"
+        );
+    }
+    let frozen = report["frozen_chunks"].as_array().unwrap();
+    assert!(
+        frozen.iter().any(|chunk| chunk["file"]
+            .as_str()
+            .unwrap()
+            .ends_with("dynamic-CCCCCCCC.js")),
+        "{report:#}"
+    );
+    assert!(
+        frozen.iter().any(|chunk| chunk["file"]
+            .as_str()
+            .unwrap()
+            .ends_with("settings-BBBBBBBB.js")),
+        "{report:#}"
+    );
+}
+
+#[test]
+fn static_package_import_and_reexport_still_reject() {
+    for source in [
+        r#"import{x}from"fs/promises";console.log(x);"#,
+        r#"export{x}from"fs/promises";"#,
+    ] {
+        let temp = bundle(&[("index.js", source)]);
+        for output in [
+            run_typeopt(temp.path(), &[]),
+            Command::new(env!("CARGO_BIN_EXE_typeopt"))
+                .current_dir(temp.path())
+                .args(["--bundle", "dist", "--check"])
+                .output()
+                .unwrap(),
+        ] {
+            assert!(!output.status.success());
+            assert!(
+                String::from_utf8_lossy(&output.stderr).contains("outside the bundle directory"),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
 }
 
 #[test]
