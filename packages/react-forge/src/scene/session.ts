@@ -76,6 +76,7 @@ export interface SceneAnalysis {
   readonly referencedGeometryBytes: number;
   readonly unusedGeometryCount: number;
   readonly meshes: readonly SceneMeshAnalysis[];
+}
 
 export interface GeometryCompaction {
   readonly geometry: GeometryHandle;
