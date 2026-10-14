@@ -7,7 +7,6 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"slices"
-	"strings"
 )
 
 func requestImageAttachments(values []*pb.ImageAttachment) ([]domain.ImageAttachment, error) {
@@ -40,7 +39,7 @@ func checkImageRoute(tx *store.Tx, agentID, machineID domain.ID, prompt string, 
 	if err != nil {
 		return err
 	}
-	if !agent.Harness.ImageInputs() || !slices.Contains(machine.WorkerCapabilities, domain.ImageInputsV1) || agent.Harness == domain.OpenCode && strings.TrimSpace(prompt) == "" {
+	if !agent.Harness.ImageInputs() || !slices.Contains(machine.WorkerCapabilities, domain.ImageInputsV1) || !domain.ImagePromptAllowed(agent.Harness, prompt) {
 		return domain.UnsupportedImageInput()
 	}
 	if err := domain.ValidateImageAttachmentsForHarness(agent.Harness, refs); err != nil {
@@ -118,7 +117,7 @@ func checkSessionImageRoute(tx *store.Tx, session domain.Session, prompt string,
 	if err != nil {
 		return err
 	}
-	if !snapshot.Configuration.Harness.ImageInputs() || !snapshot.Configuration.ImageInputDeclared || snapshot.Configuration.SidechatPolicy != "" || !slices.Contains(machine.WorkerCapabilities, domain.ImageInputsV1) || snapshot.Configuration.Harness == domain.OpenCode && strings.TrimSpace(prompt) == "" {
+	if !snapshot.Configuration.Harness.ImageInputs() || !snapshot.Configuration.ImageInputDeclared || snapshot.Configuration.SidechatPolicy != "" || !slices.Contains(machine.WorkerCapabilities, domain.ImageInputsV1) || !domain.ImagePromptAllowed(snapshot.Configuration.Harness, prompt) {
 		return domain.UnsupportedImageInput()
 	}
 	if err := domain.ValidateImageAttachmentsForHarness(snapshot.Configuration.Harness, refs); err != nil {
@@ -130,4 +129,36 @@ func checkSessionImageRoute(tx *store.Tx, session domain.Session, prompt string,
 		}
 	}
 	return domain.ValidateImageAttachments(refs)
+}
+
+// checkQueuedImageEdit applies the text-dependent image rules to an edit of an
+// undelivered input. The immutable references were admitted with the original
+// input, so the edit never reruns catalog or Worker eligibility; it only keeps
+// the new text valid for the frozen session harness (a claimed session
+// snapshot, else the Agent harness the first execution will freeze).
+func checkQueuedImageEdit(tx *store.Tx, session domain.Session, prompt string, refs []domain.ImageAttachment) error {
+	if len(refs) == 0 {
+		return nil
+	}
+	var harness domain.Harness
+	switch {
+	case session.InitialExecution != nil:
+		harness = session.InitialExecution.Configuration.Harness
+	case session.Fork != nil:
+		harness = session.Fork.Snapshot.Configuration.Harness
+	default:
+		row, err := tx.Get(domain.AgentKind, session.AgentID)
+		if err != nil {
+			return err
+		}
+		agent, err := store.Decode[domain.Agent](row)
+		if err != nil {
+			return err
+		}
+		harness = agent.Harness
+	}
+	if !domain.ImagePromptAllowed(harness, prompt) {
+		return domain.UnsupportedImageInput()
+	}
+	return nil
 }

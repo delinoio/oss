@@ -59,6 +59,13 @@ func (a ImageAttachment) Validate() error {
 	return nil
 }
 
+// ImagePromptAllowed reports whether a message may combine this prompt with
+// image attachments. OpenCode keeps one original text part, so its image
+// messages need nonblank text; Codex also accepts image-only messages.
+func ImagePromptAllowed(harness Harness, prompt string) bool {
+	return harness != OpenCode || strings.TrimSpace(prompt) != ""
+}
+
 // ValidateImageAttachmentsForHarness applies the generic bounds plus any
 // harness-specific combined size limit.
 func ValidateImageAttachmentsForHarness(harness Harness, values []ImageAttachment) error {

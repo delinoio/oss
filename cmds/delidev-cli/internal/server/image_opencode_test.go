@@ -134,3 +134,63 @@ func TestOpenCodeFollowUpImageUsesFrozenSnapshotAndRejectsSidechat(t *testing.T)
 		}
 	}
 }
+
+func createOpenCodeImageSession(t *testing.T) (*firstDispatchFixture, *pb.SessionChange) {
+	t.Helper()
+	f, u, operation := openCodeImageUpload(t, domain.OpenCode)
+	selection := f.selection
+	selection.Prompt = "Describe the attached image"
+	document, _ := json.Marshal(selection)
+	reply, err := sessionClient(f.accountFixture).CreateSession(context.Background(), ownerRequest(f.identity, &pb.CreateSessionRequest{RequestId: string(operation), DocumentJson: document, Attachments: []*pb.ImageAttachment{u.Attachment}}))
+	if err != nil {
+		t.Fatal("OpenCode image session rejected", err)
+	}
+	return f, reply.Msg.Change
+}
+
+func queuedInput(t *testing.T, f *firstDispatchFixture, id string) domain.QueuedInput {
+	t.Helper()
+	var value domain.QueuedInput
+	if err := f.service.Store.Read(context.Background(), func(tx *store.Tx) error {
+		row, err := tx.Get(domain.QueueKind, domain.ID(id))
+		if err != nil {
+			return err
+		}
+		value, err = store.Decode[domain.QueuedInput](row)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return value
+}
+
+func TestOpenCodeQueuedImageEditKeepsNonblankText(t *testing.T) {
+	f, change := createOpenCodeImageSession(t)
+	original := queuedInput(t, f, change.Input.Id)
+	if len(original.Attachments) != 1 {
+		t.Fatal("fixture lost its image reference")
+	}
+	ctx := context.Background()
+	edit := func(input *pb.Resource, prompt string) (*connect.Response[pb.EditQueuedInputResponse], error) {
+		return sessionClient(f.accountFixture).EditQueuedInput(ctx, ownerRequest(f.identity, &pb.EditQueuedInputRequest{Mutation: acctMutation(input, domain.NewID()), SessionId: change.Session.Id, Prompt: prompt}))
+	}
+	for name, prompt := range map[string]string{"empty": "", "whitespace": " \n\t "} {
+		if _, err := edit(change.Input, prompt); connect.CodeOf(err) != connect.CodeUnimplemented {
+			t.Fatalf("%s prompt kept the images: %v", name, err)
+		}
+		if current := queuedInput(t, f, change.Input.Id); current.Prompt != original.Prompt || current.ContentRevision != original.ContentRevision || len(current.Attachments) != 1 {
+			t.Fatalf("rejected %s edit changed the queued input", name)
+		}
+	}
+	changed, err := edit(change.Input, "A new caption")
+	if err != nil {
+		t.Fatal("nonblank edit rejected", err)
+	}
+	if current := queuedInput(t, f, change.Input.Id); current.Prompt != "A new caption" || len(current.Attachments) != 1 || current.Attachments[0] != original.Attachments[0] {
+		t.Fatal("edit lost the immutable image reference")
+	}
+	removed, err := sessionClient(f.accountFixture).RemoveQueuedInput(ctx, ownerRequest(f.identity, &pb.RemoveQueuedInputRequest{Mutation: acctMutation(changed.Msg.Change.Input, domain.NewID()), SessionId: change.Session.Id}))
+	if err != nil || queuedInput(t, f, change.Input.Id).Delivery != domain.InputRemoved || removed == nil {
+		t.Fatal("removal of an image message was rejected", err)
+	}
+}

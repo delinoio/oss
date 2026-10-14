@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"slices"
-	"strings"
 )
 
 // ExecutionJobInput is a non-secret immutable Worker assignment. API authority
@@ -122,7 +121,7 @@ func (i ExecutionJobInput) Validate() error {
 		if err := ValidateImageAttachmentsForHarness(i.Configuration.Harness, i.Input.Attachments); err != nil {
 			return err
 		}
-		if i.Configuration.Harness == OpenCode && strings.TrimSpace(i.Input.Prompt) == "" {
+		if !ImagePromptAllowed(i.Configuration.Harness, i.Input.Prompt) {
 			return UnsupportedImageInput()
 		}
 	}

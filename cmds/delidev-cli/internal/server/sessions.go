@@ -636,6 +636,13 @@ func (s *Service) changeQueuedInput(ctx context.Context, meta *pb.Mutation, sess
 		if !remove && (domain.SessionInput{Prompt: prompt, Mode: value.Mode, Attachments: value.Attachments}).Validate() != nil {
 			return nil, domain.InvalidImageInput()
 		}
+		// An edit changes the text that travels with the immutable references, so
+		// it must satisfy the same frozen-session route rules as enqueue.
+		if !remove {
+			if err := checkQueuedImageEdit(tx, session, prompt, value.Attachments); err != nil {
+				return nil, err
+			}
+		}
 		value.Prompt = prompt
 		value.ContentRevision++
 		if remove {
