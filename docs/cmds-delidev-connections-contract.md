@@ -110,6 +110,22 @@ normal-TLS request to its canonical HTTPS hostname on port 8443. No redirects,
 ambient proxies, alternate ports, scans, certificate bypass or automatic setup
 is allowed. Unsupported or offline peers retain manual pairing and SSH paths.
 
+Check-only failures may carry one closed safe cause in the existing
+`ErrorDetail.cause` (no proto change). `CheckTailscale` uses a cause-aware probe
+while the shared `Probe` used by access enable keeps its current generic errors.
+Normal TLS, one request, no redirect and no proxy are unchanged. A cause is set
+only when proven: `connection_refused` from `syscall.ECONNREFUSED` (and the Windows
+`WSAECONNREFUSED` code) through `errors.Is/As`; `timeout` from the request's own
+deadline or a `net.Error` timeout while the caller context is still live (never
+parent cancellation, and never a DNS lookup); `certificate_invalid` from x509 or
+`tls.CertificateVerificationError`; `unexpected_http` from any non-200 status
+including an un-followed redirect (code `unavailable` for these four); and
+`invalid_identity` from an undecodable or incompatible identity document (code
+`unsupported`). Oversized or unreadable bodies, DNS, other socket or TLS errors,
+peer refresh and local access failures keep the generic error without a cause.
+Hostnames, URLs, status bodies, certificates and native error text never enter
+`ErrorDetail`, logs or UI; the Check log records only the phase, code and cause.
+
 Access defaults to Off. Enable requires Running, exact Self FQDN certificate
 eligibility in CertDomains and Self.CapMap membership for `https`. Refuse existing
 TCP, Web, Services, Foreground or Funnel configuration. The validated installed CLI runs
