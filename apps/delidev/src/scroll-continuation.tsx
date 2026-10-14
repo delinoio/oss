@@ -24,6 +24,11 @@ export interface ScrollContinuationQuery {
 
 export const continuationDistance = 96;
 
+export enum ContinuationAxis {
+  Vertical = "vertical",
+  Horizontal = "horizontal",
+}
+
 /** The adapter owns admission, tokens, validation and disposal. This component
  * observes only the loaded tail and never starts an initial read or mutation. */
 export function ScrollContinuation({
@@ -33,7 +38,9 @@ export function ScrollContinuation({
   active,
   showErrors = true,
   showInitial = true,
+  axis = ContinuationAxis.Vertical,
   showProgress = false,
+  horizontalTail,
 }: {
   query: ScrollContinuationQuery;
   label: string;
@@ -41,10 +48,14 @@ export function ScrollContinuation({
   active: boolean;
   showErrors?: boolean;
   showInitial?: boolean;
+  axis?: ContinuationAxis;
   /** Opt-in: explain that scrolling loads another page while one exists, and
    * show a distinct end state once the accepted chain has no next page. A
    * pending or failed read never counts as exhaustion. */
   showProgress?: boolean;
+  /** The last reached history row when synthetic rows follow the loaded tail.
+   * Pass null when the loaded range has no visible history tail. */
+  horizontalTail?: RefObject<HTMLElement | null> | null;
 }) {
   const sidebarActivity = useSidebarActivity();
   active = active && sidebarActivity;
@@ -68,7 +79,10 @@ export function ScrollContinuation({
     !loading &&
     !error;
   useLayoutEffect(() => {
-    const container = resolveScrollRoot(root.current),
+    const container =
+        axis === ContinuationAxis.Horizontal
+          ? root.current
+          : resolveScrollRoot(root.current),
       element = anchor.current;
     if (!container || !element || !allowed) return;
     const check = () => {
@@ -85,15 +99,63 @@ export function ScrollContinuation({
       ) {
         if (parent instanceof HTMLDetailsElement && !parent.open) return;
       }
-      const bounds = container.getBoundingClientRect(),
-        position = element.getBoundingClientRect();
-      if (
-        position.top <= bounds.bottom + continuationDistance &&
-        position.bottom >= bounds.top
-      )
-        append();
+      if (axis === ContinuationAxis.Horizontal) {
+        // The continuation control is a sibling of the single-row strip, so
+        // its vertical rectangle cannot identify the loaded horizontal tail.
+        const tail = horizontalTail?.current;
+        if (
+          container.clientWidth > 0 &&
+          (() => {
+            if (!tail) {
+              if (horizontalTail === null) return Infinity;
+              return (
+                container.scrollWidth -
+                container.scrollLeft -
+                container.clientWidth
+              );
+            }
+            const tailBounds = tail.getBoundingClientRect(),
+              containerBounds = container.getBoundingClientRect();
+            if (
+              tail === container.lastElementChild &&
+              container.scrollWidth <= container.clientWidth
+            ) {
+              // A short history strip has no overflow edge to reach. Keep
+              // paging until the loaded tail overflows the viewport; a
+              // synthetic child after the tail must still use its own edge.
+              return 0;
+            }
+            if (tailBounds.width <= 0 || containerBounds.width <= 0) {
+              // Test DOMs can omit layout geometry. Keep synthetic rows from
+              // becoming a false end-of-history signal in that fallback.
+              if (tail !== container.lastElementChild) return Infinity;
+              return (
+                container.scrollWidth -
+                container.scrollLeft -
+                container.clientWidth
+              );
+            }
+            if (
+              tailBounds.right < containerBounds.left ||
+              tailBounds.right > containerBounds.right + continuationDistance
+            )
+              return Infinity;
+            return containerBounds.right - tailBounds.right;
+          })() <= continuationDistance
+        )
+          append();
+      } else {
+        const bounds = container.getBoundingClientRect(),
+          position = element.getBoundingClientRect();
+        if (
+          position.top <= bounds.bottom + continuationDistance &&
+          position.bottom >= bounds.top
+        )
+          append();
+      }
     };
     const observer =
+      axis === ContinuationAxis.Vertical &&
       typeof IntersectionObserver === "function"
         ? new IntersectionObserver(check, {
             root: container,
@@ -106,17 +168,28 @@ export function ScrollContinuation({
         ? new ResizeObserver(check)
         : undefined;
     resize?.observe(container);
-    resize?.observe(element);
+    if (axis === ContinuationAxis.Vertical) resize?.observe(element);
+    const mutations =
+      axis === ContinuationAxis.Horizontal &&
+      typeof MutationObserver === "function"
+        ? new MutationObserver(check)
+        : undefined;
+    mutations?.observe(container, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
     container.addEventListener("scroll", check, { passive: true });
     window.addEventListener("resize", check);
     check();
     return () => {
       observer?.disconnect();
       resize?.disconnect();
+      mutations?.disconnect();
       container.removeEventListener("scroll", check);
       window.removeEventListener("resize", check);
     };
-  }, [allowed, append, root]);
+  }, [allowed, append, axis, horizontalTail, root]);
   const reloadRequired =
     error?.stalled || error?.failure.code === FailureCode.CursorExpired;
   return (
