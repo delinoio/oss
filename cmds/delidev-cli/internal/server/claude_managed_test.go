@@ -19,6 +19,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/claude"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
@@ -384,15 +385,16 @@ func TestManagedClaudeRequestAuthorizationAndNewAccountOnly(t *testing.T) {
 	if !a.Subscription.ManagedClaude() {
 		t.Fatal("the new account did not select the server-token mode")
 	}
-	// A device-owned account keeps its own flow and is never converted.
+	// A machine-bound request is retired: it is rejected and never converts the
+	// account to server-owned or creates a Runner-owned operation.
 	device := newClaudeSubscriptionFixture(t)
 	dr, _ := device.record()
-	if _, err := device.client.RequestSubscription(context.Background(), subscriptionRequest(device.service.Identity.Token, &pb.RequestSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(dr.ID), ExpectedRevision: dr.Revision}, MachineId: string(device.input.MachineID), Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN})); err != nil {
-		t.Fatal(err)
+	_, err := device.client.RequestSubscription(context.Background(), subscriptionRequest(device.service.Identity.Token, &pb.RequestSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(dr.ID), ExpectedRevision: dr.Revision}, MachineId: string(device.input.MachineID), Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN}))
+	if domain.SafeError(rpc.ClientError(err)).Code != domain.Unsupported {
+		t.Fatalf("the Runner login was not rejected as unsupported: %v", err)
 	}
-	_, da := device.record()
-	if da.Subscription.ManagedClaude() || da.Subscription.NativeOperation == nil {
-		t.Fatal("the device-owned flow was converted")
+	if _, da := device.record(); da.Subscription != nil && (da.Subscription.ManagedClaude() || da.Subscription.NativeOperation != nil) {
+		t.Fatal("the rejected Runner login changed the account")
 	}
 }
 

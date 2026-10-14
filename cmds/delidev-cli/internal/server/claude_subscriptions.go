@@ -85,68 +85,24 @@ func (s *Service) requestClaudeSubscription(ctx context.Context, req *connect.Re
 	action := subscriptionAction(req.Msg.Action)
 	machine := domain.ID(req.Msg.MachineId)
 	if machine.Validate() != nil || req.Msg.DeviceCode || action != domain.SubscriptionLogin && action != domain.SubscriptionRefresh && action != domain.SubscriptionLogout {
-		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "Select a Runner Device for Claude login, reauthentication or logout.", "Claude Console/API login and device authentication are not supported."), c)
+		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "Select the original Runner Device to log out a device-owned Claude account.", "Claude sign-in is server-owned. Claude Console/API login and device authentication are not supported."), c)
 	}
-	input := struct {
-		Account, Machine domain.ID
-		Revision         uint64
-		Action           domain.SubscriptionAction
-		Actor            domain.Principal
-	}{domain.ID(m.Id), machine, m.ExpectedRevision, action, actor}
+	input := claudeLifecycleInput{domain.ID(m.Id), machine, m.ExpectedRevision, action, actor}
 	unlock, err := s.lockAccounts(ctx)
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
 	defer unlock()
-	result, err := s.Store.Mutate(ctx, domain.ID(m.RequestId), "claude.subscription.request", input, func(tx *store.Tx) (any, error) {
-		r, a, err := claudeSubscriptionAccount(tx, input.Account, input.Revision)
-		if err != nil {
-			return nil, err
+	requestID := domain.ID(m.RequestId)
+	result, err := s.Store.Mutate(ctx, requestID, claudeLifecycleOperation, input, func(tx *store.Tx) (any, error) {
+		// Fresh machine-bound sign-in is retired. The rejection runs inside the
+		// Mutate closure, after the receipt check, so a request accepted before
+		// the retirement still replays through its original receipt.
+		if action == domain.SubscriptionLogin || action == domain.SubscriptionRefresh {
+			s.logger.WarnContext(ctx, "claude_runner_signin_rejected", "operation_id", m.RequestId, "account_id", m.Id, "machine_id", machine, "action", action, "code", domain.Unsupported)
+			return nil, claudeRunnerSignInRetired()
 		}
-		if err := subscriptionActorValid(tx, actor); err != nil {
-			return nil, err
-		}
-		if _, err := claudeSubscriptionInstallation(tx, machine); err != nil {
-			return nil, err
-		}
-		if a.Subscription == nil {
-			a.Subscription = &domain.SubscriptionState{}
-		}
-		st := a.Subscription
-		// An abandoned queued operation must never block a new request forever.
-		expireStaleQueuedClaudeOperation(st, time.Now().UTC())
-		if st.OwnerMachineID != "" && st.OwnerMachineID != machine {
-			return nil, domain.Fail(domain.Unsupported, "This Claude account belongs to another Runner Device.", "Select its original Runner Device; authentication cannot move between devices.")
-		}
-		// A live shared Execute owner does not block a Refresh: the queued
-		// operation closes admission (the join branch of Take requires no Pending)
-		// and its lifecycle Take stays contended until the last runnable member
-		// retires the owner. Every other lease holder keeps the request exclusive.
-		refreshBehindSharedOwner := action == domain.SubscriptionRefresh && st.SharedOwner() && st.Lease.Action == domain.SubscriptionExecute
-		if st.Pending != nil || st.RecoveryRequired || a.Removal != nil || st.Lease != nil && action != domain.SubscriptionLogout && !refreshBehindSharedOwner {
-			return nil, subscriptionDenied()
-		}
-		if action == domain.SubscriptionLogin {
-			if a.Connection != nil || st.Generation != "" || st.NativeProfileID != "" {
-				return nil, subscriptionDenied()
-			}
-			st.NativeProfileID = domain.NewID()
-			st.OwnerMachineID = machine
-		} else if st.NativeProfileID == "" || st.Generation == "" || a.Connection == nil {
-			return nil, subscriptionDenied()
-		}
-		now := time.Now().UTC()
-		id := domain.ID(m.RequestId)
-		st.NativeOperation = &domain.NativeSubscriptionOperation{ID: id, Actor: actor, MachineID: machine, Epoch: s.subscriptionServerEpoch(), Action: action, State: domain.SubscriptionPreparing, StartedAt: now, ExpiresAt: now.Add(claudeOperationWindow)}
-		st.Pending = &domain.SubscriptionOperation{ID: id, Action: action, MachineID: machine, Actor: actor, Phase: domain.SubscriptionQueued, QueuedBehindLease: st.Lease != nil}
-		if action == domain.SubscriptionLogout {
-			a.Health = domain.AccountRevoked
-			if err := cancelAccountExecutions(tx, r.ID); err != nil {
-				return nil, err
-			}
-		}
-		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
-		return accountReceipt{ID: r.ID}, err
+		return s.admitClaudeLifecycle(tx, input, requestID)
 	})
 	if err != nil {
 		return nil, rpc.Error(err, c)
@@ -157,6 +113,80 @@ func (s *Service) requestClaudeSubscription(ctx context.Context, req *connect.Re
 	}
 	s.logger.InfoContext(ctx, "claude_subscription_operation_accepted", "operation_id", m.RequestId, "machine_id", machine, "action", action, "replayed", result.Replayed)
 	return connect.NewResponse(&pb.RequestSubscriptionResponse{Account: rpc.Resource(r), OperationId: m.RequestId, Replayed: result.Replayed}), nil
+}
+
+// claudeLifecycleOperation is the receipt operation name of a Claude lifecycle
+// request. Admission and replay share it so a retained receipt stays valid.
+const claudeLifecycleOperation = "claude.subscription.request"
+
+// claudeLifecycleInput is the receipt-bound input of a Claude lifecycle request.
+type claudeLifecycleInput struct {
+	Account, Machine domain.ID
+	Revision         uint64
+	Action           domain.SubscriptionAction
+	Actor            domain.Principal
+}
+
+// claudeRunnerSignInRetired is returned for fresh machine-bound Claude login and
+// reauthentication. Claude sign-in is server-owned; only logout of an existing
+// device-owned account still admits a Runner-bound request.
+func claudeRunnerSignInRetired() error {
+	return domain.Fail(domain.Unsupported, "Claude sign-in on a Runner Device is no longer supported.", "Connect a new Claude account from this server instead. Existing device-owned accounts can still run work and log out.")
+}
+
+// admitClaudeLifecycle applies one machine-bound Claude lifecycle admission
+// inside an open transaction. Production reaches it for logout only; LOGIN and
+// REFRESH admission is retained so tests can seed a state that an earlier
+// release accepted.
+func (s *Service) admitClaudeLifecycle(tx *store.Tx, input claudeLifecycleInput, requestID domain.ID) (any, error) {
+	r, a, err := claudeSubscriptionAccount(tx, input.Account, input.Revision)
+	if err != nil {
+		return nil, err
+	}
+	if err := subscriptionActorValid(tx, input.Actor); err != nil {
+		return nil, err
+	}
+	if _, err := claudeSubscriptionInstallation(tx, input.Machine); err != nil {
+		return nil, err
+	}
+	if a.Subscription == nil {
+		a.Subscription = &domain.SubscriptionState{}
+	}
+	st := a.Subscription
+	// An abandoned queued operation must never block a new request forever.
+	expireStaleQueuedClaudeOperation(st, time.Now().UTC())
+	if st.OwnerMachineID != "" && st.OwnerMachineID != input.Machine {
+		return nil, domain.Fail(domain.Unsupported, "This Claude account belongs to another Runner Device.", "Select its original Runner Device; authentication cannot move between devices.")
+	}
+	// A live shared Execute owner does not block a Refresh: the queued
+	// operation closes admission (the join branch of Take requires no Pending)
+	// and its lifecycle Take stays contended until the last runnable member
+	// retires the owner. Every other lease holder keeps the request exclusive.
+	refreshBehindSharedOwner := input.Action == domain.SubscriptionRefresh && st.SharedOwner() && st.Lease.Action == domain.SubscriptionExecute
+	if st.Pending != nil || st.RecoveryRequired || a.Removal != nil || st.Lease != nil && input.Action != domain.SubscriptionLogout && !refreshBehindSharedOwner {
+		return nil, subscriptionDenied()
+	}
+	if input.Action == domain.SubscriptionLogin {
+		if a.Connection != nil || st.Generation != "" || st.NativeProfileID != "" {
+			return nil, subscriptionDenied()
+		}
+		st.NativeProfileID = domain.NewID()
+		st.OwnerMachineID = input.Machine
+	} else if st.NativeProfileID == "" || st.Generation == "" || a.Connection == nil {
+		return nil, subscriptionDenied()
+	}
+	now := time.Now().UTC()
+	id := requestID
+	st.NativeOperation = &domain.NativeSubscriptionOperation{ID: id, Actor: input.Actor, MachineID: input.Machine, Epoch: s.subscriptionServerEpoch(), Action: input.Action, State: domain.SubscriptionPreparing, StartedAt: now, ExpiresAt: now.Add(claudeOperationWindow)}
+	st.Pending = &domain.SubscriptionOperation{ID: id, Action: input.Action, MachineID: input.Machine, Actor: input.Actor, Phase: domain.SubscriptionQueued, QueuedBehindLease: st.Lease != nil}
+	if input.Action == domain.SubscriptionLogout {
+		a.Health = domain.AccountRevoked
+		if err := cancelAccountExecutions(tx, r.ID); err != nil {
+			return nil, err
+		}
+	}
+	_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+	return accountReceipt{ID: r.ID}, err
 }
 
 // claudeOperationWindow is how long a claimed lifecycle operation may run.
