@@ -3,7 +3,8 @@ import { create } from "@bufbuild/protobuf";
 import { createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, renderHook, screen, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { expect, it, vi } from "vitest";
 import {
   EntityKind,
@@ -17,7 +18,10 @@ import {
 } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
 import { MutationIntents } from "./mutation";
-import { plainOpenCodeForkMessage } from "./opencode-fork-profile";
+import {
+  plainOpenCodeForkMessage,
+  useOpenCodeForkProfile,
+} from "./opencode-fork-profile";
 import { SessionForkAction, SessionForkProvider } from "./session-fork";
 import "./localization";
 
@@ -241,3 +245,51 @@ it.each(["both", "server", "worker"])(
     }
   },
 );
+
+it("counts a completed reasoning record as eligible content like the server", async () => {
+  const sessionId = newRequestId();
+  const source: Resource = create(ResourceSchema, {
+    kind: EntityKind.SESSION,
+    id: sessionId,
+    revision: 3n,
+    schemaVersion: 1,
+    documentJson: encode({
+      execution: { native_thread_id: thread },
+    }),
+  });
+  const user = plainMessages(sessionId)[0];
+  const only = (messages: Resource[]) =>
+    createRouterTransport((router) => {
+      router.service(ResourceService, {
+        getResource: () => ({ resource: source }),
+        listResources: () => ({ resources: messages }),
+      });
+    });
+  const run = async (messages: Resource[]) => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const { result } = renderHook(
+      () => useOpenCodeForkProfile(source, true, true),
+      {
+        wrapper: ({ children }: { children: ReactNode }) => (
+          <TransportProvider transport={only(messages)}>
+            <QueryClientProvider client={client}>
+              {children}
+            </QueryClientProvider>
+          </TransportProvider>
+        ),
+      },
+    );
+    await waitFor(() => expect(result.current.isFetching).toBe(false));
+    return result.current.data;
+  };
+  // A user text record plus one reasoning record is two eligible records.
+  expect(await run([user, reasoning(sessionId)])).toBe(true);
+  // A lone user text record stays below the two-record floor.
+  expect(await run([user])).toBe(false);
+  // A duplicated reasoning native identity is still rejected.
+  expect(await run([user, reasoning(sessionId), reasoning(sessionId)])).toBe(
+    false,
+  );
+});

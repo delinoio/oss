@@ -257,7 +257,9 @@ export function useOpenCodeForkProfile(
             reasoning,
           );
           if (!kind) return false;
-          if (kind === "text") {
+          if (kind === "text" || kind === "reasoning") {
+            // The server counts every eligible canonical record, so a completed
+            // reasoning part is content even when its turn has no text part.
             const id = document(row).native_id;
             if (nativeIds.has(id)) return false;
             nativeIds.add(id);
