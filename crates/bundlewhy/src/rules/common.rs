@@ -1091,7 +1091,8 @@ fn function_body_block(
                     .find(|byte| !byte.is_ascii_whitespace())
                     .is_some_and(|byte| {
                         matches!(byte, b':' | b'<' | b'|' | b'&' | b',' | b'[' | b'(')
-                    });
+                    })
+                || return_annotation && code[..cursor].trim_end().ends_with("=>");
             if !type_brace {
                 return blocks.iter().find(|(open, _)| *open == cursor).copied();
             }
@@ -1606,6 +1607,8 @@ y=/process.env.F/.test(z),process.env.G"#;
         let source = "function run(): void { var eval = helper; } eval(code);";
         assert!(direct_eval_line(source).is_some());
         let source = "function run(): Promise<{ ok: boolean }> { var eval = helper; } eval(code);";
+        assert!(direct_eval_line(source).is_some());
+        let source = "function run(): () => { ok: boolean } { var eval = helper; } eval(code);";
         assert!(direct_eval_line(source).is_some());
     }
 
