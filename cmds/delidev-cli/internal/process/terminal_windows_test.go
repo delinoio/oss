@@ -60,3 +60,65 @@ func TestConPTYResizeOutputAndOwnedExit(t *testing.T) {
 		t.Fatal("missing native ConPTY output")
 	}
 }
+
+func TestConPTYDeliveryFailureJoinsOwnedCleanup(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		canceled bool
+	}{
+		{name: "writer failure"},
+		{name: "writer cancellation", canceled: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			directory, err := windows.GetSystemDirectory()
+			if err != nil {
+				t.Fatal(err)
+			}
+			writerContext, cancelWriter := context.WithCancel(context.Background())
+			defer cancelWriter()
+			entered := make(chan struct{})
+			writer := outputWriterFunc(func([]byte) (int, error) {
+				close(entered)
+				if test.canceled {
+					<-writerContext.Done()
+					return 0, writerContext.Err()
+				}
+				return 0, os.ErrClosed
+			})
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			h, err := Start(ctx, Config{Directory: filepath.Join(t.TempDir(), "processes"), OwnerID: domain.NewID(), Executable: filepath.Join(directory, "cmd.exe"), Args: []string{"/D", "/Q"}, Env: []string{"SystemRoot=" + os.Getenv("SystemRoot"), "PATH=" + directory}, Cwd: t.TempDir(), Terminal: &TerminalSize{Rows: 24, Columns: 80}, Stdout: writer})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := h.Resume(); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := h.Write([]byte("echo CONPTY_DELIVERY\r")); err != nil {
+				t.Fatal(err)
+			}
+			awaitOutput(t, entered)
+			if test.canceled {
+				cancelWriter()
+			}
+			select {
+			case <-h.Done():
+			case <-time.After(20 * time.Second):
+				t.Fatal("ConPTY cleanup did not settle after delivery failure")
+			}
+			if code := domain.SafeError(h.Wait()).Code; code != domain.Unavailable {
+				t.Fatalf("terminal result code = %v, want Unavailable", code)
+			}
+			if err := h.Stop(); err != nil {
+				t.Fatalf("owned Stop: %v", err)
+			}
+			if err := h.Close(); err != nil {
+				t.Fatalf("owned Close: %v", err)
+			}
+			scope, err := readWindowsScope(h.Identity().ScopeDir)
+			if err != nil || !scope.Complete {
+				t.Fatalf("owned Job completion not persisted: complete=%v err=%v", scope.Complete, err)
+			}
+		})
+	}
+}
