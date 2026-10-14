@@ -41,6 +41,19 @@ expose the new enum. No public RPC, System capability, message field or SQLite
 migration is added. The [command contract](cmds-delidev-contract.md#parallel-session-dispatch)
 owns dispatch behavior.
 
+## Worker attach request identity
+
+The server binds `AttachWorkerRequest.request_id` to the exact request content,
+including the ordered `capabilities` list and the network fields. A negotiated
+attach therefore derives its request ID from the complete request, not from a
+hand-maintained profile of selected capabilities. The Worker keeps the same ID
+only while the whole request is identical across reconnects and rotates it when
+any capability is added, removed, reordered or duplicated, or when any other
+field changes. A server upgrade or rollback that changes the echoed capability
+support must never replay an earlier ID with different content, which the server
+rejects as a conflict. The `attachRequestIdentity` table and per-capability
+reconnect tests in `cmds/delidev-cli/internal/worker` own this rule.
+
 ## Branch prefix exact-quote negotiation
 
 Worker `BRANCH_PREFIX_EXACT_QUOTE_V1 = 65` is allocated and activated with

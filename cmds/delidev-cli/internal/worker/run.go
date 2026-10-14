@@ -333,8 +333,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 	initialAttach := attachNetworkObservation(&pb.AttachWorkerRequest{RequestId: string(attachID), MachineId: string(credential.MachineID), InstanceId: string(instance), ProtocolVersion: rpc.ProtocolVersion, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}}, config)
 	config.terminals = newTerminalManager(ctx, config, client, credential, instance)
 	defer config.terminals.close()
-	var capabilityAttachID domain.ID
-	var capabilityProfile string
+	var capabilityAttach attachRequestIdentity
 	backoff := time.Second
 	ready := false
 	for ctx.Err() == nil {
@@ -536,9 +535,6 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if managedCapabilityExpected && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SHARED_SUBSCRIPTION_OWNER_V1) && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_PARALLEL_SESSIONS_V1) {
 				profile += "\x00shared-subscription-owner-v1"
 			}
-			if capabilityAttachID == "" || capabilityProfile != profile {
-				capabilityAttachID, capabilityProfile = domain.NewID(), profile
-			}
 			capabilities := []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1)
@@ -675,7 +671,11 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1)
 			}
-			negotiated, negotiateErr := client.AttachWorker(negotiate, authenticated(credential, attachNetworkObservation(&pb.AttachWorkerRequest{RequestId: string(capabilityAttachID), MachineId: string(credential.MachineID), InstanceId: string(instance), ProtocolVersion: rpc.ProtocolVersion, Version: rpc.Version, Capabilities: capabilities}, config)))
+			// The request ID is derived from the exact request, so any change to the
+			// advertised capability list rotates it across reconnects.
+			negotiation := attachNetworkObservation(&pb.AttachWorkerRequest{MachineId: string(credential.MachineID), InstanceId: string(instance), ProtocolVersion: rpc.ProtocolVersion, Version: rpc.Version, Capabilities: capabilities}, config)
+			capabilityAttach.assign(profile, negotiation)
+			negotiated, negotiateErr := client.AttachWorker(negotiate, authenticated(credential, negotiation))
 			stopNegotiation()
 			err = negotiateErr
 			if err == nil && negotiated.Msg.ServerId != string(credential.ServerID) {
