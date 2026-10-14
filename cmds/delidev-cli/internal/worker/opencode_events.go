@@ -476,10 +476,21 @@ func (c *OpenCodeEventPublisher) completeHistory(history opencode.HistoryObserva
 			return false
 		}
 	}
-	for id := range t.inputExtras {
+	// An image-bearing input expands into exactly one synthetic Read text and one
+	// file part per attachment; fewer observed parts mean an incomplete expansion.
+	synthetic, files := 0, 0
+	for id, kind := range t.inputExtras {
 		if !seen[id] {
 			return false
 		}
+		if kind == opencode.FilePartKind {
+			files++
+		} else {
+			synthetic++
+		}
+	}
+	if attachments := len(t.binding.publisher.input.Input.Attachments); synthetic != attachments || files != attachments {
+		return false
 	}
 	for id := range t.revisions {
 		if !seen[id] {
