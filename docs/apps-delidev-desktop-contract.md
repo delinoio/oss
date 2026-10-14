@@ -6768,6 +6768,29 @@ compact detail header retain complete wrapping titles, textual state, Draft and
 unknown-author notices, exact UTC times and their own signed additions/deletions.
 Stack-context rows remain distinguished from accepted filtered matches.
 
+The selected detail is a flat document layout. A top toolbar holds Back to results
+at the start and Refresh plus Open on GitHub at the end, using the existing Back,
+Refresh and Open action icons with localized accessible labels and 40 CSS pixel
+targets; handlers, disabled states and the native GitHub opener are unchanged, and
+opener and read notices render beneath the toolbar without enabling unavailable
+actions. Below it come textual Open/Closed, optional Draft, the PR number, the
+complete wrapping title (24px/1.4 semibold), then one wrapping row of avatar,
+author or unknown-author notice and `Updated {relative time}`, and a row of
+monospace head-to-base branches with the PR's own signed additions/deletions at the
+end. Body text is 16px/1.65; content insets are 28px when the workspace is at least
+900 CSS pixels wide and 16px in compact layouts; header-to-tabs and tabs-to-body
+gaps are 24px. Header and tabs scroll with the detail body (no sticky positioning,
+cards or shadows). The tabs use a neutral baseline with a 2px selected underline.
+Only this detail Updated field uses `TimestampMode.Relative`: elapsed time shows
+now below 60 seconds, then floored minutes, hours, days (24 hours), weeks (7 days),
+months (30 days) and years (365 days) at the 60 minute, 24 hour, 7 day, 30 day and
+365 day boundaries. The time element keeps `dateTime`, native `title` and
+`aria-description` equal to the exact source value, so hover shows the exact UTC
+value without a custom popup or extra focus stop. The shared presentation
+scheduler updates the label at each unit boundary while active and recomputes on
+focus/visibility return without any GitHub read or business-state change. Commit
+author, committer and observation timestamps and list-card times stay Exact.
+
 Semantic underline tabs are Description, Diff, Reviews, Commits (설명, Diff, 리뷰,
 커밋). Arrow/Home/End moves focus without reading; Enter/Space explicitly activates.
 Same-PR observations are lazy, disposable and bounded. Scope replacement clears

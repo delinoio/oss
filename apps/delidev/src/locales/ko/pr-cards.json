@@ -5,5 +5,6 @@
   "pr-cards.updated": "업데이트 (UTC)",
   "pr-cards.emptyPage": "{{page}}페이지에서 반환된 pull request가 없습니다.",
   "pr-cards.draft": "초안",
-  "pr-cards.unverifiedAuthor": "작성자 유형 미확인"
+  "pr-cards.unverifiedAuthor": "작성자 유형 미확인",
+  "pr-cards.updatedRelative": "{{time}} 업데이트"
 }

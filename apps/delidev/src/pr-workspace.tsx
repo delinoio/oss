@@ -34,8 +34,14 @@ import {
 } from "./github-query-model";
 import { validPRSource } from "./github-pr-source";
 import { copy, useLocale } from "./localization";
-import { Timestamp, TimestampMode } from "./timestamp-display";
-import { OpenGitHub } from "./github-opening";
+import { Timestamp, TimestampMode, TimestampText } from "./timestamp-display";
+import { OpenGitHubNotices, useOpenGitHub } from "./github-opening";
+import {
+  SettingsActionButton,
+  SettingsActionIcon,
+  SettingsActionPresentation,
+  SettingsActionScope,
+} from "./settings-action";
 import { PRFeedback } from "./github-feedback";
 import { Problem } from "./ui";
 import { Disclosure, DisclosureSummary } from "./disclosure";
@@ -820,6 +826,12 @@ function Detail({
         : undefined,
     item = object(items(value?.items)[0]),
     remote = object(value?.repository);
+  // The native opener keeps its original guards; it stays unavailable until a
+  // validated detail with a URL is present.
+  const opener = useOpenGitHub(
+    text(item.url),
+    detail.isFetching || Boolean(detail.error) || !value || !text(item.url),
+  );
   const diffQuery = { ...query, operation: QueryOperation.Diff },
     feedbackQuery = { ...query, operation: QueryOperation.Feedback };
   const diff = useQuery(
@@ -879,15 +891,45 @@ function Detail({
   };
   return (
     <section className="pr-workspace-detail">
-      <button className="pr-workspace-back" onClick={back}>
-        {copy("github-items.backToResults_c7ef0e")}
-      </button>
-      <button
-        disabled={detail.isFetching || diff.isFetching || reviews.isFetching}
-        onClick={reload}
-      >
-        {copy("github-items.refreshGithubResults_bd77c0")}
-      </button>
+      <SettingsActionScope>
+        <div className="pr-detail-toolbar">
+          <SettingsActionButton
+            className="pr-workspace-back"
+            type="button"
+            icon={SettingsActionIcon.Back}
+            presentation={SettingsActionPresentation.Icon}
+            aria-label={copy("github-items.backToResults_c7ef0e")}
+            onClick={back}
+          >
+            {copy("github-items.backToResults_c7ef0e")}
+          </SettingsActionButton>
+          <div className="pr-detail-toolbar-end">
+            <SettingsActionButton
+              type="button"
+              icon={SettingsActionIcon.Refresh}
+              presentation={SettingsActionPresentation.Icon}
+              aria-label={copy("github-items.refreshGithubResults_bd77c0")}
+              disabled={
+                detail.isFetching || diff.isFetching || reviews.isFetching
+              }
+              onClick={reload}
+            >
+              {copy("github-items.refreshGithubResults_bd77c0")}
+            </SettingsActionButton>
+            <SettingsActionButton
+              type="button"
+              icon={SettingsActionIcon.Open}
+              presentation={SettingsActionPresentation.Icon}
+              aria-label={copy("github-opening.extra.03f69885814b")}
+              disabled={opener.blocked}
+              onClick={opener.open}
+            >
+              {copy("github-opening.extra.03f69885814b")}
+            </SettingsActionButton>
+          </div>
+        </div>
+      </SettingsActionScope>
+      <OpenGitHubNotices status={opener.status} />
       <Problem error={detail.error} />
       {detail.isFetching ? (
         <p role="status">{copy("github-items.readingGithub_ebcef8")}</p>
@@ -899,19 +941,24 @@ function Detail({
       ) : null}
       {value ? (
         <>
-          <header>
-            <p>
-              {copy(
-                item.state === "closed"
-                  ? "pull-requests.closed_c21ead"
-                  : "pull-requests.open_ed077f",
-              )}
-              {item.draft ? <> · {copy("pr-cards.draft")}</> : null}
+          <header className="pr-detail-header">
+            <p className="pr-detail-status">
+              <span className="pr-detail-state" data-state={text(item.state)}>
+                {copy(
+                  item.state === "closed"
+                    ? "pull-requests.closed_c21ead"
+                    : "pull-requests.open_ed077f",
+                )}
+              </span>
+              {item.draft ? (
+                <span className="pr-detail-draft">
+                  {copy("pr-cards.draft")}
+                </span>
+              ) : null}
+              <span className="pr-detail-number">#{text(item.number)}</span>
             </p>
-            <h3>
-              #{text(item.number)} {text(item.title)}
-            </h3>
-            <p className="pr-row-author">
+            <h3>{text(item.title)}</h3>
+            <p className="pr-detail-meta">
               <Avatar
                 selected={selected}
                 reference={
@@ -919,26 +966,35 @@ function Detail({
                 }
                 enabled={supported}
               />
-              {text(object(item.author).login) ||
-                copy("github-items.extra.a326f4758492")}
-              {object(item.author).kind === "unknown" ? (
-                <> · {copy("pr-cards.unverifiedAuthor")}</>
-              ) : null}
+              <span>
+                {text(object(item.author).login) ||
+                  copy("github-items.extra.a326f4758492")}
+                {object(item.author).kind === "unknown" ? (
+                  <> · {copy("pr-cards.unverifiedAuthor")}</>
+                ) : null}
+              </span>
+              <span>
+                <TimestampText
+                  id="pr-cards.updatedRelative"
+                  values={{
+                    time: (
+                      <Timestamp
+                        value={text(item.updated_at)}
+                        mode={TimestampMode.Relative}
+                        active={active}
+                        fallback="—"
+                      />
+                    ),
+                  }}
+                />
+              </span>
             </p>
-            <p>
-              <Timestamp
-                value={text(item.updated_at)}
-                mode={TimestampMode.Exact}
-              />{" "}
-              · <PRCounts value={same ? selection.node?.counts : undefined} />
+            <p className="pr-detail-branches">
+              <code>
+                {text(item.head_ref)} → {text(item.base_ref)}
+              </code>
+              <PRCounts value={same ? selection.node?.counts : undefined} />
             </p>
-            <p>
-              {text(item.head_ref)} → {text(item.base_ref)}
-            </p>
-            <OpenGitHub
-              url={text(item.url)}
-              disabled={detail.isFetching || Boolean(detail.error)}
-            />
           </header>
           <div
             role="tablist"

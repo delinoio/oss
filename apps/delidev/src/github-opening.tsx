@@ -123,15 +123,9 @@ async function openGitHubNative(url: string) {
   }
 }
 
-export function OpenGitHub({
-  url,
-  disabled = false,
-  label = copy("github-opening.extra.03f69885814b"),
-}: {
-  url: string;
-  disabled?: boolean;
-  label?: string;
-}) {
+/** Native GitHub opener state. Callers place the button and the notices
+ * independently while the opener keeps one busy/status owner. */
+export function useOpenGitHub(url: string, disabled = false) {
   useLocale();
   const [busy, setBusy] = useState(false),
     [status, setStatus] = useProductMessage("");
@@ -153,20 +147,51 @@ export function OpenGitHub({
       setBusy(false);
     }
   };
+  return {
+    open: () => void open(),
+    blocked: disabled || busy || !isTauri(),
+    status,
+  };
+}
+
+/** Browser-unavailable and result notices for a `useOpenGitHub` owner. */
+export function OpenGitHubNotices({
+  status,
+}: {
+  status: ReturnType<typeof useOpenGitHub>["status"];
+}) {
+  useLocale();
+  return (
+    <>
+      {!isTauri() ? (
+        <p>{copy("github-opening.browserOpeningIsAvailableInThe_33be1f")}</p>
+      ) : null}
+      {status ? <p role="status">{status}</p> : null}
+    </>
+  );
+}
+
+export function OpenGitHub({
+  url,
+  disabled = false,
+  label = copy("github-opening.extra.03f69885814b"),
+}: {
+  url: string;
+  disabled?: boolean;
+  label?: string;
+}) {
+  const opener = useOpenGitHub(url, disabled);
   return (
     <div>
       <SettingsActionButton
         icon={SettingsActionIcon.Open}
         type="button"
-        disabled={disabled || busy || !isTauri()}
-        onClick={() => void open()}
+        disabled={opener.blocked}
+        onClick={opener.open}
       >
         {label}
       </SettingsActionButton>
-      {!isTauri() ? (
-        <p>{copy("github-opening.browserOpeningIsAvailableInThe_33be1f")}</p>
-      ) : null}
-      {status ? <p role="status">{status}</p> : null}
+      <OpenGitHubNotices status={opener.status} />
     </div>
   );
 }

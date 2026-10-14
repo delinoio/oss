@@ -13,6 +13,52 @@ export enum TimestampMode {
   Absolute = "absolute",
   Exact = "exact",
   QuotaCountdown = "quota-countdown",
+  /** Elapsed time at every age: now, minutes, hours, days, weeks, months, years. */
+  Relative = "relative",
+}
+const MINUTE = 60000,
+  HOUR = 3600000,
+  DAY = 86400000,
+  WEEK = 7 * DAY,
+  MONTH = 30 * DAY,
+  YEAR = 365 * DAY;
+/** Closed elapsed-time units for the Relative mode. Each unit lasts until the
+ * next band starts, so label boundaries are exact multiples of the band size. */
+enum RelativeUnit {
+  Now = "now",
+  Minute = "minute",
+  Hour = "hour",
+  Day = "day",
+  Week = "week",
+  Month = "month",
+  Year = "year",
+}
+const relativeBands: { unit: RelativeUnit; size: number; end: number }[] = [
+  { unit: RelativeUnit.Now, size: MINUTE, end: MINUTE },
+  { unit: RelativeUnit.Minute, size: MINUTE, end: HOUR },
+  { unit: RelativeUnit.Hour, size: HOUR, end: DAY },
+  { unit: RelativeUnit.Day, size: DAY, end: WEEK },
+  { unit: RelativeUnit.Week, size: WEEK, end: MONTH },
+  { unit: RelativeUnit.Month, size: MONTH, end: YEAR },
+  { unit: RelativeUnit.Year, size: YEAR, end: Infinity },
+];
+/** Nonnegative age only; callers keep their own future-value fallback. */
+function relativeLabel(age: number): string {
+  const band = relativeBands.find((item) => age < item.end)!;
+  if (band.unit === RelativeUnit.Now) return copy("timestamp.now");
+  const count = Math.floor(age / band.size),
+    one = count === 1;
+  const key = {
+    [RelativeUnit.Minute]: one ? "timestamp.minute" : "timestamp.minutes",
+    [RelativeUnit.Hour]: one ? "timestamp.hour" : "timestamp.hours",
+    [RelativeUnit.Day]: one ? "timestamp.day" : "timestamp.days",
+    [RelativeUnit.Week]: one ? "timestamp.week" : "timestamp.weeks",
+    [RelativeUnit.Month]: one ? "timestamp.month" : "timestamp.months",
+    [RelativeUnit.Year]: one ? "timestamp.year" : "timestamp.years",
+  } as const;
+  return copy(key[band.unit as Exclude<RelativeUnit, RelativeUnit.Now>], {
+    count,
+  });
 }
 export interface TimestampOptions {
   preference?: DateFormatPreference;
@@ -42,6 +88,15 @@ export function nextTimestampTransition(
   }
   const age = now - instant;
   if (age < 0) return instant;
+  if (mode === TimestampMode.Relative) {
+    const band = relativeBands.find((item) => age < item.end)!;
+    // Week and month bands end off a multiple of their unit (30 days is not a
+    // multiple of 7 days), so the band end caps the next unit boundary.
+    return (
+      instant +
+      Math.min(band.end, (Math.floor(age / band.size) + 1) * band.size)
+    );
+  }
   if (age >= 86400000) return;
   const unit = age < 3600000 ? 60000 : 3600000;
   return instant + (Math.floor(age / unit) + 1) * unit;
@@ -106,6 +161,7 @@ export function formatTimestampLabel(
   const age = now - instant;
   if (mode === TimestampMode.QuotaCountdown && age < 0)
     return quotaCountdown(-age);
+  if (mode === TimestampMode.Relative && age >= 0) return relativeLabel(age);
   if (
     (mode === TimestampMode.Ordinary ||
       mode === TimestampMode.QuotaCountdown) &&
