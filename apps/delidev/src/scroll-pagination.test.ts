@@ -689,3 +689,105 @@ it("runs the marker invalidation immediately when the chain is idle", async () =
   await chain.refresh(read);
   expect(read.mock.calls.map((call) => call[0])).toEqual(["", "1"]);
 });
+
+it("keeps whole-chain observation evidence after the first payload page is evicted and clears it on suspend until a refresh completes", async () => {
+  const chain = new PaginationChain<Row, Payload>();
+  chain.activate();
+  expect(chain.getSnapshot().observed).toBe(false);
+  await chain.refresh(reader);
+  expect(chain.getSnapshot().observed).toBe(true);
+  for (let index = 0; index < 5; index++) await chain.append(reader);
+  const grown = chain.getSnapshot();
+  // The evictable first payload page is gone, yet the observation remains.
+  expect(grown.payloadPages.map((page) => page.token)).toEqual(["3", "4", "5"]);
+  expect(grown.observed).toBe(true);
+  // Additional pages inside the visit never changed the evidence; suspending
+  // ends the visit and revokes it.
+  chain.suspend();
+  expect(chain.getSnapshot().observed).toBe(false);
+  expect(chain.getSnapshot().loaded).toBe(true);
+  chain.activate();
+  const refreshed = vi.fn<PaginationReader<Row, Payload>>((token, signal) =>
+    reader(token, signal),
+  );
+  await chain.refresh(refreshed);
+  const snapshot = chain.getSnapshot();
+  expect(snapshot.observed).toBe(true);
+  expect(snapshot.payloadPages.length).toBeLessThanOrEqual(3);
+  expect(snapshot.payloadPages.some((page) => page.token === "")).toBe(false);
+  expect(snapshot.pages.map((page) => page.token)).toEqual([
+    "",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+  ]);
+  expect(snapshot.nextPageToken).toBe("");
+  // Suspending again revokes the evidence; a Restore read cannot grant it back
+  // before a whole-chain refresh succeeds.
+  chain.suspend();
+  chain.activate();
+  const afterSuspend = vi.fn<PaginationReader<Row, Payload>>((token, signal) =>
+    reader(token, signal),
+  );
+  await chain.restore("", afterSuspend);
+  expect(afterSuspend).toHaveBeenCalledTimes(1);
+  expect(chain.getSnapshot().observed).toBe(false);
+});
+
+it("never grants observation evidence to failed, in-flight, suspended or reset whole-chain reads", async () => {
+  const chain = new PaginationChain<Row, Payload>();
+  chain.activate();
+  const failing = vi.fn<PaginationReader<Row, Payload>>(async () => {
+    throw new ConnectError("unavailable", Code.Unavailable);
+  });
+  await chain.refresh(failing);
+  expect(chain.getSnapshot().observed).toBe(false);
+  expect(chain.getSnapshot().error).toBeDefined();
+  await chain.retry(reader);
+  expect(chain.getSnapshot().observed).toBe(true);
+  // A refresh that fails after a success drops the earlier evidence.
+  chain.suspend();
+  chain.activate();
+  await chain.refresh(failing);
+  expect(chain.getSnapshot().observed).toBe(false);
+  await chain.retry(reader);
+  expect(chain.getSnapshot().observed).toBe(true);
+  // An in-flight refresh revokes the evidence until it succeeds.
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  const pending = chain.refresh(async (token, signal) => {
+    await gate;
+    return reader(token, signal);
+  });
+  expect(chain.getSnapshot().loading).toBe(ReadStage.Refresh);
+  expect(chain.getSnapshot().observed).toBe(false);
+  // Suspension during the read leaves no admission after the stale read ends.
+  chain.suspend();
+  release();
+  await pending;
+  expect(chain.getSnapshot().observed).toBe(false);
+  chain.activate();
+  await chain.refresh(reader);
+  expect(chain.getSnapshot().observed).toBe(true);
+  chain.reset();
+  expect(chain.getSnapshot().observed).toBe(false);
+  expect(chain.getSnapshot().loaded).toBe(false);
+  chain.activate();
+  await chain.reload(reader);
+  expect(chain.getSnapshot().observed).toBe(true);
+});
+
+it("keeps observation evidence across a failed additional page inside the same visit", async () => {
+  const chain = new PaginationChain<Row, Payload>();
+  chain.activate();
+  await chain.refresh(reader);
+  await chain.append(async () => {
+    throw new ConnectError("unavailable", Code.Unavailable);
+  });
+  expect(chain.getSnapshot().error).toBeDefined();
+  expect(chain.getSnapshot().observed).toBe(true);
+  await chain.retry(reader);
+  expect(chain.getSnapshot().observed).toBe(true);
+});
