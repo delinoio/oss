@@ -471,7 +471,7 @@ then uses it to select Cargo registry credentials, Rust setup, caching and
 publication. Non-Cargo projects still validate their immutable source and tag.
 
 `Release Project` includes DeliDev stable patch/minor/major preparation and the
-exceptional `delidev-v<semver>` namespace. It synchronizes desktop package,
+`delidev@v<semver>` tag namespace, the same `<project>@v<semver>` form used by every other project. It synchronizes desktop package,
 Cargo/Tauri and lock versions, retains exact same-run source recovery, skips Cargo
 registry publication through the common `cargo_publish` output and ends after
 verified tagging. The tag push starts the dedicated independent release workflow;

@@ -470,6 +470,12 @@ test("async-commit-hook rejects foreign identities and ambiguously formatted JSO
   }
 });
 
+test("Release tags use the project@v namespace for every project including DeliDev", () => {
+  assert.equal(releaseTag(Project.DeliDev, "1.2.3"), "delidev@v1.2.3");
+  for (const project of Object.values(Project))
+    assert.equal(releaseTag(project, "1.2.3"), `${project}@v1.2.3`);
+});
+
 test("Downstream manual and tag metadata must agree with source before builds", () => {
   for (const project of Object.values(Project).filter(
     (project) => project !== Project.AsyncCommitHook,
