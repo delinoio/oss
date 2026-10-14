@@ -625,7 +625,7 @@ The owned process runs `--bare --print` with stream-json input/output and verbos
 
 Before launch, the adapter requires canonical private home/config/cache/data/state/temp directories, empty child state and the private root as cwd. It reconstructs the environment from owned paths and absolute system lookup entries, preserving only bounded Windows system lookup context when applicable. Caller-supplied provider credentials, OAuth tokens, shell/loader options and proxy settings are discarded. Automatic updates and nonessential traffic are disabled, and the model base URL is fixed to loopback as an additional guard against accidental remote traffic. No provider token is supplied.
 
-Claude Code `2.1.287` emits one `{type: "system", subtype: "ui_invalidate"}` startup frame before the initialize response. The probe accepts at most one such frame, only before the response, with exactly the optional `uuid` and `session_id` fields and no other key (a declared field must be a bounded text string; `null`, numbers and objects are refused); it is discarded as non-authoritative startup metadata. A second prelude, a prelude after the response, any other `system` subtype, an unknown field, a malformed or oversized frame, a foreign or duplicate response and trailing output fail with a typed refusal, and cleanup is still joined (RecoveryRequired when cleanup cannot be proved). The `2.1.287` control response may add `pending_permission_requests` and `pending_user_dialog_requests` as members of the inner control-response envelope next to `subtype`, `request_id` and `response` (the official SDK `ControlResponse` shape; each must be an empty array when declared, and the same names inside the initialize result are unknown fields). Its initialize result may add `analytics_disabled` (literal `true` when declared), `capabilities` (at most 64 unique bounded names, or a flat bounded object of boolean/text values), `feedback_mode` (`disabled` or `off`), `remote_control_available` and `remote_control_auto_connect_default` (explicit `false`), `session_state` (`idle`) and `user_output_styles_dir` (bounded private text). All control-response, initialize-result, account, descriptor and startup-frame keys must use their exact lowercase profile spelling: differently cased aliases are refused rather than matched case-insensitively. The same strict envelope decoder serves the probe and the API stream. Each addition is optional so earlier verified profiles keep passing, but a declared field with `null`, a wrong type, a non-empty pending list, a non-idle session, enabled feedback or enabled remote-control defaults is refused. These fields never grant account, tool or execution readiness; the no-token, first-party account, `dontAsk`, remote-control, fast-mode, catalog and cleanup checks stay authoritative. The same response validators serve the managed-token session initializer. Sanitized `2.1.287`-shaped fixtures cover the prelude and fields; installed-native and real-account validation are recorded separately and fixture results are not account-login acceptance.
+Claude Code `2.1.287` emits one `{type: "system", subtype: "ui_invalidate"}` startup frame before the initialize response. The probe accepts at most one such frame, only before the response, with optional `event: "ui.render"`, `uuid` and `session_id` fields and no other key (a declared field must be a bounded text string; `null`, numbers and objects are refused); it is discarded as non-authoritative startup metadata. A second prelude, a prelude after the response, any other `system` subtype, an unknown field, a malformed or oversized frame, a foreign or duplicate response and trailing output fail with a typed refusal, and cleanup is still joined (RecoveryRequired when cleanup cannot be proved). The `2.1.287` control response may add `pending_permission_requests` and `pending_user_dialog_requests` as members of the inner control-response envelope next to `subtype`, `request_id` and `response` (the official SDK `ControlResponse` shape; each must be an empty array when declared, and the same names inside the initialize result are unknown fields). Its initialize result may add `analytics_disabled` (literal `true` when declared), `capabilities` (at most 64 unique bounded names, or a flat bounded object of boolean/text values), `feedback_mode` (`disabled`, `off` or exactly `{kind: "disabled"}`), `remote_control_available` and `remote_control_auto_connect_default` (explicit `false`), `session_state` (`idle`) and `user_output_styles_dir` (bounded private text). All control-response, initialize-result, account, descriptor and startup-frame keys must use their exact lowercase profile spelling: differently cased aliases are refused rather than matched case-insensitively. The same strict envelope decoder serves the probe and the API stream. Each addition is optional so earlier verified profiles keep passing, but a declared field with `null`, a wrong type, a non-empty pending list, a non-idle session, enabled feedback or enabled remote-control defaults is refused. These fields never grant account, tool or execution readiness; the no-token, first-party account, `dontAsk`, remote-control, fast-mode, catalog and cleanup checks stay authoritative. The same response validators serve the managed-token session initializer. Sanitized `2.1.287`-shaped fixtures cover the prelude and fields. An isolated, unauthenticated native initialization confirmed the `ui.render` event and disabled feedback object; it does not establish account-login acceptance.
 
 Validation requires exactly one correlated success response, empty commands, an unauthenticated first-party account descriptor (`tokenSource: none`), `dontAsk`, explicitly disabled remote-control gates and the observed disabled fast-mode state. Typed agent/model/style descriptors must be bounded, unambiguous and structurally compatible. They are discarded after validation: native advertised model names, prices, capabilities and built-in agents never become selected-account catalog data or execution authority. Unknown fields, duplicate keys/responses, changed scope, malformed UTF-8, unsolicited control/events other than the single allowed startup frame, partial trailing output and mixed success/error responses fail explicitly. Native error text and stderr stay private and become only stable typed diagnostics.
 
@@ -2961,6 +2961,13 @@ rename therefore leaves an attributable plaintext remnant: the presence check
 entry with that name blocks without being removed, and the next credential write
 to the same target retires an earlier remnant before writing.
 
+For a validated existing credential parent, an empty attributed-temporary scan
+and an absent credential target each require a successful parent-directory sync
+before cleanup reports success. This includes retries after removal succeeded but
+the earlier sync failed. A sync failure retains the typed cleanup error and
+blocks server or Worker cleanup checkpoints. Missing, linked and non-directory
+parents retain their validation behavior; unrelated profile files remain intact.
+
 The transient executable copy of a native model observation is created by
 exactly one attempt (`O_EXCL`) and removed only after that operation's owned
 processes are joined; an unproven owner keeps the copy and the failure. A retry
@@ -2992,6 +2999,13 @@ verified legacy `runtimes/<id>` directory, which is registered in place: nothing
 is moved, merged or rewritten, and no native database is merged. A directory
 may be registered for one key only.
 
+One history identifier belongs to at most one managed or legacy profile in an
+owner registry. Rebinding it to the same profile is idempotent. A conflicting
+registration or record operation fails before publication and retains both
+profiles and their histories. Registry load rejects cross-profile duplicates as
+`registry_invalid` without rewriting the registry; history lookup and
+history-scoped deletion cannot choose an owner from ambiguous restored state.
+
 ### Deletion ownership
 
 A profile is deleted only by explicit session, account or storage deletion:
@@ -3007,6 +3021,17 @@ profile that is locked, referenced or unremovable makes the whole deletion retur
 an error (`profile_busy`, `referenced` or `delete_blocked`), so no caller proves a
 deletion while a matching profile remains. There is no age-based pruning.
 
+Managed-profile deletion checks the selected entry's owner record, private
+native home and exact directory object before removal. The recursive removal
+stays bound to that verified object. A missing or changed owner, missing native
+home or replacement directory leaves the directory and registry entry in
+recovery-required state. Verified legacy profiles keep their existing explicit
+deletion behavior. If Claude logout already removed its verified legacy auth
+directory but registry publication failed, original cleanup recovery uses its
+retained account, profile and joined-process claim to retire only that exact
+absent registration. It retains the cleanup fence for a referenced, locked,
+reappeared or mismatched profile, or for another registry publication failure.
+
 ### Legacy access-only quota migration
 
 A prior-epoch uncertain access-only quota or credit attempt whose per-operation
@@ -3014,13 +3039,15 @@ runtime was retained (original aliases, empty original process index, no auth or
 probe files, no live controller) is settled once, as failed, through an
 idempotent versioned migration receipt (`verified`, then `settled`). The proof
 requires the retained process index, a joined original owner, a bounded
-secret-remnant check (no credential file names, token fields or JWT-like
-content; links are counted but never followed) and unchanged account,
+secret-remnant check of every byte of each permitted regular file, within the
+existing cumulative 64 MiB limit (no credential file names, token fields or
+JWT-like content; links are counted but never followed), and unchanged account,
 connection, generation and operation identity. The directory and its helper
 links are left untouched. Only the eligible obsolete captured credential
 reference is retired, balances and timestamps are unchanged, and the old request
 is never replayed. Missing ownership, process, credential or vault proof, a
-changed identity or an unreadable receipt keeps the original fence. A later
+changed identity, an unreadable or size-changed retained file, an exceeded bound,
+or an unreadable receipt keeps the original fence. A later
 ordinary Refresh makes a new observation through the account's permanent quota
 profile.
 
@@ -3052,4 +3079,4 @@ Claude Code `2.1.236`, OpenCode `1.18.32` and Grok Build `1.0.41` are minimum Se
 
 Admission never establishes protocol, account or execution readiness. An admitted installation still passes the harness's existing bounded native protocol, effective-settings, account, ownership and cleanup checks on the actual executable, and a changed method, field or setting fails with a typed native-validation error before any input or credential delivery with verified cleanup. Probe logs record the observed `installed_version` and the `baseline_version`. Direct version-4 execution keeps its version-independent admission and gains no numeric gate. Legacy execution, continuation and claim paths (versions 1 to 3) use the same `HarnessVersionAllowed` rule instead of exact equality. The pinned fixtures and installed-macOS evidence described in this contract remain evidence for the baseline only.
 
-Retained native records keep the observed executable version (`ExecutionPublisher.NativeVersion()`), which can be newer than the baseline. Every desktop validator of such a record (Claude, OpenCode and Grok interaction requests, Codex approvals, native usage observations and child records) must apply the same per-harness minimum-version rule through the single shared frontend predicate `harnessVersionAllowed` in `apps/delidev/src/harness-version.ts`, which mirrors `HarnessVersionAllowed` (and applies the Codex minimum `0.151.0`). A renderer validator must never compare a record version for equality with a baseline constant: that would present a newer admitted installation's question, permission request or usage as unavailable with no response controls. Unsupported-installation messages on the server, Worker and desktop (including `claudeSubscriptionInstallation` and the subagent and model-settings copy) must not name a fixed version.
+Retained native records keep the observed executable version (`ExecutionPublisher.NativeVersion()`), which can be newer than the baseline. Every desktop validator of such a record (Claude, OpenCode and Grok interaction requests, Codex approvals, native usage observations and child records) must apply the same per-harness minimum-version rule through the single shared frontend predicate `harnessVersionAllowed` in `apps/delidev/src/harness-version.ts`, which mirrors `HarnessVersionAllowed` (and applies the Codex minimum `0.151.0`). A renderer validator must never compare a record version for equality with a baseline constant: that would present a newer admitted installation's question, permission request or usage as unavailable with no response controls. Unsupported-installation messages on the server, Worker and desktop (including `claudeSubscriptionInstallation` and the subagent and model-settings copy) must not name a fixed version. The OpenCode discovery probe keeps one `domain.Unsupported` code for every profile mismatch but gives each cause its own remedy. Only the initial version admission (below the minimum, prerelease of it or malformed, checked before any process starts) tells the operator to update OpenCode on the Worker (for example `opencode upgrade`, or the package manager that installed it) and refresh discovery. A mismatch observed from an admitted or newer installation (health payload, global configuration, startup output or OpenAPI schema) must never prescribe an upgrade: it tells the operator to select a validated OpenCode version or correct its configuration, because a newer release can be the cause. No message or guidance contains baseline digits. Installation states that discovery reports as `incompatible` (relative explicit path, non-regular executable, Windows shell wrapper, unrunnable executable or unparseable version output) never carry a detected version, so they are never an outdated-version cause. The success-path `baseline_version` probe log field is operator telemetry and is unchanged. The desktop Settings installation observation applies the same minimum to a detected OpenCode version through `installationVersionAllowed` in `apps/delidev/src/harness-version.ts` (see the desktop contract); Codex and Grok keep protocol-only classification there.

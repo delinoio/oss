@@ -707,6 +707,12 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 				if domain.Decode(job.Input, &execution) != nil || execution.Validate() != nil {
 					return nil, subscriptionDenied()
 				}
+				if sharedCapable && !execution.SharedCodexOwnerEligible() {
+					sharedCapable = false
+					if err := accountBusy(); err != nil {
+						return nil, err
+					}
+				}
 				if sharedCapable {
 					if state.Lease == nil {
 						sharedOwner = true

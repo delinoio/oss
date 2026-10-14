@@ -74,6 +74,17 @@ func TestPreparePromptIntegrationLaunchShape(t *testing.T) {
 			if len(got.Args) != 3 || got.Args[0] != "-i" || got.Args[1] != "--init-command" || !strings.HasPrefix(got.Args[2], "source '") {
 				t.Fatalf("fish must source the wrapper after its configuration: %+v", got.Args)
 			}
+			if containsPrefix(got.Env, ChatDirectoryEnvironment+"=") || strings.Contains(strings.Join(got.Env, "\x00"), chat) || strings.Contains(strings.Join(got.Args, "\x00"), chat) {
+				t.Fatal("fish launch must not expose the physical chat directory")
+			}
+			contents, err := os.ReadFile(filepath.Join(got.dir, "chat-directory"))
+			if err != nil || string(contents) != chat+"\n" {
+				t.Fatal("fish private handoff must contain the verified physical directory")
+			}
+			script, err := os.ReadFile(filepath.Join(got.dir, "init.fish"))
+			if err != nil || strings.Contains(string(script), chat) {
+				t.Fatal("fish source script must not include the physical directory")
+			}
 		}},
 		{"/usr/bin/pwsh", func(t *testing.T, got PromptIntegration) {
 			if len(got.Args) != 4 || got.Args[1] != "-NoExit" || got.Args[2] != "-Command" || !strings.HasPrefix(got.Args[3], ". '") {
@@ -82,7 +93,7 @@ func TestPreparePromptIntegrationLaunchShape(t *testing.T) {
 		}},
 	} {
 		got := PreparePromptIntegration(t.TempDir(), domain.NewID(), tc.shell, chat, []string{"-i"}, []string{"HOME=/h"})
-		if got.Outcome != PromptApplied || !containsPrefix(got.Env, ChatDirectoryEnvironment+"="+chat) || !containsPrefix(got.Env, "HOME=/h") {
+		if got.Outcome != PromptApplied || !containsPrefix(got.Env, "HOME=/h") || (got.Kind != ShellKindFish && !containsPrefix(got.Env, ChatDirectoryEnvironment+"="+chat)) {
 			t.Fatalf("%s: %+v", tc.shell, got)
 		}
 		tc.check(t, got)
@@ -99,6 +110,19 @@ func TestPreparePromptIntegrationLaunchShape(t *testing.T) {
 		if err := got.Cleanup(); err != nil {
 			t.Fatalf("cleanup must be idempotent: %v", err)
 		}
+	}
+}
+
+func TestFishPromptHandoffFailureKeepsNativeLaunch(t *testing.T) {
+	root, chat := t.TempDir(), t.TempDir()
+	parent := filepath.Join(root, promptIntegrationDirectory)
+	if err := os.WriteFile(parent, []byte("occupied"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	args, env := []string{"-i"}, []string{"HOME=/h"}
+	got := PreparePromptIntegration(root, domain.NewID(), "/usr/bin/fish", chat, args, env)
+	if got.Outcome != PromptUnsupported || !reflect.DeepEqual(got.Args, args) || !reflect.DeepEqual(got.Env, env) {
+		t.Fatal("unsafe fish handoff must leave the original launch unchanged")
 	}
 }
 

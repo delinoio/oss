@@ -36,8 +36,8 @@ const (
 )
 
 // ChatDirectoryEnvironment carries the verified original General Chat
-// directory to the integration scripts, which copy it into a shell-local
-// variable and unset it so it is not inherited by commands.
+// directory to shell integrations other than fish. Fish reads a private file
+// after its account configuration so startup children cannot inherit the path.
 const ChatDirectoryEnvironment = "DELIDEV_TERMINAL_CHAT_DIRECTORY"
 
 // ChatPromptLabel is the display alias for the General Chat directory.
@@ -140,8 +140,19 @@ func PreparePromptIntegration(root string, terminal domain.ID, shell, chatDirect
 			return fail()
 		}
 	}
+	if kind == ShellKindFish {
+		// The init command runs after fish's account configuration. Keep the
+		// physical path out of the launch environment and command line while
+		// making it available only to the private post-configuration script.
+		if err := security.WriteAtomic(filepath.Join(dir, "chat-directory"), []byte(physical+"\n")); err != nil {
+			return fail()
+		}
+	}
 	launchArgs := append([]string(nil), args...)
-	launchEnv := append(append([]string(nil), env...), ChatDirectoryEnvironment+"="+physical)
+	launchEnv := append([]string(nil), env...)
+	if kind != ShellKindFish {
+		launchEnv = append(launchEnv, ChatDirectoryEnvironment+"="+physical)
+	}
 	switch kind {
 	case ShellKindZsh:
 		launchEnv = append(launchEnv, "ZDOTDIR="+dir)

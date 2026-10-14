@@ -110,7 +110,7 @@ func (c *Client) StartCodeReview(ctx context.Context, action domain.ID, selectio
 	}
 	// Claim before native Call, including transport/acknowledgment uncertainty.
 	c.codeReview = &codeReviewAttempt{action: action, selection: selection, items: map[string]codeReviewItem{}}
-	response, err := c.wire.Call(ctx, action, "review/start", struct {
+	response, err := c.call(ctx, action, "review/start", struct {
 		ThreadID domain.ID      `json:"threadId"`
 		Target   map[string]any `json:"target"`
 		Delivery string         `json:"delivery"`

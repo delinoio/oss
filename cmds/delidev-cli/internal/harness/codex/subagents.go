@@ -206,7 +206,7 @@ func (c *Client) InspectDescendants(ctx context.Context) (Event, error) {
 	cursor := ""
 	seen := map[string]bool{}
 	for page := 0; page < 16; page++ {
-		response, err := c.wire.Call(ctx, domain.NewID(), "thread/list", struct {
+		response, err := c.call(ctx, domain.NewID(), "thread/list", struct {
 			Ancestor    domain.ID `json:"ancestorThreadId"`
 			Limit       int       `json:"limit"`
 			Cursor      string    `json:"cursor,omitempty"`
@@ -418,7 +418,7 @@ func (c *Client) childMetadata() Event {
 }
 
 func (c *Client) readChildHistory(ctx context.Context, child domain.SubagentObservation, id domain.ID) (domain.SubagentObservation, error) {
-	response, err := c.wire.Call(ctx, domain.NewID(), "thread/turns/list", struct {
+	response, err := c.call(ctx, domain.NewID(), "thread/turns/list", struct {
 		Thread    domain.ID `json:"threadId"`
 		Limit     int       `json:"limit"`
 		Direction string    `json:"sortDirection"`

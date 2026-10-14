@@ -145,6 +145,8 @@ message GetSubscriptionProgressResponse {
   CodexDiagnostic diagnostic = 7;
   SubscriptionLoginMethod login_method = 8;
   NativeSubscriptionDiagnostic native_diagnostic = 9;
+  // Declared for Grok Build; no server path populates it yet.
+  GrokDiagnostic grok_diagnostic = 10;
 }
 message WatchSubscriptionRequest {
   string machine_id = 1;
@@ -361,6 +363,29 @@ message CodexDiagnostic {
   string message = 5;
   string guidance = 6;
   string correlation_id = 7;
+}
+message GrokDiagnostic {
+  string detected_version = 1;
+  string supported_version = 2;
+  GrokDiagnosticPhase phase = 3;
+  string code = 4;
+  string message = 5;
+  string guidance = 6;
+  string correlation_id = 7;
+}
+enum GrokDiagnosticPhase {
+  GROK_DIAGNOSTIC_PHASE_UNSPECIFIED = 0;
+  GROK_DIAGNOSTIC_PHASE_DISCOVERY = 1;
+  GROK_DIAGNOSTIC_PHASE_VERSION = 2;
+  GROK_DIAGNOSTIC_PHASE_PROFILE = 3;
+  GROK_DIAGNOSTIC_PHASE_RUNTIME = 4;
+  GROK_DIAGNOSTIC_PHASE_LOGIN = 5;
+  GROK_DIAGNOSTIC_PHASE_REFRESH = 6;
+  GROK_DIAGNOSTIC_PHASE_LOGOUT = 7;
+  GROK_DIAGNOSTIC_PHASE_MODELS = 8;
+  GROK_DIAGNOSTIC_PHASE_EXECUTION = 9;
+  GROK_DIAGNOSTIC_PHASE_HISTORY = 10;
+  GROK_DIAGNOSTIC_PHASE_CLEANUP = 11;
 }
 enum CodexDiagnosticPhase {
   CODEX_DIAGNOSTIC_PHASE_UNSPECIFIED = 0;
