@@ -337,7 +337,7 @@ The owner-approved native Claude subscription extension spans the existing
 subscription, desktop, harness, protocol and storage owners. Record System 38,
 Worker 20 and the complete login-code/progress/native-identity declarations in
 the owning feature PR. Authentication remains in an original installed
-Claude Code account profile on the selected Runner Device; server metadata does
+Claude Code account profile on the original Runner Device of an existing device-owned account (new sign-in is server-owned under System 67); server metadata does
 not grant credentials, cross-device execution or cleanup authority. The
 reservation prerequisite activates no support and adds no migration. Follow
 [the subscription contract](cmds-delidev-subscription-contract.md#native-claude-subscriptions).
