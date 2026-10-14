@@ -230,6 +230,27 @@ it("connects a new server-owned account for a logged-out device-owned account wi
   expect(value.logout).not.toHaveBeenCalled();
 });
 
+it("connects a new account for a logged-out device-owned account on a capability 67 server without capability 38", async () => {
+  const value = mount(
+    [
+      SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,
+      SystemCapability.CLAUDE_SERVER_LOGIN_V1,
+    ],
+    deviceOwnedAccount(false),
+  );
+  const connect = await screen.findByRole("button", {
+    name: "Connect new account",
+  });
+  await waitFor(() =>
+    expect((connect as HTMLButtonElement).disabled).toBe(false),
+  );
+  expect(screen.queryByText(/Claude sign-in needs a server update/)).toBeNull();
+  expect(
+    screen.queryByText(/does not support the requested lifecycle action/),
+  ).toBeNull();
+  expect(value.logout).not.toHaveBeenCalled();
+});
+
 it("disables reconnection with server-update guidance when capability 67 is absent", async () => {
   const value = mount(
     [

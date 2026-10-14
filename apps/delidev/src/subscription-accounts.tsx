@@ -224,10 +224,14 @@ function NativeManagedSubscriptionAccount({
     service === SubscriptionServiceId.Claude &&
     !connected &&
     (connectsNewAccount || (!managedClaude && !neverUsedClaude));
+  // Capability 67 alone authorizes every Claude sign-in presentation: a
+  // server-token account's lifecycle and a disconnected account's connect-new
+  // action, which creates a separate server-owned account. Legacy capability 38
+  // only governs the lifecycle of a connected device-owned account (logout).
   const supported =
     serviceSupported &&
     (service === SubscriptionServiceId.Claude
-      ? managedClaude
+      ? managedClaude || !connected
         ? claudeServerLogin
         : status.data?.capabilities.includes(
             SystemCapability.CLAUDE_SUBSCRIPTIONS_V1,

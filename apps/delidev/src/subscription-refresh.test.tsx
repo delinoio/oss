@@ -361,7 +361,11 @@ it.each([
       connection: {},
       health: "disconnected",
     },
-    options: { claudeServer: true, subscription: { generation: "" } },
+    options: {
+      claudeLegacy: false,
+      claudeServer: true,
+      subscription: { generation: "" },
+    },
     label: "Sign in to Claude",
     key: "subscription-accounts.signInTo_fa4edf",
   },
@@ -373,6 +377,7 @@ it.each([
       health: "disconnected",
     },
     options: {
+      claudeLegacy: false,
       claudeServer: true,
       subscription: { native_profile_id: "device-owned-profile" },
     },
