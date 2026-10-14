@@ -64,6 +64,7 @@ function fixture(
     }),
   });
   let providerReads = 0;
+  let providerReadError: unknown;
   const original = create(ResourceSchema, {
     id: newRequestId(),
     kind: EntityKind.ACCOUNT,
@@ -110,7 +111,14 @@ function fixture(
   const transport = createRouterTransport((router) => {
     router.service(ResourceService, {
       getResource: (request) => {
-        if (request.id === provider.id) providerReads += 1;
+        if (request.id === provider.id) {
+          providerReads += 1;
+          if (providerReadError) {
+            const error = providerReadError;
+            providerReadError = undefined;
+            throw error;
+          }
+        }
         return {
           resource: request.id === provider.id ? provider : current,
         };
@@ -187,6 +195,9 @@ function fixture(
     setProvider: (resource: Resource) => {
       provider = resource;
     },
+    failNextProviderRead: (error: unknown) => {
+      providerReadError = error;
+    },
   };
 }
 
@@ -246,6 +257,9 @@ it("refetches Provider evidence after a revision conflict", async () => {
     value.setProvider(
       create(ResourceSchema, { ...value.provider, revision: 2n }),
     );
+    value.failNextProviderRead(
+      new ConnectError("Provider refresh unavailable", Code.Unavailable),
+    );
     throw new ConnectError("Provider changed", Code.Aborted);
   });
   const select = screen.getByRole("combobox", { name: "API format" });
@@ -255,6 +269,12 @@ it("refetches Provider evidence after a revision conflict", async () => {
   await waitFor(() => expect(value.changeFormat).toHaveBeenCalledTimes(1));
   await waitFor(() =>
     expect(value.providerReads).toBeGreaterThan(readsBeforeConflict),
+  );
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Retry profile checks" }),
+  );
+  await waitFor(() =>
+    expect(value.providerReads).toBeGreaterThan(readsBeforeConflict + 1),
   );
 
   value.changeFormat.mockImplementationOnce(async (request) => {

@@ -458,6 +458,15 @@ export function AccountAPIFormatField({
         </p>
       ) : null}
       <Problem error={inventory.error || provider.error} />
+      {provider.error ? (
+        <SettingsActionButton
+          icon={SettingsActionIcon.Retry}
+          type="button"
+          onClick={() => void provider.refetch()}
+        >
+          {copy("configuration-fields.retryApiFormats")}
+        </SettingsActionButton>
+      ) : null}
     </>
   );
 }
