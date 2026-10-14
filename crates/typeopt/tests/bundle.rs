@@ -2054,7 +2054,7 @@ fn rejects_imports_outside_the_bundle() {
 fn rejects_relative_imports_hidden_by_dynamic_package_boundary() {
     let temp = bundle(&[(
         "sub/index.js",
-        r#"import{x}from"../../node_modules/pkg/index.js";if(false)import("pkg");console.log(x);"#,
+        r#"import{x}from"../../node_modules/pkg/index";if(false)import("pkg");console.log(x);"#,
     )]);
     let package = temp.path().join("node_modules/pkg");
     fs::create_dir_all(&package).unwrap();
