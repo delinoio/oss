@@ -31,7 +31,7 @@ type forkGitInventory struct {
 }
 
 func inspectForkGitInventory(ctx context.Context, git Git, source string, budget *snapshotCopyBudget) (forkGitInventory, error) {
-	return inspectForkGitInventoryWithConfigProof(ctx, git, source, budget, true)
+	return inspectForkGitInventoryWithBudgets(ctx, git, source, budget, budget, true)
 }
 
 // inspectForkGitInventoryWithoutConfigProof rechecks the source inventory while
@@ -39,10 +39,18 @@ func inspectForkGitInventory(ctx context.Context, git Git, source string, budget
 // same large config here would pin a second command buffer during preparation or
 // final verification, defeating the aggregate Fork allowance.
 func inspectForkGitInventoryWithoutConfigProof(ctx context.Context, git Git, source string, budget *snapshotCopyBudget) (forkGitInventory, error) {
-	return inspectForkGitInventoryWithConfigProof(ctx, git, source, budget, false)
+	return inspectForkGitInventoryWithBudgets(ctx, git, source, budget, nil, false)
 }
 
-func inspectForkGitInventoryWithConfigProof(ctx context.Context, git Git, source string, budget *snapshotCopyBudget, captureConfigProof bool) (forkGitInventory, error) {
+// inspectForkGitInventoryForPreparation keeps the source inventory traversal
+// independently bounded while charging only the retained config proof against
+// the request-wide budget. The copied Git files are charged by the later copy,
+// so charging them again here would reject valid aggregate preparations.
+func inspectForkGitInventoryForPreparation(ctx context.Context, git Git, source string, inventoryBudget, proofBudget *snapshotCopyBudget) (forkGitInventory, error) {
+	return inspectForkGitInventoryWithBudgets(ctx, git, source, inventoryBudget, proofBudget, true)
+}
+
+func inspectForkGitInventoryWithBudgets(ctx context.Context, git Git, source string, inventoryBudget, proofBudget *snapshotCopyBudget, captureConfigProof bool) (forkGitInventory, error) {
 	var result forkGitInventory
 	git.readOnly, git.offline = true, true
 	if err := validateSnapshotGitEntry(source); err != nil {
@@ -77,7 +85,7 @@ func inspectForkGitInventoryWithConfigProof(ctx context.Context, git Git, source
 	}
 	// Common worktree registrations are external location pointers. Only this
 	// selected worktree's complete private administration overlays the common store.
-	result.commonFiles, err = walkSnapshotBudget(ctx, result.common, "", func(p string) bool { return p == "worktrees" || strings.HasPrefix(p, "worktrees/") }, maxForkEntries, budget)
+	result.commonFiles, err = walkSnapshotBudget(ctx, result.common, "", func(p string) bool { return p == "worktrees" || strings.HasPrefix(p, "worktrees/") }, maxForkEntries, inventoryBudget)
 	if err != nil {
 		return result, err
 	}
@@ -85,7 +93,7 @@ func inspectForkGitInventoryWithConfigProof(ctx context.Context, git Git, source
 		return result, err
 	}
 	if !sameNativePath(result.common, result.admin) {
-		result.adminFiles, err = walkSnapshotBudget(ctx, result.admin, "", nil, maxForkEntries, budget)
+		result.adminFiles, err = walkSnapshotBudget(ctx, result.admin, "", nil, maxForkEntries, inventoryBudget)
 		if err != nil {
 			return result, err
 		}
@@ -94,7 +102,7 @@ func inspectForkGitInventoryWithConfigProof(ctx context.Context, git Git, source
 		}
 	}
 	if captureConfigProof {
-		if err = result.captureConfigProof(ctx, git, source, budget); err != nil {
+		if err = result.captureConfigProof(ctx, git, source, proofBudget); err != nil {
 			return result, err
 		}
 	}
@@ -218,7 +226,7 @@ func (m *Manager) prepareForkGitInventory(ctx context.Context, git Git, spec Rep
 	}
 	if !proof.configProof.bound {
 		var err error
-		proof, err = inspectForkGitInventory(ctx, git, spec.Checkout, newForkCopyBudget(1))
+		proof, err = inspectForkGitInventoryForPreparation(ctx, git, spec.Checkout, newForkCopyBudget(1), budget)
 		if err != nil {
 			return *entry, nil, err
 		}
