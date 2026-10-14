@@ -361,9 +361,10 @@ fn env_guard(code: &str, start: usize, end: usize, ignored: &[(usize, usize)]) -
             ("switch", EnvGuard::Switch),
         ] {
             if prefix.ends_with(keyword)
-                && prefix[..prefix.len() - keyword.len()]
+                && prefix
                     .as_bytes()
-                    .last()
+                    .get(..prefix.len() - keyword.len())
+                    .and_then(|prefix| prefix.last())
                     .is_none_or(|byte| {
                         !byte.is_ascii_alphanumeric() && *byte != b'_' && *byte != b'$'
                     })
