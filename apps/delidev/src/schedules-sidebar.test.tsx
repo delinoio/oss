@@ -662,6 +662,7 @@ it("retains Schedules connection memory on same-identity reconnect and resets on
   fireEvent.click(pane().getByRole("button", { name: "Enabled" }));
   await waitFor(() => expect(value.list.mock.lastCall?.[0].enabled).toBe(true));
   selectMorning();
+  fireEvent.click(screen.getByRole("button", { name: "More" }));
   fireEvent.click(screen.getByRole("button", { name: "Usage" }));
   fireEvent.click(screen.getByRole("button", { name: "Schedules" }));
   rendered.rerender(

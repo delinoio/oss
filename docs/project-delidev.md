@@ -432,6 +432,7 @@ ownership. System 62 / Worker 36 activate no filesystem rewind or migration.
 
 - Positive pre-send image rejection follows the image-input/direct startup contracts: optional startup field 11 and closed failure enum 0/1 require original adapter/Worker/queue/process proof plus independent cleanup. Preserve original image input and uncertainty; add no capability or migration.
 - Persistent sidebar collapse is computer-local under the desktop contract . Its native enum/revision document and product-window publication remain independent of Appearance, connections, server configuration and exported/backed-up data; compact drawer actions do not change the wide preference.
+- The rail's **More** popover holds Usage; the Boolean `usage_pinned` (default false) puts Usage on the rail between Pull requests and Schedules. It is computer-local in its own bounded `navigation_preference.json` (revision, lock sidecar, atomic write, uncertain-save recovery and `navigation-preference-changed` window events as defined in the desktop contract), independent of `sidebar_preference.json`, connections, server configuration and exported/backed-up data. Tray and account Usage navigation never read or write it.
 
 ## Accepted-turn timing boundary
 

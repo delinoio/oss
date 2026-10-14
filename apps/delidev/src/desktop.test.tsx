@@ -132,6 +132,8 @@ function savedFixture(stopServer?: (_request: unknown) => Promise<object>) {
     if (command === "show_connection_manager") return;
     if (command === "read_sidebar_preference")
       return { revision: 1, sidebar_preference: "expanded", problem: null };
+    if (command === "read_navigation_preference")
+      return { revision: 1, usage_pinned: false, problem: null };
     if (command === "notification_permission")
       return { permission: "unavailable", problem: "os-unavailable" };
     if (command === "begin_tray" || command === "begin_notifications")
@@ -172,6 +174,7 @@ it("uses only the native-pinned saved authority and direct product RPCs without 
         "begin_notifications",
         "end_notifications",
         "read_sidebar_preference",
+        "read_navigation_preference",
         "begin_inbox_badge",
         "read_inbox_badge_selection",
         "publish_inbox_badge",
@@ -835,9 +838,18 @@ it("reloads the product window once from the connected top-level screens", async
       "Schedules",
       "Settings",
     ]) {
-      const button = screen.queryByRole("button", {
-        name: new RegExp(`^${name}`),
-      });
+      // Usage is unpinned by default, so it is reached through the More popover.
+      if (name === "Usage")
+        fireEvent.click(screen.getByRole("button", { name: "More" }));
+      const button =
+        name === "Usage"
+          ? within(screen.getByRole("dialog", { name: "More" })).queryByRole(
+              "button",
+              { name: "Usage" },
+            )
+          : screen.queryByRole("button", {
+              name: new RegExp(`^${name}`),
+            });
       expect(button, name).toBeTruthy();
       fireEvent.click(button!);
       pressReload();
