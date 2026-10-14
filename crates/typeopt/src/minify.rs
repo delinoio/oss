@@ -392,7 +392,7 @@ fn legal(text: &str) -> bool {
 pub(crate) fn minify_module(code: &str) -> Option<Minified> {
     let cm: Lrc<SourceMap> = Default::default();
     let file = cm.new_source_file(Lrc::new(FileName::Anon), code.to_owned());
-    GLOBALS.set(&Globals::new(), || {
+    let (code, map) = GLOBALS.set(&Globals::new(), || {
         let unresolved = Mark::new();
         let top_level = Mark::new();
         let comments = SingleThreadedComments::default();
@@ -574,11 +574,16 @@ pub(crate) fn minify_module(code: &str) -> Option<Minified> {
         .to_writer(&mut json)
         .ok()?;
         let map = sourcemap::SourceMap::from_slice(&json).ok()?;
-        Some(Minified {
-            compressed: compressed(&code),
-            code,
-            map,
-        })
+        Some((code, map))
+    })?;
+    // Measured after the SWC program, comments and mappings are dropped, so
+    // the compressors do not add to their peak memory.
+    drop(file);
+    drop(cm);
+    Some(Minified {
+        compressed: compressed(&code),
+        code,
+        map,
     })
 }
 
