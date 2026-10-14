@@ -915,6 +915,7 @@ fn module_require_and_created_loader_guard_intrinsics() {
     for bridge in [
         ("bridge.cjs", "require(\"patch-slice\");\n"),
         ("bridge.cjs", "module.require(\"patch-slice\");\n"),
+        ("bridge.cjs", "module[\"require\"](\"patch-slice\");\n"),
         (
             "bridge.cjs",
             "const target = \"patch-slice\";\nmodule.require(target);\n",

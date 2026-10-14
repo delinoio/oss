@@ -1744,13 +1744,19 @@ fn created_require_loaders(nodes: &[Node]) -> HashSet<String> {
     loaders
 }
 
-fn module_require_call(callee: Node, loaders: &HashSet<String>) -> bool {
+fn module_require_call(ctx: &Ctx, callee: Node, loaders: &HashSet<String>) -> bool {
     let callee = skip_outer(callee);
     if callee.kind() == SyntaxKind::Identifier {
         return loaders.contains(callee.text());
     }
-    callee.kind() == SyntaxKind::PropertyAccessExpression
-        && callee.name().text() == "require"
+    let is_require_member = match callee.kind() {
+        SyntaxKind::PropertyAccessExpression => callee.name().text() == "require",
+        SyntaxKind::ElementAccessExpression => {
+            literal_member(ctx, callee.argument_expression()) == Member::Named("require".to_owned())
+        }
+        _ => false,
+    };
+    is_require_member
         && skip_outer(callee.expression()).kind() == SyntaxKind::Identifier
         && skip_outer(callee.expression()).text() == "module"
 }
@@ -1789,7 +1795,7 @@ fn imports_external_runtime(ctx: &mut Ctx) -> bool {
                     if !dynamic
                         && !require
                         && !created_loader
-                        && !(ctx.files[index].js && module_require_call(callee, &loaders))
+                        && !(ctx.files[index].js && module_require_call(ctx, callee, &loaders))
                     {
                         continue;
                     }
