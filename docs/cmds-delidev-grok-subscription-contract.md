@@ -537,10 +537,32 @@ through `internal/process`. It then checks, in order:
 
 Cleanup always runs `grok logout` and removes the scratch directory, including
 after a canceled or timed-out login, but only when every native process it
-started is confirmed gone. If stopping the ACP agent, a command's ownership
-reconciliation or `grok logout` ownership cannot be confirmed, the scratch tree
+started is confirmed gone. If ownership cannot be confirmed for any native
+process (including the ACP agent and the cleanup `grok logout`), the scratch tree
 is retained, the run fails and the error names the retained path (never its
 content); remove it manually after confirming no `grok` process still uses it.
+A native process is confirmed gone when `internal/process` reports a clean stop
+or, after it reports `recovery_required`, the immediately following owner
+reconciliation (`ReconcileOwner`) succeeds: reconciliation is the proof, so a
+recovery error that reconciliation resolves still fails that command's own
+result but no longer retains the tree. The test records a suspicion per native
+owner and retires it only through that owner's successful reconciliation:
+
+| Site                  | Records a suspicion on                 | Retired by                                                 |
+| --------------------- | -------------------------------------- | ---------------------------------------------------------- |
+| Short command (`run`) | `Run` returns `recovery_required`      | the reconciliation `run` does next                         |
+| Short command (`run`) | its reconciliation fails               | stands                                                     |
+| ACP start             | `Start` returns `recovery_required`    | the reconciliation `startACP` does next (no handle exists) |
+| ACP resume            | `Resume` returns `recovery_required`   | the stop path's reconciliation                             |
+| ACP stop              | `Close` returns `recovery_required`    | the stop path's reconciliation                             |
+| ACP stop              | `Wait` fails other than by exit status | the stop path's reconciliation                             |
+| ACP stop              | its reconciliation fails               | stands                                                     |
+
+`TestNativeAccountHarnessRunUncertaintyMatrix` and
+`TestNativeAccountHarnessACPUncertaintyMatrix` script every row against both
+reconciliation outcomes, and
+`TestNativeAccountHarnessCleanupLogoutRecoveryIsReconciled` covers the cleanup
+logout.
 The cleanup logout fails the run only when the scratch credential file survives
 or its ownership is uncertain; step 5 checks the explicit logout strictly. A failed check fails the test with a
 message that names the check and never echoes native output, URLs, codes,

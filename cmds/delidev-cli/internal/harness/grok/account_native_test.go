@@ -368,6 +368,35 @@ func approvalTerminal() (io.WriteCloser, error) {
 	return file, nil
 }
 
+// nativeHandle is the part of *process.Handle that the ACP client uses. It exists
+// so the self-tests can script ownership failures that a real process cannot be
+// made to produce on demand.
+type nativeHandle interface {
+	Resume() error
+	Write([]byte) (int, error)
+	CloseInput() error
+	Close() error
+	Wait() error
+	Done() <-chan struct{}
+}
+
+// startNative is process.Start without the typed-nil interface trap.
+func startNative(ctx context.Context, config process.Config) (nativeHandle, error) {
+	handle, err := process.Start(ctx, config)
+	if err != nil {
+		return nil, err
+	}
+	return handle, nil
+}
+
+// uncertainty is a suspicion that one owner's native process tree may still be
+// alive. It is keyed by owner so a later successful reconciliation of that owner
+// retires exactly its own suspicion.
+type uncertainty struct {
+	owner domain.ID
+	err   error
+}
+
 // accountScratch is a private HOME/GROK_HOME tree for one acceptance run.
 type accountScratch struct {
 	executable string
@@ -379,11 +408,12 @@ type accountScratch struct {
 	budgets    accountBudgets
 
 	// Seams for the harness self-tests; production uses internal/process directly.
-	runner  func(context.Context, process.Config) error
-	starter func(context.Context, process.Config) (*process.Handle, error)
+	runner     func(context.Context, process.Config) error
+	starter    func(context.Context, process.Config) (nativeHandle, error)
+	reconciler func(root string, owner domain.ID) error
 
 	mu        sync.Mutex
-	uncertain []error
+	uncertain []uncertainty
 
 	once       sync.Once
 	cleanupErr error
@@ -402,27 +432,65 @@ func newAccountScratch(t *testing.T, executable string, extraEnv []string) *acco
 	return s
 }
 
-// noteUncertain records that a native process tree may still be alive. The
-// scratch tree is then retained instead of removed from under it.
-func (s *accountScratch) noteUncertain(err error) {
+// noteUncertain records that the owner's native process tree may still be alive.
+// The suspicion stands until reconcileNative proves that owner's tree is gone;
+// while any suspicion stands, Cleanup retains the scratch tree instead of
+// removing it from under a live process.
+func (s *accountScratch) noteUncertain(owner domain.ID, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.uncertain = append(s.uncertain, err)
+	s.uncertain = append(s.uncertain, uncertainty{owner, err})
+}
+
+// clearUncertain retires every suspicion held for the owner.
+func (s *accountScratch) clearUncertain(owner domain.ID) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	kept := s.uncertain[:0]
+	for _, entry := range s.uncertain {
+		if entry.owner != owner {
+			kept = append(kept, entry)
+		}
+	}
+	s.uncertain = kept
 }
 
 func (s *accountScratch) uncertainErr() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return errors.Join(s.uncertain...)
+	errs := make([]error, 0, len(s.uncertain))
+	for _, entry := range s.uncertain {
+		errs = append(errs, entry.err)
+	}
+	return errors.Join(errs...)
 }
 
-// observe flags an ownership-recovery failure from internal/process and passes
-// the error through unchanged.
-func (s *accountScratch) observe(err error) error {
-	if err != nil && domain.SafeError(err).Code == domain.RecoveryRequired {
-		s.noteUncertain(errors.New("native process ownership could not be confirmed"))
+func recoveryRequired(err error) bool {
+	return err != nil && domain.SafeError(err).Code == domain.RecoveryRequired
+}
+
+// observe flags an ownership-recovery failure from internal/process as a
+// suspicion for the owner and passes the error through unchanged. Every call
+// site is followed by reconcileNative for the same owner, which retires the
+// suspicion when reconciliation proves the owned tree is gone, so a recovery
+// error that reconciliation resolves does not make cleanup fail.
+func (s *accountScratch) observe(owner domain.ID, err error) error {
+	if recoveryRequired(err) {
+		s.noteUncertain(owner, errors.New("native process ownership could not be confirmed"))
 	}
 	return err
+}
+
+// reconcileNative proves the owner's native process tree is gone. A failure is a
+// standing suspicion (label names the process in the retained-path error); a
+// success retires every earlier suspicion for that owner.
+func (s *accountScratch) reconcileNative(config process.Config, label string) error {
+	if err := s.reconciler(config.Directory, config.OwnerID); err != nil {
+		s.noteUncertain(config.OwnerID, errors.New(label+" ownership reconciliation failed"))
+		return err
+	}
+	s.clearUncertain(config.OwnerID)
+	return nil
 }
 
 func buildAccountScratch(t *testing.T, executable string, extraEnv []string) *accountScratch {
@@ -443,7 +511,8 @@ func buildAccountScratch(t *testing.T, executable string, extraEnv []string) *ac
 		processes:  filepath.Join(root, "proc"),
 		budgets:    productionBudgets(),
 		runner:     process.Run,
-		starter:    process.Start,
+		starter:    startNative,
+		reconciler: process.ReconcileOwner,
 	}
 	t.Cleanup(func() {
 		// Backstop for a scratch built without newAccountScratch's reporting
@@ -523,9 +592,8 @@ func (s *accountScratch) config(args []string, stdout, stderr io.Writer) process
 // proves the owned process tree is gone.
 func (s *accountScratch) run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	config := s.config(args, stdout, stderr)
-	err := s.observe(s.runner(ctx, config))
-	if reconcile := process.ReconcileOwner(config.Directory, config.OwnerID); reconcile != nil {
-		s.noteUncertain(errors.New("native process ownership reconciliation failed"))
+	err := s.observe(config.OwnerID, s.runner(ctx, config))
+	if reconcile := s.reconcileNative(config, "native process"); reconcile != nil {
 		err = errors.Join(err, reconcile)
 	}
 	return err
@@ -724,7 +792,7 @@ func checkModelsShape(output string) error {
 // product ACP code only knows API-key authentication, so the subscription
 // (cached_token) path is spoken directly here.
 type acpClient struct {
-	handle  *process.Handle
+	handle  nativeHandle
 	frames  *acpFrames
 	nextID  int
 	updates int
@@ -808,7 +876,11 @@ func startACP(ctx context.Context, s *accountScratch) (*acpClient, func() error,
 	config := s.config([]string{"agent", "stdio"}, frames, nil)
 	handle, err := s.starter(ctx, config)
 	if err != nil {
-		_ = s.observe(err)
+		if recoveryRequired(s.observe(config.OwnerID, err)) {
+			// No handle exists, so reconciliation is the only proof that the
+			// owner's partially launched scope is gone.
+			_ = s.reconcileNative(config, "ACP process")
+		}
 		return nil, nil, errors.New("ACP process could not start: " + describeNativeError(err))
 	}
 	closer := func() error {
@@ -816,25 +888,24 @@ func startACP(ctx context.Context, s *accountScratch) (*acpClient, func() error,
 		// The input may already be gone because the agent exited; the ownership
 		// checks below decide whether anything is left running.
 		_ = handle.CloseInput()
-		if err := s.observe(handle.Close()); err != nil {
+		if err := s.observe(config.OwnerID, handle.Close()); err != nil {
 			errs = append(errs, errors.New("ACP process stop could not be confirmed"))
 		}
 		// Wait reports the stopped agent's own exit status; only a failure that
 		// is not a plain exit status says anything about the process tree.
 		if err := handle.Wait(); err != nil {
 			if _, exited := process.CommandExitCode(err); !exited {
-				s.noteUncertain(errors.New("ACP process wait failed"))
+				s.noteUncertain(config.OwnerID, errors.New("ACP process wait failed"))
 				errs = append(errs, errors.New("ACP process wait failed: "+string(domain.SafeError(err).Code)))
 			}
 		}
-		if err := process.ReconcileOwner(config.Directory, config.OwnerID); err != nil {
-			s.noteUncertain(errors.New("ACP process ownership reconciliation failed"))
+		if err := s.reconcileNative(config, "ACP process"); err != nil {
 			errs = append(errs, errors.New("ACP process ownership reconciliation failed"))
 		}
 		return errors.Join(errs...)
 	}
 	if err := handle.Resume(); err != nil {
-		_ = s.observe(err)
+		_ = s.observe(config.OwnerID, err)
 		if closeErr := closer(); closeErr != nil {
 			return nil, nil, fmt.Errorf("ACP process could not resume (%s) and cleanup failed: %w", describeNativeError(err), closeErr)
 		}
@@ -1521,7 +1592,7 @@ func TestNativeAccountHarnessUncertainCleanupRetainsScratch(t *testing.T) {
 	if err := scratch.Login(ctx, &lockedBuffer{}, func(string, ...any) {}); err != nil {
 		t.Fatal(err)
 	}
-	scratch.noteUncertain(errors.New("ACP process ownership reconciliation failed"))
+	scratch.noteUncertain(domain.NewID(), errors.New("ACP process ownership reconciliation failed"))
 	err := scratch.Cleanup()
 	if err == nil || !strings.Contains(err.Error(), "retained at "+scratch.root) {
 		t.Fatalf("uncertain cleanup did not fail with the retained path: %v", err)
@@ -1560,9 +1631,9 @@ func recordBudgets(s *accountScratch) func() []budgetCall {
 		note(ctx, config)
 		return process.Run(ctx, config)
 	}
-	s.starter = func(ctx context.Context, config process.Config) (*process.Handle, error) {
+	s.starter = func(ctx context.Context, config process.Config) (nativeHandle, error) {
 		note(ctx, config)
-		return process.Start(ctx, config)
+		return startNative(ctx, config)
 	}
 	return func() []budgetCall {
 		mu.Lock()
@@ -1589,6 +1660,9 @@ func recordBudgets(s *accountScratch) func() []budgetCall {
 // context would carry the predecessor's earlier deadline and fall below the
 // lower bound. The check uses the monotonic clock only, with no sleeps.
 func TestNativeAccountHarnessEveryStepOwnsItsBudget(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is required")
+	}
 	scratch, _ := fakeAccountScratch(t, "")
 	// Distinct budgets so a budget taken from the wrong step is also caught.
 	budgets := accountBudgets{
@@ -1691,5 +1765,206 @@ func TestNativeAccountHarnessSetupHasABudget(t *testing.T) {
 	scratch.budgets.Setup = 30 * time.Second
 	if err := scratch.initRepo(); err != nil {
 		t.Fatalf("git init within budget: %v", err)
+	}
+}
+
+// ---- Ownership uncertainty (scripted process.Run/Start/Reconcile results) ----
+//
+// Every place that records "this native process tree may still be alive" is
+// followed by an ownership reconciliation of the same owner. The record is a
+// suspicion, not a verdict: it stands only when reconciliation fails, and a
+// successful reconciliation retires it, because reconciliation is the proof that
+// the owned tree is gone. The tests below cover every cell of this table, then
+// check Cleanup against each outcome:
+//
+//	site                                  records on           retired by
+//	run: process.Run                      RecoveryRequired     the reconcile run does next
+//	run: reconcile                        reconcile failure    (stands)
+//	startACP: process.Start               RecoveryRequired     the reconcile startACP does next
+//	startACP: Handle.Resume               RecoveryRequired     closer's reconcile
+//	closer: Handle.Close                  RecoveryRequired     closer's reconcile
+//	closer: Handle.Wait                   non-exit failure     closer's reconcile
+//	closer: reconcile                     reconcile failure    (stands)
+
+var (
+	errScriptedRecovery  = domain.Fail(domain.RecoveryRequired, "scripted ownership failure", "none")
+	errScriptedReconcile = errors.New("scripted reconcile failure")
+)
+
+// scriptedScratch is a scratch whose native process calls are all scripted.
+func scriptedScratch(t *testing.T) *accountScratch {
+	t.Helper()
+	scratch := buildAccountScratch(t, filepath.Join(t.TempDir(), "grok"), nil)
+	t.Cleanup(func() { _ = os.RemoveAll(scratch.root) })
+	return scratch
+}
+
+// assertCleanupMatches checks that Cleanup retains the scratch tree exactly when
+// a suspicion still stands. Its own logout is scripted to succeed.
+func assertCleanupMatches(t *testing.T, scratch *accountScratch, wantUncertain bool) {
+	t.Helper()
+	scratch.runner = func(context.Context, process.Config) error { return nil }
+	scratch.reconciler = func(string, domain.ID) error { return nil }
+	err := scratch.Cleanup()
+	_, statErr := os.Lstat(scratch.root)
+	switch {
+	case wantUncertain && (err == nil || !strings.Contains(err.Error(), "retained at "+scratch.root) || statErr != nil):
+		t.Fatalf("an uncertain run must retain the scratch tree and fail: err=%v stat=%v", err, statErr)
+	case !wantUncertain && (err != nil || !errors.Is(statErr, os.ErrNotExist)):
+		t.Fatalf("a reconciled run must clean up: err=%v stat=%v", err, statErr)
+	}
+}
+
+func TestNativeAccountHarnessRunUncertaintyMatrix(t *testing.T) {
+	plain := errors.New("exit status 1")
+	cases := []struct {
+		name          string
+		runErr        error
+		reconcileErr  error
+		wantUncertain bool
+	}{
+		{"run ok, reconcile ok", nil, nil, false},
+		{"run failed, reconcile ok", plain, nil, false},
+		{"run recovery required, reconcile ok", errScriptedRecovery, nil, false},
+		{"run recovery required, reconcile failed", errScriptedRecovery, errScriptedReconcile, true},
+		{"run ok, reconcile failed", nil, errScriptedReconcile, true},
+		{"run failed, reconcile failed", plain, errScriptedReconcile, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			scratch := scriptedScratch(t)
+			var reconciled int
+			scratch.runner = func(context.Context, process.Config) error { return tc.runErr }
+			scratch.reconciler = func(string, domain.ID) error { reconciled++; return tc.reconcileErr }
+			err := scratch.run(context.Background(), []string{"models"}, nil, nil)
+			if reconciled != 1 {
+				t.Fatalf("run reconciled %d times, want exactly 1", reconciled)
+			}
+			if tc.runErr != nil && !errors.Is(err, tc.runErr) {
+				t.Fatalf("run lost its own error: %v", err)
+			}
+			if tc.reconcileErr != nil && !errors.Is(err, tc.reconcileErr) {
+				t.Fatalf("run lost the reconcile error: %v", err)
+			}
+			if tc.runErr == nil && tc.reconcileErr == nil && err != nil {
+				t.Fatalf("clean run failed: %v", err)
+			}
+			if got := scratch.uncertainErr() != nil; got != tc.wantUncertain {
+				t.Fatalf("uncertain = %v, want %v", got, tc.wantUncertain)
+			}
+			assertCleanupMatches(t, scratch, tc.wantUncertain)
+		})
+	}
+}
+
+// TestNativeAccountHarnessCleanupLogoutRecoveryIsReconciled covers the cleanup
+// logout itself: process.Run reports RecoveryRequired, reconciliation proves the
+// tree is gone, and the scratch credential tree is still removed.
+func TestNativeAccountHarnessCleanupLogoutRecoveryIsReconciled(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		reconcileErr error
+		wantRetained bool
+	}{
+		{"reconciled", nil, false},
+		{"not reconciled", errScriptedReconcile, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			scratch := scriptedScratch(t)
+			scratch.runner = func(context.Context, process.Config) error { return errScriptedRecovery }
+			scratch.reconciler = func(string, domain.ID) error { return tc.reconcileErr }
+			err := scratch.Cleanup()
+			_, statErr := os.Lstat(scratch.root)
+			if tc.wantRetained && (err == nil || statErr != nil) {
+				t.Fatalf("unreconciled cleanup must retain the tree: err=%v stat=%v", err, statErr)
+			}
+			if !tc.wantRetained && (err != nil || !errors.Is(statErr, os.ErrNotExist)) {
+				t.Fatalf("reconciled cleanup must remove the tree: err=%v stat=%v", err, statErr)
+			}
+		})
+	}
+}
+
+// TestNativeAccountHarnessReconcileRetiresOnlyItsOwner proves a successful
+// reconciliation never forgives another owner's suspicion.
+func TestNativeAccountHarnessReconcileRetiresOnlyItsOwner(t *testing.T) {
+	scratch := scriptedScratch(t)
+	first, second := scratch.config(nil, nil, nil), scratch.config(nil, nil, nil)
+	scratch.noteUncertain(first.OwnerID, errors.New("first"))
+	scratch.noteUncertain(second.OwnerID, errors.New("second"))
+	scratch.reconciler = func(string, domain.ID) error { return nil }
+	if err := scratch.reconcileNative(second, "native process"); err != nil {
+		t.Fatal(err)
+	}
+	if err := scratch.uncertainErr(); err == nil || !strings.Contains(err.Error(), "first") || strings.Contains(err.Error(), "second") {
+		t.Fatalf("reconciling one owner changed another owner's suspicion: %v", err)
+	}
+}
+
+// scriptedHandle is a native handle whose lifecycle results are scripted.
+type scriptedHandle struct {
+	resume, closeErr, wait error
+}
+
+func (h scriptedHandle) Resume() error               { return h.resume }
+func (h scriptedHandle) Write(p []byte) (int, error) { return len(p), nil }
+func (h scriptedHandle) CloseInput() error           { return nil }
+func (h scriptedHandle) Close() error                { return h.closeErr }
+func (h scriptedHandle) Wait() error                 { return h.wait }
+func (h scriptedHandle) Done() <-chan struct{}       { return nil }
+
+func TestNativeAccountHarnessACPUncertaintyMatrix(t *testing.T) {
+	notFound := domain.Fail(domain.NotFound, "scripted missing executable", "none")
+	waitFailed := errors.New("scripted wait failure")
+	cases := []struct {
+		name          string
+		startErr      error
+		handle        scriptedHandle
+		reconcileErr  error
+		wantStartFail bool
+		wantCloseFail bool
+		wantReconcile int
+		wantUncertain bool
+	}{
+		{name: "start recovery required, reconcile ok", startErr: errScriptedRecovery, wantStartFail: true, wantReconcile: 1},
+		{name: "start recovery required, reconcile failed", startErr: errScriptedRecovery, reconcileErr: errScriptedReconcile, wantStartFail: true, wantReconcile: 1, wantUncertain: true},
+		{name: "start refused without a process", startErr: notFound, reconcileErr: errScriptedReconcile, wantStartFail: true},
+		{name: "resume recovery required, reconcile ok", handle: scriptedHandle{resume: errScriptedRecovery}, wantStartFail: true, wantReconcile: 1},
+		{name: "resume recovery required, reconcile failed", handle: scriptedHandle{resume: errScriptedRecovery}, reconcileErr: errScriptedReconcile, wantStartFail: true, wantReconcile: 1, wantUncertain: true},
+		{name: "close recovery required, reconcile ok", handle: scriptedHandle{closeErr: errScriptedRecovery}, wantCloseFail: true, wantReconcile: 1},
+		{name: "close recovery required, reconcile failed", handle: scriptedHandle{closeErr: errScriptedRecovery}, reconcileErr: errScriptedReconcile, wantCloseFail: true, wantReconcile: 1, wantUncertain: true},
+		{name: "wait failed, reconcile ok", handle: scriptedHandle{wait: waitFailed}, wantCloseFail: true, wantReconcile: 1},
+		{name: "wait failed, reconcile failed", handle: scriptedHandle{wait: waitFailed}, reconcileErr: errScriptedReconcile, wantCloseFail: true, wantReconcile: 1, wantUncertain: true},
+		{name: "stopped cleanly, reconcile ok", wantReconcile: 1},
+		{name: "stopped cleanly, reconcile failed", reconcileErr: errScriptedReconcile, wantCloseFail: true, wantReconcile: 1, wantUncertain: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			scratch := scriptedScratch(t)
+			var reconciled int
+			scratch.starter = func(context.Context, process.Config) (nativeHandle, error) {
+				if tc.startErr != nil {
+					return nil, tc.startErr
+				}
+				return tc.handle, nil
+			}
+			scratch.reconciler = func(string, domain.ID) error { reconciled++; return tc.reconcileErr }
+			_, closeACP, err := startACP(context.Background(), scratch)
+			if (err != nil) != tc.wantStartFail {
+				t.Fatalf("startACP error = %v, want failure %v", err, tc.wantStartFail)
+			}
+			if err == nil {
+				if closeErr := closeACP(); (closeErr != nil) != tc.wantCloseFail {
+					t.Fatalf("closer error = %v, want failure %v", closeErr, tc.wantCloseFail)
+				}
+			}
+			if reconciled != tc.wantReconcile {
+				t.Fatalf("reconciled %d times, want %d", reconciled, tc.wantReconcile)
+			}
+			if got := scratch.uncertainErr() != nil; got != tc.wantUncertain {
+				t.Fatalf("uncertain = %v (%v), want %v", got, scratch.uncertainErr(), tc.wantUncertain)
+			}
+			assertCleanupMatches(t, scratch, tc.wantUncertain)
+		})
 	}
 }
