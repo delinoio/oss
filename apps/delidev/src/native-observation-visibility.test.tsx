@@ -466,10 +466,8 @@ describe("transcript token and time observation toggles", () => {
       </TransportProvider>,
     );
     const rowOf = (text: RegExp) =>
-      [
-        ...view.container.querySelectorAll("p, dt, dd, .context-metric"),
-      ].find((item) =>
-        text.test(item.textContent ?? ""),
+      [...view.container.querySelectorAll("p, dt, dd, .context-metric")].find(
+        (item) => text.test(item.textContent ?? ""),
       ) as HTMLElement | undefined;
     const labelPattern = new RegExp(label, "i");
     for (const tokens of [true, false]) {

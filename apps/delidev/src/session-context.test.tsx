@@ -416,15 +416,11 @@ it.each(["en", "ko"])(
       // A reported zero stays zero and is never replaced by Not reported.
       observation = { ...native, status: "historical", tokens: "0" };
       refresh();
-      await waitFor(() =>
-        expect(metricValue(view.container)).toBe("0"),
-      );
+      await waitFor(() => expect(metricValue(view.container)).toBe("0"));
       expectNoRemovedProse();
       observation = { ...native, tokens: "2" };
       refresh();
-      await waitFor(() =>
-        expect(metricValue(view.container)).toBe("2"),
-      );
+      await waitFor(() => expect(metricValue(view.container)).toBe("2"));
       fail = true;
       refresh();
       await screen.findByText(
@@ -574,9 +570,9 @@ it.each<ContextCapacityScenario>([
         // The bar accompanies the numeric value and never replaces it.
         expect(metricText(view.container)).toContain("68000 / 128000");
       }
-      expect(
-        screen.queryByText("Reported capacity unavailable") !== null,
-      ).toBe(capacityNote);
+      expect(screen.queryByText("Reported capacity unavailable") !== null).toBe(
+        capacityNote,
+      );
       for (const prose of REMOVED_CONTEXT_PROSE)
         expect(screen.queryByText(prose)).toBeNull();
     } finally {

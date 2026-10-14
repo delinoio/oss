@@ -908,11 +908,7 @@ export const ExecutionConfiguration = memo(function ExecutionConfiguration({
                 )}
               </p>
             ) : configuration.instructions === "" ? (
-              <p>
-                {copy(
-                  "execution-configuration.noneSelected",
-                )}
-              </p>
+              <p>{copy("execution-configuration.noneSelected")}</p>
             ) : (
               <pre
                 aria-label={copy(

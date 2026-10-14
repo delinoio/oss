@@ -353,9 +353,7 @@ it("reports Pending for a retained successful view while a reread is in flight",
     ),
   );
   // The retained view stays displayed and controllers stay mounted.
-  expect(
-    screen.getByText("Not set"),
-  ).toBeTruthy();
+  expect(screen.getByText("Not set")).toBeTruthy();
   release();
   await waitFor(() =>
     expect(f.evidence).toHaveBeenLastCalledWith(
