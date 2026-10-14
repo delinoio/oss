@@ -2150,7 +2150,7 @@ fn ignores_syntax_diagnostics_in_dynamic_only_package_files() {
             r#"function value(n){return{verticalSpacing:n,horizontalSpacing:n*2}}export{value};"#,
         ),
     ]);
-    let package = temp.path().join("dist/node_modules/pkg");
+    let package = temp.path().join("node_modules/pkg");
     fs::create_dir_all(&package).unwrap();
     fs::write(
         package.join("package.json"),
@@ -2220,6 +2220,30 @@ fn allows_transitive_dynamic_package_declarations() {
         "export declare const y:number;",
     )
     .unwrap();
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn allows_transitive_dynamic_package_commonjs_requires() {
+    let temp = bundle(&[("index.js", r#"if(false)import("pkg");console.log(1);"#)]);
+    let package = temp.path().join("node_modules/pkg");
+    fs::create_dir_all(&package).unwrap();
+    fs::write(
+        package.join("package.json"),
+        r#"{"name":"pkg","main":"index.js"}"#,
+    )
+    .unwrap();
+    fs::write(
+        package.join("index.js"),
+        r#"module.exports=require("./helper.js");"#,
+    )
+    .unwrap();
+    fs::write(package.join("helper.js"), "module.exports={value:1};").unwrap();
     let output = run_typeopt(temp.path(), &[]);
     assert!(
         output.status.success(),
