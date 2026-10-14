@@ -8,6 +8,10 @@
 
 The installed Tailscale adapter lives in `internal/tailscale`; approval and ingress business flows remain in `internal/server`. Read the [connections contract](../../docs/cmds-delidev-connections-contract.md#tailscale-connections) before changing either boundary.
 
+## OpenCode General Chat Fork profiles
+
+Profile `opencode-general-chat-v1` (System 26 / Worker 15) forks plain text and step history. Profile `opencode-general-chat-v2` (System 104 / Worker 69) additionally clones completed plain timed reasoning. The server selects v2 only for a reasoning source on a Worker that holds both pairs; the profile is an omitted-when-v1 enum so v1 bytes never change. Keep `internal/harness/opencode/fork_history.go`, `internal/server/session_fork_opencode.go` and `apps/delidev/src/opencode-fork-profile.ts` aligned with the [fork contract](../../docs/cmds-delidev-forks-contract.md).
+
 ## Owning contracts
 
 - [DeliDev desktop client](../../docs/apps-delidev-desktop-contract.md)
