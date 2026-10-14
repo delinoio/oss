@@ -1582,23 +1582,28 @@ fn dynamic_package_files(
                 }
             }
             for node in nodes {
-                let specifier = match node.kind() {
+                let (specifier, commonjs_require) = match node.kind() {
                     SyntaxKind::ImportDeclaration | SyntaxKind::ExportDeclaration => {
-                        node.module_specifier()
+                        (node.module_specifier(), false)
                     }
-                    SyntaxKind::ImportEqualsDeclaration => node.module_reference().expression(),
+                    SyntaxKind::ImportEqualsDeclaration => {
+                        (node.module_reference().expression(), false)
+                    }
                     SyntaxKind::ImportType => {
                         let argument = node.argument();
                         if argument.kind() == SyntaxKind::LiteralType {
-                            argument.literal()
+                            (argument.literal(), false)
                         } else {
-                            Node::NIL
+                            (Node::NIL, false)
                         }
                     }
                     SyntaxKind::CallExpression
                         if node.expression().kind() == SyntaxKind::ImportKeyword =>
                     {
-                        node.arguments().iter().next().unwrap_or(Node::NIL)
+                        (node.arguments().iter().next().unwrap_or(Node::NIL), false)
+                    }
+                    SyntaxKind::CallExpression if is_require_callee(node.expression()) => {
+                        (node.arguments().iter().next().unwrap_or(Node::NIL), true)
                     }
                     _ => continue,
                 };
@@ -1610,8 +1615,18 @@ fn dynamic_package_files(
                 {
                     continue;
                 }
-                if let Some(target) = resolved_module_file(checker, specifier)
-                    .or_else(|| resolve_dynamic_package_entry(&name, specifier.text()))
+                let target = if commonjs_require && specifier.text().starts_with('.') {
+                    std::path::Path::new(&name)
+                        .parent()
+                        .and_then(|parent| {
+                            resolve_runtime_module_path(&parent.join(specifier.text()))
+                        })
+                        .or_else(|| resolved_module_file(checker, specifier))
+                } else {
+                    resolved_module_file(checker, specifier)
+                        .or_else(|| resolve_dynamic_package_entry(&name, specifier.text()))
+                };
+                if let Some(target) = target
                     && !dynamic.contains(&target)
                 {
                     pending.push(target);
