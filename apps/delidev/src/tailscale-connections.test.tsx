@@ -665,7 +665,7 @@ it("shows the proven connection refusal outside Technical details without claimi
       checkFailure(
         "Tailscale is unavailable or its observation is unsupported.",
         "unavailable",
-        "connection_refused",
+        "tailscale_connection_refused",
       ),
   });
   const heading = await screen.findByText(
@@ -704,7 +704,7 @@ it("re-translates the visible cause guidance and keeps the original technical de
       checkFailure(
         "Original safe message.",
         "unavailable",
-        "connection_refused",
+        "tailscale_connection_refused",
       ),
   });
   await screen.findByText(`Could not connect to DeliDev on ${DEVICE}.`);
@@ -727,25 +727,25 @@ it("re-translates the visible cause guidance and keeps the original technical de
 
 const CAUSES = [
   {
-    cause: "timeout",
+    cause: "tailscale_timeout",
     code: "unavailable",
     heading: `DeliDev on ${DEVICE} did not respond in time.`,
     korean: `${DEVICE}의 DeliDev가 제시간에 응답하지 않았습니다.`,
   },
   {
-    cause: "certificate_invalid",
+    cause: "tailscale_certificate_invalid",
     code: "unavailable",
     heading: `The secure connection to ${DEVICE} could not be verified.`,
     korean: `${DEVICE}와의 보안 연결을 확인할 수 없습니다.`,
   },
   {
-    cause: "unexpected_http",
+    cause: "tailscale_unexpected_http",
     code: "unavailable",
     heading: `${DEVICE} replied, but not as DeliDev.`,
     korean: `${DEVICE}가 응답했지만 DeliDev가 아닙니다.`,
   },
   {
-    cause: "invalid_identity",
+    cause: "tailscale_invalid_identity",
     code: "unsupported",
     heading: `DeliDev on ${DEVICE} is not compatible.`,
     korean: `${DEVICE}의 DeliDev와 호환되지 않습니다.`,
@@ -785,15 +785,20 @@ it("keeps the generic Problem for unproven, unknown or mismatched causes", async
   for (const failure of [
     () => checkFailure("Original safe message.", "unavailable", ""),
     () => checkFailure("Original safe message.", "unavailable", "dns_failure"),
+    // The generic Codex handshake pair and other unnamespaced values are not
+    // Tailscale Check causes.
+    () => checkFailure("Original safe message.", "unavailable", "timeout"),
+    () =>
+      checkFailure("Original safe message.", "unavailable", "connection_refused"),
     () =>
       checkFailure(
         "Original safe message.",
         "unsupported",
-        "connection_refused",
+        "tailscale_connection_refused",
         Code.Unimplemented,
       ),
     () =>
-      checkFailure("Original safe message.", "unavailable", "invalid_identity"),
+      checkFailure("Original safe message.", "unavailable", "tailscale_invalid_identity"),
   ]) {
     checkFixture({ failure });
     await waitFor(() => expect(rowAlert()).not.toBeNull());
@@ -818,7 +823,7 @@ it("keeps the accepting state and actions after a successful check", async () =>
 // next to a newer error, so the latest result must control status and actions.
 const actionNames = ["Connect", "Register Worker"];
 const refusedFailure = () =>
-  checkFailure("Original safe message.", "unavailable", "connection_refused");
+  checkFailure("Original safe message.", "unavailable", "tailscale_connection_refused");
 
 it("lets a refused retry replace the cached accepting state and actions", async () => {
   const f = checkFixture({ failure: refusedFailure, failFrom: 2 });
@@ -838,7 +843,7 @@ it("lets a refused retry replace the cached accepting state and actions", async 
 it("lets any later check failure replace the cached accepting state", async () => {
   checkFixture({
     failure: () =>
-      checkFailure("Original safe message.", "unavailable", "timeout"),
+      checkFailure("Original safe message.", "unavailable", "tailscale_timeout"),
     failFrom: 2,
   });
   await screen.findByText("DeliDev: Accepting requests");

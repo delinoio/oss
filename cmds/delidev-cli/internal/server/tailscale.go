@@ -270,7 +270,7 @@ func (v tailnetIdentity) compatible(origin string) bool {
 }
 
 // tailnetIdentityRejection is the generic unsupported failure plus the closed
-// invalid_identity cause; it carries no peer-provided value.
+// tailscale_invalid_identity cause; it carries no peer-provided value.
 func tailnetIdentityRejection() error {
 	failure := tailnetFailure(domain.Unsupported).(*domain.Error)
 	failure.Cause = string(tailscale.ProbeInvalidIdentity)

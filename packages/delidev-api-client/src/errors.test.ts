@@ -114,12 +114,48 @@ it("projects only proven Tailscale check causes with their exact codes", () => {
     expect(failureCause(FailureCode.Internal, cause)).toBeUndefined();
     expect(failureCause(FailureCode.Conflict, cause)).toBeUndefined();
   }
-  expect(failureCause("unsupported", "connection_refused")).toBeUndefined();
-  expect(failureCause("unavailable", "invalid_identity")).toBeUndefined();
+  expect(
+    failureCause("unsupported", FailureCause.TailscaleConnectionRefused),
+  ).toBeUndefined();
+  expect(
+    failureCause("unavailable", FailureCause.TailscaleInvalidIdentity),
+  ).toBeUndefined();
   expect(failure("unavailable", "dns_failure").cause).toBeUndefined();
   expect(failure("unavailable", "").cause).toBeUndefined();
   expect(
     clientFailure(new ConnectError("connection_refused", Code.Unavailable))
       .cause,
   ).toBeUndefined();
+
+  // Collision class: generic emitters (for example the Codex app-server
+  // handshake timeout, unavailable + "timeout") must never decode as a
+  // Check-only Tailscale cause, whatever the code.
+  for (const cause of [
+    "timeout",
+    "connection_refused",
+    "certificate_invalid",
+    "unexpected_http",
+    "invalid_identity",
+  ])
+    for (const code of Object.values(FailureCode)) {
+      expect(failureCause(code, cause)).toBeUndefined();
+      expect(failure(code, cause).cause).toBeUndefined();
+    }
+});
+
+it("keeps every Tailscale Check cause namespaced on the wire", () => {
+  const tailscale = Object.entries(FailureCause).filter(([name]) =>
+    name.startsWith("Tailscale"),
+  );
+  expect(tailscale.map(([, wire]) => wire).sort()).toEqual([
+    "tailscale_certificate_invalid",
+    "tailscale_connection_refused",
+    "tailscale_invalid_identity",
+    "tailscale_timeout",
+    "tailscale_unexpected_http",
+  ]);
+  const generic = Object.entries(FailureCause).filter(
+    ([name]) => !name.startsWith("Tailscale"),
+  );
+  for (const [, wire] of generic) expect(wire.startsWith("tailscale_")).toBe(false);
 });

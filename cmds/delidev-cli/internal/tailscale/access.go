@@ -403,11 +403,11 @@ type Identity struct {
 type ProbeCause string
 
 const (
-	ProbeConnectionRefused  ProbeCause = "connection_refused"
-	ProbeTimeout            ProbeCause = "timeout"
-	ProbeCertificateInvalid ProbeCause = "certificate_invalid"
-	ProbeUnexpectedHTTP     ProbeCause = "unexpected_http"
-	ProbeInvalidIdentity    ProbeCause = "invalid_identity"
+	ProbeConnectionRefused  ProbeCause = "tailscale_connection_refused"
+	ProbeTimeout            ProbeCause = "tailscale_timeout"
+	ProbeCertificateInvalid ProbeCause = "tailscale_certificate_invalid"
+	ProbeUnexpectedHTTP     ProbeCause = "tailscale_unexpected_http"
+	ProbeInvalidIdentity    ProbeCause = "tailscale_invalid_identity"
 )
 
 // probeTimeout bounds the whole single request.

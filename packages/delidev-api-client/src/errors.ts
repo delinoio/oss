@@ -27,11 +27,11 @@ export enum FailureCause {
   ConfigurationNameConflict = "configuration_name_conflict",
   // Check-only Tailscale probe causes proven by the server (see the connections
   // contract). They never carry hostnames, URLs or native error text.
-  TailscaleConnectionRefused = "connection_refused",
-  TailscaleTimeout = "timeout",
-  TailscaleCertificateInvalid = "certificate_invalid",
-  TailscaleUnexpectedHttp = "unexpected_http",
-  TailscaleInvalidIdentity = "invalid_identity",
+  TailscaleConnectionRefused = "tailscale_connection_refused",
+  TailscaleTimeout = "tailscale_timeout",
+  TailscaleCertificateInvalid = "tailscale_certificate_invalid",
+  TailscaleUnexpectedHttp = "tailscale_unexpected_http",
+  TailscaleInvalidIdentity = "tailscale_invalid_identity",
 }
 
 // Explicit closed code/cause pairs. Any other combination projects to undefined.

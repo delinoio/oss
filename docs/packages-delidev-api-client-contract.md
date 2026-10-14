@@ -528,12 +528,16 @@ allocation is added; older documents and clients keep their generic fallback.
 
 ## Tailscale check failure causes
 
-`FailureCause` also contains `TailscaleConnectionRefused` (`connection_refused`),
-`TailscaleTimeout` (`timeout`), `TailscaleCertificateInvalid`
-(`certificate_invalid`), `TailscaleUnexpectedHttp` (`unexpected_http`) and
-`TailscaleInvalidIdentity` (`invalid_identity`). `failureCause` uses one explicit
-closed code/cause allowlist: `unavailable` pairs with the first four and
-`unsupported` pairs only with `invalid_identity`. Any other code, an unknown cause
+`FailureCause` also contains `TailscaleConnectionRefused`
+(`tailscale_connection_refused`), `TailscaleTimeout` (`tailscale_timeout`),
+`TailscaleCertificateInvalid` (`tailscale_certificate_invalid`),
+`TailscaleUnexpectedHttp` (`tailscale_unexpected_http`) and
+`TailscaleInvalidIdentity` (`tailscale_invalid_identity`). The wire values are
+namespaced because the causes are Check-only: generic values such as `timeout`
+(emitted with `unavailable` by the Codex app-server handshake) must never decode as
+a Tailscale cause. `failureCause` uses one explicit closed code/cause allowlist:
+`unavailable` pairs with the first four and `unsupported` pairs only with
+`tailscale_invalid_identity`. Any other code, an unknown or unnamespaced cause
 and untyped transport text project to `undefined`. The causes carry no hostname,
 URL, status body, certificate or native error text, and no protocol field changes.
 
