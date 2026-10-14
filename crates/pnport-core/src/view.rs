@@ -342,36 +342,55 @@ impl View {
         wait: &mut dyn FnMut() -> Result<()>,
     ) -> Result<Translation> {
         let (physical, managed) = match VPath::from(&logical).map_err(|_| cache_error())? {
-            VPath::Native(path) => {
-                // Materialized bytes remain read-only even if a child reaches
-                // their private backing path through /proc/self/fd or a saved
-                // absolute pathname instead of the logical ZIP location.
-                let managed = self.graph.managed(&path)
-                    || path.starts_with(&self.cache.root)
-                    || path.starts_with(self.session.join("views"));
-                (path, managed)
-            }
+            VPath::Native(path) => self.native_backing(path),
             VPath::Virtual(info) => (normalize(&info.physical_base_path()), true),
             VPath::Zip(info) => {
                 let archive = normalize(&info.physical_base_path());
-                if !self.leases.contains_key(&archive) {
-                    let lease = self.cache.materialize_with_wait(&archive, wait)?;
-                    let active = self.session.join("active");
-                    fs::create_dir_all(&active).map_err(|_| cache_error())?;
-                    let bytes = serde_json::to_vec(&crate::graph::Input {
-                        path: archive.clone(),
-                        sha256: lease.sha256.clone(),
-                    })
-                    .map_err(|_| cache_error())?;
-                    let marker = active.join(digest(&bytes));
-                    let temp =
-                        tempfile::NamedTempFile::new_in(&active).map_err(|_| cache_error())?;
-                    fs::write(temp.path(), bytes).map_err(|_| cache_error())?;
-                    temp.persist(&marker).map_err(|_| cache_error())?;
-                    self.leases.insert(archive.clone(), lease);
+                // The .zip suffix also occurs on native directories and files.
+                // Extract only a graph-owned archive file; retain native lookup
+                // and mutation behavior for every other path.
+                // Virtual package locations use a physical archive path that is
+                // absent from the graph's virtual location-ancestor index. The
+                // package lookup proves ownership only when its own archive
+                // maps to this physical path.
+                let virtual_archive_owned = info.virtual_segments.is_some()
+                    && self.graph.package(&logical).is_some_and(|package| {
+                        let Ok(VPath::Zip(package_info)) = VPath::from(&package.package_location)
+                        else {
+                            return false;
+                        };
+                        normalize(&package_info.physical_base_path()) == archive
+                    });
+                let graph_owned =
+                    self.graph.is_location_ancestor(&archive) || virtual_archive_owned;
+                if !graph_owned || (archive.is_dir() && info.virtual_segments.is_none()) {
+                    self.native_backing(logical.clone())
+                } else if archive.is_dir() {
+                    // A graph-owned virtual ZIP can be backed by an unpacked
+                    // native directory. Keep that physical backing path so
+                    // directory fixtures and unplugged packages remain
+                    // addressable without creating a cache lease.
+                    (archive.join(info.zip_path), true)
+                } else {
+                    if !self.leases.contains_key(&archive) {
+                        let lease = self.cache.materialize_with_wait(&archive, wait)?;
+                        let active = self.session.join("active");
+                        fs::create_dir_all(&active).map_err(|_| cache_error())?;
+                        let bytes = serde_json::to_vec(&crate::graph::Input {
+                            path: archive.clone(),
+                            sha256: lease.sha256.clone(),
+                        })
+                        .map_err(|_| cache_error())?;
+                        let marker = active.join(digest(&bytes));
+                        let temp =
+                            tempfile::NamedTempFile::new_in(&active).map_err(|_| cache_error())?;
+                        fs::write(temp.path(), bytes).map_err(|_| cache_error())?;
+                        temp.persist(&marker).map_err(|_| cache_error())?;
+                        self.leases.insert(archive.clone(), lease);
+                    }
+                    let lease = &self.leases[&archive];
+                    (lease.content.join(info.zip_path), true)
                 }
-                let lease = &self.leases[&archive];
-                (lease.content.join(info.zip_path), true)
             }
         };
         Ok(Translation {
@@ -385,6 +404,15 @@ impl View {
                 PathKind::Native
             },
         })
+    }
+
+    fn native_backing(&self, path: PathBuf) -> (PathBuf, bool) {
+        // Materialized bytes remain read-only even if a child reaches their
+        // private backing path through /proc/self/fd or a saved absolute path.
+        let managed = self.graph.managed(&path)
+            || path.starts_with(&self.cache.root)
+            || path.starts_with(self.session.join("views"));
+        (path, managed)
     }
 
     fn directory(&mut self, issuer: &Path, scope: Option<&str>) -> Result<Translation> {

@@ -98,7 +98,7 @@ func newAccessCreditFixture(t *testing.T, o accessCreditOptions) (*subscriptionF
 	}
 	remaining := .7
 	n := &accessCreditNative{outcome: domain.SubscriptionReset, observed: domain.SubscriptionQuotaObservation{ObservedAt: now, Windows: []domain.SubscriptionQuotaWindow{{ID: "codex:primary", Remaining: &remaining}}}}
-	f.service.creditOpen = func(context.Context, string, domain.ID, codex.QuotaAuthentication, *slog.Logger) (serverCreditNative, error) {
+	f.service.creditOpen = func(context.Context, nativeScope, domain.ID, codex.QuotaAuthentication, *slog.Logger) (serverCreditNative, error) {
 		n.mu.Lock()
 		n.opens++
 		n.mu.Unlock()

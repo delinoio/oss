@@ -639,6 +639,7 @@ func (s *Store) restoreEligible(ctx context.Context, in BackupRestoreInput) erro
 		 (kind='account' AND (json_extract(body,'$.removal') IS NOT NULL OR
 		 json_extract(body,'$.subscription.pending') IS NOT NULL OR
 		 json_extract(body,'$.subscription.lease') IS NOT NULL OR
+		 json_extract(body,'$.subscription.members') IS NOT NULL OR
          json_extract(body,'$.subscription.server_quota.phase') IN ('queued','sending','uncertain') OR
          json_extract(body,'$.subscription.server_credit.phase') IN ('queued','sending','uncertain') OR
 		 COALESCE(json_extract(body,'$.subscription.recovery_required'),0)<>0)) OR

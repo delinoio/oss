@@ -109,6 +109,14 @@ const (
 	BranchPrefixInstructionsV1    WorkerCapability = "branch-prefix-instructions-v1"
 	BranchPrefixExactQuoteV1      WorkerCapability = "branch-prefix-exact-quote-v1"
 	ParallelSessionsV1            WorkerCapability = "parallel-sessions-v1"
+	// SharedSubscriptionOwnerV1 negotiates account-owner plus execution-member
+	// ownership for managed Codex accounts (issue 3466). Without it an account
+	// keeps one exclusive execution lease.
+	SharedSubscriptionOwnerV1 WorkerCapability = "shared-subscription-owner-v1"
+	// ClaudeDeviceOwnedMembersV1 negotiates the same ownership for the
+	// device-owned native Claude lane. The server-owned setup-token lane stays
+	// exclusive.
+	ClaudeDeviceOwnedMembersV1 WorkerCapability = "claude-device-owned-members-v1"
 
 	OpenCodeGoSubscriptionsV1      WorkerCapability = "opencode-go-subscriptions-v1"
 	SidechatQuestionRetryV1        WorkerCapability = "sidechat-question-retry-v1"

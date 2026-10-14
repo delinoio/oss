@@ -66,11 +66,19 @@ type APIStreamConfig struct {
 	ManagedToken []byte `json:"-"`
 }
 
-// NativeSubscriptionProfile is a device-local reference under an exclusive
-// account lease. It contains no credential bytes or native identity.
+// NativeSubscriptionProfile is a device-local reference under an account lease.
+// It contains no credential bytes or native identity.
+//
+// Version 1 (SecureStorageHome empty) uses one canonical profile directory as
+// configuration, history and secure storage under an exclusive account lease.
+// Version 2 gives the session a private configuration and history directory
+// (Home, which must equal the stream's Home) and names the one canonical
+// secure-storage directory independently (SecureStorageHome). Only the native
+// CLI reads and renews authentication in that directory; DeliDev never opens it.
 type NativeSubscriptionProfile struct {
-	ID   domain.ID
-	Home string
+	ID                domain.ID
+	Home              string
+	SecureStorageHome string
 }
 
 // NativeHistoryHome exposes only the authenticated owned history root to the
@@ -136,7 +144,7 @@ func prepareAPIStreamMode(config APIStreamConfig, resumed bool) (process.Config,
 	// Fresh launches use discovery's empty private directories. The private
 	// closed-session handoff rechecks their retained ownership before reuse;
 	// only PATH and Windows system lookup context survive caller environment.
-	env, err := nativeEnvironment(ProbeConfig{Process: config.Process, Version: config.Version, Home: config.Home}, !resumed)
+	env, err := nativeEnvironment(ProbeConfig{Process: config.Process, Version: config.Version, Home: config.Home})
 	if err != nil {
 		return process.Config{}, err
 	}
@@ -153,6 +161,20 @@ func prepareAPIStreamMode(config APIStreamConfig, resumed bool) (process.Config,
 		if err != nil || canonical != config.Subscription.Home || !filepath.IsAbs(canonical) || filepath.Base(canonical) != "claude" {
 			return process.Config{}, apiConfigurationError()
 		}
+		secure := canonical
+		if config.Subscription.SecureStorageHome != "" {
+			// Version 2: the session-private directory stays the native
+			// configuration and history directory; the canonical profile is only
+			// the secure-storage namespace. The two must be different directories
+			// and the history directory must be the stream's own private home.
+			if config.Subscription.Home != config.Home || security.CheckPrivateDir(config.Subscription.SecureStorageHome) != nil {
+				return process.Config{}, apiConfigurationError()
+			}
+			secure, err = filepath.EvalSymlinks(config.Subscription.SecureStorageHome)
+			if err != nil || secure != config.Subscription.SecureStorageHome || !filepath.IsAbs(secure) || filepath.Base(secure) != "claude" || secure == canonical {
+				return process.Config{}, apiConfigurationError()
+			}
+		}
 		filtered := env[:0]
 		for _, entry := range env {
 			if strings.HasPrefix(entry, "ANTHROPIC_BASE_URL=") {
@@ -163,7 +185,7 @@ func prepareAPIStreamMode(config APIStreamConfig, resumed bool) (process.Config,
 			}
 			filtered = append(filtered, entry)
 		}
-		env = append(filtered, "CLAUDE_SECURESTORAGE_CONFIG_DIR="+canonical)
+		env = append(filtered, "CLAUDE_SECURESTORAGE_CONFIG_DIR="+secure)
 	} else {
 		for i, entry := range env {
 			if strings.HasPrefix(entry, "ANTHROPIC_BASE_URL=") {

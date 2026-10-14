@@ -82,7 +82,7 @@ func (f *subscriptionFixture) serverStart(action pb.SubscriptionAction) *pb.Requ
 }
 func (f *subscriptionFixture) serverRun(n *serverLoginFixture) <-chan struct{} {
 	f.t.Helper()
-	f.service.subscriptionOpen = func(_ context.Context, _ string, _ domain.ID, _ []byte, _ *slog.Logger) (serverSubscriptionNative, error) {
+	f.service.subscriptionOpen = func(_ context.Context, _ nativeScope, _ domain.ID, _ []byte, _ *slog.Logger) (serverSubscriptionNative, error) {
 		return n, nil
 	}
 	done := make(chan struct{})
@@ -302,7 +302,7 @@ func TestServerSubscriptionRestartNeverRelaunchesAcceptedLogin(t *testing.T) {
 		t.Fatal(err)
 	}
 	called := false
-	f.service.subscriptionOpen = func(context.Context, string, domain.ID, []byte, *slog.Logger) (serverSubscriptionNative, error) {
+	f.service.subscriptionOpen = func(context.Context, nativeScope, domain.ID, []byte, *slog.Logger) (serverSubscriptionNative, error) {
 		called = true
 		return nil, nil
 	}
@@ -330,7 +330,7 @@ func TestServerSubscriptionWaitsForOriginalExecutionLease(t *testing.T) {
 	}
 	f.serverStart(pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH)
 	called := false
-	f.service.subscriptionOpen = func(context.Context, string, domain.ID, []byte, *slog.Logger) (serverSubscriptionNative, error) {
+	f.service.subscriptionOpen = func(context.Context, nativeScope, domain.ID, []byte, *slog.Logger) (serverSubscriptionNative, error) {
 		called = true
 		return nil, nil
 	}
@@ -407,7 +407,7 @@ func TestServerSubscriptionSafeDurableDiagnostics(t *testing.T) {
 			close(n.finish)
 			switch scenario.name {
 			case "missing", "old", "initialize":
-				f.service.subscriptionOpen = func(context.Context, string, domain.ID, []byte, *slog.Logger) (serverSubscriptionNative, error) {
+				f.service.subscriptionOpen = func(context.Context, nativeScope, domain.ID, []byte, *slog.Logger) (serverSubscriptionNative, error) {
 					return nil, domain.WithCodexDiagnostic(scenario.version, scenario.phase, domain.Fail(scenario.code, "raw-token/path/native-sentinel", "secret-url"))
 				}
 			case "login", "login-cleanup":

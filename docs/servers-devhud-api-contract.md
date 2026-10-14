@@ -126,6 +126,8 @@ The Docker Go builder version must match the root `go.mod` directive. CI checks 
 
 Validation covers Go format/vet/unit tests, PostgreSQL migrations/integration, direct-upload header/checksum material, 256-bit identifier shape, encrypted/scoped pagination, every PNG dimension boundary, signer rollback, rolling URL equality, concurrent cross-group submission enforcement, replay rejection, non-double-charging, invalid staging cleanup, removal ordering, exact R2 CORS, and generated-contract freshness. Cloudflare origin/rate policies remain operator-applied artifacts and are live-validated at production startup.
 
+The package's API and OCI PostgreSQL integration tasks and the private packaging workflow's schema-readiness step execute `go test -count=1 -tags=integration` against their current database. This forces the database assertions to run despite a successful Go test result in `GOCACHE`, while Go may reuse compiled objects. Preserve the existing database lifecycle, task dependencies, and failure propagation.
+
 ## Dependencies and Integrations
 
 Consumes generated `protos/devhud/v1` bindings and is consumed by `apps/devhud` and `apps/devhud-admin` through `packages/devhud-api-client`. Runtime requires PostgreSQL, Logto, private staging/public R2 buckets, the public asset custom domain, Cloudflare cache/rate controls, public client identifiers, and an HMAC identity key ring. AdminService consumes the internal upload hooks and the API binary embeds the production administrator bundle.

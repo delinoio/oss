@@ -643,6 +643,10 @@ export const TranscriptItem = memo(function TranscriptItem({
       : textRole && data.role === "assistant"
         ? " message-assistant"
         : "";
+  const complete =
+    data.state === undefined ||
+    data.state === "complete" ||
+    data.state === "completed";
   const message = (
     <article
       className={`message${roleClass}`}
@@ -670,7 +674,7 @@ export const TranscriptItem = memo(function TranscriptItem({
         // Only plain user and assistant text is link-activatable; every other
         // role or evidence-bearing record keeps inert preformatted text.
         roleClass ? (
-          <LinkedPre text={text(data.text)} />
+          <LinkedPre text={text(data.text)} complete={complete} />
         ) : (
           <pre>{text(data.text)}</pre>
         )

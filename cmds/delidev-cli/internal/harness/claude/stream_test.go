@@ -94,6 +94,20 @@ func init() {
 				response["response"].(map[string]any)["error"] = "private-error-sentinel"
 			case "array-response":
 				response["response"].(map[string]any)["response"] = []string{"private-array-sentinel"}
+			case "envelope-pending":
+				inner := response["response"].(map[string]any)
+				inner["pending_permission_requests"] = []any{}
+				inner["pending_user_dialog_requests"] = []any{}
+			case "envelope-pending-nonempty":
+				response["response"].(map[string]any)["pending_permission_requests"] = []any{map[string]any{"id": "private-pending-sentinel"}}
+			case "envelope-pending-null":
+				response["response"].(map[string]any)["pending_user_dialog_requests"] = nil
+			case "envelope-alias":
+				inner := response["response"].(map[string]any)
+				inner["Request_ID"] = inner["request_id"]
+			case "envelope-outer-alias":
+				response["Response"] = response["response"]
+				delete(response, "response")
 			case "duplicate-response":
 				emit(response)
 			case "unknown-cancel":
@@ -407,7 +421,7 @@ func TestStreamRejectsProtocolFailuresAndStopsOwnedScope(t *testing.T) {
 	for _, test := range []struct {
 		mode string
 		code domain.Code
-	}{{"malformed", domain.Unsupported}, {"duplicate-key", domain.Unsupported}, {"invalid-utf8", domain.Unsupported}, {"ambiguous-response", domain.Unsupported}, {"array-response", domain.Unsupported}, {"duplicate-response", domain.Unsupported}, {"unknown-cancel", domain.Unsupported}, {"duplicate-cancel", domain.Unsupported}, {"identity-collision", domain.Unsupported}, {"unclaimed-echo", domain.Unsupported}, {"oversize", domain.ResourceExhausted}, {"foreign-response", domain.Unsupported}, {"partial-exit", domain.Unsupported}, {"flood", domain.ResourceExhausted}, {"duplicate-callback", domain.Unsupported}} {
+	}{{"malformed", domain.Unsupported}, {"duplicate-key", domain.Unsupported}, {"invalid-utf8", domain.Unsupported}, {"ambiguous-response", domain.Unsupported}, {"array-response", domain.Unsupported}, {"envelope-pending-nonempty", domain.Unsupported}, {"envelope-pending-null", domain.Unsupported}, {"envelope-alias", domain.Unsupported}, {"envelope-outer-alias", domain.Unsupported}, {"duplicate-response", domain.Unsupported}, {"unknown-cancel", domain.Unsupported}, {"duplicate-cancel", domain.Unsupported}, {"identity-collision", domain.Unsupported}, {"unclaimed-echo", domain.Unsupported}, {"oversize", domain.ResourceExhausted}, {"foreign-response", domain.Unsupported}, {"partial-exit", domain.Unsupported}, {"flood", domain.ResourceExhausted}, {"duplicate-callback", domain.Unsupported}} {
 		t.Run(test.mode, func(t *testing.T) {
 			s, _, _ := streamFixture(t, test.mode)
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -425,6 +439,19 @@ func TestStreamRejectsProtocolFailuresAndStopsOwnedScope(t *testing.T) {
 				t.Fatal("failed connection exposed retained events")
 			}
 		})
+	}
+}
+
+// TestStreamAcceptsEmptyPendingListsInControlResponseEnvelope pins the 2.1.287
+// placement: the lists belong to the inner control-response envelope, so the
+// same members inside the response result stay unknown result fields.
+func TestStreamAcceptsEmptyPendingListsInControlResponseEnvelope(t *testing.T) {
+	s, _, _ := streamFixture(t, "envelope-pending")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	r, err := s.Call(ctx, domain.NewID(), map[string]any{"subtype": "initialize", "hooks": nil})
+	if err != nil || r.Failed || string(r.Result) != `{"ready":true}` {
+		t.Fatalf("envelope pending lists: %+v %v", r, err)
 	}
 }
 

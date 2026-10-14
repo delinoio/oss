@@ -35,6 +35,8 @@ Coordinates use meters, right-handed Y-up. `translation` and `scale` are three-e
 
 `registerGeometry()` copies typed arrays immediately. Keep large arrays in registered geometry, not React props. `registerTexture(bytesOrPath)` copies PNG/JPEG data or reads an explicit local file; URLs are not fetched. Asset handles belong to their creating session.
 
+GLB export packs eligible triangle indices into a smaller lossless representation while preserving every authored vertex and triangle. Continue to supply indices as `Uint32Array`; packing needs no option. Output size depends on the whole scene, so a smaller index buffer does not guarantee an exact file-size reduction.
+
 ### Explicit geometry compaction (unreleased)
 
 The unreleased API adds `await session.compactGeometry(geometry, { signal })` for GLB and FBX sessions. It returns `{ geometry, inputVertices, outputVertices, triangles, inputBytes, outputBytes }`. Render with the returned handle to use the smaller asset. The original geometry remains available for export; neither registration nor export compacts it automatically.

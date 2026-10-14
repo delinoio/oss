@@ -166,7 +166,10 @@ async function fixture(
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  const navigate = vi.fn();
+  const sessionNavigationGeneration = { current: 0 };
+  const navigate = vi.fn(() => {
+    sessionNavigationGeneration.current += 1;
+  });
   let store!: SessionTabsStore;
   function Workspace({ active = true }: { active?: boolean }) {
     const tabs = useSessionTabs(sourceId);
@@ -237,7 +240,10 @@ async function fixture(
       <QueryClientProvider client={client}>
         <MutationIntents>
           <SessionTabsProvider>
-            <SessionForkProvider openSession={navigate}>
+            <SessionForkProvider
+              openSession={navigate}
+              sessionNavigationGeneration={sessionNavigationGeneration}
+            >
               <Workspace active={active} />
               <SessionForkAction
                 source={source}
@@ -268,6 +274,9 @@ async function fixture(
     read,
     client,
     navigate,
+    navigateSession: () => {
+      sessionNavigationGeneration.current += 1;
+    },
     store: () => store,
     rendered,
     view,
@@ -828,6 +837,78 @@ it("a deferred reopen focus callback cannot steal focus after later navigation a
   expect(document.activeElement).toBe(input);
   elsewhere.remove();
   expect(f.fork).toHaveBeenCalledTimes(1);
+});
+
+it("a deferred reopen focus callback cannot steal focus after leaving and returning to the same Session", async () => {
+  const { f, input, pending, callbacks, openFromB, flush } =
+    await retainedInA();
+  openFromB();
+  expect(callbacks).toHaveLength(1);
+  f.navigateSession();
+  f.rendered.rerender(f.view(false));
+  f.navigateSession();
+  f.rendered.rerender(f.view(true));
+  expect(f.store().snapshot(f.sourceId).selected).toBe(sessionTabKey(pending));
+  expect(input.closest("[hidden], [inert]")).toBeNull();
+  const laterFocus = document.createElement("button");
+  document.body.append(laterFocus);
+  laterFocus.focus();
+  flush();
+  expect(document.activeElement).toBe(laterFocus);
+  expect(input.value).toBe("Retained in A");
+  expect(f.store().snapshot(f.sourceId).tabs).toContainEqual(pending);
+  expect(f.fork).toHaveBeenCalledTimes(1);
+  laterFocus.remove();
+});
+
+it("a deferred reopen focus callback cannot steal focus after leaving and returning to the same tab", async () => {
+  const { f, input, pending, callbacks, openFromB, flush } =
+    await retainedInA();
+  openFromB();
+  expect(callbacks).toHaveLength(1);
+  act(() => {
+    f.store().open(f.sourceId, { kind: SessionTabKind.Files });
+    f.store().select(f.sourceId, sessionTabKey(pending));
+  });
+  expect(f.store().snapshot(f.sourceId).selected).toBe(sessionTabKey(pending));
+  expect(input.closest("[hidden], [inert]")).toBeNull();
+  const laterFocus = document.createElement("button");
+  document.body.append(laterFocus);
+  laterFocus.focus();
+  flush();
+  expect(document.activeElement).toBe(laterFocus);
+  expect(input.value).toBe("Retained in A");
+  expect(f.store().snapshot(f.sourceId).tabs).toContainEqual(pending);
+  expect(f.fork).toHaveBeenCalledTimes(1);
+  laterFocus.remove();
+});
+
+it("a deferred reopen focus callback ignores a changed tab", async () => {
+  const { f, callbacks, openFromB, flush } = await retainedInA();
+  openFromB();
+  expect(callbacks).toHaveLength(1);
+  act(() => f.store().open(f.sourceId, { kind: SessionTabKind.Files }));
+  const laterFocus = document.createElement("button");
+  document.body.append(laterFocus);
+  laterFocus.focus();
+  flush();
+  expect(document.activeElement).toBe(laterFocus);
+  expect(f.fork).toHaveBeenCalledTimes(1);
+  laterFocus.remove();
+});
+
+it("a deferred reopen focus callback ignores provider disposal", async () => {
+  const { f, callbacks, openFromB, flush } = await retainedInA();
+  openFromB();
+  expect(callbacks).toHaveLength(1);
+  f.rendered.unmount();
+  const laterFocus = document.createElement("button");
+  document.body.append(laterFocus);
+  laterFocus.focus();
+  flush();
+  expect(document.activeElement).toBe(laterFocus);
+  expect(f.fork).toHaveBeenCalledTimes(1);
+  laterFocus.remove();
 });
 
 it("automatic publication while backgrounded or closed never navigates or reopens presentation", async () => {

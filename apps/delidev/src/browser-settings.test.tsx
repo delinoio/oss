@@ -198,6 +198,46 @@ it("shows an unconfirmed outcome when the native call itself rejects", async () 
   expect(screen.queryByText("Browser setting saved.")).toBeNull();
 });
 
+it.each([
+  [
+    "browser-discovery-failed",
+    "Installed browsers could not be checked. Your saved browser settings were not changed.",
+  ],
+  [
+    "invalid-input",
+    "That browser choice is invalid. Your saved browser settings were not changed.",
+  ],
+])("keeps both selectors usable after pre-write %s", async (code, guidance) => {
+  const { bridge, snapshot } = fixture({ revision: 5 });
+  bridge.update = vi.fn(async () => {
+    throw code;
+  });
+  render(view(bridge));
+  await waitFor(() =>
+    expect(within(general()).getAllByRole("option")).toHaveLength(3),
+  );
+  fireEvent.change(general(), {
+    target: { value: "installed:com.google.Chrome" },
+  });
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toContain(guidance);
+  expect(alert.textContent).not.toContain("could not confirm");
+  expect(screen.queryByText("Browser setting saved.")).toBeNull();
+  expect(general().value).toBe("default");
+  expect(local().value).toBe("default");
+  expect(general().disabled).toBe(false);
+  expect(local().disabled).toBe(false);
+  expect(snapshot()).toEqual({
+    revision: 5,
+    choices: { general: systemDefault, local: systemDefault },
+    problem: null,
+  });
+  expect(bridge.update).toHaveBeenCalledTimes(1);
+  expect(
+    screen.queryByRole("button", { name: "Reload browser settings" }),
+  ).toBeNull();
+});
+
 it("reports a browser that disappeared before selection and refreshes the list", async () => {
   const { bridge } = fixture();
   bridge.update = vi.fn(async () => {
@@ -368,6 +408,25 @@ it("renders the Korean catalog with 40px-capable native controls", async () => {
       "로그인 및 계정 인증 링크는 항상 시스템 기본 브라우저로 열립니다.",
     ),
   ).toBeTruthy();
+});
+
+it("shows definitive pre-write guidance in Korean", async () => {
+  await i18n.changeLanguage(SupportedLanguage.Korean);
+  const { bridge } = fixture();
+  bridge.update = vi.fn(async () => {
+    throw "browser-discovery-failed";
+  });
+  render(view(bridge));
+  const select = await screen.findByLabelText("일반 URL 열기 대상");
+  await waitFor(() =>
+    expect(within(select).getAllByRole("option")).toHaveLength(3),
+  );
+  fireEvent.change(select, {
+    target: { value: "installed:com.google.Chrome" },
+  });
+  expect((await screen.findByRole("alert")).textContent).toContain(
+    "저장된 브라우저 설정은 변경되지 않았습니다",
+  );
 });
 
 it("validates native snapshots and inventories strictly", () => {

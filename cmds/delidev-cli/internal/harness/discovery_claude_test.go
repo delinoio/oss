@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 )
 
@@ -64,7 +65,7 @@ func discoverClaude(t *testing.T, binary string) {
 	root, owner := discoveryRoot(t), domain.NewID()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	output, err := Discover(ctx, DiscoveryConfig{Root: root, OwnerID: owner}, input)
+	output, err := Discover(ctx, DiscoveryConfig{Root: root, Profiles: testProfiles(t, root), OwnerID: owner}, input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,9 +79,12 @@ func discoverClaude(t *testing.T, binary string) {
 	if err := process.ReconcileOwner(filepath.Join(root, "processes"), owner); err != nil {
 		t.Fatal(err)
 	}
-	entries, err := os.ReadDir(filepath.Join(root, "probes"))
-	if err != nil || len(entries) != 0 {
-		t.Fatal("completed Claude probe runtime was not removed")
+	// The accountless probe profile is persistent; no disposable probe directory is allocated.
+	if _, err := os.Stat(filepath.Join(root, "probes")); err == nil {
+		t.Fatal("a disposable Claude probe directory was allocated")
+	}
+	if _, ok, err := testProfiles(t, root).Lookup(context.Background(), nativeprofile.Key{Harness: domain.ClaudeCode, Purpose: nativeprofile.PurposeDiscovery}); err != nil || !ok {
+		t.Fatal("persistent Claude probe profile was not retained")
 	}
 }
 

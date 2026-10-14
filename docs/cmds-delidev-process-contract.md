@@ -1,5 +1,21 @@
 # DeliDev owned process contract
 
+## Shared subscription owner process ownership
+
+Under the [shared account owner model](cmds-delidev-subscription-contract.md#shared-account-owner-and-execution-members)
+every execution member keeps its own process owner (its session job identifier),
+journal and cleanup: one member's completion, Stop or failure never terminates,
+reconciles or adopts a sibling's processes. The owner's own authentication
+operations use the founding lease's owner. A final owner containment joins every
+retained member's process owner before it reports confirmed cleanup, and recovery
+of a lost owner joins every member's process owner before touching the canonical
+profile. A missing owner directory is a never-started proof only for a member whose
+durable journal records no started execution; for a member that recorded a
+started execution (or whose journal cannot be read) a missing or unreadable
+directory is unproven closure, so final containment reports unconfirmed cleanup
+and owner recovery stops before touching the canonical profile. Logs carry owner,
+lease, operation and counts only.
+
 ## Scope
 
 `cmds/delidev-cli/internal/process` owns Worker-launched Git, native harness and terminal process lifecycles. The complete product requirements remain in [issue requirements](cmds-delidev-requirements.md); distinguish implementation from native-platform verification in pull requests, issues and CI logs/artifacts.
@@ -127,3 +143,14 @@ after its original Resume succeeds; initialization begins then and is confirmed
 only by the adapter's validated native response. This callback is excluded from
 serialization and noninteractive Run helpers. It cannot release the barrier,
 change cancellation, input/cleanup authority, ownership journals or return values.
+
+## Profile retention and process journals
+
+Process ownership journals stay per operation under `processes/<owner>` and are
+independent of profile lifetime. Joining an operation's owned processes never
+removes a persistent native profile; a retained directory alone never implies a
+live process, and a live controller, unjoined process or unremoved credential
+file blocks only the owning operation with a specific safe cause. Discovery,
+model observation and title probes reconcile their own owner index and release
+their persistent accountless profile. Native process control sockets keep their
+separate lifecycle. See the [harness contract](cmds-delidev-harness-contract.md#persistent-native-profiles).

@@ -32,11 +32,39 @@ it("rejects credentials, malformed hosts and oversized tokens", () => {
 it("splits without changing any character, whitespace or line break", () => {
   const text =
     "line one\n\n  https://example.com/a  \n\tsecond https://x.test/b\r\nend";
-  const parts = splitLinkedText(text);
+  const parts = splitLinkedText(text, false);
   expect(parts.map((part) => part.text).join("")).toBe(text);
   expect(parts.filter((part) => "url" in part)).toHaveLength(2);
-  expect(splitLinkedText("")).toEqual([]);
-  expect(splitLinkedText("no links here")).toEqual([{ text: "no links here" }]);
+  expect(splitLinkedText("", false)).toEqual([]);
+  expect(splitLinkedText("no links here", false)).toEqual([
+    { text: "no links here" },
+  ]);
+});
+
+it("keeps only the unfinished buffer-ending URL inert", () => {
+  const first = "https://example.com/one";
+  const second = "https://example.com/two";
+  const text = `See ${first} now ${second}`;
+  expect(splitLinkedText(text, false)).toEqual([
+    { text: "See " },
+    { text: first, url: first },
+    { text: ` now ${second}` },
+  ]);
+  expect(splitLinkedText(text, true).at(-1)).toEqual({
+    text: second,
+    url: second,
+  });
+  expect(splitLinkedText(`See ${second}.`, false)).toEqual([
+    { text: `See ${second}.` },
+  ]);
+  expect(splitLinkedText(`See (${second}).`, false)).toEqual([
+    { text: `See (${second}).` },
+  ]);
+  expect(splitLinkedText(`See ${second}. Next`, false)).toEqual([
+    { text: "See " },
+    { text: second, url: second },
+    { text: ". Next" },
+  ]);
 });
 
 it("activates only the token under the pointer and joins full-width wrapped rows", () => {

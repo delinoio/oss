@@ -81,7 +81,7 @@ func TestManagedUnusedAuthenticationRequiresAbsentOrIdenticalFileAndCleanHome(t 
 				t.Fatal("native-owned cleanup accepted an absent captured authentication file")
 			}
 			err := cleanupUnusedExecutionAuthentication(home, bundle)
-			wantClean := mode == "absent-clean" || mode == "published-identical"
+			wantClean := mode == "absent-clean" || mode == "published-identical" || mode == "absent-symlink"
 			if (err == nil) != wantClean {
 				t.Fatal("unused authentication cleanup lost its original ownership or remnant barrier", err)
 			}

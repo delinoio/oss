@@ -48,6 +48,24 @@ type ServerOptions struct {
 	AllowedOrigins []string `json:"allowed_origins,omitempty"`
 }
 
+type workingDirectory struct {
+	original string
+	physical string
+}
+
+type referencePathOps struct {
+	volumeName      func(string) string
+	isPathSeparator func(uint8) bool
+	join            func(...string) string
+	clean           func(string) string
+	abs             func(string) (string, error)
+}
+
+var nativeReferencePathOps = referencePathOps{
+	volumeName: filepath.VolumeName, isPathSeparator: os.IsPathSeparator,
+	join: filepath.Join, clean: filepath.Clean, abs: filepath.Abs,
+}
+
 // CaptureServerOptions resolves new relative TLS references in the original
 // installing/server process, never later in a native user manager's cwd. The
 // original cwd is resolved to its physical path once, so retargeting a symlink
@@ -57,21 +75,26 @@ type ServerOptions struct {
 // being joined blindly to the cwd. It preserves references only; it neither
 // reads nor copies credential bytes.
 func CaptureServerOptions(options ServerOptions) (ServerOptions, error) {
-	var physicalCwd string
+	return captureServerOptions(options, physicalWorkingDirectory)
+}
+
+func captureServerOptions(options ServerOptions, capture func() (workingDirectory, error)) (ServerOptions, error) {
+	var cwd workingDirectory
 	for _, path := range []*string{&options.TLSCertificate, &options.TLSKey} {
 		if *path == "" || filepath.IsAbs(*path) {
 			continue
 		}
-		if physicalCwd == "" {
-			resolved, err := physicalWorkingDirectory()
+		if cwd.physical == "" {
+			resolved, err := capture()
 			if err != nil {
+				slog.Warn("userservice tls directory capture failed", "component", "userservice", "operation", "capture_server_options", "stage", "cwd_identity", "code", domain.InvalidArgument)
 				return ServerOptions{}, domain.Fail(domain.InvalidArgument, "The original TLS references could not be resolved.", "Inspect the installing process directory and reinstall with explicit absolute references.")
 			}
-			physicalCwd = resolved
+			cwd = resolved
 		}
-		anchored, err := anchorReference(physicalCwd, *path)
+		anchored, err := anchorReference(cwd, *path)
 		if err != nil {
-			slog.Warn("userservice tls reference anchor failed", "component", "userservice", "operation", "capture_server_options", "error", err)
+			slog.Warn("userservice tls reference anchor failed", "component", "userservice", "operation", "capture_server_options", "stage", "path_anchor", "code", domain.InvalidArgument)
 			return ServerOptions{}, domain.Fail(domain.InvalidArgument, "The original TLS references could not be resolved.", "Inspect the installing process directory and reinstall with explicit absolute references.")
 		}
 		*path = anchored
@@ -85,32 +108,56 @@ func CaptureServerOptions(options ServerOptions) (ServerOptions, error) {
 // as `C:cert.pem` is relative to that drive's current directory; joining either
 // to the cwd would change its meaning. Both volume and rooted checks are no-ops
 // on platforms where every rooted path is already absolute.
-func anchorReference(physicalCwd, path string) (string, error) {
-	volume := filepath.VolumeName(path)
+func anchorReference(cwd workingDirectory, path string) (string, error) {
+	return anchorReferenceWith(cwd, path, nativeReferencePathOps)
+}
+
+func anchorReferenceWith(cwd workingDirectory, path string, ops referencePathOps) (string, error) {
+	volume := ops.volumeName(path)
 	rest := path[len(volume):]
-	rooted := rest != "" && os.IsPathSeparator(rest[0])
+	rooted := rest != "" && ops.isPathSeparator(rest[0])
+	originalVolume := ops.volumeName(cwd.original)
 	switch {
 	case volume == "" && !rooted:
-		return filepath.Join(physicalCwd, path), nil
+		return ops.join(cwd.physical, path), nil
 	case volume == "":
-		return filepath.Clean(filepath.VolumeName(physicalCwd) + path), nil
-	case !rooted && strings.EqualFold(volume, filepath.VolumeName(physicalCwd)):
-		return filepath.Join(physicalCwd, rest), nil
+		return ops.clean(originalVolume + path), nil
+	case !rooted && strings.EqualFold(volume, originalVolume):
+		return ops.join(cwd.physical, rest), nil
 	default:
 		// A drive-relative reference on another drive depends on that drive's
 		// per-drive current directory, which only the operating system knows.
-		return filepath.Abs(path)
+		return ops.abs(path)
 	}
 }
 
-// physicalWorkingDirectory returns the current directory with every symlink
-// resolved. os.Getwd may return a symlink spelling taken from PWD.
-func physicalWorkingDirectory() (string, error) {
-	cwd, err := os.Getwd()
+// physicalWorkingDirectory retains the original cwd spelling for Windows drive
+// semantics and verifies the resolved path against the process directory.
+func physicalWorkingDirectory() (workingDirectory, error) {
+	return physicalWorkingDirectoryWith(os.Stat, os.Getwd, filepath.EvalSymlinks)
+}
+
+func physicalWorkingDirectoryWith(stat func(string) (os.FileInfo, error), getwd func() (string, error), eval func(string) (string, error)) (workingDirectory, error) {
+	originalIdentity, err := stat(".")
 	if err != nil {
-		return "", err
+		return workingDirectory{}, err
 	}
-	return filepath.EvalSymlinks(cwd)
+	cwd, err := getwd()
+	if err != nil {
+		return workingDirectory{}, err
+	}
+	physical, err := eval(cwd)
+	if err != nil {
+		return workingDirectory{}, err
+	}
+	resolvedIdentity, err := stat(physical)
+	if err != nil {
+		return workingDirectory{}, err
+	}
+	if !os.SameFile(originalIdentity, resolvedIdentity) {
+		return workingDirectory{}, errors.New("resolved working directory identity changed")
+	}
+	return workingDirectory{original: cwd, physical: physical}, nil
 }
 
 func (options ServerOptions) requireAbsoluteTLS() error {

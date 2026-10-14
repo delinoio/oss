@@ -604,6 +604,7 @@ export function ConfigurationEditor({
     false,
   );
   const notifications = useNotifications();
+  const queryClient = useQueryClient();
   const inline =
     kind === EntityKind.SETTINGS &&
     presentation === ConfigurationEditorPresentation.InlineServerPreferences;
@@ -646,6 +647,7 @@ export function ConfigurationEditor({
     [],
   );
   const [keepsFormatKey, setKeepsFormatKey] = useState(false);
+  const [providerRevision, setProviderRevision] = useState(0n);
   const [fieldsBlocked, setFieldsBlocked] = useState(false);
   const [problem, setProblem] = useProductMessage("");
   const [nameConflict, setNameConflict] = useState(false);
@@ -865,7 +867,30 @@ export function ConfigurationEditor({
           apiFormatToWire(apiFormat(document(result.account).api_protocol)!) ===
             request.apiProtocol),
       ),
+    false,
+    undefined,
+    (error) => clientFailure(error).code === FailureCode.Conflict,
   );
+  useEffect(() => {
+    if (
+      !formatMutation.error ||
+      clientFailure(formatMutation.error).code !== FailureCode.Conflict
+    )
+      return;
+    const providerId = text(data.provider_id);
+    if (!providerId) return;
+    console.info("delidev.settings.account_format_provider_refetch", {
+      providerId,
+    });
+    void queryClient.invalidateQueries({
+      queryKey: createConnectQueryKey({
+        schema: ResourceQuery.getResource,
+        input: { kind: EntityKind.PROVIDER, id: providerId },
+        cardinality: "finite",
+      }),
+      refetchType: "active",
+    });
+  }, [data.provider_id, formatMutation.error, queryClient]);
   const polled = current.data?.resource;
   const latest = inline
     ? latestServerPreferences(
@@ -1195,6 +1220,7 @@ export function ConfigurationEditor({
       selectedFormat &&
       selectedFormat !== document(source).api_protocol
     ) {
+      if (providerRevision <= 0n) return;
       void formatMutation.send({
         mutation: {
           id: source.id,
@@ -1202,6 +1228,7 @@ export function ConfigurationEditor({
           requestId: newRequestId(),
         },
         apiProtocol: apiFormatToWire(selectedFormat),
+        providerRevision,
         alias: text(data.alias),
         enabled: data.enabled === true,
         excludeAutomatic: data.exclude_automatic === true,
@@ -1372,6 +1399,7 @@ export function ConfigurationEditor({
             supportsSessionDefaults={supportsSessionDefaults}
             movementActive={active && taskVisible && !blocked && !childPending}
             keepsFormatKey={setKeepsFormatKey}
+            inspectedProviderRevision={setProviderRevision}
             initial={source}
             saveBlocked={setFieldsBlocked}
             kind={kind}
@@ -1400,6 +1428,7 @@ export function ConfigurationEditor({
                 active && taskVisible && !blocked && !childPending
               }
               keepsFormatKey={setKeepsFormatKey}
+              inspectedProviderRevision={setProviderRevision}
               initial={source}
               saveBlocked={setFieldsBlocked}
               kind={kind}
