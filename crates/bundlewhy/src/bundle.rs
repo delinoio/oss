@@ -305,6 +305,11 @@ fn validate_export_usage(diagnostic: &Diagnostic, usage: &ExportUsage) -> BwResu
             ExportUsagePathEnd::Truncated if usage.truncation == ExportUsageTruncation::None => {
                 return Err(bad("a truncated path without a truncation marker"));
             }
+            // An unconfirmed start exists only because an edge was dropped,
+            // and the analysis always discloses dropped edges in the note.
+            ExportUsagePathEnd::Incomplete if usage.note.is_empty() => {
+                return Err(bad("an incomplete path without a disclosure note"));
+            }
             _ => {}
         }
         for edge in &path.edges {
@@ -755,6 +760,16 @@ mod tests {
     }
 
     #[test]
+    fn an_incomplete_path_end_with_a_note_is_valid_without_a_truncation_marker() {
+        let mut usage = valid_usage();
+        usage.paths[0].end = ExportUsagePathEnd::Incomplete;
+        usage.note = "1 engine edge(s) were not shown.".to_owned();
+        assert_eq!(usage.truncation, ExportUsageTruncation::None);
+        let parsed = parse_usage(usage.clone()).unwrap();
+        assert_eq!(parsed.analysis.diagnostics[0].export_usage, Some(usage));
+    }
+
+    #[test]
     fn unavailable_export_usage_is_valid_without_paths() {
         let usage = ExportUsage {
             state: ExportUsageState::Unavailable,
@@ -767,7 +782,7 @@ mod tests {
     #[test]
     fn rejects_every_invalid_export_usage_shape() {
         type Edit = fn(&mut ExportUsage);
-        let cases: [(&str, Edit); 14] = [
+        let cases: [(&str, Edit); 15] = [
             ("unspecified state", |usage| {
                 usage.state = ExportUsageState::Unspecified;
             }),
@@ -792,6 +807,9 @@ mod tests {
             }),
             ("truncated end without marker", |usage| {
                 usage.paths[0].end = ExportUsagePathEnd::Truncated;
+            }),
+            ("incomplete end without a note", |usage| {
+                usage.paths[0].end = ExportUsagePathEnd::Incomplete;
             }),
             ("unspecified scope", |usage| {
                 usage.paths[0].edges[0].consumer.scope = ExportScope::Unspecified;

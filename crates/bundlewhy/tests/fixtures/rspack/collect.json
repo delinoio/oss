@@ -41,6 +41,8 @@
   "available": true,
   "reason": null,
   "skippedEdges": 0,
+  "skippedProviders": [],
+  "unattributedEdges": 0,
   "edges": [
    {
     "consumer": {

@@ -691,12 +691,17 @@ type ExportUsagePathEnd int32
 
 const (
 	ExportUsagePathEnd_EXPORT_USAGE_PATH_END_UNSPECIFIED ExportUsagePathEnd = 0
-	// No further engine edge consumes the first export in the chain.
+	// The engine reported no edge into the first export in the chain, and no
+	// edge that could be one was dropped.
 	ExportUsagePathEnd_EXPORT_USAGE_PATH_END_ROOT ExportUsagePathEnd = 1
 	// The first edge returns to an export already in the chain.
 	ExportUsagePathEnd_EXPORT_USAGE_PATH_END_CYCLE ExportUsagePathEnd = 2
 	// A display or work limit stopped the chain before a root was reached.
 	ExportUsagePathEnd_EXPORT_USAGE_PATH_END_TRUNCATED ExportUsagePathEnd = 3
+	// The engine reported an earlier edge into the first export that bundlewhy
+	// could not use because an endpoint is not an identifiable module. The chain
+	// may continue beyond this point, so it is not a confirmed start.
+	ExportUsagePathEnd_EXPORT_USAGE_PATH_END_INCOMPLETE ExportUsagePathEnd = 4
 )
 
 // Enum value maps for ExportUsagePathEnd.
@@ -706,12 +711,14 @@ var (
 		1: "EXPORT_USAGE_PATH_END_ROOT",
 		2: "EXPORT_USAGE_PATH_END_CYCLE",
 		3: "EXPORT_USAGE_PATH_END_TRUNCATED",
+		4: "EXPORT_USAGE_PATH_END_INCOMPLETE",
 	}
 	ExportUsagePathEnd_value = map[string]int32{
 		"EXPORT_USAGE_PATH_END_UNSPECIFIED": 0,
 		"EXPORT_USAGE_PATH_END_ROOT":        1,
 		"EXPORT_USAGE_PATH_END_CYCLE":       2,
 		"EXPORT_USAGE_PATH_END_TRUNCATED":   3,
+		"EXPORT_USAGE_PATH_END_INCOMPLETE":  4,
 	}
 )
 
@@ -3651,12 +3658,13 @@ const file_bundlewhy_v1_bundlewhy_proto_rawDesc = "" +
 	"\vExportScope\x12\x1c\n" +
 	"\x18EXPORT_SCOPE_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12EXPORT_SCOPE_NAMED\x10\x01\x12\x17\n" +
-	"\x13EXPORT_SCOPE_MODULE\x10\x02*\xa1\x01\n" +
+	"\x13EXPORT_SCOPE_MODULE\x10\x02*\xc7\x01\n" +
 	"\x12ExportUsagePathEnd\x12%\n" +
 	"!EXPORT_USAGE_PATH_END_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aEXPORT_USAGE_PATH_END_ROOT\x10\x01\x12\x1f\n" +
 	"\x1bEXPORT_USAGE_PATH_END_CYCLE\x10\x02\x12#\n" +
-	"\x1fEXPORT_USAGE_PATH_END_TRUNCATED\x10\x03*\xdb\x01\n" +
+	"\x1fEXPORT_USAGE_PATH_END_TRUNCATED\x10\x03\x12$\n" +
+	" EXPORT_USAGE_PATH_END_INCOMPLETE\x10\x04*\xdb\x01\n" +
 	"\x15ExportUsageTruncation\x12'\n" +
 	"#EXPORT_USAGE_TRUNCATION_UNSPECIFIED\x10\x00\x12 \n" +
 	"\x1cEXPORT_USAGE_TRUNCATION_NONE\x10\x01\x12&\n" +

@@ -1,8 +1,10 @@
+import { fromJson } from "@bufbuild/protobuf";
 import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { ExportUsageSection } from "./ExportUsageSection";
 import {
   ExportUsagePathEnd,
+  ExportUsageSchema,
   ExportUsageState,
   ExportUsageTruncation,
 } from "./gen/bundlewhy/v1/bundlewhy_pb";
@@ -118,6 +120,42 @@ describe("export usage section", () => {
     expect(pathItems(2)[0].textContent).toContain("src/right.ts");
   });
 
+  it("reads the incomplete chain end that the Rust analysis writes", () => {
+    const usage = fromJson(ExportUsageSchema, {
+      state: "EXPORT_USAGE_STATE_AVAILABLE",
+      note: "1 engine edge(s) involve modules that bundlewhy could not identify and are not shown.",
+      paths: [
+        {
+          edges: [
+            {
+              consumer: {
+                module: "src/a.ts",
+                exportPath: ["a"],
+                scope: "EXPORT_SCOPE_NAMED",
+              },
+              provider: {
+                module: "src/b.ts",
+                exportPath: ["b"],
+                scope: "EXPORT_SCOPE_NAMED",
+              },
+            },
+          ],
+          end: "EXPORT_USAGE_PATH_END_INCOMPLETE",
+        },
+      ],
+      truncation: "EXPORT_USAGE_TRUNCATION_NONE",
+    });
+    expect(usage.paths[0].end).toBe(ExportUsagePathEnd.INCOMPLETE);
+    renderUsage(usage);
+    expect(document.querySelector(".export-path-end")!.textContent).toMatch(
+      /Chain start not confirmed/,
+    );
+    expect(document.querySelector(".export-path-end")!.textContent).not.toMatch(
+      /Chain start: Rspack reported no earlier edge/,
+    );
+    expect(screen.getByText(/1 engine edge\(s\)/)).toBeTruthy();
+  });
+
   it("explains how each chain ends", () => {
     const ends: [ExportUsagePathEnd, RegExp][] = [
       [ExportUsagePathEnd.ROOT, /Chain start: Rspack reported no earlier edge/],
@@ -126,6 +164,10 @@ describe("export usage section", () => {
         /returns to an export that is already in this chain/,
       ],
       [ExportUsagePathEnd.TRUNCATED, /stopped at a limit before the start/],
+      [
+        ExportUsagePathEnd.INCOMPLETE,
+        /Chain start not confirmed.*could not use.*may continue beyond/,
+      ],
       [ExportUsagePathEnd.UNSPECIFIED, /end of this chain was not recorded/],
     ];
     for (const [end, pattern] of ends) {

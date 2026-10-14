@@ -48,7 +48,22 @@ pub struct CollectedExportUsage {
     pub reason: Option<ExportUsageReason>,
     /// Engine edges that were dropped because a module could not be mapped.
     pub skipped_edges: u32,
+    /// Dropped edges per collected provider module: each entry says that an
+    /// edge into that module exists but cannot be shown, so a chain that ends
+    /// at the module has not reached a confirmed start.
+    pub skipped_providers: Vec<CollectedSkippedProvider>,
+    /// Dropped edges whose provider module could not be determined at all.
+    /// Such an edge may be an earlier edge of any chain.
+    pub unattributed_edges: u32,
     pub edges: Vec<CollectedExportEdge>,
+}
+
+/// Edges dropped by the adapter that target one collected module.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct CollectedSkippedProvider {
+    pub module: String,
+    pub edges: u32,
 }
 
 /// Stable codes for export usage that the adapter could not collect. The

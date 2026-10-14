@@ -188,6 +188,7 @@ proto_enum!(ExportUsagePathEnd {
     Root = "EXPORT_USAGE_PATH_END_ROOT",
     Cycle = "EXPORT_USAGE_PATH_END_CYCLE",
     Truncated = "EXPORT_USAGE_PATH_END_TRUNCATED",
+    Incomplete = "EXPORT_USAGE_PATH_END_INCOMPLETE",
 });
 
 proto_enum!(ExportUsageTruncation {

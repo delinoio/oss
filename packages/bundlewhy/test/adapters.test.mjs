@@ -498,6 +498,8 @@ test("decodeExportUsageEdges handles every payload shape", () => {
         assert.equal(result.available, false);
         assert.equal(result.reason, ExportUsageReason.EdgesPayloadInvalid);
         assert.deepEqual(result.edges, []);
+        assert.deepEqual(result.skippedProviders, []);
+        assert.equal(result.unattributedEdges, 0);
       },
     },
     {
@@ -591,6 +593,108 @@ test("decodeExportUsageEdges handles every payload shape", () => {
   }
 });
 
+// Attribution of skipped edges: which provider lost an earlier edge. Mirrors
+// the "Edge classification" table in the contract.
+test("decodeExportUsageEdges attributes every skipped edge to the provider that lost it", () => {
+  const decode = (raw) =>
+    decodeExportUsageEdges(raw, decodeIdentifiers, decodeCollected);
+  const good = [1, ["a"], 2, null, "10", "3:1-4"];
+  const cases = [
+    {
+      name: "stored edges are not skipped",
+      raw: [good],
+      skipped: 0,
+      providers: [],
+      unattributed: 0,
+    },
+    {
+      name: "consumer module key is unknown: the collected provider lost an edge",
+      raw: [[99, ["a"], 2, null, "1", null]],
+      skipped: 1,
+      providers: [{ module: "/p/b.js", edges: 1 }],
+      unattributed: 0,
+    },
+    {
+      name: "consumer is a concatenated container: the collected provider lost an edge",
+      raw: [[3, ["a"], 2, null, "1", null]],
+      skipped: 1,
+      providers: [{ module: "/p/b.js", edges: 1 }],
+      unattributed: 0,
+    },
+    {
+      name: "consumer export path is invalid: the collected provider lost an edge",
+      raw: [[1, [""], 2, null, "1", null]],
+      skipped: 1,
+      providers: [{ module: "/p/b.js", edges: 1 }],
+      unattributed: 0,
+    },
+    {
+      name: "provider export path is invalid: the collected provider lost an edge",
+      raw: [[1, ["a"], 2, ["b", ""], "1", null]],
+      skipped: 1,
+      providers: [{ module: "/p/b.js", edges: 1 }],
+      unattributed: 0,
+    },
+    {
+      name: "short tuple with a collected provider key",
+      raw: [[1, ["a"], 2]],
+      skipped: 1,
+      providers: [{ module: "/p/b.js", edges: 1 }],
+      unattributed: 0,
+    },
+    {
+      name: "provider is a concatenated container: no chain through a collected module can end at it",
+      raw: [[1, ["a"], 3, null, "1", null]],
+      skipped: 1,
+      providers: [],
+      unattributed: 0,
+    },
+    {
+      name: "provider module key is unknown: it may hide an earlier edge anywhere",
+      raw: [[1, ["a"], 99, null, "1", null]],
+      skipped: 1,
+      providers: [],
+      unattributed: 1,
+    },
+    {
+      name: "tuple that is not a list may hide an earlier edge anywhere",
+      raw: ["not a tuple", null, 7],
+      skipped: 3,
+      providers: [],
+      unattributed: 3,
+    },
+    {
+      name: "providers are counted per module and sorted",
+      raw: [
+        [99, ["a"], 2, null, "1", null],
+        [99, ["a"], 1, null, "2", null],
+        [98, ["a"], 2, null, "3", null],
+        good,
+      ],
+      skipped: 3,
+      providers: [
+        { module: "/p/a.js", edges: 1 },
+        { module: "/p/b.js", edges: 2 },
+      ],
+      unattributed: 0,
+    },
+  ];
+  for (const { name, raw, skipped, providers, unattributed } of cases) {
+    const result = decode(raw);
+    assert.equal(result.available, true, name);
+    assert.equal(result.skippedEdges, skipped, name);
+    assert.deepEqual(result.skippedProviders, providers, name);
+    assert.equal(result.unattributedEdges, unattributed, name);
+    // Every skipped edge is accounted for at most once.
+    assert.ok(
+      result.skippedProviders.reduce((sum, entry) => sum + entry.edges, 0) +
+        result.unattributedEdges <=
+        result.skippedEdges,
+      name,
+    );
+  }
+});
+
 test("decodeExportUsageEdges refuses graphs above the edge limit", () => {
   const raw = Array.from({ length: MAX_EXPORT_USAGE_EDGES + 1 }, (_, index) => [
     1,
@@ -608,6 +712,8 @@ test("decodeExportUsageEdges refuses graphs above the edge limit", () => {
   assert.equal(result.available, false);
   assert.equal(result.reason, ExportUsageReason.EdgeLimitExceeded);
   assert.deepEqual(result.edges, []);
+  assert.deepEqual(result.skippedProviders, []);
+  assert.equal(result.unattributedEdges, 0);
 });
 
 // Projects that use a wrapper around the real @rspack/core to simulate

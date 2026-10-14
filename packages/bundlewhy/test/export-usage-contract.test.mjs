@@ -73,3 +73,38 @@ test("the detailed guide and the UI keep the same two tags", () => {
     assert.ok(text.includes("Derived by bundlewhy"));
   }
 });
+
+test("the chain end table matches the UI text and lists every end", () => {
+  const lines = contract.split("\n");
+  const start = lines.findIndex((line) => line.startsWith("Chain end. "));
+  assert.ok(start >= 0, "the contract has a chain end table");
+  const rows = [];
+  for (const line of lines.slice(start + 1)) {
+    if (line.startsWith("|")) rows.push(line);
+    else if (rows.length > 0) break;
+  }
+  const cells = rows.slice(2).map((row) =>
+    row
+      .split("|")
+      .slice(1, -1)
+      .map((cell) => cell.trim()),
+  );
+  const ui = read("apps/bundlewhy-web/src/ExportUsageSection.tsx");
+  const ends = new Set();
+  for (const [, end, , text] of cells) {
+    if (end === "none yet") continue;
+    ends.add(end);
+    assert.ok(ui.includes(text), `the UI has no text: ${text}`);
+  }
+  assert.deepEqual([...ends].sort(), [
+    "`CYCLE`",
+    "`INCOMPLETE`",
+    "`ROOT`",
+    "`TRUNCATED`",
+  ]);
+  // Every end of the protocol is described in the protocol contract.
+  const protocol = read("docs/protos-bundlewhy-v1-contract.md");
+  for (const end of ["ROOT", "CYCLE", "TRUNCATED", "INCOMPLETE"]) {
+    assert.ok(protocol.includes(`\`${end}\``), end);
+  }
+});

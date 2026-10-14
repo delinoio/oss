@@ -18,6 +18,8 @@ export function pathEndExplanation(end: ExportUsagePathEnd): string {
       return "The first edge returns to an export that is already in this chain (a cycle). Traversal stopped here.";
     case ExportUsagePathEnd.TRUNCATED:
       return "Traversal stopped at a limit before the start of this chain was reached.";
+    case ExportUsagePathEnd.INCOMPLETE:
+      return "Chain start not confirmed: Rspack reported an earlier edge into the first export that bundlewhy could not use, because an endpoint is not a module it can identify. The chain may continue beyond this point.";
     default:
       return "The end of this chain was not recorded.";
   }

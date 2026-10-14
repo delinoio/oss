@@ -117,26 +117,63 @@ fn usable_reference(reference: &CollectedExportRef) -> bool {
 
 /// Engine edges grouped for traversal.
 pub struct ExportUsageIndex<'a> {
-    usage: &'a CollectedExportUsage,
     /// Edges that provide exactly one export, in stable order.
     by_provider: HashMap<&'a CollectedExportRef, Vec<&'a CollectedExportEdge>>,
     /// Edges that provide any export of one module, in stable order.
     by_provider_module: HashMap<&'a str, Vec<&'a CollectedExportEdge>>,
     /// Edges dropped here because an endpoint cannot be shown.
     unusable_edges: u32,
+    /// Dropped edges (by the adapter or here) per provider module they
+    /// targeted: an edge into that module exists but cannot be shown.
+    skipped_into: HashMap<&'a str, u32>,
+    /// Dropped edges whose provider module is unknown. Such an edge may be
+    /// an earlier edge of any chain.
+    unattributed_edges: u32,
+    /// Edges dropped by the adapter plus edges dropped here.
+    skipped_total: u32,
 }
 
 impl<'a> ExportUsageIndex<'a> {
     pub fn new(usage: &'a CollectedExportUsage) -> Self {
         let mut unusable_edges = 0u32;
+        let mut skipped_into: HashMap<&str, u32> = HashMap::new();
+        let mut unattributed_edges = usage.unattributed_edges;
+        let mut adapter_attributed = u64::from(usage.unattributed_edges);
+        for skipped in usage
+            .skipped_providers
+            .iter()
+            .filter(|entry| entry.edges > 0)
+        {
+            adapter_attributed += u64::from(skipped.edges);
+            if skipped.module.is_empty() {
+                unattributed_edges = unattributed_edges.saturating_add(skipped.edges);
+            } else {
+                let count = skipped_into.entry(skipped.module.as_str()).or_default();
+                *count = count.saturating_add(skipped.edges);
+            }
+        }
         let mut edges: Vec<&CollectedExportEdge> = Vec::with_capacity(usage.edges.len());
         for edge in &usage.edges {
             if usable_reference(&edge.consumer) && usable_reference(&edge.provider) {
                 edges.push(edge);
             } else {
                 unusable_edges = unusable_edges.saturating_add(1);
+                if edge.provider.module.is_empty() {
+                    unattributed_edges = unattributed_edges.saturating_add(1);
+                } else {
+                    let count = skipped_into
+                        .entry(edge.provider.module.as_str())
+                        .or_default();
+                    *count = count.saturating_add(1);
+                }
             }
         }
+        // The adapter total never counts less than its own attribution, so a
+        // chain end that is not a confirmed start always has a disclosure.
+        let adapter_total = u64::from(usage.skipped_edges).max(adapter_attributed);
+        let skipped_total = u32::try_from(adapter_total)
+            .unwrap_or(u32::MAX)
+            .saturating_add(unusable_edges);
         edges.sort_by(|left, right| {
             (
                 &left.provider,
@@ -165,10 +202,12 @@ impl<'a> ExportUsageIndex<'a> {
                 .push(edge);
         }
         Self {
-            usage,
             by_provider,
             by_provider_module,
             unusable_edges,
+            skipped_into,
+            unattributed_edges,
+            skipped_total,
         }
     }
 
@@ -182,7 +221,17 @@ impl<'a> ExportUsageIndex<'a> {
 
     /// Edges the adapter skipped plus edges dropped while indexing.
     fn skipped_edges(&self) -> u32 {
-        self.usage.skipped_edges.saturating_add(self.unusable_edges)
+        self.skipped_total
+    }
+
+    /// True when an edge that could have targeted `module` was dropped, so
+    /// "no edge targets this module" would be a claim that the data cannot
+    /// support. A dropped edge counts when its provider is `module` or when
+    /// its provider is unknown. An edge into another module, including a
+    /// module that was not collected, cannot be an earlier edge of a chain
+    /// through `module`.
+    fn may_hide_edge_into(&self, module: &str) -> bool {
+        self.unattributed_edges > 0 || self.skipped_into.contains_key(module)
     }
 }
 
@@ -211,8 +260,15 @@ pub fn build(context: &Context<'_>, module_id: &str) -> ExportUsage {
         module = module_id,
         state = ?result.state,
         paths = result.paths.len(),
+        incomplete_paths = result
+            .paths
+            .iter()
+            .filter(|path| path.end == ExportUsagePathEnd::Incomplete)
+            .count(),
         truncation = ?result.truncation,
         skipped_edges = index.skipped_edges(),
+        dropped_by_index = index.unusable_edges,
+        unattributed_edges = index.unattributed_edges,
         "export usage paths derived"
     );
     result
@@ -244,10 +300,10 @@ pub fn traverse(
     let starts = index.edges_into_module(module_id);
     let skipped = index.skipped_edges();
     if starts.is_empty() {
-        return unavailable(if skipped == 0 {
-            NOTE_NO_EDGE
-        } else {
+        return unavailable(if index.may_hide_edge_into(module_id) {
             NOTE_NO_USABLE_EDGE
+        } else {
+            NOTE_NO_EDGE
         });
     }
     let mut queue: VecDeque<Candidate<'_>> = starts
@@ -295,7 +351,14 @@ pub fn traverse(
             .map(Vec::as_slice)
             .unwrap_or_default();
         if upstream.is_empty() {
-            finished.push((path, ExportUsagePathEnd::Root));
+            // No usable edge consumes the first export. That is a confirmed
+            // start only when no dropped edge could have been one.
+            let end = if index.may_hide_edge_into(&outermost.consumer.module) {
+                ExportUsagePathEnd::Incomplete
+            } else {
+                ExportUsagePathEnd::Root
+            };
+            finished.push((path, end));
             continue;
         }
         if path.len() >= limits.max_edges_per_path {
@@ -381,7 +444,10 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::{collect::Collection, sources::SourceStore};
+    use crate::{
+        collect::{CollectedSkippedProvider, Collection},
+        sources::SourceStore,
+    };
 
     fn reference(module: &str, export: Option<&[&str]>) -> CollectedExportRef {
         CollectedExportRef {
@@ -407,9 +473,8 @@ mod tests {
         Collection {
             export_usage: Some(CollectedExportUsage {
                 available: true,
-                reason: None,
-                skipped_edges: 0,
                 edges,
+                ..CollectedExportUsage::default()
             }),
             ..Collection::default()
         }
@@ -780,16 +845,37 @@ mod tests {
         assert!(usage.note.starts_with("3 engine edge(s)"));
     }
 
+    /// Records what the adapter reported about dropped edges.
+    fn skip_edges(data: &mut Collection, total: u32, providers: &[(&str, u32)], unattributed: u32) {
+        let usage = data.export_usage.as_mut().unwrap();
+        usage.skipped_edges = total;
+        usage.skipped_providers = providers
+            .iter()
+            .map(|(module, edges)| CollectedSkippedProvider {
+                module: (*module).to_owned(),
+                edges: *edges,
+            })
+            .collect();
+        usage.unattributed_edges = unattributed;
+    }
+
     #[test]
     fn a_module_whose_edges_were_all_skipped_is_not_reported_as_having_none() {
         let mut data = collection(vec![edge(("a", Some(A)), ("b", Some(B)), "1")]);
-        data.export_usage.as_mut().unwrap().skipped_edges = 2;
+        skip_edges(&mut data, 2, &[("a", 2)], 0);
         let usage = build_for(&data, "a");
         assert_eq!(usage.state, ExportUsageState::Unavailable);
         assert_eq!(usage.note, NOTE_NO_USABLE_EDGE);
         assert!(usage.paths.is_empty());
+        // An edge that was skipped into another module cannot target `a`, so
+        // the plain statement stays accurate for `a`.
+        skip_edges(&mut data, 2, &[("elsewhere", 2)], 0);
+        assert_eq!(build_for(&data, "a").note, NOTE_NO_EDGE);
+        // An edge with an unknown provider might target any module.
+        skip_edges(&mut data, 1, &[], 1);
+        assert_eq!(build_for(&data, "a").note, NOTE_NO_USABLE_EDGE);
         // With nothing skipped the plain statement stays accurate.
-        data.export_usage.as_mut().unwrap().skipped_edges = 0;
+        skip_edges(&mut data, 0, &[], 0);
         assert_eq!(build_for(&data, "a").note, NOTE_NO_EDGE);
     }
 
@@ -918,6 +1004,250 @@ mod tests {
         let usage = build_for(&data, "b");
         assert_eq!(usage.paths.len(), 1);
         assert!(usage.note.starts_with("3 engine edge(s)"), "{}", usage.note);
+    }
+
+    /// Terminal classification of a chain: every way a chain can stop and the
+    /// label that it gets. Mirrors the "Chain end" table in the contract.
+    #[test]
+    fn chain_end_classification_table() {
+        use ExportUsagePathEnd::{Cycle, Incomplete, Root, Truncated};
+        struct Case {
+            name: &'static str,
+            edges: Vec<CollectedExportEdge>,
+            module: &'static str,
+            /// Adapter total, per-provider counts and unattributed count.
+            skips: (u32, Vec<(&'static str, u32)>, u32),
+            limits: Limits,
+            ends: Vec<ExportUsagePathEnd>,
+            truncation: ExportUsageTruncation,
+        }
+        let lone = || vec![edge(("entry", None), ("m", Some(A)), "1")];
+        let through_mid = || {
+            vec![
+                edge(("entry", None), ("mid", Some(A)), "1"),
+                edge(("mid", Some(A)), ("m", Some(B)), "2"),
+            ]
+        };
+        let only_mid = || vec![edge(("mid", Some(A)), ("m", Some(B)), "2")];
+        let fan_in = || {
+            (0..4)
+                .map(|index| edge((&format!("c{index}"), None), ("leaf", Some(A)), "1"))
+                .collect::<Vec<_>>()
+        };
+        let line = || {
+            ["m0", "m1", "m2", "m3", "m4"]
+                .windows(2)
+                .map(|pair| edge((pair[0], Some(A)), (pair[1], Some(A)), "1"))
+                .collect::<Vec<_>>()
+        };
+        let mut dropped_into_entry = edge(("gone", Some(A)), ("entry", None), "9");
+        dropped_into_entry.consumer.module.clear();
+        let mut dropped_unknown_provider = edge(("gone", Some(A)), ("entry", None), "9");
+        dropped_unknown_provider.provider.module.clear();
+        let mut dropped_into_elsewhere = edge(("gone", Some(A)), ("elsewhere", None), "9");
+        dropped_into_elsewhere.consumer.module.clear();
+        let with = |mut edges: Vec<CollectedExportEdge>, extra: CollectedExportEdge| {
+            edges.push(extra);
+            edges
+        };
+        let none = (0, Vec::new(), 0);
+        let cases = vec![
+            Case {
+                name: "no edge was dropped: a confirmed start",
+                edges: lone(),
+                module: "m",
+                skips: none.clone(),
+                limits: Limits::DEFAULT,
+                ends: vec![Root],
+                truncation: ExportUsageTruncation::None,
+            },
+            Case {
+                name: "an edge was dropped into another module: still a confirmed start",
+                edges: lone(),
+                module: "m",
+                skips: (1, vec![("elsewhere", 1)], 0),
+                limits: Limits::DEFAULT,
+                ends: vec![Root],
+                truncation: ExportUsageTruncation::None,
+            },
+            Case {
+                name: "an edge was dropped into the first export's module: not confirmed",
+                edges: lone(),
+                module: "m",
+                skips: (1, vec![("entry", 1)], 0),
+                limits: Limits::DEFAULT,
+                ends: vec![Incomplete],
+                truncation: ExportUsageTruncation::None,
+            },
+            Case {
+                name: "a provider entry without edges drops nothing",
+                edges: lone(),
+                module: "m",
+                skips: (0, vec![("entry", 0)], 0),
+                limits: Limits::DEFAULT,
+                ends: vec![Root],
+                truncation: ExportUsageTruncation::None,
+            },
+            Case {
+                name: "a dropped edge into a module inside the chain does not change the end",
+                edges: through_mid(),
+                module: "m",
+                skips: (1, vec![("mid", 1)], 0),
+                limits: Limits::DEFAULT,
+                ends: vec![Root],
+                truncation: ExportUsageTruncation::None,
+            },
+            Case {
+                name: "the only earlier edge of an inner module was dropped: not confirmed",
+                edges: only_mid(),
+                module: "m",
+                skips: (1, vec![("mid", 1)], 0),
+                limits: Limits::DEFAULT,
+                ends: vec![Incomplete],
+                truncation: ExportUsageTruncation::None,
+            },
+            Case {
+                name: "an edge with an unknown provider may be any earlier edge",
+                edges: fan_in(),
+                module: "leaf",
+                skips: (1, Vec::new(), 1),
+                limits: Limits::DEFAULT,
+                ends: vec![Incomplete; 4],
+                truncation: ExportUsageTruncation::None,
+            },
+            Case {
+                name: "a cycle end is not changed by a dropped edge",
+                edges: vec![
+                    edge(("a", Some(A)), ("b", Some(B)), "1"),
+                    edge(("b", Some(B)), ("a", Some(A)), "2"),
+                ],
+                module: "b",
+                skips: (1, vec![("a", 1)], 0),
+                limits: Limits::DEFAULT,
+                ends: vec![Cycle],
+                truncation: ExportUsageTruncation::None,
+            },
+            Case {
+                name: "path cap: kept chains are classified, the cap is reported",
+                edges: fan_in(),
+                module: "leaf",
+                skips: (1, vec![("c0", 1)], 0),
+                limits: Limits {
+                    max_paths: 2,
+                    ..Limits::DEFAULT
+                },
+                ends: vec![Incomplete, Root],
+                truncation: ExportUsageTruncation::PathCount,
+            },
+            Case {
+                name: "depth cap: the chain never reached the start, a dropped edge there is moot",
+                edges: line(),
+                module: "m4",
+                skips: (1, vec![("m0", 1)], 0),
+                limits: Limits {
+                    max_edges_per_path: 2,
+                    ..Limits::DEFAULT
+                },
+                ends: vec![Truncated],
+                truncation: ExportUsageTruncation::Depth,
+            },
+            Case {
+                name: "expansion budget: remaining chains stay truncated",
+                edges: line(),
+                module: "m4",
+                skips: (1, vec![("m0", 1)], 0),
+                limits: Limits {
+                    max_expansions: 2,
+                    ..Limits::DEFAULT
+                },
+                ends: vec![Truncated],
+                truncation: ExportUsageTruncation::ExpansionBudget,
+            },
+            Case {
+                name: "an edge dropped by the index (empty consumer module) counts for its \
+                       provider",
+                edges: with(lone(), dropped_into_entry),
+                module: "m",
+                skips: none.clone(),
+                limits: Limits::DEFAULT,
+                ends: vec![Incomplete],
+                truncation: ExportUsageTruncation::None,
+            },
+            Case {
+                name: "an edge dropped by the index into another module does not",
+                edges: with(lone(), dropped_into_elsewhere),
+                module: "m",
+                skips: none.clone(),
+                limits: Limits::DEFAULT,
+                ends: vec![Root],
+                truncation: ExportUsageTruncation::None,
+            },
+            Case {
+                name: "an edge dropped by the index (empty provider module) is unattributed",
+                edges: with(lone(), dropped_unknown_provider),
+                module: "m",
+                skips: none,
+                limits: Limits::DEFAULT,
+                ends: vec![Incomplete],
+                truncation: ExportUsageTruncation::None,
+            },
+        ];
+        for case in cases {
+            let mut data = collection(case.edges);
+            let (total, providers, unattributed) = &case.skips;
+            skip_edges(&mut data, *total, providers, *unattributed);
+            let context = Context::new(
+                &data,
+                PathBuf::from("/project"),
+                "project".to_owned(),
+                Vec::new(),
+                SourceStore::new(false),
+            );
+            let usage = data.export_usage.as_ref().unwrap();
+            let result = traverse(
+                &context,
+                &ExportUsageIndex::new(usage),
+                case.module,
+                case.limits,
+            );
+            let ends: Vec<_> = result.paths.iter().map(|path| path.end).collect();
+            assert_eq!(ends, case.ends, "{}", case.name);
+            assert_eq!(result.truncation, case.truncation, "{}", case.name);
+            // A chain whose start is not confirmed always comes with the
+            // disclosure of the dropped edges.
+            if ends.contains(&Incomplete) {
+                assert!(
+                    result.note.contains("engine edge(s)"),
+                    "{}: {}",
+                    case.name,
+                    result.note
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_disclosure_never_counts_fewer_edges_than_the_adapter_attributed() {
+        let mut data = collection(vec![edge(("entry", None), ("m", Some(A)), "1")]);
+        // A hand-written collection that attributes more edges than it counts.
+        skip_edges(&mut data, 0, &[("entry", 2)], 1);
+        let usage = build_for(&data, "m");
+        assert_eq!(usage.paths[0].end, ExportUsagePathEnd::Incomplete);
+        assert!(usage.note.starts_with("3 engine edge(s)"), "{}", usage.note);
+    }
+
+    #[test]
+    fn a_dropped_upstream_edge_into_the_first_consumer_is_not_called_a_start() {
+        // `entry` uses `m.a`; Rspack also reported an edge into `entry.x`
+        // whose consumer is not a collected module, so the adapter dropped it.
+        let mut data = collection(vec![edge(("entry", Some(A)), ("m", Some(A)), "1")]);
+        skip_edges(&mut data, 1, &[("entry", 1)], 0);
+        let usage = build_for(&data, "m");
+        assert_eq!(usage.state, ExportUsageState::Available);
+        assert_eq!(usage.paths.len(), 1);
+        assert_eq!(usage.paths[0].end, ExportUsagePathEnd::Incomplete);
+        assert_eq!(usage.truncation, ExportUsageTruncation::None);
+        assert!(usage.note.starts_with("1 engine edge(s)"), "{}", usage.note);
     }
 
     #[test]

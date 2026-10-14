@@ -244,9 +244,22 @@ export const ExportUsageReason = Object.freeze({
  * module identifiers. A `null` export path means module or namespace scope.
  * Edges that cannot be decoded, have an empty or non-string export path
  * segment, or whose modules are not collected modules (for example a
- * concatenated container) are skipped and counted, never guessed. The result
- * never contains source text, and an unavailable result carries only an
- * `ExportUsageReason` code.
+ * concatenated container) are skipped and counted, never guessed. Every
+ * skipped edge is also attributed so that a chain end is never reported as a
+ * start when an earlier edge was dropped:
+ *
+ * - its provider is a collected module: counted for that module in
+ *   `skippedProviders` (an earlier edge into that module exists but cannot
+ *   be shown);
+ * - its provider is a known module that is not collected (for example a
+ *   concatenated container): counted only in `skippedEdges`, because no
+ *   chain through a collected module can end at it;
+ * - its provider cannot be determined (malformed tuple or unknown module
+ *   key): counted in `unattributedEdges`, which may hide an earlier edge
+ *   anywhere.
+ *
+ * The result never contains source text, and an unavailable result carries
+ * only an `ExportUsageReason` code.
  *
  * @param {unknown} rawEdges payload field `exportUsageEdges`
  * @param {Map<number, string>} identifiers module key to bundler identifier
@@ -254,12 +267,7 @@ export const ExportUsageReason = Object.freeze({
  */
 export function decodeExportUsageEdges(rawEdges, identifiers, collectedIds) {
   if (!Array.isArray(rawEdges)) {
-    return {
-      available: false,
-      reason: ExportUsageReason.EdgesPayloadInvalid,
-      skippedEdges: 0,
-      edges: [],
-    };
+    return unavailableExportUsage(ExportUsageReason.EdgesPayloadInvalid);
   }
   const exportPath = (value) => {
     if (value === null) return { ok: true, value: null };
@@ -275,9 +283,25 @@ export function decodeExportUsageEdges(rawEdges, identifiers, collectedIds) {
   const edges = [];
   const seen = new Set();
   let skippedEdges = 0;
+  let unattributedEdges = 0;
+  const skippedByProvider = new Map();
+  const skip = (raw) => {
+    skippedEdges += 1;
+    const providerModule = Array.isArray(raw)
+      ? identifiers.get(raw[2])
+      : undefined;
+    if (!providerModule) {
+      unattributedEdges += 1;
+    } else if (collectedIds.has(providerModule)) {
+      skippedByProvider.set(
+        providerModule,
+        (skippedByProvider.get(providerModule) ?? 0) + 1,
+      );
+    }
+  };
   for (const raw of rawEdges) {
     if (!Array.isArray(raw) || raw.length < 6) {
-      skippedEdges += 1;
+      skip(raw);
       continue;
     }
     const [consumerKey, consumerExport, providerKey, providerExport] = raw;
@@ -293,7 +317,7 @@ export function decodeExportUsageEdges(rawEdges, identifiers, collectedIds) {
       !consumer.ok ||
       !provider.ok
     ) {
-      skippedEdges += 1;
+      skip(raw);
       continue;
     }
     const edge = {
@@ -308,19 +332,26 @@ export function decodeExportUsageEdges(rawEdges, identifiers, collectedIds) {
     edges.push(edge);
   }
   if (edges.length > MAX_EXPORT_USAGE_EDGES) {
-    return {
-      available: false,
-      reason: ExportUsageReason.EdgeLimitExceeded,
-      skippedEdges: 0,
-      edges: [],
-    };
+    return unavailableExportUsage(ExportUsageReason.EdgeLimitExceeded);
   }
   edges.sort((left, right) => {
     const a = JSON.stringify(left);
     const b = JSON.stringify(right);
     return a < b ? -1 : a > b ? 1 : 0;
   });
-  return { available: true, reason: null, skippedEdges, edges };
+  const skippedProviders = [...skippedByProvider]
+    .map(([module, count]) => ({ module, edges: count }))
+    .sort((left, right) =>
+      left.module < right.module ? -1 : left.module > right.module ? 1 : 0,
+    );
+  return {
+    available: true,
+    reason: null,
+    skippedEdges,
+    skippedProviders,
+    unattributedEdges,
+    edges,
+  };
 }
 
 /**
@@ -334,5 +365,12 @@ export function unavailableExportUsage(reason) {
       "export usage reason must be an ExportUsageReason code",
     );
   }
-  return { available: false, reason, skippedEdges: 0, edges: [] };
+  return {
+    available: false,
+    reason,
+    skippedEdges: 0,
+    skippedProviders: [],
+    unattributedEdges: 0,
+    edges: [],
+  };
 }

@@ -139,12 +139,17 @@ enum ExportScope {
 // Why a derived export usage chain stops.
 enum ExportUsagePathEnd {
   EXPORT_USAGE_PATH_END_UNSPECIFIED = 0;
-  // No further engine edge consumes the first export in the chain.
+  // The engine reported no edge into the first export in the chain, and no
+  // edge that could be one was dropped.
   EXPORT_USAGE_PATH_END_ROOT = 1;
   // The first edge returns to an export already in the chain.
   EXPORT_USAGE_PATH_END_CYCLE = 2;
   // A display or work limit stopped the chain before a root was reached.
   EXPORT_USAGE_PATH_END_TRUNCATED = 3;
+  // The engine reported an earlier edge into the first export that bundlewhy
+  // could not use because an endpoint is not an identifiable module. The chain
+  // may continue beyond this point, so it is not a confirmed start.
+  EXPORT_USAGE_PATH_END_INCOMPLETE = 4;
 }
 
 // The first display or work limit that shortened the shown chains.
