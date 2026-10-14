@@ -266,14 +266,7 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result err
 	}()
 	defer func() { stopKnown(); <-knownDone }()
 
-	priceManager := service.tokenPrices()
-	service.Store.SetAutomaticPricing(func(tx *store.Tx, model domain.ModelIdentity) error {
-		snapshot, err := service.tokenPriceSnapshot(tx, model)
-		if err != nil {
-			return err
-		}
-		return service.applyReference(tx, model, snapshot)
-	})
+	priceManager := service.installAutomaticPricingResolver()
 	pricesCtx, stopPrices := context.WithCancel(child)
 	pricesDone := make(chan struct{})
 	go func() {
