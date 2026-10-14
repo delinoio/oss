@@ -18,6 +18,8 @@
   "browser-settings.noBrowsers": "웹 링크를 여는 다른 브라우저를 찾지 못했습니다. 시스템 기본 브라우저는 계속 사용할 수 있습니다.",
   "browser-settings.unavailableSaved": "저장된 브라우저가 설치되어 있지 않습니다. 다른 브라우저를 선택하기 전까지 해당 링크는 열리지 않습니다.",
   "browser-settings.notInstalled": "해당 브라우저가 더 이상 설치되어 있지 않습니다. 목록을 새로고침한 뒤 다른 브라우저를 선택하세요.",
+  "browser-settings.selectionDiscoveryFailed": "설치된 브라우저를 확인하지 못했습니다. 저장된 브라우저 설정은 변경되지 않았습니다. 브라우저 목록을 새로고침한 뒤 다시 시도하세요.",
+  "browser-settings.invalidSelection": "잘못된 브라우저 선택입니다. 저장된 브라우저 설정은 변경되지 않았습니다. 다른 브라우저를 선택하세요.",
   "browser-settings.webUnavailable": "브라우저 선택은 DeliDev 데스크톱 앱에서만 사용할 수 있습니다.",
   "browser-settings.readFailed": "브라우저 설정을 읽지 못했습니다. 다시 시도하기 전에 설정을 다시 불러오세요.",
   "browser-settings.invalidDocument": "저장된 브라우저 설정이 손상되어 변경하지 않았습니다. 설정을 초기화하면 모든 링크에 시스템 기본 브라우저를 사용합니다.",
