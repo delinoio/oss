@@ -2823,6 +2823,115 @@ fn minifies_edited_chunks() {
     assert!(settings.contains("makeSettings") && settings.contains("describeSettings"));
 }
 
+#[test]
+fn minifies_legal_notices_with_overlapping_comment_text() {
+    let settings = format!(
+        "function unused() {{ /** @license MIT */ return 42; }}\n/** @license MIT additional \
+         terms */\n{}",
+        VERBOSE[1].1
+    );
+    let temp = bundle(&[("index.js", VERBOSE[0].1), ("settings.js", &settings)]);
+    let report = optimize(
+        temp.path(),
+        &["--minify", "--disable-pass", "residual-dependency-removal"],
+    );
+    same_behavior(temp.path());
+    assert!(
+        report["size"]["minified"].as_u64().unwrap() > 0,
+        "{report:#}"
+    );
+    let published = out(temp.path(), "settings.js");
+    assert!(!published.contains("unused"), "{published}");
+    assert_eq!(
+        published.matches("/** @license MIT */").count(),
+        1,
+        "{published}"
+    );
+    assert_eq!(
+        published
+            .matches("/** @license MIT additional terms */")
+            .count(),
+        1,
+        "{published}"
+    );
+}
+
+#[test]
+fn minifies_legal_notice_even_when_its_text_occurs_in_a_string() {
+    let index = format!(
+        "{}\nimport {{ noticeText }} from './settings.js'; console.log(noticeText);",
+        VERBOSE[0].1
+    );
+    let settings = format!(
+        "function unused() {{ /** @license MIT */ return 42; }}\nexport const noticeText = '* \
+         @license MIT ';\n{}",
+        VERBOSE[1].1
+    );
+    let temp = bundle(&[("index.js", &index), ("settings.js", &settings)]);
+    let report = optimize(
+        temp.path(),
+        &["--minify", "--disable-pass", "residual-dependency-removal"],
+    );
+    same_behavior(temp.path());
+    assert!(
+        report["size"]["minified"].as_u64().unwrap() > 0,
+        "{report:#}"
+    );
+    let published = out(temp.path(), "settings.js");
+    assert!(!published.contains("unused"), "{published}");
+    assert_eq!(
+        published.matches("/** @license MIT */").count(),
+        1,
+        "{published}"
+    );
+    assert!(published.contains("* @license MIT "), "{published}");
+}
+
+#[test]
+fn minifies_legal_notice_control_with_composed_source_map() {
+    let index = format!(
+        "{}\nimport {{ noticeText }} from './settings.js'; console.log(noticeText);",
+        VERBOSE[0].1
+    );
+    let settings = format!(
+        "/** @license MIT */\nexport const noticeText = 'unrelated';\n{}//# \
+         sourceMappingURL=settings.js.map\n",
+        VERBOSE[1].1
+    );
+    let map = r#"{"version":3,"sources":["src/settings.ts"],"names":[],"mappings":"AAAA"}"#;
+    let temp = bundle(&[
+        ("index.js", &index),
+        ("settings.js", &settings),
+        ("settings.js.map", map),
+    ]);
+    let report = optimize(
+        temp.path(),
+        &["--minify", "--disable-pass", "residual-dependency-removal"],
+    );
+    same_behavior(temp.path());
+    assert!(
+        report["size"]["minified"].as_u64().unwrap() > 0,
+        "{report:#}"
+    );
+    let published = out(temp.path(), "settings.js");
+    assert_eq!(
+        published.matches("/** @license MIT */").count(),
+        1,
+        "{published}"
+    );
+    assert!(published.contains("noticeText"), "{published}");
+    assert!(
+        published
+            .trim_end()
+            .ends_with("//# sourceMappingURL=settings.js.map"),
+        "{published}"
+    );
+    let map =
+        sourcemap::SourceMap::from_slice(out(temp.path(), "settings.js.map").as_bytes()).unwrap();
+    assert_eq!(map.get_source(0), Some("src/settings.ts"));
+    assert!(map.tokens().count() > 0);
+}
+
 /// The published map leads from the minified code to the original sources.
 #[test]
 fn composes_maps_of_minified_chunks() {

@@ -341,6 +341,45 @@ fn legal(text: &str) -> bool {
     text.starts_with('!') || text.contains("@license") || text.contains("@preserve")
 }
 
+/// Read emitted legal comments as comments, so matching text in a string or
+/// another comment cannot stand in for a missing notice.
+fn emitted_legal_comments(cm: &Lrc<SourceMap>, code: &str) -> Option<Vec<Comment>> {
+    let file = cm.new_source_file(Lrc::new(FileName::Anon), code.to_owned());
+    let comments = SingleThreadedComments::default();
+    let mut errors = Vec::new();
+    parse_file_as_module(
+        &file,
+        Syntax::Es(EsSyntax::default()),
+        EsVersion::latest(),
+        Some(&comments),
+        &mut errors,
+    )
+    .ok()?;
+    if !errors.is_empty() {
+        return None;
+    }
+    let (leading, trailing) = comments.borrow_all();
+    let mut notices: Vec<Comment> = leading
+        .values()
+        .chain(trailing.values())
+        .flatten()
+        .filter(|comment| legal(&comment.text))
+        .cloned()
+        .collect();
+    notices.sort_by_key(|comment| comment.span.lo);
+    Some(notices)
+}
+
+/// Compare emitted comment identities in source order. Emission changes
+/// spans, but it must preserve each comment's kind and exact text.
+fn same_legal_comments(expected: &[Comment], emitted: &[Comment]) -> bool {
+    expected.len() == emitted.len()
+        && expected
+            .iter()
+            .zip(emitted)
+            .all(|(left, right)| left.kind == right.kind && left.text == right.text)
+}
+
 /// Minifies an ES module. `None` when SWC cannot parse it or emit it; the
 /// chunk then stays as the pipeline left it.
 pub(crate) fn minify_module(code: &str) -> Option<Minified> {
@@ -363,9 +402,9 @@ pub(crate) fn minify_module(code: &str) -> Option<Minified> {
             return None;
         }
         let mut program = Program::Module(module);
-        // Legal notices may sit on declarations that compression removes;
-        // they are restored at the start of the output if the emitter drops
-        // them.
+        // Legal notices may sit on declarations that compression removes.
+        // Collect them before optimization so every notice can be emitted in
+        // source order, even if its declaration disappears.
         let notices: Vec<Comment> = {
             let (leading, trailing) = comments.borrow_all();
             let mut notices: Vec<Comment> = leading
@@ -424,9 +463,15 @@ pub(crate) fn minify_module(code: &str) -> Option<Minified> {
         program.visit_mut_with(&mut fixer(Some(&comments)));
         {
             let (mut leading, mut trailing) = comments.borrow_all_mut();
-            for list in leading.values_mut().chain(trailing.values_mut()) {
-                list.retain(|comment| legal(&comment.text));
-            }
+            leading.clear();
+            trailing.clear();
+        }
+        let start = match &program {
+            Program::Module(module) => module.body.first().map_or(BytePos(0), |item| item.span().lo),
+            Program::Script(script) => script.body.first().map_or(BytePos(0), |item| item.span().lo),
+        };
+        for notice in &notices {
+            comments.add_leading(start, notice.clone());
         }
         let emit = |comments: &SingleThreadedComments| {
             let mut output = Vec::new();
@@ -449,39 +494,10 @@ pub(crate) fn minify_module(code: &str) -> Option<Minified> {
             }
             Some((String::from_utf8(output).ok()?, mappings))
         };
-        // The emitter takes the comments it writes out of the store; a second
-        // emission starts again from this snapshot.
-        let snapshot = {
-            let (leading, trailing) = comments.borrow_all();
-            (leading.clone(), trailing.clone())
-        };
-        let (mut code, mut mappings) = emit(&comments)?;
-        let mut missing: Vec<Comment> = Vec::new();
-        for notice in notices {
-            if !code.contains(notice.text.as_ref())
-                && !missing.iter().any(|kept| kept.text == notice.text)
-            {
-                missing.push(notice);
-            }
-        }
-        if !missing.is_empty() {
-            // Before the first statement, in source order.
-            let start = match &program {
-                Program::Module(module) => module.body.first().map_or(BytePos(0), |item| item.span().lo),
-                Program::Script(script) => script.body.first().map_or(BytePos(0), |item| item.span().lo),
-            };
-            {
-                let (mut leading, mut trailing) = comments.borrow_all_mut();
-                *leading = snapshot.0;
-                *trailing = snapshot.1;
-            }
-            for notice in &missing {
-                comments.add_leading(start, notice.clone());
-            }
-            (code, mappings) = emit(&comments)?;
-            if missing.iter().any(|notice| !code.contains(notice.text.as_ref())) {
-                return None;
-            }
+        let (code, mappings) = emit(&comments)?;
+        let emitted = emitted_legal_comments(&cm, &code)?;
+        if !same_legal_comments(&notices, &emitted) {
+            return None;
         }
         let mut json = Vec::new();
         cm.build_source_map(
@@ -499,6 +515,15 @@ pub(crate) fn minify_module(code: &str) -> Option<Minified> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn legal_texts(code: &str) -> Vec<String> {
+        let cm: Lrc<SourceMap> = Default::default();
+        emitted_legal_comments(&cm, code)
+            .unwrap()
+            .into_iter()
+            .map(|comment| comment.text.trim().to_owned())
+            .collect()
+    }
 
     #[test]
     fn minifies_and_maps_back_to_the_input() {
@@ -580,6 +605,36 @@ export {};
         );
         assert!(minified.code.contains("@license MIT"), "{}", minified.code);
         assert_eq!(minified.code.matches("keep this license").count(), 1);
+    }
+
+    #[test]
+    fn restores_a_notice_whose_text_occurs_inside_another_comment() {
+        let input = "function unused() { /** @license MIT */ return 42; }\n/** @license MIT \
+                     additional terms */\nexport const value = 3;\n";
+        let minified = minify_module(input).unwrap();
+        assert!(!minified.code.contains("unused"), "{}", minified.code);
+        assert_eq!(
+            legal_texts(&minified.code),
+            ["* @license MIT", "* @license MIT additional terms"]
+        );
+    }
+
+    #[test]
+    fn restores_a_notice_whose_text_occurs_inside_a_string() {
+        let input = "function unused() { /** @license MIT */ return 42; }\nexport const \
+                     noticeText = '* @license MIT ';\n";
+        let minified = minify_module(input).unwrap();
+        assert!(!minified.code.contains("unused"), "{}", minified.code);
+        assert_eq!(legal_texts(&minified.code), ["* @license MIT"]);
+        assert!(minified.code.contains("* @license MIT "));
+    }
+
+    #[test]
+    fn keeps_one_surviving_notice_without_duplication() {
+        let input = "/** @license MIT */\nexport const noticeText = 'unrelated';\n";
+        let minified = minify_module(input).unwrap();
+        assert_eq!(legal_texts(&minified.code), ["* @license MIT"]);
+        assert!(minified.map.tokens().count() > 0);
     }
 
     #[test]
