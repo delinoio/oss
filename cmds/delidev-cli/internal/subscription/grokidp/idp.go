@@ -131,6 +131,9 @@ type IdP struct {
 	RefreshMode        RefreshMode
 	OmitRefreshIDToken bool
 	TruncateTokenBody  bool
+	// TokenTrailer is appended verbatim after the body of every token response,
+	// including a configured TokenBody and an invalid_grant rejection.
+	TokenTrailer string
 }
 
 // New starts the fake provider and registers cleanup.
@@ -318,12 +321,13 @@ func (i *IdP) token(w http.ResponseWriter, r *http.Request) {
 			status = http.StatusOK
 		}
 		w.WriteHeader(status)
-		_, _ = w.Write([]byte(i.TokenBody))
+		_, _ = w.Write([]byte(i.TokenBody + i.TokenTrailer))
 		return
 	}
 	reject := func() {
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid_grant"})
+		_, _ = w.Write([]byte(i.TokenTrailer))
 	}
 	if r.PostForm.Get("grant_type") == "refresh_token" {
 		i.refresh(w, r, reject)
@@ -452,7 +456,7 @@ func (i *IdP) write(w http.ResponseWriter, body map[string]any) {
 		_, _ = w.Write(raw[:len(raw)/2])
 		return
 	}
-	_, _ = w.Write(raw)
+	_, _ = w.Write(append(raw, i.TokenTrailer...))
 }
 
 // refresh answers a refresh_token grant for the public client. Only the

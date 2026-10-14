@@ -2,9 +2,7 @@
 package subscription
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
@@ -21,7 +19,8 @@ const GrokTokenEndpoint = GrokIssuer + "/oauth2/token"
 // retries or follows a redirect.
 //
 // The classification matches ExchangeCode. A definitive provider rejection
-// (HTTP 400 or 401 with an OAuth error, for example invalid_grant) is
+// (HTTP 400 or 401 whose whole body is one OAuth error object, for example
+// invalid_grant) is
 // GrokReasonTokenRejected: the provider refused the token, so nothing rotated.
 // Every transport failure, cancellation, truncated or oversized body and
 // unexpected status is GrokReasonTokenUncertain, and a malformed success body is
@@ -44,17 +43,7 @@ func (c GrokOAuthClient) Refresh(ctx context.Context, refreshToken []byte) (Grok
 	if err != nil {
 		return GrokTokens{}, err
 	}
-	var body struct {
-		AccessToken  string      `json:"access_token"`
-		RefreshToken string      `json:"refresh_token"`
-		IDToken      string      `json:"id_token"`
-		TokenType    string      `json:"token_type"`
-		ExpiresIn    json.Number `json:"expires_in"`
-		Error        string      `json:"error"`
-	}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.UseNumber()
-	parsed := decoder.Decode(&body) == nil
+	body, parsed := parseGrokTokenBody(raw)
 	if status != http.StatusOK {
 		if parsed && (status == http.StatusBadRequest || status == http.StatusUnauthorized) && body.Error != "" {
 			return GrokTokens{}, grokFailure(GrokReasonTokenRejected)
