@@ -9,6 +9,7 @@ use std::{
 mod animation;
 mod assets;
 mod compaction;
+mod simplify;
 pub use animation::*;
 pub use assets::{MAX_MORPHS, MorphTarget, VertexSkin};
 pub use compaction::{CompactedGeometry, compact_geometry, compaction_scratch_bytes};
@@ -16,6 +17,7 @@ pub use forge_document::Assets;
 use forge_tree_doc::{Diagnostic, ErrorCode, Result, cancellation::checkpoint};
 use glam::{DMat4, DQuat, DVec3};
 use serde::{Deserialize, Serialize};
+pub use simplify::{SimplifiedGeometry, simplification_scratch, simplify_geometry};
 use uuid::Uuid;
 
 pub const MAX_BYTES: usize = 256 * 1024 * 1024;
