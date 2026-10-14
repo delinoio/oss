@@ -460,7 +460,7 @@ test("Git LFS attribute changes force every eligible job", () => {
   }
 });
 
-test("pnport installer changes select four-host native verification on main", () => {
+test("pnport installer changes select Linux native verification on main", () => {
   for (const installer of [
     "scripts/install/pnport.sh",
     "scripts/install/pnport.ps1",
@@ -476,6 +476,50 @@ test("pnport installer changes select four-host native verification on main", ()
       installer,
     );
   }
+});
+
+test("pnport native checks include Cargo and Node configuration on affected main pushes", () => {
+  for (const event of Object.values(Event)) {
+    const matrix = matricesForEvent(event).pnportMatrix.include;
+    assert.deepEqual(
+      matrix.map(({ suffix }) => suffix),
+      ["linux-x64-gnu", "linux-arm64-gnu"],
+      event,
+    );
+    for (const path of [".cargo/config.toml", ".nvmrc"]) {
+      const needs = results(event, [path]);
+      const expected = event === Event.Push;
+      assert.equal(
+        planJobs(event, [path]).jobs["pnport-native"],
+        expected,
+        `${event}: ${path}`,
+      );
+      assert.equal(
+        needs["pnport-native"].result,
+        expected ? "success" : "skipped",
+        `${event}: ${path}`,
+      );
+      assert.equal(validateResults(needs), true, `${event}: ${path}`);
+      for (const result of expected
+        ? ["failure", "cancelled", "skipped", undefined]
+        : ["success", "failure", "cancelled", undefined]) {
+        needs["pnport-native"].result = result;
+        assert.throws(
+          () => validateResults(needs),
+          /pnport-native/u,
+          `${event}: ${path}: ${result}`,
+        );
+      }
+    }
+  }
+  assert.equal(
+    planJobs(Event.Push, ["docs/project-with-watch.md"]).jobs["pnport-native"],
+    false,
+  );
+  assert.equal(
+    planJobs(Event.Push, ["crates/pnport/src/main.rs"]).jobs["pnport-native"],
+    true,
+  );
 });
 
 test("main selects affected non-Mac native jobs; manual skips native jobs", () => {
