@@ -483,7 +483,10 @@ export class SessionTabsStore {
     if (!this.provisionalSidechat(parent, id)) return;
     this.children.get(parent)?.delete(id);
     if (this.parents.get(id) === parent) this.parents.delete(id);
-    this.close(parent, sessionTabKey({ kind: SessionTabKind.Sidechat, id, name: "" }));
+    this.close(
+      parent,
+      sessionTabKey({ kind: SessionTabKind.Sidechat, id, name: "" }),
+    );
   }
   // Child controllers survive presentation close and retain their original parent.
   sidechats(parent: string) {

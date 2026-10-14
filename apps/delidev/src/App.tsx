@@ -674,7 +674,13 @@ function Shell({
       controller.abort();
       if (restoreAbort.current === controller) restoreAbort.current = undefined;
     };
-  }, [pendingSelection, connectionReady, transport, connectionEpoch, queryClient]);
+  }, [
+    pendingSelection,
+    connectionReady,
+    transport,
+    connectionEpoch,
+    queryClient,
+  ]);
   // Mirror committed navigation into the URL query with history.replaceState.
   // The URL keeps the original route until its selection has been verified.
   const sidechatRoute =
