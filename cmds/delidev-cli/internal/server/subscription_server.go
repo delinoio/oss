@@ -264,6 +264,11 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 					continue
 				} else if a.Subscription != nil && !a.Subscription.RecoveryRequired && a.Subscription.ServerOperation != nil && a.Subscription.ServerOperation.State == domain.SubscriptionPreparing && !a.Subscription.ServerOperation.NativeStarted && a.Subscription.ServerOperation.Epoch == s.subscriptionServerEpoch() && a.Subscription.Pending != nil && a.Subscription.Pending.Phase == domain.SubscriptionQueued && a.Subscription.Lease == nil {
 					candidates = append(candidates, candidate{account: r.ID})
+				} else if grokRefreshNeedsRecovery(a) {
+					eligible[a.Subscription.ServerOperation.ID] = true
+					if retries[a.Subscription.ServerOperation.ID].due(now) {
+						candidates = append(candidates, candidate{account: r.ID, operation: a.Subscription.ServerOperation.ID, cleanup: true, grok: true, refresh: true})
+					}
 				} else if grokLoginNeedsRecovery(a) {
 					eligible[a.Subscription.ServerOperation.ID] = true
 					if retries[a.Subscription.ServerOperation.ID].due(now) {
@@ -307,7 +312,12 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 						s.runManagedClaude(child, next.account)
 					}
 				} else if next.grok {
-					if err := s.recoverGrokLogin(child, next.account, next.operation); err != nil && child.Err() == nil {
+					if next.refresh {
+						if err := s.recoverGrokRefresh(child, next.account, next.operation); err != nil && child.Err() == nil {
+							result.failed = true
+							s.logger.WarnContext(child, "grok_refresh_recovery_pending", "operation_id", next.operation, "code", domain.SafeError(err).Code)
+						}
+					} else if err := s.recoverGrokLogin(child, next.account, next.operation); err != nil && child.Err() == nil {
 						result.failed = true
 						s.logger.WarnContext(child, "grok_login_recovery_pending", "operation_id", next.operation, "code", domain.SafeError(err).Code)
 					}
