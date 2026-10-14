@@ -207,7 +207,8 @@ pub(crate) fn launch(
         use std::os::unix::process::CommandExt;
         command.process_group(0);
     }
-    let mut child = spawn_retrying_text_file_busy(&mut command)
+    let mut child = command
+        .spawn()
         .map_err(|_| NativeFailure::BrowserLaunchFailed)?;
     let until = Instant::now() + INSTALLED_GRACE;
     loop {
@@ -235,34 +236,6 @@ pub(crate) fn launch(
             Err(_) => return Err(NativeFailure::BrowserLaunchFailed),
         }
     }
-}
-
-/// Spawns the browser, retrying only when exec fails with ETXTBSY ("text file
-/// busy"). On Linux a concurrent fork elsewhere in the process can briefly
-/// inherit a write descriptor to a freshly written executable; exec then
-/// fails although nothing ran, so a retry cannot launch the browser twice.
-/// Every other error is returned immediately. Remove this when launches no
-/// longer target freshly written executables (only tests do today).
-#[cfg(target_os = "linux")]
-fn spawn_retrying_text_file_busy(command: &mut Command) -> std::io::Result<std::process::Child> {
-    // ETXTBSY is 26 on every Linux architecture.
-    const TEXT_FILE_BUSY: i32 = 26;
-    let mut attempts = 0u64;
-    loop {
-        match command.spawn() {
-            Err(error) if error.raw_os_error() == Some(TEXT_FILE_BUSY) && attempts < 20 => {
-                attempts += 1;
-                thread::sleep(Duration::from_millis(5 * attempts));
-            }
-            result => return result,
-        }
-    }
-}
-
-/// Other platforms do not report ETXTBSY for this race; spawn once.
-#[cfg(not(target_os = "linux"))]
-fn spawn_retrying_text_file_busy(command: &mut Command) -> std::io::Result<std::process::Child> {
-    command.spawn()
 }
 
 #[cfg(all(test, unix))]
