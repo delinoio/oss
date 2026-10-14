@@ -161,7 +161,10 @@ it("falls back through the body sources in the documented order without mixing f
   };
   const steps: [unknown, string][] = [
     [full, "completed content"],
-    [{ ...full, completed: snapshot(["completed summary"], ["", " "]) }, "streamed content"],
+    [
+      { ...full, completed: snapshot(["completed summary"], ["", " "]) },
+      "streamed content",
+    ],
     [
       {
         ...full,

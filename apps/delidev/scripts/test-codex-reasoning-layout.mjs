@@ -158,7 +158,9 @@ try {
             );
             assert.equal(
               await reasoning
-                .locator(".codex-reasoning-body section, .codex-reasoning-body h4, .codex-reasoning-body small, .codex-reasoning-body pre")
+                .locator(
+                  ".codex-reasoning-body section, .codex-reasoning-body h4, .codex-reasoning-body small, .codex-reasoning-body pre",
+                )
                 .count(),
               0,
             );
@@ -172,7 +174,8 @@ try {
                 const css = getComputedStyle(node);
                 return {
                   fontSize: parseFloat(css.fontSize),
-                  lineHeight: parseFloat(css.lineHeight) / parseFloat(css.fontSize),
+                  lineHeight:
+                    parseFloat(css.lineHeight) / parseFloat(css.fontSize),
                   overflow: node.scrollWidth > node.clientWidth,
                 };
               });
