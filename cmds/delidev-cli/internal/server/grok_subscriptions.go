@@ -284,7 +284,7 @@ func (s *Service) takeGrokSubscription(ctx context.Context, req *connect.Request
 	// Readiness is revoked from the acceptance of a logout, so new execution is
 	// refused with a typed unavailable problem while it waits, revokes and
 	// cleans up.
-	if action == domain.SubscriptionExecute && s.grokLeaseAction(action) && s.grokAccountLoggingOut(ctx, input.Account) {
+	if action == domain.SubscriptionExecute && s.grokAccountLoggingOut(ctx, input.Account) {
 		s.logger.WarnContext(ctx, "grok_subscription_take_logging_out", "phase", grokLogPhaseLogout, "account_id", input.Account, "action", action)
 		return nil, rpc.Error(grokLoggingOut(), c)
 	}

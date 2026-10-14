@@ -441,13 +441,14 @@ func TestGrokExecutionCapabilitiesAreAdvertisedOnlyWhenEnabled(t *testing.T) {
 	if slices.Contains(status(), grokSystemExecutionReservation) {
 		t.Fatal("System 40 is advertised by default")
 	}
+	loginAdvertised := slices.Contains(status(), grokSystemLoginReservation)
 	f.service.grokExecution = true
 	capabilities := status()
 	if !slices.Contains(capabilities, grokSystemExecutionReservation) {
 		t.Fatal("System 40 is not advertised when enabled")
 	}
-	if slices.Contains(capabilities, grokSystemLoginReservation) {
-		t.Fatal("enabling execution advertised System 39")
+	if slices.Contains(capabilities, grokSystemLoginReservation) != loginAdvertised {
+		t.Fatal("enabling execution changed the System 39 advertisement")
 	}
 }
 
