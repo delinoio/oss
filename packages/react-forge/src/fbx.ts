@@ -3,11 +3,14 @@ export {
   SceneSession,
   SceneBudgetAction,
   SceneBudgetMetric,
+  SceneGeometryFindingCode,
 } from "./scene/session.js";
 export type {
   SceneGeometry,
   SceneAnalysis,
   SceneMeshAnalysis,
+  SceneGeometryFinding,
+  SceneGeometryQuality,
   SceneSessionOptions,
   AnimationSample,
   GeometryCompaction,

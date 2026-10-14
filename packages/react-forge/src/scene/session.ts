@@ -90,6 +90,26 @@ export interface SceneMeshAnalysis {
   readonly vertexCount: number;
   readonly triangleCount: number;
   readonly geometryInstanceCount: number;
+  readonly geometryId?: string;
+}
+export enum SceneGeometryFindingCode {
+  UnusedVertex = "unused_vertex",
+  RepeatedIndexTriangle = "repeated_index_triangle",
+  ZeroAreaTriangle = "zero_area_triangle",
+  DuplicateTriangle = "duplicate_triangle",
+  OppositeWindingTriangle = "opposite_winding_triangle",
+}
+export interface SceneGeometryFinding {
+  readonly code: SceneGeometryFindingCode;
+  readonly count: number;
+  readonly samples: readonly number[];
+  readonly truncated: boolean;
+}
+export interface SceneGeometryQuality {
+  readonly geometryId: string;
+  readonly vertexCount: number;
+  readonly triangleCount: number;
+  readonly findings: readonly SceneGeometryFinding[];
 }
 export interface SceneAnalysis {
   readonly documentId: string;
@@ -105,6 +125,7 @@ export interface SceneAnalysis {
   readonly unusedGeometryCount: number;
   readonly meshes: readonly SceneMeshAnalysis[];
   readonly budgetViolations: readonly SceneBudgetViolation[];
+  readonly geometryQuality?: readonly SceneGeometryQuality[];
 }
 
 function geometryBudget(value: unknown): Readonly<SceneGeometryBudget> {
@@ -993,7 +1014,8 @@ export class SceneSession {
   private async process(
     signal: AbortSignal,
     context: { revision: number },
-    operation: "generate" | "inspect" | "analyze" = "generate",
+    operation:
+      "generate" | "inspect" | "analyze" | "analyze_quality" = "generate",
     animation?: AnimationSample,
     expectedRevision?: number,
   ) {
@@ -1019,7 +1041,9 @@ export class SceneSession {
           sample: { clip: animation.clip.nodeId, time: animation.time },
         }
       : p.model;
-    const run = (kind: "generate" | "inspect" | "analyze") =>
+    const run = (
+      kind: "generate" | "inspect" | "analyze" | "analyze_quality",
+    ) =>
       processDocument(
         this.format,
         kind,
@@ -1088,12 +1112,21 @@ export class SceneSession {
     return this.export(options);
   }
   analyze(
-    options: { revision?: number; signal?: AbortSignal } = {},
+    options: {
+      revision?: number;
+      signal?: AbortSignal;
+      geometryQuality?: boolean;
+    } = {},
   ): Promise<SceneAnalysis> {
     const signal = this.signal(options.signal);
     if (
-      options.revision !== undefined &&
-      (!Number.isSafeInteger(options.revision) || options.revision < 0)
+      Object.keys(options).some(
+        (key) => !["revision", "signal", "geometryQuality"].includes(key),
+      ) ||
+      (options.geometryQuality !== undefined &&
+        typeof options.geometryQuality !== "boolean") ||
+      (options.revision !== undefined &&
+        (!Number.isSafeInteger(options.revision) || options.revision < 0))
     )
       throw malformed();
     return this.track(Stage.Layout, (context) =>
@@ -1101,7 +1134,7 @@ export class SceneSession {
         const result = await this.process(
           signal,
           context,
-          "analyze",
+          options.geometryQuality ? "analyze_quality" : "analyze",
           undefined,
           options.revision,
         );
@@ -1121,6 +1154,25 @@ export class SceneSession {
           meshes: Object.freeze(
             native.meshes.map((mesh) => Object.freeze(mesh)),
           ),
+          ...(native.geometryQuality
+            ? {
+                geometryQuality: Object.freeze(
+                  native.geometryQuality.map((quality) =>
+                    Object.freeze({
+                      ...quality,
+                      findings: Object.freeze(
+                        quality.findings.map((finding) =>
+                          Object.freeze({
+                            ...finding,
+                            samples: Object.freeze(finding.samples),
+                          }),
+                        ),
+                      ),
+                    }),
+                  ),
+                ),
+              }
+            : {}),
         });
       }),
     );

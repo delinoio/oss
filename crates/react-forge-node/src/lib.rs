@@ -91,6 +91,7 @@ enum OperationKind {
     Generate,
     Inspect,
     Analyze,
+    AnalyzeQuality,
     Update,
 }
 
@@ -155,10 +156,13 @@ impl Task for Operation {
             OperationKind::Generate => "generate",
             OperationKind::Inspect => "inspect",
             OperationKind::Analyze => "analyze",
+            OperationKind::AnalyzeQuality => "analyze_quality",
             OperationKind::Update => "update",
         };
-        let stage = if matches!(self.kind, OperationKind::Inspect | OperationKind::Analyze)
-            && matches!(self.format, Format::Glb | Format::Fbx)
+        let stage = if matches!(
+            self.kind,
+            OperationKind::Inspect | OperationKind::Analyze | OperationKind::AnalyzeQuality
+        ) && matches!(self.format, Format::Glb | Format::Fbx)
         {
             "layout"
         } else if matches!(self.kind, OperationKind::Inspect) {
@@ -255,6 +259,9 @@ pub fn process_document(
         "generate" => OperationKind::Generate,
         "inspect" => OperationKind::Inspect,
         "analyze" if matches!(format, Format::Glb | Format::Fbx) => OperationKind::Analyze,
+        "analyze_quality" if matches!(format, Format::Glb | Format::Fbx) => {
+            OperationKind::AnalyzeQuality
+        }
         "update" => OperationKind::Update,
         _ => {
             return Err(native_error(Diagnostic::new(
