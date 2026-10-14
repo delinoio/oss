@@ -306,10 +306,21 @@ impl OAuthHost {
 
     pub fn stop(&self) {
         self.stopped.store(true, Ordering::Release);
-        if let Ok(mut attempts) = self.attempts.lock() {
-            attempts.clear();
-        }
+        // Retire every admitted device dispatch before anything can block:
+        // clearing the attempts joins their callback listeners, and a pending
+        // dispatch must not commit and spawn the browser while that join waits.
         self.cancel_device_openings(|_| true);
+        // A dispatch that passed the stopped check before the store above
+        // registers under the attempts lock, so cancelling once more while
+        // holding that lock retires it too: admission either refused the
+        // dispatch or registered it before this cancellation.
+        match self.attempts.lock() {
+            Ok(mut attempts) => {
+                self.cancel_device_openings(|_| true);
+                attempts.clear();
+            }
+            Err(_) => self.cancel_device_openings(|_| true),
+        }
     }
 
     pub fn control(
@@ -3476,13 +3487,16 @@ mod grok_subscription_tests {
         ));
     }
 
-    // Device opener lifecycle (Rust half of the renderer state table):
-    //   admit          -> refused when stopped, stale epoch, disposed or
-    // invalid;                     otherwise registered with a per-opening
-    // cancel flag   Dispose(scope) -> sets the flag of every opening in
-    // that scope only   close_window   -> sets the flag of every opening in
-    // that window only   stop/exhausted -> sets every flag
-    //   settle         -> unregisters on success and on failure
+    // Device opener lifecycle (Rust half of the renderer state table); the
+    // contract document lists the same cells:
+    //   admit: refused when stopped, stale epoch, disposed or invalid,
+    //     otherwise registered with a per-opening cancel flag
+    //   Dispose(scope): sets the flag of every opening in that scope only
+    //   close_window: sets the flag of every opening in that window only
+    //   stop and revocation exhaustion: set every flag
+    //   settle: unregisters on success and on failure
+    // Every retirement sets the flag before it joins any callback listener, so
+    // a slow listener cannot delay it.
     fn open_device(
         host: &OAuthHost,
         scope: &OAuthScope,
@@ -3500,6 +3514,204 @@ mod grok_subscription_tests {
     }
     fn registered_device_openings(host: &OAuthHost) -> usize {
         host.device_openings.lock().unwrap().len()
+    }
+
+    // A retained callback attempt whose listener thread is still running: the
+    // attempt's drop joins that thread, so every retirement that clears or
+    // removes the attempt blocks until `release` is sent.
+    fn slow_listener_attempt(
+        attempt_scope: OAuthScope,
+        release: std::sync::mpsc::Receiver<()>,
+    ) -> Attempt {
+        Attempt {
+            kind: BrowserBindingKind::Provider,
+            profile: OAuthProfile::Openrouter,
+            scope: attempt_scope,
+            generation: uuid::Uuid::now_v7().to_string(),
+            callback: String::new(),
+            attempt: String::new(),
+            authorization: Zeroizing::new(String::new()),
+            until: Instant::now() + Duration::from_secs(600),
+            shared: Arc::new(Shared {
+                expected_state: None,
+                api_state: Mutex::new(None),
+                api_profile: None,
+                bound: AtomicBool::new(true),
+                consumed: AtomicBool::new(false),
+                stop: AtomicBool::new(false),
+                code: Mutex::new(None),
+            }),
+            thread: Some(thread::spawn(move || {
+                let _ = release.recv();
+            })),
+        }
+    }
+
+    // Runs one retirement while a device dispatch is admitted and a retained
+    // attempt's listener join is blocked. The dispatcher models the browser
+    // opener: it polls only its own flag. The retirement must set that flag
+    // before it waits for the join, so the dispatch is refused instead of
+    // spawning the browser after the retirement began.
+    fn retirement_retires_the_dispatch_before_joining_a_slow_listener(
+        host: OAuthHost,
+        device_scope: OAuthScope,
+        listener_scope: OAuthScope,
+        retire: impl FnOnce(Arc<OAuthHost>) + Send + 'static,
+    ) {
+        let host = Arc::new(host);
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        host.attempts.lock().unwrap().insert(
+            listener_scope.window.clone(),
+            slow_listener_attempt(listener_scope, release_rx),
+        );
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel::<()>();
+        let worker_host = Arc::clone(&host);
+        let spawned = Arc::new(AtomicBool::new(false));
+        let worker_spawned = Arc::clone(&spawned);
+        let worker = thread::spawn(move || {
+            open_device(&worker_host, &device_scope, move |_, cancel| {
+                entered_tx.send(()).unwrap();
+                let deadline = Instant::now() + Duration::from_secs(10);
+                while Instant::now() < deadline {
+                    if cancel.load(Ordering::Acquire) {
+                        return Err(NativeFailure::Stopped);
+                    }
+                    thread::sleep(Duration::from_millis(2));
+                }
+                // The retirement never reached this dispatch: the browser
+                // would have been started.
+                worker_spawned.store(true, Ordering::SeqCst);
+                Ok(())
+            })
+        });
+        entered_rx.recv().unwrap();
+        let retiring_host = Arc::clone(&host);
+        let retiring = thread::spawn(move || retire(retiring_host));
+        let result = worker.join().unwrap();
+        // The listener is still blocked, so the retirement has not finished.
+        let still_joining = !retiring.is_finished();
+        release_tx.send(()).unwrap();
+        retiring.join().unwrap();
+        assert!(
+            matches!(result, Err(NativeFailure::Stopped)),
+            "dispatch was not retired before the listener join"
+        );
+        assert!(!spawned.load(Ordering::SeqCst));
+        assert!(still_joining);
+        assert_eq!(registered_device_openings(&host), 0);
+    }
+
+    #[test]
+    fn host_stop_retires_a_pending_dispatch_before_joining_callback_listeners() {
+        let device_scope = scope();
+        retirement_retires_the_dispatch_before_joining_a_slow_listener(
+            OAuthHost::default(),
+            device_scope.clone(),
+            OAuthScope {
+                window: "listener".into(),
+                ..scope()
+            },
+            |host| host.stop(),
+        );
+    }
+
+    #[test]
+    fn revocation_exhaustion_retires_a_pending_dispatch_before_joining_callback_listeners() {
+        let host = OAuthHost::default();
+        {
+            let mut disposed = host.disposed.lock().unwrap();
+            for _ in 0..4096 {
+                disposed.insert(OAuthScope {
+                    opening: uuid::Uuid::now_v7().to_string(),
+                    ..scope()
+                });
+            }
+        }
+        retirement_retires_the_dispatch_before_joining_a_slow_listener(
+            host,
+            scope(),
+            OAuthScope {
+                window: "listener".into(),
+                ..scope()
+            },
+            |host| {
+                let overflow = OAuthScope {
+                    opening: uuid::Uuid::now_v7().to_string(),
+                    ..scope()
+                };
+                assert!(matches!(
+                    host.control(overflow, OAuthAction::Dispose, "", "", ""),
+                    Err(NativeFailure::Stopped)
+                ));
+            },
+        );
+    }
+
+    #[test]
+    fn dispose_retires_a_pending_dispatch_before_joining_its_callback_listener() {
+        let device_scope = scope();
+        retirement_retires_the_dispatch_before_joining_a_slow_listener(
+            OAuthHost::default(),
+            device_scope.clone(),
+            device_scope.clone(),
+            move |host| {
+                host.control(device_scope, OAuthAction::Dispose, "", "", "")
+                    .unwrap();
+            },
+        );
+    }
+
+    #[test]
+    fn window_close_retires_a_pending_dispatch_before_joining_its_callback_listener() {
+        let device_scope = scope();
+        retirement_retires_the_dispatch_before_joining_a_slow_listener(
+            OAuthHost::default(),
+            device_scope.clone(),
+            device_scope,
+            |host| host.close_window("main").unwrap(),
+        );
+    }
+
+    #[test]
+    fn host_stop_racing_an_admission_never_lets_the_dispatch_start() {
+        // Stop lands exactly while the dispatch is being admitted (after the
+        // first stopped check, before registration): the admission holds the
+        // attempts lock, so stop either finds the registered dispatch or the
+        // admission is refused. Neither outcome starts a browser.
+        for _ in 0..50 {
+            let host = Arc::new(OAuthHost::default());
+            let spawned = Arc::new(AtomicBool::new(false));
+            let barrier = Arc::new(std::sync::Barrier::new(2));
+            let worker_host = Arc::clone(&host);
+            let worker_spawned = Arc::clone(&spawned);
+            let worker_barrier = Arc::clone(&barrier);
+            let worker_scope = scope();
+            let worker = thread::spawn(move || {
+                worker_barrier.wait();
+                open_device(&worker_host, &worker_scope, |_, cancel| {
+                    // Stop either already refused the admission or retires this
+                    // registered dispatch; the dispatcher polls only its flag.
+                    let deadline = Instant::now() + Duration::from_secs(5);
+                    while Instant::now() < deadline && !cancel.load(Ordering::Acquire) {
+                        thread::sleep(Duration::from_millis(1));
+                    }
+                    if cancel.load(Ordering::Acquire) {
+                        return Err(NativeFailure::Stopped);
+                    }
+                    worker_spawned.store(true, Ordering::SeqCst);
+                    Ok(())
+                })
+            });
+            barrier.wait();
+            host.stop();
+            let result = worker.join().unwrap();
+            assert!(
+                matches!(result, Err(NativeFailure::Stopped)),
+                "a dispatch that raced stop was not refused or retired"
+            );
+            assert!(!spawned.load(Ordering::SeqCst));
+            assert_eq!(registered_device_openings(&host), 0);
+        }
     }
 
     #[test]

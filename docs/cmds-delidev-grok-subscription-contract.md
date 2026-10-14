@@ -119,7 +119,15 @@ that was spawned and then retired is terminated while it runs, and a dispatch
 whose retirement completed before the process finished never reports success
 (`Stopped`); a launcher that already handed the page to the browser cannot be
 recalled. The flag is never the host-wide stop flag, and an unrelated opening or
-window is never cancelled.
+window is never cancelled. Every retirement sets the flags of the dispatches it
+retires before it clears, removes or joins any retained callback listener, so a
+slow listener join can never delay a retirement: a dispatch that is pending when
+`stop`, revocation exhaustion, Dispose or window close begins is refused or
+terminated even while the join is still waiting. `stop` cancels once before it
+waits for the attempts lock and once more while holding it, so a dispatch that
+was admitted just before the host stopped is retired too. The Rust tests cover
+each retirement (`stop`, revocation exhaustion, Dispose, window close) against a
+pending dispatch with a blocked listener join, and `stop` racing an admission.
 
 | Retirement point                                | Process       | Dispatch result        |
 | ----------------------------------------------- | ------------- | ---------------------- |
