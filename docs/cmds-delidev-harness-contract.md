@@ -2876,11 +2876,11 @@ account and (for conversation purposes) the logical conversation. Execution,
 request or attempt identifiers never appear in a key. Credential rotation does
 not change a key or path. The closed purposes are:
 
-| Scope | Purposes | Required key fields |
-| --- | --- | --- |
-| system (accountless) | `discovery`, `model_observation`, `title_probe` | harness |
-| account | `auth`, `quota`, `credit`, `subscription_probe` | harness, account |
-| conversation | `conversation`, `fork`, `compaction`, `revert`, `sidechat`, `title`, `review` | harness, account, conversation |
+| Scope                | Purposes                                                                      | Required key fields            |
+| -------------------- | ----------------------------------------------------------------------------- | ------------------------------ |
+| system (accountless) | `discovery`, `model_observation`, `title_probe`                               | harness                        |
+| account              | `auth`, `quota`, `credit`, `subscription_probe`                               | harness, account               |
+| conversation         | `conversation`, `fork`, `compaction`, `revert`, `sidechat`, `title`, `review` | harness, account, conversation |
 
 Layout below `<root>/native-profiles/`: `registry.json` (versioned registry,
 `registry.lock`), `locks/<profile-id>.lock`, `migrations/<kind>-<operation>.json`
