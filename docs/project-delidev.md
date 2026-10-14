@@ -54,7 +54,7 @@ Main desktop local Workers now have automatic same-owner registration/start and 
 
 The feature preserves closed private local-startup ownership/admission classifications across Go, native supervision and localized startup/Connection & diagnostics guidance. Original owners and data remain untouched; ownership and unclassified legacy conflicts retain safe inspection and explicit retry guidance under the existing supervision cadence. This adds no RPC, allocation, migration or automatic lifecycle authority. See the [desktop contract](apps-delidev-desktop-contract.md#local-startup-conflict-guidance).
 
-Failed-login subscription cleanup uses System capability 41 after main-first reservation the originating change. The [subscription contract](cmds-delidev-subscription-contract.md#failed-subscription-cleanup-reservations) owns durable server batches, original login/credential authority, atomic deletion receipts and restore quarantine. The [Settings contract](apps-delidev-subscription-settings-contract.md#automatic-failed-login-cleanup) owns the one-click action and disposable status presentation. Existing Claude 38 and Grok 39/40 reservations retain ownership; no migration or Rust/native change is added.
+Failed-login subscription cleanup uses System capability 41 after main-first reservation the originating change. The [subscription contract](cmds-delidev-subscription-contract.md#failed-subscription-cleanup-reservations) owns durable server batches, original login/credential authority, atomic deletion receipts and restore quarantine. The [Settings contract](apps-delidev-subscription-settings-contract.md#automatic-failed-login-cleanup) owns the one-click action and disposable status presentation. Existing Claude 38 and the declared-but-unadvertised Grok 39/40 identifiers retain ownership; no migration or Rust/native change is added.
 
 Native execution option selection follows the [catalog contract](cmds-delidev-catalog-contract.md#native-execution-option-selection). Available settings pass unchanged to native execution; unavailable saved values remain explicit, and all four Codex API/subscription permission modes preserve authentication, applied-setting and cleanup/recovery ownership. No protocol or database migration is required.
 
@@ -137,7 +137,7 @@ The standalone [Pull requests sidebar](apps-delidev-desktop-contract.md#standalo
 - [Account lifecycle and AI API Keys presentation](cmds-delidev-accounts-contract.md)
 - [Managed Codex subscriptions and shared account owner/member ownership](cmds-delidev-subscription-contract.md#shared-account-owner-and-execution-members), Worker 67 `SHARED_SUBSCRIPTION_OWNER_V1` and Worker 68 `CLAUDE_DEVICE_OWNED_MEMBERS_V1`
 - [OpenCode Go subscriptions](cmds-delidev-opencode-go-subscription-contract.md)
-- [Grok Build subscriptions (planned)](cmds-delidev-grok-subscription-contract.md)
+- [Grok Build subscriptions (planned; protocol identifiers declared but unadvertised)](cmds-delidev-grok-subscription-contract.md)
 - [API account browser OAuth](cmds-delidev-account-oauth-contract.md)
 - [Provider inspection](cmds-delidev-providers-contract.md)
 - [Provider and model catalog](cmds-delidev-catalog-contract.md)
@@ -304,7 +304,7 @@ Workspace storage exposes original-job snapshot, usage preview, cleanup, inspect
 - [DeliDev signed updates](cmds-delidev-updates-contract.md)
 - [DeliDev SSH Worker setup](cmds-delidev-ssh-setup-contract.md)
 
-AI Subscription browser login and naming compose across Go server ownership, generated Connect capability 30 and trusted native window callbacks. Account identity is independent of Runner Devices; execution/quota still retain their original Worker selection and credential leases. ChatGPT login precedes optional naming. Claude independently selects its owning Runner under capability 38 and then uses login/name steps; Grok remains unsupported. Follow the subscription, desktop and protocol contracts and distinguish fixtures/builds from actual account/packaged-platform acceptance. Shared reservations reached main in the originating change; this optional JSON amendment adds no migration.
+AI Subscription browser login and naming compose across Go server ownership, generated Connect capability 30 and trusted native window callbacks. Account identity is independent of Runner Devices; execution/quota still retain their original Worker selection and credential leases. ChatGPT login precedes optional naming. Claude independently selects its owning Runner under capability 38 and then uses login/name steps; Grok remains unsupported (System 39/40, Worker 21 and progress field 10 are declared in the protos but unadvertised, with no server or Worker behavior). Follow the subscription, desktop and protocol contracts and distinguish fixtures/builds from actual account/packaged-platform acceptance. Shared reservations reached main in the originating change; this optional JSON amendment adds no migration.
 
 Ordered account source routing follows the catalog, desktop, sessions, protocol and
 portable configuration contracts. One Harness retains source-specific models and
@@ -501,3 +501,7 @@ the [harness](cmds-delidev-harness-contract.md#persistent-native-profiles),
 and [sessions](cmds-delidev-sessions-contract.md#native-histories-and-persistent-profiles)
 contracts. Deploy the updated server and Workers; each owner migrates only its
 own state and rejects incompatible local profile versions without rewriting them.
+Native history IDs have one owner per registry. Explicit deletion verifies the
+selected managed profile owner and binds its directory identity, while an
+original Claude logout can finish a registry-only retry after its owned
+directory was removed.

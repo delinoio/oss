@@ -2999,6 +2999,13 @@ verified legacy `runtimes/<id>` directory, which is registered in place: nothing
 is moved, merged or rewritten, and no native database is merged. A directory
 may be registered for one key only.
 
+One history identifier belongs to at most one managed or legacy profile in an
+owner registry. Rebinding it to the same profile is idempotent. A conflicting
+registration or record operation fails before publication and retains both
+profiles and their histories. Registry load rejects cross-profile duplicates as
+`registry_invalid` without rewriting the registry; history lookup and
+history-scoped deletion cannot choose an owner from ambiguous restored state.
+
 ### Deletion ownership
 
 A profile is deleted only by explicit session, account or storage deletion:
@@ -3013,6 +3020,17 @@ several profiles, removals that already completed stay committed but any matchin
 profile that is locked, referenced or unremovable makes the whole deletion return
 an error (`profile_busy`, `referenced` or `delete_blocked`), so no caller proves a
 deletion while a matching profile remains. There is no age-based pruning.
+
+Managed-profile deletion checks the selected entry's owner record, private
+native home and exact directory object before removal. The recursive removal
+stays bound to that verified object. A missing or changed owner, missing native
+home or replacement directory leaves the directory and registry entry in
+recovery-required state. Verified legacy profiles keep their existing explicit
+deletion behavior. If Claude logout already removed its verified legacy auth
+directory but registry publication failed, original cleanup recovery uses its
+retained account, profile and joined-process claim to retire only that exact
+absent registration. It retains the cleanup fence for a referenced, locked,
+reappeared or mismatched profile, or for another registry publication failure.
 
 ### Legacy access-only quota migration
 

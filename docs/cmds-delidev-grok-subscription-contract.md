@@ -2,7 +2,8 @@
 
 ## Scope
 
-This contract owns the planned Grok Build subscription lifecycle in
+This contract owns the planned Grok Build subscription lifecycle (not yet
+implemented or advertised; only the protocol identifiers below are declared) in
 `cmds/delidev-cli`, its Connect interface and the desktop AI Subscription flow.
 The implementation pins Grok Build `1.0.46`. Reservation support is separate
 from implemented support and actual account/platform acceptance.
@@ -21,7 +22,11 @@ private runtime. Separate accounts can run independently.
 
 ## Interfaces and Contracts
 
-Record these the feature allocations in the owning feature PR:
+These allocations are declared in the protos and generated bindings but are
+unadvertised: GetStatus and AttachWorker never list System 39/40 or Worker 21,
+the Worker does not report 21 and the server rejects it as an unknown
+capability, and GetSubscriptionProgress never populates `grok_diagnostic`. The
+owning feature change advertises and activates them:
 
 - System `GROK_SUBSCRIPTION_LOGIN_V1 = 39`.
 - System `GROK_SUBSCRIPTION_EXECUTION_V1 = 40`.
@@ -71,7 +76,7 @@ compaction are excluded.
 
 ### Project requirements
 
-- DeliDev Grok Build subscription support follows `cmds-delidev-grok-subscription-contract.md`. Record System 39/40, Worker 21, progress field 10 and the new Grok diagnostic declarations in the owning feature PR. Reservations grant no login, native execution or migration. Preserve existing capability ownership, server-owned OAuth/protected credentials, original account leases and same-account/Worker history; verify the exact 1.0.46 profile before activation.
+- DeliDev Grok Build subscription support follows `cmds-delidev-grok-subscription-contract.md`. System 39/40, Worker 21, progress field 10 and the Grok diagnostic messages are declared but unadvertised until the owning feature activates them. Declarations grant no login, native execution or migration. Preserve existing capability ownership, server-owned OAuth/protected credentials, original account leases and same-account/Worker history; verify the exact 1.0.46 profile before activation.
 
 ## Storage
 
