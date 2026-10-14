@@ -3,6 +3,7 @@ package server
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
@@ -54,6 +55,16 @@ func TestGrokLogoutAmbiguousClaimCommitStaysClaimedAndFenced(t *testing.T) {
 	_, a := g.record()
 	if grokLogoutRecoveryKind(a) != grokLogoutNone {
 		t.Fatal("a claimed revocation is automatically recoverable")
+	}
+	// The record describes what was stored, not the stale unclaimed failure.
+	finished := ""
+	for _, line := range strings.Split(g.logs.String(), "\n") {
+		if strings.Contains(line, `"msg":"grok_logout_finished"`) {
+			finished = line
+		}
+	}
+	if !strings.Contains(finished, `"state":"recovery`) && !strings.Contains(finished, "RECOVERY") || !strings.Contains(finished, `"claimed":true`) {
+		t.Fatalf("the finish record does not describe the reconciled outcome: %s", finished)
 	}
 	// A new logout cannot overwrite the claim while the fence stands.
 	if _, err := g.client.RequestSubscription(context.Background(), subscriptionRequest(g.service.Identity.Token, &pb.RequestSubscriptionRequest{Mutation: g.mutation(), Action: logoutAction})); err == nil {

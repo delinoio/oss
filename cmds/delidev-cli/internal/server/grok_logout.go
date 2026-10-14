@@ -293,6 +293,10 @@ func (s *Service) settleGrokLogoutWithoutRevocation(ctx context.Context, id doma
 		return err
 	}
 	defer unlock()
+	// settled is the outcome the transaction wrote. It starts as the caller's and is
+	// replaced when the durable claim reconciles a failure into uncertainty, so the
+	// record logged below describes what was stored.
+	settled := outcome
 	_, err = s.Store.Mutate(ctx, o.FinishID, "grok.server.logout-finish", struct {
 		Account, Operation domain.ID
 		State              domain.SubscriptionLoginState
@@ -310,18 +314,18 @@ func (s *Service) settleGrokLogoutWithoutRevocation(ctx context.Context, id doma
 		// whose commit acknowledgement was lost is still a claim, and the token may
 		// be sent by a later logout once the pending operation is cleared. Such a
 		// failure is therefore uncertain, never a plain failed logout.
-		outcome := outcome
-		if st.ServerOperation.GrokRevocation != "" && outcome.state != domain.SubscriptionRecovery {
-			outcome.state, outcome.code, outcome.claimed = domain.SubscriptionRecovery, domain.RecoveryRequired, true
+		settled = outcome
+		if st.ServerOperation.GrokRevocation != "" && settled.state != domain.SubscriptionRecovery {
+			settled.state, settled.code, settled.claimed = domain.SubscriptionRecovery, domain.RecoveryRequired, true
 		}
-		st.ServerOperation.GrokDiagnostic = grokLogoutDiagnostic(o, outcome.state, outcome.code)
-		if outcome.state == domain.SubscriptionRecovery {
+		st.ServerOperation.GrokDiagnostic = grokLogoutDiagnostic(o, settled.state, settled.code)
+		if settled.state == domain.SubscriptionRecovery {
 			st.RecoveryRequired = true
 			a.Health = domain.AccountFailed
 			st.ServerOperation.State = domain.SubscriptionRecovery
 		} else {
 			st.ServerOperation.NativeStarted = false
-			st.ServerOperation.State = outcome.state
+			st.ServerOperation.State = settled.state
 			st.Pending = nil
 		}
 		if _, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
@@ -334,7 +338,7 @@ func (s *Service) settleGrokLogoutWithoutRevocation(ctx context.Context, id doma
 	}
 	delete(s.subscriptionProgress, o.ID)
 	level := slog.LevelWarn
-	s.logGrok(ctx, level, "grok_logout_finished", o, grokStepFinish, "state", outcome.state, "code", outcome.code, "claimed", outcome.claimed)
+	s.logGrok(ctx, level, "grok_logout_finished", o, grokStepFinish, "state", settled.state, "code", settled.code, "claimed", settled.claimed)
 	return nil
 }
 
