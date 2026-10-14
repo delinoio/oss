@@ -76,14 +76,24 @@ func executionConfigurationBytes(tx *store.Tx, agentID domain.ID) int {
 		templates = append(templates, domain.AppliedTemplate{ID: id, Revision: row.Revision, Contents: template.Contents})
 		parts = append(parts, template.Contents)
 	}
-	accounts := agent.Accounts
+	// Any source route can be the selected one at dispatch, and weights from 1 to
+	// 1000 change the encoded width, so compare serialized sizes, not lengths.
+	accounts, largest := agent.Accounts, accountListBytes(agent.Accounts)
 	for _, route := range agent.Routes {
-		if len(route.Accounts) > len(accounts) {
-			accounts = route.Accounts
+		if size := accountListBytes(route.Accounts); size > largest {
+			accounts, largest = route.Accounts, size
 		}
 	}
 	configuration := domain.ExecutionConfiguration{Accounts: accounts, Templates: templates, Instructions: strings.Join(parts, "\n\n"), Options: agent.Options}
 	raw, err := json.Marshal(configuration)
+	if err != nil {
+		return 0
+	}
+	return len(raw)
+}
+
+func accountListBytes(accounts []domain.WeightedAccount) int {
+	raw, err := json.Marshal(accounts)
 	if err != nil {
 		return 0
 	}

@@ -248,3 +248,59 @@ func TestQueueContinuationRechecksInstalledPrompt(t *testing.T) {
 		t.Fatal("oversized queued continuation prompt reached job publication", err)
 	}
 }
+
+func (f *scheduleDispatchFixture) configurationBytes(t *testing.T, accounts []domain.WeightedAccount, routes ...[]domain.WeightedAccount) int {
+	t.Helper()
+	f.mutate(t, func(tx *store.Tx) error {
+		r, err := tx.Get(domain.AgentKind, f.agent)
+		if err != nil {
+			return err
+		}
+		agent, err := store.Decode[domain.Agent](r)
+		if err != nil {
+			return err
+		}
+		agent.Accounts, agent.Routes = accounts, nil
+		for _, route := range routes {
+			agent.Routes = append(agent.Routes, domain.AgentSourceRoute{Accounts: route})
+		}
+		_, err = tx.Put(domain.AgentKind, f.agent, r.Revision, "", "", agent)
+		return err
+	})
+	var size int
+	if err := f.service.Store.Read(f.ctx, func(tx *store.Tx) error {
+		size = executionConfigurationBytes(tx, f.agent)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return size
+}
+
+// Account weights from 1 to 1000 change the encoded width, so an equally long
+// or shorter route can serialize larger than the longest route.
+func TestExecutionConfigurationBytesSelectsLargestSerializedRoute(t *testing.T) {
+	f := newScheduleDispatchFixture(t, domain.ScheduleAllowOverlap, false)
+	build := func(count int, weight uint32) []domain.WeightedAccount {
+		accounts := make([]domain.WeightedAccount, count)
+		for i := range accounts {
+			accounts[i] = domain.WeightedAccount{ID: domain.NewID(), Weight: weight}
+		}
+		return accounts
+	}
+	narrow, wide, longest := build(40, 1), build(40, 1000), build(41, 1)
+	wideAlone := f.configurationBytes(t, nil, wide)
+	if got := f.configurationBytes(t, nil, narrow, wide); got != wideAlone {
+		t.Fatalf("equal-length wide route was ignored: %d != %d", got, wideAlone)
+	}
+	if got := f.configurationBytes(t, nil, wide, narrow); got != wideAlone {
+		t.Fatalf("route order changed the bound: %d != %d", got, wideAlone)
+	}
+	// One more narrow account is longer but serializes smaller than 40 wide ones.
+	if got := f.configurationBytes(t, nil, longest, wide); got != wideAlone {
+		t.Fatalf("longer but narrower route was selected: %d != %d", got, wideAlone)
+	}
+	if got := f.configurationBytes(t, wide, narrow, longest); got != wideAlone {
+		t.Fatalf("legacy accounts were not compared: %d != %d", got, wideAlone)
+	}
+}
