@@ -293,6 +293,7 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
             ),
         ),
         Ok(collection) => {
+            let effective_root = analysis::effective_root(&collection, &selection.project_root);
             log.event(
                 "engine",
                 json!({
@@ -318,7 +319,7 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
             };
             let output = analysis::analyze(&AnalysisInput {
                 run_id: run_id.clone(),
-                project_root: selection.project_root.clone(),
+                project_root: effective_root.clone(),
                 project_name: selection.project_name.clone(),
                 bundler: selection.bundler,
                 collection: &collection,
@@ -339,19 +340,19 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
             );
             let analysis = output.analysis;
             let project_relative = bundle::retained_relative(
-                &selection.project_root,
+                &effective_root,
                 &output.sources,
                 &output.project_relative,
             );
             let existence_relative = bundle::retained_relative(
-                &selection.project_root,
+                &effective_root,
                 &output.sources,
                 &output.existence_relative,
             );
             (
                 ResultBundle {
                     schema_version: SCHEMA_VERSION,
-                    project_root: selection.project_root.to_string_lossy().into_owned(),
+                    project_root: effective_root.to_string_lossy().into_owned(),
                     analysis,
                     sources: output.sources,
                     project_relative,

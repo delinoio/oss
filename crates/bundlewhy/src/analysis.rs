@@ -45,6 +45,23 @@ pub struct AnalysisOutput {
     pub existence_relative: std::collections::BTreeMap<String, String>,
 }
 
+/// Returns the root that owns collected sources and their saved freshness
+/// paths. Adapters resolve their build context before writing a collection;
+/// older collections without a context continue to use the selected root.
+pub fn effective_root(collection: &Collection, selected_root: &Path) -> PathBuf {
+    collection.context.as_deref().map_or_else(
+        || selected_root.to_path_buf(),
+        |context| {
+            let context = PathBuf::from(context);
+            if context.is_absolute() {
+                context
+            } else {
+                selected_root.join(context)
+            }
+        },
+    )
+}
+
 pub fn engine_identity(bundler: BundlerChoice, collection: &Collection) -> EngineIdentity {
     let spec = bundler.spec();
     let support = if collection.bundler_version == spec.version {
@@ -217,10 +234,7 @@ fn coverage(
 
 pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
     let collection = input.collection;
-    let context_dir = collection
-        .context
-        .as_ref()
-        .map_or_else(|| input.project_root.clone(), PathBuf::from);
+    let context_dir = effective_root(collection, &input.project_root);
     let mut problems: Vec<Problem> = Vec::new();
     let mut chunks = Vec::new();
     let mut failed_chunks = 0usize;
@@ -306,7 +320,7 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
     }
     let mut context = Context::new(
         collection,
-        input.project_root.clone(),
+        context_dir.clone(),
         input.project_name.clone(),
         chunks,
         store,
@@ -319,7 +333,7 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
             diagnostic.snippet = None;
         }
     }
-    let root = input.project_root.clone();
+    let root = context_dir.clone();
     let display = |path: &Path| classify(&root, path).display;
     if let Some(on_measuring) = input.on_measuring {
         on_measuring();
@@ -380,7 +394,7 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
         config_file: collection
             .config_file
             .as_deref()
-            .map(|file| classify(&input.project_root, Path::new(file)).display)
+            .map(|file| classify(&context_dir, Path::new(file)).display)
             .unwrap_or_default(),
         status: if partial {
             RunStatus::Partial
@@ -433,6 +447,7 @@ mod tests {
     struct Fixture {
         _dir: tempfile::TempDir,
         project: PathBuf,
+        collection: Collection,
         output: AnalysisOutput,
     }
 
@@ -502,6 +517,7 @@ mod tests {
         Fixture {
             _dir: dir,
             project,
+            collection,
             output,
         }
     }
@@ -705,6 +721,32 @@ mod tests {
                 .filter(|source| source.origin == crate::model::SourceOrigin::Project)
                 .filter(|source| source.id != png.id)
                 .all(|source| fixture.output.project_relative.contains_key(&source.id))
+        );
+    }
+
+    #[test]
+    fn configured_context_root_owns_source_freshness_paths() {
+        let fixture = run_fixture(BundlerChoice::Vite, |_| {});
+        let selected_root = tempfile::tempdir().unwrap();
+        let output = analyze(&AnalysisInput {
+            run_id: "test-run".to_owned(),
+            project_root: selected_root.path().to_path_buf(),
+            project_name: "bundlewhy-fixture-vite-app".to_owned(),
+            bundler: BundlerChoice::Vite,
+            collection: &fixture.collection,
+            build_dir: fixture._dir.path().join("build"),
+            include_sources: true,
+            started_at: String::new(),
+            on_measuring: None,
+            cancelled: None,
+        });
+
+        assert!(!output.project_relative.is_empty());
+        assert!(
+            output
+                .project_relative
+                .values()
+                .all(|path| !Path::new(path).is_absolute())
         );
     }
 
