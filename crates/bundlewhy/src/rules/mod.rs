@@ -253,7 +253,7 @@ impl<'a> Context<'a> {
         let display = self.display_path(path);
         let root = self.project_root.clone();
         let (source_id, snippet) = match self.sources.add_file(&root, path) {
-            Some((id, content)) => {
+            Some((id, Some(content))) => {
                 let (start_line, text) = snippet_lines(&content, line);
                 (
                     id,
@@ -266,6 +266,8 @@ impl<'a> Context<'a> {
                     }),
                 )
             }
+            // A non-text source keeps its identity but has no snippet.
+            Some((id, None)) => (id, None),
             None => (String::new(), None),
         };
         Located {
@@ -332,7 +334,7 @@ impl<'a> Context<'a> {
         let root = self.project_root.clone();
         self.sources
             .add_file(&root, Path::new(path))
-            .map(|(_, content)| content)
+            .and_then(|(_, content)| content)
     }
 }
 
