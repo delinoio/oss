@@ -14,11 +14,11 @@
 //!   `length` (`Function.prototype` methods such as `bind` could construct
 //!   instances);
 //! - it extends nothing or another closed class, implements nothing, has no
-//!   decorators, `declare`, `abstract`, `accessor`, overloads or parameter
-//!   properties, never uses `new.target` or `import.meta`, returns no value
-//!   from its constructor, uses `super` only as `super(…)` in the constructor
-//!   or `super.m(…)` in instance members, and has no static member that uses
-//!   `this` or `super`.
+//!   decorators (on members or parameters), `declare`, `abstract`, `accessor`,
+//!   overloads or parameter properties, never uses `new.target` or
+//!   `import.meta`, returns no value from its constructor, uses `super` only as
+//!   `super(…)` in the constructor or `super.m(…)` in instance members, and has
+//!   no static member that uses `this` or `super`.
 //!
 //! One value stands for the instances of each closed class. `this` in the
 //! instance members of a class holds that value and the values of every
@@ -26,7 +26,8 @@
 //! constructor, `x.m(…)` dispatches on each instance that reaches `x`, and
 //! `C.m(…)` uses the summary of a static method whose every reference is a
 //! direct call with its exact arity. A later prototype member replaces an
-//! earlier one of the same name, and an instance field shadows both.
+//! earlier one of the same name, and an instance field of any class in the
+//! chain shadows both.
 //! Members with computed (well-known symbol) names have no summary, because
 //! protocol code calls them. Methods with rest or nested-pattern
 //! parameters, `arguments`, or async or generator bodies have no summary:
@@ -241,7 +242,18 @@ impl Builder<'_, '_> {
             parent = Some(self.symbol(expression).ok_or("heritage")?);
         }
         for member in node.members().iter() {
-            if !member.decorators().is_empty() {
+            if !member.decorators().is_empty()
+                || (matches!(
+                    member.kind(),
+                    SyntaxKind::Constructor
+                        | SyntaxKind::MethodDeclaration
+                        | SyntaxKind::GetAccessor
+                        | SyntaxKind::SetAccessor
+                ) && member
+                    .parameters()
+                    .iter()
+                    .any(|parameter| !parameter.decorators().is_empty()))
+            {
                 return Err("decorator");
             }
             if has_syntactic_modifier(
@@ -713,7 +725,18 @@ impl Builder<'_, '_> {
     pub(super) fn method_tables(&mut self) {
         for index in 0..self.classes.len() {
             let value = self.classes[index].value;
+            // Every constructor of the chain defines its fields as own
+            // properties, which shadow prototype members of any class.
             let mut seen = HashSet::<&'static str>::new();
+            let mut current = Some(index);
+            while let Some(class) = current {
+                for &(name, member) in &self.classes[class].members {
+                    if member == Member::Field {
+                        seen.insert(name);
+                    }
+                }
+                current = self.classes[class].parent;
+            }
             let mut exposure = Vec::new();
             let mut constructor = None;
             let mut current = Some(index);

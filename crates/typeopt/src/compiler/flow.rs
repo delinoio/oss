@@ -470,6 +470,8 @@ struct Access {
     receiver: CellId,
     key: AccessKey,
     usage: Usage,
+    /// The access is a write target.
+    write: bool,
 }
 
 /// A dispatched call whose arguments escape unless every receiver value is
@@ -1167,6 +1169,7 @@ impl Builder<'_, '_> {
                     receiver,
                     key,
                     usage: Usage::Data,
+                    write: false,
                 });
             }
         }
@@ -1474,6 +1477,7 @@ impl Builder<'_, '_> {
                         receiver,
                         key,
                         usage,
+                        write: assignment_target(node).is_some(),
                     });
                 }
                 self.expr(node);
@@ -1973,6 +1977,8 @@ impl Builder<'_, '_> {
         }
         stamp(&reasons, &mut causes, "store-into-unknown-receiver");
         let mut extras: Vec<Vec<&'static str>> = vec![Vec::new(); objects];
+        // Names that code writes on each instance.
+        let mut written: Vec<HashSet<&'static str>> = vec![HashSet::new(); objects];
         // Literals have exactly their own properties. Instances gain every
         // undeclared name that code reads or writes, except private names
         // (never renamed) and names that `Object.prototype` defines.
@@ -2036,6 +2042,9 @@ impl Builder<'_, '_> {
             for &object in &members {
                 if mixed {
                     reasons[object].get_or_insert(Preservation::Escapes);
+                }
+                if access.write {
+                    written[object].extend(names.iter().copied());
                 }
                 let observable = if self.instance_class[object].is_some() {
                     access.usage == Usage::Other
@@ -2139,6 +2148,33 @@ impl Builder<'_, '_> {
             }
         }
         stamp(&reasons, &mut causes, "annotation");
+        // A name that no instance of a region declares or writes resolves
+        // through the prototype chain, which code may extend
+        // (`Object.prototype.x = …`); reading it keeps the region.
+        let mut known = HashMap::<usize, HashSet<&str>>::new();
+        for object in 0..objects {
+            if self.instance_class[object].is_none() {
+                continue;
+            }
+            let names = known.entry(root(&mut parents, object)).or_default();
+            names.extend(
+                self.objects[object]
+                    .properties
+                    .iter()
+                    .map(|p| p.name.as_str()),
+            );
+            names.extend(written[object].iter().copied());
+        }
+        for object in 0..objects {
+            if extras[object].is_empty() {
+                continue;
+            }
+            let names = &known[&root(&mut parents, object)];
+            if extras[object].iter().any(|name| !names.contains(name)) {
+                reasons[object].get_or_insert(Preservation::SpecialProperty);
+            }
+        }
+        stamp(&reasons, &mut causes, "prototype-read");
         // Region preservation.
         let mut region = vec![None::<Preservation>; total];
         let mut region_cause = vec![""; total];

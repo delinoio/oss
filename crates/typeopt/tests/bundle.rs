@@ -3071,6 +3071,12 @@ fn keeps_behavior_of_class_member_edge_cases() {
         r#"globalThis.ext=o=>o.longProperty;class C{static call(o){return 0}static call=globalThis.ext}console.log(C.call({longProperty:1}));"#,
         // `Function.prototype` methods hand out the constructor.
         r#"class C{constructor(){this.longProperty=1}}const B=C.bind(null);const v=new B;console.log(v.longProperty);"#,
+        // An extracted method returns to callers the analysis does not see.
+        r#"class C{make(){return{longProperty:1}}}const make=new C().make;const result=make();console.log(result.longProperty);"#,
+        // A base class field shadows a subclass method of the same name.
+        r#"globalThis.external=o=>o.longProperty;class Base{action=globalThis.external}class Sub extends Base{action(o){return 0}}console.log(new Sub().action({longProperty:1}));"#,
+        // Code can add names to `Object.prototype`.
+        r#"Object.prototype.longProperty=1;class C{}console.log(new C().longProperty);"#,
     ];
     for code in cases {
         let code = format!("{code}export{{}};");
