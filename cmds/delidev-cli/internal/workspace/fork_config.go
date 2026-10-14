@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -48,27 +49,38 @@ func forkConfigKey(record string) string {
 }
 
 // listForkConfigFile lists one configuration file without following includes.
-func listForkConfigFile(ctx context.Context, git Git, dir, path string) ([]string, error) {
-	out, err := git.run(ctx, dir, "config", "--no-includes", "--file", path, "--list", "-z")
+// The output must fit the aggregate Fork allowance for retained config records.
+func listForkConfigFile(ctx context.Context, git Git, dir, path string, allowance uint64) ([]string, uint64, error) {
+	out, _, err := git.runCommandWithOutputLimit(ctx, dir, int(min(allowance, maxForkBytes)), "config", "--no-includes", "--file", path, "--list", "-z")
 	if err != nil {
-		return nil, err
+		return nil, 0, err
+	}
+	if len(out) > 0 && out[len(out)-1] != 0 {
+		return nil, 0, forkSnapshotChanged()
 	}
 	records := strings.Split(string(out), "\x00")
 	if len(records) > 0 && records[len(records)-1] == "" {
 		records = records[:len(records)-1]
 	}
-	return records, nil
+	return records, uint64(len(out)), nil
 }
 
 // readFrozenForkConfig reads a source config file named by the inventory. The
 // file bytes must match the inventory digest before and after Git parses them, so
 // the parsed list describes exactly the inventoried source content.
-func readFrozenForkConfig(ctx context.Context, git Git, checkout, path string, entry snapshotEntry) (forkConfigLayer, error) {
-	if os.FileMode(entry.Mode)&os.ModeType != 0 || entry.Size > MaxGitOutput {
-		return forkConfigLayer{}, forkUnsupported()
+func readFrozenForkConfig(ctx context.Context, git Git, checkout, path string, entry snapshotEntry, allowance uint64) (forkConfigLayer, uint64, error) {
+	if os.FileMode(entry.Mode)&os.ModeType != 0 {
+		return forkConfigLayer{}, 0, forkUnsupported()
 	}
 	matches := func() (bool, error) {
-		raw, err := os.ReadFile(path)
+		file, err := os.Open(path)
+		if err != nil {
+			return false, err
+		}
+		defer file.Close()
+		// Inventory bounded entry.Size; a changed file cannot force an
+		// unbounded read before the digest comparison reports drift.
+		raw, err := io.ReadAll(io.LimitReader(file, int64(entry.Size)+1))
 		if err != nil {
 			return false, err
 		}
@@ -77,21 +89,21 @@ func readFrozenForkConfig(ctx context.Context, git Git, checkout, path string, e
 	}
 	if ok, err := matches(); err != nil || !ok {
 		if err != nil {
-			return forkConfigLayer{}, err
+			return forkConfigLayer{}, 0, err
 		}
-		return forkConfigLayer{}, forkSnapshotChanged()
+		return forkConfigLayer{}, 0, forkSnapshotChanged()
 	}
-	records, err := listForkConfigFile(ctx, git, checkout, path)
+	records, size, err := listForkConfigFile(ctx, git, checkout, path, allowance)
 	if err != nil {
-		return forkConfigLayer{}, err
+		return forkConfigLayer{}, 0, err
 	}
 	if ok, err := matches(); err != nil || !ok {
 		if err != nil {
-			return forkConfigLayer{}, err
+			return forkConfigLayer{}, 0, err
 		}
-		return forkConfigLayer{}, forkSnapshotChanged()
+		return forkConfigLayer{}, 0, forkSnapshotChanged()
 	}
-	return forkConfigLayer{present: true, records: records}, nil
+	return forkConfigLayer{present: true, records: records}, size, nil
 }
 
 // sourceFile resolves which source file becomes the child's file with this
@@ -113,7 +125,14 @@ func (i forkGitInventory) sourceFile(name string) (string, snapshotEntry, bool) 
 }
 
 // captureConfigProof freezes both retained config layers from the source.
-func (i *forkGitInventory) captureConfigProof(ctx context.Context, git Git, checkout string) error {
+func (i *forkGitInventory) captureConfigProof(ctx context.Context, git Git, checkout string, allowance uint64) error {
+	// Inventory already charged the source config bytes. Replace those charges
+	// with the parsed output bytes so valid large configs are not counted twice.
+	for _, name := range []string{"config", "config.worktree"} {
+		if _, entry, ok := i.sourceFile(name); ok {
+			allowance += entry.Size
+		}
+	}
 	for _, layer := range []struct {
 		name   string
 		target *forkConfigLayer
@@ -122,33 +141,43 @@ func (i *forkGitInventory) captureConfigProof(ctx context.Context, git Git, chec
 		if !ok {
 			continue
 		}
-		frozen, err := readFrozenForkConfig(ctx, git, checkout, path, entry)
+		frozen, size, err := readFrozenForkConfig(ctx, git, checkout, path, entry, allowance)
 		if err != nil {
 			return err
 		}
+		allowance -= size
 		*layer.target = frozen
 	}
 	return nil
 }
 
+func forkConfigOutputAllowance(files snapshotInventory, remaining uint64) uint64 {
+	for _, entry := range files.Entries {
+		if entry.Path == "config" || entry.Path == "config.worktree" {
+			remaining += entry.Size
+		}
+	}
+	return remaining
+}
+
 // readChildForkConfig lists a copied config file; a missing file is an absent layer.
-func readChildForkConfig(ctx context.Context, git Git, target, name string) (forkConfigLayer, error) {
+func readChildForkConfig(ctx context.Context, git Git, target, name string, allowance uint64) (forkConfigLayer, uint64, error) {
 	path := filepath.Join(target, ".git", name)
 	info, err := os.Lstat(path)
 	if os.IsNotExist(err) {
-		return forkConfigLayer{}, nil
+		return forkConfigLayer{}, 0, nil
 	}
 	if err != nil {
-		return forkConfigLayer{}, err
+		return forkConfigLayer{}, 0, err
 	}
-	if !info.Mode().IsRegular() || info.Size() > MaxGitOutput {
-		return forkConfigLayer{}, forkSnapshotChanged()
+	if !info.Mode().IsRegular() {
+		return forkConfigLayer{}, 0, forkSnapshotChanged()
 	}
-	records, err := listForkConfigFile(ctx, git, target, path)
+	records, size, err := listForkConfigFile(ctx, git, target, path, allowance)
 	if err != nil {
-		return forkConfigLayer{}, err
+		return forkConfigLayer{}, 0, err
 	}
-	return forkConfigLayer{present: true, records: records}, nil
+	return forkConfigLayer{present: true, records: records}, size, nil
 }
 
 // forkRemoteURLKey is the canonical Git config key of the selected remote URL.
@@ -203,16 +232,17 @@ func (l forkConfigLayer) matchesNormalized(child forkConfigLayer, normalized map
 // in each retained layer, the selected remote URL in config, and no selected
 // remote URL in config.worktree, which Git reads after config and would
 // otherwise keep the stale source endpoint effective).
-func (i forkGitInventory) verifyChildConfig(ctx context.Context, git Git, target string) error {
+func (i forkGitInventory) verifyChildConfig(ctx context.Context, git Git, target string, allowance uint64) error {
 	proof := i.configProof
 	if !proof.bound {
 		return ResultUncertain()
 	}
 	core := map[string]string{"core.bare": "false", "core.worktree": ".."}
-	config, err := readChildForkConfig(ctx, git, target, "config")
+	config, size, err := readChildForkConfig(ctx, git, target, "config", allowance)
 	if err != nil {
 		return err
 	}
+	allowance -= size
 	// Git recreates a missing source config, so config is always expected.
 	if !config.present || !proof.config.matchesNormalized(config, map[string]string{
 		"core.bare": core["core.bare"], "core.worktree": core["core.worktree"],
@@ -220,7 +250,7 @@ func (i forkGitInventory) verifyChildConfig(ctx context.Context, git Git, target
 	}) {
 		return forkSnapshotChanged()
 	}
-	worktree, err := readChildForkConfig(ctx, git, target, "config.worktree")
+	worktree, _, err := readChildForkConfig(ctx, git, target, "config.worktree", allowance)
 	if err != nil {
 		return err
 	}

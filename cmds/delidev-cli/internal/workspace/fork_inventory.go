@@ -81,7 +81,7 @@ func inspectForkGitInventory(ctx context.Context, git Git, source string, budget
 			return result, err
 		}
 	}
-	if err = result.captureConfigProof(ctx, git, source); err != nil {
+	if err = result.captureConfigProof(ctx, git, source, budget.bytes); err != nil {
 		return result, err
 	}
 	return result, nil
@@ -118,7 +118,8 @@ func (i forkGitInventory) verify(ctx context.Context, git Git, source, target st
 	if !i.sourceMatches(current) {
 		return forkSnapshotChanged()
 	}
-	targetFiles, err := walkSnapshotBudget(ctx, filepath.Join(target, ".git"), "", nil, maxForkEntries, newForkCopyBudget(1))
+	targetBudget := newForkCopyBudget(1)
+	targetFiles, err := walkSnapshotBudget(ctx, filepath.Join(target, ".git"), "", nil, maxForkEntries, targetBudget)
 	if err != nil {
 		return err
 	}
@@ -143,7 +144,7 @@ func (i forkGitInventory) verify(ctx context.Context, git Git, source, target st
 	}
 	// The copied config files were excluded from the inventory comparison above
 	// because normalization rewrites them. Prove them against the frozen source.
-	if err = i.verifyChildConfig(ctx, git, target); err != nil {
+	if err = i.verifyChildConfig(ctx, git, target, forkConfigOutputAllowance(targetFiles, targetBudget.bytes)); err != nil {
 		return err
 	}
 	if _, err = os.Lstat(filepath.Join(expected, "objects", "info", "alternates")); !errors.Is(err, os.ErrNotExist) {

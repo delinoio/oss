@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -31,6 +32,130 @@ func retainedConfigSetup(t *testing.T, source, selected string) {
 	gitTest(t, source, "config", "--local", "extensions.worktreeConfig", "true")
 	gitTest(t, selected, "config", "--worktree", "fixture.scoped", "scoped")
 	gitTest(t, selected, "config", "--worktree", "fixture.other", "other")
+}
+
+func appendLargeForkConfig(t *testing.T, path string) {
+	t.Helper()
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = file.WriteString("[fixture]\n\tlarge = " + strings.Repeat("x", MaxGitOutput) + "\n"); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	if err = file.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestIndependentForkInventoryAdmitsLargeConfigLayers(t *testing.T) {
+	for _, linked := range []bool{false, true} {
+		name := "common config"
+		if linked {
+			name = "linked config.worktree"
+		}
+		t.Run(name, func(t *testing.T) {
+			configName := "config"
+			if linked {
+				configName = "config.worktree"
+			}
+			m, _, child, proof, _ := forkInventoryCopyFixtureWith(t, linked, func(t *testing.T, source, selected string) {
+				retainedConfigSetup(t, source, selected)
+				gitDir := gitTest(t, source, "rev-parse", "--absolute-git-dir")
+				if linked {
+					gitDir = gitTest(t, selected, "rev-parse", "--absolute-git-dir")
+				}
+				appendLargeForkConfig(t, filepath.Join(gitDir, configName))
+			})
+			git := m.Git
+			git.OwnerID = child.SessionID
+			childPath := filepath.Join(child.PrimaryPath, ".git", configName)
+			if info, err := os.Stat(childPath); err != nil || info.Size() <= MaxGitOutput {
+				t.Fatalf("child config did not cross the old limit: %v, %v", info, err)
+			}
+			if err := proof.verify(context.Background(), git); err != nil {
+				t.Fatalf("large config lost its normalized ordered proof: %v", err)
+			}
+			original := readForkFixtureFile(t, childPath)
+			gitTest(t, child.PrimaryPath, "config", "--file", childPath, "fixture.drift", "changed")
+			if err := proof.verify(context.Background(), git); domain.SafeError(err).Code != domain.Conflict {
+				t.Fatalf("large child config drift accepted: %v", err)
+			}
+			if err := os.WriteFile(childPath, original, 0600); err != nil {
+				t.Fatal(err)
+			}
+			sourcePath, _, ok := proof.gitInventory.sourceFile(configName)
+			if !ok {
+				t.Fatal("source config is missing")
+			}
+			file, err := os.OpenFile(sourcePath, os.O_APPEND|os.O_WRONLY, 0600)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = file.WriteString("\n"); err != nil {
+				t.Fatal(err)
+			}
+			if err = file.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if err := proof.verify(context.Background(), git); domain.SafeError(err).Code != domain.Conflict {
+				t.Fatalf("large source config drift accepted: %v", err)
+			}
+			if _, err := git.run(context.Background(), child.PrimaryPath, "config", "--no-includes", "--file", childPath, "--list", "-z"); err == nil {
+				t.Fatal("generic Git command accepted output above 4 MiB")
+			}
+		})
+	}
+}
+
+func TestIndependentForkInventoryRejectsLargeConfigOutsideBudgetOrGrammar(t *testing.T) {
+	for _, mode := range []string{"aggregate overflow", "prohibited key", "invalid config"} {
+		t.Run(mode, func(t *testing.T) {
+			input := forkInventoryFixtureInputWith(t, false, func(t *testing.T, source, selected string) {
+				path := filepath.Join(gitTest(t, source, "rev-parse", "--absolute-git-dir"), "config")
+				appendLargeForkConfig(t, path)
+				if mode == "prohibited key" {
+					file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0600)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if _, err = file.WriteString("[include]\n\tpath = /tmp/forbidden\n"); err != nil {
+						t.Fatal(err)
+					}
+					if err = file.Close(); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if mode == "invalid config" {
+					file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0600)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if _, err = file.WriteString("invalid config line\n"); err != nil {
+						t.Fatal(err)
+					}
+					if err = file.Close(); err != nil {
+						t.Fatal(err)
+					}
+				}
+			})
+			budget := newForkCopyBudget(1)
+			if mode == "aggregate overflow" {
+				budget.bytes = MaxGitOutput
+			}
+			_, err := inspectForkGitInventory(context.Background(), input.git, input.selected, budget)
+			if err == nil {
+				t.Fatal("large config bypassed rejection")
+			}
+			if mode == "aggregate overflow" && domain.SafeError(err).Code != domain.ResourceExhausted {
+				t.Fatalf("aggregate overflow was misclassified: %v", err)
+			}
+			if mode == "prohibited key" && domain.SafeError(err).Code != domain.Unsupported {
+				t.Fatalf("prohibited key was misclassified: %v", err)
+			}
+		})
+	}
 }
 
 func TestIndependentForkInventoryProvesRetainedConfig(t *testing.T) {
@@ -139,7 +264,7 @@ func TestIndependentForkInventoryDropsStaleWorktreeRemoteURL(t *testing.T) {
 			if urls := gitTest(t, child.PrimaryPath, "config", "--get-all", "remote.origin.url"); urls != proof.gitInventory.configProof.remoteURL {
 				t.Fatalf("child exposes remote URLs other than the selected one: %q", urls)
 			}
-			if records, err := listForkConfigFile(context.Background(), git, child.PrimaryPath, worktree); err != nil {
+			if records, _, err := listForkConfigFile(context.Background(), git, child.PrimaryPath, worktree, maxForkBytes); err != nil {
 				t.Fatal(err)
 			} else if (forkConfigLayer{present: true, records: records}).hasKey("remote.origin.url") {
 				t.Fatal("child config.worktree retained the selected remote URL")
