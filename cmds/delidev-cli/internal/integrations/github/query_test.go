@@ -207,3 +207,32 @@ func TestRepositoryQueryAcceptsOnlyItsObservedRepositoryIDPagination(t *testing.
 		}
 	}
 }
+
+func TestRepositoryQueryPullRequestPageSizeFiftyRequestsFiftyAndRejectsOversizedPage(t *testing.T) {
+	q := listQuery(domain.RepositoryPullRequest)
+	q.PageSize = 50
+	path, _ := queryPath(domain.RemoteRepository{Owner: "fixture-owner", Name: "repo"}, q)
+	if !strings.Contains(path, "per_page=50") {
+		t.Fatal("page size 50 was not requested", path)
+	}
+	rows := []any{}
+	distinct := func(n int) map[string]any {
+		row := queryFixtureItem(q.Kind, n, false, false)
+		row["id"], row["node_id"] = n+5000, "ITEM_"+strconv.Itoa(n)
+		return row
+	}
+	for n := 1; n <= 50; n++ {
+		rows = append(rows, distinct(n))
+	}
+	client, _ := queryFixture(t, q, rows, "")
+	result, err := client.QueryRepository(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", q)
+	if err != nil || len(result.Items) != 50 {
+		t.Fatal("fifty-row page rejected", len(result.Items), err)
+	}
+	// A provider page larger than the requested size never becomes evidence.
+	rows = append(rows, distinct(51))
+	client, _ = queryFixture(t, q, rows, "")
+	if _, err := client.QueryRepository(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", q); err == nil {
+		t.Fatal("fifty-one rows accepted for page size 50")
+	}
+}

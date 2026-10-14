@@ -611,6 +611,10 @@ func (s *Service) runManagedClaudeLogin(ctx context.Context, id domain.ID, origi
 	}
 	started, version, phase = true, claude.SupportedVersion, domain.NativeSubscriptionLogin
 	published := false
+	// delivered records that the one approval code reached the original child.
+	// The durable consumption mark is single-use, so the loop must never ask for
+	// the code again while that child is still working on it.
+	delivered := false
 	var runErr error
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
@@ -627,7 +631,7 @@ loop:
 			}
 			published = true
 		}
-		if published {
+		if published && !delivered {
 			code, claimed, cerr := s.takeManagedClaudeCode(ctx, id, original)
 			if cerr != nil {
 				runErr = cerr
@@ -637,6 +641,8 @@ loop:
 				if runErr = login.Submit(code); runErr != nil {
 					break
 				}
+				delivered = true
+				s.logger.InfoContext(ctx, "claude_managed_code_delivered", "operation_id", original.ID)
 			}
 		}
 		select {

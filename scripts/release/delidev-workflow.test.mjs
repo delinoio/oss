@@ -18,10 +18,10 @@ test("release starts independently from an immutable tag push", () => {
     "registry",
     "tag",
   ]);
-  assert.deepEqual(workflow.on, { push: { tags: ["delidev-v*"] } });
+  assert.deepEqual(workflow.on, { push: { tags: ["delidev@v*"] } });
   assert.equal(
     workflow.jobs.inspect.if,
-    "github.repository == 'delinoio/oss' && startsWith(github.ref, 'refs/tags/delidev-v') && github.event_name == 'push'",
+    "github.repository == 'delinoio/oss' && startsWith(github.ref, 'refs/tags/delidev@v') && github.event_name == 'push'",
   );
   const inspect = workflow.jobs.inspect;
   assert.equal(inspect.steps[0].with.ref, "${{ github.sha }}");

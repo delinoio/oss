@@ -108,6 +108,7 @@ const (
 	RemoteWorkspaceCloneV1        WorkerCapability = "remote-workspace-clone-v1"
 	BranchPrefixInstructionsV1    WorkerCapability = "branch-prefix-instructions-v1"
 	BranchPrefixExactQuoteV1      WorkerCapability = "branch-prefix-exact-quote-v1"
+	ParallelSessionsV1            WorkerCapability = "parallel-sessions-v1"
 
 	OpenCodeGoSubscriptionsV1      WorkerCapability = "opencode-go-subscriptions-v1"
 	SidechatQuestionRetryV1        WorkerCapability = "sidechat-question-retry-v1"

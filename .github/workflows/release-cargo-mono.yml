@@ -126,15 +126,19 @@ jobs:
 
           mkdir -p dist
           artifact_name="cargo-mono-${{ matrix.asset_os }}-${{ matrix.asset_arch }}.${{ matrix.archive_ext }}"
+          cp "LICENSE" "NOTICE" "dist/"
+          cmp -s "LICENSE" "dist/LICENSE"
+          cmp -s "NOTICE" "dist/NOTICE"
 
           if [ "${{ matrix.asset_os }}" = "windows" ]; then
             cp "target/${{ matrix.target }}/release/cargo-mono.exe" dist/cargo-mono.exe
-            pwsh -NoLogo -NoProfile -Command "Compress-Archive -Path dist/cargo-mono.exe -DestinationPath dist/${artifact_name}"
+            pwsh -NoLogo -NoProfile -Command "Compress-Archive -Path dist/cargo-mono.exe,dist/LICENSE,dist/NOTICE -DestinationPath dist/${artifact_name}"
             rm -f dist/cargo-mono.exe
           else
             cp "target/${{ matrix.target }}/release/cargo-mono" dist/cargo-mono
-            tar -C dist -czf "dist/${artifact_name}" cargo-mono
+            tar -C dist -czf "dist/${artifact_name}" cargo-mono LICENSE NOTICE
           fi
+          rm -f "dist/LICENSE" "dist/NOTICE"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
