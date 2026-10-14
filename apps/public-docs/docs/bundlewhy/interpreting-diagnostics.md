@@ -45,11 +45,13 @@ Each optimization category has a coverage state for the run.
 | `rspack/concatenation-disabled`        | Rspack | Module concatenation  | Confirmed                                                                                    | Configuration sets `optimization.concatenateModules: false`; concatenation coverage is then not applicable |
 | `vite/ineffective-dynamic-import`      | Vite   | Chunk splitting       | Confirmed                                                                                    | Rolldown `INEFFECTIVE_DYNAMIC_IMPORT` log, or static and dynamic importers                                 |
 | `bundle/duplicate-package`             | Both   | Duplicate modules     | Confirmed                                                                                    | Same package name included from two or more package directories                                            |
-| `minifier/unresolved-env-condition`    | Both   | Dead-code elimination | Inferred                                                                                     | Generated code still reads `process.env.<NAME>` (Rspack) or Vite's `({}).<NAME>` replacement               |
+| `minifier/unresolved-env-condition`    | Both   | Dead-code elimination | Inferred                                                                                     | Generated code retains an environment read that guards a branch                                            |
 | `minifier/minification-disabled`       | Both   | Dead-code elimination | Confirmed                                                                                    | Configuration disables minification                                                                        |
 | `minifier/direct-eval-blocks-mangling` | Both   | Name mangling         | Confirmed with an engine-reported `EVAL` log or eval bailout, Inferred from source otherwise | Direct `eval` in a module whose long local names survive in the generated chunk                            |
 
 Inlining and constant folding currently have no coverage for either engine. Neither engine exposes those decisions, and bundlewhy has no verified detector for them, so those categories are always shown as unavailable.
+
+The unresolved environment condition rule requires a retained read to guard a branch in the generated code. A read used only as a value, such as `console.log(process.env.VERSION)`, does not produce this finding. The finding remains inferred because the engine does not report why it kept the branch.
 
 ## Conditions
 

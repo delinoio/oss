@@ -259,6 +259,149 @@ fn in_ranges(ranges: &[(usize, usize)], offset: usize) -> bool {
     index > 0 && offset < ranges[index - 1].1
 }
 
+#[derive(Clone, Copy)]
+enum EnvGuard {
+    ShortCircuitAnd,
+    ShortCircuitOr,
+    NullishCoalescing,
+    Conditional,
+    If,
+    While,
+    Switch,
+}
+
+impl EnvGuard {
+    fn evidence(self) -> &'static str {
+        match self {
+            Self::ShortCircuitAnd => "the retained read controls a && short-circuit branch",
+            Self::ShortCircuitOr => "the retained read controls a || short-circuit branch",
+            Self::NullishCoalescing => "the retained read controls a ?? fallback branch",
+            Self::Conditional => "the retained read controls a conditional (?:) branch",
+            Self::If => "the retained read is in an if condition",
+            Self::While => "the retained read is in a while condition",
+            Self::Switch => "the retained read is in a switch condition",
+        }
+    }
+}
+
+/// Recognize only a generated branch whose test contains this read. A plain
+/// value read in a call, assignment or another data expression is not a DCE
+/// blocker.
+fn env_guard(code: &str, start: usize, end: usize, ignored: &[(usize, usize)]) -> Option<EnvGuard> {
+    let bytes = code.as_bytes();
+    let mut nesting = Vec::new();
+    let mut index = end;
+    while index < bytes.len() {
+        if in_ranges(ignored, index) {
+            index += 1;
+            continue;
+        }
+        match bytes[index] {
+            b'(' | b'[' | b'{' => nesting.push(bytes[index]),
+            b')' | b']' | b'}' => {
+                if nesting.pop().is_none() {
+                    break;
+                }
+            }
+            b';' | b',' | b':' if nesting.is_empty() => break,
+            b'=' if nesting.is_empty()
+                && bytes.get(index + 1) != Some(&b'=')
+                && bytes.get(index.wrapping_sub(1)) != Some(&b'=')
+                && bytes.get(index.wrapping_sub(1)) != Some(&b'!')
+                && bytes.get(index.wrapping_sub(1)) != Some(&b'<')
+                && bytes.get(index.wrapping_sub(1)) != Some(&b'>') =>
+            {
+                break;
+            }
+            b'&' if nesting.is_empty() && bytes.get(index + 1) == Some(&b'&') => {
+                return Some(EnvGuard::ShortCircuitAnd);
+            }
+            b'|' if nesting.is_empty() && bytes.get(index + 1) == Some(&b'|') => {
+                return Some(EnvGuard::ShortCircuitOr);
+            }
+            b'?' if nesting.is_empty() && bytes.get(index + 1) == Some(&b'?') => {
+                return Some(EnvGuard::NullishCoalescing);
+            }
+            b'?' if nesting.is_empty() && bytes.get(index + 1) != Some(&b'.') => {
+                return Some(EnvGuard::Conditional);
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+
+    // An if/while/switch test can remain in generated code without being
+    // lowered to a short-circuit operator. Reject nested calls and comma
+    // expressions whose later operand, rather than the env read, is the test.
+    let mut nested_closes = 0usize;
+    for index in (0..start).rev() {
+        if in_ranges(ignored, index) {
+            continue;
+        }
+        match bytes[index] {
+            b')' => {
+                nested_closes += 1;
+                continue;
+            }
+            b'(' if nested_closes > 0 => {
+                nested_closes -= 1;
+                continue;
+            }
+            b'(' => {}
+            b';' | b'{' | b'}' if nested_closes == 0 => break,
+            _ => continue,
+        }
+        if comma_after_read_before_closing_paren(bytes, index, end, ignored) {
+            return None;
+        }
+        let prefix = code[..index].trim_end();
+        for (keyword, guard) in [
+            ("if", EnvGuard::If),
+            ("while", EnvGuard::While),
+            ("switch", EnvGuard::Switch),
+        ] {
+            if prefix.ends_with(keyword)
+                && prefix[..prefix.len() - keyword.len()]
+                    .as_bytes()
+                    .last()
+                    .is_none_or(|byte| {
+                        !byte.is_ascii_alphanumeric() && *byte != b'_' && *byte != b'$'
+                    })
+            {
+                return Some(guard);
+            }
+        }
+        if prefix.as_bytes().last().is_some_and(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(*byte, b'_' | b'$' | b']' | b')' | b'.')
+        }) {
+            return None;
+        }
+    }
+    None
+}
+
+fn comma_after_read_before_closing_paren(
+    bytes: &[u8],
+    open: usize,
+    end: usize,
+    ignored: &[(usize, usize)],
+) -> bool {
+    let mut depth = 0usize;
+    for (index, byte) in bytes.iter().copied().enumerate().skip(open + 1) {
+        if in_ranges(ignored, index) {
+            continue;
+        }
+        match byte {
+            b'(' | b'[' | b'{' => depth += 1,
+            b')' | b']' | b'}' if depth > 0 => depth -= 1,
+            b')' => return false,
+            b',' if index >= end && depth == 0 => return true,
+            _ => {}
+        }
+    }
+    false
+}
+
 fn unresolved_env_conditions(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
     let vite = context.collection.bundler == "vite";
     // Vite replaces `process.env` with `{}` in client builds; Rspack leaves
@@ -278,7 +421,7 @@ fn unresolved_env_conditions(context: &mut Context<'_>, drafts: &mut Vec<Diagnos
             return;
         }
         let ignored = non_code_ranges(&context.chunks[index].code);
-        let matches: Vec<(usize, String)> = pattern
+        let matches: Vec<(usize, usize, usize, String)> = pattern
             .captures_iter(&context.chunks[index].code)
             .filter_map(|captures| {
                 let whole = captures.get(0)?;
@@ -298,10 +441,13 @@ fn unresolved_env_conditions(context: &mut Context<'_>, drafts: &mut Vec<Diagnos
                     .get(1)
                     .or_else(|| captures.get(2))
                     .or_else(|| captures.get(3))?;
-                Some((offset, name.as_str().to_owned()))
+                Some((whole.start(), whole.end(), offset, name.as_str().to_owned()))
             })
             .collect();
-        for (offset, name) in matches {
+        for (start, end, offset, name) in matches {
+            let Some(guard) = env_guard(&context.chunks[index].code, start, end, &ignored) else {
+                continue;
+            };
             let located = context.chunk_location(index, offset);
             let mapped = located.generated.is_some();
             tracing::debug!(
@@ -342,9 +488,9 @@ fn unresolved_env_conditions(context: &mut Context<'_>, drafts: &mut Vec<Diagnos
                 status: EvidenceStatus::Inferred,
                 title: format!("process.env.{name} is not a compile-time constant"),
                 summary: format!(
-                    "The generated code still reads {generated_text} at runtime, so the minifier \
-                     cannot evaluate conditions that depend on it and cannot remove the branches \
-                     they guard."
+                    "The generated code retains a branch guarded by {generated_text}. Because \
+                     this value is read at runtime, bundlewhy infers that the minifier could not \
+                     resolve the branch at build time."
                 ),
                 conditions: vec![
                     Condition::new(
@@ -353,9 +499,9 @@ fn unresolved_env_conditions(context: &mut Context<'_>, drafts: &mut Vec<Diagnos
                         format!("{generated_text} remains in {chunk_file}"),
                     ),
                     Condition::new(
-                        "The guarded branch can be evaluated and removed",
-                        ConditionOutcome::Unknown,
-                        "Depends on whether the value is constant for the deployed build",
+                        "The retained environment read guards a branch",
+                        ConditionOutcome::Met,
+                        guard.evidence(),
                     ),
                 ],
                 located,
@@ -371,13 +517,17 @@ fn unresolved_env_conditions(context: &mut Context<'_>, drafts: &mut Vec<Diagnos
                         "bundlewhy analysis",
                         EvidenceStatus::Inferred,
                         if mapped {
-                            "Mapped to the original source through the chunk source map. The \
-                             engine does not report why the condition was kept; bundlewhy infers \
-                             that the unresolved read blocks dead-code elimination."
+                            format!(
+                                "{}; mapped to the original source through the chunk source map. \
+                                 The engine does not report why the branch was kept.",
+                                guard.evidence()
+                            )
                         } else {
-                            "No source mapping is available for this position. The engine does not \
-                             report why the condition was kept; bundlewhy infers that the \
-                             unresolved read blocks dead-code elimination."
+                            format!(
+                                "{}; no source mapping is available for this position. The engine \
+                                 does not report why the branch was kept.",
+                                guard.evidence()
+                            )
                         },
                     ),
                 ],
@@ -1214,6 +1364,43 @@ y=/process.env.F/.test(z),process.env.G"#;
             "if (process.env.FEATURE_FLAGS) {}",
             "FEATURE_FLAG"
         ));
+    }
+
+    #[test]
+    fn env_reads_require_a_generated_branch() {
+        let guard = |code: &str, read: &str| {
+            let start = code.find(read).unwrap();
+            env_guard(code, start, start + read.len(), &non_code_ranges(code))
+                .map(EnvGuard::evidence)
+        };
+        for code in [
+            "console.log(process.env.VERSION);",
+            "const version=process.env.VERSION;ready&&run()",
+            "console.log(process.env.VERSION),ready&&run()",
+            "if(console.log(process.env.VERSION))run()",
+            "if(process.env.VERSION,ready)run()",
+            "if((process.env.VERSION),ready)run()",
+            "console.log(process.env.VERSION, '&&')",
+        ] {
+            assert_eq!(guard(code, "process.env.VERSION"), None, "{code}");
+        }
+        assert_eq!(guard("console.log(({}).VERSION)", "({}).VERSION"), None);
+        assert_eq!(
+            guard("'on'===process.env.VERSION&&run()", "process.env.VERSION"),
+            Some("the retained read controls a && short-circuit branch")
+        );
+        assert_eq!(
+            guard("({}).VERSION==='on'&&run()", "({}).VERSION"),
+            Some("the retained read controls a && short-circuit branch")
+        );
+        assert_eq!(
+            guard("if((process.env.VERSION))run()", "process.env.VERSION"),
+            Some("the retained read is in an if condition")
+        );
+        assert_eq!(
+            guard("process.env.VERSION?on():off()", "process.env.VERSION"),
+            Some("the retained read controls a conditional (?:) branch")
+        );
     }
 
     #[test]

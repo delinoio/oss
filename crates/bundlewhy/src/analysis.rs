@@ -785,6 +785,11 @@ mod tests {
         assert!(env.title.contains("BUNDLEWHY_FIXTURE_FLAG"));
         assert_eq!(env.location.as_ref().unwrap().path, "src/main.js");
         assert!(env.generated_location.is_some());
+        assert!(env.summary.contains("retains a branch guarded by"));
+        assert!(env.conditions.iter().any(|condition| {
+            condition.outcome == ConditionOutcome::Met
+                && condition.detail.contains("&& short-circuit branch")
+        }));
         assert!(
             !diagnostics
                 .iter()
@@ -1162,6 +1167,81 @@ mod tests {
                         && diagnostic.title.contains("BUNDLEWHY_FIXTURE_FLAG")
                 )
         );
+    }
+
+    #[test]
+    fn data_only_env_reads_do_not_produce_a_branch_diagnostic() {
+        for bundler in [BundlerChoice::Vite, BundlerChoice::Rspack] {
+            let fixture = run_fixture_patched(
+                bundler,
+                true,
+                |_| {},
+                |build, _| {
+                    let (file, guard, read) = match bundler {
+                        BundlerChoice::Vite => (
+                            "assets/index-BHjrzQLH.js",
+                            "({}).BUNDLEWHY_FIXTURE_FLAG===`on`&&console.log(`flag branch`)",
+                            "({}).BUNDLEWHY_FIXTURE_FLAG",
+                        ),
+                        BundlerChoice::Rspack => (
+                            "main.js",
+                            "\"on\"===process.env.BUNDLEWHY_FIXTURE_FLAG&&console.log(\"flag \
+                             branch\")",
+                            "process.env.BUNDLEWHY_FIXTURE_FLAG",
+                        ),
+                    };
+                    let path = build.join(file);
+                    let code = std::fs::read_to_string(&path).unwrap();
+                    assert!(code.contains(guard));
+                    let replacement = match bundler {
+                        // Keep the Vite read at the same generated offset so
+                        // its source mapping still points at the edited read.
+                        BundlerChoice::Vite => format!("{read};console.log(`flag branch`)"),
+                        BundlerChoice::Rspack => format!("console.log({read})"),
+                    };
+                    std::fs::write(&path, code.replace(guard, &replacement)).unwrap();
+                    if bundler == BundlerChoice::Vite {
+                        let map_path = build.join(format!("{file}.map"));
+                        let mut map: serde_json::Value =
+                            serde_json::from_str(&std::fs::read_to_string(&map_path).unwrap())
+                                .unwrap();
+                        let source_index = map["sources"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .position(|source| source.as_str().unwrap().ends_with("/src/main.js"))
+                            .unwrap();
+                        let source = map["sourcesContent"][source_index].as_str().unwrap();
+                        let branch = "if (process.env.BUNDLEWHY_FIXTURE_FLAG === \"on\") {\n  \
+                                      console.log(\"flag branch\");\n}";
+                        assert!(source.contains(branch));
+                        map["sourcesContent"][source_index] = serde_json::json!(source.replace(
+                            branch,
+                            "console.log(process.env.BUNDLEWHY_FIXTURE_FLAG);\nconsole.log(\"flag \
+                             branch\");\n// data-only read",
+                        ));
+                        std::fs::write(map_path, serde_json::to_vec(&map).unwrap()).unwrap();
+                    }
+                },
+            );
+            if bundler == BundlerChoice::Vite {
+                assert!(fixture.output.sources.iter().any(|source| {
+                    source.path == "src/main.js"
+                        && source
+                            .content
+                            .contains("console.log(process.env.BUNDLEWHY_FIXTURE_FLAG);")
+                }));
+            }
+            assert!(
+                !fixture
+                    .output
+                    .analysis
+                    .diagnostics
+                    .iter()
+                    .any(|diagnostic| { diagnostic.rule == "minifier/unresolved-env-condition" }),
+                "{bundler:?} reported a branch for a data-only read"
+            );
+        }
     }
 
     #[test]
