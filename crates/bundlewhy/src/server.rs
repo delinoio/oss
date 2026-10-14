@@ -236,10 +236,16 @@ fn progress_snapshot(served: &Served) -> RunProgress {
 }
 
 /// Creates a new report file without following or replacing existing entries.
-/// A saved run directory is untrusted and may contain symlinks with predictable
-/// report names; exclusive creation refuses them and a unique suffix is tried.
-fn write_new_report(run_dir: &Path, file_name: &str, bytes: &[u8]) -> std::io::Result<String> {
-    use std::io::Write;
+/// A saved run directory may contain symlinks with predictable report names;
+/// exclusive creation refuses them and a unique suffix is tried. Only a file
+/// created by this call is removed after a failed write.
+fn write_new_report_with(
+    run_dir: &Path,
+    file_name: &str,
+    bytes: &[u8],
+    mut write: impl FnMut(&mut std::fs::File, &[u8]) -> std::io::Result<()>,
+    mut cleanup: impl FnMut(&Path) -> std::io::Result<()>,
+) -> std::io::Result<String> {
     let stem = file_name.trim_end_matches(".html");
     for attempt in 0..100u32 {
         let candidate = if attempt == 0 {
@@ -247,13 +253,27 @@ fn write_new_report(run_dir: &Path, file_name: &str, bytes: &[u8]) -> std::io::R
         } else {
             format!("{stem}-{attempt}.html")
         };
+        let path = run_dir.join(&candidate);
         match std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
-            .open(run_dir.join(&candidate))
+            .open(&path)
         {
             Ok(mut file) => {
-                file.write_all(bytes)?;
+                if let Err(write_error) = write(&mut file, bytes) {
+                    drop(file);
+                    if let Err(cleanup_error) = cleanup(&path) {
+                        return Err(std::io::Error::new(
+                            write_error.kind(),
+                            format!(
+                                "{write_error}; could not remove incomplete report {}: \
+                                 {cleanup_error}",
+                                path.display()
+                            ),
+                        ));
+                    }
+                    return Err(write_error);
+                }
                 return Ok(candidate);
             }
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
@@ -264,6 +284,17 @@ fn write_new_report(run_dir: &Path, file_name: &str, bytes: &[u8]) -> std::io::R
         std::io::ErrorKind::AlreadyExists,
         "no unused report file name",
     ))
+}
+
+fn write_new_report(run_dir: &Path, file_name: &str, bytes: &[u8]) -> std::io::Result<String> {
+    use std::io::Write;
+    write_new_report_with(
+        run_dir,
+        file_name,
+        bytes,
+        |file, bytes| file.write_all(bytes).and_then(|()| file.sync_all()),
+        |path| std::fs::remove_file(path),
+    )
 }
 
 fn list_runs(out_dir: &Path, active: &str) -> Vec<RunSummary> {
@@ -513,6 +544,7 @@ async fn handle_rpc(
             );
             let file_name =
                 write_new_report(&run_dir, &file_name, html.as_bytes()).map_err(|error| {
+                    tracing::warn!(%error, "report export failed");
                     RpcError::new(
                         ConnectCode::Internal,
                         ErrorCode::ExportFailed,
@@ -778,7 +810,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn report_export_never_follows_existing_symlinks() {
+    fn server_report_export_never_follows_existing_symlinks() {
         let dir = tempfile::tempdir().unwrap();
         let outside = dir.path().join("outside.txt");
         std::fs::write(&outside, "keep").unwrap();
@@ -789,6 +821,97 @@ mod tests {
         assert_eq!(name, "report-x-1.html");
         assert_eq!(std::fs::read_to_string(&outside).unwrap(), "keep");
         assert_eq!(std::fs::read(run.join(&name)).unwrap(), b"<html>");
+    }
+
+    #[test]
+    fn server_report_export_preserves_existing_regular_file() {
+        let run = tempfile::tempdir().unwrap();
+        let original = run.path().join("report-x.html");
+        std::fs::write(&original, b"original").unwrap();
+
+        let name = write_new_report(run.path(), "report-x.html", b"<html>").unwrap();
+        assert_eq!(name, "report-x-1.html");
+        assert_eq!(std::fs::read(original).unwrap(), b"original");
+        assert_eq!(std::fs::read(run.path().join(name)).unwrap(), b"<html>");
+    }
+
+    #[test]
+    fn server_report_export_removes_partial_write_and_reuses_name() {
+        use std::io::{Error, ErrorKind, Write};
+
+        let run = tempfile::tempdir().unwrap();
+        let report = run.path().join("report-x.html");
+        let error = write_new_report_with(
+            run.path(),
+            "report-x.html",
+            b"<html>complete</html>",
+            |file, _| {
+                file.write_all(b"<html>")?;
+                Err(Error::new(ErrorKind::WriteZero, "injected write failure"))
+            },
+            |path| std::fs::remove_file(path),
+        )
+        .unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::WriteZero);
+        assert!(error.to_string().contains("injected write failure"));
+        assert!(!report.exists());
+
+        let name = write_new_report(run.path(), "report-x.html", b"<html>complete</html>").unwrap();
+        assert_eq!(name, "report-x.html");
+        assert_eq!(std::fs::read(report).unwrap(), b"<html>complete</html>");
+    }
+
+    #[test]
+    fn server_report_export_removes_file_after_finalization_failure() {
+        use std::io::{Error, ErrorKind, Write};
+
+        let run = tempfile::tempdir().unwrap();
+        let report = run.path().join("report-x.html");
+        let error = write_new_report_with(
+            run.path(),
+            "report-x.html",
+            b"<html>",
+            |file, bytes| {
+                file.write_all(bytes)?;
+                Err(Error::new(
+                    ErrorKind::Other,
+                    "injected finalization failure",
+                ))
+            },
+            |path| std::fs::remove_file(path),
+        )
+        .unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::Other);
+        assert!(!report.exists());
+    }
+
+    #[test]
+    fn server_report_export_keeps_write_error_when_cleanup_fails() {
+        use std::io::{Error, ErrorKind, Write};
+
+        let run = tempfile::tempdir().unwrap();
+        let report = run.path().join("report-x.html");
+        let error = write_new_report_with(
+            run.path(),
+            "report-x.html",
+            b"<html>complete</html>",
+            |file, _| {
+                file.write_all(b"<html>")?;
+                Err(Error::new(ErrorKind::WriteZero, "injected write failure"))
+            },
+            |_| {
+                Err(Error::new(
+                    ErrorKind::PermissionDenied,
+                    "injected cleanup failure",
+                ))
+            },
+        )
+        .unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::WriteZero);
+        assert!(error.to_string().contains("injected write failure"));
+        assert!(error.to_string().contains("injected cleanup failure"));
+        assert!(error.to_string().contains(&report.display().to_string()));
+        assert_eq!(std::fs::read(report).unwrap(), b"<html>");
     }
 
     #[test]
