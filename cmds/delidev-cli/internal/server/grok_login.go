@@ -487,6 +487,12 @@ func (s *Service) grokLoginSteps(ctx, parent context.Context, id domain.ID, orig
 // The browser nonce is compared with the ID token's; the device grant has none.
 func (s *Service) grokBundleOutcome(ctx context.Context, client subscription.GrokOAuthClient, endpoints subscription.GrokEndpoints, tokens subscription.GrokTokens, nonce string, device bool, original domain.ServerSubscriptionOperation) grokOutcome {
 	fail := func(code domain.Code, step grokLoginStep) grokOutcome {
+		if ctx.Err() != nil {
+			// The tokens were already issued, so a cancellation, shutdown or expiry
+			// that interrupts their verification is not a plain failure: it must not
+			// become a canceled login that clears the claim and permits another login.
+			return grokOutcome{state: domain.SubscriptionRecovery, code: domain.RecoveryRequired, step: step, claimed: true}
+		}
 		return grokOutcome{state: domain.SubscriptionFailed, code: code, step: step, claimed: true}
 	}
 	var claims subscription.GrokClaims
