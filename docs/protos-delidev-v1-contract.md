@@ -1,5 +1,14 @@
 # DeliDev v1 Connect contract
 
+## Parallel session dispatch reservation
+
+Worker `PARALLEL_SESSIONS_V1 = 66` is reserved by issue 3465 as the first change
+of its pull request, before any behavior uses it. The reservation grants no
+dispatch authority: no server echoes it and no Worker advertises it until the
+parallel session dispatch change in the same pull request activates it. Existing
+numeric assignments are unchanged. Go and TypeScript Worker descriptors expose
+the new enum. No public RPC, System capability or SQLite migration is added.
+
 ## Branch prefix exact-quote negotiation
 
 Worker `BRANCH_PREFIX_EXACT_QUOTE_V1 = 65` is allocated and activated with
