@@ -372,6 +372,24 @@ describe("source viewer", () => {
     ).toBeTruthy();
     expect(within(dialog).queryByText("// header")).toBeNull();
   });
+
+  it("does not render content marked unavailable as analyzed source", async () => {
+    const source = create(SourceFileSchema, {
+      ...fixtureSource(),
+      contentIncluded: true,
+      revisionEvidence: SourceRevisionEvidence.UNAVAILABLE,
+    });
+    await renderAnalysis(fixtureAnalysis(), {
+      getSourceFile: () => ({ source }),
+    });
+    fireEvent.click(screen.getByRole("button", { name: "View full source" }));
+    const dialog = await screen.findByRole("dialog", { name: "src/main.ts" });
+    expect(
+      within(dialog).getByText("Verified build source content is unavailable."),
+    ).toBeTruthy();
+    expect(within(dialog).queryByText("// header")).toBeNull();
+  });
+
 });
 
 describe("notices and banners", () => {

@@ -1249,7 +1249,8 @@ function SourceDialog({
               </p>
             </div>
           ) : null}
-          {file.contentIncluded ? (
+          {file.contentIncluded &&
+          file.revisionEvidence === SourceRevisionEvidence.BUILD_SNAPSHOT ? (
             <pre className="code source-view">
               <code>
                 {file.content.split("\n").map((line, index) => (
@@ -1263,7 +1264,8 @@ function SourceDialog({
             </pre>
           ) : (
             <p className="empty">
-              {file.revisionEvidence === SourceRevisionEvidence.UNAVAILABLE
+              {file.revisionEvidence === SourceRevisionEvidence.UNAVAILABLE ||
+              file.contentIncluded
                 ? "Verified build source content is unavailable."
                 : "Source content was not included in this report."}
             </p>
