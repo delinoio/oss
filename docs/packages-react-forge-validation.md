@@ -696,3 +696,14 @@ normalizes it to bytes.
 Timings and RSS reflect the host and OS cache state. They are not GPU, frame-rate,
 draw-call or numeric performance guarantees. Neither Blender nor a network
 service is required for this local harness.
+
+Local macOS arm64 execution at source revision `8243a5958f10039790bf54b168d8d33f1cb2595c`
+passed all eight exports, Khronos GLB validation and independent ufbx topology
+checks. The package suite passed 159 tests; `typecheck:examples` and
+`pnpm format:check` passed. The compact
+[`scene-benchmark-macos-arm64.json`](../packages/react-forge/tests/evidence/scene-benchmark-macos-arm64.json)
+records host/build provenance, fixture and export hashes, exact topology and
+resource observations. Root `cargo test` was interrupted during cold workspace
+compilation because concurrent checkouts exhausted shared host disk headroom;
+it has no passing test result for this change. No Blender, local viewer, GPU or
+other native-host acceptance was performed for this benchmark.
