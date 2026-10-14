@@ -535,7 +535,9 @@ fn scope_context(
                 .as_bytes()
                 .get(..prefix.len() - keyword.len())
                 .and_then(|prefix| prefix.last())
-                .is_none_or(|byte| !byte.is_ascii_alphanumeric() && *byte != b'_' && *byte != b'$')
+                .is_none_or(|byte| {
+                    !byte.is_ascii_alphanumeric() && *byte != b'_' && *byte != b'$' && *byte != b'.'
+                })
         {
             return ScopeContext::Guard(guard);
         }
@@ -1579,6 +1581,12 @@ y=/process.env.F/.test(z),process.env.G"#;
             ),
             Some("the retained read is in an if condition")
         );
+        for code in [
+            "obj.if(process.env.VERSION)run()",
+            "obj.switch(process.env.VERSION)run()",
+        ] {
+            assert_eq!(guard(code, "process.env.VERSION"), None, "{code}");
+        }
         assert_eq!(
             guard("process.env.VERSION?on():off()", "process.env.VERSION"),
             Some("the retained read controls a conditional (?:) branch")
