@@ -2973,18 +2973,18 @@ recursive, so history that appeared in the directory is never deleted, and an
 existing directory is never created, repaired or removed. Missing parent
 directories stay because they hold no history.
 
-| Starting state                                    | Registry publication                | Directory afterwards | Entry afterwards | Result                                  |
-| ------------------------------------------------- | ----------------------------------- | -------------------- | ---------------- | --------------------------------------- |
-| home absent, key unregistered                     | succeeds                            | created              | registered       | success                                 |
-| home absent, key unregistered                     | fails, nothing written              | removed              | absent           | error; retry creates it again           |
-| home absent, key unregistered                     | fails after the entry became durable | kept                | registered       | error; retry is idempotent              |
-| home absent, key unregistered                     | fails and the registry is unreadable | kept (empty)        | unproven         | error; retry registers the same empty home |
-| home present, key unregistered                    | succeeds                            | untouched            | registered       | success                                 |
-| home present, key unregistered                    | fails                               | untouched            | absent           | error; history is never removed         |
-| home absent, key already registered at that path  | none needed                         | not created          | registered       | resolution rejects a missing registered home |
-| home absent, key or path registered elsewhere     | none attempted                      | not created          | unchanged        | `key_conflict`                          |
-| home absent, a parent is not a directory          | none attempted                      | not created          | absent           | `owner_invalid`                         |
-| home is a link or not private                     | none attempted                      | untouched            | absent           | recovery required (`legacy_unverified`) |
+| Starting state                                   | Registry publication                 | Directory afterwards | Entry afterwards | Result                                       |
+| ------------------------------------------------ | ------------------------------------ | -------------------- | ---------------- | -------------------------------------------- |
+| home absent, key unregistered                    | succeeds                             | created              | registered       | success                                      |
+| home absent, key unregistered                    | fails, nothing written               | removed              | absent           | error; retry creates it again                |
+| home absent, key unregistered                    | fails after the entry became durable | kept                 | registered       | error; retry is idempotent                   |
+| home absent, key unregistered                    | fails and the registry is unreadable | kept (empty)         | unproven         | error; retry registers the same empty home   |
+| home present, key unregistered                   | succeeds                             | untouched            | registered       | success                                      |
+| home present, key unregistered                   | fails                                | untouched            | absent           | error; history is never removed              |
+| home absent, key already registered at that path | none needed                          | not created          | registered       | resolution rejects a missing registered home |
+| home absent, key or path registered elsewhere    | none attempted                       | not created          | unchanged        | `key_conflict`                               |
+| home absent, a parent is not a directory         | none attempted                       | not created          | absent           | `owner_invalid`                              |
+| home is a link or not private                    | none attempted                       | untouched            | absent           | recovery required (`legacy_unverified`)      |
 
 The Claude device-profile directory is the other path that creates a directory
 and then registers it in place, and it follows the same rule: a login that
@@ -3011,15 +3011,15 @@ The release and the Finish settle as follows. The owner path is the founding
 owner retiring through its last member; the exclusive path is a version 2
 continuation that holds the lock itself.
 
-| Release            | Finish    | Returned through the member outcome                    | Local owner or hold                                         | Lock                                        |
-| ------------------ | --------- | ------------------------------------------------------ | ----------------------------------------------------------- | ------------------------------------------- |
-| verified           | succeeds  | success                                                | owner cleared                                               | free                                        |
-| verified           | fails     | the Finish error                                       | owner retained; the same Finish is retried                  | free                                        |
-| verified           | ambiguous | the Finish error                                       | owner retained with the pending request, retried unchanged  | free                                        |
-| not verified       | succeeds  | owner path: the release failure (recovery required)    | owner cleared; the unverified hold moves to the account gate | closed, verified again by the next holder   |
-| not verified       | succeeds  | exclusive path: the cleanup failure                    | hold moves to the account gate                              | closed, verified again by the next holder   |
-| not verified       | fails     | the Finish error                                       | owner or hold retained; the retry verifies the release again | closed, unverified                          |
-| not verified       | ambiguous | the Finish error                                       | owner retained with the pending request; the retry verifies the release again | closed, unverified                          |
+| Release      | Finish    | Returned through the member outcome                 | Local owner or hold                                                           | Lock                                      |
+| ------------ | --------- | --------------------------------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------- |
+| verified     | succeeds  | success                                             | owner cleared                                                                 | free                                      |
+| verified     | fails     | the Finish error                                    | owner retained; the same Finish is retried                                    | free                                      |
+| verified     | ambiguous | the Finish error                                    | owner retained with the pending request, retried unchanged                    | free                                      |
+| not verified | succeeds  | owner path: the release failure (recovery required) | owner cleared; the unverified hold moves to the account gate                  | closed, verified again by the next holder |
+| not verified | succeeds  | exclusive path: the cleanup failure                 | hold moves to the account gate                                                | closed, verified again by the next holder |
+| not verified | fails     | the Finish error                                    | owner or hold retained; the retry verifies the release again                  | closed, unverified                        |
+| not verified | ambiguous | the Finish error                                    | owner retained with the pending request; the retry verifies the release again | closed, unverified                        |
 
 The release failure of a published owner Finish is returned like the exclusive
 path's cleanup failure: the member outcome is an unconfirmed cleanup that
