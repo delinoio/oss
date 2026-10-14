@@ -317,6 +317,7 @@ enum ScopeContext {
 struct ScanScope {
     parent: usize,
     context: ScopeContext,
+    conditional_questions: usize,
     pending_reads: Vec<usize>,
     arrow_expression: bool,
 }
@@ -333,6 +334,7 @@ fn env_guards(
     let mut scopes = vec![ScanScope {
         parent: 0,
         context: ScopeContext::Neutral,
+        conditional_questions: 0,
         pending_reads: Vec::new(),
         arrow_expression: false,
     }];
@@ -380,6 +382,7 @@ fn env_guards(
                 scopes.push(ScanScope {
                     parent: current_scope,
                     context,
+                    conditional_questions: 0,
                     pending_reads: Vec::new(),
                     arrow_expression: false,
                 });
@@ -391,10 +394,21 @@ fn env_guards(
                 scopes[parent].pending_reads.extend(pending_reads);
                 current_scope = parent;
             }
-            b';' | b',' | b':' => {
+            b';' | b',' => {
                 for read in scopes[current_scope].pending_reads.drain(..) {
                     if guards[read].is_none() {
                         blocked[read] = true;
+                    }
+                }
+            }
+            b':' => {
+                if scopes[current_scope].conditional_questions > 0 {
+                    scopes[current_scope].conditional_questions -= 1;
+                } else {
+                    for read in scopes[current_scope].pending_reads.drain(..) {
+                        if guards[read].is_none() {
+                            blocked[read] = true;
+                        }
                     }
                 }
             }
@@ -403,6 +417,7 @@ fn env_guards(
                     scopes.push(ScanScope {
                         parent: current_scope,
                         context: ScopeContext::Neutral,
+                        conditional_questions: 0,
                         pending_reads: Vec::new(),
                         arrow_expression: true,
                     });
@@ -442,6 +457,7 @@ fn env_guards(
                 for &read in &scopes[current_scope].pending_reads {
                     guards[read] = Some(EnvGuard::Conditional);
                 }
+                scopes[current_scope].conditional_questions += 1;
             }
             _ => {}
         }
@@ -1520,6 +1536,13 @@ y=/process.env.F/.test(z),process.env.G"#;
         assert_eq!(
             guard(
                 "if({on:true}[process.env.VERSION])run()",
+                "process.env.VERSION"
+            ),
+            Some("the retained read is in an if condition")
+        );
+        assert_eq!(
+            guard(
+                "if(ready?process.env.VERSION:false)run()",
                 "process.env.VERSION"
             ),
             Some("the retained read is in an if condition")
