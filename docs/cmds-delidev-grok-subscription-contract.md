@@ -461,7 +461,11 @@ An unconfirmed cleanup never replaces the first failure's phase, code or
 timeout reason, but it always forces the transport error to `recovery_required`
 because discovery must stop and reconcile the owned process before retrying.
 A late protocol failure that the stdout drain reports while cleanup runs counts
-as the first failure. Discovery stores the diagnostic on
+as the first failure, and so does a partial trailing frame left in the drain's
+frame buffer: `Wait` joins the drain whether or not the owned scope was
+confirmed stopped, so an unconfirmed cleanup never hides either one
+(`TestProbeCleanupFailureNeverReplacesTheFirstFailure`, rows "late protocol
+failure" and "partial trailing frame"). Discovery stores the diagnostic on
 `Installation.Protocol.GrokDiagnostic` (JSON `grok_diagnostic`) for a Grok
 installation whose validation did not succeed, which is how a populated
 1.0.52 `experiments` inventory becomes a `profile` / `unsupported` observation;

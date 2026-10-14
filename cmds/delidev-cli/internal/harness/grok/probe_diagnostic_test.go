@@ -128,6 +128,7 @@ func TestProbeCleanupFailureNeverReplacesTheFirstFailure(t *testing.T) {
 		{name: "profile deadline", mode: "inspect-timeout", deadline: time.Second, phases: []domain.GrokPhase{domain.GrokProfile}, code: domain.Unavailable},
 		{name: "runtime failure", mode: "foreign", handle: true, phases: []domain.GrokPhase{domain.GrokRuntime}, code: domain.Unsupported},
 		{name: "runtime exit", mode: "exit", handle: true, phases: []domain.GrokPhase{domain.GrokRuntime}, code: domain.Unavailable},
+		{name: "partial trailing frame", mode: "trailing", handle: true, phases: []domain.GrokPhase{domain.GrokRuntime}, code: domain.Unsupported},
 		{name: "late protocol failure", mode: "duplicate", handle: true, phases: []domain.GrokPhase{domain.GrokRuntime}, code: domain.Unsupported},
 		// The deadline can expire while the fake inspection still runs on a slow
 		// machine, so either phase proves the first failure was kept.

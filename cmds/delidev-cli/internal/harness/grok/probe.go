@@ -163,11 +163,14 @@ func Probe(ctx context.Context, config ProbeConfig) (returned error) {
 		// The stdout drain can detect another/partial frame after the first
 		// response woke us. Cleanup joins that drain before accepting success.
 		// A late protocol failure precedes the cleanup outcome, so it is the first
-		// failure; the frame buffer is only read once the drain is joined.
+		// failure; the frame buffer is only read once the drain is joined. Wait
+		// joins it whether or not the owned scope was confirmed stopped, so an
+		// unconfirmed cleanup never hides a partial trailing frame: that frame is
+		// the first failure and the cleanup only upgrades the transport error.
 		if returned == nil {
 			if problem := wire.status(); problem != nil {
 				returned = problem
-			} else if frames := config.Process.Stdout.(*probeFrames); cleanup == nil && len(frames.buffer) != 0 {
+			} else if frames := config.Process.Stdout.(*probeFrames); len(frames.buffer) != 0 {
 				returned = incompatible()
 			}
 		}
