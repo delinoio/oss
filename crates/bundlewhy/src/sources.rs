@@ -129,6 +129,22 @@ pub struct SourceStore {
     pub snapshots: std::collections::HashMap<PathBuf, String>,
     /// Display paths whose live file differs from the build snapshot.
     pub changed_since_build: Vec<String>,
+    /// Module paths the bundler reported. Together with the project root
+    /// they are the only live files read; any other path (for example one
+    /// named only by a source map) relies on `sourcesContent` snapshots.
+    pub allowed: std::collections::HashSet<PathBuf>,
+}
+
+/// Largest live source file read.
+pub const MAX_SOURCE_BYTES: u64 = 16 * 1024 * 1024;
+
+/// Live read outcome for one source path.
+enum LiveRead {
+    Content(String),
+    /// Not vetted for reading (outside the project and not a module path,
+    /// special file, or too large); never treated as a change.
+    NotPermitted,
+    Unreadable(std::io::Error),
 }
 
 impl SourceStore {
@@ -148,12 +164,18 @@ impl SourceStore {
         if let Some(existing) = self.files.get(&key) {
             return Some((existing.id.clone(), existing.content.clone()));
         }
-        let live = std::fs::read(path).map(|bytes| String::from_utf8_lossy(&bytes).into_owned());
+        let live = self.read_live(project_root, path);
         let (content, stale) = match (self.snapshots.get(&normalize(path)), live) {
-            (Some(snapshot), Ok(live)) => (snapshot.clone(), *snapshot != live),
-            (Some(snapshot), Err(_)) => (snapshot.clone(), true),
-            (None, Ok(live)) => (live, false),
-            (None, Err(error)) => {
+            (Some(snapshot), LiveRead::Content(live)) => (snapshot.clone(), *snapshot != live),
+            (Some(snapshot), LiveRead::Unreadable(_)) => (snapshot.clone(), true),
+            (Some(snapshot), LiveRead::NotPermitted) => (snapshot.clone(), false),
+            (None, LiveRead::Content(live)) => (live, false),
+            (None, LiveRead::NotPermitted) => {
+                tracing::debug!(path = %classified.display, "source not vetted for live reading");
+                self.unreadable.push(classified.display);
+                return None;
+            }
+            (None, LiveRead::Unreadable(error)) => {
                 tracing::debug!(path = %classified.display, %error, "source file unreadable");
                 self.unreadable.push(classified.display);
                 return None;
@@ -178,6 +200,45 @@ impl SourceStore {
         }
         self.files.insert(key, file);
         Some((id, content))
+    }
+
+    /// Reads a live source only when it is a regular file of at most
+    /// `MAX_SOURCE_BYTES` that lies inside the project root or is a module
+    /// path the bundler reported.
+    fn read_live(&self, project_root: &Path, path: &Path) -> LiveRead {
+        let resolved = match std::fs::canonicalize(path) {
+            Ok(resolved) => resolved,
+            Err(error) => return LiveRead::Unreadable(error),
+        };
+        let root =
+            std::fs::canonicalize(project_root).unwrap_or_else(|_| project_root.to_path_buf());
+        let vetted = resolved.starts_with(&root)
+            || self.allowed.contains(&normalize(path))
+            || self.allowed.contains(&resolved);
+        if !vetted {
+            return LiveRead::NotPermitted;
+        }
+        let metadata = match std::fs::metadata(&resolved) {
+            Ok(metadata) => metadata,
+            Err(error) => return LiveRead::Unreadable(error),
+        };
+        if !metadata.is_file() || metadata.len() > MAX_SOURCE_BYTES {
+            return LiveRead::NotPermitted;
+        }
+        let mut bytes = Vec::new();
+        let read = std::fs::File::open(&resolved).and_then(|file| {
+            std::io::Read::read_to_end(
+                &mut std::io::Read::take(file, MAX_SOURCE_BYTES + 1),
+                &mut bytes,
+            )
+        });
+        match read {
+            Ok(_) if bytes.len() as u64 <= MAX_SOURCE_BYTES => {
+                LiveRead::Content(String::from_utf8_lossy(&bytes).into_owned())
+            }
+            Ok(_) => LiveRead::NotPermitted,
+            Err(error) => LiveRead::Unreadable(error),
+        }
     }
 
     pub fn into_files(self) -> Vec<SourceFile> {
@@ -277,6 +338,33 @@ mod tests {
         let files = store.into_files();
         assert!(files[0].stale);
         assert_eq!(files[0].sha256, sha256_hex(b"what the build read"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn live_reads_are_limited_to_vetted_regular_files() {
+        let project = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let secret = outside.path().join("secret.txt");
+        std::fs::write(&secret, "token").unwrap();
+        let mut store = SourceStore::new(true);
+        // A path outside the project that the bundler never reported.
+        assert!(store.add_file(project.path(), &secret).is_none());
+        // Special files are never read.
+        store.allowed.insert(PathBuf::from("/dev/zero"));
+        assert!(
+            store
+                .add_file(project.path(), Path::new("/dev/zero"))
+                .is_none()
+        );
+        // A reported module path outside the project is read.
+        let module = outside.path().join("module.js");
+        std::fs::write(&module, "export {}").unwrap();
+        store.allowed.insert(normalize(&module));
+        assert_eq!(
+            store.add_file(project.path(), &module).unwrap().1,
+            "export {}"
+        );
     }
 
     #[test]

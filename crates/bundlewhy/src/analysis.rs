@@ -275,6 +275,12 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
     }
 
     let mut store = SourceStore::new(input.include_sources);
+    store.allowed = collection
+        .modules
+        .iter()
+        .filter_map(|module| module.path.as_deref())
+        .map(|path| crate::sources::normalize(Path::new(path)))
+        .collect();
     for chunk in &chunks {
         let Some(map) = chunk.map.as_ref() else {
             continue;
