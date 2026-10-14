@@ -424,6 +424,25 @@ impl SideEffectDeclaration {
     }
 }
 
+/// Id of the module Vite synthesizes for a Node built-in that browser-targeted
+/// code imports. Vite emits it as `__vite-browser-external` (optionally behind
+/// the virtual-module NUL prefix, and in some modes with a `:` suffix).
+const BROWSER_EXTERNAL_ID: &str = "__vite-browser-external";
+
+/// True for a Vite-generated browser-external placeholder module: collected as
+/// virtual (no file path) with the browser-external id.
+fn is_vite_browser_external(module: &crate::collect::CollectedModule) -> bool {
+    if !module.is_virtual || module.path.is_some() {
+        return false;
+    }
+    module
+        .id
+        .strip_prefix('\0')
+        .unwrap_or(&module.id)
+        .strip_prefix(BROWSER_EXTERNAL_ID)
+        .is_some_and(|rest| rest.is_empty() || rest.starts_with(':'))
+}
+
 fn commonjs_wrapped(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
     let collection = context.collection;
     let helper = collection
@@ -455,15 +474,47 @@ fn commonjs_wrapped(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>
             EvidenceStatus::Confirmed,
             format!("The runtime helper {helper} is rendered in the bundle."),
         ));
+        let generated = is_vite_browser_external(module);
+        if generated {
+            evidence.push(Evidence::new(
+                MODULE_INFO,
+                EvidenceStatus::Confirmed,
+                "The module is virtual (no file path) and its id is Vite's browser-external \
+                 placeholder, which Vite generates for a Node built-in imported by \
+                 browser-targeted code.",
+            ));
+        }
+        let (summary, direction, safety) = if generated {
+            (
+                "Rolldown wraps CommonJS modules in a runtime closure instead of hoisting them \
+                 into the chunk scope. This module is a placeholder that Vite generates for a \
+                 Node built-in imported by browser-targeted code; it has no source file, must not \
+                 be edited, and has no ECMAScript module build to import.",
+                "Follow the dependency path to the importer that pulls the Node built-in into the \
+                 browser bundle, then decide for browser compatibility: remove or replace that \
+                 usage, alias or polyfill the built-in for the browser, or keep the import \
+                 server-only.",
+                "Do not edit or convert the generated placeholder. Confirm that the importer does \
+                 not need the built-in's behavior in the browser before removing or replacing the \
+                 usage; the placeholder exposes no real implementation.",
+            )
+        } else {
+            (
+                "Rolldown wraps CommonJS modules in a runtime closure instead of hoisting them \
+                 into the chunk scope. The wrapper, its interop helpers and exports that cannot \
+                 be analyzed statically stay in the bundle.",
+                "Import an ECMAScript module build of this code (check the package's \"exports\" \
+                 or \"module\" field) or convert the module to ESM syntax.",
+                "Confirm that the ESM build exposes the same API and evaluation order; CommonJS \
+                 modules evaluate lazily on first require.",
+            )
+        };
         let status = EvidenceStatus::Confirmed;
         drafts.push(DiagnosticDraft {
             rule: RuleId::ViteCommonjsWrapped,
             status,
             title: format!("{display} is wrapped as CommonJS"),
-            summary: "Rolldown wraps CommonJS modules in a runtime closure instead of hoisting \
-                      them into the chunk scope. The wrapper, its interop helpers and exports \
-                      that cannot be analyzed statically stay in the bundle."
-                .to_owned(),
+            summary: summary.to_owned(),
             conditions: vec![
                 Condition::new(
                     "The module is an ECMAScript module",
@@ -480,12 +531,8 @@ fn commonjs_wrapped(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>
             module: display,
             dependency_paths: context.dependency_paths(&module.id),
             evidence,
-            direction: "Import an ECMAScript module build of this code (check the package's \
-                        \"exports\" or \"module\" field) or convert the module to ESM syntax."
-                .to_owned(),
-            safety: "Confirm that the ESM build exposes the same API and evaluation order; \
-                     CommonJS modules evaluate lazily on first require."
-                .to_owned(),
+            direction: direction.to_owned(),
+            safety: safety.to_owned(),
             dependency: context.is_dependency(module),
         });
     }

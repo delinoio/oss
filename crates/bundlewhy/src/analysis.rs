@@ -1013,6 +1013,125 @@ mod tests {
         );
     }
 
+    /// Rewrites the Vite fixture so that `target_id` names a wrapped CommonJS
+    /// module with the given virtual/path facts, importing from the entry.
+    fn vite_cjs_variant(id: &'static str, path: Option<&'static str>, is_virtual: bool) -> Fixture {
+        run_fixture(BundlerChoice::Vite, move |value| {
+            let mut template = value["modules"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|module| {
+                    module["id"]
+                        .as_str()
+                        .is_some_and(|id| id.ends_with("src/legacy/cjs.cjs"))
+                })
+                .unwrap()
+                .clone();
+            template["id"] = serde_json::json!(id);
+            template["path"] = serde_json::json!(path);
+            template["virtual"] = serde_json::json!(is_virtual);
+            value["modules"].as_array_mut().unwrap().push(template);
+        })
+    }
+
+    fn action(diagnostic: &Diagnostic) -> &crate::model::CorrectiveAction {
+        diagnostic.corrective_action.as_ref().unwrap()
+    }
+
+    fn generated_placeholder_diagnostic<'a>(fixture: &'a Fixture, module: &str) -> &'a Diagnostic {
+        find(
+            &fixture.output.analysis.diagnostics,
+            "vite/commonjs-wrapped",
+            module,
+        )
+        .unwrap_or_else(|| panic!("missing vite/commonjs-wrapped for {module}"))
+    }
+
+    #[test]
+    fn vite_browser_external_placeholder_gets_generated_module_guidance() {
+        for id in [
+            "__vite-browser-external",
+            "\u{0}__vite-browser-external",
+            "\u{0}__vite-browser-external:fs",
+            "__vite-browser-external:path",
+        ] {
+            let fixture = vite_cjs_variant(id, None, true);
+            let diagnostic =
+                generated_placeholder_diagnostic(&fixture, id.trim_start_matches('\0'));
+            assert_eq!(diagnostic.status, EvidenceStatus::Confirmed, "{id}");
+            assert!(
+                diagnostic
+                    .evidence
+                    .iter()
+                    .all(|evidence| evidence.status == EvidenceStatus::Confirmed),
+                "{id}"
+            );
+            assert!(diagnostic.summary.contains("generates"), "{id}");
+            assert!(diagnostic.summary.contains("must not be edited"), "{id}");
+            assert!(
+                action(diagnostic).direction.contains("dependency path"),
+                "{id}"
+            );
+            assert!(action(diagnostic).direction.contains("server-only"), "{id}");
+            assert!(
+                !action(diagnostic)
+                    .direction
+                    .split(|c: char| !c.is_alphanumeric())
+                    .any(|word| matches!(word, "fs" | "path" | "os" | "crypto")),
+                "{id}: the direction must not name a specific built-in"
+            );
+            assert!(
+                !action(diagnostic)
+                    .direction
+                    .contains("ECMAScript module build"),
+                "{id}"
+            );
+            assert!(!action(diagnostic).direction.contains("ESM"), "{id}");
+            assert!(action(diagnostic).safety.contains("Do not edit"), "{id}");
+            assert!(!action(diagnostic).safety.contains("ESM build"), "{id}");
+        }
+    }
+
+    #[test]
+    fn vite_commonjs_guidance_stays_for_other_modules() {
+        // An ordinary file-backed module keeps the ESM-conversion advice.
+        let fixture = run_fixture(BundlerChoice::Vite, |_| {});
+        let ordinary = generated_placeholder_diagnostic(&fixture, "src/legacy/cjs.cjs");
+        assert!(
+            action(ordinary)
+                .direction
+                .contains("ECMAScript module build")
+        );
+        assert!(action(ordinary).safety.contains("ESM build"));
+
+        // A virtual CommonJS module with another id is not the placeholder.
+        let other = vite_cjs_variant("\u{0}virtual:other-cjs", None, true);
+        let diagnostic = generated_placeholder_diagnostic(&other, "virtual:other-cjs");
+        assert!(
+            action(diagnostic)
+                .direction
+                .contains("ECMAScript module build")
+        );
+        assert!(action(diagnostic).safety.contains("ESM build"));
+
+        // A file-backed module that merely resembles the id keeps the advice.
+        let backed = vite_cjs_variant(
+            "__vite-browser-external",
+            Some("/__bundlewhy_project__/src/legacy/cjs.cjs"),
+            false,
+        );
+        assert!(
+            backed
+                .output
+                .analysis
+                .diagnostics
+                .iter()
+                .filter(|d| d.rule == "vite/commonjs-wrapped")
+                .all(|d| action(d).direction.contains("ECMAScript module build"))
+        );
+    }
+
     #[test]
     fn vite_disabled_tree_shaking_is_not_reported_as_covered() {
         let fixture = run_fixture(BundlerChoice::Vite, |value| {
