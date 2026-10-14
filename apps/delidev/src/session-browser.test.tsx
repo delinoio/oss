@@ -252,7 +252,6 @@ function Workspace({ f, active = true }: { f: Fixture; active?: boolean }) {
             handle.current?.closePage(tab.profile, tab.id);
           else tabs.store.close(f.session.id, key);
         }}
-        newPage={() => setDialog(true)}
       />
       <button type="button" onClick={() => setDialog(true)}>
         Open tool Browser
@@ -295,7 +294,7 @@ const pageCalls = (action: Request["action"]) =>
 const tabNames = () =>
   screen.getAllByRole("tab").map((tab) => tab.getAttribute("title"));
 async function openDialog() {
-  fireEvent.click(screen.getByRole("button", { name: "New browser page" }));
+  fireEvent.click(screen.getByRole("button", { name: "Open tool Browser" }));
   return screen.findByRole("dialog", { name: "New browser page" });
 }
 async function submit(dialog: HTMLElement, address: string) {
@@ -376,7 +375,7 @@ it("never creates anything while the profile is absent or the inventory is empty
   expect(native).not.toHaveBeenCalled();
 });
 
-it("opens the same address dialog from + and the Open tool entry and creates nothing on dismissal", async () => {
+it("opens the address dialog from the Open tool Browser entry and creates nothing on dismissal", async () => {
   const f = fixture({ registered: false });
   mount(f);
   const dialog = await openDialog();
