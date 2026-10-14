@@ -13,7 +13,17 @@ export interface NativeOutput {
   geometry: string;
   diagnostics: string;
 }
+export interface NativeCompactedGeometry {
+  bytes: Buffer;
+  inputVertices: number;
+  outputVertices: number;
+  triangles: number;
+}
 interface Binding {
+  compactSceneGeometry(
+    bytes: Buffer,
+    cancellation: Cancellation,
+  ): Promise<NativeCompactedGeometry>;
   validateSceneAsset(
     kind: string,
     bytes: Buffer,
@@ -297,6 +307,36 @@ export async function validateSceneAsset(
       /* Redact native details. */
     }
     throw new ForgeError(code, "Scene asset validation failed.");
+  } finally {
+    signal.removeEventListener("abort", cancel);
+  }
+}
+
+export async function compactSceneGeometry(
+  bytes: Buffer,
+  signal: AbortSignal,
+): Promise<NativeCompactedGeometry> {
+  const native = load();
+  const cancellation = new native.Cancellation();
+  const cancel = () => cancellation.cancel();
+  signal.addEventListener("abort", cancel, { once: true });
+  if (signal.aborted) cancel();
+  try {
+    return await native.compactSceneGeometry(bytes, cancellation);
+  } catch (error) {
+    if (signal.aborted)
+      throw new ForgeError(
+        ErrorCode.Cancelled,
+        "Geometry compaction was cancelled.",
+      );
+    let code = ErrorCode.MalformedInput;
+    try {
+      const detail = JSON.parse((error as Error).message);
+      code = codes[detail.code] ?? code;
+    } catch {
+      /* Redact native details. */
+    }
+    throw new ForgeError(code, "Geometry compaction failed.");
   } finally {
     signal.removeEventListener("abort", cancel);
   }

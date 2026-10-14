@@ -35,4 +35,5 @@ export type {
   SceneGeometry,
   SceneSessionOptions,
   AnimationSample,
+  GeometryCompaction,
 } from "./scene/session.js";
