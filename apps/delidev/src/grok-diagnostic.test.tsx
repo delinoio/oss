@@ -309,3 +309,100 @@ it("reuses the diagnostic in Grok onboarding while the service stays unsupported
   ).toBeNull();
   expect(inspect).not.toHaveBeenCalled();
 });
+
+// Identical to grokReasonTable in the Go domain tests
+// (TestGrokDiagnosticReasonFollowsTheSharedCodeTable): the desktop rebuilds the
+// server's reason sentence from the closed code.
+const reasonTable: ReadonlyArray<readonly [FailureCode, string]> = [
+  [FailureCode.InvalidArgument, "The native configuration is invalid."],
+  [FailureCode.NotFound, "The Grok Build executable was not found."],
+  [FailureCode.Conflict, "The operation conflicts with an existing owner."],
+  [FailureCode.Unauthenticated, "Native authentication was not accepted."],
+  [FailureCode.PermissionDenied, "Native access was denied."],
+  [FailureCode.Unavailable, "The native operation failed or timed out."],
+  [FailureCode.ServerUnavailable, "The native service is unavailable."],
+  [FailureCode.Unsupported, "The native protocol or version is incompatible."],
+  [FailureCode.RecoveryRequired, "The native operation requires recovery."],
+  [FailureCode.ResourceExhausted, "The native output exceeded its bound."],
+  [FailureCode.Canceled, "The native operation was canceled."],
+  [FailureCode.Internal, "The native operation failed."],
+  [FailureCode.ConfirmationRequired, "The native operation did not complete."],
+  [FailureCode.MissingInput, "The native operation did not complete."],
+  [FailureCode.BudgetReached, "The native operation did not complete."],
+  [FailureCode.CursorExpired, "The native operation did not complete."],
+  [FailureCode.ProviderDisabled, "The native operation did not complete."],
+];
+
+it.each(reasonTable)("explains %s with the shared reason", (code, reason) => {
+  const safe = safeGrokDiagnostic(diagnostic(GrokDiagnosticPhase.LOGIN, code));
+  expect(safe?.message.endsWith(` ${reason}`)).toBe(true);
+});
+
+it("covers every failure code in the shared reason table", () => {
+  expect(reasonTable.map(([code]) => code).sort()).toEqual(
+    Object.values(FailureCode).sort(),
+  );
+});
+
+// Guidance depends on the phase and the code. Only an access failure while
+// handling the installation or its private runtime restores OS permissions;
+// every other failure keeps the account and operation unchanged.
+const accessGuidance = "Restore OS permission";
+const installGuidance = "Install the supported Grok Build release";
+const operationGuidance = "Keep the original account and operation. Check";
+const installationPhaseSet = new Set([
+  GrokDiagnosticPhase.DISCOVERY,
+  GrokDiagnosticPhase.VERSION,
+  GrokDiagnosticPhase.PROFILE,
+  GrokDiagnosticPhase.RUNTIME,
+  GrokDiagnosticPhase.CLEANUP,
+]);
+
+it.each(
+  phases.flatMap(([phase]) =>
+    Object.values(FailureCode).map((code) => [phase, code] as const),
+  ),
+)("chooses guidance for phase %s and code %s", (phase, code) => {
+  const safe = safeGrokDiagnostic(diagnostic(phase, code));
+  let want = operationGuidance;
+  if (code === FailureCode.PermissionDenied && installationPhaseSet.has(phase))
+    want = accessGuidance;
+  else if (
+    phase === GrokDiagnosticPhase.DISCOVERY ||
+    phase === GrokDiagnosticPhase.VERSION ||
+    phase === GrokDiagnosticPhase.PROFILE
+  )
+    want = installGuidance;
+  expect(safe?.guidance.startsWith(want)).toBe(true);
+});
+
+it.each([
+  [FailureCode.InvalidArgument, "noncanonical home or inherited environment"],
+  [FailureCode.Unsupported, "unexpected profile entry or symlink"],
+  [FailureCode.Unavailable, "launch or initialization failure"],
+])(
+  "does not ask to restore OS permissions for a runtime %s failure (%s)",
+  async (code) => {
+    const value = diagnostic(GrokDiagnosticPhase.RUNTIME, code);
+    const { unmount } = render(<GrokDiagnosticNotice diagnostic={value} />);
+    const english = screen.getByRole("alert").textContent!;
+    expect(english).not.toContain(accessGuidance);
+    expect(english).toContain(operationGuidance);
+    await act(() => i18n.changeLanguage("ko"));
+    expect(screen.getByRole("alert").textContent).not.toContain(
+      "운영체제 권한",
+    );
+    unmount();
+  },
+);
+
+it("restores OS permissions only for a runtime permission failure", async () => {
+  const value = diagnostic(
+    GrokDiagnosticPhase.RUNTIME,
+    FailureCode.PermissionDenied,
+  );
+  render(<GrokDiagnosticNotice diagnostic={value} />);
+  expect(screen.getByRole("alert").textContent).toContain(accessGuidance);
+  await act(() => i18n.changeLanguage("ko"));
+  expect(screen.getByRole("alert").textContent).toContain("운영체제 권한");
+});

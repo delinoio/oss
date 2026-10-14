@@ -220,3 +220,36 @@ func TestServerOperationGrokDiagnosticOwnership(t *testing.T) {
 		t.Fatalf("legacy server operation gained a Grok diagnostic key: %s %v", raw, err)
 	}
 }
+
+// grokReasonTable is the code-to-reason table shared with the desktop
+// (apps/delidev/src/grok-diagnostic.test.tsx keeps an identical copy). The
+// desktop reconstructs these sentences from the closed code, so a code that
+// changes here must change there.
+var grokReasonTable = map[Code]string{
+	InvalidArgument:      "The native configuration is invalid.",
+	NotFound:             "The Grok Build executable was not found.",
+	Conflict:             "The operation conflicts with an existing owner.",
+	Unauthenticated:      "Native authentication was not accepted.",
+	PermissionDenied:     "Native access was denied.",
+	Unavailable:          "The native operation failed or timed out.",
+	ServerUnavailable:    "The native service is unavailable.",
+	Unsupported:          "The native protocol or version is incompatible.",
+	RecoveryRequired:     "The native operation requires recovery.",
+	ResourceExhausted:    "The native output exceeded its bound.",
+	Canceled:             "The native operation was canceled.",
+	Internal:             "The native operation failed.",
+	ConfirmationRequired: "The native operation did not complete.",
+	MissingInput:         "The native operation did not complete.",
+	BudgetReached:        "The native operation did not complete.",
+	CursorExpired:        "The native operation did not complete.",
+	ProviderDisabled:     "The native operation did not complete.",
+}
+
+func TestGrokDiagnosticReasonFollowsTheSharedCodeTable(t *testing.T) {
+	for code, reason := range grokReasonTable {
+		d := GrokErrorDiagnostic(WithGrokDiagnostic("1.0.52", GrokLogin, Fail(code, "x", "y")))
+		if d == nil || d.Code != code || !strings.HasSuffix(d.Message, " "+reason) || d.Validate() != nil {
+			t.Errorf("code %q: unexpected diagnostic %#v", code, d)
+		}
+	}
+}

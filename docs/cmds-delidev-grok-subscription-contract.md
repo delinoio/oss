@@ -479,16 +479,16 @@ owner's active operation:
 `GetSubscriptionProgress` (`grokProgressView`) maps every state of one original
 operation, so polling never fails merely because the operation has not settled:
 
-| Account record | Progress state |
-| --- | --- |
-| queued Pending, no `ServerOperation` | `preparing` |
-| claimed Pending, no `ServerOperation` | `waiting` (`canceled=true` once cancellation is requested) |
-| refused Take (`unsupported` record, still queued) | `unsupported` with the admission diagnostic |
-| settled `succeeded` / `failed` | the record's state, diagnostic and committed generation |
-| settled `canceled` | `canceled`; a canceled record never carries a diagnostic |
-| active record past its window | `expired` |
-| account recovery fence | `recovery-required` |
-| any other operation ID, actor or no operation | access denied |
+| Account record                                    | Progress state                                             |
+| ------------------------------------------------- | ---------------------------------------------------------- |
+| queued Pending, no `ServerOperation`              | `preparing`                                                |
+| claimed Pending, no `ServerOperation`             | `waiting` (`canceled=true` once cancellation is requested) |
+| refused Take (`unsupported` record, still queued) | `unsupported` with the admission diagnostic                |
+| settled `succeeded` / `failed`                    | the record's state, diagnostic and committed generation    |
+| settled `canceled`                                | `canceled`; a canceled record never carries a diagnostic   |
+| active record past its window                     | `expired`                                                  |
+| account recovery fence                            | `recovery-required`                                        |
+| any other operation ID, actor or no operation     | access denied                                              |
 
 A succeeded operation's progress response carries `generation` (the generation
 the account still references) so the onboarding controller can name the account;
@@ -500,8 +500,17 @@ validation tests and attach through the same `settleGrokOperation` when those
 producers land.
 
 The desktop reconstructs presentation from closed metadata only
-(`apps/delidev/src/grok-diagnostic.tsx`, English and Korean). `GrokDiagnosticNotice`
-shows the message, phase guidance and a Technical details disclosure with detected
+(`apps/delidev/src/grok-diagnostic.tsx`, English and Korean). Guidance follows
+the closed phase and code (`grokGuidanceKey`): `permission_denied` in the
+`discovery`, `version`, `profile`, `runtime` or `cleanup` phase asks to restore OS
+permission; any other `discovery`, `version` or `profile` failure asks to install
+the supported release; every other failure, including non-access `runtime` and
+`cleanup` failures (noncanonical home, unexpected profile entry, symlink, invalid
+inherited environment, launch or initialization), keeps the account and operation
+and asks to check the installation. The reason sentence follows the same code
+table as `GrokDiagnostic.text`; `TestGrokDiagnosticReasonFollowsTheSharedCodeTable`
+and `grok-diagnostic.test.tsx` keep identical copies of it. `GrokDiagnosticNotice`
+shows the message, that guidance and a Technical details disclosure with detected
 version, supported version, failed step, error code and a copyable correlation
 ID; it is reused by Settings > AI Subscription onboarding and by the Worker
 installation row (`machine-settings.tsx`), which reads the stored

@@ -72,16 +72,60 @@ const wireStepNames: Partial<Record<GrokDiagnosticPhase, string>> = {
   [GrokDiagnosticPhase.CLEANUP]: "cleanup",
 };
 
+// Every code with a dedicated explanation. Go's GrokDiagnostic.text owns the
+// same table; the other valid codes fall back to the generic reason.
 const reasonKeys: Partial<Record<FailureCode, MessageKey>> = {
+  [FailureCode.InvalidArgument]: "grok-diagnostic.reason.invalidArgument",
   [FailureCode.NotFound]: "grok-diagnostic.reason.notFound",
+  [FailureCode.Conflict]: "grok-diagnostic.reason.conflict",
   [FailureCode.Unsupported]: "grok-diagnostic.reason.unsupported",
   [FailureCode.Unavailable]: "grok-diagnostic.reason.unavailable",
+  [FailureCode.ServerUnavailable]: "grok-diagnostic.reason.serverUnavailable",
   [FailureCode.Unauthenticated]: "grok-diagnostic.reason.unauthenticated",
   [FailureCode.PermissionDenied]: "grok-diagnostic.reason.permissionDenied",
   [FailureCode.RecoveryRequired]: "grok-diagnostic.reason.recoveryRequired",
   [FailureCode.ResourceExhausted]: "grok-diagnostic.reason.resourceExhausted",
   [FailureCode.Canceled]: "grok-diagnostic.reason.canceled",
+  [FailureCode.Internal]: "grok-diagnostic.reason.internal",
 };
+
+// Phases that act on the local Grok Build installation or its private runtime.
+// Only an access failure in one of them is told to restore OS permissions.
+const installationPhases: readonly GrokDiagnosticPhase[] = [
+  GrokDiagnosticPhase.DISCOVERY,
+  GrokDiagnosticPhase.VERSION,
+  GrokDiagnosticPhase.PROFILE,
+  GrokDiagnosticPhase.RUNTIME,
+  GrokDiagnosticPhase.CLEANUP,
+];
+
+/**
+ * Choose the guidance for one closed (phase, code) pair:
+ * - permission_denied in an installation phase: restore OS permission;
+ * - any other discovery, version or profile failure: install the supported
+ *   release (no account execution was authorized);
+ * - every other failure, including runtime and cleanup failures that are not
+ *   access related (invalid home, unexpected profile entry, symlink, invalid
+ *   inherited environment, launch or initialization): keep the account and
+ *   operation and check the installation.
+ */
+export function grokGuidanceKey(
+  phase: GrokDiagnosticPhase,
+  code: string,
+): MessageKey {
+  if (
+    code === FailureCode.PermissionDenied &&
+    installationPhases.includes(phase)
+  )
+    return "grok-diagnostic.guidance.access";
+  if (
+    phase === GrokDiagnosticPhase.DISCOVERY ||
+    phase === GrokDiagnosticPhase.VERSION ||
+    phase === GrokDiagnosticPhase.PROFILE
+  )
+    return "grok-diagnostic.guidance.install";
+  return "grok-diagnostic.guidance.operation";
+}
 
 export interface SafeGrokDiagnostic {
   version: string;
@@ -127,17 +171,7 @@ export function safeGrokDiagnostic(
       reasonKeys[d.code as FailureCode] ?? "grok-diagnostic.reason.other",
     );
   const step = copy(phaseKeys[d.phase]!);
-  const guidanceKey: MessageKey = [
-    GrokDiagnosticPhase.DISCOVERY,
-    GrokDiagnosticPhase.VERSION,
-    GrokDiagnosticPhase.PROFILE,
-  ].includes(d.phase)
-    ? "grok-diagnostic.guidance.install"
-    : [GrokDiagnosticPhase.RUNTIME, GrokDiagnosticPhase.CLEANUP].includes(
-          d.phase,
-        )
-      ? "grok-diagnostic.guidance.access"
-      : "grok-diagnostic.guidance.operation";
+  const guidanceKey = grokGuidanceKey(d.phase, d.code);
   return {
     version: d.detectedVersion,
     supported,
