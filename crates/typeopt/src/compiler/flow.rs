@@ -1180,6 +1180,8 @@ impl Builder<'_, '_> {
                 self.symbols.insert(r.node, (symbol, r.kind));
             }
         }
+        // Class closure needs the exports that module namespaces expose.
+        self.exposed = exposed_exports(self.ctx);
         let closed = self.closed_classes(&files);
         // Allocations, closed classes and key literals, in file and
         // preorder order.
@@ -1220,7 +1222,6 @@ impl Builder<'_, '_> {
         }
         self.graph = Graph::new(self.objects.len(), names);
         self.class_cells();
-        self.exposed = exposed_exports(self.ctx);
         // Function summaries.
         let mut boundaries = std::collections::BTreeMap::<FunctionBoundary, usize>::new();
         for &file in &files {

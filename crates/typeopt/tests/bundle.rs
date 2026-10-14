@@ -2949,6 +2949,25 @@ fn renames_instances_of_static_factories() {
     }
 }
 
+/// A dynamic import exposes the module namespace, so the classes it exports
+/// are reachable without an indexed reference.
+#[test]
+fn keeps_classes_exported_through_dynamic_namespaces() {
+    let (temp, _) = run(&[
+        (
+            "index.js",
+            r#"import{localValue as v}from"./models.js";console.log(v);const ns=await import("./models.js");const key=["Mo","del"].join("");const m=new ns[key];console.log(m.longProperty,m.readLongProperty());"#,
+        ),
+        (
+            "models.js",
+            r#"class Model{constructor(){this.longProperty=1}readLongProperty(){return this.longProperty}}const local=new Model;const localValue=local.readLongProperty();export{Model,localValue};"#,
+        ),
+    ]);
+    let models = out(temp.path(), "models.js");
+    assert!(models.contains("longProperty"), "{models}");
+    assert!(models.contains("readLongProperty"), "{models}");
+}
+
 /// Every fixture gives code that the analysis does not own a way to observe
 /// an instance member by name, so the names stay.
 #[test]
