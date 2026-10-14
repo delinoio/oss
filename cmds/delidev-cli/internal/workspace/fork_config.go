@@ -67,6 +67,10 @@ func listForkConfigFile(ctx context.Context, git Git, dir, path string, allowanc
 	return records, uint64(len(out)), nil
 }
 
+func readForkConfigBytes(ctx context.Context, file *os.File, limit int64) ([]byte, error) {
+	return io.ReadAll(forkReader{ctx, io.LimitReader(file, limit)})
+}
+
 // readFrozenForkConfig reads a source config file named by the inventory. The
 // file bytes must match the inventory digest before and after Git parses them, so
 // the parsed list describes exactly the inventoried source content.
@@ -82,7 +86,7 @@ func readFrozenForkConfig(ctx context.Context, git Git, checkout, path string, e
 		defer file.Close()
 		// Inventory bounded entry.Size; a changed file cannot force an
 		// unbounded read before the digest comparison reports drift.
-		raw, err := io.ReadAll(forkReader{ctx, io.LimitReader(file, int64(entry.Size)+1)})
+		raw, err := readForkConfigBytes(ctx, file, int64(entry.Size)+1)
 		if err != nil {
 			return false, err
 		}

@@ -375,6 +375,21 @@ func TestForkChildConfigOverflowIsSnapshotConflict(t *testing.T) {
 	}
 }
 
+func TestReadFrozenForkConfigHonorsCancellation(t *testing.T) {
+	m, _, child, proof, _ := forkInventoryCopyFixture(t, false)
+	git := m.Git
+	git.OwnerID = child.SessionID
+	path, entry, ok := proof.gitInventory.sourceFile("config")
+	if !ok {
+		t.Fatal("source config is missing")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, _, err := readFrozenForkConfig(ctx, git, proof.source, path, entry, maxForkBytes); domain.SafeError(err).Code != domain.Canceled {
+		t.Fatalf("frozen config read ignored cancellation: %v", err)
+	}
+}
+
 func TestForkSnapshotVerifyRejectsChildConfigDrift(t *testing.T) {
 	m, input, _ := managedCloneFixture(t)
 	manifest, err := m.Prepare(context.Background(), input)
