@@ -58,6 +58,7 @@ use swc_core::{
 struct InferredNames(Vec<Id>);
 
 impl InferredNames {
+    /// Sorted and deduplicated, for binary search.
     fn names(&self) -> Vec<Atom> {
         let mut names: Vec<Atom> = self.0.iter().map(|(name, _)| name.clone()).collect();
         names.sort();
@@ -493,7 +494,11 @@ pub(crate) fn minify_module(code: &str) -> Option<Minified> {
         // A binding that names its function or class must keep its name.
         let mut kept = InferredNames::default();
         program.visit_with(&mut kept);
-        if let Some(name) = kept.names().iter().find(|name| !reserved.contains(name)) {
+        if let Some(name) = kept
+            .names()
+            .into_iter()
+            .find(|name| reserved.binary_search(name).is_err())
+        {
             tracing::debug!(%name, "minify skipped: an inferred name would change");
             return None;
         }
