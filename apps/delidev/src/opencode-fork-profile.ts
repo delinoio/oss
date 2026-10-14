@@ -1,13 +1,59 @@
 // SPDX-License-Identifier: Apache-2.0
 import { createClient } from "@connectrpc/connect";
-import { useTransport } from "@connectrpc/connect-query";
+import {
+  useQuery as useConnectQuery,
+  useTransport,
+} from "@connectrpc/connect-query";
 import { useQuery } from "@tanstack/react-query";
 import {
   EntityKind,
+  ResourceQuery,
   ResourceService,
+  SystemCapability,
+  SystemQuery,
   type Resource,
 } from "@delinoio/delidev-api-client";
-import { document, object } from "./documents";
+import { document, object, text } from "./documents";
+
+// Worker capability that independently negotiates Fork profile v2, which also
+// clones completed plain timed reasoning history.
+export const OPENCODE_FORK_REASONING_WORKER_CAPABILITY =
+  "opencode-general-chat-fork-reasoning-v1";
+// The base Worker capability that every profile v2 peer must also hold.
+export const OPENCODE_FORK_WORKER_CAPABILITY = "opencode-general-chat-fork-v1";
+
+// Reasoning history is offered only when the server and the original Worker both
+// report the independent capability pair. Otherwise a source with reasoning keeps
+// the existing unsupported-source copy.
+export function useOpenCodeForkReasoningSupport(
+  source: Resource | undefined,
+  enabled: boolean,
+): boolean {
+  const status = useConnectQuery(SystemQuery.getStatus, {}, { enabled });
+  const machine = useConnectQuery(
+    ResourceQuery.getResource,
+    {
+      kind: EntityKind.MACHINE,
+      id: text(document(source).machine_id),
+    },
+    { enabled: enabled && Boolean(source) },
+  );
+  const runner = document(machine.data?.resource);
+  return (
+    enabled &&
+    status.data?.capabilities.includes(
+      SystemCapability.OPENCODE_GENERAL_CHAT_FORK_V1,
+    ) === true &&
+    status.data.capabilities.includes(
+      SystemCapability.OPENCODE_GENERAL_CHAT_FORK_REASONING_V1,
+    ) &&
+    Array.isArray(runner.worker_capabilities) &&
+    runner.worker_capabilities.includes(OPENCODE_FORK_WORKER_CAPABILITY) &&
+    runner.worker_capabilities.includes(
+      OPENCODE_FORK_REASONING_WORKER_CAPABILITY,
+    )
+  );
+}
 
 const native = (value: unknown, prefix: string) =>
   typeof value === "string" &&
@@ -30,7 +76,35 @@ const fields = [
   "first_sequence",
   "last_sequence",
   "progress",
+  "artifact",
 ];
+const reasoningArtifactFields = ["started", "completed", "deltas"];
+const reasoningSnapshotFields = ["kind", "text", "summary", "content"];
+
+// One completed plain-text reasoning artifact: no image, revision, plan, summary
+// or content family. Deltas are retained stream observations only.
+function plainReasoningArtifact(value: Record<string, unknown>): boolean {
+  const artifact = object(value.artifact);
+  if (
+    Object.keys(artifact).some((key) => !reasoningArtifactFields.includes(key))
+  )
+    return false;
+  const empty = (items: unknown) =>
+    items == null || (Array.isArray(items) && items.length === 0);
+  return ["started", "completed"].every((key) => {
+    const snapshot = object(artifact[key]);
+    return (
+      Object.keys(snapshot).length > 0 &&
+      Object.keys(snapshot).every((name) =>
+        reasoningSnapshotFields.includes(name),
+      ) &&
+      snapshot.kind === "reasoning-text" &&
+      typeof snapshot.text === "string" &&
+      empty(snapshot.summary) &&
+      empty(snapshot.content)
+    );
+  });
+}
 
 // The summary cannot prove the complete plain-text profile. Read every retained
 // canonical message before offering the action; Go independently revalidates it
@@ -39,7 +113,8 @@ export function plainOpenCodeForkMessage(
   resource: Resource,
   sessionId: string,
   thread: unknown,
-): "text" | "empty-changes" | undefined {
+  reasoning = false,
+): "text" | "empty-changes" | "reasoning" | undefined {
   const value = document(resource);
   if (
     resource.kind !== EntityKind.MESSAGE ||
@@ -103,6 +178,18 @@ export function plainOpenCodeForkMessage(
     !native(value.native_parent_id, "msg")
   )
     return;
+  if (value.role === "artifact") {
+    // Profile v2 only: completed reasoning re-parented under an assistant turn.
+    if (
+      reasoning &&
+      value.native_parent_id !== value.native_turn_id &&
+      (value.input_id == null || value.input_id === "") &&
+      plainReasoningArtifact(value)
+    )
+      return "reasoning";
+    return;
+  }
+  if (value.artifact != null) return;
   if (
     (value.role === "user" &&
       value.native_parent_id === value.native_turn_id &&
@@ -116,6 +203,7 @@ export function plainOpenCodeForkMessage(
 export function useOpenCodeForkProfile(
   source: Resource | undefined,
   enabled: boolean,
+  reasoning = false,
 ) {
   const transport = useTransport();
   const thread = object(document(source).execution).native_thread_id;
@@ -125,6 +213,7 @@ export function useOpenCodeForkProfile(
       source?.id,
       source?.revision.toString(),
       thread,
+      reasoning,
     ],
     enabled: enabled && Boolean(source),
     retry: false,
@@ -167,9 +256,16 @@ export function useOpenCodeForkProfile(
           if (++total > 10000 || bytes > 8 << 20 || ids.has(row.id))
             return false;
           ids.add(row.id);
-          const kind = plainOpenCodeForkMessage(row, source.id, thread);
+          const kind = plainOpenCodeForkMessage(
+            row,
+            source.id,
+            thread,
+            reasoning,
+          );
           if (!kind) return false;
-          if (kind === "text") {
+          if (kind === "text" || kind === "reasoning") {
+            // The server counts every eligible canonical record, so a completed
+            // reasoning part is content even when its turn has no text part.
             const id = document(row).native_id;
             if (nativeIds.has(id)) return false;
             nativeIds.add(id);
