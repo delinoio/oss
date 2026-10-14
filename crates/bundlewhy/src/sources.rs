@@ -337,6 +337,26 @@ impl SourceStore {
         project_root: &Path,
         path: &Path,
     ) -> Option<(String, Option<String>)> {
+        self.add_file_with_coverage_gap(project_root, path, true)
+    }
+
+    /// Adds a source for attribution without counting a missing build snapshot
+    /// as a coverage gap. Use this for configuration-only locations that no
+    /// detector scans as source evidence.
+    pub fn add_file_without_coverage_gap(
+        &mut self,
+        project_root: &Path,
+        path: &Path,
+    ) -> Option<(String, Option<String>)> {
+        self.add_file_with_coverage_gap(project_root, path, false)
+    }
+
+    fn add_file_with_coverage_gap(
+        &mut self,
+        project_root: &Path,
+        path: &Path,
+        track_coverage_gap: bool,
+    ) -> Option<(String, Option<String>)> {
         let classified = classify(project_root, path);
         // Key by the resolved path rather than the display path.
         let key = normalize(path).to_string_lossy().into_owned();
@@ -403,7 +423,9 @@ impl SourceStore {
             (None, LiveRead::Bytes(bytes)) => match as_text(&bytes) {
                 Some(_) => {
                     tracing::debug!(path = %classified.display, "live source has no build snapshot");
-                    self.unverified.push(classified.display.clone());
+                    if track_coverage_gap {
+                        self.unverified.push(classified.display.clone());
+                    }
                     (None, String::new(), false, true)
                 }
                 None => (None, sha256_hex(&bytes), false, true),

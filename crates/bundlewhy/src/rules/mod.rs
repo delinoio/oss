@@ -250,9 +250,34 @@ impl<'a> Context<'a> {
     }
 
     pub fn original_location(&mut self, path: &Path, line: u32, column: u32) -> Located {
+        self.original_location_with_coverage_gap(path, line, column, true)
+    }
+
+    /// Locates a configuration-only file without reducing detector coverage.
+    pub fn original_location_without_coverage_gap(
+        &mut self,
+        path: &Path,
+        line: u32,
+        column: u32,
+    ) -> Located {
+        self.original_location_with_coverage_gap(path, line, column, false)
+    }
+
+    fn original_location_with_coverage_gap(
+        &mut self,
+        path: &Path,
+        line: u32,
+        column: u32,
+        track_coverage_gap: bool,
+    ) -> Located {
         let display = self.display_path(path);
         let root = self.project_root.clone();
-        let (source_id, snippet) = match self.sources.add_file(&root, path) {
+        let added = if track_coverage_gap {
+            self.sources.add_file(&root, path)
+        } else {
+            self.sources.add_file_without_coverage_gap(&root, path)
+        };
+        let (source_id, snippet) = match added {
             Some((id, Some(content))) => {
                 let (start_line, text) = snippet_lines(&content, line);
                 (

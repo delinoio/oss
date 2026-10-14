@@ -1162,6 +1162,23 @@ mod tests {
             .find(|entry| entry.category == OptimizationCategory::TreeShaking)
             .unwrap();
         assert_eq!(entry.state, CoverageState::NotApplicable);
+        assert!(
+            !analysis
+                .problems
+                .iter()
+                .any(|problem| problem.code == "BW_SOURCE_UNVERIFIED")
+        );
+        for category in [
+            OptimizationCategory::DeadCodeElimination,
+            OptimizationCategory::NameMangling,
+        ] {
+            let entry = analysis
+                .coverage
+                .iter()
+                .find(|entry| entry.category == category)
+                .unwrap();
+            assert_eq!(entry.state, CoverageState::Covered, "{category:?}");
+        }
     }
 
     #[test]
