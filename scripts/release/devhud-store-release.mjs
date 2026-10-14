@@ -376,10 +376,10 @@ async function appleReviewSubmission(environment, version, fetchImpl, token) {
         "App Store review submission lookup returned invalid data",
       );
     if (
-      result.links !== undefined &&
-      (result.links === null ||
-        typeof result.links !== "object" ||
-        Array.isArray(result.links))
+      result.links === undefined ||
+      result.links === null ||
+      typeof result.links !== "object" ||
+      Array.isArray(result.links)
     )
       throw new Error(
         "App Store review submission lookup returned invalid links",

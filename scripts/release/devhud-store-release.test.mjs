@@ -205,7 +205,12 @@ function appleReviewFixture(
       const page = pages[cursor];
       if (page === undefined)
         throw new Error(`unexpected review page: ${cursor}`);
-      return page instanceof Response ? page : jsonResponse(page);
+      if (page instanceof Response) return page;
+      return jsonResponse(
+        Object.prototype.hasOwnProperty.call(page, "links")
+          ? page
+          : { ...page, links: {} },
+      );
     }
     if (url.includes("/reviewSubmissions/") && options.method === "PATCH")
       return jsonResponse({ data: { id: url.split("/").at(-1) } });
@@ -730,7 +735,8 @@ test("App Store submission creates one absent exact version after build processi
       });
     if (url.endsWith("appStoreVersionPhasedRelease"))
       return new Response(null, { status: 404 });
-    if (url.includes("/reviewSubmissions?")) return jsonResponse({ data: [] });
+    if (url.includes("/reviewSubmissions?"))
+      return jsonResponse({ data: [], links: {} });
     return jsonResponse({ data: { id: "mutation-result" } });
   };
   await run("submit", StoreProvider.Apple, {}, environment(), fetchImpl);
@@ -884,6 +890,7 @@ test("App Store submission reconciles an already-submitted exact version without
             },
           },
         ],
+        links: {},
       });
     throw new Error(`unexpected request: ${url}`);
   };
@@ -927,6 +934,7 @@ test("App Store submission reuses one unbound draft and creates only its missing
             relationships: { items: { data: [] } },
           },
         ],
+        links: {},
       });
     return jsonResponse({ data: { id: "mutation-result" } });
   };
@@ -989,6 +997,7 @@ test("App Store submission replaces a canceled exact review submission", async (
             },
           },
         ],
+        links: {},
       });
     if (url.endsWith("/v1/reviewSubmissions") && options.method === "POST")
       return jsonResponse({
@@ -1320,6 +1329,7 @@ test("withdrawal cancels the exact Apple submission and current Chrome submissio
             },
           },
         ],
+        links: {},
       });
     return jsonResponse({ data: { id: "submission-id" } });
   };
@@ -1552,6 +1562,12 @@ test("App Store review discovery failures do not mutate submissions", async (t) 
       { data: [], links: { next: appleReviewPageTwo } },
       { data: [], included: {} },
       /returned invalid data/u,
+    ],
+    [
+      "missing links",
+      { data: [], links: undefined },
+      undefined,
+      /returned invalid links/u,
     ],
     [
       "foreign origin",
