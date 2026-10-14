@@ -308,6 +308,13 @@ export function TailscaleConnections({
               </>
             ) : status.isPending ? (
               <p role="status">{copy("tailscale.loading")}</p>
+            ) : status.error ? (
+              // A failed capability read is not evidence that the server lacks
+              // Tailscale support.
+              <>
+                <p role="status">{copy("tailscale.unavailable")}</p>
+                <Problem error={status.error} />
+              </>
             ) : (
               <p>{copy("tailscale.unsupported")}</p>
             )}
@@ -628,8 +635,11 @@ function DeviceInventory({
               </ul>
             ) : operations.isPending ? (
               <p role="status">{copy("tailscale.requestsLoading")}</p>
-            ) : (
+            ) : operations.data ? (
               <p>{copy("tailscale.requestsEmpty")}</p>
+            ) : (
+              // The list was never read, so it cannot be reported as empty.
+              <p role="status">{copy("tailscale.requestsUnavailable")}</p>
             )}
           </section>
         ) : null}

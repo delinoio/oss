@@ -67,5 +67,6 @@
   "tailscale.requests": "Connection requests",
   "tailscale.requestsHelp": "Requests stay here until they finish. Resume or cancel the original request, or retry it when its outcome is unconfirmed.",
   "tailscale.requestsLoading": "Reading connection requests…",
-  "tailscale.requestsEmpty": "No connection requests."
+  "tailscale.requestsEmpty": "No connection requests.",
+  "tailscale.requestsUnavailable": "Connection requests could not be read. Refresh to try again."
 }
