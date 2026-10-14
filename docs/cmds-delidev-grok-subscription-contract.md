@@ -445,6 +445,64 @@ before activation. A failed profile keeps support disabled until resolved.
 Fixture/build/package results do not establish actual account or OS acceptance;
 record supported-platform native and packaging evidence separately.
 
+### Real-account acceptance runbook
+
+`TestAccountAcceptance` in `cmds/delidev-cli/internal/harness/grok/account_native_test.go`
+makes the actual-profile verification above repeatable. It is interactive by
+design (the account owner approves each device-code login in their own browser),
+never runs in CI and is skipped unless both gates are set:
+
+| Variable | Meaning |
+| --- | --- |
+| `DELIDEV_NATIVE_GROK_ACCOUNT=1` | Opt in to the real-account test. |
+| `DELIDEV_NATIVE_GROK_EXECUTABLE` | Absolute path of the Grok Build CLI under test (for example `$HOME/.grok/bin/grok`). |
+| `DELIDEV_NATIVE_GROK_APPROVAL_TIMEOUT` | Optional Go duration, `10s` to `30m`. Default: 5 minutes for the owner to approve. |
+
+Run it from an interactive terminal (the approval details are written only to
+the controlling terminal, `/dev/tty` or `CONOUT$`; the run fails without one):
+
+```sh
+cd cmds/delidev-cli
+DELIDEV_NATIVE_GROK_ACCOUNT=1 DELIDEV_NATIVE_GROK_EXECUTABLE="$HOME/.grok/bin/grok" \
+  go test ./internal/harness/grok/ -run 'TestAccountAcceptance' -v -timeout 10m
+```
+
+The test uses a fresh scratch tree (`HOME`, `GROK_HOME`, XDG and temp variables
+all inside it, a scratch git repository as working directory) and the CLI with
+`--no-auto-update` and `GROK_DISABLE_AUTOUPDATER=1`. Each native command runs
+through `internal/process`. It then checks, in order:
+
+1. `grok --version` prints `grok <semver> ...` at or above
+   `domain.GrokSubscriptionBaselineVersion`; the version line is logged for the PR.
+2. `grok login --device-auth` exits 0 after the owner approves. Expected output
+   shape: an `https://` verification URL on an `x.ai` host and a user code
+   `[A-Z0-9]{4}-[A-Z0-9]{4}`. Only those two lines, never the identity line, are
+   shown, and only on the terminal. Test output carries just the fixed notice
+   `waiting for account owner approval`. The scratch `auth.json` must exist.
+3. `grok models` prints `You are logged in with ...`, a `Default model: <id>`
+   line and at least one `grok-*` model entry.
+4. Raw ACP over `grok agent stdio`: `initialize` advertises the `cached_token`
+   authentication method, `authenticate` with `cached_token` succeeds,
+   `session/new` returns a `sessionId`, and one `session/prompt` in the scratch
+   repository finishes with `stopReason: "end_turn"`.
+5. `grok logout` exits 0, removes the scratch `auth.json`, and `grok models` then
+   reports `not authenticated`.
+6. The invoking user's real `auth.json` (`$GROK_HOME` or `~/.grok`) has the same
+   SHA-256 before and after. The test only hashes it, never reads it for
+   content, copies it, links it or prints the hash.
+
+Cleanup always runs `grok logout` and removes the scratch directory, including
+after a canceled or timed-out login. A failed check fails the test with a
+message that names the check and never echoes native output, URLs, codes,
+identity or key material. A failure on the current stable release keeps support
+disabled until resolved.
+
+Record the result in the pull request, not in repository evidence files: the
+logged CLI version line (for example `grok 1.0.52 (...) [stable]`), the
+operating system, and pass or fail for each step above. Fixture-only harness
+tests (`TestNativeAccountHarness*`) use a fake `grok` script, need no account and
+run in ordinary `go test`; they do not replace the real-account run.
+
 ## Dependencies and Integrations
 
 The official [CLI reference](https://docs.x.ai/build/cli/reference) defines browser
