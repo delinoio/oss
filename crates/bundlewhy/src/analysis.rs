@@ -1048,48 +1048,109 @@ mod tests {
         .unwrap_or_else(|| panic!("missing vite/commonjs-wrapped for {module}"))
     }
 
+    /// Words that name a specific Node built-in; guidance for a placeholder
+    /// whose original specifier is unknown must not use them.
+    fn names_specific_builtin(text: &str) -> bool {
+        text.split(|c: char| !c.is_alphanumeric() && c != '_')
+            .any(|word| matches!(word, "fs" | "os" | "crypto" | "net" | "child_process"))
+    }
+
+    fn assert_generated_placeholder_common(diagnostic: &Diagnostic, id: &str) {
+        assert_eq!(diagnostic.status, EvidenceStatus::Confirmed, "{id}");
+        assert!(
+            diagnostic
+                .evidence
+                .iter()
+                .all(|evidence| evidence.status == EvidenceStatus::Confirmed),
+            "{id}"
+        );
+        assert!(diagnostic.summary.contains("generates"), "{id}");
+        assert!(diagnostic.summary.contains("must not be edited"), "{id}");
+        assert!(
+            action(diagnostic).direction.contains("dependency path"),
+            "{id}"
+        );
+        assert!(action(diagnostic).direction.contains("server-only"), "{id}");
+        assert!(
+            !action(diagnostic)
+                .direction
+                .contains("ECMAScript module build"),
+            "{id}"
+        );
+        assert!(!action(diagnostic).direction.contains("ESM"), "{id}");
+        assert!(action(diagnostic).safety.contains("Do not edit"), "{id}");
+        assert!(!action(diagnostic).safety.contains("ESM build"), "{id}");
+        assert!(
+            !names_specific_builtin(&action(diagnostic).direction),
+            "{id}"
+        );
+    }
+
     #[test]
-    fn vite_browser_external_placeholder_gets_generated_module_guidance() {
+    fn vite_browser_external_with_builtin_suffix_gets_node_builtin_guidance() {
         for id in [
-            "__vite-browser-external",
-            "\u{0}__vite-browser-external",
             "\u{0}__vite-browser-external:fs",
             "__vite-browser-external:path",
         ] {
             let fixture = vite_cjs_variant(id, None, true);
             let diagnostic =
                 generated_placeholder_diagnostic(&fixture, id.trim_start_matches('\0'));
-            assert_eq!(diagnostic.status, EvidenceStatus::Confirmed, "{id}");
+            assert_generated_placeholder_common(diagnostic, id);
+            assert!(diagnostic.summary.contains("Node built-in"), "{id}");
+            assert!(
+                action(diagnostic).direction.contains("Node built-in"),
+                "{id}"
+            );
+            assert!(action(diagnostic).direction.contains("polyfill"), "{id}");
             assert!(
                 diagnostic
                     .evidence
                     .iter()
-                    .all(|evidence| evidence.status == EvidenceStatus::Confirmed),
+                    .any(|evidence| evidence.detail.contains("built-in suffix")),
                 "{id}"
             );
-            assert!(diagnostic.summary.contains("generates"), "{id}");
-            assert!(diagnostic.summary.contains("must not be edited"), "{id}");
+        }
+    }
+
+    #[test]
+    fn vite_bare_browser_external_keeps_guidance_generic() {
+        // The bare id is also produced for a dependency file that its
+        // `browser` field maps to `false`, so it must not be called a built-in.
+        for id in ["__vite-browser-external", "\u{0}__vite-browser-external"] {
+            let fixture = vite_cjs_variant(id, None, true);
+            let diagnostic =
+                generated_placeholder_diagnostic(&fixture, id.trim_start_matches('\0'));
+            assert_generated_placeholder_common(diagnostic, id);
+            let direction = &action(diagnostic).direction;
+            assert!(direction.contains("browser field"), "{id}");
+            assert!(!direction.contains("polyfill"), "{id}");
+            assert!(!direction.contains("alias"), "{id}");
             assert!(
-                action(diagnostic).direction.contains("dependency path"),
+                !diagnostic.summary.contains("generates for a Node built-in"),
                 "{id}"
             );
-            assert!(action(diagnostic).direction.contains("server-only"), "{id}");
             assert!(
-                !action(diagnostic)
-                    .direction
-                    .split(|c: char| !c.is_alphanumeric())
-                    .any(|word| matches!(word, "fs" | "os" | "crypto" | "net" | "child_process")),
-                "{id}: the direction must not name a specific built-in"
-            );
-            assert!(
-                !action(diagnostic)
-                    .direction
-                    .contains("ECMAScript module build"),
+                !diagnostic.summary.contains("for a Node built-in imported"),
                 "{id}"
             );
-            assert!(!action(diagnostic).direction.contains("ESM"), "{id}");
-            assert!(action(diagnostic).safety.contains("Do not edit"), "{id}");
-            assert!(!action(diagnostic).safety.contains("ESM build"), "{id}");
+            assert!(
+                !action(diagnostic).safety.contains("built-in"),
+                "{id}: the safety text must not assume a Node built-in"
+            );
+            assert!(
+                diagnostic
+                    .evidence
+                    .iter()
+                    .all(|evidence| { !evidence.detail.contains("generates for a Node built-in") }),
+                "{id}"
+            );
+            assert!(
+                diagnostic
+                    .evidence
+                    .iter()
+                    .any(|evidence| evidence.detail.contains("does not show whether")),
+                "{id}"
+            );
         }
     }
 
@@ -1114,6 +1175,19 @@ mod tests {
                 .contains("ECMAScript module build")
         );
         assert!(action(diagnostic).safety.contains("ESM build"));
+
+        // Ids that only share the placeholder prefix are not placeholders.
+        for id in ["__vite-browser-external:", "__vite-browser-externalish"] {
+            let lookalike = vite_cjs_variant(id, None, true);
+            let diagnostic = generated_placeholder_diagnostic(&lookalike, id);
+            assert!(
+                action(diagnostic)
+                    .direction
+                    .contains("ECMAScript module build"),
+                "{id}"
+            );
+            assert!(action(diagnostic).safety.contains("ESM build"), "{id}");
+        }
 
         // A file-backed module that merely resembles the id keeps the advice.
         let backed = vite_cjs_variant(

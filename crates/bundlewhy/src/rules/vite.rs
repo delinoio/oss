@@ -424,23 +424,47 @@ impl SideEffectDeclaration {
     }
 }
 
-/// Id of the module Vite synthesizes for a Node built-in that browser-targeted
-/// code imports. Vite emits it as `__vite-browser-external` (optionally behind
-/// the virtual-module NUL prefix, and in some modes with a `:` suffix).
+/// Id of the module Vite synthesizes as an empty browser stand-in. Vite emits
+/// it as `__vite-browser-external` (optionally behind the virtual-module NUL
+/// prefix). It is produced for a Node built-in imported by browser-targeted
+/// code and also for a dependency file that its `browser` field maps to
+/// `false`. Vite appends `:<specifier>` only for built-ins.
 const BROWSER_EXTERNAL_ID: &str = "__vite-browser-external";
 
-/// True for a Vite-generated browser-external placeholder module: collected as
-/// virtual (no file path) with the browser-external id.
-fn is_vite_browser_external(module: &crate::collect::CollectedModule) -> bool {
+/// What the collected id of a Vite browser-external placeholder reveals about
+/// the module it stands in for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum BrowserExternalKind {
+    /// The id retains a built-in suffix (for example `:fs`), so the original
+    /// specifier is a Node built-in.
+    NodeBuiltin,
+    /// The bare id. It does not reveal the original specifier: it can stand in
+    /// for a Node built-in or for a file the dependency maps to `false` in its
+    /// `browser` field.
+    Unspecified,
+}
+
+/// Classifies a Vite-generated browser-external placeholder module: collected
+/// as virtual (no file path) with the browser-external id. Returns `None` for
+/// every other module.
+fn vite_browser_external_kind(
+    module: &crate::collect::CollectedModule,
+) -> Option<BrowserExternalKind> {
     if !module.is_virtual || module.path.is_some() {
-        return false;
+        return None;
     }
-    module
+    let rest = module
         .id
         .strip_prefix('\0')
         .unwrap_or(&module.id)
-        .strip_prefix(BROWSER_EXTERNAL_ID)
-        .is_some_and(|rest| rest.is_empty() || rest.starts_with(':'))
+        .strip_prefix(BROWSER_EXTERNAL_ID)?;
+    if rest.is_empty() {
+        Some(BrowserExternalKind::Unspecified)
+    } else if rest.strip_prefix(':').is_some_and(|name| !name.is_empty()) {
+        Some(BrowserExternalKind::NodeBuiltin)
+    } else {
+        None
+    }
 }
 
 fn commonjs_wrapped(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
@@ -474,18 +498,29 @@ fn commonjs_wrapped(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>
             EvidenceStatus::Confirmed,
             format!("The runtime helper {helper} is rendered in the bundle."),
         ));
-        let generated = is_vite_browser_external(module);
-        if generated {
+        let generated = vite_browser_external_kind(module);
+        if let Some(kind) = &generated {
+            let detail = match kind {
+                BrowserExternalKind::NodeBuiltin => {
+                    "The module is virtual (no file path) and its id is Vite's browser-external \
+                     placeholder with a built-in suffix, which Vite generates for a Node built-in \
+                     imported by browser-targeted code."
+                }
+                BrowserExternalKind::Unspecified => {
+                    "The module is virtual (no file path) and its id is Vite's bare \
+                     browser-external placeholder, which Vite generates as an empty browser \
+                     stand-in. The id does not show whether the original specifier was a Node \
+                     built-in or a file that a dependency maps to false in its browser field."
+                }
+            };
             evidence.push(Evidence::new(
                 MODULE_INFO,
                 EvidenceStatus::Confirmed,
-                "The module is virtual (no file path) and its id is Vite's browser-external \
-                 placeholder, which Vite generates for a Node built-in imported by \
-                 browser-targeted code.",
+                detail,
             ));
         }
-        let (summary, direction, safety) = if generated {
-            (
+        let (summary, direction, safety) = match generated {
+            Some(BrowserExternalKind::NodeBuiltin) => (
                 "Rolldown wraps CommonJS modules in a runtime closure instead of hoisting them \
                  into the chunk scope. This module is a placeholder that Vite generates for a \
                  Node built-in imported by browser-targeted code; it has no source file, must not \
@@ -497,9 +532,23 @@ fn commonjs_wrapped(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>
                 "Do not edit or convert the generated placeholder. Confirm that the importer does \
                  not need the built-in's behavior in the browser before removing or replacing the \
                  usage; the placeholder exposes no real implementation.",
-            )
-        } else {
-            (
+            ),
+            Some(BrowserExternalKind::Unspecified) => (
+                "Rolldown wraps CommonJS modules in a runtime closure instead of hoisting them \
+                 into the chunk scope. This module is a placeholder that Vite generates as an \
+                 empty browser stand-in for a module that is not available in the browser; it has \
+                 no source file, must not be edited, and has no ECMAScript module build to import.",
+                "Follow the dependency path to the importer that pulls the externalized module \
+                 into the browser bundle, then identify the original specifier from that \
+                 importer: a Node built-in or a file that the dependency maps to false in its \
+                 browser field. Decide for browser compatibility whether to remove or replace \
+                 that usage, provide a browser-compatible replacement, or keep the import \
+                 server-only.",
+                "Do not edit or convert the generated placeholder. Confirm that the importer does \
+                 not need the original module's behavior in the browser before removing or \
+                 replacing the usage; the placeholder exposes no real implementation.",
+            ),
+            None => (
                 "Rolldown wraps CommonJS modules in a runtime closure instead of hoisting them \
                  into the chunk scope. The wrapper, its interop helpers and exports that cannot \
                  be analyzed statically stay in the bundle.",
@@ -507,7 +556,7 @@ fn commonjs_wrapped(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>
                  or \"module\" field) or convert the module to ESM syntax.",
                 "Confirm that the ESM build exposes the same API and evaluation order; CommonJS \
                  modules evaluate lazily on first require.",
-            )
+            ),
         };
         let status = EvidenceStatus::Confirmed;
         drafts.push(DiagnosticDraft {
