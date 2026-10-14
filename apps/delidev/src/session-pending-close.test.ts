@@ -305,6 +305,67 @@ describe("pending Close ownership across product windows", () => {
       expect(synced).toBe(true);
     });
 
+    it("re-announces the hold to a live window that missed the first one", async () => {
+      const held = new Set<string>();
+      const locks: PendingCloseLocks = {
+        request: (name, _options, callback) => {
+          held.add(name);
+          return callback().finally(() => held.delete(name));
+        },
+        query: async () => ({ held: [...held].map((name) => ({ name })) }),
+      };
+      const bus = new QueuedBus();
+      const first = new PendingCloseRegistry({
+        channel: bus.endpoint(),
+        locks,
+        window: "a",
+      });
+      const second = new PendingCloseRegistry({
+        channel: bus.endpoint(),
+        locks,
+        window: "b",
+      });
+      bus.queue.length = 0;
+      let synced = false;
+      void first.hold("k", {}).then(() => (synced = true));
+      // The sibling registered its lock but never received the first Hold.
+      bus.queue.length = 0;
+      await vi.advanceTimersByTimeAsync(0);
+      expect(synced).toBe(false);
+      expect(second.has("k")).toBe(false);
+      // Discovering it re-sends an acknowledgement-requesting Hold.
+      bus.flush();
+      await vi.advanceTimersByTimeAsync(0);
+      bus.flush();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(second.has("k")).toBe(true);
+      expect(synced).toBe(true);
+    });
+
+    it("asks a window that joins mid-barrier for an acknowledgement", async () => {
+      const bus = new QueuedBus();
+      const first = new PendingCloseRegistry({
+        channel: bus.endpoint(),
+        locks: null,
+        window: "a",
+      });
+      let synced = false;
+      void first.hold("k", {}).then(() => (synced = true));
+      bus.queue.length = 0;
+      const late = new PendingCloseRegistry({
+        channel: bus.endpoint(),
+        locks: null,
+        window: "c",
+      });
+      // The newcomer's Query is answered with a Hold that requires an Ack.
+      bus.flush();
+      bus.flush();
+      bus.flush();
+      expect(late.has("k")).toBe(true);
+      await vi.advanceTimersByTimeAsync(150);
+      expect(synced).toBe(true);
+    });
+
     it("waits out discovery for an unintroduced window without Web Locks", async () => {
       const bus = new QueuedBus();
       const first = new PendingCloseRegistry({

@@ -368,8 +368,16 @@ export class PendingCloseRegistry {
     this.peers.add(data.window);
     if (data.kind === PendingCloseMessageKind.Query) {
       this.send({ kind: PendingCloseMessageKind.Presence });
-      for (const key of this.local.keys())
-        this.send({ kind: PendingCloseMessageKind.Hold, key });
+      for (const key of this.local.keys()) {
+        // A Hold still gathering acknowledgements asks the newcomer for one,
+        // otherwise a window that joined mid-barrier could never satisfy it.
+        const waiter = this.waiters.get(key);
+        this.send({
+          kind: PendingCloseMessageKind.Hold,
+          key,
+          ...(waiter ? { ack: true, id: waiter.id } : {}),
+        });
+      }
       return;
     }
     if (data.kind === PendingCloseMessageKind.Presence) return;
@@ -472,9 +480,27 @@ export class PendingCloseRegistry {
         ack: true,
         id: waiter.id,
       });
+      // Windows the acknowledgement-requesting Hold was sent to or answered by.
+      const asked = new Set<string>(this.peers);
       const discovered = (live: Set<string> | null) => {
         if (finished) return;
         waiter.required ??= new Set([...this.peers, ...(live ?? [])]);
+        // A live window that registered after the first broadcast never saw an
+        // acknowledgement-requesting Hold: ask again so it can answer.
+        let again = false;
+        for (const peer of live ?? []) {
+          if (asked.has(peer)) continue;
+          asked.add(peer);
+          waiter.required.add(peer);
+          again = true;
+        }
+        if (again && this.local.has(key))
+          this.send({
+            kind: PendingCloseMessageKind.Hold,
+            key,
+            ack: true,
+            id: waiter.id,
+          });
         waiter.check();
       };
       void this.liveWindows().then((live) => {
