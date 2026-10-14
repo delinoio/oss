@@ -61,6 +61,8 @@ test("vite collection root follows resolver symlink policy", () => {
 
   assert.equal(normalizeCollectionRoot(lexicalRoot), fs.realpathSync(realRoot));
   assert.equal(normalizeCollectionRoot(lexicalRoot, true), lexicalRoot);
+  const missingRoot = path.join(work, "missing");
+  assert.equal(normalizeCollectionRoot(missingRoot), missingRoot);
 
   fs.rmSync(work, { recursive: true, force: true });
 });

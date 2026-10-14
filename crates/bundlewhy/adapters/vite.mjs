@@ -32,7 +32,13 @@ export const ADAPTER_VERSION = "1";
  * checks disagree with the IDs emitted by the build.
  */
 export function normalizeCollectionRoot(root, preserveSymlinks = false) {
-  return preserveSymlinks ? root : fs.realpathSync(root);
+  if (preserveSymlinks) return root;
+  // Vite keeps the resolved lexical root when realpath cannot access it yet.
+  try {
+    return fs.realpathSync(root);
+  } catch {
+    return root;
+  }
 }
 
 /**
