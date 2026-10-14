@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativetest"
 )
 
 type nativeCheckpointWorkspace uint8
@@ -22,10 +24,7 @@ const (
 )
 
 func TestManualNativeOpenCodeUnbornProjectCheckpointReplacement(t *testing.T) {
-	binary := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
-	if binary == "" {
-		t.Skip("explicit private pinned OpenCode unborn project fixture")
-	}
+	binary, _ := nativetest.NativeOpenCodeExecutable(t)
 	for _, profile := range []nativeCheckpointWorkspace{checkpointUnbornProject, checkpointFirstCommitProject} {
 		name := "unborn"
 		if profile == checkpointFirstCommitProject {
@@ -36,10 +35,7 @@ func TestManualNativeOpenCodeUnbornProjectCheckpointReplacement(t *testing.T) {
 }
 
 func TestManualNativeOpenCodeOriginalProjectCheckpoint(t *testing.T) {
-	binary := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
-	if binary == "" {
-		t.Skip("explicit private pinned OpenCode project checkpoint fixture")
-	}
+	binary, _ := nativetest.NativeOpenCodeExecutable(t)
 	for _, mode := range []string{"build", "plan"} {
 		t.Run(mode, func(t *testing.T) { nativeClosedCheckpoint(t, binary, mode, checkpointCommittedProject) })
 	}
@@ -98,20 +94,14 @@ func inspectNativeProjectSnapshot(t *testing.T, config apiSessionConfig, value n
 }
 
 func TestManualNativeOpenCodeProjectCheckpointReplacement(t *testing.T) {
-	binary := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
-	if binary == "" {
-		t.Skip("explicit private pinned OpenCode project replacement fixture")
-	}
+	binary, _ := nativetest.NativeOpenCodeExecutable(t)
 	for _, mode := range []string{"build", "plan", "failed", "stopped", "build-plan-build", "plan-build-plan"} {
 		t.Run(mode, func(t *testing.T) { nativeCheckpointReplacement(t, binary, mode, checkpointCommittedProject) })
 	}
 }
 
 func TestManualNativeOpenCodeProjectInPlaceResume(t *testing.T) {
-	binary := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
-	if binary == "" {
-		t.Skip("explicit private pinned OpenCode in-place project fixture")
-	}
+	binary, _ := nativetest.NativeOpenCodeExecutable(t)
 	profiles := map[string]nativeCheckpointWorkspace{"committed": checkpointCommittedProject, "unborn": checkpointUnbornProject, "first-commit": checkpointFirstCommitProject}
 	for name, profile := range profiles {
 		t.Run(name, func(t *testing.T) { nativeCheckpointReplacementMode(t, binary, "build", true, profile) })

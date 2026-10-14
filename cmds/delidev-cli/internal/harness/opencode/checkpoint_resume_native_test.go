@@ -22,24 +22,19 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativetest"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
 func TestManualNativeOpenCodeCheckpointProcessReplacement(t *testing.T) {
-	binary := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
-	if binary == "" {
-		t.Skip("explicit private pinned OpenCode process replacement fixture")
-	}
+	binary, _ := nativetest.NativeOpenCodeExecutable(t)
 	for _, mode := range []string{"build", "plan", "failed", "stopped", "build-plan-build", "plan-build-plan"} {
 		t.Run(mode, func(t *testing.T) { nativeCheckpointReplacement(t, binary, mode) })
 	}
 }
 
 func TestManualNativeOpenCodeCheckpointInPlaceResume(t *testing.T) {
-	binary := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
-	if binary == "" {
-		t.Skip("explicit private pinned OpenCode in-place resume fixture")
-	}
+	binary, _ := nativetest.NativeOpenCodeExecutable(t)
 	for _, mode := range []string{"build", "plan", "failed", "stopped", "build-plan-build", "plan-build-plan"} {
 		t.Run(mode, func(t *testing.T) { nativeCheckpointReplacementMode(t, binary, mode, true) })
 	}
@@ -162,6 +157,7 @@ func nativeCheckpointReplacementMode(t *testing.T, binary string, mode string, i
 		config := fixtureOwnedAPIConfig(t)
 		config.Probe.Process.Logger = slog.New(slog.NewJSONHandler(os.Stderr, nil))
 		config.Probe.Process.Executable = binary
+		_, config.Probe.Version = nativetest.NativeOpenCodeExecutable(t)
 		config.ServerOrigin, config.Token = provider.URL, tokens[turn]
 		config.Settings.Agent, config.Settings.Permission = agentAt(turn), []PermissionRule{}
 		config.Instructions = "Private immutable additive checkpoint instruction."

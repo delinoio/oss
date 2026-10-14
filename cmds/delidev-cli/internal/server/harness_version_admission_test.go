@@ -42,3 +42,33 @@ func TestLegacyExecutionRelayAdmitsBaselineSemVerOnly(t *testing.T) {
 		})
 	}
 }
+
+// TestFirstDispatchFixtureReportsObservedExecutableVersion proves that the
+// dispatch fixture records the version a real native binary reported instead of
+// the harness baseline, so the Worker probes that binary with its true version.
+func TestFirstDispatchFixtureReportsObservedExecutableVersion(t *testing.T) {
+	for _, test := range []struct {
+		name, observed, want string
+	}{
+		{"baseline-by-default", "", domain.OpenCodeProtocolVersion},
+		{"newer-observed", "1.18.33", "1.18.33"},
+		{"prerelease-observed", "2.0.0-rc.1", "2.0.0-rc.1"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f := newFirstDispatchFixtureObserved(t, domain.OpenCode, domain.ExecuteMode, "/fixture/opencode", test.observed, "", "fixture-model", domain.GeneralChat)
+			var machine domain.Machine
+			if err := domain.Decode(f.machine.DocumentJson, &machine); err != nil {
+				t.Fatal(err)
+			}
+			for _, installation := range machine.Installations {
+				if installation.Harness == domain.OpenCode {
+					if installation.Version != test.want || installation.ResolvedPath != "/fixture/opencode" {
+						t.Fatalf("installation version=%q path=%q, want %q", installation.Version, installation.ResolvedPath, test.want)
+					}
+					return
+				}
+			}
+			t.Fatal("OpenCode installation was not reported")
+		})
+	}
+}

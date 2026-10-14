@@ -16,14 +16,12 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativetest"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
 func TestManualNativeOpenCodeOriginalClosedCheckpoint(t *testing.T) {
-	executable := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
-	if executable == "" {
-		t.Skip("explicit isolated pinned OpenCode checkpoint fixture")
-	}
+	executable, _ := nativetest.NativeOpenCodeExecutable(t)
 	for _, mode := range []string{"build", "plan", "failed", "stopped"} {
 		t.Run(mode, func(t *testing.T) { nativeClosedCheckpoint(t, executable, mode) })
 	}
@@ -38,6 +36,7 @@ func nativeClosedCheckpoint(t *testing.T, executable, mode string, project ...na
 		config.Settings.Agent = PlanAgent
 	}
 	config.Probe.Process.Executable = executable
+	_, config.Probe.Version = nativetest.NativeOpenCodeExecutable(t)
 	config.Instructions = "Private checkpoint additive instruction."
 	if len(project) == 1 && project[0] != checkpointGeneralChat {
 		prepareNativeCheckpointGit(t, &config, project[0])

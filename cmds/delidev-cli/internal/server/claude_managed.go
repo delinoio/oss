@@ -208,6 +208,14 @@ func (s *Service) requestManagedClaude(ctx context.Context, req *connect.Request
 		return nil, rpc.Error(err, c)
 	}
 	action := subscriptionAction(req.Msg.Action)
+	// A machine-bound sign-in is retired for every Claude account, including an
+	// existing server-token account that routing sends here first. Report the
+	// same typed retirement result as the Runner lane instead of a generic
+	// invalid-argument error.
+	if req.Msg.MachineId != "" && (action == domain.SubscriptionLogin || action == domain.SubscriptionRefresh) {
+		s.logger.WarnContext(ctx, "claude_runner_signin_rejected", "operation_id", req.Msg.Mutation.RequestId, "account_id", req.Msg.Mutation.Id, "machine_id", req.Msg.MachineId, "action", action, "code", domain.Unsupported, "lane", "managed")
+		return nil, rpc.Error(claudeRunnerSignInRetired(), c)
+	}
 	if action != domain.SubscriptionLogin && action != domain.SubscriptionLogout || req.Msg.DeviceCode || req.Msg.MachineId != "" {
 		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "Choose a supported Claude server operation.", "Use login or logout without a Runner Device; reconnection connects a new account."), c)
 	}

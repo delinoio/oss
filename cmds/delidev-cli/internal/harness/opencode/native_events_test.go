@@ -6,24 +6,20 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"sync/atomic"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativetest"
 )
 
 func TestManualNativeOpenCodeEvents(t *testing.T) {
-	if os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE") == "" {
-		t.Skip("explicit private native OpenCode event fixture")
-	}
+	_, _ = nativetest.NativeOpenCodeExecutable(t)
 	nativeTextEventFixture(t, FinishStop)
 }
 
 func TestManualNativeOpenCodeContentFilter(t *testing.T) {
-	if os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE") == "" {
-		t.Skip("explicit private native OpenCode content-filter fixture")
-	}
+	_, _ = nativetest.NativeOpenCodeExecutable(t)
 	nativeTextEventFixture(t, FinishContentFilter)
 }
 
@@ -132,9 +128,7 @@ func nativeTextEventFixture(t *testing.T, reason FinishReason) {
 }
 
 func TestManualNativeOpenCodeEventHeartbeat(t *testing.T) {
-	if os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE") == "" {
-		t.Skip("explicit private native OpenCode event heartbeat fixture")
-	}
+	_, _ = nativetest.NativeOpenCodeExecutable(t)
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		t.Error("heartbeat-only fixture invoked a provider")
 		w.WriteHeader(400)
