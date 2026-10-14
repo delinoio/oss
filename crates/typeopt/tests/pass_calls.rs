@@ -875,3 +875,39 @@ fn shadowed_undefined_is_not_treated_as_inert() {
     optimize(temp.path(), &[]);
     same_behavior(temp.path());
 }
+
+#[test]
+fn inlines_unwritten_let_and_var_functions() {
+    let temp = project(&[(
+        "main.ts",
+        r#"let increment = (n: number) => n + 1;
+var double = function (n: number) {
+  return n * 2;
+};
+console.log(increment(1), double(4), increment(double(2)));
+"#,
+    )]);
+    let report = optimize(temp.path(), &args(&only(&[INLINE, RESIDUAL])));
+    assert!(applied_count(&report, INLINE) >= 2, "{report:#}");
+    let main = emitted(temp.path(), "main.ts");
+    assert!(
+        !main.contains("increment(") && !main.contains("double("),
+        "{main}"
+    );
+    same_behavior(temp.path());
+}
+
+#[test]
+fn preserves_written_let_functions() {
+    assert_not_inlined(
+        &[(
+            "main.ts",
+            r#"let pick = (n: number) => n + 1;
+console.log(pick(1));
+pick = (n: number) => n - 1;
+console.log(pick(1));
+"#,
+        )],
+        "pick(1)",
+    );
+}

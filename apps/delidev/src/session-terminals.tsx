@@ -284,6 +284,12 @@ export function SessionTerminals({
     store: number;
     local: number;
   }>(undefined);
+  // The Session controller stays mounted across departure. Retire only its
+  // selection origin before a late creation acknowledgment can run; the
+  // retained mutation and its exact retry remain owned by the presenter.
+  useLayoutEffect(() => {
+    if (!sessionActive) creationOrigin.current = undefined;
+  }, [sessionActive]);
   const create = useRetainedMutation(
     `terminal-create:${session.id}`,
     TerminalQuery.createTerminal,

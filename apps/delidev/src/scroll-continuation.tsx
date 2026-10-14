@@ -39,6 +39,7 @@ export function ScrollContinuation({
   showErrors = true,
   showInitial = true,
   axis = ContinuationAxis.Vertical,
+  showProgress = false,
 }: {
   query: ScrollContinuationQuery;
   label: string;
@@ -47,6 +48,10 @@ export function ScrollContinuation({
   showErrors?: boolean;
   showInitial?: boolean;
   axis?: ContinuationAxis;
+  /** Opt-in: explain that scrolling loads another page while one exists, and
+   * show a distinct end state once the accepted chain has no next page. A
+   * pending or failed read never counts as exhaustion. */
+  showProgress?: boolean;
 }) {
   const sidebarActivity = useSidebarActivity();
   active = active && sidebarActivity;
@@ -182,6 +187,16 @@ export function ScrollContinuation({
             {copy(reloadRequired ? "pagination.reload" : "pagination.retry")}
           </SettingsActionButton>
         </>
+      ) : null}
+      {showProgress && loaded && nextPageToken && !loading && !error ? (
+        <span className="sidebar-continuation-note">
+          {copy("pagination.moreAvailable", { label })}
+        </span>
+      ) : null}
+      {showProgress && loaded && !nextPageToken && !loading && !error ? (
+        <span role="status" className="sidebar-continuation-note">
+          {copy("pagination.exhausted", { label })}
+        </span>
       ) : null}
       {loaded && nextPageToken && !error ? (
         <SettingsActionButton

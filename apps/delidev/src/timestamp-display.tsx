@@ -73,6 +73,7 @@ export function Timestamp({
   timeZone,
   active = true,
   expired,
+  nativeTitle = true,
 }: {
   value?: string;
   fallback?: ReactNode;
@@ -80,6 +81,9 @@ export function Timestamp({
   timeZone?: string;
   active?: boolean;
   expired?: (timestamp: ReactNode) => ReactNode;
+  /** Surfaces with their own exact-instant tooltip disable the native title and
+   * description so the same instant is not announced or shown twice. */
+  nativeTitle?: boolean;
 }) {
   useLocale();
   const preference = useDateFormat();
@@ -101,7 +105,11 @@ export function Timestamp({
   const now = useSyncExternalStore(listen, getClock, getClock);
   if (!value) return <>{expired ? expired(fallback) : fallback}</>;
   const timestamp = (
-    <time dateTime={value} title={value} aria-description={value}>
+    <time
+      dateTime={value}
+      title={nativeTitle ? value : undefined}
+      aria-description={nativeTitle ? value : undefined}
+    >
       {formatTimestampLabel(value, { preference, mode, timeZone, now })}
     </time>
   );

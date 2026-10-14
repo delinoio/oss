@@ -14,6 +14,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { resolve } from "node:path";
+import { Project, releaseTag } from "./project.mjs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 export const targets = Object.freeze([
@@ -175,7 +176,7 @@ export function buildManifest(input, key, root) {
       name,
       size: before.size,
       sha256,
-      url: `https://github.com/delinoio/oss/releases/download/delidev-v${input.version}/${name}`,
+      url: `https://github.com/delinoio/oss/releases/download/${releaseTag(Project.DeliDev, input.version)}/${name}`,
     };
   });
   const payload = {

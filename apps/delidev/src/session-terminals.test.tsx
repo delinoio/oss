@@ -2743,6 +2743,7 @@ function navigationFixture(options: { rejectFirst?: boolean } = {}) {
     return (
       <>
         <button onClick={() => setDeparted(true)}>Depart session</button>
+        <button onClick={() => setDeparted(false)}>Return to session</button>
         <button
           onClick={() =>
             setIntent({ requestId: newRequestId(), revision: session.revision })
@@ -2799,6 +2800,14 @@ function navigationFixture(options: { rejectFirst?: boolean } = {}) {
           kind: SessionTabKind.Terminal,
           id: origin.id,
         }),
+      );
+    },
+    depart() {
+      fireEvent.click(screen.getByRole("button", { name: "Depart session" }));
+    },
+    returnToSession() {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Return to session" }),
       );
     },
     hold() {
@@ -3008,7 +3017,41 @@ it("still selects the terminal admitted by the toolbar reuse-or-create gesture f
   }
 });
 
-it("does not select the additional terminal after Session departure", async () => {
+it.each(["button", "primary+T"] as const)(
+  "preserves the origin terminal after Session departure and return before %s creation acknowledgment",
+  async (trigger) => {
+    const f = navigationFixture();
+    try {
+      f.openOrigin();
+      const input = await screen.findByRole("textbox", {
+        name: "Terminal input",
+      });
+      await waitFor(() => expect(f.createButton().disabled).toBe(false));
+      const release = f.hold();
+      if (trigger === "button") fireEvent.click(f.createButton());
+      else expect(fireEvent.keyDown(input, primaryT)).toBe(false);
+      await waitFor(() => expect(f.createTerminal).toHaveBeenCalledOnce());
+      f.depart();
+      f.returnToSession();
+      expect(f.selected()).toBe(f.keyOf(f.origin.id));
+      const returnedInput = await screen.findByRole("textbox", {
+        name: "Terminal input",
+      });
+      await waitFor(() => expect(document.activeElement).toBe(returnedInput));
+      await act(async () => release());
+      await waitFor(() => expect(f.addedTab()).not.toBeNull());
+      expect(f.addedTab()!.textContent).toMatch(/^Terminal 3/);
+      expect(f.selected()).toBe(f.keyOf(f.origin.id));
+      expect(document.activeElement).toBe(returnedInput);
+      expect(f.createTerminal).toHaveBeenCalledOnce();
+      expect(f.controlTerminal).not.toHaveBeenCalled();
+    } finally {
+      f.cleanup();
+    }
+  },
+);
+
+it("retains a terminal acknowledged while the Session is absent for explicit opening", async () => {
   const f = navigationFixture();
   try {
     f.openOrigin();
@@ -3017,11 +3060,43 @@ it("does not select the additional terminal after Session departure", async () =
     const release = f.hold();
     fireEvent.click(f.createButton());
     await waitFor(() => expect(f.createTerminal).toHaveBeenCalledOnce());
-    fireEvent.click(screen.getByRole("button", { name: "Depart session" }));
+    f.depart();
     await act(async () => release());
+    f.returnToSession();
+    await waitFor(() => expect(f.addedTab()).not.toBeNull());
+    expect(f.addedTab()!.textContent).toMatch(/^Terminal 3/);
+    expect(f.selected()).toBe(f.keyOf(f.origin.id));
+    f.navigate((store, id) =>
+      store.open(id, { kind: SessionTabKind.Terminal, id: f.added.id }),
+    );
+    expect(f.selected()).toBe(f.keyOf(f.added.id));
+    expect(f.createTerminal).toHaveBeenCalledOnce();
+    expect(f.controlTerminal).not.toHaveBeenCalled();
+  } finally {
+    f.cleanup();
+  }
+});
+
+it("keeps exact additional-creation retry bytes after Session departure and return", async () => {
+  const f = navigationFixture({ rejectFirst: true });
+  try {
+    f.openOrigin();
+    await screen.findByRole("textbox", { name: "Terminal input" });
+    await waitFor(() => expect(f.createButton().disabled).toBe(false));
+    fireEvent.click(f.createButton());
+    const retry = await screen.findByRole("button", {
+      name: "Retry the same terminal creation",
+      hidden: true,
+    });
+    const originalRequest = f.createTerminal.mock.calls[0]![0];
+    f.depart();
+    f.returnToSession();
+    fireEvent.click(retry);
+    await waitFor(() => expect(f.createTerminal).toHaveBeenCalledTimes(2));
+    expect(f.createTerminal.mock.calls[1]![0]).toEqual(originalRequest);
     await waitFor(() => expect(f.addedTab()).not.toBeNull());
     expect(f.selected()).toBe(f.keyOf(f.origin.id));
-    expect(f.createTerminal).toHaveBeenCalledOnce();
+    expect(f.controlTerminal).not.toHaveBeenCalled();
   } finally {
     f.cleanup();
   }

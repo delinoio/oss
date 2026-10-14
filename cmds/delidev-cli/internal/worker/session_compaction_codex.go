@@ -266,7 +266,8 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 		nativeConfig.FrameProfile = retainedHistoryFrameProfile(i.Assignment)
 		nativeConfig.QuotaObserver = managed.publishRollingQuota
 	} else {
-		proxy, err = openCodexNativeProxy(nativeCtx, config, i.ActionID)
+		nativeRoute := captureNativeRoute(config)
+		proxy, err = openCodexNativeProxy(nativeCtx, config, i.ActionID, nativeRoute)
 		if err != nil {
 			return nil, err
 		}
@@ -283,7 +284,7 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 				}
 			}()
 		} else {
-			forwarder, err = openCodexNativeForwarder(nativeCtx, config, i.ActionID, token, false)
+			forwarder, err = openCodexNativeForwarder(nativeCtx, config, i.ActionID, token, false, nativeRoute)
 			if err != nil {
 				return nil, err
 			}

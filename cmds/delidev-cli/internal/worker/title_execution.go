@@ -179,7 +179,8 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 		API:     &codex.APIConfig{ServerOrigin: connection.Credential.Endpoint, Token: token, TitleProfile: true},
 		Process: process.Config{Directory: processRoot, OwnerID: jobID, Executable: resolved, Cwd: workdir, Env: env, Logger: config.Logger},
 	}
-	proxy, err := openCodexNativeProxy(ctx, config, input.OriginalExecutionID)
+	nativeRoute := captureNativeRoute(config)
+	proxy, err := openCodexNativeProxy(ctx, config, input.OriginalExecutionID, nativeRoute)
 	if proxy != nil {
 		cleanup.closeProxy = proxy.Close
 	}
@@ -192,7 +193,7 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 	} else {
 		// The title profile follows the same relocated Local runtime as the
 		// conversation; the forwarder and proxy are mutually exclusive.
-		forwarder, err := openCodexNativeForwarder(ctx, config, input.OriginalExecutionID, token, true)
+		forwarder, err := openCodexNativeForwarder(ctx, config, input.OriginalExecutionID, token, true, nativeRoute)
 		if forwarder != nil {
 			cleanup.closeProxy = forwarder.Close
 		}

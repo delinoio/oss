@@ -37,6 +37,11 @@ test("all six desktop and Worker artifacts are signed with an isolated key", () 
     };
     const manifest = JSON.parse(buildManifest(input, privateKey, declaration));
     assert.equal(manifest.payload.artifacts.length, 12);
+    for (const artifact of manifest.payload.artifacts)
+      assert.equal(
+        artifact.url,
+        `https://github.com/delinoio/oss/releases/download/delidev@v0.2.0/${artifact.name}`,
+      );
     assert.ok(
       verify(
         null,

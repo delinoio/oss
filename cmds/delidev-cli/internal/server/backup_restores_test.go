@@ -317,3 +317,14 @@ func TestRestoreStoppedIntentFailurePreservesOriginalDatabase(t *testing.T) {
 		t.Fatal("stopped-intent failure changed the source backup", observed, err)
 	}
 }
+
+func TestStatusAdvertisesPullRequestPaging50(t *testing.T) {
+	s, _ := newDoctorFixture(t)
+	status, err := s.GetStatus(context.Background(), connect.NewRequest(&pb.GetStatusRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pb.SystemCapability_SYSTEM_CAPABILITY_PULL_REQUEST_PAGING_50_V1 != 103 || !slices.Contains(status.Msg.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_PULL_REQUEST_PAGING_50_V1) || !slices.Contains(status.Msg.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1) {
+		t.Fatal("paging capability number or advertisement changed")
+	}
+}

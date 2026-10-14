@@ -28,9 +28,11 @@ const (
 	// Server-owned Claude setup-token login for new accounts, without a Runner Device.
 	SystemCapability_SYSTEM_CAPABILITY_CLAUDE_SERVER_LOGIN_V1 SystemCapability = 67
 	// Server-owned Claude token execution on Workers that advertise the adapter.
-	SystemCapability_SYSTEM_CAPABILITY_CLAUDE_MANAGED_EXECUTION_V1       SystemCapability = 68
-	SystemCapability_SYSTEM_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1         SystemCapability = 92
-	SystemCapability_SYSTEM_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1            SystemCapability = 102
+	SystemCapability_SYSTEM_CAPABILITY_CLAUDE_MANAGED_EXECUTION_V1 SystemCapability = 68
+	SystemCapability_SYSTEM_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1   SystemCapability = 92
+	SystemCapability_SYSTEM_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1      SystemCapability = 102
+	// Pull request List/Search pages and workspace enrichment accept up to 50 items.
+	SystemCapability_SYSTEM_CAPABILITY_PULL_REQUEST_PAGING_50_V1         SystemCapability = 103
 	SystemCapability_SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1         SystemCapability = 90
 	SystemCapability_SYSTEM_CAPABILITY_TAILSCALE_CONNECTIONS_V1          SystemCapability = 93
 	SystemCapability_SYSTEM_CAPABILITY_SESSION_INBOX_READ_V1             SystemCapability = 89
@@ -122,6 +124,7 @@ var (
 		68:  "SYSTEM_CAPABILITY_CLAUDE_MANAGED_EXECUTION_V1",
 		92:  "SYSTEM_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1",
 		102: "SYSTEM_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1",
+		103: "SYSTEM_CAPABILITY_PULL_REQUEST_PAGING_50_V1",
 		90:  "SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1",
 		93:  "SYSTEM_CAPABILITY_TAILSCALE_CONNECTIONS_V1",
 		89:  "SYSTEM_CAPABILITY_SESSION_INBOX_READ_V1",
@@ -199,6 +202,7 @@ var (
 		"SYSTEM_CAPABILITY_CLAUDE_MANAGED_EXECUTION_V1":          68,
 		"SYSTEM_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1":            92,
 		"SYSTEM_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1":               102,
+		"SYSTEM_CAPABILITY_PULL_REQUEST_PAGING_50_V1":            103,
 		"SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1":            90,
 		"SYSTEM_CAPABILITY_TAILSCALE_CONNECTIONS_V1":             93,
 		"SYSTEM_CAPABILITY_SESSION_INBOX_READ_V1":                89,
@@ -3045,13 +3049,14 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\"V\n" +
 	"\x18GetBackupRestoreResponse\x12:\n" +
-	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\xd5\x1c\n" +
+	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\x86\x1d\n" +
 	"\x10SystemCapability\x12!\n" +
 	"\x1dSYSTEM_CAPABILITY_UNSPECIFIED\x10\x00\x12,\n" +
 	"(SYSTEM_CAPABILITY_CLAUDE_SERVER_LOGIN_V1\x10C\x121\n" +
 	"-SYSTEM_CAPABILITY_CLAUDE_MANAGED_EXECUTION_V1\x10D\x12/\n" +
 	"+SYSTEM_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1\x10\\\x12,\n" +
 	"(SYSTEM_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1\x10f\x12/\n" +
+	"+SYSTEM_CAPABILITY_PULL_REQUEST_PAGING_50_V1\x10g\x12/\n" +
 	"+SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1\x10Z\x12.\n" +
 	"*SYSTEM_CAPABILITY_TAILSCALE_CONNECTIONS_V1\x10]\x12+\n" +
 	"'SYSTEM_CAPABILITY_SESSION_INBOX_READ_V1\x10Y\x12,\n" +

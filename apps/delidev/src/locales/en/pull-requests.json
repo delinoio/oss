@@ -55,5 +55,7 @@
   "pull-requests.retryOriginalProfileSave": "Retry original profile connection",
   "pull-requests.editCurrentRepository": "Edit this repository",
   "pull-requests.profileCapabilityRequired": "Repository connection requires current server support.",
-  "pull-requests.profileSaveUnverified": "The saved repository identity or revision could not be verified. Inspect the original operation before continuing."
+  "pull-requests.profileSaveUnverified": "The saved repository identity or revision could not be verified. Inspect the original operation before continuing.",
+  "pull-requests.pageSizeUnsupported": "This server does not support 50 pull requests per page. Choose 10 or 20.",
+  "pull-requests.pageSizeChecking": "Checking whether this server supports 50 pull requests per page."
 }
