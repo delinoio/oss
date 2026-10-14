@@ -866,6 +866,9 @@ export function ConfigurationEditor({
           apiFormatToWire(apiFormat(document(result.account).api_protocol)!) ===
             request.apiProtocol),
       ),
+    false,
+    undefined,
+    (error) => clientFailure(error).code === FailureCode.Conflict,
   );
   useEffect(() => {
     if (

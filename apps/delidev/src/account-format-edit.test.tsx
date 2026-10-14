@@ -384,6 +384,32 @@ it("retries only the original uncertain format request", async () => {
   expect(value.disconnect).not.toHaveBeenCalled();
 });
 
+it("releases uncertainty after a definitive format conflict", async () => {
+  const value = fixture();
+  value.changeFormat
+    .mockRejectedValueOnce(
+      new ConnectError("Fixture lost response", Code.Unavailable),
+    )
+    .mockRejectedValueOnce(new ConnectError("Provider changed", Code.Aborted));
+  await screen.findByRole("button", { name: "Save changes" });
+  fireEvent.change(screen.getByLabelText("API format"), {
+    target: { value: "openai-responses" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Retry the same configuration" }),
+  );
+  await waitFor(() => expect(value.changeFormat).toHaveBeenCalledTimes(2));
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("button", { name: "Retry the same configuration" }),
+    ).toBeNull(),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(value.saved).toHaveBeenCalledTimes(1));
+  expect(value.changeFormat).toHaveBeenCalledTimes(3);
+});
+
 it("does not enable key-preserving changes without revision capability", async () => {
   fixture(true, false, false);
   await screen.findByRole("option", { name: "OpenAI Responses" });
