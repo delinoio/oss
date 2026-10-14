@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,10 +9,15 @@ import { fileURLToPath } from "node:url";
 import React from "react";
 import {
   parseLockedUfbxVersion,
+  nativeBuildProvenance,
   runBenchmark,
   sampleEventLoopUtilization,
   sourceStatus,
 } from "./benchmark-scenes.mjs";
+import {
+  bindingFilename,
+  writeNativeBuildProvenance,
+} from "./native-build-provenance.mjs";
 import {
   assertTopology,
   expectedTopology,
@@ -400,6 +406,24 @@ test("source dirtiness excludes an existing benchmark destination", async () => 
   } finally {
     await rm(output, { force: true });
     await rm(child, { force: true });
+  }
+});
+
+test("native benchmark profile survives target artifact cleanup", async () => {
+  const output = await mkdtemp(join(tmpdir(), "forge-scene-native-profile-"));
+  const host = { id: "fixture-host" };
+  const revision = "a".repeat(40);
+  try {
+    await writeFile(join(output, bindingFilename(host)), "fixture binding");
+    await writeNativeBuildProvenance(output, host, "release", revision);
+    assert.deepEqual(await nativeBuildProvenance(revision, { host, output }), {
+      nativeBuildProfile: "release",
+      nativeBindingSha256: createHash("sha256")
+        .update("fixture binding")
+        .digest("hex"),
+    });
+  } finally {
+    await rm(output, { recursive: true, force: true });
   }
 });
 

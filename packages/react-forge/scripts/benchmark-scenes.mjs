@@ -45,37 +45,22 @@ const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 if (process.versions.node.split(".")[0] !== "24")
   throw new Error("Scene benchmarks require Node.js 24.");
 
-async function nativeBuildProvenance(sourceRevision) {
-  const host = platforms.find(
-    (item) =>
-      item.platform === process.platform && item.architecture === process.arch,
-  );
+export async function nativeBuildProvenance(sourceRevision, options = {}) {
+  const host =
+    options.host ??
+    platforms.find(
+      (item) =>
+        item.platform === process.platform &&
+        item.architecture === process.arch,
+    );
   if (!host) throw new Error("Unsupported scene benchmark host.");
-  const metadata = await readNativeBuildMetadata(
-    join(root, "packages/react-forge/dist"),
-    host,
-  );
+  const output = options.output ?? join(root, "packages/react-forge/dist");
+  const metadata = await readNativeBuildMetadata(output, host);
   if (metadata.sourceRevision !== sourceRevision)
     throw new Error("React Forge native build does not match source revision.");
-  const binding = await readFile(
-    join(root, "packages/react-forge/dist", `react-forge.${host.id}.node`),
-  );
+  const binding = await readFile(join(output, `react-forge.${host.id}.node`));
   const nativeBindingSha256 = sha256(binding);
-  for (const profile of ["debug", "release"]) {
-    const candidate = await readFile(
-      join(root, "target/react-forge", host.target, profile, host.library),
-    ).catch(() => null);
-    if (
-      candidate &&
-      sha256(candidate) === nativeBindingSha256 &&
-      metadata.profile === (profile === "debug" ? "dev" : "release")
-    )
-      return {
-        nativeBuildProfile: profile === "debug" ? "dev" : "release",
-        nativeBindingSha256,
-      };
-  }
-  return { nativeBuildProfile: "unknown", nativeBindingSha256 };
+  return { nativeBuildProfile: metadata.profile, nativeBindingSha256 };
 }
 
 async function javascriptBuildProvenance(sourceRevision) {
