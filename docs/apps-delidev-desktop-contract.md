@@ -1577,6 +1577,15 @@ or app restart resets it. Labels never expose original or shortened UUIDs. The
 number is presentation only: RPCs, receipts, tab/cache keys, selection and cleanup
 proofs keep the original ID.
 
+A General Chat terminal's native shell prompt shows the label `chat` instead of its
+directory segment while the shell is at the session's original General Chat
+directory, and its ordinary directory display elsewhere. This is Worker-side,
+process-local shell integration: the desktop renders the unchanged native
+output bytes, never rewrites prompts, and adds no RPC, preference or schema.
+Repository Worktree and Local terminals, unknown shells, `cmd.exe` and prompts
+whose directory segment cannot be identified keep their native prompt. See the
+[terminal contract](cmds-delidev-terminals-contract.md).
+
 Opening status, capability/read failures and uncertain-creation recovery render in
 a non-modal strip directly below the tab row while the current pane stays mounted;
 no placeholder tab is created. Read Retry is read-only and never creates a
