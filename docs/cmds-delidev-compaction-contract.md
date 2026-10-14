@@ -520,6 +520,9 @@ retained turn in order. Reject missing, foreign, repeated, reordered, unsupporte
 or unsettled item evidence, missing pages and cursor cycles. Retain the native
 frame bound, 128-turn and profile-aware history budget (16 MiB under the enlarged
 native frame profile, otherwise 4 MiB), with at most 4,096 distinct items.
+The paginated item scan counts the retained item bytes against that history
+budget, consistent with the joined history; the discarded page envelopes (turn
+IDs, timestamps, cursors and JSON structure) have a separate fixed 4 MiB bound.
 Canonical history preserves exact JSON numbers before digest comparison.
 Replacement continuation and explicit original-intent recovery use the same
 complete hydration; observation never sends Revert again. Existing original

@@ -42,7 +42,7 @@ func (c *Client) revertHistoryLocked(ctx context.Context, direction string, turn
 		}
 		seenCursors[*itemsCursor] = true
 	}
-	size := 0
+	budget := revertScanBudget{history: c.historyAggregateLimit()}
 	for {
 		reply, err := c.wire.Call(ctx, domain.NewID(), "thread/items/list", struct {
 			Thread    domain.ID `json:"threadId"`
@@ -58,9 +58,8 @@ func (c *Client) revertHistoryLocked(ctx context.Context, direction string, turn
 		if err != nil || reply.ErrorCode != nil || domain.DecodeBounded(reply.Result, &page, c.nativeFrameLimit()) != nil || page.Data == nil || len(page.Data) > 50 || len(page.Next) == 0 || len(page.Back) == 0 {
 			return nil, compactionUncertain()
 		}
-		size += len(reply.Result)
 		var next, back *string
-		if size > c.historyAggregateLimit() || json.Unmarshal(page.Next, &next) != nil || json.Unmarshal(page.Back, &back) != nil || back != nil && domain.Text(*back, "native item backwards cursor", 4096, true) != nil {
+		if !budget.admit(len(reply.Result), page.Data) || json.Unmarshal(page.Next, &next) != nil || json.Unmarshal(page.Back, &back) != nil || back != nil && domain.Text(*back, "native item backwards cursor", 4096, true) != nil {
 			return nil, compactionUncertain()
 		}
 		for _, entry := range page.Data {
@@ -84,6 +83,30 @@ func (c *Client) revertHistoryLocked(ctx context.Context, direction string, turn
 		slices.Reverse(entries)
 	}
 	return joinRevertHistory(turns, entries, c.historyAggregateLimit())
+}
+
+// maxRevertEnvelopeBytes bounds the discarded item-page transport structure of
+// one paginated Revert scan, independent of the retained history budget. At most
+// 4,096 items in non-empty pages of 50 stay far below it.
+const maxRevertEnvelopeBytes = 4 << 20
+
+// revertScanBudget accounts one paginated Revert scan. Retained item bytes follow
+// the profile-aware history budget, matching the final joined history. The
+// turn IDs, timestamps, cursors and JSON structure of each page are discarded by
+// joinRevertHistory, so they only count against their own fixed bound.
+type revertScanBudget struct {
+	history, items, envelopes int
+}
+
+// admit records one decoded page and reports whether both bounds still hold.
+func (b *revertScanBudget) admit(resultBytes int, entries []revertHistoryItem) bool {
+	pageItems := 0
+	for _, entry := range entries {
+		pageItems += len(entry.Item)
+	}
+	b.items += pageItems
+	b.envelopes += max(resultBytes-pageItems, 0)
+	return b.items <= b.history && b.envelopes <= maxRevertEnvelopeBytes
 }
 
 type revertHistoryItem struct {

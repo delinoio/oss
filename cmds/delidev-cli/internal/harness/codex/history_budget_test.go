@@ -201,3 +201,34 @@ func TestRevertAcceptsAggregateAboveBaseBudgetUnderEnlargedProfile(t *testing.T)
 		t.Fatal("intent verification rejected the retained prefix")
 	}
 }
+
+func TestRevertScanBudgetCountsRetainedItemsNotPageEnvelopes(t *testing.T) {
+	item := func(size int) revertHistoryItem {
+		return revertHistoryItem{TurnID: domain.NewID(), Item: json.RawMessage(strings.Repeat("a", size))}
+	}
+	for _, limit := range []int{4 << 20, 16 << 20} {
+		// Item bytes exactly at the budget pass even though every page result
+		// carries extra transport structure beyond the retained items.
+		budget := revertScanBudget{history: limit}
+		const envelope = 8 << 10
+		for range limit / (1 << 20) {
+			if !budget.admit(1<<20+envelope, []revertHistoryItem{item(1 << 20)}) {
+				t.Fatal("page envelopes were counted against the retained-history budget", limit)
+			}
+		}
+		if budget.items != limit {
+			t.Fatal("unexpected retained item total", budget.items)
+		}
+		// One more retained byte fails, as does a separately oversized envelope.
+		if budget.admit(1+envelope, []revertHistoryItem{item(1)}) {
+			t.Fatal("retained items above the budget were admitted", limit)
+		}
+	}
+	envelopeOnly := revertScanBudget{history: 16 << 20}
+	if !envelopeOnly.admit(maxRevertEnvelopeBytes+10, []revertHistoryItem{item(10)}) {
+		t.Fatal("envelope at its own bound was rejected")
+	}
+	if envelopeOnly.admit(1, nil) {
+		t.Fatal("transport envelopes above their own bound were admitted")
+	}
+}
