@@ -445,6 +445,153 @@ before activation. A failed profile keeps support disabled until resolved.
 Fixture/build/package results do not establish actual account or OS acceptance;
 record supported-platform native and packaging evidence separately.
 
+### Real-account acceptance runbook
+
+`TestAccountAcceptance` in `cmds/delidev-cli/internal/harness/grok/account_native_test.go`
+makes the actual-profile verification above repeatable. It is interactive by
+design (the account owner approves each device-code login in their own browser),
+never runs in CI and is skipped unless both gates are set:
+
+| Variable                               | Meaning                                                                              |
+| -------------------------------------- | ------------------------------------------------------------------------------------ |
+| `DELIDEV_NATIVE_GROK_ACCOUNT=1`        | Opt in to the real-account test.                                                     |
+| `DELIDEV_NATIVE_GROK_EXECUTABLE`       | Absolute path of the Grok Build CLI under test (for example `$HOME/.grok/bin/grok`). |
+| `DELIDEV_NATIVE_GROK_APPROVAL_TIMEOUT` | Optional Go duration, `10s` to `30m`. Default: 5 minutes for the owner to approve.   |
+
+Run it from an interactive terminal (the approval details are written only to
+the controlling terminal, `/dev/tty` or `CONOUT$`; the run fails without one):
+
+```sh
+cd cmds/delidev-cli
+DELIDEV_NATIVE_GROK_ACCOUNT=1 DELIDEV_NATIVE_GROK_EXECUTABLE="$HOME/.grok/bin/grok" \
+  go test ./internal/harness/grok/ -run 'TestAccountAcceptance' -count=1 -v -timeout 45m
+```
+
+`-count=1` is mandatory. Go caches a passing result and would replay a cached
+PASS without launching the CLI even after the Grok binary, its release or the
+account changed; the test environment does not include the binary's contents.
+Never record a run whose output ends in `(cached)`.
+
+`-timeout` must cover the longest approval wait plus the other steps. The owner
+may take up to 30 minutes (`DELIDEV_NATIVE_GROK_APPROVAL_TIMEOUT=30m`) and the
+remaining steps need up to 7 minutes (6 minutes of step budgets plus a minute of
+process-start slack), so the runbook uses `45m`. The test checks
+`go test -timeout` first and fails before any login when the remaining time is
+shorter than the approval wait plus 7 minutes; raise `-timeout` for such a run
+instead of lowering the approval wait below what the owner needs.
+
+Every native command and the scratch `git init` run under a context created for
+that step alone, from `context.Background()`; no step inherits what an earlier
+step left over. The budgets are:
+
+| Step               | Command or context                                                                                      | Budget                                     |
+| ------------------ | ------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| Setup              | `git init` of the scratch repository                                                                    | 30s (`Setup`)                              |
+| Version            | `grok --version`                                                                                        | 30s (`Version`)                            |
+| Login              | `grok login --device-auth`                                                                              | approval wait (5m default, 10s-30m)        |
+| Models             | `grok models` while logged in                                                                           | 30s (`Models`)                             |
+| ACP prompt turn    | `grok agent stdio` start, `initialize`, `authenticate`, `session/new`, `session/prompt`, reply settling | 3m (`Prompt`, one shared budget by design) |
+| Logout             | `grok logout`                                                                                           | 30s (`Logout`)                             |
+| Post-logout models | `grok models` after the logout                                                                          | 30s (`PostLogoutModels`)                   |
+| Cleanup            | the cleanup `grok logout`                                                                               | 30s (`Cleanup`)                            |
+
+The non-login budgets sum to 6 minutes, which `accountFixedBudget` (7 minutes)
+must cover; `TestNativeAccountHarnessFixedBudgetCoversEveryStep` and
+`TestNativeAccountHarnessEveryStepOwnsItsBudget` pin the sum and that each
+command starts with its own deadline.
+
+The test uses a fresh scratch tree (`HOME`, `GROK_HOME`, XDG and temp variables
+all inside it, a scratch git repository as working directory) and the CLI with
+`--no-auto-update` and `GROK_DISABLE_AUTOUPDATER=1`. Each native command runs
+through `internal/process`. It then checks, in order:
+
+1. `grok --version` prints `grok <semver> ...` at or above
+   `domain.GrokSubscriptionBaselineVersion`; the version line is logged for the PR.
+2. `grok login --device-auth` exits 0 after the owner approves. Expected output
+   shape: an `https://` verification URL on an `x.ai` host and a user code
+   `[A-Z0-9]{4}-[A-Z0-9]{4}`. The real CLI prints this prompt on stderr, so
+   stdout and stderr both pass through one filter; every other line of either
+   stream, including the identity line, is dropped. Only the URL and code lines
+   are shown, and only on the terminal; the login fails if they cannot be
+   written there. Test output carries just the fixed notice
+   `waiting for account owner approval`. The scratch `auth.json` must exist.
+   Short native commands (`--version`, `models`, `logout`) check stdout and
+   stderr together without logging either. The ACP agent's stderr is discarded
+   by design because it can carry account details.
+3. `grok models` prints `You are logged in with ...`, a `Default model: <id>`
+   line and at least one `grok-*` model entry.
+4. Raw ACP over `grok agent stdio`: `initialize` advertises the `cached_token`
+   authentication method, `authenticate` with `cached_token` succeeds,
+   `session/new` returns a `sessionId`, and one `session/prompt` in the scratch
+   repository finishes with `stopReason: "end_turn"`. The assistant text is
+   collected from that session's `session/update` `agent_message_chunk` text
+   updates and must be the single word `ok` (case and surrounding punctuation
+   ignored). An empty turn, a reply for another session, non-message updates
+   only, or any other text such as an authentication notice fails the step. The
+   reply text is never logged, only its length on a mismatch. The agent may send
+   the `session/prompt` response before its final `session/update` text frames,
+   so the client keeps reading after the response (refusing any late agent
+   request with `-32601`, as it does while waiting) and validates only once the
+   target session's accumulated text has stopped changing for 2 seconds. With no
+   text yet, it waits up to 20 seconds for the first frame; text that is still
+   changing after 20 seconds fails with `ACP assistant reply did not stabilize`.
+   Both bounds sit inside the 3-minute `Prompt` budget, and an agent exit ends
+   the wait early. This mirrors the official xAI headless client example, which
+   waits for the accumulated text length to stabilize after the prompt result.
+   `TestNativeAccountHarnessPromptTurnValidation` (fake `grok`: update before the
+   response, update after it, several late chunks, a late agent request, no
+   update, a never-stabilizing stream) and `TestNativeAccountHarnessFrameOrderings`
+   (in-process agent: a notification and an agent request before and after the
+   response of each of `initialize`, `authenticate`, `session/new` and
+   `session/prompt`, plus text, no-text, foreign-session, wrong-text and
+   agent-exit rows) pin every ordering. The suite sends no `session/cancel`, and
+   `logout` is a plain CLI command rather than a JSON-RPC pair.
+5. `grok logout` exits 0, removes the scratch `auth.json`, and `grok models` then
+   reports `not authenticated`.
+6. The invoking user's real `auth.json` (`$GROK_HOME` or `~/.grok`) has the same
+   SHA-256 before and after. The test only hashes it, never reads it for
+   content, copies it, links it or prints the hash.
+
+Cleanup always runs `grok logout` and removes the scratch directory, including
+after a canceled or timed-out login, but only when every native process it
+started is confirmed gone. If ownership cannot be confirmed for any native
+process (including the ACP agent and the cleanup `grok logout`), the scratch tree
+is retained, the run fails and the error names the retained path (never its
+content); remove it manually after confirming no `grok` process still uses it.
+A native process is confirmed gone when `internal/process` reports a clean stop
+or, after it reports `recovery_required`, the immediately following owner
+reconciliation (`ReconcileOwner`) succeeds: reconciliation is the proof, so a
+recovery error that reconciliation resolves still fails that command's own
+result but no longer retains the tree. The test records a suspicion per native
+owner and retires it only through that owner's successful reconciliation:
+
+| Site                  | Records a suspicion on                 | Retired by                                                 |
+| --------------------- | -------------------------------------- | ---------------------------------------------------------- |
+| Short command (`run`) | `Run` returns `recovery_required`      | the reconciliation `run` does next                         |
+| Short command (`run`) | its reconciliation fails               | stands                                                     |
+| ACP start             | `Start` returns `recovery_required`    | the reconciliation `startACP` does next (no handle exists) |
+| ACP resume            | `Resume` returns `recovery_required`   | the stop path's reconciliation                             |
+| ACP stop              | `Close` returns `recovery_required`    | the stop path's reconciliation                             |
+| ACP stop              | `Wait` fails other than by exit status | the stop path's reconciliation                             |
+| ACP stop              | its reconciliation fails               | stands                                                     |
+
+`TestNativeAccountHarnessRunUncertaintyMatrix` and
+`TestNativeAccountHarnessACPUncertaintyMatrix` script every row against both
+reconciliation outcomes, and
+`TestNativeAccountHarnessCleanupLogoutRecoveryIsReconciled` covers the cleanup
+logout.
+The cleanup logout fails the run only when the scratch credential file survives
+or its ownership is uncertain; step 5 checks the explicit logout strictly. A failed check fails the test with a
+message that names the check and never echoes native output, URLs, codes,
+identity or key material. A failure on the current stable release keeps support
+disabled until resolved.
+
+Record the result in the pull request, not in repository evidence files: the
+logged CLI version line (for example `grok 1.0.52 (...) [stable]`), the
+operating system, and pass or fail for each step above. Fixture-only harness
+tests (`TestNativeAccountHarness*`) use a fake `grok` script, need no account and
+run in ordinary `go test`; they do not replace the real-account run.
+
 ## Dependencies and Integrations
 
 The official [CLI reference](https://docs.x.ai/build/cli/reference) defines browser
