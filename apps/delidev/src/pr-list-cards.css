@@ -1,11 +1,18 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 .page.pull-requests-page[data-list-layout="true"] {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  min-height: 100%;
   width: 100%;
   max-width: 1120px;
   padding: 32px;
   margin-inline: 0;
   min-width: 0;
   overflow-wrap: anywhere;
+}
+.page.pull-requests-page[data-list-layout="true"] > :not(.pr-workspace) {
+  flex-shrink: 0;
 }
 .pull-requests-page[data-list-layout="true"] > h2,
 .pr-list-header h2 {

@@ -41,6 +41,22 @@ try {
       source: {
         entry: { index: join(app, "src/pr-list-cards-layout.fixture.tsx") },
       },
+      tools: {
+        rspack: {
+          module: {
+            rules: [
+              {
+                test: /\.wasm$/,
+                resourceQuery: /url/,
+                type: "asset/resource",
+                generator: {
+                  filename: "static/wasm/[name].[contenthash:8][ext]",
+                },
+              },
+            ],
+          },
+        },
+      },
       html: { template: join(app, "index.html") },
       output: {
         distPath: { root: directory },
@@ -92,6 +108,7 @@ try {
   for (const language of ["en", "ko"])
     for (const theme of ["light", "dark"])
       for (const [width, height] of [
+        [1440, 1200],
         [1440, 900],
         [1100, 768],
         [960, 640],
@@ -193,6 +210,41 @@ try {
               card.titleFull && !card.overflow && card.actionHeight >= 40,
           ),
           context,
+        );
+        // Vertical fill: the workspace takes the height left in the page, down
+        // to the page bottom padding, and never drops below 320 CSS pixels.
+        const vertical = await page
+          .locator(".pull-requests-page")
+          .evaluate((node) => {
+            const main = node.closest("main"),
+              workspace = node.querySelector(".pr-workspace"),
+              pageRect = node.getBoundingClientRect(),
+              mainRect = main.getBoundingClientRect(),
+              box = workspace.getBoundingClientRect(),
+              paddingBottom = parseFloat(getComputedStyle(node).paddingBottom),
+              panes = [
+                ...workspace.querySelectorAll(
+                  ".pr-workspace-list, .pr-workspace-selected",
+                ),
+              ]
+                .filter((pane) => getComputedStyle(pane).display !== "none")
+                .map((pane) => pane.getBoundingClientRect());
+            return {
+              workspaceHeight: box.height,
+              gapToPageContent: pageRect.bottom - paddingBottom - box.bottom,
+              paddingBottom,
+              pageFillsMain: pageRect.height >= mainRect.height - 1,
+              mainFits: main.scrollHeight <= main.clientHeight + 1,
+              paneGaps: panes.map((pane) => Math.abs(pane.bottom - box.bottom)),
+            };
+          });
+        assert(
+          vertical.workspaceHeight >= 319 &&
+            Math.abs(vertical.gapToPageContent) <= 1 &&
+            vertical.pageFillsMain &&
+            vertical.paneGaps.every((gap) => gap <= 1) &&
+            vertical.paddingBottom === (width < 760 ? 24 : 32),
+          `${context}: vertical fill ${JSON.stringify(vertical)}`,
         );
         assert.equal(geometry.refresh, 1, context);
         assert.equal(geometry.pendingEmpty, "true", context);
@@ -296,6 +348,23 @@ try {
           layout.wide === "true",
           layout.width >= 900,
           `${context}: available body breakpoint`,
+        );
+        const scrolls = await page.locator(".pr-workspace").evaluate((node) => {
+          const list = node.querySelector(".pr-workspace-list"),
+            selected = node.querySelector(".pr-workspace-selected"),
+            selectedBefore = selected.scrollTop;
+          list.scrollTop = 100000;
+          const selectedAfterList = selected.scrollTop;
+          const listAfter = list.scrollTop;
+          selected.scrollTop = 100000;
+          return {
+            selectedUnchanged: selectedAfterList === selectedBefore,
+            listUnchanged: list.scrollTop === listAfter,
+          };
+        });
+        assert(
+          scrolls.selectedUnchanged && scrolls.listUnchanged,
+          `${context}: independent pane scrolling ${JSON.stringify(scrolls)}`,
         );
         await page
           .getByRole("button", {
