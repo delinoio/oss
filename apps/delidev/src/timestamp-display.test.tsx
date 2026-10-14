@@ -301,3 +301,110 @@ test("countdown transition scheduling crosses floored units and exact expiry wit
     now + 60000,
   );
 });
+
+const SECOND = 1000,
+  MINUTE_MS = 60 * SECOND,
+  HOUR_MS = 60 * MINUTE_MS,
+  DAY_MS = 24 * HOUR_MS;
+test.each([
+  [59 * SECOND, "now", "방금"],
+  [60 * SECOND, "1 minute ago", "1분 전"],
+  [59 * MINUTE_MS + 59 * SECOND, "59 minutes ago", "59분 전"],
+  [60 * MINUTE_MS, "1 hour ago", "1시간 전"],
+  [23 * HOUR_MS + 59 * MINUTE_MS, "23 hours ago", "23시간 전"],
+  [24 * HOUR_MS, "1 day ago", "1일 전"],
+  [6 * DAY_MS + 23 * HOUR_MS, "6 days ago", "6일 전"],
+  [7 * DAY_MS, "1 week ago", "1주 전"],
+  [21 * DAY_MS, "3 weeks ago", "3주 전"],
+  [29 * DAY_MS + 23 * HOUR_MS, "4 weeks ago", "4주 전"],
+  [30 * DAY_MS, "1 month ago", "1개월 전"],
+  [60 * DAY_MS, "2 months ago", "2개월 전"],
+  [364 * DAY_MS + 23 * HOUR_MS, "12 months ago", "12개월 전"],
+  [365 * DAY_MS, "1 year ago", "1년 전"],
+  [730 * DAY_MS, "2 years ago", "2년 전"],
+])("Relative mode label at %s ms", async (age, english, korean) => {
+  const value = new Date(now - Number(age)).toISOString();
+  await i18n.changeLanguage("en");
+  expect(
+    formatTimestampLabel(value, { now, mode: TimestampMode.Relative }),
+  ).toBe(english);
+  await i18n.changeLanguage("ko");
+  expect(
+    formatTimestampLabel(value, { now, mode: TimestampMode.Relative }),
+  ).toBe(korean);
+});
+test("Relative mode keeps future, invalid and other-mode behavior", async () => {
+  await i18n.changeLanguage("en");
+  const old = new Date(now - 60 * DAY_MS).toISOString();
+  expect(
+    formatTimestampLabel(new Date(now + SECOND).toISOString(), {
+      now,
+      mode: TimestampMode.Relative,
+      timeZone: "UTC",
+    }),
+  ).not.toMatch(/ago|now/);
+  expect(
+    formatTimestampLabel("not a date", { now, mode: TimestampMode.Relative }),
+  ).toBe("not a date");
+  // Ordinary switches to an absolute date after 24 hours; Exact stays raw.
+  expect(
+    formatTimestampLabel(old, { now, timeZone: "UTC" }),
+  ).not.toMatch(/ago/);
+  expect(
+    formatTimestampLabel(old, { now, mode: TimestampMode.Exact }),
+  ).toBe(old);
+  expect(
+    formatTimestampLabel(old, { now, mode: TimestampMode.Absolute }),
+  ).not.toMatch(/ago/);
+});
+test("Relative transitions land on the next label boundary", () => {
+  const next = (age: number) =>
+    nextTimestampTransition(now - age, now, TimestampMode.Relative)! -
+    (now - age);
+  expect(next(0)).toBe(MINUTE_MS);
+  expect(next(59 * SECOND)).toBe(MINUTE_MS);
+  expect(next(60 * SECOND)).toBe(2 * MINUTE_MS);
+  expect(next(59 * MINUTE_MS + 59 * SECOND)).toBe(HOUR_MS);
+  expect(next(HOUR_MS)).toBe(2 * HOUR_MS);
+  expect(next(23 * HOUR_MS + 1)).toBe(DAY_MS);
+  expect(next(DAY_MS)).toBe(2 * DAY_MS);
+  expect(next(6 * DAY_MS + 1)).toBe(7 * DAY_MS);
+  expect(next(7 * DAY_MS)).toBe(14 * DAY_MS);
+  // Four weeks ends at the 30-day month boundary, not at 35 days.
+  expect(next(28 * DAY_MS)).toBe(30 * DAY_MS);
+  expect(next(30 * DAY_MS)).toBe(60 * DAY_MS);
+  expect(next(360 * DAY_MS)).toBe(365 * DAY_MS);
+  expect(next(365 * DAY_MS)).toBe(730 * DAY_MS);
+  expect(
+    nextTimestampTransition(now + SECOND, now, TimestampMode.Relative),
+  ).toBe(now + SECOND);
+});
+test("Relative labels tick without data reads, recompute on return and release timers", async () => {
+  await i18n.changeLanguage("en");
+  vi.useFakeTimers();
+  vi.setSystemTime(now);
+  const visible = vi
+    .spyOn(document, "visibilityState", "get")
+    .mockReturnValue("visible");
+  const value = new Date(now - 2 * MINUTE_MS).toISOString();
+  const view = render(<Timestamp value={value} mode={TimestampMode.Relative} />);
+  const time = view.container.querySelector("time")!;
+  expect(time.textContent).toBe("2 minutes ago");
+  expect(time.dateTime).toBe(value);
+  expect(time.title).toBe(value);
+  expect(time.getAttribute("aria-description")).toBe(value);
+  expect(vi.getTimerCount()).toBe(1);
+  act(() => vi.advanceTimersByTime(MINUTE_MS));
+  expect(screen.getByText("3 minutes ago")).toBeTruthy();
+  visible.mockReturnValue("hidden");
+  fireEvent(document, new Event("visibilitychange"));
+  expect(vi.getTimerCount()).toBe(0);
+  act(() => vi.setSystemTime(now + 3 * DAY_MS));
+  visible.mockReturnValue("visible");
+  fireEvent.focus(window);
+  expect(screen.getByText("3 days ago")).toBeTruthy();
+  expect(vi.getTimerCount()).toBe(1);
+  view.unmount();
+  expect(vi.getTimerCount()).toBe(0);
+  visible.mockRestore();
+});
