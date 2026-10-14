@@ -2151,27 +2151,20 @@ export function SessionView({
   // follow-up or interaction. A healthy background refresh (previous complete
   // pages retained, no error, no continuation token, all payloads resident) does
   // not restore Info: isFetching is deliberately not part of these gates, so
-  // routine rereads cause no panel or layout flicker. A refresh that fails, comes
-  // back incomplete or evicts pages, or that resolves with new evidence, still
-  // fails closed through the remaining terms and the existing evidence checks.
-  const startupTranscriptCurrent =
-    Boolean(messages.data) &&
-    !messages.error &&
-    !messages.isPending &&
-    !messages.nextPageToken &&
-    pagesResident(messages);
-  const startupQueueCurrent =
-    Boolean(queue.data) &&
-    !queue.error &&
-    !queue.isPending &&
-    !queue.nextPageToken &&
-    pagesResident(queue);
-  const startupInteractionsCurrent =
-    Boolean(interactions.data) &&
-    !interactions.error &&
-    !interactions.isPending &&
-    !interactions.nextPageToken &&
-    pagesResident(interactions);
+  // routine rereads cause no panel or layout flicker. Retained pages are stale
+  // proof, not current proof, after a failed read: Retry and Reload clear the
+  // error while they load, so the failed-read latch (`unrecovered`) keeps Info
+  // visible until a read settles successfully.
+  const startupReadCurrent = (query: typeof messages): boolean =>
+    Boolean(query.data) &&
+    !query.error &&
+    !query.isPending &&
+    !query.unrecovered &&
+    !query.nextPageToken &&
+    pagesResident(query);
+  const startupTranscriptCurrent = startupReadCurrent(messages);
+  const startupQueueCurrent = startupReadCurrent(queue);
+  const startupInteractionsCurrent = startupReadCurrent(interactions);
   const startupBudgetCurrent =
     budgetEvidence?.id === id && budgetEvidence.status === BudgetEvidence.Ready;
   // A projected later follow-up (not the original Queued/Claimed/Accepted

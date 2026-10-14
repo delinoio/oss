@@ -2147,6 +2147,110 @@ it.each(refreshReads)(
     }
   },
 );
+/** Scripted reads of one page kind: each read can be held and made to fail. */
+function scriptRead(f: ReturnType<typeof fixture>, read: RefreshRead) {
+  const kind =
+    read === "transcript" ? EntityKind.MESSAGE : EntityKind.INTERACTION;
+  const state = {
+    started: 0,
+    fail: false,
+    gate: undefined as ReturnType<typeof deferred> | undefined,
+  };
+  const original = {
+    list: f.list.getMockImplementation()!,
+    queue: f.listQueue.getMockImplementation()!,
+  };
+  const run = async () => {
+    state.started += 1;
+    await state.gate?.gate;
+    if (state.fail) throw new ConnectError("Read unavailable", Code.Unavailable);
+  };
+  if (read === "queue")
+    f.listQueue.mockImplementation((async (request: { pageToken: string }) => {
+      await run();
+      return original.queue(request);
+    }) as never);
+  else
+    f.list.mockImplementation((async (
+      request: Parameters<typeof original.list>[0],
+    ) => {
+      if (request.filter?.kind !== kind) return original.list(request);
+      await run();
+      return original.list(request);
+    }) as never);
+  return {
+    state,
+    hold() {
+      state.gate = deferred();
+      return state.gate;
+    },
+  };
+}
+/** The agent request tray recovers only while its disclosure is expanded. */
+async function openRetry(container: HTMLElement, read: RefreshRead) {
+  if (read !== "interactions") return;
+  const requests = container.querySelector<HTMLDetailsElement>("details.requests");
+  expect(requests).toBeTruthy();
+  fireEvent.click(requests!.querySelector("summary")!);
+  await waitFor(() => expect(requests!.open).toBe(true));
+}
+it.each(refreshReads)(
+  "keeps startup Info visible through Retry of a failed %s refresh until it settles",
+  async (read) => {
+    const { f, view, info, composer } = await refreshSession("general-chat");
+    try {
+      const script = scriptRead(f, read);
+      script.state.fail = true;
+      refreshAll(f);
+      await waitFor(() => expect(info).toHaveProperty("hidden", false));
+      await waitFor(() => expect(f.client.isFetching()).toBe(0));
+      // Retry clears the error while the retained complete pages stay in place;
+      // those pages are stale proof until the retry settles successfully.
+      script.state.fail = false;
+      const started = script.state.started;
+      const gate = script.hold();
+      await openRetry(view.container, read);
+      fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
+      await waitFor(() => expect(script.state.started).toBe(started + 1));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(info).toHaveProperty("hidden", false);
+      expect(document.activeElement).toBe(composer);
+      gate.release();
+      await waitFor(() => expect(info).toHaveProperty("hidden", true));
+      expect(script.state.started).toBe(started + 1);
+      expectStartupPreserved(f, composer);
+    } finally {
+      view.unmount();
+      f.client.clear();
+    }
+  },
+);
+it.each(refreshReads)(
+  "keeps startup Info visible while a retried %s read fails again",
+  async (read) => {
+    const { f, view, info } = await refreshSession("general-chat");
+    try {
+      const script = scriptRead(f, read);
+      script.state.fail = true;
+      refreshAll(f);
+      await waitFor(() => expect(info).toHaveProperty("hidden", false));
+      await waitFor(() => expect(f.client.isFetching()).toBe(0));
+      const started = script.state.started;
+      const gate = script.hold();
+      await openRetry(view.container, read);
+      fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
+      await waitFor(() => expect(script.state.started).toBe(started + 1));
+      expect(info).toHaveProperty("hidden", false);
+      gate.release();
+      await screen.findByRole("button", { name: "Retry" });
+      expect(info).toHaveProperty("hidden", false);
+      expect(f.enqueue).not.toHaveBeenCalled();
+    } finally {
+      view.unmount();
+      f.client.clear();
+    }
+  },
+);
 /** Four single-row pages with a terminal last token leave three payload pages. */
 const evictedPageLabels = {
   transcript: "Load more Conversation pages",
