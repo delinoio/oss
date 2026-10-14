@@ -2907,7 +2907,7 @@ not change a key or path. The closed purposes are:
 | Scope                | Purposes                                                                      | Required key fields            |
 | -------------------- | ----------------------------------------------------------------------------- | ------------------------------ |
 | system (accountless) | `discovery`, `model_observation`, `title_probe`                               | harness                        |
-| account              | `auth`, `quota`, `credit`, `subscription_probe`                               | harness, account               |
+| account              | `auth`, `quota`, `credit`, `subscription_probe`, `shared_owner`               | harness, account               |
 | conversation         | `conversation`, `fork`, `compaction`, `revert`, `sidechat`, `title`, `review` | harness, account, conversation |
 
 Layout below `<root>/native-profiles/`: `registry.json` (versioned registry,
@@ -2932,6 +2932,33 @@ unchanged. Adapters verify and reuse owned state: probe and execution
 environments no longer require empty directories, only canonical private paths.
 Every launch revalidates its model, instructions, account generation and route;
 a previous run's settings are never inherited.
+
+### Shared Codex owner account home
+
+The managed shared Codex owner (see the
+[shared account owner model](cmds-delidev-subscription-contract.md#shared-account-owner-and-execution-members))
+keeps one account-wide history home at `runtimes/accounts/<account-id>/codex`.
+That directory predates the registry and is a checkpoint-bound history path
+(version 2 `AccountHome`), so it is registered in place under the typed
+account-scoped `shared_owner` key (harness `codex`, account) as a legacy
+profile: nothing is moved, merged or rewritten, the first resolution of a new
+account only creates the fixed private directory, and registration is
+idempotent across owner restarts. The Worker resolves it through the registry
+for every shared execution and for a version 1 history import, and
+checkpoint readers reject a registered path that differs from the derived
+account home. A directory that is not a real private directory, or a
+registration for another path, blocks with a recovery-required failure and is
+never repaired or recreated.
+
+The founding owner takes the profile lock when it is founded and releases only
+the lock when the owner retires; joined members rely on that lock and take none.
+An exclusive continuation of a version 2 account history takes the same lock, so
+a shared owner and an exclusive run can never write the home at once; a held lock
+blocks with `profile_busy`. Retained rollouts, caches and helper links never
+block a later owner. An unremoved `auth.json` still blocks the next founder
+through the credential check. The profile has no conversation or history
+identifier, so session deletion never removes it; no automatic age-based pruning
+applies.
 
 ### Operation journals stay per operation
 

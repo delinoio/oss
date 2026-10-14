@@ -210,10 +210,13 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	nativeHome := filepath.Join(profile.Root, "codex")
 	sharedCodex := config.codexMembers && input.SharedCodexOwnerEligible()
 	if sharedCodex {
-		nativeHome, err = codexAccountHistoryHome(manager.Root, input.AccountID)
-		if err != nil || security.PrivateDir(nativeHome) != nil {
-			return nil, executionCheckpointUncertain()
+		// The shared account history home is registered in place in the
+		// persistent profile registry; its lock is taken by the founding owner.
+		sharedInfo, err := resolveSharedCodexHome(ctx, config, input.MachineID, input.AccountID)
+		if err != nil {
+			return nil, err
 		}
+		nativeHome = sharedInfo.Root
 	}
 	env, err = replaceCodexHome(env, nativeHome)
 	if err != nil {
@@ -252,6 +255,22 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 				return nil, executionCheckpointUncertain()
 			}
 			nativeHome = checkpoint.AccountHome
+			// An exclusive continuation of the account history locks the same
+			// registered profile that a shared owner holds, so both can never
+			// write the home at once.
+			accountProfile, err := acquireSharedCodexHome(ctx, config, input.MachineID, input.AccountID)
+			if err != nil {
+				return nil, err
+			}
+			if accountProfile.Root != nativeHome {
+				_ = accountProfile.Close()
+				return nil, executionCheckpointUncertain()
+			}
+			defer func() {
+				if err := accountProfile.Close(); err != nil {
+					output, returned = nil, config.startup.cleanupFailure(returned, err)
+				}
+			}()
 		}
 		env, err = replaceCodexHome(env, nativeHome)
 		if err != nil {
@@ -438,6 +457,14 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 				}
 			}
 		}()
+		if sharedCodex && sharedFounder {
+			// The founding owner locks the registered account home until the
+			// owner retires; joined members rely on that lock.
+			sharedOwner.profile, err = acquireSharedCodexHome(ctx, config, input.MachineID, input.AccountID)
+			if err != nil {
+				return nil, err
+			}
+		}
 		if !sharedCodex || sharedFounder {
 			if sharedCodex || checkpoint.Version == 2 {
 				if _, statErr := os.Lstat(filepath.Join(nativeHome, "auth.json")); !errors.Is(statErr, os.ErrNotExist) {

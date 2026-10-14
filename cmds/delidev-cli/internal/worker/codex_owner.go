@@ -10,6 +10,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
@@ -92,11 +93,14 @@ func (g *codexAccountGate) fence() {
 }
 
 type codexSharedOwner struct {
-	gate                   *codexAccountGate
-	config                 Config
-	lease                  *managedSubscriptionLease
-	runtime                *codex.SharedRuntime
-	home                   string
+	gate    *codexAccountGate
+	config  Config
+	lease   *managedSubscriptionLease
+	runtime *codex.SharedRuntime
+	home    string
+	// profile is the registry lock of the shared account history home. The
+	// founding owner holds it until the owner retires.
+	profile                *nativeprofile.Lease
 	initial                []byte
 	latest                 []byte
 	unregisterObservations func()
@@ -352,6 +356,7 @@ func (o *codexSharedOwner) reportOwner(last *codexSharedMember) error {
 	}
 	o.pendingOwner = nil
 	o.gate.mu.Unlock()
+	o.releaseProfile()
 	if o.config.Logger != nil {
 		o.config.Logger.Info("codex_shared_owner_retired", "account_id", o.lease.account, "owner_lease_id", o.lease.leaseID(), "cleanup_confirmed", o.clean)
 	}
@@ -376,3 +381,15 @@ func (o *codexSharedOwner) accountHome(root string) (string, error) {
 }
 
 func (o *codexSharedOwner) ownerProcessID() domain.ID { return o.lease.leaseID() }
+
+// releaseProfile releases the registry lock of the shared account history
+// home. It only unlocks: history, caches and helper files stay retained.
+func (o *codexSharedOwner) releaseProfile() {
+	if o.profile == nil {
+		return
+	}
+	if err := o.profile.Close(); err != nil && o.config.Logger != nil {
+		o.config.Logger.Warn("codex_shared_owner_profile_release_failed", "account_id", o.lease.account, "owner_lease_id", o.lease.leaseID())
+	}
+	o.profile = nil
+}

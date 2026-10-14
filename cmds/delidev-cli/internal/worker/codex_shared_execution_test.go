@@ -15,6 +15,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
@@ -240,5 +241,15 @@ func testSharedCodexWorkerSessions(t *testing.T, count int, retry, loss bool) {
 	}
 	if _, err := os.Lstat(filepath.Join(home, "auth.json")); !os.IsNotExist(err) {
 		t.Fatal("account authentication remained after owner retirement")
+	}
+	// The shared account home is a registered in-place profile whose lock the
+	// founding owner released on retirement, with the history left in place.
+	profile, err := acquireSharedCodexHome(ctx, Config{Root: root}, first.input.MachineID, first.input.AccountID)
+	if err != nil {
+		t.Fatalf("retired owner left the shared account home locked or unregistered: %v", err)
+	}
+	defer profile.Close()
+	if profile.Root != home || profile.Origin != nativeprofile.OriginLegacy || profile.Key.Purpose != nativeprofile.PurposeSharedOwner {
+		t.Fatalf("shared account home is not registered in place: %s", profile.Root)
 	}
 }

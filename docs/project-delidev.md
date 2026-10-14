@@ -502,7 +502,7 @@ the [harness](cmds-delidev-harness-contract.md#persistent-native-profiles),
 and [sessions](cmds-delidev-sessions-contract.md#native-histories-and-persistent-profiles)
 contracts. Deploy the updated server and Workers; each owner migrates only its
 own state and rejects incompatible local profile versions without rewriting them.
-Native history IDs have one owner per registry. Explicit deletion verifies the
+The managed shared Codex owner's account-wide history home is registered in place as a `shared_owner` profile. Native history IDs have one owner per registry. Explicit deletion verifies the
 selected managed profile owner and binds its directory identity, while an
 original Claude logout can finish a registry-only retry after its owned
 directory was removed.

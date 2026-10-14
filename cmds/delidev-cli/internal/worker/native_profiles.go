@@ -246,3 +246,95 @@ func peekHistoryNativeRoot(root string, machine domain.ID, harnessKind domain.Ha
 	}
 	return filepath.Join(root, filepath.FromSlash(legacyRuntimePath(history))), nil
 }
+
+// sharedCodexOwnerKey is the registry key of the account-wide Codex history
+// home shared by the members of one managed Codex account owner.
+func sharedCodexOwnerKey(account domain.ID) nativeprofile.Key {
+	return nativeprofile.Key{Harness: domain.Codex, Purpose: nativeprofile.PurposeSharedOwner, Account: account}
+}
+
+// sharedCodexLegacyPath is the registry-relative path of the shared Codex
+// history home. The directory predates the registry and is registered in
+// place; nothing is moved or merged.
+func sharedCodexLegacyPath(account domain.ID) string {
+	return "runtimes/accounts/" + string(account) + "/codex"
+}
+
+// resolveSharedCodexHome registers the fixed per-account Codex history home in
+// place and returns its profile without locking it. Registration is idempotent
+// and survives owner restarts. A registered path that differs from the derived
+// account home, or a home that is not a real private directory, blocks with a
+// closed cause and is never repaired or replaced.
+func resolveSharedCodexHome(ctx context.Context, config Config, machine, account domain.ID) (nativeprofile.Info, error) {
+	home, err := codexAccountHistoryHome(config.Root, account)
+	if err != nil {
+		return nativeprofile.Info{}, err
+	}
+	registry, err := nativeProfiles(config, machine)
+	if err != nil {
+		return nativeprofile.Info{}, err
+	}
+	if err := security.PrivateDir(home); err != nil {
+		return nativeprofile.Info{}, executionCheckpointUncertain()
+	}
+	info, err := registry.RegisterLegacy(ctx, sharedCodexOwnerKey(account), sharedCodexLegacyPath(account))
+	if err != nil {
+		return nativeprofile.Info{}, err
+	}
+	if info.Root != home {
+		nativeprofile.Log(config.Logger, "native_profile_blocked", info.Key, info.ID, nativeprofile.ReasonOwnerInvalid)
+		return nativeprofile.Info{}, nativeprofile.Failure(domain.RecoveryRequired, nativeprofile.ReasonOwnerInvalid, "The shared Codex history home does not match its registered profile.", "Inspect the profile without deleting retained history.")
+	}
+	return info, nil
+}
+
+// acquireSharedCodexHome resolves the shared Codex history home and locks it.
+// The founding owner holds the lock for the owner's lifetime; joined members
+// rely on that lock. A held lock blocks with the closed cause profile_busy.
+func acquireSharedCodexHome(ctx context.Context, config Config, machine, account domain.ID) (*nativeprofile.Lease, error) {
+	info, err := resolveSharedCodexHome(ctx, config, machine, account)
+	if err != nil {
+		return nil, err
+	}
+	registry, err := nativeProfiles(config, machine)
+	if err != nil {
+		return nil, err
+	}
+	lease, err := registry.Acquire(ctx, info.Key)
+	if err != nil {
+		return nil, err
+	}
+	if lease.Root != info.Root || lease.Origin != nativeprofile.OriginLegacy {
+		_ = lease.Close()
+		return nil, nativeprofile.Failure(domain.RecoveryRequired, nativeprofile.ReasonOwnerInvalid, "The shared Codex history home does not match its registered profile.", "Inspect the profile without deleting retained history.")
+	}
+	return lease, nil
+}
+
+// verifySharedCodexHome checks a checkpoint-bound shared home against the
+// registry without registering or creating anything. An unregistered legacy
+// home passes; a registered one must resolve to the same path.
+func verifySharedCodexHome(root string, machine, account domain.ID, home string) error {
+	registry, err := nativeProfiles(Config{Root: root}, machine)
+	if err != nil {
+		return err
+	}
+	info, ok, err := registry.Lookup(context.Background(), sharedCodexOwnerKey(account))
+	if err != nil {
+		return err
+	}
+	if ok && info.Root != home {
+		return executionCheckpointUncertain()
+	}
+	return nil
+}
+
+// reviewProfile resolves the persistent native review profile of a session.
+func reviewProfile(ctx context.Context, config Config, machine, account, session, action domain.ID) (*nativeprofile.Lease, error) {
+	return conversationProfile(ctx, config, machine, nativeprofile.Key{Harness: domain.Codex, Purpose: nativeprofile.PurposeReview, Account: account, Conversation: session}, action)
+}
+
+// forkChildProfile resolves the persistent profile of a Fork child history.
+func forkChildProfile(ctx context.Context, config Config, machine domain.ID, harnessKind domain.Harness, account, runtime domain.ID) (*nativeprofile.Lease, error) {
+	return conversationProfile(ctx, config, machine, nativeprofile.Key{Harness: harnessKind, Purpose: nativeprofile.PurposeFork, Account: account, Conversation: runtime}, runtime)
+}

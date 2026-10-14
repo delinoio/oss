@@ -835,3 +835,41 @@ func TestRepeatedPublicationFailuresLeaveNoProfileDirectories(t *testing.T) {
 		t.Fatalf("leftover directories: %d", len(entries))
 	}
 }
+
+// The shared Codex owner purpose is account scoped and registers an existing
+// per-account directory in place without allocating a managed profile.
+func TestSharedOwnerPurposeIsAccountScopedAndRegistersInPlace(t *testing.T) {
+	root := testRoot(t)
+	r, _ := workerRegistry(t, root, nil)
+	account := domain.NewID()
+	if err := (Key{Owner: OwnerWorker, Machine: domain.NewID(), Harness: domain.Codex, Purpose: PurposeSharedOwner}).Validate(); err == nil {
+		t.Fatal("a shared owner key without an account was accepted")
+	}
+	if err := (Key{Owner: OwnerWorker, Machine: domain.NewID(), Harness: domain.Codex, Purpose: PurposeSharedOwner, Account: account, Conversation: domain.NewID()}).Validate(); err == nil {
+		t.Fatal("a shared owner key with a conversation was accepted")
+	}
+	relative := "runtimes/accounts/" + string(account) + "/codex"
+	home := filepath.Join(root, filepath.FromSlash(relative))
+	if err := security.PrivateDir(home); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "history"), []byte("kept"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	key := Key{Harness: domain.Codex, Purpose: PurposeSharedOwner, Account: account}
+	info, err := r.RegisterLegacy(context.Background(), key, relative)
+	if err != nil || info.Origin != OriginLegacy || info.Root != home {
+		t.Fatalf("shared owner home was not registered in place: %+v %v", info, err)
+	}
+	lease, err := r.Acquire(context.Background(), key)
+	if err != nil || lease.ID != info.ID || lease.Root != home {
+		t.Fatalf("acquire did not reuse the registered home: %v", err)
+	}
+	defer lease.Close()
+	if _, err := r.Acquire(context.Background(), key); err == nil {
+		t.Fatal("a held shared owner home was locked twice")
+	}
+	if raw, err := os.ReadFile(filepath.Join(home, "history")); err != nil || string(raw) != "kept" {
+		t.Fatal("registration changed retained history")
+	}
+}

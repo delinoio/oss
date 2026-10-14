@@ -32,6 +32,10 @@ const (
 	PurposeQuota             Purpose = "quota"
 	PurposeCredit            Purpose = "credit"
 	PurposeSubscriptionProbe Purpose = "subscription_probe"
+	// PurposeSharedOwner is the account-wide Codex history home shared by the
+	// members of one managed Codex account owner. It is registered in place at
+	// its fixed per-account path and never holds a per-conversation history.
+	PurposeSharedOwner Purpose = "shared_owner"
 	// Conversation purposes are keyed by account and a logical native history.
 	PurposeConversation Purpose = "conversation"
 	PurposeFork         Purpose = "fork"
@@ -53,7 +57,7 @@ const (
 
 var purposeScopes = map[Purpose]Scope{
 	PurposeDiscovery: ScopeSystem, PurposeModelObservation: ScopeSystem, PurposeTitleProbe: ScopeSystem,
-	PurposeAuth: ScopeAccount, PurposeQuota: ScopeAccount, PurposeCredit: ScopeAccount, PurposeSubscriptionProbe: ScopeAccount,
+	PurposeAuth: ScopeAccount, PurposeQuota: ScopeAccount, PurposeCredit: ScopeAccount, PurposeSubscriptionProbe: ScopeAccount, PurposeSharedOwner: ScopeAccount,
 	PurposeConversation: ScopeConversation, PurposeFork: ScopeConversation, PurposeCompaction: ScopeConversation,
 	PurposeRevert: ScopeConversation, PurposeSidechat: ScopeConversation, PurposeTitle: ScopeConversation, PurposeReview: ScopeConversation,
 }

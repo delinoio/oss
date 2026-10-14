@@ -3,6 +3,7 @@
 - Follow the root instruction-update policy and the nearest parent instructions.
 - This file covers `cmds/delidev-cli/internal/nativeprofile/` and its descendants.
 - This package is the single owner and resolver of persistent native homes. Resolve every native launch path through it; never allocate a temporary or per-execution native home and never add a hidden temporary-home fallback.
+- The closed `shared_owner` purpose is account scoped and only registers the existing shared Codex account history home in place; it never holds a conversation or history identifier.
 - Keys use typed purposes and stable identifiers only. Never derive a profile from an execution, request or attempt identifier.
 - Keep registry, owner record and receipt versions closed; reject incompatible versions without rewriting them.
 - Log with closed reasons only; never log secrets, native contents or personal paths.
