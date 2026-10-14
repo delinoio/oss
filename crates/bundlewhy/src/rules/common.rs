@@ -477,7 +477,10 @@ fn env_guards(
         .into_iter()
         .zip(contexts.into_iter().zip(blocked))
         .map(|(guard, (context, blocked))| match context {
-            ScopeContext::Invalid => None,
+            // An invalid enclosing expression blocks inherited branch
+            // evidence, but an operator found inside that expression still
+            // directly controls its own branch.
+            ScopeContext::Invalid => guard,
             ScopeContext::Neutral => guard,
             ScopeContext::Guard(fallback) if !blocked => guard.or(Some(fallback)),
             ScopeContext::Guard(_) => guard,
@@ -1598,6 +1601,13 @@ y=/process.env.F/.test(z),process.env.G"#;
         assert_eq!(
             guard("(()=>process.env.VERSION)&&run()", "process.env.VERSION"),
             None
+        );
+        assert_eq!(
+            guard(
+                "function run(){process.env.VERSION&&work()}",
+                "process.env.VERSION"
+            ),
+            Some("the retained read controls a && short-circuit branch")
         );
     }
 
