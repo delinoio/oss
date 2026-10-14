@@ -1,13 +1,18 @@
 # DeliDev v1 Connect contract
 
-## Parallel session dispatch reservation
+## Parallel session dispatch negotiation
 
-Worker `PARALLEL_SESSIONS_V1 = 66` is reserved by issue 3465 as the first change
-of its pull request, before any behavior uses it. The reservation grants no
-dispatch authority: no server echoes it and no Worker advertises it until the
-parallel session dispatch change in the same pull request activates it. Existing
-numeric assignments are unchanged. Go and TypeScript Worker descriptors expose
-the new enum. No public RPC, System capability or SQLite migration is added.
+Worker `PARALLEL_SESSIONS_V1 = 66` is reserved by issue 3465 as the first
+commit of its pull request, with no active behavior, and activated by the
+dispatch commits that follow in the same pull request. This deviates from a
+separate main-first reservation pull request; the pull request body records the
+deviation. The server echoes the capability in
+`AttachWorkerResponse.supported_worker_capabilities`; a Worker advertises it only
+after observing that echo, and the machine records it only when advertised.
+Existing numeric assignments are unchanged. Go and TypeScript Worker descriptors
+expose the new enum. No public RPC, System capability, message field or SQLite
+migration is added. The [command contract](cmds-delidev-contract.md#parallel-session-dispatch)
+owns dispatch behavior.
 
 ## Branch prefix exact-quote negotiation
 
@@ -439,7 +444,7 @@ Authenticated owner clients and separately authorized outbound Workers. No unaut
 
 `WorkerService` is the outbound execution boundary: an authenticated Worker attaches with a fresh process instance identity, receives bounded server-streamed work assignments, and reports results through separate unary RPCs. The server binds every assignment, acknowledgment, and result to that machine, job, and claimed process instance. A disconnect never authorizes a duplicate execution or a different-machine retry. Per-device revocation cancels active RPC contexts and rejects both later authorization and in-flight mutation commits. It atomically cancels that machine's undispatched jobs and marks claimed jobs uncertain, propagating the failure to any repository-save coordinator, session preparation and native execution/input ownership; a connection cancellation never proves an accepted native operation had no side effects. Accepted job routing remains immutable.
 
-Each outbound work stream delivers at most one unresolved assignment; later accepted jobs stay queued until the preceding report resolves. Ten-second heartbeats continue during native work. Workers receive in a separate bounded loop, cancel owned work on stream termination/revocation or 45 seconds of silence, join cleanup, and retain the durable outcome before reconnecting. A same-instance reconnect may reuse a finished journal/report identity but cannot rerun a started operation without its completion record. Half-open TCP is not continuing execution authority. `WatchWorkResponse.cancel_job_id` is a separate control for an immutable assigned job; `cancel_requested` accompanies a replayed assignment whose cancellation was already accepted. Controls never alter its revision/digest, survive server restart and target only that job. A precanceled assignment writes its completion journal without starting native work. Worker reports classify confirmed cancellation as `canceled`, while unresolved ownership remains `uncertain`.
+Each outbound work stream delivers at most one unresolved assignment unless `PARALLEL_SESSIONS_V1` was negotiated; later accepted jobs stay queued until the preceding report resolves. A negotiated stream may hold one unresolved assignment per independent session, keeps the single stream per machine instance, and sends cancellation, question, approval and steer controls only for their original `job_id`. Ten-second heartbeats continue during native work. Workers receive in a separate bounded loop, cancel owned work on stream termination/revocation or 45 seconds of silence, join cleanup, and retain the durable outcome before reconnecting. A same-instance reconnect may reuse a finished journal/report identity but cannot rerun a started operation without its completion record. Half-open TCP is not continuing execution authority. `WatchWorkResponse.cancel_job_id` is a separate control for an immutable assigned job; `cancel_requested` accompanies a replayed assignment whose cancellation was already accepted. Controls never alter its revision/digest, survive server restart and target only that job. A precanceled assignment writes its completion journal without starting native work. Worker reports classify confirmed cancellation as `canceled`, while unresolved ownership remains `uncertain`.
 
 `SystemService.GetDoctor` retains its empty request/JSON response and now returns the bounded version-2 [diagnostic report](cmds-delidev-diagnostics-contract.md), with decimal-string capacities/counts, explicit partial inventories, original-connection observations and final client authorization. No protobuf change is required; unknown report versions cannot establish health.
 

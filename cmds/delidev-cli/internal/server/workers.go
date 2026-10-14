@@ -490,6 +490,12 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 		}
 		return false
 	}
+	s.logger.InfoContext(ctx, "worker_stream_opened", "machine_id", machine, "instance_id", instance, "parallel_sessions", parallel)
+	defer func() {
+		// Owned claimed jobs stay claimed for explicit reconciliation; they are
+		// never redispatched or replayed by the closed stream.
+		s.logger.InfoContext(context.WithoutCancel(ctx), "worker_stream_closed", "machine_id", machine, "instance_id", instance, "parallel_sessions", parallel, "in_flight", len(inFlight))
+	}()
 	wake := workerStoreWake{store: s.Store}
 	for {
 		changed := wake.channel()

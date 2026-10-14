@@ -1039,6 +1039,7 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 		// Every owned parallel assignment observes the cancellation above and is
 		// joined before any shared Worker resource is released.
 		parallelJobs.Wait()
+		config.Logger.InfoContext(context.WithoutCancel(ctx), "worker_stream_joined", "machine_id", credential.MachineID, "instance_id", instance, "parallel_sessions", config.parallelSessions)
 		<-readsDone
 		<-imagesDone
 		<-forwardsDone
