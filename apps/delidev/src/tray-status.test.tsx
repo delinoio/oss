@@ -481,6 +481,33 @@ describe("isolated tray panel", () => {
     await screen.findByText("57.00% remaining");
     expect(screen.queryByText("Loading status…")).toBeNull();
   });
+  it("keeps loading active while a queued read replaces a failed initial read", async () => {
+    const initial = deferred<TrayPanelSnapshot>();
+    const queued = deferred<TrayPanelSnapshot>();
+    let changed = () => {};
+    let readCount = 0;
+    const bridge: TrayPanelBridge = {
+      read: vi.fn(() => (readCount++ === 0 ? initial.promise : queued.promise)),
+      subscribe: vi.fn(async (callback) => {
+        changed = callback;
+        return vi.fn();
+      }),
+      activate: vi.fn(async () => {}),
+      dismiss: vi.fn(async () => {}),
+    };
+    render(<TrayStatus instance={instance} bridge={bridge} />);
+    await waitFor(() => expect(bridge.read).toHaveBeenCalledOnce());
+    act(() => changed());
+    act(() => initial.reject(new Error("read failed")));
+    await waitFor(() => expect(bridge.read).toHaveBeenCalledTimes(2));
+    expect(screen.getAllByText("Loading status…")).toHaveLength(2);
+    expect(
+      screen.queryByText("Account observations are unavailable."),
+    ).toBeNull();
+    act(() => queued.resolve(fixture()));
+    await screen.findByText("57.00% remaining");
+    expect(screen.queryByText("Loading status…")).toBeNull();
+  });
   it("distinguishes initial loading, unavailable and empty accounts, and recovers after a failed read", async () => {
     const firstRead = deferred<TrayPanelSnapshot>();
     const retry = deferred<TrayPanelSnapshot>();
