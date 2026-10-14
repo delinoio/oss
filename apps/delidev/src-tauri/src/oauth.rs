@@ -808,7 +808,7 @@ fn begin_profile(scope: OAuthScope, profile: OAuthProfile) -> Result<Attempt, Na
                         if !peer.ip().is_loopback() {
                             continue;
                         }
-                        handle_request(&mut stream, &host, &path, &control);
+                        handle_request(&mut stream, &host, &path, &control, until);
                     }
                 }
                 thread::sleep(Duration::from_millis(10));
@@ -970,10 +970,33 @@ fn parse_request_profile(
     let code = query.strip_prefix("code=")?;
     decode_code(code).map(Some)
 }
-fn handle_request(stream: &mut TcpStream, host: &str, path: &str, shared: &Shared) {
+// The one-shot claim of a callback. The deadline is rechecked here, immediately
+// before the compare-and-swap, because the owning loop only evaluates it
+// between connections.
+fn claim_callback(shared: &Shared, deadline: Instant) -> bool {
+    shared.bound.load(Ordering::Acquire)
+        && !shared.stop.load(Ordering::Acquire)
+        && Instant::now() < deadline
+        && shared
+            .consumed
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+}
+
+// `deadline` is the owning attempt's expiry. A delivery that was accepted just
+// before it can still be read for up to a second, so the handler reads no
+// longer than the deadline and rechecks it immediately before it consumes the
+// callback. An expired delivery is answered as a bad request and never stored.
+fn handle_request(
+    stream: &mut TcpStream,
+    host: &str,
+    path: &str,
+    shared: &Shared,
+    deadline: Instant,
+) {
     let _ = stream.set_read_timeout(Some(Duration::from_millis(25)));
     let _ = stream.set_write_timeout(Some(Duration::from_millis(100)));
-    let until = Instant::now() + Duration::from_secs(1);
+    let until = (Instant::now() + Duration::from_secs(1)).min(deadline);
     let mut raw = Zeroizing::new(Vec::new());
     let mut buffer = [0u8; 1024];
     while raw.len() <= 32 << 10 && Instant::now() < until && !shared.stop.load(Ordering::Acquire) {
@@ -1009,14 +1032,7 @@ fn handle_request(stream: &mut TcpStream, host: &str, path: &str, shared: &Share
                   no-referrer\r\nContent-Security-Policy: default-src 'none'; frame-ancestors \
                   'none'\r\nConnection: close\r\n";
     let response = match parsed {
-        Some(Some(code))
-            if shared.bound.load(Ordering::Acquire)
-                && !shared.stop.load(Ordering::Acquire)
-                && shared
-                    .consumed
-                    .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-                    .is_ok() =>
-        {
+        Some(Some(code)) if claim_callback(shared, deadline) => {
             if let Ok(mut slot) = shared.code.lock() {
                 *slot = Some(code);
             }
@@ -2066,6 +2082,7 @@ fn begin_subscription(
                                     callback.authority(),
                                     "/auth/callback",
                                     &control,
+                                    until,
                                 );
                             }
                         }
@@ -2736,6 +2753,7 @@ mod claude_subscription_tests {
 // callback could not be forwarded, and the one-shot code would be consumed for
 // nothing, so a remote Grok open is refused up front with
 // `NativeFailure::Incompatible` until the server gains Grok forwarding.
+const GROK_ATTEMPT_LIFETIME: Duration = Duration::from_secs(900);
 const GROK_AUTHORIZATION_HOST: &str = "auth.x.ai";
 const GROK_AUTHORIZATION_PATH: &str = "/oauth2/authorize";
 const GROK_CLIENT_ID: &str = "b1a00492-073a-47ea-816f-4c329264a828";
@@ -2837,6 +2855,24 @@ fn begin_grok_subscription(
     local: bool,
     remote_forwarding: bool,
 ) -> Result<Attempt, NativeFailure> {
+    begin_grok_subscription_for(
+        scope,
+        attempt_id,
+        authorization,
+        local,
+        remote_forwarding,
+        GROK_ATTEMPT_LIFETIME,
+    )
+}
+
+fn begin_grok_subscription_for(
+    scope: OAuthScope,
+    attempt_id: &str,
+    authorization: &str,
+    local: bool,
+    remote_forwarding: bool,
+    lifetime: Duration,
+) -> Result<Attempt, NativeFailure> {
     let (state, port) = validate_grok_subscription_authorization(authorization)?;
     if !local && !remote_forwarding {
         tracing::warn!(
@@ -2854,7 +2890,7 @@ fn begin_grok_subscription(
         stop: AtomicBool::new(false),
         code: Mutex::new(None),
     });
-    let until = Instant::now() + Duration::from_secs(900);
+    let until = Instant::now() + lifetime;
     let authority = format!("127.0.0.1:{port}");
     let handle = if local {
         None
@@ -2881,7 +2917,7 @@ fn begin_grok_subscription(
                         if let Ok((mut stream, peer)) = listener.accept()
                             && peer.ip().is_loopback()
                         {
-                            handle_request(&mut stream, &host, GROK_CALLBACK_PATH, &control);
+                            handle_request(&mut stream, &host, GROK_CALLBACK_PATH, &control, until);
                         }
                         thread::sleep(Duration::from_millis(10));
                     }
@@ -3500,6 +3536,124 @@ mod grok_subscription_tests {
             |_, _| Ok(()),
         )
         .unwrap();
+    }
+
+    fn shared_for_handler() -> Shared {
+        Shared {
+            expected_state: Some(Zeroizing::new(STATE.to_owned())),
+            api_state: Mutex::new(None),
+            api_profile: None,
+            bound: AtomicBool::new(true),
+            consumed: AtomicBool::new(false),
+            stop: AtomicBool::new(false),
+            code: Mutex::new(None),
+        }
+    }
+
+    // Runs the real `handle_request` against a real loopback connection that
+    // already carries one complete, valid Grok redirect.
+    fn run_handler(shared: &Shared, deadline: Instant) -> String {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let mut client = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        client
+            .write_all(
+                format!(
+                    "GET /callback?code=fixture&state={STATE} HTTP/1.1\r\nHost: \
+                     127.0.0.1:{port}\r\n\r\n"
+                )
+                .as_bytes(),
+            )
+            .unwrap();
+        let (mut stream, _) = listener.accept().unwrap();
+        handle_request(
+            &mut stream,
+            &format!("127.0.0.1:{port}"),
+            GROK_CALLBACK_PATH,
+            shared,
+            deadline,
+        );
+        drop(stream);
+        let mut response = String::new();
+        let _ = client.read_to_string(&mut response);
+        response
+    }
+
+    #[test]
+    fn handler_stores_an_in_time_callback_and_drops_one_past_the_deadline() {
+        let in_time = shared_for_handler();
+        let response = run_handler(&in_time, Instant::now() + Duration::from_secs(60));
+        assert!(response.starts_with("HTTP/1.1 303"));
+        assert!(in_time.consumed.load(Ordering::Acquire));
+        assert!(in_time.code.lock().unwrap().is_some());
+
+        // A complete, valid request handled at or after the deadline is dropped
+        // without consuming the one-shot slot or storing a code. The peer may
+        // observe a reset because the request was never read.
+        let expired = shared_for_handler();
+        let response = run_handler(&expired, Instant::now());
+        assert!(!response.starts_with("HTTP/1.1 303"));
+        assert!(!expired.consumed.load(Ordering::Acquire));
+        assert!(expired.code.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn claim_rechecks_the_deadline_immediately_before_the_compare_and_swap() {
+        // The request was read in time, but the deadline passed before the
+        // claim.
+        let shared = shared_for_handler();
+        assert!(!claim_callback(&shared, Instant::now()));
+        assert!(!shared.consumed.load(Ordering::Acquire));
+        // The slot stays claimable until the deadline, and only once.
+        let deadline = Instant::now() + Duration::from_secs(60);
+        assert!(claim_callback(&shared, deadline));
+        assert!(!claim_callback(&shared, deadline));
+        // Stopped and unbound attempts never claim.
+        let stopped = shared_for_handler();
+        stopped.stop.store(true, Ordering::Release);
+        assert!(!claim_callback(&stopped, deadline));
+        let unbound = shared_for_handler();
+        unbound.bound.store(false, Ordering::Release);
+        assert!(!claim_callback(&unbound, deadline));
+    }
+
+    #[test]
+    fn listener_drops_a_delivery_that_completes_after_the_attempt_expires() {
+        let _guard = super::tests::loopback_listener_test_guard();
+        let port = free_port();
+        let attempt = begin_grok_subscription_for(
+            scope(),
+            &uuid::Uuid::now_v7().to_string(),
+            &authorization(port),
+            false,
+            true,
+            Duration::from_millis(400),
+        )
+        .unwrap();
+        let shared = Arc::clone(&attempt.shared);
+        // The peer connects in time (so the listener accepts it) but sends its
+        // request only after the attempt expired.
+        let mut client = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        thread::sleep(Duration::from_millis(600));
+        let _ = client.write_all(
+            format!(
+                "GET /callback?code=fixture&state={STATE} HTTP/1.1\r\nHost: \
+                 127.0.0.1:{port}\r\n\r\n"
+            )
+            .as_bytes(),
+        );
+        let mut response = String::new();
+        let _ = client.read_to_string(&mut response);
+        assert!(!response.starts_with("HTTP/1.1 303"));
+        assert!(!shared.consumed.load(Ordering::Acquire));
+        assert!(shared.code.lock().unwrap().is_none());
+        drop(attempt);
     }
 
     #[test]
