@@ -2308,6 +2308,7 @@ it.each([
   ["Back", "back"],
   ["unmount", "unmount"],
   ["terminal state", "terminal"],
+  ["observed cancellation", "observed"],
   ["verified success", "success"],
 ] as const)(
   "retires a pending verification open through the native host on %s",
@@ -2337,6 +2338,17 @@ it.each([
         {},
         { timeout: 3000 },
       );
+    } else if (how === "observed") {
+      // A WAITING status read carries the canceled flag while the native open
+      // is still pending: the pending dispatch is retired without any local
+      // cancel mutation, so the browser cannot open after the server canceled.
+      f.observeCanceled();
+      await screen.findByText(
+        copy("grok-subscription.problem.canceling"),
+        {},
+        { timeout: 3000 },
+      );
+      expect(f.cancel).not.toHaveBeenCalled();
     } else {
       f.success();
       await screen.findByLabelText(
