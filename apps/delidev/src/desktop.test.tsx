@@ -132,6 +132,8 @@ function savedFixture(stopServer?: (_request: unknown) => Promise<object>) {
     if (command === "show_connection_manager") return;
     if (command === "read_sidebar_preference")
       return { revision: 1, sidebar_preference: "expanded", problem: null };
+    if (command === "read_navigation_preference")
+      return { revision: 1, usage_pinned: false, problem: null };
     if (command === "notification_permission")
       return { permission: "unavailable", problem: "os-unavailable" };
     if (command === "begin_tray" || command === "begin_notifications")
@@ -172,6 +174,7 @@ it("uses only the native-pinned saved authority and direct product RPCs without 
         "begin_notifications",
         "end_notifications",
         "read_sidebar_preference",
+        "read_navigation_preference",
         "begin_inbox_badge",
         "read_inbox_badge_selection",
         "publish_inbox_badge",

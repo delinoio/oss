@@ -34,6 +34,11 @@ import { Surface } from "./views";
 import { Sidebar } from "./sidebar";
 import type { ComponentProps } from "react";
 import { i18n, SupportedLanguage } from "./localization";
+import {
+  NavigationProvider,
+  memoryNavigationBridge,
+  type NavigationBridge,
+} from "./navigation-preference";
 
 type StatusResponse = {
   version: string;
@@ -72,6 +77,7 @@ function mountSidebar({
   props = {},
   stateful = false,
   withApp = false,
+  navigation,
   status = vi.fn<StatusReader>(() => ({
     version: "0.1.0",
     protocolVersion: 1,
@@ -92,6 +98,7 @@ function mountSidebar({
   status?: Mock<StatusReader>;
   stateful?: boolean;
   withApp?: boolean;
+  navigation?: NavigationBridge;
   props?: Partial<ComponentProps<typeof Sidebar>>;
 }) {
   const projectRequests: string[] = [];
@@ -166,21 +173,30 @@ function mountSidebar({
       />
     );
   }
-  const tree = () => (
-    <TransportProvider transport={transport}>
-      <QueryClientProvider client={client}>
-        <MutationIntents>
-          {withApp ? (
-            <div className="app">
-              <Harness />
-            </div>
-          ) : (
-            <Harness />
-          )}
-        </MutationIntents>
-      </QueryClientProvider>
-    </TransportProvider>
-  );
+  const tree = () => {
+    const sidebar = withApp ? (
+      <div className="app">
+        <Harness />
+      </div>
+    ) : (
+      <Harness />
+    );
+    return (
+      <TransportProvider transport={transport}>
+        <QueryClientProvider client={client}>
+          <MutationIntents>
+            {navigation ? (
+              <NavigationProvider bridge={navigation}>
+                {sidebar}
+              </NavigationProvider>
+            ) : (
+              sidebar
+            )}
+          </MutationIntents>
+        </QueryClientProvider>
+      </TransportProvider>
+    );
+  };
   const view = render(tree());
   const setProps = (next: Partial<ComponentProps<typeof Sidebar>>) => {
     currentProps = { ...currentProps, ...next };
@@ -1210,8 +1226,8 @@ it("retires Activity while retaining the four rail destinations and header navig
     );
     const expected =
       language === SupportedLanguage.English
-        ? ["Sessions", "Pull requests", "Usage", "Schedules"]
-        : ["세션", "풀 리퀘스트", "사용량", "예약 작업"];
+        ? ["Sessions", "Pull requests", "Schedules", "More"]
+        : ["세션", "풀 리퀘스트", "예약 작업", "더보기"];
     expect(names.slice(0, 4)).toEqual(expected);
     expect(names).not.toContain(
       language === SupportedLanguage.English ? "Activity" : "활동",
@@ -2394,4 +2410,176 @@ it("closes logical activity and focus before the visual interval, then settles o
     focusAllowed: false,
   });
   view.unmount();
+});
+
+function railNames() {
+  return [...document.querySelectorAll(".sidebar-rail > button")].map((button) =>
+    button.getAttribute("aria-label"),
+  );
+}
+const emptyLists = {
+  projects: () => ({ resources: [] }),
+  sessions: () => ({ sessions: [] }),
+};
+
+it("shows Usage only in More by default and opens the existing Usage destination from it", async () => {
+  const value = mountSidebar({ ...emptyLists });
+  await screen.findByRole("button", { name: "Sessions" });
+  expect(railNames().slice(0, 4)).toEqual([
+    "Sessions",
+    "Pull requests",
+    "Schedules",
+    "More",
+  ]);
+  expect(railNames()).not.toContain("Usage");
+  expect(railNames().at(-1)).toBe("Settings");
+  const more = screen.getByRole("button", { name: "More" });
+  expect(more.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(more);
+  const popover = screen.getByRole("dialog", { name: "More" });
+  expect(more.getAttribute("aria-expanded")).toBe("true");
+  expect(
+    within(popover).getByRole("button", { name: "Pin Usage" }),
+  ).toBeTruthy();
+  expect(document.activeElement).toBe(
+    within(popover).getByRole("button", { name: "Usage" }),
+  );
+  fireEvent.click(within(popover).getByRole("button", { name: "Usage" }));
+  expect(value.navigate).toHaveBeenCalledExactlyOnceWith(Surface.Usage);
+  expect(screen.queryByRole("dialog", { name: "More" })).toBeNull();
+  expect(document.activeElement).toBe(more);
+});
+
+it("pins and unpins Usage without navigating and keeps the active destination named correctly", async () => {
+  const bridge = memoryNavigationBridge();
+  const update = vi.spyOn(bridge, "update");
+  const value = mountSidebar({
+    ...emptyLists,
+    stateful: true,
+    navigation: bridge,
+  });
+  await screen.findByRole("button", { name: "Sessions" });
+  value.setSurface(Surface.Usage);
+  const more = screen.getByRole("button", { name: "More" });
+  expect(more.getAttribute("aria-current")).toBe("page");
+  fireEvent.click(more);
+  fireEvent.click(screen.getByRole("button", { name: "Pin Usage" }));
+  await waitFor(() =>
+    expect(railNames().slice(0, 5)).toEqual([
+      "Sessions",
+      "Pull requests",
+      "Usage",
+      "Schedules",
+      "More",
+    ]),
+  );
+  expect(update).toHaveBeenCalledExactlyOnceWith(true, 1);
+  expect(value.navigate).not.toHaveBeenCalled();
+  expect(
+    document
+      .querySelector(".sidebar-rail > button[aria-label='Usage']")
+      ?.getAttribute("aria-current"),
+  ).toBe("page");
+  expect(more.getAttribute("aria-current")).toBeNull();
+  // The row stays in More while pinned so the same control can unpin.
+  const popover = screen.getByRole("dialog", { name: "More" });
+  expect(within(popover).getByRole("button", { name: "Usage" })).toBeTruthy();
+  fireEvent.click(within(popover).getByRole("button", { name: "Unpin Usage" }));
+  await waitFor(() => expect(railNames()).not.toContain("Usage"));
+  expect(value.navigate).not.toHaveBeenCalled();
+  expect(more.getAttribute("aria-current")).toBe("page");
+});
+
+it("dismisses More with Escape or an outside press, restores opener focus and supports arrow keys", async () => {
+  mountSidebar({ ...emptyLists });
+  await screen.findByRole("button", { name: "Sessions" });
+  const more = screen.getByRole("button", { name: "More" });
+  fireEvent.click(more);
+  const usage = screen.getByRole("button", { name: "Usage" });
+  const pin = screen.getByRole("button", { name: "Pin Usage" });
+  expect(document.activeElement).toBe(usage);
+  fireEvent.keyDown(usage, { key: "ArrowRight" });
+  expect(document.activeElement).toBe(pin);
+  fireEvent.keyDown(pin, { key: "ArrowDown" });
+  expect(document.activeElement).toBe(usage);
+  fireEvent.keyDown(usage, { key: "End" });
+  expect(document.activeElement).toBe(pin);
+  fireEvent.keyDown(pin, { key: "Escape" });
+  expect(screen.queryByRole("dialog", { name: "More" })).toBeNull();
+  expect(document.activeElement).toBe(more);
+  fireEvent.click(more);
+  fireEvent.click(more);
+  expect(screen.queryByRole("dialog", { name: "More" })).toBeNull();
+  fireEvent.click(more);
+  expect(screen.getByRole("dialog", { name: "More" })).toBeTruthy();
+  fireEvent.pointerDown(document.body);
+  expect(screen.queryByRole("dialog", { name: "More" })).toBeNull();
+  expect(document.activeElement).toBe(more);
+});
+
+it("localizes More and the pin controls in Korean", async () => {
+  mountSidebar({ ...emptyLists, navigation: memoryNavigationBridge() });
+  await screen.findByRole("button", { name: "Sessions" });
+  await act(async () => {
+    await i18n.changeLanguage(SupportedLanguage.Korean);
+  });
+  try {
+    fireEvent.click(screen.getByRole("button", { name: "더보기" }));
+    const popover = screen.getByRole("dialog", { name: "더보기" });
+    fireEvent.click(within(popover).getByRole("button", { name: "사용량 고정" }));
+    await within(popover).findByRole("button", { name: "사용량 고정 해제" });
+  } finally {
+    await act(async () => {
+      await i18n.changeLanguage(SupportedLanguage.English);
+    });
+  }
+});
+
+it("keeps the confirmed pin state and offers explicit reload after read or uncertain save failures", async () => {
+  const stored = memoryNavigationBridge();
+  let failRead = true;
+  let failUpdate = false;
+  const bridge: NavigationBridge = {
+    ...stored,
+    read: vi.fn(async () => {
+      if (failRead) throw new Error("storage detail");
+      return stored.read();
+    }),
+    update: vi.fn(async (pinned, revision) => {
+      if (failUpdate) throw new Error("storage detail");
+      return stored.update(pinned, revision);
+    }),
+  };
+  mountSidebar({ ...emptyLists, navigation: bridge });
+  await screen.findByRole("button", { name: "Sessions" });
+  fireEvent.click(screen.getByRole("button", { name: "More" }));
+  const popover = await screen.findByRole("dialog", { name: "More" });
+  await within(popover).findByRole("alert");
+  const pin = within(popover).getByRole("button", { name: "Pin Usage" });
+  expect(pin.getAttribute("aria-disabled")).toBe("true");
+  fireEvent.click(pin);
+  expect(bridge.update).not.toHaveBeenCalled();
+  failRead = false;
+  fireEvent.click(
+    within(popover).getByRole("button", { name: "Reload navigation preference" }),
+  );
+  await waitFor(() => expect(within(popover).queryByRole("alert")).toBeNull());
+  expect(document.activeElement).toBe(pin);
+  expect(pin.getAttribute("aria-disabled")).toBeNull();
+  failUpdate = true;
+  fireEvent.click(pin);
+  await within(popover).findByRole("alert");
+  // An uncertain save never shows the requested pin as committed.
+  expect(railNames()).not.toContain("Usage");
+  expect(
+    within(popover).getByRole("button", { name: "Pin Usage" }),
+  ).toBeTruthy();
+  fireEvent.click(pin);
+  expect(bridge.update).toHaveBeenCalledTimes(1);
+  failUpdate = false;
+  fireEvent.click(
+    within(popover).getByRole("button", { name: "Reload navigation preference" }),
+  );
+  await waitFor(() => expect(within(popover).queryByRole("alert")).toBeNull());
+  expect(railNames()).not.toContain("Usage");
 });
