@@ -190,7 +190,10 @@ describe("pending Close ownership across product windows", () => {
     const observer = make("observer");
     const bus = new Bus();
     const endpoint = bus.endpoint();
-    const registry = new PendingCloseRegistry({ channel: endpoint, window: "w" });
+    const registry = new PendingCloseRegistry({
+      channel: endpoint,
+      window: "w",
+    });
     const sibling = bus.endpoint();
     const seen: unknown[] = [];
     sibling.onmessage = (event) => seen.push(event.data);
@@ -199,7 +202,9 @@ describe("pending Close ownership across product windows", () => {
     expect(endpoint.closed).toBe(1);
     expect(endpoint.onmessage).toBeNull();
     expect(registry.has("k")).toBe(false);
-    expect(seen).toContainEqual(expect.objectContaining({ kind: "release", key: "k" }));
+    expect(seen).toContainEqual(
+      expect.objectContaining({ kind: "release", key: "k" }),
+    );
     expect(seen.at(-1)).toMatchObject({ kind: "bye" });
     // Disposal is idempotent and a disposed registry can reconnect.
     registry.dispose();
@@ -239,8 +244,16 @@ describe("pending Close ownership across product windows", () => {
 
     it("resolves only after every sibling recorded the hold", async () => {
       const bus = new QueuedBus();
-      const first = new PendingCloseRegistry({ channel: bus.endpoint(), locks: null, window: "a" });
-      const second = new PendingCloseRegistry({ channel: bus.endpoint(), locks: null, window: "b" });
+      const first = new PendingCloseRegistry({
+        channel: bus.endpoint(),
+        locks: null,
+        window: "a",
+      });
+      const second = new PendingCloseRegistry({
+        channel: bus.endpoint(),
+        locks: null,
+        window: "b",
+      });
       bus.flush();
       let synced = false;
       void first.hold("k", {}).then(() => (synced = true));
@@ -258,7 +271,11 @@ describe("pending Close ownership across product windows", () => {
       vi.useFakeTimers();
       try {
         const bus = new QueuedBus();
-        const first = new PendingCloseRegistry({ channel: bus.endpoint(), locks: null, window: "a" });
+        const first = new PendingCloseRegistry({
+          channel: bus.endpoint(),
+          locks: null,
+          window: "a",
+        });
         const silent = bus.endpoint();
         // The silent window announces itself once, then never acknowledges.
         silent.postMessage({

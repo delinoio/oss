@@ -126,7 +126,10 @@ export class PendingCloseRegistry {
   // Sibling windows seen on the channel, and the Holds still awaiting acks.
   private peers = new Set<string>();
   private syncing = new Map<string, Promise<void>>();
-  private waiters = new Map<string, { awaiting: Set<string>; done: () => void }>();
+  private waiters = new Map<
+    string,
+    { awaiting: Set<string>; done: () => void }
+  >();
 
   constructor(options: PendingCloseOptions = {}) {
     this.options = options;
@@ -193,7 +196,9 @@ export class PendingCloseRegistry {
     };
     void this.locks
       .query()
-      .then((state) => settle(Boolean(state.held?.some((l) => l.name === name))))
+      .then((state) =>
+        settle(Boolean(state.held?.some((l) => l.name === name))),
+      )
       .catch(() => settle(false));
   }
 

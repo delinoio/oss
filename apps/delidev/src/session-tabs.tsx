@@ -324,7 +324,10 @@ export class SessionTabsStore {
   /** Marks a page as owned by an unsettled Close; `owner` identifies the holder.
    * Resolves once every other product window recorded the hold. */
   holdPendingClose(profile: string, pageId: string, owner: object) {
-    return this.pendingCloses.hold(this.pendingCloseKey(profile, pageId), owner);
+    return this.pendingCloses.hold(
+      this.pendingCloseKey(profile, pageId),
+      owner,
+    );
   }
   /** Releases one holder once its Close settled, was rejected or was abandoned. */
   releasePendingClose(profile: string, pageId: string, owner: object) {
