@@ -30,7 +30,9 @@ import { i18n } from "./localization";
 import { MutationIntents } from "./mutation";
 import { ProductIdentityProvider } from "./product-identity-labels";
 import type { RunnerTailscaleSlots } from "./runner-tailscale-slots";
-import { Settings } from "./settings";
+import { Settings, type SettingsNavigationEntry } from "./settings";
+import { SettingsCategory } from "./settings-category";
+import { SettingsSearchTarget } from "./settings-search";
 import { TailscaleConnections } from "./tailscale-connections";
 
 // Issue 3689: the desktop-owned Tailscale controller presents This computer,
@@ -84,6 +86,7 @@ interface Options {
   readFails?: boolean;
   peerAccepts?: boolean;
   operations?: { id: string; state: string }[];
+  entry?: SettingsNavigationEntry;
 }
 function fixture(options: Options = {}) {
   const {
@@ -240,6 +243,7 @@ function fixture(options: Options = {}) {
       <>
         <Settings
           visible
+          entryDestination={options.entry}
           runnerTailscale={local ? setSlots : undefined}
           connectionSettings={
             local ? <ConnectionsPage local onSlots={() => {}} /> : undefined
@@ -414,6 +418,27 @@ it("lists no Tailscale category and sends no Tailscale requests in a saved-serve
   await idle();
   expect(screen.queryByRole("heading", { name: "This computer" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Enable access" })).toBeNull();
+  for (const call of [
+    calls.getAccess,
+    calls.discover,
+    calls.listApprovals,
+    calls.listConnections,
+  ])
+    expect(call).not.toHaveBeenCalled();
+});
+
+it("opens Runner Devices instead of an empty page when a saved-server window receives a Tailscale destination", async () => {
+  const { calls } = fixture({
+    local: false,
+    entry: {
+      category: SettingsCategory.Tailscale,
+      target: SettingsSearchTarget.TailscaleDevices,
+      generation: "stale-tailscale",
+    },
+  });
+  await screen.findByRole("heading", { level: 1, name: RUNNER });
+  expect(screen.queryByRole("heading", { level: 1, name: TAILSCALE })).toBeNull();
+  await idle();
   for (const call of [
     calls.getAccess,
     calls.discover,

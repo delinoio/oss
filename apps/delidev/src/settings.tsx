@@ -2021,6 +2021,34 @@ export const settingsGroups: {
   },
 ];
 
+/**
+ * Tailscale is hosted only by the original local desktop window, which supplies
+ * the `runnerTailscale` publisher. Saved-server windows list no Tailscale
+ * category, search target or command, so every catalog derives from this one
+ * availability-filtered view of `settingsGroups`.
+ */
+export function availableSettingsGroups(
+  tailscaleAvailable: boolean,
+): typeof settingsGroups {
+  return settingsGroups.map((group) => ({
+    ...group,
+    categories: group.categories.filter(
+      (category) =>
+        category !== SettingsCategory.Tailscale || tailscaleAvailable,
+    ),
+  }));
+}
+// An unavailable Tailscale destination (for example a stale entry replayed into
+// a saved-server window) opens Runner Devices instead of an empty page.
+function reachableCategory(
+  category: SettingsCategory,
+  tailscaleAvailable: boolean,
+): SettingsCategory {
+  return category === SettingsCategory.Tailscale && !tailscaleAvailable
+    ? SettingsCategory.ExecutionWorkers
+    : category;
+}
+
 const settingsIcons: Record<SettingsCategory, string> = {
   [SettingsCategory.AppInformation]:
     "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18m0 5h.01M12 11v6",
@@ -2152,14 +2180,17 @@ const entranceCategories: ReadonlyMap<SettingsCategory, EntranceTarget> =
   ]);
 
 function entrySelection(
-  destination?: SettingsNavigationEntry,
+  destination: SettingsNavigationEntry | undefined,
+  tailscaleAvailable: boolean,
 ): SettingsSelection {
   if (typeof destination === "object")
     return {
-      category:
+      category: reachableCategory(
         destination.category === SettingsCategory.GitWorkflow
           ? SettingsCategory.ProjectDefaults
           : destination.category,
+        tailscaleAvailable,
+      ),
       key: newRequestId(),
       entry:
         destination.resourceId && destination.resourceKind
@@ -2214,8 +2245,11 @@ function SettingsVisit({
   useLocale();
   const closeDrawer = useCloseSidebarDrawer();
   const [searchRequest, setSearchRequest] = useState<SettingsSearchRequest>();
+  // Only the original local desktop window supplies the Tailscale presentation
+  // publisher; saved-server windows list no Tailscale category at all.
+  const tailscaleAvailable = props.runnerTailscale !== undefined;
   const [selection, setSelection] = useState(() =>
-    entrySelection(entryDestination),
+    entrySelection(entryDestination, tailscaleAvailable),
   );
   // The activation key is the category opening, so rendering, reads, edits and
   // preference changes inside the opening cannot replay the entrance.
@@ -2224,18 +2258,8 @@ function SettingsVisit({
     selection.key,
     entranceTarget !== undefined,
   );
-  // Only the original local desktop window supplies the Tailscale presentation
-  // publisher; saved-server windows list no Tailscale category at all.
-  const tailscaleAvailable = props.runnerTailscale !== undefined;
   const visibleGroups = useMemo(
-    () =>
-      settingsGroups.map((group) => ({
-        ...group,
-        categories: group.categories.filter(
-          (category) =>
-            category !== SettingsCategory.Tailscale || tailscaleAvailable,
-        ),
-      })),
+    () => availableSettingsGroups(tailscaleAvailable),
     [tailscaleAvailable],
   );
   const initialDestination = useRef(entryDestination);
@@ -2244,10 +2268,12 @@ function SettingsVisit({
   );
   const navigate = useCallback<NavigateSettings>(
     (category, entry) => {
-      category =
+      category = reachableCategory(
         category === SettingsCategory.GitWorkflow
           ? SettingsCategory.ProjectDefaults
-          : category;
+          : category,
+        tailscaleAvailable,
+      );
       setSearchRequest(undefined);
       closeDrawer();
       setSelection((current) =>
@@ -2256,7 +2282,7 @@ function SettingsVisit({
           : { category, entry, key: newRequestId() },
       );
     },
-    [closeDrawer],
+    [closeDrawer, tailscaleAvailable],
   );
   useEffect(() => {
     if (!entryDestination) {
@@ -2268,10 +2294,15 @@ function SettingsVisit({
     if (initialDestination.current === entryDestination)
       initialDestination.current = undefined;
     else {
-      const target = entrySelection(entryDestination);
+      const target = entrySelection(entryDestination, tailscaleAvailable);
       navigate(target.category, target.entry);
     }
-    if (typeof entryDestination === "object")
+    // A target inside an unavailable category has nothing to focus.
+    if (
+      typeof entryDestination === "object" &&
+      reachableCategory(entryDestination.category, tailscaleAvailable) ===
+        entryDestination.category
+    )
       setSearchRequest({
         category:
           entryDestination.category === SettingsCategory.GitWorkflow
@@ -2281,7 +2312,7 @@ function SettingsVisit({
         generation: entryDestination.generation,
       });
     destinationConsumed?.();
-  }, [destinationConsumed, entryDestination, navigate]);
+  }, [destinationConsumed, entryDestination, navigate, tailscaleAvailable]);
   return (
     <>
       <SidebarSurface
