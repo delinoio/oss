@@ -1,6 +1,7 @@
 // Local test-only benchmark. Fresh children isolate resource observations.
 import { spawn, execFile as execFileCallback } from "node:child_process";
 import { createHash } from "node:crypto";
+import { renameSync } from "node:fs";
 import {
   mkdir,
   mkdtemp,
@@ -10,7 +11,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { cpus, release } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { monitorEventLoopDelay, performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -255,6 +256,9 @@ export async function runBenchmark(output, options = {}) {
   const owned = await mkdtemp(
     join(dirname(destination), ".react-forge-scene-benchmark-"),
   );
+  const staged = join(dirname(destination), `.${basename(owned)}-report.json`);
+  let ownedRemoved = false;
+  let published = false;
   try {
     const pending = [];
     for (const { format, workload } of cases) {
@@ -348,10 +352,17 @@ export async function runBenchmark(output, options = {}) {
       `${JSON.stringify(report, null, 2)}\n`,
     );
     if (signal?.aborted) throw new Error("Scene benchmark cancelled.");
-    await rename(join(owned, "report.json"), destination);
+    await rename(join(owned, "report.json"), staged);
+    await rm(owned, { recursive: true, force: true });
+    ownedRemoved = true;
+    if (signal?.aborted) throw new Error("Scene benchmark cancelled.");
+    renameSync(staged, destination);
+    published = true;
     return report;
   } finally {
-    await rm(owned, { recursive: true, force: true });
+    if (!ownedRemoved)
+      await rm(owned, { recursive: true, force: true }).catch(() => {});
+    if (!published) await rm(staged, { force: true }).catch(() => {});
   }
 }
 
