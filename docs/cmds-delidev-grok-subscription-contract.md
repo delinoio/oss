@@ -158,8 +158,13 @@ key (`grokIdentityCommitment`, 64 hex characters) as
 `SubscriptionState.IdentityCommitment`, so `uniqueSubscriptionIdentity` rejects a
 second account with the same identity and admits a different principal. The
 unkeyed key is never stored. `String`, `GoString`, `%v`/`%+v`, `slog` `LogValue`
-and JSON encoding errors reveal only the service and a 12-character opaque
-identity hash; generic JSON/text encoding of a bundle fails closed.
+and JSON encoding errors reveal only the service and whether a credential is held
+(`present` or `empty`); no prefix or digest of the identity key is formatted,
+because the unkeyed key is guessable from a user and principal identifier and a
+prefix would let log readers confirm candidates offline. `GrokIdentity` formats
+as redacted in the same forms. Correlation across log lines uses the account,
+lease and operation identifiers. Generic JSON/text encoding of a bundle fails
+closed.
 
 Protected Take/Finish dispatches by account service. The Codex lifecycle keeps
 serving only ChatGPT accounts and refuses every Grok account; a Grok account uses

@@ -126,6 +126,16 @@ type GrokIdentity struct {
 	Expiry        time.Time
 }
 
+// String, GoString, Format and LogValue never reveal an identity field, for the
+// same reason a bundle formatter does not: the fields name a user and principal.
+// The fields stay readable by code that needs them.
+func (GrokIdentity) String() string     { return grokRedactedLabel + "-identity{redacted}" }
+func (i GrokIdentity) GoString() string { return i.String() }
+func (i GrokIdentity) Format(f fmt.State, _ rune) {
+	_, _ = f.Write([]byte(i.String()))
+}
+func (GrokIdentity) LogValue() slog.Value { return slog.StringValue("redacted") }
+
 // GrokBundle holds exactly one native auth.json scope entry. Every accessor and
 // formatter is redacted; callers must call Clear after the bytes were used.
 type GrokBundle struct {
@@ -164,27 +174,29 @@ func GrokIdentityKey(userID, principalType, principalID string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// opaque returns a short stable hash that identifies a bundle in diagnostics
-// without revealing any field value.
-func (b GrokBundle) opaque() string {
-	key := b.IdentityKey()
-	if key == "" {
-		return "none"
+// state names whether the bundle holds a credential. It is the only
+// bundle-derived value a formatter reveals: the unkeyed identity key is
+// guessable from a user and principal identifier, so no prefix or digest of it
+// may appear in a log line or a formatted value. Correlation across log lines
+// uses the account and lease identifiers the caller already logs.
+func (b GrokBundle) state() string {
+	if b.entry.Key == "" {
+		return "empty"
 	}
-	return key[:12]
+	return "present"
 }
 
-// String, GoString, Format and LogValue reveal only the service and an opaque
-// identity hash, for every verb including %v, %+v and %#v.
+// String, GoString, Format and LogValue reveal only the service and whether a
+// credential is held, for every verb including %v, %+v and %#v.
 func (b GrokBundle) String() string {
-	return fmt.Sprintf("%s{service=%s identity=%s}", grokRedactedLabel, grokServiceIdentifier, b.opaque())
+	return fmt.Sprintf("%s{service=%s state=%s}", grokRedactedLabel, grokServiceIdentifier, b.state())
 }
 func (b GrokBundle) GoString() string { return b.String() }
 func (b GrokBundle) Format(f fmt.State, _ rune) {
 	_, _ = f.Write([]byte(b.String()))
 }
 func (b GrokBundle) LogValue() slog.Value {
-	return slog.GroupValue(slog.String("service", grokServiceIdentifier), slog.String("identity", b.opaque()))
+	return slog.GroupValue(slog.String("service", grokServiceIdentifier), slog.String("state", b.state()))
 }
 
 // MarshalJSON refuses to serialize the bundle through generic encoders so a

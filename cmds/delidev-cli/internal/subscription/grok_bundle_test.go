@@ -211,8 +211,30 @@ func TestGrokBundleRedaction(t *testing.T) {
 			t.Fatalf("%s does not identify the service", label)
 		}
 	}
-	if !strings.Contains(bundle.String(), bundle.IdentityKey()[:12]) || strings.Contains(bundle.String(), bundle.IdentityKey()) {
-		t.Fatal("redacted form must carry only a short opaque identity hash")
+	// No digest of the guessable identity key may be formatted, whole or as a
+	// prefix, in any form.
+	key := bundle.IdentityKey()
+	for label, text := range outputs {
+		for _, prefix := range []string{key, key[:12], key[:8], key[:6]} {
+			if strings.Contains(text, prefix) {
+				t.Fatalf("%s reveals an identity-derived value", label)
+			}
+		}
+		if !strings.Contains(text, "present") {
+			t.Fatalf("%s does not report that a credential is held", label)
+		}
+	}
+	identity := bundle.Identity()
+	var identityLogs bytes.Buffer
+	slog.New(slog.NewJSONHandler(&identityLogs, nil)).Info("grok_identity", "identity", identity)
+	for label, text := range map[string]string{
+		"%v": fmt.Sprintf("%v", identity), "%+v": fmt.Sprintf("%+v", identity), "%#v": fmt.Sprintf("%#v", identity), "slog": identityLogs.String(),
+	} {
+		for _, value := range []string{grokTestUser, grokTestPrincipal, grokTestTeam, key[:12]} {
+			if strings.Contains(text, value) {
+				t.Fatalf("%s exposed an identity field", label)
+			}
+		}
 	}
 	if _, err := json.Marshal(bundle); err == nil {
 		t.Fatal("generic JSON encoding of a bundle must fail")
@@ -222,7 +244,7 @@ func TestGrokBundleRedaction(t *testing.T) {
 	if _, err := json.Marshal(map[string]any{"nested": &bundle}); err == nil {
 		t.Fatal("nested JSON encoding of a bundle must fail")
 	}
-	if got := (GrokBundle{}).String(); !strings.Contains(got, "none") {
+	if got := (GrokBundle{}).String(); !strings.Contains(got, "empty") {
 		t.Fatal("empty bundle form unexpected")
 	}
 }
