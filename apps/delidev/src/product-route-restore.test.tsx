@@ -68,51 +68,78 @@ function fixture() {
     schemaVersion: 1,
     documentJson: encode({ name: "Restored repository" }),
   });
-  const schedule = create(ResourceSchema, {
+  const otherRepository = create(ResourceSchema, {
     id: newRequestId(),
-    kind: EntityKind.SCHEDULE,
-    revision: 3n,
-    schemaVersion: 1,
-    documentJson: encode({
-      definition: {
-        name: "Restored schedule",
-        enabled: false,
-        prompt: "Retained prompt",
-        project_id: newRequestId(),
-        agent_id: newRequestId(),
-        machine_id: newRequestId(),
-        workspace: "worktree",
-        mode: "plan",
-        cron: "0 9 * * 1-5",
-        timezone: "Asia/Seoul",
-        overlap: "wait",
-      },
-      configuration_revision: 2,
-      created_by: newRequestId(),
-      last_occurrence: 9,
-      next_run_at: "2026-09-28T00:00:00Z",
-    }),
-  });
-  const executionId = newRequestId();
-  const inboxEntry = create(ResourceSchema, {
-    id: newRequestId(),
-    sessionId: session.id,
-    kind: EntityKind.INBOX,
+    kind: EntityKind.REPOSITORY,
     revision: 1n,
     schemaVersion: 1,
-    createdAt: "2026-09-29T00:15:00Z",
-    documentJson: encode({
-      source: "execution-terminal",
-      source_id: executionId,
-      read_state: "read",
-      terminal: { outcome: "succeeded" },
-    }),
+    documentJson: encode({ name: "Chosen repository" }),
   });
-  const inboxView: InboxView = create(InboxViewSchema, {
-    entry: inboxEntry,
-    session,
-  });
-  const resources = [session, other, sidechat, repository];
+  const scheduleOf = (name: string) =>
+    create(ResourceSchema, {
+      id: newRequestId(),
+      kind: EntityKind.SCHEDULE,
+      revision: 3n,
+      schemaVersion: 1,
+      documentJson: encode({
+        definition: {
+          name,
+          enabled: false,
+          prompt: "Retained prompt",
+          project_id: newRequestId(),
+          agent_id: newRequestId(),
+          machine_id: newRequestId(),
+          workspace: "worktree",
+          mode: "plan",
+          cron: "0 9 * * 1-5",
+          timezone: "Asia/Seoul",
+          overlap: "wait",
+        },
+        configuration_revision: 2,
+        created_by: newRequestId(),
+        last_occurrence: 9,
+        next_run_at: "2026-09-28T00:00:00Z",
+      }),
+    });
+  const schedule = scheduleOf("Restored schedule");
+  const otherSchedule = scheduleOf("Chosen schedule");
+  const inboxOf = (owner: Resource) => {
+    const entry = create(ResourceSchema, {
+      id: newRequestId(),
+      sessionId: owner.id,
+      kind: EntityKind.INBOX,
+      revision: 1n,
+      schemaVersion: 1,
+      createdAt: "2026-09-29T00:15:00Z",
+      documentJson: encode({
+        source: "execution-terminal",
+        source_id: newRequestId(),
+        read_state: "read",
+        terminal: { outcome: "succeeded" },
+      }),
+    });
+    const view: InboxView = create(InboxViewSchema, {
+      entry,
+      session: owner,
+    });
+    return { entry, view };
+  };
+  const { entry: inboxEntry, view: inboxView } = inboxOf(session);
+  const { entry: otherInboxEntry, view: otherInboxView } = inboxOf(other);
+  const resources = [session, other, sidechat, repository, otherRepository];
+  // Reads of a held ID wait until `hold` releases them, so a test can answer a
+  // restore read after the user acted.
+  const held = new Map<string, Promise<void>>();
+  const hold = (id: string) => {
+    let release = () => {};
+    held.set(
+      id,
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    );
+    return release;
+  };
   const mutated = vi.fn();
   const reads = {
     resource: vi.fn(),
@@ -150,8 +177,9 @@ function fixture() {
       },
     });
     router.service(ResourceService, {
-      getResource: (request) => {
+      getResource: async (request) => {
         reads.resource(request);
+        await held.get(request.id);
         if (failure.code) throw new ConnectError("read failed", failure.code);
         return {
           resource: resources.find(
@@ -168,7 +196,9 @@ function fixture() {
       }),
       listResources: (request) => ({
         resources:
-          request.filter?.kind === EntityKind.REPOSITORY ? [repository] : [],
+          request.filter?.kind === EntityKind.REPOSITORY
+            ? [repository, otherRepository]
+            : [],
       }),
       async *watchEvents(_request, context) {
         await new Promise<void>((resolve) => {
@@ -181,24 +211,30 @@ function fixture() {
       },
     });
     router.service(InboxService, {
-      listInbox: () => ({ entries: [inboxView] }),
-      getInboxEntry: (request) => {
+      listInbox: () => ({ entries: [inboxView, otherInboxView] }),
+      getInboxEntry: async (request) => {
         reads.inbox(request);
+        await held.get(request.id);
         if (failure.code) throw new ConnectError("read failed", failure.code);
-        if (request.id !== inboxEntry.id)
-          throw new ConnectError("missing", Code.NotFound);
-        return { view: inboxView };
+        const view = [inboxView, otherInboxView].find(
+          (row) => row.entry?.id === request.id,
+        );
+        if (!view) throw new ConnectError("missing", Code.NotFound);
+        return { view };
       },
       getNotificationPreferences: () => ({ preferences }),
     });
     router.service(ScheduleService, {
-      listSchedules: () => ({ schedules: [schedule] }),
-      getSchedule: (request) => {
+      listSchedules: () => ({ schedules: [schedule, otherSchedule] }),
+      getSchedule: async (request) => {
         reads.schedule(request);
+        await held.get(request.id);
         if (failure.code) throw new ConnectError("read failed", failure.code);
-        if (request.id !== schedule.id)
-          throw new ConnectError("missing", Code.NotFound);
-        return { schedule };
+        const found = [schedule, otherSchedule].find(
+          (row) => row.id === request.id,
+        );
+        if (!found) throw new ConnectError("missing", Code.NotFound);
+        return { schedule: found };
       },
       listScheduleOccurrences: () => ({ occurrences: [] }),
     });
@@ -209,8 +245,13 @@ function fixture() {
     other,
     sidechat,
     repository,
+    otherRepository,
     schedule,
+    otherSchedule,
     inboxEntry,
+    inboxView,
+    otherInboxEntry,
+    hold,
     mutated,
     reads,
     failure,
@@ -588,6 +629,105 @@ describe("pending routes", () => {
     expect(search().has("item")).toBe(false);
     expect(value.reads.schedule).not.toHaveBeenCalled();
   });
+});
+
+const invalidEnvelopes: [string, (resource: Resource) => void][] = [
+  [
+    "a zero revision",
+    (resource) => {
+      resource.revision = 0n;
+    },
+  ],
+  [
+    "an unsupported schema version",
+    (resource) => {
+      resource.schemaVersion = 99;
+    },
+  ],
+];
+
+describe("route envelope validation", () => {
+  it.each(invalidEnvelopes)(
+    "clears a Session whose read has %s and shows Sessions Home",
+    async (_name, corrupt) => {
+      const value = fixture();
+      corrupt(value.session);
+      route(`?screen=sessions&session=${value.session.id}`);
+      render(<App transport={value.transport} />);
+      expect(
+        await screen.findByText("Your sessions, in one place"),
+      ).toBeTruthy();
+      await waitFor(() => expect(search().has("session")).toBe(false));
+      expect(search().get("screen")).toBe(Surface.Sessions);
+    },
+  );
+
+  it.each(invalidEnvelopes)(
+    "opens only the parent when the Sidechat read has %s",
+    async (_name, corrupt) => {
+      const value = fixture();
+      corrupt(value.sidechat);
+      route(
+        `?screen=sessions&session=${value.session.id}&sidechat=${value.sidechat.id}`,
+      );
+      render(<App transport={value.transport} />);
+      await waitFor(() =>
+        expect(screen.getAllByText("Retained session").length).toBeGreaterThan(
+          0,
+        ),
+      );
+      expect(screen.queryByRole("tab", { name: /Side question/ })).toBeNull();
+      await waitFor(() => expect(search().has("sidechat")).toBe(false));
+      expect(search().get("session")).toBe(value.session.id);
+    },
+  );
+
+  it.each(invalidEnvelopes)(
+    "clears an Inbox entry whose read has %s",
+    async (_name, corrupt) => {
+      const value = fixture();
+      corrupt(value.inboxView.entry!);
+      route(`?screen=inbox&item=${value.inboxEntry.id}`);
+      render(<App transport={value.transport} />);
+      await waitFor(() => expect(value.reads.inbox).toHaveBeenCalled());
+      await waitFor(() => expect(search().has("item")).toBe(false));
+      expect(search().get("screen")).toBe(Surface.Inbox);
+      expect(value.mutated).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(invalidEnvelopes)(
+    "clears a Schedule whose read has %s",
+    async (_name, corrupt) => {
+      const value = fixture();
+      corrupt(value.schedule);
+      route(`?screen=schedules&item=${value.schedule.id}`);
+      render(<App transport={value.transport} />);
+      expect(
+        await screen.findByText(
+          "Select a schedule from the sidebar to inspect its details and retained history.",
+        ),
+      ).toBeTruthy();
+      await waitFor(() => expect(search().has("item")).toBe(false));
+      expect(search().get("screen")).toBe(Surface.Schedules);
+    },
+  );
+
+  it.each(invalidEnvelopes)(
+    "clears a Pull requests repository whose read has %s",
+    async (_name, corrupt) => {
+      const value = fixture();
+      corrupt(value.repository);
+      route(`?screen=pull-requests&item=${value.repository.id}`);
+      render(<App transport={value.transport} />);
+      await waitFor(() => expect(value.reads.resource).toHaveBeenCalled());
+      await waitFor(() => expect(search().has("item")).toBe(false));
+      expect(search().get("screen")).toBe(Surface.PullRequests);
+      expect(
+        screen.queryByRole("region", { name: "Query options" }),
+      ).toBeNull();
+    },
+  );
 });
 
 describe("reload shortcut remount", () => {

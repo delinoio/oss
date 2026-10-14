@@ -28,6 +28,19 @@ export type RouteRead<T> =
   | { outcome: RouteReadOutcome.Found; value: T }
   | { outcome: RouteReadOutcome.Missing | RouteReadOutcome.Failed };
 
+/**
+ * Applies the envelope checks every mounted consumer applies before trusting a
+ * resource: a positive revision and a supported schema version. A response that
+ * fails them does not describe a restorable selection.
+ */
+function validEnvelope(resource: Resource): boolean {
+  return (
+    typeof resource.revision === "bigint" &&
+    resource.revision > 0n &&
+    supportsResourceSchema(resource)
+  );
+}
+
 const missing = { outcome: RouteReadOutcome.Missing } as const;
 const failed = { outcome: RouteReadOutcome.Failed } as const;
 
@@ -95,7 +108,8 @@ export function readRouteRepository(
     ),
     (response) =>
       response.resource?.id === id &&
-      response.resource.kind === EntityKind.REPOSITORY
+      response.resource.kind === EntityKind.REPOSITORY &&
+      validEnvelope(response.resource)
         ? id
         : undefined,
     signal,
@@ -117,8 +131,7 @@ export function readRouteSchedule(
       return schedule &&
         schedule.id === id &&
         schedule.kind === EntityKind.SCHEDULE &&
-        schedule.revision > 0n &&
-        supportsResourceSchema(schedule)
+        validEnvelope(schedule)
         ? schedule
         : undefined;
     },
@@ -137,7 +150,11 @@ export function readRouteInboxEntry(
     client,
     createQueryOptions(InboxQuery.getInboxEntry, { id }, { transport }),
     (response) =>
-      response.view && currentInboxSource(response.view, id) ? id : undefined,
+      response.view?.entry &&
+      validEnvelope(response.view.entry) &&
+      currentInboxSource(response.view, id)
+        ? id
+        : undefined,
     signal,
   );
 }
