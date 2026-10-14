@@ -90,6 +90,12 @@ func TestNativeOpenCodeExecutableVersionRule(t *testing.T) {
 		{"newer-prerelease-major", "printf '2.0.0-rc.1\\n'", outcomeRun},
 		{"leading-v", "printf 'v1.19.0\\n'", outcomeRun},
 		{"garbage", "printf 'not a version\\n'", outcomeFatal},
+		{"prerelease-leading-zero", "printf '1.18.33-01\\n'", outcomeFatal},
+		{"prerelease-empty-identifier", "printf '1.18.33-..\\n'", outcomeFatal},
+		{"prerelease-trailing-dot", "printf '1.18.33-rc.\\n'", outcomeFatal},
+		{"build-metadata-empty-identifier", "printf '1.18.33+a..b\\n'", outcomeFatal},
+		{"leading-zero-core", "printf '01.18.33\\n'", outcomeFatal},
+		{"two-lines", "printf '1.18.33\\n1.18.34\\n'", outcomeFatal},
 		{"empty", "exit 0", outcomeFatal},
 		{"failing", "exit 3", outcomeFatal},
 	}
@@ -158,5 +164,19 @@ func TestPrivateRuntimeEnvironmentMatchesHarness(t *testing.T) {
 	slices.Sort(got)
 	if !slices.Equal(got, want) {
 		t.Fatalf("native test environment drifted from harness.PrivateRuntimeEnvironment:\n got %v\nwant %v", got, want)
+	}
+}
+
+func TestParseVersionMatchesHarnessAdmission(t *testing.T) {
+	for _, raw := range []string{"1.18.33-01", "1.18.33-..", "1.18.33-", "1.18.33+", "1.18.33+a..b", "1.18.33-rc.", "01.18.33", "1.018.33", "1.18", "v", "", "vv1.18.33", "1.18.33 rc"} {
+		if version, err := nativetest.ParseVersion(raw); err == nil {
+			t.Errorf("ParseVersion(%q) = %q, want an error", raw, version)
+		}
+	}
+	for _, raw := range []string{"1.18.32", "v1.18.32\n", " 2.0.0-rc.1 ", "1.18.33+build.5", "1.18.33-rc.1+build.5"} {
+		version, err := nativetest.ParseVersion(raw)
+		if err != nil || !domain.HarnessVersionAllowed(domain.OpenCode, version) {
+			t.Errorf("ParseVersion(%q) = %q, %v; want an admitted version", raw, version, err)
+		}
 	}
 }

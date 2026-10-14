@@ -2,7 +2,8 @@
 // binaries. It is imported only by *_test.go files and has no production
 // wiring. It depends on the domain package alone so that tests in
 // internal/harness and internal/harness/opencode can import it without an
-// import cycle.
+// import cycle. Its only other dependency is golang.org/x/mod/semver, which
+// domain.HarnessVersionAllowed also uses for strict SemVer syntax.
 package nativetest
 
 import (
@@ -16,6 +17,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"golang.org/x/mod/semver"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
@@ -85,10 +88,13 @@ func ObserveOpenCodeVersion(home, path string) (string, error) {
 }
 
 // ParseVersion accepts one bounded SemVer line with an optional leading "v",
-// matching how discovery parses OpenCode.
+// matching how discovery parses OpenCode. It applies the same two checks as
+// domain.HarnessVersionAllowed (the installation-version shape and strict
+// semver syntax), so malformed output such as 1.18.33-01 is a fatal parse
+// error here instead of being mistaken for a below-minimum version later.
 func ParseVersion(raw string) (string, error) {
 	value := strings.TrimPrefix(strings.TrimSpace(raw), "v")
-	if !domain.ValidInstallationVersion(value) {
+	if !domain.ValidInstallationVersion(value) || !semver.IsValid("v"+value) {
 		return "", errors.New("--version output is not a SemVer")
 	}
 	return value, nil
