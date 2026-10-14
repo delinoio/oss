@@ -43,6 +43,18 @@ const (
 	ExecutionConfigurationReserveBytes = 8*ExecutionEscapedTextBytes + 2*(ExecutionEscapedTextBytes+256)*4/3 + 4<<10
 )
 
+// ExecutionJobStage identifies which enforcement point rejected an oversized
+// execution Job document, because the retained ownership differs by stage.
+type ExecutionJobStage string
+
+const (
+	// ExecutionJobAdmission runs before any workspace job or session write.
+	ExecutionJobAdmission ExecutionJobStage = "admission"
+	// ExecutionJobDispatch runs after workspace preparation succeeded and the
+	// real manifest was loaded.
+	ExecutionJobDispatch ExecutionJobStage = "dispatch"
+)
+
 // ExecutionJobBudget is the shared upper-bound calculation for one execution
 // Job document. Admission builds it from accepted inputs before any workspace
 // preparation exists; dispatch rechecks the actual serialized bytes.
@@ -74,7 +86,7 @@ func (b ExecutionJobBudget) JobDocumentBytes() int {
 
 // Require rejects a budget that cannot fit the execution Job document limit.
 func (b ExecutionJobBudget) Require(logger *slog.Logger) error {
-	return requireExecutionJobBytes(b.JobDocumentBytes(), logger, b)
+	return requireExecutionJobBytes(ExecutionJobAdmission, b.JobDocumentBytes(), logger, b)
 }
 
 // ExecutionJobDocumentBytes returns the Job document size reserved for an
@@ -86,16 +98,19 @@ func ExecutionJobDocumentBytes(inputBytes int) int {
 // RequireExecutionJobInput rechecks the actual serialized execution input
 // right before atomic dispatch publication.
 func RequireExecutionJobInput(raw json.RawMessage, logger *slog.Logger) error {
-	return requireExecutionJobBytes(ExecutionJobDocumentBytes(len(raw)), logger, ExecutionJobBudget{})
+	return requireExecutionJobBytes(ExecutionJobDispatch, ExecutionJobDocumentBytes(len(raw)), logger, ExecutionJobBudget{})
 }
 
-func requireExecutionJobBytes(total int, logger *slog.Logger, budget ExecutionJobBudget) error {
+func requireExecutionJobBytes(stage ExecutionJobStage, total int, logger *slog.Logger, budget ExecutionJobBudget) error {
 	if total <= MaxExecutionJobDocumentBytes {
 		return nil
 	}
 	if logger == nil {
 		logger = slog.Default()
 	}
-	logger.Warn("execution_job_budget_exceeded", "document_bytes", total, "limit_bytes", MaxExecutionJobDocumentBytes, "preparation_bytes", budget.PreparationBytes, "manifest_bytes", budget.ManifestBytes, "input_bytes", budget.InputBytes, "configuration_bytes", budget.ConfigurationBytes)
+	logger.Warn("execution_job_budget_exceeded", "stage", string(stage), "document_bytes", total, "limit_bytes", MaxExecutionJobDocumentBytes, "preparation_bytes", budget.PreparationBytes, "manifest_bytes", budget.ManifestBytes, "input_bytes", budget.InputBytes, "configuration_bytes", budget.ConfigurationBytes)
+	if stage == ExecutionJobDispatch {
+		return Fail(ResourceExhausted, "The workspace and input are too large for one execution assignment.", "Reduce the prompt, applied instructions or the number of project repositories; the prepared workspace remains retained, and the saved input and configuration claim was rolled back.")
+	}
 	return Fail(ResourceExhausted, "The workspace and input are too large for one execution assignment.", "Reduce the prompt, applied instructions or the number of project repositories; the saved input and configuration were not changed and no workspace was prepared.")
 }

@@ -95,3 +95,20 @@ func TestExecutionConfigurationReserveCoversWorstCaseScalars(t *testing.T) {
 		t.Fatalf("reserve %d does not cover the worst-case scalar configuration %d", ExecutionConfigurationReserveBytes, len(raw))
 	}
 }
+
+func TestExecutionJobRejectionGuidanceNamesRetainedOwnership(t *testing.T) {
+	admission := (ExecutionJobBudget{InputBytes: MaxExecutionJobDocumentBytes}).Require(nil)
+	dispatch := RequireExecutionJobInput(json.RawMessage(strings.Repeat("1", MaxExecutionJobDocumentBytes)), nil)
+	for name, err := range map[string]error{"admission": admission, "dispatch": dispatch} {
+		if SafeError(err).Code != ResourceExhausted {
+			t.Fatal(name, "was not rejected", err)
+		}
+	}
+	if !strings.Contains(SafeError(admission).Guidance, "no workspace was prepared") {
+		t.Fatal("admission guidance lost its no-workspace statement", SafeError(admission).Guidance)
+	}
+	guidance := SafeError(dispatch).Guidance
+	if strings.Contains(guidance, "no workspace was prepared") || !strings.Contains(guidance, "prepared workspace remains retained") || !strings.Contains(guidance, "rolled back") {
+		t.Fatal("dispatch guidance misstates workspace ownership", guidance)
+	}
+}
