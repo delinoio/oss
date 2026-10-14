@@ -197,3 +197,88 @@ func TestRefreshClaimIsOmittedFromLegacyServerOperations(t *testing.T) {
 		t.Fatalf("legacy server operation gained a refresh claim: %s %v", raw, err)
 	}
 }
+
+func grokServerLogoutFixture() Account {
+	now := time.Now().UTC()
+	operation, generation := NewID(), NewID()
+	return Account{Type: SubscriptionAccount, SubscriptionService: SubscriptionGrok, Health: AccountRevoked, Connection: &AccountConnection{ID: NewID(), Authentication: SubscriptionAuth, ConnectedAt: now}, Subscription: &SubscriptionState{
+		Generation: generation, IdentityCommitment: strings.Repeat("a", 64),
+		Pending:         &SubscriptionOperation{ID: operation, Action: SubscriptionLogout, Actor: Principal{Type: OwnerDevice}, Phase: SubscriptionQueued},
+		ServerOperation: &ServerSubscriptionOperation{ID: operation, Epoch: NewID(), FinishID: NewID(), Action: SubscriptionLogout, Actor: Principal{Type: OwnerDevice}, State: SubscriptionPreparing, StartedAt: now, ExpiresAt: now.Add(15 * time.Minute)},
+	}}
+}
+
+func TestGrokServerLogoutStateValidation(t *testing.T) {
+	queued := grokServerLogoutFixture()
+	if err := queued.Subscription.Validate(queued); err != nil || !queued.GrokLoggingOut() {
+		t.Fatalf("queued Grok logout: %v %v", err, queued.GrokLoggingOut())
+	}
+	for name, mutate := range map[string]func(*Account){
+		"claimed": func(a *Account) {
+			o := a.Subscription.ServerOperation
+			o.NativeStarted, o.GrokRevocation, o.Generation = true, GrokRevocationClaimed, a.Subscription.Generation
+			a.Subscription.Pending.Phase = SubscriptionClaimed
+		},
+		"revoked": func(a *Account) {
+			o := a.Subscription.ServerOperation
+			o.NativeStarted, o.GrokRevocation, o.Generation = true, GrokRevocationConfirmed, a.Subscription.Generation
+			a.Subscription.Pending.Phase = SubscriptionClaimed
+			a.Subscription.RevokedGeneration = a.Subscription.Generation
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			a := grokServerLogoutFixture()
+			mutate(&a)
+			if err := a.Subscription.Validate(a); err != nil {
+				t.Fatalf("Grok logout was rejected: %v", err)
+			}
+		})
+	}
+	for name, mutate := range map[string]func(*Account){
+		"claim before start": func(a *Account) { a.Subscription.ServerOperation.GrokRevocation = GrokRevocationClaimed },
+		"unknown phase":      func(a *Account) { a.Subscription.ServerOperation.GrokRevocation = "invented" },
+		"refresh claim":      func(a *Account) { a.Subscription.ServerOperation.RefreshClaimed = true },
+		"login method":       func(a *Account) { a.Subscription.ServerOperation.LoginMethod = SubscriptionBrowserCallback },
+		"callback":           func(a *Account) { a.Subscription.ServerOperation.CallbackForwarded = true },
+		"revocation on refresh": func(a *Account) {
+			a.Subscription.ServerOperation.Action, a.Subscription.Pending.Action = SubscriptionRefresh, SubscriptionRefresh
+			a.Subscription.ServerOperation.GrokRevocation = GrokRevocationConfirmed
+		},
+		"revocation on chatgpt": func(a *Account) {
+			a.SubscriptionService = SubscriptionChatGPT
+			a.Subscription.ServerOperation.GrokRevocation = GrokRevocationConfirmed
+		},
+		"revoked generation chat": func(a *Account) {
+			a.SubscriptionService = SubscriptionChatGPT
+			a.Subscription.RevokedGeneration = NewID()
+		},
+		"bad revoked generation": func(a *Account) { a.Subscription.RevokedGeneration = "not-an-id" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			a := grokServerLogoutFixture()
+			mutate(&a)
+			if a.Subscription.Validate(a) == nil {
+				t.Fatal("invalid Grok logout ownership was accepted")
+			}
+		})
+	}
+}
+
+func TestGrokLoggingOutIsLimitedToAnAcceptedGrokLogout(t *testing.T) {
+	for name, mutate := range map[string]func(*Account){
+		"ready":    func(a *Account) { a.Health = AccountReady },
+		"chatgpt":  func(a *Account) { a.SubscriptionService = SubscriptionChatGPT },
+		"refresh":  func(a *Account) { a.Subscription.ServerOperation.Action = SubscriptionRefresh },
+		"no op":    func(a *Account) { a.Subscription.Pending = nil },
+		"no state": func(a *Account) { a.Subscription = nil },
+		"api":      func(a *Account) { a.Type = APIAccount },
+	} {
+		t.Run(name, func(t *testing.T) {
+			a := grokServerLogoutFixture()
+			mutate(&a)
+			if a.GrokLoggingOut() {
+				t.Fatal("an account that is not logging out was reported as logging out")
+			}
+		})
+	}
+}

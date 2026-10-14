@@ -43,10 +43,14 @@ type SubscriptionState struct {
 	ResetCredits           *SubscriptionResetCredits         `json:"reset_credits,omitempty"`
 	Generation             ID                                `json:"generation,omitempty"`
 	IdentityCommitment     string                            `json:"identity_commitment,omitempty"`
-	RecoveryRequired       bool                              `json:"recovery_required"`
-	Pending                *SubscriptionOperation            `json:"pending,omitempty"`
-	ServerOperation        *ServerSubscriptionOperation      `json:"server_operation,omitempty"`
-	Lease                  *SubscriptionLease                `json:"lease,omitempty"`
+	// RevokedGeneration is the Grok credential generation whose refresh token the
+	// provider has revoked during a logout. Only a revoked generation may be
+	// deleted from the protected vault by the logout cleanup.
+	RevokedGeneration ID                           `json:"revoked_generation,omitempty"`
+	RecoveryRequired  bool                         `json:"recovery_required"`
+	Pending           *SubscriptionOperation       `json:"pending,omitempty"`
+	ServerOperation   *ServerSubscriptionOperation `json:"server_operation,omitempty"`
+	Lease             *SubscriptionLease           `json:"lease,omitempty"`
 	// Members are the execution members of a shared owner lease. Historical
 	// singleton accounts omit them.
 	Members []SubscriptionMember `json:"members,omitempty"`
@@ -101,6 +105,9 @@ func (s SubscriptionState) Validate(account Account) error {
 		}
 	}
 	if account.Type != SubscriptionAccount {
+		return invalid()
+	}
+	if s.RevokedGeneration != "" && (account.SubscriptionService != SubscriptionGrok || s.RevokedGeneration.Validate() != nil) {
 		return invalid()
 	}
 	if err := s.validateNativeClaude(account); err != nil {
@@ -245,11 +252,44 @@ type ServerSubscriptionOperation struct {
 	// refresh_token grant. It is written, in its own transaction, before the one
 	// token request is sent and is never cleared: a refresh whose claim exists
 	// but whose outcome was not published is uncertain and is never resent.
-	RefreshClaimed bool                     `json:"refresh_claimed,omitempty"`
+	RefreshClaimed bool `json:"refresh_claimed,omitempty"`
+	// GrokRevocation records the durable progress of the provider revocation of a
+	// server-owned Grok logout. It is written, in its own transaction, before the
+	// one revocation request is sent and is never cleared.
+	GrokRevocation GrokRevocationPhase      `json:"grok_revocation,omitempty"`
 	StartedAt      time.Time                `json:"started_at"`
 	ExpiresAt      time.Time                `json:"expires_at"`
 	Diagnostic     *CodexDiagnostic         `json:"diagnostic,omitempty"`
 	CleanupPhase   SubscriptionCleanupPhase `json:"cleanup_phase,omitempty"`
+}
+
+// GrokRevocationPhase is the closed progress of a Grok logout revocation.
+type GrokRevocationPhase string
+
+const (
+	// GrokRevocationClaimed is persisted before the revocation request is sent.
+	// A logout whose claim exists but whose outcome was not proven is uncertain.
+	GrokRevocationClaimed GrokRevocationPhase = "claimed"
+	// GrokRevocationConfirmed records that the provider revoked the refresh token
+	// or already refused it as invalid.
+	GrokRevocationConfirmed GrokRevocationPhase = "revoked"
+)
+
+func (p GrokRevocationPhase) Valid() bool {
+	return p == "" || p == GrokRevocationClaimed || p == GrokRevocationConfirmed
+}
+
+// GrokLoggingOut reports whether the account is a Grok subscription account
+// whose logout has been accepted and has not settled. Readiness is revoked from
+// acceptance, so new execution is refused while the logout waits for the original
+// execution to exit, revokes the credential and confirms its cleanup.
+func (a Account) GrokLoggingOut() bool {
+	st := a.Subscription
+	if a.Type != SubscriptionAccount || a.SubscriptionService != SubscriptionGrok || a.Health != AccountRevoked || st == nil {
+		return false
+	}
+	o := st.ServerOperation
+	return o != nil && o.Action == SubscriptionLogout && st.Pending != nil && st.Pending.ID == o.ID
 }
 
 // Cleanup checkpoints release only a failed initial server login. They cannot
