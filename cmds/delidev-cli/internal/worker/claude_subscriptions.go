@@ -249,8 +249,6 @@ func (l *managedSubscriptionLease) finishClaudeScoped(identity *pb.NativeSubscri
 	return nil
 }
 func runClaudeAccount(ctx context.Context, config Config, client delidevv1connect.SubscriptionServiceClient, credential Credential, instance, account domain.ID, revision uint64, op domain.SubscriptionOperation) (returned error) {
-	bounded, cancel := context.WithTimeout(ctx, 15*time.Minute)
-	defer cancel()
 	action := pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN
 	if op.Action == domain.SubscriptionRefresh {
 		action = pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH
@@ -258,10 +256,16 @@ func runClaudeAccount(ctx context.Context, config Config, client delidevv1connec
 	if op.Action == domain.SubscriptionLogout {
 		action = pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT
 	}
-	lease, err := takeManagedSubscription(bounded, config, client, credential, instance, account, op.ID, revision, action)
+	// An operation queued behind a live shared owner waits inside Take for as
+	// long as the owner's members run. Its lifetime begins at the grant, exactly
+	// like the server's rebased operation window, so the wait is bound only by the
+	// watch context and the server's own decision to stop admitting the Take.
+	lease, err := takeManagedSubscription(ctx, config, client, credential, instance, account, op.ID, revision, action)
 	if err != nil {
 		return err
 	}
+	bounded, cancel := context.WithTimeout(ctx, 15*time.Minute)
+	defer cancel()
 	cleanup, success := false, false
 	var identity *pb.NativeSubscriptionIdentity
 	phase := domain.NativeSubscriptionRuntime

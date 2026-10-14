@@ -113,6 +113,8 @@ func (s *Service) requestClaudeSubscription(ctx context.Context, req *connect.Re
 			a.Subscription = &domain.SubscriptionState{}
 		}
 		st := a.Subscription
+		// An abandoned queued operation must never block a new request forever.
+		expireStaleQueuedClaudeOperation(st, time.Now().UTC())
 		if st.OwnerMachineID != "" && st.OwnerMachineID != machine {
 			return nil, domain.Fail(domain.Unsupported, "This Claude account belongs to another Runner Device.", "Select its original Runner Device; authentication cannot move between devices.")
 		}
@@ -135,8 +137,8 @@ func (s *Service) requestClaudeSubscription(ctx context.Context, req *connect.Re
 		}
 		now := time.Now().UTC()
 		id := domain.ID(m.RequestId)
-		st.NativeOperation = &domain.NativeSubscriptionOperation{ID: id, Actor: actor, MachineID: machine, Epoch: s.subscriptionServerEpoch(), Action: action, State: domain.SubscriptionPreparing, StartedAt: now, ExpiresAt: now.Add(15 * time.Minute)}
-		st.Pending = &domain.SubscriptionOperation{ID: id, Action: action, MachineID: machine, Actor: actor, Phase: domain.SubscriptionQueued}
+		st.NativeOperation = &domain.NativeSubscriptionOperation{ID: id, Actor: actor, MachineID: machine, Epoch: s.subscriptionServerEpoch(), Action: action, State: domain.SubscriptionPreparing, StartedAt: now, ExpiresAt: now.Add(claudeOperationWindow)}
+		st.Pending = &domain.SubscriptionOperation{ID: id, Action: action, MachineID: machine, Actor: actor, Phase: domain.SubscriptionQueued, QueuedBehindLease: st.Lease != nil}
 		if action == domain.SubscriptionLogout {
 			a.Health = domain.AccountRevoked
 			if err := cancelAccountExecutions(tx, r.ID); err != nil {
@@ -155,6 +157,39 @@ func (s *Service) requestClaudeSubscription(ctx context.Context, req *connect.Re
 	}
 	s.logger.InfoContext(ctx, "claude_subscription_operation_accepted", "operation_id", m.RequestId, "machine_id", machine, "action", action, "replayed", result.Replayed)
 	return connect.NewResponse(&pb.RequestSubscriptionResponse{Account: rpc.Resource(r), OperationId: m.RequestId, Replayed: result.Replayed}), nil
+}
+
+// claudeOperationWindow is how long a claimed lifecycle operation may run.
+const claudeOperationWindow = 15 * time.Minute
+
+// claudeQueuedWindowDeferred reports whether the pending lifecycle operation is
+// still queued behind a lease (or is a logout, which must always run) and so has
+// not started its window. Such an operation never expires while it waits.
+func claudeQueuedWindowDeferred(st *domain.SubscriptionState) bool {
+	return st != nil && st.Pending != nil && st.Pending.Phase == domain.SubscriptionQueued && (st.Pending.QueuedBehindLease || st.Pending.Action == domain.SubscriptionLogout)
+}
+
+// expireStaleQueuedClaudeOperation retires a queued login or reauthentication
+// whose window elapsed before any Worker claimed it. A Take rejects an expired
+// operation, so leaving it pending would block every later admission until a
+// user canceled it. The retirement mirrors a queued cancellation. It reports
+// whether it changed the state; the caller persists it with its own write.
+func expireStaleQueuedClaudeOperation(st *domain.SubscriptionState, now time.Time) bool {
+	op, o := st.Pending, st.NativeOperation
+	if op == nil || o == nil || o.ID != op.ID || op.Phase != domain.SubscriptionQueued || claudeQueuedWindowDeferred(st) || o.ExpiresAt.After(now) {
+		return false
+	}
+	if op.Action != domain.SubscriptionLogin && op.Action != domain.SubscriptionRefresh {
+		return false
+	}
+	o.State = domain.SubscriptionExpired
+	st.Pending = nil
+	if st.Generation == "" {
+		st.NativeProfileID = ""
+		st.OwnerMachineID = ""
+		st.RecoveryRequired = false
+	}
+	return true
 }
 func (s *Service) cancelClaudeSubscription(ctx context.Context, req *connect.Request[pb.CancelSubscriptionRequest]) (*connect.Response[pb.CancelSubscriptionResponse], error) {
 	c := req.Header().Get(rpc.CorrelationHeader)
@@ -237,7 +272,7 @@ func (s *Service) getClaudeSubscriptionProgress(ctx context.Context, req *connec
 		if st.RecoveryRequired || o.Epoch != s.subscriptionServerEpoch() && (state == domain.SubscriptionPreparing || state == domain.SubscriptionWaiting) {
 			state = domain.SubscriptionRecovery
 		}
-		if !o.ExpiresAt.After(time.Now().UTC()) && (state == domain.SubscriptionPreparing || state == domain.SubscriptionWaiting) {
+		if !o.ExpiresAt.After(time.Now().UTC()) && (state == domain.SubscriptionPreparing || state == domain.SubscriptionWaiting) && !claudeQueuedWindowDeferred(st) {
 			state = domain.SubscriptionExpired
 		}
 		response.State = loginState(state)
@@ -368,6 +403,11 @@ func (s *Service) takeClaudeSubscription(ctx context.Context, req *connect.Reque
 		if st == nil || st.RecoveryRequired {
 			return nil, subscriptionDenied()
 		}
+		if action == domain.SubscriptionExecute {
+			// A queued operation whose window elapsed can never be claimed. It must
+			// not keep blocking admission until a user cancels it.
+			expireStaleQueuedClaudeOperation(st, time.Now().UTC())
+		}
 
 		accountBusy := func() error {
 			if st.Lease != nil {
@@ -462,6 +502,12 @@ func (s *Service) takeClaudeSubscription(ctx context.Context, req *connect.Reque
 		} else {
 			op := st.Pending
 			o := st.NativeOperation
+			if o != nil && op != nil && o.ID == op.ID && op.ID == input.Operation && claudeQueuedWindowDeferred(st) && o.State == domain.SubscriptionPreparing {
+				// The operation waited behind a live lease. Its window starts at this
+				// claim, so the wait cannot have expired it.
+				claimed := time.Now().UTC()
+				o.StartedAt, o.ExpiresAt = claimed, claimed.Add(claudeOperationWindow)
+			}
 			if o == nil || o.Epoch != s.subscriptionServerEpoch() || !o.ExpiresAt.After(time.Now().UTC()) {
 				return nil, subscriptionDenied()
 			}

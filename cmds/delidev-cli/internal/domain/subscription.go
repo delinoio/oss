@@ -59,6 +59,10 @@ type SubscriptionOperation struct {
 	DeviceCode bool               `json:"device_code"`
 	Canceled   bool               `json:"canceled"`
 	Phase      SubscriptionPhase  `json:"phase"`
+	// QueuedBehindLease marks a lifecycle operation accepted while a lease was
+	// held. Its native operation window begins when the lifecycle Take claims
+	// it, never while it waits, so waiting cannot expire it.
+	QueuedBehindLease bool `json:"queued_behind_lease,omitempty"`
 }
 type SubscriptionLease struct {
 	ForkRevision uint64 `json:"fork_revision,omitempty"`

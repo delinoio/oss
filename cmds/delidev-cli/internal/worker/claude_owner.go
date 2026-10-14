@@ -104,9 +104,21 @@ type claudeSharedOwner struct {
 	profile  *nativeClaudeProfile      // holds the canonical profile lock
 	members  map[domain.ID]*claudeSharedMember
 	runnable int
-	// uncertain records a member Finish whose acknowledgment was lost, so the
+	// uncertain records a member Finish the server definitively refused, so the
 	// final owner Finish can never claim a clean containment.
 	uncertain bool
+	// closed records that retirement released the canonical profile lock.
+	closed bool
+	// containment is the owner Finish evidence computed by retirement. It is
+	// fixed once the profile closes so an owner Finish retry reports the same
+	// request, never a re-derived one.
+	identity  *pb.NativeSubscriptionIdentity
+	contained bool
+	retained  int
+	// resume continues a retirement that could not complete: a member Finish or
+	// the owner Finish whose outcome stayed unknown after bounded retries. The
+	// admission gate runs it before the next member can join.
+	resume func() error
 }
 
 type claudeSharedMember struct {
@@ -114,6 +126,45 @@ type claudeSharedMember struct {
 	job      domain.ID
 	state    claudeMemberState
 	closeRPC func()
+	// pendingFinish records a member Finish whose outcome is unknown after
+	// bounded retries. The server may still count this member as runnable, so the
+	// same idempotent Finish is retried before the owner can retire.
+	pendingFinish bool
+	pendingJoined bool
+}
+
+// claudeFinishAttempts bounds the idempotent retry of one Finish whose outcome
+// is unknown. Every attempt reuses the same request identifier and revision, so
+// the server either replays the committed result or commits it exactly once.
+const claudeFinishAttempts = 4
+
+var claudeFinishRetryDelay = time.Second
+
+// claudeFinishOutcomeUnknown reports a transport-level failure: the server may
+// or may not have committed the Finish. A typed server refusal is definite.
+func claudeFinishOutcomeUnknown(err error) bool {
+	var uncertain *managedExecutionUncertain
+	if err == nil || errors.As(err, &uncertain) {
+		return false
+	}
+	return domain.SafeError(err).Code == domain.ServerUnavailable
+}
+
+// finishClaudeScopedRetry reports one scoped Finish and retries only an unknown
+// outcome with the identical idempotent request.
+func (l *managedSubscriptionLease) finishClaudeScopedRetry(identity *pb.NativeSubscriptionIdentity, cleanup, success bool, scope pb.SubscriptionFinishScope, revision uint64) error {
+	delay := claudeFinishRetryDelay
+	for attempt := 1; ; attempt++ {
+		err := l.finishClaudeScoped(identity, cleanup, success, scope, revision)
+		if !claudeFinishOutcomeUnknown(err) || attempt >= claudeFinishAttempts {
+			return err
+		}
+		if l.logger != nil {
+			l.logger.Warn("claude_finish_retrying", "account_id", l.account, "lease_id", l.response.LeaseId, "finish_scope", scope, "attempt", attempt)
+		}
+		time.Sleep(delay)
+		delay = min(delay*2, 8*time.Second)
+	}
 }
 
 func (m *claudeSharedMember) close() {
@@ -223,6 +274,13 @@ func (g *claudeAccountGate) found(ctx context.Context, config Config, input doma
 	}
 	g.mu.Unlock()
 	if stale {
+		if !existing.closed {
+			// Retirement stopped before it released the profile lock (a member
+			// Finish stayed unacknowledged). The fresh founding Take proves the
+			// server settled the account, so release the lock before reopening.
+			_ = existing.profile.close()
+			existing.closed = true
+		}
 		if config.Logger != nil {
 			config.Logger.WarnContext(ctx, "claude_shared_owner_stale_cleared", "account_id", input.AccountID, "stale_owner_lease_id", existing.lease.response.LeaseId, "owner_lease_id", lease.response.LeaseId)
 		}
@@ -233,8 +291,30 @@ func (g *claudeAccountGate) found(ctx context.Context, config Config, input doma
 		return nil, nil, nil, &managedExecutionUncertain{subscription.Invalid()}
 	}
 	failFounding := func(problem error) (*nativeClaudeProfile, *managedClaudeToken, func(bool) error, error) {
-		_ = lease.finishClaudeScoped(nil, false, false, pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_OWNER, lease.response.LeaseRevision)
+		finishErr := lease.finishClaudeScopedRetry(nil, false, false, pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_OWNER, lease.response.LeaseRevision)
 		member.close()
+		if claudeFinishOutcomeUnknown(finishErr) {
+			// The server may still hold the founding lease. Track it as a retiring
+			// owner so the gate resumes the same idempotent Finish before any join.
+			pending := &claudeSharedOwner{config: config, lease: lease, members: map[domain.ID]*claudeSharedMember{}, closed: true, uncertain: true}
+			pending.resume = func() error {
+				err := withFreshClient(config, lease, func() error {
+					return lease.finishClaudeScopedRetry(nil, false, false, pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_OWNER, lease.response.LeaseRevision)
+				})
+				if err == nil {
+					g.mu.Lock()
+					if g.owner == pending {
+						g.owner = nil
+					}
+					pending.resume = nil
+					g.mu.Unlock()
+				}
+				return err
+			}
+			g.mu.Lock()
+			g.owner = pending
+			g.mu.Unlock()
+		}
 		return nil, nil, nil, problem
 	}
 	profile, err := openClaudeProfile(config, connection.Credential, input.AccountID, domain.ID(lease.response.NativeProfileId), input.Installation, domain.ID(lease.response.LeaseId), false)
@@ -271,11 +351,36 @@ func (g *claudeAccountGate) found(ctx context.Context, config Config, input doma
 func (g *claudeAccountGate) join(config Config, member *claudeSharedMember, version claudeProfileVersion) (*nativeClaudeProfile, *managedClaudeToken, func(bool) error, error) {
 	g.mu.Lock()
 	owner := g.owner
-	if owner == nil || owner.lease.response.LeaseId != member.lease.response.OwnerLeaseId || owner.uncertain {
+	if owner != nil && owner.lease.response.LeaseId == member.lease.response.OwnerLeaseId && owner.resume != nil {
+		// A previous retirement could not finish: the server still holds the
+		// owner. The member just admitted must not run on a retiring owner. Release
+		// it alone, then finish the outstanding retirement before any later join.
+		resume := owner.resume
 		g.mu.Unlock()
+		released := member.lease.finishClaudeScopedRetry(nil, true, false, pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_MEMBER, member.lease.response.LeaseRevision)
+		member.close()
+		if released != nil {
+			return nil, nil, nil, &managedExecutionUncertain{released}
+		}
+		err := resume()
+		if config.Logger != nil {
+			config.Logger.WarnContext(context.Background(), "claude_shared_retirement_resumed", "account_id", member.lease.account, "owner_lease_id", owner.lease.response.LeaseId, "completed", err == nil)
+		}
+		return nil, nil, nil, &managedTakeNotDelivered{domain.Fail(domain.Unavailable, "The Claude account owner was still retiring.", "Retry the session once the account owner has retired.")}
+	}
+	if owner == nil || owner.lease.response.LeaseId != member.lease.response.OwnerLeaseId || owner.uncertain {
 		// The server and this Worker disagree about the owner. The member has
-		// started nothing, so release it alone and report uncertainty.
-		_ = member.lease.finishClaudeScoped(nil, true, false, pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_MEMBER, member.lease.response.LeaseRevision)
+		// started nothing, so release it alone and report uncertainty. A release
+		// whose outcome is unknown stays pending on a tracked owner so the owner
+		// Finish cannot be refused later by a member the server still counts.
+		sameOwner := owner != nil && owner.lease.response.LeaseId == member.lease.response.OwnerLeaseId
+		g.mu.Unlock()
+		if err := member.lease.finishClaudeScopedRetry(nil, true, false, pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_MEMBER, member.lease.response.LeaseRevision); claudeFinishOutcomeUnknown(err) && sameOwner {
+			member.state, member.pendingFinish, member.pendingJoined = claudeMemberReleased, true, true
+			g.mu.Lock()
+			owner.members[member.lease.leaseID()] = member
+			g.mu.Unlock()
+		}
 		member.close()
 		return nil, nil, nil, &managedExecutionUncertain{subscription.Invalid()}
 	}
@@ -331,11 +436,21 @@ func (g *claudeAccountGate) finishMember(owner *claudeSharedOwner, member *claud
 	g.mu.Unlock()
 	logger := owner.config.Logger
 	if !last {
-		err := member.lease.finishClaudeScoped(nil, joined, joined, pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_MEMBER, revision)
+		err := member.lease.finishClaudeScopedRetry(nil, joined, joined, pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_MEMBER, revision)
 		if err != nil {
 			g.mu.Lock()
-			owner.uncertain = true
+			if claudeFinishOutcomeUnknown(err) {
+				// The server may still count this member as runnable. Keep it as a
+				// pending member Finish; the last member settles it before the owner
+				// Finish, which the server would otherwise refuse as conflicting.
+				member.pendingFinish, member.pendingJoined = true, joined
+			} else {
+				owner.uncertain = true
+			}
 			g.mu.Unlock()
+			if logger != nil {
+				logger.WarnContext(context.Background(), "claude_shared_member_finish_pending", "account_id", member.lease.account, "owner_lease_id", owner.lease.response.LeaseId, "lease_id", member.lease.response.LeaseId, "outcome_unknown", claudeFinishOutcomeUnknown(err), "code", domain.SafeError(err).Code)
+			}
 			return err
 		}
 		g.mu.Lock()
@@ -351,54 +466,143 @@ func (g *claudeAccountGate) finishMember(owner *claudeSharedOwner, member *claud
 	return g.retire(owner, member, joined)
 }
 
-// retire runs under the admission gate, so no new member can join while the
-// owner closes.
-func (g *claudeAccountGate) retire(owner *claudeSharedOwner, last *claudeSharedMember, joined bool) error {
-	config := owner.config
-	contained := joined && !owner.uncertain
+// withFreshClient runs one Finish attempt over a newly built transport. A member
+// closes its own transport as soon as its session ends, so a Finish resumed
+// later must not reuse it. A transport that cannot be built is an unknown
+// outcome, never a definite refusal.
+func withFreshClient(config Config, lease *managedSubscriptionLease, attempt func() error) error {
+	if config.execution == nil {
+		return attempt()
+	}
+	ctx, stop := context.WithTimeout(context.Background(), time.Minute)
+	defer stop()
+	client, closeRPC, err := subscriptionRPC(ctx, config, config.execution.Credential)
+	if err != nil {
+		return domain.Fail(domain.ServerUnavailable, "The DeliDev server transport could not be opened.", "Retry once the DeliDev server is reachable.")
+	}
+	defer closeRPC()
+	lease.client = client
+	return attempt()
+}
+
+// settlePendingMembers retries, with fresh transport, every member Finish whose
+// outcome stayed unknown. It reports whether no unsettled member remains. The
+// caller holds the admission gate.
+func (g *claudeAccountGate) settlePendingMembers(owner *claudeSharedOwner) bool {
 	g.mu.Lock()
-	var retained []*claudeSharedMember
+	var pending []*claudeSharedMember
 	for _, m := range owner.members {
-		if m.state == claudeMemberRetained {
-			retained = append(retained, m)
+		if m.pendingFinish {
+			pending = append(pending, m)
 		}
 	}
 	g.mu.Unlock()
-	for _, m := range retained {
-		bounded, stop := context.WithTimeout(context.Background(), 30*time.Second)
-		err := settleClaudeMemberProcesses(bounded, config, m.lease.leaseID(), m.job, &m.lease.journal)
-		stop()
+	if len(pending) == 0 {
+		return true
+	}
+	config := owner.config
+	settled := true
+	for _, m := range pending {
+		err := withFreshClient(config, m.lease, func() error {
+			return m.lease.finishClaudeScopedRetry(nil, m.pendingJoined, m.pendingJoined, pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_MEMBER, m.lease.response.LeaseRevision)
+		})
+		if claudeFinishOutcomeUnknown(err) {
+			settled = false
+			continue
+		}
+		g.mu.Lock()
+		m.pendingFinish = false
 		if err != nil {
-			contained = false
+			owner.uncertain = true
+		} else if m.pendingJoined {
+			delete(owner.members, m.lease.leaseID())
+		}
+		g.mu.Unlock()
+		if config.Logger != nil {
+			config.Logger.InfoContext(context.Background(), "claude_shared_member_finish_settled", "account_id", m.lease.account, "owner_lease_id", owner.lease.response.LeaseId, "lease_id", m.lease.response.LeaseId, "acknowledged", err == nil)
+		}
+	}
+	return settled
+}
+
+// retire runs under the admission gate, so no new member can join while the
+// owner closes. A retirement that cannot finish records itself in owner.resume;
+// the gate completes it before any later member joins.
+func (g *claudeAccountGate) retire(owner *claudeSharedOwner, last *claudeSharedMember, joined bool) error {
+	config := owner.config
+	incomplete := func(err error) error {
+		g.mu.Lock()
+		owner.resume = func() error { return g.retire(owner, last, joined) }
+		g.mu.Unlock()
+		return err
+	}
+	if !owner.closed {
+		// The server refuses the owner Finish while any member it still counts as
+		// runnable exists, so every unacknowledged member Finish settles first. The
+		// profile stays open (lock held) until they do.
+		if !g.settlePendingMembers(owner) {
 			if config.Logger != nil {
-				config.Logger.WarnContext(context.Background(), "claude_shared_member_closure_unproven", "account_id", last.lease.account, "owner_lease_id", owner.lease.response.LeaseId, "lease_id", m.lease.response.LeaseId, "operation_id", m.job, "code", domain.SafeError(err).Code)
+				config.Logger.WarnContext(context.Background(), "claude_shared_owner_retirement_blocked", "account_id", last.lease.account, "owner_lease_id", owner.lease.response.LeaseId)
+			}
+			return incomplete(domain.Fail(domain.ServerUnavailable, "A member Finish is still unacknowledged.", "Retry once the DeliDev server is reachable."))
+		}
+		contained := joined && !owner.uncertain
+		g.mu.Lock()
+		var retained []*claudeSharedMember
+		for _, m := range owner.members {
+			if m.state == claudeMemberRetained {
+				retained = append(retained, m)
 			}
 		}
-	}
-	bounded, stop := context.WithTimeout(context.Background(), 30*time.Second)
-	defer stop()
-	var identity *pb.NativeSubscriptionIdentity
-	if contained {
-		var err error
-		if identity, err = owner.profile.identity(bounded, config); err != nil {
+		g.mu.Unlock()
+		for _, m := range retained {
+			bounded, stop := context.WithTimeout(context.Background(), 30*time.Second)
+			err := settleClaudeMemberProcesses(bounded, config, m.lease.leaseID(), m.job, &m.lease.journal)
+			stop()
+			if err != nil {
+				contained = false
+				if config.Logger != nil {
+					config.Logger.WarnContext(context.Background(), "claude_shared_member_closure_unproven", "account_id", last.lease.account, "owner_lease_id", owner.lease.response.LeaseId, "lease_id", m.lease.response.LeaseId, "operation_id", m.job, "code", domain.SafeError(err).Code)
+				}
+			}
+		}
+		bounded, stop := context.WithTimeout(context.Background(), 30*time.Second)
+		var identity *pb.NativeSubscriptionIdentity
+		if contained {
+			var err error
+			if identity, err = owner.profile.identity(bounded, config); err != nil {
+				contained, identity = false, nil
+			}
+		}
+		stop()
+		// Keep the server owner until the original local lock is released. A queued
+		// logout can start as soon as the owner Finish commits and must not race the
+		// closing profile.
+		if err := owner.profile.close(); err != nil {
 			contained, identity = false, nil
 		}
+		g.mu.Lock()
+		owner.closed, owner.identity, owner.contained, owner.retained = true, identity, contained, len(retained)
+		g.mu.Unlock()
 	}
-	// Keep the server owner until the original local lock is released. A queued
-	// logout can start as soon as the owner Finish commits and must not race the
-	// closing profile.
-	if err := owner.profile.close(); err != nil {
-		contained, identity = false, nil
-	}
-	err := last.lease.finishClaudeScoped(identity, contained, contained, pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_OWNER, owner.lease.response.LeaseRevision)
+	err := withFreshClient(config, last.lease, func() error {
+		return last.lease.finishClaudeScopedRetry(owner.identity, owner.contained, owner.contained, pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_OWNER, owner.lease.response.LeaseRevision)
+	})
 	if err != nil {
+		if claudeFinishOutcomeUnknown(err) {
+			// The server may have committed the retirement. The profile is already
+			// closed, so no member may join this owner again: resume the same
+			// idempotent Finish before the next join.
+			return incomplete(err)
+		}
 		return err
 	}
 	g.mu.Lock()
 	g.owner = nil
+	owner.resume = nil
 	g.mu.Unlock()
 	if config.Logger != nil {
-		config.Logger.InfoContext(context.Background(), "claude_shared_owner_retired", "account_id", last.lease.account, "owner_lease_id", owner.lease.response.LeaseId, "retained_members", len(retained), "contained", contained)
+		config.Logger.InfoContext(context.Background(), "claude_shared_owner_retired", "account_id", last.lease.account, "owner_lease_id", owner.lease.response.LeaseId, "retained_members", owner.retained, "contained", owner.contained)
 	}
 	return nil
 }

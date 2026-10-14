@@ -47,9 +47,13 @@ type sharedClaudeServer struct {
 	// recovering models the fenced account: an owner-scope cleanup Finish is
 	// accepted for the whole set.
 	recovering bool
-	// loseOwnerAck settles the next owner Finish on the server but answers with a
-	// transport error, as an interrupted connection would.
-	loseOwnerAck bool
+	// loseOwnerAcks settles the next owner Finishes on the server but answers each
+	// with a transport error, as an interrupted connection would.
+	loseOwnerAcks int
+	// failMemberFinishes and dropOwnerFinishes answer the next member or owner
+	// Finishes with a transport error before the server commits anything.
+	failMemberFinishes int
+	dropOwnerFinishes  int
 }
 
 func (s *sharedClaudeServer) document() []byte {
@@ -97,6 +101,14 @@ func (s *sharedClaudeServer) FinishSubscription(_ context.Context, req *connect.
 		_ = lock.Close()
 	}
 	lease := domain.ID(req.Msg.LeaseId)
+	if req.Msg.FinishScope == pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_MEMBER && s.failMemberFinishes > 0 {
+		s.failMemberFinishes--
+		return nil, connect.NewError(connect.CodeUnavailable, nil)
+	}
+	if req.Msg.FinishScope == pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_OWNER && s.dropOwnerFinishes > 0 {
+		s.dropOwnerFinishes--
+		return nil, connect.NewError(connect.CodeUnavailable, nil)
+	}
 	switch req.Msg.FinishScope {
 	case pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_MEMBER:
 		for i := range s.members {
@@ -121,8 +133,8 @@ func (s *sharedClaudeServer) FinishSubscription(_ context.Context, req *connect.
 			return nil, connect.NewError(connect.CodeAborted, nil)
 		}
 		s.owner, s.members = "", nil
-		if s.loseOwnerAck {
-			s.loseOwnerAck = false
+		if s.loseOwnerAcks > 0 {
+			s.loseOwnerAcks--
 			return nil, connect.NewError(connect.CodeUnavailable, nil)
 		}
 	default:
@@ -167,6 +179,9 @@ func newSharedClaudeFixture(t *testing.T, negotiated bool) *sharedClaudeFixture 
 	if err != nil {
 		t.Fatal(err)
 	}
+	previousDelay := claudeFinishRetryDelay
+	claudeFinishRetryDelay = time.Millisecond
+	t.Cleanup(func() { claudeFinishRetryDelay = previousDelay })
 	var logs bytes.Buffer
 	config := Config{Root: root, Logger: slog.New(slog.NewJSONHandler(&logs, nil)), claudeMembers: negotiated, claudeOwners: newClaudeOwnerRegistry()}
 	credential := Credential{ServerID: domain.NewID(), MachineID: domain.NewID()}
@@ -565,7 +580,7 @@ func TestClaudeSharedOwnerFoundsAgainAfterUnacknowledgedRetirement(t *testing.T)
 	f := newSharedClaudeFixture(t, true)
 	members := f.start(t, 1)
 	f.mu.Lock()
-	f.loseOwnerAck = true
+	f.loseOwnerAcks = claudeFinishAttempts
 	f.mu.Unlock()
 	if err := members[0].finish(true); err == nil {
 		t.Fatal("a lost owner Finish acknowledgment was reported as settled")
@@ -772,7 +787,7 @@ func TestClaudeSharedOwnerRecoveryRetryAfterLostFinishDoesNotRepeatLogout(t *tes
 	}
 	state := f.lostOwnerState(members)
 	f.mu.Lock()
-	f.loseOwnerAck = true
+	f.loseOwnerAcks = 1
 	f.mu.Unlock()
 	if err := f.recover(state); err == nil {
 		t.Fatal("a lost owner Finish acknowledgment was reported as settled")
@@ -783,5 +798,160 @@ func TestClaudeSharedOwnerRecoveryRetryAfterLostFinishDoesNotRepeatLogout(t *tes
 	// The retry must not need the (already removed) profile again.
 	if err := f.recover(state); err != nil {
 		t.Fatal("the recovery retry repeated a completed profile cleanup", err)
+	}
+}
+
+func (f *sharedClaudeFixture) gateOwner() *claudeSharedOwner {
+	gate := f.config.claudeOwners.gate(f.account)
+	gate.mu.Lock()
+	defer gate.mu.Unlock()
+	return gate.owner
+}
+
+func (f *sharedClaudeFixture) memberFinishRequests(lease string) []*pb.FinishSubscriptionRequest {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var matched []*pb.FinishSubscriptionRequest
+	for _, finish := range f.finishes {
+		if finish.LeaseId == lease && finish.FinishScope == pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_MEMBER {
+			matched = append(matched, finish)
+		}
+	}
+	return matched
+}
+
+func TestClaudeSharedOwnerRetriesAnUnacknowledgedMemberFinishIdempotently(t *testing.T) {
+	f := newSharedClaudeFixture(t, true)
+	members := f.start(t, 2)
+	f.mu.Lock()
+	f.failMemberFinishes = 2
+	f.mu.Unlock()
+	if err := members[1].finish(true); err != nil {
+		t.Fatal("a transient transport error was not retried", err)
+	}
+	requests := f.memberFinishRequests(members[1].profile.managedLease.response.LeaseId)
+	if len(requests) != 3 {
+		t.Fatal("the member Finish was not retried until it was acknowledged", len(requests))
+	}
+	for _, request := range requests {
+		if request.Mutation.RequestId != requests[0].Mutation.RequestId || request.Mutation.ExpectedRevision != requests[0].Mutation.ExpectedRevision {
+			t.Fatal("a retry changed the idempotent request identity")
+		}
+	}
+	f.mu.Lock()
+	remaining := len(f.members)
+	f.mu.Unlock()
+	if remaining != 1 {
+		t.Fatal("the server still counts the finished member")
+	}
+	if err := members[0].finish(true); err != nil {
+		t.Fatal(err)
+	}
+	if f.owner != "" || f.profileLocked() || f.gateOwner() != nil {
+		t.Fatal("the owner did not retire after the retried member Finish")
+	}
+}
+
+func TestClaudeSharedOwnerLastMemberSettlesAnUnacknowledgedMemberBeforeRetiring(t *testing.T) {
+	f := newSharedClaudeFixture(t, true)
+	members := f.start(t, 2)
+	f.mu.Lock()
+	f.failMemberFinishes = claudeFinishAttempts
+	f.mu.Unlock()
+	if err := members[1].finish(true); err == nil {
+		t.Fatal("an unacknowledged member Finish was reported as settled")
+	}
+	if !f.profileLocked() {
+		t.Fatal("an unacknowledged member released the owner profile")
+	}
+	// The server counts the member as runnable, so an owner Finish sent now would
+	// be refused as conflicting. Retirement settles the member first.
+	if err := members[0].finish(true); err != nil {
+		t.Fatal("the last member could not retire after settling the pending member", err)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.owner != "" || len(f.members) != 0 {
+		t.Fatal("the server owner or its members survived retirement")
+	}
+	last := f.finishes[len(f.finishes)-1]
+	if last.FinishScope != pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_OWNER || !last.CleanupConfirmed || last.NativeIdentity == nil {
+		t.Fatal("a settled pending member left the owner Finish without confirmed containment")
+	}
+}
+
+func TestClaudeSharedOwnerBlockedRetirementResumesBeforeTheNextMemberJoins(t *testing.T) {
+	f := newSharedClaudeFixture(t, true)
+	members := f.start(t, 2)
+	f.mu.Lock()
+	f.failMemberFinishes = 2 * claudeFinishAttempts
+	f.mu.Unlock()
+	if err := members[1].finish(true); err == nil {
+		t.Fatal("an unacknowledged member Finish was reported as settled")
+	}
+	if err := members[0].finish(true); err == nil {
+		t.Fatal("retirement completed while a member Finish stayed unacknowledged")
+	}
+	owner := f.gateOwner()
+	if owner == nil || owner.resume == nil || owner.closed || !f.profileLocked() {
+		t.Fatal("a blocked retirement did not keep the owner and its profile lock")
+	}
+	// The next session joins the server owner. It must not run on the retiring
+	// owner: the gate releases it alone and finishes the retirement.
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	_, _, _, err := beginClaudeSubscriptionExecution(ctx, f.config, domain.NewID(), f.input())
+	var delivered *managedTakeNotDelivered
+	if err == nil || !asManagedNotDelivered(err, &delivered) {
+		t.Fatal("a member joined an owner whose retirement was outstanding", err)
+	}
+	f.mu.Lock()
+	settled := f.owner == "" && len(f.members) == 0
+	f.mu.Unlock()
+	if !settled || f.profileLocked() || f.gateOwner() != nil {
+		t.Fatal("the outstanding retirement did not complete")
+	}
+	next := f.start(t, 1)
+	if next[0].profile.managedLease.response.OwnerLeaseId != "" || !f.profileLocked() {
+		t.Fatal("the next session did not found a fresh owner")
+	}
+	if err := next[0].finish(true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestClaudeSharedOwnerNeverAdmitsAMemberOntoAnUnacknowledgedRetiredOwner(t *testing.T) {
+	f := newSharedClaudeFixture(t, true)
+	members := f.start(t, 1)
+	f.mu.Lock()
+	f.dropOwnerFinishes = claudeFinishAttempts
+	f.mu.Unlock()
+	if err := members[0].finish(true); err == nil {
+		t.Fatal("an unacknowledged owner Finish was reported as settled")
+	}
+	if f.profileLocked() {
+		t.Fatal("the retired owner kept the profile lock")
+	}
+	f.mu.Lock()
+	stillOwned := f.owner != ""
+	f.mu.Unlock()
+	if !stillOwned {
+		t.Fatal("the fixture did not leave the owner on the server")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	_, _, _, err := beginClaudeSubscriptionExecution(ctx, f.config, domain.NewID(), f.input())
+	var delivered *managedTakeNotDelivered
+	if err == nil || !asManagedNotDelivered(err, &delivered) {
+		t.Fatal("a member ran on a retired owner without the profile lock", err)
+	}
+	f.mu.Lock()
+	settled := f.owner == "" && len(f.members) == 0
+	f.mu.Unlock()
+	if !settled || f.gateOwner() != nil {
+		t.Fatal("the retired owner Finish was not completed with the same request")
+	}
+	if len(f.memberFinishRequests(members[0].profile.managedLease.response.LeaseId)) != 0 {
+		t.Fatal("the founding lease was finished with a member scope")
 	}
 }

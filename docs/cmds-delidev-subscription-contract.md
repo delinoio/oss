@@ -70,6 +70,23 @@ owner and a scoped Finish cannot settle a singleton. A failed or unconfirmed
 owner Finish keeps the existing recovery fence, so credentials remain until
 confirmed settlement.
 
+The Worker never lets a lost Finish acknowledgment leave its local owner and the
+server's owner/member set divergent. A `MEMBER` or `OWNER` Finish whose outcome
+is unknown (a transport failure) is retried a bounded number of times with the
+identical idempotent request (same request identifier and revision). A member
+Finish that stays unacknowledged is kept as a pending member Finish: the last
+local member settles every pending member Finish over a fresh transport before
+it closes the profile and sends the `OWNER` Finish, which the server would
+otherwise refuse as conflicting while it still counts that member as runnable.
+An unfinished retirement keeps the owner and records a resume step; the
+admission gate completes it (releasing the newly admitted member alone and
+reporting a definite no-delivery failure) before any later member can join, so no
+member runs on a retiring owner. A founding failure whose owner Finish stays
+unacknowledged is tracked the same way. Structured logs
+(`claude_finish_retrying`, `claude_shared_member_finish_pending`,
+`claude_shared_member_finish_settled`, `claude_shared_owner_retirement_blocked`,
+`claude_shared_retirement_resumed`) carry account, lease and counts only.
+
 **Lifecycle.** Login, reauthentication and explicit refresh close new member
 admission when accepted and take lifecycle authority only after the owner and
 every member (including retained cleanup) have drained, because the lifecycle
@@ -78,7 +95,16 @@ refresh behind a live shared Execute owner as the pending operation, so a user c
 queue reauthentication to close admission and drain the owner; the queued
 operation grants no lease, and the owner's identifier cannot read or advance its
 native progress or login code. Any other lease holder keeps the refresh request
-refused. Logout keeps immediate readiness
+refused. An operation accepted while a lease is held is marked
+`queued_behind_lease`, and a queued logout is always deferred: its 15-minute
+native operation window starts when the lifecycle Take claims it (the Take
+rebases `started_at`/`expires_at`), never while it waits, and progress does not
+report it expired while queued. The Worker bounds its own 15-minute run after
+the grant, so a long-running shared owner cannot expire the wait. An unclaimed
+queued login or refresh that is not deferred and whose window elapsed is retired
+as `expired` (like a queued cancellation) by the next request or the next
+Execute admission, so an expired `pending` never blocks admission forever.
+Logout keeps immediate readiness
 revocation, cancels every account execution, joins every member's ownership and
 only then runs the canonical native logout and credential deletion.
 
