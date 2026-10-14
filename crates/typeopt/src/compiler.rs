@@ -328,8 +328,6 @@ impl Project {
             computed: computed_import,
             bare,
             worker_scripts,
-            non_esm,
-            eval_or_with,
         } = project.bundle_imported(dir);
         // Chunks known to run as ES modules: imported by another chunk or
         // loaded by an HTML module script. Others count as modules only with
@@ -394,16 +392,17 @@ impl Project {
         let mut classic = classic;
         classic.extend(worker_scripts);
         crate::app::set_bundle_modules(modules, classic);
-        // Boundary chunks stay byte-for-byte unchanged and keep importing the
-        // original names of what they reach. Whatever a boundary chunk can
+        // Excluded chunks stay byte-for-byte unchanged and keep importing the
+        // original names of what they reach. Whatever an excluded chunk can
         // import must therefore keep its name and content too: a renamed copy
         // would be evaluated next to the original, with a second module state.
+        // Other boundary chunks (classic scripts and chunks with `eval`, `with`
+        // or `importScripts`) are not edited by passes, but publication
+        // rewrites their references to renamed chunks, so they import the
+        // renamed copies and freeze nothing.
         let boundaries: Paths = chunks
             .iter()
-            .filter(|chunk| {
-                crate::app::bundle_boundary(chunk, !non_esm.contains(*chunk))
-                    || eval_or_with.contains(*chunk)
-            })
+            .filter(|chunk| crate::app::bundle_excluded(chunk))
             .cloned()
             .collect();
         let reach = boundary_reach(&chunks, &boundaries, &edges);
@@ -476,7 +475,6 @@ impl Project {
         let mut bare = None;
         let (mut worker_scripts, mut worker_computed) = (Paths::new(), false);
         let mut non_esm = Paths::new();
-        let mut eval_or_with = Paths::new();
         for file in source_files() {
             if !is_application(file) {
                 continue;
@@ -490,9 +488,6 @@ impl Project {
             collect(file, &mut nodes);
             if !has_esm_statements(file) && !uses_import_meta(&nodes) {
                 non_esm.insert(name.clone());
-            }
-            if uses_eval_or_with(&nodes) {
-                eval_or_with.insert(name.clone());
             }
             for node in nodes {
                 // `importScripts(…)` loads its targets as classic scripts.
@@ -592,7 +587,6 @@ impl Project {
         if worker_computed {
             worker_scripts.extend(non_esm.iter().cloned());
         }
-        let (non_esm_all, eval_or_with_all) = (non_esm, eval_or_with);
         BundleImports {
             imported,
             unlinked: public,
@@ -600,8 +594,6 @@ impl Project {
             computed,
             bare,
             worker_scripts,
-            non_esm: non_esm_all,
-            eval_or_with: eval_or_with_all,
         }
     }
 
@@ -1334,10 +1326,6 @@ struct BundleImports {
     bare: Option<String>,
     /// Chunks that `importScripts` can load as classic scripts.
     worker_scripts: Paths,
-    /// Chunks without ESM statements or `import.meta`.
-    non_esm: Paths,
-    /// Chunks that use direct `eval`, `with` or `importScripts`.
-    eval_or_with: Paths,
 }
 
 /// Chunks that a boundary chunk can import, statically or through a literal

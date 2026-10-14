@@ -1035,8 +1035,10 @@ fn rehash(
             .collect();
         referenced.insert(name.clone(), targets);
     }
-    // Boundary chunks stay byte-for-byte unchanged: never renamed or
-    // rewritten. They keep the original files they reference (below).
+    // Pinned chunks (excluded chunks and what they import) stay
+    // byte-for-byte unchanged: never renamed or rewritten. They keep the
+    // original files they reference (below). Other boundary chunks are
+    // rewritten and renamed like every text asset.
     let frozen_names: BTreeSet<String> = frozen.iter().map(|p| base(p)).collect();
     // The rename set: edited hashed chunks and, transitively, hashed files
     // that reference a renamed file.
@@ -1154,7 +1156,7 @@ fn rehash(
         counts
     };
     let mut retained = BTreeSet::<String>::new();
-    // Everything a boundary chunk can import is frozen with it, so a boundary
+    // Everything an excluded chunk can import is pinned with it, so a pinned
     // chunk names a renamed chunk only through something that is not an
     // import (a string, for example): it keeps referencing the original name.
     for path in frozen {
@@ -1164,7 +1166,7 @@ fn rehash(
                     tracing::warn!(
                         boundary = %path.display(),
                         chunk = name.as_str(),
-                        "a boundary chunk names a renamed chunk without importing it; the original \
+                        "an excluded chunk names a renamed chunk without importing it; the original \
                          is kept"
                     );
                     retained.insert(name.clone());
@@ -1287,6 +1289,162 @@ fn rehash(
     })
 }
 
+/// String value of the property `key` at `at` (`key:"…"`, `"key":'…'`), with
+/// the byte span of the value inside its quotes.
+fn string_property(text: &str, at: usize, key: &str) -> Option<(String, usize, usize)> {
+    let bytes = text.as_bytes();
+    let mut index = at;
+    let quoted = matches!(bytes.get(index), Some(b'"' | b'\''));
+    if quoted {
+        index += 1;
+    }
+    if !text[index..].starts_with(key) {
+        return None;
+    }
+    index += key.len();
+    if quoted {
+        if bytes.get(index) != bytes.get(at) {
+            return None;
+        }
+        index += 1;
+    }
+    while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
+        index += 1;
+    }
+    if bytes.get(index) != Some(&b':') {
+        return None;
+    }
+    index += 1;
+    while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
+        index += 1;
+    }
+    let quote = *bytes.get(index).filter(|b| matches!(b, b'"' | b'\''))?;
+    let start = index + 1;
+    let end = start + text[start..].find(quote as char)?;
+    let value = &text[start..end];
+    // Escaped content is not a plain file name or digest.
+    (!value.contains('\\')).then(|| (value.to_owned(), start, end))
+}
+
+/// Precache entries `{url:"…",revision:"…"}` (either order) of a service
+/// worker manifest, as Workbox and vite-plugin-pwa emit them: the URL and the
+/// byte span of the revision string.
+fn precache_entries(text: &str) -> Vec<(String, usize, usize)> {
+    let bytes = text.as_bytes();
+    let mut entries = Vec::new();
+    let mut from = 0;
+    while let Some(offset) = text[from..].find("revision") {
+        let at = from + offset;
+        from = at + "revision".len();
+        let key = if at > 0 && matches!(bytes[at - 1], b'"' | b'\'') {
+            at - 1
+        } else {
+            at
+        };
+        if key == 0 || !matches!(bytes[key - 1], b'{' | b',') {
+            continue;
+        }
+        let Some((_, start, end)) = string_property(text, key, "revision") else {
+            continue;
+        };
+        // The enclosing object literal, which holds no nested objects.
+        let Some(open) = text[..key].rfind(['{', '}']).filter(|&i| bytes[i] == b'{') else {
+            continue;
+        };
+        let Some(close) = text[end..].find(['{', '}']).map(|i| end + i) else {
+            continue;
+        };
+        if bytes[close] != b'}' {
+            continue;
+        }
+        let object = &text[open..=close];
+        let url = object.char_indices().find_map(|(i, c)| {
+            (i > 0
+                && matches!(c, 'u' | '"' | '\'')
+                && matches!(object.as_bytes()[i - 1], b'{' | b','))
+            .then(|| string_property(text, open + i, "url"))
+            .flatten()
+        });
+        if let Some((url, _, _)) = url {
+            entries.push((url, start, end));
+        }
+    }
+    entries
+}
+
+/// Gives precache entries of files whose published content differs from the
+/// input a new revision. A service worker keeps a cached file while its
+/// revision string is unchanged, so an unchanged revision would keep serving
+/// stale HTML that names chunks the output no longer has. The new revision
+/// is derived from the new content and keeps the original length, so source
+/// maps of the manifest file stay valid. Content-hashed files are left alone:
+/// their names already cover their content. Returns how many revisions
+/// changed.
+fn refresh_precache_revisions(
+    source: &Path,
+    root: &Path,
+    pinned: &BTreeSet<PathBuf>,
+) -> Result<usize> {
+    let mut files = Vec::new();
+    files_under(root, &mut files)?;
+    files.sort();
+    let mut refreshed = 0;
+    for file in &files {
+        let name = file.file_name().unwrap().to_string_lossy();
+        let script = file
+            .extension()
+            .is_some_and(|e| e == "js" || e == "mjs" || e == "cjs");
+        if !script || pinned.contains(file) || hashed_name(&name).is_some() {
+            continue;
+        }
+        let Ok(mut text) = std::fs::read_to_string(file) else {
+            continue;
+        };
+        let directory = file.parent().unwrap_or(root);
+        let mut changed = false;
+        for (url, start, end) in precache_entries(&text.clone()) {
+            let path = url.split(['?', '#']).next().unwrap_or_default();
+            if path.is_empty() || path.contains("://") || path.starts_with("//") {
+                continue;
+            }
+            let staged = match path.strip_prefix('/') {
+                Some(absolute) => root.join(absolute),
+                None => directory.join(path.trim_start_matches("./")),
+            };
+            let Ok(published) = std::fs::read(&staged) else {
+                continue;
+            };
+            let relative = staged.strip_prefix(root).unwrap_or(&staged);
+            if std::fs::read(source.join(relative)).is_ok_and(|input| input == published) {
+                continue;
+            }
+            let digest = crate::compiler::sha256_hex(&published);
+            let revision: String = digest.chars().cycle().take(end - start).collect();
+            if text[start..end] != revision {
+                text.replace_range(start..end, &revision);
+                refreshed += 1;
+                changed = true;
+                tracing::debug!(
+                    manifest = %relative_display(root, file),
+                    entry = url.as_str(),
+                    "refreshed a precache revision of a changed file"
+                );
+            }
+        }
+        if changed {
+            std::fs::write(file, text).context("cannot refresh a precache revision")?;
+        }
+    }
+    Ok(refreshed)
+}
+
+fn relative_display(root: &Path, path: &Path) -> String {
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .into_owned()
+}
+
 /// Rejects bundles that bundle mode cannot publish faithfully, before
 /// analysis in check and output modes:
 /// - symbolic links: analysis would follow them to their targets while the
@@ -1401,7 +1559,7 @@ pub fn stage(
     snapshot: &Snapshot,
     outcome: &Outcome,
     analyzed: &Fingerprint,
-    boundaries: &BTreeSet<String>,
+    pinned: &BTreeSet<String>,
 ) -> Result<Staged> {
     ensure!(
         std::fs::symlink_metadata(destination)
@@ -1463,8 +1621,8 @@ pub fn stage(
             None => {}
         }
     }
-    // Boundary chunks, as staged paths.
-    let frozen: BTreeSet<PathBuf> = boundaries
+    // Pinned chunks (excluded and what they import), as staged paths.
+    let frozen: BTreeSet<PathBuf> = pinned
         .iter()
         .filter_map(|path| Path::new(path).strip_prefix(source).ok())
         .map(|relative| root.join(relative))
@@ -1477,11 +1635,13 @@ pub fn stage(
     } else {
         rehash(&root, &edited, &originals, &original_maps, &frozen)?
     };
+    let revisions = refresh_precache_revisions(source, &root, &frozen)?;
     tracing::info!(
         edited = edited.len(),
         maps,
         dropped_maps = dropped,
         rehashed = rehashed.renamed,
+        precache_revisions = revisions,
         retained_bytes = rehashed.retained_bytes,
         "bundle chunks written"
     );
