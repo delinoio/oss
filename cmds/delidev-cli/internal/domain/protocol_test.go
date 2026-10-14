@@ -113,3 +113,31 @@ func TestHarnessVersionAllowedUsesSemVerPrecedence(t *testing.T) {
 		}
 	}
 }
+
+func TestGrokSubscriptionVersionIsExactPinNotLegacyBaseline(t *testing.T) {
+	for version, want := range map[string]bool{
+		"1.0.46":            true,
+		"1.0.46+build.7":    true,
+		GrokProtocolVersion: false,
+		"1.0.40":            false,
+		"1.0.42":            false,
+		"1.0.45":            false,
+		"1.0.47":            false,
+		"1.1.0":             false,
+		"2.0.0":             false,
+		"1.0.46-rc.1":       false,
+		"1.0.47-rc.1":       false,
+		"v1.0.46":           false,
+		"":                  false,
+		"invalid/version":   false,
+	} {
+		if got := GrokSubscriptionVersionAllowed(version); got != want {
+			t.Fatalf("GrokSubscriptionVersionAllowed(%q) = %v, want %v", version, got, want)
+		}
+	}
+	// The legacy baseline keeps admitting later releases for discovery; the
+	// subscription pin must never inherit that lower-bound rule.
+	if !HarnessVersionAllowed(GrokBuild, "1.0.45") || GrokSubscriptionVersionAllowed("1.0.45") {
+		t.Fatal("subscription admission reused the legacy lower-bound predicate")
+	}
+}

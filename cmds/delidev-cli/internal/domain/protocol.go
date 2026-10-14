@@ -14,9 +14,14 @@ const (
 	CodexMinimumVersion = "0.151.0"
 	// CodexProtocolVersion retains the historical fixture baseline. Runtime
 	// admission uses CodexVersionAllowed and records the installed version.
-	CodexProtocolVersion    = CodexMinimumVersion
-	ClaudeProtocolVersion   = "2.1.236"
-	GrokProtocolVersion     = "1.0.41"
+	CodexProtocolVersion  = CodexMinimumVersion
+	ClaudeProtocolVersion = "2.1.236"
+	GrokProtocolVersion   = "1.0.41"
+	// GrokSubscriptionVersion is the exact Grok Build release that managed
+	// subscription authority is pinned to. It is separate from the legacy
+	// GrokProtocolVersion baseline, which keeps admitting discovery and legacy
+	// execution input but never grants new credential authority.
+	GrokSubscriptionVersion = "1.0.46"
 	OpenCodeProtocolVersion = "1.18.32"
 )
 
@@ -54,6 +59,18 @@ func HarnessVersionAllowed(harness Harness, version string) bool {
 	default:
 		return false
 	}
+}
+
+// GrokSubscriptionVersionAllowed reports whether version is exactly the pinned
+// Grok Build release that may receive a managed subscription credential. Unlike
+// HarnessVersionAllowed it is not a lower bound: older legacy releases and
+// unreviewed newer releases are refused, and a prerelease never equals the pin.
+// Build metadata does not affect SemVer precedence and is ignored.
+func GrokSubscriptionVersionAllowed(version string) bool {
+	if !ValidInstallationVersion(version) || !semver.IsValid("v"+version) {
+		return false
+	}
+	return semver.Compare("v"+version, "v"+GrokSubscriptionVersion) == 0
 }
 
 type ProtocolState string

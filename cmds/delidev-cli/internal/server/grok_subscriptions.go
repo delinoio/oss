@@ -75,9 +75,12 @@ func grokSubscriptionAccount(tx *store.Tx, id domain.ID, revision uint64) (store
 }
 
 // grokSubscriptionInstallation requires exactly one verified Grok Build
-// installation on the selected Runner Device. The managed-Grok Worker
-// capability (Worker 21) is reserved but not yet declared, so admission is
-// bound to the verified installation until that capability activates.
+// installation on the selected Runner Device whose version is the pinned
+// subscription release. The legacy discovery baseline is deliberately not used:
+// it admits every later release, while a managed credential may be delivered
+// only to the exact reviewed profile. The managed-Grok Worker capability
+// (Worker 21) is reserved but not yet declared, so admission is bound to the
+// verified installation until that capability activates.
 func grokSubscriptionInstallation(tx *store.Tx, machine domain.ID) (domain.Installation, error) {
 	_, m, err := activeMachine(tx, machine)
 	if err != nil {
@@ -92,8 +95,8 @@ func grokSubscriptionInstallation(tx *store.Tx, machine domain.ID) (domain.Insta
 			found = &m.Installations[i]
 		}
 	}
-	if found == nil || !domain.HarnessVersionAllowed(domain.GrokBuild, found.Version) || found.State != domain.InstallationDetected || !found.ProtocolVerified || found.Protocol == nil || found.Protocol.Protocol != domain.ProtocolFor(domain.GrokBuild) || found.Protocol.State != domain.ProtocolVerified || found.Protocol.Problem != nil || found.Problem != nil || found.ResolvedPath == "" || found.ObservedAt == nil || found.ObservedAt.IsZero() || found.ObservedAt.After(time.Now().UTC().Add(time.Second)) {
-		return domain.Installation{}, domain.Fail(domain.Unsupported, "Grok subscription authentication requires a verified, supported Grok Build installation.", "Discover the installed Grok Build on the selected Runner Device and update it if it is below the supported baseline.")
+	if found == nil || !domain.GrokSubscriptionVersionAllowed(found.Version) || found.State != domain.InstallationDetected || !found.ProtocolVerified || found.Protocol == nil || found.Protocol.Protocol != domain.ProtocolFor(domain.GrokBuild) || found.Protocol.State != domain.ProtocolVerified || found.Protocol.Problem != nil || found.Problem != nil || found.ResolvedPath == "" || found.ObservedAt == nil || found.ObservedAt.IsZero() || found.ObservedAt.After(time.Now().UTC().Add(time.Second)) {
+		return domain.Installation{}, domain.Fail(domain.Unsupported, "Grok subscription authentication requires a verified, supported Grok Build installation.", "Discover the installed Grok Build on the selected Runner Device and install the pinned supported release yourself.")
 	}
 	return *found, nil
 }

@@ -119,9 +119,12 @@ Protected Take/Finish dispatches by account service. The Codex lifecycle keeps
 serving only ChatGPT accounts and refuses every Grok account; a Grok account uses
 its own singleton-lease lifecycle for login, refresh and logout. Take claims the
 exact queued original, requires one verified Grok Build installation on the
-selected Runner Device, and returns the stored envelope (empty for a fresh login)
-only after the server re-opens it against its own identity, the account and the
-stored generation. A Grok execute Take, a member or owner Finish scope, and any
+selected Runner Device whose version is exactly the pinned `1.0.46` release, and
+returns the stored envelope (empty for a fresh login) only after the server
+re-opens it against its own identity, the account and the stored generation. The
+legacy `1.0.41` discovery baseline is a lower bound for discovery and legacy
+execution input only; it admits no new credential authority, so older legacy
+releases, unreviewed newer releases and prereleases receive no lease. A Grok execute Take, a member or owner Finish scope, and any
 other action are refused. Grok lifecycle work is not pushed to Workers through
 the subscription watch until the managed Grok Worker capability is declared and
 negotiated.

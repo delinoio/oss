@@ -125,7 +125,7 @@ func newGrokFixture(t *testing.T) *grokFixture {
 		if err != nil {
 			return nil, err
 		}
-		machine.Installations = []domain.Installation{{Harness: domain.GrokBuild, State: domain.InstallationDetected, Version: domain.GrokProtocolVersion, ResolvedPath: "/controlled/native/grok", ProtocolVerified: true, ObservedAt: &observed, Protocol: &domain.ProtocolObservation{Protocol: domain.ProtocolFor(domain.GrokBuild), State: domain.ProtocolVerified}}}
+		machine.Installations = []domain.Installation{{Harness: domain.GrokBuild, State: domain.InstallationDetected, Version: domain.GrokSubscriptionVersion, ResolvedPath: "/controlled/native/grok", ProtocolVerified: true, ObservedAt: &observed, Protocol: &domain.ProtocolObservation{Protocol: domain.ProtocolFor(domain.GrokBuild), State: domain.ProtocolVerified}}}
 		return tx.Put(domain.MachineKind, mr.ID, mr.Revision, "", "", machine)
 	})
 	if err != nil {
@@ -411,6 +411,47 @@ func TestGrokTakeRefusesUnsupportedAndUnverifiedWork(t *testing.T) {
 	if a.Subscription.Lease != nil {
 		t.Fatal("a refused Take created a lease")
 	}
+}
+
+// setGrokInstallation rewrites the Runner Device's discovered installations the
+// way a completed harness discovery replaces them.
+func (f *grokFixture) setGrokInstallation(t *testing.T, edit func(*[]domain.Installation)) {
+	t.Helper()
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.grok.installations", nil, func(tx *store.Tx) (any, error) {
+		mr, err := tx.Get(domain.MachineKind, f.input.MachineID)
+		if err != nil {
+			return nil, err
+		}
+		machine, err := store.Decode[domain.Machine](mr)
+		if err != nil {
+			return nil, err
+		}
+		edit(&machine.Installations)
+		return tx.Put(domain.MachineKind, mr.ID, mr.Revision, "", "", machine)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGrokTakeRequiresPinnedSubscriptionVersion(t *testing.T) {
+	for _, version := range []string{domain.GrokProtocolVersion, "1.0.45", "1.0.47", "1.0.46-rc.1", "2.0.0"} {
+		t.Run(version, func(t *testing.T) {
+			f := newGrokFixture(t)
+			f.setGrokInstallation(t, func(installations *[]domain.Installation) { (*installations)[0].Version = version })
+			if _, err := f.take(f.queue(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN), pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN); err == nil || domain.SafeError(rpc.ClientError(err)).Code != domain.Unsupported {
+				t.Fatal("Take admitted a Grok installation that is not the pinned release")
+			}
+			if _, a := f.record(); a.Subscription.Lease != nil || a.Subscription.RecoveryRequired {
+				t.Fatal("a refused Take claimed the lease or fenced the account")
+			}
+		})
+	}
+	f := newGrokFixture(t)
+	f.setGrokInstallation(t, func(installations *[]domain.Installation) {
+		(*installations)[0].Version = domain.GrokSubscriptionVersion + "+build.1"
+	})
+	f.login("synthetic-principal-1")
 }
 
 func (f *grokFixture) start2(action pb.SubscriptionAction) (*pb.RequestSubscriptionResponse, error) {
