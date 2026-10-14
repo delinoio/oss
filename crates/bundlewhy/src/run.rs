@@ -491,20 +491,11 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
 /// source code (code frames, stderr tails); with `--exclude-sources` only the
 /// code and a generic message are saved, and the details stay on the terminal.
 fn saved_problem(error: &BwError, exclude_sources: bool) -> crate::model::Problem {
-    let quotes_output = matches!(
-        error.code,
-        ErrorCode::BuildFailed | ErrorCode::CollectionFailed | ErrorCode::ConfigLoadFailed
-    );
-    if exclude_sources && quotes_output {
-        return problem(
-            error.code,
-            ProblemSeverity::Error,
-            "The diagnostic build failed. Details were not saved because sources are excluded; \
-             see the terminal output of `bundlewhy analyze`.",
-            error.recovery.clone(),
-        );
+    let mut saved = error.problem(ProblemSeverity::Error);
+    if exclude_sources {
+        crate::error::sanitize_problem(&mut saved);
     }
-    error.problem(ProblemSeverity::Error)
+    saved
 }
 
 /// Result bundle for a run that failed or was cancelled before analysis

@@ -143,3 +143,23 @@ pub fn problem(
 }
 
 pub type BwResult<T> = Result<T, BwError>;
+
+/// Problem codes whose messages can quote project output (code frames,
+/// stderr tails) and therefore source code.
+pub const OUTPUT_QUOTING_CODES: [&str; 3] = [
+    "BW_BUILD_FAILED",
+    "BW_COLLECTION_FAILED",
+    "BW_CONFIG_LOAD_FAILED",
+];
+
+/// Generic replacement message for source-free results.
+pub const SANITIZED_FAILURE_MESSAGE: &str = "The diagnostic build failed. Details were not saved \
+                                             because sources are excluded; see the terminal \
+                                             output of `bundlewhy analyze`.";
+
+/// Replaces the message of a problem that may quote source code.
+pub fn sanitize_problem(problem: &mut Problem) {
+    if OUTPUT_QUOTING_CODES.contains(&problem.code.as_str()) {
+        SANITIZED_FAILURE_MESSAGE.clone_into(&mut problem.message);
+    }
+}

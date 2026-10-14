@@ -114,6 +114,13 @@ pub fn render(
         summary.stale = false;
     }
     if !include_sources {
+        // A run analyzed with sources can still carry build errors that quote
+        // code; a source-free export must not.
+        for problem in &mut analysis.problems {
+            crate::error::sanitize_problem(problem);
+        }
+    }
+    if !include_sources {
         // Snippets are source excerpts and must not survive a source-free
         // export.
         for diagnostic in &mut analysis.diagnostics {
@@ -180,7 +187,14 @@ mod tests {
             content_included: true,
             ..SourceFile::default()
         }];
+        let mut analysis = analysis;
+        analysis.problems.push(crate::model::Problem {
+            code: "BW_BUILD_FAILED".to_owned(),
+            message: "src/a.ts:1:1 const problemSecret = 1".to_owned(),
+            ..crate::model::Problem::default()
+        });
         let html = render(ui, &analysis, &sources, false);
+        assert!(!html.contains("problemSecret"));
         assert!(!html.contains(REPORT_MARKER));
         assert!(!html.contains("<img"));
         assert!(!html.contains("secret"));
