@@ -58,7 +58,17 @@ export type SessionTab =
       title: string;
       label?: string;
     }
-  | { kind: SessionTabKind.Sidechat; id: string; name: string }
+  | {
+      kind: SessionTabKind.Sidechat;
+      id: string;
+      name: string;
+      /**
+       * The name is a product-identity placeholder because the descriptor was
+       * restored before its Session could be verified. It is presentation
+       * state, not identity, so it is not part of the tab key.
+       */
+      provisional?: boolean;
+    }
   | { kind: SessionTabKind.PendingSidechat; requestId: string; name: string };
 export const conversationTab: SessionTab = {
   kind: SessionTabKind.Conversation,
@@ -439,6 +449,41 @@ export class SessionTabsStore {
         previous.selected === key ? sessionTabKey(tab) : previous.selected,
     });
     return true;
+  }
+  /** Whether the Sidechat descriptor still carries a restore placeholder name. */
+  provisionalSidechat(parent: string, id: string) {
+    return this.children.get(parent)?.get(id)?.provisional === true;
+  }
+  /**
+   * Replaces the placeholder name of a restored Sidechat descriptor with the
+   * verified name. Order and selection are untouched, and nothing publishes for
+   * a descriptor that is not provisional.
+   */
+  settleSidechat(parent: string, id: string, name: string) {
+    const current = this.children.get(parent)?.get(id);
+    if (!current?.provisional) return;
+    const settled: SidechatTab = { kind: SessionTabKind.Sidechat, id, name };
+    this.children.get(parent)!.set(id, settled);
+    const previous = this.snapshot(parent),
+      key = sessionTabKey(settled);
+    const found = previous.tabs.findIndex(
+      (value) => sessionTabKey(value) === key,
+    );
+    if (found < 0) return;
+    const tabs = [...previous.tabs];
+    tabs[found] = settled;
+    this.publish(parent, { ...previous, tabs });
+  }
+  /**
+   * Ends a restored Sidechat descriptor that its own Session proved is not a
+   * Sidechat of this parent: the placeholder tab and its ownership are removed.
+   * A verified descriptor is never touched.
+   */
+  discardProvisionalSidechat(parent: string, id: string) {
+    if (!this.provisionalSidechat(parent, id)) return;
+    this.children.get(parent)?.delete(id);
+    if (this.parents.get(id) === parent) this.parents.delete(id);
+    this.close(parent, sessionTabKey({ kind: SessionTabKind.Sidechat, id, name: "" }));
   }
   // Child controllers survive presentation close and retain their original parent.
   sidechats(parent: string) {

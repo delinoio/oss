@@ -1,4 +1,8 @@
-import { ProductIdentityProvider } from "./product-identity-labels";
+import {
+  ProductIdentityProvider,
+  useProductLabels,
+} from "./product-identity-labels";
+import { PresentationKind } from "./product-identity";
 import { DraftEditGenerations } from "./draft-edit-generations";
 import { SessionInboxReadBoundary } from "./session-inbox-read";
 import { SubscriptionQuotaAutoRefresh } from "./subscription-quota-refresh";
@@ -188,6 +192,7 @@ function Shell({
   readLocalWorker?: ReadLocalWorkerProof;
 }) {
   const queryClient = useQueryClient();
+  const productLabel = useProductLabels();
   const transport = useTransport();
   const latestTransport = useRef(transport);
   useLayoutEffect(() => {
@@ -525,11 +530,17 @@ function Shell({
     if (parent) {
       tabs.open(
         parent,
-        tabs.sidechats(parent).find((tab) => tab.id === id) ?? {
-          kind: SessionTabKind.Sidechat,
-          id,
-          name: name ?? id,
-        },
+        tabs.sidechats(parent).find((tab) => tab.id === id) ??
+          (name
+            ? { kind: SessionTabKind.Sidechat, id, name }
+            : {
+                // Never expose the internal ID: show a localized product label
+                // until the pane verifies the Session and supplies its name.
+                kind: SessionTabKind.Sidechat,
+                id,
+                name: productLabel(PresentationKind.Session, id),
+                provisional: true,
+              }),
       );
       id = parent;
     }

@@ -745,6 +745,83 @@ describe("route failure classification", () => {
     expect(value.mutated).not.toHaveBeenCalled();
   });
 
+  describe("a Sidechat restored during a transient outage", () => {
+    // Collects every presentation string of every tab for the whole test, so a
+    // brief flash of an internal ID cannot go unnoticed.
+    const watchTabLabels = () => {
+      const seen = new Set<string>();
+      const collect = () => {
+        for (const tab of screen.queryAllByRole("tab")) {
+          seen.add(tab.textContent ?? "");
+          seen.add(tab.getAttribute("title") ?? "");
+          seen.add(tab.getAttribute("aria-label") ?? "");
+        }
+        for (const close of screen.queryAllByRole("button"))
+          seen.add(close.getAttribute("aria-label") ?? "");
+      };
+      const observer = new MutationObserver(collect);
+      observer.observe(window.document.body, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        characterData: true,
+      });
+      return { seen, collect, stop: () => observer.disconnect() };
+    };
+
+    it.each([
+      ["the Sidechat read", "child"],
+      ["the parent read", "parent"],
+    ] as const)(
+      "labels the tab with a product label instead of its ID when %s fails, then shows the loaded name",
+      async (_name, failing) => {
+        const value = fixture();
+        value.failure.code = Code.Unavailable;
+        if (failing === "child") value.failure.id = value.sidechat.id;
+        route(
+          `?screen=sessions&session=${value.session.id}&sidechat=${value.sidechat.id}`,
+        );
+        const labels = watchTabLabels();
+        render(<App transport={value.transport} />);
+        await waitFor(() =>
+          expect(search().get("sidechat")).toBe(value.sidechat.id),
+        );
+        // The pane loads the Session through the stream and names the tab.
+        expect(
+          await screen.findByRole("tab", { name: /Side question/ }),
+        ).toBeTruthy();
+        labels.collect();
+        labels.stop();
+        expect(labels.seen.size).toBeGreaterThan(0);
+        for (const label of labels.seen)
+          expect(label).not.toContain(value.sidechat.id);
+        expect(value.mutated).not.toHaveBeenCalled();
+      },
+    );
+
+    it("ends a placeholder tab whose Session is not a Sidechat of the requested parent", async () => {
+      const value = fixture();
+      value.failure.code = Code.Unavailable;
+      route(
+        `?screen=sessions&session=${value.session.id}&sidechat=${value.other.id}`,
+      );
+      const labels = watchTabLabels();
+      render(<App transport={value.transport} />);
+      await waitFor(() => expect(value.reads.resource).toHaveBeenCalled());
+      await waitFor(() =>
+        expect(
+          screen
+            .queryAllByRole("tab")
+            .filter((tab) => !/Conversation/.test(tab.textContent ?? "")),
+        ).toHaveLength(0),
+      );
+      labels.stop();
+      for (const label of labels.seen)
+        expect(label).not.toContain(value.other.id);
+      expect(value.mutated).not.toHaveBeenCalled();
+    });
+  });
+
   it.each(transientCodes)(
     "%s on the parent keeps the requested Sidechat too",
     async (_name, code) => {

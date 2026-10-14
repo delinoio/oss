@@ -182,6 +182,7 @@ import {
   text,
   Workspace,
 } from "./documents";
+import { ConversationKind, conversationProvenance } from "./home-navigation";
 import {
   useRetainedMutation,
   useRetainedMutationNotifications,
@@ -1304,6 +1305,26 @@ export function SessionView({
         tabs.tab.kind,
       ),
   );
+  // A Sidechat restored before its Session could be verified carries a
+  // placeholder name. Once the pane reads the Session, the descriptor takes its
+  // verified name, or ends if the Session is not a Sidechat of that parent.
+  useEffect(() => {
+    if (!embedded || session?.id !== id) return;
+    const parent = tabs.store.parent(id);
+    if (!parent || !tabs.store.provisionalSidechat(parent, id)) return;
+    const provenance = conversationProvenance(session, readDocument(session));
+    if (provenance.conversationKind === ConversationKind.Unknown) return;
+    if (
+      provenance.conversationKind === ConversationKind.Sidechat &&
+      provenance.sidechatParent === parent
+    )
+      tabs.store.settleSidechat(
+        parent,
+        id,
+        productResourceName(productLabel, session),
+      );
+    else tabs.store.discardProvisionalSidechat(parent, id);
+  }, [embedded, id, session, tabs.store, productLabel]);
   useSessionInboxRead(
     id,
     conversationActive && !embedded,
