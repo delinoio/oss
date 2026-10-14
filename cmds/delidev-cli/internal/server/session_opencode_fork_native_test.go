@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativetest"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/worker"
@@ -32,10 +33,7 @@ func TestManualNativePublicOpenCodeGeneralChatFork(t *testing.T) {
 	}
 }
 func nativePublicOpenCodeFork(t *testing.T, fault string) {
-	binary := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
-	if binary == "" {
-		t.Skip("explicit isolated pinned native General Chat fork")
-	}
+	binary, _ := nativetest.NativeOpenCodeExecutable(t)
 	binary, err := filepath.EvalSymlinks(binary)
 	if err != nil {
 		t.Fatal(err)

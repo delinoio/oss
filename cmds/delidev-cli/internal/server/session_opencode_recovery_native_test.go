@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativetest"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/worker"
@@ -28,13 +29,7 @@ import (
 
 func nativeOpenCodeRecoveryExecutable(t *testing.T) string {
 	t.Helper()
-	binary := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
-	if binary == "" {
-		t.Skip("explicit installed OpenCode and generated loopback provider only")
-	}
-	if !filepath.IsAbs(binary) {
-		t.Fatal("native executable must be absolute")
-	}
+	binary, _ := nativetest.NativeOpenCodeExecutable(t)
 	binary, err := filepath.EvalSymlinks(binary)
 	if err != nil {
 		t.Fatal(err)

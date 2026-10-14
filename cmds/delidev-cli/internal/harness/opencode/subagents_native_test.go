@@ -6,17 +6,15 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"sync/atomic"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativetest"
 )
 
 func TestManualNativeOpenCodeForegroundChild(t *testing.T) {
-	if os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE") == "" {
-		t.Skip("explicit isolated pinned native foreground child fixture")
-	}
+	_, _ = nativetest.NativeOpenCodeExecutable(t)
 	key := string(domain.NewID())
 	var calls atomic.Int32
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

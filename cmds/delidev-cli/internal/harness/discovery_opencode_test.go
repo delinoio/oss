@@ -11,12 +11,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativetest"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 )
 
@@ -69,7 +71,11 @@ func init() {
 	os.Exit(0)
 }
 
-func discoverOpenCode(t *testing.T, binary string) {
+// discoverOpenCode runs discovery against binary and expects the installation
+// to report wantVersion, which must itself satisfy the minimum-version
+// admission rule. The in-process fake reports the baseline; a real binary
+// reports whatever admitted version is installed.
+func discoverOpenCode(t *testing.T, binary, wantVersion string) {
 	t.Helper()
 	input := allMissing(t)
 	input.VerifyProtocol = true
@@ -86,7 +92,7 @@ func discoverOpenCode(t *testing.T, binary string) {
 		t.Fatal(err)
 	}
 	i := output.Installations[2]
-	if i.Harness != domain.OpenCode || i.Version != domain.OpenCodeProtocolVersion || !i.ProtocolVerified || i.Protocol == nil || i.Protocol.State != domain.ProtocolVerified || i.Protocol.Problem != nil || len(i.Capabilities) != 0 {
+	if i.Harness != domain.OpenCode || !domain.HarnessVersionAllowed(domain.OpenCode, i.Version) || i.Version != wantVersion || !i.ProtocolVerified || i.Protocol == nil || i.Protocol.State != domain.ProtocolVerified || i.Protocol.Problem != nil || len(i.Capabilities) != 0 {
 		t.Fatalf("OpenCode discovery: state=%s version=%s protocol=%+v; logs: %s", i.State, i.Version, i.Protocol, logs.String())
 	}
 	if err := process.ReconcileOwner(filepath.Join(root, "processes"), owner); err != nil {
@@ -106,15 +112,30 @@ func TestDiscoveryVerifiesOpenCodeWithoutExecution(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	discoverOpenCode(t, executable)
+	discoverOpenCode(t, executable, domain.OpenCodeProtocolVersion)
 }
+
+// TestDiscoveryAdmitsNewerOpenCodeVersion proves that a binary above the
+// baseline is admitted and reported with its own observed version. The wrapper
+// only rewrites the --version line; the protocol behavior is the in-process fake.
+func TestDiscoveryAdmitsNewerOpenCodeVersion(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell wrapper executables are not available on Windows")
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const newer = "1.18.33"
+	wrapper := filepath.Join(t.TempDir(), "opencode")
+	script := "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then\n\tmkdir -p \"$HOME/config/opencode\"\n\tprintf '%s\\n' '" + newer + "'\n\texit 0\nfi\nexec '" + executable + "' \"$@\"\n"
+	if err := os.WriteFile(wrapper, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	discoverOpenCode(t, wrapper, newer)
+}
+
 func TestManualNativeOpenCodeDiscovery(t *testing.T) {
-	executable := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
-	if executable == "" {
-		t.Skip("explicit private OpenCode discovery")
-	}
-	if !filepath.IsAbs(executable) {
-		t.Fatal("select an absolute native executable")
-	}
-	discoverOpenCode(t, executable)
+	executable, version := nativetest.NativeOpenCodeExecutable(t)
+	discoverOpenCode(t, executable, version)
 }
