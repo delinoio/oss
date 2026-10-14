@@ -344,7 +344,9 @@ describe("source viewer", () => {
       ),
     ).toBeTruthy();
     expect(
-      within(dialog).queryByText("The source file was removed since this analysis."),
+      within(dialog).queryByText(
+        "The source file was removed since this analysis.",
+      ),
     ).toBeNull();
   });
 
