@@ -737,6 +737,65 @@ fn nested_zip_archive_beneath_native_zip_directory_in_inline_and_split_views() {
             assert!(!native.readonly, "split={split}, unpacked={unpacked}");
             fs::write(&native.physical, b"changed").unwrap();
             assert_eq!(fs::read(&native_file).unwrap(), b"changed");
+
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            if !unpacked {
+                use std::process::Command;
+
+                let source = root_path.join("nested-zip-probe.c");
+                fs::write(
+                    &source,
+                    r#"
+#include <errno.h>
+#include <fcntl.h>
+#include <string.h>
+#include <unistd.h>
+int main(void) {
+    const char *dependencies[] = {
+        "assets.zip/cache.zip/node_modules/dep/file.txt",
+        "node_modules/dep/file.txt"
+    };
+    for (int i = 0; i < 2; ++i) {
+        int fd = open(dependencies[i], O_RDONLY);
+        if (fd < 0) return 41;
+        char bytes[14] = {0};
+        if (read(fd, bytes, 13) != 13 || strcmp(bytes, "package bytes")) return 42;
+        close(fd);
+        errno = 0;
+        if (open(dependencies[i], O_WRONLY) != -1 || errno != EROFS) return 43;
+    }
+    int native = open("assets.zip/native.txt", O_WRONLY | O_TRUNC);
+    if (native < 0 || write(native, "runtime", 7) != 7) return 44;
+    close(native);
+    return 0;
+}
+"#,
+                )
+                .unwrap();
+                let executable = root_path.join("nested-zip-probe");
+                assert!(Command::new("cc")
+                    .arg(&source)
+                    .args(["-Wall", "-Wextra", "-Werror", "-o"])
+                    .arg(&executable)
+                    .status()
+                    .unwrap()
+                    .success());
+                let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+                    .current_dir(&root_path)
+                    .arg("--cache-dir")
+                    .arg(cache_root.path().join("runtime-cache"))
+                    .args(["run", "--"])
+                    .arg(&executable)
+                    .output()
+                    .unwrap();
+                assert_eq!(
+                    result.status.code(),
+                    Some(0),
+                    "split={split} stderr={}",
+                    String::from_utf8_lossy(&result.stderr)
+                );
+                assert_eq!(fs::read(&native_file).unwrap(), b"runtime");
+            }
         }
     }
 }
