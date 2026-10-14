@@ -322,3 +322,122 @@ func TestGrokBundleClearDropsReferences(t *testing.T) {
 		t.Fatal("cleared bundle materialized a file")
 	}
 }
+
+// grokRawFile encodes a native file the way the native client does: without
+// HTML escaping, so bounded fields keep their literal one-byte characters.
+func grokRawFile(t *testing.T, mutate func(entry map[string]any)) []byte {
+	t.Helper()
+	entry := grokFixtureEntry()
+	if mutate != nil {
+		mutate(entry)
+	}
+	raw, err := marshalGrokJSON(map[string]any{GrokScopeKey: entry})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The encoder always escapes the JavaScript line separators; a native
+	// writer may emit them literally, so restore the literal three-byte form.
+	raw = bytes.ReplaceAll(raw, []byte("\\u2028"), []byte("\u2028"))
+	raw = bytes.ReplaceAll(raw, []byte("\\u2029"), []byte("\u2029"))
+	return raw
+}
+
+func grokBundleIDs() (domain.ID, domain.ID, domain.ID) {
+	return domain.NewID(), domain.NewID(), domain.NewID()
+}
+
+// An accepted native file must always be emitted again. HTML-sensitive
+// characters are one byte in the native file but six bytes when escaped, so the
+// canonical encoding must not escape them.
+func TestGrokBundleReencodesAcceptedHTMLSensitiveFieldsWithinBound(t *testing.T) {
+	for _, ch := range []string{"<", ">", "&"} {
+		t.Run(ch, func(t *testing.T) {
+			key := strings.Repeat(ch, 12<<10)
+			raw := grokRawFile(t, func(e map[string]any) { e["key"] = key; e["refresh_token"] = strings.Repeat(ch, 12<<10) })
+			if len(raw) > MaxGrokAuthFile {
+				t.Fatalf("fixture is not within the input bound: %d", len(raw))
+			}
+			bundle, err := ParseGrokAuthFile(raw)
+			if err != nil {
+				t.Fatal("a bounded HTML-sensitive file was rejected")
+			}
+			native, err := bundle.AuthFile()
+			if err != nil {
+				t.Fatal("an accepted bundle could not be re-encoded")
+			}
+			if bytes.Contains(native, []byte("\\u003")) || bytes.Contains(native, []byte("\\u0026")) || len(native) > MaxGrokAuthFile {
+				t.Fatal("HTML-sensitive characters were expanded")
+			}
+			server, account, generation := grokBundleIDs()
+			sealed, err := SealGrokBundle(server, account, generation, bundle)
+			if err != nil {
+				t.Fatal("an accepted bundle could not be sealed")
+			}
+			if len(sealed) > MaxGrokBundleEnvelope {
+				t.Fatal("the sealed envelope exceeds its bound")
+			}
+			opened, err := OpenGrokBundle(sealed, server, account, generation)
+			if err != nil || !opened.Equal(bundle) || opened.entry.Key != key {
+				t.Fatal("the sealed bundle did not round trip semantically")
+			}
+		})
+	}
+}
+
+// Whatever the input bound accepts, the canonical encoding and the sealed
+// envelope must succeed; anything whose canonical form cannot fit is rejected
+// at parse time instead of failing later during seal.
+func TestGrokBundleAcceptedInputAlwaysReencodesAndSeals(t *testing.T) {
+	server, account, generation := grokBundleIDs()
+	for _, unit := range []string{"a", "<", "&", " ", " ", "é", "漢", "😀", `"`, `\`, "\u007f"[:0] + "~"} {
+		for _, size := range []int{1 << 10, 8 << 10, 12 << 10, 20 << 10, 24 << 10} {
+			count := size / len(unit)
+			if count == 0 {
+				continue
+			}
+			field := strings.Repeat(unit, count)
+			if len(field) > maxGrokSecretField {
+				field = field[:maxGrokSecretField-maxGrokSecretField%len(unit)]
+			}
+			raw := grokRawFile(t, func(e map[string]any) {
+				e["key"], e["refresh_token"] = field, field
+				e["email"], e["first_name"], e["profile_image_asset_id"] = strings.Repeat(unit, maxGrokProfileField/len(unit)), strings.Repeat(unit, maxGrokProfileField/len(unit)), strings.Repeat(unit, maxGrokProfileField/len(unit))
+			})
+			bundle, err := ParseGrokAuthFile(raw)
+			if err != nil {
+				if !errors.Is(err, GrokBundleInvalid()) && err.Error() != GrokBundleInvalid().Error() {
+					t.Fatal("rejection was not the stable bundle error")
+				}
+				continue
+			}
+			native, err := bundle.AuthFile()
+			if err != nil {
+				t.Fatalf("accepted input (unit %q, size %d) cannot be re-encoded", unit, size)
+			}
+			again, err := ParseGrokAuthFile(native)
+			if err != nil || !again.Equal(bundle) {
+				t.Fatalf("re-encoded bundle (unit %q, size %d) is not accepted again", unit, size)
+			}
+			sealed, err := SealGrokBundle(server, account, generation, bundle)
+			if err != nil {
+				t.Fatalf("accepted input (unit %q, size %d) cannot be sealed", unit, size)
+			}
+			if _, err := OpenGrokBundle(sealed, server, account, generation); err != nil {
+				t.Fatalf("sealed bundle (unit %q, size %d) cannot be opened", unit, size)
+			}
+		}
+	}
+}
+
+// U+2028 and U+2029 are always escaped by the encoder, so input made of them can
+// pass the input bound yet exceed it once re-encoded. It is rejected up front.
+func TestParseGrokAuthFileRejectsInputThatCannotBeReencoded(t *testing.T) {
+	field := strings.Repeat("\u2028", maxGrokSecretField/3)
+	raw := grokRawFile(t, func(e map[string]any) { e["key"], e["refresh_token"] = field, field })
+	if len(raw) > MaxGrokAuthFile {
+		t.Fatalf("fixture is not within the input bound: %d", len(raw))
+	}
+	if _, err := ParseGrokAuthFile(raw); err == nil {
+		t.Fatal("a file whose canonical encoding exceeds the bound was accepted")
+	}
+}

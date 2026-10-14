@@ -168,6 +168,23 @@ func grokSecret(value string) bool {
 	return grokControlFree(value, maxGrokSecretField, true) && !strings.ContainsAny(value, " \t")
 }
 
+// marshalGrokJSON encodes value as compact JSON without HTML escaping. The
+// default encoder rewrites <, > and & as six-byte \u escapes, so a bounded
+// native file could grow past its own limit when re-emitted. Native Grok reads
+// either spelling, and the bytes decode to identical strings.
+func marshalGrokJSON(value any) ([]byte, error) {
+	var out bytes.Buffer
+	encoder := json.NewEncoder(&out)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(value); err != nil {
+		clear(out.Bytes())
+		return nil, err
+	}
+	raw := bytes.Clone(bytes.TrimSuffix(out.Bytes(), []byte("\n")))
+	clear(out.Bytes())
+	return raw, nil
+}
+
 // ParseGrokAuthFile validates raw native $GROK_HOME/auth.json bytes. The file
 // must contain exactly the one pinned scope entry; unknown fields, duplicate
 // keys, other scopes and mismatched issuer or client are rejected.
@@ -204,7 +221,17 @@ func ParseGrokAuthFile(raw []byte) (GrokBundle, error) {
 	if entry.TeamID != nil {
 		identity.TeamID = *entry.TeamID
 	}
-	return GrokBundle{entry: entry, identity: identity}, nil
+	bundle := GrokBundle{entry: entry, identity: identity}
+	// The accepted input bound alone does not bound the canonical re-encoding
+	// (for example U+2028 and U+2029 always expand to six-byte escapes). Accept
+	// only what AuthFile, and therefore SealGrokBundle, can always emit again.
+	reencoded, err := bundle.AuthFile()
+	if err != nil {
+		bundle.Clear()
+		return GrokBundle{}, GrokBundleInvalid()
+	}
+	clear(reencoded)
+	return bundle, nil
 }
 
 // AuthFile returns the native auth.json bytes (one scope entry) for Worker
@@ -213,7 +240,7 @@ func (b GrokBundle) AuthFile() ([]byte, error) {
 	if b.entry.Key == "" {
 		return nil, GrokBundleInvalid()
 	}
-	raw, err := json.Marshal(map[string]grokAuthEntry{GrokScopeKey: b.entry})
+	raw, err := marshalGrokJSON(map[string]grokAuthEntry{GrokScopeKey: b.entry})
 	if err != nil || len(raw) > MaxGrokAuthFile {
 		clear(raw)
 		return nil, GrokBundleInvalid()
@@ -243,7 +270,7 @@ func SealGrokBundle(server, account, generation domain.ID, bundle GrokBundle) ([
 		return nil, err
 	}
 	defer clear(auth)
-	raw, err := json.Marshal(grokBundleEnvelope{Version: grokBundleVersion, Kind: grokBundleKind, Server: server, Account: account, Generation: generation, Auth: auth})
+	raw, err := marshalGrokJSON(grokBundleEnvelope{Version: grokBundleVersion, Kind: grokBundleKind, Server: server, Account: account, Generation: generation, Auth: auth})
 	if err != nil || len(raw) > MaxGrokBundleEnvelope {
 		clear(raw)
 		return nil, GrokBundleInvalid()

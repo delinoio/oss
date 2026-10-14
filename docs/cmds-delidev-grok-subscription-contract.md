@@ -97,6 +97,13 @@ key. Optional native profile fields (`email`, `first_name`,
 `profile_image_asset_id`, `team_id`, `coding_data_retention_opt_out`) are
 preserved when present and never invented when absent. `AuthFile` re-emits the
 native bytes semantically for Worker materialization; the caller clears them.
+The canonical encoding is compact JSON without HTML escaping, so `<`, `>` and `&`
+stay one byte, and the same encoder is used for the sealed envelope. The input
+bound alone does not bound the re-encoding (U+2028 and U+2029 always expand to
+six-byte escapes), so `ParseGrokAuthFile` also rejects, with the same stable
+error, any file whose canonical encoding exceeds 64 KiB. A bundle the parser
+accepts can therefore always be re-emitted by `AuthFile` and sealed within the
+envelope bound.
 
 The vault object is the versioned envelope (`version` 1, kind
 `grok-auth-bundle`) bound to server, account and generation by `SealGrokBundle`
