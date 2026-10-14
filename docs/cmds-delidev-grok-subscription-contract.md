@@ -139,40 +139,40 @@ Retry original request is shown exactly while a retry kind other than `none` is 
 
 #### Events
 
-| Event                     | Trigger                                                                                         |
-| ------------------------- | ----------------------------------------------------------------------------------------------- |
-| `poll-preparing`          | A status read reports preparing                                                                 |
-| `poll-preparing-canceled` | A status read reports preparing with the canceled flag                                          |
-| `poll-waiting`            | A status read reports waiting                                                                   |
-| `poll-waiting-canceled`   | A status read reports waiting with the canceled flag (another client or a lost cancel response) |
-| `poll-canceled`           | A status read reports the canceled state                                                        |
-| `poll-expired`            | A status read reports the expired state                                                         |
-| `poll-unsupported`        | A status read reports the unsupported state                                                     |
-| `poll-recovery`           | A status read reports recovery required                                                         |
-| `poll-failed`             | A status read reports the failed state                                                          |
-| `poll-succeeded`          | A status read reports success and the fresh account verifies generation and operation           |
-| `poll-error`              | A status read fails or its result cannot be verified                                            |
-| `link-ready`              | The original authorization link passes validation for the first time                            |
-| `open-succeeded`          | The native receiver confirms the first open                                                     |
-| `open-incompatible`       | The first open meets the Incompatible refusal                                                   |
-| `open-failed`             | The first open fails for any other reason                                                       |
-| `reopen-succeeded`        | Open browser again succeeds                                                                     |
-| `reopen-incompatible`     | Open browser again meets the Incompatible refusal                                               |
-| `reopen-failed`           | Open browser again fails                                                                        |
-| `callback-take-failed`    | Taking the native callback fails (never retried)                                                |
-| `callback-forward-failed` | Forwarding the taken callback fails (never retried)                                             |
-| `replay-started`          | A start, cancel or name save request (first run or Retry original request) begins               |
-| `auxiliary-started`       | Open browser again begins                                                                       |
-| `start-accepted`          | Account creation and RequestSubscription succeed                                                |
-| `start-refused`           | Account creation or RequestSubscription is refused definitively                                 |
-| `start-uncertain`         | Account creation or RequestSubscription has an uncertain outcome                                |
-| `cancel-accepted`         | CancelSubscription is acknowledged                                                              |
-| `cancel-refused`          | CancelSubscription is refused definitively                                                      |
-| `cancel-uncertain`        | CancelSubscription has an uncertain outcome                                                     |
-| `name-saved`              | The account alias save is verified                                                              |
-| `name-refused`            | The account alias save is refused definitively                                                  |
-| `name-uncertain`          | The account alias save has an uncertain outcome                                                 |
-| `dispose`                 | The task is left, Settings closes or the controller unmounts                                    |
+| Event                     | Trigger                                                                                                                            |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `poll-preparing`          | A status read reports preparing                                                                                                    |
+| `poll-preparing-canceled` | A status read reports preparing with the canceled flag                                                                             |
+| `poll-waiting`            | A status read reports waiting                                                                                                      |
+| `poll-waiting-canceled`   | A status read reports waiting with the canceled flag (another client or a lost cancel response)                                    |
+| `poll-canceled`           | A status read reports the canceled state                                                                                           |
+| `poll-expired`            | A status read reports the expired state                                                                                            |
+| `poll-unsupported`        | A status read reports the unsupported state                                                                                        |
+| `poll-recovery`           | A status read reports recovery required                                                                                            |
+| `poll-failed`             | A status read reports the failed state                                                                                             |
+| `poll-succeeded`          | A status read reports success and the fresh account verifies generation and operation                                              |
+| `poll-error`              | A status read fails or its result cannot be verified                                                                               |
+| `link-ready`              | The original authorization link passes validation for the first time                                                               |
+| `open-succeeded`          | The native receiver confirms the first open                                                                                        |
+| `open-incompatible`       | The first open meets the Incompatible refusal                                                                                      |
+| `open-failed`             | The first open fails for any other reason                                                                                          |
+| `reopen-succeeded`        | Open browser again succeeds                                                                                                        |
+| `reopen-incompatible`     | Open browser again meets the Incompatible refusal                                                                                  |
+| `reopen-failed`           | Open browser again fails                                                                                                           |
+| `callback-take-failed`    | Taking the native callback fails (never retried)                                                                                   |
+| `callback-forward-failed` | Forwarding the taken callback fails (never retried)                                                                                |
+| `replay-started`          | A start, cancel or name save request (first run or Retry original request) begins                                                  |
+| `auxiliary-started`       | Open browser again begins                                                                                                          |
+| `start-accepted`          | Account creation and RequestSubscription succeed                                                                                   |
+| `start-refused`           | Account creation or RequestSubscription is refused definitively, or its receipt fails the local account, alias or operation checks |
+| `start-uncertain`         | Account creation or RequestSubscription has an uncertain outcome                                                                   |
+| `cancel-accepted`         | CancelSubscription is acknowledged                                                                                                 |
+| `cancel-refused`          | CancelSubscription is refused definitively, or its receipt fails the local account checks                                          |
+| `cancel-uncertain`        | CancelSubscription has an uncertain outcome                                                                                        |
+| `name-saved`              | The account alias save is verified                                                                                                 |
+| `name-refused`            | The account alias save is refused definitively, or its receipt fails the local alias or account checks                             |
+| `name-uncertain`          | The account alias save has an uncertain outcome                                                                                    |
+| `dispose`                 | The task is left, Settings closes or the controller unmounts                                                                       |
 
 #### Transitions
 

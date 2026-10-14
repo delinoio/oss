@@ -1069,14 +1069,111 @@ it("rejects a created account whose alias differs from the requested name before
   }));
   render(f.view());
   fireEvent.click(screen.getByRole("button", { name: "Start Grok" }));
-  // The receipt is not accepted: nothing is adopted, so the original request is
-  // retained for an explicit replay and no login request is sent.
-  await screen.findByRole("button", {
-    name: copy("grok-subscription.retryOriginal"),
-  });
+  // The receipt is rejected locally. Replaying the same request would return
+  // the same receipt, so the attempt ends with the definite-failure notice and
+  // retains nothing: no Retry button, no login request and no adoption.
+  await screen.findByText(copy("grok-subscription.problem.requestFailed"));
+  expect(
+    screen.queryByRole("button", {
+      name: copy("grok-subscription.retryOriginal"),
+    }),
+  ).toBeNull();
+  expect(
+    screen.queryByText(copy("grok-subscription.problem.requestUnconfirmed")),
+  ).toBeNull();
+  expect(f.save).toHaveBeenCalledTimes(1);
   expect(f.login).not.toHaveBeenCalled();
   expect(f.progress).not.toHaveBeenCalled();
   expect(f.changed).not.toHaveBeenCalled();
+});
+
+it("rejects a login receipt for another operation as a definite failure without a retained request", async () => {
+  const f = fixture(),
+    admit = f.login.getMockImplementation()!;
+  f.login.mockImplementationOnce((request) => ({
+    ...admit(request),
+    operationId: newRequestId(),
+  }));
+  render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Start Grok" }));
+  await screen.findByText(copy("grok-subscription.problem.requestFailed"));
+  expect(
+    screen.queryByRole("button", {
+      name: copy("grok-subscription.retryOriginal"),
+    }),
+  ).toBeNull();
+  expect(
+    screen.queryByText(copy("grok-subscription.problem.requestUnconfirmed")),
+  ).toBeNull();
+  // Nothing replays the rejected receipt and no operation is polled.
+  expect(f.save).toHaveBeenCalledTimes(1);
+  expect(f.login).toHaveBeenCalledTimes(1);
+  expect(f.progress).not.toHaveBeenCalled();
+});
+
+it("rejects a cancellation receipt for another account as a definite failure and keeps Cancel available", async () => {
+  const f = fixture();
+  await start(f);
+  f.cancel.mockImplementationOnce(() => ({
+    account: create(ResourceSchema, {
+      ...f.current(),
+      id: newRequestId(),
+    }),
+  }));
+  fireEvent.click(
+    screen.getByRole("button", { name: copy("grok-subscription.cancel") }),
+  );
+  await screen.findByText(copy("grok-subscription.problem.cancelFailed"));
+  expect(
+    screen.queryByRole("button", {
+      name: copy("grok-subscription.retryOriginal"),
+    }),
+  ).toBeNull();
+  expect(
+    screen.queryByText(copy("grok-subscription.problem.cancelUnconfirmed")),
+  ).toBeNull();
+  // The rejected receipt is not replayed; a deliberate Cancel is a new request.
+  const again = screen.getByRole("button", {
+    name: copy("grok-subscription.cancel"),
+  }) as HTMLButtonElement;
+  expect(again.disabled).toBe(false);
+  expect(f.cancel).toHaveBeenCalledTimes(1);
+  fireEvent.click(again);
+  await screen.findByText(copy("grok-subscription.problem.canceling"));
+  expect(f.cancel).toHaveBeenCalledTimes(2);
+  expect(f.cancel.mock.calls[1][0].mutation?.requestId).not.toBe(
+    f.cancel.mock.calls[0][0].mutation?.requestId,
+  );
+});
+
+it("rejects a saved name whose receipt carries another alias as a definite failure and keeps the name editable", async () => {
+  const f = fixture();
+  await start(f);
+  f.success();
+  const input = (await screen.findByLabelText(
+    copy("grok-subscription.accountName"),
+    {},
+    { timeout: 3000 },
+  )) as HTMLInputElement;
+  f.save.mockImplementationOnce(async (request) => ({
+    requestId: request.mutation.requestId,
+    resource: create(ResourceSchema, {
+      ...f.current(),
+      revision: f.current().revision + 1n,
+      documentJson: encode({ ...document(f.current()), alias: "Other" }),
+    }),
+  }));
+  fireEvent.click(
+    screen.getByRole("button", { name: copy("grok-subscription.saveName") }),
+  );
+  await screen.findByText(copy("grok-subscription.problem.nameUnconfirmed"));
+  expect(input.disabled).toBe(false);
+  expect(
+    screen.queryByRole("button", {
+      name: copy("grok-subscription.retryOriginal"),
+    }),
+  ).toBeNull();
+  expect(f.save).toHaveBeenCalledTimes(2);
 });
 
 it("replaces the unconfirmed request notice when an uncertain start replay is refused definitively", async () => {

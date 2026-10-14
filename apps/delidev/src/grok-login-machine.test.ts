@@ -352,14 +352,16 @@ const eventTriggers: Record<GrokLoginEvent, string> = {
   [E.AuxiliaryStarted]: "Open browser again begins",
   [E.StartAccepted]: "Account creation and RequestSubscription succeed",
   [E.StartRefused]:
-    "Account creation or RequestSubscription is refused definitively",
+    "Account creation or RequestSubscription is refused definitively, or its receipt fails the local account, alias or operation checks",
   [E.StartUncertain]:
     "Account creation or RequestSubscription has an uncertain outcome",
   [E.CancelAccepted]: "CancelSubscription is acknowledged",
-  [E.CancelRefused]: "CancelSubscription is refused definitively",
+  [E.CancelRefused]:
+    "CancelSubscription is refused definitively, or its receipt fails the local account checks",
   [E.CancelUncertain]: "CancelSubscription has an uncertain outcome",
   [E.NameSaved]: "The account alias save is verified",
-  [E.NameRefused]: "The account alias save is refused definitively",
+  [E.NameRefused]:
+    "The account alias save is refused definitively, or its receipt fails the local alias or account checks",
   [E.NameUncertain]: "The account alias save has an uncertain outcome",
   [E.Dispose]: "The task is left, Settings closes or the controller unmounts",
 };
