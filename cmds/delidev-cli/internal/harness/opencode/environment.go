@@ -1,6 +1,7 @@
 package opencode
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -9,6 +10,14 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
+
+// userAuthoredConfigurationNames lists the entries below the native home that only
+// a user (never the native itself) authors. A persistent profile retains native
+// caches and history but never consumes these configuration or login surfaces.
+var userAuthoredConfigurationNames = []string{"opencode.json", "opencode.jsonc", "config.json", "AGENTS.md", "agent", "agents", "command", "commands", "plugin", "plugins", "tool", "tools", "skill", "skills", "mode", "modes", "themes"}
+
+// userAuthoredRootNames are retained login files below the profile root.
+var userAuthoredRootNames = []string{"data/auth.json", "data/opencode/auth.json", "data/opencode/mcp-auth.json"}
 
 func probeEnvironment(config ProbeConfig) ([]string, error) {
 	invalid := func() error {
@@ -43,6 +52,16 @@ func probeEnvironment(config ProbeConfig) ([]string, error) {
 				return nil, invalid()
 			}
 		default:
+			return nil, invalid()
+		}
+	}
+	for _, name := range userAuthoredConfigurationNames {
+		if _, err := os.Lstat(filepath.Join(config.Home, name)); !errors.Is(err, os.ErrNotExist) {
+			return nil, invalid()
+		}
+	}
+	for _, name := range userAuthoredRootNames {
+		if _, err := os.Lstat(filepath.Join(root, filepath.FromSlash(name))); !errors.Is(err, os.ErrNotExist) {
 			return nil, invalid()
 		}
 	}

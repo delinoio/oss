@@ -250,7 +250,7 @@ func TestProbeOwnsBoundedInspectedInitialization(t *testing.T) {
 }
 
 func TestProbeRejectsProfileAndRuntimeBeforeLaunch(t *testing.T) {
-	for _, change := range []string{"version", "cwd", "home", "retained-config", "retained-cache", "project-config", "root-file", "path", "duplicate-path", "nonprivate", "symlink"} {
+	for _, change := range []string{"version", "cwd", "home", "retained-config", "project-config", "root-file", "path", "duplicate-path", "nonprivate", "symlink"} {
 		t.Run(change, func(t *testing.T) {
 			if runtime.GOOS == "windows" && (change == "nonprivate" || change == "symlink") {
 				t.Skip("Unix mode/link fixture; Windows uses native ACLs")
@@ -265,10 +265,6 @@ func TestProbeRejectsProfileAndRuntimeBeforeLaunch(t *testing.T) {
 				config.Home = "relative"
 			case "retained-config":
 				if err := os.WriteFile(filepath.Join(config.Home, "auth.json"), []byte("private"), 0600); err != nil {
-					t.Fatal(err)
-				}
-			case "retained-cache":
-				if err := os.WriteFile(filepath.Join(config.Process.Cwd, "cache", "old"), []byte("private"), 0600); err != nil {
 					t.Fatal(err)
 				}
 			case "project-config":
@@ -323,5 +319,17 @@ func TestManualNativeGrokInitialization(t *testing.T) {
 	}
 	if _, err := os.Lstat(filepath.Join(config.Home, "auth.json")); !os.IsNotExist(err) {
 		t.Fatal("probe created authentication state")
+	}
+}
+
+// A persistent profile keeps native caches and history; only user-authored
+// configuration and login surfaces are refused.
+func TestProbeAcceptsRetainedNativeCache(t *testing.T) {
+	config, _ := fixtureConfig(t, "valid")
+	if err := os.WriteFile(filepath.Join(config.Process.Cwd, "cache", "old"), []byte("private"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := probeEnvironment(config); err != nil {
+		t.Fatalf("retained native cache blocked reuse: %v", err)
 	}
 }

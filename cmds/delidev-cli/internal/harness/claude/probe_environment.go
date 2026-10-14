@@ -1,6 +1,8 @@
 package claude
 
 import (
+	"errors"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -8,6 +10,10 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
+
+// userAuthoredConfigurationNames lists the Claude configuration entries that only
+// a user (never the native itself) authors below CLAUDE_CONFIG_DIR.
+var userAuthoredConfigurationNames = []string{"settings.json", "settings.local.json", "CLAUDE.md", "hooks", "commands", "agents", "plugins", "skills", "output-styles"}
 
 func probeEnvironment(config ProbeConfig) ([]string, error) {
 	return nativeEnvironment(config)
@@ -38,6 +44,14 @@ func nativeEnvironment(config ProbeConfig) ([]string, error) {
 		}
 		actual, err := filepath.EvalSymlinks(path)
 		if err != nil || actual != path {
+			return nil, invalid()
+		}
+	}
+	// A persistent profile retains native caches and history, but a user-authored
+	// configuration surface must never be consumed: settings, memory, hooks,
+	// commands, agents, plugins, skills and output styles are rejected by name.
+	for _, name := range userAuthoredConfigurationNames {
+		if _, err := os.Lstat(filepath.Join(home, name)); !errors.Is(err, os.ErrNotExist) {
 			return nil, invalid()
 		}
 	}

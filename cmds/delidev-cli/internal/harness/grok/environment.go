@@ -1,6 +1,7 @@
 package grok
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -9,6 +10,11 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
+
+// userAuthoredConfigurationNames lists the entries below the native home that only
+// a user (never the native itself) authors. A persistent profile retains native
+// caches and history but never consumes these configuration or login surfaces.
+var userAuthoredConfigurationNames = []string{"auth.json", "config.toml", "config.json", "settings.json", "GROK.md", "AGENTS.md", "hooks", "plugins", "skills", "commands", "agents", "mcp.json"}
 
 func probeEnvironment(config ProbeConfig) ([]string, error) {
 	invalid := func() error {
@@ -43,6 +49,11 @@ func probeEnvironment(config ProbeConfig) ([]string, error) {
 				return nil, invalid()
 			}
 		default:
+			return nil, invalid()
+		}
+	}
+	for _, name := range userAuthoredConfigurationNames {
+		if _, err := os.Lstat(filepath.Join(config.Home, name)); !errors.Is(err, os.ErrNotExist) {
 			return nil, invalid()
 		}
 	}

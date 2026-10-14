@@ -2974,3 +2974,15 @@ Profile events use the structured fields `profile_id`, `owner`, `harness`,
 `credential_cleanup_blocked`, `process_uncertain`, `helper_retained`,
 `referenced`, `deleted`, `delete_blocked`, `migration_verified`,
 `migration_settled`). Logs never contain secrets, native contents or paths.
+
+### OpenCode execution-family status
+
+OpenCode discovery and protocol probes use the persistent accountless
+`discovery` profile. OpenCode execution, continuation, compaction and Fork still
+keep their immutable per-execution runtimes (`runtimes/<id>`), because their
+native checkpoints digest the complete runtime tree and copy the database
+forward into an empty, different runtime. Moving them to persistent profiles
+requires an in-place resume profile and a retained-configuration inspection
+verified against the pinned native; neither is part of the migrated paths. These
+runtimes remain legacy evidence: they are never auto-pruned, and session
+deletion still removes them with the session.
