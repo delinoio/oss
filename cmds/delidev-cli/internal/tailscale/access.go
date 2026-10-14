@@ -234,6 +234,12 @@ func (m *Manager) enable(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// Only the explicit NeedsLogin observation is relabelled. Every other
+	// non-Running state keeps the generic unavailable message below.
+	if inventory.State == LoggedOut {
+		m.adapter.logLoginRequired(ctx)
+		return LoginRequired()
+	}
 	if inventory.State != Running || !inventory.HTTPS || inventory.Self == nil {
 		return fail(domain.Unavailable)
 	}
