@@ -1078,7 +1078,7 @@ mod tests {
                 !action(diagnostic)
                     .direction
                     .split(|c: char| !c.is_alphanumeric())
-                    .any(|word| matches!(word, "fs" | "path" | "os" | "crypto")),
+                    .any(|word| matches!(word, "fs" | "os" | "crypto" | "net" | "child_process")),
                 "{id}: the direction must not name a specific built-in"
             );
             assert!(
