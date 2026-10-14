@@ -289,11 +289,6 @@ pub fn source_offset(mut offset: usize, chain: &[Vec<Edit>]) -> usize {
     offset
 }
 
-/// Bytes of context on each side of an edit that the compressed-size check
-/// compresses. Deflate's window is 32 KiB, so changes farther away barely
-/// affect how the edited text compresses.
-const COMPRESSION_CONTEXT: usize = 16 * 1024;
-
 /// Offset `offset` of the original text in the text that `edits` (sorted,
 /// against the original) produce, for a position outside every edit.
 fn forward_offset(offset: usize, edits: &[Edit]) -> usize {
@@ -305,194 +300,6 @@ fn forward_offset(offset: usize, edits: &[Edit]) -> usize {
         shifted += edit.replacement.len() as isize - (edit.end - edit.start) as isize;
     }
     shifted.max(0) as usize
-}
-
-/// Read access to a text that may only exist virtually (see [`Patched`]).
-trait TextView {
-    fn len(&self) -> usize;
-    fn is_char_boundary(&self, at: usize) -> bool;
-    fn extend_into(&self, from: usize, to: usize, out: &mut Vec<u8>);
-}
-
-impl TextView for str {
-    fn len(&self) -> usize {
-        str::len(self)
-    }
-
-    fn is_char_boundary(&self, at: usize) -> bool {
-        str::is_char_boundary(self, at)
-    }
-
-    fn extend_into(&self, from: usize, to: usize, out: &mut Vec<u8>) {
-        out.extend_from_slice(&self.as_bytes()[from..to]);
-    }
-}
-
-/// `base` with sorted, non-overlapping `edits` applied, read without
-/// building the whole text. The gate compares a few windows of each edited
-/// chunk; copying multi-megabyte chunks per candidate dominated run time.
-struct Patched<'a> {
-    base: &'a str,
-    edits: &'a [Edit],
-    /// `(start in the patched text, segment)`: a base range or an edit's
-    /// replacement, in order.
-    segments: Vec<(usize, Segment)>,
-    len: usize,
-}
-
-#[derive(Clone, Copy)]
-enum Segment {
-    Base(usize, usize),
-    Replacement(usize),
-}
-
-impl<'a> Patched<'a> {
-    fn new(base: &'a str, edits: &'a [Edit]) -> Self {
-        let mut segments = Vec::with_capacity(edits.len() * 2 + 1);
-        let (mut at, mut previous) = (0usize, 0usize);
-        for (index, edit) in edits.iter().enumerate() {
-            if edit.start > previous {
-                segments.push((at, Segment::Base(previous, edit.start)));
-                at += edit.start - previous;
-            }
-            if !edit.replacement.is_empty() {
-                segments.push((at, Segment::Replacement(index)));
-                at += edit.replacement.len();
-            }
-            previous = edit.end;
-        }
-        if previous < base.len() {
-            segments.push((at, Segment::Base(previous, base.len())));
-            at += base.len() - previous;
-        }
-        Self {
-            base,
-            edits,
-            segments,
-            len: at,
-        }
-    }
-
-    fn bytes(&self, segment: Segment) -> &[u8] {
-        match segment {
-            Segment::Base(from, to) => &self.base.as_bytes()[from..to],
-            Segment::Replacement(index) => self.edits[index].replacement.as_bytes(),
-        }
-    }
-}
-
-impl TextView for Patched<'_> {
-    fn len(&self) -> usize {
-        self.len
-    }
-
-    fn is_char_boundary(&self, at: usize) -> bool {
-        if at == 0 || at >= self.len {
-            return at <= self.len;
-        }
-        let index = self.segments.partition_point(|&(start, _)| start <= at) - 1;
-        let (start, segment) = self.segments[index];
-        // UTF-8 continuation bytes never start a character.
-        self.bytes(segment)[at - start] & 0xc0 != 0x80
-    }
-
-    fn extend_into(&self, from: usize, to: usize, out: &mut Vec<u8>) {
-        let first = self
-            .segments
-            .partition_point(|&(start, _)| start <= from)
-            .saturating_sub(1);
-        for &(start, segment) in &self.segments[first..] {
-            if start >= to {
-                break;
-            }
-            let bytes = self.bytes(segment);
-            let (a, b) = (from.max(start) - start, to.min(start + bytes.len()) - start);
-            if a < b {
-                out.extend_from_slice(&bytes[a..b]);
-            }
-        }
-    }
-}
-
-/// The text around `spans` (`(start, length)` in `text`), each widened by
-/// [`COMPRESSION_CONTEXT`] and merged when they overlap, concatenated.
-fn compression_context<T: TextView + ?Sized>(text: &T, spans: &mut [(usize, usize)]) -> Vec<u8> {
-    spans.sort_unstable();
-    let mut windows: Vec<(usize, usize)> = Vec::new();
-    for &(start, length) in spans.iter() {
-        let mut from = start.saturating_sub(COMPRESSION_CONTEXT).min(text.len());
-        let mut to = (start + length + COMPRESSION_CONTEXT).min(text.len());
-        while !text.is_char_boundary(from) {
-            from -= 1;
-        }
-        while !text.is_char_boundary(to) {
-            to += 1;
-        }
-        match windows.last_mut() {
-            Some(last) if from <= last.1 => last.1 = last.1.max(to),
-            _ => windows.push((from, to)),
-        }
-    }
-    let mut context = Vec::new();
-    for (from, to) in windows {
-        text.extend_into(from, to, &mut context);
-    }
-    context
-}
-
-/// Deflate (level 9) size of `bytes`.
-fn deflate_size(bytes: &[u8]) -> usize {
-    use std::io::Write as _;
-    let mut deflate = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::best());
-    deflate
-        .write_all(bytes)
-        .ok()
-        .and_then(|()| deflate.finish().ok())
-        .map_or(usize::MAX, |bytes| bytes.len())
-}
-
-/// Brotli size of `bytes`. Quality 9 tracks the shipped quality 11 closely at
-/// a fraction of its cost; quality 11 per candidate made large bundles several
-/// times slower and its greedy rejections blocked enabling transformations.
-fn brotli_size(bytes: &[u8]) -> usize {
-    let mut brotli = Vec::new();
-    let parameters = brotli::enc::BrotliEncoderParams {
-        quality: 9,
-        lgwin: 22,
-        ..Default::default()
-    };
-    brotli::BrotliCompress(&mut &bytes[..], &mut brotli, &parameters)
-        .map_or(usize::MAX, |_| brotli.len())
-}
-
-/// Deflate and Brotli sizes of the text around `spans` (see
-/// [`compression_context`]). Both encoders run at fixed settings, so the
-/// result is deterministic.
-#[cfg(test)]
-fn compressed_context<T: TextView + ?Sized>(
-    text: &T,
-    spans: &mut [(usize, usize)],
-) -> (usize, usize) {
-    let context = compression_context(text, spans);
-    (deflate_size(&context), brotli_size(&context))
-}
-
-/// Whether compressing the edited contexts grows either the Deflate or the
-/// Brotli size compared with the contexts before the bundle. Deflate is cheap
-/// and decides first; Brotli of both sides runs in parallel only when Deflate
-/// does not already reject.
-fn compression_grows(before: &[Vec<u8>], after: &[Vec<u8>]) -> bool {
-    let deflate = |contexts: &[Vec<u8>]| contexts.iter().map(|c| deflate_size(c)).sum::<usize>();
-    if deflate(after) > deflate(before) {
-        return true;
-    }
-    let brotli = |contexts: &[Vec<u8>]| contexts.iter().map(|c| brotli_size(c)).sum::<usize>();
-    let (before, after) = std::thread::scope(|scope| {
-        let worker = scope.spawn(|| brotli(before));
-        let after = brotli(after);
-        (worker.join().unwrap_or(usize::MAX), after)
-    });
-    after > before
 }
 
 /// Two edits conflict when their ranges intersect or they start at the same
@@ -588,9 +395,7 @@ impl<B: Backend> Gate<'_, B> {
             let mut merged_files = Vec::new();
             let mut insertions = Vec::new();
             let mut uses_residual = false;
-            let mut contexts_before = Vec::new();
-            let mut contexts_after = Vec::new();
-            let compression = crate::app::bundle_mode();
+            let bundle = crate::app::bundle_mode();
             for (file, mut edits) in by_file {
                 edits.sort();
                 for pair in edits.windows(2) {
@@ -607,9 +412,9 @@ impl<B: Backend> Gate<'_, B> {
                 merged.sort();
                 // Bundle mode measures the chunk text itself: the size follows
                 // from the edit lengths, and the import list changes only when
-                // an edit touches import syntax. Only the windows the
-                // compression check compares are read from the edited text.
-                let shifted: Vec<Edit> = if compression {
+                // an edit touches import syntax, so no candidate copies the
+                // chunk.
+                let shifted: Vec<Edit> = if bundle {
                     let accepted = self.accepted.get(&file).map_or(&[][..], Vec::as_slice);
                     edits
                         .iter()
@@ -625,7 +430,7 @@ impl<B: Backend> Gate<'_, B> {
                 } else {
                     Vec::new()
                 };
-                let emitted = if compression {
+                let emitted = if bundle {
                     let (text, comment) = self.current_text(&file)?;
                     let delta: isize = shifted
                         .iter()
@@ -682,20 +487,6 @@ impl<B: Backend> Gate<'_, B> {
                     }
                 }
                 after += emitted.size;
-                if compression {
-                    // The text before this candidate and the edited text,
-                    // compared around the candidate's own edits.
-                    let (previous, _) = self.current_text(&file)?;
-                    let edited = Patched::new(previous, &shifted);
-                    let mut before_spans: Vec<(usize, usize)> =
-                        shifted.iter().map(|e| (e.start, e.end - e.start)).collect();
-                    let mut after_spans: Vec<(usize, usize)> = shifted
-                        .iter()
-                        .map(|e| (forward_offset(e.start, &shifted), e.replacement.len()))
-                        .collect();
-                    contexts_before.push(compression_context(previous, &mut before_spans));
-                    contexts_after.push(compression_context(&edited, &mut after_spans));
-                }
                 merged_files.push((file, merged, emitted));
             }
             if !insertions.is_empty() {
@@ -715,12 +506,6 @@ impl<B: Backend> Gate<'_, B> {
                 continue;
             }
             if after >= before {
-                return Ok(Decision::Reject(Reason::NoSizeBenefit));
-            }
-            // Shipped bundles are compressed: a bundle that shortens the text
-            // but makes it compress worse is no benefit.
-            if compression && compression_grows(&contexts_before, &contexts_after) {
-                tracing::trace!(pass = %candidate.pass, "bundle rejected: compressed size grows");
                 return Ok(Decision::Reject(Reason::NoSizeBenefit));
             }
             if uses_residual
@@ -1159,58 +944,6 @@ mod tests {
         assert_eq!(forward_offset(6, &edits), 7);
         assert_eq!(forward_offset(10, &edits), 11);
         assert_eq!(forward_offset(12, &edits), 15);
-    }
-
-    #[test]
-    fn patched_text_reads_like_the_applied_text() {
-        let base = "hello, world; const a = 1; const b = 2;";
-        let edits = [
-            Edit {
-                start: 0,
-                end: 5,
-                replacement: "hi".into(),
-            },
-            Edit {
-                start: 13,
-                end: 13,
-                replacement: "ünï".into(),
-            },
-            Edit {
-                start: 27,
-                end: 39,
-                replacement: String::new(),
-            },
-        ];
-        let applied = apply(base, &edits).unwrap();
-        let patched = Patched::new(base, &edits);
-        assert_eq!(TextView::len(&patched), applied.len());
-        for from in 0..=applied.len() {
-            assert_eq!(
-                TextView::is_char_boundary(&patched, from),
-                applied.is_char_boundary(from),
-                "{from}"
-            );
-            for to in from..=applied.len() {
-                let mut bytes = Vec::new();
-                patched.extend_into(from, to, &mut bytes);
-                assert_eq!(bytes, &applied.as_bytes()[from..to], "{from}..{to}");
-            }
-        }
-    }
-
-    #[test]
-    fn compressed_context_measures_the_text_around_edits() {
-        let repetitive = "abcdefgh".repeat(10_000);
-        let mixed: String = (0..80_000u32)
-            .map(|i| char::from(b'a' + (i.wrapping_mul(2_654_435_761) >> 27) as u8 % 26))
-            .collect();
-        let (deflate_a, brotli_a) = compressed_context(repetitive.as_str(), &mut [(40_000, 1)]);
-        let (deflate_b, brotli_b) = compressed_context(mixed.as_str(), &mut [(40_000, 1)]);
-        assert!(deflate_a < deflate_b && brotli_a < brotli_b);
-        // Overlapping windows merge; distant ones add their own context.
-        let (near, _) = compressed_context(mixed.as_str(), &mut [(40_000, 1), (40_010, 1)]);
-        let (far, _) = compressed_context(mixed.as_str(), &mut [(1_000, 1), (70_000, 1)]);
-        assert!(near < far, "{near} {far}");
     }
 
     /// Test-only backend: candidates come from a fixed script, size is byte
