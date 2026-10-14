@@ -1904,43 +1904,360 @@ it.each([
   expect(info).toHaveProperty("hidden", false);
   expect(f.enqueue).not.toHaveBeenCalled();
 });
-it.each(["transcript", "queue", "interactions"] as const)(
-  "keeps startup Info visible while a %s refresh retains stale complete pages",
+const refreshReads = ["transcript", "queue", "interactions"] as const;
+type RefreshRead = (typeof refreshReads)[number];
+/** Holds the next read of one page kind; every started read is counted. */
+function holdRead(f: ReturnType<typeof fixture>, read: RefreshRead) {
+  const kind =
+    read === "transcript" ? EntityKind.MESSAGE : EntityKind.INTERACTION;
+  const held = deferred();
+  const started = { count: 0 };
+  const original = {
+    list: f.list.getMockImplementation()!,
+    queue: f.listQueue.getMockImplementation()!,
+  };
+  const outcome: { value: "ok" | "fail"; rows: unknown[] } = {
+    value: "ok",
+    rows: [],
+  };
+  if (read === "queue")
+    f.listQueue.mockImplementation((async (request: { pageToken: string }) => {
+      started.count += 1;
+      await held.gate;
+      if (outcome.value === "fail")
+        throw new ConnectError("Queue unavailable", Code.Unavailable);
+      return outcome.rows.length
+        ? { inputs: outcome.rows, nextPageToken: "" }
+        : original.queue(request);
+    }) as never);
+  else
+    f.list.mockImplementation((async (
+      request: Parameters<typeof original.list>[0],
+    ) => {
+      if (request.filter?.kind !== kind) return original.list(request);
+      started.count += 1;
+      await held.gate;
+      if (outcome.value === "fail")
+        throw new ConnectError("Read unavailable", Code.Unavailable);
+      return outcome.rows.length
+        ? { resources: outcome.rows, nextPageToken: "" }
+        : original.list(request);
+    }) as never);
+  return { held, started, outcome };
+}
+/** A compact startup with Worker presence, so the Startup details disclosure exists. */
+async function refreshSession(workspace: "general-chat" | "worktree") {
+  const startup = presenceStartup();
+  const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, {
+    ...startup.extra,
+    workspace,
+  });
+  installPresence(f, startup.resource);
+  const user = create(ResourceSchema, {
+    id: newRequestId(),
+    sessionId: f.session.id,
+    kind: EntityKind.MESSAGE,
+    revision: 1n,
+    schemaVersion: 1,
+    documentJson: encode({
+      execution_id: startup.extra.initial_execution.id,
+      input_id: startup.extra.initial_execution.input_id,
+      native_thread_id: "thread",
+      native_turn_id: "turn",
+      native_id: "native-user",
+      role: "user",
+      state: "complete",
+      text: "Published initial input",
+      first_sequence: 1,
+      last_sequence: 1,
+    }),
+  });
+  f.list.mockImplementation((async (request: {
+    filter?: { kind: EntityKind };
+  }) => ({
+    resources: request.filter?.kind === EntityKind.MESSAGE ? [user] : [],
+    nextPageToken: "",
+  })) as never);
+  const view = render(f.view("Retained startup draft"));
+  const progress = await waitFor(() => {
+    const node = view.container.querySelector<HTMLElement>(".session-progress");
+    expect(node).toBeTruthy();
+    return node!;
+  });
+  const info = view.container.querySelector<HTMLElement>(
+    ".session-information",
+  )!;
+  await waitFor(() => expect(info).toHaveProperty("hidden", true));
+  const composer = screen.getByRole("textbox", { name: "Message" });
+  composer.focus();
+  return { f, view, progress, info, composer, user };
+}
+const refreshAll = (f: ReturnType<typeof fixture>) =>
+  act(() => {
+    void f.client.invalidateQueries();
+  });
+it.each(
+  refreshReads.flatMap((read) =>
+    (["general-chat", "worktree"] as const).map((workspace) => ({
+      read,
+      workspace,
+    })),
+  ),
+)(
+  "keeps startup Info hidden during healthy $read refreshes in $workspace",
+  async ({ read, workspace }) => {
+    const { f, view, progress, info, composer } =
+      await refreshSession(workspace);
+    try {
+      const disclosure = view.container.querySelector<HTMLDetailsElement>(
+        ".session-startup-disclosure",
+      )!;
+      expect(disclosure).toBeTruthy();
+      disclosure.open = true;
+      for (let cycle = 0; cycle < 2; cycle += 1) {
+        const gate = holdRead(f, read);
+        refreshAll(f);
+        await waitFor(() => expect(gate.started.count).toBe(1));
+        // The read is pending: nothing about the startup presentation changes.
+        expect(info).toHaveProperty("hidden", true);
+        expect(view.container.querySelector(".session-progress")).toBe(
+          progress,
+        );
+        expect(
+          view.container.querySelector(".session-startup-disclosure"),
+        ).toBe(disclosure);
+        expect(disclosure.open).toBe(true);
+        expect(
+          within(progress).getAllByText("Waiting for response").length,
+        ).toBeGreaterThan(0);
+        expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
+        expect(document.activeElement).toBe(composer);
+        gate.held.release();
+        // Unchanged pages: still nothing flashes after the read settles.
+        await waitFor(() => expect(f.client.isFetching()).toBe(0));
+        expect(gate.started.count).toBe(1);
+        expect(info).toHaveProperty("hidden", true);
+        expect(view.container.querySelector(".session-progress")).toBe(
+          progress,
+        );
+        expect(disclosure.open).toBe(true);
+        expectStartupPreserved(f, composer);
+      }
+    } finally {
+      view.unmount();
+      f.client.clear();
+    }
+  },
+);
+it.each([
+  {
+    read: "transcript" as const,
+    name: "a new assistant response",
+    rows: (
+      f: ReturnType<typeof fixture>,
+      user: ReturnType<typeof create<typeof ResourceSchema>>,
+    ) => [
+      user,
+      create(ResourceSchema, {
+        id: newRequestId(),
+        sessionId: f.session.id,
+        kind: EntityKind.MESSAGE,
+        revision: 1n,
+        schemaVersion: 1,
+        documentJson: encode({
+          ...readDocument(user),
+          native_id: "native-assistant",
+          role: "assistant",
+          state: "streaming",
+          text: "First visible response",
+          first_sequence: 2,
+          last_sequence: 2,
+        }),
+      }),
+    ],
+    progressEnds: true,
+  },
+  {
+    read: "queue" as const,
+    name: "a later queued input",
+    rows: (f: ReturnType<typeof fixture>) => [
+      create(ResourceSchema, {
+        id: newRequestId(),
+        sessionId: f.session.id,
+        kind: EntityKind.QUEUE,
+        revision: 1n,
+        schemaVersion: 1,
+        documentJson: encode({
+          delivery: "queued",
+          prompt: "Later input",
+          mode: "execute",
+          sequence: 2,
+          content_revision: 1,
+        }),
+      }),
+    ],
+    progressEnds: false,
+  },
+  {
+    read: "interactions" as const,
+    name: "an open interaction",
+    rows: (f: ReturnType<typeof fixture>) => [
+      interactionRow(f.session.id, "open"),
+    ],
+    progressEnds: false,
+  },
+])(
+  "restores Info when the held $read refresh resolves with $name",
+  async ({ read, rows, progressEnds }) => {
+    const { f, view, info, composer, user } =
+      await refreshSession("general-chat");
+    try {
+      const gate = holdRead(f, read);
+      gate.outcome.rows = rows(f, user);
+      refreshAll(f);
+      await waitFor(() => expect(gate.started.count).toBe(1));
+      expect(info).toHaveProperty("hidden", true);
+      gate.held.release();
+      await waitFor(() => expect(info).toHaveProperty("hidden", false));
+      if (progressEnds)
+        await waitFor(() =>
+          expect(view.container.querySelector(".session-progress")).toBeNull(),
+        );
+      expect(document.activeElement).toBe(composer);
+      expect(f.enqueue).not.toHaveBeenCalled();
+      expect(f.control).not.toHaveBeenCalled();
+      expect(f.recover).not.toHaveBeenCalled();
+    } finally {
+      view.unmount();
+      f.client.clear();
+    }
+  },
+);
+it.each(refreshReads)(
+  "keeps startup Info visible when a held %s refresh fails",
   async (read) => {
-    const f = fixture(
-      BudgetState.ALLOW_INCOMPLETE,
-      false,
-      initialResponseWaiting(),
-    );
-    const held = deferred();
-    const kind =
-      read === "transcript" ? EntityKind.MESSAGE : EntityKind.INTERACTION;
-    const { container } = render(f.view("Retained startup draft"));
-    const info = await startupInfo(container);
-    await waitFor(() => expect(info).toHaveProperty("hidden", true));
-    const composer = screen.getByRole("textbox", { name: "Message" });
-    composer.focus();
-    if (read === "queue")
-      f.listQueue.mockImplementation((async () => {
-        await held.gate;
-        return { inputs: [], nextPageToken: "" };
-      }) as never);
-    else
-      f.list.mockImplementation(async (request) => {
-        if (request.filter?.kind === kind) await held.gate;
-        return { resources: [], nextPageToken: "" };
-      });
-    act(() => {
-      void f.client.invalidateQueries();
-    });
-    await waitFor(() => expect(info).toHaveProperty("hidden", false));
-    expect(info.hasAttribute("inert")).toBe(false);
-    // Retained presentation stays; only Info visibility follows the fence.
-    expect(screen.getByText("Waiting for response")).toBeTruthy();
-    expect(document.activeElement).toBe(composer);
-    held.release();
-    await waitFor(() => expect(info).toHaveProperty("hidden", true));
-    expectStartupPreserved(f, composer);
+    const { f, view, info } = await refreshSession("general-chat");
+    try {
+      const gate = holdRead(f, read);
+      gate.outcome.value = "fail";
+      refreshAll(f);
+      await waitFor(() => expect(gate.started.count).toBeGreaterThan(0));
+      expect(info).toHaveProperty("hidden", true);
+      gate.held.release();
+      await waitFor(() => expect(info).toHaveProperty("hidden", false));
+      expect(f.enqueue).not.toHaveBeenCalled();
+      expect(f.control).not.toHaveBeenCalled();
+      expect(f.recover).not.toHaveBeenCalled();
+    } finally {
+      view.unmount();
+      f.client.clear();
+    }
+  },
+);
+/** Scripted reads of one page kind: each read can be held and made to fail. */
+function scriptRead(f: ReturnType<typeof fixture>, read: RefreshRead) {
+  const kind =
+    read === "transcript" ? EntityKind.MESSAGE : EntityKind.INTERACTION;
+  const state = {
+    started: 0,
+    fail: false,
+    gate: undefined as ReturnType<typeof deferred> | undefined,
+  };
+  const original = {
+    list: f.list.getMockImplementation()!,
+    queue: f.listQueue.getMockImplementation()!,
+  };
+  const run = async () => {
+    state.started += 1;
+    await state.gate?.gate;
+    if (state.fail)
+      throw new ConnectError("Read unavailable", Code.Unavailable);
+  };
+  if (read === "queue")
+    f.listQueue.mockImplementation((async (request: { pageToken: string }) => {
+      await run();
+      return original.queue(request);
+    }) as never);
+  else
+    f.list.mockImplementation((async (
+      request: Parameters<typeof original.list>[0],
+    ) => {
+      if (request.filter?.kind !== kind) return original.list(request);
+      await run();
+      return original.list(request);
+    }) as never);
+  return {
+    state,
+    hold() {
+      state.gate = deferred();
+      return state.gate;
+    },
+  };
+}
+/** The agent request tray recovers only while its disclosure is expanded. */
+async function openRetry(container: HTMLElement, read: RefreshRead) {
+  if (read !== "interactions") return;
+  const requests =
+    container.querySelector<HTMLDetailsElement>("details.requests");
+  expect(requests).toBeTruthy();
+  fireEvent.click(requests!.querySelector("summary")!);
+  await waitFor(() => expect(requests!.open).toBe(true));
+}
+it.each(refreshReads)(
+  "keeps startup Info visible through Retry of a failed %s refresh until it settles",
+  async (read) => {
+    const { f, view, info, composer } = await refreshSession("general-chat");
+    try {
+      const script = scriptRead(f, read);
+      script.state.fail = true;
+      refreshAll(f);
+      await waitFor(() => expect(info).toHaveProperty("hidden", false));
+      await waitFor(() => expect(f.client.isFetching()).toBe(0));
+      // Retry clears the error while the retained complete pages stay in place;
+      // those pages are stale proof until the retry settles successfully.
+      script.state.fail = false;
+      const started = script.state.started;
+      const gate = script.hold();
+      await openRetry(view.container, read);
+      fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
+      await waitFor(() => expect(script.state.started).toBe(started + 1));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(info).toHaveProperty("hidden", false);
+      expect(document.activeElement).toBe(composer);
+      gate.release();
+      await waitFor(() => expect(info).toHaveProperty("hidden", true));
+      expect(script.state.started).toBe(started + 1);
+      expectStartupPreserved(f, composer);
+    } finally {
+      view.unmount();
+      f.client.clear();
+    }
+  },
+);
+it.each(refreshReads)(
+  "keeps startup Info visible while a retried %s read fails again",
+  async (read) => {
+    const { f, view, info } = await refreshSession("general-chat");
+    try {
+      const script = scriptRead(f, read);
+      script.state.fail = true;
+      refreshAll(f);
+      await waitFor(() => expect(info).toHaveProperty("hidden", false));
+      await waitFor(() => expect(f.client.isFetching()).toBe(0));
+      const started = script.state.started;
+      const gate = script.hold();
+      await openRetry(view.container, read);
+      fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
+      await waitFor(() => expect(script.state.started).toBe(started + 1));
+      expect(info).toHaveProperty("hidden", false);
+      gate.release();
+      await screen.findByRole("button", { name: "Retry" });
+      expect(info).toHaveProperty("hidden", false);
+      expect(f.enqueue).not.toHaveBeenCalled();
+    } finally {
+      view.unmount();
+      f.client.clear();
+    }
   },
 );
 /** Four single-row pages with a terminal last token leave three payload pages. */
@@ -2144,6 +2461,54 @@ it.each(["held", "rejected"] as const)(
       expect(f.enqueue).toHaveBeenCalledTimes(1);
     }
     expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
+  },
+);
+it.each(["queued", "claimed", "accepted"] as const)(
+  "keeps startup Info visible for a follow-up receipt in the %s phase while the stale original-only queue refreshes",
+  async (delivery) => {
+    const f = fixture(
+      BudgetState.ALLOW_INCOMPLETE,
+      false,
+      initialResponseWaiting(),
+    );
+    const { container } = render(f.view("Retained startup draft"));
+    const info = await startupInfo(container);
+    await waitFor(() => expect(info).toHaveProperty("hidden", true));
+    const composer = screen.getByRole("textbox", { name: "Message" });
+    composer.focus();
+    // The retained mutation publishes its receipt, then rereads the queue; the
+    // reread is held and (like the retained snapshot) lists only the original.
+    const script = scriptRead(f, "queue");
+    const gate = script.hold();
+    f.enqueue.mockImplementation((async (
+      request: Parameters<typeof sessionInputReceipt>[1],
+    ) => {
+      const receipt = sessionInputReceipt(f.session, request);
+      receipt.change.input = create(ResourceSchema, {
+        ...receipt.change.input,
+        documentJson: encode({
+          ...readDocument(receipt.change.input),
+          delivery,
+          sequence: 2,
+          content_revision: 1,
+        }),
+      });
+      return receipt;
+    }) as never);
+    fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
+    await waitFor(() => expect(f.enqueue).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(script.state.started).toBe(1));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(info).toHaveProperty("hidden", false);
+    expect(info.hasAttribute("inert")).toBe(false);
+    gate.release();
+    await waitFor(() => expect(f.client.isFetching()).toBe(0));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    // The settled queue may still list only the original input: the receipt
+    // remains local follow-up evidence, so Info never flashes hidden.
+    expect(info).toHaveProperty("hidden", false);
+    expect(f.enqueue).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(composer);
   },
 );
 it.each(["parent-snapshot", "embedded"] as const)(

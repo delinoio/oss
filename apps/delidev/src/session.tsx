@@ -2171,41 +2171,48 @@ export function SessionView({
   // Hide-boundary freshness only. A terminal token proves traversal, not
   // payload completeness: every retained page must still have its payload
   // resident (at most three stay), else evicted pages could hide a response,
-  // follow-up or interaction. A refresh keeps its retained pages displayed
-  // (the startup list stays), but retained pages are not current proof that no
-  // response, follow-up or interaction arrived, so Info stays visible meanwhile.
-  const startupTranscriptCurrent =
-    Boolean(messages.data) &&
-    !messages.error &&
-    !messages.isPending &&
-    !messages.isFetching &&
-    !messages.nextPageToken &&
-    pagesResident(messages);
-  const startupQueueCurrent =
-    Boolean(queue.data) &&
-    !queue.error &&
-    !queue.isPending &&
-    !queue.isFetching &&
-    !queue.nextPageToken &&
-    pagesResident(queue);
-  const startupInteractionsCurrent =
-    Boolean(interactions.data) &&
-    !interactions.error &&
-    !interactions.isPending &&
-    !interactions.isFetching &&
-    !interactions.nextPageToken &&
-    pagesResident(interactions);
+  // follow-up or interaction. A healthy background refresh (previous complete
+  // pages retained, no error, no continuation token, all payloads resident) does
+  // not restore Info: isFetching is deliberately not part of these gates, so
+  // routine rereads cause no panel or layout flicker. Retained pages are stale
+  // proof, not current proof, after a failed read: Retry and Reload clear the
+  // error while they load, so the failed-read latch (`unrecovered`) keeps Info
+  // visible until a read settles successfully.
+  const startupReadCurrent = (query: typeof messages): boolean =>
+    Boolean(query.data) &&
+    !query.error &&
+    !query.isPending &&
+    !query.unrecovered &&
+    !query.nextPageToken &&
+    pagesResident(query);
+  const startupTranscriptCurrent = startupReadCurrent(messages);
+  const startupQueueCurrent = startupReadCurrent(queue);
+  const startupInteractionsCurrent = startupReadCurrent(interactions);
   const startupBudgetCurrent =
     budgetEvidence?.id === id && budgetEvidence.status === BudgetEvidence.Ready;
-  // A projected later follow-up (not the original Queued/Claimed/Accepted
-  // input) is local evidence that startup is no longer pristine.
-  const startupLocalFollowUp = projectedSubmissions.some((row) =>
+  // Any projected submission other than the original input is local evidence
+  // that startup is no longer pristine, in every phase. A Queued, Claimed or
+  // Accepted receipt of a later follow-up (published by the retained enqueue
+  // before its queue refresh or stream arrival) is such evidence even while the
+  // retained queue snapshot still lists only the original input.
+  const originalInputIds = new Set<string>(
     [
-      SubmissionPhase.Preparing,
-      SubmissionPhase.Sending,
-      SubmissionPhase.Rejected,
-      SubmissionPhase.Uncertain,
-    ].includes(row.phase),
+      text(object(data.initial_execution).input_id),
+      ...pending
+        .filter((input) => readDocument(input).sequence === 1)
+        .map((input) => input.id),
+    ].filter(Boolean),
+  );
+  const startupLocalFollowUp = projectedSubmissions.some(
+    (row) =>
+      [
+        SubmissionPhase.Preparing,
+        SubmissionPhase.Sending,
+        SubmissionPhase.Rejected,
+        SubmissionPhase.Uncertain,
+      ].includes(row.phase) ||
+      !row.queueId ||
+      !originalInputIds.has(row.queueId),
   );
   // Sidechat children keep their own Info in every initial execution phase.
   const sidechatChild =

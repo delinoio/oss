@@ -66,6 +66,12 @@ export interface PaginationSnapshot<
   nextPageToken: string;
   loading?: ReadStage;
   error?: PaginationFailure;
+  /** Failed-read latch. Set when a read fails and kept by every later snapshot
+   * (including Retry or Reload while they are loading and have already cleared
+   * `error`) until a read is accepted into a settled successful snapshot, which
+   * is always built without it. Retained pages in such a snapshot are stale
+   * proof of the chain, never current. Reset, and a new chain, also clear it. */
+  unrecovered?: boolean;
   /** Monotonic count of reads accepted into a settled successful snapshot.
    * Cancellation, suspension and failure never advance it, so callers can tell
    * a settled read apart from a read that was merely abandoned. */
@@ -152,7 +158,10 @@ export class PaginationChain<Row extends PaginationRow, Payload = never> {
   };
   getSnapshot = () => this.snapshot;
   private publish(next: PaginationSnapshot<Row, Payload>) {
-    this.snapshot = next;
+    // A failed read latches; only a freshly built successful snapshot (or an
+    // empty one) omits the latch, so loading stages inherit it from `previous`.
+    this.snapshot =
+      next.error && !next.unrecovered ? { ...next, unrecovered: true } : next;
     for (const listener of this.listeners) listener();
   }
   activate() {

@@ -2701,7 +2701,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - Add Settings integration coverage to a feature-specific `settings-<feature>.integration.test.tsx`. Call `useSettingsFixture` once per file; each file owns independent temporary server/database/provider/Worker state. Register a spawned Worker on that fixture before waiting for readiness so failed tests still reap it. Do not append unrelated tests to a central suite or depend on another file's mutations.
 
-- `scroll-pagination.ts` owns serial read state, accepted opaque request tokens, atomic range refresh, typed failures, explicit exact retry/reload, scope generations and a separate three-page full-payload window. A batch may carry an `accepted` observer that runs only for accepted reads, before payload eviction, so domain metadata projections reach evicted pages. Adapters validate whole responses and retain only safe display projections in accumulated rows. Keep credentials, full configuration documents, previews and native observations outside projections. Payload restoration reuses accepted tokens and rejects changed identity/order; measured placeholders preserve reached content and focused pages retain their payload until focus leaves.
+- `scroll-pagination.ts` owns serial read state, accepted opaque request tokens, atomic range refresh, typed failures, a failed-read latch (`unrecovered`, set by a failed read, kept through Retry and Reload loading stages and cleared only by a settled successful snapshot or reset), explicit exact retry/reload, scope generations and a separate three-page full-payload window. A batch may carry an `accepted` observer that runs only for accepted reads, before payload eviction, so domain metadata projections reach evicted pages. Adapters validate whole responses and retain only safe display projections in accumulated rows. Keep credentials, full configuration documents, previews and native observations outside projections. Payload restoration reuses accepted tokens and rejects changed identity/order; measured placeholders preserve reached content and focused pages retain their payload until focus leaves.
 
 - Conversation adapters retain forward ordering and independent bounded live-stream reconciliation; Files retain metadata-only digest-bound ranges and separate previews. `session-files-model.ts` owns per-directory lazy chains, expansion, complete-parent-only absence and one serial observation scheduler; the generated Connect Query reader shares pending settlement across panel/session replacement for the same connection client. An already dispatched Files read uses a dedicated non-aborted settlement signal because Connect abort rejects before an ignored-abort handler finishes; controller cancellation fences publication and skips queued reads. Preserve all server deadlines and current authorization, and leave business mutation/native cancellation unchanged. Collapse cancels/fences unfinished descendants; explicit Refresh supersedes pending tree work and runs root/expanded directories parent-first. Back restores accepted metadata/scroll/nearest focus without rereading and discards preview bytes. Links and special files stay inert; keep exact decimal sizes, digest-bound 100-entry pages and 64KiB previews. Reject a whole directory page with duplicate entry names before accumulation; retain prior accepted metadata and the original retry token. Keep user-authored request/queue/review drafts outside evictable full payloads under their existing limits, with original mutation registries and terminal-watch/selected-review ownership unchanged.
 
@@ -6470,12 +6470,28 @@ follow-up, replacement execution, unsupported workspace or unknown first-input
 evidence retains Info.
 Every hiding path additionally requires, at the visibility boundary only: a
 complete current transcript, queue and interaction read (payload present, no
-error, not pending, not fetching, no continuation token, and a resident payload
+error, not pending, no continuation token, and a resident payload
 page for every retained page token), and current
-successful non-blocking session budget evidence. A refresh that retains stale
-pages (`isFetching`) keeps the retained startup presentation but restores Info
-until the read settles; the fence is not applied to the progress projection, so
-routine refreshes cause no startup-list flicker. A terminal token proves
+successful non-blocking session budget evidence. A healthy background refresh of
+the same session's pages (previous complete pages retained, no error, no
+continuation token, every payload page resident) does not restore Info:
+`isFetching` is not a freshness term, so Session information stays hidden, the
+single-column conversation layout, the waiting progress node, the Startup
+details disclosure, the composer draft and focus stay unchanged, and no extra
+operation starts while the read is in flight, in both Session and General Chat
+workspaces. When the read resolves with unchanged pages nothing changes; when it
+resolves with a new assistant response, later queued input or an interaction,
+the waiting projection ends and Info appears through the existing evidence
+precedence. A failed read, a continuation token, an evicted page, a session or
+transport change, disconnect, Stop, recovery, a blocking budget or approval
+evidence still fails closed (Info visible, no stale waiting claim, no implicit
+retry, existing focus behavior). A failed read also latches its page chain
+(`unrecovered` in the pagination snapshot): Retry or Reload clears the error as
+soon as it starts and keeps the prior complete pages, but those pages are stale
+proof, so Info stays visible while the recovery read loads, fails again or
+stalls, and only a read accepted into a settled successful snapshot (or a new
+chain) releases the latch. Budget evidence rereads keep their own
+fail-closed rule. A terminal token proves
 traversal only; when the three-page payload bound has evicted any retained page,
 that read is incomplete and Info stays visible, while the bound and the explicit
 restoration controls are unchanged. Pending, absent, failed or
@@ -6484,7 +6500,13 @@ Info and its existing Retry; threshold-reached remains blocking. The budget
 controller reports a closed status (Pending, Failed, Ready, Blocked) keyed to the
 session ID without a new RPC or query owner. A projected later local follow-up in
 the Preparing, Sending, Rejected or Uncertain phase retains Info before any
-enqueue response; original-input Queued, Claimed and Accepted projections do not.
+enqueue response. Any other projected submission, including a Queued, Claimed or
+Accepted receipt, also retains Info unless its queue identity is the original
+first input (the initial execution input or the retained sequence-one queue
+row): the retained enqueue publishes its receipt before the queue reread or
+stream arrival, and the retained queue snapshot may still list only the original
+input, so that stale original-only read never qualifies Info to hide. Original-input
+Queued, Claimed and Accepted projections do not retain Info.
 Embedded Sidechat children and `sidechat_parent_snapshot` sessions keep their own
 Info in every initial execution phase.
 Before hiding focused Info, move focus to its original connected, enabled and
