@@ -120,7 +120,7 @@ version 2; a continuation keeps the version of its predecessor and binds the
 previous session's private directory. A foreign owner, history directory or
 digest fails closed.
 
-**Codex Worker activation (not part of this change).** The server accepts and
+**Codex Worker activation (not yet implemented).** The server accepts and
 echoes Worker capability 67 and models members for the managed Codex lane, but no
 Worker advertises it yet, so managed Codex execution stays exclusive per account.
 Activation requires one account-scoped app-server and private authentication
