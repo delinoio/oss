@@ -288,7 +288,6 @@ afterEach(async () => {
   });
 });
 
-
 const beforeNode = (a: Node, b: Node) =>
   Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
 const idle = () =>
@@ -303,20 +302,31 @@ it("lists Tailscale after Paired devices in Device management and presents the t
     ...document.querySelectorAll<HTMLElement>("[data-settings-category]"),
   ].map((node) => node.dataset.settingsCategory);
   expect(
-    names.slice(names.indexOf("execution-workers"), names.indexOf("execution-workers") + 3),
+    names.slice(
+      names.indexOf("execution-workers"),
+      names.indexOf("execution-workers") + 3,
+    ),
   ).toEqual(["execution-workers", "paired-devices", "tailscale"]);
   // Opening Settings never reads or writes Tailscale state.
   expect(calls.discover).not.toHaveBeenCalled();
   category(TAILSCALE);
-  expect(await screen.findByRole("heading", { level: 1, name: "Tailscale" })).toBeTruthy();
+  expect(
+    await screen.findByRole("heading", { level: 1, name: "Tailscale" }),
+  ).toBeTruthy();
   expect(
     screen.getByText(
       "Check this computer's Tailscale access, find devices on your tailnet and review connection requests.",
     ),
   ).toBeTruthy();
-  const computer = await screen.findByRole("heading", { name: "This computer" });
-  const devices = await screen.findByRole("heading", { name: "Devices on your tailnet" });
-  const requests = await screen.findByRole("heading", { name: "Connection requests" });
+  const computer = await screen.findByRole("heading", {
+    name: "This computer",
+  });
+  const devices = await screen.findByRole("heading", {
+    name: "Devices on your tailnet",
+  });
+  const requests = await screen.findByRole("heading", {
+    name: "Connection requests",
+  });
   expect(beforeNode(computer, devices)).toBe(true);
   expect(beforeNode(devices, requests)).toBe(true);
   expect(screen.getByRole("button", { name: "Enable access" })).toBeTruthy();
@@ -383,7 +393,9 @@ it("shows unsupported guidance without discovery or mutation requests", async ()
   category(TAILSCALE);
   await screen.findByText(/does not support Tailscale connections/);
   expect(screen.queryByRole("button", { name: "Enable access" })).toBeNull();
-  expect(screen.queryByRole("heading", { name: "Devices on your tailnet" })).toBeNull();
+  expect(
+    screen.queryByRole("heading", { name: "Devices on your tailnet" }),
+  ).toBeNull();
   await idle();
   expect(calls.discover).not.toHaveBeenCalled();
   expect(calls.getAccess).not.toHaveBeenCalled();
@@ -394,7 +406,9 @@ it("shows unsupported guidance without discovery or mutation requests", async ()
 it("lists no Tailscale category and sends no Tailscale requests in a saved-server window", async () => {
   const { calls } = fixture({ local: false });
   expect(screen.queryByRole("button", { name: TAILSCALE })).toBeNull();
-  expect(document.querySelector('[data-settings-category="tailscale"]')).toBeNull();
+  expect(
+    document.querySelector('[data-settings-category="tailscale"]'),
+  ).toBeNull();
   category(RUNNER);
   await screen.findByRole("heading", { name: "Fixture runner" });
   await idle();
@@ -418,13 +432,17 @@ it("separates enabled intent from Ready: setup-required shows Action needed with
   expect(status.getAttribute("role")).toBe("status");
   expect(screen.getByText("Enabled")).toBeTruthy();
   expect(
-    screen.getByText("Check Tailscale sign-in and HTTPS setup, then refresh devices."),
+    screen.getByText(
+      "Check Tailscale sign-in and HTTPS setup, then refresh devices.",
+    ),
   ).toBeTruthy();
   expect(screen.queryByText("Ready")).toBeNull();
   expect(screen.getByRole("button", { name: "Disable access" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Enable access" })).toBeNull();
   // No uncertain request exists, so no original-request inspection is offered.
-  expect(screen.queryByRole("button", { name: "Inspect original request" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Inspect original request" }),
+  ).toBeNull();
   expect(mutations(calls)).toEqual(quiet);
 });
 
@@ -437,7 +455,11 @@ it("treats cleanup-required with enabled intent as action needed and Worker regi
   await screen.findByText(/Accepting requests/);
   expect(screen.getByRole("button", { name: "Connect" })).toBeTruthy();
   expect(
-    (screen.getByRole("button", { name: "Register Worker" }) as HTMLButtonElement).disabled,
+    (
+      screen.getByRole("button", {
+        name: "Register Worker",
+      }) as HTMLButtonElement
+    ).disabled,
   ).toBe(true);
 });
 
@@ -471,12 +493,15 @@ it("never enables a connection from online status alone and follows the explicit
   expect(within(row).getByText(/Online/)).toBeTruthy();
   expect(within(row).getByText(/Not checked/)).toBeTruthy();
   expect(within(row).queryByRole("button", { name: "Connect" })).toBeNull();
-  expect(within(row).queryByRole("button", { name: "Register Worker" })).toBeNull();
+  expect(
+    within(row).queryByRole("button", { name: "Register Worker" }),
+  ).toBeNull();
   fireEvent.click(within(row).getByRole("button", { name: "Check" }));
   await within(row).findByText(/Unavailable or blocked/);
   expect(within(row).queryByRole("button", { name: "Connect" })).toBeNull();
   expect(
-    within(row).getAllByRole("button", { name: "Set up a Worker over SSH" }).length,
+    within(row).getAllByRole("button", { name: "Set up a Worker over SSH" })
+      .length,
   ).toBeGreaterThan(0);
 });
 
@@ -487,17 +512,27 @@ it("enables Connect and Register Worker only after a successful check when acces
   fireEvent.click(within(row).getByRole("button", { name: "Check" }));
   await within(row).findByText(/Accepting requests/);
   expect(
-    (within(row).getByRole("button", { name: "Connect" }) as HTMLButtonElement).disabled,
+    (within(row).getByRole("button", { name: "Connect" }) as HTMLButtonElement)
+      .disabled,
   ).toBe(false);
   expect(
-    (within(row).getByRole("button", { name: "Register Worker" }) as HTMLButtonElement).disabled,
+    (
+      within(row).getByRole("button", {
+        name: "Register Worker",
+      }) as HTMLButtonElement
+    ).disabled,
   ).toBe(false);
 });
 
 it("lists retained requests in every state and offers resume and cancel only where they apply", async () => {
-  const ids = ["pending", "approved", "denied", "expired", "completed", "uncertain"].map(
-    (state) => ({ id: newRequestId(), state }),
-  );
+  const ids = [
+    "pending",
+    "approved",
+    "denied",
+    "expired",
+    "completed",
+    "uncertain",
+  ].map((state) => ({ id: newRequestId(), state }));
   const { calls } = fixture({ operations: ids });
   category(TAILSCALE);
   await screen.findByText("Approval pending");
@@ -510,9 +545,15 @@ it("lists retained requests in every state and offers resume and cancel only whe
   ])
     expect(screen.getByText(label)).toBeTruthy();
   // Resume: pending, approved, uncertain. Cancel: pending only.
-  expect(screen.getAllByRole("button", { name: "Inspect original request" })).toHaveLength(3);
-  expect(screen.getAllByRole("button", { name: "Cancel original request" })).toHaveLength(1);
-  fireEvent.click(screen.getAllByRole("button", { name: "Cancel original request" })[0]);
+  expect(
+    screen.getAllByRole("button", { name: "Inspect original request" }),
+  ).toHaveLength(3);
+  expect(
+    screen.getAllByRole("button", { name: "Cancel original request" }),
+  ).toHaveLength(1);
+  fireEvent.click(
+    screen.getAllByRole("button", { name: "Cancel original request" })[0],
+  );
   await waitFor(() => expect(calls.cancel).toHaveBeenCalledTimes(1));
   expect(calls.setAccess).not.toHaveBeenCalled();
 });
@@ -527,7 +568,9 @@ it("retains a pending confirmation and an uncertain access request across catego
   // The owner-level confirmation survives; navigation sent nothing.
   expect(screen.getByRole("dialog", { name: "Enable access" })).toBe(confirm);
   expect(calls.setAccess).not.toHaveBeenCalled();
-  fireEvent.click(within(confirm).getByRole("button", { name: "Enable access" }));
+  fireEvent.click(
+    within(confirm).getByRole("button", { name: "Enable access" }),
+  );
   await waitFor(() => expect(calls.setAccess).toHaveBeenCalledTimes(1));
   const original = calls.setAccess.mock.calls[0][0].requestId;
   category(AWAY);
@@ -608,7 +651,9 @@ it("finds the Tailscale category and its sections through Settings search", asyn
   const input = screen.getByRole("searchbox");
   fireEvent.change(input, { target: { value: "tailnet" } });
   fireEvent.click(
-    await screen.findByRole("button", { name: "Tailscale › Devices on your tailnet" }),
+    await screen.findByRole("button", {
+      name: "Tailscale › Devices on your tailnet",
+    }),
   );
   await screen.findByRole("heading", { name: "Devices on your tailnet" });
 });

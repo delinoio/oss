@@ -140,11 +140,12 @@ enum AccessStatus {
   SetupRequired = "setup-required",
 }
 function accessStatus(access: Access | undefined, pending: boolean) {
-  if (!access)
-    return pending ? AccessStatus.Loading : AccessStatus.Unavailable;
+  if (!access) return pending ? AccessStatus.Loading : AccessStatus.Unavailable;
   if (access.state === "ready") return AccessStatus.Ready;
   if (access.state === "off") return AccessStatus.Off;
-  return access.enabled ? AccessStatus.ActionNeeded : AccessStatus.SetupRequired;
+  return access.enabled
+    ? AccessStatus.ActionNeeded
+    : AccessStatus.SetupRequired;
 }
 const accessStatusCopy = {
   [AccessStatus.Loading]: "tailscale.accessLoading",
@@ -229,7 +230,9 @@ export function TailscaleConnections({
             <h2 id={accessHeading}>{copy("tailscale.thisComputer")}</h2>
             {supported ? (
               <>
-                <p className="tailscale-help">{copy("tailscale.computerHelp")}</p>
+                <p className="tailscale-help">
+                  {copy("tailscale.computerHelp")}
+                </p>
                 <dl className="tailscale-facts">
                   {access ? (
                     <div>
@@ -273,7 +276,9 @@ export function TailscaleConnections({
                     : copy("tailscale.enable")}
                 </button>
                 {access?.enabled ? (
-                  <p className="tailscale-note">{copy("tailscale.disableNote")}</p>
+                  <p className="tailscale-note">
+                    {copy("tailscale.disableNote")}
+                  </p>
                 ) : null}
                 {!accessRead.error && isLoginRequired(accessMutation.error) ? (
                   <LoginRequiredProblem error={accessMutation.error} />

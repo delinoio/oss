@@ -2929,9 +2929,9 @@ function SettingsWorkspace({
                           ? "settings-content settings-connections"
                           : area === SettingsArea.Tailscale
                             ? "settings-content settings-tailscale"
-                          : area === SettingsArea.KeyboardShortcuts
-                            ? "settings-content settings-shortcuts"
-                            : "settings-content"
+                            : area === SettingsArea.KeyboardShortcuts
+                              ? "settings-content settings-shortcuts"
+                              : "settings-content"
           }
           aria-label={copy("settings.settingsContent_e4dcd3")}
         >
