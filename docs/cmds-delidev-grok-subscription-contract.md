@@ -50,6 +50,24 @@ Remote desktop callbacks retain the same original address and use a trusted
 native receiver plus authenticated Connect forwarding. Device authorization
 honors RFC 8628 pending, slow-down, denial and expiry.
 
+The trusted native receiver (`apps/delidev/src-tauri/src/oauth.rs`) exposes
+`grok-subscription-open` and `grok-subscription-reopen` for the server-returned
+browser URL. It validates the fixed `https://auth.x.ai/oauth2/authorize` shape
+(public client `b1a00492-073a-47ea-816f-4c329264a828`, S256 PKCE, nonempty
+state and nonce, redirect exactly `http://127.0.0.1:<port>/callback`), opens it
+once. A local desktop binds nothing because the server listener receives the
+redirect. A remote desktop is refused explicitly (`Incompatible`) until the
+server can forward Grok callbacks: today `ForwardSubscriptionCallback` accepts
+only the ChatGPT/Codex login (`auth.openai.com`, fixed port 1457) and rejects
+Grok accounts, so forwarding must first become service-aware (Grok host,
+state and the dynamic port bound for that login) with Codex behavior unchanged.
+Once enabled, the receiver binds that IPv4 loopback port, accepts one
+`code`/`state`/`scope` redirect and returns it through Take for a single
+`ForwardSubscriptionCallback` call bound to the operation id. The server must
+therefore emit `state` and `nonce` from `[A-Za-z0-9-_.~]` (at most 512 bytes),
+an unprivileged port and no other query keys than `scope` and `referrer`. See
+the [desktop contract](apps-delidev-desktop-contract.md).
+
 General Chat and prepared Local/Worktree repositories require a complete ordered
 manifest, primary cwd and original ownership of additional roots. Execute/Plan,
 tools, questions and approvals retain original input authority. Follow-up input
