@@ -4,6 +4,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"testing"
 	"time"
 
@@ -282,5 +283,32 @@ func TestParallelStreamLossResendsEachOwnedAssignmentOnce(t *testing.T) {
 		if err != nil || row.Revision != revision {
 			t.Fatal("reconnect replayed or re-claimed an owned assignment", err)
 		}
+	}
+}
+
+func TestAttachWorkerEchoesParallelSessionsAndRecordsOnlyAdvertisedSupport(t *testing.T) {
+	f := newStorageFixture(t)
+	attach := func(capabilities ...pb.WorkerCapability) *pb.AttachWorkerResponse {
+		t.Helper()
+		response, err := f.worker.AttachWorker(context.Background(), ownerRequest(f.workerIdentity, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: string(f.machine), InstanceId: string(f.instance), Version: rpc.Version, Capabilities: capabilities}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return response.Msg
+	}
+	advertised := func(response *pb.AttachWorkerResponse) bool {
+		var machine domain.Machine
+		if err := domain.Decode(response.Machine.DocumentJson, &machine); err != nil {
+			t.Fatal(err)
+		}
+		return slices.Contains(machine.WorkerCapabilities, domain.ParallelSessionsV1)
+	}
+	legacy := attach()
+	if !slices.Contains(legacy.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_PARALLEL_SESSIONS_V1) || advertised(legacy) {
+		t.Fatal("server must echo support but record nothing until the Worker advertises it")
+	}
+	negotiated := attach(pb.WorkerCapability_WORKER_CAPABILITY_PARALLEL_SESSIONS_V1)
+	if !advertised(negotiated) {
+		t.Fatal("advertised parallel sessions were not recorded on the machine")
 	}
 }
