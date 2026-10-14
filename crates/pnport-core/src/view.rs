@@ -342,36 +342,35 @@ impl View {
         wait: &mut dyn FnMut() -> Result<()>,
     ) -> Result<Translation> {
         let (physical, managed) = match VPath::from(&logical).map_err(|_| cache_error())? {
-            VPath::Native(path) => {
-                // Materialized bytes remain read-only even if a child reaches
-                // their private backing path through /proc/self/fd or a saved
-                // absolute pathname instead of the logical ZIP location.
-                let managed = self.graph.managed(&path)
-                    || path.starts_with(&self.cache.root)
-                    || path.starts_with(self.session.join("views"));
-                (path, managed)
-            }
+            VPath::Native(path) => self.native_backing(path),
             VPath::Virtual(info) => (normalize(&info.physical_base_path()), true),
             VPath::Zip(info) => {
                 let archive = normalize(&info.physical_base_path());
-                if !self.leases.contains_key(&archive) {
-                    let lease = self.cache.materialize_with_wait(&archive, wait)?;
-                    let active = self.session.join("active");
-                    fs::create_dir_all(&active).map_err(|_| cache_error())?;
-                    let bytes = serde_json::to_vec(&crate::graph::Input {
-                        path: archive.clone(),
-                        sha256: lease.sha256.clone(),
-                    })
-                    .map_err(|_| cache_error())?;
-                    let marker = active.join(digest(&bytes));
-                    let temp =
-                        tempfile::NamedTempFile::new_in(&active).map_err(|_| cache_error())?;
-                    fs::write(temp.path(), bytes).map_err(|_| cache_error())?;
-                    temp.persist(&marker).map_err(|_| cache_error())?;
-                    self.leases.insert(archive.clone(), lease);
+                // The .zip suffix also occurs on native directories and files.
+                // Extract only a graph-owned archive file; retain native lookup
+                // and mutation behavior for every other path.
+                if !self.graph.is_location_ancestor(&archive) || archive.is_dir() {
+                    self.native_backing(logical.clone())
+                } else {
+                    if !self.leases.contains_key(&archive) {
+                        let lease = self.cache.materialize_with_wait(&archive, wait)?;
+                        let active = self.session.join("active");
+                        fs::create_dir_all(&active).map_err(|_| cache_error())?;
+                        let bytes = serde_json::to_vec(&crate::graph::Input {
+                            path: archive.clone(),
+                            sha256: lease.sha256.clone(),
+                        })
+                        .map_err(|_| cache_error())?;
+                        let marker = active.join(digest(&bytes));
+                        let temp =
+                            tempfile::NamedTempFile::new_in(&active).map_err(|_| cache_error())?;
+                        fs::write(temp.path(), bytes).map_err(|_| cache_error())?;
+                        temp.persist(&marker).map_err(|_| cache_error())?;
+                        self.leases.insert(archive.clone(), lease);
+                    }
+                    let lease = &self.leases[&archive];
+                    (lease.content.join(info.zip_path), true)
                 }
-                let lease = &self.leases[&archive];
-                (lease.content.join(info.zip_path), true)
             }
         };
         Ok(Translation {
@@ -385,6 +384,15 @@ impl View {
                 PathKind::Native
             },
         })
+    }
+
+    fn native_backing(&self, path: PathBuf) -> (PathBuf, bool) {
+        // Materialized bytes remain read-only even if a child reaches their
+        // private backing path through /proc/self/fd or a saved absolute path.
+        let managed = self.graph.managed(&path)
+            || path.starts_with(&self.cache.root)
+            || path.starts_with(self.session.join("views"));
+        (path, managed)
     }
 
     fn directory(&mut self, issuer: &Path, scope: Option<&str>) -> Result<Translation> {
