@@ -157,5 +157,6 @@ it("keeps every Tailscale Check cause namespaced on the wire", () => {
   const generic = Object.entries(FailureCause).filter(
     ([name]) => !name.startsWith("Tailscale"),
   );
-  for (const [, wire] of generic) expect(wire.startsWith("tailscale_")).toBe(false);
+  for (const [, wire] of generic)
+    expect(wire.startsWith("tailscale_")).toBe(false);
 });
