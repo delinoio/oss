@@ -54,12 +54,23 @@ func (s SubscriptionState) validateServerGrok(account Account, o *ServerSubscrip
 		return Fail(InvalidArgument, "Invalid Grok server login ownership.", "Preserve the original server operation and its exchange claim.")
 	}
 	if account.SubscriptionService != SubscriptionGrok {
-		if o.GrokDiagnostic != nil {
+		if o.GrokDiagnostic != nil || o.RefreshClaimed {
 			return invalid()
 		}
 		return nil
 	}
 	if o.GrokDiagnostic != nil && (o.GrokDiagnostic.Validate() != nil || o.GrokDiagnostic.CorrelationID != o.ID || o.State == SubscriptionSucceeded || o.State == SubscriptionPreparing || o.State == SubscriptionWaiting) {
+		return invalid()
+	}
+	if o.Action == SubscriptionRefresh {
+		// A refresh grant has no callback, code or login method; its only exchange
+		// claim is RefreshClaimed, which needs the operation to have started.
+		if o.LoginMethod != 0 || o.CodeSubmissionID != "" || o.CodeConsumed || o.CallbackForwarded || o.RefreshClaimed && o.State == SubscriptionPreparing && !o.NativeStarted {
+			return invalid()
+		}
+		return nil
+	}
+	if o.RefreshClaimed {
 		return invalid()
 	}
 	if o.LoginMethod != 0 && o.LoginMethod != SubscriptionBrowserCallback || o.CodeSubmissionID != "" && o.CodeSubmissionID.Validate() != nil || o.CodeConsumed && o.CodeSubmissionID == "" {

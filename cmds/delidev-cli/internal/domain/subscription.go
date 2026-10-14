@@ -240,7 +240,12 @@ type ServerSubscriptionOperation struct {
 	// LoginMethod (callback), CallbackForwarded, CodeSubmissionID and
 	// CodeConsumed; GrokDiagnostic reports a failed login. They hold no URL,
 	// code, verifier, state, nonce or token.
-	GrokDiagnostic *GrokDiagnostic          `json:"grok_diagnostic,omitempty"`
+	GrokDiagnostic *GrokDiagnostic `json:"grok_diagnostic,omitempty"`
+	// RefreshClaimed is the durable exchange claim of a server-owned Grok
+	// refresh_token grant. It is written, in its own transaction, before the one
+	// token request is sent and is never cleared: a refresh whose claim exists
+	// but whose outcome was not published is uncertain and is never resent.
+	RefreshClaimed bool                     `json:"refresh_claimed,omitempty"`
 	StartedAt      time.Time                `json:"started_at"`
 	ExpiresAt      time.Time                `json:"expires_at"`
 	Diagnostic     *CodexDiagnostic         `json:"diagnostic,omitempty"`

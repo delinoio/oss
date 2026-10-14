@@ -54,9 +54,9 @@ func (s *Service) requestServerSubscription(ctx context.Context, req *connect.Re
 			return nil, err
 		}
 		if a.SubscriptionService == domain.SubscriptionGrok {
-			// Server-owned Grok supports browser login only. The device-code method
-			// is explicit and never substituted for the browser method.
-			if action != domain.SubscriptionLogin {
+			// Server-owned Grok supports browser login and refresh. The device-code
+			// method is explicit and never substituted for the browser method.
+			if action == domain.SubscriptionLogout {
 				return nil, grokLoginUnsupportedAction()
 			}
 			if input.DeviceCode {
@@ -238,6 +238,7 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 			cleanup            bool
 			claude             bool
 			grok               bool
+			refresh            bool
 		}
 		var candidates []candidate
 		eligible := map[domain.ID]bool{}
@@ -381,9 +382,13 @@ func (r cleanupRetry) after(now time.Time, failed bool, base time.Duration) clea
 }
 
 func (s *Service) runServerSubscription(parent context.Context, id domain.ID) {
-	if s.isGrokServerLogin(parent, id) {
-		// Grok login is a Go-owned OAuth flow, not a native process.
-		s.runGrokLogin(parent, id)
+	if action, matched := s.grokServerAction(parent, id); matched {
+		// Grok login and refresh are Go-owned OAuth flows, not native processes.
+		if action == domain.SubscriptionRefresh {
+			s.runGrokRefresh(parent, id)
+		} else {
+			s.runGrokLogin(parent, id)
+		}
 		return
 	}
 	var original domain.ServerSubscriptionOperation

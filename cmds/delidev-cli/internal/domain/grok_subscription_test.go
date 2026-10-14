@@ -83,3 +83,69 @@ func TestGrokDiagnosticIsOmittedFromLegacyServerOperations(t *testing.T) {
 		t.Fatalf("legacy server operation gained a Grok diagnostic: %s %v", raw, err)
 	}
 }
+
+func grokServerRefreshFixture() Account {
+	a := grokServerLoginFixture()
+	a.Health = AccountReady
+	a.Connection = &AccountConnection{ID: NewID(), Authentication: SubscriptionAuth, ConnectedAt: time.Now().UTC()}
+	a.Subscription.Generation = NewID()
+	a.Subscription.IdentityCommitment = strings.Repeat("a", 64)
+	a.Subscription.ServerOperation.Action = SubscriptionRefresh
+	a.Subscription.Pending.Action = SubscriptionRefresh
+	return a
+}
+
+func TestGrokServerRefreshStateValidation(t *testing.T) {
+	queued := grokServerRefreshFixture()
+	if err := queued.Subscription.Validate(queued); err != nil {
+		t.Fatalf("queued Grok refresh was rejected: %v", err)
+	}
+	claimed := grokServerRefreshFixture()
+	o := claimed.Subscription.ServerOperation
+	o.NativeStarted, o.RefreshClaimed, o.Generation = true, true, claimed.Subscription.Generation
+	claimed.Subscription.Pending.Phase = SubscriptionClaimed
+	if err := claimed.Subscription.Validate(claimed); err != nil {
+		t.Fatalf("claimed Grok refresh was rejected: %v", err)
+	}
+	settled := grokServerRefreshFixture()
+	settled.Subscription.ServerOperation.State = SubscriptionSucceeded
+	settled.Subscription.ServerOperation.RefreshClaimed = true
+	settled.Subscription.Pending = nil
+	if err := settled.Subscription.Validate(settled); err != nil {
+		t.Fatalf("settled Grok refresh keeping its claim was rejected: %v", err)
+	}
+	for name, mutate := range map[string]func(*Account){
+		"claim before the lease":  func(a *Account) { a.Subscription.ServerOperation.RefreshClaimed = true },
+		"login code on a refresh": func(a *Account) { a.Subscription.ServerOperation.CodeConsumed = true },
+		"login method":            func(a *Account) { a.Subscription.ServerOperation.LoginMethod = SubscriptionBrowserCallback },
+		"callback on a refresh":   func(a *Account) { a.Subscription.ServerOperation.CallbackForwarded = true },
+		"claim on a login": func(a *Account) {
+			a.Subscription.ServerOperation.Action = SubscriptionLogin
+			a.Subscription.Pending.Action = SubscriptionLogin
+			a.Subscription.ServerOperation.RefreshClaimed = true
+			a.Subscription.ServerOperation.NativeStarted = true
+		},
+		"claim on another service": func(a *Account) {
+			a.SubscriptionService = SubscriptionChatGPT
+			a.Subscription.ServerOperation.NativeStarted = true
+			a.Subscription.ServerOperation.RefreshClaimed = true
+			a.Subscription.ServerOperation.Generation = a.Subscription.Generation
+			a.Subscription.Pending.Phase = SubscriptionClaimed
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			a := grokServerRefreshFixture()
+			mutate(&a)
+			if a.Subscription.Validate(a) == nil {
+				t.Fatal("invalid Grok refresh ownership was accepted")
+			}
+		})
+	}
+}
+
+func TestRefreshClaimIsOmittedFromLegacyServerOperations(t *testing.T) {
+	raw, err := json.Marshal(ServerSubscriptionOperation{})
+	if err != nil || strings.Contains(string(raw), "refresh_claimed") {
+		t.Fatalf("legacy server operation gained a refresh claim: %s %v", raw, err)
+	}
+}

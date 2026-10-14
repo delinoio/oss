@@ -146,3 +146,7 @@ func RefreshGrokBundle(now time.Time, current GrokBundle, tokens GrokTokens, cla
 	}
 	return next, nil
 }
+
+// RefreshTokenBytes returns a copy of the bundle's refresh token for the one
+// refresh_token grant. The caller owns the copy and must clear it after use.
+func (b GrokBundle) RefreshTokenBytes() []byte { return []byte(b.entry.RefreshToken) }

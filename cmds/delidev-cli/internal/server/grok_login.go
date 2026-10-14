@@ -252,7 +252,7 @@ func grokLoginUnsupportedDevice() *domain.Error {
 }
 
 func grokLoginUnsupportedAction() *domain.Error {
-	return domain.Fail(domain.Unsupported, "Only Grok login is available on the server.", "Use login; refresh and logout are separate lifecycle work.")
+	return domain.Fail(domain.Unsupported, "Only Grok login and refresh are available on the server.", "Use login or refresh; logout is separate lifecycle work.")
 }
 
 // grokOutcome is the settled result of the OAuth steps, before it is written.
@@ -263,6 +263,8 @@ type grokOutcome struct {
 	step   grokLoginStep
 	// claimed reports that the exchange claim was persisted.
 	claimed bool
+	// rejected reports that the provider definitively refused a refresh token.
+	rejected bool
 }
 
 func (o grokOutcome) failed() bool {
@@ -275,18 +277,12 @@ func (o grokOutcome) needsDiagnostic() bool {
 	return o.state == domain.SubscriptionFailed || o.state == domain.SubscriptionRecovery || o.state == domain.SubscriptionUnsupported
 }
 
-func (s *Service) isGrokServerLogin(ctx context.Context, id domain.ID) bool {
-	matched := false
-	_ = s.Store.Read(ctx, func(tx *store.Tx) error {
-		_, a, err := accountFromTx(tx, id, 0)
-		matched = err == nil && a.Type == domain.SubscriptionAccount && a.SubscriptionService == domain.SubscriptionGrok && a.ProviderID == ""
-		return nil
-	})
-	return matched
-}
-
 func (s *Service) logGrok(ctx context.Context, level slog.Level, message string, o domain.ServerSubscriptionOperation, step grokLoginStep, attrs ...any) {
-	base := []any{"phase", grokLogPhaseLogin, "operation_id", o.ID, "correlation_id", o.ID, "step", step}
+	phase := grokLogPhaseLogin
+	if o.Action == domain.SubscriptionRefresh {
+		phase = grokLogPhaseRefresh
+	}
+	base := []any{"phase", phase, "operation_id", o.ID, "correlation_id", o.ID, "step", step}
 	s.logger.Log(ctx, level, message, append(base, attrs...)...)
 }
 
@@ -723,16 +719,28 @@ func grokDiagnosticMessage(d *domain.GrokDiagnostic) *pb.GrokDiagnostic {
 		return nil
 	}
 	message, guidance := "Grok sign-in did not complete.", "Start a new Grok sign-in."
-	switch d.Code {
-	case domain.RecoveryRequired:
+	switch {
+	case d.Phase == domain.GrokDiagnosticRefresh:
+		message, guidance = "Grok credential refresh did not complete.", "Start a new refresh later."
+		switch d.Code {
+		case domain.RecoveryRequired:
+			message, guidance = "Grok credential refresh has an uncertain outcome.", "Do not retry the refresh. Sign in to the account again after inspecting it."
+		case domain.Unauthenticated:
+			message, guidance = "Grok no longer accepts the stored credential.", "Sign in to the account again."
+		case domain.Unavailable:
+			message, guidance = "Grok refresh services are unavailable.", "Check the server's network access to the Grok sign-in service, then try again."
+		case domain.Conflict:
+			message, guidance = "The stored Grok credential does not match the account.", "Sign in to the account again."
+		}
+	case d.Code == domain.RecoveryRequired:
 		message, guidance = "Grok sign-in has an uncertain outcome.", "Do not retry the original sign-in. Inspect the account before starting another."
-	case domain.PermissionDenied:
+	case d.Code == domain.PermissionDenied:
 		message, guidance = "Grok did not authorize this sign-in.", "Start a new Grok sign-in and approve the request."
-	case domain.Unauthenticated:
+	case d.Code == domain.Unauthenticated:
 		message, guidance = "Grok sign-in could not be verified.", "Start a new Grok sign-in."
-	case domain.Unavailable:
+	case d.Code == domain.Unavailable:
 		message, guidance = "Grok sign-in services are unavailable.", "Check the server's network access to the Grok sign-in service, then try again."
-	case domain.Conflict:
+	case d.Code == domain.Conflict:
 		message, guidance = "This Grok account is already connected.", "Use the existing account instead of adding it again."
 	}
 	return &pb.GrokDiagnostic{DetectedVersion: d.DetectedVersion, SupportedVersion: d.SupportedVersion, Phase: pb.GrokDiagnosticPhase(d.Phase), Code: string(d.Code), Message: message, Guidance: guidance, CorrelationId: string(d.CorrelationID)}
