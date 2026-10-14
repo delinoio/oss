@@ -135,11 +135,16 @@ fn deny_write() -> String {
 
 impl Project {
     pub fn load(path: &str, entries: Vec<String>) -> Result<Self> {
-        Self::load_rooted(path, entries, Vec::new())
+        Self::load_rooted(path, entries, Vec::new(), Some("/"))
     }
 
     /// Loads the program rooted at `entries`, `roots` and declaration files.
-    fn load_rooted(path: &str, entries: Vec<String>, extra_roots: Vec<String>) -> Result<Self> {
+    fn load_rooted(
+        path: &str,
+        entries: Vec<String>,
+        extra_roots: Vec<String>,
+        root_dir_override: Option<&str>,
+    ) -> Result<Self> {
         let region = tsrs_core::arena::Region::new(1 << 20);
         let region_scope = region.enter();
         let cwd = std::env::current_dir()?.to_string_lossy().into_owned();
@@ -238,6 +243,14 @@ impl Project {
         options.source_root.clear();
         options.map_root.clear();
         options.out_dir = "/__typeopt_output__".into();
+        if let Some(root_dir) = root_dir_override {
+            // Stage 1 publishes numbered modules instead of the compiler's
+            // directory layout. Forced emit otherwise raises TS5011 for a
+            // nested entry. Keep this until forced emit accepts such entries
+            // without a rootDir override.
+            options.root_dir = root_dir.into();
+            tracing::debug!(root_dir = %options.root_dir, "overriding stage 1 output root");
+        }
         // Size evaluation uses the same emitter settings without maps, so the
         // metric never includes source-map comments.
         let mut size_options = options.clone();
@@ -314,6 +327,7 @@ impl Project {
             &path.canonicalize()?.to_string_lossy(),
             Vec::new(),
             chunks.clone(),
+            None,
         )?;
         if let Some(outside) = project.application_file_outside(dir) {
             bail!(
