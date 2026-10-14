@@ -16,7 +16,7 @@ type Quadric = [f64; 16];
 type Face = [u32; 3];
 
 fn guarded(i: usize) -> Result<()> {
-    if i % 4096 == 0 {
+    if i.is_multiple_of(4096) {
         checkpoint()?;
     }
     Ok(())
@@ -150,16 +150,22 @@ fn has_disconnected_fan(vertex: u32, faces: &[Face], incident: &[usize]) -> bool
     visited.len() != links.len()
 }
 
-fn legal(
-    source: u32,
-    destination: u32,
-    faces: &[Face],
-    edges: &BTreeMap<(u32, u32), Vec<usize>>,
-    vertices: &BTreeMap<u32, Vec<usize>>,
-    face_counts: &BTreeMap<Face, usize>,
-    positions: &[[f32; 3]],
+struct LegalityContext<'a> {
+    faces: &'a [Face],
+    edges: &'a BTreeMap<(u32, u32), Vec<usize>>,
+    vertices: &'a BTreeMap<u32, Vec<usize>>,
+    face_counts: &'a BTreeMap<Face, usize>,
+    positions: &'a [[f32; 3]],
     target: usize,
-) -> Result<bool> {
+}
+
+fn legal(source: u32, destination: u32, context: &LegalityContext<'_>) -> Result<bool> {
+    let faces = context.faces;
+    let edges = context.edges;
+    let vertices = context.vertices;
+    let face_counts = context.face_counts;
+    let positions = context.positions;
+    let target = context.target;
     let incident = match edges.get(&edge(source, destination)) {
         Some(v) if v.len() <= 2 => v,
         _ => return Ok(false),
@@ -359,11 +365,7 @@ pub fn simplify_geometry(
     if extent == 0. {
         return Ok(unchanged(false));
     }
-    let mut faces: Vec<Face> = g
-        .indices
-        .chunks_exact(3)
-        .map(|v| [v[0], v[1], v[2]])
-        .collect();
+    let mut faces: Vec<Face> = g.indices.as_chunks::<3>().0.to_vec();
     let mut quadrics = vec![[0.; 16]; input_vertices];
     let mut frozen = vec![false; input_vertices];
     for (i, &f) in faces.iter().enumerate() {
@@ -461,17 +463,18 @@ pub fn simplify_geometry(
             if legal(
                 source,
                 destination,
-                &faces,
-                &edges,
-                &vertices,
-                &face_counts,
-                &g.positions,
-                target,
-            )? {
-                if let Some(next) = apply_collapse(source, destination, &faces, &edges, target)? {
-                    accepted = Some((cost, destination, source, next));
-                    break;
-                }
+                &LegalityContext {
+                    faces: &faces,
+                    edges: &edges,
+                    vertices: &vertices,
+                    face_counts: &face_counts,
+                    positions: &g.positions,
+                    target,
+                },
+            )? && let Some(next) = apply_collapse(source, destination, &faces, &edges, target)?
+            {
+                accepted = Some((cost, destination, source, next));
+                break;
             }
         }
         let Some((cost, destination, source, next)) = accepted else {
@@ -645,7 +648,7 @@ mod tests {
         let result = simplify_geometry(&encode(&positions, &normals, &indices), 12, 0.).unwrap();
         assert_eq!((result.output_triangles, result.output_vertices), (12, 16));
         let output = geometry(&result.bytes).unwrap();
-        assert!(output.indices.chunks_exact(3).all(|f| {
+        assert!(output.indices.as_chunks::<3>().0.iter().all(|f| {
             let x = output.positions[f[0] as usize][0];
             f.iter()
                 .all(|&v| (output.positions[v as usize][0] < 1.5) == (x < 1.5))
