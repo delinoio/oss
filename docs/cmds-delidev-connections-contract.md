@@ -109,6 +109,11 @@ Check refreshes the original visible peer identity and sends a single bounded
 normal-TLS request to its canonical HTTPS hostname on port 8443. No redirects,
 ambient proxies, alternate ports, scans, certificate bypass or automatic setup
 is allowed. Unsupported or offline peers retain manual pairing and SSH paths.
+The desktop may issue this Check automatically, once per visit of the Tailscale
+devices presentation, for each visible peer that is online and not shared to,
+strictly one at a time because every Check performs a fresh locked status read.
+It uses the same RPC and peer ID with no schema or storage change, and a failed
+automatic Check is an ordinary per-peer failure that the user retries manually.
 
 Access defaults to Off. Enable requires Running, exact Self FQDN certificate
 eligibility in CertDomains and Self.CapMap membership for `https`. Refuse existing
@@ -216,7 +221,7 @@ then retry only that journal. Startup uses the existing detached Worker controll
 registration. Client/Worker completion does not create an Agent Worker or infer
 harness/account readiness.
 
-The desktop Tailscale access and device views appear in Settings Runner Devices (not Connections), presented by the original desktop-owned controller through Runner slots, and retain resume and cancel requests through
+The desktop Tailscale access, device and connection-request views appear in the dedicated Settings Tailscale category in the original local desktop window (not Runner Devices or Connections), presented by the original desktop-owned controller through typed slots, and retain resume and cancel requests through
 connection-owned retained mutations. While either retains input or is uncertain,
 its row action stays disabled, and a separately labelled retry control replays
 only the original request ID and bytes; it never creates a second request.

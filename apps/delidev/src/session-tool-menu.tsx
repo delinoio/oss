@@ -24,7 +24,7 @@ const enabledControls = (root: ParentNode | null | undefined) => [
 ];
 
 /**
- * Compact tool dialog shared by the Open tool button and the OpenTool shortcut.
+ * Compact tool dialog shared by the tab-bar + Open tool button and the OpenTool shortcut.
  * Rows keep their original callbacks; this dialog only owns presentation, focus
  * and the shortcut registration. Opening performs no tool action.
  */
@@ -133,7 +133,7 @@ export function SessionToolMenu({
         aria-controls={id}
         onClick={() => openDialog(trigger.current)}
       >
-        <SessionIcon kind={SessionIconKind.Tools} />
+        <SessionIcon kind={SessionIconKind.Plus} />
       </button>
       {createPortal(
         <DialogSurface

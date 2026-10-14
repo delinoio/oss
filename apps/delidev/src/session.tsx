@@ -2428,7 +2428,6 @@ export function SessionView({
               selected={tabs.selected}
               select={(key) => tabs.store.select(id, key)}
               close={closeTab}
-              newPage={() => setBrowserDialog(true)}
               closeAria={shortcuts.aria(ShortcutId.SessionCloseTab)}
             />
             <SessionToolMenu

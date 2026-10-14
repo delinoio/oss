@@ -33,7 +33,10 @@ import {
   type ShortcutPlatform,
 } from "./shortcuts";
 import "./shortcuts.css";
-import { useShortcutPreferences } from "./shortcut-preference-controller";
+import {
+  shortcutSnapshotVerified,
+  useShortcutPreferences,
+} from "./shortcut-preference-controller";
 import {
   NativeShortcutId,
   fixedNativeShortcutCatalog,
@@ -59,13 +62,19 @@ interface Controller {
 const Context = createContext<Controller | undefined>(undefined);
 export function ShortcutProvider({ children }: { children: ReactNode }) {
   const { snapshot, ready } = useShortcutPreferences();
+  const verified = shortcutSnapshotVerified(snapshot);
   const [store] = useState(() => new ShortcutStore());
   useLayoutEffect(
     () =>
       store.setResolver((definitions) =>
-        effectiveShortcutDefinitions(definitions, snapshot.overrides, ready),
+        effectiveShortcutDefinitions(
+          definitions,
+          snapshot.overrides,
+          ready,
+          verified,
+        ),
       ),
-    [store, snapshot.overrides, ready],
+    [store, snapshot.overrides, ready, verified],
   );
   const [platform] = useState(shortcutPlatform);
   const [helpLifetime, setHelpLifetime] = useState<HelpLifetime | null>(null);
@@ -200,7 +209,12 @@ export function useShortcutHelp() {
 export function useGlobalShortcutAria(id: keyof typeof globalShortcutBindings) {
   const controller = useContext(Context);
   const { snapshot, ready } = useShortcutPreferences();
-  return customizationBindings(id, snapshot.overrides, ready)
+  return customizationBindings(
+    id,
+    snapshot.overrides,
+    ready,
+    shortcutSnapshotVerified(snapshot),
+  )
     .map((binding) =>
       bindingAria(binding, controller?.platform ?? shortcutPlatform()),
     )
@@ -213,6 +227,7 @@ export function useShortcuts(definitions: readonly ShortcutDefinition[]) {
     definitions,
     snapshot.overrides,
     ready,
+    shortcutSnapshotVerified(snapshot),
   );
   const [owner] = useState(() => Symbol("shortcuts"));
   useLayoutEffect(() => {
