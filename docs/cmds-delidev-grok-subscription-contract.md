@@ -555,22 +555,22 @@ the diagnostic always carries the phase of the operation (`LOGIN` or `REFRESH`)
 and the operation as correlation id. The scanner settles only a fenced operation
 whose exchange was never claimed; a claim is never released automatically.
 
-| Stage reached | Event | Outcome | Recovery kind | Diagnostic |
-| --- | --- | --- | --- | --- |
-| queued, not leased | restart | fenced by the startup fence, then settled `FAILED` by the scanner (`recoverGrokLogin` or `recoverGrokRefresh`); a refresh restores health `ready` | automatic | `unavailable` |
-| queued, not leased | cancel (login only) | `CANCELED`, pending cleared | none | none |
-| leased, no claim | shutdown or cancel | `CANCELED` | none | none |
-| leased, no claim | window expiry | `EXPIRED` | none | none |
-| leased, no claim | restart | fenced, then settled `FAILED` by the scanner | automatic | `unavailable` |
-| leased, no claim | failure before the claim (vault, discovery, listener) | `FAILED`, credential untouched | none | the failure code |
-| claimed, request not sent | restart or crash | fenced, the claim is retained | manual, never resent | `recovery_required` |
-| claimed, request sent | transport failure, timeout, shutdown, cancel, unparsed or unexpected response | fenced | manual, never resent | `recovery_required` |
-| claimed, request sent | definitive refusal (see the [response table](#token-endpoint-response-table)) | `FAILED` (refresh also sets health `expired`) | none | `unauthenticated` or the refusal code |
-| claimed, response received | identity, ID token, userinfo or mapping not verified | fenced | manual | `recovery_required` |
-| claimed, response verified | settlement committed | `SUCCEEDED`, next generation published | none | none |
-| claimed, response verified | settlement write failed before the commit | fenced, staged generation retired | manual | `recovery_required` |
-| any stage | settlement commit acknowledgement lost after the commit | the committed outcome stands, nothing is rewritten | none | as committed |
-| any stage | cancel after a claim | ignored: a claimed operation never settles as canceled | manual | `recovery_required` |
+| Stage reached              | Event                                                                         | Outcome                                                                                                                                           | Recovery kind        | Diagnostic                            |
+| -------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- | ------------------------------------- |
+| queued, not leased         | restart                                                                       | fenced by the startup fence, then settled `FAILED` by the scanner (`recoverGrokLogin` or `recoverGrokRefresh`); a refresh restores health `ready` | automatic            | `unavailable`                         |
+| queued, not leased         | cancel (login only)                                                           | `CANCELED`, pending cleared                                                                                                                       | none                 | none                                  |
+| leased, no claim           | shutdown or cancel                                                            | `CANCELED`                                                                                                                                        | none                 | none                                  |
+| leased, no claim           | window expiry                                                                 | `EXPIRED`                                                                                                                                         | none                 | none                                  |
+| leased, no claim           | restart                                                                       | fenced, then settled `FAILED` by the scanner                                                                                                      | automatic            | `unavailable`                         |
+| leased, no claim           | failure before the claim (vault, discovery, listener)                         | `FAILED`, credential untouched                                                                                                                    | none                 | the failure code                      |
+| claimed, request not sent  | restart or crash                                                              | fenced, the claim is retained                                                                                                                     | manual, never resent | `recovery_required`                   |
+| claimed, request sent      | transport failure, timeout, shutdown, cancel, unparsed or unexpected response | fenced                                                                                                                                            | manual, never resent | `recovery_required`                   |
+| claimed, request sent      | definitive refusal (see the [response table](#token-endpoint-response-table)) | `FAILED` (refresh also sets health `expired`)                                                                                                     | none                 | `unauthenticated` or the refusal code |
+| claimed, response received | identity, ID token, userinfo or mapping not verified                          | fenced                                                                                                                                            | manual               | `recovery_required`                   |
+| claimed, response verified | settlement committed                                                          | `SUCCEEDED`, next generation published                                                                                                            | none                 | none                                  |
+| claimed, response verified | settlement write failed before the commit                                     | fenced, staged generation retired                                                                                                                 | manual               | `recovery_required`                   |
+| any stage                  | settlement commit acknowledgement lost after the commit                       | the committed outcome stands, nothing is rewritten                                                                                                | none                 | as committed                          |
+| any stage                  | cancel after a claim                                                          | ignored: a claimed operation never settles as canceled                                                                                            | manual               | `recovery_required`                   |
 
 ### Commit acknowledgement ambiguity
 
@@ -581,12 +581,12 @@ paths of login and refresh reconcile through `fenceUnsettledGrokOperation`: it
 re-reads the durable operation and fences it only while it is still the account's
 pending native-started operation.
 
-| Transaction | Ambiguous error | Reconcile rule |
-| --- | --- | --- |
-| lease (`grok.server.refresh-lease`, `grok.server.claim`) | the lease may be durable with no owner running | the runner re-reads the operation: a durable lease (native-started, pending) is fenced with the phase diagnostic so the scanner settles it as `FAILED`; an operation that is still queued is left for the next scan (`TestGrokLeaseWithALostAcknowledgementIsFencedForTheScanner`) |
-| exchange claim (`claimGrokExchange`, `claimGrokRefresh`) | the claim flag may be durable although the request was never sent | the request is not sent after any claim error, so the operation settles `FAILED` with the stored credential untouched and the flag is inert on a settled operation; a claim whose commit succeeded is the only way a request is sent |
-| stage (vault write of the next generation) | the generation may exist | an unpublished generation is retired only after proving the account does not reference it |
-| publish (`grok.server.finish`, `grok.server.refresh-finish`) | the settlement may be committed | re-read: a settled operation is the outcome; a still-pending one is fenced with the phase diagnostic; superseded generations are removed by the next cleanup |
+| Transaction                                                  | Ambiguous error                                                   | Reconcile rule                                                                                                                                                                                                                                                                     |
+| ------------------------------------------------------------ | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| lease (`grok.server.refresh-lease`, `grok.server.claim`)     | the lease may be durable with no owner running                    | the runner re-reads the operation: a durable lease (native-started, pending) is fenced with the phase diagnostic so the scanner settles it as `FAILED`; an operation that is still queued is left for the next scan (`TestGrokLeaseWithALostAcknowledgementIsFencedForTheScanner`) |
+| exchange claim (`claimGrokExchange`, `claimGrokRefresh`)     | the claim flag may be durable although the request was never sent | the request is not sent after any claim error, so the operation settles `FAILED` with the stored credential untouched and the flag is inert on a settled operation; a claim whose commit succeeded is the only way a request is sent                                               |
+| stage (vault write of the next generation)                   | the generation may exist                                          | an unpublished generation is retired only after proving the account does not reference it                                                                                                                                                                                          |
+| publish (`grok.server.finish`, `grok.server.refresh-finish`) | the settlement may be committed                                   | re-read: a settled operation is the outcome; a still-pending one is fenced with the phase diagnostic; superseded generations are removed by the next cleanup                                                                                                                       |
 
 ### Token endpoint response table
 
@@ -598,16 +598,16 @@ before the request, so an unparsed response is never a published success and nev
 a definitive rejection that would release the claim. The table is pinned by
 `TestGrokTokenResponseTable`, which runs every row against both grants.
 
-| Status | Body | Reason | Settlement after the claim |
-| --- | --- | --- | --- |
-| 200 | one valid token object (trailing whitespace allowed) | success | publish |
-| 200 | token object followed by another JSON value or any other byte | `GrokReasonTokenResponse` | `RECOVERY_REQUIRED` |
-| 200 | missing or invalid member, not JSON | `GrokReasonTokenResponse` | `RECOVERY_REQUIRED` |
-| 400, 401 | exactly one object with a non-empty `error` | `GrokReasonTokenRejected` | `FAILED`, the token did not rotate |
-| 400, 401 | an `error` object followed by any other byte or JSON value | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED` |
-| 400, 401 | no `error` member or not JSON | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED` |
-| other 4xx, 5xx, redirect | any body | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED` |
-| transport error, cancellation, truncated or oversized body | none | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED` |
+| Status                                                     | Body                                                          | Reason                     | Settlement after the claim         |
+| ---------------------------------------------------------- | ------------------------------------------------------------- | -------------------------- | ---------------------------------- |
+| 200                                                        | one valid token object (trailing whitespace allowed)          | success                    | publish                            |
+| 200                                                        | token object followed by another JSON value or any other byte | `GrokReasonTokenResponse`  | `RECOVERY_REQUIRED`                |
+| 200                                                        | missing or invalid member, not JSON                           | `GrokReasonTokenResponse`  | `RECOVERY_REQUIRED`                |
+| 400, 401                                                   | exactly one object with a non-empty `error`                   | `GrokReasonTokenRejected`  | `FAILED`, the token did not rotate |
+| 400, 401                                                   | an `error` object followed by any other byte or JSON value    | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
+| 400, 401                                                   | no `error` member or not JSON                                 | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
+| other 4xx, 5xx, redirect                                   | any body                                                      | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
+| transport error, cancellation, truncated or oversized body | none                                                          | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
 
 ### Native refresh confinement
 
