@@ -19,6 +19,8 @@ import { document, object, text } from "./documents";
 // clones completed plain timed reasoning history.
 export const OPENCODE_FORK_REASONING_WORKER_CAPABILITY =
   "opencode-general-chat-fork-reasoning-v1";
+// The base Worker capability that every profile v2 peer must also hold.
+export const OPENCODE_FORK_WORKER_CAPABILITY = "opencode-general-chat-fork-v1";
 
 // Reasoning history is offered only when the server and the original Worker both
 // report the independent capability pair. Otherwise a source with reasoning keeps
@@ -40,9 +42,13 @@ export function useOpenCodeForkReasoningSupport(
   return (
     enabled &&
     status.data?.capabilities.includes(
-      SystemCapability.OPENCODE_GENERAL_CHAT_FORK_REASONING_V1,
+      SystemCapability.OPENCODE_GENERAL_CHAT_FORK_V1,
     ) === true &&
+    status.data.capabilities.includes(
+      SystemCapability.OPENCODE_GENERAL_CHAT_FORK_REASONING_V1,
+    ) &&
     Array.isArray(runner.worker_capabilities) &&
+    runner.worker_capabilities.includes(OPENCODE_FORK_WORKER_CAPABILITY) &&
     runner.worker_capabilities.includes(
       OPENCODE_FORK_REASONING_WORKER_CAPABILITY,
     )

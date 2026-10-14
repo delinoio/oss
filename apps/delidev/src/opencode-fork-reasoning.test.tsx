@@ -21,6 +21,7 @@ import { MutationIntents } from "./mutation";
 import {
   plainOpenCodeForkMessage,
   useOpenCodeForkProfile,
+  useOpenCodeForkReasoningSupport,
 } from "./opencode-fork-profile";
 import { SessionForkAction, SessionForkProvider } from "./session-fork";
 import "./localization";
@@ -293,3 +294,62 @@ it("counts a completed reasoning record as eligible content like the server", as
     false,
   );
 });
+
+it.each([
+  ["both pairs", true, true, true],
+  ["reasoning pair without the base Worker capability", false, true, false],
+  ["reasoning pair without the base system capability", true, false, false],
+])(
+  "requires the base capability together with reasoning: %s",
+  async (_name, baseWorker, baseSystem, expected) => {
+    const machineId = newRequestId();
+    const source: Resource = create(ResourceSchema, {
+      kind: EntityKind.SESSION,
+      id: newRequestId(),
+      revision: 1n,
+      schemaVersion: 1,
+      documentJson: encode({ machine_id: machineId }),
+    });
+    const machine = create(ResourceSchema, {
+      kind: EntityKind.MACHINE,
+      id: machineId,
+      revision: 1n,
+      schemaVersion: 1,
+      documentJson: encode({
+        worker_capabilities: [
+          ...(baseWorker ? ["opencode-general-chat-fork-v1"] : []),
+          "opencode-general-chat-fork-reasoning-v1",
+        ],
+      }),
+    });
+    const transport = createRouterTransport((router) => {
+      router.service(SystemService, {
+        getStatus: () => ({
+          capabilities: [
+            ...(baseSystem ? [SystemCapability.OPENCODE_GENERAL_CHAT_FORK_V1] : []),
+            SystemCapability.OPENCODE_GENERAL_CHAT_FORK_REASONING_V1,
+          ],
+        }),
+      });
+      router.service(ResourceService, {
+        getResource: () => ({ resource: machine }),
+      });
+    });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const { result } = renderHook(
+      () => useOpenCodeForkReasoningSupport(source, true),
+      {
+        wrapper: ({ children }: { children: ReactNode }) => (
+          <TransportProvider transport={transport}>
+            <QueryClientProvider client={client}>{children}</QueryClientProvider>
+          </TransportProvider>
+        ),
+      },
+    );
+    await waitFor(() => expect(client.isFetching()).toBe(0));
+    expect(client.getQueryCache().getAll()).toHaveLength(2);
+    expect(result.current).toBe(expected);
+  },
+);
