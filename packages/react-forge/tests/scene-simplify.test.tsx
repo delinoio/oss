@@ -186,6 +186,57 @@ for (const format of [Format.Glb, Format.Fbx] as const) {
 }
 
 sceneTest(
+  "concurrent simplification reserves native scratch space",
+  async () => {
+    const session = createSession(Format.Glb);
+    const side = 216;
+    const positions = new Float32Array(side * side * 3);
+    const normals = new Float32Array(side * side * 3);
+    const indices: number[] = [];
+    for (let y = 0; y < side; y++)
+      for (let x = 0; x < side; x++) {
+        const i = y * side + x;
+        positions.set([x / (side - 1), y / (side - 1), 0], i * 3);
+        normals[i * 3 + 2] = 1;
+        if (x + 1 < side && y + 1 < side) {
+          const b = i + 1,
+            c = i + side,
+            d = c + 1;
+          indices.push(i, b, d, i, d, c);
+        }
+      }
+    try {
+      const source = await session.registerGeometry({
+        positions,
+        normals,
+        indices: new Uint32Array(indices),
+      });
+      const controller = new AbortController();
+      const pending = session.simplifyGeometry(
+        source,
+        { targetTriangles: indices.length / 3 - 1, maxError: 0 },
+        { signal: controller.signal },
+      );
+      assert.throws(
+        () =>
+          session.simplifyGeometry(source, {
+            targetTriangles: indices.length / 3 - 1,
+            maxError: 0,
+          }),
+        (error: ForgeError) => error.code === ErrorCode.ResourceLimit,
+      );
+      controller.abort();
+      await assert.rejects(
+        pending,
+        (error: ForgeError) => error.code === ErrorCode.Cancelled,
+      );
+    } finally {
+      await session.dispose();
+    }
+  },
+);
+
+sceneTest(
   "mid-operation cancellation leaves source usable and releases admission",
   async () => {
     const session = createSession(Format.Glb);

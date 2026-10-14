@@ -98,6 +98,23 @@ function compactionScratchBytes(bytes: Buffer): number {
   return scratch;
 }
 
+function simplificationScratchBytes(bytes: Buffer): number {
+  // Mirror forge-scene's preflight bound so concurrent workers reserve their
+  // operation-owned scratch before native simplification begins.
+  const base = bytes.subarray(
+    bytes.toString("ascii", 0, 4) === "FSG2" ? 16 : 0,
+  );
+  const vertices = base.readUInt32LE(8);
+  const indices = base.readUInt32LE(12);
+  const scratch = bytes.length * 4 + vertices * 512 + indices * 384;
+  if (!Number.isSafeInteger(scratch) || scratch > limits.sceneBytes)
+    throw new ForgeError(
+      ErrorCode.ResourceLimit,
+      "Geometry simplification exceeds its scratch budget.",
+    );
+  return scratch;
+}
+
 /** Independent 3D lifecycle; shares React and atomic local publication with documents. */
 export class SceneSession {
   readonly documentId = v7();
@@ -340,16 +357,21 @@ export class SceneSession {
       options.maxError < 0
     )
       throw malformed();
+    const scratch = simplificationScratchBytes(source);
     // A changed result is at most as large as the source. A known no-op does
     // not allocate a derived asset, so it remains admissible at the limit.
     const reserve =
       options.targetTriangles === inputTriangles ? 0 : source.length;
-    if (this.bytes + this.reserved + reserve > limits.sceneBytes)
+    if (
+      this.bytes + this.reserved + reserve > limits.sceneBytes ||
+      this.scratchReserved + scratch > limits.sceneBytes
+    )
       throw new ForgeError(
         ErrorCode.ResourceLimit,
-        "Scene assets exceed 256 MiB.",
+        "Geometry simplification exceeds its reserved budget.",
       );
     this.reserved += reserve;
+    this.scratchReserved += scratch;
     const task = this.track(Stage.Layout, async () => {
       try {
         const result = await simplifySceneGeometry(
@@ -392,6 +414,7 @@ export class SceneSession {
         });
       } finally {
         this.reserved -= reserve;
+        this.scratchReserved -= scratch;
       }
     });
     this.pending.add(task);
