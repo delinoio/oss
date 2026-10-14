@@ -75,10 +75,10 @@ func grokSubscriptionAccount(tx *store.Tx, id domain.ID, revision uint64) (store
 }
 
 // grokSubscriptionInstallation requires exactly one verified Grok Build
-// installation on the selected Runner Device whose version is the pinned
-// subscription release. The legacy discovery baseline is deliberately not used:
-// it admits every later release, while a managed credential may be delivered
-// only to the exact reviewed profile. The managed-Grok Worker capability
+// installation on the selected Runner Device whose version is at or above the
+// subscription baseline. The legacy discovery baseline is deliberately not used:
+// it admits every release from 1.0.41, while a managed credential may be
+// delivered only to an installation that meets the subscription profile. The managed-Grok Worker capability
 // (Worker 21) is reserved but not yet declared, so admission is bound to the
 // verified installation until that capability activates.
 func grokSubscriptionInstallation(tx *store.Tx, machine domain.ID) (domain.Installation, error) {

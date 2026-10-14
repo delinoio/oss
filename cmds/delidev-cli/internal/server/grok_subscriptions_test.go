@@ -125,7 +125,7 @@ func newGrokFixture(t *testing.T) *grokFixture {
 		if err != nil {
 			return nil, err
 		}
-		machine.Installations = []domain.Installation{{Harness: domain.GrokBuild, State: domain.InstallationDetected, Version: domain.GrokSubscriptionVersion, ResolvedPath: "/controlled/native/grok", ProtocolVerified: true, ObservedAt: &observed, Protocol: &domain.ProtocolObservation{Protocol: domain.ProtocolFor(domain.GrokBuild), State: domain.ProtocolVerified}}}
+		machine.Installations = []domain.Installation{{Harness: domain.GrokBuild, State: domain.InstallationDetected, Version: domain.GrokSubscriptionBaselineVersion, ResolvedPath: "/controlled/native/grok", ProtocolVerified: true, ObservedAt: &observed, Protocol: &domain.ProtocolObservation{Protocol: domain.ProtocolFor(domain.GrokBuild), State: domain.ProtocolVerified}}}
 		return tx.Put(domain.MachineKind, mr.ID, mr.Revision, "", "", machine)
 	})
 	if err != nil {
@@ -434,24 +434,25 @@ func (f *grokFixture) setGrokInstallation(t *testing.T, edit func(*[]domain.Inst
 	}
 }
 
-func TestGrokTakeRequiresPinnedSubscriptionVersion(t *testing.T) {
-	for _, version := range []string{domain.GrokProtocolVersion, "1.0.45", "1.0.47", "1.0.46-rc.1", "2.0.0"} {
+func TestGrokTakeRequiresSubscriptionBaselineVersion(t *testing.T) {
+	for _, version := range []string{domain.GrokProtocolVersion, "1.0.45", "1.0.46-rc.1", "not-a-version"} {
 		t.Run(version, func(t *testing.T) {
 			f := newGrokFixture(t)
 			f.setGrokInstallation(t, func(installations *[]domain.Installation) { (*installations)[0].Version = version })
 			if _, err := f.take(f.queue(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN), pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN); err == nil || domain.SafeError(rpc.ClientError(err)).Code != domain.Unsupported {
-				t.Fatal("Take admitted a Grok installation that is not the pinned release")
+				t.Fatal("Take admitted a Grok installation below the subscription baseline")
 			}
 			if _, a := f.record(); a.Subscription.Lease != nil || a.Subscription.RecoveryRequired {
 				t.Fatal("a refused Take claimed the lease or fenced the account")
 			}
 		})
 	}
-	f := newGrokFixture(t)
-	f.setGrokInstallation(t, func(installations *[]domain.Installation) {
-		(*installations)[0].Version = domain.GrokSubscriptionVersion + "+build.1"
-	})
-	f.login("synthetic-principal-1")
+	// The baseline and newer releases are admitted by SemVer precedence.
+	for _, version := range []string{domain.GrokSubscriptionBaselineVersion + "+build.1", "1.0.47", "1.0.52"} {
+		f := newGrokFixture(t)
+		f.setGrokInstallation(t, func(installations *[]domain.Installation) { (*installations)[0].Version = version })
+		f.login("synthetic-principal-1")
+	}
 }
 
 // Harness discovery replaces the installation list at any time. A lease that
@@ -465,7 +466,7 @@ func TestGrokFinishSurvivesInstallationRediscoveryAfterTake(t *testing.T) {
 			(*i)[0].ProtocolVerified = false
 		},
 		"duplicated":   func(i *[]domain.Installation) { *i = append(*i, (*i)[0]) },
-		"unsupported":  func(i *[]domain.Installation) { (*i)[0].Version = "1.0.47" },
+		"unsupported":  func(i *[]domain.Installation) { (*i)[0].Version = "1.0.45" },
 		"unverified":   func(i *[]domain.Installation) { (*i)[0].ProtocolVerified = false },
 		"stale-legacy": func(i *[]domain.Installation) { (*i)[0].Version = domain.GrokProtocolVersion },
 	}
