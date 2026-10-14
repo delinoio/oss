@@ -3090,14 +3090,6 @@ function SettingsWorkspace({
                     : null}
                   {area === SettingsArea.Diagnostics ? (
                     <div>
-                      <SettingsActionButton
-                        icon={SettingsActionIcon.Inspect}
-                        onClick={() =>
-                          navigate(SettingsCategory.AppInformation)
-                        }
-                      >
-                        {copy("settings.appInformation.navigate")}
-                      </SettingsActionButton>
                       {connectionSettings ?? (
                         <section
                           data-settings-search-target="current-connection"
