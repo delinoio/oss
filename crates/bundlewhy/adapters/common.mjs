@@ -30,6 +30,9 @@ export const AdapterErrorCode = Object.freeze({
 export const FRAME_PREFIX = "BUNDLEWHY-FRAME";
 let protocolToken = "";
 
+const isAdapterEntrypoint = () =>
+  ["vite.mjs", "rspack.mjs"].includes(path.basename(process.argv[1] ?? ""));
+
 export class AdapterError extends Error {
   constructor(code, message, recovery) {
     super(message);
@@ -184,7 +187,11 @@ export function summarizeValue(value) {
   return String(value);
 }
 
-export async function runAdapter(main) {
+export async function runAdapter(
+  main,
+  { execute = isAdapterEntrypoint() } = {},
+) {
+  if (!execute) return;
   const started = Date.now();
   try {
     const request = readRequest();
