@@ -254,6 +254,68 @@ function Shell({
     return true;
   };
 
+  const [pendingSelection, setPendingSelection] = useState(() =>
+    pendingSelectionOf(initialRoute),
+  );
+  // The one monotonic navigation-intent token. Every user-driven navigation or
+  // selection bumps it synchronously, in the handler itself and never from an
+  // effect: a surface change, a Session/Sidechat/Inbox/Schedule/repository
+  // selection, a new-item, editor or review opener, a tab change. A pending
+  // route restore captures the token when it starts and compares it when its
+  // read settles, before any state change, Session opening or URL write, so a
+  // slow read can never override a choice made after it began, even when it
+  // settles before the choice has rendered or any passive effect has run.
+  const navigationIntent = useRef(0);
+  const restoreAbort = useRef<AbortController>(undefined);
+  const restorePending = useRef(pendingSelection !== undefined);
+  const userNavigated = useCallback(() => {
+    navigationIntent.current += 1;
+    restoreAbort.current?.abort();
+    restoreAbort.current = undefined;
+    if (!restorePending.current) return;
+    restorePending.current = false;
+    console.info("delidev.product_route.restore", {
+      outcome: "superseded",
+    });
+    setPendingSelection(undefined);
+  }, []);
+  // In-screen controls (list rows, New schedule, occurrence review, editors,
+  // tabs) live in child components. A capture-phase listener on the window sees
+  // their activation, and the keys that move a selection or run a shortcut,
+  // before any handler runs, so those choices advance the same token.
+  useLayoutEffect(() => {
+    const navigationKeys = new Set([
+      "Enter",
+      " ",
+      "ArrowUp",
+      "ArrowDown",
+      "ArrowLeft",
+      "ArrowRight",
+      "Home",
+      "End",
+      "PageUp",
+      "PageDown",
+    ]);
+    const modifierKeys = new Set(["Control", "Alt", "Meta", "Shift"]);
+    const activated = () => userNavigated();
+    const keyed = (event: KeyboardEvent) => {
+      if (modifierKeys.has(event.key)) return;
+      if (
+        navigationKeys.has(event.key) ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey
+      )
+        userNavigated();
+    };
+    window.addEventListener("click", activated, true);
+    window.addEventListener("keydown", keyed, true);
+    return () => {
+      window.removeEventListener("click", activated, true);
+      window.removeEventListener("keydown", keyed, true);
+    };
+  }, [userNavigated]);
+
   const searchIntent = useRef(0);
   const searchAbort = useRef<AbortController>(undefined);
   const searchMounted = useRef(false);
@@ -278,9 +340,14 @@ function Shell({
   // Leaving Search supersedes a pending result opening synchronously, in the
   // navigation path itself: a read can settle after the new surface commits but
   // before passive effects flush, and must not override the chosen destination.
-  const setSurface = (next: Surface) => {
+  const showSurface = (next: Surface) => {
     if (next !== Surface.Search) supersedeSearchOpening();
     setSurfaceState(next);
+  };
+  // Every surface change a handler requests is a navigation intent.
+  const setSurface = (next: Surface) => {
+    userNavigated();
+    showSurface(next);
   };
   useEffect(() => {
     if (surface === Surface.Search) return;
@@ -327,9 +394,6 @@ function Shell({
   }>();
   const [usageEntry, setUsageEntry] = useState<UsageEntry>();
   const [settingsEntry, setSettingsEntry] = useState<SettingsNavigationEntry>();
-  const [pendingSelection, setPendingSelection] = useState(() =>
-    pendingSelectionOf(initialRoute),
-  );
   const [routeSelection, setRouteSelection] = useState<RouteSelection>({
     inbox: "",
     schedule: "",
@@ -352,22 +416,22 @@ function Shell({
     id: string;
     generation: string;
   }>();
-  // Fence for the pending route restore: every non-empty selection a screen
-  // reports (a click, a keyboard choice, a notification, a saved Schedule)
-  // advances it, so a slower restore read can never overwrite that choice.
-  const selectionFence = useRef(0);
-  const inboxSelected = useCallback((inbox: string) => {
-    if (inbox) selectionFence.current += 1;
-    setRouteSelection((current) => ({ ...current, inbox }));
-  }, []);
-  const scheduleSelected = useCallback((schedule: string) => {
-    if (schedule) selectionFence.current += 1;
-    setRouteSelection((current) => ({ ...current, schedule }));
-  }, []);
-  const repositorySelected = useCallback((repository: string) => {
-    if (repository) selectionFence.current += 1;
-    setRouteSelection((current) => ({ ...current, repository }));
-  }, []);
+  // Screens report their selection for the URL mirror. Reporting is
+  // informational: restore supersession is decided only by `navigationIntent`.
+  const inboxSelected = useCallback(
+    (inbox: string) => setRouteSelection((current) => ({ ...current, inbox })),
+    [],
+  );
+  const scheduleSelected = useCallback(
+    (schedule: string) =>
+      setRouteSelection((current) => ({ ...current, schedule })),
+    [],
+  );
+  const repositorySelected = useCallback(
+    (repository: string) =>
+      setRouteSelection((current) => ({ ...current, repository })),
+    [],
+  );
   const categorySelected = useCallback(
     (category: SettingsCategory) =>
       setRouteSelection((current) => ({ ...current, category })),
@@ -460,7 +524,9 @@ function Shell({
     setSettingsEntry(undefined);
     if (destination !== surface) setProjectCreation(undefined);
   };
-  const openSession = (id: string, originalParent?: string, name?: string) => {
+  // Shows a Session without registering a navigation intent: the route restore
+  // uses it after it has verified that no user navigation happened since it began.
+  const showSession = (id: string, originalParent?: string, name?: string) => {
     sessionNavigationGeneration.current += 1;
     setSessionNavigationActivation((value) => value + 1);
     const parent = tabs.parent(id) ?? originalParent;
@@ -481,54 +547,42 @@ function Shell({
     leaveSurface(Surface.Sessions);
     if (id !== selected) setProjectCreation(undefined);
     setSelected(id);
-    setSurface(Surface.Sessions);
+    showSurface(Surface.Sessions);
     setDrawerOpen(false);
   };
+  const openSession = (id: string, originalParent?: string, name?: string) => {
+    userNavigated();
+    showSession(id, originalParent, name);
+  };
   const openSessionRef = useRef(openSession);
+  const showSessionRef = useRef(showSession);
   useLayoutEffect(() => {
     openSessionRef.current = openSession;
+    showSessionRef.current = showSession;
   });
-  // A deliberate navigation away from the requested screen, or a selection made
-  // on that screen (a Session, Inbox entry, Schedule or repository), supersedes
-  // the pending route selection. Cancelling the pending state aborts its read.
-  useEffect(() => {
-    if (!pendingSelection) return;
-    const chosen = {
-      [Surface.Sessions]: Boolean(selected),
-      [Surface.Inbox]: Boolean(routeSelection.inbox),
-      [Surface.Schedules]: Boolean(routeSelection.schedule),
-      [Surface.PullRequests]: Boolean(routeSelection.repository),
-    } as Partial<Record<Surface, boolean>>;
-    if (
-      surface !== pendingSelection.surface ||
-      chosen[pendingSelection.surface]
-    ) {
-      console.info("delidev.product_route.superseded", {
-        surface: pendingSelection.surface,
-      });
-      setPendingSelection(undefined);
-    }
-  }, [pendingSelection, surface, selected, routeSelection]);
   // Verifies the route selection with fresh reads through the current
   // connection. It waits for connection readiness, never dispatches a mutation
-  // and reopens only what this connection can read.
+  // and reopens only what this connection can read. The restore captures the
+  // navigation-intent token when it starts; any user navigation since then
+  // aborts it and fails `current()`, so it applies nothing.
   useEffect(() => {
     if (!pendingSelection || !connectionReady) return;
     const pending = pendingSelection;
     const owner = transport;
     const controller = new AbortController();
-    // A selection reported since this restore began fences its result out even
-    // before the superseding effect has aborted the read.
-    const fence = selectionFence.current;
+    restoreAbort.current = controller;
+    const intent = navigationIntent.current;
     const current = () =>
       !controller.signal.aborted &&
       latestTransport.current === owner &&
-      selectionFence.current === fence;
+      navigationIntent.current === intent;
     const settle = (outcome: RouteReadOutcome | "superseded") => {
       console.info("delidev.product_route.restore", {
         surface: pending.surface,
         outcome,
       });
+      restorePending.current = false;
+      if (restoreAbort.current === controller) restoreAbort.current = undefined;
       setPendingSelection(undefined);
     };
     void (async () => {
@@ -545,7 +599,7 @@ function Shell({
           if (read.outcome === RouteReadOutcome.Missing) return;
           // A retryable failure still opens the deepest requested selection;
           // the mounted view owns its existing retry and error state.
-          openSessionRef.current(read.open.id, read.open.parent, read.open.name);
+          showSessionRef.current(read.open.id, read.open.parent, read.open.name);
           return;
         }
         case Surface.Inbox: {
@@ -607,7 +661,10 @@ function Shell({
           settle("superseded");
       }
     })();
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      if (restoreAbort.current === controller) restoreAbort.current = undefined;
+    };
   }, [pendingSelection, connectionReady, transport, queryClient]);
   // Mirror committed navigation into the URL query with history.replaceState.
   // The URL keeps the original route until its selection has been verified.
@@ -639,6 +696,7 @@ function Shell({
   // A never-visited Sidechat result carries only its child ID, so its original
   // parent is read from retained metadata before the host is chosen.
   const openSearchResult = (id: string) => {
+    userNavigated();
     if (tabs.parent(id)) {
       open(id);
       return;
@@ -711,6 +769,7 @@ function Shell({
     [],
   );
   const openNewProject = () => {
+    userNavigated();
     setDrawerOpen(false);
     setProjectCreation((current) =>
       current

@@ -475,12 +475,24 @@ retryable failure of the Sidechat read, or of the parent read, retains the reque
 Sidechat (the child tab is mounted under the requested parent so its own retry and
 error state runs, and the URL keeps the `sidechat` ID) instead of dropping it.
 
-Deliberate navigation, or any selection made on the pending screen while its
-read is still running (a Session, Inbox entry, Schedule or repository), supersedes
-the pending selection: the read is cancelled and its late result is discarded, so
-it never overwrites the user's explicit choice. A new top-level screen or selection
-must report through `Shell`, be added to the route parser, serializer and restore
-tests, and follow the same envelope and supersession rules.
+Restore supersession uses one monotonic navigation-intent token owned by `Shell`
+(`navigationIntent`, a ref). Every user-driven navigation or selection bumps it
+synchronously in the handler, never from an effect: every surface change
+(`setSurface`), every Session or Sidechat opening (`openSession`), the Search result
+opener, the project creation opener, and, for controls inside child screens (list
+rows, New schedule, occurrence review, editors, tabs, keyboard selection and
+shortcuts), a capture-phase window listener for `click` and for `keydown` of
+selection keys (Enter, Space, arrows, Home, End, PageUp, PageDown) and modifier
+chords, which runs before any child handler. Bumping also aborts the pending
+restore's read and clears the pending selection in the same handler. A pending
+restore captures the token when it starts and compares it when its read settles,
+before any side effect (state change, Session opening or URL write), so a read that
+settles in the same tick as a click, before React renders the choice or flushes a
+passive effect, still cannot override it. The restore itself opens the Session
+through `showSession`, which does not bump the token. Selection reports from
+screens only feed the URL mirror; they never decide supersession. A new navigation
+handler or in-screen destination must advance the token (usually by reaching one of
+those paths) and add a same-tick test.
 Restoration only selects and reads: no mutation is dispatched, no pending operation
 is replayed, and drafts, filters, search text, scroll, dialogs and in-memory
 presentation reset as before. The structured log `delidev.product_route.restore`
@@ -492,7 +504,8 @@ native, server, RPC, storage or migration change is involved. Regression coverag
 `product-route.test.ts` (parse, serialize, hash and history, identity claim),
 `product-route-restore.test.tsx` (mirroring, restore per screen, fallbacks, pending
 routes, reload-shortcut remount, envelope validation per kind, slow-read supersession
-per kind, retained Sidechat selections after transient failures, and a failure-code by
+per kind, same-tick supersession per restore kind and for New schedule and surface
+changes, retained Sidechat selections after transient failures, and a failure-code by
 restore-kind matrix including wrong-kind IDs) and
 `search-session-routing.test.ts` (the failure classification table).
 

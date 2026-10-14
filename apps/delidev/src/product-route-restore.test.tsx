@@ -1061,6 +1061,185 @@ describe("selection supersedes a slow route restore", () => {
   });
 });
 
+// A read that settles in the same tick as a click, before React has rendered
+// the choice or flushed any passive effect, must not override that choice.
+const clickAndSettle = async (
+  target: HTMLElement,
+  release: () => void,
+) => {
+  await act(async () => {
+    fireEvent.click(target);
+    release();
+  });
+  await act(async () => {});
+};
+
+describe("navigation intent supersedes a restore settling in the same tick", () => {
+  it("keeps a Session chosen as the Session restore read settles", async () => {
+    const value = fixture();
+    const release = value.hold(value.session.id);
+    route(`?screen=sessions&session=${value.session.id}`);
+    render(<App transport={value.transport} />);
+    await waitFor(() => expect(value.reads.resource).toHaveBeenCalled());
+    await clickAndSettle(await screen.findByText("Other session"), release);
+    await waitFor(() => expect(search().get("session")).toBe(value.other.id));
+    expect(search().has("sidechat")).toBe(false);
+    expect(value.mutated).not.toHaveBeenCalled();
+  });
+
+  it("keeps a Session chosen as the parent read of a Sidechat restore settles", async () => {
+    const value = fixture();
+    const release = value.hold(value.session.id);
+    route(
+      `?screen=sessions&session=${value.session.id}&sidechat=${value.sidechat.id}`,
+    );
+    render(<App transport={value.transport} />);
+    await waitFor(() => expect(value.reads.resource).toHaveBeenCalled());
+    await clickAndSettle(await screen.findByText("Other session"), release);
+    await waitFor(() => expect(search().get("session")).toBe(value.other.id));
+    expect(search().has("sidechat")).toBe(false);
+    expect(screen.queryByRole("tab", { name: /Side question/ })).toBeNull();
+  });
+
+  it("keeps a Session chosen as the child read of a Sidechat restore settles", async () => {
+    const value = fixture();
+    const release = value.hold(value.sidechat.id);
+    route(
+      `?screen=sessions&session=${value.session.id}&sidechat=${value.sidechat.id}`,
+    );
+    render(<App transport={value.transport} />);
+    await waitFor(() =>
+      expect(
+        value.reads.resource.mock.calls.some(
+          ([request]) => request.id === value.sidechat.id,
+        ),
+      ).toBe(true),
+    );
+    await clickAndSettle(await screen.findByText("Other session"), release);
+    await waitFor(() => expect(search().get("session")).toBe(value.other.id));
+    expect(search().has("sidechat")).toBe(false);
+    expect(screen.queryByRole("tab", { name: /Side question/ })).toBeNull();
+  });
+
+  it("keeps an Inbox entry chosen as the Inbox restore read settles", async () => {
+    const value = fixture();
+    const release = value.hold(value.inboxEntry.id);
+    route(`?screen=inbox&item=${value.inboxEntry.id}`);
+    render(<App transport={value.transport} />);
+    await waitFor(() => expect(value.reads.inbox).toHaveBeenCalled());
+    await clickAndSettle(await screen.findByText(/Other session/), release);
+    await waitFor(() =>
+      expect(search().get("item")).toBe(value.otherInboxEntry.id),
+    );
+    expect(value.mutated).not.toHaveBeenCalled();
+  });
+
+  it("keeps a Schedule chosen as the Schedule restore read settles", async () => {
+    const value = fixture();
+    const release = value.hold(value.schedule.id);
+    route(`?screen=schedules&item=${value.schedule.id}`);
+    render(<App transport={value.transport} />);
+    await waitFor(() => expect(value.reads.schedule).toHaveBeenCalled());
+    await clickAndSettle(await screen.findByText("Chosen schedule"), release);
+    expect(
+      await screen.findByRole("heading", { name: "Chosen schedule" }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("heading", { name: "Restored schedule" }),
+    ).toBeNull();
+    await waitFor(() =>
+      expect(search().get("item")).toBe(value.otherSchedule.id),
+    );
+  });
+
+  it("keeps a repository chosen as the repository restore read settles", async () => {
+    const value = fixture();
+    const release = value.hold(value.repository.id);
+    route(`?screen=pull-requests&item=${value.repository.id}`);
+    render(<App transport={value.transport} />);
+    await waitFor(() => expect(value.reads.resource).toHaveBeenCalled());
+    await clickAndSettle(await screen.findByText("Chosen repository"), release);
+    await waitFor(() =>
+      expect(search().get("item")).toBe(value.otherRepository.id),
+    );
+    expect(value.mutated).not.toHaveBeenCalled();
+  });
+
+  it("does not restore a Schedule after New schedule is opened, and canceling the editor shows the list state", async () => {
+    const value = fixture();
+    const release = value.hold(value.schedule.id);
+    route(`?screen=schedules&item=${value.schedule.id}`);
+    render(<App transport={value.transport} />);
+    await waitFor(() => expect(value.reads.schedule).toHaveBeenCalled());
+    await clickAndSettle(
+      await screen.findByRole("button", { name: "New schedule" }),
+      release,
+    );
+    // The creation editor stays open and the stale Schedule never reaches the URL.
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeTruthy();
+    expect(search().has("item")).toBe(false);
+    expect(
+      screen.queryByRole("heading", { name: "Restored schedule" }),
+    ).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(
+      await screen.findByText(
+        "Select a schedule from the sidebar to inspect its details and retained history.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("heading", { name: "Restored schedule" }),
+    ).toBeNull();
+    expect(search().has("item")).toBe(false);
+  });
+
+  it("does not restore a Schedule after the surface changes in the same tick", async () => {
+    const value = fixture();
+    const release = value.hold(value.schedule.id);
+    route(`?screen=schedules&item=${value.schedule.id}`);
+    render(<App transport={value.transport} />);
+    await waitFor(() => expect(value.reads.schedule).toHaveBeenCalled());
+    await clickAndSettle(
+      await rail().findByRole("button", { name: "Pull requests" }),
+      release,
+    );
+    await waitFor(() =>
+      expect(search().get("screen")).toBe(Surface.PullRequests),
+    );
+    expect(search().has("item")).toBe(false);
+  });
+
+  it("treats a selection key pressed before the read settles as navigation", async () => {
+    const value = fixture();
+    const release = value.hold(value.inboxEntry.id);
+    route(`?screen=inbox&item=${value.inboxEntry.id}`);
+    render(<App transport={value.transport} />);
+    await waitFor(() => expect(value.reads.inbox).toHaveBeenCalled());
+    await act(async () => {
+      fireEvent.keyDown(document.body, { key: "ArrowDown" });
+      release();
+    });
+    await act(async () => {});
+    expect(search().has("item")).toBe(false);
+    expect(search().get("screen")).toBe(Surface.Inbox);
+  });
+
+  it("still restores when nothing is chosen while the read is slow", async () => {
+    const value = fixture();
+    const release = value.hold(value.schedule.id);
+    route(`?screen=schedules&item=${value.schedule.id}`);
+    render(<App transport={value.transport} />);
+    await waitFor(() => expect(value.reads.schedule).toHaveBeenCalled());
+    await act(async () => {
+      release();
+    });
+    expect(
+      await screen.findByRole("heading", { name: "Restored schedule" }),
+    ).toBeTruthy();
+    expect(search().get("item")).toBe(value.schedule.id);
+  });
+});
+
 describe("reload shortcut remount", () => {
   it("reloads once and the remounted renderer returns to the same screen and item", async () => {
     vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
