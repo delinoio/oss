@@ -433,9 +433,18 @@ capability 26/15; the existing capabilities keep their exact v1 meaning.
   Plan, tools, snapshots, todo, compaction, children, media, remembered
   permissions, Windows, VCS workspaces or already-forked sources changes.
 - The child preparation records `fork_profile` `opencode-general-chat-v2`; the server
-  rejects a result whose profile differs from the selected one. A v2 child needs
-  Worker capability 69 for dispatch, Resume and execution authority, and the Worker
-  compares the retained profile with its private checkpoint.
+  rejects a result whose profile differs from the selected one. The Worker compares
+  the retained profile with its private checkpoint.
+- Capability pairing: a Worker attachment that reports capability 69 without 15 is
+  rejected `InvalidArgument` before any machine state is persisted, and machine
+  validation rejects the same set. A peer qualifies for profile v2 only when it holds
+  both 15 and 69.
+- Continuation binding: the retained child `ForkOrigin` profile, not the one-shot
+  first-turn fork input, decides the requirement. Every v2 child execution (first
+  turn, Resume, later queued continuation, retry, compaction and execution
+  authority) needs both 15 and 69 on the original Worker; a Worker that reconnects
+  with a downgraded profile cannot start or authorize any further turn and the child
+  stays paused.
 
 Copy all regular General Chat files, including hidden/ignored files and executable
 modes, into an exclusively created independent sibling. Bound this profile to
@@ -498,8 +507,11 @@ Fork. Its cancellable authenticated Resource RPC read is keyed to the original
 session revision and native thread, spans at most 10,000 records/8 MiB and
 rejects repeated/incomplete pages, tool/artifact content and non-empty changes.
 A completed plain reasoning artifact record is eligible only when the server
-reports System 104 and the original Runner Device reports Worker 69; otherwise the
-existing unsupported-source copy applies and no new copy is shown.
+reports System 26 and 104 and the original Runner Device reports Worker 15 and 69;
+otherwise the existing unsupported-source copy applies and no new copy is shown.
+Each eligible text or reasoning record counts toward the two-record minimum exactly
+as the server counts retained canonical records, so a turn whose assistant has a
+completed reasoning part but no text part remains forkable.
 An original-revision read before and after pagination detects changed sources.
 Submit refreshes the profile and does not use stale success after read failure.
 Desktop preflight captures one immutable source/revision/turn and draft generation

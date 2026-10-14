@@ -1316,8 +1316,10 @@ timed reasoning history is cloned with its messages. They refine capability
 26/15, which every v2 peer must also hold, and never change what 26/15 mean. The
 server selects v2 only when both capabilities are present and the source contains
 reasoning; a Worker without capability 69 is rejected before any job or native
-session exists. The Worker advertises 69 only on a non-Windows host after the
-original server echoed it. The profile is an omitted-when-v1 JSON enum on the
+session exists. A Worker attachment that reports 69 without 15 is invalid peer
+state: AttachWorker rejects it as `InvalidArgument` before persistence and Worker
+machine validation never accepts it. The Worker advertises 69 only on a
+non-Windows host after the original server echoed it. The profile is an omitted-when-v1 JSON enum on the
 Fork job requests, the child Fork origin and the first execution Fork boundary, so
 v1 bytes are unchanged. No protobuf message field or migration is added; the generated
 Go and TypeScript enums are regenerated together.
