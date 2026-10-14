@@ -85,6 +85,7 @@ export function SessionTerminals({
   tabbed = false,
   openIntent,
   finishOpenIntent,
+  workspaceReady = true,
   sessionActive = active,
   statusTarget,
 }: {
@@ -99,6 +100,12 @@ export function SessionTerminals({
   tabbed?: boolean;
   openIntent?: { requestId: string; revision: bigint };
   finishOpenIntent?: () => void;
+  /**
+   * Whether the authenticated Session document reports a ready workspace
+   * preparation. Terminal creation (open intent, + and the terminal-input
+   * shortcut) is unavailable otherwise; existing terminals are unaffected.
+   */
+  workspaceReady?: boolean;
   /**
    * The Session view is visible, independently of whether a terminal pane is
    * selected. It gates explicit-open resolution and the retained creation
@@ -130,6 +137,7 @@ export function SessionTerminals({
     active,
     sessionActive,
     session,
+    workspaceReady,
     finishOpenIntent,
     openTerminal,
     selected: "",
@@ -139,6 +147,7 @@ export function SessionTerminals({
     active,
     sessionActive,
     session,
+    workspaceReady,
     finishOpenIntent,
     openTerminal,
     selected: latest.current.selected,
@@ -342,6 +351,7 @@ export function SessionTerminals({
   );
   const blocked =
     !active ||
+    !workspaceReady ||
     Boolean(openIntent) ||
     !supported ||
     create.busy ||
@@ -390,7 +400,7 @@ export function SessionTerminals({
       finishOpenIntent?.();
       return;
     }
-    if (status.error || (status.data && !supported)) {
+    if (!workspaceReady || status.error || (status.data && !supported)) {
       finishOpenIntent?.();
       return;
     }
@@ -530,6 +540,9 @@ export function SessionTerminals({
             Code.FailedPrecondition,
           );
         const original = latest.current.session;
+        // Readiness can be lost while inventory reads were in flight. The
+        // unsent intent is discarded here and never replayed on recovery.
+        if (!latest.current.workspaceReady) return;
         if (
           original.revision !== openIntent.revision ||
           text(document(original).archive) !== "active"
@@ -563,7 +576,14 @@ export function SessionTerminals({
       if (!sent && resolution.current === openIntent.requestId)
         resolution.current = undefined;
     };
-  }, [openIntent, sessionActive, supported, status.error, status.isFetching]);
+  }, [
+    openIntent,
+    sessionActive,
+    workspaceReady,
+    supported,
+    status.error,
+    status.isFetching,
+  ]);
 
   // The accepted resource can be beyond the first history page. Retain just
   // that one explicit selection so history eviction never detaches its shell.

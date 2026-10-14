@@ -3,6 +3,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 
 import {
   appleToken,
@@ -351,23 +352,80 @@ async function appleReviewSubmission(environment, version, fetchImpl, token) {
     limit: "200",
     "limit[items]": "50",
   });
-  const result = await checked(
-    fetchImpl,
-    `https://api.appstoreconnect.apple.com/v1/apps/${encodeURIComponent(environment.DEVHUD_APP_STORE_APP_ID)}/reviewSubmissions?${query}`,
-    { headers: bearer(token) },
-    "App Store review submission lookup",
-  );
-  if (!Array.isArray(result.data))
-    throw new Error("App Store review submission lookup returned invalid data");
-  const includedById = new Map(
-    (result.included ?? []).map((resource) => [
-      `${resource.type}:${resource.id}`,
-      resource,
-    ]),
-  );
+  const origin = "https://api.appstoreconnect.apple.com";
+  const path = `/v1/apps/${encodeURIComponent(environment.DEVHUD_APP_STORE_APP_ID)}/reviewSubmissions`;
+  let url = new URL(`${origin}${path}?${query}`);
+  const visited = new Set();
+  const submissions = [];
+  const includedById = new Map();
+  while (url) {
+    if (visited.has(url.href))
+      throw new Error("App Store review submission pagination loop");
+    visited.add(url.href);
+    const result = await checked(
+      fetchImpl,
+      url.href,
+      { headers: bearer(token) },
+      "App Store review submission lookup",
+    );
+    if (
+      !Array.isArray(result?.data) ||
+      (result.included !== undefined && !Array.isArray(result.included))
+    )
+      throw new Error(
+        "App Store review submission lookup returned invalid data",
+      );
+    if (
+      result.links === undefined ||
+      result.links === null ||
+      typeof result.links !== "object" ||
+      Array.isArray(result.links)
+    )
+      throw new Error(
+        "App Store review submission lookup returned invalid links",
+      );
+    submissions.push(...result.data);
+    for (const resource of result.included ?? []) {
+      const key = `${resource.type}:${resource.id}`;
+      const prior = includedById.get(key);
+      if (prior && !isDeepStrictEqual(prior, resource))
+        throw new Error(
+          "App Store review submission lookup returned conflicting included resources",
+        );
+      includedById.set(key, resource);
+    }
+    const next = result.links?.next;
+    if (next === undefined || next === null) {
+      url = null;
+      continue;
+    }
+    if (typeof next !== "string" || next.length === 0)
+      throw new Error(
+        "App Store review submission lookup returned invalid next link",
+      );
+    let nextUrl;
+    try {
+      nextUrl = new URL(next, url);
+    } catch {
+      throw new Error(
+        "App Store review submission lookup returned invalid next link",
+      );
+    }
+    if (
+      nextUrl.origin !== origin ||
+      nextUrl.pathname !== path ||
+      nextUrl.username ||
+      nextUrl.password ||
+      nextUrl.hash
+    )
+      throw new Error(
+        "App Store review submission lookup returned invalid next link",
+      );
+    url = nextUrl;
+  }
   const exact = [];
   const emptyReady = [];
-  for (const submission of result.data) {
+  for (const submission of submissions) {
     if (submission.attributes?.state === "CANCELED") continue;
     const { versionIds, itemCount } = appleSubmissionVersionIds(
       submission,
