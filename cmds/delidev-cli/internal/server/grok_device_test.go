@@ -747,3 +747,40 @@ func TestGrokDeviceLoginShutdownBetweenPollsKeepsAClaimInRecovery(t *testing.T) 
 		g.requireNoBundle(t, a)
 	})
 }
+
+// The tokens of a claimed grant are already issued when they are verified. An
+// interruption of that verification (cancel, shutdown or the window ending) is
+// uncertain and stays fenced; a verification that fails on its own is an ordinary
+// failure that stores nothing.
+func TestGrokVerificationInterruptedAfterTheTokensAreIssuedStaysInRecovery(t *testing.T) {
+	g := newGrokDeviceFixture(t)
+	client := subscription.GrokOAuthClient{Transport: g.idp.Transport}
+	endpoints, err := client.Discover(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant, err := client.RequestDeviceAuthorization(context.Background(), endpoints)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer grant.Clear()
+	tokens, result, err := client.PollDeviceToken(context.Background(), endpoints, grant.DeviceCode)
+	if err != nil || result != subscription.GrokDeviceTokens {
+		t.Fatalf("poll = %v, %v", result, err)
+	}
+	original := domain.ServerSubscriptionOperation{ID: domain.NewID(), Action: domain.SubscriptionLogin}
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	for _, device := range []bool{true, false} {
+		outcome := g.service.grokBundleOutcome(canceled, client, endpoints, tokens, "", device, original)
+		if outcome.state != domain.SubscriptionRecovery || outcome.code != domain.RecoveryRequired || !outcome.claimed {
+			t.Fatalf("an interrupted verification (device=%v) settled as %v", device, outcome.state)
+		}
+	}
+	// A verification that fails on its own, with a live context, stays an ordinary
+	// failure.
+	g.idp.UserInfoStatus = http.StatusInternalServerError
+	if outcome := g.service.grokBundleOutcome(context.Background(), client, endpoints, tokens, "", true, original); outcome.state != domain.SubscriptionFailed || !outcome.claimed {
+		t.Fatalf("a userinfo failure settled as %v", outcome.state)
+	}
+}
