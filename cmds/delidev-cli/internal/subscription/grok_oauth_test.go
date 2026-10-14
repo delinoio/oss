@@ -287,3 +287,23 @@ func TestGrokOAuthValuesAreRedactedWhenFormatted(t *testing.T) {
 }
 
 func fmtValue(format string, value any) string { return fmt.Sprintf(format, value) }
+
+func TestGrokPKCEIsEnforcedOnBothSides(t *testing.T) {
+	idp := grokidp.New(t)
+	client, endpoints, a, grant := exchangeFixture(t, idp)
+	// A verifier that does not match the challenge is rejected by the provider.
+	_, err := client.ExchangeCode(context.Background(), endpoints, []byte(grant.Code), []byte("a-different-verifier-value-that-does-not-match"), grant.RedirectURI)
+	if reason, ok := subscription.GrokOAuthFailure(err); !ok || reason != subscription.GrokReasonTokenRejected {
+		t.Fatalf("wrong verifier: %v", err)
+	}
+	// A URL without a challenge, or with a non-S256 method, is never published.
+	good := endpoints.AuthorizationURL(subscription.GrokRedirectURI(43817), a)
+	for name, bad := range map[string]string{
+		"no challenge": strings.Replace(good, "code_challenge="+a.Challenge+"&", "", 1),
+		"plain method": strings.Replace(good, "code_challenge_method=S256", "code_challenge_method=plain", 1),
+	} {
+		if _, _, ok := subscription.GrokAuthorizationDetails(bad); ok {
+			t.Fatalf("validator accepted %s", name)
+		}
+	}
+}
