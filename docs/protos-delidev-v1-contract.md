@@ -2,8 +2,7 @@
 
 ## Shared subscription owner reservation
 
-Issue 3466 reserves, as the first commit of its pull request and with no active
-behavior, Worker `SHARED_SUBSCRIPTION_OWNER_V1 = 67`, Worker
+The protocol reserves, with no behavior of their own, Worker `SHARED_SUBSCRIPTION_OWNER_V1 = 67`, Worker
 `CLAUDE_DEVICE_OWNED_MEMBERS_V1 = 68`, `TakeSubscriptionResponse.owner_lease_id = 7`,
 `FinishSubscriptionRequest.finish_scope = 11` and the new enum
 `SubscriptionFinishScope` (`UNSPECIFIED = 0`, `MEMBER = 1`, `OWNER = 2`). Capability

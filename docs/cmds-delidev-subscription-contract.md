@@ -2,8 +2,9 @@
 
 ## Shared account owner and execution members
 
-Issue 3466 replaces account-wide execution exclusivity with a durable account
-owner plus execution members for the managed Codex lane, negotiated by Worker
+A managed subscription account runs independent sessions concurrently through a
+durable account owner plus execution members instead of account-wide execution
+exclusivity. The managed Codex lane is negotiated by Worker
 `SHARED_SUBSCRIPTION_OWNER_V1 = 67` (reserved in the
 [protocol contract](protos-delidev-v1-contract.md)). Independent sessions that
 use one account on its original Runner Device run concurrently, including more
