@@ -10,7 +10,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { Code, ConnectError } from "@connectrpc/connect";
-import { ScrollContinuation } from "./scroll-continuation";
+import { ContinuationAxis, ScrollContinuation } from "./scroll-continuation";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { ResourceQuery, EntityKind } from "@delinoio/delidev-api-client";
 import { createRouterTransport } from "@connectrpc/connect";
@@ -27,10 +27,12 @@ function List({
   read,
   active = true,
   initialRead = true,
+  axis,
 }: {
   read: PaginationReader<Row>;
   active?: boolean;
   initialRead?: boolean;
+  axis?: ContinuationAxis;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const reader = useMemo(() => read, [read]);
@@ -40,10 +42,14 @@ function List({
       <button type="button" onClick={query.reload}>
         Load
       </button>
+      <button type="button" onClick={query.refreshExplicit}>
+        Refresh
+      </button>
       {query.rows.map((row) => (
         <p key={row.id}>{row.id}</p>
       ))}
       <ScrollContinuation
+        axis={axis}
         query={query}
         label="items"
         root={root}
@@ -52,6 +58,74 @@ function List({
     </div>
   );
 }
+function horizontalViewport() {
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(40);
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(320);
+  vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockImplementation(
+    function (this: HTMLElement) {
+      return this.querySelectorAll("p").length * 100;
+    },
+  );
+}
+it("keeps horizontal continuation at the loaded tail across scroll and refresh", async () => {
+  horizontalViewport();
+  const read = vi.fn<PaginationReader<Row>>(async (token) => {
+    const page = Number(token || 0);
+    return {
+      rows: Array.from({ length: 50 }, (_, index) => ({
+        id: `terminal-${page * 50 + index}`,
+        revision: 1n,
+      })),
+      nextPageToken: page < 19 ? String(page + 1) : "",
+    };
+  });
+  const view = renderValue(
+    <List read={read} axis={ContinuationAxis.Horizontal} />,
+  );
+  const strip = view.container.firstElementChild as HTMLElement;
+  await screen.findByText("terminal-49");
+  expect(read.mock.calls.map(([token]) => token)).toEqual([""]);
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+  expect(read.mock.calls.map(([token]) => token)).toEqual(["", ""]);
+
+  strip.scrollLeft = strip.scrollWidth - strip.clientWidth - 96;
+  fireEvent.scroll(strip);
+  await screen.findByText("terminal-99");
+  expect(read.mock.calls.map(([token]) => token)).toEqual(["", "", "1"]);
+  fireEvent.scroll(strip);
+  expect(read).toHaveBeenCalledTimes(3);
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  await waitFor(() => expect(read).toHaveBeenCalledTimes(5));
+  expect(read.mock.calls.map(([token]) => token)).toEqual([
+    "",
+    "",
+    "1",
+    "",
+    "1",
+  ]);
+  fireEvent.click(screen.getByRole("button", { name: "Load more items" }));
+  await screen.findByText("terminal-149");
+  expect(read.mock.calls.at(-1)?.[0]).toBe("2");
+});
+
+it("fills an underfilled horizontal strip only until its loaded tail overflows", async () => {
+  horizontalViewport();
+  const read = vi.fn<PaginationReader<Row>>(async (token) => ({
+    rows: Array.from({ length: token ? 4 : 1 }, (_, index) => ({
+      id: `${token || "first"}-${index}`,
+      revision: 1n,
+    })),
+    nextPageToken: token ? "third" : "second",
+  }));
+  const view = renderValue(
+    <List read={read} axis={ContinuationAxis.Horizontal} />,
+  );
+  await screen.findByText("second-3");
+  expect(read.mock.calls.map(([token]) => token)).toEqual(["", "second"]);
+  fireEvent.scroll(view.container.firstElementChild!);
+  expect(read).toHaveBeenCalledTimes(2);
+});
 function renderValue(value: ReactNode) {
   return render(
     <QueryClientProvider client={new QueryClient()}>

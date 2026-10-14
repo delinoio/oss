@@ -11,7 +11,7 @@ import "./tab-strip.css";
 import "./terminal-dock.css";
 import { revealTabItem } from "./tab-strip";
 import { useConversationPages } from "./conversation-pagination";
-import { ScrollContinuation } from "./scroll-continuation";
+import { ContinuationAxis, ScrollContinuation } from "./scroll-continuation";
 import { ReadStage } from "./scroll-pagination";
 import { statusLabel } from "./product-status";
 import { copy, useLocale } from "./localization";
@@ -226,14 +226,6 @@ export function SessionTerminals({
   latest.current.createdTerminal = createdTerminal;
   const [selectedTerminal, setSelectedTerminal] = useState<Resource>();
   const listRoot = useRef<HTMLDivElement>(null);
-  // Presentation only: reveal the selected terminal in the scrolling strip.
-  useLayoutEffect(() => {
-    revealTabItem(
-      listRoot.current?.querySelector<HTMLElement>(
-        '[aria-selected="true"], .tab-item.is-selected',
-      ),
-    );
-  }, [selected]);
   const resolving = sessionActive && Boolean(openIntent);
   const status = useQuery(
     SystemQuery.getStatus,
@@ -615,6 +607,18 @@ export function SessionTerminals({
         : undefined));
   if (resource && !tabs.some((row) => row.id === resource.id))
     tabs.push({ id: resource.id, revision: resource.revision });
+  const selectedTabPresent =
+    Boolean(selected) && tabs.some((row) => row.id === selected);
+  // Reveal after the selected row commits, including a late inventory or exact
+  // resource read. Polling revisions do not reposition an already present row.
+  useLayoutEffect(() => {
+    if (!selectedTabPresent) return;
+    revealTabItem(
+      listRoot.current?.querySelector<HTMLElement>(
+        '[aria-selected="true"], .tab-item.is-selected',
+      ),
+    );
+  }, [selected, selectedTabPresent]);
   // The original creation receipt fences final dismissal: an admitted but
   // unsettled CreateTerminal may still resolve to a live terminal.
   const creationUnsettled = create.busy || create.uncertain;
@@ -937,6 +941,7 @@ export function SessionTerminals({
         ))}
       </div>
       <ScrollContinuation
+        axis={ContinuationAxis.Horizontal}
         showInitial={!(list.loaded && list.loading === ReadStage.Refresh)}
         query={list}
         root={listRoot}
