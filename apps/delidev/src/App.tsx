@@ -599,7 +599,11 @@ function Shell({
           if (read.outcome === RouteReadOutcome.Missing) return;
           // A retryable failure still opens the deepest requested selection;
           // the mounted view owns its existing retry and error state.
-          showSessionRef.current(read.open.id, read.open.parent, read.open.name);
+          showSessionRef.current(
+            read.open.id,
+            read.open.parent,
+            read.open.name,
+          );
           return;
         }
         case Surface.Inbox: {

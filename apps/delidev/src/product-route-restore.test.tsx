@@ -661,37 +661,32 @@ describe("route failure classification", () => {
     expect(value.mutated).not.toHaveBeenCalled();
   });
 
-  it.each(cases)(
-    "%s on a Sidechat read",
-    async (_name, code, definitive) => {
-      const value = fixture();
-      value.failure.code = code;
-      // Only the Sidechat child fails: the verified parent opens either way.
-      value.failure.id = value.sidechat.id;
-      route(
-        `?screen=sessions&session=${value.session.id}&sidechat=${value.sidechat.id}`,
-      );
-      render(<App transport={value.transport} />);
+  it.each(cases)("%s on a Sidechat read", async (_name, code, definitive) => {
+    const value = fixture();
+    value.failure.code = code;
+    // Only the Sidechat child fails: the verified parent opens either way.
+    value.failure.id = value.sidechat.id;
+    route(
+      `?screen=sessions&session=${value.session.id}&sidechat=${value.sidechat.id}`,
+    );
+    render(<App transport={value.transport} />);
+    await waitFor(() =>
+      expect(screen.getAllByText("Retained session").length).toBeGreaterThan(0),
+    );
+    if (definitive) {
+      // A definitively rejected child is dropped in favor of its parent.
+      expect(screen.queryByRole("tab", { name: /Side question/ })).toBeNull();
+      await waitFor(() => expect(search().has("sidechat")).toBe(false));
+    } else {
+      // A retryable failure keeps the Sidechat selection: the child tab is
+      // mounted so its own retry and error state runs, and the URL keeps it.
       await waitFor(() =>
-        expect(screen.getAllByText("Retained session").length).toBeGreaterThan(
-          0,
-        ),
+        expect(search().get("sidechat")).toBe(value.sidechat.id),
       );
-      if (definitive) {
-        // A definitively rejected child is dropped in favor of its parent.
-        expect(screen.queryByRole("tab", { name: /Side question/ })).toBeNull();
-        await waitFor(() => expect(search().has("sidechat")).toBe(false));
-      } else {
-        // A retryable failure keeps the Sidechat selection: the child tab is
-        // mounted so its own retry and error state runs, and the URL keeps it.
-        await waitFor(() =>
-          expect(search().get("sidechat")).toBe(value.sidechat.id),
-        );
-      }
-      expect(search().get("session")).toBe(value.session.id);
-      expect(value.mutated).not.toHaveBeenCalled();
-    },
-  );
+    }
+    expect(search().get("session")).toBe(value.session.id);
+    expect(value.mutated).not.toHaveBeenCalled();
+  });
 
   it.each(transientCodes)(
     "%s on the parent keeps the requested Sidechat too",
@@ -1063,10 +1058,7 @@ describe("selection supersedes a slow route restore", () => {
 
 // A read that settles in the same tick as a click, before React has rendered
 // the choice or flushed any passive effect, must not override that choice.
-const clickAndSettle = async (
-  target: HTMLElement,
-  release: () => void,
-) => {
+const clickAndSettle = async (target: HTMLElement, release: () => void) => {
   await act(async () => {
     fireEvent.click(target);
     release();
