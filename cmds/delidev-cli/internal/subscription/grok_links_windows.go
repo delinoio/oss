@@ -9,6 +9,13 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+// grokOpenReadFlags adds nothing on Windows.
+const grokOpenReadFlags = 0
+
+// syncGrokDirectory is a no-op on Windows: the atomic publication uses a
+// write-through rename and a directory handle cannot be flushed.
+func syncGrokDirectory(*os.File) error { return nil }
+
 // grokSingleLinkFile reports whether an opened credential file has exactly one
 // directory entry. Unknown metadata fails closed.
 func grokSingleLinkFile(file *os.File, _ os.FileInfo) bool {
@@ -16,10 +23,10 @@ func grokSingleLinkFile(file *os.File, _ os.FileInfo) bool {
 	return windows.GetFileInformationByHandle(windows.Handle(file.Fd()), &info) == nil && info.NumberOfLinks == 1
 }
 
-// grokSingleLinkPath reports whether the entry at path has exactly one
-// directory entry, by inspecting a handle opened on it.
-func grokSingleLinkPath(path string, _ os.FileInfo) bool {
-	file, err := os.Open(path)
+// grokSingleLinkEntry reports whether the entry name inside root has exactly
+// one directory entry, by inspecting a handle opened relative to root.
+func grokSingleLinkEntry(root *os.Root, name string, _ os.FileInfo) bool {
+	file, err := root.OpenFile(name, os.O_RDONLY, 0)
 	if err != nil {
 		return false
 	}

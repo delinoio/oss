@@ -15,46 +15,57 @@ import (
 // it against its own server, the account and the delivered generation, writes
 // the native $GROK_HOME/auth.json atomically with owner-only permission inside a
 // private home, and returns a freshly sealed bundle only through Finish after
-// the file is retired. Nothing here logs a credential, path or identity value.
+// the file is retired. Every filesystem operation on the home is anchored to the
+// directory handle bound at materialization (see subscription.GrokHome), so a
+// home swapped after binding can never receive or lose a credential through a
+// path lookup. Nothing here logs a credential, path or identity value.
 
-// materializeGrok opens the delivered envelope and writes grokHome/auth.json.
-// A fresh login delivers no bundle and writes nothing, but the native login
-// creates auth.json itself, so the home is validated and must hold no credential
-// file or interrupted-write temporary before any login or refresh proceeds. The
-// returned bundle holds the original identity for the Finish binding check; the
-// caller clears it.
-func (l *managedSubscriptionLease) materializeGrok(grokHome string) (subscription.GrokBundle, error) {
+// materializeGrok opens the delivered envelope and writes auth.json into the
+// bound home. A fresh login delivers no bundle and writes nothing, but the
+// native login creates auth.json itself, so the home is validated and must hold
+// no credential file or interrupted-write temporary before any login or refresh
+// proceeds. The returned bundle holds the original identity for the Finish
+// binding check; the caller clears it. The bound home is retained on the lease
+// for Finish and released by finishGrok; a failed materialization releases it
+// here.
+func (l *managedSubscriptionLease) materializeGrok(grokHome string) (bundle subscription.GrokBundle, err error) {
 	raw := l.response.Bundle
 	defer func() {
 		clear(raw)
 		l.response.Bundle = nil
 	}()
-	// The identity of the home is bound before anything is written or accepted;
-	// Finish retires and proves absence on that same directory only.
+	// The directory is bound (opened and validated through its handle) before
+	// anything is written or accepted; every later step uses that handle only.
 	home, err := subscription.BindGrokHome(grokHome)
 	if err != nil {
 		return subscription.GrokBundle{}, err
 	}
 	l.grokHome = home
+	defer func() {
+		if err != nil {
+			_ = home.Close()
+			l.grokHome = subscription.GrokHome{}
+		}
+	}()
 	if len(raw) == 0 {
 		if l.response.GenerationId != "" {
 			return subscription.GrokBundle{}, subscription.GrokBundleInvalid()
 		}
 		// A leftover credential would otherwise be sealed as the result of this login.
-		if present, err := subscription.GrokAuthFilePresent(grokHome); err != nil || present {
+		if present, err := home.AuthFilePresent(); err != nil || present {
 			return subscription.GrokBundle{}, subscription.GrokBundleInvalid()
 		}
 		return subscription.GrokBundle{}, nil
 	}
-	bundle, err := subscription.OpenGrokBundle(raw, l.credential.ServerID, l.account, domain.ID(l.response.GenerationId))
+	opened, err := subscription.OpenGrokBundle(raw, l.credential.ServerID, l.account, domain.ID(l.response.GenerationId))
 	if err != nil {
 		return subscription.GrokBundle{}, err
 	}
-	if err := subscription.WriteGrokAuthFile(grokHome, bundle); err != nil {
-		bundle.Clear()
+	if err := home.WriteAuthFile(opened); err != nil {
+		opened.Clear()
 		return subscription.GrokBundle{}, err
 	}
-	return bundle, nil
+	return opened, nil
 }
 
 // grokFinishOutcome is the closed result the Worker reports to Finish.
@@ -73,15 +84,20 @@ type grokFinishOutcome struct {
 // home that was renamed away or replaced (even by an empty directory, which
 // would read as clean) downgrades to an unsuccessful, uncleaned Finish that
 // carries no bundle, for logout as well. A failed read or an identity that
-// differs from the original also downgrades to an unsuccessful Finish.
+// differs from the original also downgrades to an unsuccessful Finish. Reads and
+// removals run through the held directory handle, so a swap that lands between
+// a verification and the operation after it can neither redirect them into the
+// substitute nor leave the final verification unaware of it.
 func prepareGrokFinish(home subscription.GrokHome, server, account, generation domain.ID, action pb.SubscriptionAction, original subscription.GrokBundle, success bool) grokFinishOutcome {
 	out := grokFinishOutcome{Success: success}
-	grokHome := home.Path()
 	if home.Verify() != nil {
+		// The bound path no longer names the held directory, so nothing is read,
+		// sealed or removed and cleanup is never confirmed; the original directory
+		// keeps its file for recovery.
 		return grokFinishOutcome{}
 	}
 	if success && action != pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT {
-		sealed, bundle, err := subscription.SealGrokFinish(grokHome, server, account, generation, original)
+		sealed, bundle, err := home.SealFinish(server, account, generation, original)
 		if err != nil {
 			out.Success = false
 		} else {
@@ -89,8 +105,8 @@ func prepareGrokFinish(home subscription.GrokHome, server, account, generation d
 			bundle.Clear()
 		}
 	}
-	out.Cleanup = subscription.RetireGrokAuthFile(grokHome) == nil
-	if present, err := subscription.GrokAuthFilePresent(grokHome); err != nil || present {
+	out.Cleanup = home.RetireAuthFile() == nil
+	if present, err := home.AuthFilePresent(); err != nil || present {
 		out.Cleanup = false
 	}
 	if home.Verify() != nil {
@@ -109,6 +125,11 @@ func prepareGrokFinish(home subscription.GrokHome, server, account, generation d
 // for a refresh whose native process already exited.
 func (l *managedSubscriptionLease) finishGrok(original subscription.GrokBundle, success bool) error {
 	defer original.Clear()
+	// The bound home is released once this Finish has settled its credential.
+	defer func() {
+		_ = l.grokHome.Close()
+		l.grokHome = subscription.GrokHome{}
+	}()
 	action := l.journal.Action
 	outcome := prepareGrokFinish(l.grokHome, l.credential.ServerID, l.account, l.finishID, action, original, success)
 	refresh := outcome.Success && action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH

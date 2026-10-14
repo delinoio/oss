@@ -37,6 +37,20 @@ func checkPrivate(path string, _ os.FileInfo) error {
 	if err != nil {
 		return err
 	}
+	return checkPrivateDescriptor(sd)
+}
+
+// checkPrivateHandle applies the same owner-only ACL contract to an open
+// handle, so the check cannot be redirected by a path replacement.
+func checkPrivateHandle(f *os.File, _ os.FileInfo) error {
+	sd, err := windows.GetSecurityInfo(windows.Handle(f.Fd()), windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		return err
+	}
+	return checkPrivateDescriptor(sd)
+}
+
+func checkPrivateDescriptor(sd *windows.SECURITY_DESCRIPTOR) error {
 	acl, _, err := sd.DACL()
 	if err != nil {
 		return err

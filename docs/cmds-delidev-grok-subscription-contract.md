@@ -256,13 +256,34 @@ cleanup as unconfirmed because the other entry keeps the plaintext credential
 reachable. Cleanup is confirmed only when no credential file or attributed
 temporary remains in the same directory the credential was materialized in;
 otherwise no bundle is returned and the server keeps the lease fenced. The
-Worker binds the identity of the private home (`subscription.BindGrokHome`)
-before it accepts any delivery, and Finish verifies that the path still names
-that directory before it reads or removes anything and again after the final
+Worker binds the private home (`subscription.BindGrokHome`) before it accepts
+any delivery by opening it once and validating the opened directory itself
+(real directory, owner, permissions or ACL) through that handle; the path is
+compared with the handle only to refuse a link or a directory swapped during the
+bind. Every later credential operation (write, read, presence check, retirement)
+is anchored to that held directory handle with openat-style, link-refusing,
+handle-relative calls, so a home that is renamed away and replaced after binding
+cannot receive a credential written through a path lookup or lose a file from the
+substitute: there is no gap between checking the directory and using it. The
+write also requires that the path still names the held directory, and Finish
+verifies the same before it reads or removes anything and again after the final
 absence check. A home that was renamed away or replaced (even by an empty
 directory, which a path lookup reads as clean) therefore never confirms cleanup,
 for logout as well, and nothing is read from or removed in the substitute path;
-the original directory keeps its file for recovery. Native refresh, login execution and Worker-side watch dispatch for
+the original directory keeps its file for recovery. The handle is released when
+Finish settles or when materialization fails.
+
+Residual window: the native Grok child can only reach the home through its path
+(`GROK_HOME`), which cannot be anchored for another process. A swap after the
+last verification can make the native child read or write the substitute; the
+next verification rejects the lease as uncleaned, and no Worker-side operation is
+ever redirected. On Windows the same handle-relative API is used (a directory
+handle with relative opens, renames and removals, and an ACL check on the handle);
+it is validated by cross-compilation only, so the Windows behavior stays fail
+closed: any unconfirmed identity, ACL or link count reports an unconfirmed
+cleanup.
+
+Native refresh, login execution and Worker-side watch dispatch for
 Grok are separate lifecycle work and are not activated by this storage contract.
 
 ### Grok lease interleavings
@@ -281,7 +302,7 @@ library tests are in `internal/worker/grok_subscriptions_test.go` and
 | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Take of the queued original                                                                            | Lease committed, stored envelope re-opened and delivered once                                                                                          | `TestGrokLifecycleMovesBundleOnlyThroughProtectedTakeAndFinish`                                                                                                                       |
 | Take on an unverified or below-baseline installation, or for execute                                   | Refused before any lease; account untouched                                                                                                            | `TestGrokTakeRefusesUnsupportedAndUnverifiedWork`, `TestGrokTakeRequiresSubscriptionBaselineVersion`                                                                                  |
-| Take replayed after a lost first response                                                              | Denied; the exact unfinished lease is fenced; a finished or foreign lease is untouched                                                                 | `TestGrokReplayedTakeFencesTheUnfinishedLease`, `TestGrokLateReplayedTakeDoesNotFenceAReleasedAccount`                                                                                |
+| Take replayed after a lost first response                                                              | Denied; the exact unfinished lease is fenced; a finished or foreign lease is untouched                                                                 | `TestGrokReplayedTakeFencesTheUnfinishedLease`, `TestGrokLateReplayedTakeDoesNotFenceAReleasedAccount` |
 | Replaying request canceled, past its deadline or from a revoked Worker while the fence runs             | The fence still commits on a bounded, detached context; the lease is never stranded without `RecoveryRequired`                                         | `TestGrokReplayFenceIsDetachedFromTheReplayingRequest`                                                                                |
 | Take whose stored envelope is invalid or missing, or whose operation is canceled during the vault read | Nothing delivered; lease kept and account fenced under the current generation                                                                          | `TestGrokTakeFailuresAfterTheLeaseCommitFenceWithoutDelivery`                                                                                                                         |
 | Installation rediscovered after Take                                                                   | Finish still accepted from the exact owner                                                                                                             | `TestGrokFinishSurvivesInstallationRediscoveryAfterTake`                                                                                                                              |
@@ -298,11 +319,12 @@ library tests are in `internal/worker/grok_subscriptions_test.go` and
 | Worker instance lost, or server restarted, while a lease is held                                       | Lease fenced under its generation; later Finish and Take refused; the vault is unchanged                                                               | `TestGrokLostWorkerFencesTheLeaseAndRefusesLaterFinish`                                                                                                                               |
 | Server crash between staging and the commit                                                            | Same as a restart: lease fenced; the staged generation is an unreferenced vault object, never granted, removed by the next cleanup                     | `TestGrokFinishAbortWithFailedRetirementStaysFencedAndNeverGrantsTheStagedGeneration`                                                                                                 |
 | Worker materializes a bound envelope, a rebound or malformed one, or an unsafe home                    | Written once with owner-only permission; otherwise nothing written                                                                                     | `TestGrokMaterializationWritesPrivateAuthFileFromBoundEnvelope`, `TestGrokMaterializationRejectsReboundEnvelopeBeforeWriting`, `TestGrokMaterializationRefusesNonPrivateOrLinkedHome` |
+| Home renamed away and replaced after binding, before or after the path check                          | The credential is written, read and retired only in the bound directory; the substitute is never written, read or modified                             | `TestGrokWriteIsAnchoredToTheBoundHomeNotItsPath`, `TestGrokWriteDoesNotFollowAPlantedAuthFileLink`, `TestGrokHomeRejectsALooseningAfterBinding`, `TestGrokHomeBindingFailsClosed` |
 | Fresh login in a home that already holds a credential or temporary                                     | Refused; a leftover is never sealed as the login result                                                                                                | `TestGrokFreshLoginRefusesLeftoverCredentialFiles`                                                                                                                                    |
 | Native process rotates, fails, changes identity or leaves an unparsable file                           | Rotated credential sealed; otherwise no bundle; the file is retired in every case                                                                      | `TestPrepareGrokFinishSealsRotatedCredentialAndRetiresFile`                                                                                                                           |
 | Remnant that cannot be removed, or a hard-linked credential                                            | No bundle; cleanup unconfirmed; lease stays fenced                                                                                                     | `TestPrepareGrokFinishWithholdsBundleWhenCleanupIsUnconfirmed`, `TestPrepareGrokFinishWithholdsBundleForHardLinkedCredential`                                                         |
 | Home renamed away or replaced after materialization                                                    | No bundle and no cleanup for refresh, login and logout; nothing read or removed in the substitute; the original keeps its file                         | `TestPrepareGrokFinishRefusesARenamedOrReplacedHome`, `TestGrokHomeVerifiesTheBoundDirectoryIdentity`                                                                                 |
-| Finish prepared for a lease that never bound a home                                                    | Cleanup never confirmed                                                                                                                                | `TestPrepareGrokFinishRefusesAnUnboundHome`, `TestGrokMaterializationBindsTheHomeForFinish`                                                                                           |
+| Finish prepared for a lease that never bound a home                                                    | Cleanup never confirmed                                                                                                                                | `TestPrepareGrokFinishRefusesAnUnboundHome`, `TestGrokMaterializationBindsTheHomeForFinish`, `TestGrokMaterializationReleasesTheHomeWhenItFails`                                                                                           |
 | Worker crash or restart with the native file on disk                                                   | The server fences the lease (row above); the plaintext stays in the private home until Worker-side recovery, which is not activated; nothing is resent | Server side: `TestGrokLostWorkerFencesTheLeaseAndRefusesLaterFinish`                                                                                                                  |
 
 The Worker holds the only copy of a freshly produced bundle in memory until

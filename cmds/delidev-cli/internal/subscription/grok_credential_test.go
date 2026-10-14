@@ -21,24 +21,35 @@ func grokHomeForTest(t *testing.T) string {
 	return home
 }
 
+// boundGrokHome binds home and releases the handle with the test.
+func boundGrokHome(t *testing.T, home string) GrokHome {
+	t.Helper()
+	bound, err := BindGrokHome(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = bound.Close() })
+	return bound
+}
+
 func TestGrokAuthFileWriteReadRetire(t *testing.T) {
 	home := grokHomeForTest(t)
 	bundle, err := ParseGrokAuthFile(grokFixtureFile(t, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := WriteGrokAuthFile(home, bundle); err != nil {
+	if err := boundGrokHome(t, home).WriteAuthFile(bundle); err != nil {
 		t.Fatal("write failed")
 	}
 	info, err := os.Lstat(filepath.Join(home, GrokAuthFileName))
 	if err != nil || !info.Mode().IsRegular() || runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatal("auth.json is not a regular owner-only file")
 	}
-	read, err := ReadGrokAuthFile(home)
+	read, err := boundGrokHome(t, home).ReadAuthFile()
 	if err != nil || !read.Equal(bundle) {
 		t.Fatal("read did not round trip")
 	}
-	if present, err := GrokAuthFilePresent(home); err != nil || !present {
+	if present, err := boundGrokHome(t, home).AuthFilePresent(); err != nil || !present {
 		t.Fatal("presence not reported")
 	}
 	// An interrupted earlier write is attributed to its target and retired.
@@ -46,17 +57,17 @@ func TestGrokAuthFileWriteReadRetire(t *testing.T) {
 	if err := os.WriteFile(leftover, []byte(grokTestRefresh), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := RetireGrokAuthFile(home); err != nil {
+	if err := boundGrokHome(t, home).RetireAuthFile(); err != nil {
 		t.Fatal("retire failed")
 	}
-	if present, err := GrokAuthFilePresent(home); err != nil || present {
+	if present, err := boundGrokHome(t, home).AuthFilePresent(); err != nil || present {
 		t.Fatal("credential material survived retirement")
 	}
 	if entries, _ := os.ReadDir(home); len(entries) != 0 {
 		t.Fatal("retirement left files behind")
 	}
 	// Retiring an absent file is idempotent.
-	if err := RetireGrokAuthFile(home); err != nil {
+	if err := boundGrokHome(t, home).RetireAuthFile(); err != nil {
 		t.Fatal("repeated retirement failed")
 	}
 }
@@ -75,7 +86,7 @@ func TestReadGrokAuthFileRejectsUnsafeEntries(t *testing.T) {
 		if err := prepare(); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := ReadGrokAuthFile(home); err == nil || err.Error() != GrokBundleInvalid().Error() {
+		if _, err := boundGrokHome(t, home).ReadAuthFile(); err == nil || err.Error() != GrokBundleInvalid().Error() {
 			t.Fatalf("%s entry was not rejected with the safe error", name)
 		}
 	}
@@ -88,17 +99,17 @@ func TestReadGrokAuthFileRejectsUnsafeEntries(t *testing.T) {
 		if err := os.Symlink(target, path); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := ReadGrokAuthFile(home); err == nil {
+		if _, err := boundGrokHome(t, home).ReadAuthFile(); err == nil {
 			t.Fatal("a symlinked auth.json was read")
 		}
 		// A non-regular entry cannot be proven removable and is never followed.
-		if err := RetireGrokAuthFile(home); err == nil {
+		if err := boundGrokHome(t, home).RetireAuthFile(); err == nil {
 			t.Fatal("a symlinked auth.json entry was treated as retired")
 		}
 		if _, err := os.Stat(target); err != nil {
 			t.Fatal("retirement followed the link")
 		}
-		if present, err := GrokAuthFilePresent(home); err == nil || !present {
+		if present, err := boundGrokHome(t, home).AuthFilePresent(); err == nil || !present {
 			t.Fatal("a linked credential entry was reported clean")
 		}
 	}
@@ -108,10 +119,10 @@ func TestSealGrokFinishBindsOriginalIdentity(t *testing.T) {
 	home := grokHomeForTest(t)
 	server, account, generation := domain.NewID(), domain.NewID(), domain.NewID()
 	original, _ := ParseGrokAuthFile(grokFixtureFile(t, nil))
-	if err := WriteGrokAuthFile(home, original); err != nil {
+	if err := boundGrokHome(t, home).WriteAuthFile(original); err != nil {
 		t.Fatal(err)
 	}
-	sealed, _, err := SealGrokFinish(home, server, account, generation, original)
+	sealed, _, err := boundGrokHome(t, home).SealFinish(server, account, generation, original)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +130,7 @@ func TestSealGrokFinishBindsOriginalIdentity(t *testing.T) {
 		t.Fatal("sealed finish bundle does not reopen")
 	}
 	other, _ := ParseGrokAuthFile(grokFixtureFile(t, func(e map[string]any) { e["principal_id"] = "synthetic-principal-0002" }))
-	if _, _, err := SealGrokFinish(home, server, account, generation, other); err == nil {
+	if _, _, err := boundGrokHome(t, home).SealFinish(server, account, generation, other); err == nil {
 		t.Fatal("a different identity was sealed")
 	}
 }
@@ -166,26 +177,26 @@ func TestGrokAuthFileRejectsHardLinkedCredential(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := WriteGrokAuthFile(home, bundle); err != nil {
+	if err := boundGrokHome(t, home).WriteAuthFile(bundle); err != nil {
 		t.Fatal(err)
 	}
 	alias := filepath.Join(t.TempDir(), "alias.json")
 	if err := os.Link(path, alias); err != nil {
 		t.Skip("hard links are unsupported on this platform")
 	}
-	if _, err := ReadGrokAuthFile(home); err == nil || err.Error() != GrokBundleInvalid().Error() {
+	if _, err := boundGrokHome(t, home).ReadAuthFile(); err == nil || err.Error() != GrokBundleInvalid().Error() {
 		t.Fatal("a hard-linked auth.json was read")
 	}
 	server, account, generation := domain.NewID(), domain.NewID(), domain.NewID()
-	if _, _, err := SealGrokFinish(home, server, account, generation, bundle); err == nil {
+	if _, _, err := boundGrokHome(t, home).SealFinish(server, account, generation, bundle); err == nil {
 		t.Fatal("a hard-linked auth.json was sealed")
 	}
-	if present, err := GrokAuthFilePresent(home); err == nil || !present {
+	if present, err := boundGrokHome(t, home).AuthFilePresent(); err == nil || !present {
 		t.Fatal("a hard-linked credential was reported clean")
 	}
 	// The name in the private home is still unlinked, but the surviving entry
 	// makes the retirement unconfirmed.
-	if err := RetireGrokAuthFile(home); err == nil {
+	if err := boundGrokHome(t, home).RetireAuthFile(); err == nil {
 		t.Fatal("retirement of a hard-linked credential was confirmed")
 	}
 	if _, err := os.Lstat(path); !os.IsNotExist(err) {
@@ -194,7 +205,7 @@ func TestGrokAuthFileRejectsHardLinkedCredential(t *testing.T) {
 	if _, err := os.Stat(alias); err != nil {
 		t.Fatal("retirement removed the other directory entry")
 	}
-	if present, err := GrokAuthFilePresent(home); err != nil || present {
+	if present, err := boundGrokHome(t, home).AuthFilePresent(); err != nil || present {
 		t.Fatal("the home still reports a credential after the name was unlinked")
 	}
 }
@@ -210,7 +221,7 @@ func TestRetireGrokAuthFileReportsHardLinkedTemporary(t *testing.T) {
 	if err := os.Link(temporary, alias); err != nil {
 		t.Skip("hard links are unsupported on this platform")
 	}
-	if err := RetireGrokAuthFile(home); err == nil {
+	if err := boundGrokHome(t, home).RetireAuthFile(); err == nil {
 		t.Fatal("retirement of a hard-linked temporary was confirmed")
 	}
 	if entries, _ := os.ReadDir(home); len(entries) != 0 {
@@ -251,5 +262,178 @@ func TestGrokHomeVerifiesTheBoundDirectoryIdentity(t *testing.T) {
 	}
 	if bound.Verify() != nil {
 		t.Fatal("the original directory did not verify after it returned")
+	}
+}
+
+// swapGrokHome renames the bound home away and plants a fresh private directory
+// at its path, returning the path the original directory moved to.
+func swapGrokHome(t *testing.T, home string) string {
+	t.Helper()
+	moved := home + ".moved"
+	if err := os.Rename(home, moved); err != nil {
+		t.Fatal(err)
+	}
+	if err := security.PrivateDir(home); err != nil {
+		t.Fatal(err)
+	}
+	return moved
+}
+
+// The directory is validated and used through one handle: a home that is
+// renamed away and replaced after binding must never receive the credential,
+// whether the swap is caught by the path check or lands after it.
+func TestGrokWriteIsAnchoredToTheBoundHomeNotItsPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("directory replacement semantics differ")
+	}
+	bundle, err := ParseGrokAuthFile(grokFixtureFile(t, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Run("path-check-rejects-the-substitute", func(t *testing.T) {
+		home := grokHomeForTest(t)
+		bound := boundGrokHome(t, home)
+		moved := swapGrokHome(t, home)
+		if err := bound.WriteAuthFile(bundle); err == nil {
+			t.Fatal("a credential was written for a home that no longer names the bound directory")
+		}
+		for _, dir := range []string{home, moved} {
+			if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+				t.Fatalf("a rejected write left files in %s", filepath.Base(dir))
+			}
+		}
+	})
+	t.Run("swap-after-the-path-check-lands-in-the-bound-directory", func(t *testing.T) {
+		home := grokHomeForTest(t)
+		bound := boundGrokHome(t, home)
+		moved := swapGrokHome(t, home)
+		raw, err := bundle.AuthFile()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// The unguarded step the path check could not cover.
+		if err := bound.writeAnchored(raw); err != nil {
+			t.Fatal(err)
+		}
+		if entries, _ := os.ReadDir(home); len(entries) != 0 {
+			t.Fatal("the credential was written into the substitute directory")
+		}
+		if _, err := os.Lstat(filepath.Join(moved, GrokAuthFileName)); err != nil {
+			t.Fatal("the credential was not written into the bound directory")
+		}
+		// Reading and retiring also stay on the bound directory, and a file
+		// planted in the substitute is neither read nor removed.
+		planted := filepath.Join(home, GrokAuthFileName)
+		if err := os.WriteFile(planted, grokFixtureFile(t, func(e map[string]any) { e["principal_id"] = "synthetic-principal-0002" }), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		read, err := bound.ReadAuthFile()
+		if err != nil || !read.Equal(bundle) {
+			t.Fatal("a read followed the path into the substitute directory")
+		}
+		if present, err := bound.AuthFilePresent(); err != nil || !present {
+			t.Fatal("presence was judged on the substitute directory")
+		}
+		if err := bound.RetireAuthFile(); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Lstat(filepath.Join(moved, GrokAuthFileName)); !os.IsNotExist(err) {
+			t.Fatal("retirement did not remove the bound directory's credential")
+		}
+		if _, err := os.Lstat(planted); err != nil {
+			t.Fatal("retirement removed a file from the substitute directory")
+		}
+	})
+}
+
+// A planted symlink at auth.json is replaced, never written through.
+func TestGrokWriteDoesNotFollowAPlantedAuthFileLink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation needs privileges")
+	}
+	home := grokHomeForTest(t)
+	target := filepath.Join(t.TempDir(), "target.json")
+	if err := os.WriteFile(target, []byte("untouched"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(home, GrokAuthFileName)); err != nil {
+		t.Fatal(err)
+	}
+	bundle, _ := ParseGrokAuthFile(grokFixtureFile(t, nil))
+	if err := boundGrokHome(t, home).WriteAuthFile(bundle); err != nil {
+		t.Fatal(err)
+	}
+	if raw, _ := os.ReadFile(target); string(raw) != "untouched" {
+		t.Fatal("the write followed the planted link")
+	}
+	if info, err := os.Lstat(filepath.Join(home, GrokAuthFileName)); err != nil || !info.Mode().IsRegular() {
+		t.Fatal("auth.json was not published as a regular file")
+	}
+}
+
+// A home is bound only from the opened directory: a link or a shared directory
+// is refused, and every operation on a closed or never-bound home fails closed.
+func TestGrokHomeBindingFailsClosed(t *testing.T) {
+	home := grokHomeForTest(t)
+	bound := boundGrokHome(t, home)
+	bundle, _ := ParseGrokAuthFile(grokFixtureFile(t, nil))
+	if err := bound.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for name, err := range map[string]error{
+		"verify":  bound.Verify(),
+		"write":   bound.WriteAuthFile(bundle),
+		"retire":  bound.RetireAuthFile(),
+		"zero":    (GrokHome{}).RetireAuthFile(),
+		"zero-w":  (GrokHome{}).WriteAuthFile(bundle),
+		"zero-v":  (GrokHome{}).Verify(),
+		"missing": func() error { _, err := BindGrokHome(filepath.Join(t.TempDir(), "missing")); return err }(),
+	} {
+		if err == nil {
+			t.Fatalf("%s succeeded on a home that is not bound", name)
+		}
+	}
+	if _, err := (GrokHome{}).ReadAuthFile(); err == nil {
+		t.Fatal("a never-bound home was read")
+	}
+	if present, err := (GrokHome{}).AuthFilePresent(); err == nil || !present {
+		t.Fatal("a never-bound home was reported clean")
+	}
+	if runtime.GOOS == "windows" {
+		return
+	}
+	shared := filepath.Join(t.TempDir(), "shared")
+	if err := os.Mkdir(shared, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := BindGrokHome(shared); err == nil {
+		t.Fatal("a group-readable home was bound")
+	}
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(home, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := BindGrokHome(link); err == nil {
+		t.Fatal("a symlinked home was bound")
+	}
+}
+
+// Loosening the held directory's permissions after binding is detected through
+// the handle, so credentials are not written into a directory that became shared.
+func TestGrokHomeRejectsALooseningAfterBinding(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission bits do not apply")
+	}
+	home := grokHomeForTest(t)
+	bound := boundGrokHome(t, home)
+	if err := os.Chmod(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bundle, _ := ParseGrokAuthFile(grokFixtureFile(t, nil))
+	if bound.WriteAuthFile(bundle) == nil {
+		t.Fatal("a credential was written into a directory that became group-readable")
+	}
+	if entries, _ := os.ReadDir(home); len(entries) != 0 {
+		t.Fatal("a rejected write left files behind")
 	}
 }

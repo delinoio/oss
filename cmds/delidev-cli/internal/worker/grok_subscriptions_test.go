@@ -70,7 +70,7 @@ func TestGrokMaterializationWritesPrivateAuthFileFromBoundEnvelope(t *testing.T)
 	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatal("auth.json is not owner-only")
 	}
-	written, err := subscription.ReadGrokAuthFile(home)
+	written, err := bindGrokHome(t, home).ReadAuthFile()
 	if err != nil || !written.Equal(native) {
 		t.Fatal("auth.json does not carry the delivered credential")
 	}
@@ -114,6 +114,7 @@ func bindGrokHome(t *testing.T, home string) subscription.GrokHome {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = bound.Close() })
 	return bound
 }
 
@@ -354,5 +355,18 @@ func TestGrokMaterializationBindsTheHomeForFinish(t *testing.T) {
 	}
 	if lease.grokHome.Path() != home || lease.grokHome.Verify() != nil {
 		t.Fatal("materialization did not bind the home")
+	}
+}
+
+// A failed materialization releases the directory handle it bound and leaves no
+// bound home on the lease, so Finish can never act on a half-bound lease.
+func TestGrokMaterializationReleasesTheHomeWhenItFails(t *testing.T) {
+	server, account, generation := domain.NewID(), domain.NewID(), domain.NewID()
+	lease := grokWorkerLease(t, server, account, generation, []byte(`{"version":1}`))
+	if _, err := lease.materializeGrok(grokHome(t)); err == nil {
+		t.Fatal("a garbage envelope was materialized")
+	}
+	if lease.grokHome.Path() != "" || lease.grokHome.Verify() == nil {
+		t.Fatal("a failed materialization kept a bound home")
 	}
 }
