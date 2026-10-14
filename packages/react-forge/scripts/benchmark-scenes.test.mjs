@@ -232,6 +232,7 @@ test("a verified sample publishes schema one atomically and an invalid destinati
       cases: [{ format: "glb", workload: "small" }],
       caseFile: child,
       verifyArtifact: () => expectedTopology("small"),
+      javascriptProvenance: {},
       nativeProvenance: {
         nativeBuildProfile: "test",
         nativeBindingSha256: "0".repeat(64),
@@ -260,6 +261,7 @@ test("a verified sample publishes schema one atomically and an invalid destinati
         cases: [{ format: "glb", workload: "small" }],
         caseFile: child,
         verifyArtifact: () => expectedTopology("small"),
+        javascriptProvenance: {},
         nativeProvenance: {
           nativeBuildProfile: "test",
           nativeBindingSha256: "0".repeat(64),
@@ -271,6 +273,7 @@ test("a verified sample publishes schema one atomically and an invalid destinati
         cases: [{ format: "glb", workload: "small" }],
         caseFile: child,
         verifyArtifact: () => expectedTopology("small"),
+        javascriptProvenance: {},
         nativeProvenance: {
           nativeBuildProfile: "test",
           nativeBindingSha256: "0".repeat(64),

@@ -20,6 +20,7 @@ import validator from "gltf-validator";
 import manifest from "../package.json" with { type: "json" };
 import platforms from "../src/native-platforms.json" with { type: "json" };
 import { readNativeBuildMetadata } from "./native-build-provenance.mjs";
+import { readJavaScriptBuildMetadata } from "./js-build-provenance.mjs";
 import {
   SCENE_CASES,
   assertTopology,
@@ -68,6 +69,13 @@ async function nativeBuildProvenance(sourceRevision) {
       };
   }
   return { nativeBuildProfile: "unknown", nativeBindingSha256 };
+}
+
+async function javascriptBuildProvenance(sourceRevision) {
+  return readJavaScriptBuildMetadata(
+    join(root, "packages/react-forge/dist"),
+    sourceRevision,
+  );
 }
 
 function maxRssBytes() {
@@ -350,6 +358,8 @@ export async function runBenchmark(output, options = {}) {
           : `ufbx ${ufbxVersion}`;
     }
     if (signal?.aborted) throw new Error("Scene benchmark cancelled.");
+    await (options.javascriptProvenance ??
+      javascriptBuildProvenance(sourceRevision.trim()));
     const native =
       options.nativeProvenance ??
       (await nativeBuildProvenance(sourceRevision.trim()));
