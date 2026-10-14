@@ -331,14 +331,10 @@ func (p *managedProcess) observe(stdout, stderr io.Writer) {
 	outputErrors := make(chan error, 2)
 	pump := func(reader *os.File, writer io.Writer) {
 		defer copied.Done()
-		if writer == nil {
-			writer = io.Discard
-		}
-		_, err := io.Copy(writer, reader)
-		outputErrors <- err
-		if err != nil {
+		err := copyNativeOutput(reader, writer, func() {
 			_ = windows.TerminateJobObject(p.job, 1)
-		}
+		})
+		outputErrors <- err
 	}
 	go pump(p.output, stdout)
 	go pump(p.diagnostic, stderr)
@@ -350,13 +346,15 @@ func (p *managedProcess) observe(stdout, stderr io.Writer) {
 	p.mu.Lock()
 	reconcile := drainJob(p.job)
 	_ = p.input.Close()
-	if p.pseudo != 0 {
-		// Drain output concurrently while ConPTY closes. ClosePseudoConsole can
-		// otherwise deadlock waiting for its synchronous output consumer.
-		windows.ClosePseudoConsole(p.pseudo)
-		p.pseudo = 0
-	}
+	pseudo := p.pseudo
+	p.pseudo = 0
 	p.mu.Unlock()
+	if pseudo != 0 {
+		// Drain output concurrently while ConPTY closes. ClosePseudoConsole can
+		// otherwise deadlock waiting for its synchronous output consumer. Stop
+		// must not wait on the mutex during this potentially blocking close.
+		windows.ClosePseudoConsole(pseudo)
+	}
 	copied.Wait()
 	outputFailed := false
 	for range 2 {

@@ -29,7 +29,7 @@ func TestClearActivePricingRetainsClearInstantAndLegacyClearsAreUnknown(t *testi
 		}
 		return got
 	}
-	if at(now.Add(-3*time.Hour)) != nil || at(now.Add(-90*time.Minute)) == nil || at(now.Add(-30*time.Minute)) != nil {
+	if at(now.Add(-3*time.Hour)) != nil || at(now.Add(-90*time.Minute)) == nil || at(now.Add(-time.Hour)) != nil || at(now.Add(-30*time.Minute)) != nil {
 		t.Fatal("eligibility must follow the activation and clear instants")
 	}
 	// A clear from before clear history existed has no instant: report none.

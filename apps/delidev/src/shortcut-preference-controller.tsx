@@ -56,6 +56,19 @@ const nativeBridge: ShortcutPreferenceBridge = {
         )
       : () => {},
 };
+/**
+ * True when the snapshot is a verified committed map or persistence is
+ * explicitly unavailable (default bindings apply). Every other problem leaves
+ * the saved map unverified until a successful reinspection clears it.
+ */
+export function shortcutSnapshotVerified(
+  snapshot: ShortcutPreferenceSnapshot,
+): boolean {
+  return (
+    snapshot.problem === null ||
+    snapshot.problem === ShortcutPreferenceProblem.Unavailable
+  );
+}
 export function parseShortcutSnapshot(
   raw: unknown,
 ): ShortcutPreferenceSnapshot {
