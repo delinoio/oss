@@ -772,6 +772,28 @@ it("uses one original server batch for unloaded account pages and one row quota 
   });
 });
 
+it("keeps the Claude server-update notice off unavailable ChatGPT row and Refresh all actions", async () => {
+  const f = fixture({ list: true, supported: false });
+  render(<f.Harness />);
+  await screen.findByRole("article", { name: "Original account" });
+  const claudeUpdate = /Claude sign-in needs a server update/;
+  // The Claude guidance stays in the Add-account notice and the Claude card.
+  expect((await screen.findAllByText(claudeUpdate)).length).toBe(1);
+  const refreshRow = screen.getByRole("button", {
+    name: /^Refresh Original account/,
+  });
+  const refreshAll = screen.getByRole("button", { name: "Refresh all" });
+  for (const button of [refreshRow, refreshAll]) {
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    expect(button.getAttribute("title")).toMatch(/does not support/);
+    expect(button.getAttribute("title")).not.toMatch(claudeUpdate);
+  }
+  const disconnect = screen.getByRole("button", {
+    name: /^Disconnect Original account/,
+  });
+  expect(disconnect.getAttribute("title") ?? "").not.toMatch(claudeUpdate);
+});
+
 it("rereads accepted account pages every thirty seconds in app use without unseen-page discovery", async () => {
   vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
   const focus = vi.spyOn(document, "hasFocus").mockReturnValue(true);

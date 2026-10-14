@@ -132,7 +132,12 @@ export interface SubscriptionSettingsViewProps {
   cleanupUnavailable?: string;
   cleanupStatus?: ReactNode;
   actionsBlocked?: boolean;
+  // Notice shown with the Add-account cards; it may carry service-specific
+  // guidance such as a Claude server update.
   lifecycleUnavailable?: string;
+  // Guidance for a disabled row action or Refresh all. It never carries
+  // Add-account guidance, so it defaults to the generic lifecycle notice.
+  actionUnavailable?: string;
   selectService?: (brand: SubscriptionBrand) => void;
   serviceLoginAvailable?: (brand: SubscriptionBrand) => boolean;
   // A disabled service whose sign-in needs a server update keeps the Add
@@ -873,6 +878,7 @@ export function SubscriptionSettingsView({
   cleanupStatus,
   actionsBlocked = false,
   lifecycleUnavailable = copy("subscription-settings.extra.f874aed4a97c"),
+  actionUnavailable = lifecycleUnavailable,
   selectService,
   serviceLoginAvailable = () => true,
   serviceUpdateRequired = () => false,
@@ -1022,8 +1028,12 @@ export function SubscriptionSettingsView({
                 !refreshAll ||
                 operationBlocked(refreshAllOperation)
               }
-              title={!refreshAll ? lifecycleUnavailable : undefined}
-              aria-describedby={!refreshAll ? noticeId : undefined}
+              title={!refreshAll ? actionUnavailable : undefined}
+              aria-describedby={
+                !refreshAll && actionUnavailable === lifecycleUnavailable
+                  ? noticeId
+                  : undefined
+              }
               onClick={refreshAll}
             >
               {copy("subscription-settings.refreshAll_3c128b")}
@@ -1087,7 +1097,7 @@ export function SubscriptionSettingsView({
                 account={account}
                 now={presentationNow}
                 active={active}
-                unavailable={lifecycleUnavailable}
+                unavailable={actionUnavailable}
                 actionsBlocked={actionsBlocked}
                 openDetails={openDetails}
               />

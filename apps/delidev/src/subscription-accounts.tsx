@@ -718,11 +718,16 @@ export function SubscriptionAccounts({
     ? status.data.capabilities.includes(SystemCapability.CLAUDE_SERVER_LOGIN_V1)
     : undefined;
   const claudeUpdateRequired = claudeServerLoginAdvertised === false;
+  // Claude guidance is scoped to the Claude Add-account presentation. Row
+  // actions and Refresh all keep the generic notice, so a missing Claude
+  // capability never reads as the reason a ChatGPT quota refresh or another
+  // service's disconnect is unavailable.
   const lifecycleNotice = copy(
     claudeUpdateRequired
       ? "claude-subscription.serverUpdateRequired"
       : "claude-subscription.availability",
   );
+  const actionUnavailable = copy("subscription-settings.extra.f874aed4a97c");
   const refreshInventory = useRef<() => void>(() => {});
   // Login/status authority stays active while its own presentation pauses only
   // the background inventory reader. The callback uses the current reader.
@@ -1055,7 +1060,7 @@ export function SubscriptionAccounts({
                       key={row.id}
                       account={account}
                       now={now}
-                      unavailable={lifecycleNotice}
+                      unavailable={actionUnavailable}
                       actionsBlocked={blocked}
                       openDetails={openDetails}
                     />
@@ -1102,6 +1107,7 @@ export function SubscriptionAccounts({
           if (capable && (rows.error || !validPage)) void rows.refetch();
         }}
         lifecycleUnavailable={lifecycleNotice}
+        actionUnavailable={actionUnavailable}
         serviceUpdateRequired={(brand) =>
           brand === SubscriptionBrand.Claude && claudeUpdateRequired
         }
