@@ -504,6 +504,69 @@ func TestGrokFinishSurvivesInstallationRediscoveryAfterTake(t *testing.T) {
 	}
 }
 
+// takeWith sends a Grok Take under an explicit request identifier so a lost
+// response can be retried with the exact original request.
+func (f *grokFixture) takeWith(request domain.ID, revision uint64, op *pb.RequestSubscriptionResponse, action pb.SubscriptionAction) (*pb.TakeSubscriptionResponse, error) {
+	response, err := f.client.TakeSubscription(context.Background(), subscriptionRequest(f.workerToken, &pb.TakeSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(request), Id: string(f.input.AccountID), ExpectedRevision: revision}, MachineId: string(f.input.MachineID), InstanceId: string(f.instance), OperationId: op.OperationId, Action: action}))
+	if err != nil {
+		return nil, err
+	}
+	return response.Msg, nil
+}
+
+// When the first Take response is lost, the Worker retries the same request. The
+// receipt never redistributes the credential, and the unfinished lease the
+// Worker can no longer finish is fenced for recovery.
+func TestGrokReplayedTakeFencesTheUnfinishedLease(t *testing.T) {
+	f := newGrokFixture(t)
+	generation := f.login("synthetic-principal-1")
+	op := f.queue(pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH)
+	request := domain.NewID()
+	observed, _ := f.record()
+	first, err := f.takeWith(request, observed.Revision, op, pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH)
+	if err != nil || len(first.Bundle) == 0 {
+		t.Fatal("the first Take did not deliver the envelope")
+	}
+	if _, a := f.record(); a.Subscription.RecoveryRequired || a.Subscription.Lease == nil {
+		t.Fatal("a delivered lease was fenced before any replay")
+	}
+	replay, err := f.takeWith(request, observed.Revision, op, pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH)
+	if err == nil || replay != nil {
+		t.Fatal("a replayed receipt redistributed the credential")
+	}
+	_, a := f.record()
+	if !a.Subscription.RecoveryRequired || a.Subscription.Lease == nil || a.Health != domain.AccountFailed || a.Subscription.Generation != generation {
+		t.Fatal("the replay did not fence the unfinished lease for recovery")
+	}
+	rotated := domain.NewID()
+	if _, err := f.finishWith(first, rotated, f.sealed(t, f.input.AccountID, rotated, "synthetic-principal-1"), true, true, true); err == nil {
+		t.Fatal("a recovery-fenced lease accepted a new generation")
+	}
+}
+
+// A replay after the lease was finished or replaced must not fence a healthy
+// account.
+func TestGrokLateReplayedTakeDoesNotFenceAReleasedAccount(t *testing.T) {
+	f := newGrokFixture(t)
+	op := f.queue(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
+	request := domain.NewID()
+	observed, _ := f.record()
+	lease, err := f.takeWith(request, observed.Revision, op, pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	generation := domain.NewID()
+	if _, err := f.finishWith(lease, generation, f.sealed(t, f.input.AccountID, generation, "synthetic-principal-1"), true, false, true); err != nil {
+		t.Fatal(err)
+	}
+	if replay, err := f.takeWith(request, observed.Revision, op, pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN); err == nil || replay != nil {
+		t.Fatal("a late replay redistributed a credential")
+	}
+	if _, a := f.record(); a.Subscription.RecoveryRequired || a.Subscription.Lease != nil || a.Health != domain.AccountReady || a.Subscription.Generation != generation {
+		t.Fatal("a late replay fenced an already released account")
+	}
+}
+
 func (f *grokFixture) start2(action pb.SubscriptionAction) (*pb.RequestSubscriptionResponse, error) {
 	r, _ := f.record()
 	response, err := f.client.RequestSubscription(context.Background(), subscriptionRequest(f.service.Identity.Token, &pb.RequestSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(r.ID), ExpectedRevision: r.Revision}, MachineId: string(f.input.MachineID), Action: action}))

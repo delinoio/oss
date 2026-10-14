@@ -221,8 +221,14 @@ func (s *Service) takeGrokSubscription(ctx context.Context, req *connect.Request
 		return nil, rpc.Error(err, c)
 	}
 	// A receipt never redistributes a secret; an uncertain first delivery keeps
-	// the lease and requires recovery instead of a second native owner.
+	// the lease and requires recovery instead of a second native owner. The first
+	// response may have been lost after the lease committed, in which case the
+	// Worker lacks the generation and lease revision it needs to Finish, so the
+	// exact unfinished lease is fenced for recovery before the denial.
 	if result.Replayed {
+		if err := s.fenceReplayedGrokTake(ctx, input.Account, input.Lease, input.Operation, input.Machine, input.Instance, action, actor); err != nil {
+			s.logger.WarnContext(ctx, "grok_subscription_replay_fence_unconfirmed", "account_id", input.Account, "lease_id", input.Lease, "operation_id", input.Operation, "code", domain.SafeError(err).Code)
+		}
 		return nil, rpc.Error(subscriptionDenied(), c)
 	}
 	owned = true
@@ -280,6 +286,38 @@ func (s *Service) takeGrokSubscription(ctx context.Context, req *connect.Request
 	installationJSON, _ := json.Marshal(admitted)
 	s.logger.InfoContext(ctx, "grok_subscription_lease_granted", "account_id", input.Account, "lease_id", input.Lease, "operation_id", input.Operation, "action", action, "bundle_delivered", len(bundle) != 0)
 	return connect.NewResponse(&pb.TakeSubscriptionResponse{LeaseId: string(input.Lease), GenerationId: string(generation), Bundle: bundle, LeaseRevision: leaseRevision, InstallationJson: installationJSON}), nil
+}
+
+// fenceReplayedGrokTake marks the still-held original Grok lease
+// recovery-required so the unfinished lease is never silently stranded. The
+// caller holds the account gate. A lease that was already finished, replaced, or
+// held by another operation, device or instance is left untouched, and the
+// credential is never redistributed.
+func (s *Service) fenceReplayedGrokTake(ctx context.Context, id, lease, operation, machine, instance domain.ID, action domain.SubscriptionAction, actor domain.Principal) error {
+	fenced := false
+	_, err := s.Store.Mutate(ctx, domain.NewID(), "grok.subscription.take-replay-fence", struct{ Account, Lease domain.ID }{id, lease}, func(tx *store.Tx) (any, error) {
+		r, a, err := grokSubscriptionAccount(tx, id, 0)
+		if err != nil {
+			return nil, err
+		}
+		st := a.Subscription
+		if st == nil || st.RecoveryRequired {
+			return struct{}{}, nil
+		}
+		l := st.Lease
+		if l == nil || l.ID != lease || l.OperationID != operation || l.Action != action || l.MachineID != machine || l.InstanceID != instance || l.DeviceID != actor.DeviceID {
+			return struct{}{}, nil
+		}
+		st.RecoveryRequired = true
+		a.Health = domain.AccountFailed
+		fenced = true
+		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+		return struct{}{}, err
+	})
+	if err == nil && fenced {
+		s.logger.WarnContext(ctx, "grok_subscription_replayed_take_fenced", "account_id", id, "lease_id", lease, "operation_id", operation)
+	}
+	return err
 }
 
 func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Request[pb.FinishSubscriptionRequest]) (response *connect.Response[pb.FinishSubscriptionResponse], returned error) {

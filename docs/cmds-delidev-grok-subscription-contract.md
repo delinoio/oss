@@ -172,7 +172,12 @@ own identity, the account and the stored generation. The legacy
 `domain.GrokProtocolVersion` discovery baseline is a lower bound for discovery
 and legacy execution input only; it admits no new credential authority, so an
 installation between that baseline and the subscription baseline, or a prerelease
-of the subscription baseline, receives no lease. A Grok execute Take, a member or owner Finish scope, and any
+of the subscription baseline, receives no lease. A retried Take whose first
+response was lost is a receipt replay: it never redistributes the envelope, and
+it marks the exact unfinished lease (same operation, Worker device, Runner Device
+and instance) recovery-required before the denial, because that Worker lacks the
+generation and lease revision needed to Finish. A finished or foreign lease is
+left untouched. A Grok execute Take, a member or owner Finish scope, and any
 other action are refused. Grok lifecycle work is not pushed to Workers through
 the subscription watch until the managed Grok Worker capability is declared and
 negotiated.
