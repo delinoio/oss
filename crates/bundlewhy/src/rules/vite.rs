@@ -61,12 +61,14 @@ fn side_effect_retained(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
             .as_deref()
             .unwrap_or("not declared");
         let declaration = SideEffectDeclaration::from_collected(side_effects, package_side_effects);
-        let (status, title, summary) = match declaration {
+        // The title feeds the diagnostic ID, so it stays the same however the
+        // declaration changes and one retained module keeps one ID.
+        let title = format!("{display} is retained although none of its exports is used");
+        let (status, summary) = match declaration {
             // An explicit effect declaration is itself the engine-visible
             // reason the module is kept.
             SideEffectDeclaration::Effectful => (
                 EvidenceStatus::Confirmed,
-                format!("{display} is kept because it is declared to have side effects"),
                 format!(
                     "Rolldown rendered {} bytes of this module although none of its exports is \
                      used. The module or its package declares side effects, so Rolldown keeps it.",
@@ -77,7 +79,6 @@ fn side_effect_retained(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
             // the cause stays an inference from the observed facts.
             _ => (
                 EvidenceStatus::Inferred,
-                format!("{display} is retained although none of its exports is used"),
                 format!(
                     "Rolldown rendered {} bytes of this module although none of its exports is \
                      used, and did not report why. The module may contain top-level code with \

@@ -1200,7 +1200,7 @@ mod tests {
                 "{module} / {package:?}"
             );
             assert_eq!(finding.status, EvidenceStatus::Confirmed);
-            assert!(finding.title.contains("declared to have side effects"));
+            assert!(finding.summary.contains("declares side effects"));
             assert!(
                 !finding
                     .corrective_action
@@ -1241,6 +1241,20 @@ mod tests {
                 .safety
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn vite_side_effect_retained_id_ignores_the_declaration() {
+        let ids: Vec<String> = [
+            ("null", None),
+            ("false", None),
+            ("true", Some("false")),
+            ("null", Some("[array of 2]")),
+        ]
+        .into_iter()
+        .map(|(module, package)| retained_register(module, package).id)
+        .collect();
+        assert!(ids.iter().all(|id| id == &ids[0]), "{ids:?}");
     }
 
     #[test]
