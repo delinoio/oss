@@ -21,7 +21,11 @@ import { useImageRoute } from "./image-drafts";
 const machineId = newRequestId();
 const agentId = newRequestId();
 const route = (modalities: string[]) => ({
-  model: { provider_id: newRequestId(), native_id: "fixture-native", input_modalities: modalities },
+  model: {
+    provider_id: newRequestId(),
+    native_id: "fixture-native",
+    input_modalities: modalities,
+  },
   accounts: [{ id: newRequestId() }],
 });
 
@@ -46,7 +50,9 @@ function wrapper(agent: Record<string, unknown>) {
       }),
     });
   });
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   return ({ children }: { children: ReactNode }) => (
     <TransportProvider transport={transport}>
       <QueryClientProvider client={client}>{children}</QueryClientProvider>
@@ -76,14 +82,18 @@ async function ready(
 }
 
 it("admits Codex agents and OpenCode agents whose every route model declares image input", async () => {
-  expect(await ready({ harness: "codex", routes: [route(["text"])] })).toBe(true);
+  expect(await ready({ harness: "codex", routes: [route(["text"])] })).toBe(
+    true,
+  );
   expect(
     await ready({ harness: "opencode", routes: [route(["text", "image"])] }),
   ).toBe(true);
 });
 
 it("keeps OpenCode text-only routes and the other harnesses unsupported", async () => {
-  expect(await ready({ harness: "opencode", routes: [route(["text"])] })).toBe(false);
+  expect(await ready({ harness: "opencode", routes: [route(["text"])] })).toBe(
+    false,
+  );
   expect(
     await ready({
       harness: "opencode",
@@ -91,15 +101,27 @@ it("keeps OpenCode text-only routes and the other harnesses unsupported", async 
     }),
   ).toBe(false);
   expect(await ready({ harness: "opencode", routes: [route([])] })).toBe(false);
-  expect(await ready({ harness: "claude-code", routes: [route(["image"])] })).toBe(false);
-  expect(await ready({ harness: "grok-build", routes: [route(["image"])] })).toBe(false);
+  expect(
+    await ready({ harness: "claude-code", routes: [route(["image"])] }),
+  ).toBe(false);
+  expect(
+    await ready({ harness: "grok-build", routes: [route(["image"])] }),
+  ).toBe(false);
 });
 
 it("uses the frozen execution snapshot for queued follow-ups", async () => {
   const agent = { harness: "opencode", routes: [route(["text"])] };
-  expect(await ready(agent, { harness: "opencode", declared: true })).toBe(true);
-  expect(await ready(agent, { harness: "opencode", declared: false })).toBe(false);
+  expect(await ready(agent, { harness: "opencode", declared: true })).toBe(
+    true,
+  );
+  expect(await ready(agent, { harness: "opencode", declared: false })).toBe(
+    false,
+  );
   expect(await ready(agent, { harness: "codex", declared: false })).toBe(true);
-  expect(await ready(agent, { harness: "claude-code", declared: true })).toBe(false);
-  expect(await ready(agent, { harness: "sidechat", declared: true })).toBe(false);
+  expect(await ready(agent, { harness: "claude-code", declared: true })).toBe(
+    false,
+  );
+  expect(await ready(agent, { harness: "sidechat", declared: true })).toBe(
+    false,
+  );
 });
