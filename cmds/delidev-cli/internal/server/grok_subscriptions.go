@@ -758,6 +758,11 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 					state.RecoveryRequired = false
 					if a.Health == domain.AccountFailed && a.Connection != nil {
 						a.Health = domain.AccountReady
+						if a.GrokLoggingOut() {
+							// A logout accepted while the lease ran keeps the account
+							// revoked until it settles; the fence only hid that health.
+							a.Health = domain.AccountRevoked
+						}
 					}
 				}
 				if state.Pending != nil && state.Pending.ID == lease.OperationID {

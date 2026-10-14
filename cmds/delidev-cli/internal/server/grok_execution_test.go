@@ -739,3 +739,32 @@ func TestGrokDisablingExecutionKeepsOwnedLeaseRecoveryAvailable(t *testing.T) {
 		}
 	})
 }
+
+// A logout accepted while an execute lease runs keeps the account revoked. When
+// that lease is fenced and then cleaned up by its original Worker, the account must
+// not turn ready while the logout is still pending.
+func TestGrokExecuteRecoveryKeepsTheAccountRevokedWhileALogoutIsPending(t *testing.T) {
+	f := newGrokExecutionFixture(t)
+	jobs := f.prepareJobs(0)
+	lease, err := f.takeJob(jobs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.serverStart(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT)
+	if _, a := f.record(); a.Health != domain.AccountRevoked || !a.GrokLoggingOut() {
+		t.Fatal("the logout accepted during the lease did not revoke readiness")
+	}
+	if err := f.service.retainLostSubscriptionLeases(f.input.MachineID, f.instance, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, a := f.record(); a.Health != domain.AccountFailed || !a.Subscription.RecoveryRequired {
+		t.Fatal("the lost instance did not fence the lease")
+	}
+	if _, err := f.finishWith(lease, domain.NewID(), nil, false, false, true); err != nil {
+		t.Fatalf("the original Worker's cleanup was refused: %v", err)
+	}
+	_, a := f.record()
+	if a.Subscription.Lease != nil || a.Subscription.RecoveryRequired || a.Health != domain.AccountRevoked || !a.GrokLoggingOut() {
+		t.Fatalf("recovery exposed health %q while the logout is still pending", a.Health)
+	}
+}
