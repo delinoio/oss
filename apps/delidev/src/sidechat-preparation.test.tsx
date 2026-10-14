@@ -810,6 +810,28 @@ it("a deferred reopen focus callback cannot steal focus after leaving and return
   laterFocus.remove();
 });
 
+it("a deferred reopen focus callback cannot steal focus after leaving and returning to the same tab", async () => {
+  const { f, input, pending, callbacks, openFromB, flush } =
+    await retainedInA();
+  openFromB();
+  expect(callbacks).toHaveLength(1);
+  act(() => {
+    f.store().open(f.sourceId, { kind: SessionTabKind.Files });
+    f.store().select(f.sourceId, sessionTabKey(pending));
+  });
+  expect(f.store().snapshot(f.sourceId).selected).toBe(sessionTabKey(pending));
+  expect(input.closest("[hidden], [inert]")).toBeNull();
+  const laterFocus = document.createElement("button");
+  document.body.append(laterFocus);
+  laterFocus.focus();
+  flush();
+  expect(document.activeElement).toBe(laterFocus);
+  expect(input.value).toBe("Retained in A");
+  expect(f.store().snapshot(f.sourceId).tabs).toContainEqual(pending);
+  expect(f.fork).toHaveBeenCalledTimes(1);
+  laterFocus.remove();
+});
+
 it("a deferred reopen focus callback ignores a changed tab", async () => {
   const { f, callbacks, openFromB, flush } = await retainedInA();
   openFromB();

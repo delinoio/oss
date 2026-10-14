@@ -402,7 +402,8 @@ export function SessionForkProvider({
   };
   // Reopening routes to the original parent first, then selects the original
   // pending descriptor. The reopen token fences newer gestures and disposal;
-  // the App navigation generation also fences a departure followed by return.
+  // the App and per-session tab navigation generations also fence a departure
+  // followed by return, including when the same tab is selected again.
   const reopenToken = useRef(0);
   useEffect(
     () => () => {
@@ -428,9 +429,11 @@ export function SessionForkProvider({
       requestId: retained.requestId,
       name: retained.name,
     });
+    const tabNavigationGeneration = tabs.navigation(retained.parent);
     requestAnimationFrame(() => {
       if (reopenToken.current !== token) return;
       if (sessionNavigationGeneration?.current !== navigationGeneration) return;
+      if (tabs.navigation(retained.parent) !== tabNavigationGeneration) return;
       if (tabs.snapshot(retained.parent).selected !== key) return;
       const input = globalThis.document.getElementById(
         `pending-sidechat-${retained.requestId}`,
