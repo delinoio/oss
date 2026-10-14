@@ -74,10 +74,17 @@ func (a *OwnedAPI) InspectSession(ctx context.Context) (SessionReceipt, error) {
 // lifetime. A lost HTTP reply still binds an observer to the original claim;
 // the returned scheduling error is retained without replay or replacement.
 func (a *OwnedAPI) StartText(ctx context.Context, request domain.ID, text string) (InputReceipt, error) {
+	return a.StartInput(ctx, request, text, nil)
+}
+
+// StartInput is StartText for an input with ordered image attachments. Each
+// image must be a validated private Worker file; a nonempty text part is
+// required so the native message keeps its single original text part.
+func (a *OwnedAPI) StartInput(ctx context.Context, request domain.ID, text string, images []InputImage) (InputReceipt, error) {
 	if !a.valid() {
 		return InputReceipt{}, sessionInvalid()
 	}
-	if request.Validate() != nil || domain.Text(text, "input", 256<<10, true) != nil {
+	if request.Validate() != nil || domain.Text(text, "input", 256<<10, true) != nil || !validInputImages(images) {
 		return InputReceipt{}, sessionInvalid()
 	}
 	if err := a.session.enter(ctx); err != nil {
@@ -95,13 +102,13 @@ func (a *OwnedAPI) StartText(ctx context.Context, request domain.ID, text string
 	}
 	// JSON escaping can exceed the transport bound even for bounded UTF-8
 	// text. Preflight the complete original body before claiming a listener.
-	if _, err := encodeTextInput(creation.settings, message, part, text); err != nil {
+	if _, err := encodeInput(creation.settings, message, part, text, images, false); err != nil {
 		return InputReceipt{}, err
 	}
 	if _, err := a.session.openEvents(ctx); err != nil {
 		return InputReceipt{}, err
 	}
-	receipt, submission := a.session.submit(ctx, request, message, part, text)
+	receipt, submission := a.session.submitInput(ctx, request, message, part, text, images)
 	if receipt.MessageID == "" {
 		return receipt, submission
 	}

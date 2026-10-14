@@ -189,6 +189,9 @@ type sessionIdentity struct {
 type sessionInput struct {
 	receipt InputReceipt
 	digest  [sha256.Size]byte
+	// images is the ordered, path-free identity of this input's attachments.
+	// It is empty for every text-only input.
+	images []storedInputImage
 }
 
 func sessionProblem() *domain.Error {
@@ -393,6 +396,11 @@ func (s *sessionAPI) sessionMetadataCreation() sessionCreation {
 // HTTP 204 acknowledges asynchronous scheduling only. It proves neither a
 // stored user message, a model response, completion nor mid-turn Steer support.
 func (s *sessionAPI) submit(ctx context.Context, request domain.ID, messageID, partID, text string) (InputReceipt, error) {
+	return s.submitInput(ctx, request, messageID, partID, text, nil)
+}
+
+// submitInput is submit for an input that may carry ordered image attachments.
+func (s *sessionAPI) submitInput(ctx context.Context, request domain.ID, messageID, partID, text string, images []InputImage) (InputReceipt, error) {
 	if err := s.enter(ctx); err != nil {
 		return InputReceipt{}, err
 	}
@@ -421,12 +429,20 @@ func (s *sessionAPI) submit(ctx context.Context, request domain.ID, messageID, p
 	if err != nil {
 		return InputReceipt{}, err
 	}
-	body, err := encodeTextInput(s.creation.settings, messageID, partID, text)
+	body, err := encodeInput(s.creation.settings, messageID, partID, text, images, false)
 	if err != nil {
 		return InputReceipt{}, err
 	}
-	s.input = &sessionInput{receipt: InputReceipt{RequestID: request, SessionID: id, MessageID: messageID, PartID: partID}, digest: sha256.Sum256([]byte(text))}
-	claim := SessionClaim{RequestID: request, Kind: SubmitInputMutation, SessionID: id, MessageID: messageID, PartID: partID, BodyDigest: mutationDigest(body)}
+	claimBody, err := encodeInput(s.creation.settings, messageID, partID, text, images, true)
+	if err != nil {
+		return InputReceipt{}, err
+	}
+	retained, _ := storedImages(partID, images)
+	s.input = &sessionInput{receipt: InputReceipt{RequestID: request, SessionID: id, MessageID: messageID, PartID: partID}, digest: sha256.Sum256([]byte(text)), images: retained}
+	if len(images) > 0 && s.logger != nil {
+		s.logger.InfoContext(ctx, "opencode_image_input_prepared", append([]any{"owner_id", s.owner, "request_id", request}, s.input.imageDiagnostics()...)...)
+	}
+	claim := SessionClaim{RequestID: request, Kind: SubmitInputMutation, SessionID: id, MessageID: messageID, PartID: partID, BodyDigest: mutationDigest(claimBody)}
 	if err := s.claim(ctx, claim); err != nil {
 		s.diagnostic(ctx, SubmitInputMutation, err)
 		return s.input.receipt, sessionUncertain()

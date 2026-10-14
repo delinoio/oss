@@ -304,8 +304,12 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	}
 	input.Installation.Version = api.Version()
 	publisher.nativeVersion = api.Version()
+	images, err := openCodeInputImages(config.Root, input, logger)
+	if err != nil {
+		return nil, err
+	}
 	config.startup.claimInput()
-	if _, err := api.StartText(nativeCtx, input.TurnRequestID, input.Input.Prompt); err != nil {
+	if _, err := api.StartInput(nativeCtx, input.TurnRequestID, input.Input.Prompt, images); err != nil {
 		return nil, err
 	}
 	phase = "first-input"

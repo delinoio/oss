@@ -4,6 +4,10 @@
 - This file covers `cmds/delidev-cli/internal/harness/opencode/` and its descendants unless a more specific instruction file applies.
 - Read the owning contracts below before changing behavior, including affected cross-domain consumers.
 
+## Image input
+
+OpenCode image inputs follow the [image input contract](../../../../../docs/cmds-delidev-image-input-contract.md#closed-adapter-profiles) and the [harness contract](../../../../../docs/cmds-delidev-harness-contract.md#opencode-image-input). Keep text-only bodies and `TextInputClaimDigest` byte-identical, keep Worker paths and image bytes out of claims and logs, accept only the closed native expansion verified by SHA-256, and keep replacement, Fork, Sidechat and compaction profiles rejecting image-bearing history.
+
 ## Owning contracts
 
 - [DeliDev account lifecycle](../../../../../docs/cmds-delidev-accounts-contract.md)

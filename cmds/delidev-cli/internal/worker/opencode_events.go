@@ -437,8 +437,15 @@ func (c *OpenCodeEventPublisher) completeHistory(history opencode.HistoryObserva
 			}
 			switch part.Kind {
 			case opencode.TextPartKind, opencode.ReasoningPartKind:
+				if t.inputExtras[part.ID] == part.Kind && owner.role == domain.UserMessage {
+					continue
+				}
 				p := t.parts[part.ID]
 				if p == nil || p.kind != part.Kind || p.message.NativeParentID != message.ID || !p.complete {
+					return false
+				}
+			case opencode.FilePartKind:
+				if t.inputExtras[part.ID] != opencode.FilePartKind || owner.role != domain.UserMessage {
 					return false
 				}
 			case opencode.ToolPartKind:
@@ -465,6 +472,11 @@ func (c *OpenCodeEventPublisher) completeHistory(history opencode.HistoryObserva
 		}
 	}
 	for id := range t.parts {
+		if !seen[id] {
+			return false
+		}
+	}
+	for id := range t.inputExtras {
 		if !seen[id] {
 			return false
 		}
