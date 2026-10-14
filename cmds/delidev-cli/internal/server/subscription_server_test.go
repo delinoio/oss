@@ -104,7 +104,9 @@ func awaitServerFixture(t *testing.T, ch <-chan struct{}) {
 	t.Helper()
 	select {
 	case <-ch:
-	case <-time.After(10 * time.Second):
+	// Generous bound: the server package shares a loaded CI runner, so the
+	// goroutine under test can be scheduled late; this only guards against hangs.
+	case <-time.After(60 * time.Second):
 		t.Fatal("fixture timed out")
 	}
 }

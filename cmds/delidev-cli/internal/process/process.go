@@ -332,69 +332,97 @@ func ReconcileOwnerContext(ctx context.Context, root string, owner domain.ID) er
 	return reconcileOwnerContext(ctx, root, owner, 10000)
 }
 
+// ReconcileOwnerContextBound reconciles like ReconcileOwnerContext and also
+// returns an identity holding the owner's maintenance lock object
+// (<root>/<owner>.recovery.lock) that this reconciliation locked and, when
+// absent, created. The identity is bound while the lock handle is still open, so
+// it is exactly the reconciler's object: a file placed at the name afterwards
+// can never match it. The caller must Close the identity. Nothing is returned on
+// error.
+func ReconcileOwnerContextBound(ctx context.Context, root string, owner domain.ID) (security.PathIdentity, error) {
+	return reconcileOwner(ctx, root, owner, 10000, true)
+}
+
 func reconcileOwnerContext(ctx context.Context, root string, owner domain.ID, limit int) error {
+	_, err := reconcileOwner(ctx, root, owner, limit, false)
+	return err
+}
+
+func reconcileOwner(ctx context.Context, root string, owner domain.ID, limit int, bind bool) (bound security.PathIdentity, returned error) {
+	defer func() {
+		if returned != nil {
+			bound.Close()
+			bound = security.PathIdentity{}
+		}
+	}()
 	if err := ctx.Err(); err != nil {
-		return domain.SafeError(err)
+		return bound, domain.SafeError(err)
 	}
 	if err := owner.Validate(); err != nil {
-		return err
+		return bound, err
 	}
 	directory := filepath.Join(root, string(owner))
 	if err := security.CheckPrivateDir(directory); err != nil {
-		return ownershipError()
+		return bound, ownershipError()
 	}
 	// Serialize retirement independently of native handle ownership. The lock
 	// lives outside the owner index so a retained empty index stays meaningful.
-	maintenance, err := security.TryLock(filepath.Join(root, string(owner)+".recovery.lock"))
+	maintenancePath := filepath.Join(root, string(owner)+".recovery.lock")
+	maintenance, err := security.TryLock(maintenancePath)
 	if err != nil {
-		return err
+		return bound, err
 	}
 	defer maintenance.Close()
+	if bind {
+		if bound, err = maintenance.BindPathIdentity(maintenancePath); err != nil {
+			return bound, ownershipError()
+		}
+	}
 	index, err := os.Open(directory)
 	if err != nil {
-		return ownershipError()
+		return bound, ownershipError()
 	}
 	defer index.Close()
 	var retained []Process
 	for {
 		if err := ctx.Err(); err != nil {
-			return domain.SafeError(err)
+			return bound, domain.SafeError(err)
 		}
 		entries, err := index.ReadDir(256)
 		if err != nil && !errors.Is(err, io.EOF) {
-			return ownershipError()
+			return bound, ownershipError()
 		}
 		if len(entries) == 0 {
 			break
 		}
 		for _, entry := range entries {
 			if err := ctx.Err(); err != nil {
-				return domain.SafeError(err)
+				return bound, domain.SafeError(err)
 			}
 			name := entry.Name()
 			retired := strings.HasPrefix(name, ".retired-")
 			if !entry.IsDir() || domain.ID(strings.TrimPrefix(name, ".retired-")).Validate() != nil {
-				return ownershipError()
+				return bound, ownershipError()
 			}
 			path := filepath.Join(directory, name)
 			if err := security.CheckPrivateDir(path); err != nil {
-				return ownershipError()
+				return bound, ownershipError()
 			}
 			if retired {
 				// This name is published only after completed ownership and released
 				// controller authority are verified. Retry interrupted removal without
 				// interpreting a partially removed journal as new completion proof.
 				if err := os.RemoveAll(path); err != nil {
-					return ownershipError()
+					return bound, ownershipError()
 				}
 				if err := security.SyncParent(path); err != nil {
-					return ownershipError()
+					return bound, ownershipError()
 				}
 				continue
 			}
 			raw, err := security.ReadPrivate(filepath.Join(path, "ownership.json"), 1<<20)
 			if err != nil {
-				return ownershipError()
+				return bound, ownershipError()
 			}
 			// This superset contains metadata only and supports each native journal.
 			var scope struct {
@@ -410,7 +438,7 @@ func reconcileOwnerContext(ctx context.Context, root string, owner domain.ID, li
 				Complete  bool      `json:"complete"`
 			}
 			if err := domain.Decode(raw, &scope); err != nil || scope.Version != 1 || scope.OwnerID != owner {
-				return ownershipError()
+				return bound, ownershipError()
 			}
 			identity := scope.Owner
 			identity.ScopeDir = path
@@ -423,40 +451,40 @@ func reconcileOwnerContext(ctx context.Context, root string, owner domain.ID, li
 					checked := ReconcileProcess(identity)
 					closed := controller.Close()
 					if checked != nil || closed != nil {
-						return ownershipError()
+						return bound, ownershipError()
 					}
 					retiredPath := filepath.Join(directory, ".retired-"+name)
 					if err := os.Rename(path, retiredPath); err != nil {
-						return ownershipError()
+						return bound, ownershipError()
 					}
 					if err := security.SyncParent(retiredPath); err != nil {
-						return ownershipError()
+						return bound, ownershipError()
 					}
 					if err := os.RemoveAll(retiredPath); err != nil {
-						return ownershipError()
+						return bound, ownershipError()
 					}
 					if err := security.SyncParent(retiredPath); err != nil {
-						return ownershipError()
+						return bound, ownershipError()
 					}
 					continue
 				}
 				if domain.SafeError(err).Code != domain.Conflict {
-					return ownershipError()
+					return bound, ownershipError()
 				}
 			}
 			retained = append(retained, identity)
 			if len(retained) > limit {
-				return domain.Fail(domain.ResourceExhausted, "Process recovery exceeds its bounded unresolved owner scope.", "Inspect the retained ownership journals before retrying.")
+				return bound, domain.Fail(domain.ResourceExhausted, "Process recovery exceeds its bounded unresolved owner scope.", "Inspect the retained ownership journals before retrying.")
 			}
 		}
 	}
 	for _, identity := range retained {
 		if err := ctx.Err(); err != nil {
-			return domain.SafeError(err)
+			return bound, domain.SafeError(err)
 		}
 		if err := ReconcileProcess(identity); err != nil {
-			return err
+			return bound, err
 		}
 	}
-	return nil
+	return bound, nil
 }

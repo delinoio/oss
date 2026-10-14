@@ -122,3 +122,48 @@ func TestOwnerRecoveryFinishesInterruptedRetirement(t *testing.T) {
 		t.Fatal("interrupted retirement remained in the active owner index")
 	}
 }
+
+// The bound identity is the maintenance lock object the reconciliation locked,
+// and it survives the reconciler releasing its own handle.
+func TestReconcileOwnerContextBoundReturnsTheLockedMaintenanceObject(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "processes")
+	if err := security.PrivateDir(root); err != nil {
+		t.Fatal(err)
+	}
+	owner := domain.NewID()
+	if err := security.PrivateDir(filepath.Join(root, string(owner))); err != nil {
+		t.Fatal(err)
+	}
+	bound, err := ReconcileOwnerContextBound(context.Background(), root, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer bound.Close()
+	lock := filepath.Join(root, string(owner)+".recovery.lock")
+	if !bound.Present() || !bound.Held() || bound.Record().Kind != security.ObjectRegular || bound.Record().Size != 0 {
+		t.Fatal("bound identity is not the empty regular maintenance lock", bound.Record())
+	}
+	if err := bound.StillAt(lock); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(lock, lock+".moved"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(lock, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := bound.StillAt(lock); err == nil {
+		t.Fatal("a replacement lock matched the reconciler's object")
+	}
+}
+
+func TestReconcileOwnerContextBoundReturnsNothingOnError(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "processes")
+	if err := security.PrivateDir(root); err != nil {
+		t.Fatal(err)
+	}
+	bound, err := ReconcileOwnerContextBound(context.Background(), root, domain.NewID())
+	if err == nil || bound.Present() || bound.Held() {
+		t.Fatal("a missing owner index produced a binding", err)
+	}
+}
