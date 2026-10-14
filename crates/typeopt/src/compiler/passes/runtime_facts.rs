@@ -1807,6 +1807,19 @@ fn module_require_call(ctx: &Ctx, callee: Node, loaders: &HashSet<String>) -> bo
         && skip_outer(callee.expression()).text() == "module"
 }
 
+fn element_access_symbol(ctx: &mut Ctx, access: Node) -> SymbolId {
+    let key = skip_outer(access.argument_expression());
+    let Some(name) = string_value(ctx, key) else {
+        return SymbolId::NIL;
+    };
+    let ty = ctx.checker.get_type_at_location(access.expression());
+    ctx.checker
+        .get_properties_of_type(ty)
+        .into_iter()
+        .find(|&symbol| ctx.checker.sym(symbol).name == name)
+        .map_or(SymbolId::NIL, |symbol| ctx.skip_alias(symbol))
+}
+
 /// Whether any application module has a runtime import, re-export, dynamic
 /// import or `require` of code outside the application. Type-only imports
 /// and re-exports are erased and exempt. The scan reads syntax and resolves
@@ -1911,6 +1924,14 @@ fn imports_external_runtime(ctx: &mut Ctx) -> bool {
                         }
                         SyntaxKind::PropertyAccessExpression => {
                             loader_symbols.contains(&ctx.resolve(callee.name()))
+                        }
+                        SyntaxKind::ElementAccessExpression => {
+                            let key = skip_outer(callee.argument_expression());
+                            matches!(
+                                key.kind(),
+                                SyntaxKind::StringLiteral
+                                    | SyntaxKind::NoSubstitutionTemplateLiteral
+                            ) && loader_symbols.contains(&element_access_symbol(ctx, callee))
                         }
                         _ => false,
                     };
