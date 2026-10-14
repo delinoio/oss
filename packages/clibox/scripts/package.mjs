@@ -29,6 +29,18 @@ import {
 const { targets } = platforms;
 const mainName = "@delino/clibox";
 const mainFiles = ["bin/clibox.cjs", "src/launcher.cjs", "src/platforms.cjs"];
+const fspyNotice = ["LICENSE.fspy", "crates/fspy/LICENSE"];
+const nativeNotices = new Map([
+  [platforms.Platform.Darwin, [fspyNotice]],
+  [
+    platforms.Platform.Windows,
+    [
+      fspyNotice,
+      ["LICENSE.detours", "crates/fspy_detours_sys/detours/LICENSE"],
+    ],
+  ],
+]);
+const noticesFor = (target) => nativeNotices.get(target?.os) ?? [];
 export const integrity = (bytes) =>
   `sha512-${createHash("sha512").update(bytes).digest("base64")}`;
 export const tarballName = (name, version) =>
@@ -49,7 +61,9 @@ export function packageManifest(target, version, sourceRevision) {
     repository: { type: "git", url: repository, directory: "packages/clibox" },
     gitHead: sourceRevision,
     publishConfig: { access: "public", registry },
-    files: target ? [`bin/${target.binary}`] : mainFiles,
+    files: target
+      ? [`bin/${target.binary}`, ...noticesFor(target).map(([name]) => name)]
+      : mainFiles,
   };
   if (target) {
     Object.assign(manifest, { os: [target.os], cpu: [target.cpu] });
@@ -98,6 +112,8 @@ export function buildPackage({
     path.join(directory, "LICENSE"),
     sourceText("crates/clibox/LICENSE"),
   );
+  for (const [name, source] of noticesFor(target))
+    writeFileSync(path.join(directory, name), sourceText(source));
   if (target) {
     copyFileSync(
       path.resolve(binary),
@@ -274,6 +290,11 @@ export function inspectTarball(file, { version, sourceRevision }) {
       .bytes.equals(Buffer.from(sourceText("crates/clibox/LICENSE"))),
     "License mismatch",
   );
+  for (const [name, source] of noticesFor(target))
+    ensure(
+      entries.get(name).bytes.equals(Buffer.from(sourceText(source))),
+      `Notice mismatch: ${name}`,
+    );
   ensure(
     entries
       .get("README.md")
