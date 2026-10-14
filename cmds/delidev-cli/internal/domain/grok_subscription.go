@@ -73,7 +73,15 @@ func (s SubscriptionState) validateServerGrok(account Account, o *ServerSubscrip
 	if o.RefreshClaimed {
 		return invalid()
 	}
-	if o.LoginMethod != 0 && o.LoginMethod != SubscriptionBrowserCallback || o.CodeSubmissionID != "" && o.CodeSubmissionID.Validate() != nil || o.CodeConsumed && o.CodeSubmissionID == "" {
+	if o.LoginMethod != 0 && o.LoginMethod != SubscriptionBrowserCallback && o.LoginMethod != SubscriptionDeviceCode || o.CodeSubmissionID != "" && o.CodeSubmissionID.Validate() != nil || o.CodeConsumed && o.CodeSubmissionID == "" {
+		return invalid()
+	}
+	// The recorded method must match the requested one, and a device login has no
+	// callback to forward. Settled operations no longer carry the request.
+	if p := s.Pending; p != nil && p.ID == o.ID && (o.LoginMethod == SubscriptionDeviceCode && !p.DeviceCode || o.LoginMethod == SubscriptionBrowserCallback && p.DeviceCode) {
+		return invalid()
+	}
+	if o.LoginMethod == SubscriptionDeviceCode && o.CallbackForwarded {
 		return invalid()
 	}
 	return nil

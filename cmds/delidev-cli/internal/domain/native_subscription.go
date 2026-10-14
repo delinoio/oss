@@ -11,6 +11,8 @@ type SubscriptionLoginMethod uint32
 const (
 	SubscriptionBrowserCallback SubscriptionLoginMethod = 1
 	SubscriptionBrowserCode     SubscriptionLoginMethod = 2
+	// SubscriptionDeviceCode is the server-owned Grok RFC 8628 device login.
+	SubscriptionDeviceCode SubscriptionLoginMethod = 3
 )
 
 type NativeSubscriptionPhase uint32

@@ -77,6 +77,54 @@ func TestGrokServerLoginStateValidation(t *testing.T) {
 	}
 }
 
+func grokServerDeviceLoginFixture() Account {
+	a := grokServerLoginFixture()
+	a.Subscription.Pending.DeviceCode = true
+	return a
+}
+
+func TestGrokServerDeviceLoginStateValidation(t *testing.T) {
+	queued := grokServerDeviceLoginFixture()
+	if err := queued.Subscription.Validate(queued); err != nil {
+		t.Fatalf("queued Grok device login was rejected: %v", err)
+	}
+	claimed := grokServerDeviceLoginFixture()
+	o := claimed.Subscription.ServerOperation
+	o.State, o.LoginMethod, o.CodeSubmissionID, o.CodeConsumed, o.NativeStarted = SubscriptionWaiting, SubscriptionDeviceCode, NewID(), true, true
+	claimed.Subscription.Pending.Phase = SubscriptionClaimed
+	if err := claimed.Subscription.Validate(claimed); err != nil {
+		t.Fatalf("claimed Grok device login was rejected: %v", err)
+	}
+	for name, mutate := range map[string]func(*Account){
+		"device method on a browser request": func(a *Account) {
+			a.Subscription.Pending.DeviceCode = false
+			a.Subscription.ServerOperation.LoginMethod = SubscriptionDeviceCode
+		},
+		"browser method on a device request": func(a *Account) { a.Subscription.ServerOperation.LoginMethod = SubscriptionBrowserCallback },
+		"forwarded callback on a device login": func(a *Account) {
+			a.Subscription.ServerOperation.LoginMethod = SubscriptionDeviceCode
+			a.Subscription.ServerOperation.CallbackForwarded = true
+		},
+		"device method on a refresh": func(a *Account) {
+			a.Health = AccountReady
+			a.Connection = &AccountConnection{ID: NewID(), Authentication: SubscriptionAuth, ConnectedAt: time.Now().UTC()}
+			a.Subscription.Generation = NewID()
+			a.Subscription.IdentityCommitment = strings.Repeat("a", 64)
+			a.Subscription.ServerOperation.Action = SubscriptionRefresh
+			a.Subscription.Pending.Action = SubscriptionRefresh
+			a.Subscription.ServerOperation.LoginMethod = SubscriptionDeviceCode
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			a := grokServerDeviceLoginFixture()
+			mutate(&a)
+			if a.Subscription.Validate(a) == nil {
+				t.Fatal("invalid Grok device login ownership was accepted")
+			}
+		})
+	}
+}
+
 func TestGrokDiagnosticIsOmittedFromLegacyServerOperations(t *testing.T) {
 	raw, err := json.Marshal(ServerSubscriptionOperation{})
 	if err != nil || strings.Contains(string(raw), "grok_diagnostic") {

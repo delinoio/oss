@@ -67,6 +67,11 @@ type IdP struct {
 	grants map[string]Grant
 
 	tokenRequests     atomic.Int32
+	deviceRequests    atomic.Int32
+	devicePolls       atomic.Int32
+	lastDevice        url.Values
+	deviceIssued      string
+	deviceScriptIndex int
 	userInfoRequests  atomic.Int32
 	discoveryRequests atomic.Int32
 	lastToken         url.Values
@@ -101,6 +106,25 @@ type IdP struct {
 	DiscoveryHost    string
 	NoRefreshToken   bool
 
+	// Device knobs. DeviceScript lists the OAuth error answered to each
+	// successive device_code poll in order ("authorization_pending", "slow_down",
+	// "access_denied", "expired_token"); an empty entry or an exhausted script
+	// answers with tokens. DeviceBody and DeviceStatus override the device
+	// authorization answer; DeviceGate blocks it until closed and DeviceEntered
+	// receives once per request. The remaining fields shape the default answer.
+	DeviceScript        []string
+	DeviceBody          string
+	DeviceStatus        int
+	DeviceGate          chan struct{}
+	DeviceEntered       chan struct{}
+	DeviceUserCode      string
+	DeviceInterval      int // seconds; 0 omits the member
+	DeviceExpiresIn     int // seconds
+	DeviceOmitComplete  bool
+	DeviceVerification  string // verification_uri; defaults to the accounts host
+	DeviceCompleteURI   string // verification_uri_complete override
+	DeviceHideDiscovery bool
+
 	// Refresh knobs. RefreshMode shapes a successful refresh_token grant,
 	// OmitRefreshIDToken drops the ID token from it, and TruncateTokenBody makes
 	// any token response end before its declared length.
@@ -120,11 +144,12 @@ func New(t testing.TB) *IdP {
 	if err != nil {
 		t.Fatal(err)
 	}
-	idp := &IdP{key: key, other: other, grants: map[string]Grant{}, Subject: "fake-user-1", Email: "fixture@example.invalid", FirstName: "Fixture", ExpiresIn: 6 * 3600}
+	idp := &IdP{key: key, other: other, grants: map[string]Grant{}, Subject: "fake-user-1", Email: "fixture@example.invalid", FirstName: "Fixture", ExpiresIn: 6 * 3600, DeviceUserCode: "ABCD-1234", DeviceInterval: 5, DeviceExpiresIn: 600}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/.well-known/openid-configuration", idp.discovery)
 	mux.HandleFunc("/.well-known/jwks.json", idp.jwks)
 	mux.HandleFunc("/oauth2/token", idp.token)
+	mux.HandleFunc("/oauth2/device/code", idp.deviceCode)
 	mux.HandleFunc("/oauth2/userinfo", idp.userinfo)
 	idp.server = httptest.NewTLSServer(mux)
 	address := idp.server.Listener.Addr().String()
@@ -142,6 +167,26 @@ func New(t testing.TB) *IdP {
 
 // TokenRequests counts token endpoint requests.
 func (i *IdP) TokenRequests() int { return int(i.tokenRequests.Load()) }
+
+// DeviceRequests counts device authorization requests.
+func (i *IdP) DeviceRequests() int { return int(i.deviceRequests.Load()) }
+
+// DevicePolls counts device_code token polls.
+func (i *IdP) DevicePolls() int { return int(i.devicePolls.Load()) }
+
+// LastDeviceForm returns the form of the last device authorization request.
+func (i *IdP) LastDeviceForm() url.Values {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	return i.lastDevice
+}
+
+// IssuedDeviceCode is the device code the provider last issued.
+func (i *IdP) IssuedDeviceCode() string {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	return i.deviceIssued
+}
 
 // UserInfoRequests counts userinfo requests.
 func (i *IdP) UserInfoRequests() int { return int(i.userInfoRequests.Load()) }
@@ -223,13 +268,17 @@ func (i *IdP) discovery(w http.ResponseWriter, _ *http.Request) {
 		issuer = i.DiscoveryIssuer
 	}
 	base := "https://" + i.host()
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	doc := map[string]any{
 		"issuer": issuer, "authorization_endpoint": base + "/oauth2/authorize", "token_endpoint": base + "/oauth2/token",
 		"userinfo_endpoint": base + "/oauth2/userinfo", "jwks_uri": base + "/.well-known/jwks.json",
 		"response_types_supported": []string{"code"}, "code_challenge_methods_supported": []string{"S256"},
 		"token_endpoint_auth_methods_supported": []string{"client_secret_basic", "client_secret_post", "none"},
 		"id_token_signing_alg_values_supported": []string{"ES256"},
-	})
+	}
+	if !i.DeviceHideDiscovery {
+		doc["device_authorization_endpoint"] = base + "/oauth2/device/code"
+	}
+	_ = json.NewEncoder(w).Encode(doc)
 }
 
 func (i *IdP) jwks(w http.ResponseWriter, _ *http.Request) {
@@ -240,6 +289,10 @@ func (i *IdP) jwks(w http.ResponseWriter, _ *http.Request) {
 func (i *IdP) token(w http.ResponseWriter, r *http.Request) {
 	i.tokenRequests.Add(1)
 	_ = r.ParseForm()
+	if r.PostForm.Get("grant_type") == "urn:ietf:params:oauth:grant-type:device_code" {
+		// Counted before any override so a gated or failing poll is still a poll.
+		i.devicePolls.Add(1)
+	}
 	i.mu.Lock()
 	i.lastToken = r.PostForm
 	i.tokenForms = append(i.tokenForms, r.PostForm)
@@ -276,6 +329,10 @@ func (i *IdP) token(w http.ResponseWriter, r *http.Request) {
 		i.refresh(w, r, reject)
 		return
 	}
+	if r.PostForm.Get("grant_type") == "urn:ietf:params:oauth:grant-type:device_code" {
+		i.devicePoll(w, r, reject)
+		return
+	}
 	i.mu.Lock()
 	grant, ok := i.grants[r.PostForm.Get("code")]
 	delete(i.grants, r.PostForm.Get("code"))
@@ -287,6 +344,96 @@ func (i *IdP) token(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	body := map[string]any{"access_token": "fake-access-token", "token_type": "Bearer", "expires_in": i.ExpiresIn, "id_token": i.idToken(grant.Nonce)}
+	if !i.NoRefreshToken {
+		body["refresh_token"] = "fake-refresh-token"
+		i.mu.Lock()
+		i.refreshCurrent = "fake-refresh-token"
+		i.mu.Unlock()
+	}
+	i.write(w, body)
+}
+
+// deviceCode answers a device authorization request for the public client.
+func (i *IdP) deviceCode(w http.ResponseWriter, r *http.Request) {
+	i.deviceRequests.Add(1)
+	_ = r.ParseForm()
+	i.mu.Lock()
+	i.lastDevice = r.PostForm
+	i.mu.Unlock()
+	if i.DeviceEntered != nil {
+		select {
+		case i.DeviceEntered <- struct{}{}:
+		default:
+		}
+	}
+	if i.DeviceGate != nil {
+		select {
+		case <-i.DeviceGate:
+		case <-r.Context().Done():
+			return
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if i.DeviceBody != "" || i.DeviceStatus != 0 {
+		status := i.DeviceStatus
+		if status == 0 {
+			status = http.StatusOK
+		}
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(i.DeviceBody))
+		return
+	}
+	if r.PostForm.Get("client_id") != subscription.GrokClientID || r.PostForm.Get("scope") != subscription.GrokScope() || r.PostForm.Get("client_secret") != "" || r.Header.Get("Authorization") != "" {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid_request"})
+		return
+	}
+	raw := make([]byte, 24)
+	_, _ = rand.Read(raw)
+	device := "fake-device-" + base64.RawURLEncoding.EncodeToString(raw)
+	i.mu.Lock()
+	i.deviceIssued = device
+	i.mu.Unlock()
+	verification := i.DeviceVerification
+	if verification == "" {
+		verification = "https://accounts.x.ai/oauth2/device"
+	}
+	body := map[string]any{"device_code": device, "user_code": i.DeviceUserCode, "verification_uri": verification, "expires_in": i.DeviceExpiresIn}
+	if !i.DeviceOmitComplete {
+		complete := i.DeviceCompleteURI
+		if complete == "" {
+			complete = verification + "?user_code=" + url.QueryEscape(i.DeviceUserCode)
+		}
+		body["verification_uri_complete"] = complete
+	}
+	if i.DeviceInterval != 0 {
+		body["interval"] = i.DeviceInterval
+	}
+	_ = json.NewEncoder(w).Encode(body)
+}
+
+// devicePoll answers a device_code token poll: the scripted OAuth errors first,
+// then tokens for the issued device code. The tokens carry no nonce because a
+// device authorization request has none.
+func (i *IdP) devicePoll(w http.ResponseWriter, r *http.Request, reject func()) {
+	i.mu.Lock()
+	issued := i.deviceIssued
+	step := ""
+	if i.deviceScriptIndex < len(i.DeviceScript) {
+		step = i.DeviceScript[i.deviceScriptIndex]
+		i.deviceScriptIndex++
+	}
+	i.mu.Unlock()
+	if r.PostForm.Get("client_id") != subscription.GrokClientID || issued == "" || r.PostForm.Get("device_code") != issued || r.PostForm.Get("client_secret") != "" || r.Header.Get("Authorization") != "" {
+		reject()
+		return
+	}
+	if step != "" {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": step})
+		return
+	}
+	body := map[string]any{"access_token": "fake-access-token", "token_type": "Bearer", "expires_in": i.ExpiresIn, "id_token": i.idToken("")}
 	if !i.NoRefreshToken {
 		body["refresh_token"] = "fake-refresh-token"
 		i.mu.Lock()

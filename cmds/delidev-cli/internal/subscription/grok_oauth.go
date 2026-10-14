@@ -92,6 +92,10 @@ type GrokEndpoints struct {
 	Token         string
 	UserInfo      string
 	JWKS          string
+	// DeviceAuthorization is the RFC 8628 device authorization endpoint: the
+	// issuer-origin endpoint discovery advertises, else the fixed
+	// GrokDeviceAuthorizationEndpoint.
+	DeviceAuthorization string
 }
 
 // GrokOAuthClient performs the owned outbound calls of the Grok profile. The
@@ -181,6 +185,7 @@ func (c GrokOAuthClient) Discover(ctx context.Context) (GrokEndpoints, error) {
 		Token         string   `json:"token_endpoint"`
 		UserInfo      string   `json:"userinfo_endpoint"`
 		JWKS          string   `json:"jwks_uri"`
+		DeviceAuth    string   `json:"device_authorization_endpoint"`
 		ResponseTypes []string `json:"response_types_supported"`
 		Challenges    []string `json:"code_challenge_methods_supported"`
 		AuthMethods   []string `json:"token_endpoint_auth_methods_supported"`
@@ -207,6 +212,16 @@ func (c GrokOAuthClient) Discover(ctx context.Context) (GrokEndpoints, error) {
 		if !valid {
 			return GrokEndpoints{}, grokFailure(GrokReasonDiscovery)
 		}
+	}
+	// The device endpoint is optional metadata: an advertised one must live on
+	// the issuer origin, an absent one falls back to the fixed profile value.
+	endpoints.DeviceAuthorization = GrokDeviceAuthorizationEndpoint
+	if doc.DeviceAuth != "" {
+		device, valid := grokEndpointURL(doc.DeviceAuth)
+		if !valid {
+			return GrokEndpoints{}, grokFailure(GrokReasonDiscovery)
+		}
+		endpoints.DeviceAuthorization = device
 	}
 	return endpoints, nil
 }
@@ -423,6 +438,13 @@ func (c GrokOAuthClient) ExchangeCode(ctx context.Context, endpoints GrokEndpoin
 	if err != nil {
 		return GrokTokens{}, err
 	}
+	return grokTokenResult(status, raw)
+}
+
+// grokTokenResult classifies one authorization-code or device-code token
+// response. Both grants share it so a browser and a device login that receive
+// the same token response produce the same tokens or the same failure.
+func grokTokenResult(status int, raw []byte) (GrokTokens, error) {
 	var body struct {
 		AccessToken  string      `json:"access_token"`
 		RefreshToken string      `json:"refresh_token"`
