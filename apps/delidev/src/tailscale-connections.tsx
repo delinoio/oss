@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useEffect, useId, useState } from "react";
-import { useQuery } from "@connectrpc/connect-query";
+import { useCallback, useEffect, useId, useState } from "react";
+import {
+  createConnectQueryKey,
+  useQuery,
+  useTransport,
+} from "@connectrpc/connect-query";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   DeviceType,
   FailureCode,
@@ -39,6 +44,15 @@ interface Peer {
   online: boolean;
   shared_to: boolean;
 }
+// A peer the visit queue may check automatically: exactly the peers whose
+// manual Check control is enabled.
+const checkEligible = (peer: Peer) => peer.online && !peer.shared_to;
+interface QueuedPeer {
+  id: string;
+  host: string;
+}
+const queuedAndEligible = (queued: QueuedPeer, peer: Peer) =>
+  queued.id === peer.id && queued.host === peer.host && checkEligible(peer);
 interface Inventory {
   state: string;
   peers: Peer[];
@@ -477,6 +491,70 @@ function DeviceInventory({
     cancel.busy || cancel.uncertain || Boolean(cancel.input);
   const retainedHelpId = "tailscale-retained-request-help";
   const inventory = decode<Inventory>(discovery.data?.documentJson);
+  // Automatic availability checks belong to this mount, which is exactly one
+  // visit of the devices presentation: leaving the category unmounts it and
+  // reopening starts fresh. The queue is snapshotted once from the first
+  // successful running inventory, so rerenders, Strict Mode replay, focus,
+  // reconnect and Refresh never restart or extend it.
+  const [queue, setQueue] = useState<readonly QueuedPeer[]>();
+  const [settled, setSettled] = useState<readonly string[]>([]);
+  useEffect(() => {
+    if (queue || !discovery.isSuccess || discovery.isFetching) return;
+    if (inventory?.state !== "running") return;
+    const next = inventory.peers
+      .filter(checkEligible)
+      .map(({ id, host }) => ({ id, host }));
+    setQueue(next);
+  }, [queue, discovery.isSuccess, discovery.isFetching, inventory]);
+  const markSettled = useCallback(
+    (id: string) =>
+      setSettled((prev) => (prev.includes(id) ? prev : [...prev, id])),
+    [],
+  );
+  // Peers whose automatic read is in flight, reported by their rows. An entry
+  // that stops being eligible keeps its read running until it ends, so the
+  // queue waits for it instead of starting the next peer's read alongside it.
+  const [reading, setReading] = useState<readonly string[]>([]);
+  const markReading = useCallback(
+    (id: string, busy: boolean) =>
+      setReading((prev) =>
+        busy
+          ? prev.includes(id)
+            ? prev
+            : [...prev, id]
+          : prev.includes(id)
+            ? prev.filter((other) => other !== id)
+            : prev,
+      ),
+    [],
+  );
+  // Queue entries that went offline, vanished or changed host leave the visit
+  // queue for good: a later Refresh that restores the peer never re-enters it,
+  // so it is only checkable manually for the rest of the visit.
+  const [dropped, setDropped] = useState<readonly string[]>([]);
+  const currentPeers = inventory?.peers ?? [];
+  const live = (q: QueuedPeer) =>
+    !dropped.includes(q.id) &&
+    currentPeers.some((p) => queuedAndEligible(q, p));
+  useEffect(() => {
+    if (!queue || !inventory) return;
+    const invalid = queue
+      .filter(
+        (q) =>
+          !dropped.includes(q.id) &&
+          !inventory.peers.some((p) => queuedAndEligible(q, p)),
+      )
+      .map((q) => q.id);
+    if (invalid.length) setDropped((prev) => [...prev, ...invalid]);
+  }, [queue, inventory, dropped]);
+  // Serial advance: only the first queued peer that is still live and has not
+  // settled is checked, and only after every invalidated entry's read ended.
+  const waiting = queue?.some(
+    (q) => !live(q) && !settled.includes(q.id) && reading.includes(q.id),
+  );
+  const activeId = waiting
+    ? undefined
+    : queue?.find((q) => !settled.includes(q.id) && live(q))?.id;
   const original = decode<Approval[]>(operations.data?.documentJson) ?? [];
   const retained = accepted
     ? [accepted, ...original.filter((a) => a.id !== accepted.id)]
@@ -533,14 +611,27 @@ function DeviceInventory({
               <p>{copy("tailscale.empty")}</p>
             ) : null}
             <ul className="tailscale-list">
-              {inventory?.peers.map((peer) => (
-                <PeerRow
-                  key={peer.id}
-                  peer={peer}
-                  workerEnabled={access?.state === "ready"}
-                  choose={(role) => setSelected({ peer, role })}
-                />
-              ))}
+              {inventory?.peers.map((peer) => {
+                const queued = queue?.find(
+                  (q) => !dropped.includes(q.id) && queuedAndEligible(q, peer),
+                );
+                const active = queued !== undefined && queued.id === activeId;
+                return (
+                  <PeerRow
+                    key={peer.id}
+                    peer={peer}
+                    workerEnabled={access?.state === "ready"}
+                    choose={(role) => setSelected({ peer, role })}
+                    automatic={
+                      active ||
+                      (queued !== undefined && settled.includes(peer.id))
+                    }
+                    active={active}
+                    onSettled={markSettled}
+                    onReading={markReading}
+                  />
+                );
+              })}
             </ul>
           </section>
         ) : null}
@@ -700,30 +791,93 @@ function PeerRow({
   peer,
   choose,
   workerEnabled,
+  automatic,
+  active,
+  onSettled,
+  onReading,
 }: {
   peer: Peer;
   choose: (role: DeviceType) => void;
   workerEnabled: boolean;
+  // The visit queue has started (or finished) the automatic check of this peer.
+  automatic: boolean;
+  // This peer is the one automatic check currently owning the queue.
+  active: boolean;
+  onSettled: (id: string) => void;
+  // Reports whether this row has a check read in flight.
+  onReading: (id: string, busy: boolean) => void;
 }) {
   useLocale();
   const [checked, setChecked] = useState(false);
+  const enabled = checked || automatic;
+  // A check result describes the peer as observed when it was read. Any change
+  // to the observed host, online state or sharing leaves the earlier result
+  // (success or failure) behind: it is hidden at once, the manual opt-in is
+  // cleared and the cached entry is reset, so a later Check always sends a
+  // fresh read instead of re-exposing the old approval or error.
+  const observation = JSON.stringify([peer.host, peer.online, peer.shared_to]);
+  const [observed, setObserved] = useState(observation);
+  const [discard, setDiscard] = useState(false);
+  if (observed !== observation) {
+    setObserved(observation);
+    setChecked(false);
+    setDiscard(true);
+  }
+  const queryClient = useQueryClient();
+  const transport = useTransport();
   // Checking is an explicit single-peer read. Unmount cancels it; cached online
   // metadata never establishes DeliDev support or enables another peer's action.
   const check = useQuery(
     TailscaleQuery.checkTailscale,
     { peerId: peer.id },
     {
-      enabled: checked,
+      enabled,
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       staleTime: Infinity,
       gcTime: 0,
     },
   );
-  const identity = checked
-    ? decode<Identity>(check.data?.documentJson)
-    : undefined;
-  useEffect(() => setChecked(false), [peer.host, peer.online]);
+  const identity =
+    enabled && !discard
+      ? decode<Identity>(check.data?.documentJson)
+      : undefined;
+  // An invalidated result is reset only once no read is in flight: the queue
+  // waits for that read to end, so it is allowed to finish and then discarded.
+  useEffect(() => {
+    if (!discard || check.isFetching) return;
+    if (check.status === "pending") {
+      setDiscard(false);
+      return;
+    }
+    void queryClient.resetQueries({
+      queryKey: createConnectQueryKey({
+        schema: TailscaleQuery.checkTailscale,
+        input: { peerId: peer.id },
+        transport,
+        cardinality: "finite",
+      }),
+      exact: true,
+    });
+  }, [
+    discard,
+    check.isFetching,
+    check.status,
+    queryClient,
+    transport,
+    peer.id,
+  ]);
+  // The active automatic check is done once its read is no longer in flight and
+  // has produced a result or an error (including a check that a manual click
+  // already finished); the queue then advances to the next peer.
+  const settledRead = !check.isFetching && check.status !== "pending";
+  useEffect(() => {
+    if (active && settledRead) onSettled(peer.id);
+  }, [active, settledRead, onSettled, peer.id]);
+  useEffect(() => {
+    onReading(peer.id, check.isFetching);
+  }, [check.isFetching, onReading, peer.id]);
+  useEffect(() => () => onReading(peer.id, false), [onReading, peer.id]);
   return (
     <li>
       <div>
@@ -734,20 +888,28 @@ function PeerRow({
         </p>
         <p role="status">
           {copy("tailscale.delidev")}:{" "}
-          {check.isFetching
-            ? copy("tailscale.checking")
-            : identity?.approval
-              ? copy("tailscale.accepting")
-              : checked
-                ? copy("tailscale.unavailable")
-                : copy("tailscale.notChecked")}
+          {check.isFetching ? (
+            <>
+              {copy("tailscale.checking")}
+              <span className="tailscale-progress" aria-hidden="true" />
+            </>
+          ) : identity?.approval ? (
+            copy("tailscale.accepting")
+          ) : enabled ? (
+            copy("tailscale.unavailable")
+          ) : (
+            copy("tailscale.notChecked")
+          )}
         </p>
       </div>
       <div className="tailscale-actions">
         <button
           type="button"
           disabled={!peer.online || peer.shared_to || check.isFetching}
-          onClick={() => (checked ? void check.refetch() : setChecked(true))}
+          onClick={() => {
+            setChecked(true);
+            if (enabled) void check.refetch();
+          }}
         >
           {copy("tailscale.check")}
         </button>
@@ -773,7 +935,7 @@ function PeerRow({
           <SSHSetup active initialHost={peer.host} />
         ) : null}
       </div>
-      <Problem error={check.error} />
+      <Problem error={discard ? undefined : check.error} />
     </li>
   );
 }

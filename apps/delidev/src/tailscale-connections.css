@@ -122,3 +122,24 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+.tailscale-progress {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-inline-start: 8px;
+  vertical-align: -2px;
+  border: 2px solid var(--border);
+  border-top-color: var(--muted);
+  border-radius: 50%;
+  animation: tailscale-progress-spin 1s linear infinite;
+}
+@keyframes tailscale-progress-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tailscale-progress {
+    animation: none;
+  }
+}
