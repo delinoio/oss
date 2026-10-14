@@ -10,6 +10,7 @@ import {
   type Resource,
 } from "@delinoio/delidev-api-client";
 import { document, object, text } from "./documents";
+import { harnessVersionAllowed } from "./harness-version";
 import { Problem } from "./ui";
 import { NativeClaudeUsage } from "./native-claude-usage";
 
@@ -136,8 +137,7 @@ export function NativeUsage({
     retained.sessionId === session.id &&
     record.execution_id === progress.execution_id &&
     record.harness === configuration.harness &&
-    record.native_version ===
-      (grok ? "1.0.41" : claude ? "2.1.236" : "1.18.32") &&
+    harnessVersionAllowed(configuration.harness, record.native_version) &&
     (grok
       ? record.claude_observation == null &&
         record.opencode_observation == null &&

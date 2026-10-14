@@ -31,7 +31,7 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 		}
 	}()
 
-	if input.Version != 4 && input.Installation.Version != opencode.SupportedVersion {
+	if input.Version != 4 && !domain.HarnessVersionAllowed(domain.OpenCode, input.Installation.Version) {
 		return nil, domain.Fail(domain.Unsupported, "This OpenCode execution requires a separately verified continuation profile.", "Retain the original native history; do not start a replacement input.")
 	}
 	requested, err := openCodeExecutionSettings(input.Configuration, input.Input.Mode, "DeliDev session")

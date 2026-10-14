@@ -50,7 +50,9 @@ type managedClaudeLogin interface {
 
 // A non-recovery opener error proves joined native and private-file cleanup.
 // A recovery error retains the original operation and runtime for inspection.
-type managedClaudeOpener func(context.Context, string, domain.ID, *slog.Logger) (managedClaudeLogin, error)
+// The returned string is the observed executable version (empty when discovery
+// did not reach a detected installation), never the pinned baseline.
+type managedClaudeOpener func(context.Context, string, domain.ID, *slog.Logger) (managedClaudeLogin, string, error)
 
 type serverClaudeRuntime struct {
 	*claude.SetupTokenLogin
@@ -62,19 +64,19 @@ type serverClaudeRuntime struct {
 	result   error
 }
 
-func openManagedClaudeLogin(ctx context.Context, root string, owner domain.ID, logger *slog.Logger) (returned managedClaudeLogin, err error) {
+func openManagedClaudeLogin(ctx context.Context, root string, owner domain.ID, logger *slog.Logger) (returned managedClaudeLogin, observed string, err error) {
 	runtimeRoot := filepath.Join(root, "subscription-runtime")
 	home := filepath.Join(runtimeRoot, "auth", string(owner))
 	if _, e := os.Lstat(home); !errors.Is(e, os.ErrNotExist) {
-		return nil, subscriptionDenied()
+		return nil, "", subscriptionDenied()
 	}
 	env, e := harness.PrivateRuntimeEnvironment(home)
 	if e != nil {
-		return nil, subscriptionDenied()
+		return nil, "", subscriptionDenied()
 	}
 	info, e := security.StableStat(home)
 	if e != nil {
-		return nil, subscriptionDenied()
+		return nil, "", subscriptionDenied()
 	}
 	defer func() {
 		if err != nil && domain.SafeError(err).Code != domain.RecoveryRequired {
@@ -86,22 +88,25 @@ func openManagedClaudeLogin(ctx context.Context, root string, owner domain.ID, l
 	}()
 	installation, e := harness.DiscoverClaude(ctx, harness.DiscoveryConfig{Root: runtimeRoot, OwnerID: owner, Logger: logger})
 	if e != nil {
-		return nil, e
+		return nil, "", e
 	}
 	if installation.State != domain.InstallationDetected {
-		return nil, domain.InstallationProblem(installation.State)
+		return nil, "", domain.InstallationProblem(installation.State)
 	}
-	if installation.Version != claude.SupportedVersion {
-		return nil, domain.Fail(domain.Unsupported, "Claude Code 2.1.236 is required on the server.", "Install the supported Claude Code version on the server.")
+	// Discovery already admitted this version through the baseline predicate and
+	// the native protocol checks; the observed value is the diagnostic authority.
+	observed = installation.Version
+	if !domain.HarnessVersionAllowed(domain.ClaudeCode, installation.Version) {
+		return nil, observed, domain.Fail(domain.Unsupported, "The Claude Code version installed on the server is not supported.", "Update Claude Code on the server, then try again.")
 	}
 	if !installation.ProtocolVerified || installation.Protocol == nil || installation.Protocol.State != domain.ProtocolVerified || installation.Problem != nil || installation.ResolvedPath == "" {
-		return nil, domain.Fail(domain.Unsupported, "The installed Claude Code protocol is unavailable.", "Refresh native discovery on the server.")
+		return nil, observed, domain.Fail(domain.Unsupported, "The installed Claude Code protocol is unavailable.", "Refresh native discovery on the server.")
 	}
 	login, e := claude.StartSetupToken(ctx, claude.SetupTokenConfig{Version: installation.Version, Home: filepath.Join(home, "claude"), Process: process.Config{Directory: filepath.Join(runtimeRoot, "processes"), OwnerID: owner, Executable: installation.ResolvedPath, Cwd: home, Env: env, Logger: logger}})
 	if e != nil {
-		return nil, e
+		return nil, observed, e
 	}
-	return &serverClaudeRuntime{SetupTokenLogin: login, home: home, original: info, owner: owner, logger: logger}, nil
+	return &serverClaudeRuntime{SetupTokenLogin: login, home: home, original: info, owner: owner, logger: logger}, observed, nil
 }
 
 // Close joins the original child, wipes its screen buffer and removes only the
@@ -604,12 +609,12 @@ func (s *Service) runManagedClaudeLogin(ctx context.Context, id domain.ID, origi
 	if opener == nil {
 		opener = openManagedClaudeLogin
 	}
-	login, err := opener(ctx, s.Store.Root(), original.ID, s.logger)
+	login, observed, err := opener(ctx, s.Store.Root(), original.ID, s.logger)
 	if err != nil {
 		// A non-recovery opener error proves joined native and private-file cleanup.
-		return nil, false, domain.SafeError(err).Code != domain.RecoveryRequired, "", domain.NativeSubscriptionLaunch, err
+		return nil, false, domain.SafeError(err).Code != domain.RecoveryRequired, observed, domain.NativeSubscriptionLaunch, err
 	}
-	started, version, phase = true, claude.SupportedVersion, domain.NativeSubscriptionLogin
+	started, version, phase = true, observed, domain.NativeSubscriptionLogin
 	published := false
 	// delivered records that the one approval code reached the original child.
 	// The durable consumption mark is single-use, so the loop must never ask for
