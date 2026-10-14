@@ -179,7 +179,7 @@ main:has(> .page.pull-requests-page[data-list-layout="true"]:not([hidden]))
 }
 @media (max-width: 759px) {
   .page.pull-requests-page[data-list-layout="true"] {
-    padding: 24px 16px;
+    padding: 24px 16px 32px;
   }
   .pr-list-header button:not(.pr-list-refresh),
   .pr-list-card-footer button {

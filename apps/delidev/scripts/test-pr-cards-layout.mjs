@@ -250,7 +250,7 @@ try {
             vertical.pageReachesMainBottom &&
             (vertical.workspaceHeight <= 321 || vertical.mainFits) &&
             vertical.paneGaps.every((gap) => gap <= 1) &&
-            vertical.paddingBottom === (width < 760 ? 24 : 32),
+            vertical.paddingBottom === 32,
           `${context}: vertical fill ${JSON.stringify(vertical)}`,
         );
         assert.equal(geometry.refresh, 1, context);

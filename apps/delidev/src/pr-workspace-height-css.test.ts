@@ -104,4 +104,20 @@ describe("pull request workspace height contract", () => {
       expect(rule).not.toMatch(/\d+(vh|dvh|svh|lvh)/);
     }
   });
+  it("keeps the 32px bottom padding in the compact layout", () => {
+    // The desktop contract states one 32px bottom padding for every width, so
+    // the compact override may only shrink the top and inline insets.
+    const stripped = CARDS_CSS.replace(/\/\*[\s\S]*?\*\//g, "").replace(
+      /\s+/g,
+      " ",
+    );
+    const media = stripped.slice(stripped.indexOf("@media (max-width: 759px)"));
+    const rule = media.slice(
+      media.indexOf(`${RuleSelector.PageLayout} {`),
+      media.indexOf("}"),
+    );
+    const padding = /padding\s*:\s*([^;]+);/.exec(rule)?.[1].trim().split(" ");
+    expect(padding).toEqual(["24px", "16px", "32px"]);
+    expect(rule).not.toMatch(/padding-bottom/);
+  });
 });
