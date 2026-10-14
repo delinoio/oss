@@ -576,6 +576,9 @@ impl Project {
                     {
                         node.arguments().iter().next().unwrap_or(Node::NIL)
                     }
+                    SyntaxKind::CallExpression if is_require_callee(node.expression()) => {
+                        node.arguments().iter().next().unwrap_or(Node::NIL)
+                    }
                     _ => continue,
                 };
                 if specifier.is_nil()
@@ -2136,6 +2139,12 @@ fn is_import_scripts_callee(callee: Node) -> bool {
         }
         _ => false,
     }
+}
+
+/// Whether a call's callee is the CommonJS `require` function.
+fn is_require_callee(callee: Node) -> bool {
+    let callee = skip_parentheses(callee);
+    callee.kind() == SyntaxKind::Identifier && callee.text() == "require"
 }
 
 /// The expression inside any number of enclosing parentheses.
