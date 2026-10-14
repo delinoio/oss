@@ -20,6 +20,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -40,6 +42,18 @@ type Grant struct {
 	RedirectURI string
 }
 
+// RefreshMode selects how the fake provider answers a refresh_token grant.
+type RefreshMode int
+
+const (
+	// RefreshRotate issues a new refresh token and invalidates the presented one.
+	RefreshRotate RefreshMode = iota
+	// RefreshOmit omits refresh_token from the response (no rotation).
+	RefreshOmit
+	// RefreshUnchanged returns the presented refresh token unchanged.
+	RefreshUnchanged
+)
+
 // IdP is the fake provider. Fields prefixed with Override are test knobs and
 // must be set before the flow under test reaches the matching endpoint.
 type IdP struct {
@@ -57,6 +71,9 @@ type IdP struct {
 	discoveryRequests atomic.Int32
 	lastToken         url.Values
 	lastTokenHeaders  http.Header
+	tokenForms        []url.Values
+	refreshCurrent    string
+	issued            int
 
 	// Subject, Email, FirstName and the principal fields feed the ID token and
 	// userinfo. PrincipalType/PrincipalID stay empty by default (fallback).
@@ -83,6 +100,13 @@ type IdP struct {
 	DiscoveryIssuer  string
 	DiscoveryHost    string
 	NoRefreshToken   bool
+
+	// Refresh knobs. RefreshMode shapes a successful refresh_token grant,
+	// OmitRefreshIDToken drops the ID token from it, and TruncateTokenBody makes
+	// any token response end before its declared length.
+	RefreshMode        RefreshMode
+	OmitRefreshIDToken bool
+	TruncateTokenBody  bool
 }
 
 // New starts the fake provider and registers cleanup.
@@ -127,6 +151,34 @@ func (i *IdP) LastTokenForm() url.Values {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	return i.lastToken
+}
+
+// TokenForms returns the form of every token request in arrival order.
+func (i *IdP) TokenForms() []url.Values {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	return append([]url.Values(nil), i.tokenForms...)
+}
+
+// RefreshTokensPresented returns every refresh token value a refresh_token
+// grant presented, in arrival order.
+func (i *IdP) RefreshTokensPresented() []string {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	var presented []string
+	for _, form := range i.tokenForms {
+		if form.Get("grant_type") == "refresh_token" {
+			presented = append(presented, form.Get("refresh_token"))
+		}
+	}
+	return presented
+}
+
+// CurrentRefreshToken is the one refresh token the provider currently honors.
+func (i *IdP) CurrentRefreshToken() string {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	return i.refreshCurrent
 }
 
 // LastTokenHeaders returns the headers of the last token request.
@@ -190,6 +242,7 @@ func (i *IdP) token(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	i.mu.Lock()
 	i.lastToken = r.PostForm
+	i.tokenForms = append(i.tokenForms, r.PostForm)
 	i.lastTokenHeaders = r.Header.Clone()
 	i.mu.Unlock()
 	if i.TokenEntered != nil {
@@ -219,6 +272,10 @@ func (i *IdP) token(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid_grant"})
 	}
+	if r.PostForm.Get("grant_type") == "refresh_token" {
+		i.refresh(w, r, reject)
+		return
+	}
 	i.mu.Lock()
 	grant, ok := i.grants[r.PostForm.Get("code")]
 	delete(i.grants, r.PostForm.Get("code"))
@@ -232,8 +289,56 @@ func (i *IdP) token(w http.ResponseWriter, r *http.Request) {
 	body := map[string]any{"access_token": "fake-access-token", "token_type": "Bearer", "expires_in": i.ExpiresIn, "id_token": i.idToken(grant.Nonce)}
 	if !i.NoRefreshToken {
 		body["refresh_token"] = "fake-refresh-token"
+		i.mu.Lock()
+		i.refreshCurrent = "fake-refresh-token"
+		i.mu.Unlock()
 	}
-	_ = json.NewEncoder(w).Encode(body)
+	i.write(w, body)
+}
+
+// write encodes a successful token response, optionally cut short.
+func (i *IdP) write(w http.ResponseWriter, body map[string]any) {
+	raw, _ := json.Marshal(body)
+	if i.TruncateTokenBody {
+		// Declare the full length and send half: the client sees an unexpected EOF.
+		w.Header().Set("Content-Length", strconv.Itoa(len(raw)))
+		_, _ = w.Write(raw[:len(raw)/2])
+		return
+	}
+	_, _ = w.Write(raw)
+}
+
+// refresh answers a refresh_token grant for the public client. Only the
+// currently honored refresh token is accepted; a rotated-away token is refused
+// exactly like a real provider would refuse a replayed one.
+func (i *IdP) refresh(w http.ResponseWriter, r *http.Request, reject func()) {
+	i.mu.Lock()
+	current := i.refreshCurrent
+	i.mu.Unlock()
+	presented := r.PostForm.Get("refresh_token")
+	if r.PostForm.Get("client_id") != subscription.GrokClientID || presented == "" || presented != current || r.PostForm.Get("client_secret") != "" || r.Header.Get("Authorization") != "" {
+		reject()
+		return
+	}
+	i.mu.Lock()
+	i.issued++
+	n := i.issued
+	i.mu.Unlock()
+	body := map[string]any{"access_token": "fake-access-token-r" + strconv.Itoa(n), "token_type": "Bearer", "expires_in": i.ExpiresIn}
+	if !i.OmitRefreshIDToken {
+		body["id_token"] = i.idToken("")
+	}
+	switch i.RefreshMode {
+	case RefreshRotate:
+		next := "fake-refresh-token-r" + strconv.Itoa(n)
+		body["refresh_token"] = next
+		i.mu.Lock()
+		i.refreshCurrent = next
+		i.mu.Unlock()
+	case RefreshUnchanged:
+		body["refresh_token"] = presented
+	}
+	i.write(w, body)
 }
 
 func (i *IdP) idToken(nonce string) string {
@@ -253,7 +358,10 @@ func (i *IdP) idToken(nonce string) string {
 	if i.ExpiredIDToken {
 		expiry = now.Add(-time.Hour)
 	}
-	claims := map[string]any{"iss": issuer, "aud": audience, "sub": i.Subject, "nonce": nonce, "exp": expiry.Unix(), "iat": now.Unix(), "email": i.Email, "given_name": i.FirstName}
+	claims := map[string]any{"iss": issuer, "aud": audience, "sub": i.Subject, "exp": expiry.Unix(), "iat": now.Unix(), "email": i.Email, "given_name": i.FirstName}
+	if nonce != "" {
+		claims["nonce"] = nonce
+	}
 	if i.PrincipalType != "" {
 		claims["principal_type"], claims["principal_id"] = i.PrincipalType, i.PrincipalID
 	}
@@ -277,7 +385,7 @@ func (i *IdP) idToken(nonce string) string {
 
 func (i *IdP) userinfo(w http.ResponseWriter, r *http.Request) {
 	i.userInfoRequests.Add(1)
-	if r.Header.Get("Authorization") != "Bearer fake-access-token" {
+	if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer fake-access-token") {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}

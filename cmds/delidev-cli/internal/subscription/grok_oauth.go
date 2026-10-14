@@ -75,6 +75,7 @@ const (
 	GrokReasonKeys           GrokOAuthReason = "jwks"
 	GrokReasonUserInfo       GrokOAuthReason = "userinfo"
 	GrokReasonMapping        GrokOAuthReason = "mapping"
+	GrokReasonIdentity       GrokOAuthReason = "identity"
 )
 
 // GrokOAuthError reports one failed step by closed reason only.
@@ -506,6 +507,13 @@ func (c GrokOAuthClient) keys(ctx context.Context, endpoints GrokEndpoints) (jos
 // ValidateIDToken verifies an ES256 signature with the issuer's JWKS and then
 // the issuer, audience, nonce and time claims. Nothing but ES256 is accepted.
 func (c GrokOAuthClient) ValidateIDToken(ctx context.Context, endpoints GrokEndpoints, token, nonce string) (GrokClaims, error) {
+	return c.validateIDToken(ctx, endpoints, token, nonce, true)
+}
+
+// validateIDToken is ValidateIDToken with an optional nonce check. A refresh
+// response is not tied to an authorization request, so it carries no nonce to
+// compare; every other check is identical.
+func (c GrokOAuthClient) validateIDToken(ctx context.Context, endpoints GrokEndpoints, token, nonce string, checkNonce bool) (GrokClaims, error) {
 	invalid := grokFailure(GrokReasonIDToken)
 	if len(token) > maxGrokSecretField {
 		return GrokClaims{}, invalid
@@ -557,7 +565,7 @@ func (c GrokOAuthClient) ValidateIDToken(ctx context.Context, endpoints GrokEndp
 	if !grokAudience(fields) {
 		return GrokClaims{}, invalid
 	}
-	if got := grokClaimString(fields, "nonce"); nonce == "" || subtle.ConstantTimeCompare([]byte(got), []byte(nonce)) != 1 {
+	if got := grokClaimString(fields, "nonce"); checkNonce && (nonce == "" || subtle.ConstantTimeCompare([]byte(got), []byte(nonce)) != 1) {
 		return GrokClaims{}, invalid
 	}
 	subject := grokClaimString(fields, "sub")
@@ -598,19 +606,31 @@ func (u GrokUserInfo) Format(f fmt.State, _ rune) {
 // UserInfo reads the userinfo endpoint with the access token. It sends one
 // idempotent GET and requires the subject to equal the verified ID token's.
 func (c GrokOAuthClient) UserInfo(ctx context.Context, endpoints GrokEndpoints, accessToken string, claims GrokClaims) (GrokUserInfo, error) {
+	info, _, err := c.userInfo(ctx, endpoints, accessToken, claims, false)
+	return info, err
+}
+
+// userInfo reads the userinfo endpoint. With requireSubject the response must
+// itself name a valid subject (a refresh response without an ID token has no
+// other source) and that subject is returned.
+func (c GrokOAuthClient) userInfo(ctx context.Context, endpoints GrokEndpoints, accessToken string, claims GrokClaims, requireSubject bool) (GrokUserInfo, string, error) {
 	status, raw, err := c.do(ctx, http.MethodGet, endpoints.UserInfo, nil, accessToken)
 	defer clear(raw)
 	if err != nil || status != http.StatusOK {
-		return GrokUserInfo{}, grokFailure(GrokReasonUserInfo)
+		return GrokUserInfo{}, "", grokFailure(GrokReasonUserInfo)
 	}
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(raw, &fields) != nil {
-		return GrokUserInfo{}, grokFailure(GrokReasonUserInfo)
+		return GrokUserInfo{}, "", grokFailure(GrokReasonUserInfo)
 	}
-	if subject := grokClaimString(fields, "sub"); subject != "" && subject != claims.Subject {
-		return GrokUserInfo{}, grokFailure(GrokReasonUserInfo)
+	subject := grokClaimString(fields, "sub")
+	if requireSubject && !grokControlFree(subject, maxGrokIdentityField, true) {
+		return GrokUserInfo{}, "", grokFailure(GrokReasonUserInfo)
 	}
-	return GrokUserInfo{fields: fields}, nil
+	if subject != "" && claims.Subject != "" && subject != claims.Subject {
+		return GrokUserInfo{}, "", grokFailure(GrokReasonUserInfo)
+	}
+	return GrokUserInfo{fields: fields}, subject, nil
 }
 
 // grokPick returns the first non-empty string among the verified ID token and

@@ -247,6 +247,13 @@ func (h GrokHome) AuthFilePresent() (bool, error) {
 	if len(temporaries) != 0 {
 		return true, nil
 	}
+	// The native lock file is part of the native refresh footprint: while it
+	// exists the home is not clean, whatever auth.json holds.
+	if _, err := h.root.Lstat(GrokLockFileName); err == nil {
+		return true, nil
+	} else if !os.IsNotExist(err) {
+		return true, &RuntimeCleanupError{Stage: CleanupValidation, Reason: CleanupFilesystem}
+	}
 	info, err := h.root.Lstat(GrokAuthFileName)
 	if os.IsNotExist(err) {
 		return false, nil
@@ -265,8 +272,8 @@ func (h GrokHome) AuthFilePresent() (bool, error) {
 	return true, nil
 }
 
-// RetireAuthFile removes only the credential file and its attributed
-// temporaries from the held home, through the held handle: it works even when
+// RetireAuthFile removes only the credential file, its native lock file
+// (auth.json.lock) and its attributed temporaries from the held home, through the held handle: it works even when
 // the bound path was since replaced, which is what removes a credential this
 // Worker wrote into a directory that was then swapped away. The caller has
 // already joined the native process and its descendants; every other file is
@@ -331,6 +338,11 @@ func (h GrokHome) retireNames(scope grokRetireScope) (linked bool, err error) {
 		return false, err
 	}
 	names = append(names, GrokAuthFileName)
+	if scope == grokRetireAll {
+		// A native refresh may leave its lock file; it is retired with the
+		// credential so the home returns to its pre-refresh footprint.
+		names = append(names, GrokLockFileName)
+	}
 	var retired []retiredEntry
 	defer func() {
 		for _, entry := range retired {

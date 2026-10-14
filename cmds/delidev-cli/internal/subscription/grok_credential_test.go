@@ -572,3 +572,52 @@ func TestGrokWriteRefusesAnOlderLinkedCredential(t *testing.T) {
 		})
 	}
 }
+
+func TestRetireGrokAuthFileRemovesTheNativeLockFile(t *testing.T) {
+	home := grokHomeForTest(t)
+	bundle, err := ParseGrokAuthFile(grokFixtureFile(t, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bound := boundGrokHome(t, home)
+	if err := bound.WriteAuthFile(bundle); err != nil {
+		t.Fatal(err)
+	}
+	lock := filepath.Join(home, GrokLockFileName)
+	if err := os.WriteFile(lock, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if present, err := bound.AuthFilePresent(); err != nil || !present {
+		t.Fatal("presence not reported")
+	}
+	if err := bound.RetireAuthFile(); err != nil {
+		t.Fatal(err)
+	}
+	if present, err := bound.AuthFilePresent(); err != nil || present {
+		t.Fatal("the home is not clean after retirement")
+	}
+	if entries, _ := os.ReadDir(home); len(entries) != 0 {
+		t.Fatal("retirement left the lock file or the credential behind")
+	}
+	// A lock file alone, with no credential, still blocks a clean report until
+	// it is retired.
+	if err := os.WriteFile(lock, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if present, err := bound.AuthFilePresent(); err != nil || !present {
+		t.Fatal("a leftover lock file was reported clean")
+	}
+	if err := bound.RetireAuthFile(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(lock); !os.IsNotExist(err) {
+		t.Fatal("the lock file survived")
+	}
+	// A lock that is not a regular file cannot be proven removable.
+	if err := os.Mkdir(lock, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := bound.RetireAuthFile(); err == nil {
+		t.Fatal("a non-regular lock entry was retired")
+	}
+}
