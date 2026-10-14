@@ -14,6 +14,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
+	"google.golang.org/protobuf/proto"
 )
 
 // finishRecorder captures the one Finish a native refresh reports.
@@ -23,9 +24,7 @@ type finishRecorder struct {
 }
 
 func (r *finishRecorder) FinishSubscription(_ context.Context, req *connect.Request[pb.FinishSubscriptionRequest]) (*connect.Response[pb.FinishSubscriptionResponse], error) {
-	cloned := *req.Msg
-	cloned.Bundle = append([]byte(nil), req.Msg.Bundle...)
-	r.requests = append(r.requests, &cloned)
+	r.requests = append(r.requests, proto.Clone(req.Msg).(*pb.FinishSubscriptionRequest))
 	return connect.NewResponse(&pb.FinishSubscriptionResponse{}), nil
 }
 
