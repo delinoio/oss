@@ -27,6 +27,10 @@ The [SFX format](/react-forge/formats/sfx/) adds `Format.Wav` tasks with `.wav` 
 
 [GLB](/react-forge/formats/glb/) and [FBX](/react-forge/formats/fbx/) creation are available in npm `0.2.0`. They use SceneSession with registered geometry/textures, explicit file export, and revision-bound world-space bounds. The released static API excludes existing-file editing, animation and rigging. The FBX material profile targets Blender 4.5; local verification does not establish results on other hosts or FBX applications.
 
+## Analyze a scene (unreleased)
+
+`react-forge analyze <entry.tsx> [--data <json>] [--json]` runs a trusted task that returns a GLB or FBX `SceneSession`, waits for its settled revision, and prints topology totals plus up to ten largest mesh node IDs. `--json` returns the complete report, including all mesh rows. The command itself does not export or publish. Task code runs with your permissions and can explicitly perform its own effects. This command is implemented in source but is not yet in the released npm package.
+
 ## Animated scene tasks (unreleased)
 
 With the unreleased animation extension, return a `SceneSession` from the same

@@ -196,6 +196,8 @@ Test renderers are not runtime dependencies. Direct Microsoft Office validation 
 
 See the [GLB guide](https://oss.delino.io/react-forge/formats/glb/), [FBX guide](https://oss.delino.io/react-forge/formats/fbx/), and original [AURA product example](examples/audio-studio-assets/README.md). The CLI/MCP exports `.glb`/`.fbx` in npm `0.2.0` and later.
 
+The unreleased source extension adds `SceneSession.analyze({ revision?, signal? })` for a settled, immutable report of unique geometry and per-mesh instance topology. The `react-forge analyze` command and MCP `inspect` view `scene_analysis` expose the same totals without automatic export. The [GLB analysis guide](https://oss.delino.io/react-forge/formats/glb/#scene-complexity-analysis-unreleased) describes the counts and availability.
+
 ## Sprite authoring (available in npm 0.2.0)
 
 `Format.Sprite` and `@delino/react-forge/sprite` are available in npm `0.2.0`. See the [Sprite guide](https://oss.delino.io/react-forge/formats/sprite/) for the workflow and limits.

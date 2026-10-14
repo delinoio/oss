@@ -16,6 +16,8 @@ acceptance uses Khronos, Three.js, ufbx and Blender 4.5.14. No npm publication,
 scene import, automatic rigging, IK, retargeting, physics or playback runtime is
 part of this extension.
 
+An additive, unreleased scene analysis interface reports revision-pinned unique and instance topology through the library, CLI, and the existing MCP inspect tool. Its counting and lifecycle contract is [GLB/FBX scenes and animation](packages-react-forge-scene-contract.md).
+
 ## Project ID
 
 `react-forge` (`ProjectId::ReactForge`). Product name: **React Forge**. The public npm package is `@delino/react-forge`; its CLI executable is `react-forge`.

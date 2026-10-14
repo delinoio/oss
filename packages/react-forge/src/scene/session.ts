@@ -51,6 +51,26 @@ export interface SceneGeometry {
   readonly max: Vec3;
   readonly revision: number;
 }
+export interface SceneMeshAnalysis {
+  readonly nodeId: string;
+  readonly vertexCount: number;
+  readonly triangleCount: number;
+  readonly geometryInstanceCount: number;
+}
+export interface SceneAnalysis {
+  readonly documentId: string;
+  readonly revision: number;
+  readonly meshCount: number;
+  readonly referencedGeometryCount: number;
+  readonly uniqueVertexCount: number;
+  readonly uniqueTriangleCount: number;
+  readonly instanceVertexCount: number;
+  readonly instanceTriangleCount: number;
+  readonly registeredGeometryBytes: number;
+  readonly referencedGeometryBytes: number;
+  readonly unusedGeometryCount: number;
+  readonly meshes: readonly SceneMeshAnalysis[];
+}
 
 /** Independent 3D lifecycle; shares React and atomic local publication with documents. */
 export class SceneSession {
@@ -428,7 +448,7 @@ export class SceneSession {
   private async process(
     signal: AbortSignal,
     context: { revision: number },
-    inspect = false,
+    operation: "generate" | "inspect" | "analyze" = "generate",
     animation?: AnimationSample,
   ) {
     const p = await this.pinned(signal);
@@ -450,7 +470,7 @@ export class SceneSession {
       : p.model;
     const output = await processDocument(
       this.format,
-      inspect ? "inspect" : "generate",
+      operation,
       model,
       Buffer.alloc(0),
       p.assets,
@@ -473,6 +493,41 @@ export class SceneSession {
   }
   exportBuffer(options: { signal?: AbortSignal } = {}): Promise<Buffer> {
     return this.export(options);
+  }
+  analyze(
+    options: { revision?: number; signal?: AbortSignal } = {},
+  ): Promise<SceneAnalysis> {
+    const signal = this.signal(options.signal);
+    if (
+      options.revision !== undefined &&
+      (!Number.isSafeInteger(options.revision) || options.revision < 0)
+    )
+      throw malformed();
+    return this.track(Stage.Layout, (context) =>
+      this.ordered(signal, async () => {
+        const result = await this.process(signal, context, "analyze");
+        if (
+          options.revision !== undefined &&
+          result.revision !== options.revision
+        )
+          throw new ForgeError(
+            ErrorCode.Conflict,
+            "Requested scene revision is stale.",
+          );
+        const native = JSON.parse(result.geometry) as Omit<
+          SceneAnalysis,
+          "documentId" | "revision"
+        >;
+        return Object.freeze({
+          ...native,
+          documentId: this.documentId,
+          revision: result.revision,
+          meshes: Object.freeze(
+            native.meshes.map((mesh) => Object.freeze(mesh)),
+          ),
+        });
+      }),
+    );
   }
   export(options: { signal?: AbortSignal } = {}): Promise<Buffer> {
     const signal = this.signal(options.signal);
@@ -528,7 +583,7 @@ export class SceneSession {
         const result = await this.process(
           signal,
           context,
-          true,
+          "inspect",
           options.animation,
         );
         if (result.revision !== options.revision)
