@@ -1579,7 +1579,14 @@ fn dynamic_package_files(
                         node.module_specifier()
                     }
                     SyntaxKind::ImportEqualsDeclaration => node.module_reference().expression(),
-                    SyntaxKind::ImportType => node.argument().literal(),
+                    SyntaxKind::ImportType => {
+                        let argument = node.argument();
+                        if argument.kind() == SyntaxKind::LiteralType {
+                            argument.literal()
+                        } else {
+                            Node::NIL
+                        }
+                    }
                     SyntaxKind::CallExpression
                         if node.expression().kind() == SyntaxKind::ImportKeyword =>
                     {

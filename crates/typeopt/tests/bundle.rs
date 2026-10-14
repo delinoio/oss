@@ -2205,6 +2205,28 @@ fn allows_transitive_dynamic_package_declarations() {
     );
 }
 
+/// A malformed import type in a declaration reached only through a dynamic
+/// package boundary must be skipped without panicking during dependency walk.
+#[test]
+fn ignores_malformed_dynamic_package_import_types() {
+    let temp = bundle(&[("index.js", r#"if(false)import("pkg");console.log(1);"#)]);
+    let package = temp.path().join("node_modules/pkg");
+    fs::create_dir_all(&package).unwrap();
+    fs::write(
+        package.join("package.json"),
+        r#"{"name":"pkg","type":"module","main":"index.js","types":"index.d.ts"}"#,
+    )
+    .unwrap();
+    fs::write(package.join("index.js"), "export const value=1;").unwrap();
+    fs::write(package.join("index.d.ts"), "export type T = import(Foo).T;").unwrap();
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 /// A package loaded only by a guarded dynamic import is an unchanged
 /// boundary; an independent chunk can still be optimized.
 #[test]
