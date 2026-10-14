@@ -730,6 +730,117 @@ describe("route envelope validation", () => {
   );
 });
 
+describe("selection supersedes a slow route restore", () => {
+  it("keeps a Schedule chosen while the restore read is slow", async () => {
+    const value = fixture();
+    const release = value.hold(value.schedule.id);
+    route(`?screen=schedules&item=${value.schedule.id}`);
+    render(<App transport={value.transport} />);
+    await waitFor(() => expect(value.reads.schedule).toHaveBeenCalled());
+    fireEvent.click(await screen.findByText("Chosen schedule"));
+    expect(
+      await screen.findByRole("heading", { name: "Chosen schedule" }),
+    ).toBeTruthy();
+    await waitFor(() =>
+      expect(search().get("item")).toBe(value.otherSchedule.id),
+    );
+    await act(async () => {
+      release();
+    });
+    await act(async () => {});
+    expect(screen.getByRole("heading", { name: "Chosen schedule" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Restored schedule" })).toBeNull();
+    expect(search().get("item")).toBe(value.otherSchedule.id);
+    expect(value.mutated).not.toHaveBeenCalled();
+  });
+
+  it("keeps a repository chosen while the restore read is slow", async () => {
+    const value = fixture();
+    const release = value.hold(value.repository.id);
+    route(`?screen=pull-requests&item=${value.repository.id}`);
+    render(<App transport={value.transport} />);
+    await waitFor(() => expect(value.reads.resource).toHaveBeenCalled());
+    fireEvent.click(await screen.findByText("Chosen repository"));
+    await waitFor(() =>
+      expect(search().get("item")).toBe(value.otherRepository.id),
+    );
+    await act(async () => {
+      release();
+    });
+    await act(async () => {});
+    expect(search().get("item")).toBe(value.otherRepository.id);
+    expect(value.mutated).not.toHaveBeenCalled();
+  });
+
+  it("keeps an Inbox entry chosen while the restore read is slow", async () => {
+    const value = fixture();
+    const release = value.hold(value.inboxEntry.id);
+    route(`?screen=inbox&item=${value.inboxEntry.id}`);
+    render(<App transport={value.transport} />);
+    await waitFor(() => expect(value.reads.inbox).toHaveBeenCalled());
+    fireEvent.click(await screen.findByText(/Other session/));
+    await waitFor(() =>
+      expect(search().get("item")).toBe(value.otherInboxEntry.id),
+    );
+    await act(async () => {
+      release();
+    });
+    await act(async () => {});
+    expect(search().get("item")).toBe(value.otherInboxEntry.id);
+    expect(value.mutated).not.toHaveBeenCalled();
+  });
+
+  it("keeps a Session chosen while the restore read is slow", async () => {
+    const value = fixture();
+    const release = value.hold(value.session.id);
+    route(`?screen=sessions&session=${value.session.id}`);
+    render(<App transport={value.transport} />);
+    await waitFor(() => expect(value.reads.resource).toHaveBeenCalled());
+    fireEvent.click(await screen.findByText("Other session"));
+    await waitFor(() => expect(search().get("session")).toBe(value.other.id));
+    await act(async () => {
+      release();
+    });
+    await act(async () => {});
+    expect(search().get("session")).toBe(value.other.id);
+    expect(value.mutated).not.toHaveBeenCalled();
+  });
+
+  it("keeps a Session chosen while the Sidechat restore read is slow", async () => {
+    const value = fixture();
+    const release = value.hold(value.sidechat.id);
+    route(
+      `?screen=sessions&session=${value.session.id}&sidechat=${value.sidechat.id}`,
+    );
+    render(<App transport={value.transport} />);
+    await waitFor(() =>
+      expect(
+        value.reads.resource.mock.calls.some(
+          ([request]) => request.id === value.sidechat.id,
+        ),
+      ).toBe(true),
+    );
+    fireEvent.click(await screen.findByText("Other session"));
+    await waitFor(() => expect(search().get("session")).toBe(value.other.id));
+    await act(async () => {
+      release();
+    });
+    await act(async () => {});
+    expect(search().get("session")).toBe(value.other.id);
+    expect(search().has("sidechat")).toBe(false);
+    expect(screen.queryByRole("tab", { name: /Side question/ })).toBeNull();
+  });
+
+  it("keeps a Usage tab chosen right after the restored tab opens", async () => {
+    const value = fixture();
+    route(`?screen=usage&tab=${UsageTab.Prices}`);
+    render(<App transport={value.transport} />);
+    await screen.findByRole("tab", { name: "Model prices" });
+    fireEvent.click(await screen.findByRole("tab", { name: "Overview" }));
+    await waitFor(() => expect(search().get("tab")).toBe(UsageTab.Overview));
+  });
+});
+
 describe("reload shortcut remount", () => {
   it("reloads once and the remounted renderer returns to the same screen and item", async () => {
     vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");

@@ -351,20 +351,22 @@ function Shell({
     id: string;
     generation: string;
   }>();
-  const inboxSelected = useCallback(
-    (inbox: string) => setRouteSelection((current) => ({ ...current, inbox })),
-    [],
-  );
-  const scheduleSelected = useCallback(
-    (schedule: string) =>
-      setRouteSelection((current) => ({ ...current, schedule })),
-    [],
-  );
-  const repositorySelected = useCallback(
-    (repository: string) =>
-      setRouteSelection((current) => ({ ...current, repository })),
-    [],
-  );
+  // Fence for the pending route restore: every non-empty selection a screen
+  // reports (a click, a keyboard choice, a notification, a saved Schedule)
+  // advances it, so a slower restore read can never overwrite that choice.
+  const selectionFence = useRef(0);
+  const inboxSelected = useCallback((inbox: string) => {
+    if (inbox) selectionFence.current += 1;
+    setRouteSelection((current) => ({ ...current, inbox }));
+  }, []);
+  const scheduleSelected = useCallback((schedule: string) => {
+    if (schedule) selectionFence.current += 1;
+    setRouteSelection((current) => ({ ...current, schedule }));
+  }, []);
+  const repositorySelected = useCallback((repository: string) => {
+    if (repository) selectionFence.current += 1;
+    setRouteSelection((current) => ({ ...current, repository }));
+  }, []);
   const categorySelected = useCallback(
     (category: SettingsCategory) =>
       setRouteSelection((current) => ({ ...current, category })),
@@ -485,20 +487,27 @@ function Shell({
   useLayoutEffect(() => {
     openSessionRef.current = openSession;
   });
-  // A deliberate navigation away from the requested screen, or a new Session
-  // selection, supersedes the pending route selection.
+  // A deliberate navigation away from the requested screen, or a selection made
+  // on that screen (a Session, Inbox entry, Schedule or repository), supersedes
+  // the pending route selection. Cancelling the pending state aborts its read.
   useEffect(() => {
+    if (!pendingSelection) return;
+    const chosen = {
+      [Surface.Sessions]: Boolean(selected),
+      [Surface.Inbox]: Boolean(routeSelection.inbox),
+      [Surface.Schedules]: Boolean(routeSelection.schedule),
+      [Surface.PullRequests]: Boolean(routeSelection.repository),
+    } as Partial<Record<Surface, boolean>>;
     if (
-      pendingSelection &&
-      (surface !== pendingSelection.surface ||
-        (pendingSelection.surface === Surface.Sessions && selected))
+      surface !== pendingSelection.surface ||
+      chosen[pendingSelection.surface]
     ) {
       console.info("delidev.product_route.superseded", {
         surface: pendingSelection.surface,
       });
       setPendingSelection(undefined);
     }
-  }, [pendingSelection, surface, selected]);
+  }, [pendingSelection, surface, selected, routeSelection]);
   // Verifies the route selection with fresh reads through the current
   // connection. It waits for connection readiness, never dispatches a mutation
   // and reopens only what this connection can read.
@@ -507,8 +516,13 @@ function Shell({
     const pending = pendingSelection;
     const owner = transport;
     const controller = new AbortController();
+    // A selection reported since this restore began fences its result out even
+    // before the superseding effect has aborted the read.
+    const fence = selectionFence.current;
     const current = () =>
-      !controller.signal.aborted && latestTransport.current === owner;
+      !controller.signal.aborted &&
+      latestTransport.current === owner &&
+      selectionFence.current === fence;
     const settle = (outcome: RouteReadOutcome | "superseded") => {
       console.info("delidev.product_route.restore", {
         surface: pending.surface,
