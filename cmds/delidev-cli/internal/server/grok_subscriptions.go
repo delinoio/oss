@@ -288,6 +288,42 @@ func (s *Service) takeGrokSubscription(ctx context.Context, req *connect.Request
 	return connect.NewResponse(&pb.TakeSubscriptionResponse{LeaseId: string(input.Lease), GenerationId: string(generation), Bundle: bundle, LeaseRevision: leaseRevision, InstallationJson: installationJSON}), nil
 }
 
+// retireUnpublishedGrokGeneration removes the generation a Finish staged when
+// that Finish aborted, so a failed or racing publication (a revoked Worker, a
+// concurrent cancellation, a store failure) does not leave a second credential
+// beside the current one. The account is read first and the generation is
+// removed only when the account document provably does not reference it: a
+// commit that succeeded before its caller saw an error keeps its generation.
+// An unreadable account, an unexpected state or a failed removal keeps the
+// generation, which stays vault-owned and is never granted (Take reads only the
+// referenced generation); the next cleanup or the logout cleanup removes it,
+// and the abort already fenced the account for recovery. The write is bounded
+// and carries no request authority (as in markSubscriptionRecovery), so neither
+// a client disconnect nor the revocation that aborted the Finish can skip it.
+// The caller holds the account gate.
+func (s *Service) retireUnpublishedGrokGeneration(vault accountSecrets, account, lease, generation domain.ID) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	unreferenced := false
+	err := s.Store.Read(ctx, func(tx *store.Tx) error {
+		_, a, err := accountFromTx(tx, account, 0)
+		if err != nil {
+			return err
+		}
+		unreferenced = a.Subscription != nil && a.Subscription.Generation != generation
+		return nil
+	})
+	if err != nil || !unreferenced {
+		s.logger.WarnContext(ctx, "grok_subscription_staged_generation_kept", "account_id", account, "lease_id", lease, "reason", "publication_unproven")
+		return
+	}
+	if err := vault.Delete(ctx, credentials.Ref{Owner: account, ID: generation, Purpose: credentials.AccountLogin}); err != nil {
+		s.logger.WarnContext(ctx, "grok_subscription_staged_generation_kept", "account_id", account, "lease_id", lease, "reason", "removal_failed", "code", domain.SafeError(err).Code)
+		return
+	}
+	s.logger.InfoContext(ctx, "grok_subscription_staged_generation_retired", "account_id", account, "lease_id", lease)
+}
+
 // fenceReplayedGrokTake marks the still-held original Grok lease
 // recovery-required so the unfinished lease is never silently stranded. The
 // caller holds the account gate. A lease that was already finished, replaced, or
@@ -381,6 +417,15 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 			return nil, rpc.Error(err, c)
 		}
 		newGeneration := domain.ID(m.RequestId)
+		// staged is set before the vault write begins, because a write that
+		// reports an error may still have left the staged generation behind. Any
+		// abort after that point retires it unless the account references it.
+		staged := false
+		defer func() {
+			if staged && returned != nil {
+				s.retireUnpublishedGrokGeneration(vault, input.Account, input.Lease, newGeneration)
+			}
+		}()
 		var identityCommitment string
 		if usable && lease.Action != domain.SubscriptionLogout {
 			// The envelope is bound to the generation this Finish creates, so a
@@ -422,6 +467,7 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 			}
 			// Only the exact authenticated Worker lease can stage this freshly
 			// produced native bundle. No owner/client import endpoint exists.
+			staged = true
 			if _, err := vault.Put(ctx, credentials.Ref{Owner: input.Account, ID: newGeneration, Purpose: credentials.AccountLogin}, req.Msg.Bundle); err != nil {
 				return nil, rpc.Error(err, c)
 			}

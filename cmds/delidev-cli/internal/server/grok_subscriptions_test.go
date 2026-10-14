@@ -684,6 +684,110 @@ func TestGrokFinishFailedPublicationKeepsTheCurrentGeneration(t *testing.T) {
 	if stored, err := f.secrets.Get(context.Background(), credentials.Ref{Owner: f.input.AccountID, ID: generation, Purpose: credentials.AccountLogin}); err != nil || len(stored) == 0 {
 		t.Fatal("a failed publication deleted the generation the account still references")
 	}
+	if refs, err := f.secrets.UnremovedReferences(context.Background(), f.input.AccountID); err != nil || len(refs) != 1 || refs[0].ID != generation {
+		t.Fatal("an aborted publication left the staged generation beside the current one")
+	}
+}
+
+// grokRotatedEnvelope seals a rotated credential for the same principal under
+// generation.
+func (f *grokFixture) grokRotatedEnvelope(generation domain.ID) []byte {
+	f.t.Helper()
+	raw, err := json.Marshal(map[string]any{subscription.GrokScopeKey: map[string]any{
+		"key": "synthetic-key-rotated", "auth_mode": "oidc", "create_time": "2026-10-14T00:00:00Z", "expires_at": "2026-10-14T12:00:00Z",
+		"user_id": "synthetic-user", "principal_type": "user", "principal_id": "synthetic-principal-1", "refresh_token": "synthetic-refresh-rotated",
+		"oidc_issuer": subscription.GrokIssuer, "oidc_client_id": subscription.GrokClientID,
+	}})
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	next, err := subscription.ParseGrokAuthFile(raw)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	sealed, err := subscription.SealGrokBundle(f.service.Identity.ServerID, f.input.AccountID, generation, next)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return sealed
+}
+
+// An abort whose staged generation cannot be removed still fences the account and
+// keeps the current generation; the unreferenced generation stays vault-owned
+// (never granted) until the next cleanup removes it.
+func TestGrokFinishAbortWithFailedRetirementStaysFencedAndNeverGrantsTheStagedGeneration(t *testing.T) {
+	f := newGrokFixture(t)
+	generation := f.login("synthetic-principal-1")
+	lease, err := f.take(f.queue(pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH), pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.secrets.afterPut = func() {
+		f.secrets.mu.Lock()
+		f.secrets.deleteError = domain.Fail(domain.Unavailable, "The vault removal failed.", "")
+		f.secrets.mu.Unlock()
+		_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.revoke-grok-worker", nil, func(tx *store.Tx) (any, error) {
+			r, err := tx.Get(domain.DeviceKind, f.device)
+			if err != nil {
+				return nil, err
+			}
+			d, err := store.Decode[domain.Device](r)
+			if err != nil {
+				return nil, err
+			}
+			d.Revoked = true
+			_, err = tx.Put(domain.DeviceKind, r.ID, r.Revision, "", "", d)
+			return nil, err
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	}
+	rotated := domain.NewID()
+	if _, err := f.finishWith(lease, rotated, f.grokRotatedEnvelope(rotated), true, true, true); err == nil {
+		t.Fatal("a revoked Worker published a generation")
+	}
+	_, a := f.record()
+	if a.Subscription.Generation != generation || !a.Subscription.RecoveryRequired || a.Subscription.Lease == nil {
+		t.Fatal("an aborted publication released the account or changed its generation")
+	}
+	if refs, err := f.secrets.UnremovedReferences(context.Background(), f.input.AccountID); err != nil || len(refs) != 2 {
+		t.Fatal("the failed removal did not leave the staged generation vault-owned")
+	}
+	if stored, err := f.secrets.Get(context.Background(), credentials.Ref{Owner: f.input.AccountID, ID: generation, Purpose: credentials.AccountLogin}); err != nil || len(stored) == 0 {
+		t.Fatal("the failed removal damaged the current generation")
+	}
+}
+
+// Retirement is bound to proof that the account document does not reference the
+// generation: a commit whose caller saw an error keeps the generation it
+// published, an unreadable account keeps everything, and only an unreferenced
+// generation is removed.
+func TestGrokRetireUnpublishedGenerationRequiresProofOfNonPublication(t *testing.T) {
+	f := newGrokFixture(t)
+	generation := f.login("synthetic-principal-1")
+	staged := domain.NewID()
+	ref := func(id domain.ID) credentials.Ref {
+		return credentials.Ref{Owner: f.input.AccountID, ID: id, Purpose: credentials.AccountLogin}
+	}
+	if _, err := f.secrets.Put(context.Background(), ref(staged), []byte("synthetic-staged")); err != nil {
+		t.Fatal(err)
+	}
+	f.service.retireUnpublishedGrokGeneration(f.secrets, f.input.AccountID, domain.NewID(), generation)
+	if _, err := f.secrets.Get(context.Background(), ref(generation)); err != nil {
+		t.Fatal("the generation the account references was removed")
+	}
+	f.service.retireUnpublishedGrokGeneration(f.secrets, domain.NewID(), domain.NewID(), staged)
+	if _, err := f.secrets.Get(context.Background(), ref(staged)); err != nil {
+		t.Fatal("an unreadable account did not keep the generation")
+	}
+	f.service.retireUnpublishedGrokGeneration(f.secrets, f.input.AccountID, domain.NewID(), staged)
+	if _, err := f.secrets.Get(context.Background(), ref(staged)); err == nil {
+		t.Fatal("an unreferenced generation was not retired")
+	}
+	if _, err := f.secrets.Get(context.Background(), ref(generation)); err != nil {
+		t.Fatal("retirement removed the current generation")
+	}
 }
 
 // A logout the Worker could not complete is fenced for recovery and the account

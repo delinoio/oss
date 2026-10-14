@@ -207,7 +207,15 @@ references removed (superseded generations, an unpublished staged generation and
 every generation after a completed logout); a logout fenced for recovery keeps
 its generation. A removal that cannot be confirmed marks the
 account recovery-required, and an unconfirmed Worker cleanup keeps the lease
-fenced.
+fenced. A Finish that aborts after staging (a revoked Worker, a concurrent
+cancellation, a vault or store failure) fences the account and then retires the
+staged generation, but only after reading the account document and proving it
+does not reference that generation; a commit whose caller saw an error keeps the
+generation it published. The retirement carries no request authority, so the
+revocation that aborted the Finish cannot skip it. When the account is
+unreadable or the removal fails, the unreferenced generation stays vault-owned,
+is never granted (Take reads only the referenced generation) and is removed by
+the next cleanup or the logout cleanup.
 
 Worker custody mirrors this. The Worker opens the delivered envelope against its
 own server, the account and the delivered generation, then writes
