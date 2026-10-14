@@ -217,15 +217,35 @@ export async function runAdapter(main) {
 export const MAX_EXPORT_USAGE_EDGES = 100_000;
 
 /**
+ * Stable reason codes for export usage that could not be collected. The
+ * collection stores only these codes; the analysis maps each to fixed text.
+ * No error message, source text or project path is ever stored as a reason.
+ */
+export const ExportUsageReason = Object.freeze({
+  PluginApiMissing: "plugin-api-missing",
+  PluginAlreadyConfigured: "plugin-already-configured",
+  PluginConstructionFailed: "plugin-construction-failed",
+  PluginApplyFailed: "plugin-apply-failed",
+  HookRegistrationFailed: "hook-registration-failed",
+  BuildFailedWithObserver: "build-failed-with-observer",
+  GraphNotDelivered: "graph-not-delivered",
+  ModulesPayloadInvalid: "modules-payload-invalid",
+  EdgesPayloadInvalid: "edges-payload-invalid",
+  EdgeLimitExceeded: "edge-limit-exceeded",
+});
+
+/**
  * Decodes Rspack's positional export usage tuples into collection edges.
  *
  * Each tuple is `[consumerKey, consumerExport, providerKey, providerExport,
  * dependencyId, location]`. Module keys are numeric and only meaningful
  * inside the payload that carried them, so `identifiers` maps them to bundler
  * module identifiers. A `null` export path means module or namespace scope.
- * Edges that cannot be decoded or whose modules are not collected modules
- * (for example a concatenated container) are skipped and counted, never
- * guessed. The result never contains source text.
+ * Edges that cannot be decoded, have an empty or non-string export path
+ * segment, or whose modules are not collected modules (for example a
+ * concatenated container) are skipped and counted, never guessed. The result
+ * never contains source text, and an unavailable result carries only an
+ * `ExportUsageReason` code.
  *
  * @param {unknown} rawEdges payload field `exportUsageEdges`
  * @param {Map<number, string>} identifiers module key to bundler identifier
@@ -235,8 +255,7 @@ export function decodeExportUsageEdges(rawEdges, identifiers, collectedIds) {
   if (!Array.isArray(rawEdges)) {
     return {
       available: false,
-      reason:
-        "The Rspack export usage payload has an unexpected shape (exportUsageEdges is not a list).",
+      reason: ExportUsageReason.EdgesPayloadInvalid,
       skippedEdges: 0,
       edges: [],
     };
@@ -246,7 +265,7 @@ export function decodeExportUsageEdges(rawEdges, identifiers, collectedIds) {
     if (
       Array.isArray(value) &&
       value.length > 0 &&
-      value.every((part) => typeof part === "string")
+      value.every((part) => typeof part === "string" && part.length > 0)
     ) {
       return { ok: true, value: [...value] };
     }
@@ -290,7 +309,7 @@ export function decodeExportUsageEdges(rawEdges, identifiers, collectedIds) {
   if (edges.length > MAX_EXPORT_USAGE_EDGES) {
     return {
       available: false,
-      reason: `Rspack reported more than ${MAX_EXPORT_USAGE_EDGES} export usage edges; none were stored.`,
+      reason: ExportUsageReason.EdgeLimitExceeded,
       skippedEdges: 0,
       edges: [],
     };
@@ -303,7 +322,16 @@ export function decodeExportUsageEdges(rawEdges, identifiers, collectedIds) {
   return { available: true, reason: null, skippedEdges, edges };
 }
 
-/** Collection value for export usage that could not be collected. */
+/**
+ * Collection value for export usage that could not be collected.
+ *
+ * @param {string} reason one of `ExportUsageReason`
+ */
 export function unavailableExportUsage(reason) {
+  if (!Object.values(ExportUsageReason).includes(reason)) {
+    throw new TypeError(
+      "export usage reason must be an ExportUsageReason code",
+    );
+  }
   return { available: false, reason, skippedEdges: 0, edges: [] };
 }

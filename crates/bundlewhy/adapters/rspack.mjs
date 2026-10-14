@@ -11,6 +11,7 @@ import {
   AdapterErrorCode,
   checkEngineVersion,
   decodeExportUsageEdges,
+  ExportUsageReason,
   importFile,
   moduleFilePath,
   nearestPackage,
@@ -322,19 +323,13 @@ function normalizeStats(stats) {
 
 const EXPORT_USAGE_TAP = "bundlewhy-export-usage";
 
-/** One-line, length-bounded error text for the collection and logs. */
-function shortMessage(error) {
-  return String(error?.message ?? error)
-    .split("\n")[0]
-    .slice(0, 200);
-}
-
 /**
  * Prepares the observation-only RsdoctorPlugin that reports Rspack's export
  * usage graph. The plugin is appended to the diagnostic build's plugin list;
  * the project's engine and its other plugins stay as configured. Every access
  * to the internal plugin API is guarded: when the API, the hook or the graph
- * is unavailable, the collection records why and the build continues.
+ * is unavailable, the collection records a fixed reason code and the build
+ * continues. Error messages from the plugin are never copied anywhere.
  */
 function prepareExportUsage(rspackModule, plugins) {
   const state = { graph: null, unavailable: null };
@@ -343,13 +338,11 @@ function prepareExportUsage(rspackModule, plugins) {
     typeof RsdoctorPlugin !== "function" ||
     typeof RsdoctorPlugin.getCompilationHooks !== "function"
   ) {
-    state.unavailable =
-      "This Rspack version does not provide experiments.RsdoctorPlugin, which reports export usage edges.";
+    state.unavailable = ExportUsageReason.PluginApiMissing;
     return { state, plugins };
   }
   if (plugins.some((entry) => entry instanceof RsdoctorPlugin)) {
-    state.unavailable =
-      "The project already configures RsdoctorPlugin; bundlewhy does not add a second instance.";
+    state.unavailable = ExportUsageReason.PluginAlreadyConfigured;
     return { state, plugins };
   }
   let observer;
@@ -359,15 +352,27 @@ function prepareExportUsage(rspackModule, plugins) {
       chunkGraphFeatures: false,
       exportUsageGraph: true,
     });
-  } catch (error) {
-    state.unavailable = `RsdoctorPlugin could not be created: ${shortMessage(error)}`;
+  } catch {
+    state.unavailable = ExportUsageReason.PluginConstructionFailed;
     return { state, plugins };
   }
+  // The first failure wins; later ones never replace the recorded reason.
+  const fail = (reason) => {
+    state.unavailable ??= reason;
+  };
+  // Rspack applies the plugin while it creates the compiler, so an exception
+  // here would otherwise abort the build and lose every diagnostic.
+  const guardedObserver = {
+    apply(compiler) {
+      try {
+        observer.apply(compiler);
+      } catch {
+        fail(ExportUsageReason.PluginApplyFailed);
+      }
+    },
+  };
   const collector = {
     apply(compiler) {
-      const fail = (error) => {
-        state.unavailable = `The RsdoctorPlugin moduleGraph hook could not be used: ${shortMessage(error)}`;
-      };
       try {
         // thisCompilation is not fired for child compilations, so the
         // payload always describes the main build.
@@ -377,16 +382,16 @@ function prepareExportUsage(rspackModule, plugins) {
             hooks.moduleGraph.tapPromise(EXPORT_USAGE_TAP, async (graph) => {
               state.graph = graph;
             });
-          } catch (error) {
-            fail(error);
+          } catch {
+            fail(ExportUsageReason.HookRegistrationFailed);
           }
         });
-      } catch (error) {
-        fail(error);
+      } catch {
+        fail(ExportUsageReason.HookRegistrationFailed);
       }
     },
   };
-  return { state, plugins: [...plugins, observer, collector] };
+  return { state, plugins: [...plugins, guardedObserver, collector] };
 }
 
 /** Builds the collection's export usage record from the captured payload. */
@@ -394,14 +399,10 @@ function collectExportUsage(state, normalized) {
   if (state.unavailable) return unavailableExportUsage(state.unavailable);
   const graph = state.graph;
   if (!graph || typeof graph !== "object") {
-    return unavailableExportUsage(
-      "Rspack did not deliver the RsdoctorPlugin module graph for this build.",
-    );
+    return unavailableExportUsage(ExportUsageReason.GraphNotDelivered);
   }
   if (!Array.isArray(graph.modules)) {
-    return unavailableExportUsage(
-      "The Rspack export usage payload has an unexpected shape (modules is not a list).",
-    );
+    return unavailableExportUsage(ExportUsageReason.ModulesPayloadInvalid);
   }
   const identifiers = new Map();
   for (const entry of graph.modules) {
@@ -501,23 +502,51 @@ await runAdapter(async (request) => {
     rspackModule,
     Array.isArray(config.plugins) ? config.plugins : [],
   );
-  if (exportUsage.state.unavailable === null) {
+  const observerAttached = exportUsage.state.unavailable === null;
+  if (observerAttached) {
     diagnosticConfig.plugins = exportUsage.plugins;
-    overrides.push(
-      "plugins += RsdoctorPlugin (observation-only export usage graph; the project's plugins are unchanged)",
-    );
   }
 
   progress("building", `Running the Rspack ${version} production build`);
   let stats;
   let platform = {};
-  try {
-    ({ stats, platform } = await runCompiler(rspack, diagnosticConfig));
-  } catch (error) {
-    throw new AdapterError(
-      AdapterErrorCode.BuildFailed,
-      `rspack build failed: ${error?.message ?? error}`,
-      "Fix the build error, confirm the Rspack build succeeds in the project, then start a new run.",
+  let observed = false;
+  if (observerAttached) {
+    // The observer is an internal API that can drift between Rspack
+    // releases. Any failure of this build might come from it, so the build
+    // is repeated once without it; export usage is then unavailable and
+    // the project's own build failure, if any, is reported by the repeat.
+    try {
+      ({ stats, platform } = await runCompiler(rspack, diagnosticConfig));
+      observed = !stats.hasErrors();
+    } catch {
+      observed = false;
+    }
+    if (!observed) {
+      exportUsage.state.unavailable ??=
+        ExportUsageReason.BuildFailedWithObserver;
+      if (config.plugins === undefined) delete diagnosticConfig.plugins;
+      else diagnosticConfig.plugins = config.plugins;
+      progress(
+        "building",
+        "Repeating the production build without the export usage observer",
+      );
+    }
+  }
+  if (!observed) {
+    try {
+      ({ stats, platform } = await runCompiler(rspack, diagnosticConfig));
+    } catch (error) {
+      throw new AdapterError(
+        AdapterErrorCode.BuildFailed,
+        `rspack build failed: ${error?.message ?? error}`,
+        "Fix the build error, confirm the Rspack build succeeds in the project, then start a new run.",
+      );
+    }
+  }
+  if (observed) {
+    overrides.push(
+      "plugins += RsdoctorPlugin (observation-only export usage graph; the project's plugins are unchanged)",
     );
   }
 

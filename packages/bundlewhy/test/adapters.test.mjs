@@ -8,6 +8,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
+  ExportUsageReason,
   MAX_EXPORT_USAGE_EDGES,
   decodeExportUsageEdges,
 } from "../../../crates/bundlewhy/adapters/common.mjs";
@@ -495,7 +496,7 @@ test("decodeExportUsageEdges handles every payload shape", () => {
       raw: { not: "a list" },
       expect: (result) => {
         assert.equal(result.available, false);
-        assert.match(result.reason, /unexpected shape/);
+        assert.equal(result.reason, ExportUsageReason.EdgesPayloadInvalid);
         assert.deepEqual(result.edges, []);
       },
     },
@@ -533,6 +534,30 @@ test("decodeExportUsageEdges handles every payload shape", () => {
       name: "empty export path is skipped and counted",
       raw: [[1, [], 2, null, "1", null]],
       expect: (result) => assert.equal(result.skippedEdges, 1),
+    },
+    {
+      name: "export path with only an empty segment is skipped and counted",
+      raw: [[1, [""], 2, null, "1", null]],
+      expect: (result) => {
+        assert.equal(result.skippedEdges, 1);
+        assert.deepEqual(result.edges, []);
+      },
+    },
+    {
+      name: "provider export path with an empty segment is skipped and counted",
+      raw: [[1, ["a"], 2, ["b", ""], "1", null], good],
+      expect: (result) => {
+        assert.equal(result.skippedEdges, 1);
+        assert.equal(result.edges.length, 1);
+      },
+    },
+    {
+      name: "self edge is stored once",
+      raw: [[1, ["a"], 1, ["a"], "1", null]],
+      expect: (result) => {
+        assert.equal(result.skippedEdges, 0);
+        assert.equal(result.edges.length, 1);
+      },
     },
     {
       name: "non-string export path segment is skipped and counted",
@@ -581,7 +606,7 @@ test("decodeExportUsageEdges refuses graphs above the edge limit", () => {
     decodeCollected,
   );
   assert.equal(result.available, false);
-  assert.match(result.reason, /more than/);
+  assert.equal(result.reason, ExportUsageReason.EdgeLimitExceeded);
   assert.deepEqual(result.edges, []);
 });
 
@@ -628,7 +653,21 @@ function wrappedProject({ config = null } = {}) {
     `const real = require(${JSON.stringify(realRspackEntry)});
 const mode = process.env.BUNDLEWHY_TEST_EXPORT_USAGE_MODE;
 const Real = real.experiments.RsdoctorPlugin;
-class Patched extends Real {}
+class Patched extends Real {
+  constructor(...args) {
+    if (mode === "construct-throws") throw new Error("boom construct\\nsecond line quotes source");
+    super(...args);
+  }
+  apply(compiler) {
+    if (mode === "apply-throws") throw new Error("boom apply\\nsecond line quotes source");
+    if (mode === "compilation-hook-throws") {
+      compiler.hooks.thisCompilation.tap("boom", () => {
+        throw new Error("boom compilation\\nsecond line quotes source");
+      });
+    }
+    return super.apply(compiler);
+  }
+}
 Patched.getCompilationHooks = (compilation) => {
   if (mode === "hook-throws") throw new Error("boom\\nsecond line quotes source");
   if (mode === "hook-missing") return {};
@@ -700,14 +739,21 @@ test("rspack adapter works through the wrapped engine when the API is intact", (
   );
 });
 
-for (const [mode, expected, addsPlugin] of [
-  ["no-plugin", /does not provide experiments\.RsdoctorPlugin/, false],
-  ["hook-missing", /moduleGraph hook could not be used/, true],
-  ["hook-throws", /moduleGraph hook could not be used: boom$/, true],
-  ["never-called", /did not deliver the RsdoctorPlugin module graph/, true],
-  ["no-edges-field", /exportUsageEdges is not a list/, true],
-  ["no-modules-field", /modules is not a list/, true],
-]) {
+// Every adapter failure or drift path: the export usage reason code and
+// whether the final build used the plugin. The build always succeeds.
+const adapterOutcomes = [
+  ["no-plugin", ExportUsageReason.PluginApiMissing, false],
+  ["construct-throws", ExportUsageReason.PluginConstructionFailed, false],
+  ["apply-throws", ExportUsageReason.PluginApplyFailed, true],
+  ["hook-missing", ExportUsageReason.HookRegistrationFailed, true],
+  ["hook-throws", ExportUsageReason.HookRegistrationFailed, true],
+  ["compilation-hook-throws", ExportUsageReason.BuildFailedWithObserver, false],
+  ["never-called", ExportUsageReason.GraphNotDelivered, true],
+  ["no-edges-field", ExportUsageReason.EdgesPayloadInvalid, true],
+  ["no-modules-field", ExportUsageReason.ModulesPayloadInvalid, true],
+];
+
+for (const [mode, reason, addsPlugin] of adapterOutcomes) {
   test(`rspack adapter reports unavailable export usage when ${mode}`, () => {
     const dir = wrappedProject();
     const { status, events, collection } = runWrapped(dir, mode);
@@ -718,17 +764,41 @@ for (const [mode, expected, addsPlugin] of [
       collection.modules.some((module) => module.path?.endsWith("value.js")),
     );
     assert.equal(collection.exportUsage.available, false);
-    assert.match(collection.exportUsage.reason, expected);
+    assert.equal(collection.exportUsage.reason, reason);
     assert.deepEqual(collection.exportUsage.edges, []);
     assert.equal(
       collection.overrides.some((entry) => entry.includes("RsdoctorPlugin")),
       addsPlugin,
     );
-    // A failure message never spans several lines (no quoted source).
-    assert.ok(!collection.exportUsage.reason.includes("\n"));
-    assert.ok(!collection.exportUsage.reason.includes("second line"));
+    // The reason is a code from the fixed set and no error text is copied
+    // into the collection or the protocol frames.
+    assert.ok(Object.values(ExportUsageReason).includes(reason));
+    const everything = JSON.stringify({ collection, events });
+    assert.ok(!everything.includes("boom"), mode);
+    assert.ok(!everything.includes("second line"), mode);
   });
 }
+
+test("every export usage reason code has an adapter outcome test or a payload test", () => {
+  const covered = new Set(adapterOutcomes.map(([, reason]) => reason));
+  covered.add(ExportUsageReason.PluginAlreadyConfigured);
+  covered.add(ExportUsageReason.EdgeLimitExceeded);
+  assert.deepEqual(
+    [...covered].sort(),
+    Object.values(ExportUsageReason).sort(),
+  );
+});
+
+test("a failing project build is still reported after the observer repeat", () => {
+  const dir = wrappedProject();
+  fs.writeFileSync(path.join(dir, "src/main.js"), "import { from ;\n");
+  const { status, events, collection } = runWrapped(dir, "intact");
+  fs.rmSync(dir, { recursive: true, force: true });
+  assert.notEqual(status, 0);
+  assert.equal(collection, null);
+  const error = events.find((event) => event.event === "error");
+  assert.equal(error.code, "BW_BUILD_FAILED");
+});
 
 test("rspack adapter does not add a second RsdoctorPlugin to the project", () => {
   const dir = wrappedProject({
@@ -746,9 +816,9 @@ export default {
   fs.rmSync(dir, { recursive: true, force: true });
   assert.equal(status, 0, JSON.stringify(events));
   assert.equal(collection.exportUsage.available, false);
-  assert.match(
+  assert.equal(
     collection.exportUsage.reason,
-    /already configures RsdoctorPlugin/,
+    ExportUsageReason.PluginAlreadyConfigured,
   );
   assert.ok(
     !collection.overrides.some((entry) => entry.includes("RsdoctorPlugin")),
