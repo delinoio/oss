@@ -706,6 +706,120 @@ it("never opens a browser or takes a callback for a login whose cancellation was
     expect(screen.queryByRole("button", { name: copy(name) }), name).toBeNull();
 });
 
+// Native completion after an acknowledged cancellation. The acknowledgement
+// disposes the native binding at once; a native step that was already pending
+// is discarded when it settles.
+//
+//   pending native step   settles with   result
+//   GrokSubscriptionOpen  generation     discarded: no Take, notice kept
+//   GrokSubscriptionOpen  failure        discarded: notice kept
+//   Take                  callback       zeroed, never forwarded
+//   Take                  failure        discarded: notice kept
+it.each([
+  ["a generation", "resolve"],
+  ["a failure", "reject"],
+] as const)(
+  "discards a pending native open that settles with %s after the cancellation was acknowledged",
+  async (_name, outcome) => {
+    const f = fixture();
+    let settle: () => void = () => undefined;
+    f.native.mockImplementation(async (_scope, action, generation) => {
+      if (action !== OAuthNativeAction.GrokSubscriptionOpen)
+        return { generation: generation || newRequestId() };
+      return new Promise((resolve, reject) => {
+        settle = () =>
+          outcome === "resolve"
+            ? resolve({ generation: newRequestId() })
+            : reject("browser-launch-failed");
+      });
+    });
+    render(f.view());
+    fireEvent.click(screen.getByRole("button", { name: "Start Grok" }));
+    await waitFor(
+      () =>
+        expect(
+          actions(f, OAuthNativeAction.GrokSubscriptionOpen),
+        ).toHaveLength(1),
+      { timeout: 3000 },
+    );
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: copy("grok-subscription.cancel"),
+      }),
+    );
+    await screen.findByText(copy("grok-subscription.problem.canceling"));
+    // The binding is retired at the acknowledgement, before the open settles.
+    expect(actions(f, OAuthNativeAction.Dispose).length).toBeGreaterThan(0);
+    await act(async () => {
+      settle();
+      await new Promise((resolve) => setTimeout(resolve, 1300));
+    });
+    expect(actions(f, OAuthNativeAction.Take)).toHaveLength(0);
+    expect(f.forward).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(copy("grok-subscription.problem.canceling")),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText(copy("grok-subscription.problem.browserFailed")),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", {
+        name: copy("grok-subscription.openBrowser"),
+      }),
+    ).toBeNull();
+    expect(f.cancel).toHaveBeenCalledTimes(1);
+  },
+  20000,
+);
+
+it.each([
+  ["a callback", "callback"],
+  ["a failure", "failure"],
+] as const)(
+  "discards a pending native take that settles with %s after the cancellation was acknowledged",
+  async (_name, outcome) => {
+    const f = fixture();
+    const code = [99, 111, 100, 101];
+    let settle: () => void = () => undefined;
+    f.native.mockImplementation(async (_scope, action, generation) => {
+      if (action !== OAuthNativeAction.Take)
+        return { generation: generation || newRequestId() };
+      return new Promise((resolve, reject) => {
+        settle = () =>
+          outcome === "callback"
+            ? resolve({ generation, code })
+            : reject("take-failed");
+      });
+    });
+    render(f.view());
+    fireEvent.click(screen.getByRole("button", { name: "Start Grok" }));
+    await waitFor(
+      () => expect(actions(f, OAuthNativeAction.Take)).toHaveLength(1),
+      { timeout: 3000 },
+    );
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: copy("grok-subscription.cancel"),
+      }),
+    );
+    await screen.findByText(copy("grok-subscription.problem.canceling"));
+    await act(async () => {
+      settle();
+      await new Promise((resolve) => setTimeout(resolve, 1300));
+    });
+    // The callback is zeroed and never forwarded to the server.
+    if (outcome === "callback") expect(code).toEqual([0, 0, 0, 0]);
+    expect(f.forward).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(copy("grok-subscription.problem.canceling")),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText(copy("grok-subscription.problem.callbackUncertain")),
+    ).toBeNull();
+  },
+  20000,
+);
+
 it("replays an uncertain cancel only through Retry original request and never as a second cancel", async () => {
   const f = fixture();
   await start(f);

@@ -205,6 +205,12 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
   const update = (p: Pending, change: Partial<View>) => {
     if (live(p)) setView((current) => current && { ...current, ...change });
   };
+  const disposeNative = (p: Pending) => {
+    if (native)
+      void native(p.opening, OAuthNativeAction.Dispose, "", "", "").catch(
+        () => undefined,
+      );
+  };
   // Disposal clears display, timer and callback authority only. It never
   // cancels an operation the server already accepted.
   const dispose = (p: Pending) => {
@@ -213,18 +219,12 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
     p.url = "";
     if (p.copyTimer) clearTimeout(p.copyTimer);
     p.copyTimer = undefined;
-    if (native)
-      void native(p.opening, OAuthNativeAction.Dispose, "", "", "").catch(
-        () => undefined,
-      );
+    disposeNative(p);
   };
   const finish = (p: Pending) => {
     p.terminal = true;
     p.url = "";
-    if (native)
-      void native(p.opening, OAuthNativeAction.Dispose, "", "", "").catch(
-        () => undefined,
-      );
+    disposeNative(p);
   };
   const leave = () => {
     const p = pending.current;
@@ -508,6 +508,10 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
               p.url,
             );
             if (!live(p)) return;
+            // A cancellation acknowledged while the open was pending already
+            // disposed the native binding: the late result is discarded and
+            // never overwrites the cancellation notice.
+            if (p.cancelAcknowledged) return;
             if (!isEntityId(result.generation))
               throw new Error("Invalid native generation");
             p.generation = result.generation;
@@ -518,6 +522,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
               problem: undefined,
             });
           } catch (error) {
+            if (p.cancelAcknowledged) return;
             // A closed incompatible refusal leaves no native binding, so
             // Open browser again would only be refused again: keep it hidden
             // and leave the copyable link as the only way forward. Any other
@@ -545,12 +550,15 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
             );
           } catch {
             p.callbackDispatched = true;
-            update(p, {
-              problem: "grok-subscription.problem.callbackUncertain",
-            });
+            if (!p.cancelAcknowledged)
+              update(p, {
+                problem: "grok-subscription.problem.callbackUncertain",
+              });
             return;
           }
-          if (!live(p)) {
+          // A callback taken after the cancellation was acknowledged is
+          // zeroed and never forwarded.
+          if (!live(p) || p.cancelAcknowledged) {
             result.code?.fill(0);
             return;
           }
@@ -579,9 +587,10 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
                 callbackQuery: query,
               });
             } catch {
-              update(p, {
-                problem: "grok-subscription.problem.forwardUncertain",
-              });
+              if (!p.cancelAcknowledged)
+                update(p, {
+                  problem: "grok-subscription.problem.forwardUncertain",
+                });
             } finally {
               query.fill(0);
               result.code.fill(0);
@@ -601,7 +610,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
 
   const reopen = () => {
     const p = pending.current;
-    if (!p || !live(p) || !p.url || !native) return;
+    if (!p || !live(p) || !p.url || !native || p.cancelAcknowledged) return;
     void run(
       p,
       async () => {
@@ -624,7 +633,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
           });
           return;
         }
-        if (!live(p)) return;
+        if (!live(p) || p.cancelAcknowledged) return;
         if (
           !isEntityId(result.generation) ||
           (p.generation && result.generation !== p.generation)
@@ -699,6 +708,9 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
           // observing until it reports the terminal state, but a second
           // click must not send another cancel mutation.
           p.cancelAcknowledged = true;
+          // Retire the native receiver now: no browser binding, callback take
+          // or forwarding can complete after the acknowledged cancellation.
+          disposeNative(p);
           update(p, {
             problem: "grok-subscription.problem.canceling",
             canCancel: false,
