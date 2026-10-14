@@ -8,3 +8,4 @@
 
 - [DeliDev account lifecycle](../../../../../docs/cmds-delidev-accounts-contract.md)
 - [DeliDev native harness adapter contract](../../../../../docs/cmds-delidev-harness-contract.md)
+- [DeliDev Grok subscription contract](../../../../../docs/cmds-delidev-grok-subscription-contract.md)
