@@ -140,11 +140,11 @@ it.each([
     (value: Record<string, unknown>) => (value.input_id = newRequestId()),
   ],
   ["tool", (value: Record<string, unknown>) => (value.tool = {})],
-  ["streaming", (value: Record<string, unknown>) => (value.state = "streaming")],
   [
-    "foreign field",
-    (value: Record<string, unknown>) => (value.claude = {}),
+    "streaming",
+    (value: Record<string, unknown>) => (value.state = "streaming"),
   ],
+  ["foreign field", (value: Record<string, unknown>) => (value.claude = {})],
 ])("keeps rejecting a non-reasoning artifact record: %s", (_name, edit) => {
   const sessionId = newRequestId();
   expect(

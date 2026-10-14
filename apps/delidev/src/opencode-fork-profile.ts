@@ -250,7 +250,12 @@ export function useOpenCodeForkProfile(
           if (++total > 10000 || bytes > 8 << 20 || ids.has(row.id))
             return false;
           ids.add(row.id);
-          const kind = plainOpenCodeForkMessage(row, source.id, thread, reasoning);
+          const kind = plainOpenCodeForkMessage(
+            row,
+            source.id,
+            thread,
+            reasoning,
+          );
           if (!kind) return false;
           if (kind === "text") {
             const id = document(row).native_id;
