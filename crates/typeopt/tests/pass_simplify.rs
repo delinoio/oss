@@ -723,6 +723,16 @@ fn package(name: &str, runtime: &str, declaration: &str) -> Vec<(String, String)
 fn assert_slice_preserved(files: &[(&str, &str)], expected: &str) {
     for keep in [&[IS][..], &[][..]] {
         let temp = project(files);
+        if files.iter().any(|(name, _)| {
+            !name.starts_with("node_modules/")
+                && (name.ends_with(".js") || name.ends_with(".mjs") || name.ends_with(".cjs"))
+        }) {
+            std::fs::write(
+                temp.path().join("tsconfig.json"),
+                r#"{"compilerOptions":{"target":"ES2022","module":"ESNext","moduleResolution":"bundler","strict":true,"allowJs":true,"rewriteRelativeImportExtensions":true}}"#,
+            )
+            .unwrap();
+        }
         let report = if keep.is_empty() {
             optimize(temp.path(), &[])
         } else {
@@ -742,6 +752,140 @@ fn assert_slice_preserved(files: &[(&str, &str)], expected: &str) {
             skipped_reasons(&report, IS).contains(&"intrinsic_may_be_replaced".to_owned()),
             "{report:#}"
         );
+    }
+}
+
+#[test]
+fn bare_core_looking_packages_do_not_prove_host_identity() {
+    for name in ["process", "buffer", "http"] {
+        let packages = package(
+            name,
+            "Array.prototype.slice = function () { return [9]; };\n",
+            "export {};\n",
+        );
+        let source = format!("import \"{name}\";\nconsole.log(JSON.stringify([1].slice()));\n");
+        let app = [("main.ts", source.as_str())];
+        let files = with_packages(&app, &packages);
+        // Node itself resolves these names to the host. The assertion here
+        // checks the optimizer's guard for browser or alternate resolvers.
+        let temp = project(&files);
+        let report = optimize(temp.path(), &args(&only(&[IS])));
+        assert_eq!(applied(&report, IS), 0, "{name}: {report:#}");
+        assert!(emitted(temp.path(), "main.ts").contains(".slice()"));
+        assert!(skipped_reasons(&report, IS).contains(&"intrinsic_may_be_replaced".to_owned()));
+    }
+}
+
+#[test]
+fn ambient_bare_core_name_does_not_prove_host_identity() {
+    let files: &[(&str, &str)] = &[
+        (
+            "main.ts",
+            "import \"http\";\nconsole.log(JSON.stringify([1].slice()));\n",
+        ),
+        ("host.d.ts", "declare module \"http\";\n"),
+    ];
+    let (temp, report) = run(files, &[IS]);
+    assert_eq!(applied(&report, IS), 0, "{report:#}");
+    assert!(emitted(temp.path(), "main.ts").contains(".slice()"));
+    assert!(skipped_reasons(&report, IS).contains(&"intrinsic_may_be_replaced".to_owned()));
+}
+
+#[test]
+fn executable_package_with_json_suffix_guards_intrinsics() {
+    let packages = package(
+        "patch.json",
+        "Array.prototype.slice = function () { return [9]; };\nexport const ready = true;\n",
+        "export declare const ready: boolean;\n",
+    );
+    let cases: [&[(&str, &str)]; 4] = [
+        &[(
+            "main.ts",
+            "import \"patch.json\";\nconsole.log(JSON.stringify([1].slice()));\n",
+        )],
+        &[(
+            "main.ts",
+            "export {};\nawait \
+             import(\"patch.json\");\nconsole.log(JSON.stringify([1].slice()));\n",
+        )],
+        &[
+            (
+                "main.ts",
+                "import \"./bridge.ts\";\nconsole.log(JSON.stringify([1].slice()));\n",
+            ),
+            ("bridge.ts", "export { ready } from \"patch.json\";\n"),
+        ],
+        &[
+            (
+                "main.ts",
+                "import \"./bridge.cjs\";\nconsole.log(JSON.stringify([1].slice()));\n",
+            ),
+            ("bridge.cjs", "module.require(\"patch.json\");\n"),
+        ],
+    ];
+    for (case, app) in cases.into_iter().enumerate() {
+        let files = with_packages(app, &packages);
+        assert_slice_preserved(&files, "[9]\n");
+        if case == 0 {
+            let temp = project(&files);
+            let options = only(&[IS]);
+            let checked = check(temp.path(), &args(&options));
+            let published = optimize(temp.path(), &args(&options));
+            assert_eq!(
+                without_measurements(checked),
+                without_measurements(published)
+            );
+        }
+    }
+}
+
+#[test]
+fn resolved_json_data_keeps_intrinsics_specializable() {
+    let files: &[(&str, &str)] = &[
+        (
+            "main.ts",
+            "import data from \"./data.json\" with { type: \"json\" \
+             };\nconsole.log(JSON.stringify([data.value].slice()));\n",
+        ),
+        ("data.json", "{\"value\":5}\n"),
+    ];
+    let (temp, report) = run(files, &[IS]);
+    assert!(applied(&report, IS) >= 1, "{report:#}");
+    assert!(!emitted(temp.path(), "main.ts").contains(".slice()"));
+}
+
+#[test]
+fn module_require_and_created_loader_guard_intrinsics() {
+    let packages = package(
+        "patch-slice",
+        "Array.prototype.slice = function () { return [9]; };\n",
+        "export {};\n",
+    );
+    for bridge in [
+        ("bridge.cjs", "require(\"patch-slice\");\n"),
+        ("bridge.cjs", "module.require(\"patch-slice\");\n"),
+        (
+            "bridge.cjs",
+            "const target = \"patch-slice\";\nmodule.require(target);\n",
+        ),
+        (
+            "bridge.cjs",
+            "const { createRequire: makeRequire } = require(\"node:module\");\nconst load = \
+             makeRequire(__filename);\nload(\"patch-slice\");\n",
+        ),
+        (
+            "bridge.mjs",
+            "import { createRequire as makeRequire } from \"node:module\";\nconst load = \
+             makeRequire(import.meta.url);\nload(\"patch-slice\");\n",
+        ),
+    ] {
+        let entry = format!(
+            "import \"./{}\";\nconsole.log(JSON.stringify([1].slice()));\n",
+            bridge.0
+        );
+        let app = [("main.ts", entry.as_str()), (bridge.0, bridge.1)];
+        let files = with_packages(&app, &packages);
+        assert_slice_preserved(&files, "[9]\n");
     }
 }
 

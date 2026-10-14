@@ -1543,13 +1543,6 @@ fn scan_patches(ctx: &mut Ctx) -> Patches {
     patches
 }
 
-/// Node.js core modules. Importing one runs only the host's own code, which
-/// does not replace language built-ins.
-const NODE_CORE_MODULES: [&str; 12] = [
-    "assert", "buffer", "crypto", "events", "fs", "os", "path", "process", "stream", "url", "util",
-    "zlib",
-];
-
 /// How an application module reaches the module a specifier names.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ImportTarget {
@@ -1565,10 +1558,9 @@ enum ImportTarget {
 /// Classifies a literal module specifier without loading the module.
 fn import_target(ctx: &mut Ctx, importer: &str, specifier: Node) -> ImportTarget {
     let text = specifier.text();
-    if text.starts_with("node:")
-        || NODE_CORE_MODULES.contains(&text)
-        || text.split('?').next().is_some_and(|p| p.ends_with(".json"))
-    {
+    // The explicit scheme identifies a host module. A bare core-looking name
+    // can resolve to a browser package or ambient declaration instead.
+    if text.starts_with("node:") {
         return ImportTarget::Inert;
     }
     let symbol = ctx.checker.get_symbol_at_location(specifier);
@@ -1637,12 +1629,114 @@ fn relative_application_file(ctx: &Ctx, importer: &str, specifier: &str) -> bool
         .any(|candidate| ctx.file_of(candidate).is_some())
 }
 
+/// Local names of loaders returned by `createRequire` from the host module.
+/// This intentionally recognizes a bounded set of direct aliases. Unknown
+/// loader calls are not used as evidence that an intrinsic is intact.
+fn created_require_loaders(nodes: &[Node]) -> HashSet<String> {
+    let mut factories = HashSet::new();
+    for &node in nodes {
+        match node.kind() {
+            SyntaxKind::ImportDeclaration
+                if matches!(node.module_specifier().text(), "node:module" | "module") =>
+            {
+                let clause = node.import_clause();
+                if clause.is_nil() || clause.is_type_only() {
+                    continue;
+                }
+                let bindings = clause.named_bindings();
+                if bindings.kind() != SyntaxKind::NamedImports {
+                    continue;
+                }
+                for specifier in bindings.elements().iter() {
+                    let imported = if specifier.property_name().is_some() {
+                        specifier.property_name()
+                    } else {
+                        specifier.name()
+                    };
+                    if imported.text() == "createRequire" && !specifier.is_type_only() {
+                        factories.insert(specifier.name().text().to_owned());
+                    }
+                }
+            }
+            SyntaxKind::VariableDeclaration
+                if node.name().kind() == SyntaxKind::ObjectBindingPattern =>
+            {
+                let init = skip_outer(node.initializer());
+                if init.kind() != SyntaxKind::CallExpression
+                    || skip_outer(init.expression()).kind() != SyntaxKind::Identifier
+                    || skip_outer(init.expression()).text() != "require"
+                    || !init
+                        .arguments()
+                        .first()
+                        .is_some_and(|argument| matches!(argument.text(), "node:module" | "module"))
+                {
+                    continue;
+                }
+                for binding in node.name().elements().iter() {
+                    let imported = if binding.property_name().is_some() {
+                        binding.property_name()
+                    } else {
+                        binding.name()
+                    };
+                    if imported.text() == "createRequire"
+                        && binding.name().kind() == SyntaxKind::Identifier
+                    {
+                        factories.insert(binding.name().text().to_owned());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut loaders = HashSet::new();
+    // A direct initializer and a local alias both retain the loader identity.
+    for _ in 0..nodes.len() {
+        let mut changed = false;
+        for &node in nodes {
+            if node.kind() != SyntaxKind::VariableDeclaration
+                || node.name().kind() != SyntaxKind::Identifier
+            {
+                continue;
+            }
+            let init = skip_outer(node.initializer());
+            let from_factory = init.kind() == SyntaxKind::CallExpression
+                && skip_outer(init.expression()).kind() == SyntaxKind::Identifier
+                && factories.contains(skip_outer(init.expression()).text());
+            let from_loader =
+                init.kind() == SyntaxKind::Identifier && loaders.contains(init.text());
+            if (from_factory || from_loader) && loaders.insert(node.name().text().to_owned()) {
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    loaders
+}
+
+fn module_require_call(callee: Node, loaders: &HashSet<String>) -> bool {
+    let callee = skip_outer(callee);
+    if callee.kind() == SyntaxKind::Identifier {
+        return loaders.contains(callee.text());
+    }
+    callee.kind() == SyntaxKind::PropertyAccessExpression
+        && callee.name().text() == "require"
+        && skip_outer(callee.expression()).kind() == SyntaxKind::Identifier
+        && skip_outer(callee.expression()).text() == "module"
+}
+
 /// Whether any application module has a runtime import, re-export, dynamic
 /// import or `require` of code outside the application. Type-only imports
 /// and re-exports are erased and exempt. The scan reads syntax and resolves
 /// specifiers through the checker; it never executes or reads dependencies.
 fn imports_external_runtime(ctx: &mut Ctx) -> bool {
     for index in 0..ctx.files.len() {
+        let loaders = if ctx.files[index].js {
+            created_require_loaders(&ctx.files[index].nodes)
+        } else {
+            HashSet::new()
+        };
         for position in 0..ctx.files[index].nodes.len() {
             let node = ctx.files[index].nodes[position];
             let specifier = match node.kind() {
@@ -1665,7 +1759,10 @@ fn imports_external_runtime(ctx: &mut Ctx) -> bool {
                     let require = callee.kind() == SyntaxKind::Identifier
                         && callee.text() == "require"
                         && ctx.files[index].js;
-                    if !dynamic && !require {
+                    if !dynamic
+                        && !require
+                        && !(ctx.files[index].js && module_require_call(callee, &loaders))
+                    {
                         continue;
                     }
                     match node.arguments().first() {
