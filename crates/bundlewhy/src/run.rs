@@ -47,26 +47,20 @@ const LOCKFILES: [&str; 5] = [
 ];
 
 /// Hashes the files bundlewhy must never modify.
-/// Lockfiles of the nearest ancestor directory that has one, stopping at a
-/// repository root (`.git`). In a monorepo the workspace lockfile controls the
-/// dependencies a package build uses.
+/// Lockfile candidates in every ancestor directory up to the repository root
+/// (`.git`), whether or not they exist yet. Missing candidates are hashed as
+/// absent, so a workspace lockfile created during the build is detected.
 fn ancestor_lockfiles(project_root: &Path) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
     let mut directory = project_root.parent();
     while let Some(current) = directory {
-        let found: Vec<PathBuf> = LOCKFILES
-            .iter()
-            .map(|name| current.join(name))
-            .filter(|path| path.is_file())
-            .collect();
-        if !found.is_empty() {
-            return found;
-        }
+        candidates.extend(LOCKFILES.iter().map(|name| current.join(name)));
         if current.join(".git").exists() {
             break;
         }
         directory = current.parent();
     }
-    Vec::new()
+    candidates
 }
 
 fn protected_files(selection: &Selection) -> BTreeMap<PathBuf, Option<String>> {
@@ -764,17 +758,26 @@ mod tests {
     fn workspace_lockfiles_above_the_project_are_protected() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir(dir.path().join(".git")).unwrap();
-        std::fs::write(dir.path().join("pnpm-lock.yaml"), "lockfileVersion: 9").unwrap();
         let package = dir.path().join("packages/app");
         std::fs::create_dir_all(&package).unwrap();
-        assert_eq!(
-            ancestor_lockfiles(&package),
-            vec![dir.path().join("pnpm-lock.yaml")]
+        let candidates = ancestor_lockfiles(&package);
+        // Candidates exist for every ancestor up to and including the
+        // repository root, even before any lockfile exists.
+        assert!(candidates.contains(&dir.path().join("pnpm-lock.yaml")));
+        assert!(candidates.contains(&dir.path().join("packages/package-lock.json")));
+        assert!(!candidates.iter().any(|path| !path.starts_with(dir.path())));
+        let selection = Selection {
+            project_root: package.clone(),
+            project_name: "app".to_owned(),
+            bundler: BundlerChoice::Vite,
+            config_file: None,
+        };
+        let before = protected_files(&selection);
+        std::fs::write(dir.path().join("pnpm-lock.yaml"), "lockfileVersion: 9").unwrap();
+        let after = protected_files(&selection);
+        assert_ne!(
+            before, after,
+            "a lockfile created during the run must be detected"
         );
-        // A repository root without a lockfile ends the search.
-        let other = tempfile::tempdir().unwrap();
-        std::fs::create_dir(other.path().join(".git")).unwrap();
-        std::fs::create_dir_all(other.path().join("app")).unwrap();
-        assert!(ancestor_lockfiles(&other.path().join("app")).is_empty());
     }
 }
