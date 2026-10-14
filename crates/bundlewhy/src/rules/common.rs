@@ -289,7 +289,7 @@ impl EnvGuard {
 /// blocker.
 fn env_guard(code: &str, start: usize, end: usize, ignored: &[(usize, usize)]) -> Option<EnvGuard> {
     let bytes = code.as_bytes();
-    let mut nesting = Vec::new();
+    let mut nesting = enclosing_nesting(bytes, start, ignored);
     let mut index = end;
     while index < bytes.len() {
         if in_ranges(ignored, index) {
@@ -379,6 +379,28 @@ fn env_guard(code: &str, start: usize, end: usize, ignored: &[(usize, usize)]) -
         }
     }
     None
+}
+
+fn enclosing_nesting(bytes: &[u8], end: usize, ignored: &[(usize, usize)]) -> Vec<u8> {
+    let mut nesting = Vec::new();
+    let mut index = 0;
+    while index < end {
+        if in_ranges(ignored, index) {
+            index += 1;
+            continue;
+        }
+        match bytes[index] {
+            b'(' | b'[' | b'{' => nesting.push(bytes[index]),
+            b')' | b']' | b'}' => {
+                if nesting.pop().is_none() {
+                    break;
+                }
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+    nesting
 }
 
 fn comma_after_read_before_closing_paren(
@@ -1388,6 +1410,13 @@ y=/process.env.F/.test(z),process.env.G"#;
         assert_eq!(guard("console.log(({}).VERSION)", "({}).VERSION"), None);
         assert_eq!(
             guard("'on'===process.env.VERSION&&run()", "process.env.VERSION"),
+            Some("the retained read controls a && short-circuit branch")
+        );
+        assert_eq!(
+            guard(
+                "(sideEffect(), process.env.VERSION)&&run()",
+                "process.env.VERSION"
+            ),
             Some("the retained read controls a && short-circuit branch")
         );
         assert_eq!(
