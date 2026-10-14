@@ -56,3 +56,42 @@ func TestExecutionJobInputReserveCoversEscapedExecutablePath(t *testing.T) {
 		t.Fatal("reserve does not cover the escaped maximum executable path", len(raw))
 	}
 }
+
+// The reserve must cover a complete configuration whose every bounded text
+// field is at its accepted maximum with the widest JSON escaping. Accounts,
+// templates and instructions are measured separately and stay empty here.
+func TestExecutionConfigurationReserveCoversWorstCaseScalars(t *testing.T) {
+	text := strings.Repeat("<", 256)
+	if Text(text, "fixture", 256, true) != nil || ValidateBranchPrefix(text) != nil {
+		t.Fatal("fixture is not an accepted maximum text")
+	}
+	identity := ModelIdentity{ProviderID: NewID(), NativeID: text}
+	child := ModelIdentity{ProviderID: identity.ProviderID, NativeID: text}
+	configuration := ExecutionConfiguration{
+		BranchPrefix:        &BranchPrefixSelection{Version: BranchPrefixVersionExactQuote, Prefix: text, SettingsID: NewID(), SettingsRevision: 1<<63 - 1, ProjectID: NewID(), ProjectRevision: 1<<63 - 1},
+		ReviewerNativeModel: CodexReviewerNativeModel,
+		ImageInputDeclared:  true,
+		SidechatPolicy:      CodexReadOnlySidechatV1,
+		AgentID:             NewID(),
+		AgentRevision:       1<<63 - 1,
+		Harness:             Codex,
+		ModelID:             identity.Key(),
+		ModelRevision:       1<<63 - 1,
+		ProviderID:          identity.ProviderID,
+		NativeModel:         text,
+		SubagentModel:       &ExecutionSubagentModel{ModelID: child.Key(), ModelRevision: 1<<63 - 1, NativeModel: text},
+		Effort:              text,
+		Options:             AgentOptions{ApprovalsReviewer: CodexReviewerAuto, SubagentModel: text, SubagentEffort: text, MaxConcurrency: 1<<32 - 1, Permission: PermissionWorkspaceWrite, ApprovalPolicy: text, ApprovalReviewModel: text, ServiceTier: text},
+		Routing:             RoutingPolicy(strings.Repeat("r", 64)),
+		OpenCodeContext:     &OpenCodeModelContext{Tokens: 1_000_000_000, Source: UserDeclared, Policy: OpenCodeNativeContextV1},
+		GrokContext:         &GrokModelContext{Tokens: 1_000_000_000, Source: UserDeclared},
+		Subscription:        true,
+	}
+	raw, err := json.Marshal(configuration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) > ExecutionConfigurationReserveBytes {
+		t.Fatalf("reserve %d does not cover the worst-case scalar configuration %d", ExecutionConfigurationReserveBytes, len(raw))
+	}
+}

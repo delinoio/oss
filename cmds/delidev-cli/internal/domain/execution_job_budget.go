@@ -26,10 +26,21 @@ const (
 	// ExecutionJobInputReserveBytes is the total reserve for the bounded scalar
 	// fields of ExecutionJobInput, including the startup selection.
 	ExecutionJobInputReserveBytes = ExecutionJobInputScalarReserveBytes + ExecutionExecutablePathReserveBytes
+	// ExecutionEscapedTextBytes is the serialized size of one accepted
+	// 256-byte text field whose every byte is a '<', '>' or '&' that
+	// encoding/json expands to a six-byte escape.
+	ExecutionEscapedTextBytes = 256 * 6
 	// ExecutionConfigurationReserveBytes covers the bounded model, provider,
 	// native identity, routing, option and branch-prefix fields of the frozen
-	// execution configuration that are resolved only at dispatch.
-	ExecutionConfigurationReserveBytes = 8 << 10
+	// execution configuration that are resolved only at dispatch. It is sized
+	// from a complete worst-case configuration: eight accepted 256-byte text
+	// fields (native model, effort, child model, child effort, approval policy,
+	// approval review model, service tier and branch prefix) at their escaped
+	// maximum plus two base64-encoded source model keys that each wrap an
+	// escaped native identity, with 4 KiB left for fixed identities, field names,
+	// revisions and context metadata. The domain test marshals that worst case
+	// and fails if the reserve stops covering it.
+	ExecutionConfigurationReserveBytes = 8*ExecutionEscapedTextBytes + 2*(ExecutionEscapedTextBytes+256)*4/3 + 4<<10
 )
 
 // ExecutionJobBudget is the shared upper-bound calculation for one execution
