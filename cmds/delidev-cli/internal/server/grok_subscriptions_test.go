@@ -593,18 +593,26 @@ type orderedGrokSecrets struct {
 	f          *grokFixture
 	deletes    int
 	prematures int
+	// revokedPrematures counts the premature removals of a generation the provider
+	// already revoked: a confirmed logout removes that bundle first on purpose.
+	revokedPrematures int
 }
 
 func (v *orderedGrokSecrets) Delete(ctx context.Context, ref credentials.Ref) error {
 	v.deletes++
 	if _, a := v.f.record(); a.Subscription != nil && a.Subscription.Generation == ref.ID {
 		v.prematures++
+		if a.Subscription.RevokedGeneration == ref.ID {
+			v.revokedPrematures++
+		}
 	}
 	return v.accountTestSecrets.Delete(ctx, ref)
 }
 
 // A superseded generation is removed only after the account document durably
-// stops referencing it, for both a refresh and a logout.
+// stops referencing it. A confirmed logout is the one exception, and only for the
+// generation the provider already revoked: that bundle is removed first so the
+// lease and generation stay the cleanup owner until the removal is confirmed.
 func TestGrokFinishDeletesTheReferencedGenerationOnlyAfterPublication(t *testing.T) {
 	f := newGrokFixture(t)
 	vault := &orderedGrokSecrets{accountTestSecrets: f.secrets, f: f}
@@ -645,8 +653,8 @@ func TestGrokFinishDeletesTheReferencedGenerationOnlyAfterPublication(t *testing
 	if _, err := f.finishWith(lease, domain.NewID(), nil, true, false, true); err != nil {
 		t.Fatal(err)
 	}
-	if vault.deletes != 2 || vault.prematures != 0 {
-		t.Fatalf("logout removed the generation while it was still referenced (%d deletes, %d premature)", vault.deletes, vault.prematures)
+	if vault.deletes != 2 || vault.prematures != vault.revokedPrematures {
+		t.Fatalf("logout removed a generation that the provider had not revoked while it was still referenced (%d deletes, %d premature, %d of them revoked)", vault.deletes, vault.prematures, vault.revokedPrematures)
 	}
 }
 

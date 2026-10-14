@@ -537,6 +537,19 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 				return nil, rpc.Error(err, c)
 			}
 		}
+		// A confirmed logout deletes the revoked bundle from the vault before the
+		// account stops owning it, exactly like the server-owned logout: the lease and
+		// the generation stay the durable cleanup owner until the removal is
+		// confirmed, so a removal that fails leaves the exact Worker able to retry
+		// instead of stranding a revoked bundle behind a disconnected account.
+		if usable && lease.Action == domain.SubscriptionLogout && input.Cleanup {
+			cleanupCtx, cancelCleanup := grokBookkeepingContext(ctx, grokCleanupTimeout)
+			err := cleanupSubscriptionReferences(cleanupCtx, vault, input.Account, "", protectedGenerations(original.Subscription)...)
+			cancelCleanup()
+			if err != nil {
+				return nil, rpc.Error(err, c)
+			}
+		}
 		// The superseded generation stays referenced and readable until the
 		// account document durably publishes its replacement (or the logout), so a
 		// failed or retried publication never points at a deleted generation.

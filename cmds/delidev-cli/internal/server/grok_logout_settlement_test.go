@@ -189,3 +189,41 @@ func TestGrokRestartedLogoutWaitingForALeaseIsReleasedWithoutTouchingTheLease(t 
 		t.Fatal("a revoked logout was recoverable while a lease still holds the bundle")
 	}
 }
+
+// The Worker-lease logout deletes the revoked bundle before the account stops
+// owning it. A removal that fails keeps the lease and the generation as the
+// durable cleanup owner, so the exact Worker retries and completes instead of the
+// revoked bundle being stranded behind a disconnected account.
+func TestGrokWorkerLogoutKeepsCleanupOwnershipUntilTheVaultRemovalIsConfirmed(t *testing.T) {
+	f := newGrokFixture(t)
+	generation := f.login("synthetic-principal-1")
+	f.markRevoked(t)
+	lease, err := f.take(f.queue(logoutAction), logoutAction)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.secrets.mu.Lock()
+	f.secrets.deleteError = domain.Fail(domain.Unavailable, "The vault removal failed.", "")
+	f.secrets.mu.Unlock()
+	if _, err := f.finishWith(lease, domain.NewID(), nil, true, false, true); err == nil {
+		t.Fatal("a Finish whose vault removal failed was acknowledged")
+	}
+	_, a := f.record()
+	st := a.Subscription
+	if a.Connection == nil || st.Lease == nil || st.Generation != generation || !st.RecoveryRequired || st.RevokedGeneration != generation {
+		t.Fatal("a failed vault removal gave up the lease or the generation that own the cleanup")
+	}
+	f.secrets.mu.Lock()
+	f.secrets.deleteError = nil
+	f.secrets.mu.Unlock()
+	if _, err := f.finishWith(lease, domain.NewID(), nil, true, false, true); err != nil {
+		t.Fatal("the original Worker could not retry the cleanup", err)
+	}
+	_, a = f.record()
+	if a.Connection != nil || a.Health != domain.AccountDisconnected || a.Subscription.Lease != nil || a.Subscription.RecoveryRequired || a.Subscription.Generation != "" {
+		t.Fatal("the retried Worker logout did not settle")
+	}
+	if refs, err := f.secrets.UnremovedReferences(context.Background(), f.input.AccountID); err != nil || len(refs) != 0 {
+		t.Fatal("the retried Worker logout left protected generations")
+	}
+}
