@@ -1607,6 +1607,7 @@ fn refresh_precache_revisions(
     let mut files = Vec::new();
     files_under(root, &mut files)?;
     files.sort();
+
     let mut refreshed = 0;
     for file in &files {
         let name = file.file_name().unwrap().to_string_lossy();
@@ -1622,6 +1623,9 @@ fn refresh_precache_revisions(
         let directory = file.parent().unwrap_or(root);
         let mut changed = false;
         for (url, start, end, trusted) in precache_entries(&text.clone()) {
+            if !trusted {
+                continue;
+            }
             // Only regular files of the staged bundle: `..` must not leave it,
             // and a device or FIFO must not block publication.
             let Some(staged) = precache_target(root, directory, &url) else {
