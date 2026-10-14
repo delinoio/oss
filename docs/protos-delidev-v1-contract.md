@@ -2,11 +2,7 @@
 
 ## Parallel session dispatch negotiation
 
-Worker `PARALLEL_SESSIONS_V1 = 66` is reserved by issue 3465 as the first
-commit of its pull request, with no active behavior, and activated by the
-dispatch commits that follow in the same pull request. This deviates from a
-separate main-first reservation pull request; the pull request body records the
-deviation. The server echoes the capability in
+Worker `PARALLEL_SESSIONS_V1 = 66` is an active opt-in capability. The server echoes the capability in
 `AttachWorkerResponse.supported_worker_capabilities`; a Worker advertises it only
 after observing that echo, and the machine records it only when advertised.
 Existing numeric assignments are unchanged. Go and TypeScript Worker descriptors
