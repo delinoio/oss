@@ -7,6 +7,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"slices"
+	"strings"
 )
 
 func requestImageAttachments(values []*pb.ImageAttachment) ([]domain.ImageAttachment, error) {
@@ -20,7 +21,7 @@ func requestImageAttachments(values []*pb.ImageAttachment) ([]domain.ImageAttach
 	}
 	return result, domain.ValidateImageAttachments(result)
 }
-func checkImageRoute(tx *store.Tx, agentID, machineID domain.ID, refs []domain.ImageAttachment) error {
+func checkImageRoute(tx *store.Tx, agentID, machineID domain.ID, prompt string, refs []domain.ImageAttachment) error {
 	if len(refs) == 0 {
 		return nil
 	}
@@ -39,8 +40,11 @@ func checkImageRoute(tx *store.Tx, agentID, machineID domain.ID, refs []domain.I
 	if err != nil {
 		return err
 	}
-	if agent.Harness != domain.Codex || !slices.Contains(machine.WorkerCapabilities, domain.ImageInputsV1) {
+	if !agent.Harness.ImageInputs() || !slices.Contains(machine.WorkerCapabilities, domain.ImageInputsV1) || agent.Harness == domain.OpenCode && strings.TrimSpace(prompt) == "" {
 		return domain.UnsupportedImageInput()
+	}
+	if err := domain.ValidateImageAttachmentsForHarness(agent.Harness, refs); err != nil {
+		return err
 	}
 	for _, route := range agent.SourceRoutes() {
 		if route.Model == nil || !slices.Contains(route.Model.InputModalities, "image") {
@@ -97,7 +101,7 @@ func rejectDocumentAttachments(typed []*pb.ImageAttachment, document []domain.Im
 	return nil
 }
 
-func checkSessionImageRoute(tx *store.Tx, session domain.Session, refs []domain.ImageAttachment) error {
+func checkSessionImageRoute(tx *store.Tx, session domain.Session, prompt string, refs []domain.ImageAttachment) error {
 	if len(refs) == 0 {
 		return nil
 	}
@@ -108,14 +112,17 @@ func checkSessionImageRoute(tx *store.Tx, session domain.Session, refs []domain.
 		snapshot = &session.Fork.Snapshot
 	}
 	if snapshot == nil {
-		return checkImageRoute(tx, session.AgentID, session.MachineID, refs)
+		return checkImageRoute(tx, session.AgentID, session.MachineID, prompt, refs)
 	}
 	_, machine, err := activeMachine(tx, session.MachineID)
 	if err != nil {
 		return err
 	}
-	if snapshot.Configuration.Harness != domain.Codex || !snapshot.Configuration.ImageInputDeclared || snapshot.Configuration.SidechatPolicy != "" || !slices.Contains(machine.WorkerCapabilities, domain.ImageInputsV1) {
+	if !snapshot.Configuration.Harness.ImageInputs() || !snapshot.Configuration.ImageInputDeclared || snapshot.Configuration.SidechatPolicy != "" || !slices.Contains(machine.WorkerCapabilities, domain.ImageInputsV1) || snapshot.Configuration.Harness == domain.OpenCode && strings.TrimSpace(prompt) == "" {
 		return domain.UnsupportedImageInput()
+	}
+	if err := domain.ValidateImageAttachmentsForHarness(snapshot.Configuration.Harness, refs); err != nil {
+		return err
 	}
 	for _, ref := range refs {
 		if ref.MachineID != session.MachineID {

@@ -176,3 +176,78 @@ func TestImageModelDeclarationKeepsOmittedTextConfigurationCompatible(t *testing
 		t.Fatal("text digest changed", err)
 	}
 }
+
+func TestImageInputHarnessProfile(t *testing.T) {
+	for harness, want := range map[Harness]bool{Codex: true, OpenCode: true, ClaudeCode: false, GrokBuild: false} {
+		if harness.ImageInputs() != want {
+			t.Fatalf("%s image profile = %v", harness, !want)
+		}
+	}
+	_, ref := imageFixture(t, ImagePNG)
+	if err := ValidateImageAttachmentsForHarness(OpenCode, []ImageAttachment{ref}); err != nil {
+		t.Fatal(err)
+	}
+	for _, harness := range []Harness{ClaudeCode, GrokBuild} {
+		if SafeError(ValidateImageAttachmentsForHarness(harness, []ImageAttachment{ref})).Code != Unsupported {
+			t.Fatalf("%s accepted images", harness)
+		}
+	}
+	if err := ValidateImageAttachmentsForHarness(ClaudeCode, nil); err != nil {
+		t.Fatal("text-only input is not an image route", err)
+	}
+}
+
+func TestOpenCodeImageAttachmentsShareOneCombinedByteBound(t *testing.T) {
+	_, ref := imageFixture(t, ImagePNG)
+	half := ref
+	half.ByteLength = MaxOpenCodeInputImagesBytes / 2
+	other := half
+	other.ID = NewID()
+	if err := ValidateImageAttachmentsForHarness(OpenCode, []ImageAttachment{half, other}); err != nil {
+		t.Fatal("images at the bound rejected", err)
+	}
+	over := half
+	over.ID = NewID()
+	over.ByteLength++
+	if SafeError(ValidateImageAttachmentsForHarness(OpenCode, []ImageAttachment{half, other, over})).Code != InvalidArgument {
+		t.Fatal("combined images beyond the native response bound accepted")
+	}
+	// Codex keeps the generic 40 MiB bound.
+	if err := ValidateImageAttachmentsForHarness(Codex, []ImageAttachment{half, other, over}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestExecutionConfigurationFreezesOpenCodeImageDeclaration(t *testing.T) {
+	provider := NewID()
+	for _, test := range []struct {
+		harness    Harness
+		modalities []string
+		declared   bool
+	}{
+		{OpenCode, []string{"text", "image"}, true},
+		{OpenCode, []string{"text"}, false},
+		{Codex, []string{"text", "image"}, true},
+		{ClaudeCode, []string{"text", "image"}, false},
+		{GrokBuild, []string{"text", "image"}, false},
+	} {
+		identity := ModelIdentity{ProviderID: provider, NativeID: "fixture-model"}
+		agent := Agent{Name: "Fixture", Harness: test.harness, ModelID: identity.Key(), Model: &InlineModel{ModelIdentity: identity, InputModalities: test.modalities, MetadataSource: UserDeclared}, Accounts: []WeightedAccount{{ID: NewID(), Weight: 1}}, Options: AgentOptions{Permission: PermissionReadOnly}}
+		model := Model{Name: "Fixture", NativeID: identity.NativeID, ProviderID: provider, Harnesses: []Harness{test.harness}, InputModalities: test.modalities, MetadataSource: UserDeclared}
+		config, err := ResolveExecutionConfiguration(NewID(), 1, agent, 1, model, Priority, nil)
+		if err != nil {
+			t.Fatal(test.harness, err)
+		}
+		if config.ImageInputDeclared != test.declared {
+			t.Fatalf("%s %v declared=%v", test.harness, test.modalities, config.ImageInputDeclared)
+		}
+		raw, err := json.Marshal(config)
+		if err != nil || bytes.Contains(raw, []byte("image_input_declared")) != test.declared {
+			t.Fatalf("%s declaration serialization changed: %s", test.harness, raw)
+		}
+	}
+	config := ExecutionConfiguration{Harness: ClaudeCode, ImageInputDeclared: true}
+	if SafeError(config.Validate()).Code == "" {
+		t.Fatal("retained non-image harness declaration accepted")
+	}
+}

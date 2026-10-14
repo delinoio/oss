@@ -296,7 +296,7 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[pb.Cre
 				return nil, localOriginRequired()
 			}
 		}
-		if err := checkImageRoute(tx, input.AgentID, input.MachineID, input.Attachments); err != nil {
+		if err := checkImageRoute(tx, input.AgentID, input.MachineID, input.Prompt, input.Attachments); err != nil {
 			return nil, err
 		}
 		if err := validateSessionSelection(tx, input); err != nil {
@@ -429,7 +429,7 @@ func (s *Service) EnqueueInput(ctx context.Context, req *connect.Request[pb.Enqu
 		if value.IsSidechat() && len(input.Attachments) > 0 {
 			return nil, domain.UnsupportedImageInput()
 		}
-		if err := checkSessionImageRoute(tx, value, input.Attachments); err != nil {
+		if err := checkSessionImageRoute(tx, value, input.Prompt, input.Attachments); err != nil {
 			return nil, err
 		}
 		itemID, err := appendSessionInput(tx, r.ID, &value, input, preparedSkillNames)

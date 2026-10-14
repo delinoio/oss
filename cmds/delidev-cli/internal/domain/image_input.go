@@ -24,6 +24,12 @@ const MaxImageChunkBytes = 256 << 10
 const MaxInputImagePixels = 40_000_000
 const ImageInputsV1 WorkerCapability = "image-inputs-v1"
 
+// MaxOpenCodeInputImagesBytes bounds the combined original image bytes of one
+// OpenCode input. The native server rewrites each image into a base64 data URL
+// inside its stored message and event frames, and the OpenCode adapter keeps
+// every native response and event within its 1 MiB protocol bound.
+const MaxOpenCodeInputImagesBytes = 384 << 10
+
 type ImageMediaType string
 
 const (
@@ -52,6 +58,28 @@ func (a ImageAttachment) Validate() error {
 	}
 	return nil
 }
+
+// ValidateImageAttachmentsForHarness applies the generic bounds plus any
+// harness-specific combined size limit.
+func ValidateImageAttachmentsForHarness(harness Harness, values []ImageAttachment) error {
+	if err := ValidateImageAttachments(values); err != nil {
+		return err
+	}
+	if len(values) > 0 && !harness.ImageInputs() {
+		return UnsupportedImageInput()
+	}
+	if harness == OpenCode {
+		var total uint64
+		for _, value := range values {
+			total += value.ByteLength
+		}
+		if total > MaxOpenCodeInputImagesBytes {
+			return Fail(InvalidArgument, "The images exceed the OpenCode attachment size limit.", "Attach at most 384 KiB of images to an OpenCode message, or send fewer or smaller images.")
+		}
+	}
+	return nil
+}
+
 func ValidateImageAttachments(values []ImageAttachment) error {
 	if len(values) > MaxInputImages {
 		return InvalidImageInput()

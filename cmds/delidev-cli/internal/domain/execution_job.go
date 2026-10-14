@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"slices"
+	"strings"
 )
 
 // ExecutionJobInput is a non-secret immutable Worker assignment. API authority
@@ -110,13 +111,19 @@ func (i ExecutionJobInput) Validate() error {
 		return Fail(Unsupported, "This assignment cannot generate native images.", "Preserve the original managed OpenAI execution profile.")
 	}
 	if len(i.Input.Attachments) > 0 {
-		if i.Configuration.Harness != Codex || !i.Configuration.ImageInputDeclared || i.Configuration.SidechatPolicy != "" {
+		if !i.Configuration.Harness.ImageInputs() || !i.Configuration.ImageInputDeclared || i.Configuration.SidechatPolicy != "" {
 			return UnsupportedImageInput()
 		}
 		for _, ref := range i.Input.Attachments {
 			if ref.MachineID != i.MachineID {
 				return InvalidImageInput()
 			}
+		}
+		if err := ValidateImageAttachmentsForHarness(i.Configuration.Harness, i.Input.Attachments); err != nil {
+			return err
+		}
+		if i.Configuration.Harness == OpenCode && strings.TrimSpace(i.Input.Prompt) == "" {
+			return UnsupportedImageInput()
 		}
 	}
 	if i.Remediation != nil && (i.Remediation.Validate() != nil || i.Input.Mode != ExecuteMode || i.Configuration.Harness != Codex || (i.Configuration.Options.Permission != PermissionWorkspaceWrite && i.Configuration.Options.Permission != PermissionFullAccess)) {

@@ -24,6 +24,10 @@ func (h Harness) Valid() bool {
 	return slices.Contains([]Harness{Codex, ClaudeCode, OpenCode, GrokBuild}, h)
 }
 
+// ImageInputs reports the closed harness set with a verified native image
+// input adapter. Claude Code and Grok Build keep their text-only profiles.
+func (h Harness) ImageInputs() bool { return h == Codex || h == OpenCode }
+
 type WorkspaceType string
 
 const (

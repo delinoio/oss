@@ -276,7 +276,7 @@ func TestImageOfflineDraftRemovalSurvivesReconciliation(t *testing.T) {
 }
 
 func TestUnsupportedImageRoutesNeverClaimOrCreateNativeWork(t *testing.T) {
-	for _, harness := range []domain.Harness{domain.ClaudeCode, domain.OpenCode, domain.GrokBuild} {
+	for _, harness := range []domain.Harness{domain.ClaudeCode, domain.GrokBuild} {
 		t.Run(string(harness), func(t *testing.T) {
 			f, c, raw := imageRPCFixture(t, harness)
 			imageWorkerFixture(t, f, c)
@@ -390,16 +390,20 @@ func TestImageMixedSourcesAndImmutableDeclaredSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := f.service.Store.Read(ctx, func(tx *store.Tx) error {
-		return checkImageRoute(tx, domain.ID(f.agent.Id), domain.ID(f.machine.Id), []domain.ImageAttachment{ref})
+		return checkImageRoute(tx, domain.ID(f.agent.Id), domain.ID(f.machine.Id), "describe", []domain.ImageAttachment{ref})
 	}); domain.SafeError(err).Code != domain.Unsupported {
 		t.Fatal("mixed unsupported model admitted", err)
 	}
 	snapshot := domain.Session{AgentID: domain.ID(f.agent.Id), MachineID: domain.ID(f.machine.Id), InitialExecution: &domain.InitialExecution{Configuration: domain.ExecutionConfiguration{Harness: domain.Codex, ImageInputDeclared: true}}}
-	if err := f.service.Store.Read(ctx, func(tx *store.Tx) error { return checkSessionImageRoute(tx, snapshot, []domain.ImageAttachment{ref}) }); err != nil {
+	if err := f.service.Store.Read(ctx, func(tx *store.Tx) error {
+		return checkSessionImageRoute(tx, snapshot, "describe", []domain.ImageAttachment{ref})
+	}); err != nil {
 		t.Fatal("mutable metadata replaced original declaration", err)
 	}
 	snapshot.InitialExecution.Configuration.ImageInputDeclared = false
-	if err := f.service.Store.Read(ctx, func(tx *store.Tx) error { return checkSessionImageRoute(tx, snapshot, []domain.ImageAttachment{ref}) }); domain.SafeError(err).Code != domain.Unsupported {
+	if err := f.service.Store.Read(ctx, func(tx *store.Tx) error {
+		return checkSessionImageRoute(tx, snapshot, "describe", []domain.ImageAttachment{ref})
+	}); domain.SafeError(err).Code != domain.Unsupported {
 		t.Fatal("unknown original modality admitted", err)
 	}
 }
