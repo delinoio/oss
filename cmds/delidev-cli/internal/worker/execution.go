@@ -30,6 +30,32 @@ import (
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
+type codexTurnStarter interface {
+	StartTurn(context.Context, domain.ID, domain.ID, domain.SessionInput) (codex.TurnResult, error)
+}
+
+func startCodexTurnWithRetryAuthority(ctx context.Context, connection *PublicationConfig, registration *pb.RegisterExecutionRequest, input domain.ExecutionJobInput, managed bool, client codexTurnStarter, logger *slog.Logger) (codex.TurnResult, error) {
+	if input.SidechatRetry != nil && managed {
+		// Managed retry inference bypasses the API relay. Replaying the exact
+		// registration receipt forces a current actor and binding check after
+		// native startup and binding, before the first input.
+		bounded, stop := context.WithTimeout(ctx, 30*time.Second)
+		fresh, checkErr := connection.Client.RegisterExecution(bounded, authenticated(connection.Credential, registration))
+		stop()
+		if checkErr != nil {
+			clientErr := rpc.ClientError(checkErr)
+			logger.WarnContext(ctx, "sidechat_retry_presend_denied", "generation_id", input.SidechatRetry.GenerationID, "request_id", registration.Mutation.RequestId, "code", domain.SafeError(clientErr).Code)
+			return codex.TurnResult{}, clientErr
+		}
+		if fresh == nil || fresh.Msg == nil || !fresh.Msg.Replayed || fresh.Msg.ProxyPath != "" {
+			logger.WarnContext(ctx, "sidechat_retry_presend_unverified", "generation_id", input.SidechatRetry.GenerationID, "request_id", registration.Mutation.RequestId)
+			return codex.TurnResult{}, publicationUncertain()
+		}
+		logger.InfoContext(ctx, "sidechat_retry_presend_authorized", "generation_id", input.SidechatRetry.GenerationID, "request_id", registration.Mutation.RequestId)
+	}
+	return client.StartTurn(ctx, input.TurnRequestID, input.InputID, input.Input)
+}
+
 func executeSession(ctx context.Context, config Config, owner domain.ID, job domain.Job) (output json.RawMessage, returned error) {
 	connection := config.execution
 	if connection == nil || connection.Assignment == nil || domain.ID(connection.Assignment.Id) != owner || config.executionContext == nil {
@@ -146,8 +172,9 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			}
 		}()
 	}
-	// The private runtime is retained for native resume/reconciliation. Never
-	// inherit an existing directory after an interrupted first execution.
+	// The per-execution directory is only the operation journal. It must be fresh
+	// so an interrupted first execution is never inherited; native state lives in
+	// the persistent conversation profile resolved below.
 	runtimeRoot := filepath.Join(manager.Root, "runtimes")
 	if err := security.PrivateDir(runtimeRoot); err != nil {
 		return nil, domain.SafeError(err)
@@ -156,15 +183,27 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	if _, err := os.Lstat(home); !errors.Is(err, os.ErrNotExist) {
 		return nil, publicationUncertain()
 	}
+	if err := security.CreatePrivateDirExclusive(home); err != nil {
+		return nil, publicationUncertain()
+	}
 	var ordinaryTools executionenv.Ordinary
 	if input.Configuration.SidechatPolicy == "" {
 		ordinaryTools = ordinaryExecutionTools(config.Logger)
 	}
-	env, err := harness.PrivateRuntimeEnvironment(home)
+	profile, err := codexExecutionProfile(ctx, config, input)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := profile.Close(); err != nil {
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
+		}
+	}()
+	env, err := harness.PrivateRuntimeEnvironment(profile.Root)
 	if err != nil {
 		return nil, domain.SafeError(err)
 	}
-	nativeHome := filepath.Join(home, "codex")
+	nativeHome := filepath.Join(profile.Root, "codex")
 	var checkpoint CodexExecutionCheckpoint
 	var compacted *codex.CompactedCheckpoint
 	if c := input.Continuation; c != nil {
@@ -182,15 +221,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		if err != nil {
 			return nil, err
 		}
-		nativeHome = filepath.Join(runtimeRoot, string(c.HistoryExecutionID), "codex")
-		replaced := 0
-		for i, entry := range env {
-			if strings.HasPrefix(entry, "CODEX_HOME=") {
-				env[i] = "CODEX_HOME=" + nativeHome
-				replaced++
-			}
-		}
-		if replaced != 1 {
+		if security.CheckPrivateDir(nativeHome) != nil {
 			return nil, executionCheckpointUncertain()
 		}
 		if c.Compaction == nil {
@@ -216,10 +247,8 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			return nil, err
 		}
 		checkpoint.Native = native
-		nativeHome = filepath.Join(runtimeRoot, string(f.RuntimeID), "codex")
-		env, err = replaceCodexHome(env, nativeHome)
-		if err != nil {
-			return nil, err
+		if security.CheckPrivateDir(nativeHome) != nil {
+			return nil, executionCheckpointUncertain()
 		}
 	}
 	if prGit != nil {
@@ -317,7 +346,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 				}
 			}
 		}()
-		if err := security.WriteAtomic(filepath.Join(nativeHome, "auth.json"), managed.response.Bundle); err != nil {
+		if err := subscription.WriteCredentialFile(filepath.Join(nativeHome, "auth.json"), managed.response.Bundle); err != nil {
 			return nil, subscription.Invalid()
 		}
 	}
@@ -342,6 +371,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	token := apiproxy.TokenPrefix + rawToken
 	digest := sha256.Sum256([]byte(token))
 	registration := domain.NewID()
+	registrationRequest := &pb.RegisterExecutionRequest{Mutation: &pb.Mutation{RequestId: string(registration), Id: string(owner), ExpectedRevision: connection.Assignment.Revision}, MachineId: string(input.MachineID), InstanceId: string(connection.Instance), CredentialDigest: digest[:]}
 	// Retain only digest/request metadata before registration. A process restart
 	// cannot reconstruct the token or replay the native first input from this.
 	intent := struct {
@@ -355,7 +385,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		return nil, publicationUncertain()
 	}
 	bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
-	registered, err := connection.Client.RegisterExecution(bounded, authenticated(connection.Credential, &pb.RegisterExecutionRequest{Mutation: &pb.Mutation{RequestId: string(registration), Id: string(owner), ExpectedRevision: connection.Assignment.Revision}, MachineId: string(input.MachineID), InstanceId: string(connection.Instance), CredentialDigest: digest[:]}))
+	registered, err := connection.Client.RegisterExecution(bounded, authenticated(connection.Credential, registrationRequest))
 	cancel()
 	if err != nil {
 		return nil, rpc.ClientError(err)
@@ -504,7 +534,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		return nil, err
 	}
 	config.startup.claimInput()
-	turn, err := client.StartTurn(ctx, input.TurnRequestID, input.InputID, input.Input)
+	turn, err := startCodexTurnWithRetryAuthority(ctx, connection, registrationRequest, input, managed != nil, client, logger)
 	if err != nil {
 		if proofErr := config.startup.captureImageRejection(turn); proofErr != nil {
 			if config.startup != nil {

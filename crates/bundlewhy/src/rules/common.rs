@@ -403,7 +403,7 @@ fn unresolved_env_conditions(context: &mut Context<'_>, drafts: &mut Vec<Diagnos
 }
 
 fn path_is_dependency(path: &str) -> bool {
-    path.starts_with("node_modules/") || path.starts_with("../")
+    path.starts_with("node_modules/") || path.contains("/node_modules/") || path.starts_with("../")
 }
 
 /// Text of a configuration-disabled finding.
@@ -1027,6 +1027,144 @@ fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn package_module(
+        id: &str,
+        importers: &[&str],
+        path: &Path,
+        version: &str,
+        dir: &Path,
+    ) -> CollectedModule {
+        CollectedModule {
+            id: id.to_owned(),
+            path: Some(path.to_string_lossy().into_owned()),
+            importers: importers.iter().map(|value| (*value).to_owned()).collect(),
+            included: true,
+            package_name: Some("@dnd-kit/sortable".to_owned()),
+            package_version: Some(version.to_owned()),
+            package_dir: Some(dir.to_string_lossy().into_owned()),
+            ..CollectedModule::default()
+        }
+    }
+
+    fn write_package_file(dir: &Path) -> std::path::PathBuf {
+        let file = dir.join("dist/sortable.esm.js");
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(&file, "export const v = 1;").unwrap();
+        file
+    }
+
+    fn run_duplicate_packages(root: &Path, modules: Vec<CollectedModule>) -> Vec<DiagnosticDraft> {
+        let collection = crate::collect::Collection {
+            modules,
+            ..crate::collect::Collection::default()
+        };
+        let mut context = Context::new(
+            &collection,
+            root.to_path_buf(),
+            "app".to_owned(),
+            Vec::new(),
+            crate::sources::SourceStore::new(true),
+        );
+        let mut drafts = Vec::new();
+        duplicate_packages(&mut context, &mut drafts);
+        drafts
+    }
+
+    #[test]
+    fn duplicate_packages_distinguish_nested_node_modules_copies() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let top_dir = root.join("node_modules/@dnd-kit/sortable");
+        let nested_dir = root.join("node_modules/@douyinfe/semi-ui/node_modules/@dnd-kit/sortable");
+        let top_file = write_package_file(&top_dir);
+        let nested_file = write_package_file(&nested_dir);
+        let mut entry = CollectedModule {
+            id: "entry".to_owned(),
+            is_entry: true,
+            included: true,
+            ..CollectedModule::default()
+        };
+        entry.path = Some(root.join("src/main.js").to_string_lossy().into_owned());
+        let modules = vec![
+            entry,
+            package_module("top", &["entry"], &top_file, "10.0.0", &top_dir),
+            package_module("nested", &["entry"], &nested_file, "7.0.0", &nested_dir),
+        ];
+        let drafts = run_duplicate_packages(root, modules);
+        assert_eq!(drafts.len(), 1);
+        let draft = &drafts[0];
+        let top_display = "node_modules/@dnd-kit/sortable";
+        let nested_display = "node_modules/@douyinfe/semi-ui/node_modules/@dnd-kit/sortable";
+        let detail = &draft.conditions[0].detail;
+        assert!(
+            detail.contains(&format!("10.0.0 at {top_display} (1 module(s))")),
+            "{detail}"
+        );
+        assert!(
+            detail.contains(&format!("7.0.0 at {nested_display} (1 module(s))")),
+            "{detail}"
+        );
+        let evidence_text: Vec<&str> = draft
+            .evidence
+            .iter()
+            .map(|evidence| evidence.detail.as_str())
+            .collect();
+        assert!(evidence_text.iter().any(|text| text.contains(top_display)));
+        assert!(
+            evidence_text
+                .iter()
+                .any(|text| text.contains(nested_display))
+        );
+        // The located module is the second copy (by package directory order).
+        let root_text = root.to_string_lossy();
+        assert!(
+            draft.module.starts_with("node_modules/"),
+            "{}",
+            draft.module
+        );
+        assert!(!draft.module.contains(root_text.as_ref()));
+        let location = draft.located.location.as_ref().unwrap();
+        assert_eq!(location.path, draft.module);
+        // Endpoints of the two dependency paths are distinct displays.
+        assert_eq!(draft.dependency_paths.len(), 2);
+        let endpoints: BTreeSet<&str> = draft
+            .dependency_paths
+            .iter()
+            .map(|path| path.modules.last().unwrap().as_str())
+            .collect();
+        assert_eq!(endpoints.len(), 2);
+        assert!(
+            endpoints
+                .iter()
+                .all(|endpoint| !endpoint.contains(root_text.as_ref()))
+        );
+    }
+
+    #[test]
+    fn single_included_copy_emits_no_duplicate_package() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let top_dir = root.join("node_modules/@dnd-kit/sortable");
+        let nested_dir = root.join("node_modules/@douyinfe/semi-ui/node_modules/@dnd-kit/sortable");
+        let top_file = write_package_file(&top_dir);
+        let nested_file = write_package_file(&nested_dir);
+        let mut excluded = package_module("nested", &[], &nested_file, "7.0.0", &nested_dir);
+        excluded.included = false;
+        let modules = vec![
+            package_module("top", &[], &top_file, "10.0.0", &top_dir),
+            excluded,
+        ];
+        assert!(run_duplicate_packages(root, modules).is_empty());
+    }
+
+    #[test]
+    fn nested_node_modules_paths_count_as_dependencies() {
+        assert!(path_is_dependency("node_modules/a/index.js"));
+        assert!(path_is_dependency("packages/a/node_modules/x/index.js"));
+        assert!(path_is_dependency("../node_modules/x/index.js"));
+        assert!(!path_is_dependency("src/node_modules_like/index.js"));
+    }
 
     #[test]
     fn non_code_ranges_cover_strings_comments_templates_and_regexes() {

@@ -171,6 +171,8 @@ message ChangeAccountApiFormatRequest {
   bool enabled = 4;
   bool exclude_automatic = 5;
   bool recovery_notifications = 6;
+  // Revision of the Provider resource inspected for the selected API profile.
+  uint64 provider_revision = 7;
 }
 
 message ChangeAccountApiFormatResponse {

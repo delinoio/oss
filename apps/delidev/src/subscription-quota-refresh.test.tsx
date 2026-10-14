@@ -166,16 +166,22 @@ it("stops on blur or hide, never catches up, and waits a fresh thirty seconds on
   }
 });
 
-it("does not send from a queued callback after focus was lost without an event", async () => {
+it("restarts one full wait after focus returns from a missed blur", async () => {
   const f = fixture();
   await mount(f.view());
   focused = false;
   await advance(30000);
   expect(f.requests).toHaveLength(0);
   focused = true;
-  await advance(120000);
-  // Without a focus event nothing restarted the stopped wait.
+  fireEvent(window, new Event("focus"));
+  await advance(15000);
+  fireEvent(window, new Event("focus"));
+  await advance(14999);
   expect(f.requests).toHaveLength(0);
+  await advance(1);
+  expect(f.requests).toHaveLength(1);
+  await advance(30000);
+  expect(f.requests).toHaveLength(2);
 });
 
 it("sends nothing while disconnected, unsupported or stopping, and restarts its wait on readiness", async () => {

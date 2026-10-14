@@ -24,20 +24,21 @@ func TestServerSubscriptionRuntimeCleanupLogsSafeFailure(t *testing.T) {
 		{"matched", "", ""},
 		{"mismatch", subscription.CleanupAuthFile, subscription.CleanupMismatch},
 		{"missing", subscription.CleanupAuthFile, subscription.CleanupReadFailed},
-		{"oversized", subscription.CleanupInventory, subscription.CleanupByteLimit},
+		{"special", subscription.CleanupAuthFile, subscription.CleanupNotRegular},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			home := filepath.Join(t.TempDir(), "private-path-sentinel")
 			if _, err := harness.PrivateRuntimeEnvironment(home); err != nil {
 				t.Fatal(err)
 			}
-			original, err := os.Stat(home)
-			if err != nil {
-				t.Fatal(err)
-			}
 			latest := []byte("synthetic-token-sentinel")
 			auth := filepath.Join(home, "codex", "auth.json")
-			if scenario.name != "missing" {
+			if scenario.name == "special" {
+				// A non-regular entry cannot be proven to be removable credential state.
+				if err := os.MkdirAll(auth, 0700); err != nil {
+					t.Fatal(err)
+				}
+			} else if scenario.name != "missing" {
 				written := latest
 				if scenario.name == "mismatch" {
 					written = []byte("synthetic-other-token-sentinel")
@@ -46,29 +47,35 @@ func TestServerSubscriptionRuntimeCleanupLogsSafeFailure(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if scenario.name == "oversized" {
-				file, err := os.OpenFile(filepath.Join(home, "oversized-sentinel"), os.O_CREATE|os.O_WRONLY, 0600)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if err := file.Truncate(subscription.RuntimeByteLimit + 1); err != nil {
-					_ = file.Close()
-					t.Fatal(err)
-				}
-				if err := file.Close(); err != nil {
-					t.Fatal(err)
-				}
+			// Ordinary retained native data must never block credential cleanup.
+			cache := filepath.Join(home, "codex", "tmp", "arg0", "native-helpers")
+			if err := os.MkdirAll(cache, 0700); err != nil {
+				t.Fatal(err)
+			}
+			helper := filepath.Join(cache, "apply_patch")
+			if err := os.Symlink(filepath.Join(home, "verified-native"), helper); err != nil {
+				t.Skip("symlinks unavailable")
 			}
 			var logs bytes.Buffer
 			logger := slog.New(slog.NewJSONHandler(&logs, nil))
 			owner := domain.NewID()
-			err = cleanupServerSubscriptionRuntime(home, original, owner, logger, latest)
+			compare := latest
+			if scenario.name == "special" {
+				compare = nil
+			}
+			err := cleanupServerSubscriptionRuntime(home, owner, logger, compare)
+			if _, statErr := os.Lstat(helper); statErr != nil {
+				t.Fatal("cleanup removed a retained helper link")
+			}
 			if scenario.name == "matched" {
 				if err != nil || logs.Len() != 0 {
 					t.Fatal("confirmed cleanup was classified as a failure")
 				}
-				if _, err := os.Lstat(home); !os.IsNotExist(err) {
-					t.Fatal("confirmed runtime retained")
+				if _, err := os.Lstat(auth); !os.IsNotExist(err) {
+					t.Fatal("transient credential file remained")
+				}
+				if _, err := os.Stat(home); err != nil {
+					t.Fatal("confirmed cleanup removed the persistent profile")
 				}
 				return
 			}
@@ -76,7 +83,7 @@ func TestServerSubscriptionRuntimeCleanupLogsSafeFailure(t *testing.T) {
 				t.Fatal("unconfirmed cleanup lost recovery fencing")
 			}
 			if _, err := os.Stat(home); err != nil {
-				t.Fatal("unconfirmed credential runtime was removed")
+				t.Fatal("unconfirmed credential profile was removed")
 			}
 			var event struct {
 				Time      string                     `json:"time"`
@@ -95,9 +102,6 @@ func TestServerSubscriptionRuntimeCleanupLogsSafeFailure(t *testing.T) {
 			decoder.DisallowUnknownFields()
 			if decoder.Decode(&event) != nil || event.Message != "server_subscription_cleanup_failed" || event.Operation != owner || event.Stage != scenario.stage || event.Reason != scenario.reason || event.Code != domain.RecoveryRequired || event.FileLimit != subscription.RuntimeFileLimit || event.ByteLimit != subscription.RuntimeByteLimit {
 				t.Fatal("cleanup did not log its closed original-operation diagnostic")
-			}
-			if scenario.name == "oversized" && (event.Count == 0 || event.Bytes <= subscription.RuntimeByteLimit) {
-				t.Fatal("cleanup limit failure lost its observed counters")
 			}
 			if bytes.Contains(logs.Bytes(), []byte("sentinel")) || bytes.Contains(logs.Bytes(), []byte(home)) {
 				t.Fatal("cleanup log exposed credential content or a path")

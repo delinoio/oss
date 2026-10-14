@@ -8,6 +8,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import {
   DeviceType,
+  FailureCause,
   FailureCode,
   SystemCapability,
   SystemQuery,
@@ -125,6 +126,70 @@ function LoginRequiredProblem({ error }: { error: unknown }) {
     />
   );
 }
+// Proven Check-only causes and their localized guidance. Any other failure,
+// including an unknown or mismatched cause, keeps the generic Problem.
+const checkCauseCopy = {
+  [FailureCause.TailscaleConnectionRefused]: {
+    heading: "tailscale.cause.connectionRefused.heading",
+    body: "tailscale.cause.connectionRefused.body",
+  },
+  [FailureCause.TailscaleTimeout]: {
+    heading: "tailscale.cause.timeout.heading",
+    body: "tailscale.cause.timeout.body",
+  },
+  [FailureCause.TailscaleCertificateInvalid]: {
+    heading: "tailscale.cause.certificateInvalid.heading",
+    body: "tailscale.cause.certificateInvalid.body",
+  },
+  [FailureCause.TailscaleUnexpectedHttp]: {
+    heading: "tailscale.cause.unexpectedHttp.heading",
+    body: "tailscale.cause.unexpectedHttp.body",
+  },
+  [FailureCause.TailscaleInvalidIdentity]: {
+    heading: "tailscale.cause.invalidIdentity.heading",
+    body: "tailscale.cause.invalidIdentity.body",
+  },
+} as const;
+type CheckCause = keyof typeof checkCauseCopy;
+function checkCause(error: unknown): CheckCause | undefined {
+  if (!error) return undefined;
+  const cause = clientFailure(error).cause;
+  return cause !== undefined && Object.hasOwn(checkCauseCopy, cause)
+    ? (cause as CheckCause)
+    : undefined;
+}
+// Presentation only: the original Check query keeps its identity and error. The
+// summary is outside Technical details, which keep the original safe failure.
+function CheckCauseProblem({
+  error,
+  cause,
+  device,
+}: {
+  error: unknown;
+  cause: CheckCause;
+  device: string;
+}) {
+  useLocale();
+  const failure = clientFailure(error);
+  return (
+    <InlineRemediation
+      summary={
+        <>
+          <strong>{copy(checkCauseCopy[cause].heading, { device })}</strong>
+          <p>{copy(checkCauseCopy[cause].body, { device })}</p>
+        </>
+      }
+      details={
+        <>
+          <strong>{failure.message}</strong>
+          <p>{failure.guidance}</p>
+          <code>{failure.code}</code>
+          {failure.correlationId ? <code>{failure.correlationId}</code> : null}
+        </>
+      }
+    />
+  );
+}
 const ownershipCopy = {
   [Ownership.Own]: "tailscale.own",
   [Ownership.Shared]: "tailscale.shared",
@@ -209,8 +274,17 @@ export function TailscaleConnections({
     () => setAcceptedAccess(decode<Access>(accessRead.data?.documentJson)),
     [accessRead.data],
   );
-  const access =
-    acceptedAccess ?? decode<Access>(accessRead.data?.documentJson);
+  // A failed latest read leaves TanStack Query holding the previous data next to
+  // the new error. The latest result controls: the cached access state never
+  // outranks the current read failure, so status and actions treat it as unknown.
+  const access = accessRead.error
+    ? undefined
+    : (acceptedAccess ?? decode<Access>(accessRead.data?.documentJson));
+  // The access action depends on a successful read of the current state. While
+  // that state is unknown (first read pending or latest read failed), neither
+  // Enable nor Disable is offered: a fresh Enable request would clean up a
+  // working ingress, and a Disable would be chosen without knowing the state.
+  const accessUnknown = access === undefined;
   const accessMutation = useRetainedMutation(
     "tailscale:access",
     TailscaleQuery.setTailscaleAccess,
@@ -275,7 +349,7 @@ export function TailscaleConnections({
                 ) : null}
                 <button
                   type="button"
-                  disabled={accessMutation.busy}
+                  disabled={accessMutation.busy || accessUnknown}
                   onClick={() =>
                     access?.enabled
                       ? void accessMutation.send({
@@ -354,7 +428,7 @@ export function TailscaleConnections({
           <p>{copy("tailscale.visibility")}</p>
           <button
             type="button"
-            disabled={accessMutation.busy}
+            disabled={accessMutation.busy || accessUnknown}
             onClick={() => {
               setConfirmation(false);
               void accessMutation.send({
@@ -490,13 +564,27 @@ function DeviceInventory({
   const cancelBlocked =
     cancel.busy || cancel.uncertain || Boolean(cancel.input);
   const retainedHelpId = "tailscale-retained-request-help";
-  const inventory = decode<Inventory>(discovery.data?.documentJson);
+  // A failed refresh keeps the previous inventory in the query next to the new
+  // error. The latest result controls status and peer actions, so the cached
+  // inventory is ignored while the current query has an error. The retained
+  // snapshot below only keeps the peer rows (and their gcTime 0 check queries)
+  // mounted, hidden, so a settled automatic check is never discarded and issued
+  // again after a later successful Refresh.
+  const retainedInventory = decode<Inventory>(discovery.data?.documentJson);
+  const inventory = discovery.error ? undefined : retainedInventory;
   // Automatic availability checks belong to this mount, which is exactly one
   // visit of the devices presentation: leaving the category unmounts it and
   // reopening starts fresh. The queue is snapshotted once from the first
   // successful running inventory, so rerenders, Strict Mode replay, focus,
   // reconnect and Refresh never restart or extend it.
   const [queue, setQueue] = useState<readonly QueuedPeer[]>();
+  // The visit queue alone owns "this peer was checked automatically in this
+  // visit": a peer is claimed the moment its automatic read is handed out and
+  // settled when that read ended. Both facts live here, not in the peer rows,
+  // the check query cache (gcTime 0) or the live and active flags, so a hidden
+  // row, a failed discovery refresh or a recovery never starts, repeats or
+  // forgets an automatic read.
+  const [claimed, setClaimed] = useState<readonly string[]>([]);
   const [settled, setSettled] = useState<readonly string[]>([]);
   useEffect(() => {
     if (queue || !discovery.isSuccess || discovery.isFetching) return;
@@ -506,6 +594,11 @@ function DeviceInventory({
       .map(({ id, host }) => ({ id, host }));
     setQueue(next);
   }, [queue, discovery.isSuccess, discovery.isFetching, inventory]);
+  const markClaimed = useCallback(
+    (id: string) =>
+      setClaimed((prev) => (prev.includes(id) ? prev : [...prev, id])),
+    [],
+  );
   const markSettled = useCallback(
     (id: string) =>
       setSettled((prev) => (prev.includes(id) ? prev : [...prev, id])),
@@ -555,6 +648,9 @@ function DeviceInventory({
   const activeId = waiting
     ? undefined
     : queue?.find((q) => !settled.includes(q.id) && live(q))?.id;
+  useEffect(() => {
+    if (activeId) markClaimed(activeId);
+  }, [activeId, markClaimed]);
   const original = decode<Approval[]>(operations.data?.documentJson) ?? [];
   const retained = accepted
     ? [accepted, ...original.filter((a) => a.id !== accepted.id)]
@@ -610,23 +706,26 @@ function DeviceInventory({
             {inventory?.state === "running" && inventory.peers.length === 0 ? (
               <p>{copy("tailscale.empty")}</p>
             ) : null}
-            <ul className="tailscale-list">
-              {inventory?.peers.map((peer) => {
+            <ul className="tailscale-list" hidden={Boolean(discovery.error)}>
+              {retainedInventory?.peers.map((peer) => {
                 const queued = queue?.find(
                   (q) => !dropped.includes(q.id) && queuedAndEligible(q, peer),
                 );
-                const active = queued !== undefined && queued.id === activeId;
+                // A claimed peer keeps its automatic check, in flight or
+                // settled, whether or not it is currently live; the queue
+                // waits for its read to end and then marks it settled.
+                const automatic =
+                  queued !== undefined &&
+                  (queued.id === activeId || claimed.includes(queued.id));
+                const awaiting = automatic && !settled.includes(peer.id);
                 return (
                   <PeerRow
                     key={peer.id}
                     peer={peer}
                     workerEnabled={access?.state === "ready"}
                     choose={(role) => setSelected({ peer, role })}
-                    automatic={
-                      active ||
-                      (queued !== undefined && settled.includes(peer.id))
-                    }
-                    active={active}
+                    automatic={automatic}
+                    awaiting={awaiting}
                     onSettled={markSettled}
                     onReading={markReading}
                   />
@@ -792,7 +891,7 @@ function PeerRow({
   choose,
   workerEnabled,
   automatic,
-  active,
+  awaiting,
   onSettled,
   onReading,
 }: {
@@ -801,8 +900,8 @@ function PeerRow({
   workerEnabled: boolean;
   // The visit queue has started (or finished) the automatic check of this peer.
   automatic: boolean;
-  // This peer is the one automatic check currently owning the queue.
-  active: boolean;
+  // The queue started this peer's automatic check and has not seen it end yet.
+  awaiting: boolean;
   onSettled: (id: string) => void;
   // Reports whether this row has a check read in flight.
   onReading: (id: string, busy: boolean) => void;
@@ -838,10 +937,16 @@ function PeerRow({
       gcTime: 0,
     },
   );
+  // Every displayed value reads the query only for the current check. A failed
+  // check (automatic or manual) keeps the previous identity next to the new
+  // error, so the latest result controls: cached identity is ignored on error,
+  // and an invalidated result hides both identity and error.
+  const checkError = enabled && !discard ? check.error : undefined;
   const identity =
-    enabled && !discard
+    enabled && !discard && !check.error
       ? decode<Identity>(check.data?.documentJson)
       : undefined;
+  const cause = checkCause(checkError);
   // An invalidated result is reset only once no read is in flight: the queue
   // waits for that read to end, so it is allowed to finish and then discarded.
   useEffect(() => {
@@ -867,13 +972,15 @@ function PeerRow({
     transport,
     peer.id,
   ]);
-  // The active automatic check is done once its read is no longer in flight and
+  // The awaited automatic check is done once its read is no longer in flight and
   // has produced a result or an error (including a check that a manual click
-  // already finished); the queue then advances to the next peer.
+  // already finished); the queue then advances to the next peer. This holds
+  // while discovery is failing and the row is hidden, so that result is still
+  // reported to the queue.
   const settledRead = !check.isFetching && check.status !== "pending";
   useEffect(() => {
-    if (active && settledRead) onSettled(peer.id);
-  }, [active, settledRead, onSettled, peer.id]);
+    if (awaiting && settledRead) onSettled(peer.id);
+  }, [awaiting, settledRead, onSettled, peer.id]);
   useEffect(() => {
     onReading(peer.id, check.isFetching);
   }, [check.isFetching, onReading, peer.id]);
@@ -896,7 +1003,11 @@ function PeerRow({
           ) : identity?.approval ? (
             copy("tailscale.accepting")
           ) : enabled ? (
-            copy("tailscale.unavailable")
+            cause === FailureCause.TailscaleConnectionRefused ? (
+              copy("tailscale.couldNotConnect")
+            ) : (
+              copy("tailscale.unavailable")
+            )
           ) : (
             copy("tailscale.notChecked")
           )}
@@ -935,7 +1046,17 @@ function PeerRow({
           <SSHSetup active initialHost={peer.host} />
         ) : null}
       </div>
-      <Problem error={discard ? undefined : check.error} />
+      {cause ? (
+        <div className="tailscale-check-cause">
+          <CheckCauseProblem
+            error={checkError}
+            cause={cause}
+            device={peer.name}
+          />
+        </div>
+      ) : (
+        <Problem error={checkError} />
+      )}
     </li>
   );
 }

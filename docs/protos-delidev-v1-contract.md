@@ -1,5 +1,34 @@
 # DeliDev v1 Connect contract
 
+## Shared subscription owner reservation
+
+The protocol reserves, with no behavior of their own, Worker `SHARED_SUBSCRIPTION_OWNER_V1 = 67`, Worker
+`CLAUDE_DEVICE_OWNED_MEMBERS_V1 = 68`, `TakeSubscriptionResponse.owner_lease_id = 7`,
+`FinishSubscriptionRequest.finish_scope = 11` and the new enum
+`SubscriptionFinishScope` (`UNSPECIFIED = 0`, `MEMBER = 1`, `OWNER = 2`). Capability
+67 negotiates account-owner plus execution-member ownership for managed Codex
+accounts; capability 68 negotiates the same ownership for the device-owned native
+Claude lane. Neither covers the server-owned Claude setup-token lane (Worker
+capability 41), which stays exclusive. `owner_lease_id` is empty for a founding or
+legacy singleton lease and never accompanies authentication bytes for a joined
+member. An unspecified `finish_scope` keeps the legacy singleton meaning, so old
+peers retain exclusive execution. The server echoes a capability in
+`AttachWorkerResponse.supported_worker_capabilities` only after the activating
+change; a Worker reports it only after observing that echo. Existing numeric
+assignments are unchanged. Go and TypeScript descriptors expose the new enum,
+fields and enum values. No public RPC, System capability or SQLite migration is
+added: owner and member records are an additive JSON extension of the account
+document. The [subscription contract](cmds-delidev-subscription-contract.md) owns
+the behavior.
+
+The owner/member change activates both capabilities on the server and the
+device-owned Claude Worker: the server records 67 and 68 from the Worker attach and
+echoes them in `supported_worker_capabilities`, accepts `finish_scope` and
+populates `owner_lease_id` on joined members. A Claude Worker advertises 68 only
+for a verified native Claude lane after observing that echo. No Worker advertises
+67 yet: the managed Codex Worker activation (shared app-server) is a separate,
+unimplemented change, so managed Codex execution stays exclusive per account.
+
 ## Parallel session dispatch negotiation
 
 Worker `PARALLEL_SESSIONS_V1 = 66` is an active opt-in capability. The server echoes the capability in
@@ -61,12 +90,21 @@ is added.
 The originating change established the complete reservations on main before activation.
 The feature owns ProviderInventory capability
 `ACCOUNT_API_FORMAT_CHANGE_V1 = 9` separately from capability 7 and OAuth
-reservation 8. The owner/client `AccountService.ChangeAccountApiFormat` RPC
+reservation 8. Capability
+`ACCOUNT_API_FORMAT_CHANGE_REVISION_V1 = 10` gates revision-bound format saves.
+The owner/client `AccountService.ChangeAccountApiFormat` RPC
 uses request fields mutation 1, api_protocol 2, alias 3, enabled 4,
 exclude_automatic 5 and recovery_notifications 6; its response uses account 1,
-request_id 2 and replayed 3. Reuse the existing `ApiProtocol` enum.
-Capability 9 now activates this dedicated operation. The reservation-only PR
-granted no format change, key access or execution authority.
+request_id 2 and replayed 3. Request field provider_revision 7 carries the
+inspected Provider resource revision. Reuse the existing `ApiProtocol` enum.
+Capability 9 now activates this dedicated operation, while capability 10 is
+required before a client enables the provider revision check. The
+reservation-only PR granted no format change, key access or execution
+authority.
+Active servers reject zero or omitted provider_revision on fresh requests and
+do not reinterpret earlier receipt bytes as provider-bound evidence. An exact
+accepted revised request replays through its original actor-bound digest before
+a current Provider revision check; a changed request under that ID conflicts.
 
 The approved extension permits changing a connected API account's format while
 keeping its protected key. Go owns atomic preference/profile publication and
@@ -79,7 +117,8 @@ exact actor/revision/request retries, and explicit Disconnect/deletion cleanup
 across all generations. Do not convert formats or change Provider identity or
 keyless credential ownership. No SQLite migration or native change is authorized.
 Capability 7 and its existing cleanup-required configuration operation remain
-unchanged; capability 9 owns the dedicated extension.
+unchanged; capability 9 owns the dedicated extension and capability 10 gates
+revision-bound provider checks.
 
 ## OAuth API format selection reservations
 
@@ -105,7 +144,7 @@ actor/login/credential ownership, once-only exchange and cleanup stay intact.
 The desktop uses one provider-metadata-driven format presentation for manual and
 OAuth connections: explicitly choose among multiple formats, or display the sole
 format. Preserve Google project binding and device approval. Existing accounts
-may use capability 9 for the key-preserving change without a new OAuth exchange;
+may use capabilities 9 and 10 for the key-preserving change without a new OAuth exchange;
 capability 7 alone requires Disconnect and confirmed cleanup before format changes. No historical
 account/execution rewrite, protocol conversion or native change is authorized.
 
@@ -561,7 +600,7 @@ Record implementation status and validation results in pull requests, issues and
 
 - The feature image inputs follow `cmds-delidev-image-input-contract.md`. The owner permits declarations and complete activation in the same feature PR for System 45, Worker 25 and creation/enqueue attachments field 5 only. Preserve metadata-only server storage, authenticated Worker byte ownership, ordered immutable claims, original native image proofs and durable independent cleanup; no migration. Real-account, installed-native, remote-machine and platform acceptance remain owner-assigned and nonblocking for this feature.
 
-- Key-preserving API format changes follow `cmds-delidev-catalog-contract.md#key-preserving-api-format-change-reservations`: the originating change established ProviderInventory 9 and the complete ChangeAccountApiFormat RPC declarations on main before activation. Preserve capability 7, OAuth reservation 8, protected shared key references, original execution/continuation generations, new-format validation, immutable referenced profiles and all-generation explicit cleanup. No SQLite migration or native change. Reservation-only changes activate no support.
+- Key-preserving API format changes follow `cmds-delidev-catalog-contract.md#key-preserving-api-format-change-reservations`: the originating change established ProviderInventory 9 and the complete ChangeAccountApiFormat RPC declarations on main before activation; capability 10 gates revision-bound provider checks. Preserve capability 7, OAuth reservation 8, protected shared key references, original execution/continuation generations, new-format validation, immutable referenced profiles and all-generation explicit cleanup. No SQLite migration or native change. Reservation-only changes activate no support.
 
 - OAuth API format selection follows `cmds-delidev-account-oauth-contract.md#oauth-api-format-selection-reservations`: record ProviderInventory 8 and Start/attempt api_protocol fields 4/7 in the owning feature PR. Reuse the existing ApiProtocol enum; preserve original default/receipt compatibility, provider OAuth eligibility, once-only exchange, protected credentials, immutable selected profiles and confirmed cleanup. No database migration or native change. Reservations alone activate no support.
 

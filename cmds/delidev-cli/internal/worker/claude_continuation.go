@@ -11,6 +11,23 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 )
 
+// claudeContinuationReference derives the immutable checkpoint reference of a
+// Claude continuation from its assignment, never from the retained file.
+func claudeContinuationReference(root string, input domain.ExecutionJobInput) (ExecutionCheckpointRef, error) {
+	c := input.Continuation
+	var manifest workspace.Manifest
+	if c == nil || input.Validate() != nil || domain.Decode(input.Manifest, &manifest) != nil {
+		return ExecutionCheckpointRef{}, executionCheckpointUncertain()
+	}
+	ref := ExecutionCheckpointRef{JobID: c.Previous.JobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: c.HistoryExecutionID, AssignmentInputDigest: c.AssignmentInputDigest, ConfigurationDigest: input.ConfigurationDigest, AccountID: input.AccountID, ConnectionID: input.ConnectionID, Completion: c.Completion, InputMode: c.InputMode, AcceptedInputs: c.Previous.AcceptedInputs, WorkspaceRoots: nativeWorkspaceRoots(manifest)}
+	digest, err := hex.DecodeString(c.PromptDigest)
+	if err != nil || len(digest) != len(ref.PromptDigest) {
+		return ExecutionCheckpointRef{}, executionCheckpointUncertain()
+	}
+	copy(ref.PromptDigest[:], digest)
+	return ref, nil
+}
+
 func readClaudeContinuation(ctx context.Context, root string, credential Credential, input domain.ExecutionJobInput, manifest workspace.Manifest, config claude.APIStreamConfig) (*claude.ClosedAPISession, error) {
 	c := input.Continuation
 	if c == nil || input.Validate() != nil {
@@ -19,15 +36,24 @@ func readClaudeContinuation(ctx context.Context, root string, credential Credent
 	if err := verifyClaudeContinuationJournals(root, credential, input); err != nil {
 		return nil, err
 	}
-	ref := ExecutionCheckpointRef{JobID: c.Previous.JobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: c.HistoryExecutionID, AssignmentInputDigest: c.AssignmentInputDigest, ConfigurationDigest: input.ConfigurationDigest, AccountID: input.AccountID, ConnectionID: input.ConnectionID, Completion: c.Completion, InputMode: c.InputMode, AcceptedInputs: c.Previous.AcceptedInputs, WorkspaceRoots: nativeWorkspaceRoots(manifest)}
-	digest, err := hex.DecodeString(c.PromptDigest)
-	if err != nil || len(digest) != len(ref.PromptDigest) {
-		return nil, executionCheckpointUncertain()
+	ref, err := claudeContinuationReference(root, input)
+	if err != nil {
+		return nil, err
 	}
-	copy(ref.PromptDigest[:], digest)
 	config.Process.OwnerID = c.Previous.JobID
-	config.Process.Cwd = filepath.Join(root, "runtimes", string(c.HistoryExecutionID))
-	config.Home = filepath.Join(config.Process.Cwd, "claude")
+	historyRoot, err := historyNativeRoot(ctx, root, input.MachineID, domain.ClaudeCode, historyAccount(input), c.HistoryExecutionID)
+	if err != nil {
+		return nil, err
+	}
+	config.Process.Cwd = historyRoot
+	config.Home = filepath.Join(historyRoot, "claude")
+	if config.Subscription != nil && config.Subscription.SecureStorageHome != "" {
+		// A version 2 history is the previous session's private directory; only the
+		// canonical secure-storage namespace stays shared.
+		restored := *config.Subscription
+		restored.Home = config.Home
+		config.Subscription = &restored
+	}
 	if c.Compaction != nil {
 		if _, err := readClaudeExecutionCheckpoint(root, ref); err != nil {
 			return nil, err

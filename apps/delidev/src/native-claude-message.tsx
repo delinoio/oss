@@ -327,7 +327,13 @@ export function NativeClaudeMessage({
               </p>
             ) : (
               <>
-                <LinkedPre text={block.text} />
+                <LinkedPre
+                  text={block.text}
+                  complete={
+                    block.state === BlockState.Completed ||
+                    block.state === BlockState.Stopped
+                  }
+                />
                 <small>{blockLabels[block.state]}</small>
               </>
             )}

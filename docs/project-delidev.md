@@ -13,8 +13,12 @@ The desktop-owned shared pure identity presentation at `apps/delidev/src/product
 ## Key-preserving format amendment
 
 After main reservation the originating change, ProviderInventory capability 9 owns connected API
-format changes through the dedicated atomic Account RPC. Current/retained
-server-owned connection generations share the original protected key, preserve
+format changes through the dedicated atomic Account RPC, while capability 10
+gates revision-bound provider checks. Each new format-change
+request binds the inspected Provider resource revision when capability 10 is
+advertised, checked with Account and
+Provider identity before publication. Current and retained server-owned connection
+generations share the original protected key, preserve
 original executions and continuations, and require fresh explicit validation for
 new sessions. Capability 7 and OAuth reservation 8 keep their separate meaning.
 Follow the [account](cmds-delidev-accounts-contract.md#connected-api-format-changes),
@@ -131,7 +135,7 @@ The standalone [Pull requests sidebar](apps-delidev-desktop-contract.md#standalo
 - [Session development-server forwarding](cmds-delidev-forwarding-contract.md)
 - [GitHub integration profiles](cmds-delidev-integrations-contract.md)
 - [Account lifecycle and AI API Keys presentation](cmds-delidev-accounts-contract.md)
-- [Managed Codex subscriptions](cmds-delidev-subscription-contract.md)
+- [Managed Codex subscriptions and shared account owner/member ownership](cmds-delidev-subscription-contract.md#shared-account-owner-and-execution-members), Worker 67 `SHARED_SUBSCRIPTION_OWNER_V1` and Worker 68 `CLAUDE_DEVICE_OWNED_MEMBERS_V1`
 - [OpenCode Go subscriptions](cmds-delidev-opencode-go-subscription-contract.md)
 - [Grok Build subscriptions (planned)](cmds-delidev-grok-subscription-contract.md)
 - [API account browser OAuth](cmds-delidev-account-oauth-contract.md)
@@ -483,3 +487,17 @@ Server reset credits V2 uses System 101 under the [subscription contract](cmds-d
 ## Server-owned Claude token accounts
 
 New Claude accounts may be authenticated by the server through `setup-token` (System 67/68, Worker 41) and executed on any Worker that advertises the managed adapter. Invariants: the token exists only in the server vault envelope, the protected Take response and the supervised child environment; a legacy-only Worker never receives it; one exclusive original lease per generation; disconnect and uncertain cleanup keep the fence until the original Worker confirms cleanup; existing device-owned profiles are never inspected or converted; no provider relay, quota, reset-credit or provider-wide revocation claim is made. See the subscription, credentials, harness, accounts, settings and protocol contracts.
+
+## Persistent native profiles
+
+DeliDev-owned native homes are persistent, owner-local profiles resolved by one
+shared Go owner (`cmds/delidev-cli/internal/nativeprofile`) for server and
+Worker discovery, model observation, login/refresh, quota, credits, execution,
+continuation, Fork, compaction, Revert, Sidechat, titles and native review. See
+the [harness](cmds-delidev-harness-contract.md#persistent-native-profiles),
+[storage](cmds-delidev-storage-contract.md#persistent-native-profile-storage),
+[process](cmds-delidev-process-contract.md#profile-retention-and-process-journals),
+[subscription](cmds-delidev-subscription-contract.md#persistent-account-profiles)
+and [sessions](cmds-delidev-sessions-contract.md#native-histories-and-persistent-profiles)
+contracts. Deploy the updated server and Workers; each owner migrates only its
+own state and rejects incompatible local profile versions without rewriting them.

@@ -1,5 +1,192 @@
 # DeliDev native subscriptions
 
+## Shared account owner and execution members
+
+A managed subscription account runs independent sessions concurrently through a
+durable account owner plus execution members instead of account-wide execution
+exclusivity. The managed Codex lane is negotiated by Worker
+`SHARED_SUBSCRIPTION_OWNER_V1 = 67` and the device-owned native Claude lane by
+Worker `CLAUDE_DEVICE_OWNED_MEMBERS_V1 = 68` (both reserved in the
+[protocol contract](protos-delidev-v1-contract.md)). Only capability 68 is
+advertised by the shipped Worker. Capability 67 is reserved and not advertised
+until the Codex Worker slice (tracked by issue 3466) lands, so the server's
+Codex shared-owner branch is inactive for the shipped Worker and managed Codex
+stays exclusive per account. Where a lane is negotiated, independent sessions that
+use one account on its original Runner Device run concurrently, including more
+than four, with no session-count cap, setting or queue depth. Account lifecycle
+authority stays exclusive.
+
+**Representation.** Account JSON gains an additive, versioned extension. A lease
+with `shared = true` is the account owner and `members` holds one record per
+execution member (lease identifier, session job, admission revision, `running` or
+`retained`, admission time). The owner is bound to the original account and
+connection, Runner, device, Worker instance, server epoch and credential
+generation. Exactly one member owns each session job; the founding member shares
+the owner's lease identifier, job and revision, so that one identifier never
+resolves to two different jobs; no other member may carry the owner's own job.
+Historical accounts omit both fields and keep the
+singleton lease and its original receipts unchanged. A singleton lease never
+carries members, and a shared lease never carries a Fork or title revision.
+Validation rejects duplicate jobs or lease identifiers, an unknown member state,
+a non-execute owner, a founding member whose job or revision differs from the
+owner's, a later member that carries the owner's job, and members without an
+owner. There is no SQLite migration:
+the extension is account document JSON.
+
+**Negotiation.** Only a Worker whose current attach advertised capability 67 (and
+therefore observed the server's echo) can found or join a shared owner. Every
+other peer keeps one exclusive singleton lease and receives the historical
+`ResourceExhausted` refusal behind any live lease. A downgraded or replaced
+instance cannot join an owner bound to another instance or device.
+
+**Admission.** The first negotiated execute Take on an idle account founds the
+owner and receives the one protected bundle. A later execute Take on the live
+owner from the same Runner, device, instance, epoch and generation joins as a
+member and receives no authentication: the response carries `owner_lease_id`
+and an empty bundle, so DeliDev never distributes a second copy of a refresh
+token. All existing job, assignment, cancellation, Stop, recovery-fence, budget
+and account-state checks apply per member. Pending login, reauthentication,
+refresh or logout, a native observation, a recovery fence, a draining owner (no
+runnable member) or an exclusive server operation refuses new members. A joined
+member whose admission fails after commit is released alone with the typed
+`subscription_member_not_admitted` result and never fences siblings. Fork,
+compaction, native review, managed title, quota and reset-credit work keep
+exclusive singleton custody and wait while a shared owner is live, so their
+receipts and generation proofs keep their original meaning.
+
+**Finish.** `FinishSubscription` carries an explicit `finish_scope`. A `MEMBER`
+Finish releases exactly one running member, carries no authentication, never
+reads or writes the vault, never rotates the generation and never touches a
+sibling. Confirmed cleanup removes the member. Unconfirmed native or descendant
+closure (for example a Stop whose `thread/closed` or descendant proof is
+missing) marks the member `retained`: it stops being runnable and holds no
+execution authority, but its cleanup ownership and workspace stay with the owner
+until final owner containment closes. Retention is not a completed Stop. An
+`OWNER` Finish retires the owner only when no other member is runnable; it
+performs the single generation-specific writeback, releases retained members with
+the owner and clears the lease. Only `UNSPECIFIED` keeps the legacy singleton meaning; any other unrecognized
+scope value is rejected with `InvalidArgument` before the Finish is processed. A legacy-scope Finish cannot settle a shared
+owner and a scoped Finish cannot settle a singleton. A failed or unconfirmed
+owner Finish keeps the existing recovery fence, so credentials remain until
+confirmed settlement.
+
+The Worker never lets a lost Finish acknowledgment leave its local owner and the
+server's owner/member set divergent. A `MEMBER` or `OWNER` Finish whose outcome
+is unknown (a transport failure) is retried a bounded number of times with the
+identical idempotent request (same request identifier and revision). A member
+Finish that stays unacknowledged is kept as a pending member Finish: the last
+local member settles every pending member Finish over a fresh transport before
+it closes the profile and sends the `OWNER` Finish, which the server would
+otherwise refuse as conflicting while it still counts that member as runnable.
+An unfinished retirement keeps the owner and records a resume step; the
+admission gate completes it (releasing the newly admitted member alone and
+reporting a definite no-delivery failure) before any later member can join, so no
+member runs on a retiring owner. A founding failure whose owner Finish stays
+unacknowledged is tracked the same way. Structured logs
+(`claude_finish_retrying`, `claude_shared_member_finish_pending`,
+`claude_shared_member_finish_settled`, `claude_shared_owner_retirement_blocked`,
+`claude_shared_retirement_resumed`) carry account, lease and counts only.
+
+**Lifecycle.** Login, reauthentication and explicit refresh close new member
+admission when accepted and take lifecycle authority only after the owner and
+every member (including retained cleanup) have drained, because the lifecycle
+Take is refused while any lease exists. The device-owned Claude lane accepts a
+refresh behind a live shared Execute owner as the pending operation, so a user can
+queue reauthentication to close admission and drain the owner; the queued
+operation grants no lease, and the owner's identifier cannot read or advance its
+native progress or login code. Any other lease holder keeps the refresh request
+refused. An operation accepted while a lease is held is marked
+`queued_behind_lease`, and a queued logout is always deferred: its 15-minute
+native operation window starts when the lifecycle Take claims it (the Take
+rebases `started_at`/`expires_at`), never while it waits, and progress does not
+report it expired while queued. The Worker bounds its own 15-minute run after
+the grant, so a long-running shared owner cannot expire the wait. An unclaimed
+queued login or refresh that is not deferred and whose window elapsed is retired
+as `expired` (like a queued cancellation) by the next request or the next
+Execute admission, so an expired `pending` never blocks admission forever.
+Logout keeps immediate readiness
+revocation, cancels every account execution, joins every member's ownership and
+only then runs the canonical native logout and credential deletion.
+
+**Loss and recovery.** Loss of the shared owner (Worker stream, instance or
+epoch) fences the account once, which fences every member: no member Finish,
+admission, observation or credential write is accepted, no other process adopts
+the owner and no input replays. Doctor, account deletion, database restore and
+recovery treat any live lease, including a shared owner and its members, as
+unsettled and cannot clear or reuse its credentials; a restored image retains the
+owner/member set as quarantined evidence under a recovery fence. Worker recovery
+of a lost shared owner joins each member's process owner (a missing directory is
+accepted only for a member whose durable journal records no started execution),
+then always logs out the canonical profile and records that cleanup in an
+owner-level durable claim; it never infers either step from the founding
+member's per-session cleanup or identity flags. Structured logs
+(`subscription_lease_granted`, `subscription_member_finished`,
+`subscription_member_released_undelivered`, `subscription_shared_owner_lost`)
+carry account, lease, operation and counts only, never authentication, prompts or
+native content.
+
+**Device-owned Claude accounts (Worker `CLAUDE_DEVICE_OWNED_MEMBERS_V1 = 68`).**
+The native Claude lane uses the same owner/member representation with its own
+negotiation. The server admits a negotiated execute Take as the founding owner or
+a joined member exactly as above, with no bundle for any member (this lane never
+delivers authentication bytes), and uses `MEMBER` and `OWNER` Finish scopes. An
+owner Finish carries the native identity commitment and confirmed cleanup that the
+singleton Finish carried; a member Finish carries neither and cannot confirm an
+identity. A fenced owner is cleaned only as one set through an owner-scope
+cleanup Finish.
+
+On the Worker, one account owner per connection holds the canonical profile lock
+for its whole lifetime, replacing the per-execution lock with account lifecycle
+exclusion: login, reauthentication and logout take the profile only after the
+server owner has drained and the Worker released the lock. Each session is a
+member with its own lease journal, process owner, workspace lease and publication
+journal. Admission and owner retirement are serialized per account by a gate that
+is never held across a busy wait. The last runnable member joins every retained
+member's process owner, reads the native identity through the CLI's own status,
+releases the lock and only then reports the owner Finish; an unproven closure
+reports unconfirmed cleanup, which fences the account. An owner whose last member finished but whose owner Finish was never acknowledged is replaced when the server grants a fresh founding lease, which only an account with no lease receives; an owner that still has runnable members is never replaced and fences instead. Native code alone reads
+and renews the authentication in the canonical secure-storage directory under its
+own locks and compare-and-swap rereads; DeliDev never reads, copies or
+distributes those bytes. These are mock and fixture results for pinned Claude
+Code `2.1.236`, not real simultaneous renewal, owner-crash or cross-platform
+acceptance.
+
+_Profile versions._ Version 1 keeps one canonical directory as native
+configuration, history and secure storage. A retained version 1 history keeps its
+exact checkpoint bytes and digest and continues only in the canonical directory,
+one session at a time per account on the Worker. Version 2 gives every session a
+private configuration and history directory (`CLAUDE_CONFIG_DIR`) and names the
+canonical profile only as the secure-storage namespace
+(`CLAUDE_SECURESTORAGE_CONFIG_DIR`). Its checkpoint digest binds the private
+history directory and the canonical secure-storage directory independently, and
+the Worker checkpoint records `profile_version = 2` (omitted for version 1, so
+version 1 bytes are unchanged). A fresh session of a negotiated Worker is
+version 2; a continuation keeps the version of its predecessor and binds the
+previous session's private history profile, resolved through the native profile
+registry. A foreign owner, history directory or
+digest fails closed.
+
+**Codex Worker activation (not yet implemented).** The server accepts and
+echoes Worker capability 67 and models members for the managed Codex lane, but no
+Worker advertises it yet, so managed Codex execution stays exclusive per account.
+Activation requires one account-scoped app-server and private authentication
+runtime that shares the native `AuthManager` across independently routed threads;
+completion of one thread must not rotate credentials or close a sibling; early
+workspace release requires exact `thread/closed` after `thread/unsubscribe` plus
+independently proven descendant closure, otherwise the member's workspace and
+cleanup stay retained until final owner containment; and the retained per-session
+history needs an explicit owner-home design before simultaneous threads can share
+one native home. These remain unimplemented and unvalidated.
+
+**Scope boundary.** The server-owned Claude setup-token lane (Worker capability
+41, `claude_credential = server-token`) is explicitly outside the owner/member
+model and stays exclusive: it delivers a static server-held token inside one
+protected Take response, which conflicts with the rule that no member receives
+authentication bytes. OpenCode Go keeps its independent key-backed relay. Grok
+Build is not activated. Mock and build evidence for this model is not real-account,
+real-renewal or cross-platform acceptance; that acceptance is future work and is
+not performed.
+
 ## Direct execution startup
 
 [Direct startup](cmds-delidev-execution-startup-contract.md) removes manual installation inspection and separate execution probes from new negotiated assignments. Initialize the actual selected process and validate its protocol, credential mode and settings before input. Optional observed version metadata cannot grant or deny execution by numeric comparison. Existing protected generation, original account lease, server-owned OAuth and credential write-back/cleanup remain required; readiness never grants login, account refresh or credential ownership.
@@ -49,8 +236,9 @@ subscription authentication with no API-key source. Reauthentication reuses the
 same owned profile and identity, creates a new generation and preserves the
 connection ID. A different native identity cannot replace that account.
 
-One exclusive account lease serializes login, reauthentication, execution and
-logout. Login/reauthentication cannot enter behind another lease. Logout may
+One account lease serializes login, reauthentication, execution and
+logout; negotiated managed Codex execution instead shares the lease as an owner
+with concurrent members (see the shared account owner section). Login/reauthentication cannot enter behind another lease. Logout may
 queue behind execution after atomically revoking readiness and canceling that
 execution. Execution checks the service/model/harness, dedicated capability,
 original owner Runner, profile and generation before consuming an input. Wrong
@@ -345,7 +533,7 @@ A fresh subscription lifecycle Take may return Canceled with exact cause `subscr
 
 - Idle quota/reset-credit observation publication failure does not itself imply credential-owner recovery. Collect the unchanged valid native bundle and independently join native/file cleanup before completing the short credential lease; retain original operation uncertainty/key for explicit credit reconciliation. Failed bundle/native/file validation still fences ownership.
 
-- Claude subscription Worker 20 requires verified original Claude Code at or above the 2.1.236 baseline (the `--version` output must match the observed installation version) and joined empty-profile cleanup. Persist original lease/process/code claims before native effects; use one canonical private account profile and scoped secure storage, original-machine owner and exclusive lock. Official login/status/logout owns auth; raw identity stays local and the original keyed commitment is pinned in private profile ownership before later status comparison or execution input. Original recovery joins process journals and confirms logout/status plus bounded owned-profile removal before reporting cleanup. Execution reuses stream-json/history with no API auth injection or auth-file checkpoints. Never replay uncertain Take/login/code or claim actual platform acceptance from fixtures.
+- Claude subscription Worker 20 requires verified original Claude Code at or above the 2.1.236 baseline (the `--version` output must match the observed installation version) and joined empty-profile cleanup. Persist original lease/process/code claims before native effects; use one canonical private account profile and scoped secure storage, original-machine owner and exclusive lock (lifecycle operations and Workers that did not negotiate Worker 68 keep the whole-execution lock; a negotiated Worker's owner holds it for the owner's lifetime, see the shared account owner section). Official login/status/logout owns auth; raw identity stays local and the original keyed commitment is pinned in private profile ownership before later status comparison or execution input. Original recovery joins process journals and confirms logout/status plus bounded owned-profile removal before reporting cleanup. Execution reuses stream-json/history with no API auth injection or auth-file checkpoints. Never replay uncertain Take/login/code or claim actual platform acceptance from fixtures.
 
 Subscription lifecycle Take treats only Canceled with exact cause `subscription_take_not_admitted` as an operation-local no-grant refusal. Retire its original private claim without Finish, retry or native launch; preserve other accounts on the joined lane. Execute, ordinary Canceled, RecoveryRequired, unknown delivery and uncertain Finish retain existing lane/recovery fences.
 
@@ -662,6 +850,12 @@ Record declarations and complete implementation together; no migration or new
 native action is added. Existing manual consumption, server credit lanes and
 explicit Resume retain their independent ownership.
 
+On a shared account owner, an automatic-credit episode and its frozen server
+proof bind the lease, job and revision of the running member whose session
+reported the quota block, never the founding owner's. The claim is authorized
+only while that member is running; a finished or retained member, or the
+founding member's unrelated job, cannot continue it.
+
 Consent defaults off and binds the authenticated actor, account connection and
 credential generation. Enabling requires explicit confirmation; disabling is a
 separate exact mutation. Logout and every replacement credential generation clear
@@ -756,6 +950,35 @@ The server runs the installed, verified Claude Code (SemVer precedence at or abo
 The token is sealed in a closed, versioned envelope bound to server, account and generation in the existing `AccountLogin` vault ownership and published through its staging receipts. Its keyed commitment proves possession of that credential and is not a human identity. A Worker advertising capability 41 receives the envelope only in the protected Take response of one exclusive original execution lease; a legacy-only Worker never does. A replayed Take receipt never redistributes it; when the exact original lease is still unfinished, the replay fences it as recovery-required so the original Worker can confirm cleanup, and a replay after joined cleanup changes nothing. The Worker sets `CLAUDE_CODE_OAUTH_TOKEN` only in the supervised Claude child, uses a fresh private configuration directory, never passes `--bare`, and clears its buffers after joined termination. Finish with joined cleanup releases the lease; unconfirmed cleanup, restart or lost ownership fences the account until the original Worker confirms cleanup. The Worker journals its claim before the Take request, so a response lost after the lease committed (or whose fields could not be persisted) leaves a pre-delivery journal with no generation or lease revision and no started execution; the original Worker's recovery accepts exactly that claim under the server lease's identity and generation, and any journal field that contradicts the lease, operation or instance still fails closed.
 
 An expired or rejected token ends the execution explicitly with no API fallback, no other account or Runner and no automatic login. Disconnect revokes DeliDev readiness at acceptance, cancels admitted work, waits for the original Worker lease and cleanup to clear, then settles the logout together with a durable credential-cleanup checkpoint in the same transaction and only afterwards removes the vault generation, clearing the checkpoint once deletion is confirmed; an offline Worker or uncertain cleanup retains the fence. A logout accepted behind a lease keeps readiness revoked when that lease clears. Its 15-minute operation window restarts when the original lease clears rather than at acceptance, moving the operation's start time together with its deadline so the persisted window never exceeds 15 minutes, and progress does not report it expired while it is still queued behind the lease. If a server restart fenced the logout as recovery-required, the original Worker's cleanup releases only the lease and the recovery fence stays, so the restart scanner completes the old-epoch logout and vault removal instead of stranding it. A settled login records the same checkpoint for obsolete vault references. If the login's metadata commit returns an ambiguous error after the sealed token was staged, the server reads the stored account before touching the vault: a generation already published as the connected, succeeded login keeps its token and continues normal retirement of obsolete references, an account that did not publish removes only the staged token, and an unreadable account deletes nothing so the checkpoint or recovery scan settles it. Finishing any server-owned Claude operation also clears its unconsumed single-use approval code and presentation from server memory. A failed or interrupted deletion never rewrites the settled state: the checkpoint alone selects the account for a bounded retry that preserves the settled generation, and a stale checkpoint deletes nothing. A database restore clears a server-token account's connection but retains its historical generation, operation and recovery fence while the vault is outside the image; that generation is never authorized again. The restart scanner selects such an account (no connection, a retained generation, recovery required and no lease), deletes every vault reference of the account including the historical generation and any checkpoint obligation, and settles it as a logged-out account without relaunching a login, so reconnecting means connecting a new account. If the restored image still carries an execution lease, the original Worker's cleanup releases only the lease and keeps the disconnected health and recovery fence for that scan. Worker cleanup that crosses a recovery fence never restores readiness on its own: the server first re-opens the settled generation's vault envelope for this server and account, and only a positive result returns the account to ready. A missing, malformed, foreign or unreadable credential (for example after a Take whose credential load failed) releases the lease and fence but leaves the account failed, so no later session is admitted only to repeat the failed Take; the account can still be disconnected and reconnected. Local deletion makes no claim about provider-side token revocation, quota or reset credits. The token expires, has no Remote Control or claude.ai connector access and is not renewed automatically. No provider relay or SQLite migration is added.
+
+## Persistent account profiles
+
+Server and Worker login, authentication refresh, logout, quota and credit
+operations resolve permanent per-account profiles (`auth`, `quota`, `credit`,
+`subscription_probe`) instead of `subscription-runtime/<kind>/<operation>` or
+`managed-auth/<lease>` homes. Access-only quota and credit profiles never contain
+managed `auth.json`; the managed `auth` profile holds it only between a written
+bundle and its joined cleanup. Cleanup retires only transient credential files;
+native-created helper links, caches and history are retained and never block a
+later Refresh. A surviving credential file, live process or invalid owner blocks
+with a closed cause. Historical per-operation runtimes are never deleted by
+completion: the historical access-only quota shape settles once as failed through
+an idempotent migration receipt that leaves the directory and helper links
+untouched, retires only the eligible obsolete credential reference and never
+replays the request (see the
+[harness contract](cmds-delidev-harness-contract.md#legacy-access-only-quota-migration)).
+The Claude device-profile directory is registered in place and removed only by
+its logout.
+
+Explicit deletion of a server account removes every server-owned profile of that
+account (`auth`, `quota`, `credit`, `subscription_probe` with their native
+caches) in the same locked admission step that checks credential references and
+before the account record is deleted; a busy, referenced or unremovable profile
+rejects the deletion so the same request can be retried, and a logout alone
+still retains the profiles. Transient credential files include the
+target-attributed temporary files of an interrupted credential write
+(`.pending-<target>-*`): they block reuse as `credential_file_present` and are
+retired with the credential files, including during account deletion.
 
 ## Claude native version admission and diagnostics
 

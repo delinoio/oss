@@ -46,9 +46,14 @@ type Config struct {
 	repositoryClone           bool
 	updatesEnabled            bool
 	parallelSessions          bool
-	terminals                 *terminalManager
-	Root                      string
-	StartupID                 domain.ID
+	// claudeMembers is the negotiated ClaudeDeviceOwnedMembersV1 capability of the
+	// current attach; claudeOwners holds this connection's device-owned Claude
+	// account owners.
+	claudeMembers bool
+	claudeOwners  *claudeOwnerRegistry
+	terminals     *terminalManager
+	Root          string
+	StartupID     domain.ID
 	// DesktopClientID enables proof only for authenticated ordinary desktop admission.
 	DesktopClientID domain.ID
 	Logger          *slog.Logger
@@ -215,6 +220,7 @@ func fatalTitleProfileProbeError(err error) error {
 
 func Run(ctx context.Context, config Config) (resultErr error) {
 	config.observations = &managedObservationRegistry{}
+	config.claudeOwners = newClaudeOwnerRegistry()
 	credential, err := LoadCredential(config.Root)
 	if err != nil {
 		return err
@@ -394,7 +400,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				// capabilities. It reads no personal login and creates no authority.
 				probeCtx, stop := context.WithTimeout(ctx, 30*time.Second)
 				var claudeProbe bool
-				claudeProbe, err = verifyNativeClaudeSubscriptionProfile(probeCtx, config, attached.Msg.Machine)
+				claudeProbe, err = verifyNativeClaudeSubscriptionProfile(probeCtx, config, credential.MachineID, attached.Msg.Machine)
 				stop()
 				claudeCapabilityExpected = claudeProbe && supportsDeviceClaude
 				managedClaudeExpected = claudeProbe && supportsManagedClaude
@@ -510,6 +516,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_PARALLEL_SESSIONS_V1) {
 				profile += "\x00parallel-sessions-v1"
+			}
+			if claudeCapabilityExpected && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CLAUDE_DEVICE_OWNED_MEMBERS_V1) {
+				profile += "\x00claude-device-owned-members-v1"
 			}
 			if capabilityAttachID == "" || capabilityProfile != profile {
 				capabilityAttachID, capabilityProfile = domain.NewID(), profile
@@ -627,6 +636,11 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_PARALLEL_SESSIONS_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_PARALLEL_SESSIONS_V1)
 			}
+			// Device-owned Claude members are advertised only for a verified native
+			// Claude lane and only after the original server echoes support.
+			if claudeCapabilityExpected && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CLAUDE_DEVICE_OWNED_MEMBERS_V1) {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CLAUDE_DEVICE_OWNED_MEMBERS_V1)
+			}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1) && openCodeChildExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1)
 			}
@@ -674,6 +688,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				config.Logger.InfoContext(ctx, "worker auxiliary title capability not negotiated", "machine_id", credential.MachineID)
 			}
 			config.updatesEnabled = machineCapability(attached.Msg.Machine, domain.SignedWorkerUpdatesV1)
+			config.claudeMembers = claudeCapabilityExpected && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CLAUDE_DEVICE_OWNED_MEMBERS_V1) && machineCapability(attached.Msg.Machine, domain.ClaudeDeviceOwnedMembersV1)
 			config.parallelSessions = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_PARALLEL_SESSIONS_V1) && machineCapability(attached.Msg.Machine, domain.ParallelSessionsV1)
 			config.startupProgress = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1) && machineCapability(attached.Msg.Machine, domain.SessionStartupProgressV1)
 			config.namedWorkspaceDirectories = namedDirectoriesExpected && machineCapability(attached.Msg.Machine, domain.NamedWorkspaceDirectoriesV1)
@@ -1268,6 +1283,10 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 	if job.Type == domain.DiscoverRepositoryBranchesJob {
 		journalLimit = domain.MaxRepositoryBranchesJobBytes
 		decodeLimit = domain.MaxRepositoryBranchesJobBytes
+	} else if job.Type == domain.NativeCodeReviewJob {
+		// A valid 1 MiB review output needs room for the finished journal
+		// envelope. Keep the existing finite private-file bound for this job.
+		decodeLimit = journalLimit
 	}
 	raw, err := security.ReadPrivate(path, int64(journalLimit))
 	if err == nil {
@@ -1281,6 +1300,12 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 			return journal{}, err
 		}
 		if result.State == journalFinished || result.State == journalReported {
+			if job.Type == domain.NativeCodeReviewJob {
+				var input domain.NativeCodeReviewInput
+				if domain.DecodeNativeCodeReviewInput(job.Input, &input) != nil || validateNativeReviewJournalOutcome(result, input, resource) != nil {
+					return journal{}, publicationUncertain()
+				}
+			}
 			return result, nil
 		}
 		if result.State != journalStarted {
@@ -1384,7 +1409,11 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 		if scope.MachineID != job.MachineID {
 			return nil, domain.NativeModelFailure()
 		}
-		result, err := harness.DiscoverNativeModels(ctx, harness.DiscoveryConfig{Root: root, OwnerID: owner, Logger: config.Logger}, scope)
+		discovery, err := discoveryConfig(config, root, owner, job.MachineID)
+		if err != nil {
+			return nil, err
+		}
+		result, err := harness.DiscoverNativeModels(ctx, discovery, scope)
 		if err != nil {
 			return nil, err
 		}
@@ -1512,7 +1541,11 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 		if err := domain.Decode(job.Input, &input); err != nil {
 			return nil, err
 		}
-		result, err := harness.Discover(ctx, harness.DiscoveryConfig{Root: root, OwnerID: owner, Logger: config.Logger}, input)
+		discovery, err := discoveryConfig(config, root, owner, job.MachineID)
+		if err != nil {
+			return nil, err
+		}
+		result, err := harness.Discover(ctx, discovery, input)
 		if err != nil {
 			return nil, err
 		}

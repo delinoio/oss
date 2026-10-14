@@ -25,12 +25,164 @@ import (
 
 func formatRequest(account *pb.Resource, protocol pb.ApiProtocol) *pb.ChangeAccountApiFormatRequest {
 	body := accountBodyNoTest(account)
-	return &pb.ChangeAccountApiFormatRequest{Mutation: acctMutation(account, domain.NewID()), ApiProtocol: protocol, Alias: body.Alias, Enabled: body.Enabled, ExcludeAutomatic: body.ExcludeAutomatic, RecoveryNotifications: body.RecoveryNotifications}
+	return &pb.ChangeAccountApiFormatRequest{Mutation: acctMutation(account, domain.NewID()), ApiProtocol: protocol, Alias: body.Alias, Enabled: body.Enabled, ExcludeAutomatic: body.ExcludeAutomatic, RecoveryNotifications: body.RecoveryNotifications, ProviderRevision: 1}
 }
 func accountBodyNoTest(account *pb.Resource) domain.Account {
 	var body domain.Account
 	_ = domain.Decode(account.DocumentJson, &body)
 	return body
+}
+
+func TestAccountApiFormatChangeBindsInspectedProviderRevision(t *testing.T) {
+	for _, editTarget := range []bool{true, false} {
+		name := "unrelated provider edit"
+		if editTarget {
+			name = "target profile edit"
+		}
+		t.Run(name, func(t *testing.T) {
+			f := newOAuthFixture(t)
+			profiles := []domain.ProviderAPIFormat{
+				{Protocol: domain.OpenAIChat, Endpoint: "https://api.example.test/chat/v1", Authentication: domain.BearerAuth},
+				{Protocol: domain.OpenAIResponses, Endpoint: "https://api.example.test/responses/v1", Authentication: domain.BearerAuth},
+			}
+			providerBody := domain.Provider{Name: "Format fixture", Protocol: profiles[0].Protocol, Endpoint: profiles[0].Endpoint, Authentication: profiles[0].Authentication, APIFormats: profiles}
+			provider, err := saveAPIFormatConfiguration(f, domain.ProviderKind, providerBody, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			account, err := saveAPIFormatConfiguration(f, domain.AccountKind, domain.Account{Alias: "Format fixture", Type: domain.APIAccount, ProviderID: domain.ID(provider.Id), APIProtocol: domain.OpenAIChat, Enabled: true, Health: domain.AccountDisconnected}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			connected, err := f.s.ConnectAccount(f.ctx, connect.NewRequest(&pb.ConnectAccountRequest{Mutation: acctMutation(account, domain.NewID()), ApiKey: []byte("fixture-revision-key")}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			account = connected.Msg.Account
+			request := formatRequest(account, pb.ApiProtocol_API_PROTOCOL_OPENAI_RESPONSES)
+			request.ProviderRevision = provider.Revision
+			providerBody.APIFormats = append([]domain.ProviderAPIFormat(nil), profiles...)
+			if editTarget {
+				providerBody.APIFormats[1].Endpoint = "https://changed.example.test/responses/v1"
+			} else {
+				providerBody.Name = "Renamed format fixture"
+			}
+			updated, err := saveAPIFormatConfiguration(f, domain.ProviderKind, providerBody, provider)
+			if err != nil {
+				t.Fatal(err)
+			}
+			puts, deletes, enumerations := f.vault.counts()
+			if _, err = f.s.ChangeAccountApiFormat(f.ctx, connect.NewRequest(request)); rpc.ClientError(err).Code != domain.Conflict {
+				t.Fatal("stale inspected Provider revision was accepted", err)
+			}
+			current, err := f.s.accountRecord(f.ctx, domain.ID(account.Id))
+			if err != nil || current.Revision != account.Revision || !bytes.Equal(current.Data, account.DocumentJson) {
+				t.Fatal("stale Provider revision published account state", err)
+			}
+			if p, d, e := f.vault.counts(); p != puts || d != deletes || e != enumerations {
+				t.Fatal("stale Provider revision accessed protected credentials")
+			}
+			fresh := proto.Clone(request).(*pb.ChangeAccountApiFormatRequest)
+			fresh.Mutation.RequestId = string(domain.NewID())
+			fresh.ProviderRevision = updated.Revision
+			changed, err := f.s.ChangeAccountApiFormat(f.ctx, connect.NewRequest(fresh))
+			if err != nil || changed.Msg.Replayed || len(accountBody(t, changed.Msg.Account).RetainedConnections) != 1 {
+				t.Fatal("fresh inspection did not allow the selected profile", err)
+			}
+			providerBody.Name = "Renamed after acceptance"
+			if _, err = saveAPIFormatConfiguration(f, domain.ProviderKind, providerBody, updated); err != nil {
+				t.Fatal(err)
+			}
+			replay, err := f.s.ChangeAccountApiFormat(f.ctx, connect.NewRequest(fresh))
+			if err != nil || !replay.Msg.Replayed || replay.Msg.Account.Revision != changed.Msg.Account.Revision {
+				t.Fatal("exact accepted request lost its Provider commitment", err)
+			}
+		})
+	}
+}
+
+func TestAccountApiFormatChangeChecksProviderRevisionBeforeCleanup(t *testing.T) {
+	f := newOAuthFixture(t)
+	providerBody := domain.Provider{
+		Name:           "Format fixture",
+		Protocol:       domain.OpenAIChat,
+		Endpoint:       "https://api.example.test/chat/v1",
+		Authentication: domain.BearerAuth,
+		APIFormats: []domain.ProviderAPIFormat{
+			{Protocol: domain.OpenAIChat, Endpoint: "https://api.example.test/chat/v1", Authentication: domain.BearerAuth},
+			{Protocol: domain.OpenAIResponses, Endpoint: "https://api.example.test/responses/v1", Authentication: domain.BearerAuth},
+		},
+	}
+	provider, err := saveAPIFormatConfiguration(f, domain.ProviderKind, providerBody, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	account, err := saveAPIFormatConfiguration(f, domain.AccountKind, domain.Account{
+		Alias:       "Format fixture",
+		Type:        domain.APIAccount,
+		ProviderID:  domain.ID(provider.Id),
+		APIProtocol: domain.OpenAIChat,
+		Enabled:     true,
+		Health:      domain.AccountDisconnected,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	providerBody.Name = "Changed format fixture"
+	if _, err = saveAPIFormatConfiguration(f, domain.ProviderKind, providerBody, provider); err != nil {
+		t.Fatal(err)
+	}
+	f.vault.referenceError = domain.Fail(domain.Unavailable, "fixture cleanup unavailable", "retry")
+	request := formatRequest(account, pb.ApiProtocol_API_PROTOCOL_OPENAI_RESPONSES)
+	request.ProviderRevision = provider.Revision
+	if _, err = f.s.ChangeAccountApiFormat(f.ctx, connect.NewRequest(request)); rpc.ClientError(err).Code != domain.Conflict {
+		t.Fatalf("stale Provider revision did not win before cleanup: %v", err)
+	}
+	if _, _, enumerations := f.vault.counts(); enumerations != 0 {
+		t.Fatalf("stale Provider revision accessed protected credentials: %d enumerations", enumerations)
+	}
+}
+
+type legacyProviderlessChangeAccountFormatInput struct {
+	ID                                               domain.ID
+	Revision                                         uint64
+	Protocol                                         domain.APIProtocol
+	Alias                                            string
+	Enabled, ExcludeAutomatic, RecoveryNotifications bool
+	Actor                                            domain.Principal
+}
+
+func TestAccountApiFormatChangeRejectsUnsupportedClientAndLegacyReceipt(t *testing.T) {
+	f := newOAuthFixture(t)
+	account, err := saveAPIFormatConfiguration(f, domain.AccountKind, domain.Account{Alias: "Format fixture", Type: domain.APIAccount, ProviderID: domain.ID(f.provider.Id), APIProtocol: domain.OpenAIChat, Enabled: true, Health: domain.AccountDisconnected}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := formatRequest(account, pb.ApiProtocol_API_PROTOCOL_OPENAI_RESPONSES)
+	request.ProviderRevision = 0
+	if _, err = f.s.ChangeAccountApiFormat(f.ctx, connect.NewRequest(request)); rpc.ClientError(err).Code != domain.InvalidArgument {
+		t.Fatal("older client was accepted without Provider revision", err)
+	}
+	legacy := legacyProviderlessChangeAccountFormatInput{domain.ID(account.Id), account.Revision, domain.OpenAIResponses, request.Alias, request.Enabled, request.ExcludeAutomatic, request.RecoveryNotifications, domain.Principal{Type: domain.OwnerDevice}}
+	requestID := domain.ID(request.Mutation.RequestId)
+	saved, err := f.s.Store.Mutate(f.ctx, requestID, "account.change-format", legacy, func(*store.Tx) (any, error) {
+		return accountReceipt{ID: domain.ID(account.Id)}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.ProviderRevision = f.provider.Revision
+	if _, err = f.s.ChangeAccountApiFormat(f.ctx, connect.NewRequest(request)); rpc.ClientError(err).Code != domain.Conflict {
+		t.Fatal("providerless historical receipt was adopted", err)
+	}
+	again, found, err := f.s.Store.Replay(f.ctx, requestID, "account.change-format", legacy)
+	if err != nil || !found || !bytes.Equal(again.Data, saved.Data) {
+		t.Fatal("historical receipt changed", err)
+	}
+	current, err := f.s.accountRecord(f.ctx, domain.ID(account.Id))
+	if err != nil || current.Revision != account.Revision {
+		t.Fatal("unsupported request changed account", err)
+	}
 }
 
 func TestAccountApiFormatChangeKeepsKeyAcrossRestartAndCleanup(t *testing.T) {
@@ -243,6 +395,11 @@ func TestAccountApiFormatChangeKeepsOriginalExecutionAuthority(t *testing.T) {
 	}
 	client := delidevv1connect.NewAccountServiceClient(http.DefaultClient, f.http.URL)
 	input := formatRequest(rpc.Resource(record), pb.ApiProtocol_API_PROTOCOL_OPENAI_CHAT)
+	inspectedProvider, err := f.service.Store.Get(context.Background(), domain.ProviderKind, f.input.Configuration.ProviderID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.ProviderRevision = inspectedProvider.Revision
 	worker := connect.NewRequest(input)
 	worker.Header().Set("Authorization", "Bearer "+f.workerToken)
 	if _, err = client.ChangeAccountApiFormat(context.Background(), worker); connect.CodeOf(err) != connect.CodePermissionDenied {
@@ -335,7 +492,13 @@ func TestAccountApiFormatChangePreservesSessionContinuation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	changed, err := f.accounts.ChangeAccountApiFormat(ctx, ownerRequest(f.identity, formatRequest(f.account, pb.ApiProtocol_API_PROTOCOL_OPENAI_CHAT)))
+	inspectedProvider, err := f.service.Store.Get(ctx, domain.ProviderKind, original.Configuration.ProviderID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	format := formatRequest(f.account, pb.ApiProtocol_API_PROTOCOL_OPENAI_CHAT)
+	format.ProviderRevision = inspectedProvider.Revision
+	changed, err := f.accounts.ChangeAccountApiFormat(ctx, ownerRequest(f.identity, format))
 	if err != nil {
 		t.Fatal(err)
 	}

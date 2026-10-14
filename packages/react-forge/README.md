@@ -196,6 +196,8 @@ The unreleased source API also has `SceneSession.compactGeometry(handle, { signa
 
 `inspect`, settled `snapshot`, revision-bound world-AABB `measure`, `exportBuffer`, atomic `exportFile`, `onDiagnostic` and `dispose` retain the local session lifecycle. GLB uses glTF 2.0; binary FBX 7.4 targets Blender 4.5 materials and embeds textures. Other FBX applications may shade differently. Registered assets and output each have a 256 MiB ceiling, individual geometry/textures 64 MiB, with existing image and React-tree limits. Generation has no Blender or viewer runtime dependency.
 
+GLB export can store triangle indices in a smaller lossless representation when their referenced values fit. Authoring still uses `Uint32Array`, and every vertex and triangle remains intact. Total file-size savings depend on the rest of the scene.
+
 See the [GLB guide](https://oss.delino.io/react-forge/formats/glb/), [FBX guide](https://oss.delino.io/react-forge/formats/fbx/), and original [AURA product example](examples/audio-studio-assets/README.md). The CLI/MCP exports `.glb`/`.fbx` in npm `0.2.0` and later.
 
 For deliberate triangle counts and texture-carried artwork, see [polygon-efficient static authoring](https://oss.delino.io/react-forge/formats/glb/#polygon-efficient-static-authoring) and the [portable source example](examples/polygon-efficient.tsx). It compares 192 and 2,400 triangle curved sheets with opaque painted and transparent two-triangle quads. Its PNGs are generated in memory; copy both example source files for an installed CLI task.
