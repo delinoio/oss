@@ -136,7 +136,11 @@ export function writeProductRoute(route: ProductRoute): boolean {
     const { pathname, search, hash } = window.location;
     const next = serializeProductRoute(route, search);
     if (next === search) return false;
-    window.history.replaceState(window.history.state, "", pathname + next + hash);
+    window.history.replaceState(
+      window.history.state,
+      "",
+      pathname + next + hash,
+    );
     return true;
   } catch (error) {
     // Some webviews throttle history writes; navigation itself is unaffected.

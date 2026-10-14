@@ -110,7 +110,9 @@ describe("product route parse and serialize", () => {
       sidechat: expect.any(String),
     });
     expect(
-      parseProductRoute(`?screen=sessions&session=${session}&sidechat=${session}`),
+      parseProductRoute(
+        `?screen=sessions&session=${session}&sidechat=${session}`,
+      ),
     ).toEqual({ surface: Surface.Sessions, session });
     expect(parseProductRoute(`?screen=sessions&sidechat=${id()}`)).toEqual({
       surface: Surface.Sessions,

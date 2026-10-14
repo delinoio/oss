@@ -554,7 +554,11 @@ function Shell({
               child.parent === pending.id
             ) {
               settle(RouteReadOutcome.Found);
-              openSessionRef.current(pending.sidechat, child.parent, child.name);
+              openSessionRef.current(
+                pending.sidechat,
+                child.parent,
+                child.name,
+              );
               return;
             }
           }

@@ -152,8 +152,7 @@ function fixture() {
     router.service(ResourceService, {
       getResource: (request) => {
         reads.resource(request);
-        if (failure.code)
-          throw new ConnectError("read failed", failure.code);
+        if (failure.code) throw new ConnectError("read failed", failure.code);
         return {
           resource: resources.find(
             (row) => row.kind === request.kind && row.id === request.id,
@@ -185,8 +184,7 @@ function fixture() {
       listInbox: () => ({ entries: [inboxView] }),
       getInboxEntry: (request) => {
         reads.inbox(request);
-        if (failure.code)
-          throw new ConnectError("read failed", failure.code);
+        if (failure.code) throw new ConnectError("read failed", failure.code);
         if (request.id !== inboxEntry.id)
           throw new ConnectError("missing", Code.NotFound);
         return { view: inboxView };
@@ -197,8 +195,7 @@ function fixture() {
       listSchedules: () => ({ schedules: [schedule] }),
       getSchedule: (request) => {
         reads.schedule(request);
-        if (failure.code)
-          throw new ConnectError("read failed", failure.code);
+        if (failure.code) throw new ConnectError("read failed", failure.code);
         if (request.id !== schedule.id)
           throw new ConnectError("missing", Code.NotFound);
         return { schedule };
@@ -245,7 +242,10 @@ describe("route mirroring", () => {
     render(<App transport={value.transport} />);
     await screen.findByRole("button", { name: "New session" });
     expect(search().get("screen")).toBe(Surface.Sessions);
-    const visit = async (open: () => void | Promise<void>, expected: Surface) => {
+    const visit = async (
+      open: () => void | Promise<void>,
+      expected: Surface,
+    ) => {
       await open();
       await waitFor(() => expect(search().get("screen")).toBe(expected));
       expect(search().get("native")).toBe("1");
@@ -307,15 +307,11 @@ describe("route restore after a document reload", () => {
     // The pending route never renders the Home welcome content.
     expect(screen.queryByText("Your sessions, in one place")).toBeNull();
     await waitFor(() =>
-      expect(
-        screen.getAllByText("Retained session").length,
-      ).toBeGreaterThan(0),
+      expect(screen.getAllByText("Retained session").length).toBeGreaterThan(0),
     );
     expect(screen.queryByText("Your sessions, in one place")).toBeNull();
     expect(value.reads.resource).toHaveBeenCalled();
-    await waitFor(() =>
-      expect(search().get("session")).toBe(value.session.id),
-    );
+    await waitFor(() => expect(search().get("session")).toBe(value.session.id));
     expect(value.mutated).not.toHaveBeenCalled();
   });
 
@@ -364,9 +360,7 @@ describe("route restore after a document reload", () => {
     expect(
       await screen.findByRole("region", { name: "Query options" }),
     ).toBeTruthy();
-    await waitFor(() =>
-      expect(search().get("item")).toBe(value.repository.id),
-    );
+    await waitFor(() => expect(search().get("item")).toBe(value.repository.id));
     prs.unmount();
 
     newDocument();
@@ -443,9 +437,7 @@ describe("route fallbacks", () => {
     const value = fixture();
     route(`?screen=nowhere&session=${value.session.id}`);
     render(<App transport={value.transport} />);
-    expect(
-      await screen.findByText("Your sessions, in one place"),
-    ).toBeTruthy();
+    expect(await screen.findByText("Your sessions, in one place")).toBeTruthy();
     await waitFor(() => expect(search().get("screen")).toBe(Surface.Sessions));
     expect(search().has("session")).toBe(false);
     expect(value.reads.resource).not.toHaveBeenCalled();
@@ -461,7 +453,9 @@ describe("route fallbacks", () => {
       route(query());
       render(<App transport={value.transport} />);
       expect(
-        await screen.findByText("Select a schedule from the sidebar to inspect its details and retained history."),
+        await screen.findByText(
+          "Select a schedule from the sidebar to inspect its details and retained history.",
+        ),
       ).toBeTruthy();
       await waitFor(() =>
         expect(search().get("screen")).toBe(Surface.Schedules),
@@ -474,9 +468,7 @@ describe("route fallbacks", () => {
     const value = fixture();
     route(`?screen=sessions&session=${newRequestId()}`);
     render(<App transport={value.transport} />);
-    expect(
-      await screen.findByText("Your sessions, in one place"),
-    ).toBeTruthy();
+    expect(await screen.findByText("Your sessions, in one place")).toBeTruthy();
     await waitFor(() => expect(search().has("session")).toBe(false));
     expect(search().get("screen")).toBe(Surface.Sessions);
   });
@@ -501,7 +493,10 @@ describe("route fallbacks", () => {
   it("ignores a selection from another connection identity", async () => {
     const value = fixture();
     const first = {
-      pairingAuthority: { endpoint: "http://127.0.0.1:46310", serverId: newRequestId() },
+      pairingAuthority: {
+        endpoint: "http://127.0.0.1:46310",
+        serverId: newRequestId(),
+      },
       currentDeviceId: newRequestId(),
     };
     route(`?screen=schedules&item=${value.schedule.id}`);
@@ -521,7 +516,9 @@ describe("route fallbacks", () => {
       />,
     );
     expect(
-      await screen.findByText("Select a schedule from the sidebar to inspect its details and retained history."),
+      await screen.findByText(
+        "Select a schedule from the sidebar to inspect its details and retained history.",
+      ),
     ).toBeTruthy();
     await waitFor(() => expect(search().has("item")).toBe(false));
   });
@@ -533,9 +530,7 @@ describe("route fallbacks", () => {
     render(<App transport={value.transport} />);
     await waitFor(() => expect(value.reads.resource).toHaveBeenCalled());
     // The mounted screen owns its existing retry and error state.
-    await waitFor(() =>
-      expect(search().get("item")).toBe(value.repository.id),
-    );
+    await waitFor(() => expect(search().get("item")).toBe(value.repository.id));
     expect(value.mutated).not.toHaveBeenCalled();
   });
 
@@ -545,9 +540,7 @@ describe("route fallbacks", () => {
     route(`?screen=sessions&session=${value.session.id}`);
     render(<App transport={value.transport} />);
     await waitFor(() => expect(value.reads.resource).toHaveBeenCalled());
-    await waitFor(() =>
-      expect(search().get("session")).toBe(value.session.id),
-    );
+    await waitFor(() => expect(search().get("session")).toBe(value.session.id));
     expect(screen.queryByText("Your sessions, in one place")).toBeNull();
     expect(value.mutated).not.toHaveBeenCalled();
   });
@@ -571,7 +564,9 @@ describe("pending routes", () => {
       <App transport={value.transport} connectionReady={false} />,
     );
     await act(async () => {});
-    await screen.findByText("Select a schedule from the sidebar to inspect its details and retained history.");
+    await screen.findByText(
+      "Select a schedule from the sidebar to inspect its details and retained history.",
+    );
     expect(value.reads.schedule).not.toHaveBeenCalled();
     // The original route stays in the URL while the connection is unavailable.
     expect(search().get("item")).toBe(value.schedule.id);

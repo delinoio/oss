@@ -60,10 +60,12 @@ async function readFresh<Response, Value>(
       gcTime: 0,
       staleTime: 0,
       queryFn: (context) =>
-        (options.queryFn as (context: unknown) => Response | Promise<Response>)({
-          ...(context as object),
-          queryKey: options.queryKey,
-        }),
+        (options.queryFn as (context: unknown) => Response | Promise<Response>)(
+          {
+            ...(context as object),
+            queryKey: options.queryKey,
+          },
+        ),
     });
     const value = select(response);
     return value === undefined
