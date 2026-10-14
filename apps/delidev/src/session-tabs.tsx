@@ -2,6 +2,7 @@
 import {
   createContext,
   useContext,
+  useEffect,
   useState,
   useSyncExternalStore,
   type ReactNode,
@@ -103,6 +104,14 @@ type ComparisonTab = Extract<SessionTab, { kind: SessionTabKind.Comparison }>;
 /** Connection-owned descriptors contain no resource bodies, preview bytes or requests. */
 export class SessionTabsStore {
   constructor(private pendingCloses = new PendingCloseRegistry()) {}
+  /** (Re)opens the cross-window pending-close channel; idempotent. */
+  connect() {
+    this.pendingCloses.connect();
+  }
+  /** Releases holds and closes the channel when the store is discarded. */
+  dispose() {
+    this.pendingCloses.dispose();
+  }
   private terminals = new Map<string, TerminalPresentation>();
   terminalPresentation(id: string) {
     let value = this.terminals.get(id);
@@ -475,11 +484,24 @@ export class SessionTabsStore {
 const Context = createContext<SessionTabsStore | undefined>(undefined);
 export function SessionTabsProvider({ children }: { children: ReactNode }) {
   const [store] = useState(() => new SessionTabsStore());
+  useEffect(() => {
+    store.connect();
+    return () => store.dispose();
+  }, [store]);
   return <Context.Provider value={store}>{children}</Context.Provider>;
 }
 export function useSessionTabsStore() {
   const context = useContext(Context),
     [fallback] = useState(() => new SessionTabsStore());
+  useEffect(() => {
+    // The fallback store only serves callers outside a provider.
+    if (context) {
+      fallback.dispose();
+      return;
+    }
+    fallback.connect();
+    return () => fallback.dispose();
+  }, [context, fallback]);
   return context ?? fallback;
 }
 export function useSessionTabs(id: string) {

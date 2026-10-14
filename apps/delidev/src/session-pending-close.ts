@@ -76,21 +76,53 @@ function isMessage(value: unknown): value is PendingCloseMessage {
 export class PendingCloseRegistry {
   private local = new Map<string, Set<object>>();
   private remote = new Map<string, Map<string, number>>();
-  private channel: PendingCloseChannel | null;
+  private channel: PendingCloseChannel | null = null;
   private timer: ReturnType<typeof setInterval> | undefined;
   private now: () => number;
   private window: string;
+  private options: PendingCloseOptions;
+  private onPageHide = () => this.releaseAll();
 
   constructor(options: PendingCloseOptions = {}) {
+    this.options = options;
     this.now = options.now ?? Date.now;
     this.window = options.window ?? windowIdentity();
-    this.channel =
-      options.channel === undefined ? defaultChannel() : options.channel;
+    this.connect();
+  }
+
+  /**
+   * Opens the cross-window channel. Idempotent while connected; also reopens
+   * a registry that was disposed (for example by a development-mode effect
+   * replay), so a store can be disposed and reconnected safely.
+   */
+  connect() {
+    if (this.channel) return;
+    const { channel } = this.options;
+    this.channel = channel === undefined ? defaultChannel() : channel;
     if (!this.channel) return;
     this.channel.onmessage = (event) => this.receive(event.data);
     this.send({ kind: PendingCloseMessageKind.Query });
     if (typeof window !== "undefined")
-      window.addEventListener("pagehide", () => this.releaseAll());
+      window.addEventListener("pagehide", this.onPageHide);
+  }
+
+  /**
+   * Releases every local hold, stops the heartbeat, detaches the page listener
+   * and closes the channel, so a discarded registry stays reachable by nothing.
+   */
+  dispose() {
+    if (!this.channel) return;
+    this.releaseAll();
+    if (typeof window !== "undefined")
+      window.removeEventListener("pagehide", this.onPageHide);
+    this.channel.onmessage = null;
+    try {
+      this.channel.close();
+    } catch {
+      // Closing is best-effort; the handler is already detached.
+    }
+    this.channel = null;
+    this.remote.clear();
   }
 
   private send(message: Omit<PendingCloseMessage, "scope" | "window">) {

@@ -233,6 +233,9 @@ heartbeat refresh and its release over a same-origin `BroadcastChannel`
 (`delidev.browser.pending-close`). A newly opened window queries the current
 holds. A hold whose window stopped refreshing (for example after a crash)
 expires after 15 seconds, and a closing window releases its holds on `pagehide`.
+A discarded tab store (for example when the connection identity remounts the
+provider) disposes its registry: it releases its holds, detaches the `pagehide`
+listener and closes the channel, and a replayed mount reconnects it.
 The channel carries only an opaque window identity and the profile/page key,
 never URLs or credentials; without `BroadcastChannel` the hold stays
 window-local. Existing local `tabs.json` storage remains compatible; no business RPC,

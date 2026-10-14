@@ -25,7 +25,10 @@ class Endpoint implements PendingCloseChannel {
     for (const other of this.bus.endpoints)
       if (other !== this) other.onmessage?.({ data: message });
   }
-  close() {}
+  closed = 0;
+  close() {
+    this.closed += 1;
+  }
 }
 
 const page = (id: string, profile: string) => ({
@@ -143,5 +146,28 @@ describe("pending Close ownership across product windows", () => {
     expect(sibling.snapshot("s").tabs.map(sessionTabKey)).toEqual([
       SessionTabKind.Conversation,
     ]);
+  });
+
+  it("disposes the channel, handler and holds with its store", () => {
+    const { make } = windows();
+    const observer = make("observer");
+    const bus = new Bus();
+    const endpoint = bus.endpoint();
+    const registry = new PendingCloseRegistry({ channel: endpoint, window: "w" });
+    const sibling = bus.endpoint();
+    const seen: unknown[] = [];
+    sibling.onmessage = (event) => seen.push(event.data);
+    registry.hold("k", {});
+    registry.dispose();
+    expect(endpoint.closed).toBe(1);
+    expect(endpoint.onmessage).toBeNull();
+    expect(registry.has("k")).toBe(false);
+    expect(seen.at(-1)).toMatchObject({ kind: "release", key: "k" });
+    // Disposal is idempotent and a disposed registry can reconnect.
+    registry.dispose();
+    expect(endpoint.closed).toBe(1);
+    registry.connect();
+    expect(endpoint.onmessage).not.toBeNull();
+    expect(observer.has("k")).toBe(false);
   });
 });
