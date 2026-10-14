@@ -134,6 +134,11 @@ type IdP struct {
 	// TokenTrailer is appended verbatim after the body of every token response,
 	// including a configured TokenBody and an invalid_grant rejection.
 	TokenTrailer string
+	// IDTokenPayload, when set, is signed verbatim as the ID token payload (for
+	// example one that repeats a claim), and UserInfoBody is returned verbatim as
+	// the userinfo response.
+	IDTokenPayload string
+	UserInfoBody   string
 }
 
 // New starts the fake provider and registers cleanup.
@@ -528,6 +533,17 @@ func (i *IdP) idToken(nonce string) string {
 	if err != nil {
 		panic(err)
 	}
+	if i.IDTokenPayload != "" {
+		object, err := signer.Sign([]byte(i.IDTokenPayload))
+		if err != nil {
+			panic(err)
+		}
+		token, err := object.CompactSerialize()
+		if err != nil {
+			panic(err)
+		}
+		return token
+	}
 	token, err := jwt.Signed(signer).Claims(claims).Serialize()
 	if err != nil {
 		panic(err)
@@ -550,5 +566,9 @@ func (i *IdP) userinfo(w http.ResponseWriter, r *http.Request) {
 		subject = i.UserInfoSubject
 	}
 	w.Header().Set("Content-Type", "application/json")
+	if i.UserInfoBody != "" {
+		_, _ = w.Write([]byte(i.UserInfoBody))
+		return
+	}
 	_ = json.NewEncoder(w).Encode(map[string]any{"sub": subject, "email": i.Email, "given_name": i.FirstName})
 }
