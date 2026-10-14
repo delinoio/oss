@@ -2252,6 +2252,66 @@ fn guarded_dynamic_package_import_is_a_boundary() {
     assert_eq!(check_report["frozen_chunks"], report["frozen_chunks"]);
 }
 
+/// An excluded chunk keeps a dynamically importing dependency and its imports
+/// under their original names, so publication cannot split the module graph.
+#[test]
+fn excluded_chunks_freeze_dynamic_package_boundaries() {
+    let temp = bundle(&[
+        (
+            "assets/index-AAAAAAAA.js",
+            r#"import"./vendor-DDDDDDDD.js";import{value}from"./settings-BBBBBBBB.js";console.log(value(3).verticalSpacing);"#,
+        ),
+        (
+            "assets/vendor-DDDDDDDD.js",
+            r#"import"./dynamic-CCCCCCCC.js";export const vendor=1;"#,
+        ),
+        (
+            "assets/dynamic-CCCCCCCC.js",
+            r#"import{value}from"./settings-BBBBBBBB.js";if(false)import("pkg");export const dynamic=value(4);"#,
+        ),
+        (
+            "assets/settings-BBBBBBBB.js",
+            r#"function value(n){return{verticalSpacing:n,horizontalSpacing:n*2}}export{value};"#,
+        ),
+    ]);
+    let package = temp.path().join("node_modules/pkg");
+    fs::create_dir_all(&package).unwrap();
+    fs::write(
+        package.join("package.json"),
+        r#"{"name":"pkg","type":"module","main":"index.js"}"#,
+    )
+    .unwrap();
+    fs::write(package.join("index.js"), "export const value=1;").unwrap();
+
+    let report = optimize(temp.path(), &["--bundle-exclude", "vendor-"]);
+    for chunk in [
+        "vendor-DDDDDDDD.js",
+        "dynamic-CCCCCCCC.js",
+        "settings-BBBBBBBB.js",
+    ] {
+        assert_eq!(
+            fs::read(temp.path().join("out/assets").join(chunk)).unwrap(),
+            fs::read(temp.path().join("dist/assets").join(chunk)).unwrap(),
+            "{chunk}"
+        );
+    }
+    let frozen = report["frozen_chunks"].as_array().unwrap();
+    assert!(
+        frozen.iter().any(|chunk| chunk["file"]
+            .as_str()
+            .unwrap()
+            .ends_with("dynamic-CCCCCCCC.js")),
+        "{report:#}"
+    );
+    assert!(
+        frozen.iter().any(|chunk| chunk["file"]
+            .as_str()
+            .unwrap()
+            .ends_with("settings-BBBBBBBB.js")),
+        "{report:#}"
+    );
+}
+
 #[test]
 fn static_package_import_and_reexport_still_reject() {
     for source in [

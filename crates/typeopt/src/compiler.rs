@@ -1638,7 +1638,13 @@ fn boundary_reach(
                 if !visited.insert(target.clone()) {
                     continue;
                 }
-                if known.contains(&target) && !boundaries.contains(&target) {
+                // An excluded importer keeps original names, so pin a
+                // dynamically importing target and its imports with it.
+                let freeze_dynamic_boundary = crate::app::bundle_excluded(boundary)
+                    && crate::app::bundle_dynamic_package(&target);
+                if known.contains(&target)
+                    && (!boundaries.contains(&target) || freeze_dynamic_boundary)
+                {
                     frozen.insert(target.clone());
                     let name = std::path::Path::new(&target).file_name();
                     reached.extend(
