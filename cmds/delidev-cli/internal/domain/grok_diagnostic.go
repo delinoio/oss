@@ -94,6 +94,37 @@ func WithGrokDiagnostic(version string, phase GrokPhase, err error) error {
 	return &grokFailure{diagnostic: diagnostic, problem: &problem, cause: err}
 }
 
+// WithGrokCleanupFailure combines an operation's result with the outcome of its
+// owned-process cleanup, keeping the earliest failure authoritative:
+//
+//	operation result  cleanup      diagnostic            transport error
+//	success           confirmed    none                  none
+//	success           unconfirmed  cleanup / recovery    recovery_required
+//	failed            confirmed    the operation's own   the operation's own
+//	failed            unconfirmed  the operation's own   recovery_required
+//
+// An unconfirmed cleanup never replaces the first failure's diagnostic, so the
+// actionable profile or runtime failure stays visible, but it always forces the
+// transport error to recovery_required because callers must stop and reconcile
+// the owned process before retrying. The returned error still matches the
+// operation's own cause (for example context.DeadlineExceeded) with errors.Is.
+// phase is the operation's failure phase; cleanup is nil when it was confirmed.
+func WithGrokCleanupFailure(version string, phase GrokPhase, err error, cleanup *Error) error {
+	if cleanup == nil {
+		return WithGrokDiagnostic(version, phase, err)
+	}
+	if err == nil {
+		return WithGrokDiagnostic(version, GrokCleanup, cleanup)
+	}
+	first, ok := WithGrokDiagnostic(version, phase, err).(*grokFailure)
+	if !ok {
+		return WithGrokDiagnostic(version, GrokCleanup, cleanup)
+	}
+	problem := *SafeError(cleanup)
+	problem.Cause, problem.CorrelationID = "", ""
+	return &grokFailure{diagnostic: first.diagnostic, problem: &problem, cause: errors.Join(first.cause, cleanup)}
+}
+
 // GrokErrorDiagnostic returns the original diagnostic carried by err, if any.
 func GrokErrorDiagnostic(err error) *GrokDiagnostic {
 	var failure *grokFailure

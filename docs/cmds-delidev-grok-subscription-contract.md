@@ -423,8 +423,24 @@ that reconstruction.
 Producers: `grok.Probe` tags every failure by probe phase (version check ->
 `version`; runtime preparation, launch and initialize -> `runtime`; configuration
 inspection -> `profile`; authenticate -> `login`; owned cleanup -> `cleanup`) and
-logs `phase`, `diagnostic_phase`, `code`, `installed_version` and
-`supported_version`. Discovery stores the diagnostic on
+logs `phase`, `diagnostic_phase`, `diagnostic_code`, `code`, `cleanup_unconfirmed`,
+`installed_version` and `supported_version`. The first failure stays
+authoritative when owned-process cleanup is also unconfirmed
+(`domain.WithGrokCleanupFailure`):
+
+| Probe result                                            | Cleanup of the owned ACP process | Diagnostic                      | Transport error                        |
+| ------------------------------------------------------- | -------------------------------- | ------------------------------- | -------------------------------------- |
+| success                                                 | confirmed                        | none                            | none                                   |
+| success                                                 | unconfirmed                      | `cleanup` / `recovery_required` | `recovery_required`                    |
+| failed in phase P                                       | confirmed                        | P with the failure's code       | the failure's own code                 |
+| failed in phase P                                       | unconfirmed                      | P with the failure's code       | `recovery_required` (discovery aborts) |
+| configuration inspection leaves its process unconfirmed | n/a                              | `cleanup` / `recovery_required` | `recovery_required`                    |
+
+An unconfirmed cleanup never replaces the first failure's phase, code or
+timeout reason, but it always forces the transport error to `recovery_required`
+because discovery must stop and reconcile the owned process before retrying.
+A late protocol failure that the stdout drain reports while cleanup runs counts
+as the first failure. Discovery stores the diagnostic on
 `Installation.Protocol.GrokDiagnostic` (JSON `grok_diagnostic`) for a Grok
 installation whose validation did not succeed, which is how a populated
 1.0.52 `experiments` inventory becomes a `profile` / `unsupported` observation;
