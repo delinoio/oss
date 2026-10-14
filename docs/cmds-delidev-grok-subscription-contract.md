@@ -85,7 +85,7 @@ boundary when revalidated against `domain.GrokSubscriptionBaselineVersion` (`1.0
 
 The desktop browser flow is implemented in `apps/delidev/src/grok-subscription-login.tsx` and enabled only when the server advertises System capability 39; the device-code method remains planned. The approved desktop flow preserves service order, existing marks, navigation
 and theme. Add account starts browser login; Use a device code is explicit.
-Waiting offers reopen/copy/open-page/cancel as appropriate. Confirmed success
+Waiting offers reopen/copy/open-page/cancel as appropriate: reopen is hidden after the `Incompatible` refusal, and nothing is offered once the server acknowledged cancellation. Confirmed success
 advances to account naming. Preparing, waiting, canceled, expired, failed and
 recovery remain distinct. Exact original-request retry does not create a new
 login. Polling, reconnection and Strict Mode grant no mutation authority.
