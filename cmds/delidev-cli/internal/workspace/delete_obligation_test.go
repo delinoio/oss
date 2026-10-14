@@ -311,3 +311,39 @@ func TestDeleteOwnedWorkspaceWithOwnerBindsReconcilerMaintenanceLock(t *testing.
 		}
 	}
 }
+
+// A crash after the removed proof but before copy removal leaves the retained
+// manifest. If the shared evidence is a distrusted version-1 record, recovery
+// must republish version-2 evidence so a later strict obligation can proceed.
+func TestRecoveryRepublishesSharedEvidenceFromRetainedManifest(t *testing.T) {
+	ctx := context.Background()
+	m := manager(t)
+	request, _ := requestFor(repository(t))
+	source, err := m.Prepare(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := security.PrivateDir(filepath.Join(m.Root, "session-deletions")); err != nil {
+		t.Fatal(err)
+	}
+	server := domain.NewID()
+	first := absentObligation(server, source.SessionID, source.MachineID, source.InputDigest)
+	second := absentObligation(server, source.SessionID, source.MachineID, strings.Repeat("cd", 32))
+	if err := m.DeleteOwnedWorkspace(ctx, first, false, func() error { return domain.SessionDeletionPending() }); err == nil {
+		t.Fatal("simulated crash before copy removal succeeded")
+	}
+	legacy := []byte(`{"version":1,"server_id":"` + string(server) + `","session_id":"` + string(source.SessionID) + `","machine_id":"` + string(source.MachineID) + `","removed":true}`)
+	if err := security.WriteAtomic(sharedWorkspaceRemovalPath(m.Root, first), legacy); err != nil {
+		t.Fatal(err)
+	}
+	called := false
+	if err := m.DeleteOwnedWorkspace(ctx, second, false, func() error { called = true; return nil }); err == nil || called {
+		t.Fatal("version-1 evidence authorized the strict obligation", err)
+	}
+	if err := m.DeleteOwnedWorkspace(ctx, first, false, func() error { return nil }); err != nil {
+		t.Fatal("recovery of the first obligation", err)
+	}
+	if err := m.DeleteOwnedWorkspace(ctx, second, false, func() error { called = true; return nil }); err != nil || !called {
+		t.Fatal("recovery did not republish version-2 evidence", err, called)
+	}
+}

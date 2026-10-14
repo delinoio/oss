@@ -317,6 +317,14 @@ func (m *Manager) DeleteOwnedWorkspaceWithOwner(ctx context.Context, w domain.Se
 		}
 	} else if _, e := os.Lstat(root); !errors.Is(e, os.ErrNotExist) {
 		return domain.SessionDeletionPending()
+	} else if proof.Manifest != nil {
+		// A crash after the removed proof but before copy removal leaves the
+		// retained manifest, and the shared evidence may still be a distrusted
+		// version-1 record. Republish version-2 evidence from the manifest so
+		// later strict obligations are not stranded.
+		if e := writeSharedWorkspaceRemoval(m.Root, w); e != nil {
+			return e
+		}
 	}
 	stage = "copy-removal"
 	if e := removeCopies(&ownerLock); e != nil {

@@ -333,7 +333,9 @@ version 2, and a manifest-less removed version-1 proof (which an older Worker al
 wrote after adopting version-1 shared evidence for an absent failed-only workspace,
 before removing copies) is never trusted. The proof is re-derived from current
 evidence, so such an obligation stays pending until version-2 evidence or a
-retained manifest exists.
+retained manifest exists. When a retained removed proof still carries its manifest
+(a crash before copy removal), recovery republishes version-2 shared evidence from
+that manifest so later strict obligations are not stranded by version-1 evidence.
 
 A later obligation whose own workspace is absent and has no stored snapshot
 manifest, and whose jobs forbid an absent workspace, adopts that removal only when
