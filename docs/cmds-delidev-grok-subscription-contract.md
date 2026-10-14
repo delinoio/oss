@@ -30,8 +30,9 @@ private runtime. Separate accounts can run independently.
 These allocations are declared in the protos and generated bindings but are
 unadvertised: GetStatus and AttachWorker never list System 39/40 or Worker 21,
 the Worker does not report 21 and the server rejects it as an unknown
-capability, and GetSubscriptionProgress never populates `grok_diagnostic`. The
-owning feature change advertises and activates them:
+capability. `GetSubscriptionProgress` populates `grok_diagnostic` only for a
+Grok account's original operation (see Grok diagnostics below); advertising the
+capabilities remains with the owning feature change, which activates them:
 
 - System `GROK_SUBSCRIPTION_LOGIN_V1 = 39`.
 - System `GROK_SUBSCRIPTION_EXECUTION_V1 = 40`.
@@ -404,6 +405,52 @@ managed subscription (the quarantine is service-agnostic):
 Restore also keeps copied Worker device records readable after revoking them.
 
 ## Security
+
+### Grok diagnostics
+
+`domain.GrokDiagnostic` (`internal/domain/grok_diagnostic.go`) mirrors the Codex
+diagnostic. It holds the detected version, the supported version
+(`domain.GrokSubscriptionBaselineVersion`, always set), a closed `domain.GrokPhase`
+(`discovery`, `version`, `profile`, `runtime`, `login`, `refresh`, `logout`,
+`models`, `execution`, `history`, `cleanup`, one-to-one with `GrokDiagnosticPhase`),
+a stable `domain.Code` enumeration, a message, guidance and an optional
+correlation ID. `WithGrokDiagnostic(version, phase, err)` keeps the first native
+failure, drops untrusted versions and rebuilds message and guidance locally from
+phase, code and versions, so native stderr, paths, URLs, tokens and identity never
+enter a diagnostic. `Validate` rejects any stored value whose text differs from
+that reconstruction.
+
+Producers: `grok.Probe` tags every failure by probe phase (version check ->
+`version`; runtime preparation, launch and initialize -> `runtime`; configuration
+inspection -> `profile`; authenticate -> `login`; owned cleanup -> `cleanup`) and
+logs `phase`, `diagnostic_phase`, `code`, `installed_version` and
+`supported_version`. Discovery stores the diagnostic on
+`Installation.Protocol.GrokDiagnostic` (JSON `grok_diagnostic`) for a Grok
+installation whose validation did not succeed, which is how a populated
+1.0.52 `experiments` inventory becomes a `profile` / `unsupported` observation;
+a verified profile, a non-Grok harness or a mismatched version rejects it.
+Protected Take refuses a missing or undiscovered installation as `discovery`, a
+version below the baseline or invalid metadata as `version`, and any other
+unverified profile as `profile` (restoring a stored profile diagnostic); the
+refusal carries the diagnostic text and a structured warning log. Login, refresh,
+logout, models, execution and history producers wrap their failures with
+`WithGrokDiagnostic` and the matching phase when they land.
+
+`ServerSubscriptionOperation.GrokDiagnostic` (JSON `grok_diagnostic`) is valid only
+on a Grok account's settled operation, never together with the Codex diagnostic,
+and its correlation ID equals the operation ID. `GetSubscriptionProgress` for a
+Grok account returns the original operation's state and `grok_diagnostic` (field
+10) after the usual actor check; Codex field 7 and native field 9 stay unset,
+older clients ignore field 10, and no URL or user code is returned.
+
+The desktop reconstructs presentation from closed metadata only
+(`apps/delidev/src/grok-diagnostic.tsx`, English and Korean). `GrokDiagnosticNotice`
+shows the message, phase guidance and a Technical details disclosure with detected
+version, supported version, failed step, error code and a copyable correlation
+ID; it is reused by Settings > AI Subscription onboarding and by the Worker
+installation row (`machine-settings.tsx`), which reads the stored
+`protocol.grok_diagnostic`. The catalog keeps Grok Planned/Coming soon: the
+notice adds no login control.
 
 Login, refresh, execution and logout share one exclusive account lease. Logout
 blocks new execution and completes only after original execution exit and

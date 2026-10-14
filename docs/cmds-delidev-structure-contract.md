@@ -68,6 +68,9 @@ GrokDiagnostic fields 1–7 and closed GrokDiagnosticPhase values 0–11. Record
 the complete closure in the owning feature PR. Codex field 7 and existing
 System 30/35/36/37 and Worker 19 ownership
 remain unchanged. Reservations activate nothing and add no migration.
+`grok_diagnostic` is populated from Grok operations and failed Grok installation
+observations as described in the Grok subscription contract; no proto field is
+added.
 
 ## Agent Worker source-route ownership
 
