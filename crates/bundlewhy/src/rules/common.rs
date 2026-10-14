@@ -1127,7 +1127,7 @@ fn named_function_is_expression(code: &str, start: usize) -> bool {
         .next();
     if !matches!(
         keyword,
-        Some("return" | "throw" | "yield" | "await" | "void")
+        Some("return" | "throw" | "yield" | "await" | "void" | "new")
     ) {
         return false;
     }
@@ -1619,6 +1619,7 @@ y=/process.env.F/.test(z),process.env.G"#;
             None
         );
         assert!(direct_eval_line("const make = () => function eval() {}; eval(code);").is_some());
+        assert!(direct_eval_line("const instance = new function eval() {}; eval(code);").is_some());
         assert!(
             direct_eval_line("const run = (value = make()) => { var eval = helper; }; eval(code);")
                 .is_some()
