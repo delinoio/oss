@@ -6,7 +6,10 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import React from "react";
-import { runBenchmark } from "./benchmark-scenes.mjs";
+import {
+  parseLockedUfbxVersion,
+  runBenchmark,
+} from "./benchmark-scenes.mjs";
 import {
   assertTopology,
   expectedTopology,
@@ -62,6 +65,15 @@ test("fixed grids preserve topology, bytes and repeatable source content", () =>
       ),
     );
   }
+});
+
+test("locked ufbx version parsing accepts Windows lockfile line endings", () => {
+  assert.equal(
+    parseLockedUfbxVersion(
+      '[package]\r\nname = "other"\r\nversion = "1.0.0"\r\n\r\n[package]\r\nname = "ufbx"\r\nversion = "0.11.4"\r\n',
+    ),
+    "0.11.4",
+  );
 });
 
 function glb(

@@ -257,11 +257,18 @@ async function inspectFbx(paths) {
   return new Map(rows.map((row) => [row.file, row]));
 }
 
-async function lockedUfbxVersion() {
-  const lockfile = await readFile(join(root, "Cargo.lock"), "utf8");
-  const match = lockfile.match(/\nname = "ufbx"\nversion = "([^"]+)"/u);
+export function parseLockedUfbxVersion(lockfile) {
+  const match = lockfile.match(
+    /(?:^|\r?\n)name = "ufbx"\r?\nversion = "([^"]+)"/u,
+  );
   if (!match) throw new Error("Unable to determine the locked ufbx version.");
   return match[1];
+}
+
+async function lockedUfbxVersion() {
+  return parseLockedUfbxVersion(
+    await readFile(join(root, "Cargo.lock"), "utf8"),
+  );
 }
 
 export async function runBenchmark(output, options = {}) {
