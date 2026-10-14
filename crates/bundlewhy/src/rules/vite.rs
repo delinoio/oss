@@ -7,6 +7,7 @@ use crate::model::{Condition, ConditionOutcome, Evidence, EvidenceStatus};
 
 const MODULE_INFO: &str = "rolldown module info (getModuleInfo)";
 const RENDERED: &str = "rolldown rendered chunk modules";
+const INFERENCE: &str = "bundlewhy inference from rendered modules";
 
 /// True when the resolved configuration disables Rolldown tree shaking.
 pub fn tree_shaking_disabled(collection: &crate::collect::Collection) -> bool {
@@ -59,15 +60,65 @@ fn side_effect_retained(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
             .package_side_effects
             .as_deref()
             .unwrap_or("not declared");
+        let declaration = SideEffectDeclaration::from_collected(side_effects, package_side_effects);
+        let (status, title, summary) = match declaration {
+            // An explicit effect declaration is itself the engine-visible
+            // reason the module is kept.
+            SideEffectDeclaration::Effectful => (
+                EvidenceStatus::Confirmed,
+                format!("{display} is kept because it is declared to have side effects"),
+                format!(
+                    "Rolldown rendered {} bytes of this module although none of its exports is \
+                     used. The module or its package declares side effects, so Rolldown keeps it.",
+                    module.rendered_length
+                ),
+            ),
+            // Rolldown reports no retention reason for rendered modules, so
+            // the cause stays an inference from the observed facts.
+            _ => (
+                EvidenceStatus::Inferred,
+                format!("{display} is retained although none of its exports is used"),
+                format!(
+                    "Rolldown rendered {} bytes of this module although none of its exports is \
+                     used, and did not report why. The module may contain top-level code with \
+                     side effects that Rolldown keeps.",
+                    module.rendered_length
+                ),
+            ),
+        };
+        let (outcome, declared_detail) = declaration.condition(side_effects, package_side_effects);
+        let mut evidence = vec![
+            Evidence::new(
+                MODULE_INFO,
+                EvidenceStatus::Confirmed,
+                format!(
+                    "Exports: {}",
+                    module.exports.as_deref().unwrap_or_default().join(", ")
+                ),
+            ),
+            Evidence::new(
+                RENDERED,
+                EvidenceStatus::Confirmed,
+                format!(
+                    "Rendered {} bytes with no rendered exports in {}",
+                    module.rendered_length,
+                    module.chunks.join(", ")
+                ),
+            ),
+        ];
+        if declaration != SideEffectDeclaration::Effectful {
+            evidence.push(Evidence::new(
+                INFERENCE,
+                EvidenceStatus::Inferred,
+                "Rolldown reports no retention reason; top-level side effects are inferred from \
+                 the retained bytes",
+            ));
+        }
         drafts.push(DiagnosticDraft {
             rule: RuleId::ViteSideEffectRetained,
-            status: EvidenceStatus::Confirmed,
-            title: format!("{display} is kept only for its side effects"),
-            summary: format!(
-                "Rolldown rendered {} bytes of this module although none of its exports is used. \
-                 Code with side effects at the top level must run, so the module is not removed.",
-                module.rendered_length
-            ),
+            status,
+            title,
+            summary,
             conditions: vec![
                 Condition::new(
                     "No export of the module is used",
@@ -76,11 +127,8 @@ fn side_effect_retained(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
                 ),
                 Condition::new(
                     "The module is declared side-effect free",
-                    ConditionOutcome::Unmet,
-                    format!(
-                        "moduleSideEffects: {side_effects} (null means inferred from code); \
-                         package sideEffects: {package_side_effects}"
-                    ),
+                    outcome,
+                    declared_detail,
                 ),
                 Condition::new(
                     "No rendered code remains",
@@ -91,35 +139,114 @@ fn side_effect_retained(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
             located,
             module: display,
             dependency_paths: context.dependency_paths(&module.id),
-            evidence: vec![
-                Evidence::new(
-                    MODULE_INFO,
-                    EvidenceStatus::Confirmed,
-                    format!(
-                        "Exports: {}",
-                        module.exports.as_deref().unwrap_or_default().join(", ")
-                    ),
-                ),
-                Evidence::new(
-                    RENDERED,
-                    EvidenceStatus::Confirmed,
-                    format!(
-                        "Rendered {} bytes with no rendered exports in {}",
-                        module.rendered_length,
-                        module.chunks.join(", ")
-                    ),
-                ),
-            ],
-            direction: "Move top-level side effects into an exported function that callers invoke \
-                        explicitly, or declare the package side-effect free with \"sideEffects\": \
-                        false (or a list of files that do have side effects) in package.json."
-                .to_owned(),
-            safety: "Only declare modules side-effect free when no importer depends on evaluating \
-                     them for their effect (polyfills, registrations, CSS imports). Otherwise the \
-                     effect is silently removed."
-                .to_owned(),
+            evidence,
+            direction: declaration.direction().to_owned(),
+            safety: declaration.safety().to_owned(),
             dependency: context.is_dependency(module),
         });
+    }
+}
+
+/// What the collected `moduleSideEffects` and package `sideEffects` values
+/// say about a module that Rolldown rendered without any used export.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SideEffectDeclaration {
+    /// Either source declares the module side-effect free (`false`).
+    Free,
+    /// Neither source declares it free and one declares effects (`true` or
+    /// `no-treeshake`).
+    Effectful,
+    /// An array summary or unrecognized value cannot be matched to this file.
+    Unresolved,
+    /// Nothing is declared; Rolldown infers the effects from the code.
+    Undeclared,
+}
+
+impl SideEffectDeclaration {
+    fn from_collected(module: &str, package: &str) -> Self {
+        if module == "false" || package == "false" {
+            Self::Free
+        } else if matches!(module, "true" | "no-treeshake") || package == "true" {
+            Self::Effectful
+        } else if module == "null" && package == "not declared" {
+            Self::Undeclared
+        } else {
+            // Array summaries and unrecognized values prove nothing either way.
+            Self::Unresolved
+        }
+    }
+
+    fn condition(self, module: &str, package: &str) -> (ConditionOutcome, String) {
+        let values = format!("moduleSideEffects: {module}; package sideEffects: {package}");
+        match self {
+            Self::Free => {
+                let source = match (module == "false", package == "false") {
+                    (true, true) => "moduleSideEffects and package sideEffects",
+                    (true, false) => "moduleSideEffects",
+                    _ => "package sideEffects",
+                };
+                (
+                    ConditionOutcome::Met,
+                    format!("Declared side-effect free by {source}; {values}"),
+                )
+            }
+            Self::Effectful => (
+                ConditionOutcome::Unmet,
+                format!("Side effects are declared; {values}"),
+            ),
+            Self::Unresolved => (
+                ConditionOutcome::Unknown,
+                format!(
+                    "The collected summary cannot show whether this file is declared side-effect \
+                     free; {values}"
+                ),
+            ),
+            Self::Undeclared => (
+                ConditionOutcome::Unmet,
+                format!("No side-effect declaration (null means inferred from code); {values}"),
+            ),
+        }
+    }
+
+    fn direction(self) -> &'static str {
+        match self {
+            Self::Free => {
+                "The module is already declared side-effect free, so adding a declaration will not \
+                 help. Check which importers still use it, such as side-effect imports, namespace \
+                 or re-export use, or an entry, and remove that use if it is unneeded. If no \
+                 importer uses it, report the retained module to the bundler."
+            }
+            Self::Effectful => {
+                "Move top-level side effects into an exported function that callers invoke \
+                 explicitly, or narrow the \"sideEffects\" declaration in package.json to the \
+                 files that do have side effects."
+            }
+            Self::Unresolved => {
+                "Check whether this file is covered by the \"sideEffects\" list in package.json. \
+                 If it is not listed, add the declaration only when the module has no needed side \
+                 effect; otherwise move top-level side effects into an exported function that \
+                 callers invoke explicitly."
+            }
+            Self::Undeclared => {
+                "Move top-level side effects into an exported function that callers invoke \
+                 explicitly, or declare the package side-effect free with \"sideEffects\": false \
+                 (or a list of files that do have side effects) in package.json."
+            }
+        }
+    }
+
+    fn safety(self) -> &'static str {
+        match self {
+            Self::Free => {
+                "Do not remove an importer that evaluates the module for its effect (polyfills, \
+                 registrations, CSS imports); the effect would be silently lost."
+            }
+            _ => {
+                "Only declare modules side-effect free when no importer depends on evaluating them \
+                 for their effect (polyfills, registrations, CSS imports). Otherwise the effect is \
+                 silently removed."
+            }
+        }
     }
 }
 

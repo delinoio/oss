@@ -728,6 +728,36 @@ mod tests {
             )
             .is_some()
         );
+        let register = find(
+            diagnostics,
+            "vite/side-effect-retained",
+            "src/effects/register.js",
+        )
+        .unwrap();
+        // Rolldown reports no retention reason, so the cause is inferred.
+        assert_eq!(register.status, EvidenceStatus::Inferred);
+        assert!(!register.summary.contains("must run"));
+        assert!(
+            register
+                .corrective_action
+                .as_ref()
+                .unwrap()
+                .direction
+                .contains("\"sideEffects\"")
+        );
+        assert!(
+            !register
+                .corrective_action
+                .as_ref()
+                .unwrap()
+                .safety
+                .is_empty()
+        );
+        assert_eq!(
+            declared_free_outcome(register),
+            ConditionOutcome::Unmet,
+            "an undeclared module is not declared side-effect free"
+        );
         assert_absent(
             diagnostics,
             "vite/side-effect-retained",
@@ -1068,6 +1098,169 @@ mod tests {
         }
     }
 
+    fn declared_free_outcome(diagnostic: &Diagnostic) -> ConditionOutcome {
+        diagnostic
+            .conditions
+            .iter()
+            .find(|condition| condition.description == "The module is declared side-effect free")
+            .expect("declared side-effect free condition")
+            .outcome
+    }
+
+    fn retained_register(
+        module_side_effects: &str,
+        package_side_effects: Option<&str>,
+    ) -> Diagnostic {
+        let module_side_effects = module_side_effects.to_owned();
+        let package_side_effects = package_side_effects.map(str::to_owned);
+        let fixture = run_fixture(BundlerChoice::Vite, |value| {
+            for module in value["modules"].as_array_mut().unwrap() {
+                if module["id"]
+                    .as_str()
+                    .is_some_and(|id| id.ends_with("src/effects/register.js"))
+                {
+                    module["moduleSideEffects"] = serde_json::json!(module_side_effects);
+                    module["packageSideEffects"] = serde_json::json!(package_side_effects);
+                }
+            }
+        });
+        find(
+            &fixture.output.analysis.diagnostics,
+            "vite/side-effect-retained",
+            "src/effects/register.js",
+        )
+        .expect("register.js stays reported")
+        .clone()
+    }
+
+    #[test]
+    fn vite_side_effect_retained_honors_free_declarations() {
+        for (module, package) in [
+            ("false", None),
+            ("null", Some("false")),
+            ("false", Some("false")),
+            ("true", Some("false")),
+        ] {
+            let finding = retained_register(module, package);
+            assert_eq!(
+                declared_free_outcome(&finding),
+                ConditionOutcome::Met,
+                "{module} / {package:?}"
+            );
+            assert_eq!(finding.status, EvidenceStatus::Inferred);
+            assert!(
+                !finding
+                    .corrective_action
+                    .as_ref()
+                    .unwrap()
+                    .direction
+                    .contains("declare the package side-effect free"),
+                "{}",
+                finding.corrective_action.as_ref().unwrap().direction
+            );
+            assert!(
+                finding
+                    .corrective_action
+                    .as_ref()
+                    .unwrap()
+                    .direction
+                    .contains("already declared side-effect free"),
+                "{}",
+                finding.corrective_action.as_ref().unwrap().direction
+            );
+            assert!(
+                !finding
+                    .corrective_action
+                    .as_ref()
+                    .unwrap()
+                    .safety
+                    .is_empty()
+            );
+        }
+    }
+
+    #[test]
+    fn vite_side_effect_retained_reports_explicit_effect_declarations() {
+        for (module, package) in [
+            ("true", None),
+            ("no-treeshake", None),
+            ("null", Some("true")),
+        ] {
+            let finding = retained_register(module, package);
+            assert_eq!(
+                declared_free_outcome(&finding),
+                ConditionOutcome::Unmet,
+                "{module} / {package:?}"
+            );
+            assert_eq!(finding.status, EvidenceStatus::Confirmed);
+            assert!(finding.title.contains("declared to have side effects"));
+            assert!(
+                !finding
+                    .corrective_action
+                    .as_ref()
+                    .unwrap()
+                    .direction
+                    .contains("declare the package side-effect free")
+            );
+            assert!(
+                !finding
+                    .corrective_action
+                    .as_ref()
+                    .unwrap()
+                    .safety
+                    .is_empty()
+            );
+        }
+    }
+
+    #[test]
+    fn vite_side_effect_retained_is_unknown_for_list_summaries() {
+        let finding = retained_register("null", Some("[array of 2]"));
+        assert_eq!(declared_free_outcome(&finding), ConditionOutcome::Unknown);
+        assert_eq!(finding.status, EvidenceStatus::Inferred);
+        assert!(
+            finding
+                .corrective_action
+                .as_ref()
+                .unwrap()
+                .direction
+                .contains("covered by the")
+        );
+        assert!(
+            !finding
+                .corrective_action
+                .as_ref()
+                .unwrap()
+                .safety
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn vite_side_effect_retained_keeps_provenance_and_paths() {
+        let finding = retained_register("null", None);
+        assert_eq!(
+            finding.evidence[0].provenance,
+            "rolldown module info (getModuleInfo)"
+        );
+        assert_eq!(
+            finding.evidence[1].provenance,
+            "rolldown rendered chunk modules"
+        );
+        assert_eq!(finding.evidence[0].status, EvidenceStatus::Confirmed);
+        assert_eq!(finding.evidence[1].status, EvidenceStatus::Confirmed);
+        assert!(
+            finding
+                .evidence
+                .iter()
+                .any(|evidence| evidence.status == EvidenceStatus::Inferred)
+        );
+        assert_eq!(
+            finding.dependency_paths[0].modules,
+            vec!["index.html", "src/main.js", "src/effects/register.js"]
+        );
+    }
+
     #[test]
     fn vite_export_less_side_effect_modules_are_reported() {
         let fixture = run_fixture(BundlerChoice::Vite, |value| {
@@ -1080,13 +1273,27 @@ mod tests {
                 }
             }
         });
+        let finding = find(
+            &fixture.output.analysis.diagnostics,
+            "vite/side-effect-retained",
+            "src/effects/register.js",
+        )
+        .unwrap();
         assert!(
-            find(
-                &fixture.output.analysis.diagnostics,
-                "vite/side-effect-retained",
-                "src/effects/register.js"
-            )
-            .is_some()
+            !finding
+                .corrective_action
+                .as_ref()
+                .unwrap()
+                .direction
+                .is_empty()
+        );
+        assert!(
+            !finding
+                .corrective_action
+                .as_ref()
+                .unwrap()
+                .safety
+                .is_empty()
         );
     }
 
