@@ -46,6 +46,5 @@
 
 - Resolve every native home through `internal/nativeprofile`; do not allocate per-execution or temporary native homes. Keep the fresh `runtimes/<id>` or `title-runtimes/<job>` directory only as the operation journal.
 - Retire only transient credential files after a joined operation; retain history, caches and native-created helper links, and delete profiles only through explicit session, account or storage deletion.
-- The managed shared Codex owner account home (`runtimes/accounts/<account-id>/codex`) is registered in place under the `shared_owner` purpose through `resolveSharedCodexHome`/`acquireSharedCodexHome`; derive it only via `codexAccountHistoryHome`, never move it, and let only the founding owner (or an exclusive version 2 continuation) hold its lock.
 - Add a new native launch path to the profile matrix test (`TestEveryNativeLaunchProfileIsStableAcrossRequestsAndOwnerRestart`) so it proves the same profile across two request identifiers and an owner restart.
 - Follow the [persistent native profiles contract](../../../../docs/cmds-delidev-harness-contract.md#persistent-native-profiles).
