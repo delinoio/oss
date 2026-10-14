@@ -261,6 +261,31 @@ pub fn is_generated_asset_module(path: &str, snapshot: &str) -> bool {
     shape && is_asset_module_path(path)
 }
 
+/// Resolves the file that backs a module path for filesystem access. Bundlers
+/// append an import query (`a.js?raw`) or a fragment to the file path to name a
+/// derived module; the query is not part of the file name. The literal path
+/// wins when it exists (a file name can contain `?` or `#`); otherwise the path
+/// without its query, then without its fragment, is used. When none exists the
+/// query-free path is returned so a removed file is still looked up by its real
+/// name. The module identity keeps the literal path.
+pub fn filesystem_path(path: &Path) -> PathBuf {
+    let text = path.to_string_lossy();
+    if !text.contains(['?', '#']) {
+        return path.to_path_buf();
+    }
+    let without_query = text.split_once('?').map_or(&*text, |(file, _)| file);
+    let without_fragment = without_query
+        .split_once('#')
+        .map_or(without_query, |(file, _)| file);
+    let candidates = [&*text, without_query, without_fragment];
+    for candidate in candidates {
+        if std::fs::symlink_metadata(candidate).is_ok() {
+            return PathBuf::from(candidate);
+        }
+    }
+    PathBuf::from(without_query)
+}
+
 /// Returns the text of `bytes` when they are valid UTF-8 without NUL bytes.
 pub fn as_text(bytes: &[u8]) -> Option<&str> {
     if bytes.contains(&0) {
@@ -307,7 +332,10 @@ impl SourceStore {
                 existing.content_included.then(|| existing.content.clone()),
             ));
         }
-        let live = self.read_live(project_root, path);
+        // The module path may carry an import query that is not part of the
+        // file name; filesystem access uses the backing file.
+        let file_path = filesystem_path(path);
+        let live = self.read_live(project_root, path, &file_path);
         let snapshot = self.snapshots.get(&normalize(path));
         let stub = snapshot
             .is_some_and(|snapshot| is_generated_asset_module(&classified.display, snapshot));
@@ -373,8 +401,14 @@ impl SourceStore {
             stale,
         };
         // Only text sources are re-hashed against the live file when a saved
-        // bundle is reopened.
-        if let (true, Some(relative)) = (verifiable, classified.project_relative) {
+        // bundle is reopened, and against the backing file, not the module
+        // path with its import query.
+        if let (true, Some(relative)) = (
+            verifiable,
+            classify(project_root, &file_path)
+                .project_relative
+                .filter(|_| classified.project_relative.is_some()),
+        ) {
             self.project_relative.insert(id.clone(), relative);
         }
         self.files.insert(key, file);
@@ -383,9 +417,10 @@ impl SourceStore {
 
     /// Reads a live source only when it is a regular file of at most
     /// `MAX_SOURCE_BYTES` that lies inside the project root or is a module
-    /// path the bundler reported.
-    fn read_live(&self, project_root: &Path, path: &Path) -> LiveRead {
-        let resolved = match std::fs::canonicalize(path) {
+    /// path the bundler reported. `file_path` is the backing file of the
+    /// module `path`.
+    fn read_live(&self, project_root: &Path, path: &Path, file_path: &Path) -> LiveRead {
+        let resolved = match std::fs::canonicalize(file_path) {
             Ok(resolved) => resolved,
             Err(error) => return LiveRead::Unreadable(error),
         };
@@ -393,6 +428,7 @@ impl SourceStore {
             std::fs::canonicalize(project_root).unwrap_or_else(|_| project_root.to_path_buf());
         let vetted = resolved.starts_with(&root)
             || self.allowed.contains(&normalize(path))
+            || self.allowed.contains(&normalize(file_path))
             || self.allowed.contains(&resolved);
         if !vetted {
             return LiveRead::NotPermitted;
@@ -897,8 +933,10 @@ mod tests {
 
     const SVG_TEXT: &str = "<svg xmlns=\"http://www.w3.org/2000/svg\"/>";
 
-    /// Decision matrix: snapshot kind x live file kind. Expected values are
-    /// (stale, content kept, listed for saved-run re-hash).
+    /// Decision matrix: file x snapshot kind x live file kind. Expected values
+    /// are (stale, content kept, listed for saved-run re-hash). A `?query` in
+    /// the file name is part of the module path; the live file is the name
+    /// without it.
     #[test]
     fn source_store_decision_matrix_covers_text_and_asset_snapshots() {
         use Live::*;
@@ -934,9 +972,32 @@ mod tests {
             ("a.js", MarkerStub, Removed, (true, true, true)),
             ("a.js", FileUrlStub, ChangedText, (true, true, true)),
             ("a.js", DataUrlStub, ChangedText, (true, true, true)),
+            // An import query that selects a string module makes a script an
+            // asset module, backed by the file without the query.
+            ("a.js?raw", RawStub, MatchingText, (false, false, false)),
+            ("a.js?raw", RawStub, ChangedText, (false, false, false)),
+            ("a.js?raw", RawStub, Removed, (true, false, false)),
+            ("a.js?inline", DataUrlStub, Binary, (false, false, false)),
+            ("a.js?url", MarkerStub, MatchingText, (false, false, false)),
+            ("a.js?url#frag", FileUrlStub, Removed, (true, false, false)),
+            ("icon.svg?raw", RawStub, MatchingText, (false, false, false)),
+            (
+                "icon.svg?inline",
+                DataUrlStub,
+                Removed,
+                (true, false, false),
+            ),
+            // Any other query still names the file that backs the module.
+            ("a.js?v=1", Text, MatchingText, (false, true, true)),
+            ("a.js?v=1", Text, ChangedText, (true, true, true)),
+            ("a.js?v=1", Text, Removed, (true, true, true)),
+            ("a.js?v=1", None, MatchingText, (false, true, true)),
+            ("a.js?raw", None, Binary, (false, false, false)),
         ];
         for (file, snapshot, live, expected) in cases {
             let dir = tempfile::tempdir().unwrap();
+            let disk_name = file.split('?').next().unwrap();
+            let is_script = disk_name.ends_with(".js");
             let path = dir.path().join(file);
             let snapshot_text = match snapshot {
                 None => Option::None,
@@ -950,17 +1011,18 @@ mod tests {
                 }
                 RawStub => Some(format!("export default {:?}", SVG_TEXT)),
             };
-            let live_bytes: Option<Vec<u8>> = match (live, file) {
-                (MatchingText, f) if f.ends_with(".js") => Some(b"export const a = 1;".to_vec()),
-                (MatchingText, _) => Some(SVG_TEXT.as_bytes().to_vec()),
-                (ChangedText, f) if f.ends_with(".js") => Some(b"export const a = 2;".to_vec()),
-                (ChangedText, _) => Some(b"<svg changed/>".to_vec()),
-                (Binary, _) => Some(PNG_BYTES.to_vec()),
-                (InvalidUtf8, _) => Some(vec![b'a', 0xff, 0xfe, b'b']),
-                (Removed, _) => Option::None,
+            let live_bytes: Option<Vec<u8>> = match live {
+                MatchingText if is_script => Some(b"export const a = 1;".to_vec()),
+                MatchingText => Some(SVG_TEXT.as_bytes().to_vec()),
+                ChangedText if is_script => Some(b"export const a = 2;".to_vec()),
+                ChangedText => Some(b"<svg changed/>".to_vec()),
+                Binary => Some(PNG_BYTES.to_vec()),
+                InvalidUtf8 => Some(vec![b'a', 0xff, 0xfe, b'b']),
+                Removed => Option::None,
             };
             if let Some(bytes) = &live_bytes {
-                std::fs::write(&path, bytes).unwrap();
+                // Created through the file name without the query.
+                std::fs::write(dir.path().join(disk_name), bytes).unwrap();
             }
             let mut store = SourceStore::new(true);
             if let Some(text) = snapshot_text {
@@ -970,16 +1032,112 @@ mod tests {
                 .add_file(dir.path(), &path)
                 .unwrap_or_else(|| panic!("{file} {snapshot:?} {live:?} must keep a source"));
             let listed = store.project_relative.contains_key(&id);
+            // The saved path is the backing file, never the module path with
+            // its query.
+            for relative in store.project_relative.values() {
+                assert_eq!(relative, disk_name, "{file} {snapshot:?} {live:?}");
+            }
             let stale = !store.changed_since_build.is_empty();
             let files = store.into_files();
             assert_eq!(files.len(), 1);
             let actual = (stale, text.is_some(), listed);
             assert_eq!(actual, *expected, "{file} {snapshot:?} {live:?}");
+            assert_eq!(files[0].path, *file);
             assert_eq!(files[0].stale, stale, "{file} {snapshot:?} {live:?}");
             assert_eq!(
                 files[0].content_included,
                 text.is_some(),
                 "{file} {snapshot:?} {live:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn module_paths_with_a_query_read_the_backing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("src/a.js");
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(&file, "export const a = 1;").unwrap();
+        for name in ["src/a.js?raw", "src/a.js?v=1#x", "src/a.js#frag"] {
+            let path = dir.path().join(name);
+            let mut store = SourceStore::new(true);
+            // No source map snapshot: the live backing file is the source and
+            // is neither unreadable nor stale.
+            let (id, text) = store
+                .add_file(dir.path(), &path)
+                .unwrap_or_else(|| panic!("{name} must be readable"));
+            assert_eq!(text.as_deref(), Some("export const a = 1;"), "{name}");
+            assert!(store.unreadable.is_empty(), "{name}");
+            assert!(store.changed_since_build.is_empty(), "{name}");
+            assert_eq!(store.project_relative[&id], "src/a.js", "{name}");
+            // The display path and module identity keep the query.
+            let files = store.into_files();
+            assert_eq!(files[0].path, name);
+            assert_eq!(files[0].id, source_id(&normalize(&path).to_string_lossy()));
+        }
+        // Different queries are different modules of the same file.
+        let mut store = SourceStore::new(true);
+        let raw = store
+            .add_file(dir.path(), &dir.path().join("src/a.js?raw"))
+            .unwrap();
+        let plain = store.add_file(dir.path(), &file).unwrap();
+        assert_ne!(raw.0, plain.0);
+        assert_eq!(store.into_files().len(), 2);
+    }
+
+    #[test]
+    fn query_paths_are_vetted_through_the_backing_file() {
+        let project = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let module = outside.path().join("module.txt");
+        std::fs::write(&module, "plain text").unwrap();
+        let queried = outside.path().join("module.txt?raw");
+        let mut store = SourceStore::new(true);
+        // Neither the module path nor its backing file was reported.
+        assert!(store.add_file(project.path(), &queried).is_none());
+        assert_eq!(store.unreadable.len(), 1);
+        // The bundler reported the module path with its query.
+        let mut store = SourceStore::new(true);
+        store.allowed.insert(normalize(&queried));
+        assert!(store.add_file(project.path(), &queried).is_some());
+        // The bundler reported the backing file.
+        let mut store = SourceStore::new(true);
+        store.allowed.insert(normalize(&module));
+        assert!(store.add_file(project.path(), &queried).is_some());
+        // Outside the project nothing is listed for a saved-run recheck.
+        assert!(store.project_relative.is_empty());
+    }
+
+    #[test]
+    fn filesystem_path_prefers_an_existing_literal_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(root.join("plain.js"), "").unwrap();
+        std::fs::write(root.join("C#.js"), "").unwrap();
+        std::fs::write(root.join("hash#frag.js"), "").unwrap();
+        // (module path, expected backing file)
+        let cases: &[(&str, &str)] = &[
+            ("plain.js", "plain.js"),
+            ("plain.js?raw", "plain.js"),
+            ("plain.js?raw&x=1", "plain.js"),
+            ("plain.js#frag", "plain.js"),
+            ("plain.js?raw#frag", "plain.js"),
+            // A literal file name wins over its query-free prefix.
+            ("C#.js", "C#.js"),
+            ("C#.js?raw", "C#.js"),
+            ("hash#frag.js?raw", "hash#frag.js"),
+            // Nothing exists: the query is dropped, a fragment is kept as it
+            // may be part of the name.
+            ("gone.js", "gone.js"),
+            ("gone.js?raw", "gone.js"),
+            ("gone.js?raw#frag", "gone.js"),
+            ("gone#name.js", "gone#name.js"),
+        ];
+        for (module, expected) in cases {
+            assert_eq!(
+                filesystem_path(&root.join(module)),
+                root.join(expected),
+                "{module}"
             );
         }
     }

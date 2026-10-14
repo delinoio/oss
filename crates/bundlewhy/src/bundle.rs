@@ -338,6 +338,33 @@ pub fn load(run_dir: &Path) -> BwResult<ResultBundle> {
     Ok(bundle)
 }
 
+/// Selects the entries of an analysis project-relative map that a saved bundle
+/// keeps: project sources whose stored path is safe and stays inside the
+/// project root.
+///
+/// The stored value is the path of the file that backs the module. It differs
+/// from the display path of a module with an import query (`src/a.js?raw` is
+/// backed by `src/a.js`), so the value is copied from the map and never derived
+/// from the display path.
+pub fn retained_relative(
+    project_root: &Path,
+    sources: &[SourceFile],
+    map: &BTreeMap<String, String>,
+) -> BTreeMap<String, String> {
+    sources
+        .iter()
+        .filter(|source| source.origin == crate::model::SourceOrigin::Project)
+        .filter_map(|source| {
+            let relative = map.get(&source.id)?;
+            let safe = safe_project_relative(relative)?;
+            project_root
+                .join(safe)
+                .starts_with(project_root)
+                .then(|| (source.id.clone(), relative.clone()))
+        })
+        .collect()
+}
+
 /// Largest project file read for a stale check.
 const MAX_STALE_CHECK_BYTES: u64 = 16 * 1024 * 1024;
 
@@ -830,5 +857,45 @@ mod tests {
                 .count();
             assert_eq!(warnings, usize::from(*expected), "{file} {stored}");
         }
+    }
+
+    #[test]
+    fn retained_relative_keeps_the_backing_file_of_safe_project_sources() {
+        let root = Path::new("/work/app");
+        let source = |id: &str, path: &str, origin| SourceFile {
+            id: id.to_owned(),
+            path: path.to_owned(),
+            origin,
+            ..SourceFile::default()
+        };
+        use crate::model::SourceOrigin::{Dependency, Project};
+        let sources = vec![
+            // A module with an import query is displayed with it, but the map
+            // names the backing file.
+            source("a", "src/a.js?raw", Project),
+            source("b", "src/b.js", Project),
+            source("c", "node_modules/x/index.js", Dependency),
+            source("d", "src/d.js", Project),
+            source("e", "src/e.js", Project),
+            source("f", "src/f.js", Project),
+        ];
+        let map: BTreeMap<String, String> = [
+            ("a", "src/a.js"),
+            ("b", "src/b.js"),
+            ("c", "node_modules/x/index.js"),
+            ("d", "../escape.js"),
+            ("e", "/etc/passwd"),
+            ("unknown", "src/u.js"),
+        ]
+        .into_iter()
+        .map(|(id, path)| (id.to_owned(), path.to_owned()))
+        .collect();
+        let kept = retained_relative(root, &sources, &map);
+        assert_eq!(
+            kept.iter()
+                .map(|(id, path)| (id.as_str(), path.as_str()))
+                .collect::<Vec<_>>(),
+            [("a", "src/a.js"), ("b", "src/b.js")]
+        );
     }
 }

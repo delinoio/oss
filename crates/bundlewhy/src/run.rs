@@ -334,23 +334,11 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
                 json!({ "stage": "measuring", "durationMs": measuring_ms, "diagnostics": output.analysis.diagnostics.len() }),
             );
             let analysis = output.analysis;
-            let project_relative = output
-                .sources
-                .iter()
-                .filter_map(|source| {
-                    let path = selection.project_root.join(&source.path);
-                    // Non-text sources (imported images) are absent from the
-                    // analysis map: their stored hash is not a live file hash.
-                    (source.origin == crate::model::SourceOrigin::Project
-                        && output.project_relative.contains_key(&source.id)
-                        && path.starts_with(&selection.project_root))
-                    .then(|| {
-                        crate::sources::safe_project_relative(&source.path)
-                            .map(|_| (source.id.clone(), source.path.clone()))
-                    })
-                    .flatten()
-                })
-                .collect();
+            let project_relative = bundle::retained_relative(
+                &selection.project_root,
+                &output.sources,
+                &output.project_relative,
+            );
             (
                 ResultBundle {
                     schema_version: SCHEMA_VERSION,
