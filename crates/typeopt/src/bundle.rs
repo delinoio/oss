@@ -1330,11 +1330,11 @@ fn rehash(
 /// `precacheAndRoute`/`precache` array: the decoded URL and the byte span of
 /// the revision string. Parsing JavaScript excludes apparent calls in strings,
 /// comments, template text and regular expressions.
-fn precache_entries(text: &str) -> Vec<(String, usize, usize)> {
+fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
     struct Entries<'a> {
         text: &'a str,
         base: u32,
-        values: Vec<(String, usize, usize)>,
+        values: Vec<(String, usize, usize, bool)>,
     }
 
     impl Entries<'_> {
@@ -1392,16 +1392,18 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize)> {
 
     impl Visit for Entries<'_> {
         fn visit_call_expr(&mut self, call: &CallExpr) {
-            let name = match &call.callee {
+            let (name, trusted) = match &call.callee {
                 Callee::Expr(callee) => match &**callee {
-                    Expr::Ident(name) => Some(name.sym.as_ref()),
+                    Expr::Ident(name) => (Some(name.sym.as_ref()), false),
                     Expr::Member(member) => match &member.prop {
-                        MemberProp::Ident(name) => Some(name.sym.as_ref()),
-                        _ => None,
+                        MemberProp::Ident(name) => {
+                            (Some(name.sym.as_ref()), is_workbox_receiver(&member.obj))
+                        }
+                        _ => (None, false),
                     },
-                    _ => None,
+                    _ => (None, false),
                 },
-                _ => None,
+                _ => (None, false),
             };
             if matches!(name, Some("precache" | "precacheAndRoute"))
                 && let Some(first) = call.args.first()
@@ -1411,11 +1413,27 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize)> {
                     if let Expr::Object(object) = &*element.expr
                         && let Some(entry) = self.entry(object)
                     {
-                        self.values.push(entry);
+                        let (url, start, end) = entry;
+                        self.values.push((url, start, end, trusted));
                     }
                 }
             }
             call.visit_children_with(self);
+        }
+    }
+
+    fn is_workbox_receiver(receiver: &Expr) -> bool {
+        match receiver {
+            Expr::Ident(name) => name.sym == "workbox",
+            Expr::Member(member) => {
+                let MemberProp::Ident(name) = &member.prop else {
+                    return false;
+                };
+                name.sym == "workbox"
+                    && matches!(&*member.obj, Expr::Ident(root)
+                        if matches!(root.sym.as_ref(), "self" | "globalThis" | "window"))
+            }
+            _ => false,
         }
     }
 
@@ -1441,7 +1459,7 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize)> {
             values: Vec::new(),
         };
         program.visit_with(&mut visitor);
-        visitor.values.sort_by_key(|(_, start, _)| *start);
+        visitor.values.sort_by_key(|(_, start, _, _)| *start);
         visitor.values
     })
 }
@@ -1515,7 +1533,7 @@ fn refresh_precache_revisions(
         };
         let directory = file.parent().unwrap_or(root);
         let mut changed = false;
-        for (url, start, end) in precache_entries(&text.clone()) {
+        for (url, start, end, trusted) in precache_entries(&text.clone()) {
             // Only regular files of the staged bundle: `..` must not leave it,
             // and a device or FIFO must not block publication.
             let Some(staged) = precache_target(root, directory, &url) else {
@@ -1529,10 +1547,18 @@ fn refresh_precache_revisions(
                 continue;
             }
             ensure!(
-                end > start,
+                end > start || !trusted,
                 "cannot refresh empty precache revision in {}",
                 relative_display(root, file)
             );
+            if end == start {
+                tracing::debug!(
+                    manifest = %relative_display(root, file),
+                    target = %relative_display(root, &staged),
+                    "skipped an empty revision from an ambiguous precache call"
+                );
+                continue;
+            }
             let digest = crate::compiler::sha256_hex(&published);
             let mut revision: String = digest.chars().cycle().take(end - start).collect();
             if text[start..end] == revision {
