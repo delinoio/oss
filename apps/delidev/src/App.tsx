@@ -32,7 +32,10 @@ import {
 } from "./entrance-motion";
 import type { UsageEntry } from "./usage-entry";
 import { LocalConnectionPresentationProvider } from "./local-connection-presentation";
-import { ConnectionEpochProvider } from "./connection-epoch";
+import {
+  ConnectionEpochProvider,
+  useConnectionEpoch,
+} from "./connection-epoch";
 import {
   useCallback,
   useEffect,
@@ -190,6 +193,14 @@ function Shell({
   useLayoutEffect(() => {
     latestTransport.current = transport;
   }, [transport]);
+  // A same-identity reconnect keeps the transport and query client while the
+  // peer behind them can be replaced or downgraded, so work that started before
+  // it is current only for the epoch it started in.
+  const connectionEpoch = useConnectionEpoch();
+  const latestEpoch = useRef(connectionEpoch);
+  useLayoutEffect(() => {
+    latestEpoch.current = connectionEpoch;
+  }, [connectionEpoch]);
   const sessionCreated = useCallback(
     (session: Resource) => {
       // A retained creation can settle after a same-identity reconnect replaces its transport.
@@ -550,12 +561,14 @@ function Shell({
     if (!pendingSelection || !connectionReady) return;
     const pending = pendingSelection;
     const owner = transport;
+    const ownerEpoch = connectionEpoch;
     const controller = new AbortController();
     restoreAbort.current = controller;
     const intent = navigationIntent.current;
     const current = () =>
       !controller.signal.aborted &&
       latestTransport.current === owner &&
+      latestEpoch.current === ownerEpoch &&
       navigationIntent.current === intent;
     const settle = (outcome: RouteReadOutcome | "superseded") => {
       console.info("delidev.product_route.restore", {
@@ -650,7 +663,7 @@ function Shell({
       controller.abort();
       if (restoreAbort.current === controller) restoreAbort.current = undefined;
     };
-  }, [pendingSelection, connectionReady, transport, queryClient]);
+  }, [pendingSelection, connectionReady, transport, connectionEpoch, queryClient]);
   // Mirror committed navigation into the URL query with history.replaceState.
   // The URL keeps the original route until its selection has been verified.
   const sidechatRoute =

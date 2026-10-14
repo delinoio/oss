@@ -884,6 +884,35 @@ describe("pending routes", () => {
     expect(search().get("item")).toBe(value.schedule.id);
   });
 
+  it("aborts and restarts a restore read when a reconnect bumps the epoch of a retained transport", async () => {
+    const value = fixture();
+    const release = value.hold(value.schedule.id);
+    route(`?screen=schedules&item=${value.schedule.id}`);
+    const view = render(
+      <App transport={value.transport} connectionReady connectionEpoch={0} />,
+    );
+    await waitFor(() => expect(value.reads.schedule).toHaveBeenCalledTimes(1));
+    // The same saved identity reverifies: the transport object is retained and
+    // the connection stays ready, but the peer behind it may have changed.
+    view.rerender(
+      <App transport={value.transport} connectionReady connectionEpoch={1} />,
+    );
+    await waitFor(() => expect(value.reads.schedule).toHaveBeenCalledTimes(2));
+    expect(value.reads.schedule).toHaveBeenCalledTimes(2);
+    expect(
+      screen.queryByRole("heading", { name: "Restored schedule" }),
+    ).toBeNull();
+    await act(async () => {
+      release();
+    });
+    expect(
+      await screen.findByRole("heading", { name: "Restored schedule" }),
+    ).toBeTruthy();
+    // Only the read that started in the current epoch restored the selection.
+    expect(search().get("item")).toBe(value.schedule.id);
+    expect(value.mutated).not.toHaveBeenCalled();
+  });
+
   it("lets deliberate navigation supersede a pending selection", async () => {
     const value = fixture();
     route(`?screen=schedules&item=${value.schedule.id}`);
