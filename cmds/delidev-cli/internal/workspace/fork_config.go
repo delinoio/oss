@@ -37,6 +37,7 @@ const (
 type forkConfigProof struct {
 	config, worktree      forkConfigLayer
 	remoteName, remoteURL string
+	retainedBytes         uint64
 	bound                 bool
 }
 
@@ -215,6 +216,11 @@ func (i *forkGitInventory) captureConfigProof(ctx context.Context, git Git, chec
 		if err := chargeForkConfigProof(budget, frozen, size); err != nil {
 			return err
 		}
+		proofBytes, err := forkConfigProofBytes(size, len(frozen.records))
+		if err != nil {
+			return err
+		}
+		i.configProof.retainedBytes += proofBytes
 		*layer.target = frozen
 	}
 	return nil

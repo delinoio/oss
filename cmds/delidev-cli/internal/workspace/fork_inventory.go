@@ -180,6 +180,10 @@ func (i forkGitInventory) verify(ctx context.Context, git Git, source, target st
 	}
 	// The copied config files were excluded from the inventory comparison above
 	// because normalization rewrites them. Prove them against the frozen source.
+	if i.configProof.retainedBytes > targetBudget.bytes {
+		return forkSnapshotChanged()
+	}
+	targetBudget.bytes -= i.configProof.retainedBytes
 	if err = i.verifyChildConfig(ctx, git, target, targetBudget); err != nil {
 		return err
 	}
