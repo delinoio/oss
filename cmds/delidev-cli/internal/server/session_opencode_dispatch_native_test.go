@@ -209,7 +209,7 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 	if externalAllowance && cascade {
 		tool = "read"
 	}
-	binary, _ := nativetest.NativeOpenCodeExecutable(t)
+	binary, version := nativetest.NativeOpenCodeExecutable(t)
 	binary, err := filepath.EvalSymlinks(binary)
 	if err != nil {
 		t.Fatal(err)
@@ -390,7 +390,7 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 			// preparation report and explicit first Resume use their public APIs. Only
 			// protocol discovery is a pinned reported fixture; actual initialization is
 			// independently revalidated by the original installed native process.
-			f := newFirstDispatchFixtureWorkspaceProfile(t, domain.OpenCode, mode, binary, upstream.URL, fixtureModel, workspaceType, projectProfile)
+			f := newFirstDispatchFixtureObserved(t, domain.OpenCode, mode, binary, version, upstream.URL, fixtureModel, workspaceType, projectProfile)
 			if missingRead {
 				toolPath.Store(prepareOpenCodeMissingRead(t, f, permission))
 			} else if externalRejection || externalAllowance {

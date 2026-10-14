@@ -33,7 +33,7 @@ func TestManualNativePublicOpenCodeGeneralChatFork(t *testing.T) {
 	}
 }
 func nativePublicOpenCodeFork(t *testing.T, fault string) {
-	binary, _ := nativetest.NativeOpenCodeExecutable(t)
+	binary, version := nativetest.NativeOpenCodeExecutable(t)
 	binary, err := filepath.EvalSymlinks(binary)
 	if err != nil {
 		t.Fatal(err)
@@ -73,7 +73,7 @@ func nativePublicOpenCodeFork(t *testing.T, fault string) {
 		fmt.Fprint(w, "data: [DONE]\n\n")
 	}))
 	defer provider.Close()
-	f := newFirstDispatchFixtureProfile(t, domain.OpenCode, domain.ExecuteMode, binary, provider.URL, "fixture-model")
+	f := newFirstDispatchFixtureObserved(t, domain.OpenCode, domain.ExecuteMode, binary, version, provider.URL, "fixture-model", domain.GeneralChat)
 	// Setup uses the shared fixture's accepted real workspace preparation.
 	// Retain its exact original assignment/report journal for deletion acceptance;
 	// native execution and fork claims below are produced only by the real Worker.
