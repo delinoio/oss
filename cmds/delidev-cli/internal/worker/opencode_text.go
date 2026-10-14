@@ -323,7 +323,15 @@ func (c *OpenCodeTextPublisher) inputExpansionPart(part opencode.NativePart) boo
 func (c *OpenCodeTextPublisher) observeInputExpansion(part opencode.NativePart) error {
 	b := c.binding
 	owner := c.messages[part.MessageID]
-	if part.SessionID != b.thread || owner == nil || owner.role != domain.UserMessage || owner.finalized || c.inputExtras[part.ID] != "" || len(c.inputExtras) >= 2*domain.MaxInputImages || domain.NativeIdentity(part.ID).Validate(domain.OpenCode, domain.NativePartIdentity) != nil {
+	// Each attached image expands into exactly one synthetic Read text and one
+	// file part, so neither kind may exceed the attachment count.
+	same := 0
+	for _, kind := range c.inputExtras {
+		if kind == part.Kind {
+			same++
+		}
+	}
+	if part.SessionID != b.thread || owner == nil || owner.role != domain.UserMessage || owner.finalized || c.inputExtras[part.ID] != "" || same >= len(b.publisher.input.Input.Attachments) || domain.NativeIdentity(part.ID).Validate(domain.OpenCode, domain.NativePartIdentity) != nil {
 		return publicationUncertain()
 	}
 	c.inputExtras[part.ID] = part.Kind
