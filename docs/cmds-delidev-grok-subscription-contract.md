@@ -253,7 +253,18 @@ temporaries. The file must be a regular, bounded, non-symlinked entry with
 exactly one directory entry: a hard-linked `auth.json` is never sealed, and
 retiring a hard-linked file or temporary unlinks its name but reports the
 cleanup as unconfirmed because the other entry keeps the plaintext credential
-reachable. Cleanup is confirmed only when no credential file or attributed
+reachable. Link validation and unlink are one guarded operation on the opened
+file: each credential entry is opened through the held directory handle, its link
+count is read from that handle, the name is unlinked, and the same retained
+handle is examined again. Retirement is confirmed only when the retained inode
+has no directory entry left (on Unix its link count after the unlink is zero,
+which is final because an unlinked inode cannot be linked again) and a rescan of
+the held directory finds no entry with the retained file's identity, so a hard
+link that another process creates after inspection and before the unlink, in this
+directory or in any other, makes the cleanup unconfirmed. Materialization applies
+the same guarded unlink to leftover temporaries and to a previous regular
+`auth.json` and refuses to write when either keeps another entry. Cleanup is
+confirmed only when no credential file or attributed
 temporary remains in the same directory the credential was materialized in;
 otherwise no bundle is returned and the server keeps the lease fenced. The
 Worker binds the private home (`subscription.BindGrokHome`) before it accepts

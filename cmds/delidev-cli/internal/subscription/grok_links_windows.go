@@ -12,6 +12,12 @@ import (
 // grokOpenReadFlags adds nothing on Windows.
 const grokOpenReadFlags = 0
 
+// grokHoldRetiredHandles is false on Windows: when the filesystem cannot remove
+// a name while a handle is open (deferred, delete-on-close semantics), the name
+// stays listed, and opening it fails, until the handle is closed. The retained
+// file identity is kept as metadata for the rescan.
+const grokHoldRetiredHandles = false
+
 // syncGrokDirectory is a no-op on Windows: the atomic publication uses a
 // write-through rename and a directory handle cannot be flushed.
 func syncGrokDirectory(*os.File) error { return nil }
@@ -32,4 +38,29 @@ func grokSingleLinkEntry(root *os.Root, name string, _ os.FileInfo) bool {
 	}
 	defer file.Close()
 	return grokSingleLinkFile(file, nil)
+}
+
+// grokUnlinkedFileLinked reports whether an opened credential file whose name
+// was just unlinked still shows another directory entry. Windows does not say
+// whether an unlinked-but-open file already dropped the removed name from its
+// count, so only a count above one is conclusive here; the entry was checked
+// for a single link before the unlink and the home is rescanned by identity
+// afterwards. Unknown metadata fails closed.
+func grokUnlinkedFileLinked(file *os.File) bool {
+	var info windows.ByHandleFileInformation
+	return windows.GetFileInformationByHandle(windows.Handle(file.Fd()), &info) != nil || info.NumberOfLinks > 1
+}
+
+// grokSameEntry reports whether the directory entry name inside root is another
+// name of the retained file. Identity is read from a handle opened relative to
+// root, because path-based Windows metadata resolves its file ID lazily. An
+// entry that cannot be examined is treated as the same file.
+func grokSameEntry(root *os.Root, name string, _, retained os.FileInfo) bool {
+	file, err := root.OpenFile(name, os.O_RDONLY, 0)
+	if err != nil {
+		return true
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	return err != nil || os.SameFile(info, retained)
 }

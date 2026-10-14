@@ -2,6 +2,7 @@
 package subscription
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -435,5 +436,133 @@ func TestGrokHomeRejectsALooseningAfterBinding(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(home); len(entries) != 0 {
 		t.Fatal("a rejected write left files behind")
+	}
+}
+
+// installGrokBeforeUnlink sets the seam for one test and restores it.
+func installGrokBeforeUnlink(t *testing.T, hook func(name string)) {
+	t.Helper()
+	previous := grokBeforeUnlink
+	grokBeforeUnlink = hook
+	t.Cleanup(func() { grokBeforeUnlink = previous })
+}
+
+func requireCleanupIdentity(t *testing.T, err error) {
+	t.Helper()
+	var cleanup *RuntimeCleanupError
+	if !errors.As(err, &cleanup) || cleanup.Reason != CleanupIdentity {
+		t.Fatalf("retirement was not reported as an unconfirmed identity: %v", err)
+	}
+}
+
+// A link that another process creates after the entry was inspected but before
+// its name is unlinked is caught by the link count of the retained handle, in
+// this directory or in any other.
+func TestRetireGrokAuthFileDetectsALinkCreatedBeforeTheUnlink(t *testing.T) {
+	for name, aliasDir := range map[string]func(home string) string{
+		"same directory":  func(home string) string { return home },
+		"other directory": func(string) string { return t.TempDir() },
+	} {
+		t.Run(name, func(t *testing.T) {
+			home := grokHomeForTest(t)
+			bundle, _ := ParseGrokAuthFile(grokFixtureFile(t, nil))
+			bound := boundGrokHome(t, home)
+			if err := bound.WriteAuthFile(bundle); err != nil {
+				t.Fatal(err)
+			}
+			alias := filepath.Join(aliasDir(home), "alias.json")
+			linkedAfterInspection := false
+			installGrokBeforeUnlink(t, func(entry string) {
+				if entry != GrokAuthFileName {
+					return
+				}
+				if err := os.Link(filepath.Join(home, GrokAuthFileName), alias); err != nil {
+					t.Skip("hard links are unsupported on this platform")
+				}
+				linkedAfterInspection = true
+			})
+			err := bound.RetireAuthFile()
+			if !linkedAfterInspection {
+				t.Fatal("the link was not created in the unlink window")
+			}
+			requireCleanupIdentity(t, err)
+			if _, err := os.Lstat(filepath.Join(home, GrokAuthFileName)); !os.IsNotExist(err) {
+				t.Fatal("the credential name was not unlinked")
+			}
+			if _, err := os.Stat(alias); err != nil {
+				t.Fatal("retirement removed the other directory entry")
+			}
+		})
+	}
+}
+
+func TestRetireGrokAuthFileDetectsALinkCreatedBeforeTheTemporaryUnlink(t *testing.T) {
+	home := grokHomeForTest(t)
+	temporary := filepath.Join(home, security.OwnedTemporaryPrefix(filepath.Join(home, GrokAuthFileName))+"old")
+	if err := os.WriteFile(temporary, []byte(grokTestRefresh), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(t.TempDir(), "alias.tmp")
+	installGrokBeforeUnlink(t, func(entry string) {
+		if strings.HasPrefix(entry, grokTemporaryPrefix) {
+			if err := os.Link(temporary, alias); err != nil {
+				t.Skip("hard links are unsupported on this platform")
+			}
+		}
+	})
+	requireCleanupIdentity(t, boundGrokHome(t, home).RetireAuthFile())
+	if entries, _ := os.ReadDir(home); len(entries) != 0 {
+		t.Fatal("the temporary name was not unlinked")
+	}
+}
+
+// A retirement that finds no extra entry is confirmed, and a retained handle
+// is never confused with a different file of the home.
+func TestRetireGrokAuthFileConfirmsASingleLinkedCredentialAmongOtherFiles(t *testing.T) {
+	home := grokHomeForTest(t)
+	bundle, _ := ParseGrokAuthFile(grokFixtureFile(t, nil))
+	bound := boundGrokHome(t, home)
+	if err := bound.WriteAuthFile(bundle); err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(home, "config.toml")
+	if err := os.WriteFile(other, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := bound.RetireAuthFile(); err != nil {
+		t.Fatalf("a single-link credential was not confirmed: %v", err)
+	}
+	if raw, err := os.ReadFile(other); err != nil || string(raw) != "keep" {
+		t.Fatal("retirement touched an unrelated file")
+	}
+}
+
+// A materialization never layers a new credential on an older plaintext that a
+// second directory entry keeps reachable.
+func TestGrokWriteRefusesAnOlderLinkedCredential(t *testing.T) {
+	for name, prepare := range map[string]func(home string) string{
+		"auth.json": func(home string) string { return filepath.Join(home, GrokAuthFileName) },
+		"temporary": func(home string) string {
+			return filepath.Join(home, security.OwnedTemporaryPrefix(filepath.Join(home, GrokAuthFileName))+"old")
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			home := grokHomeForTest(t)
+			older := prepare(home)
+			if err := os.WriteFile(older, []byte(grokTestRefresh), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			alias := filepath.Join(t.TempDir(), "alias")
+			if err := os.Link(older, alias); err != nil {
+				t.Skip("hard links are unsupported on this platform")
+			}
+			bundle, _ := ParseGrokAuthFile(grokFixtureFile(t, nil))
+			if err := boundGrokHome(t, home).WriteAuthFile(bundle); err == nil {
+				t.Fatal("a credential was written over a linked older credential")
+			}
+			if present, _ := boundGrokHome(t, home).AuthFilePresent(); present {
+				t.Fatal("a failed write left credential material in the home")
+			}
+		})
 	}
 }

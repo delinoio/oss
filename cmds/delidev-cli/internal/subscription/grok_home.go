@@ -147,8 +147,15 @@ func (h GrokHome) writeAnchored(raw []byte) error {
 	if err := h.checkHeld(); err != nil {
 		return err
 	}
-	if err := h.retireTemporaries(); err != nil {
+	// Leftover temporaries and a previous regular auth.json are retired with the
+	// same guarded unlink as retirement; one that keeps another directory entry
+	// also keeps the older plaintext reachable, so the write is refused rather
+	// than layered on it. A non-regular auth.json entry is not unlinked here: the
+	// publication below replaces it by name and never writes through it.
+	if linked, err := h.retireNames(grokRetireBeforeWrite); err != nil {
 		return err
+	} else if linked {
+		return &RuntimeCleanupError{Stage: CleanupAuthFile, Reason: CleanupIdentity}
 	}
 	suffix := make([]byte, 12)
 	if _, err := rand.Read(suffix); err != nil {
@@ -261,24 +268,185 @@ func (h GrokHome) AuthFilePresent() (bool, error) {
 // the bound path was since replaced, which is what removes a credential this
 // Worker wrote into a directory that was then swapped away. The caller has
 // already joined the native process and its descendants; every other file is
-// left to runtime cleanup. A credential file or temporary with another
+// left to runtime cleanup.
+//
+// Link validation and unlink are one guarded operation on the opened file: each
+// entry is opened through the held handle, and the retained handle (not a name
+// looked up earlier) is what proves the outcome. Removal is confirmed only when
+// the retained inode has no directory entry left anywhere (its link count after
+// the unlink, where the platform reports it) and no entry of the home still has
+// its identity, so a link created at any moment up to the unlink, in this
+// directory or another, is detected. A credential file or temporary with another
 // directory entry is still unlinked here, but retirement then reports an
 // unconfirmed cleanup because the other entry keeps the plaintext reachable.
 func (h GrokHome) RetireAuthFile() error {
 	if h.root == nil {
 		return homeUnbound()
 	}
-	linked, probeErr := h.credentialLinked()
-	if err := h.retireEntries(); err != nil {
+	linked, err := h.retireNames(grokRetireAll)
+	if err != nil {
 		return err
-	}
-	if probeErr != nil {
-		return probeErr
 	}
 	if linked {
 		return &RuntimeCleanupError{Stage: CleanupAuthFile, Reason: CleanupIdentity}
 	}
 	return nil
+}
+
+// grokRetireScope names which credential entries a guarded retirement unlinks.
+type grokRetireScope int
+
+const (
+	// grokRetireBeforeWrite unlinks attributed temporaries and a regular
+	// auth.json; a non-regular auth.json is left for the publication to replace.
+	grokRetireBeforeWrite grokRetireScope = iota
+	// grokRetireAll unlinks attributed temporaries and auth.json; a non-regular
+	// entry is an error.
+	grokRetireAll
+)
+
+// grokBeforeUnlink is a test seam that runs after an entry was opened and
+// inspected and before its name is unlinked, which is exactly the window a
+// concurrent hard link has to be detected in. Production code leaves it nil.
+var grokBeforeUnlink func(name string)
+
+// retiredEntry is a credential file that was unlinked while its opened handle
+// was kept, so the unlinked inode can still be examined afterwards. The handle
+// may be closed (and the file closed twice harmlessly) once the platform no
+// longer needs it; info keeps the identity.
+type retiredEntry struct {
+	file *os.File
+	info os.FileInfo
+}
+
+// retireNames unlinks the credential entries selected by scope and reports
+// whether any plaintext copy may remain reachable under another name. Entries
+// that cannot be opened are still unlinked and reported as linked, because their
+// link count is unknown.
+func (h GrokHome) retireNames(scope grokRetireScope) (linked bool, err error) {
+	names, err := h.temporaries()
+	if err != nil {
+		return false, err
+	}
+	names = append(names, GrokAuthFileName)
+	var retired []retiredEntry
+	defer func() {
+		for _, entry := range retired {
+			_ = entry.file.Close()
+		}
+	}()
+	for _, name := range names {
+		entry, entryLinked, err := h.unlinkGuarded(name, scope)
+		if err != nil {
+			return false, err
+		}
+		linked = linked || entryLinked
+		if entry != nil {
+			retired = append(retired, *entry)
+		}
+	}
+	// An empty scan can follow a removal whose directory sync failed, so the
+	// directory is synced before an absent entry counts as retired.
+	if err := h.syncDir(); err != nil {
+		return false, &RuntimeCleanupError{Stage: CleanupSync, Reason: CleanupFilesystem}
+	}
+	if !grokHoldRetiredHandles {
+		// A name whose removal is deferred until the last handle closes would
+		// otherwise be listed and mistaken for a surviving link.
+		for _, entry := range retired {
+			_ = entry.file.Close()
+		}
+	}
+	return h.scanForRetired(retired, linked)
+}
+
+// unlinkGuarded opens name relative to the held directory, checks the opened
+// file, unlinks the name and then asks the retained handle whether any entry
+// of the inode survived.
+func (h GrokHome) unlinkGuarded(name string, scope grokRetireScope) (entry *retiredEntry, linked bool, err error) {
+	info, err := h.root.Lstat(name)
+	if os.IsNotExist(err) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, &RuntimeCleanupError{Stage: CleanupAuthFile, Reason: CleanupFilesystem}
+	}
+	if !info.Mode().IsRegular() {
+		if name == GrokAuthFileName && scope == grokRetireBeforeWrite {
+			return nil, false, nil
+		}
+		return nil, false, &RuntimeCleanupError{Stage: CleanupAuthFile, Reason: CleanupNotRegular}
+	}
+	file, openErr := h.root.OpenFile(name, os.O_RDONLY|grokOpenReadFlags, 0)
+	if os.IsNotExist(openErr) {
+		return nil, false, nil
+	}
+	var opened os.FileInfo
+	if openErr == nil {
+		opened, err = file.Stat()
+		if err != nil || !opened.Mode().IsRegular() {
+			_ = file.Close()
+			return nil, false, &RuntimeCleanupError{Stage: CleanupAuthFile, Reason: CleanupNotRegular}
+		}
+		// The count is read from the handle that will be examined again after
+		// the unlink, never from the earlier name lookup.
+		linked = !grokSingleLinkFile(file, opened)
+	} else {
+		// The file cannot be examined, so its link count is unknown: it is still
+		// unlinked, but the retirement is never confirmed.
+		linked = true
+	}
+	if grokBeforeUnlink != nil {
+		grokBeforeUnlink(name)
+	}
+	if err := h.root.Remove(name); err != nil && !os.IsNotExist(err) {
+		if file != nil {
+			_ = file.Close()
+		}
+		return nil, false, &RuntimeCleanupError{Stage: CleanupAuthFile, Reason: CleanupFilesystem}
+	}
+	if openErr != nil {
+		return nil, linked, nil
+	}
+	if grokUnlinkedFileLinked(file) {
+		linked = true
+	}
+	return &retiredEntry{file: file, info: opened}, linked, nil
+}
+
+// scanForRetired re-reads the home after the unlinks. It reports a plaintext
+// copy as reachable when an entry of the home still has the identity of an
+// unlinked credential file (a link created after the entry was inspected, under
+// any name). An unreadable entry is a validation error, never a clean result.
+func (h GrokHome) scanForRetired(retired []retiredEntry, linked bool) (bool, error) {
+	dir, err := h.root.Open(".")
+	if err != nil {
+		return false, &RuntimeCleanupError{Stage: CleanupValidation, Reason: CleanupFilesystem}
+	}
+	defer dir.Close()
+	entries, err := dir.ReadDir(-1)
+	if err != nil {
+		return false, &RuntimeCleanupError{Stage: CleanupValidation, Reason: CleanupFilesystem}
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		info, err := h.root.Lstat(name)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return false, &RuntimeCleanupError{Stage: CleanupValidation, Reason: CleanupFilesystem}
+		}
+		if !info.Mode().IsRegular() {
+			continue
+		}
+		for _, gone := range retired {
+			if grokSameEntry(h.root, name, info, gone.info) {
+				linked = true
+			}
+		}
+	}
+	return linked, nil
 }
 
 // temporaries lists the target-attributed temporary files an interrupted write
@@ -312,73 +480,6 @@ func (h GrokHome) temporaries() ([]string, error) {
 		found = append(found, entry.Name())
 	}
 	return found, nil
-}
-
-func (h GrokHome) retireTemporaries() error {
-	found, err := h.temporaries()
-	if err != nil {
-		return err
-	}
-	for _, name := range found {
-		if err := h.root.Remove(name); err != nil && !os.IsNotExist(err) {
-			return &RuntimeCleanupError{Stage: CleanupAuthFile, Reason: CleanupFilesystem}
-		}
-	}
-	// An empty scan can follow a removal whose directory sync failed, so the
-	// directory is synced before an absent temporary counts as retired.
-	if err := h.syncDir(); err != nil {
-		return &RuntimeCleanupError{Stage: CleanupSync, Reason: CleanupFilesystem}
-	}
-	return nil
-}
-
-func (h GrokHome) retireEntries() error {
-	if err := h.retireTemporaries(); err != nil {
-		return err
-	}
-	info, err := h.root.Lstat(GrokAuthFileName)
-	if os.IsNotExist(err) {
-		return nil
-	}
-	if err != nil {
-		return &RuntimeCleanupError{Stage: CleanupAuthFile, Reason: CleanupFilesystem}
-	}
-	if !info.Mode().IsRegular() {
-		return &RuntimeCleanupError{Stage: CleanupAuthFile, Reason: CleanupNotRegular}
-	}
-	if err := h.root.Remove(GrokAuthFileName); err != nil && !os.IsNotExist(err) {
-		return &RuntimeCleanupError{Stage: CleanupAuthFile, Reason: CleanupFilesystem}
-	}
-	if err := h.syncDir(); err != nil {
-		return &RuntimeCleanupError{Stage: CleanupSync, Reason: CleanupFilesystem}
-	}
-	return nil
-}
-
-// credentialLinked reports whether the credential file or one of its
-// attributed temporaries has more than one directory entry.
-func (h GrokHome) credentialLinked() (bool, error) {
-	temporaries, err := h.temporaries()
-	if err != nil {
-		return false, err
-	}
-	linked := false
-	for _, name := range temporaries {
-		if info, err := h.root.Lstat(name); err == nil && !grokSingleLinkEntry(h.root, name, info) {
-			linked = true
-		}
-	}
-	info, err := h.root.Lstat(GrokAuthFileName)
-	if os.IsNotExist(err) {
-		return linked, nil
-	}
-	if err != nil {
-		return linked, &RuntimeCleanupError{Stage: CleanupAuthFile, Reason: CleanupFilesystem}
-	}
-	if info.Mode().IsRegular() && !grokSingleLinkEntry(h.root, GrokAuthFileName, info) {
-		linked = true
-	}
-	return linked, nil
 }
 
 // SealFinish reads the native credential file and seals it as the Finish bundle
