@@ -82,3 +82,10 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+.tailscale-list > li > .tailscale-check-cause {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+.tailscale-check-cause .problem {
+  overflow-wrap: anywhere;
+}

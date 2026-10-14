@@ -3,6 +3,7 @@ import { useEffect, useId, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import {
   DeviceType,
+  FailureCause,
   FailureCode,
   SystemCapability,
   SystemQuery,
@@ -98,6 +99,70 @@ function LoginRequiredProblem({ error }: { error: unknown }) {
         <>
           <strong>{copy("tailscale.loginRequired.heading")}</strong>
           <p>{copy("tailscale.loginRequired.body")}</p>
+        </>
+      }
+      details={
+        <>
+          <strong>{failure.message}</strong>
+          <p>{failure.guidance}</p>
+          <code>{failure.code}</code>
+          {failure.correlationId ? <code>{failure.correlationId}</code> : null}
+        </>
+      }
+    />
+  );
+}
+// Proven Check-only causes and their localized guidance. Any other failure,
+// including an unknown or mismatched cause, keeps the generic Problem.
+const checkCauseCopy = {
+  [FailureCause.TailscaleConnectionRefused]: {
+    heading: "tailscale.cause.connectionRefused.heading",
+    body: "tailscale.cause.connectionRefused.body",
+  },
+  [FailureCause.TailscaleTimeout]: {
+    heading: "tailscale.cause.timeout.heading",
+    body: "tailscale.cause.timeout.body",
+  },
+  [FailureCause.TailscaleCertificateInvalid]: {
+    heading: "tailscale.cause.certificateInvalid.heading",
+    body: "tailscale.cause.certificateInvalid.body",
+  },
+  [FailureCause.TailscaleUnexpectedHttp]: {
+    heading: "tailscale.cause.unexpectedHttp.heading",
+    body: "tailscale.cause.unexpectedHttp.body",
+  },
+  [FailureCause.TailscaleInvalidIdentity]: {
+    heading: "tailscale.cause.invalidIdentity.heading",
+    body: "tailscale.cause.invalidIdentity.body",
+  },
+} as const;
+type CheckCause = keyof typeof checkCauseCopy;
+function checkCause(error: unknown): CheckCause | undefined {
+  if (!error) return undefined;
+  const cause = clientFailure(error).cause;
+  return cause !== undefined && Object.hasOwn(checkCauseCopy, cause)
+    ? (cause as CheckCause)
+    : undefined;
+}
+// Presentation only: the original Check query keeps its identity and error. The
+// summary is outside Technical details, which keep the original safe failure.
+function CheckCauseProblem({
+  error,
+  cause,
+  device,
+}: {
+  error: unknown;
+  cause: CheckCause;
+  device: string;
+}) {
+  useLocale();
+  const failure = clientFailure(error);
+  return (
+    <InlineRemediation
+      summary={
+        <>
+          <strong>{copy(checkCauseCopy[cause].heading, { device })}</strong>
+          <p>{copy(checkCauseCopy[cause].body, { device })}</p>
         </>
       }
       details={
@@ -596,6 +661,7 @@ function PeerRow({
     ? decode<Identity>(check.data?.documentJson)
     : undefined;
   useEffect(() => setChecked(false), [peer.host, peer.online]);
+  const cause = checkCause(check.error);
   return (
     <li>
       <div>
@@ -611,7 +677,9 @@ function PeerRow({
             : identity?.approval
               ? copy("tailscale.accepting")
               : checked
-                ? copy("tailscale.unavailable")
+                ? cause === FailureCause.TailscaleConnectionRefused
+                  ? copy("tailscale.couldNotConnect")
+                  : copy("tailscale.unavailable")
                 : copy("tailscale.notChecked")}
         </p>
       </div>
@@ -645,7 +713,17 @@ function PeerRow({
           <SSHSetup active initialHost={peer.host} />
         ) : null}
       </div>
-      <Problem error={check.error} />
+      {cause ? (
+        <div className="tailscale-check-cause">
+          <CheckCauseProblem
+            error={check.error}
+            cause={cause}
+            device={peer.name}
+          />
+        </div>
+      ) : (
+        <Problem error={check.error} />
+      )}
     </li>
   );
 }

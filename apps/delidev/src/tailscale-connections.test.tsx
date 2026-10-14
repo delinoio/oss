@@ -379,3 +379,250 @@ it("ignores the login text when it comes from a read error or a different code",
   );
   expect(outsideDisclosure(LOGIN_MESSAGE)).toHaveLength(0);
 });
+
+// Check-only causes (issue 3687): a proven cause shows localized guidance
+// outside Technical details; everything else keeps the generic Problem.
+const DEVICE = "Fixture peer";
+const CORRELATION = newRequestId();
+function checkFailure(
+  message: string,
+  code: string,
+  cause: string,
+  connectCode = Code.Unavailable,
+) {
+  return new ConnectError(message, connectCode, undefined, [
+    {
+      desc: ErrorDetailSchema,
+      value: {
+        code,
+        cause,
+        guidance: "Original safe guidance.",
+        correlationId: CORRELATION,
+      },
+    },
+  ]);
+}
+function checkFixture(options: {
+  failure?: () => ConnectError;
+  peerOverrides?: Record<string, unknown>;
+}) {
+  let attempts = 0;
+  const check = vi.fn(() => {
+    attempts += 1;
+    if (options.failure) throw options.failure();
+    return {
+      documentJson: encode({
+        version: 1,
+        server_id: "server",
+        origin: "https://peer.example:8443",
+        approval: true,
+      }),
+    };
+  });
+  const transport = createRouterTransport((router) => {
+    router.service(SystemService, {
+      getStatus: () => ({
+        capabilities: [SystemCapability.TAILSCALE_CONNECTIONS_V1],
+      }),
+    });
+    router.service(TailscaleService, {
+      getTailscaleAccess: () => ({
+        documentJson: encode({ enabled: false, state: "off", server_id: "s" }),
+      }),
+      listTailscaleApprovals: () => ({ documentJson: encode([]) }),
+      discoverTailscale: () => ({
+        documentJson: encode({
+          state: "running",
+          peers: [
+            {
+              id: "peer-1",
+              name: DEVICE,
+              host: "peer.example",
+              ownership: "own",
+              online: true,
+              shared_to: false,
+              ...options.peerOverrides,
+            },
+          ],
+          observed_at: "2026-01-01T00:00:00Z",
+        }),
+      }),
+      checkTailscale: check,
+    });
+  });
+  const target = document.createElement("div");
+  document.body.append(target);
+  render(
+    <TransportProvider transport={transport}>
+      <QueryClientProvider
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      >
+        <MutationIntents>
+          <TailscaleConnections target={target} onPaired={vi.fn()} />
+        </MutationIntents>
+      </QueryClientProvider>
+    </TransportProvider>,
+  );
+  return { check, attempts: () => attempts };
+}
+async function runCheck() {
+  fireEvent.click(await screen.findByRole("button", { name: "Check" }));
+}
+const rowAlert = () =>
+  document.querySelector<HTMLElement>(".tailscale-list [role='alert']");
+
+it("shows the proven connection refusal outside Technical details without claiming the process is stopped", async () => {
+  const f = checkFixture({
+    failure: () =>
+      checkFailure(
+        "Tailscale is unavailable or its observation is unsupported.",
+        "unavailable",
+        "connection_refused",
+      ),
+  });
+  await runCheck();
+  const heading = await screen.findByText(
+    `Could not connect to DeliDev on ${DEVICE}.`,
+  );
+  const alert = heading.closest('[role="alert"]') as HTMLElement;
+  expect(heading.closest("details")).toBeNull();
+  expect(
+    within(alert).getByText(
+      `On ${DEVICE}, start DeliDev and enable Tailscale access, then select Check again.`,
+    ).closest("details"),
+  ).toBeNull();
+  expect(screen.getByText("DeliDev: Could not connect")).toBeTruthy();
+  expect(alert.textContent).not.toMatch(/stopped|not running/i);
+  // The original safe failure remains inside the closed disclosure.
+  const details = alert.querySelector("details") as HTMLDetailsElement;
+  expect(details.open).toBe(false);
+  expect(details.textContent).toContain(
+    "Tailscale is unavailable or its observation is unsupported.",
+  );
+  expect(details.textContent).toContain("Original safe guidance.");
+  expect(details.textContent).toContain("unavailable");
+  expect(details.textContent).toContain(CORRELATION);
+  expect(
+    within(alert).queryByText("DeliDev could not complete this request."),
+  ).toBeNull();
+  // No automatic retry happened.
+  expect(f.attempts()).toBe(1);
+});
+
+it("re-translates the visible cause guidance and keeps the original technical details", async () => {
+  checkFixture({
+    failure: () =>
+      checkFailure("Original safe message.", "unavailable", "connection_refused"),
+  });
+  await runCheck();
+  await screen.findByText(`Could not connect to DeliDev on ${DEVICE}.`);
+  await act(async () => {
+    await i18n.changeLanguage("ko");
+  });
+  expect(
+    screen.getByText(`${DEVICE}의 DeliDev에 연결할 수 없습니다.`),
+  ).toBeTruthy();
+  expect(
+    screen.getByText(
+      `${DEVICE}에서 DeliDev를 시작하고 Tailscale 접근을 켠 다음 확인을 다시 선택하세요.`,
+    ),
+  ).toBeTruthy();
+  expect(screen.getByText("DeliDev: 연결할 수 없음")).toBeTruthy();
+  expect(rowAlert()!.querySelector("details")!.textContent).toContain(
+    "Original safe message.",
+  );
+});
+
+const CAUSES = [
+  {
+    cause: "timeout",
+    code: "unavailable",
+    heading: `DeliDev on ${DEVICE} did not respond in time.`,
+    korean: `${DEVICE}의 DeliDev가 제시간에 응답하지 않았습니다.`,
+  },
+  {
+    cause: "certificate_invalid",
+    code: "unavailable",
+    heading: `The secure connection to ${DEVICE} could not be verified.`,
+    korean: `${DEVICE}와의 보안 연결을 확인할 수 없습니다.`,
+  },
+  {
+    cause: "unexpected_http",
+    code: "unavailable",
+    heading: `${DEVICE} replied, but not as DeliDev.`,
+    korean: `${DEVICE}가 응답했지만 DeliDev가 아닙니다.`,
+  },
+  {
+    cause: "invalid_identity",
+    code: "unsupported",
+    heading: `DeliDev on ${DEVICE} is not compatible.`,
+    korean: `${DEVICE}의 DeliDev와 호환되지 않습니다.`,
+  },
+];
+for (const entry of CAUSES) {
+  it(`shows only the matching guidance for ${entry.cause}`, async () => {
+    checkFixture({
+      failure: () =>
+        checkFailure(
+          "Original safe message.",
+          entry.code,
+          entry.cause,
+          entry.code === "unsupported" ? Code.Unimplemented : Code.Unavailable,
+        ),
+    });
+    await runCheck();
+    const heading = await screen.findByText(entry.heading);
+    expect(heading.closest("details")).toBeNull();
+    // Other causes' guidance and the refused row text never appear.
+    expect(
+      screen.queryByText(`Could not connect to DeliDev on ${DEVICE}.`),
+    ).toBeNull();
+    expect(screen.queryByText("DeliDev: Could not connect")).toBeNull();
+    expect(screen.getByText("DeliDev: Unavailable or blocked")).toBeTruthy();
+    expect(rowAlert()!.querySelectorAll("strong")).toHaveLength(
+      // Cause heading plus the disclosure's original message.
+      2,
+    );
+    await act(async () => {
+      await i18n.changeLanguage("ko");
+    });
+    expect(screen.getByText(entry.korean)).toBeTruthy();
+  });
+}
+
+it("keeps the generic Problem for unproven, unknown or mismatched causes", async () => {
+  for (const failure of [
+    () => checkFailure("Original safe message.", "unavailable", ""),
+    () => checkFailure("Original safe message.", "unavailable", "dns_failure"),
+    () =>
+      checkFailure(
+        "Original safe message.",
+        "unsupported",
+        "connection_refused",
+        Code.Unimplemented,
+      ),
+    () =>
+      checkFailure("Original safe message.", "unavailable", "invalid_identity"),
+  ]) {
+    checkFixture({ failure });
+    await runCheck();
+    await waitFor(() => expect(rowAlert()).not.toBeNull());
+    expect(
+      within(rowAlert()!).getByText("DeliDev could not complete this request."),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Could not connect to DeliDev on/)).toBeNull();
+    expect(screen.getByText("DeliDev: Unavailable or blocked")).toBeTruthy();
+    cleanup();
+    document.body.replaceChildren();
+  }
+});
+
+it("keeps the accepting state and actions after a successful check", async () => {
+  checkFixture({});
+  await runCheck();
+  expect(await screen.findByText("DeliDev: Accepting requests")).toBeTruthy();
+  expect(rowAlert()).toBeNull();
+  expect(screen.getByRole("button", { name: "Connect" })).toBeTruthy();
+});
