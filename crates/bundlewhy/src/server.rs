@@ -6,10 +6,12 @@
 
 use std::{
     convert::Infallible,
+    future::Future,
+    io,
     net::SocketAddr,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use bytes::Bytes;
@@ -35,6 +37,7 @@ use crate::{
 
 const SERVICE_PREFIX: &str = "/bundlewhy.v1.AnalysisService/";
 const MAX_REQUEST_BYTES: usize = 64 * 1024;
+const ACCEPT_RETRY_DELAY: Duration = Duration::from_millis(250);
 
 pub struct Served {
     pub progress: RunProgress,
@@ -653,6 +656,33 @@ pub struct RunningServer {
     pub url: String,
 }
 
+async fn accept_with_backoff<T, Accept, AcceptFuture, Delay, DelayFuture>(
+    addr: SocketAddr,
+    mut accept: Accept,
+    mut delay: Delay,
+) -> T
+where
+    Accept: FnMut() -> AcceptFuture,
+    AcceptFuture: Future<Output = io::Result<T>>,
+    Delay: FnMut() -> DelayFuture,
+    DelayFuture: Future<Output = ()>,
+{
+    loop {
+        match accept().await {
+            Ok(connection) => return connection,
+            Err(error) => {
+                tracing::warn!(
+                    %addr,
+                    %error,
+                    retry_delay_ms = ACCEPT_RETRY_DELAY.as_millis() as u64,
+                    "listener accept failed"
+                );
+                delay().await;
+            }
+        }
+    }
+}
+
 /// Binds 127.0.0.1 on an available port and serves until the process exits.
 pub async fn start(state: Arc<ServerState>) -> Result<RunningServer, BwError> {
     let listener = TcpListener::bind(("127.0.0.1", 0)).await.map_err(|error| {
@@ -676,9 +706,12 @@ pub async fn start(state: Arc<ServerState>) -> Result<RunningServer, BwError> {
     let url = format!("{origin}/#token={}", state.token);
     tokio::spawn(async move {
         loop {
-            let Ok((stream, peer)) = listener.accept().await else {
-                continue;
-            };
+            let (stream, peer) = accept_with_backoff(
+                addr,
+                || listener.accept(),
+                || tokio::time::sleep(ACCEPT_RETRY_DELAY),
+            )
+            .await;
             if !peer.ip().is_loopback() {
                 continue;
             }
@@ -700,7 +733,151 @@ pub async fn start(state: Arc<ServerState>) -> Result<RunningServer, BwError> {
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        cell::Cell,
+        future::{poll_fn, ready},
+        io::Write,
+        pin::pin,
+        task::{Context, Poll, Waker},
+    };
+
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
     use super::*;
+
+    #[derive(Clone)]
+    struct LogWriter(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for LogWriter {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn capture_logs(logs: Arc<Mutex<Vec<u8>>>) -> tracing::subscriber::DefaultGuard {
+        let subscriber = tracing_subscriber::fmt()
+            .with_ansi(false)
+            .with_max_level(tracing::Level::DEBUG)
+            .with_writer(move || LogWriter(logs.clone()))
+            .finish();
+        tracing::subscriber::set_default(subscriber)
+    }
+
+    #[test]
+    fn accept_error_retries_are_delayed_and_logged() {
+        let logs = Arc::new(Mutex::new(Vec::new()));
+        let _subscriber = capture_logs(logs.clone());
+        let addr: SocketAddr = "127.0.0.1:4000".parse().unwrap();
+        let attempts = Cell::new(0);
+        let delays = Cell::new(0);
+        let allow_retry = Cell::new(false);
+        let future = accept_with_backoff(
+            addr,
+            || {
+                attempts.set(attempts.get() + 1);
+                ready(if attempts.get() <= 3 {
+                    Err(io::Error::other("injected accept failure"))
+                } else {
+                    Ok(7)
+                })
+            },
+            || {
+                delays.set(delays.get() + 1);
+                poll_fn(|_| {
+                    if allow_retry.get() {
+                        Poll::Ready(())
+                    } else {
+                        Poll::Pending
+                    }
+                })
+            },
+        );
+        let mut future = pin!(future);
+        let mut context = Context::from_waker(Waker::noop());
+        for _ in 0..10 {
+            assert!(matches!(future.as_mut().poll(&mut context), Poll::Pending));
+        }
+        assert_eq!(attempts.get(), 1);
+        assert_eq!(delays.get(), 1);
+        allow_retry.set(true);
+        assert!(matches!(future.as_mut().poll(&mut context), Poll::Ready(7)));
+        assert_eq!(attempts.get(), 4);
+        assert_eq!(delays.get(), 3);
+        let output = String::from_utf8(logs.lock().unwrap().clone()).unwrap();
+        assert_eq!(output.matches("listener accept failed").count(), 3);
+        assert!(output.contains("injected accept failure"));
+        assert!(output.contains("127.0.0.1:4000"));
+        assert!(output.contains("retry_delay_ms=250"));
+    }
+
+    #[tokio::test]
+    async fn accept_error_recovers_after_transient_failure() {
+        let addr: SocketAddr = "127.0.0.1:4000".parse().unwrap();
+        let attempts = Cell::new(0);
+        let delays = Cell::new(0);
+        let accepted = accept_with_backoff(
+            addr,
+            || {
+                attempts.set(attempts.get() + 1);
+                ready(if attempts.get() == 1 {
+                    Err(io::Error::other("transient accept failure"))
+                } else {
+                    Ok(7)
+                })
+            },
+            || {
+                delays.set(delays.get() + 1);
+                ready(())
+            },
+        )
+        .await;
+        assert_eq!(accepted, 7);
+        assert_eq!(attempts.get(), 2);
+        assert_eq!(delays.get(), 1);
+    }
+
+    #[tokio::test]
+    async fn accept_error_preserves_loopback_rpc_without_logging_token() {
+        let logs = Arc::new(Mutex::new(Vec::new()));
+        let _subscriber = capture_logs(logs.clone());
+        let state = ServerState::new(
+            Served {
+                progress: RunProgress::default(),
+                analysis: None,
+                sources: Vec::new(),
+                run_dir: PathBuf::new(),
+                out_dir: PathBuf::new(),
+                started: Instant::now(),
+            },
+            Arc::new(CancelSignal::default()),
+        );
+        let token = state.token.clone();
+        let running = start(state).await.unwrap();
+        let origin = format!("http://{}", running.addr);
+        let request = format!(
+            "POST /bundlewhy.v1.AnalysisService/GetRunProgress HTTP/1.1\r\nHost: {}\r\nOrigin: \
+             {origin}\r\nAuthorization: Bearer {token}\r\nContent-Type: \
+             application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{{}}",
+            running.addr
+        );
+        let mut stream = tokio::net::TcpStream::connect(running.addr).await.unwrap();
+        stream.write_all(request.as_bytes()).await.unwrap();
+        let mut response = Vec::new();
+        tokio::time::timeout(Duration::from_secs(2), stream.read_to_end(&mut response))
+            .await
+            .unwrap()
+            .unwrap();
+        let response = String::from_utf8(response).unwrap();
+        assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+        assert!(response.contains("\"progress\""));
+        let output = String::from_utf8(logs.lock().unwrap().clone()).unwrap();
+        assert!(!output.contains(&token));
+    }
 
     #[test]
     fn authorization_requires_host_origin_and_token() {

@@ -89,7 +89,7 @@ Project configuration, plugins and adapters execute with the user's permissions;
 
 ## Logging
 
-`tracing` writes human-readable, ANSI-colored stderr logs by default (`--no-color` or `NO_COLOR` disables color, `--verbose` adds debug detail). Each run writes `bundlewhy.log` JSON lines with timestamp, run ID, stage, duration, engine versions and error codes. Logs never include source content, environment variable values, credentials or access tokens.
+`tracing` writes human-readable, ANSI-colored stderr logs by default (`--no-color` or `NO_COLOR` disables color, `--verbose` adds debug detail). The loopback listener logs accept failures with the bound address and error, then waits 250 ms before retrying; a later successful accept resumes normal connection handling. Each run writes `bundlewhy.log` JSON lines with timestamp, run ID, stage, duration, engine versions and error codes. Logs never include source content, environment variable values, credentials or access tokens.
 
 ## Build and Test
 
