@@ -94,7 +94,10 @@ func listForkConfigFile(ctx context.Context, git Git, dir, path string, allowanc
 			return nil, 0, domain.Fail(domain.ResourceExhausted, "The complete workspace snapshot exceeds its bound.", "Reduce workspace data before retrying; sources remain intact.")
 		}
 	}
-	return splitForkConfigRecords(out, recordsCount), uint64(len(out)), nil
+	// splitForkConfigRecords keeps strings backed by out. Charge the complete
+	// backing allocation because bytes.Buffer may retain spare capacity beyond
+	// the logical output length while those strings keep the buffer alive.
+	return splitForkConfigRecords(out, recordsCount), uint64(cap(out)), nil
 }
 
 // forkConfigProofBytes estimates the retained parsed representation: the

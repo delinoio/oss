@@ -80,6 +80,29 @@ func TestSplitForkConfigRecordsRetainsCommandBuffer(t *testing.T) {
 	}
 }
 
+func TestListForkConfigFileChargesRetainedBufferCapacity(t *testing.T) {
+	input := forkInventoryFixtureInputWith(t, false, retainedConfigSetup)
+	inventory, err := inspectForkGitInventory(context.Background(), input.git, input.selected, newForkCopyBudget(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, _, ok := inventory.sourceFile("config")
+	if !ok {
+		t.Fatal("source config is missing")
+	}
+	raw, _, err := input.git.runCommandWithOutputLimit(context.Background(), input.selected, maxForkBytes, "config", "--no-includes", "--file", path, "--list", "-z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, size, err := listForkConfigFile(context.Background(), input.git, input.selected, path, maxForkBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if size != uint64(cap(raw)) {
+		t.Fatalf("retained config charge used logical length: got %d, want backing capacity %d", size, cap(raw))
+	}
+}
+
 func TestIndependentForkInventoryAdmitsLargeConfigLayers(t *testing.T) {
 	for _, linked := range []bool{false, true} {
 		name := "common config"
