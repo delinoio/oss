@@ -813,9 +813,9 @@ it.each([
     fireEvent.click(screen.getByRole("button", { name: "Start Grok" }));
     await waitFor(
       () =>
-        expect(
-          actions(f, OAuthNativeAction.GrokSubscriptionOpen),
-        ).toHaveLength(1),
+        expect(actions(f, OAuthNativeAction.GrokSubscriptionOpen)).toHaveLength(
+          1,
+        ),
       { timeout: 3000 },
     );
     fireEvent.click(
@@ -1101,6 +1101,93 @@ it("keeps the Grok row unchanged without capability 39 and enables Add account w
   present.view.unmount();
   present.client.clear();
 });
+
+// Grok Add account availability cells (capability 39 x status read state).
+//
+//   status read              Add account   starts a login
+//   settled, advertised      enabled       yes
+//   settled, not advertised  Coming soon   no
+//   refetching (stale data)  disabled      no
+//   refetch failed           disabled      no
+it.each([
+  ["while a status refetch is in flight", "hang"],
+  ["after a failed status refetch", "fail"],
+] as const)(
+  "disables Grok Add account from stale capability 39 %s",
+  async (_name, mode) => {
+    let next: "ok" | "hang" | "fail" = "ok";
+    const save = vi.fn((request) => ({
+      requestId: request.mutation.requestId,
+      resource: create(ResourceSchema, { id: newRequestId() }),
+    }));
+    const transport = createRouterTransport((router) => {
+      router.service(ConfigurationService, { saveConfiguration: save });
+      router.service(SystemService, {
+        getStatus: () => {
+          if (next === "hang") return new Promise(() => undefined);
+          if (next === "fail")
+            throw typedFailure(Code.Unavailable, FailureCode.Unavailable);
+          return {
+            capabilities: [
+              SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,
+              SystemCapability.GROK_SUBSCRIPTION_LOGIN_V1,
+            ],
+          };
+        },
+      });
+      router.service(ResourceService, {
+        listResources: () => ({ resources: [] }),
+      });
+    });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const native = vi.fn(async () => ({ generation: newRequestId() }));
+    const view = render(
+      <TransportProvider transport={transport}>
+        <QueryClientProvider client={client}>
+          <OAuthNativeProvider control={native}>
+            <SettingsLifetime>
+              {() => (
+                <MutationIntents>
+                  <SubscriptionAccounts
+                    active
+                    editAccount={vi.fn()}
+                    deleteAccount={vi.fn()}
+                  />
+                </MutationIntents>
+              )}
+            </SettingsLifetime>
+          </OAuthNativeProvider>
+        </QueryClientProvider>
+      </TransportProvider>,
+    );
+    const label = (state: string) =>
+      copy("subscription-settings.message_78735b", { v0: "Grok", v1: state });
+    const add = label(copy("subscription-settings.addAccount_ee7ee5"));
+    await waitFor(async () => {
+      const button = await screen.findByRole("button", { name: add });
+      expect((button as HTMLButtonElement).disabled).toBe(false);
+    });
+    next = mode;
+    void client.invalidateQueries();
+    await waitFor(() => {
+      const button = screen.queryByRole("button", { name: add });
+      // The enabled Add account action is gone while the capability is stale.
+      expect(button === null || (button as HTMLButtonElement).disabled).toBe(
+        true,
+      );
+    });
+    const stale = screen.queryByRole("button", { name: add });
+    if (stale) fireEvent.click(stale);
+    // No account was written and no native browser step started.
+    expect(save).not.toHaveBeenCalled();
+    expect(native).not.toHaveBeenCalled();
+    view.unmount();
+    client.clear();
+  },
+  20000,
+);
 
 it.each([[SupportedLanguage.English], [SupportedLanguage.Korean]] as const)(
   "names the real Claude and Grok sign-in state in the connect notice (%s)",
