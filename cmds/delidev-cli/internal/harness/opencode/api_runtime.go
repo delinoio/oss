@@ -62,6 +62,23 @@ func directoryContains(parent, child string) bool {
 }
 
 func prepareAPISession(config apiSessionConfig) ([]string, *nativeAPIProfile, error) {
+	profile, finish, err := prepareAPIProfile(config)
+	if err != nil {
+		return nil, nil, err
+	}
+	env, err := finish()
+	if err != nil {
+		return nil, nil, err
+	}
+	return env, profile, nil
+}
+
+// prepareAPIProfile validates the session and derives its profile without
+// touching the runtime directory. The returned finish function inspects the
+// private runtime, writes the DeliDev-owned configuration files and returns the
+// native environment. A persistent profile resumed in place must verify its
+// retained checkpoint before finish changes any file.
+func prepareAPIProfile(config apiSessionConfig) (*nativeAPIProfile, func() ([]string, error), error) {
 
 	scope, err := config.workspaceRoot()
 	if err != nil {
@@ -121,37 +138,39 @@ func prepareAPISession(config apiSessionConfig) ([]string, *nativeAPIProfile, er
 	if err != nil {
 		return nil, nil, err
 	}
-	env, err := probeEnvironment(config.Probe)
-	if err != nil {
-		return nil, nil, err
-	}
-	for i, entry := range env {
-		if strings.HasPrefix(entry, "OPENCODE_CONFIG_CONTENT=") {
-			env[i] = "OPENCODE_CONFIG_CONTENT=" + string(raw)
-		}
-	}
-	for _, key := range []string{"OPENCODE_DISABLE_DEFAULT_PLUGINS", "OPENCODE_DISABLE_CLAUDE_CODE", "OPENCODE_DISABLE_EXTERNAL_SKILLS", "OPENCODE_DISABLE_LSP_DOWNLOAD", "OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER", "OPENCODE_PURE"} {
-		env = append(env, key+"=true")
-	}
-	// Pinned instance initialization attempts plugin dependency installation
-	// even in pure mode. A fresh offline cache prevents automatic downloads;
-	// remove this workaround only after a verified native no-install profile.
-	env = append(env, "npm_config_offline=true", "npm_config_cache="+filepath.Join(root, "cache", "npm"))
-	if runtime.GOOS == "windows" {
-		programData, err := nativeProgramData()
+	return profile, func() ([]string, error) {
+		env, err := probeEnvironment(config.Probe)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
-		env = append(env, "ProgramData="+programData)
-	}
-	if err := profile.writeInstructions(); err != nil {
-		return nil, nil, err
-	}
-	if err := profile.writeReferences(root, config.Workspace); err != nil {
-		return nil, nil, err
-	}
-	env = config.OrdinaryTools.Apply(env)
-	return env, profile, nil
+		for i, entry := range env {
+			if strings.HasPrefix(entry, "OPENCODE_CONFIG_CONTENT=") {
+				env[i] = "OPENCODE_CONFIG_CONTENT=" + string(raw)
+			}
+		}
+		for _, key := range []string{"OPENCODE_DISABLE_DEFAULT_PLUGINS", "OPENCODE_DISABLE_CLAUDE_CODE", "OPENCODE_DISABLE_EXTERNAL_SKILLS", "OPENCODE_DISABLE_LSP_DOWNLOAD", "OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER", "OPENCODE_PURE"} {
+			env = append(env, key+"=true")
+		}
+		// Pinned instance initialization attempts plugin dependency installation
+		// even in pure mode. A fresh offline cache prevents automatic downloads;
+		// remove this workaround only after a verified native no-install profile.
+		env = append(env, "npm_config_offline=true", "npm_config_cache="+filepath.Join(root, "cache", "npm"))
+		if runtime.GOOS == "windows" {
+			programData, err := nativeProgramData()
+			if err != nil {
+				return nil, err
+			}
+			env = append(env, "ProgramData="+programData)
+		}
+		if err := profile.writeInstructions(); err != nil {
+			return nil, err
+		}
+		if err := profile.writeReferences(root, config.Workspace); err != nil {
+			return nil, err
+		}
+		env = config.OrdinaryTools.Apply(env)
+		return env, nil
+	}, nil
 }
 
 func nativeProgramData() (string, error) {

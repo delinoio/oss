@@ -38,7 +38,7 @@ func openAPISessionRestoring(ctx context.Context, config apiSessionConfig, resto
 	if ctx.Err() != nil {
 		return nil, unavailable()
 	}
-	env, profile, err := prepareAPISession(config)
+	profile, finish, err := prepareAPIProfile(config)
 	if err != nil {
 		return nil, err
 	}
@@ -49,9 +49,24 @@ func openAPISessionRestoring(ctx context.Context, config apiSessionConfig, resto
 	if err := inspectManagedConfig(managed); err != nil {
 		return nil, err
 	}
-	if restore != nil {
-		if err := restore.stage(ctx, config, profile); err != nil {
+	var env []string
+	if restore != nil && restore.inPlace(config) {
+		// A persistent profile keeps its retained native state. The retained
+		// checkpoint is verified and consumed before DeliDev-owned files change.
+		if err := restore.stageInPlace(ctx, config, profile); err != nil {
 			return nil, err
+		}
+		if env, err = finish(); err != nil {
+			return nil, err
+		}
+	} else {
+		if env, err = finish(); err != nil {
+			return nil, err
+		}
+		if restore != nil {
+			if err := restore.stage(ctx, config, profile); err != nil {
+				return nil, err
+			}
 		}
 	}
 	// Staging can take time. Recheck every original source even when this
