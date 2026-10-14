@@ -6810,14 +6810,27 @@ accessible text and expanded source remain available. Keep the 36px target, shar
 native keyboard behavior and visible focus. The resting row has no background,
 border, rounded box, shadow, Artifact label, raw kind or routine completion badge.
 
-Expanded content retains the same summary row and plain inert source text beside
-one subtle vertical rule with approximately 20px indentation. Show Initial
-observation, Streamed observations and Final observation only when they contain
-supplied text. Keep summary/content families, original part indices, delta kinds,
-order and exact Unicode/whitespace separate. Never merge, deduplicate, generate
-summaries, split sentences or reconstruct content from deltas. Empty records keep
-the disclosure and show **No reasoning content was supplied.** / **제공된 생각
-과정이 없습니다.** when expanded. No hidden reasoning recovery is implied.
+Expanded content retains the same summary row and shows exactly one plain inert
+text body beneath it, beside one subtle vertical rule with approximately 20px
+indentation, an 8px gap below the row, 13px neutral text, about 1.45 line height
+and wrapping with no horizontal overflow. It shows no Initial observation,
+Streamed observations or Final observation heading, no part-index label and no
+raw delta kind or index. The body comes from the first source family with
+non-whitespace text, in this order: completed content parts, streamed
+`reasoning-content` deltas in sequence order, started content parts, completed
+summary parts, streamed `reasoning-summary` deltas in sequence order, started
+summary parts. Families are never combined, so a completed content snapshot
+replaces the streamed body instead of extending it, and the UI never claims a
+snapshot was reconstructed from deltas. The selected parts are joined for display
+only: whitespace at a part boundary collapses to one space; a boundary without
+whitespace receives one space except before closing punctuation or quotes and
+after opening punctuation or quotes (best effort, so a word split across chunks
+can be separated). Whitespace inside a part, every non-whitespace character and
+the retained record (families, original indices, sequence numbers and exact
+strings) are unchanged. The component never generates summaries, Markdown,
+translations or logs of reasoning text. When no family has text the disclosure
+shows **No reasoning content was supplied.** / **제공된 생각 과정이 없습니다.**
+when expanded. No hidden reasoning recovery is implied.
 
 The original default is collapsed; the existing `reasoning_disclosure` Expanded
 and Collapsed preferences govern initial mount. Explicit user choices and focus

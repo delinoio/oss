@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { useMemo } from "react";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { copy, useLocale } from "./localization";
 import "./codex-reasoning.css";
@@ -164,44 +165,95 @@ export function codexReasoningMessage(
     return undefined;
   return codexReasoning(message.artifact, state);
 }
-function hasText(snapshot: Snapshot | undefined) {
-  return (
-    snapshot &&
-    [...snapshot.summary, ...snapshot.content].some((part) => part.length > 0)
-  );
+// Display-only helpers. They read the retained record and never mutate it, and
+// they never log or transmit reasoning text.
+const hasVisibleText = (parts: readonly string[]) =>
+  parts.some((part) => part.trim().length > 0);
+const deltaParts = (data: CodexReasoningData, kind: DeltaKind) =>
+  data.deltas
+    .filter((item) => item.delta.kind === kind)
+    .sort((left, right) => left.sequence - right.sequence)
+    .map((item) => item.delta.text);
+
+// Selects exactly one source family for the visible body. Families are never
+// mixed, so a completed content snapshot replaces (never extends) the stream.
+export function reasoningBodyParts(data: CodexReasoningData): string[] {
+  const sources = [
+    () => data.completed?.content ?? [],
+    () => deltaParts(data, DeltaKind.Content),
+    () => data.started.content,
+    () => data.completed?.summary ?? [],
+    () => deltaParts(data, DeltaKind.Summary),
+    () => data.started.summary,
+  ];
+  for (const source of sources) {
+    const parts = source();
+    if (hasVisibleText(parts)) return parts;
+  }
+  return [];
 }
-function SnapshotText({ snapshot }: { snapshot: Snapshot }) {
-  return (
-    <>
-      {(["summary", "content"] as const).map((family) =>
-        snapshot[family].map((part, index) =>
-          part.length ? (
-            <div key={`${family}-${index}`}>
-              <small>
-                {copy(
-                  family === "summary"
-                    ? "native-reasoning.summaryPart"
-                    : "native-reasoning.contentPart",
-                  { index },
-                )}
-              </small>
-              <pre>{part}</pre>
-            </div>
-          ) : null,
-        ),
-      )}
-    </>
-  );
+
+const closingPunctuation = new Set(
+  Array.from(".,;:!?)]}%…»”’、。，．：；！？）］｝」』】〉》'"),
+);
+const openingPunctuation = new Set(Array.from("([{«“‘¡¿「『【〈《（［｛"));
+const isSpace = (char: string | undefined) =>
+  char !== undefined && /^\s$/u.test(char);
+
+// Joins ordered parts into one display string. Whitespace at a part boundary
+// collapses to a single space; a boundary without whitespace gets one space
+// unless it would precede closing punctuation or follow opening punctuation or
+// an opening quote. Text inside a part, and every non-whitespace character, is
+// unchanged. Leading and trailing whitespace of the whole body is dropped.
+export function joinReasoningParts(parts: readonly string[]): string {
+  let body = "";
+  let last = "";
+  let doubleQuotes = 0;
+  let boundarySpace = false;
+  for (const part of parts) {
+    const core = part.trim();
+    if (core.length === 0) {
+      boundarySpace = boundarySpace || part.length > 0;
+      continue;
+    }
+    if (body.length > 0) {
+      const first = Array.from(core)[0]!;
+      const spaced = boundarySpace || isSpace(part[0]);
+      let separator = " ";
+      if (!spaced) {
+        const before = Array.from(body.slice(-2));
+        const prevOpening =
+          openingPunctuation.has(last) ||
+          ((last === '"' || last === "'") &&
+            (before.length < 2 ||
+              isSpace(before[0]) ||
+              openingPunctuation.has(before[0]!)));
+        const nextClosing =
+          first === '"'
+            ? doubleQuotes % 2 === 1
+            : closingPunctuation.has(first);
+        if (prevOpening || nextClosing) separator = "";
+      }
+      body += separator;
+    }
+    body += core;
+    for (const char of core) if (char === '"') doubleQuotes += 1;
+    last = Array.from(core).at(-1)!;
+    boundarySpace = isSpace(part.at(-1));
+  }
+  return body;
 }
+
 export function CodexReasoning({ data }: { data: CodexReasoningData }) {
   useLocale();
   const summary =
     data.completed?.summary.find((part) => part.trim().length > 0) ??
     data.started.summary.find((part) => part.trim().length > 0) ??
     copy("native-reasoning.thinking");
-  const initial = hasText(data.started),
-    final = hasText(data.completed),
-    streamed = data.deltas.some((item) => item.delta.text.length > 0);
+  const body = useMemo(
+    () => joinReasoningParts(reasoningBodyParts(data)),
+    [data],
+  );
   return (
     <Disclosure
       className="codex-reasoning"
@@ -212,36 +264,11 @@ export function CodexReasoning({ data }: { data: CodexReasoningData }) {
         <span className="codex-reasoning-summary">{summary}</span>
       </DisclosureSummary>
       <div className="codex-reasoning-body">
-        {initial ? (
-          <section aria-label={copy("native-reasoning.initialObservation")}>
-            <h4>{copy("native-reasoning.initialObservation")}</h4>
-            <SnapshotText snapshot={data.started} />
-          </section>
-        ) : null}
-        {streamed ? (
-          <section aria-label={copy("session.streamedObservations_589dae")}>
-            <h4>{copy("session.streamedObservations_589dae")}</h4>
-            {data.deltas.map((item) =>
-              item.delta.text.length ? (
-                <div key={item.sequence}>
-                  <small>
-                    {item.delta.kind} {item.delta.index}
-                  </small>
-                  <pre>{item.delta.text}</pre>
-                </div>
-              ) : null,
-            )}
-          </section>
-        ) : null}
-        {final && data.completed ? (
-          <section aria-label={copy("native-reasoning.finalObservation")}>
-            <h4>{copy("native-reasoning.finalObservation")}</h4>
-            <SnapshotText snapshot={data.completed} />
-          </section>
-        ) : null}
-        {!initial && !streamed && !final ? (
+        {body.length > 0 ? (
+          <p className="codex-reasoning-text">{body}</p>
+        ) : (
           <p>{copy("native-reasoning.noSuppliedContent")}</p>
-        ) : null}
+        )}
       </div>
     </Disclosure>
   );

@@ -5,10 +5,14 @@ import {
   render,
   screen,
   waitFor,
-  within,
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { CodexReasoning, codexReasoning } from "./codex-reasoning";
+import {
+  CodexReasoning,
+  codexReasoning,
+  joinReasoningParts,
+  reasoningBodyParts,
+} from "./codex-reasoning";
 import { TranscriptItem } from "./session";
 import { transcriptResource } from "./transcript-role-fixtures";
 import { copy, i18n } from "./localization";
@@ -69,13 +73,7 @@ it("selects supplied completed then initial summary parts without changing Unico
     container.querySelector("summary .codex-reasoning-summary")?.textContent,
   ).toBe(full);
   fireEvent.click(container.querySelector("summary")!);
-  expect(
-    within(
-      screen.getByRole("region", {
-        name: copy("native-reasoning.finalObservation"),
-      }),
-    ).getByText(full, { normalizer: (text) => text }).textContent,
-  ).toBe(full);
+  expect(bodyText(container)).toBe("Final 한글🙂\nsummary.");
   rerender(
     <TranscriptItem
       resource={row({ ...value, completed: snapshot([" "]) }, "complete", 2n)}
@@ -88,46 +86,194 @@ it("selects supplied completed then initial summary parts without changing Unico
   expect(container.querySelector("summary")?.textContent).toBe("Thinking");
   expect(container.querySelector("details")?.open).toBe(true);
 });
-it("keeps original families, indices and ordered repeated observations separate as inert text", () => {
-  const exact = "  <script>danger()</script>\n$(touch /tmp/never) 한글🙂  ";
-  const value = {
-    started: snapshot(["", exact], ["", "", exact]),
-    completed: snapshot([exact], ["", exact]),
+const delta = (
+  sequence: number,
+  text: string,
+  kind = "reasoning-content",
+  index = 0,
+) => ({ sequence, delta: { kind, index, text } });
+const bodyText = (container: HTMLElement) =>
+  container.querySelector(".codex-reasoning-text")?.textContent;
+const expand = (container: HTMLElement) =>
+  fireEvent.click(container.querySelector("summary")!);
+it("renders one inert body without observation headings or kind and index labels", () => {
+  const { container } = render(
+    <TranscriptItem
+      resource={row(
+        {
+          started: snapshot(),
+          deltas: [
+            delta(3, "The user typed"),
+            delta(4, ' "테스트" which is'),
+            delta(5, "Korean for test."),
+          ],
+        },
+        "streaming",
+      )}
+    />,
+  );
+  expand(container);
+  expect(container.querySelectorAll(".codex-reasoning-text")).toHaveLength(1);
+  expect(bodyText(container)).toBe(
+    'The user typed "테스트" which is Korean for test.',
+  );
+  const body = container.querySelector(".codex-reasoning-body")!;
+  expect(body.querySelector("section, h4, small, pre")).toBeNull();
+  expect(body.children).toHaveLength(1);
+  expect(body.textContent).not.toMatch(
+    /Streamed observations|Initial observation|Final observation|reasoning-content|part/i,
+  );
+});
+it("replaces the streamed body with the completed content snapshot instead of appending", () => {
+  const streamed = {
+    started: snapshot(),
+    deltas: [delta(3, "streamed words")],
+  };
+  const { container, rerender } = render(
+    <TranscriptItem resource={row(streamed, "streaming")} />,
+  );
+  expand(container);
+  const trigger = container.querySelector("summary")!;
+  trigger.focus();
+  expect(bodyText(container)).toBe("streamed words");
+  rerender(
+    <TranscriptItem
+      resource={row(
+        { ...streamed, completed: snapshot(["done"], ["completed", "text"]) },
+        "complete",
+        2n,
+      )}
+    />,
+  );
+  expect(bodyText(container)).toBe("completed text");
+  expect(container.textContent).not.toContain("streamed words");
+  expect(container.querySelector("details")?.open).toBe(true);
+  expect(document.activeElement).toBe(trigger);
+});
+it("falls back through the body sources in the documented order without mixing families", () => {
+  const full = {
+    started: snapshot(["started summary"], ["started content"]),
+    completed: snapshot(["completed summary"], ["completed content"]),
     deltas: [
-      {
-        sequence: 4,
-        delta: { kind: "reasoning-summary-added", index: 7, text: "" },
-      },
-      {
-        sequence: 7,
-        delta: { kind: "reasoning-content", index: 9, text: exact },
-      },
-      {
-        sequence: 8,
-        delta: { kind: "reasoning-summary", index: 7, text: exact },
-      },
+      delta(2, "streamed summary", "reasoning-summary"),
+      delta(3, "streamed content"),
     ],
   };
-  const { container } = render(<TranscriptItem resource={row(value)} />);
-  fireEvent.click(container.querySelector("summary")!);
-  const sections = [
-    ...container.querySelectorAll(".codex-reasoning-body section"),
+  const steps: [unknown, string][] = [
+    [full, "completed content"],
+    [{ ...full, completed: snapshot(["completed summary"], ["", " "]) }, "streamed content"],
+    [
+      {
+        ...full,
+        completed: snapshot(["completed summary"]),
+        deltas: full.deltas.slice(0, 1),
+      },
+      "started content",
+    ],
+    [
+      {
+        started: snapshot(["started summary"]),
+        completed: snapshot(["completed summary"]),
+        deltas: full.deltas.slice(0, 1),
+      },
+      "completed summary",
+    ],
+    [
+      {
+        started: snapshot(["started summary"]),
+        completed: snapshot([""]),
+        deltas: full.deltas.slice(0, 1),
+      },
+      "streamed summary",
+    ],
+    [
+      {
+        started: snapshot(["started summary"]),
+        completed: snapshot(),
+      },
+      "started summary",
+    ],
   ];
-  expect(sections.map((section) => section.getAttribute("aria-label"))).toEqual(
-    ["Initial observation", "Streamed observations", "Final observation"],
+  for (const [value, expected] of steps) {
+    const { container, unmount } = render(
+      <TranscriptItem resource={row(value)} />,
+    );
+    expand(container);
+    expect(bodyText(container)).toBe(expected);
+    unmount();
+  }
+  const { container } = render(<TranscriptItem resource={row(artifact())} />);
+  expand(container);
+  expect(bodyText(container)).toBeUndefined();
+  expect(
+    screen.getByText(copy("native-reasoning.noSuppliedContent")),
+  ).toBeTruthy();
+});
+it("orders streamed content by sequence and ignores other delta kinds", () => {
+  const { container } = render(
+    <TranscriptItem
+      resource={row(
+        {
+          started: snapshot(),
+          deltas: [
+            delta(2, "summary only", "reasoning-summary"),
+            delta(3, "first"),
+            delta(4, "", "reasoning-summary-added", 1),
+            delta(5, "second", "reasoning-content", 1),
+          ],
+        },
+        "streaming",
+      )}
+    />,
   );
-  expect(
-    [...sections[0]!.querySelectorAll("small")].map((node) => node.textContent),
-  ).toEqual(["Summary part 1", "Content part 2"]);
-  expect(
-    [...sections[1]!.querySelectorAll("small")].map((node) => node.textContent),
-  ).toEqual(["reasoning-content 9", "reasoning-summary 7"]);
-  expect(
-    [...sections[2]!.querySelectorAll("small")].map((node) => node.textContent),
-  ).toEqual(["Summary part 0", "Content part 1"]);
-  expect(
-    [...container.querySelectorAll("pre")].map((node) => node.textContent),
-  ).toEqual(Array(6).fill(exact));
+  expand(container);
+  expect(bodyText(container)).toBe("first second");
+});
+it.each([
+  [["Hello", "world"], "Hello world"],
+  [["Hello ", " world"], "Hello world"],
+  [["Hello\n\n", "\tworld"], "Hello world"],
+  [["Hello", " ", "world"], "Hello world"],
+  [["Hello", "world "], "Hello world"],
+  [["  Hello", "", "world.  "], "Hello world."],
+  [["Hello", ", world", "!"], "Hello, world!"],
+  [["Wait", "…", "ok"], "Wait… ok"],
+  [["See (", "this", ")"], "See (this)"],
+  [["He said", '"', "hi", '"', "now"], 'He said "hi" now'],
+  [["He said “", "hi", "” now"], "He said “hi” now"],
+  [["It", "'s", "fine"], "It's fine"],
+  [["테스트", "입니다", "."], "테스트 입니다."],
+  [["단어를", "「", "분리", "」", "합니다"], "단어를 「분리」 합니다"],
+  [["Con", "tinued"], "Con tinued"],
+  [["a  b", "c\n d"], "a  b c\n d"],
+  [["", " ", ""], ""],
+])("formats part boundaries for %j", (parts, expected) => {
+  expect(joinReasoningParts(parts)).toBe(expected);
+});
+it("formats for display only and never mutates the retained record", () => {
+  const value = {
+    started: snapshot(["  a "], ["  <b>x</b> ", "y\n"]),
+    completed: snapshot([], [" c", "d "]),
+    deltas: [delta(2, " e ", "reasoning-content", 4), delta(9, "f")],
+  };
+  const before = JSON.stringify(value);
+  const data = codexReasoning(value, "complete")!;
+  const { container } = render(<CodexReasoning data={data} />);
+  expand(container);
+  expect(bodyText(container)).toBe("c d");
+  expect(JSON.stringify(value)).toBe(before);
+  expect(JSON.stringify(data)).toBe(before);
+  expect(reasoningBodyParts(data)).toEqual([" c", "d "]);
+});
+it("keeps HTML-like and shell-like source as inert text", () => {
+  const exact = "<script>danger()</script> $(touch /tmp/never) 한글🙂";
+  const { container } = render(
+    <TranscriptItem
+      resource={row({ started: snapshot(), completed: snapshot([], [exact]) })}
+    />,
+  );
+  expand(container);
+  expect(bodyText(container)).toBe(exact);
   expect(container.querySelector("script, a, button, img")).toBeNull();
 });
 it("keeps the same disclosure and focused trigger through streaming completion and locale changes", async () => {
