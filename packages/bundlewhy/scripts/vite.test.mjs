@@ -112,7 +112,9 @@ function assertSelectedEntry(collection, root, name) {
   assert.ok(
     collection.modules.some(
       (module) =>
-        module.path === path.join(fs.realpathSync(root), `${name}.js`) &&
+        typeof module.path === "string" &&
+        path.normalize(module.path) ===
+          path.normalize(path.join(fs.realpathSync(root), `${name}.js`)) &&
         module.included,
     ),
     `${name} must come from the selected Vite root`,
@@ -156,8 +158,11 @@ test("Vite diagnostic keeps an absolute root outside the selected project", (t) 
   assert.ok(
     !collection.modules.some(
       (module) =>
-        module.path ===
-        path.join(fs.realpathSync(projectRoot), "project-entry.js"),
+        typeof module.path === "string" &&
+        path.normalize(module.path) ===
+          path.normalize(
+            path.join(fs.realpathSync(projectRoot), "project-entry.js"),
+          ),
     ),
   );
   assert.ok(fs.existsSync(path.join(buildDir, "external-entry.txt")));
