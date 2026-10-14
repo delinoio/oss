@@ -125,7 +125,15 @@ const labels = {
     "1년 전 업데이트",
   ],
 };
-const ages = [30, 120, 3 * 3600, 2 * 86400, 21 * 86400, 60 * 86400, 400 * 86400];
+const ages = [
+  30,
+  120,
+  3 * 3600,
+  2 * 86400,
+  21 * 86400,
+  60 * 86400,
+  400 * 86400,
+];
 
 it.each([SupportedLanguage.English, SupportedLanguage.Korean])(
   "shows relative Updated labels at every age with a frozen clock (%s)",
@@ -175,7 +183,8 @@ it("changes labels through the shared scheduler without any RPC", async () => {
   vi.setSystemTime(now);
   await act(() => i18n.changeLanguage(SupportedLanguage.English));
   const { view, rpc } = rows([seconds(30)]);
-  const label = () => view.container.querySelector(".pr-row-updated")?.textContent;
+  const label = () =>
+    view.container.querySelector(".pr-row-updated")?.textContent;
   expect(label()).toBe("Updated now");
   await act(async () => {
     vi.advanceTimersByTime(31_000);

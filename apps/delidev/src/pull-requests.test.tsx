@@ -1716,13 +1716,13 @@ it("reports accepted progress in the header, guidance while another page exists 
   await choose(value.rows[0]);
   await screen.findByRole("heading", { name: "#17 Original fixture title" });
   const header = view.container.querySelector<HTMLElement>(".pr-list-header")!;
-  expect(
-    within(header).getByText("Open · Loaded through page 1"),
-  ).toBeTruthy();
+  expect(within(header).getByText("Open · Loaded through page 1")).toBeTruthy();
   // The header never carries a page-size value, selector or total claim.
   expect(header.textContent).not.toMatch(/per page|\d+ total/);
   expect(header.querySelector("select")).toBeNull();
-  expect(screen.getByText("Scroll to load more GitHub query results.")).toBeTruthy();
+  expect(
+    screen.getByText("Scroll to load more GitHub query results."),
+  ).toBeTruthy();
   expect(
     screen.queryByText("No further page of GitHub query results is available."),
   ).toBeNull();
@@ -1734,19 +1734,17 @@ it("reports accepted progress in the header, guidance while another page exists 
     screen.getByRole("button", { name: "Load more GitHub query results" }),
   );
   await screen.findByRole("button", { name: "Retry" });
-  expect(
-    within(header).getByText("Open · Loaded through page 1"),
-  ).toBeTruthy();
+  expect(within(header).getByText("Open · Loaded through page 1")).toBeTruthy();
   expect(
     screen.queryByText("No further page of GitHub query results is available."),
   ).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Retry" }));
   await screen.findByRole("region", { name: "Pull request results · Page 2" });
-  expect(
-    within(header).getByText("Open · Loaded through page 2"),
-  ).toBeTruthy();
+  expect(within(header).getByText("Open · Loaded through page 2")).toBeTruthy();
   expect(
     screen.getByText("No further page of GitHub query results is available."),
   ).toBeTruthy();
-  expect(screen.queryByText("Scroll to load more GitHub query results.")).toBeNull();
+  expect(
+    screen.queryByText("Scroll to load more GitHub query results."),
+  ).toBeNull();
 });

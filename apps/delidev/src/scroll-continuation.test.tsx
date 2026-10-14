@@ -334,6 +334,8 @@ it("opt-in progress never claims exhaustion after a failed or empty-token-less r
   await screen.findByText("first");
   fireEvent.click(screen.getByRole("button", { name: /Load more items/ }));
   await screen.findByRole("button", { name: "Retry" });
-  expect(screen.queryByText("No further page of items is available.")).toBeNull();
+  expect(
+    screen.queryByText("No further page of items is available."),
+  ).toBeNull();
   expect(screen.queryByText("Scroll to load more items.")).toBeNull();
 });
