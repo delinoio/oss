@@ -347,3 +347,31 @@ func TestRecoveryRepublishesSharedEvidenceFromRetainedManifest(t *testing.T) {
 		t.Fatal("recovery did not republish version-2 evidence", err, called)
 	}
 }
+
+// An older Worker also persisted a manifest-less proof that was not yet marked
+// removed (an absent root accepted under its permissive policy). A strict
+// obligation must not trust it either: copy removal needs current removal proof.
+func TestLegacyVersionOneManifestlessUnremovedProofIsNotTrusted(t *testing.T) {
+	ctx := context.Background()
+	m := manager(t)
+	if err := m.initialize(); err != nil {
+		t.Fatal(err)
+	}
+	if err := security.PrivateDir(filepath.Join(m.Root, "session-deletions")); err != nil {
+		t.Fatal(err)
+	}
+	strict := absentObligation(domain.NewID(), domain.NewID(), domain.NewID(), strings.Repeat("cd", 32))
+	proofPath := filepath.Join(m.Root, "session-deletions", SessionDeletionObligationName(strict)+"-workspace.json")
+	if err := writeDeletionWorkspaceProof(proofPath, deletionWorkspaceProof{Version: 1, Digest: strict.Digest()}); err != nil {
+		t.Fatal(err)
+	}
+	called := false
+	cb := func() error { called = true; return nil }
+	if err := (&Manager{Root: m.Root, Logger: m.Logger}).DeleteOwnedWorkspace(ctx, strict, false, cb); err == nil || called {
+		t.Fatal("version-1 manifest-less proof authorized copy removal for a strict obligation", err)
+	}
+	// A failed-only obligation re-derives the same absence under its own policy.
+	if err := (&Manager{Root: m.Root, Logger: m.Logger}).DeleteOwnedWorkspace(ctx, strict, true, cb); err != nil || !called {
+		t.Fatal("permissive obligation could not re-derive the proof", err)
+	}
+}

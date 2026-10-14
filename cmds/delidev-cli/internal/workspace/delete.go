@@ -108,12 +108,13 @@ func (m *Manager) DeleteOwnedWorkspaceWithOwner(ctx context.Context, w domain.Se
 		if domain.Decode(b, &loaded) != nil || loaded.Version < 1 || loaded.Version > deletionWorkspaceProofVersion || loaded.Digest != w.Digest() {
 			return domain.SessionDeletionPending()
 		}
-		if loaded.Version == 1 && loaded.Removed && loaded.Manifest == nil {
-			// An older Worker wrote a manifest-less removed proof both after a
-			// genuine cleanup and when it adopted version-1 shared evidence for an
-			// absent failed-only workspace, before its copies were removed. The two
-			// are indistinguishable, so the proof is not trusted and the removal
-			// proof is re-derived from current evidence (fail closed).
+		if loaded.Version == 1 && loaded.Manifest == nil {
+			// An older Worker wrote a manifest-less proof, removed or not, both after
+			// a genuine cleanup and when it adopted version-1 shared evidence or an
+			// absent root for a failed-only workspace, before its copies were
+			// removed. The two are indistinguishable, so the proof is not trusted and
+			// the removal proof is re-derived from current evidence under the caller's
+			// absence policy (fail closed).
 			if m.Logger != nil {
 				m.Logger.Info("workspace_deletion_legacy_removed_proof_ignored", "session_id", w.SessionID, "deletion_id", w.DeletionID, "proof_version", loaded.Version)
 			}
