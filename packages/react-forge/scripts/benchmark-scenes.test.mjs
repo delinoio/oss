@@ -10,6 +10,7 @@ import {
   parseLockedUfbxVersion,
   runBenchmark,
   sampleEventLoopUtilization,
+  sourceStatus,
 } from "./benchmark-scenes.mjs";
 import {
   assertTopology,
@@ -343,6 +344,63 @@ test("a verified sample publishes schema one atomically and an invalid destinati
       1,
     );
   });
+});
+
+test("source dirtiness excludes an existing benchmark destination", async () => {
+  const output = join(
+    fileURLToPath(new URL("../", import.meta.url)),
+    "benchmark-scenes-source-status-test.json",
+  );
+  await rm(output, { force: true });
+  const cleanStatus = await sourceStatus(output);
+  const core = new URL("./benchmark-scenes-core.mjs", import.meta.url).href;
+  const child = join(tmpdir(), `forge-scene-source-status-${process.pid}.mjs`);
+  await writeFile(
+    child,
+    `
+    import { writeFileSync } from 'node:fs';
+    import { createHash } from 'node:crypto';
+    import { expectedTopology, fixtureHash, grid } from ${JSON.stringify(core)};
+    const [, , , format, workload, destination] = process.argv;
+    const expected = expectedTopology(workload);
+    const bytes = Buffer.from('source status fixture');
+    writeFileSync(destination, bytes);
+    process.stdout.write(JSON.stringify({ format, workload,
+      parameters: { cells: expected.cells, geometries: expected.geometries, meshes: expected.meshes },
+      uniqueVertexCount: expected.uniqueVertexCount, uniqueTriangleCount: expected.uniqueTriangleCount,
+      instanceVertexCount: expected.instanceVertexCount, instanceTriangleCount: expected.instanceTriangleCount,
+      registeredGeometryBytes: expected.registeredGeometryBytes,
+      fixtureSha256: fixtureHash([grid(expected.cells)]),
+      outputBytes: bytes.length, outputSha256: createHash('sha256').update(bytes).digest('hex'),
+      revision: 1, prepareMs: 1, exportMs: 2, totalMs: 3, peakRssBytes: 1024,
+      eventLoopP99Ms: 0, eventLoopMaxMs: 0, eventLoopUtilization: 0.5
+    }));
+  `,
+  );
+  try {
+    const options = {
+      cases: [{ format: "glb", workload: "small" }],
+      caseFile: child,
+      verifyArtifact: () => expectedTopology("small"),
+      javascriptProvenance: {},
+      nativeProvenance: {
+        nativeBuildProfile: "test",
+        nativeBindingSha256: "0".repeat(64),
+      },
+    };
+    assert.equal(
+      (await runBenchmark(output, options)).sourceDirty,
+      Boolean(cleanStatus.trim()),
+    );
+    assert.equal(
+      (await runBenchmark(output, options)).sourceDirty,
+      Boolean(cleanStatus.trim()),
+    );
+    assert.equal(await sourceStatus(output), cleanStatus);
+  } finally {
+    await rm(output, { force: true });
+    await rm(child, { force: true });
+  }
 });
 
 test("cancellation reaps the owned child without replacing prior output", async () => {

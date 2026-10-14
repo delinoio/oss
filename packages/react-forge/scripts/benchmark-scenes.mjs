@@ -11,7 +11,15 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { cpus, release } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
 import { monitorEventLoopDelay, performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -292,6 +300,20 @@ async function lockedUfbxVersion() {
   );
 }
 
+export async function sourceStatus(destination) {
+  const relativeDestination = relative(root, destination);
+  const insideRepository =
+    relativeDestination &&
+    !isAbsolute(relativeDestination) &&
+    relativeDestination !== ".." &&
+    !relativeDestination.startsWith(`..${sep}`);
+  const args = ["status", "--porcelain=v1", "--untracked-files=all", "--", "."];
+  if (insideRepository)
+    args.push(`:(exclude)${relativeDestination.split(sep).join("/")}`);
+  const { stdout } = await execFile("git", args, { cwd: root });
+  return stdout;
+}
+
 export async function runBenchmark(output, options = {}) {
   if (!output || typeof output !== "string")
     throw new Error("Expected --output <report.json>.");
@@ -301,11 +323,7 @@ export async function runBenchmark(output, options = {}) {
     ["rev-parse", "HEAD"],
     { cwd: root },
   );
-  const { stdout: sourceStatus } = await execFile(
-    "git",
-    ["status", "--porcelain=v1"],
-    { cwd: root },
-  );
+  const sourceStatusOutput = await sourceStatus(destination);
   const cases = options.cases ?? SCENE_CASES;
   const signal = options.signal;
   const ufbxVersion = await lockedUfbxVersion();
@@ -384,7 +402,7 @@ export async function runBenchmark(output, options = {}) {
         "pnpm --filter @delino/react-forge benchmark:scenes --output <report.json>",
       measuredAt: new Date().toISOString(),
       sourceRevision: sourceRevision.trim(),
-      sourceDirty: Boolean(sourceStatus.trim()),
+      sourceDirty: Boolean(sourceStatusOutput.trim()),
       node: process.version,
       react: React.version,
       packageVersion: manifest.version,
