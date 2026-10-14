@@ -62,6 +62,11 @@ const states: Record<TrayQuotaState, MessageKey> = {
   failed: "tray-status.failed",
   unsupported: "tray-status.unsupported",
 };
+enum InitialReadState {
+  Loading = "loading",
+  Resolved = "resolved",
+  Failed = "failed",
+}
 function count(value: string | null | undefined) {
   return value == null
     ? copy("tray-status.unavailable")
@@ -158,6 +163,7 @@ export function TrayStatus({
 }) {
   useLocale();
   const [snapshot, setSnapshot] = useState<TrayPanelSnapshot>();
+  const [initialRead, setInitialRead] = useState(InitialReadState.Loading);
   const [selected, setSelected] = useState<string>();
   const [problem, setProblem] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -187,10 +193,10 @@ export function TrayStatus({
   const nativeReceived = useRef(performance.now());
   const closeButton = useRef<HTMLButtonElement>(null);
   const reload = useRef<() => void>(() => {});
-  // True until the first successful read of a panel opening has chosen the
-  // representative window and moved focus to Close. Native opening focuses the
-  // window, which re-arms this flag; ordinary updates never do.
-  const opening = useRef(true);
+  // A read may finish after a newer focus event. Only a read started for the
+  // current opening can choose its recent window and move focus to Close.
+  const openingGeneration = useRef(1);
+  const selectedOpeningGeneration = useRef(0);
   useEffect(() => {
     let disposed = false,
       running = false,
@@ -207,26 +213,38 @@ export function TrayStatus({
       running = true;
       do {
         requested = false;
+        const readGeneration = openingGeneration.current;
         try {
           const next = parseTrayPanel(await bridge.read(), instance);
           if (disposed) break;
           // Preference projection is read-only: no device controllers or writes.
           void i18n.changeLanguage(next.language);
           nativeReceived.current = performance.now();
-          const reopened = opening.current;
+          const reopened =
+            readGeneration === openingGeneration.current &&
+            readGeneration > selectedOpeningGeneration.current;
           setSnapshot(next);
+          setInitialRead(InitialReadState.Resolved);
           setSelected((original) =>
             representativeWindow(next, original, reopened),
           );
           setProblem(!subscriptionReady);
           if (reopened) {
+            selectedOpeningGeneration.current = readGeneration;
             queueMicrotask(() => {
-              if (!disposed) closeButton.current?.focus();
+              if (!disposed && openingGeneration.current === readGeneration)
+                closeButton.current?.focus();
             });
-            opening.current = false;
           }
         } catch {
-          if (!disposed) setProblem(true);
+          if (!disposed) {
+            setInitialRead((state) =>
+              state === InitialReadState.Loading
+                ? InitialReadState.Failed
+                : state,
+            );
+            setProblem(true);
+          }
         }
       } while (!disposed && requested);
       running = false;
@@ -248,6 +266,11 @@ export function TrayStatus({
         })
         .catch(() => {
           if (!disposed) {
+            setInitialRead((state) =>
+              state === InitialReadState.Loading
+                ? InitialReadState.Failed
+                : state,
+            );
             setProblem(true);
             void read();
           }
@@ -263,7 +286,7 @@ export function TrayStatus({
     connect();
     const tick = setInterval(() => setNow(Date.now()), 1000);
     const focus = () => {
-      opening.current = true;
+      openingGeneration.current += 1;
       void read();
     };
     window.addEventListener("focus", focus);
@@ -328,11 +351,13 @@ export function TrayStatus({
       <div className="tray-status-scroll">
         <p className="tray-connection" role="status">
           {copy(
-            !overview
-              ? "tray-status.unavailable"
-              : stale
-                ? "tray-status.connectionStale"
-                : "tray-status.connected",
+            initialRead === InitialReadState.Loading
+              ? "tray-status.loading"
+              : !overview
+                ? "tray-status.unavailable"
+                : stale
+                  ? "tray-status.connectionStale"
+                  : "tray-status.connected",
           )}
         </p>
         {overview ? (
@@ -362,7 +387,9 @@ export function TrayStatus({
             {copy("tray-status.manage")}
           </button>
         </div>
-        {!summary?.accounts ? (
+        {initialRead === InitialReadState.Loading ? (
+          <p>{copy("tray-status.loading")}</p>
+        ) : !summary?.accounts ? (
           <p>{copy("tray-status.accountsUnavailable")}</p>
         ) : !summary.accounts.entries.length ? (
           <p>{copy("tray-status.accountsEmpty")}</p>
