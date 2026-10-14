@@ -5,17 +5,17 @@ import { join } from "node:path";
 import { test } from "node:test";
 import {
   readJavaScriptBuildMetadata,
-  writeJavaScriptBuildProvenance,
+  writeJavaScriptBuildProvenanceFiles,
 } from "./js-build-provenance.mjs";
 
 const revision = "a".repeat(40);
 const files = ["index.js", "glb.js", "fbx.js"];
 
-test("JavaScript build provenance binds required dist files to the revision", async () => {
+test("JavaScript build provenance fixtures work in a dirty source tree", async () => {
   const directory = await mkdtemp(join(tmpdir(), "react-forge-js-build-"));
   try {
     for (const file of files) await writeFile(join(directory, file), file);
-    await writeJavaScriptBuildProvenance(directory, revision);
+    await writeJavaScriptBuildProvenanceFiles(directory, revision);
     const metadata = await readJavaScriptBuildMetadata(directory, revision);
     assert.deepEqual(Object.keys(metadata.files), [...files].sort());
     await writeFile(join(directory, "glb.js"), "stale");
@@ -45,7 +45,7 @@ test("JavaScript build provenance binds transitive local modules", async () => {
       join(directory, "scene/session.js"),
       "export const session = true;",
     );
-    await writeJavaScriptBuildProvenance(directory, revision);
+    await writeJavaScriptBuildProvenanceFiles(directory, revision);
     const metadata = await readJavaScriptBuildMetadata(directory, revision);
     assert.deepEqual(Object.keys(metadata.files), [
       "fbx.js",

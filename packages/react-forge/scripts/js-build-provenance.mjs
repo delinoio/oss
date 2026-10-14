@@ -110,11 +110,7 @@ async function fileDigests(output) {
   );
 }
 
-export async function writeJavaScriptBuildProvenance(
-  output,
-  revision = sourceRevision(),
-) {
-  assertCleanSourceTree();
+export async function writeJavaScriptBuildProvenanceFiles(output, revision) {
   assertRevision(revision);
   const files = await fileDigests(output);
   const metadataDirectory = join(output, "release");
@@ -123,6 +119,14 @@ export async function writeJavaScriptBuildProvenance(
     join(metadataDirectory, metadataFile),
     `${JSON.stringify({ schemaVersion, sourceRevision: revision, files }, null, 2)}\n`,
   );
+}
+
+export async function writeJavaScriptBuildProvenance(
+  output,
+  revision = sourceRevision(),
+) {
+  assertCleanSourceTree();
+  await writeJavaScriptBuildProvenanceFiles(output, revision);
 }
 
 export async function readJavaScriptBuildMetadata(output, expectedRevision) {
