@@ -40,6 +40,7 @@
   "grok-subscription.problem.forwardUncertain": "원래 콜백 결과가 불확실합니다. 서버가 로그인을 확인하기를 기다리는 중이며 콜백은 다시 전송되지 않습니다.",
   "grok-subscription.problem.statusUnconfirmed": "원래 로그인 상태를 확인하지 못했습니다. 다음 상태 확인을 기다리는 중입니다.",
   "grok-subscription.problem.cancelUnconfirmed": "원래 취소 요청을 확인하지 못했습니다. 로그인 상태를 계속 확인합니다.",
+  "grok-subscription.problem.cancelFailed": "취소 요청이 받아들여지지 않았습니다. 로그인이 아직 진행 중이므로 로그인 취소를 다시 선택하세요.",
   "grok-subscription.problem.canceling": "취소를 요청했습니다. 서버의 확인을 기다리는 중입니다.",
   "grok-subscription.problem.nameUnconfirmed": "계정 이름을 저장하지 못했습니다. 입력한 내용은 유지됩니다. 현재 계정을 확인한 뒤 다시 저장하세요.",
   "grok-subscription.diagnostic.version": "Grok 버전:",

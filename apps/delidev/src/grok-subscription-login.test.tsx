@@ -92,6 +92,7 @@ function fixture(url = loginURL) {
   });
   let state = State.WAITING,
     userCode = "",
+    canceled = false,
     operation = "",
     suggested = "grok.fixture@example.invalid",
     successOperation = "";
@@ -127,6 +128,7 @@ function fixture(url = loginURL) {
     userCode: state === State.WAITING ? userCode : "",
     suggestedName: suggested,
     generation,
+    canceled,
   }));
   const cancel = vi.fn((_request: { mutation?: { requestId: string } }) => ({
     account: current,
@@ -212,6 +214,10 @@ function fixture(url = loginURL) {
     },
     setUserCode: (value: string) => {
       userCode = value;
+    },
+    // The server reports the login as canceled while it still says waiting.
+    observeCanceled: (value = true) => {
+      canceled = value;
     },
     suggestion: (name: string) => {
       suggested = name;
@@ -740,7 +746,7 @@ it("stops offering Open browser again when a reopen meets the Incompatible refus
   expect(actions(f, OAuthNativeAction.GrokSubscriptionReopen)).toHaveLength(1);
 });
 
-it("sends one cancel mutation, keeps polling and stops offering Cancel and Open browser again once the server acknowledged it", async () => {
+it("sends one cancel mutation, keeps polling and hides every login action once the server acknowledged it", async () => {
   const f = fixture();
   await start(f);
   const progressCalls = f.progress.mock.calls.length;
@@ -749,31 +755,27 @@ it("sends one cancel mutation, keeps polling and stops offering Cancel and Open 
   );
   await screen.findByText(copy("grok-subscription.problem.canceling"));
   expect(f.cancel).toHaveBeenCalledTimes(1);
-  // Copying the link opens nothing, so it stays until the terminal state.
-  const hidden = (copyRemains: boolean) => {
+  // Nothing is offered once the cancellation was acknowledged, the link included.
+  const hidden = () => {
     for (const name of [
       "grok-subscription.cancel",
       "grok-subscription.openBrowser",
+      "grok-subscription.copyLink",
       "grok-subscription.retryOriginal",
     ] as const)
       expect(
         screen.queryByRole("button", { name: copy(name) }),
         name,
       ).toBeNull();
-    const link = screen.queryByRole("button", {
-      name: copy("grok-subscription.copyLink"),
-    });
-    if (copyRemains) expect(link).toBeTruthy();
-    else expect(link).toBeNull();
   };
-  hidden(true);
+  hidden();
   // The server still reports the login as waiting: polling continues but a
   // poll never re-offers Cancel.
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 2300));
   });
   expect(f.progress.mock.calls.length).toBeGreaterThan(progressCalls);
-  hidden(true);
+  hidden();
   expect(f.cancel).toHaveBeenCalledTimes(1);
   // The terminal state replaces the notice and still offers nothing.
   f.setState(State.CANCELED);
@@ -782,7 +784,7 @@ it("sends one cancel mutation, keeps polling and stops offering Cancel and Open 
     {},
     { timeout: 3000 },
   );
-  hidden(false);
+  hidden();
   expect(f.cancel).toHaveBeenCalledTimes(1);
   expect(f.login).toHaveBeenCalledTimes(1);
 });
@@ -1065,9 +1067,14 @@ it("ends a definitively refused request without offering a replacement login", a
   render(f.view());
   fireEvent.click(screen.getByRole("button", { name: "Start Grok" }));
   await screen.findByText(copy("grok-subscription.status.failed"));
+  // A definite refusal retains no request, so it never tells the user to retry
+  // one and names the refusal instead.
   expect(
-    screen.getByText(copy("grok-subscription.problem.requestUnconfirmed")),
+    screen.getByText(copy("grok-subscription.problem.requestFailed")),
   ).toBeTruthy();
+  expect(
+    screen.queryByText(copy("grok-subscription.problem.requestUnconfirmed")),
+  ).toBeNull();
   expect(
     screen.queryByRole("button", {
       name: copy("grok-subscription.retryOriginal"),
@@ -1075,6 +1082,208 @@ it("ends a definitively refused request without offering a replacement login", a
   ).toBeNull();
   expect(f.login).toHaveBeenCalledTimes(1);
   expect(f.progress).not.toHaveBeenCalled();
+});
+
+it("replaces the unconfirmed request notice when an uncertain start replay is refused definitively", async () => {
+  const f = fixture();
+  f.login.mockImplementationOnce(() => {
+    throw typedFailure(Code.Internal, FailureCode.Internal);
+  });
+  render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Start Grok" }));
+  const retry = await screen.findByRole("button", {
+    name: copy("grok-subscription.retryOriginal"),
+  });
+  expect(
+    screen.getByText(copy("grok-subscription.problem.requestUnconfirmed")),
+  ).toBeTruthy();
+  // The replay is refused definitively: the retained request is gone, the
+  // unconfirmed notice with it.
+  f.login.mockImplementationOnce(() => {
+    throw typedFailure(Code.PermissionDenied, FailureCode.PermissionDenied);
+  });
+  fireEvent.click(retry);
+  await screen.findByText(copy("grok-subscription.problem.requestFailed"));
+  expect(
+    screen.queryByText(copy("grok-subscription.problem.requestUnconfirmed")),
+  ).toBeNull();
+  expect(
+    screen.queryByRole("button", {
+      name: copy("grok-subscription.retryOriginal"),
+    }),
+  ).toBeNull();
+  expect(f.save).toHaveBeenCalledTimes(1);
+});
+
+it("treats an observed cancellation like an acknowledged one and retires every login action", async () => {
+  const f = fixture();
+  await start(f);
+  expect(actions(f, OAuthNativeAction.Dispose)).toHaveLength(0);
+  // Another client (or a lost cancel response) canceled the login while the
+  // server still reports waiting.
+  f.observeCanceled();
+  await screen.findByText(
+    copy("grok-subscription.problem.canceling"),
+    {},
+    { timeout: 3000 },
+  );
+  for (const name of [
+    "grok-subscription.cancel",
+    "grok-subscription.openBrowser",
+    "grok-subscription.copyLink",
+    "grok-subscription.retryOriginal",
+  ] as const)
+    expect(screen.queryByRole("button", { name: copy(name) }), name).toBeNull();
+  // The native binding is disposed once and nothing is opened or taken again.
+  await waitFor(() =>
+    expect(actions(f, OAuthNativeAction.Dispose).length).toBeGreaterThan(0),
+  );
+  const disposed = actions(f, OAuthNativeAction.Dispose).length;
+  const taken = actions(f, OAuthNativeAction.Take).length;
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 2300));
+  });
+  expect(actions(f, OAuthNativeAction.Dispose)).toHaveLength(disposed);
+  expect(actions(f, OAuthNativeAction.Take)).toHaveLength(taken);
+  expect(actions(f, OAuthNativeAction.GrokSubscriptionOpen)).toHaveLength(1);
+  expect(f.cancel).not.toHaveBeenCalled();
+  f.setState(State.CANCELED);
+  await screen.findByText(
+    copy("grok-subscription.status.canceled"),
+    {},
+    { timeout: 3000 },
+  );
+}, 20000);
+
+it("keeps the cancellation problem across a repeated uncertain replay and names a definite refusal", async () => {
+  const f = fixture();
+  await start(f);
+  f.cancel.mockImplementationOnce(() => {
+    throw typedFailure(Code.Internal, FailureCode.Internal);
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: copy("grok-subscription.cancel") }),
+  );
+  const retry = () =>
+    screen.findByRole("button", {
+      name: copy("grok-subscription.retryOriginal"),
+    });
+  await retry();
+  expect(
+    screen.getByText(copy("grok-subscription.problem.cancelUnconfirmed")),
+  ).toBeTruthy();
+  // The replay is uncertain again: the retained request keeps its own notice.
+  f.cancel.mockImplementationOnce(() => {
+    throw typedFailure(Code.Internal, FailureCode.Internal);
+  });
+  fireEvent.click(await retry());
+  await waitFor(() => expect(f.cancel).toHaveBeenCalledTimes(2));
+  await retry();
+  expect(
+    screen.getByText(copy("grok-subscription.problem.cancelUnconfirmed")),
+  ).toBeTruthy();
+  expect(
+    screen.queryByText(copy("grok-subscription.problem.requestUnconfirmed")),
+  ).toBeNull();
+  // A status failure never hides the retained request's notice.
+  f.progress.mockImplementationOnce(() => {
+    throw new Error("status unavailable");
+  });
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 1300));
+  });
+  expect(
+    screen.getByText(copy("grok-subscription.problem.cancelUnconfirmed")),
+  ).toBeTruthy();
+  // A definite refusal on the third replay ends the retained request and offers
+  // a fresh Cancel instead of an unconfirmed notice.
+  f.cancel.mockImplementationOnce(() => {
+    throw typedFailure(Code.PermissionDenied, FailureCode.PermissionDenied);
+  });
+  fireEvent.click(await retry());
+  await screen.findByText(copy("grok-subscription.problem.cancelFailed"));
+  expect(
+    screen.queryByRole("button", {
+      name: copy("grok-subscription.retryOriginal"),
+    }),
+  ).toBeNull();
+  expect(
+    (
+      screen.getByRole("button", {
+        name: copy("grok-subscription.cancel"),
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(false);
+}, 20000);
+
+it("keeps the naming problem across a repeated uncertain save replay", async () => {
+  const f = fixture();
+  await start(f);
+  f.success();
+  const input = (await screen.findByLabelText(
+    copy("grok-subscription.accountName"),
+    {},
+    { timeout: 3000 },
+  )) as HTMLInputElement;
+  fireEvent.change(input, { target: { value: "Retained Grok" } });
+  f.save.mockImplementationOnce(() => {
+    throw typedFailure(Code.Internal, FailureCode.Internal);
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: copy("grok-subscription.saveName") }),
+  );
+  const retry = () =>
+    screen.findByRole("button", {
+      name: copy("grok-subscription.retryOriginal"),
+    });
+  await retry();
+  f.save.mockImplementationOnce(() => {
+    throw typedFailure(Code.Internal, FailureCode.Internal);
+  });
+  fireEvent.click(await retry());
+  await waitFor(() => expect(f.save).toHaveBeenCalledTimes(3));
+  await retry();
+  expect(
+    screen.getByText(copy("grok-subscription.problem.nameUnconfirmed")),
+  ).toBeTruthy();
+  expect(
+    screen.queryByText(copy("grok-subscription.problem.requestUnconfirmed")),
+  ).toBeNull();
+  expect(input.disabled).toBe(true);
+});
+
+it("drops a retained cancel request once the login succeeded so the name can be saved", async () => {
+  const f = fixture();
+  await start(f);
+  f.cancel.mockImplementationOnce(() => {
+    throw typedFailure(Code.Internal, FailureCode.Internal);
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: copy("grok-subscription.cancel") }),
+  );
+  await screen.findByRole("button", {
+    name: copy("grok-subscription.retryOriginal"),
+  });
+  f.success();
+  const input = (await screen.findByLabelText(
+    copy("grok-subscription.accountName"),
+    {},
+    { timeout: 3000 },
+  )) as HTMLInputElement;
+  expect(
+    screen.queryByRole("button", {
+      name: copy("grok-subscription.retryOriginal"),
+    }),
+  ).toBeNull();
+  expect(
+    screen.queryByText(copy("grok-subscription.problem.cancelUnconfirmed")),
+  ).toBeNull();
+  expect(input.disabled).toBe(false);
+  fireEvent.click(
+    screen.getByRole("button", { name: copy("grok-subscription.saveName") }),
+  );
+  await screen.findByRole("button", { name: "Start Grok" });
+  expect(f.save).toHaveBeenCalledTimes(2);
 });
 
 it("keeps the Grok row unchanged without capability 39 and enables Add account with it", async () => {
@@ -1891,10 +2100,8 @@ it("recovers the polling notice on a healthy preparing read and keeps other noti
   await waitFor(() => expect(screen.queryByText(notice)).toBeNull(), {
     timeout: 4000,
   });
-  expect(
-    screen.getByText(copy("grok-subscription.status.preparing")),
-  ).toBeTruthy();
-  expect(screen.queryByRole("button", { name: openName() })).toBeNull();
+  // Server stages only advance, so the screen keeps the waiting phase.
+  expect(screen.getByRole("button", { name: openName() })).toBeTruthy();
 
   // A one-shot opener failure is not a polling notice and survives healthy
   // preparing reads.
@@ -2033,8 +2240,14 @@ it("hides the verification page when the server accepted the cancellation", asyn
   );
   await screen.findByText(copy("grok-subscription.problem.canceling"));
   expect(screen.queryByRole("button", { name: openName() })).toBeNull();
-  // The code stays copyable until the terminal state clears it.
-  expect(screen.getByText(DEVICE_CODE)).toBeTruthy();
+  // Nothing is offered once the cancellation was accepted: the pinned code and
+  // its copy action are released with the opener.
+  expect(screen.queryByText(DEVICE_CODE)).toBeNull();
+  expect(
+    screen.queryByRole("button", {
+      name: copy("grok-subscription.device.copyCode"),
+    }),
+  ).toBeNull();
   expect(nativeOpen(f)).toHaveLength(0);
   expect(f.cancel).toHaveBeenCalledTimes(1);
 }, 20000);
@@ -2046,7 +2259,7 @@ it("hides the verification page when the server accepted the cancellation", asyn
 //   waiting, nothing requested        no              no             shown
 //   native open failed                yes             yes            shown
 //   native open failed, then opened   no              no             shown
-//   open failed, cancel accepted      no              no             shown
+//   open failed, cancel accepted      no              no             cleared
 //   open failed, terminal state       no              no             cleared
 const addressName = () => copy("grok-subscription.device.addressAria");
 const copyAddressName = () => copy("grok-subscription.device.copyAddress");
@@ -2135,10 +2348,64 @@ it("hides the verification address once the server accepted the cancellation", a
   await screen.findByText(copy("grok-subscription.problem.canceling"));
   addressHidden();
   expect(screen.queryByRole("button", { name: openName() })).toBeNull();
-  // The code stays copyable until the terminal state clears it.
-  expect(screen.getByText(DEVICE_CODE)).toBeTruthy();
+  // Cancellation releases the code together with the address.
+  expect(screen.queryByText(DEVICE_CODE)).toBeNull();
   expect(screen.queryByText(DEVICE_URL)).toBeNull();
 }, 20000);
+
+it("releases the code, address and opener when a status read reports the cancellation", async () => {
+  const f = deviceFixture();
+  await startDevice(f);
+  await failVerificationOpen(f);
+  expect(nativeOpen(f)).toHaveLength(1);
+  const disposed = actions(f, OAuthNativeAction.Dispose).length;
+  // Another client (or a lost cancel response) canceled the login while the
+  // server still reports waiting: handled exactly like an acknowledged cancel.
+  f.observeCanceled();
+  await screen.findByText(
+    copy("grok-subscription.problem.canceling"),
+    {},
+    { timeout: 3000 },
+  );
+  addressHidden();
+  expect(screen.queryByRole("button", { name: openName() })).toBeNull();
+  expect(screen.queryByText(DEVICE_CODE)).toBeNull();
+  expect(
+    screen.queryByRole("button", {
+      name: copy("grok-subscription.device.copyCode"),
+    }),
+  ).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: copy("grok-subscription.cancel") }),
+  ).toBeNull();
+  // The opener was requested, so the opening is disposed exactly once.
+  await waitFor(() =>
+    expect(actions(f, OAuthNativeAction.Dispose)).toHaveLength(disposed + 1),
+  );
+  expect(f.cancel).not.toHaveBeenCalled();
+}, 20000);
+
+it("ends a definitively refused device request without a retry notice and without native calls", async () => {
+  const f = deviceFixture();
+  f.login.mockImplementationOnce(() => {
+    throw typedFailure(Code.PermissionDenied, FailureCode.PermissionDenied);
+  });
+  render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Start Grok device" }));
+  await screen.findByText(copy("grok-subscription.status.failed"));
+  expect(
+    screen.getByText(copy("grok-subscription.problem.requestFailed")),
+  ).toBeTruthy();
+  expect(
+    screen.queryByText(copy("grok-subscription.problem.requestUnconfirmed")),
+  ).toBeNull();
+  expect(
+    screen.queryByRole("button", {
+      name: copy("grok-subscription.retryOriginal"),
+    }),
+  ).toBeNull();
+  expect(nativeActions(f)).toEqual([]);
+});
 
 it.each([
   [State.EXPIRED, "grok-subscription.status.expired"],

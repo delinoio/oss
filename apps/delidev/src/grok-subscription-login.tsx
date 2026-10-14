@@ -33,25 +33,34 @@ import {
   serviceAccount,
   subscriptionAliasDocument,
 } from "./subscription-resource";
+import {
+  GrokHelp,
+  GrokLoginEvent,
+  GrokLoginMethod,
+  GrokLoginStage,
+  GrokNameField,
+  GrokNativeBinding,
+  GrokRetry,
+  grokLoginPresentation,
+  grokPollEvent,
+  grokRetryOutcomes,
+  initialGrokLoginState,
+  transition,
+  type GrokLoginState,
+} from "./grok-login-machine";
 import "./subscription-onboarding.css";
 
-// Closed presentation stages. They grant no login or mutation authority.
-export enum GrokLoginStage {
-  Preparing = "preparing",
-  Waiting = "waiting",
-  Naming = "naming",
-  Canceled = "canceled",
-  Expired = "expired",
-  Unsupported = "unsupported",
-  Recovery = "recovery",
-  Failed = "failed",
-}
+export { GrokLoginMethod, GrokLoginStage };
 enum CopyState {
   Idle = "idle",
   Copied = "copied",
   Failed = "failed",
 }
-// What the transient clipboard action copies. Both values are display-only.
+// The trusted native receiver rejects with its kebab-case failure name.
+enum NativeFailureReason {
+  Incompatible = "incompatible",
+}
+// What the transient clipboard action copies. Every value is display-only.
 enum CopyTarget {
   Link = "link",
   Code = "code",
@@ -74,19 +83,6 @@ const copyNotices: Record<
     failed: "grok-subscription.device.addressCopyFailed",
   },
 };
-// The explicit sign-in method chosen by the user. It never changes mid-login.
-export enum GrokLoginMethod {
-  Browser = "browser",
-  DeviceCode = "device-code",
-}
-// The trusted native receiver rejects with its kebab-case failure name.
-enum NativeFailureReason {
-  Incompatible = "incompatible",
-}
-// The only notice a later successful status read may clear. Every other problem
-// comes from an explicit user action or a one-shot native step and stays until
-// the user acts again, so polling can never hide an actionable failure.
-const statusProblem: MessageKey = "grok-subscription.problem.statusUnconfirmed";
 const copiedNoticeMilliseconds = 4000;
 const pollIntervalMilliseconds = 1000;
 
@@ -111,7 +107,6 @@ const statusKeys: Record<GrokLoginStage, MessageKey> = {
   [GrokLoginStage.Failed]: "grok-subscription.status.failed",
 };
 const deviceHelpKeys: Partial<Record<GrokLoginStage, MessageKey>> = {
-  [GrokLoginStage.Waiting]: "grok-subscription.device.help.waiting",
   [GrokLoginStage.Canceled]: "grok-subscription.device.help.canceled",
   [GrokLoginStage.Expired]: "grok-subscription.device.help.expired",
   [GrokLoginStage.Unsupported]: "grok-subscription.device.help.unsupported",
@@ -227,32 +222,21 @@ export function grokDeviceVerification(raw: string, code: string): boolean {
   }
 }
 
+// The machine owns everything that decides what the screen offers; this view
+// only adds presentation values that never gate an action.
 interface View {
-  method: GrokLoginMethod;
-  stage: GrokLoginStage;
+  machine: GrokLoginState;
   name: string;
   suggested: boolean;
   busy: boolean;
-  problem?: MessageKey;
   diagnostic?: GrokDiagnostic;
-  browserReady: boolean;
-  // True only while the native receiver confirmed that it opened the original
-  // address; the waiting guidance never claims a browser opened otherwise.
-  browserOpened: boolean;
-  urlReady: boolean;
-  // Transient device code display. Never persisted, logged or cached.
+  // Transient device display values, never persisted, logged or cached. The
+  // machine's presentation decides whether either is shown: the code while the
+  // device login waits, the validated address only after the opener failed.
   userCode?: string;
-  // The validated verification address, shown only after the native opener
-  // failed so the user can open it in any browser. Cleared on every terminal
-  // state, on a successful open and once a cancellation is accepted.
   address?: string;
   copyState: CopyState;
   copyTarget: CopyTarget;
-  canRetry: boolean;
-  canCancel: boolean;
-  // The server accepted a cancellation, so the verification page is no longer
-  // worth opening. The terminal canceled state arrives through polling.
-  canceling: boolean;
 }
 interface Pending {
   opening: string;
@@ -260,19 +244,18 @@ interface Pending {
   account?: Resource;
   operation: string;
   url: string;
-  method: GrokLoginMethod;
   userCode: string;
   bound: boolean;
   callbackDispatched: boolean;
   disposed: boolean;
-  // A device verification open was requested, so the native host may hold an
-  // admitted dispatch for this opening that only a native Dispose can retire.
-  deviceOpened: boolean;
-  canceling: boolean;
   polling: boolean;
   busy: boolean;
-  terminal: boolean;
+  // The single transition-table state; see grok-login-machine.ts.
+  machine: GrokLoginState;
   copyTimer?: ReturnType<typeof setTimeout>;
+  // The exact original request of the retained mutation. It is held exactly
+  // while machine.retry is not None and replays only through Retry original
+  // request.
   retry?: () => Promise<void>;
 }
 
@@ -296,35 +279,55 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
   const update = (p: Pending, change: Partial<View>) => {
     if (live(p)) setView((current) => current && { ...current, ...change });
   };
-  // A browser login owns a native receiver for its whole opening. A device
-  // login owns native state only once the user asked to open the verification
-  // page: that admitted dispatch may still be pending, and only disposing the
-  // opening retires it before a browser starts.
-  const nativeOwned = (p: Pending) =>
-    p.method === GrokLoginMethod.Browser || p.deviceOpened;
   const disposeNative = (p: Pending) => {
-    if (native && nativeOwned(p))
+    if (native)
       void native(p.opening, OAuthNativeAction.Dispose, "", "", "").catch(
         () => undefined,
       );
+  };
+  // Applies one event to the transition table. Every state change, retained
+  // closure, original-link release and native disposal follows from the table.
+  const apply = (p: Pending, event: GrokLoginEvent) => {
+    const previous = p.machine;
+    const next = transition(previous, event);
+    if (next === previous) return;
+    p.machine = next;
+    if (next.retry === GrokRetry.None) p.retry = undefined;
+    const after = grokLoginPresentation(next);
+    if (after.settled || after.canceling) {
+      p.url = "";
+      p.userCode = "";
+    }
+    if (
+      grokLoginPresentation(previous).native === GrokNativeBinding.Owed &&
+      after.native === GrokNativeBinding.Disposed
+    )
+      disposeNative(p);
+    // The copy notice belongs to a value that is no longer offered.
+    const copyable = after.copyLink || after.copyCode;
+    if (!copyable && p.copyTimer) {
+      clearTimeout(p.copyTimer);
+      p.copyTimer = undefined;
+    }
+    update(p, {
+      machine: next,
+      ...(copyable ? {} : { copyState: CopyState.Idle }),
+      ...(after.copyCode ? {} : { userCode: undefined, address: undefined }),
+    });
+  };
+  const dispatch = (p: Pending, event: GrokLoginEvent) => {
+    if (live(p)) apply(p, event);
   };
   // Disposal clears display, timer and callback authority only. It never
   // cancels an operation the server already accepted.
   const dispose = (p: Pending) => {
     p.disposed = true;
-    p.retry = undefined;
     p.url = "";
     p.userCode = "";
     if (p.copyTimer) clearTimeout(p.copyTimer);
     p.copyTimer = undefined;
-    disposeNative(p);
-  };
-  const finish = (p: Pending) => {
-    p.terminal = true;
+    apply(p, GrokLoginEvent.Dispose);
     p.retry = undefined;
-    p.url = "";
-    p.userCode = "";
-    disposeNative(p);
   };
   const leave = () => {
     const p = pending.current;
@@ -369,59 +372,43 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
     if (live(p)) p.account = result.resource;
     return result.resource;
   };
-  // Records the outcome of a status read. A healthy read recovers only the
-  // polling notice; a failing read never replaces a more specific problem.
-  const settleStatus = (p: Pending, healthy: boolean) => {
-    if (!live(p)) return;
-    setView((current) => {
-      if (!current) return current;
-      if (healthy)
-        return current.problem === statusProblem
-          ? { ...current, problem: undefined }
-          : current;
-      return current.problem && current.problem !== statusProblem
-        ? current
-        : { ...current, problem: statusProblem };
-    });
-  };
+  // Runs one action. A replayable mutation (kind) retains its exact original
+  // request after an uncertain outcome and settles through its own events, so
+  // the retained request keeps its mutation-specific problem across every
+  // replay. An auxiliary action (Open browser again, Open verification page)
+  // names its own start and failure events and never owns or consumes a retry.
   const run = async (
     p: Pending,
     action: () => Promise<void>,
-    problem: MessageKey,
-    replay = false,
+    mode:
+      | Exclude<GrokRetry, GrokRetry.None>
+      | { started: GrokLoginEvent; failed: GrokLoginEvent },
   ) => {
     if (!live(p) || p.busy) return;
+    const kind = typeof mode === "string" ? mode : undefined;
     p.busy = true;
-    // Only a replayable mutation owns the retry closure. An auxiliary action
-    // (opening or reopening a browser) never consumes or hides it.
-    if (replay) p.retry = undefined;
-    update(p, {
-      busy: true,
-      problem: undefined,
-      ...(replay ? { canRetry: false } : {}),
-    });
+    dispatch(
+      p,
+      typeof mode === "string" ? GrokLoginEvent.ReplayStarted : mode.started,
+    );
+    update(p, { busy: true });
     try {
       await action();
     } catch (error) {
-      // A settled login makes an auxiliary open moot, so its late failure is
-      // not worth a notice on the terminal screen.
-      if (live(p) && (replay || !p.terminal)) {
-        const uncertain = [
-          FailureCode.Unavailable,
-          FailureCode.ServerUnavailable,
-          FailureCode.Canceled,
-          FailureCode.Internal,
-        ].includes(clientFailure(error).code);
-        // An uncertain outcome keeps the exact original request for explicit
-        // replay; a definite refusal before any operation ends the attempt.
-        if (replay && uncertain) p.retry = action;
-        update(p, {
-          problem,
-          ...(replay ? { canRetry: Boolean(p.retry) } : {}),
-          ...(replay && !uncertain && !p.operation
-            ? { stage: GrokLoginStage.Failed }
-            : {}),
-        });
+      if (live(p)) {
+        if (kind) {
+          const uncertain = [
+            FailureCode.Unavailable,
+            FailureCode.ServerUnavailable,
+            FailureCode.Canceled,
+            FailureCode.Internal,
+          ].includes(clientFailure(error).code);
+          const outcomes = grokRetryOutcomes[kind];
+          // An uncertain outcome keeps the exact original request for explicit
+          // replay; a definite refusal ends the attempt without a retry.
+          dispatch(p, uncertain ? outcomes.uncertain : outcomes.refused);
+          p.retry = p.machine.retry === kind ? action : undefined;
+        } else if (typeof mode !== "string") dispatch(p, mode.failed);
       }
     } finally {
       p.busy = false;
@@ -436,37 +423,24 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
       generation: "",
       operation: "",
       url: "",
-      method,
       userCode: "",
       bound: false,
       callbackDispatched: false,
       disposed: false,
-      deviceOpened: false,
-      canceling: false,
       polling: false,
       busy: false,
-      terminal: false,
+      machine: initialGrokLoginState(Boolean(native), method),
     };
     pending.current = p;
     setView({
-      method,
-      stage: native ? GrokLoginStage.Preparing : GrokLoginStage.Unsupported,
+      machine: p.machine,
       name: "Grok",
       suggested: false,
       busy: false,
-      browserReady: false,
-      browserOpened: false,
-      urlReady: false,
       copyState: CopyState.Idle,
       copyTarget: CopyTarget.Link,
-      canRetry: false,
-      canCancel: false,
-      canceling: false,
     });
-    if (!native) {
-      update(p, { problem: "grok-subscription.problem.desktopRequired" });
-      return;
-    }
+    if (!native) return;
     const create = {
       mutation: { requestId: newRequestId() },
       kind: EntityKind.ACCOUNT,
@@ -528,9 +502,9 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
         throw new Error("Invalid login ownership");
       p.account = result.account;
       p.operation = result.operationId;
-      update(p, { canCancel: true });
+      dispatch(p, GrokLoginEvent.StartAccepted);
     };
-    void run(p, start, "grok-subscription.problem.requestUnconfirmed", true);
+    void run(p, start, GrokRetry.Start);
   };
 
   // Sensitive progress stays in this opening, outside the shared query cache.
@@ -539,7 +513,14 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
     if (!active || !view) return;
     const poll = async () => {
       const p = pending.current;
-      if (!p || !live(p) || !p.operation || p.polling || p.terminal) return;
+      if (
+        !p ||
+        !live(p) ||
+        !p.operation ||
+        p.polling ||
+        grokLoginPresentation(p.machine).settled
+      )
+        return;
       p.polling = true;
       try {
         const progress = await clients.subscription.getSubscriptionProgress({
@@ -563,64 +544,33 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
             state.recovery_required === true
           )
             throw new Error("Login success could not be verified");
-          finish(p);
+          dispatch(p, GrokLoginEvent.PollSucceeded);
           update(p, {
-            stage,
             name: subscriptionNameValid(progress.suggestedName)
               ? progress.suggestedName
               : "Grok",
             suggested: subscriptionNameValid(progress.suggestedName),
-            problem: undefined,
             diagnostic: undefined,
-            browserReady: false,
-            browserOpened: false,
-            urlReady: false,
-            userCode: undefined,
-            address: undefined,
-            canCancel: false,
-            canRetry: false,
-            canceling: false,
           });
           changed();
           return;
         }
-        const terminal = ![
-          GrokLoginStage.Preparing,
-          GrokLoginStage.Waiting,
-        ].includes(stage);
-        if (progress.canceled) p.canceling = true;
-        update(p, {
-          stage,
-          diagnostic: progress.grokDiagnostic,
-          // A poll never re-offers Cancel after the server acknowledged it.
-          canCancel: !terminal && !p.canceling,
-          ...(progress.canceled ? { canceling: true } : {}),
-          ...(terminal
-            ? {
-                problem: undefined,
-                browserReady: false,
-                browserOpened: false,
-                urlReady: false,
-                userCode: undefined,
-                address: undefined,
-                canRetry: false,
-                canceling: false,
-              }
-            : {}),
-        });
-        // A readable status is healthy whatever it says, so it recovers the
-        // polling notice before any early return below. Problems from explicit
-        // user actions and one-shot native steps are never cleared here.
-        settleStatus(p, true);
-        if (terminal) {
-          finish(p);
+        // A canceled observation is handled exactly like the local cancellation
+        // acknowledgement: the machine disposes the native binding and offers
+        // no further login action.
+        dispatch(p, grokPollEvent(stage, progress.canceled)!);
+        update(p, { diagnostic: progress.grokDiagnostic });
+        const observed = grokLoginPresentation(p.machine);
+        // A settled, canceled or cancellation-acknowledged login never opens a
+        // browser or takes a callback, even while the server still reports
+        // waiting.
+        if (
+          observed.settled ||
+          observed.canceling ||
+          stage !== GrokLoginStage.Waiting
+        )
           return;
-        }
-        // A canceled or cancellation-acknowledged login never opens a browser,
-        // pins a device code or takes a callback, even while the server still
-        // reports waiting.
-        if (stage !== GrokLoginStage.Waiting || p.canceling) return;
-        if (p.method === GrokLoginMethod.DeviceCode) {
+        if (p.machine.method === GrokLoginMethod.DeviceCode) {
           // Slow-down and pending polls are server-side and carry no new
           // presentation. The first valid pair is pinned for the whole login.
           if (
@@ -631,7 +581,8 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
             throw new Error("Invalid original device authorization");
           p.url = progress.url;
           p.userCode = progress.userCode;
-          update(p, { urlReady: true, userCode: p.userCode });
+          dispatch(p, GrokLoginEvent.CodeReady);
+          update(p, { userCode: p.userCode, address: p.url });
           return;
         }
         if (
@@ -641,12 +592,11 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
         )
           throw new Error("Invalid original browser login");
         p.url = progress.url;
-        update(p, { urlReady: true });
         if (!p.bound) {
           // Set before dispatch: an uncertain native reply must not open
           // another browser or callback receiver on the next poll.
           p.bound = true;
-          update(p, { stage: GrokLoginStage.Preparing });
+          dispatch(p, GrokLoginEvent.LinkReady);
           try {
             const result = await native!(
               p.opening,
@@ -656,37 +606,33 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
               p.url,
             );
             if (!live(p)) return;
-            // A cancellation acknowledged while the open was pending already
-            // disposed the native binding: the late result is discarded and
-            // never overwrites the cancellation notice.
-            if (p.canceling) return;
             if (!isEntityId(result.generation))
               throw new Error("Invalid native generation");
             p.generation = result.generation;
-            update(p, {
-              stage: GrokLoginStage.Waiting,
-              browserReady: true,
-              browserOpened: true,
-              problem: undefined,
-            });
+            // A cancellation acknowledged or observed while the open was
+            // pending already disposed the native binding: the table ignores
+            // this late result.
+            dispatch(p, GrokLoginEvent.OpenSucceeded);
           } catch (error) {
-            if (p.canceling) return;
             // A closed incompatible refusal leaves no native binding, so
             // Open browser again would only be refused again: keep it hidden
             // and leave the copyable link as the only way forward. Any other
             // failure may succeed on an explicit reopen.
-            const incompatible = error === NativeFailureReason.Incompatible;
-            update(p, {
-              stage: GrokLoginStage.Waiting,
-              browserReady: !incompatible,
-              browserOpened: false,
-              problem: incompatible
-                ? "grok-subscription.problem.remoteUnsupported"
-                : "grok-subscription.problem.browserFailed",
-            });
+            dispatch(
+              p,
+              error === NativeFailureReason.Incompatible
+                ? GrokLoginEvent.OpenIncompatible
+                : GrokLoginEvent.OpenFailed,
+            );
           }
         }
-        if (p.generation && !p.callbackDispatched) {
+        const callbackWindow = grokLoginPresentation(p.machine);
+        if (
+          p.generation &&
+          !p.callbackDispatched &&
+          !callbackWindow.canceling &&
+          !callbackWindow.settled
+        ) {
           let result;
           try {
             result = await native!(
@@ -698,15 +644,13 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
             );
           } catch {
             p.callbackDispatched = true;
-            if (!p.canceling)
-              update(p, {
-                problem: "grok-subscription.problem.callbackUncertain",
-              });
+            dispatch(p, GrokLoginEvent.CallbackTakeFailed);
             return;
           }
-          // A callback taken after the cancellation was acknowledged is
-          // zeroed and never forwarded.
-          if (!live(p) || p.canceling) {
+          // A callback taken after the login stopped waiting (a cancellation
+          // was acknowledged or observed) is zeroed and never forwarded.
+          const taken = grokLoginPresentation(p.machine);
+          if (!live(p) || taken.canceling || taken.settled) {
             result.code?.fill(0);
             return;
           }
@@ -735,10 +679,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
                 callbackQuery: query,
               });
             } catch {
-              if (!p.canceling)
-                update(p, {
-                  problem: "grok-subscription.problem.forwardUncertain",
-                });
+              dispatch(p, GrokLoginEvent.CallbackForwardFailed);
             } finally {
               query.fill(0);
               result.code.fill(0);
@@ -746,7 +687,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
           }
         }
       } catch {
-        settleStatus(p, false);
+        dispatch(p, GrokLoginEvent.PollError);
       } finally {
         p.polling = false;
       }
@@ -756,14 +697,19 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
     return () => clearInterval(timer);
   }, [active, Boolean(view), clients, native]);
 
-  // An auxiliary action opens a browser page for the original login. It is not
-  // available once the login settled, while a replayable mutation is waiting
-  // for its explicit retry, or after a cancellation was accepted.
-  const auxiliary = (p: Pending | undefined): p is Pending =>
-    Boolean(p && live(p) && !p.terminal && !p.canceling && !p.retry && !p.busy);
+  // Open browser again is an auxiliary action: it is unavailable while a
+  // replayable mutation waits for its explicit retry and never consumes it.
   const reopen = () => {
     const p = pending.current;
-    if (!auxiliary(p) || !p.url || !native) return;
+    if (
+      !p ||
+      !live(p) ||
+      !p.url ||
+      !native ||
+      p.retry ||
+      !grokLoginPresentation(p.machine).openBrowser
+    )
+      return;
     void run(
       p,
       async () => {
@@ -779,34 +725,39 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
         } catch (error) {
           if (error !== NativeFailureReason.Incompatible) throw error;
           // The same closed refusal as the first open: stop offering reopen.
-          update(p, {
-            browserReady: false,
-            browserOpened: false,
-            problem: "grok-subscription.problem.remoteUnsupported",
-          });
+          dispatch(p, GrokLoginEvent.ReopenIncompatible);
           return;
         }
-        if (!live(p) || p.canceling) return;
+        if (!live(p)) return;
         if (
           !isEntityId(result.generation) ||
           (p.generation && result.generation !== p.generation)
         )
           throw new Error("Original browser binding changed");
         p.generation = result.generation;
-        update(p, { browserOpened: true, problem: undefined });
+        dispatch(p, GrokLoginEvent.ReopenSucceeded);
       },
-      "grok-subscription.problem.browserFailed",
+      {
+        started: GrokLoginEvent.AuxiliaryStarted,
+        failed: GrokLoginEvent.ReopenFailed,
+      },
     );
   };
   const copyValue = (target: CopyTarget) => {
     const p = pending.current;
-    const value = target === CopyTarget.Code ? p?.userCode : p?.url;
+    if (!p || !live(p)) return;
+    const offered = grokLoginPresentation(p.machine);
+    const value = target === CopyTarget.Code ? p.userCode : p.url;
+    // Only a value the machine currently offers is copied.
     if (
-      target === CopyTarget.Address &&
-      p?.method !== GrokLoginMethod.DeviceCode
+      !value ||
+      !{
+        [CopyTarget.Link]: offered.copyLink,
+        [CopyTarget.Code]: offered.copyCode,
+        [CopyTarget.Address]: offered.copyAddress,
+      }[target]
     )
       return;
-    if (!p || !live(p) || !value) return;
     const clipboard = globalThis.navigator?.clipboard;
     const settle = (copyState: CopyState) => {
       if (!live(p)) return;
@@ -830,47 +781,51 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
   // device-authorization action. Like every OAuth/subscription authorization it
   // uses the system default browser and never the General/Local browser choice
   // that applies to ordinary links. It never opens a second browser on its own.
+  // The machine records that an open was requested before the native call, so
+  // every exit disposes the opening and retires a dispatch that is admitted but
+  // not yet finished.
   const openVerification = () => {
     const p = pending.current;
     if (
-      !auxiliary(p) ||
-      p.method !== GrokLoginMethod.DeviceCode ||
+      !p ||
+      !live(p) ||
+      !native ||
       !p.url ||
-      !native
+      p.retry ||
+      p.machine.method !== GrokLoginMethod.DeviceCode ||
+      !grokLoginPresentation(p.machine).openVerification
     )
       return;
     const url = p.url;
-    // Marked before the native call so every exit path disposes the opening
-    // and retires a dispatch that is admitted but not yet finished.
-    p.deviceOpened = true;
     void run(
       p,
       async () => {
-        try {
-          await native(
-            p.opening,
-            OAuthNativeAction.GrokDeviceAuthorizationOpen,
-            "",
-            p.operation,
-            url,
-          );
-        } catch (error) {
-          // The closed native opener failed: the validated address becomes
-          // selectable and copyable so it can be opened in any browser. A
-          // settled or canceling login keeps nothing on screen.
-          if (!p.terminal && !p.canceling) update(p, { address: url });
-          throw error;
-        }
-        update(p, { address: undefined });
+        await native(
+          p.opening,
+          OAuthNativeAction.GrokDeviceAuthorizationOpen,
+          "",
+          p.operation,
+          url,
+        );
+        dispatch(p, GrokLoginEvent.VerificationOpenSucceeded);
       },
-      "grok-subscription.problem.verificationOpenFailed",
+      {
+        started: GrokLoginEvent.VerificationOpenStarted,
+        failed: GrokLoginEvent.VerificationOpenFailed,
+      },
     );
   };
   const cancel = () => {
     const p = pending.current;
     // A held retry closure is the one authoritative way to settle an uncertain
     // cancellation; a second request would not be the original request.
-    if (!p || !live(p) || !p.operation || p.terminal || p.canceling || p.retry)
+    if (
+      !p ||
+      !live(p) ||
+      !p.operation ||
+      p.retry ||
+      !grokLoginPresentation(p.machine).cancel
+    )
       return;
     let request:
       Parameters<typeof clients.subscription.cancelSubscription>[0] | undefined;
@@ -905,23 +860,14 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
           throw new Error("Invalid cancellation");
         if (live(p)) {
           p.account = result.account;
-          // The server acknowledged this exact cancellation. Polling keeps
-          // observing until it reports the terminal state, but a second
-          // click must not send another cancel mutation.
-          p.canceling = true;
-          // Retire the native receiver now: no browser binding, callback take
-          // or forwarding can complete after the acknowledged cancellation.
-          disposeNative(p);
-          update(p, {
-            problem: "grok-subscription.problem.canceling",
-            canCancel: false,
-            address: undefined,
-            canceling: true,
-          });
+          // The server acknowledged this exact cancellation. The table retires
+          // the native receiver and every login action; polling keeps
+          // observing until the terminal state, and no second cancel mutation
+          // can be sent.
+          dispatch(p, GrokLoginEvent.CancelAccepted);
         }
       },
-      "grok-subscription.problem.cancelUnconfirmed",
-      true,
+      GrokRetry.Cancel,
     );
   };
   const save = () => {
@@ -929,9 +875,10 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
     if (
       !p ||
       !live(p) ||
-      view?.stage !== GrokLoginStage.Naming ||
-      !subscriptionNameValid(view.name) ||
-      p.retry
+      p.retry ||
+      !view ||
+      grokLoginPresentation(p.machine).name !== GrokNameField.Editable ||
+      !subscriptionNameValid(view.name)
     )
       return;
     const alias = view.name;
@@ -965,22 +912,18 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
           document(result.resource).alias !== alias
         )
           throw new Error("Invalid saved name");
+        dispatch(p, GrokLoginEvent.NameSaved);
         leave();
       },
-      "grok-subscription.problem.nameUnconfirmed",
-      true,
+      GrokRetry.Name,
     );
   };
   const retry = () => {
     const p = pending.current;
     const original = p?.retry;
-    if (p && original)
-      void run(
-        p,
-        original,
-        "grok-subscription.problem.requestUnconfirmed",
-        true,
-      );
+    const kind = p?.machine.retry;
+    if (p && original && kind && kind !== GrokRetry.None)
+      void run(p, original, kind);
   };
 
   const p = pending.current;
@@ -1073,13 +1016,17 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
     visible = useSettingsTaskVisible(),
     back = useCloseSettingsTask(props.leave);
   const { view: v, active } = props;
-  const naming = v.stage === GrokLoginStage.Naming,
-    waiting = v.stage === GrokLoginStage.Waiting,
-    inFlight = waiting || v.stage === GrokLoginStage.Preparing,
+  // Every action below follows the transition table's presentation of the
+  // current phase; nothing here decides on its own what to offer.
+  const ui = grokLoginPresentation(v.machine),
+    stage = ui.stage ?? GrokLoginStage.Failed;
+  const naming = stage === GrokLoginStage.Naming,
+    waiting = stage === GrokLoginStage.Waiting,
+    inFlight = waiting || stage === GrokLoginStage.Preparing,
     busy = !active || v.busy;
   // An uncertain naming save keeps its exact request: the name stays frozen and
   // Retry original request is the only mutation path until it settles.
-  const locked = busy || v.canRetry;
+  const locked = busy || ui.name === GrokNameField.Locked;
   const nameInput = useRef<HTMLInputElement>(null),
     focused = useRef(false);
   useEffect(() => {
@@ -1097,17 +1044,17 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
       Object.values(FailureCode).includes(d.code as FailureCode)
         ? d
         : undefined;
-  const device = v.method === GrokLoginMethod.DeviceCode;
   // Waiting guidance follows what really happened: the browser opened, only the
-  // copyable link remains, or nothing is offered yet. Device sign-in has its own
-  // guidance because the user opens the verification page deliberately.
-  const help = device
-    ? deviceHelpKeys[v.stage]
-    : waiting && !v.browserOpened
-      ? v.urlReady
-        ? "grok-subscription.help.waitingLink"
-        : undefined
-      : helpKeys[v.stage];
+  // copyable link remains, or nothing is offered yet.
+  const device = v.machine.method === GrokLoginMethod.DeviceCode;
+  const helpByKind: Record<GrokHelp, MessageKey | undefined> = {
+    [GrokHelp.None]: undefined,
+    [GrokHelp.Waiting]: "grok-subscription.help.waiting",
+    [GrokHelp.WaitingLink]: "grok-subscription.help.waitingLink",
+    [GrokHelp.DeviceWaiting]: "grok-subscription.device.help.waiting",
+    [GrokHelp.Stage]: (device ? deviceHelpKeys : helpKeys)[stage],
+  };
+  const help = helpByKind[ui.help];
   return (
     <section
       className="subscription-account-create subscription-onboarding desktop-wizard"
@@ -1152,7 +1099,7 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
           />
         ) : null}
         {naming ? <span aria-hidden="true">✓</span> : null}
-        {copy(statusKeys[v.stage])}
+        {copy(statusKeys[stage])}
       </p>
       {v.copyState !== CopyState.Idle ? (
         <p role="status">
@@ -1214,7 +1161,7 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
       ) : (
         <>
           {help ? <p>{copy(help)}</p> : null}
-          {waiting && device && v.userCode ? (
+          {ui.copyCode && v.userCode ? (
             <div className="grok-device-code">
               <p>{copy("grok-subscription.device.codeLabel")}</p>
               <SelectableValue
@@ -1225,7 +1172,7 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
               </SelectableValue>
             </div>
           ) : null}
-          {waiting && device && v.address ? (
+          {ui.copyAddress && v.address ? (
             <div className="grok-device-code">
               <p>{copy("grok-subscription.device.addressLabel")}</p>
               <SelectableValue
@@ -1252,18 +1199,18 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
             </dl>
           ) : null}
           <SettingsTaskActions className="">
-            {waiting && device && v.urlReady && !v.canceling ? (
+            {ui.openVerification ? (
               <SettingsActionButton
                 icon={SettingsActionIcon.Open}
                 type="button"
                 className="primary"
-                disabled={busy || v.canRetry}
+                disabled={busy || ui.retry}
                 onClick={props.openVerification}
               >
                 {copy("grok-subscription.device.openVerification")}
               </SettingsActionButton>
             ) : null}
-            {waiting && device && v.urlReady ? (
+            {ui.copyCode ? (
               <SettingsActionButton
                 icon={SettingsActionIcon.Copy}
                 type="button"
@@ -1273,7 +1220,7 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
                 {copy("grok-subscription.device.copyCode")}
               </SettingsActionButton>
             ) : null}
-            {waiting && device && v.address ? (
+            {ui.copyAddress ? (
               <SettingsActionButton
                 icon={SettingsActionIcon.Copy}
                 type="button"
@@ -1283,18 +1230,18 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
                 {copy("grok-subscription.device.copyAddress")}
               </SettingsActionButton>
             ) : null}
-            {waiting && !device && v.browserReady && !v.canceling ? (
+            {ui.openBrowser ? (
               <SettingsActionButton
                 icon={SettingsActionIcon.Open}
                 type="button"
                 className="primary"
-                disabled={busy || v.canRetry}
+                disabled={busy || ui.retry}
                 onClick={props.reopen}
               >
                 {copy("grok-subscription.openBrowser")}
               </SettingsActionButton>
             ) : null}
-            {waiting && !device && v.urlReady ? (
+            {ui.copyLink ? (
               <SettingsActionButton
                 icon={SettingsActionIcon.Copy}
                 type="button"
@@ -1304,13 +1251,13 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
                 {copy("grok-subscription.copyLink")}
               </SettingsActionButton>
             ) : null}
-            {v.canCancel && inFlight && !v.canceling ? (
+            {ui.cancel ? (
               <SettingsActionButton
                 icon={SettingsActionIcon.Cancel}
                 type="button"
                 // An uncertain cancel is replayed only through Retry original
                 // request, never as a second, different cancel mutation.
-                disabled={busy || v.canRetry}
+                disabled={busy || ui.retry}
                 onClick={props.cancel}
               >
                 {copy("grok-subscription.cancel")}
@@ -1319,8 +1266,8 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
           </SettingsTaskActions>
         </>
       )}
-      {v.problem ? <p role="alert">{copy(v.problem)}</p> : null}
-      {v.canRetry ? (
+      {v.machine.problem ? <p role="alert">{copy(v.machine.problem)}</p> : null}
+      {ui.retry ? (
         <SettingsActionButton
           icon={SettingsActionIcon.Retry}
           type="button"
@@ -1330,7 +1277,7 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
           {copy("grok-subscription.retryOriginal")}
         </SettingsActionButton>
       ) : null}
-      {v.stage !== GrokLoginStage.Unsupported ? (
+      {stage !== GrokLoginStage.Unsupported ? (
         <p className="subscription-onboarding-footer">
           {copy(
             naming

@@ -407,17 +407,19 @@ mod tests {
         result
     }
 
-    // OS dispatch retirement table. A retirement can land at four points; the
-    // commit lock makes the first two exclusive with the spawn itself.
+    // OS dispatch retirement table (the device open lifecycle table in
+    // docs/cmds-delidev-grok-subscription-contract.md). A retirement can land
+    // at five points; the commit lock makes the first two exclusive with the
+    // spawn itself.
     //
-    //   point                        process     result              process
-    // afterwards   before the commit            none        Stopped
-    // never started   while committing (blocked)   spawned     Stopped
-    // terminated   after spawn, still running   running     Stopped
-    // terminated   after spawn, already exited  exited      Stopped (not
-    // Ok)    reaped   after a successful exit      exited      Stopped (not
-    // Ok)    reaped   after dispatch returned Ok   exited      Ok
-    // (unchanged)      reaped
+    // - before the commit: no process starts; the result is Stopped.
+    // - while committing (blocked on the lock): the process spawns, is
+    //   terminated and the result is Stopped.
+    // - after the spawn, launcher running or already exited: the process is
+    //   terminated or reaped; the result is Stopped.
+    // - after a successful exit, before the final check: the process is reaped;
+    //   the result is Stopped, never Ok.
+    // - after the dispatch returned Ok: the result is unchanged.
     fn shell(body: &str) -> Command {
         let mut command = Command::new("/bin/sh");
         command
