@@ -15,11 +15,25 @@ const moduleImportPatterns = [
 
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
-export const sourceRevision = () =>
-  execFileSync("git", ["rev-parse", "HEAD"], {
+function assertCleanSourceTree() {
+  const status = execFileSync(
+    "git",
+    ["status", "--porcelain=v1", "--untracked-files=all"],
+    { cwd: repositoryRoot, encoding: "utf8" },
+  ).trim();
+  if (status)
+    throw new Error(
+      "Cannot record React Forge JavaScript build provenance from a dirty source tree.",
+    );
+}
+
+export const sourceRevision = () => {
+  assertCleanSourceTree();
+  return execFileSync("git", ["rev-parse", "HEAD"], {
     cwd: repositoryRoot,
     encoding: "utf8",
   }).trim();
+};
 
 function assertRevision(revision) {
   if (!/^[a-f0-9]{40}$/u.test(revision))
@@ -100,6 +114,7 @@ export async function writeJavaScriptBuildProvenance(
   output,
   revision = sourceRevision(),
 ) {
+  assertCleanSourceTree();
   assertRevision(revision);
   const files = await fileDigests(output);
   const metadataDirectory = join(output, "release");
