@@ -154,11 +154,11 @@ func (i *forkGitInventory) captureConfigProof(ctx context.Context, git Git, chec
 		if entry.Size > ^uint64(0)-allowance {
 			return domain.Fail(domain.ResourceExhausted, "The complete workspace snapshot exceeds its bound.", "Reduce workspace data before retrying; sources remain intact.")
 		}
-		frozen, size, err := readFrozenForkConfig(ctx, git, checkout, path, entry, allowance+entry.Size)
+		// Keep the raw config charge in the shared copy budget. The parsed proof
+		// has its own bounded output allowance and is retained only for comparison;
+		// replacing the raw charge would admit more data than preparation copies.
+		frozen, _, err := readFrozenForkConfig(ctx, git, checkout, path, entry, allowance+entry.Size)
 		if err != nil {
-			return err
-		}
-		if err := budget.replaceBytes(entry.Size, size); err != nil {
 			return err
 		}
 		*layer.target = frozen
