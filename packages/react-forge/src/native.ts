@@ -145,7 +145,7 @@ function safeLocation(value: unknown): string | undefined {
 
 export async function processDocument(
   format: Format,
-  operation: "generate" | "inspect" | "update",
+  operation: "generate" | "inspect" | "analyze" | "update",
   model: unknown,
   source: Buffer,
   assets: Map<string, Buffer>,
@@ -155,10 +155,10 @@ export async function processDocument(
   fontOptions: { system: boolean; ids: string[] } = { system: true, ids: [] },
   onDiagnostic?: (event: Diagnostic) => void,
 ): Promise<NativeOutput> {
-  // Scene inspection measures authored geometry; document inspection imports
+  // Scene inspection and analysis use layout; document inspection imports
   // existing bytes. Derive the stage from trusted call metadata, not native text.
   const stage =
-    operation === "inspect"
+    operation === "inspect" || operation === "analyze"
       ? format === Format.Glb || format === Format.Fbx
         ? Stage.Layout
         : Stage.Import

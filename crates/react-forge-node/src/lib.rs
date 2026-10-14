@@ -90,6 +90,7 @@ pub struct NativeOutput {
 enum OperationKind {
     Generate,
     Inspect,
+    Analyze,
     Update,
 }
 
@@ -153,9 +154,10 @@ impl Task for Operation {
         let operation = match self.kind {
             OperationKind::Generate => "generate",
             OperationKind::Inspect => "inspect",
+            OperationKind::Analyze => "analyze",
             OperationKind::Update => "update",
         };
-        let stage = if matches!(self.kind, OperationKind::Inspect)
+        let stage = if matches!(self.kind, OperationKind::Inspect | OperationKind::Analyze)
             && matches!(self.format, Format::Glb | Format::Fbx)
         {
             "layout"
@@ -252,6 +254,7 @@ pub fn process_document(
     let kind = match operation.as_str() {
         "generate" => OperationKind::Generate,
         "inspect" => OperationKind::Inspect,
+        "analyze" if matches!(format, Format::Glb | Format::Fbx) => OperationKind::Analyze,
         "update" => OperationKind::Update,
         _ => {
             return Err(native_error(Diagnostic::new(

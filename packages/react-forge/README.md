@@ -200,6 +200,8 @@ GLB export can store triangle indices in a smaller lossless representation when 
 
 See the [GLB guide](https://oss.delino.io/react-forge/formats/glb/), [FBX guide](https://oss.delino.io/react-forge/formats/fbx/), and original [AURA product example](examples/audio-studio-assets/README.md). The CLI/MCP exports `.glb`/`.fbx` in npm `0.2.0` and later.
 
+The unreleased source extension adds `SceneSession.analyze({ revision?, signal? })` for a settled, immutable report of unique geometry and per-mesh instance topology. The `react-forge analyze` command and MCP `inspect` view `scene_analysis` expose the same totals without automatic export. The [GLB analysis guide](https://oss.delino.io/react-forge/formats/glb/#scene-complexity-analysis-unreleased) describes the counts and availability.
+
 For deliberate triangle counts and texture-carried artwork, see [polygon-efficient static authoring](https://oss.delino.io/react-forge/formats/glb/#polygon-efficient-static-authoring) and the [portable source example](examples/polygon-efficient.tsx). It compares 192 and 2,400 triangle curved sheets with opaque painted and transparent two-triangle quads. Its PNGs are generated in memory; copy both example source files for an installed CLI task.
 
 ## Sprite authoring (available in npm 0.2.0)

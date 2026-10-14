@@ -4,7 +4,7 @@ import { extname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { tsImport } from "tsx/esm/api";
 import { ForgeError, abortable } from "./errors.js";
-import { ErrorCode, limits } from "./types.js";
+import { ErrorCode, Format, limits } from "./types.js";
 import type { FigmaSession } from "./figma/session.js";
 import type { DocumentSession } from "./session.js";
 import packageManifest from "../package.json" with { type: "json" };
@@ -13,6 +13,7 @@ const help = `React Forge ${packageManifest.version}
 
 Usage:
   react-forge run <entry.tsx> --output <file> [--data <json>] [--overwrite] [--json]
+  react-forge analyze <entry.tsx> [--data <json>] [--json]
   react-forge mcp [--cwd <directory>]
   react-forge --help
   react-forge --version
@@ -20,7 +21,7 @@ Usage:
 The module's default task receives { data, signal } and returns a document session.
 Output must have the session's format extension (.sprite.zip for sprites; .figma.json for a remote Figma receipt). Existing output requires --overwrite.
 Imported source files cannot be overwritten; choose a separate output path.
-Tasks execute trusted code with your permissions. No automatic timeout is applied.
+Tasks execute trusted code with your permissions and may have explicit caller-authored effects. Analysis itself does not export or publish. No automatic timeout is applied.
 `;
 
 function write(stream: NodeJS.WriteStream, value: string): Promise<void> {
@@ -83,17 +84,18 @@ export async function main(args: string[]): Promise<number> {
       return 0;
     }
     if (
-      args[0] !== "run" ||
+      (args[0] !== "run" && args[0] !== "analyze") ||
       !args[1] ||
       args[1].startsWith("-") ||
       extname(args[1]) !== ".tsx"
     ) {
       throw new ForgeError(
         ErrorCode.MalformedInput,
-        "Expected run <entry.tsx>. Use --help for usage.",
+        "Expected run or analyze <entry.tsx>. Use --help for usage.",
       );
     }
     const flags = new Map<string, string | boolean>();
+    const analyzing = args[0] === "analyze";
     for (let at = 2; at < args.length; at++) {
       const flag = args[at]!;
       if (flags.has(flag))
@@ -114,7 +116,12 @@ export async function main(args: string[]): Promise<number> {
         );
     }
     const output = flags.get("--output");
-    if (typeof output !== "string")
+    if (analyzing && (output !== undefined || flags.has("--overwrite")))
+      throw new ForgeError(
+        ErrorCode.MalformedInput,
+        "Analyze accepts only --data and --json.",
+      );
+    if (!analyzing && typeof output !== "string")
       throw new ForgeError(ErrorCode.MalformedInput, "--output is required.");
     let data: unknown;
     const rawData = flags.get("--data");
@@ -177,12 +184,36 @@ export async function main(args: string[]): Promise<number> {
         "Task must return a document session.",
       );
     session = returned;
-    if (!matchesOutputExtension(session.format, output))
+    if (analyzing) {
+      if (
+        (session.format !== Format.Glb && session.format !== Format.Fbx) ||
+        !("analyze" in session)
+      )
+        throw new ForgeError(
+          ErrorCode.UnsupportedEdit,
+          "Analyze requires a GLB or FBX scene session.",
+        );
+      const report = await session.analyze({ signal: controller.signal });
+      const summary = `Scene revision ${report.revision}: ${report.meshCount} meshes, ${report.referencedGeometryCount} referenced geometries, ${report.unusedGeometryCount} unused geometries; unique ${report.uniqueVertexCount} vertices/${report.uniqueTriangleCount} triangles; instances ${report.instanceVertexCount} vertices/${report.instanceTriangleCount} triangles; geometry bytes ${report.referencedGeometryBytes} referenced/${report.registeredGeometryBytes} registered.\n`;
+      const rows = report.meshes
+        .slice(0, 10)
+        .map(
+          (mesh) =>
+            `${mesh.nodeId}: ${mesh.vertexCount} vertices, ${mesh.triangleCount} triangles, ${mesh.geometryInstanceCount} instances\n`,
+        )
+        .join("");
+      await write(
+        process.stdout,
+        json ? `${JSON.stringify(report)}\n` : summary + rows,
+      );
+      return 0;
+    }
+    if (!matchesOutputExtension(session.format, output as string))
       throw new ForgeError(
         ErrorCode.MalformedInput,
         "Output extension must match the document session format.",
       );
-    const result = await session.exportFile(output, {
+    const result = await session.exportFile(output as string, {
       overwrite: flags.has("--overwrite"),
       signal: controller.signal,
     });

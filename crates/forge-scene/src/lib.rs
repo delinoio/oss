@@ -200,6 +200,125 @@ pub struct Prepared<'a> {
     pub skins: BTreeMap<Uuid, PreparedSkin>,
     pub samplers: BTreeMap<String, AnimationSampler>,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MeshAnalysis {
+    pub node_id: Uuid,
+    pub vertex_count: usize,
+    pub triangle_count: usize,
+    pub geometry_instance_count: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneAnalysis {
+    pub mesh_count: usize,
+    pub referenced_geometry_count: usize,
+    pub unique_vertex_count: usize,
+    pub unique_triangle_count: usize,
+    pub instance_vertex_count: usize,
+    pub instance_triangle_count: usize,
+    pub registered_geometry_bytes: usize,
+    pub referenced_geometry_bytes: usize,
+    pub unused_geometry_count: usize,
+    pub meshes: Vec<MeshAnalysis>,
+}
+
+/// Count the validated authored topology. Traversal order is retained for
+/// equal-size meshes; the exporter is never needed to obtain these counts.
+pub fn analyze(prepared: &Prepared<'_>) -> Result<SceneAnalysis> {
+    checkpoint()?;
+    let mut report = SceneAnalysis {
+        mesh_count: 0,
+        referenced_geometry_count: prepared.geometries.len(),
+        unique_vertex_count: 0,
+        unique_triangle_count: 0,
+        instance_vertex_count: 0,
+        instance_triangle_count: 0,
+        registered_geometry_bytes: 0,
+        referenced_geometry_bytes: 0,
+        unused_geometry_count: 0,
+        meshes: Vec::new(),
+    };
+    let mut instances = BTreeMap::<&str, usize>::new();
+    fn visit<'a>(node: &'a Node, rows: &mut Vec<(Uuid, &'a str)>) -> Result<()> {
+        checkpoint()?;
+        if let Kind::Mesh { geometry, .. } = &node.kind {
+            rows.push((node.id, geometry));
+        }
+        for child in &node.children {
+            visit(child, rows)?;
+        }
+        Ok(())
+    }
+    let mut ordered = Vec::new();
+    for node in &prepared.scene.nodes {
+        visit(node, &mut ordered)?;
+    }
+    for (_, id) in &ordered {
+        *instances.entry(id).or_default() += 1;
+    }
+    for (id, geometry) in &prepared.geometries {
+        checkpoint()?;
+        report.unique_vertex_count += geometry.positions.len();
+        report.unique_triangle_count += geometry.indices.len() / 3;
+        report.referenced_geometry_bytes += prepared
+            .assets
+            .get(id)
+            .ok_or_else(|| invalid("geometry"))?
+            .len();
+    }
+    for (id, bytes) in prepared.assets {
+        checkpoint()?;
+        let mut is_geometry = prepared.geometries.contains_key(id);
+        if !is_geometry && id.starts_with("geometry:") {
+            is_geometry = match geometry(bytes) {
+                Ok(_) => true,
+                Err(error) if error.code == ErrorCode::Cancelled => return Err(error),
+                Err(_) => false,
+            };
+        }
+        if !is_geometry
+            && !prepared.textures.contains_key(id)
+            && !prepared.samplers.contains_key(id)
+        {
+            is_geometry = match geometry(bytes) {
+                Ok(_) => true,
+                Err(error) if error.code == ErrorCode::Cancelled => return Err(error),
+                Err(_) => false,
+            };
+        }
+        if is_geometry {
+            report.registered_geometry_bytes += bytes.len();
+            if !prepared.geometries.contains_key(id) {
+                report.unused_geometry_count += 1;
+            }
+        }
+    }
+    for (node_id, id) in ordered {
+        checkpoint()?;
+        let geometry = prepared
+            .geometries
+            .get(id)
+            .ok_or_else(|| invalid("geometry"))?;
+        let vertex_count = geometry.positions.len();
+        let triangle_count = geometry.indices.len() / 3;
+        report.instance_vertex_count += vertex_count;
+        report.instance_triangle_count += triangle_count;
+        report.meshes.push(MeshAnalysis {
+            node_id,
+            vertex_count,
+            triangle_count,
+            geometry_instance_count: instances[id],
+        });
+    }
+    report.mesh_count = report.meshes.len();
+    report
+        .meshes
+        .sort_by_key(|a| std::cmp::Reverse(a.triangle_count));
+    Ok(report)
+}
 fn in_unit(v: f64) -> bool {
     v.is_finite() && (0.0..=1.0).contains(&v)
 }
@@ -685,6 +804,47 @@ mod tests {
             255
         );
         assert_eq!(decode(&bytes).unwrap(), color);
+    }
+
+    #[test]
+    fn analysis_counts_geometry_assets_without_a_node_layer_prefix() {
+        let scene: Scene = serde_json::from_value(serde_json::json!({
+            "document_id": "01956e48-8f55-7000-8000-000000000001",
+            "nodes": [{
+                "id": "01956e48-8f55-7000-8000-000000000002",
+                "type": "mesh",
+                "geometry": "g",
+                "material": {}
+            }]
+        }))
+        .unwrap();
+        let mut bytes = b"FSG1".to_vec();
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        for position in [[0.0f32, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]] {
+            for value in position {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        for _ in 0..3 {
+            bytes.extend_from_slice(&0.0f32.to_le_bytes());
+            bytes.extend_from_slice(&0.0f32.to_le_bytes());
+            bytes.extend_from_slice(&1.0f32.to_le_bytes());
+        }
+        for index in [0u32, 1, 2] {
+            bytes.extend_from_slice(&index.to_le_bytes());
+        }
+        let assets = Assets::from([
+            ("g".to_owned(), bytes.clone()),
+            ("unused".to_owned(), bytes.clone()),
+            ("geometry:invalid".to_owned(), b"not-geometry".to_vec()),
+        ]);
+        let prepared = prepare(&scene, &assets).unwrap();
+        let report = analyze(&prepared).unwrap();
+        assert_eq!(report.registered_geometry_bytes, bytes.len() * 2);
+        assert_eq!(report.referenced_geometry_bytes, bytes.len());
+        assert_eq!(report.unused_geometry_count, 1);
     }
 
     #[test]

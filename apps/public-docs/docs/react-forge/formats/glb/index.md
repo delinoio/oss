@@ -86,6 +86,10 @@ Copy both source files beside each other before running an installed CLI task. U
 
 Use `snapshot()` for a settled revision and targets. `measure(handle, { revision })` returns `{ coordinateSpace: "world", min, max, revision }`, a mesh/descendant world-space bounding box in meters. Cameras and empty groups have no mesh bounds. Stale revisions fail. `inspect()` is synchronous; `onDiagnostic()` subscribes to content-free diagnostics. React updates, Suspense waiting, cancellation, atomic file export, and `dispose()` retain the session behavior described in [sessions](/react-forge/sessions).
 
+### Scene complexity analysis (unreleased)
+
+The source implementation adds `await session.analyze({ revision?, signal? })`. It settles the scene and returns an immutable report before any export. Use its `meshCount`, `referencedGeometryCount`, `uniqueVertexCount`, `uniqueTriangleCount`, `instanceVertexCount`, `instanceTriangleCount`, `registeredGeometryBytes`, `referencedGeometryBytes`, and `unusedGeometryCount` to distinguish shared geometry storage from authored mesh instances. The `meshes` array lists node IDs, vertex and triangle counts, and geometry instance counts, largest triangle count first. Ties keep authored depth-first order. The byte counts describe registered geometry data, not GPU memory or final GLB size. An explicit stale revision fails. Transforms, materials, animation and camera/light nodes do not multiply topology. This feature is not in the released `0.2.0` static API; check [release status](/react-forge/releases) for availability.
+
 Registered geometry/textures together and each output are capped at 256 MiB. Individual geometry/texture data is capped at 64 MiB; textures at 64 million pixels. The existing 16 MiB, 20,000-node, depth-48 React tree limits remain. Unsupported inputs produce errors instead of being silently dropped.
 
 For Blender's FBX material profile and interchange limitations, see [FBX](/react-forge/formats/fbx/). A successful structural validator does not replace checking your exported model in the application that will consume it.

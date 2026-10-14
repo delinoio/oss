@@ -18,6 +18,7 @@ struct Edit {
 
 pub fn process(op: &Operation) -> Result<(Vec<u8>, String, String)> {
     match op.kind {
+        OperationKind::Analyze => unreachable!("analysis is scene-only"),
         OperationKind::Generate => {
             let mut document: forge_docx::Document = forge_tree_doc::parse(op.model.as_bytes())?;
             forge_docx::validate(&document)?;

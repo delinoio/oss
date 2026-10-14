@@ -143,6 +143,8 @@ The private source workspace generates a public `@delino/react-forge` package pl
 
 The generation-only GLB/FBX extension follows [the scene contract](packages-react-forge-scene-contract.md). `SceneSession` shares local publication and MCP lifecycle, uses independent world-space bounds and native scene engines, and introduces no runtime conversion dependency.
 
+The unreleased `react-forge analyze <entry.tsx> [--data <json>] [--json]` command accepts only a GLB/FBX scene task, returns the pinned scene complexity report as JSON or prints totals and the ten largest mesh rows, and disposes the session. It uses the same trusted task loader and cancellation behavior as `run`, but does not automatically export or publish. Task code can still perform explicit caller-authored effects. See the [scene analysis contract](packages-react-forge-scene-contract.md).
+
 ## Sprite Extension (Published in npm 0.2.0)
 
 `Format.Sprite` uses `DocumentSession` and the `/sprite` components under the [sprite contract](packages-react-forge-sprite-contract.md). Alongside WAV and GLB/FBX, it brings the source package to eight local authoring formats, preserving independent models and the existing export lifecycle. `exportBuffer` returns a ZIP bundle; CLI/MCP file output requires `.sprite.zip`. The bundle contains `sheet.png`, `sprite.json` and each frame PNG from one pinned revision. Measurement uses logical `sprite_frame` coordinates with `page` as the frame index; exported metadata uses scaled pixels. Import and mounted editing are unsupported. Native drawing uses no system fonts or converters. `examples/sprite.tsx` demonstrates reusable palette-based artwork and idle/hop animations; the feature is included in npm `0.2.0` and installed consumers run in the six-host suite.
