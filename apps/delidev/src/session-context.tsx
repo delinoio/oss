@@ -17,7 +17,6 @@ import { useRetainedMutation } from "./mutation";
 import { NativeContextCompaction } from "./native-context-compaction";
 import { ServiceProblem, Problem } from "./ui";
 import { timestampInstant } from "./timestamp-format";
-import { Timestamp } from "./timestamp-display";
 
 export enum NativeContextStatus {
   Latest = "latest",
@@ -226,13 +225,6 @@ export function SessionContext({ session }: { session: Resource }) {
     capacity !== undefined && native
       ? (Number(native.tokens) / capacity) * 100
       : undefined;
-  const historical =
-    native?.native_turn_id !==
-      object(document(session).execution).native_turn_id ||
-    native?.status === NativeContextStatus.Historical ||
-    Boolean(context.error) ||
-    context.isFetching ||
-    view?.session_revision !== session.revision.toString();
   const capability =
     harness === "codex"
       ? SessionContextCapability.CODEX_MANUAL_COMPACTION_V1
@@ -296,47 +288,59 @@ export function SessionContext({ session }: { session: Resource }) {
           {copy("session-name.retryRead")}
         </button>
       ) : null}
+      <div className="context-metric" data-token-observation>
+        <div className="context-metric-line">
+          <span className="context-metric-label">
+            {copy("session-context.contextUsed")}
+          </span>
+          <strong className="context-metric-value">
+            {harness === "codex"
+              ? native
+                ? capacity === undefined
+                  ? native.tokens
+                  : `${native.tokens} / ${capacity}`
+                : copy("session-context.notReported_adadfa")
+              : view?.current_tokens === null ||
+                  view?.current_tokens === undefined
+                ? copy("session-context.notReported_adadfa")
+                : text(view.current_tokens)}
+          </strong>
+          {harness === "codex" && percent !== undefined ? (
+            <span className="context-metric-percent">
+              {percent.toFixed(1)}%
+            </span>
+          ) : null}
+        </div>
+        {harness === "codex" ? (
+          <>
+            {percent === undefined ? null : (
+              <div
+                className="context-capacity"
+                data-token-observation
+                role="progressbar"
+                aria-label={copy("session-context.contextUsed")}
+                aria-valuemin={0}
+                aria-valuemax={Math.max(100, percent)}
+                aria-valuenow={percent}
+                aria-valuetext={`${native?.tokens} / ${capacity} (${percent.toFixed(1)}%)`}
+              >
+                <div
+                  style={{
+                    width: `${Math.min(100, Math.max(0, percent))}%`,
+                  }}
+                />
+              </div>
+            )}
+            {percent === undefined && native ? (
+              <p className="context-metric-note">
+                {copy("session-name.capacityUnavailable")}
+              </p>
+            ) : null}
+          </>
+        ) : null}
+      </div>
       {harness === "codex" ? (
         <>
-          <p data-token-observation>
-            <LocalizedText
-              id="session-context.latestNativeTokens"
-              components={{
-                s0: (
-                  <>
-                    {native?.tokens ??
-                      copy("session-context.notReported_adadfa")}
-                  </>
-                ),
-              }}
-            />
-          </p>
-          <div
-            className="context-capacity"
-            data-token-observation={percent === undefined ? undefined : true}
-            role="progressbar"
-            aria-label={copy("session-name.contextSnapshot")}
-            aria-valuemin={0}
-            aria-valuemax={percent === undefined ? 100 : Math.max(100, percent)}
-            aria-valuenow={percent}
-            aria-valuetext={
-              percent === undefined
-                ? copy("session-name.capacityUnavailable")
-                : `${native?.tokens} / ${capacity} (${percent.toFixed(1)}%)`
-            }
-          >
-            <div
-              hidden={percent === undefined}
-              style={{
-                width: `${percent === undefined ? 0 : Math.min(100, Math.max(0, percent))}%`,
-              }}
-            />
-          </div>
-          <p data-token-observation={percent === undefined ? undefined : true}>
-            {percent === undefined
-              ? copy("session-name.capacityUnavailable")
-              : `${native?.tokens} / ${capacity} (${percent.toFixed(1)}%)`}
-          </p>
           <Problem
             error={usage.error}
             actions={
@@ -348,24 +352,6 @@ export function SessionContext({ session }: { session: Resource }) {
               </button>
             }
           />
-          {native ? (
-            <>
-              <p>
-                {copy(
-                  historical
-                    ? "session-context.historicalSnapshot"
-                    : "session-context.latestSnapshot",
-                )}
-              </p>
-              <p>
-                <LocalizedText
-                  id="session-context.observedAt"
-                  components={{ s0: <Timestamp value={native.observed_at} /> }}
-                />
-              </p>
-            </>
-          ) : null}
-          <p>{copy("session-context.nativeSnapshotExplanation")}</p>
           {context.error ? (
             <p role="status">{copy("session-context.contextReadFailed")}</p>
           ) : null}
@@ -373,23 +359,7 @@ export function SessionContext({ session }: { session: Resource }) {
             <p role="status">{copy("session-context.invalidContext")}</p>
           ) : null}
         </>
-      ) : (
-        <p data-token-observation>
-          <LocalizedText
-            id="session-context.currentContextTokens_2fb474"
-            components={{
-              s0: (
-                <>
-                  {view?.current_tokens === null ||
-                  view?.current_tokens === undefined
-                    ? copy("session-context.notReported_adadfa")
-                    : text(view.current_tokens)}
-                </>
-              ),
-            }}
-          />
-        </p>
-      )}
+      ) : null}
       {(harness === "codex" || harness === "opencode") &&
       view?.automatic_boundary ? (
         <NativeContextCompaction
@@ -473,7 +443,6 @@ export function SessionContext({ session }: { session: Resource }) {
           ) : null}
         </div>
       ) : null}
-      <p>{copy("session-context.compactTheNativeWorkingContextAt_69b0dd")}</p>
       <button
         disabled={!eligible || pending || mutation.busy || mutation.uncertain}
         onClick={() =>
