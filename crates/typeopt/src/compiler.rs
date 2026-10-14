@@ -315,18 +315,13 @@ impl Project {
             Vec::new(),
             chunks.clone(),
         )?;
-        if let Some(outside) = project.application_file_outside(dir) {
-            bail!(
-                "a bundle chunk imports a module outside the bundle directory, which cannot be \
-                 published: {outside}"
-            );
-        }
         let BundleImports {
             imported,
             unlinked,
             edges,
             computed: computed_import,
             bare,
+            dynamic_packages,
             worker_scripts,
             non_esm,
             eval_or_with,
@@ -349,6 +344,22 @@ impl Project {
                  {specifier:?}); bundle mode needs a self-contained bundle"
             );
         }
+        if let Some(outside) = project.application_file_outside(dir) {
+            bail!(
+                "a bundle chunk imports a module outside the bundle directory, which cannot be \
+                 published: {outside}"
+            );
+        }
+        for (chunk, specifiers) in &dynamic_packages {
+            for specifier in specifiers {
+                tracing::warn!(
+                    chunk,
+                    specifier,
+                    "a dynamic package import keeps the bundle chunk unchanged"
+                );
+            }
+        }
+        crate::app::set_bundle_dynamic_packages(dynamic_packages.keys().cloned().collect());
         let all_public = all_public || computed_import;
         if all_public {
             tracing::info!(
@@ -432,6 +443,14 @@ impl Project {
                 let mut nodes = Vec::new();
                 collect(file, &mut nodes);
                 let esm = has_esm_statements(file) || uses_import_meta(&nodes);
+                if crate::app::bundle_dynamic_package(&name) {
+                    tracing::debug!(
+                        chunk = %name,
+                        rule = "dynamic-package-import",
+                        "bundle chunk is a boundary"
+                    );
+                    return Some(name);
+                }
                 if crate::app::bundle_boundary(&name, esm) {
                     tracing::debug!(
                         chunk = %name,
@@ -474,6 +493,7 @@ impl Project {
         let mut edges = BTreeMap::<String, Paths>::new();
         let mut computed = false;
         let mut bare = None;
+        let mut dynamic_packages = BTreeMap::<String, Paths>::new();
         let (mut worker_scripts, mut worker_computed) = (Paths::new(), false);
         let mut non_esm = Paths::new();
         let mut eval_or_with = Paths::new();
@@ -522,6 +542,7 @@ impl Project {
                     }
                     continue;
                 }
+                let dynamic = node.kind() == SyntaxKind::CallExpression;
                 let specifier = match node.kind() {
                     SyntaxKind::ImportDeclaration | SyntaxKind::ExportDeclaration => {
                         node.module_specifier()
@@ -567,8 +588,15 @@ impl Project {
                 }
                 if !(text.starts_with("./") || text.starts_with("../")) {
                     // A package specifier names a module outside the bundle.
-                    if !text.contains(':') && bare.is_none() {
-                        bare = Some(text.to_owned());
+                    if !text.contains(':') {
+                        if dynamic {
+                            dynamic_packages
+                                .entry(name.clone())
+                                .or_default()
+                                .insert(text.to_owned());
+                        } else if bare.is_none() {
+                            bare = Some(text.to_owned());
+                        }
                     }
                     continue;
                 }
@@ -599,6 +627,7 @@ impl Project {
             edges,
             computed,
             bare,
+            dynamic_packages,
             worker_scripts,
             non_esm: non_esm_all,
             eval_or_with: eval_or_with_all,
@@ -1330,6 +1359,9 @@ struct BundleImports {
     /// A package specifier, or a root-relative one that names no bundle
     /// file, that some chunk imports.
     bare: Option<String>,
+    /// Bare package specifiers loaded through literal dynamic imports,
+    /// grouped by the unchanged chunk that contains each import.
+    dynamic_packages: BTreeMap<String, Paths>,
     /// Chunks that `importScripts` can load as classic scripts.
     worker_scripts: Paths,
     /// Chunks without ESM statements or `import.meta`.

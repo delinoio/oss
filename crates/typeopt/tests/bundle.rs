@@ -1949,6 +1949,100 @@ fn rejects_imports_outside_the_bundle() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("outside the bundle directory"));
 }
 
+/// A package loaded only by a guarded dynamic import is an unchanged
+/// boundary; an independent chunk can still be optimized.
+#[test]
+fn guarded_dynamic_package_import_is_a_boundary() {
+    let chunks = [
+        (
+            "index.js",
+            r#"import{value}from"./settings.js";globalThis.window={};const guarded=await import("./guarded.js");console.log(value(3).verticalSpacing,guarded.answer);"#,
+        ),
+        (
+            "guarded.js",
+            r#"import{answer}from"./shared.js";if(typeof window>"u"){await import("fs/promises");await import("pkg")}export{answer};"#,
+        ),
+        ("shared.js", r#"const answer=42;export{answer};"#),
+        (
+            "settings.js",
+            r#"function value(n){return{verticalSpacing:n,horizontalSpacing:n*2}}export{value};"#,
+        ),
+    ];
+    let temp = bundle(&chunks);
+    let package = temp.path().join("node_modules/pkg");
+    fs::create_dir_all(&package).unwrap();
+    fs::write(
+        package.join("package.json"),
+        r#"{"name":"pkg","type":"module","main":"index.js"}"#,
+    )
+    .unwrap();
+    fs::write(package.join("index.js"), "export const x=1;").unwrap();
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("a dynamic package import keeps the bundle chunk unchanged")
+            && stderr.contains("guarded.js")
+            && stderr.contains("specifier=\"fs/promises\"")
+            && stderr.contains("specifier=\"pkg\""),
+        "{stderr}"
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    for name in ["guarded.js", "shared.js"] {
+        assert_eq!(
+            fs::read(temp.path().join("dist").join(name)).unwrap(),
+            fs::read(temp.path().join("out").join(name)).unwrap(),
+            "{name}"
+        );
+    }
+    assert!(saved(&report) > 0, "{report:#}");
+    assert_ne!(out(temp.path(), "settings.js"), chunks[3].1);
+    same_behavior(temp.path());
+
+    let check = Command::new(env!("CARGO_BIN_EXE_typeopt"))
+        .current_dir(temp.path())
+        .args(["--bundle", "dist", "--check", "--verbose"])
+        .output()
+        .unwrap();
+    assert!(
+        check.status.success(),
+        "{}",
+        String::from_utf8_lossy(&check.stderr)
+    );
+    let check_report: Value = serde_json::from_slice(&check.stdout).unwrap();
+    assert_eq!(check_report["size"], report["size"]);
+    assert_eq!(check_report["frozen_chunks"], report["frozen_chunks"]);
+}
+
+#[test]
+fn static_package_import_and_reexport_still_reject() {
+    for source in [
+        r#"import{x}from"fs/promises";console.log(x);"#,
+        r#"export{x}from"fs/promises";"#,
+    ] {
+        let temp = bundle(&[("index.js", source)]);
+        for output in [
+            run_typeopt(temp.path(), &[]),
+            Command::new(env!("CARGO_BIN_EXE_typeopt"))
+                .current_dir(temp.path())
+                .args(["--bundle", "dist", "--check"])
+                .output()
+                .unwrap(),
+        ] {
+            assert!(!output.status.success());
+            assert!(
+                String::from_utf8_lossy(&output.stderr).contains("outside the bundle directory"),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
+}
+
 #[test]
 fn bundle_output_is_deterministic() {
     let chunks = [
