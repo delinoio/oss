@@ -60,6 +60,16 @@ func listForkConfigFile(ctx context.Context, git Git, dir, path string, allowanc
 	if len(out) > 0 && out[len(out)-1] != 0 {
 		return nil, 0, forkSnapshotChanged()
 	}
+	recordsCount := 0
+	for _, value := range out {
+		if value != 0 {
+			continue
+		}
+		recordsCount++
+		if recordsCount > maxForkEntries {
+			return nil, 0, domain.Fail(domain.ResourceExhausted, "The complete workspace snapshot exceeds its bound.", "Reduce workspace data before retrying; sources remain intact.")
+		}
+	}
 	records := strings.Split(string(out), "\x00")
 	if len(records) > 0 && records[len(records)-1] == "" {
 		records = records[:len(records)-1]

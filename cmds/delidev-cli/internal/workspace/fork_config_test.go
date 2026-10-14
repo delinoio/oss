@@ -3,6 +3,7 @@ package workspace
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,6 +42,21 @@ func appendLargeForkConfig(t *testing.T, path string) {
 		t.Fatal(err)
 	}
 	if _, err = file.WriteString("[fixture]\n\tlarge = " + strings.Repeat("x", MaxGitOutput) + "\n"); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	if err = file.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func appendForkConfigRecords(t *testing.T, path string, count int) {
+	t.Helper()
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = fmt.Fprintf(file, "\n[cardinality]\n%s", strings.Repeat("\tentry = value\n", count)); err != nil {
 		file.Close()
 		t.Fatal(err)
 	}
@@ -155,6 +171,17 @@ func TestIndependentForkInventoryRejectsLargeConfigOutsideBudgetOrGrammar(t *tes
 				t.Fatalf("prohibited key was misclassified: %v", err)
 			}
 		})
+	}
+}
+
+func TestIndependentForkInventoryRejectsConfigRecordCardinalityOverflow(t *testing.T) {
+	input := forkInventoryFixtureInputWith(t, false, func(t *testing.T, source, _ string) {
+		path := filepath.Join(gitTest(t, source, "rev-parse", "--absolute-git-dir"), "config")
+		appendForkConfigRecords(t, path, maxForkEntries)
+	})
+	_, err := inspectForkGitInventory(context.Background(), input.git, input.selected, newForkCopyBudget(1))
+	if domain.SafeError(err).Code != domain.ResourceExhausted {
+		t.Fatalf("config record cardinality overflow was not rejected: %v", err)
 	}
 }
 
