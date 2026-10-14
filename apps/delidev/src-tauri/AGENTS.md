@@ -8,7 +8,7 @@
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
-- Browser destination dispatch (`browser_opener.rs`, `browser_discovery.rs`, `browser_preferences.rs`, `external_url.rs`) must stay argv-only, credential-free and revalidated from a fresh native inventory; `browser_opener::dispatch` (system default) is the only path OAuth authorization may use. An admitted `grok-device-authorization-open` dispatch owns a per-opening cancellation flag that Dispose, window close, stop and revocation exhaustion set; never pass the host-wide stop flag to it. Update the `device-browser-links` permission, build manifest and `permission_tests.rs` together with any command change.
+- Browser destination dispatch (`browser_opener.rs`, `browser_discovery.rs`, `browser_preferences.rs`, `external_url.rs`) must stay argv-only, credential-free and revalidated from a fresh native inventory; `browser_opener::dispatch` (system default) is the only path OAuth authorization may use. Update the `device-browser-links` permission, build manifest and `permission_tests.rs` together with any command change.
 
 ## Owning contracts
 
