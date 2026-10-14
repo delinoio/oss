@@ -355,9 +355,9 @@ func TestSidechatQuestionRetryExecutionRechecksInitiatingActor(t *testing.T) {
 	})
 }
 
-// completeChildRecoveryFixture claims the accepted recovery job through the
-// original Worker identity and reports exact completion evidence for it.
-func completeChildRecoveryFixture(t *testing.T, child *continuationFixture, resource *pb.Resource) {
+// claimChildRecoveryFixture claims the accepted recovery job through the
+// original Worker identity and returns its retained request.
+func claimChildRecoveryFixture(t *testing.T, child *continuationFixture, resource *pb.Resource) (store.Record, domain.ExecutionRecoveryRequest) {
 	t.Helper()
 	var claimed store.Record
 	var expected domain.ExecutionRecoveryRequest
@@ -377,6 +377,14 @@ func completeChildRecoveryFixture(t *testing.T, child *continuationFixture, reso
 	if err != nil {
 		t.Fatal(err)
 	}
+	return claimed, expected
+}
+
+// completeChildRecoveryFixture reports exact completion evidence for the
+// accepted recovery job.
+func completeChildRecoveryFixture(t *testing.T, child *continuationFixture, resource *pb.Resource) {
+	t.Helper()
+	claimed, expected := claimChildRecoveryFixture(t, child, resource)
 	completion := expected.Completion
 	completion.Version, completion.NativeCheckpointDigest = 2, strings.Repeat("ab", 32)
 	raw, _ := json.Marshal(domain.ExecutionRecoveryEvidence{Version: 1, JobID: expected.JobID, ReportID: domain.NewID(), Completion: completion})
@@ -412,12 +420,30 @@ func TestSidechatQuestionRetryRecoveryOfOlderGenerationKeepsNewerForkOwner(t *te
 	if before.SidechatActiveRetry != generationB.ID || before.Recovery != domain.NeedsRecovery || before.ExecutionSelection().ID != executionA {
 		t.Fatal("fixture did not leave generation B as the active owner", before.SidechatActiveRetry)
 	}
+	// A failed inspection cannot settle either generation's cleanup.
+	current := child.refresh(t)
+	response, err := sessionClient(child.accountFixture).RecoverSessionExecution(context.Background(), ownerRequest(child.identity, &pb.RecoverSessionExecutionRequest{Mutation: &pb.Mutation{Id: string(current.ID), RequestId: string(domain.NewID()), ExpectedRevision: current.Revision}, ExpectedExecutionId: string(executionA)}))
+	if err != nil {
+		t.Fatal("recovery rejected", err)
+	}
+	claimed, expected := claimChildRecoveryFixture(t, child, response.Msg.Change.ExecutionRecoveryJob)
+	bad := expected.Completion
+	bad.Version, bad.NativeCheckpointDigest = 2, strings.Repeat("ab", 32)
+	bad.NativeTurnID = domain.NativeIdentity(domain.NewID())
+	raw, _ := json.Marshal(domain.ExecutionRecoveryEvidence{Version: 1, JobID: expected.JobID, ReportID: domain.NewID(), Completion: bad})
+	if _, err := child.workerClient.ReportWork(context.Background(), ownerRequest(child.workerIdentity, &pb.ReportWorkRequest{Mutation: &pb.Mutation{Id: string(claimed.ID), ExpectedRevision: claimed.Revision, RequestId: string(domain.NewID())}, MachineId: child.machine.Id, InstanceId: child.workerInstance, OutputJson: raw})); err != nil {
+		t.Fatal(err)
+	}
+	failed, _ := store.Decode[domain.Session](child.refresh(t))
+	if failed.Recovery != domain.NeedsRecovery || failed.SidechatActiveRetry != generationB.ID || failed.Dispatch != domain.DispatchPaused || !reflect.DeepEqual(failed.Problem, before.Problem) {
+		t.Fatal("failed recovery changed the newer generation's recovery fence")
+	}
 	recoverChildExecutionFixture(t, child, executionA)
 	after, _ := store.Decode[domain.Session](child.refresh(t))
-	if after.SidechatActiveRetry != generationB.ID || after.Dispatch != domain.DispatchPaused || after.Problem == nil {
+	if after.SidechatActiveRetry != generationB.ID || after.Recovery != domain.NeedsRecovery || after.Dispatch != domain.DispatchPaused || !reflect.DeepEqual(after.Problem, before.Problem) {
 		t.Fatal("older generation recovery released the newer owner", after.SidechatActiveRetry)
 	}
-	if !after.SidechatRetries[0].Completed || after.SidechatCurrentAnswer != executionA {
+	if !after.Execution.CleanupVerified || !after.SidechatRetries[0].Completed || after.SidechatCurrentAnswer != executionA {
 		t.Fatal("older generation recovery lost its own answer")
 	}
 	view := retryViewFixture(t, child, "")
@@ -429,13 +455,13 @@ func TestSidechatQuestionRetryRecoveryOfOlderGenerationKeepsNewerForkOwner(t *te
 	if _, err := sessionClient(child.accountFixture).RetrySidechatQuestion(context.Background(), ownerRequest(child.identity, third)); err == nil {
 		t.Fatal("third generation admitted while the newer owner is active")
 	}
-	raw, _ := json.Marshal(domain.SessionInput{Prompt: "Input behind the retained owner", Mode: domain.ExecuteMode})
-	if _, err := sessionClient(child.accountFixture).EnqueueInput(context.Background(), ownerRequest(child.identity, &pb.EnqueueInputRequest{RequestId: string(domain.NewID()), SessionId: child.change.Session.Id, DocumentJson: raw})); err == nil {
+	inputRaw, _ := json.Marshal(domain.SessionInput{Prompt: "Input behind the retained owner", Mode: domain.ExecuteMode})
+	if _, err := sessionClient(child.accountFixture).EnqueueInput(context.Background(), ownerRequest(child.identity, &pb.EnqueueInputRequest{RequestId: string(domain.NewID()), SessionId: child.change.Session.Id, DocumentJson: inputRaw})); err == nil {
 		t.Fatal("input admitted while the newer owner is active")
 	}
 	// Replaying the older recovery or stopping the session cannot transfer the
 	// newer generation's cleanup ownership.
-	current := child.refresh(t)
+	current = child.refresh(t)
 	if _, err := sessionClient(child.accountFixture).ControlSession(context.Background(), ownerRequest(child.identity, &pb.ControlSessionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(current.ID), ExpectedRevision: current.Revision}, Action: pb.SessionAction_SESSION_ACTION_RESUME})); err == nil {
 		t.Fatal("Resume admitted while the newer owner is active")
 	}

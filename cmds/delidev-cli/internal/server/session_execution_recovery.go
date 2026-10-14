@@ -363,6 +363,10 @@ func finishExecutionRecovery(tx *store.Tx, record store.Record, job domain.Job) 
 		}
 		session.Execution.CleanupVerified = true
 		session.Recovery, session.ActiveExecutionID = domain.NoRecovery, ""
+		// A newer retry owner still needs its own cleanup proof.
+		if session.SidechatActiveRetry != "" {
+			session.Recovery = domain.NeedsRecovery
+		}
 		// The retained problem belongs to the newer owner while it remains active.
 		if session.Problem != nil && session.Problem.Code == domain.RecoveryRequired && session.SidechatActiveRetry == "" {
 			session.Problem = nil
