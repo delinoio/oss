@@ -35,8 +35,12 @@ const (
 	// MaxConcurrent matches the relay's concurrent request bound.
 	MaxConcurrent = 16
 
-	requestTimeout     = 15 * time.Minute
-	bodyReadTimeout    = 30 * time.Second
+	requestTimeout  = 15 * time.Minute
+	bodyReadTimeout = 30 * time.Second
+	// Body buffering precedes the relay request. The additional bounded
+	// allowance covers desktop proof and outbound connection setup before
+	// server admission; the server still enforces its own 15-minute lifetime.
+	preRelayAllowance  = 30 * time.Second
 	clientWriteTimeout = 30 * time.Second
 	closeTimeout       = 5 * time.Second
 	copyBufferSize     = 32 << 10
@@ -74,6 +78,9 @@ type Config struct {
 	Logger    *slog.Logger
 	// ExecutionID is only a log correlation identifier.
 	ExecutionID domain.ID
+	// These narrow test seams preserve the production bounds in Open.
+	relayTimeout         time.Duration
+	preparationAllowance time.Duration
 }
 
 // Forwarder is a started listener. Close joins it and every in-flight request.
@@ -114,6 +121,12 @@ func Open(ctx context.Context, config Config) (*Forwarder, error) {
 	}
 	if config.BodyLimit == 0 {
 		config.BodyLimit = MaxRequestBody
+	}
+	if config.relayTimeout == 0 {
+		config.relayTimeout = requestTimeout
+	}
+	if config.preparationAllowance == 0 {
+		config.preparationAllowance = bodyReadTimeout + preRelayAllowance
 	}
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
@@ -272,7 +285,12 @@ func (f *Forwarder) serve(w http.ResponseWriter, r *http.Request) {
 		f.fail(w, http.StatusTooManyRequests, domain.ResourceExhausted, StageRequest, correlation)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
+	// The relay starts its 15-minute clock only after it accepts headers.
+	// Local body buffering, runtime proof and connection setup happen first.
+	// The bounded allowance prevents that preparation from consuming an
+	// otherwise valid relay response. Caller and execution cancellation still
+	// terminate this same original request.
+	ctx, cancel := context.WithTimeout(r.Context(), f.config.relayTimeout+f.config.preparationAllowance)
 	defer cancel()
 	controller := http.NewResponseController(w)
 	_ = controller.SetReadDeadline(time.Now().Add(bodyReadTimeout))

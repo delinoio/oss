@@ -380,8 +380,10 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		nativeConfig.Sidechat = codex.ReadOnlySidechatV1
 	}
 	var ownedProxy *nativeproxy.Proxy
+	var nativeRoute *networkSnapshot
 	if managed == nil {
-		proxy, err := openCodexNativeProxy(nativeCtx, config, input.ExecutionID)
+		nativeRoute = captureNativeRoute(config)
+		proxy, err := openCodexNativeProxy(nativeCtx, config, input.ExecutionID, nativeRoute)
 		if err != nil {
 			return nil, err
 		}
@@ -400,7 +402,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		// A Local desktop Worker that follows a relocated runtime must not hand
 		// Codex the retired pairing address. The forwarder is joined after the
 		// native process (deferred earlier than its close) and before success.
-		forwarder, err := openCodexNativeForwarder(nativeCtx, config, input.ExecutionID, token, false)
+		forwarder, err := openCodexNativeForwarder(nativeCtx, config, input.ExecutionID, token, false, nativeRoute)
 		if err != nil {
 			return nil, err
 		}
