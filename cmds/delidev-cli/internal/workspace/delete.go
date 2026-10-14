@@ -15,6 +15,11 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
+// deletionWorkspaceProofVersion is the proof version written by this Worker.
+// Version 1 proofs remain readable, except that a manifest-less removed
+// version-1 proof is never trusted (see DeleteOwnedWorkspaceWithOwner).
+const deletionWorkspaceProofVersion = 2
+
 type deletionWorkspaceProof struct {
 	Version  uint32    `json:"version"`
 	Digest   string    `json:"digest"`
@@ -92,18 +97,34 @@ func (m *Manager) DeleteOwnedWorkspaceWithOwner(ctx context.Context, w domain.Se
 	root := filepath.Join(m.Root, "workspaces", string(w.SessionID))
 	stage = "retained-proof"
 	proofPath := filepath.Join(m.Root, "session-deletions", SessionDeletionObligationName(w)+"-workspace.json")
-	proof := deletionWorkspaceProof{Version: 1, Digest: w.Digest()}
+	proof := deletionWorkspaceProof{Version: deletionWorkspaceProofVersion, Digest: w.Digest()}
 	if err := migrateLegacyWorkspaceProof(m.Root, proofPath, w); err != nil {
 		return err
 	}
 	b, e := security.ReadPrivate(proofPath, 1<<20)
+	trusted := false
 	if e == nil {
-		if domain.Decode(b, &proof) != nil || proof.Version != 1 || proof.Digest != w.Digest() {
+		var loaded deletionWorkspaceProof
+		if domain.Decode(b, &loaded) != nil || loaded.Version < 1 || loaded.Version > deletionWorkspaceProofVersion || loaded.Digest != w.Digest() {
 			return domain.SessionDeletionPending()
+		}
+		if loaded.Version == 1 && loaded.Removed && loaded.Manifest == nil {
+			// An older Worker wrote a manifest-less removed proof both after a
+			// genuine cleanup and when it adopted version-1 shared evidence for an
+			// absent failed-only workspace, before its copies were removed. The two
+			// are indistinguishable, so the proof is not trusted and the removal
+			// proof is re-derived from current evidence (fail closed).
+			if m.Logger != nil {
+				m.Logger.Info("workspace_deletion_legacy_removed_proof_ignored", "session_id", w.SessionID, "deletion_id", w.DeletionID, "proof_version", loaded.Version)
+			}
+		} else {
+			proof = loaded
+			trusted = true
 		}
 	} else if !errors.Is(e, os.ErrNotExist) {
 		return domain.SessionDeletionPending()
-	} else {
+	}
+	if !trusted {
 		if _, e := os.Lstat(root); e == nil {
 			manifest, e := m.Read(w.SessionID)
 			if e != nil {

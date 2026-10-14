@@ -226,6 +226,42 @@ func TestLegacyVersionOneRemovalEvidenceIsIgnored(t *testing.T) {
 	}
 }
 
+// An older Worker could adopt version-1 shared evidence for an absent failed-only
+// workspace and persist a manifest-less removed obligation proof before removing
+// copies. An upgraded Worker must not trust that proof; only version-2 evidence
+// (or a genuine removal) lets the strict obligation proceed.
+func TestLegacyVersionOneDerivedObligationProofIsNotTrusted(t *testing.T) {
+	ctx := context.Background()
+	m := manager(t)
+	if err := m.initialize(); err != nil {
+		t.Fatal(err)
+	}
+	if err := security.PrivateDir(filepath.Join(m.Root, "session-deletions")); err != nil {
+		t.Fatal(err)
+	}
+	strict := absentObligation(domain.NewID(), domain.NewID(), domain.NewID(), strings.Repeat("cd", 32))
+	proofPath := filepath.Join(m.Root, "session-deletions", SessionDeletionObligationName(strict)+"-workspace.json")
+	if err := writeDeletionWorkspaceProof(proofPath, deletionWorkspaceProof{Version: 1, Digest: strict.Digest(), Removed: true}); err != nil {
+		t.Fatal(err)
+	}
+	called := false
+	cb := func() error { called = true; return nil }
+	if err := (&Manager{Root: m.Root, Logger: m.Logger}).DeleteOwnedWorkspace(ctx, strict, false, cb); err == nil || called {
+		t.Fatal("version-1 manifest-less removed proof authorized copy removal", err)
+	}
+	if err := writeSharedWorkspaceRemoval(m.Root, strict); err != nil {
+		t.Fatal(err)
+	}
+	if err := (&Manager{Root: m.Root, Logger: m.Logger}).DeleteOwnedWorkspace(ctx, strict, false, cb); err != nil || !called {
+		t.Fatal("version-2 evidence did not re-derive the proof", err)
+	}
+	raw, err := security.ReadPrivate(proofPath, 1<<20)
+	var got deletionWorkspaceProof
+	if err != nil || domain.Decode(raw, &got) != nil || got.Version != deletionWorkspaceProofVersion || !got.Removed {
+		t.Fatal("proof was not rewritten at the current version", got, err)
+	}
+}
+
 // The copy callback receives the session owner's maintenance lock object bound
 // by the reconciliation itself, and only when that reconciliation ran.
 func TestDeleteOwnedWorkspaceWithOwnerBindsReconcilerMaintenanceLock(t *testing.T) {

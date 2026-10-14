@@ -326,6 +326,12 @@ This is a deliberate fail-closed trade-off: a pre-upgrade genuine removal and a
 pre-upgrade failed-only cleanup leave identical durable state (version-1 evidence
 and a manifest-less proof), so no discriminator exists. A strict obligation that
 depended only on such evidence stays pending rather than risk removing copies
+The same rule applies to the obligation-scoped workspace proof: it is written at
+version 2, and a manifest-less removed version-1 proof (which an older Worker also
+wrote after adopting version-1 shared evidence for an absent failed-only workspace,
+before removing copies) is never trusted. The proof is re-derived from current
+evidence, so such an obligation stays pending until version-2 evidence or a
+retained manifest exists.
 without original removal proof.
 A later obligation whose own workspace is absent and has no stored snapshot
 manifest, and whose jobs forbid an absent workspace, adopts that removal only when
