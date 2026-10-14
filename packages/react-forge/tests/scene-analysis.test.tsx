@@ -262,10 +262,9 @@ for (const format of [Format.Glb, Format.Fbx] as const) {
             <Mesh geometry={q} material={{ metallic: 2 }} />
           </Scene>,
         );
-        await assert.rejects(
-          session.analyze({ revision: first.revision }),
-          { code: ErrorCode.Conflict },
-        );
+        await assert.rejects(session.analyze({ revision: first.revision }), {
+          code: ErrorCode.Conflict,
+        });
       } finally {
         await session.dispose();
       }
