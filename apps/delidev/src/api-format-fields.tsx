@@ -44,6 +44,13 @@ function useFormatCapability(active: boolean) {
       inventory.data?.capabilities.includes(
         ProviderInventoryCapability.ACCOUNT_API_FORMAT_CHANGE_V1,
       ) &&
+      !inventory.error &&
+      !inventory.isFetching,
+    ),
+    revisionBound: Boolean(
+      inventory.data?.capabilities.includes(
+        ProviderInventoryCapability.ACCOUNT_API_FORMAT_CHANGE_V1,
+      ) &&
       inventory.data?.capabilities.includes(
         ProviderInventoryCapability.ACCOUNT_API_FORMAT_CHANGE_REVISION_V1,
       ) &&
@@ -360,7 +367,8 @@ export function AccountAPIFormatField({
 }: Props) {
   useLocale();
   const labelId = useId();
-  const { inventory, ready, keepsKey } = useFormatCapability(active);
+  const { inventory, ready, keepsKey, revisionBound } =
+    useFormatCapability(active);
   const provider = useQuery(
     ResourceQuery.getResource,
     { kind: EntityKind.PROVIDER, id: text(data.provider_id) },
@@ -378,9 +386,9 @@ export function AccountAPIFormatField({
     return () => inspectedProviderRevision?.(0n);
   }, [inspectedProviderRevision, observedProviderRevision]);
   useEffect(() => {
-    keepsFormatKey?.(ready && keepsKey);
+    keepsFormatKey?.(ready && revisionBound);
     return () => keepsFormatKey?.(false);
-  }, [ready, keepsKey, keepsFormatKey]);
+  }, [ready, revisionBound, keepsFormatKey]);
   const previous = initial ? document(initial) : data;
   const originalProfile = accountAPIProfile(metadata, previous);
   const profile = accountAPIProfile(metadata, data);
@@ -392,7 +400,7 @@ export function AccountAPIFormatField({
     !provider.error &&
     !provider.isFetching &&
     !data.removal &&
-    (keepsKey || (!data.connection && data.health === "disconnected"));
+    (revisionBound || (!data.connection && data.health === "disconnected"));
   const blocked =
     changed &&
     (!canChange ||
