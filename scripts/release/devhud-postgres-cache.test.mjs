@@ -37,6 +37,32 @@ function output(result) {
   return `${result.stdout ?? ""}${result.stderr ?? ""}`;
 }
 
+function availableCommand(command, args = ["--version"]) {
+  const result = spawnSync(command, args, {
+    encoding: "utf8",
+  });
+  return !result.error && result.status === 0;
+}
+
+function resolvePostgresCommand(command) {
+  if (availableCommand(command)) return command;
+
+  // Ubuntu runners keep server tools in a versioned PostgreSQL bindir while
+  // pg_config remains on PATH. Resolve that bindir so CI cannot silently skip
+  // this regression; remove the fallback when the runner exposes these tools
+  // on PATH consistently.
+  const bindirResult = spawnSync("pg_config", ["--bindir"], {
+    encoding: "utf8",
+  });
+  if (bindirResult.error || bindirResult.status !== 0) return null;
+
+  const bindir = bindirResult.stdout.trim();
+  if (!bindir) return null;
+
+  const resolved = join(bindir, command);
+  return availableCommand(resolved) ? resolved : null;
+}
+
 function expectSuccess(result, label) {
   assert.equal(result.status, 0, `${label}: ${output(result)}`);
 }
@@ -53,16 +79,19 @@ async function availablePort() {
 }
 
 test("DevHud PostgreSQL entrypoints rerun with a warm Go result cache", async (t) => {
-  for (const binary of ["initdb", "pg_ctl", "createdb", "go", "pnpm"]) {
-    const result = spawnSync(
-      binary,
-      [binary === "go" ? "version" : "--version"],
-      {
-        encoding: "utf8",
-      },
-    );
-    if (result.error || result.status !== 0) {
-      t.skip(`${binary} is unavailable`);
+  const commands = {
+    initdb: resolvePostgresCommand("initdb"),
+    pgCtl: resolvePostgresCommand("pg_ctl"),
+    createdb: resolvePostgresCommand("createdb"),
+    go: "go",
+    pnpm: "pnpm",
+  };
+  for (const [name, command] of Object.entries(commands)) {
+    if (
+      !command ||
+      !availableCommand(command, name === "go" ? ["version"] : undefined)
+    ) {
+      t.skip(`${name} is unavailable`);
       return;
     }
   }
@@ -81,18 +110,20 @@ test("DevHud PostgreSQL entrypoints rerun with a warm Go result cache", async (t
     // without repeating the package's entire database suite ten times.
     GOFLAGS: "-run=^TestSchemaCurrentUsesConfiguredSearchPath$",
   };
-  const go = (args) => run("go", args, { env });
-  const pgCtl = (args) => run("pg_ctl", ["-D", cluster, "-w", ...args]);
+  const go = (args) => run(commands.go, args, { env });
+  const pgCtl = (args) => run(commands.pgCtl, ["-D", cluster, "-w", ...args]);
   const entrypoints = [
     {
       name: "API integration task",
       invoke: () =>
-        run("pnpm", ["--filter", "devhud-api", "ci:integration"], { env }),
+        run(commands.pnpm, ["--filter", "devhud-api", "ci:integration"], {
+          env,
+        }),
     },
     {
       name: "OCI integration task",
       invoke: () =>
-        run("pnpm", ["--filter", "devhud-api", "ci:oci:integration"], {
+        run(commands.pnpm, ["--filter", "devhud-api", "ci:oci:integration"], {
           env,
         }),
     },
@@ -104,7 +135,7 @@ test("DevHud PostgreSQL entrypoints rerun with a warm Go result cache", async (t
 
   try {
     expectSuccess(
-      run("initdb", [
+      run(commands.initdb, [
         "-D",
         cluster,
         "--auth-local=trust",
@@ -117,7 +148,7 @@ test("DevHud PostgreSQL entrypoints rerun with a warm Go result cache", async (t
       pgCtl(["-l", log, "-o", `-h 127.0.0.1 -p ${port} -F`, "start"]);
     expectSuccess(start(), "start isolated PostgreSQL");
     expectSuccess(
-      run("createdb", [
+      run(commands.createdb, [
         "-h",
         "127.0.0.1",
         "-p",
