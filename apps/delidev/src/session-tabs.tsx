@@ -103,7 +103,19 @@ type ComparisonTab = Extract<SessionTab, { kind: SessionTabKind.Comparison }>;
 
 /** Connection-owned descriptors contain no resource bodies, preview bytes or requests. */
 export class SessionTabsStore {
-  constructor(private pendingCloses = new PendingCloseRegistry()) {}
+  constructor(private pendingCloses = new PendingCloseRegistry()) {
+    // A sibling window proved a Close complete: retained Sessions here have no
+    // inventory poll, so drop the dead descriptor without re-broadcasting.
+    this.pendingCloses.onSettled((key) => {
+      try {
+        const [profile, pageId] = JSON.parse(key) as [string, string];
+        if (typeof profile === "string" && typeof pageId === "string")
+          this.closePageInSessions(profile, pageId);
+      } catch {
+        // A malformed key from another window is ignored.
+      }
+    });
+  }
   /** (Re)opens the cross-window pending-close channel; idempotent. */
   connect() {
     this.pendingCloses.connect();
@@ -300,6 +312,11 @@ export class SessionTabsStore {
    * acknowledgment idempotent. No native operation is issued.
    */
   closePageEverywhere(profile: string, pageId: string) {
+    this.closePageInSessions(profile, pageId);
+    // The proof is profile-scoped: sibling product windows drop it as well.
+    this.pendingCloses.settle(this.pendingCloseKey(profile, pageId));
+  }
+  private closePageInSessions(profile: string, pageId: string) {
     const key = sessionTabKey({
       kind: SessionTabKind.Page,
       profile,

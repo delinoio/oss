@@ -301,4 +301,28 @@ describe("pending Close ownership across product windows", () => {
       }
     });
   });
+
+  describe("settled Close propagation", () => {
+    it("removes the page from a sibling's retained sessions once", () => {
+      const { make } = windows();
+      const initiator = new SessionTabsStore(make("initiator"));
+      const sibling = new SessionTabsStore(make("sibling"));
+      sibling.open("retained", page("p1", "x"));
+      const owner = {};
+      initiator.holdPendingClose("x", "p1", owner);
+      // A rejected or abandoned Close only releases the hold.
+      initiator.releasePendingClose("x", "p1", owner);
+      expect(sibling.snapshot("retained").tabs.map(sessionTabKey)).toContain(
+        sessionTabKey(page("p1", "x")),
+      );
+      initiator.holdPendingClose("x", "p1", owner);
+      initiator.closePageEverywhere("x", "p1");
+      expect(sibling.snapshot("retained").tabs.map(sessionTabKey)).toEqual([
+        SessionTabKind.Conversation,
+      ]);
+      // The hold is gone everywhere, including for the settling window.
+      sibling.reconcilePages("retained", "x", []);
+      initiator.releasePendingClose("x", "p1", owner);
+    });
+  });
 });

@@ -10,6 +10,11 @@ const syncTimeoutMs = 1000;
 enum PendingCloseMessageKind {
   Hold = "hold",
   Release = "release",
+  /**
+   * The original Close was proven complete: the page is gone everywhere, so
+   * receivers drop the hold and remove the descriptor from retained Sessions.
+   */
+  Settled = "settled",
   Query = "query",
   /** A window announces itself so siblings can wait for its acknowledgement. */
   Presence = "presence",
@@ -126,6 +131,7 @@ export class PendingCloseRegistry {
   // Sibling windows seen on the channel, and the Holds still awaiting acks.
   private peers = new Set<string>();
   private syncing = new Map<string, Promise<void>>();
+  private settledListeners = new Set<(key: string) => void>();
   private waiters = new Map<
     string,
     { awaiting: Set<string>; done: () => void }
@@ -157,6 +163,12 @@ export class PendingCloseRegistry {
 
   private lockName(window: string) {
     return `${channelName}:${window}`;
+  }
+
+  /** Registers a listener for holds another window proved complete. */
+  onSettled(listener: (key: string) => void): () => void {
+    this.settledListeners.add(listener);
+    return () => this.settledListeners.delete(listener);
   }
 
   /** Holds this window's liveness lock until disposal or window teardown. */
@@ -242,6 +254,13 @@ export class PendingCloseRegistry {
 
   private receive(data: unknown) {
     if (!isMessage(data) || data.window === this.window) return;
+    if (data.kind === PendingCloseMessageKind.Settled) {
+      this.peers.add(data.window);
+      if (data.key === undefined) return;
+      this.remote.delete(data.key);
+      for (const listener of [...this.settledListeners]) listener(data.key);
+      return;
+    }
     if (data.kind === PendingCloseMessageKind.Bye) {
       this.peers.delete(data.window);
       for (const [key, holders] of this.remote) {
@@ -351,6 +370,18 @@ export class PendingCloseRegistry {
     if (owners.size) return;
     this.local.delete(key);
     this.send({ kind: PendingCloseMessageKind.Release, key });
+    this.stopHeartbeat();
+  }
+
+  /**
+   * Records that the original Close was proven complete: this window drops its
+   * holds for `key` and tells every sibling window to do the same and to remove
+   * the page from its retained Sessions.
+   */
+  settle(key: string) {
+    this.local.delete(key);
+    this.syncing.delete(key);
+    this.send({ kind: PendingCloseMessageKind.Settled, key });
     this.stopHeartbeat();
   }
 

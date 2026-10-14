@@ -241,6 +241,11 @@ window also holds a liveness lock named after its window identity and an expired
 hold is kept while that lock is still held, because renderer timers of a hidden
 or minimized window are throttled and are not proof of death. Without Web Locks the
 15-second expiry applies. A closing window releases its holds on `pagehide`.
+When the owning window observes the original Close proof, it broadcasts a
+`settled` message in place of a plain release: every sibling window drops the
+hold and removes the exact profile/page descriptor from all of its Sessions,
+including retained or inactive ones that run no inventory poll. A rejected or
+abandoned Close only releases the hold and never removes a descriptor.
 A discarded tab store (for example when the connection identity remounts the
 provider) disposes its registry: it releases its holds, detaches the `pagehide`
 listener and closes the channel, and a replayed mount reconnects it.
