@@ -94,6 +94,14 @@ The form retains a 1040px settings column, 720px login width, 40px controls,
 status announcements and name focus. Leaving clears display/timer/callback
 authority without canceling an accepted server operation.
 
+A connected Grok account in AI Subscription management (`subscription-accounts.tsx`)
+follows System capability 39 alone for Refresh login and Log out (there is no
+separate Grok refresh or logout capability, and capabilities 30 and 38 never
+enable Grok). Without capability 39 both controls stay disabled behind the
+Grok-specific `grok-subscription.lifecycle.unavailable` guidance; the generic
+unsupported-service remediation is not used for Grok. An existing disconnected
+Grok account offers no sign-in action.
+
 Quota/reset credit/pricing, enterprise SSO, external identity providers, imported
 user login, account switching, cross-Worker resume, Fork, Sidechat and manual
 compaction are excluded.

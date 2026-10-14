@@ -31,6 +31,7 @@
   "grok-subscription.later": "나중에",
   "grok-subscription.footer.naming": "이 화면을 나가도 로그인한 계정은 유지됩니다.",
   "grok-subscription.footer.pending": "이 화면을 나가도 계정과 현재 로그인 상태는 유지됩니다.",
+  "grok-subscription.lifecycle.unavailable": "이 서버에서는 Grok 계정의 로그인 새로고침과 로그아웃을 사용할 수 없습니다. 선택한 서버를 Grok 로그인을 지원하는 DeliDev 소프트웨어로 업데이트한 뒤 여기에서 지원 여부를 다시 확인하세요. 이 안내는 아무것도 변경하지 않았습니다.",
   "grok-subscription.problem.desktopRequired": "Grok 브라우저 로그인에는 데스크톱 앱이 필요합니다.",
   "grok-subscription.problem.requestUnconfirmed": "원래 로그인 요청을 확인하지 못했습니다. 이 화면을 열어 둔 채 원래 요청을 다시 시도하세요.",
   "grok-subscription.problem.requestFailed": "로그인 요청이 받아들여지지 않았습니다.",
