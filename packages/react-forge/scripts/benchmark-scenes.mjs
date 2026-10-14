@@ -250,6 +250,16 @@ export async function runBenchmark(output, options = {}) {
   if (!output || typeof output !== "string")
     throw new Error("Expected --output <report.json>.");
   const destination = resolve(output);
+  const { stdout: sourceRevision } = await execFile(
+    "git",
+    ["rev-parse", "HEAD"],
+    { cwd: root },
+  );
+  const { stdout: sourceStatus } = await execFile(
+    "git",
+    ["status", "--porcelain=v1"],
+    { cwd: root },
+  );
   const cases = options.cases ?? SCENE_CASES;
   const signal = options.signal;
   await mkdir(dirname(destination), { recursive: true });
@@ -314,16 +324,6 @@ export async function runBenchmark(output, options = {}) {
           : "ufbx 0.11.4";
     }
     if (signal?.aborted) throw new Error("Scene benchmark cancelled.");
-    const { stdout: sourceRevision } = await execFile(
-      "git",
-      ["rev-parse", "HEAD"],
-      { cwd: root },
-    );
-    const { stdout: sourceStatus } = await execFile(
-      "git",
-      ["status", "--porcelain=v1"],
-      { cwd: root },
-    );
     const native = options.nativeProvenance ?? (await nativeBuildProvenance());
     const report = {
       schemaVersion: 1,
