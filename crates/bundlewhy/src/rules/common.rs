@@ -329,6 +329,7 @@ struct ScanScope {
     context: ScopeContext,
     conditional_questions: usize,
     pending_reads: Vec<usize>,
+    conditional_pending: Vec<usize>,
     arrow_expression: bool,
 }
 
@@ -346,6 +347,7 @@ fn env_guards(
         context: ScopeContext::Neutral,
         conditional_questions: 0,
         pending_reads: Vec::new(),
+        conditional_pending: Vec::new(),
         arrow_expression: false,
     }];
     let mut current_scope = 0;
@@ -377,11 +379,14 @@ fn env_guards(
         {
             let parent = scopes[current_scope].parent;
             let pending_reads = std::mem::take(&mut scopes[current_scope].pending_reads);
+            let conditional_pending =
+                std::mem::take(&mut scopes[current_scope].conditional_pending);
             // An expression-bodied arrow evaluates to a function object at
             // the enclosing expression. Do not let its unguarded reads flow
             // into an enclosing branch operator. Guards found inside the
             // arrow body remain recorded on their own reads.
             drop(pending_reads);
+            drop(conditional_pending);
             current_scope = parent;
         }
 
@@ -399,6 +404,7 @@ fn env_guards(
                     context,
                     conditional_questions: 0,
                     pending_reads: Vec::new(),
+                    conditional_pending: Vec::new(),
                     arrow_expression: false,
                 });
                 current_scope = scopes.len() - 1;
@@ -406,7 +412,11 @@ fn env_guards(
             b')' | b']' | b'}' if current_scope != 0 => {
                 let parent = scopes[current_scope].parent;
                 let pending_reads = std::mem::take(&mut scopes[current_scope].pending_reads);
+                let conditional_pending =
+                    std::mem::take(&mut scopes[current_scope].conditional_pending);
                 scopes[parent].pending_reads.extend(pending_reads);
+                scopes[parent].pending_reads.extend(conditional_pending);
+                scopes[parent].pending_reads.sort_unstable();
                 current_scope = parent;
             }
             b';' => {
@@ -427,6 +437,15 @@ fn env_guards(
                         }
                     }
                 }
+                for read in scopes[current_scope].conditional_pending.drain(..) {
+                    if matches!(context, ScopeContext::For(ForClause::Test)) {
+                        if guards[read].is_none() {
+                            guards[read] = Some(EnvGuard::For);
+                        }
+                    } else if guards[read].is_none() {
+                        blocked[read] = true;
+                    }
+                }
                 if let ScopeContext::For(clause) = context {
                     scopes[current_scope].context = ScopeContext::For(match clause {
                         ForClause::Initializer => ForClause::Test,
@@ -440,12 +459,26 @@ fn env_guards(
                         blocked[read] = true;
                     }
                 }
+                for read in scopes[current_scope].conditional_pending.drain(..) {
+                    if guards[read].is_none() {
+                        blocked[read] = true;
+                    }
+                }
             }
             b':' => {
                 if scopes[current_scope].conditional_questions > 0 {
+                    let pending_reads = std::mem::take(&mut scopes[current_scope].pending_reads);
+                    scopes[current_scope]
+                        .conditional_pending
+                        .extend(pending_reads);
                     scopes[current_scope].conditional_questions -= 1;
                 } else {
                     for read in scopes[current_scope].pending_reads.drain(..) {
+                        if guards[read].is_none() {
+                            blocked[read] = true;
+                        }
+                    }
+                    for read in scopes[current_scope].conditional_pending.drain(..) {
                         if guards[read].is_none() {
                             blocked[read] = true;
                         }
@@ -459,6 +492,7 @@ fn env_guards(
                         context: ScopeContext::Neutral,
                         conditional_questions: 0,
                         pending_reads: Vec::new(),
+                        conditional_pending: Vec::new(),
                         arrow_expression: true,
                     });
                     current_scope = scopes.len() - 1;
@@ -475,27 +509,40 @@ fn env_guards(
                         blocked[read] = true;
                     }
                 }
+                for read in scopes[current_scope].conditional_pending.drain(..) {
+                    if guards[read].is_none() {
+                        blocked[read] = true;
+                    }
+                }
             }
             b'&' if bytes.get(index + 1) == Some(&b'&') => {
                 for &read in &scopes[current_scope].pending_reads {
-                    guards[read] = Some(EnvGuard::ShortCircuitAnd);
+                    if guards[read].is_none() {
+                        guards[read] = Some(EnvGuard::ShortCircuitAnd);
+                    }
                 }
             }
             b'|' if bytes.get(index + 1) == Some(&b'|') => {
                 for &read in &scopes[current_scope].pending_reads {
-                    guards[read] = Some(EnvGuard::ShortCircuitOr);
+                    if guards[read].is_none() {
+                        guards[read] = Some(EnvGuard::ShortCircuitOr);
+                    }
                 }
             }
             b'?' if bytes.get(index + 1) == Some(&b'?') => {
                 for &read in &scopes[current_scope].pending_reads {
-                    guards[read] = Some(EnvGuard::NullishCoalescing);
+                    if guards[read].is_none() {
+                        guards[read] = Some(EnvGuard::NullishCoalescing);
+                    }
                 }
             }
             b'?' if bytes.get(index + 1) != Some(&b'.')
                 && bytes.get(index.wrapping_sub(1)) != Some(&b'?') =>
             {
                 for &read in &scopes[current_scope].pending_reads {
-                    guards[read] = Some(EnvGuard::Conditional);
+                    if guards[read].is_none() {
+                        guards[read] = Some(EnvGuard::Conditional);
+                    }
                 }
                 scopes[current_scope].conditional_questions += 1;
             }
@@ -1677,6 +1724,27 @@ y=/process.env.F/.test(z),process.env.G"#;
                 "process.env.VERSION"
             ),
             None
+        );
+        assert_eq!(
+            guard(
+                "ready ? process.env.VERSION : fallback && work()",
+                "process.env.VERSION"
+            ),
+            None
+        );
+        assert_eq!(
+            guard(
+                "(ready ? process.env.VERSION : fallback) && work()",
+                "process.env.VERSION"
+            ),
+            Some("the retained read controls a && short-circuit branch")
+        );
+        assert_eq!(
+            guard(
+                "process.env.VERSION ? yes : no && work()",
+                "process.env.VERSION"
+            ),
+            Some("the retained read controls a conditional (?:) branch")
         );
     }
 
