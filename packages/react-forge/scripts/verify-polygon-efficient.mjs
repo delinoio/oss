@@ -113,7 +113,16 @@ try {
             variant === SurfaceVariant.Alpha
           ) {
             assert.deepEqual(positions, [0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0]);
-            assert.deepEqual(uv, [0, 1, 1, 1, 1, 0, 0, 0]);
+            assert.deepEqual(uv, [
+              1 / 32,
+              31 / 32,
+              31 / 32,
+              31 / 32,
+              31 / 32,
+              1 / 32,
+              1 / 32,
+              1 / 32,
+            ]);
             assert.deepEqual(normals, [0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1]);
           }
           assert.equal(

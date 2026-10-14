@@ -73,10 +73,23 @@ export function curvedSheet(
 }
 
 export function paintedQuad(): GeometryInput {
+  // Sample texel centers so repeat wrapping and linear filtering cannot blend
+  // the first and last columns at the geometry boundary.
+  const texelInset = 0.5 / 16;
+  const texelEdge = 1 - texelInset;
   return {
     positions: new Float32Array([0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0]),
     normals: new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1]),
-    uv: new Float32Array([0, 1, 1, 1, 1, 0, 0, 0]),
+    uv: new Float32Array([
+      texelInset,
+      texelEdge,
+      texelEdge,
+      texelEdge,
+      texelEdge,
+      texelInset,
+      texelInset,
+      texelInset,
+    ]),
     indices: new Uint32Array([0, 1, 2, 0, 2, 3]),
   };
 }

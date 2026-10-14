@@ -54,7 +54,10 @@ test("curved sheets keep the selected vertex and triangle budgets", () => {
 test("opaque and alpha artwork reuse one four-vertex quad", () => {
   const quad = paintedQuad();
   assert.deepEqual([...quad.positions], [0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0]);
-  assert.deepEqual([...quad.uv!], [0, 1, 1, 1, 1, 0, 0, 0]);
+  assert.deepEqual(
+    [...quad.uv!],
+    [1 / 32, 31 / 32, 31 / 32, 31 / 32, 31 / 32, 1 / 32, 1 / 32, 1 / 32],
+  );
   assert.deepEqual([...quad.indices], [0, 1, 2, 0, 2, 3]);
   const opaque = paintedTexture(false);
   const alpha = paintedTexture(true);
