@@ -8,10 +8,6 @@
 
 The installed Tailscale adapter lives in `internal/tailscale`; approval and ingress business flows remain in `internal/server`. Read the [connections contract](../../docs/cmds-delidev-connections-contract.md#tailscale-connections) before changing either boundary.
 
-## Image input harness profiles
-
-Image attachments are enabled for Codex and for non-Sidechat OpenCode sessions whose selected model declares the `image` modality (`domain.Harness.ImageInputs`); Claude Code and Grok Build stay text-only. Keep route gates, the OpenCode 384 KiB combined bound and the contract text in `docs/cmds-delidev-image-input-contract.md` and `docs/cmds-delidev-harness-contract.md` aligned.
-
 ## Native OpenCode tests
 
 Opt-in native OpenCode tests must obtain the binary and its observed version only through `nativetest.NativeOpenCodeExecutable(t)` (`internal/nativetest`); never read `DELIDEV_NATIVE_OPENCODE_EXECUTABLE` directly and never pin real-binary probe configs to `opencode.SupportedVersion`. Follow the [native OpenCode testing runbook](../../docs/cmds-delidev-opencode-native-testing.md).
