@@ -663,3 +663,36 @@ denied. This validation repair preserves the existing local-only scene policy.
 Prepared root `TMPDIR=/private/tmp cargo test --locked -- --test-threads=1`
 passed 1,952 tests with zero failures and three existing opt-in tests ignored.
 Generated repository-owned dist output was removed after validation.
+
+## Local static-scene benchmark
+
+Build the package's native binding and TypeScript output, then run the opt-in
+scene benchmark on Node 24:
+
+```sh
+pnpm --filter @delino/react-forge build
+pnpm --filter @delino/react-forge benchmark:scenes --output /tmp/react-forge-scene-benchmark.json
+```
+
+The command runs GLB and FBX versions of 8×8, 256×256, 128 shared 32×32 and
+two-layer 32×32 grids, with one fresh Node process per case. The expected
+unique/instance vertex and triangle counts are respectively 81/81 and 128/128,
+66,049/66,049 and 131,072/131,072, 1,089/139,392 and 2,048/262,144, and
+2,178/2,178 and 4,096/4,096. The registered FSG1 geometry bytes are computed
+as `16 + 32 × vertices + 12 × triangles` per unique geometry. Generated model
+files and the full host-sensitive JSON report stay outside source control. The
+driver publishes a report only after all eight child processes, Khronos GLB
+validation, GLB accessor counting and independent ufbx FBX counting pass. It
+replaces the selected report atomically and removes only its own temporary
+files. The Office/PDF benchmark and hosted scene validation selection remain
+unchanged.
+
+The report includes the source revision and dirty flag, native binding hash and
+profile matched against the local debug/release build (or `unknown`), Node and
+React versions, CPU/OS, fixture SHA-256, output SHA-256/size, prepare/export/
+total monotonic wall times, peak RSS in bytes, and event-loop delay/utilization.
+Node/libuv reports `maxRSS` in KiB on every supported host; the harness
+normalizes it to bytes.
+Timings and RSS reflect the host and OS cache state. They are not GPU, frame-rate,
+draw-call or numeric performance guarantees. Neither Blender nor a network
+service is required for this local harness.
