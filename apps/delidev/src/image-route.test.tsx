@@ -41,7 +41,9 @@ function wrapper(
       getStatus: () => ({
         capabilities: [
           SystemCapability.IMAGE_INPUTS_V1,
-          ...(openCode.system ? [SystemCapability.OPENCODE_IMAGE_INPUTS_V1] : []),
+          ...(openCode.system
+            ? [SystemCapability.OPENCODE_IMAGE_INPUTS_V1]
+            : []),
         ],
       }),
     });
@@ -158,7 +160,11 @@ it("keeps OpenCode unavailable until both sides negotiate the independent pair",
     ).toBe(false);
     // The base pair still admits Codex without the OpenCode refinement.
     expect(
-      await ready({ harness: "codex", routes: [route(["text"])] }, undefined, openCode),
+      await ready(
+        { harness: "codex", routes: [route(["text"])] },
+        undefined,
+        openCode,
+      ),
     ).toBe(true);
   }
 });

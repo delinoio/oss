@@ -481,7 +481,9 @@ export function useImageRoute(
   );
   // OpenCode needs its independent System/Worker pair on top of the base pair.
   const openCodeSystemSupported = Boolean(
-    status.data?.capabilities.includes(SystemCapability.OPENCODE_IMAGE_INPUTS_V1),
+    status.data?.capabilities.includes(
+      SystemCapability.OPENCODE_IMAGE_INPUTS_V1,
+    ),
   );
   const row = machine.data?.resource,
     agentRow = agent.data?.resource;
