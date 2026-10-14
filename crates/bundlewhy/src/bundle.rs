@@ -14,7 +14,9 @@ use serde::{Deserialize, Serialize};
 use crate::{
     error::{BwError, BwResult, ErrorCode, problem},
     model::{Analysis, ProblemSeverity, RunStatus, SCHEMA_VERSION, SourceFile},
-    sources::{safe_project_relative, sha256_hex},
+    sources::{
+        as_text, is_binary_asset_path, is_generated_asset_module, safe_project_relative, sha256_hex,
+    },
 };
 
 pub const BUNDLE_FILE: &str = "analysis.json";
@@ -363,6 +365,23 @@ fn read_project_file(canonical_root: &Path, relative: &Path) -> Option<Vec<u8>> 
     (bytes.len() as u64 <= MAX_STALE_CHECK_BYTES).then_some(bytes)
 }
 
+/// True when the saved source is a bundler-generated asset module whose hash
+/// cannot match the live file. Bundles saved before asset modules were left out
+/// of the project-relative map still list such sources (for example a PNG
+/// whose saved hash is the hash of Vite's generated stub), so the check also
+/// runs when a saved run is reopened.
+///
+/// The stored text identifies a generated module. A bundle saved with
+/// `--exclude-sources` has no stored text, so only a binary asset path with
+/// live bytes that are not text is recognized. A text snapshot that is not a
+/// generated module (ordinary code) is never skipped.
+fn is_unverifiable_asset(source: &SourceFile, live: &[u8]) -> bool {
+    if source.content_included {
+        return is_generated_asset_module(&source.path, &source.content);
+    }
+    as_text(live).is_none() && is_binary_asset_path(&source.path)
+}
+
 /// Marks sources whose current project file differs from the saved hash.
 pub fn mark_stale(bundle: &mut ResultBundle) {
     let root = PathBuf::from(&bundle.project_root);
@@ -389,8 +408,14 @@ pub fn mark_stale(bundle: &mut ResultBundle) {
         // root) is not reported stale; only a removed file or a hash mismatch
         // is.
         let removed = std::fs::symlink_metadata(canonical_root.join(&relative)).is_err();
-        let is_stale = read_project_file(&canonical_root, &relative)
-            .map_or(removed, |bytes| sha256_hex(&bytes) != source.sha256);
+        let is_stale = read_project_file(&canonical_root, &relative).map_or(removed, |bytes| {
+            if is_unverifiable_asset(source, &bytes) {
+                tracing::debug!(path = %source.path, "asset stub source is not freshness-checked");
+                false
+            } else {
+                sha256_hex(&bytes) != source.sha256
+            }
+        });
         source.stale = is_stale;
         stale += usize::from(is_stale);
     }
@@ -697,5 +722,113 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    /// Bundles saved before generated asset modules were left out of the
+    /// project-relative map still list them, with the hash of the generated
+    /// module. Reopening must not compare that hash with the live asset.
+    #[test]
+    fn reopened_saved_bundles_skip_stored_asset_modules_and_keep_text_checks() {
+        const PNG: &[u8] = &[0x89, b'P', b'N', b'G', 0, 0xff, 0xfe];
+        const SVG: &str = "<svg xmlns=\"http://www.w3.org/2000/svg\"/>";
+        const MARKER: &str = "export default \"__VITE_ASSET__abc__\"";
+        const PLACEHOLDER: &str = "export default import.meta.ROLLDOWN_FILE_URL_abc123";
+        const DATA_URL: &str = "export default \"data:image/svg+xml,%3Csvg%2F%3E\"";
+        const RAW: &str = "export default \"<svg\\n/>\"";
+        const TEXT: &str = "export const a = 1;";
+        // (file, stored text, content kept, live bytes or removed, expected
+        // stale)
+        type Case = (
+            &'static str,
+            &'static str,
+            bool,
+            Option<&'static [u8]>,
+            bool,
+        );
+        let cases: &[Case] = &[
+            // Stored generated asset modules are never compared.
+            ("src/logo.png", MARKER, true, Some(PNG), false),
+            ("src/logo.png", DATA_URL, true, Some(PNG), false),
+            ("src/icon.svg", MARKER, true, Some(SVG.as_bytes()), false),
+            (
+                "src/icon.svg",
+                PLACEHOLDER,
+                true,
+                Some(SVG.as_bytes()),
+                false,
+            ),
+            ("src/icon.svg", DATA_URL, true, Some(SVG.as_bytes()), false),
+            ("src/icon.svg?raw", RAW, true, Some(SVG.as_bytes()), false),
+            // A removed asset is still a change.
+            ("src/logo.png", MARKER, true, None, true),
+            ("src/icon.svg", PLACEHOLDER, true, None, true),
+            // Without stored text only a non-text binary asset is recognized.
+            ("src/logo.png", MARKER, false, Some(PNG), false),
+            ("src/logo.png", MARKER, false, None, true),
+            ("src/main.js", TEXT, false, Some(PNG), true),
+            // Ordinary text snapshots keep being compared.
+            ("src/main.js", TEXT, true, Some(TEXT.as_bytes()), false),
+            (
+                "src/main.js",
+                TEXT,
+                true,
+                Some(b"export const a = 2;"),
+                true,
+            ),
+            ("src/main.js", TEXT, true, Some(PNG), true),
+            ("src/main.js", TEXT, true, None, true),
+            (
+                "src/label.js",
+                "export default \"hello\";",
+                true,
+                Some(b"changed"),
+                true,
+            ),
+            (
+                "src/label.js",
+                "export default \"hello\";",
+                true,
+                Some(b"export default \"hello\";"),
+                false,
+            ),
+        ];
+        for (file, stored, content_kept, live, expected) in cases {
+            let dir = tempfile::tempdir().unwrap();
+            let project = dir.path().join("project");
+            std::fs::create_dir_all(project.join("src")).unwrap();
+            let relative = file.split('?').next().unwrap();
+            if let Some(bytes) = live {
+                std::fs::write(project.join(relative), bytes).unwrap();
+            }
+            let mut saved = bundle();
+            saved.project_root = std::fs::canonicalize(&project)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
+            saved.sources[0].path = (*file).to_owned();
+            saved.sources[0].sha256 = sha256_hex(stored.as_bytes());
+            saved.sources[0].content_included = *content_kept;
+            if *content_kept {
+                saved.sources[0].content = (*stored).to_owned();
+            }
+            saved.analysis.sources = vec![crate::model::SourceFileSummary {
+                id: "src-0123456789abcdef".to_owned(),
+                ..crate::model::SourceFileSummary::default()
+            }];
+            saved
+                .project_relative
+                .insert("src-0123456789abcdef".to_owned(), relative.to_owned());
+            save(dir.path(), &saved).unwrap();
+            let loaded = load(dir.path()).unwrap();
+            assert_eq!(loaded.sources[0].stale, *expected, "{file} {stored}");
+            assert_eq!(loaded.analysis.sources[0].stale, *expected, "{file}");
+            let warnings = loaded
+                .analysis
+                .problems
+                .iter()
+                .filter(|entry| entry.code == "BW_SOURCE_STALE")
+                .count();
+            assert_eq!(warnings, usize::from(*expected), "{file} {stored}");
+        }
     }
 }

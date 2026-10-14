@@ -54,7 +54,7 @@ Every error prints a stable `BW_*` code, a message and a recovery instruction. A
 | `BW_SOURCE_STALE`       | Source files changed or were removed after the analysis.                             | Saved locations and snippets describe the analyzed version. Start a new run to analyze the current code.       |
 | `BW_SOURCE_NOT_FOUND`   | The requested source is not part of this analysis.                                   | Select a source from the analysis, or start a new run if sources were excluded.                                |
 
-`BW_SOURCE_STALE` only applies to text sources. Imported images and other non-text assets keep their path in the analysis but are not checked for changes, and their generated asset stubs are not shown as source code.
+`BW_SOURCE_STALE` only applies to text sources. Imported images and other assets (including small inlined assets and `?url`, `?raw` or `?inline` imports) keep their path in the analysis but are not checked for changes, and the module code the bundler generated for them is not shown as source code. A normal source file that was replaced by non-text content is still reported as changed. Saved runs from earlier versions no longer report unchanged assets as changed when you reopen or export them.
 
 ## Local server and browser
 
