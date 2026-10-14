@@ -175,6 +175,10 @@ Missing proof retains the member workspace until the owner process and its
 descendants are contained. The owner reconciles its original process index before
 authentication removal and retained workspace cleanup. Unknown Finish outcomes
 retain their original request identifiers and block admission until settlement.
+Owner cleanup streams the complete accumulated account history with bounded
+memory to detect raw and encoded credential remnants. It does not apply the
+single-execution file-count or byte limits to that retained shared history;
+the existing singleton cleanup limits remain in force.
 Native owner loss fences every member and never replays input. Fresh checkpoints
 bind an account home and exact native thread-history digest; version 1 history is
 imported only after the original checkpoint and rollout are verified. Invalid or
