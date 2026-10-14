@@ -2,21 +2,32 @@
 .page.pull-requests-page[data-list-layout="true"] {
   max-width: none;
 }
+/* The workspace fills the height left in the page after the header, notices and
+ * pending actions. main and the page are column flex containers, so the page
+ * takes the height left in main after its preceding siblings and the workspace
+ * grows into the page with flex instead of a viewport-relative cap. The zero
+ * flex basis keeps the workspace content height out of the page content size,
+ * so a long list scrolls inside its pane and the 320 CSS pixel minimum is what
+ * lets main scroll on short windows. Panes size from grid tracks, not
+ * percentage heights. */
 .pr-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  flex: 1 1 0px;
   min-width: 0;
   width: 100%;
-  height: min(75vh, 1000px);
+  min-height: 320px;
   overflow: hidden;
 }
 .pr-workspace[data-wide="true"] {
-  display: grid;
   grid-template-columns: minmax(0, 40fr) minmax(0, 60fr);
   gap: 0;
 }
 .pr-workspace-list,
 .pr-workspace-selected {
   min-width: 0;
-  height: 100%;
+  min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;

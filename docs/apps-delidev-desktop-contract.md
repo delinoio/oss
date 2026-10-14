@@ -6773,6 +6773,20 @@ existing ownership.
 The read-only PR workspace follows the integration contract's separately retained
 list/selection owners. At available body width 900 CSS pixels or more, list/detail
 use 40/60 independent scrolling; compact Back restores list scroll and row focus.
+While the standalone Pull requests page is visible, `main` is a vertical flex
+container and the page takes the `main` height left after its preceding siblings,
+including the compact context trigger and the sidebar-preference notice, rather
+than a full `main` height that those siblings would overflow. The page is itself a
+vertical layout, and the workspace panes use the page height left after the
+header, notices and pending actions down to the page's 32 CSS pixel bottom
+padding. The workspace has a zero flex basis, so long lists scroll inside their
+panes instead of growing the page. There
+is no viewport-relative height cap, so a tall window leaves no unused band below
+the panes. The workspace keeps a 320 CSS pixel minimum height, so `main` scrolls
+only when less than that remains, and never when the 320 CSS pixel floor fits.
+Both panes keep their own overflow, and resizing the window or changing the
+pending-actions notice height reflows the workspace without a GitHub read or a
+selection reset.
 Selection initially remains empty and displays a localized prompt. Rows and the
 compact detail header retain complete wrapping titles, textual state, Draft and
 unknown-author notices, relative update times (exact UTC on hover/focus) and their own signed additions/deletions.
