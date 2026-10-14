@@ -63,7 +63,7 @@ type PRWorkspace struct {
 }
 
 func (w PRWorkspace) Validate() bool {
-	if !w.PRReadScope.Validate() || len(w.Seeds) > 20 || len(w.Seeds) == 0 || len(w.Nodes) > 100 || w.Nodes == nil || w.Edges == nil || w.Reasons == nil || (w.State != PRWorkspaceComplete && w.State != PRWorkspaceIncomplete && w.State != PRWorkspaceAmbiguous) {
+	if !w.PRReadScope.Validate() || len(w.Seeds) > MaxPullRequestPageSize || len(w.Seeds) == 0 || len(w.Nodes) > 100 || w.Nodes == nil || w.Edges == nil || w.Reasons == nil || (w.State != PRWorkspaceComplete && w.State != PRWorkspaceIncomplete && w.State != PRWorkspaceAmbiguous) {
 		return false
 	}
 	seen := map[string]RepositoryItem{}

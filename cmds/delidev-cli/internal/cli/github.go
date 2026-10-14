@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/presentation"
@@ -71,8 +72,14 @@ func githubCommand(ctx context.Context, c client, args []string) (any, error) {
 	if err := domain.ID(*repository).Validate(); err != nil {
 		return nil, err
 	}
-	if page > 10000 || size > 20 {
-		return nil, domain.Fail(domain.InvalidArgument, "The query page is out of bounds.", "Use page 1–10000 and page size 1–20.")
+	// List and search page sizes are kind dependent; every other paged operation
+	// keeps the original 20-row ceiling.
+	maxSize := uint(domain.MaxRepositoryPageSize)
+	if query.Operation == domain.RepositoryList || query.Operation == domain.RepositorySearch {
+		maxSize = uint(domain.MaxPullRequestListPageSize(query.Kind))
+	}
+	if page > 10000 || size > maxSize {
+		return nil, domain.Fail(domain.InvalidArgument, "The query page is out of bounds.", fmt.Sprintf("Use page 1–10000 and page size 1–%d.", maxSize))
 	}
 	query.State, query.Search, query.Number, query.Page, query.PageSize = domain.RepositoryItemState(state), text, number, uint32(page), uint32(size)
 	if err := query.Validate(); err != nil {
