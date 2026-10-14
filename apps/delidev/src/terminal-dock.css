@@ -88,7 +88,7 @@
   touch-action: none;
 }
 /* Tab geometry comes from tab-strip.css; the dock supplies its own palette. The
-   strip stays the vertical scroll root resolved by the history continuation. */
+   history continuation observes this strip's loaded horizontal tail. */
 .terminal-tabs {
   --tab-baseline: var(--terminal-border);
   --tab-muted: var(--terminal-muted);

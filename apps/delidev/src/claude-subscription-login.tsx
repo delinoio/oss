@@ -56,6 +56,10 @@ import {
 import { type ScrollContinuationQuery } from "./scroll-continuation";
 import { OAuthNativeAction, useOAuthNativeControl } from "./account-oauth";
 import { document, encode, items, object, text } from "./documents";
+import {
+  claudeVersionAllowed,
+  validInstallationVersion,
+} from "./harness-version";
 import { copy, useLocale, type MessageKey } from "./localization";
 import { useSettingsOpening } from "./settings-lifetime";
 import {
@@ -221,7 +225,7 @@ function eligibleRunner(r: Resource): boolean {
     installations.some(
       (i) =>
         i.harness === "claude-code" &&
-        i.version === "2.1.236" &&
+        claudeVersionAllowed(i.version) &&
         i.state === "detected" &&
         i.protocol_verified === true &&
         object(i.protocol).state === "verified" &&
@@ -1024,8 +1028,7 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
   const d = v.diagnostic,
     safeDiagnostic =
       d &&
-      d.requiredVersion === "2.1.236" &&
-      (!d.detectedVersion || /^\d+\.\d+\.\d+$/.test(d.detectedVersion)) &&
+      (!d.detectedVersion || validInstallationVersion(d.detectedVersion)) &&
       d.phase >= 1 &&
       d.phase <= 9 &&
       Object.values(FailureCode).includes(d.code as FailureCode) &&
@@ -1244,6 +1247,13 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
                     aria-hidden="true"
                   />
                 ) : null}
+                {v.state === SubscriptionLoginState.UNSUPPORTED ? (
+                  <>
+                    <strong>
+                      {copy("claude-subscription.validationHeading")}
+                    </strong>{" "}
+                  </>
+                ) : null}
                 {copy(status[v.state] ?? "claude-subscription.failed")}
               </p>
               {v.step === Step.Login && v.browserReady ? (
@@ -1306,10 +1316,6 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
                       {d.detectedVersion ||
                         copy("claude-subscription.notDetected")}
                     </dd>
-                  </div>
-                  <div>
-                    <dt>{copy("claude-subscription.requiredVersion")}</dt>
-                    <dd>{d.requiredVersion}</dd>
                   </div>
                   <div>
                     <dt>{copy("claude-subscription.phase")}</dt>

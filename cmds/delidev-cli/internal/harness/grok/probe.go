@@ -77,7 +77,7 @@ func Probe(ctx context.Context, config ProbeConfig) (returned error) {
 			}
 		}
 	}()
-	if config.Version != SupportedVersion {
+	if !domain.HarnessVersionAllowed(domain.GrokBuild, config.Version) {
 		return incompatible()
 	}
 	phase = runtimePhase
@@ -99,7 +99,7 @@ func Probe(ctx context.Context, config ProbeConfig) (returned error) {
 	config.Process.Stderr = &probeStderr{wire: wire}
 	phase = launchPhase
 	if config.Process.Logger != nil {
-		config.Process.Logger.InfoContext(ctx, "Grok Build native handshake started", "owner_id", config.Process.OwnerID, "profile_version", SupportedVersion)
+		config.Process.Logger.InfoContext(ctx, "Grok Build native handshake started", "owner_id", config.Process.OwnerID, "installed_version", config.Version, "baseline_version", SupportedVersion)
 	}
 	h, err := process.Start(bounded, config.Process)
 	if err != nil {

@@ -152,7 +152,7 @@ func (c *Client) WorkspaceWithBudget(ctx context.Context, token []byte, owner, n
 	ctx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
 	result := WorkspaceObservation{Nodes: []domain.PRWorkspaceNode{}, Edges: []domain.PRWorkspaceEdge{}, Reasons: []string{}, State: domain.PRWorkspaceComplete, Avatars: map[string]string{}}
-	if len(seeds) == 0 || len(seeds) > 20 {
+	if len(seeds) == 0 || len(seeds) > domain.MaxPullRequestPageSize {
 		return result, queryUnavailable()
 	}
 	// Scope comes from identity and repository metadata only, so an unreadable

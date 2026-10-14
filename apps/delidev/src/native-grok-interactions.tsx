@@ -6,6 +6,7 @@ import {
   type Resource,
 } from "@delinoio/delidev-api-client";
 import { object, encode, text, type Document } from "./documents";
+import { HarnessId, harnessVersionAllowed } from "./harness-version";
 import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
 import {
@@ -171,7 +172,7 @@ function request(data: Document) {
       "proposal_digest",
       ...(r.plan === undefined ? [] : ["plan"]),
     ]) ||
-    r.version !== "1.0.41" ||
+    !harnessVersionAllowed(HarnessId.Grok, r.version) ||
     !uuid(r.observation_id) ||
     !digest(r.request_digest) ||
     !digest(r.proposal_digest) ||

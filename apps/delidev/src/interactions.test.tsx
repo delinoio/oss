@@ -260,6 +260,48 @@ it("retains native deny descriptors when reducing a requested write to read", as
   });
 });
 
+it("offers the original decision for a newer admitted Codex approval version", async () => {
+  const value = fixture({
+    type: "native-approval",
+    closure: "open",
+    approval: {
+      harness: "codex",
+      version: "0.151.1",
+      codex: { kind: "file-change", file: {} },
+    },
+  });
+  render(value.view());
+  expect(
+    screen.queryByText(
+      "This native approval version is not supported. The original request is preserved.",
+    ),
+  ).toBeNull();
+  fireEvent.change(screen.getByRole("combobox", { name: "Decision" }), {
+    target: { value: "1" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Send decision" }));
+  await screen.findByText("Response: queued");
+  expect(value.approvals).toHaveBeenCalledTimes(1);
+});
+
+it("refuses a Codex approval version below the baseline", () => {
+  const value = fixture({
+    type: "native-approval",
+    closure: "open",
+    approval: {
+      harness: "codex",
+      version: "0.150.9",
+      codex: { kind: "file-change", file: {} },
+    },
+  });
+  render(value.view());
+  expect(
+    screen.getByText(
+      "This native approval version is not supported. The original request is preserved.",
+    ),
+  ).toBeTruthy();
+});
+
 it("refuses an unrecognized native approval version without inventing choices", () => {
   const value = fixture({
     type: "native-approval",

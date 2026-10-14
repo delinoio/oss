@@ -30,6 +30,7 @@
 
 ## Owning contracts
 
+- [bundlewhy Rust foundation](../docs/crates-bundlewhy-foundation.md)
 - [typeopt Rust CLI foundation](../docs/crates-typeopt-foundation.md)
 
 - [clibox public documentation foundation](../docs/apps-clibox-docs-foundation.md)

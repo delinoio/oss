@@ -261,6 +261,37 @@ for (const change of ["mixed", "request", "kind", "version", "arrival", "null"])
     render(<NativeGrokInteraction data={data} />);
     expect(screen.getByLabelText("Grok request unavailable")).toBeTruthy();
   });
+for (const version of ["1.0.42", "1.1.0", "2.0.0-rc.1"])
+  test(`renders response controls for a newer admitted Grok request at ${version}`, () => {
+    const data = fixture();
+    object(data.grok).version = version;
+    const resource = {
+      id,
+      revision: 1n,
+      schemaVersion: 1,
+      documentJson: encode(data),
+    } as Resource;
+    render(
+      <NativeGrokInteraction
+        data={data}
+        resource={resource}
+        accepted={() => {}}
+      />,
+    );
+    expect(screen.queryByLabelText("Grok request unavailable")).toBeNull();
+    fireEvent.change(screen.getByLabelText("Question response"), {
+      target: { value: "cancelled" },
+    });
+    fireEvent.click(screen.getByText("Send response to Grok"));
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+for (const version of ["1.0.40", "1.0.41-rc.1"])
+  test(`rejects a Grok request recorded below the baseline at ${version}`, () => {
+    const data = fixture();
+    object(data.grok).version = version;
+    render(<NativeGrokInteraction data={data} />);
+    expect(screen.getByLabelText("Grok request unavailable")).toBeTruthy();
+  });
 test("shows native revised Plan without inventing another approval", () => {
   const data = fixture(),
     r = object(data.grok),

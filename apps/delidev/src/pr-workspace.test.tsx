@@ -29,10 +29,16 @@ import {
   type PullRequestNavigation,
 } from "./github-items";
 import { ItemKind, ItemState, QueryOperation } from "./github-query-model";
+import { i18n } from "./localization";
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
 
 it("retains list/scroll while lazily reading all four tabs with independent commit counts", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(Date.parse("2026-10-11T00:18:12Z"));
   const profile = newRequestId(),
     generation = newRequestId(),
     selected = create(ResourceSchema, {
@@ -264,6 +270,52 @@ it("retains list/scroll while lazily reading all four tabs with independent comm
     screen.getByRole("button", { name: /#102 Complete original title 102/ }),
   );
   await screen.findByRole("heading", { name: "Readable heading" });
+  // Detail presentation: toolbar actions, status line, relative Updated label.
+  const header = view.container.querySelector(".pr-detail-header")!;
+  const toolbar = view.container.querySelector(".pr-detail-toolbar")!;
+  expect(toolbar.firstElementChild).toBe(
+    screen.getByRole("button", { name: "Back to results" }),
+  );
+  const toolbarEnd = toolbar.querySelector(".pr-detail-toolbar-end")!;
+  expect(
+    [...toolbarEnd.querySelectorAll("button")].map((b) =>
+      b.getAttribute("aria-label"),
+    ),
+  ).toEqual(["Refresh GitHub results", "Open on GitHub"]);
+  const openAction = screen.getByRole("button", { name: "Open on GitHub" });
+  expect((openAction as HTMLButtonElement).disabled).toBe(true);
+  const notice = screen.getByText(/Browser opening is available/);
+  expect(
+    toolbar.compareDocumentPosition(notice) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(header.querySelector(".pr-detail-status")?.textContent).toMatch(
+    /^Open.*#102$/,
+  );
+  expect(header.querySelector("h3")?.textContent).toBe(
+    "Complete original title 102",
+  );
+  expect(header.querySelector(".pr-detail-branches code")?.textContent).toMatch(
+    / → /,
+  );
+  const updated = header.querySelector(".pr-detail-meta time")!;
+  expect(updated.textContent).toBe("18 minutes ago");
+  expect(header.querySelector(".pr-detail-meta")?.textContent).toContain(
+    "Updated 18 minutes ago",
+  );
+  expect(updated.getAttribute("datetime")).toBe("2026-10-11T00:00:00Z");
+  expect(updated.getAttribute("title")).toBe("2026-10-11T00:00:00Z");
+  expect(updated.getAttribute("aria-description")).toBe("2026-10-11T00:00:00Z");
+  await act(() => i18n.changeLanguage("ko"));
+  expect(header.querySelector(".pr-detail-meta")?.textContent).toContain(
+    "18분 전 업데이트",
+  );
+  await act(() => i18n.changeLanguage("en"));
+  // A clock tick recomputes the label without another GitHub read.
+  const readsBeforeTick = legacy.mock.calls.length;
+  act(() => vi.setSystemTime(Date.parse("2026-10-11T00:19:12Z")));
+  fireEvent.focus(window);
+  expect(updated.textContent).toBe("19 minutes ago");
+  expect(legacy.mock.calls.length).toBe(readsBeforeTick);
   expect(view.container.querySelector("script")).toBeNull();
   expect(view.container.querySelector('img[src^="https:"]')).toBeNull();
   const description = screen.getByRole("tab", { name: "Description" });
@@ -890,4 +942,153 @@ it("renders a component with seeds on two resident pages exactly once", () => {
   view.rerender(rows(["103"]));
   expect(numbers()).toEqual(["101", "102", "103"]);
   view.unmount();
+});
+
+it("disposes the selection and old enrichment when the page size scope is replaced", async () => {
+  const profile = newRequestId();
+  const repository = create(ResourceSchema, {
+    id: newRequestId(),
+    kind: EntityKind.REPOSITORY,
+    revision: 1n,
+    schemaVersion: 1,
+    documentJson: encode({
+      integration_id: profile,
+      github_owner: "fixture-owner",
+      github_name: "repo",
+    }),
+  });
+  const scope = {
+    repository_id: repository.id,
+    repository_revision: "1",
+    profile_id: profile,
+    generation_id: newRequestId(),
+    observed_at: "2026-10-11T00:00:00Z",
+    repository: {
+      provider: "github.com",
+      id: "37",
+      node_id: "R_37",
+      owner: "fixture-owner",
+      name: "repo",
+      private: true,
+    },
+  };
+  const row = {
+    provider: "github.com",
+    kind: "pull-request",
+    identity_source: "pull-request-api",
+    id: "1201",
+    node_id: "PR_201",
+    number: "201",
+    title: "Selectable row",
+    state: "open",
+    created_at: "2026-10-10T00:00:00Z",
+    updated_at: "2026-10-11T00:00:00Z",
+    url: "https://github.com/fixture-owner/repo/pull/201",
+    author: {
+      provider_type: "User",
+      kind: "user",
+      id: "19",
+      node_id: "U_19",
+      login: "fixture-author",
+    },
+    draft: false,
+  };
+  const list = vi.fn(async (request: { queryJson: Uint8Array }) => ({
+    schemaVersion: 1,
+    documentJson: encode({
+      ...scope,
+      identity: { id: "17", node_id: "U_17", login: "fixture-user" },
+      query: JSON.parse(new TextDecoder().decode(request.queryJson)),
+      items: [row],
+    }),
+  }));
+  const enrich = vi.fn(async (request: { seedNumbers: string[] }) => ({
+    schemaVersion: 1,
+    documentJson: encode({
+      ...scope,
+      state: "complete",
+      reasons: [],
+      seeds: request.seedNumbers,
+      nodes: [{ item: row, seed: true }],
+      edges: [],
+    }),
+  }));
+  const transport = createRouterTransport((router) => {
+    router.service(SystemService, {
+      getStatus: () => ({
+        capabilities: [SystemCapability.PULL_REQUEST_WORKSPACE_V1],
+      }),
+    });
+    router.service(IntegrationService, {
+      queryRepositoryIntegration: list,
+      getPullRequestWorkspace: enrich,
+    });
+  });
+  let resize!: (size: number) => void;
+  function Fixture({ size }: { size: number }) {
+    const navigation: PullRequestNavigation = {
+      scopeKey: `scope-${size}`,
+      query: {
+        kind: ItemKind.PullRequest,
+        operation: QueryOperation.List,
+        state: ItemState.Open,
+        page: 1,
+        page_size: size,
+      },
+      previous: [],
+    };
+    return (
+      <StandalonePullRequestResults
+        selected={repository}
+        navigation={navigation}
+        changeNavigation={() => {}}
+        active
+      />
+    );
+  }
+  function Host() {
+    const [size, setSize] = useState(20);
+    resize = setSize;
+    return <Fixture size={size} />;
+  }
+  const view = render(
+    <TransportProvider transport={transport}>
+      <QueryClientProvider client={new QueryClient()}>
+        <Host />
+      </QueryClientProvider>
+    </TransportProvider>,
+  );
+  const button = await screen.findByRole("button", {
+    name: /#201 Selectable row/,
+  });
+  await waitFor(() => expect(enrich).toHaveBeenCalledTimes(1));
+  fireEvent.click(button);
+  await waitFor(() =>
+    expect(
+      view.container
+        .querySelector("[data-pr-number='201']")
+        ?.getAttribute("aria-pressed"),
+    ).toBe("true"),
+  );
+  act(() => resize(50));
+  const lists = () =>
+    list.mock.calls
+      .map(([request]) =>
+        JSON.parse(new TextDecoder().decode(request.queryJson)),
+      )
+      .filter((query) => query.operation === "list");
+  await waitFor(() => expect(lists()).toHaveLength(2));
+  expect(lists().map((query) => [query.page, query.page_size])).toEqual([
+    [1, 20],
+    [1, 50],
+  ]);
+  await waitFor(() =>
+    expect(
+      view.container
+        .querySelector("[data-pr-number='201']")
+        ?.getAttribute("aria-pressed"),
+    ).toBe("false"),
+  );
+  // The replacement owns its own enrichment; the old one is not reused.
+  await waitFor(() => expect(enrich).toHaveBeenCalledTimes(2));
 });

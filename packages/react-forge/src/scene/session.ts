@@ -7,7 +7,11 @@ import {
   readSource,
   withOutputReservation,
 } from "../files.js";
-import { processDocument, validateSceneAsset } from "../native.js";
+import {
+  compactSceneGeometry,
+  processDocument,
+  validateSceneAsset,
+} from "../native.js";
 import { RenderRoot } from "../renderer.js";
 import {
   ErrorCode,
@@ -53,6 +57,31 @@ export interface SceneGeometry {
   readonly max: Vec3;
   readonly revision: number;
 }
+export interface GeometryCompaction {
+  readonly geometry: GeometryHandle;
+  readonly inputVertices: number;
+  readonly outputVertices: number;
+  readonly triangles: number;
+  readonly inputBytes: number;
+  readonly outputBytes: number;
+}
+
+function compactionScratchBytes(bytes: Buffer): number {
+  // Registered geometry has already passed native envelope validation. This
+  // mirrors the native bound and charges its worker buffers before dispatch.
+  const base = bytes.subarray(
+    bytes.toString("ascii", 0, 4) === "FSG2" ? 16 : 0,
+  );
+  const vertices = base.readUInt32LE(8);
+  const indices = base.readUInt32LE(12);
+  const scratch = bytes.length * 5 + vertices * 80 + indices * 8;
+  if (!Number.isSafeInteger(scratch) || scratch > limits.sceneBytes)
+    throw new ForgeError(
+      ErrorCode.ResourceLimit,
+      "Geometry compaction exceeds its scratch budget.",
+    );
+  return scratch;
+}
 
 /** Independent 3D lifecycle; shares React and atomic local publication with documents. */
 export class SceneSession {
@@ -67,6 +96,7 @@ export class SceneSession {
   private registrations: Promise<unknown> = Promise.resolve();
   private bytes = 0;
   private reserved = 0;
+  private scratchReserved = 0;
   private signature = "";
   private currentRevision = 0;
   private disposal?: Promise<void>;
@@ -396,6 +426,71 @@ export class SceneSession {
     void task.finally(() => this.pending.delete(task)).catch(() => {});
     return task;
   }
+  compactGeometry(
+    handle: GeometryHandle,
+    control: { signal?: AbortSignal } = {},
+  ): Promise<GeometryCompaction> {
+    const signal = this.signal(control.signal);
+    checkSignal(signal);
+    if (
+      !handle ||
+      handle.documentId !== this.documentId ||
+      handle.kind !== SceneAssetKind.Geometry ||
+      typeof handle.assetId !== "string" ||
+      !handle.assetId.startsWith(`${SceneAssetKind.Geometry}:`) ||
+      !this.assets.has(handle.assetId)
+    )
+      throw new ForgeError(
+        ErrorCode.InvalidTarget,
+        "Geometry is not registered in this scene.",
+      );
+    const source = this.assets.get(handle.assetId)!;
+    const scratch = compactionScratchBytes(source);
+    if (
+      this.bytes + this.reserved + source.length > limits.sceneBytes ||
+      this.scratchReserved + scratch > limits.sceneBytes
+    )
+      throw new ForgeError(
+        ErrorCode.ResourceLimit,
+        "Geometry compaction exceeds its reserved budget.",
+      );
+    this.reserved += source.length;
+    this.scratchReserved += scratch;
+    const task = this.track(Stage.Render, async () => {
+      try {
+        const result = await compactSceneGeometry(source, signal);
+        checkSignal(signal);
+        if (result.bytes.length > source.length)
+          throw new ForgeError(
+            ErrorCode.ResourceLimit,
+            "Compacted geometry exceeds its reserved output budget.",
+          );
+        const id = `${SceneAssetKind.Geometry}:${digest(result.bytes)}`;
+        if (!this.assets.has(id)) {
+          this.assets.set(id, result.bytes);
+          this.bytes += result.bytes.length;
+        }
+        return Object.freeze({
+          geometry: Object.freeze({
+            assetId: id,
+            documentId: this.documentId,
+            kind: SceneAssetKind.Geometry,
+          }),
+          inputVertices: result.inputVertices,
+          outputVertices: result.outputVertices,
+          triangles: result.triangles,
+          inputBytes: source.length,
+          outputBytes: result.bytes.length,
+        });
+      } finally {
+        this.reserved -= source.length;
+        this.scratchReserved -= scratch;
+      }
+    });
+    this.pending.add(task);
+    void task.finally(() => this.pending.delete(task)).catch(() => {});
+    return task;
+  }
   registerAnimationSampler(
     input: AnimationSamplerInput,
     options: { signal?: AbortSignal } = {},
@@ -714,6 +809,7 @@ export class SceneSession {
       this.listeners.clear();
       this.pending.clear();
       this.bytes = 0;
+      this.scratchReserved = 0;
     })();
     return this.disposal;
   }

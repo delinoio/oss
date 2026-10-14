@@ -38,6 +38,16 @@ import {
 import { SessionTerminals } from "./session-terminals";
 import { ShortcutProvider } from "./shortcut-provider";
 
+const native = vi.hoisted(() => ({
+  invoke: vi.fn(),
+  isTauri: vi.fn(() => false),
+  screenOpened: vi.fn(),
+}));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: native.invoke,
+  isTauri: native.isTauri,
+}));
+
 // Component tests use a text fixture; real Ghostty parser/CSP acceptance runs in
 // the external Chrome fixture. This adapter exercises input ownership only.
 vi.mock("./terminal-emulator", () => ({
@@ -47,7 +57,9 @@ vi.mock("./terminal-emulator", () => ({
     _resized: unknown,
     _unavailable: unknown,
     tabShortcut?: (event: KeyboardEvent) => boolean,
+    openLink?: (url: string) => void,
   ) => {
+    native.screenOpened(openLink);
     const output = document.createElement("pre"),
       field = document.createElement("textarea");
     field.setAttribute("aria-label", "Terminal input");
@@ -88,6 +100,396 @@ vi.mock("./terminal-emulator", () => ({
     };
   },
 }));
+
+it.each([{ nativeAvailable: false }, { nativeAvailable: true }])(
+  "admits terminal URL opening only with native capability ($nativeAvailable)",
+  async ({ nativeAvailable }) => {
+    native.isTauri.mockReturnValue(nativeAvailable);
+    native.invoke.mockReset();
+    native.screenOpened.mockClear();
+    native.invoke.mockRejectedValue("browser-unavailable");
+    const session = create(ResourceSchema, {
+      id: newRequestId(),
+      kind: EntityKind.SESSION,
+      schemaVersion: 1,
+      revision: 1n,
+      documentJson: encode({ archive: "active" }),
+    });
+    const terminal = create(ResourceSchema, {
+      id: newRequestId(),
+      kind: EntityKind.TERMINAL,
+      sessionId: session.id,
+      schemaVersion: 1,
+      revision: 1n,
+      documentJson: encode({ state: "running" }),
+    });
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const transport = createRouterTransport((router) => {
+      router.service(SystemService, {
+        getStatus: () => ({
+          capabilities: [SystemCapability.SESSION_TERMINALS_V1],
+        }),
+      });
+      router.service(ResourceService, {
+        listResources: () => ({ resources: [terminal] }),
+      });
+      router.service(TerminalService, {
+        watchTerminalOutput: async function* () {
+          yield {
+            epoch: newRequestId(),
+            sequence: 1n,
+            data: new TextEncoder().encode("https://example.com/"),
+            terminal,
+          };
+          await held;
+        },
+      });
+    });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const view = render(
+      <QueryClientProvider client={client}>
+        <TransportProvider transport={transport}>
+          <MutationIntents>
+            <SessionTerminals session={session} close={() => {}} />
+          </MutationIntents>
+        </TransportProvider>
+      </QueryClientProvider>,
+    );
+    try {
+      fireEvent.click(await screen.findByRole("tab", { name: /Terminal 1/ }));
+      const output = await screen.findByText("https://example.com/");
+      await waitFor(() => expect(native.screenOpened).toHaveBeenCalled());
+      const openLink = native.screenOpened.mock.lastCall?.[0] as
+        ((url: string) => void) | undefined;
+      if (!nativeAvailable) {
+        expect(openLink).toBeUndefined();
+        fireEvent.mouseMove(output);
+        fireEvent.click(output);
+        expect(output.closest("[data-link]")).toBeNull();
+        expect(native.invoke).not.toHaveBeenCalled();
+        expect(screen.queryByRole("alert")).toBeNull();
+      } else {
+        expect(openLink).toBeTypeOf("function");
+        await act(async () => openLink?.("https://example.com/"));
+        expect(native.invoke).toHaveBeenCalledExactlyOnceWith(
+          "open_external_url",
+          { url: "https://example.com/" },
+        );
+        expect((await screen.findByRole("alert")).textContent).toContain(
+          "not installed",
+        );
+        fireEvent.click(
+          screen.getByRole("button", { name: "Dismiss link error" }),
+        );
+        expect(screen.queryByRole("alert")).toBeNull();
+      }
+    } finally {
+      view.unmount();
+      release();
+      client.clear();
+      native.isTauri.mockReturnValue(false);
+    }
+  },
+);
+
+it.each([false, true])(
+  "reveals a selected terminal after its exact resource arrives (tabbed=%s)",
+  async (tabbed) => {
+    const session = create(ResourceSchema, {
+      id: newRequestId(),
+      kind: EntityKind.SESSION,
+      schemaVersion: 1,
+      revision: 1n,
+      documentJson: encode({ archive: "active" }),
+    });
+    const terminal = (id = newRequestId()) =>
+      create(ResourceSchema, {
+        id,
+        kind: EntityKind.TERMINAL,
+        sessionId: session.id,
+        schemaVersion: 1,
+        revision: 1n,
+        documentJson: encode({ state: "closed", cleanup_verified: true }),
+      });
+    const selected = terminal();
+    const history = Array.from({ length: 50 }, () => terminal());
+    let releaseSelected!: (value: { resource: Resource }) => void;
+    const selectedReply = new Promise<{ resource: Resource }>((resolve) => {
+      releaseSelected = resolve;
+    });
+    const reads = vi.fn(() => ({ resources: history, nextPageToken: "next" }));
+    const control = vi.fn();
+    const createTerminal = vi.fn();
+    const transport = createRouterTransport((router) => {
+      router.service(SystemService, {
+        getStatus: () => ({
+          capabilities: [SystemCapability.SESSION_TERMINALS_V1],
+        }),
+      });
+      router.service(ResourceService, {
+        listResources: reads,
+        getResource: () => selectedReply,
+      });
+      router.service(TerminalService, {
+        createTerminal,
+        controlTerminal: control,
+        watchTerminalOutput: async function* () {},
+      });
+    });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const opened = vi.fn();
+    const revealed: Element[] = [];
+    const originalReveal = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = function () {
+      revealed.push(this);
+    };
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(40);
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(320);
+    vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockImplementation(
+      function (this: HTMLElement) {
+        return this.matches(".terminal-tabs")
+          ? this.childElementCount * 100
+          : 0;
+      },
+    );
+    const view = render(
+      <QueryClientProvider client={client}>
+        <TransportProvider transport={transport}>
+          <MutationIntents>
+            <button type="button">Focus sentinel</button>
+            <SessionTerminals
+              session={session}
+              selectedId={selected.id}
+              tabbed={tabbed}
+              openTerminal={opened}
+              close={() => {}}
+            />
+          </MutationIntents>
+        </TransportProvider>
+      </QueryClientProvider>,
+    );
+    try {
+      const sentinel = screen.getByRole("button", { name: "Focus sentinel" });
+      sentinel.focus();
+      await waitFor(() => expect(reads).toHaveBeenCalledOnce());
+      await waitFor(() =>
+        expect(
+          view.container.querySelectorAll(".terminal-tabs .tab-item"),
+        ).toHaveLength(50),
+      );
+      expect(revealed).toHaveLength(0);
+      expect(reads).toHaveBeenCalledTimes(1);
+      await act(async () => releaseSelected({ resource: selected }));
+      await waitFor(() =>
+        expect(
+          view.container.querySelector<HTMLElement>(
+            `#terminal-tab-${selected.id}`,
+          ),
+        ).toBeTruthy(),
+      );
+      const button = view.container.querySelector<HTMLElement>(
+        `#terminal-tab-${selected.id}`,
+      );
+      expect(revealed).toEqual([button]);
+      expect(document.activeElement).toBe(sentinel);
+      const strip = view.container.querySelector<HTMLElement>(".terminal-tabs");
+      expect(strip).toBeTruthy();
+      strip!.scrollLeft = strip!.scrollWidth - strip!.clientWidth;
+      fireEvent.scroll(strip!);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      // The selected resource is synthetic and follows the reached history;
+      // revealing it must not page history again from the synthetic tail.
+      expect(reads).toHaveBeenCalledTimes(1);
+      await act(() => client.invalidateQueries({ refetchType: "active" }));
+      await waitFor(() => expect(reads).toHaveBeenCalledTimes(2));
+      expect(revealed).toEqual([button]);
+      expect(opened).not.toHaveBeenCalled();
+      expect(createTerminal).not.toHaveBeenCalled();
+      expect(control).not.toHaveBeenCalled();
+    } finally {
+      view.unmount();
+      client.clear();
+      HTMLElement.prototype.scrollIntoView = originalReveal;
+      vi.restoreAllMocks();
+    }
+  },
+);
+
+it.each([false, true])(
+  "reveals a selected terminal after its inventory row arrives (tabbed=%s)",
+  async (tabbed) => {
+    const session = create(ResourceSchema, {
+      id: newRequestId(),
+      kind: EntityKind.SESSION,
+      schemaVersion: 1,
+      revision: 1n,
+      documentJson: encode({ archive: "active" }),
+    });
+    const terminal = (id = newRequestId()) =>
+      create(ResourceSchema, {
+        id,
+        kind: EntityKind.TERMINAL,
+        sessionId: session.id,
+        schemaVersion: 1,
+        revision: 1n,
+        documentJson: encode({ state: "closed", cleanup_verified: true }),
+      });
+    const selected = terminal();
+    const history = Array.from({ length: 50 }, () => terminal());
+    let releaseList!: (value: { resources: Resource[] }) => void;
+    const listReply = new Promise<{ resources: Resource[] }>((resolve) => {
+      releaseList = resolve;
+    });
+    const reads = vi.fn(() => listReply);
+    const transport = createRouterTransport((router) => {
+      router.service(SystemService, {
+        getStatus: () => ({
+          capabilities: [SystemCapability.SESSION_TERMINALS_V1],
+        }),
+      });
+      router.service(ResourceService, {
+        listResources: reads,
+        getResource: () => ({}),
+      });
+      router.service(TerminalService, {
+        watchTerminalOutput: async function* () {},
+      });
+    });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const revealed: Element[] = [];
+    const originalReveal = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = function () {
+      revealed.push(this);
+    };
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(40);
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(320);
+    vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockImplementation(
+      function (this: HTMLElement) {
+        return this.matches(".terminal-tabs")
+          ? this.childElementCount * 100
+          : 0;
+      },
+    );
+    const view = render(
+      <QueryClientProvider client={client}>
+        <TransportProvider transport={transport}>
+          <MutationIntents>
+            <SessionTerminals
+              session={session}
+              selectedId={selected.id}
+              tabbed={tabbed}
+              close={() => {}}
+            />
+          </MutationIntents>
+        </TransportProvider>
+      </QueryClientProvider>,
+    );
+    try {
+      await waitFor(() => expect(reads).toHaveBeenCalledOnce());
+      expect(revealed).toHaveLength(0);
+      await act(async () =>
+        releaseList({ resources: [...history.slice(0, 49), selected] }),
+      );
+      const button = await waitFor(() => {
+        const item = view.container.querySelector<HTMLElement>(
+          `#terminal-tab-${selected.id}`,
+        );
+        expect(item).toBeTruthy();
+        return item;
+      });
+      expect(revealed).toEqual([button]);
+      await act(() => client.invalidateQueries({ refetchType: "active" }));
+      await waitFor(() => expect(reads).toHaveBeenCalledTimes(2));
+      expect(revealed).toEqual([button]);
+    } finally {
+      view.unmount();
+      client.clear();
+      HTMLElement.prototype.scrollIntoView = originalReveal;
+      vi.restoreAllMocks();
+    }
+  },
+);
+
+it.each(["missing", "wrong-session"])(
+  "does not reveal a selected terminal with %s exact resource evidence",
+  async (evidence) => {
+    const session = create(ResourceSchema, {
+      id: newRequestId(),
+      kind: EntityKind.SESSION,
+      schemaVersion: 1,
+      revision: 1n,
+      documentJson: encode({ archive: "active" }),
+    });
+    const selectedId = newRequestId();
+    const getResource = vi.fn(() => ({
+      resource:
+        evidence === "wrong-session"
+          ? create(ResourceSchema, {
+              id: selectedId,
+              kind: EntityKind.TERMINAL,
+              sessionId: newRequestId(),
+              schemaVersion: 1,
+              revision: 1n,
+              documentJson: encode({ state: "closed" }),
+            })
+          : undefined,
+    }));
+    const transport = createRouterTransport((router) => {
+      router.service(SystemService, {
+        getStatus: () => ({
+          capabilities: [SystemCapability.SESSION_TERMINALS_V1],
+        }),
+      });
+      router.service(ResourceService, {
+        listResources: () => ({ resources: [] }),
+        getResource,
+      });
+    });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const revealed: Element[] = [];
+    const originalReveal = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = function () {
+      revealed.push(this);
+    };
+    const view = render(
+      <QueryClientProvider client={client}>
+        <TransportProvider transport={transport}>
+          <MutationIntents>
+            <SessionTerminals
+              session={session}
+              selectedId={selectedId}
+              close={() => {}}
+            />
+          </MutationIntents>
+        </TransportProvider>
+      </QueryClientProvider>,
+    );
+    try {
+      await waitFor(() => expect(getResource).toHaveBeenCalledOnce());
+      expect(
+        view.container.querySelector(`#terminal-tab-${selectedId}`),
+      ).toBeNull();
+      expect(revealed).toHaveLength(0);
+    } finally {
+      view.unmount();
+      client.clear();
+      HTMLElement.prototype.scrollIntoView = originalReveal;
+    }
+  },
+);
 
 it("retries the exact creation request and reattaches without another shell", async () => {
   const session = create(ResourceSchema, {
@@ -2459,6 +2861,7 @@ function navigationFixture(options: { rejectFirst?: boolean } = {}) {
     return (
       <>
         <button onClick={() => setDeparted(true)}>Depart session</button>
+        <button onClick={() => setDeparted(false)}>Return to session</button>
         <button
           onClick={() =>
             setIntent({ requestId: newRequestId(), revision: session.revision })
@@ -2515,6 +2918,14 @@ function navigationFixture(options: { rejectFirst?: boolean } = {}) {
           kind: SessionTabKind.Terminal,
           id: origin.id,
         }),
+      );
+    },
+    depart() {
+      fireEvent.click(screen.getByRole("button", { name: "Depart session" }));
+    },
+    returnToSession() {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Return to session" }),
       );
     },
     hold() {
@@ -2724,7 +3135,41 @@ it("still selects the terminal admitted by the toolbar reuse-or-create gesture f
   }
 });
 
-it("does not select the additional terminal after Session departure", async () => {
+it.each(["button", "primary+T"] as const)(
+  "preserves the origin terminal after Session departure and return before %s creation acknowledgment",
+  async (trigger) => {
+    const f = navigationFixture();
+    try {
+      f.openOrigin();
+      const input = await screen.findByRole("textbox", {
+        name: "Terminal input",
+      });
+      await waitFor(() => expect(f.createButton().disabled).toBe(false));
+      const release = f.hold();
+      if (trigger === "button") fireEvent.click(f.createButton());
+      else expect(fireEvent.keyDown(input, primaryT)).toBe(false);
+      await waitFor(() => expect(f.createTerminal).toHaveBeenCalledOnce());
+      f.depart();
+      f.returnToSession();
+      expect(f.selected()).toBe(f.keyOf(f.origin.id));
+      const returnedInput = await screen.findByRole("textbox", {
+        name: "Terminal input",
+      });
+      await waitFor(() => expect(document.activeElement).toBe(returnedInput));
+      await act(async () => release());
+      await waitFor(() => expect(f.addedTab()).not.toBeNull());
+      expect(f.addedTab()!.textContent).toMatch(/^Terminal 3/);
+      expect(f.selected()).toBe(f.keyOf(f.origin.id));
+      expect(document.activeElement).toBe(returnedInput);
+      expect(f.createTerminal).toHaveBeenCalledOnce();
+      expect(f.controlTerminal).not.toHaveBeenCalled();
+    } finally {
+      f.cleanup();
+    }
+  },
+);
+
+it("retains a terminal acknowledged while the Session is absent for explicit opening", async () => {
   const f = navigationFixture();
   try {
     f.openOrigin();
@@ -2733,12 +3178,214 @@ it("does not select the additional terminal after Session departure", async () =
     const release = f.hold();
     fireEvent.click(f.createButton());
     await waitFor(() => expect(f.createTerminal).toHaveBeenCalledOnce());
-    fireEvent.click(screen.getByRole("button", { name: "Depart session" }));
+    f.depart();
     await act(async () => release());
+    f.returnToSession();
     await waitFor(() => expect(f.addedTab()).not.toBeNull());
+    expect(f.addedTab()!.textContent).toMatch(/^Terminal 3/);
     expect(f.selected()).toBe(f.keyOf(f.origin.id));
+    f.navigate((store, id) =>
+      store.open(id, { kind: SessionTabKind.Terminal, id: f.added.id }),
+    );
+    expect(f.selected()).toBe(f.keyOf(f.added.id));
     expect(f.createTerminal).toHaveBeenCalledOnce();
+    expect(f.controlTerminal).not.toHaveBeenCalled();
   } finally {
     f.cleanup();
+  }
+});
+
+it("keeps exact additional-creation retry bytes after Session departure and return", async () => {
+  const f = navigationFixture({ rejectFirst: true });
+  try {
+    f.openOrigin();
+    await screen.findByRole("textbox", { name: "Terminal input" });
+    await waitFor(() => expect(f.createButton().disabled).toBe(false));
+    fireEvent.click(f.createButton());
+    const retry = await screen.findByRole("button", {
+      name: "Retry the same terminal creation",
+      hidden: true,
+    });
+    const originalRequest = f.createTerminal.mock.calls[0]![0];
+    f.depart();
+    f.returnToSession();
+    fireEvent.click(retry);
+    await waitFor(() => expect(f.createTerminal).toHaveBeenCalledTimes(2));
+    expect(f.createTerminal.mock.calls[1]![0]).toEqual(originalRequest);
+    await waitFor(() => expect(f.addedTab()).not.toBeNull());
+    expect(f.selected()).toBe(f.keyOf(f.origin.id));
+    expect(f.controlTerminal).not.toHaveBeenCalled();
+  } finally {
+    f.cleanup();
+  }
+});
+
+it("discards an unsent open intent when workspace readiness is lost during inventory reads and never replays it", async () => {
+  const session = create(ResourceSchema, {
+    id: newRequestId(),
+    kind: EntityKind.SESSION,
+    schemaVersion: 1,
+    revision: 7n,
+    documentJson: encode({ archive: "active" }),
+  });
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const opened = vi.fn(),
+    createTerminal = vi.fn((_request: unknown) => ({
+      terminal: create(ResourceSchema, {
+        id: newRequestId(),
+        kind: EntityKind.TERMINAL,
+        sessionId: session.id,
+        schemaVersion: 1,
+        revision: 1n,
+        documentJson: encode({ state: "running" }),
+      }),
+    }));
+  let hold = false;
+  const reads = vi.fn(async () => {
+    if (hold) await held;
+    return { resources: [] as Resource[] };
+  });
+  const transport = createRouterTransport((router) => {
+    router.service(SystemService, {
+      getStatus: () => ({
+        capabilities: [SystemCapability.SESSION_TERMINALS_V1],
+      }),
+    });
+    router.service(ResourceService, { listResources: reads });
+    router.service(TerminalService, { createTerminal });
+  });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  function View() {
+    const [ready, setReady] = useState(true);
+    const [intent, setIntent] = useState<{
+      requestId: string;
+      revision: bigint;
+    }>();
+    return (
+      <>
+        <button
+          onClick={() =>
+            setIntent({ requestId: newRequestId(), revision: session.revision })
+          }
+        >
+          Open fixture
+        </button>
+        <button onClick={() => setReady((value) => !value)}>
+          Toggle readiness
+        </button>
+        <SessionTerminals
+          session={session}
+          selectedId=""
+          tabbed
+          workspaceReady={ready}
+          openIntent={intent}
+          finishOpenIntent={() => setIntent(undefined)}
+          openTerminal={opened}
+          close={() => {}}
+        />
+      </>
+    );
+  }
+  const view = render(
+    <QueryClientProvider client={client}>
+      <TransportProvider transport={transport}>
+        <MutationIntents>
+          <View />
+        </MutationIntents>
+      </TransportProvider>
+    </QueryClientProvider>,
+  );
+  try {
+    const plus = await screen.findByRole("button", { name: "Create terminal" });
+    await waitFor(() => expect(reads).toHaveBeenCalled());
+    await waitFor(() => expect(plus).toHaveProperty("disabled", false));
+    // Hold the next inventory read behind the gesture, then lose readiness.
+    hold = true;
+    const before = reads.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "Open fixture" }));
+    await waitFor(() =>
+      expect(reads.mock.calls.length).toBeGreaterThan(before),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Toggle readiness" }));
+    expect(plus).toHaveProperty("disabled", true);
+    await act(async () => release());
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(createTerminal).not.toHaveBeenCalled();
+    // Readiness returning neither replays the discarded intent nor opens.
+    hold = false;
+    fireEvent.click(screen.getByRole("button", { name: "Toggle readiness" }));
+    await waitFor(() => expect(plus).toHaveProperty("disabled", false));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(createTerminal).not.toHaveBeenCalled();
+    expect(opened).not.toHaveBeenCalled();
+    // A fresh gesture follows the original reuse-or-create flow once.
+    fireEvent.click(screen.getByRole("button", { name: "Open fixture" }));
+    await waitFor(() => expect(createTerminal).toHaveBeenCalledOnce());
+    expect(createTerminal.mock.calls[0]?.[0]).toMatchObject({
+      creationMode: TerminalCreationMode.REUSE_OR_CREATE,
+    });
+  } finally {
+    release();
+    view.unmount();
+    client.clear();
+  }
+});
+
+it("blocks an open intent and additional creation while the workspace is not ready", async () => {
+  const session = create(ResourceSchema, {
+    id: newRequestId(),
+    kind: EntityKind.SESSION,
+    schemaVersion: 1,
+    revision: 7n,
+    documentJson: encode({ archive: "active" }),
+  });
+  const createTerminal = vi.fn();
+  const transport = createRouterTransport((router) => {
+    router.service(SystemService, {
+      getStatus: () => ({
+        capabilities: [SystemCapability.SESSION_TERMINALS_V1],
+      }),
+    });
+    router.service(ResourceService, {
+      listResources: () => ({ resources: [] }),
+    });
+    router.service(TerminalService, { createTerminal });
+  });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const finish = vi.fn();
+  const view = render(
+    <QueryClientProvider client={client}>
+      <TransportProvider transport={transport}>
+        <MutationIntents>
+          <SessionTerminals
+            session={session}
+            selectedId=""
+            tabbed
+            workspaceReady={false}
+            openIntent={{ requestId: newRequestId(), revision: 7n }}
+            finishOpenIntent={finish}
+            close={() => {}}
+          />
+        </MutationIntents>
+      </TransportProvider>
+    </QueryClientProvider>,
+  );
+  try {
+    const plus = await screen.findByRole("button", { name: "Create terminal" });
+    expect(plus).toHaveProperty("disabled", true);
+    await waitFor(() => expect(finish).toHaveBeenCalled());
+    fireEvent.click(plus);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(createTerminal).not.toHaveBeenCalled();
+  } finally {
+    view.unmount();
+    client.clear();
   }
 });

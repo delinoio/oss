@@ -371,6 +371,29 @@ func TestGrokClaimsRequireOriginalPublisherAuthority(t *testing.T) {
 	}
 }
 
+func TestGrokClaimsAdmitNewerBaselineSemVerOnly(t *testing.T) {
+	for version, want := range map[string]bool{
+		grok.SupportedVersion: true, "1.0.42": true, "2.0.0-rc.1": true,
+		"1.0.40": false, grok.SupportedVersion + "-rc.1": false, "invalid": false,
+	} {
+		p, journal, _ := newGrokClaimsFixture(t)
+		if err := journal.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Remove(journal.path); err != nil {
+			t.Fatal(err)
+		}
+		p.input.Installation.Version = version
+		opened, err := openGrokClaims(p)
+		if (err == nil) != want {
+			t.Errorf("legacy version %q: admitted=%v err=%v, want %v", version, err == nil, err, want)
+		}
+		if err == nil {
+			_ = opened.Close()
+		}
+	}
+}
+
 func TestGrokClaimsClosurePreservesOriginalInputAndNeverRepeats(t *testing.T) {
 	p, journal, claims := newGrokClaimsFixture(t)
 	ctx := context.Background()

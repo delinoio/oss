@@ -10,6 +10,10 @@
     "build:embedded": {
       "cache": false
     },
+    "ci:embedded": {
+      "cache": false,
+      "dependsOn": ["ci:check"]
+    },
     "test:unit": {
       "cache": true,
       "dependsOn": ["^build"],

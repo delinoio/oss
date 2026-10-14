@@ -11,7 +11,7 @@ import "./tab-strip.css";
 import "./terminal-dock.css";
 import { revealTabItem } from "./tab-strip";
 import { useConversationPages } from "./conversation-pagination";
-import { ScrollContinuation } from "./scroll-continuation";
+import { ContinuationAxis, ScrollContinuation } from "./scroll-continuation";
 import { ReadStage } from "./scroll-pagination";
 import { statusLabel } from "./product-status";
 import { copy, useLocale } from "./localization";
@@ -55,6 +55,7 @@ import {
   ExternalLinkFailure,
   externalLinkFailure,
   externalLinkFailureMessages,
+  externalLinksAvailable,
   openExternalUrl,
 } from "./external-links";
 import "./external-links.css";
@@ -84,6 +85,7 @@ export function SessionTerminals({
   tabbed = false,
   openIntent,
   finishOpenIntent,
+  workspaceReady = true,
   sessionActive = active,
   statusTarget,
 }: {
@@ -98,6 +100,12 @@ export function SessionTerminals({
   tabbed?: boolean;
   openIntent?: { requestId: string; revision: bigint };
   finishOpenIntent?: () => void;
+  /**
+   * Whether the authenticated Session document reports a ready workspace
+   * preparation. Terminal creation (open intent, + and the terminal-input
+   * shortcut) is unavailable otherwise; existing terminals are unaffected.
+   */
+  workspaceReady?: boolean;
   /**
    * The Session view is visible, independently of whether a terminal pane is
    * selected. It gates explicit-open resolution and the retained creation
@@ -129,6 +137,7 @@ export function SessionTerminals({
     active,
     sessionActive,
     session,
+    workspaceReady,
     finishOpenIntent,
     openTerminal,
     selected: "",
@@ -138,6 +147,7 @@ export function SessionTerminals({
     active,
     sessionActive,
     session,
+    workspaceReady,
     finishOpenIntent,
     openTerminal,
     selected: latest.current.selected,
@@ -226,14 +236,7 @@ export function SessionTerminals({
   latest.current.createdTerminal = createdTerminal;
   const [selectedTerminal, setSelectedTerminal] = useState<Resource>();
   const listRoot = useRef<HTMLDivElement>(null);
-  // Presentation only: reveal the selected terminal in the scrolling strip.
-  useLayoutEffect(() => {
-    revealTabItem(
-      listRoot.current?.querySelector<HTMLElement>(
-        '[aria-selected="true"], .tab-item.is-selected',
-      ),
-    );
-  }, [selected]);
+  const historyTail = useRef<HTMLButtonElement>(null);
   const resolving = sessionActive && Boolean(openIntent);
   const status = useQuery(
     SystemQuery.getStatus,
@@ -292,6 +295,12 @@ export function SessionTerminals({
     store: number;
     local: number;
   }>(undefined);
+  // The Session controller stays mounted across departure. Retire only its
+  // selection origin before a late creation acknowledgment can run; the
+  // retained mutation and its exact retry remain owned by the presenter.
+  useLayoutEffect(() => {
+    if (!sessionActive) creationOrigin.current = undefined;
+  }, [sessionActive]);
   const create = useRetainedMutation(
     `terminal-create:${session.id}`,
     TerminalQuery.createTerminal,
@@ -335,6 +344,7 @@ export function SessionTerminals({
   );
   const blocked =
     !active ||
+    !workspaceReady ||
     Boolean(openIntent) ||
     !supported ||
     create.busy ||
@@ -383,7 +393,7 @@ export function SessionTerminals({
       finishOpenIntent?.();
       return;
     }
-    if (status.error || (status.data && !supported)) {
+    if (!workspaceReady || status.error || (status.data && !supported)) {
       finishOpenIntent?.();
       return;
     }
@@ -523,6 +533,9 @@ export function SessionTerminals({
             Code.FailedPrecondition,
           );
         const original = latest.current.session;
+        // Readiness can be lost while inventory reads were in flight. The
+        // unsent intent is discarded here and never replayed on recovery.
+        if (!latest.current.workspaceReady) return;
         if (
           original.revision !== openIntent.revision ||
           text(document(original).archive) !== "active"
@@ -556,7 +569,14 @@ export function SessionTerminals({
       if (!sent && resolution.current === openIntent.requestId)
         resolution.current = undefined;
     };
-  }, [openIntent, sessionActive, supported, status.error, status.isFetching]);
+  }, [
+    openIntent,
+    sessionActive,
+    workspaceReady,
+    supported,
+    status.error,
+    status.isFetching,
+  ]);
 
   // The accepted resource can be beyond the first history page. Retain just
   // that one explicit selection so history eviction never detaches its shell.
@@ -576,6 +596,9 @@ export function SessionTerminals({
     }
   }, [reachedSelection, selectedTerminal]);
   const tabs = list.rows.filter((row) => !presentationRecords.hidden(row.id));
+  const historyTailId = [...list.rows]
+    .reverse()
+    .find((row) => !presentationRecords.hidden(row.id))?.id;
   if (
     createdTerminal &&
     !presentationRecords.hidden(createdTerminal.id) &&
@@ -615,6 +638,18 @@ export function SessionTerminals({
         : undefined));
   if (resource && !tabs.some((row) => row.id === resource.id))
     tabs.push({ id: resource.id, revision: resource.revision });
+  const selectedTabPresent =
+    Boolean(selected) && tabs.some((row) => row.id === selected);
+  // Reveal after the selected row commits, including a late inventory or exact
+  // resource read. Polling revisions do not reposition an already present row.
+  useLayoutEffect(() => {
+    if (!selectedTabPresent) return;
+    revealTabItem(
+      listRoot.current?.querySelector<HTMLElement>(
+        '[aria-selected="true"], .tab-item.is-selected',
+      ),
+    );
+  }, [selected, selectedTabPresent]);
   // The original creation receipt fences final dismissal: an admitted but
   // unsettled CreateTerminal may still resolve to a live terminal.
   const creationUnsettled = create.busy || create.uncertain;
@@ -862,6 +897,7 @@ export function SessionTerminals({
         {tabs.map((row, index) => (
           <button
             key={row.id}
+            ref={row.id === historyTailId ? historyTail : undefined}
             className={`tab-item tab-label tab-item-dynamic${selected === row.id ? " is-selected" : ""}`}
             id={`terminal-tab-${row.id}`}
             role={tabbed ? undefined : "tab"}
@@ -937,6 +973,8 @@ export function SessionTerminals({
         ))}
       </div>
       <ScrollContinuation
+        axis={ContinuationAxis.Horizontal}
+        horizontalTail={historyTailId ? historyTail : null}
         showInitial={!(list.loaded && list.loading === ReadStage.Refresh)}
         query={list}
         root={listRoot}
@@ -1089,15 +1127,17 @@ function TerminalView({
           },
           unavailable,
           tabShortcut,
-          (url) => {
-            // One click is one launch request; native code validates and
-            // classifies the URL and never retries or falls back.
-            setLinkFailure(undefined);
-            openExternalUrl(url).catch((failure) => {
-              if (!disposed && alive.current)
-                setLinkFailure(externalLinkFailure(failure));
-            });
-          },
+          externalLinksAvailable()
+            ? (url) => {
+                // One click is one launch request; native code validates and
+                // classifies the URL and never retries or falls back.
+                setLinkFailure(undefined);
+                openExternalUrl(url).catch((failure) => {
+                  if (!disposed && alive.current)
+                    setLinkFailure(externalLinkFailure(failure));
+                });
+              }
+            : undefined,
         );
         focusPending.current = true;
         setReady(true);

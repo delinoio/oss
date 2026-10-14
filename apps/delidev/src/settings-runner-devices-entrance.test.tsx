@@ -145,8 +145,8 @@ function fixture() {
 
 const column = () =>
   document.querySelector<HTMLElement>(".settings-content-column > div")!;
-// Issue 3660: Runner Devices hosts the persistent Tailscale portal hosts, so
-// only the static category heading moves (EntranceTarget.Heading).
+// Runner Devices and Tailscale (issue 3689 owns the persistent Tailscale portal
+// hosts) move only the static category heading (EntranceTarget.Heading).
 const heading = () =>
   document.querySelector<HTMLElement>(
     ".settings-content-column > div > .settings-category-heading",
@@ -198,11 +198,10 @@ it("plays the Runner Devices category entrance once per explicit opening without
   const node = heading();
   expect(node.getAttribute("data-entrance")).toBe("y4");
   expect(node.querySelectorAll("[data-entrance]")).toHaveLength(0);
-  // The content column and the persistent portal hosts below it never move.
+  // The content column never moves, and Runner Devices no longer hosts the
+  // Tailscale portal hosts (issue 3689).
   expect(column().hasAttribute("data-entrance")).toBe(false);
-  expect(
-    document.querySelector(".runner-tailscale")?.closest("[data-entrance]"),
-  ).toBeNull();
+  expect(document.querySelector(".runner-tailscale")).toBeNull();
   dispatchAnimation(node);
   expect(node.getAttribute("data-entrance")).toBeNull();
   await screen.findByRole("heading", { name: "Fixture runner" });
@@ -223,6 +222,27 @@ it("plays the Runner Devices category entrance once per explicit opening without
   expect(heading().getAttribute("data-entrance")).toBeNull();
   category(CATEGORY);
   expect(heading().getAttribute("data-entrance")).toBe("y4");
+});
+
+it("plays the Tailscale category entrance on the heading only and never over the portal hosts", async () => {
+  const value = fixture();
+  mount(value);
+  category(unoptedSettingsCategory);
+  expect(heading().getAttribute("data-entrance")).toBeNull();
+  category("Tailscale");
+  const node = heading();
+  expect(node.getAttribute("data-entrance")).toBe("y4");
+  expect(column().hasAttribute("data-entrance")).toBe(false);
+  const hosts = document.querySelector(".runner-tailscale");
+  expect(hosts?.children).toHaveLength(3);
+  expect(hosts?.closest("[data-entrance]")).toBeNull();
+  dispatchAnimation(node);
+  expect(node.getAttribute("data-entrance")).toBeNull();
+  // Re-selecting the current category never replays it or reads anything.
+  category("Tailscale");
+  expect(heading()).toBe(node);
+  expect(node.getAttribute("data-entrance")).toBeNull();
+  expect(value.nativeActions()).toEqual([]);
 });
 
 it("plays the entrance for a targeted Runner Devices entry", async () => {

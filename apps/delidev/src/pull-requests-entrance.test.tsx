@@ -176,7 +176,7 @@ it("plays one Y4 entrance per destination activation and never for ordinary edit
     target: { value: "fix" },
   });
   fireEvent.change(pane.getByLabelText("PR page size"), {
-    target: { value: "5" },
+    target: { value: "10" },
   });
   expect(entering()).toBeNull();
   // The segmented controls keep their mounted identity throughout.

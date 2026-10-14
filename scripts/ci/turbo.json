@@ -756,7 +756,7 @@
     },
     "ci:ach:native": {
       "cache": false,
-      "dependsOn": ["async-commit-hook#build:embedded"],
+      "dependsOn": ["async-commit-hook#ci:embedded"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/.nvmrc",
