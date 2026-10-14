@@ -496,7 +496,7 @@ function checkFixture(options: {
       </QueryClientProvider>
     </TransportProvider>,
   );
-  return { check, attempts: () => attempts };
+  return { check, attempts: () => attempts, discoveries: () => discoveries };
 }
 async function runCheck() {
   fireEvent.click(await screen.findByRole("button", { name: "Check" }));
@@ -798,6 +798,49 @@ it("drops the cached identity and its actions when discovery changes the peer ho
   for (const name of actionNames)
     expect(screen.queryByRole("button", { name })).toBeNull();
   await runCheck();
+  expect(await screen.findByText("DeliDev: Accepting requests")).toBeTruthy();
+  expect(f.attempts()).toBe(2);
+});
+
+// Re-armed check class (issue 3687 review): returning to the originally checked
+// host or online state must not match a retained key and run the query again.
+it("stays Not checked when the host returns to the checked value", async () => {
+  const f = checkFixture({
+    peerAtDiscovery: (discovery) =>
+      discovery === 2 ? { host: "moved.example" } : {},
+  });
+  await runCheck();
+  expect(await screen.findByText("DeliDev: Accepting requests")).toBeTruthy();
+  refresh();
+  expect(await screen.findByText("DeliDev: Not checked")).toBeTruthy();
+  refresh();
+  await waitFor(() => expect(f.discoveries()).toBe(3));
+  expect(await screen.findByText("DeliDev: Not checked")).toBeTruthy();
+  for (const name of actionNames)
+    expect(screen.queryByRole("button", { name })).toBeNull();
+  expect(f.attempts()).toBe(1);
+  runCheck();
+  expect(await screen.findByText("DeliDev: Accepting requests")).toBeTruthy();
+  expect(f.attempts()).toBe(2);
+});
+
+it("stays Not checked when the peer returns online after being offline", async () => {
+  const f = checkFixture({
+    peerAtDiscovery: (discovery) => ({ online: discovery !== 2 }),
+  });
+  await runCheck();
+  expect(await screen.findByText("DeliDev: Accepting requests")).toBeTruthy();
+  refresh();
+  await waitFor(() => expect(f.discoveries()).toBe(2));
+  expect(await screen.findByText("DeliDev: Not checked")).toBeTruthy();
+  refresh();
+  await waitFor(() => expect(f.discoveries()).toBe(3));
+  expect(await screen.findByText("DeliDev: Not checked")).toBeTruthy();
+  for (const name of actionNames)
+    expect(screen.queryByRole("button", { name })).toBeNull();
+  expect(rowAlert()).toBeNull();
+  expect(f.attempts()).toBe(1);
+  runCheck();
   expect(await screen.findByText("DeliDev: Accepting requests")).toBeTruthy();
   expect(f.attempts()).toBe(2);
 });

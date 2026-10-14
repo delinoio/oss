@@ -658,6 +658,12 @@ function PeerRow({
   // that observes a discovery change, so no stale result can show for a frame.
   const peerKey = JSON.stringify([peer.host, peer.online]);
   const [checkedKey, setCheckedKey] = useState<string>();
+  // A key that no longer matches the peer is cleared in the same render, not
+  // kept: otherwise a peer that returns to the checked host and online state
+  // (online to offline to online, or host A to B to A) would match it again and
+  // re-enable the query without an explicit Check.
+  if (checkedKey !== undefined && checkedKey !== peerKey)
+    setCheckedKey(undefined);
   const checked = checkedKey === peerKey;
   const queryClient = useQueryClient();
   // Checking is an explicit single-peer read. Unmount cancels it; cached online
