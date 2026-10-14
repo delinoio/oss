@@ -774,7 +774,9 @@ func (s *Service) ControlSession(ctx context.Context, req *connect.Request[pb.Co
 			if value.StartupRejection != nil {
 				return nil, domain.Fail(domain.Conflict, "This input was rejected before native startup and cannot be resumed.", "Preserve this attempt and create a fresh authorized PR fix after resolving its rejection.")
 			}
-			if ir, err := tx.OldestQueuedInput(r.ID); err == nil {
+			if ir, err := tx.OldestQueuedInput(r.ID); err != nil && domain.SafeError(err).Code != domain.MissingInput {
+				return nil, err
+			} else if err == nil {
 				_, fix, found, err := tx.PRRemediationForInput(ir.ID)
 				if err != nil {
 					return nil, err
