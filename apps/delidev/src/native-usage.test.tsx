@@ -321,3 +321,98 @@ it.each([
     expect(screen.queryByLabelText("Grok response usage")).toBeNull();
   }
 });
+
+it.each([
+  ["claude-code", "2.1.237", true],
+  ["claude-code", "2.1.235", false],
+  ["grok-build", "1.0.42", true],
+  ["grok-build", "1.0.40", false],
+  ["opencode", "1.18.33", true],
+  ["opencode", "1.18.31", false],
+] as const)(
+  "applies the per-harness minimum version to %s usage recorded at %s",
+  async (harness, version, shown) => {
+    const session = create(ResourceSchema, {
+      schemaVersion: 1,
+      id: "session",
+      kind: EntityKind.SESSION,
+      revision: 1n,
+      documentJson: encode({
+        initial_execution: { configuration: { harness } },
+        execution: {
+          execution_id: "original",
+          native_thread_id: "thread",
+          native_turn_id: "turn",
+          latest_usage_id: "usage",
+        },
+      }),
+    });
+    const payload =
+      harness === "claude-code"
+        ? {
+            claude_observation: {
+              source: "input-result",
+              native_event_id: "01960dcb-e1fa-7000-8000-000000000001",
+              result: {
+                main_loop_turn: { input_tokens: "9007199254740993" },
+                native_cumulative_cost_usd: "0.0006994999999999999",
+              },
+            },
+          }
+        : harness === "grok-build"
+          ? {
+              native_thread_id: "thread",
+              native_turn_id: "turn",
+              grok_observation: {
+                ordinal: 1,
+                counts: {
+                  input_tokens: "9007199254740993",
+                  output_tokens: "5",
+                  cache_read_input_tokens: "0",
+                  cache_creation_input_tokens: "0",
+                  reasoning_tokens: "0",
+                },
+              },
+            }
+          : { opencode_observation: observation() };
+    const retained = create(ResourceSchema, {
+      schemaVersion: 1,
+      id: "usage",
+      kind: EntityKind.USAGE,
+      sessionId: "session",
+      documentJson: encode({
+        execution_id: "original",
+        harness,
+        native_version: version,
+        ...payload,
+      }),
+    });
+    const transport = createRouterTransport((router) =>
+      router.service(ResourceService, {
+        getResource: () => ({ resource: retained }),
+      }),
+    );
+    const query = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={query}>
+        <TransportProvider transport={transport}>
+          <NativeUsage session={session} />
+        </TransportProvider>
+      </QueryClientProvider>,
+    );
+    if (shown)
+      expect(
+        await screen.findByText(
+          harness === "opencode" ? "Reported total" : "9007199254740993",
+        ),
+      ).toBeTruthy();
+    else
+      expect(
+        await screen.findByText(
+          "The matching native usage observation is unavailable.",
+        ),
+      ).toBeTruthy();
+  },
+);

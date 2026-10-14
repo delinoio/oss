@@ -314,3 +314,64 @@ func TestClaudeSubscriptionFirstInputRequiresOriginalRunnerBeforeClaim(t *testin
 		})
 	}
 }
+
+// TestClaudeSubscriptionInstallationUsesBaselineWithGenericErrors proves that
+// an installation at or above the Claude baseline passes the version gate, and
+// that every unsupported-installation error stays free of fixed version numbers
+// (a newer admitted installation may fail a later check).
+func TestClaudeSubscriptionInstallationUsesBaselineWithGenericErrors(t *testing.T) {
+	f := newClaudeSubscriptionFixture(t)
+	for _, test := range []struct {
+		name    string
+		version string
+		mutate  func(*domain.Installation)
+		wantErr bool
+	}{
+		{"baseline", domain.ClaudeProtocolVersion, nil, false},
+		{"newer patch", "2.1.237", nil, false},
+		{"newer prerelease major", "3.0.0-rc.1", nil, false},
+		{"newer without resolved path", "2.1.237", func(i *domain.Installation) { i.ResolvedPath = "" }, true},
+		{"newer without verified protocol", "2.1.237", func(i *domain.Installation) { i.ProtocolVerified = false }, true},
+		{"newer with failed protocol state", "2.1.237", func(i *domain.Installation) { i.Protocol.State = domain.ProtocolFailed }, true},
+		{"lower", "2.1.235", nil, true},
+		{"baseline prerelease", domain.ClaudeProtocolVersion + "-rc.1", nil, true},
+		{"malformed", "not-a-version", nil, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.claude-version", nil, func(tx *store.Tx) (any, error) {
+				r, m, err := activeMachine(tx, f.input.MachineID)
+				if err != nil {
+					return nil, err
+				}
+				i := m.Installations[0]
+				i.Version = test.version
+				i.ResolvedPath = "/controlled/native/claude"
+				i.ProtocolVerified = true
+				i.Protocol.State = domain.ProtocolVerified
+				if test.mutate != nil {
+					test.mutate(&i)
+				}
+				m.Installations = []domain.Installation{i}
+				if _, err = tx.Put(domain.MachineKind, r.ID, r.Revision, "", "", m); err != nil {
+					return nil, err
+				}
+				_, got := claudeSubscriptionInstallation(tx, f.input.MachineID)
+				if (got != nil) != test.wantErr {
+					t.Errorf("claudeSubscriptionInstallation(%q) error = %v, wantErr %v", test.version, got, test.wantErr)
+				}
+				if got != nil {
+					message := domain.SafeError(got).Message + " " + domain.SafeError(got).Guidance
+					for _, fixed := range []string{domain.ClaudeProtocolVersion, "2.1.237", test.version} {
+						if strings.Contains(message, fixed) {
+							t.Errorf("error %q names fixed version %q", message, fixed)
+						}
+					}
+				}
+				return nil, nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}

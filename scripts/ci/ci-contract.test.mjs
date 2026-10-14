@@ -1801,10 +1801,10 @@ test("the separate Runmoor PR workflow retains full native validation through Tu
   assert.equal(job["timeout-minutes"], 20);
   assert.deepEqual(runmoor.permissions, { contents: "read" });
   const commands = jobCommands(job);
-  assert.ok(commands.includes("go test -race ./cmds/runmoor/..."));
+  assert.ok(commands.includes("go test -race -count=1 ./cmds/runmoor/..."));
   assert.ok(
     commands.includes(
-      "go test -run TestDockerIntegration -v -timeout 10m ./cmds/runmoor/internal/runmoor",
+      "go test -count=1 -run TestDockerIntegration -v -timeout 10m ./cmds/runmoor/internal/runmoor",
     ),
   );
   assert.equal(

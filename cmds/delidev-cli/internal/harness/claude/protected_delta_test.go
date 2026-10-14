@@ -101,6 +101,34 @@ func TestProtectedValueSplitAcrossDeltasIsRefusedBeforeExposure(t *testing.T) {
 	}
 }
 
+func TestProtectedToolInputUnicodeEscapeNeverReachesCallbacks(t *testing.T) {
+	b := protectedDeltaFixture(t)
+	contentStart(t, b, "", "msg_escaped_tool")
+	protectedDeltaBlock(t, b, "msg_escaped_tool", 0, map[string]any{"type": "tool_use", "id": "tool_escaped", "name": "Write", "input": map[string]any{}})
+	parts := []string{`{"note":"`, `\u00`, `66ixture-delta-secret/+`, `é"}`}
+	var published strings.Builder
+	for index, part := range parts {
+		observation, err := protectedDeltaSend(b, t, 0, map[string]any{"type": "input_json_delta", "partial_json": part})
+		if index == len(parts)-1 {
+			if err == nil || len(observation.Content) != 0 || b.problem == nil {
+				t.Fatal("escaped protected tool input reached a callback")
+			}
+			break
+		}
+		if err != nil || len(observation.Content) != 1 {
+			t.Fatal("safe prefix did not reach the original callback", err)
+		}
+		publishedDeltas(&published, observation)
+	}
+	full := strings.Join(parts, "")
+	if !strings.HasPrefix(full, published.String()) || len(published.String()) >= len(full)-len(`"}`) {
+		t.Fatal("callback exposed a complete decodable value")
+	}
+	if b.content.active[""].blocks[0].guard.Held() != 0 {
+		t.Fatal("refusal retained private tool-input bytes")
+	}
+}
+
 func TestProtectedDeltaHoldbackKeepsSafeTextOrderedAndReleasedOnCleanCompletion(t *testing.T) {
 	b := protectedDeltaFixture(t)
 	contentStart(t, b, "", "msg_safe")

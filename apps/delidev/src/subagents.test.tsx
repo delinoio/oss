@@ -435,3 +435,44 @@ test("keeps child conversation presentation in Info and portals only source meta
   target.remove();
   client.clear();
 });
+
+function claudeSubagentFixture(session: string) {
+  const row = subagentFixture(session),
+    record = document(row);
+  record.harness = "claude-code";
+  record.native_version = "2.1.236";
+  object(record.observation).source = "claude-history";
+  object(record.observation).parent_id = "claude-parent-child";
+  object(record.observation).parent_tool_id = "toolu_original";
+  (record.sources as Record<string, unknown>[])[0].source = "claude-history";
+  row.documentJson = encode(record);
+  return row;
+}
+
+function withNativeVersion<T extends { documentJson: Uint8Array }>(
+  row: T,
+  version: string,
+): T {
+  const record = document(row as never);
+  record.native_version = version;
+  row.documentJson = encode(record);
+  return row;
+}
+
+test.each([
+  ["codex", subagentFixture, "0.151.1", "0.150.9"],
+  ["claude-code", claudeSubagentFixture, "2.1.237", "2.1.235"],
+  ["opencode", openCodeSubagentFixture, "1.18.33", "1.18.31"],
+] as const)(
+  "applies the %s minimum version to retained child records",
+  (_harness, make, newer, older) => {
+    const session = newRequestId();
+    expect(validateSubagentPage([make(session)], session)).toHaveLength(1);
+    expect(
+      validateSubagentPage([withNativeVersion(make(session), newer)], session),
+    ).toHaveLength(1);
+    expect(
+      validateSubagentPage([withNativeVersion(make(session), older)], session),
+    ).toBeUndefined();
+  },
+);

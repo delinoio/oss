@@ -20,7 +20,6 @@ import (
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/claude"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
@@ -205,7 +204,7 @@ func workerOpenCodeCompactionInstallation(resource *pb.Resource) bool {
 		return false
 	}
 	for _, installation := range machine.Installations {
-		if installation.Harness == domain.OpenCode && installation.State == domain.InstallationDetected && installation.Version == domain.OpenCodeProtocolVersion && installation.ProtocolVerified && installation.Protocol != nil && installation.Protocol.Protocol == domain.OpenCodeHTTP && installation.Protocol.State == domain.ProtocolVerified && installation.Protocol.Problem == nil && filepath.IsAbs(installation.ResolvedPath) {
+		if installation.Harness == domain.OpenCode && installation.State == domain.InstallationDetected && domain.HarnessVersionAllowed(domain.OpenCode, installation.Version) && installation.ProtocolVerified && installation.Protocol != nil && installation.Protocol.Protocol == domain.OpenCodeHTTP && installation.Protocol.State == domain.ProtocolVerified && installation.Protocol.Problem == nil && filepath.IsAbs(installation.ResolvedPath) {
 			return true
 		}
 	}
@@ -410,7 +409,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 					if domain.Decode(attached.Msg.Machine.DocumentJson, &machine) == nil {
 						for index := range machine.Installations {
 							candidate := machine.Installations[index]
-							if candidate.Harness == domain.ClaudeCode && candidate.Version == claude.SupportedVersion && candidate.ProtocolVerified && candidate.State == domain.InstallationDetected && candidate.Problem == nil && candidate.Protocol != nil && candidate.Protocol.State == domain.ProtocolVerified && candidate.Protocol.Problem == nil {
+							if candidate.Harness == domain.ClaudeCode && domain.HarnessVersionAllowed(domain.ClaudeCode, candidate.Version) && candidate.ProtocolVerified && candidate.State == domain.InstallationDetected && candidate.Problem == nil && candidate.Protocol != nil && candidate.Protocol.State == domain.ProtocolVerified && candidate.Protocol.Problem == nil {
 								config.nativeClaudeInstallation = &candidate
 								break
 							}

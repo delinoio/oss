@@ -255,7 +255,7 @@ func executionAPIOperations(input domain.ExecutionJobInput, protocol domain.APIP
 			return []apiproxy.Operation{apiproxy.ResponseCreate, apiproxy.ResponseCompact}
 		}
 	case domain.ClaudeCode:
-		if input.Validate() != nil || (input.Version != 4 && input.Installation.Version != domain.ClaudeProtocolVersion) || protocol != domain.AnthropicMessages {
+		if input.Validate() != nil || (input.Version != 4 && !domain.HarnessVersionAllowed(domain.ClaudeCode, input.Installation.Version)) || protocol != domain.AnthropicMessages {
 			return nil
 		}
 		if _, err := input.Configuration.ClaudeAPIInputPermission(input.Input.Mode); err == nil {
@@ -264,7 +264,7 @@ func executionAPIOperations(input domain.ExecutionJobInput, protocol domain.APIP
 			return []apiproxy.Operation{apiproxy.MessageCreate}
 		}
 	case domain.GrokBuild:
-		if input.Validate() != nil || input.Continuation != nil || input.Fork != nil || (input.Version != 4 && input.Installation.Version != domain.GrokProtocolVersion) || protocol != domain.OpenAIChat {
+		if input.Validate() != nil || input.Continuation != nil || input.Fork != nil || (input.Version != 4 && !domain.HarnessVersionAllowed(domain.GrokBuild, input.Installation.Version)) || protocol != domain.OpenAIChat {
 			return nil
 		}
 		if _, err := input.Configuration.GrokModeForInput(input.Input.Mode); err == nil {
@@ -273,7 +273,7 @@ func executionAPIOperations(input domain.ExecutionJobInput, protocol domain.APIP
 	case domain.OpenCode:
 		o := input.Configuration.Options
 		validGeneration := input.Version == 4 && input.Validate() == nil || input.Version == 1 && input.Continuation == nil && input.Fork == nil || input.Version == 2 && input.Continuation != nil && input.Validate() == nil || input.Version == 3 && input.Fork != nil && input.Continuation == nil && input.Validate() == nil
-		if !validGeneration || (input.Version != 4 && input.Installation.Version != domain.OpenCodeProtocolVersion) || protocol != domain.OpenAIChat || o.SubagentModel != "" || o.SubagentEffort != "" || o.MaxConcurrency != 0 || o.ApprovalReviewModel != "" || o.ServiceTier != "" {
+		if !validGeneration || (input.Version != 4 && !domain.HarnessVersionAllowed(domain.OpenCode, input.Installation.Version)) || protocol != domain.OpenAIChat || o.SubagentModel != "" || o.SubagentEffort != "" || o.MaxConcurrency != 0 || o.ApprovalReviewModel != "" || o.ServiceTier != "" {
 			return nil
 		}
 		if _, err := o.OpenCodePrimaryForInput(input.Input.Mode); err == nil {

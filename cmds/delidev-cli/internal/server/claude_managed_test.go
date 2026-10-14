@@ -113,8 +113,8 @@ func newManagedClaudeFixture(t *testing.T) *managedFixture {
 		t.Fatal(err)
 	}
 	m := &managedFixture{subscriptionFixture: f, native: newFakeManagedLogin()}
-	f.service.claudeSetupOpen = func(context.Context, string, domain.ID, *slog.Logger) (managedClaudeLogin, error) {
-		return m.native, nil
+	f.service.claudeSetupOpen = func(context.Context, string, domain.ID, *slog.Logger) (managedClaudeLogin, string, error) {
+		return m.native, domain.ClaudeProtocolVersion, nil
 	}
 	return m
 }
@@ -1313,8 +1313,8 @@ func (n *codeDroppingLogin) Progress() (claude.SetupTokenProgress, error) {
 
 func TestManagedClaudeMissingApprovalBytesBeforeDeliveryStillFailClosed(t *testing.T) {
 	f := newManagedClaudeFixture(t)
-	f.service.claudeSetupOpen = func(context.Context, string, domain.ID, *slog.Logger) (managedClaudeLogin, error) {
-		return &codeDroppingLogin{fakeManagedLogin: f.native, service: f.service}, nil
+	f.service.claudeSetupOpen = func(context.Context, string, domain.ID, *slog.Logger) (managedClaudeLogin, string, error) {
+		return &codeDroppingLogin{fakeManagedLogin: f.native, service: f.service}, "2.1.237-rc.1", nil
 	}
 	op, err := f.request(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
 	if err != nil {
@@ -1337,6 +1337,9 @@ func TestManagedClaudeMissingApprovalBytesBeforeDeliveryStillFailClosed(t *testi
 	// The operation ends with the recovery_required denial code and no retry.
 	if d := a.Subscription.ServerOperation.ClaudeDiagnostic; d == nil || d.Code != domain.RecoveryRequired {
 		t.Fatalf("diagnostic %+v, want recovery_required", d)
+	} else if d.DetectedVersion != "2.1.237-rc.1" || d.Phase != domain.NativeSubscriptionLogin || d.Validate() != nil {
+		// The newer observed version, not the pinned baseline, is attributed.
+		t.Fatalf("diagnostic %+v, want the observed version and login phase", d)
 	}
 	if got := f.progressFor(op.OperationId); got.State == pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_WAITING || got.State == pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_SUCCEEDED {
 		t.Fatalf("state %v, want a failed-closed end", got.State)
