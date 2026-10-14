@@ -6995,3 +6995,7 @@ Settings > System has a Browser category directly after Appearance (`SettingsCat
 **Logging.** Operations `external_url_open`, `provider_guidance`, `app_information_link`, `github_open`, `browser_inventory` and `device_browser_preferences_*` log operation, URL class, browser identity, phase and failure code. URLs, query values, credentials and local executable paths are never logged.
 
 **Acceptance boundary.** Component, fixture, ACL and argv tests do not establish installed-browser discovery or launch on macOS, Windows and Linux; record that acceptance separately. No server RPC, capability number, protobuf or database migration is added. The protected account/session browser and the standalone CLI keep their existing behavior.
+
+## Native record version validation
+
+Desktop validators for retained native interaction, usage and subagent records (Claude, OpenCode, Grok and Codex) accept the record's observed native version when it is a valid SemVer at or above the harness baseline, using the shared `harnessVersionAllowed` predicate in `apps/delidev/src/harness-version.ts`. Records below the baseline or with a malformed version stay unavailable and expose no response controls. Equality with a pinned baseline is never required, so a newer admitted installation's requests, usage and child observations remain actionable and visible.

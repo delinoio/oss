@@ -5,6 +5,20 @@
  * module and is a minimum SemVer precedence, never an exact version.
  */
 export const CLAUDE_BASELINE_VERSION = "2.1.236";
+/** Mirrors domain.CodexMinimumVersion; a minimum, never an exact version. */
+export const CODEX_BASELINE_VERSION = "0.151.0";
+/** Mirrors domain.OpenCodeProtocolVersion; a minimum, never an exact version. */
+export const OPENCODE_BASELINE_VERSION = "1.18.32";
+/** Mirrors domain.GrokProtocolVersion; a minimum, never an exact version. */
+export const GROK_BASELINE_VERSION = "1.0.41";
+
+/** Stable harness identifiers shared with the Go Harness enum. */
+export enum HarnessId {
+  Codex = "codex",
+  Claude = "claude-code",
+  OpenCode = "opencode",
+  Grok = "grok-build",
+}
 
 const installationVersion =
   /^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]{1,64})?(?:\+[a-zA-Z0-9.-]{1,64})?$/;
@@ -67,4 +81,30 @@ export function versionAtLeast(version: unknown, baseline: string): boolean {
 /** Eligibility rule shared by Claude Runner selection and observations. */
 export function claudeVersionAllowed(version: unknown): boolean {
   return versionAtLeast(version, CLAUDE_BASELINE_VERSION);
+}
+
+/**
+ * The single per-harness version rule for renderer validators of retained
+ * native records (interactions, usage, subagents): valid SemVer precedence at
+ * or above the harness baseline. It mirrors domain.HarnessVersionAllowed for
+ * Claude, OpenCode and Grok and applies the same minimum to Codex
+ * (domain.CodexMinimumVersion). Never compare a record version for equality
+ * with a baseline constant.
+ */
+export function harnessVersionAllowed(
+  harness: unknown,
+  version: unknown,
+): boolean {
+  switch (harness) {
+    case HarnessId.Codex:
+      return versionAtLeast(version, CODEX_BASELINE_VERSION);
+    case HarnessId.Claude:
+      return versionAtLeast(version, CLAUDE_BASELINE_VERSION);
+    case HarnessId.OpenCode:
+      return versionAtLeast(version, OPENCODE_BASELINE_VERSION);
+    case HarnessId.Grok:
+      return versionAtLeast(version, GROK_BASELINE_VERSION);
+    default:
+      return false;
+  }
 }

@@ -2,7 +2,9 @@
 import { expect, it } from "vitest";
 import {
   CLAUDE_BASELINE_VERSION,
+  HarnessId,
   claudeVersionAllowed,
+  harnessVersionAllowed,
   validInstallationVersion,
   versionAtLeast,
 } from "./harness-version";
@@ -50,4 +52,33 @@ it("accepts the same bounded detected-version shape as the Go side", () => {
   expect(validInstallationVersion("2.1.237-rc.1+build.7")).toBe(true);
   expect(validInstallationVersion("2.1")).toBe(false);
   expect(validInstallationVersion(`1.0.0-${"a".repeat(65)}`)).toBe(false);
+});
+
+it("applies one minimum-version rule per harness to retained native records", () => {
+  const cases: [HarnessId, string, string][] = [
+    [HarnessId.Codex, "0.151.0", "0.150.9"],
+    [HarnessId.Claude, "2.1.236", "2.1.235"],
+    [HarnessId.OpenCode, "1.18.32", "1.18.31"],
+    [HarnessId.Grok, "1.0.41", "1.0.40"],
+  ];
+  for (const [harness, baseline, lower] of cases) {
+    const [major, minor, patch] = baseline.split(".").map(Number);
+    for (const newer of [
+      baseline,
+      `${major}.${minor}.${patch + 1}`,
+      `${major}.${minor + 1}.0`,
+      `${major + 1}.0.0-rc.1`,
+      `${baseline}+build.3`,
+    ])
+      expect(harnessVersionAllowed(harness, newer), `${harness} ${newer}`).toBe(
+        true,
+      );
+    for (const rejected of [lower, `${baseline}-rc.1`, "unknown", "", undefined])
+      expect(
+        harnessVersionAllowed(harness, rejected),
+        `${harness} ${String(rejected)}`,
+      ).toBe(false);
+  }
+  expect(harnessVersionAllowed("not-a-harness", "9.9.9")).toBe(false);
+  expect(harnessVersionAllowed(undefined, "9.9.9")).toBe(false);
 });
