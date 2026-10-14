@@ -864,7 +864,7 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
             .next()
             .unwrap_or("");
         if whole.as_str().ends_with('{')
-            && matches!(keyword, "if" | "while" | "for" | "switch" | "with")
+            && is_control_flow_parentheses(&code, whole.start(), keyword)
         {
             continue;
         }
@@ -924,7 +924,7 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
             })
             .next()
             .unwrap_or("");
-        if !arrow && matches!(keyword, "if" | "while" | "for" | "switch" | "with") {
+        if !arrow && is_control_flow_parentheses(&code, open, keyword) {
             continue;
         }
         let list = &code[open + 1..close];
@@ -1049,6 +1049,23 @@ fn arrow_or_function_body(bytes: &[u8], close: usize) -> Option<(usize, bool)> {
         cursor += 1;
     }
     None
+}
+
+fn is_control_flow_parentheses(code: &str, open: usize, keyword: &str) -> bool {
+    if matches!(keyword, "if" | "while" | "for" | "switch" | "with") {
+        return true;
+    }
+    if keyword != "await" {
+        return false;
+    }
+    let prefix = code[..open].trim_end();
+    let await_start = prefix.len().saturating_sub("await".len());
+    let before_await = prefix[..await_start].trim_end();
+    before_await.strip_suffix("for").is_some_and(|before_for| {
+        before_for.chars().next_back().is_none_or(|character| {
+            !(character.is_alphanumeric() || character == '_' || character == '$')
+        })
+    })
 }
 
 /// Finds the block that starts a function body after its parameter list.
@@ -1606,6 +1623,13 @@ y=/process.env.F/.test(z),process.env.G"#;
         assert!(
             direct_eval_line("const run = (value): void => { var eval = helper; }; eval(code);")
                 .is_some()
+        );
+        assert_eq!(
+            direct_eval_line(
+                "async function run() { for await (const item of items) { var eval = helper; } \
+                 eval(code); }"
+            ),
+            None
         );
         assert!(
             direct_eval_line("function outer() { return\nfunction eval() {}; } eval(code);")
