@@ -489,9 +489,11 @@ it("shows the proven connection refusal outside Technical details without claimi
   const alert = heading.closest('[role="alert"]') as HTMLElement;
   expect(heading.closest("details")).toBeNull();
   expect(
-    within(alert).getByText(
-      `On ${DEVICE}, start DeliDev and enable Tailscale access, then select Check again.`,
-    ).closest("details"),
+    within(alert)
+      .getByText(
+        `On ${DEVICE}, start DeliDev and enable Tailscale access, then select Check again.`,
+      )
+      .closest("details"),
   ).toBeNull();
   expect(screen.getByText("DeliDev: Could not connect")).toBeTruthy();
   expect(alert.textContent).not.toMatch(/stopped|not running/i);
@@ -514,7 +516,11 @@ it("shows the proven connection refusal outside Technical details without claimi
 it("re-translates the visible cause guidance and keeps the original technical details", async () => {
   checkFixture({
     failure: () =>
-      checkFailure("Original safe message.", "unavailable", "connection_refused"),
+      checkFailure(
+        "Original safe message.",
+        "unavailable",
+        "connection_refused",
+      ),
   });
   await runCheck();
   await screen.findByText(`Could not connect to DeliDev on ${DEVICE}.`);
