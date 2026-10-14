@@ -3,13 +3,17 @@ package nativeprofile
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
 func testRoot(t *testing.T) string {
@@ -343,5 +347,222 @@ func TestHistoryIdentifiersKeepTheOriginalAndEvictOldestLater(t *testing.T) {
 		if err != nil || !ok || info.ID != lease.ID {
 			t.Fatalf("history %s was not resolved: %v", id, err)
 		}
+	}
+}
+
+func writeRawRegistry(t *testing.T, r *Registry, profiles []entry) {
+	t.Helper()
+	if err := r.prepare(); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(registryFile{Version: Version, Profiles: profiles})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := security.WriteAtomic(r.registryPath(), raw); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDeleteKeepsDeletionPendingWhenAnyMatchIsLocked(t *testing.T) {
+	r, _ := workerRegistry(t, testRoot(t), nil)
+	ctx := context.Background()
+	account, conversation := domain.NewID(), domain.NewID()
+	locked, err := r.Acquire(ctx, Key{Harness: domain.Codex, Purpose: PurposeTitle, Account: account, Conversation: conversation})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, purpose := range []Purpose{PurposeConversation, PurposeReview, PurposeSidechat} {
+		other, err := r.Acquire(ctx, Key{Harness: domain.Codex, Purpose: purpose, Account: account, Conversation: conversation})
+		if err != nil {
+			t.Fatal(err)
+		}
+		other.Close()
+	}
+	n, err := r.Delete(ctx, DeleteScope{Conversation: conversation})
+	if reason, ok := Reasoned(err); !ok || reason != ReasonBusy {
+		t.Fatalf("a locked match reported success: n=%d err=%v", n, err)
+	}
+	if n != 3 {
+		t.Fatalf("unlocked matches were not committed: n=%d", n)
+	}
+	if found, err := r.Exists(ctx, DeleteScope{Conversation: conversation}); err != nil || !found {
+		t.Fatalf("the locked profile left the registry: %v %v", found, err)
+	}
+	if _, err := os.Stat(locked.Root); err != nil {
+		t.Fatal("locked profile directory removed")
+	}
+	locked.Close()
+	if n, err := r.Delete(ctx, DeleteScope{Conversation: conversation}); err != nil || n != 1 {
+		t.Fatalf("retry n=%d err=%v", n, err)
+	}
+	if found, err := r.Exists(ctx, DeleteScope{Conversation: conversation}); err != nil || found {
+		t.Fatalf("profile remains: %v %v", found, err)
+	}
+}
+
+func TestDeleteReportsAnUnremovableMatch(t *testing.T) {
+	r, _ := workerRegistry(t, testRoot(t), nil)
+	ctx := context.Background()
+	key := conversationKey(domain.NewID(), domain.NewID())
+	lease, err := r.Acquire(ctx, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Dir(lease.Root)
+	lease.Close()
+	// Replace the retained directory with a regular file: it is not a real
+	// directory, so removal is refused and must never be acknowledged.
+	if err := os.RemoveAll(root); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(root, []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	n, err := r.Delete(ctx, DeleteScope{Conversation: key.Conversation})
+	if reason, ok := Reasoned(err); !ok || reason != ReasonDeleteBlocked || n != 0 {
+		t.Fatalf("n=%d err=%v", n, err)
+	}
+	if found, _ := r.Exists(ctx, DeleteScope{Conversation: key.Conversation}); !found {
+		t.Fatal("the entry was dropped while its directory remained")
+	}
+}
+
+func TestLoadRejectsEntriesOfAnotherOwnerIdentity(t *testing.T) {
+	root := testRoot(t)
+	r, _ := workerRegistry(t, root, nil)
+	ctx := context.Background()
+	lease, err := r.Acquire(ctx, conversationKey(domain.NewID(), domain.NewID()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease.Close()
+	for name, config := range map[string]Config{
+		"other-server":  {Root: root, Owner: OwnerWorker, Server: domain.NewID(), Machine: r.config.Machine},
+		"other-machine": {Root: root, Owner: OwnerWorker, Server: r.config.Server, Machine: domain.NewID()},
+		"server-owner":  {Root: root, Owner: OwnerServer, Server: r.config.Server},
+	} {
+		t.Run(name, func(t *testing.T) {
+			restored, err := Open(config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, _, err = restored.Lookup(ctx, Key{Harness: domain.Codex, Purpose: PurposeDiscovery})
+			if reason, ok := Reasoned(err); !ok || reason != ReasonRegistryInvalid {
+				t.Fatalf("a foreign registry was accepted: %v", err)
+			}
+		})
+	}
+	if _, _, err := r.Lookup(ctx, Key{Harness: domain.Codex, Purpose: PurposeDiscovery}); err != nil {
+		t.Fatalf("the owning identity was rejected: %v", err)
+	}
+}
+
+func TestLoadRejectsUnsafeLegacyPaths(t *testing.T) {
+	for _, bad := range []string{"/etc", "../outside", "a/../../outside", "native-profiles/p/x", "native-profiles", "a//b", "./a", "a/./b", "a/", `a\b`, ".", ".."} {
+		t.Run(bad, func(t *testing.T) {
+			r, _ := workerRegistry(t, testRoot(t), nil)
+			key, err := r.normalize(conversationKey(domain.NewID(), domain.NewID()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeRawRegistry(t, r, []entry{{ID: domain.NewID(), Key: key, Origin: OriginLegacy, Path: bad, CreatedAt: time.Now().UTC()}})
+			_, _, err = r.Lookup(context.Background(), key)
+			if reason, ok := Reasoned(err); !ok || reason != ReasonRegistryInvalid {
+				t.Fatalf("unsafe legacy path %q was loaded: %v", bad, err)
+			}
+		})
+	}
+	r, _ := workerRegistry(t, testRoot(t), nil)
+	key, _ := r.normalize(conversationKey(domain.NewID(), domain.NewID()))
+	writeRawRegistry(t, r, []entry{{ID: domain.NewID(), Key: key, Origin: OriginLegacy, Path: "runtimes/abc", CreatedAt: time.Now().UTC()}})
+	if _, _, err := r.Lookup(context.Background(), key); err != nil {
+		t.Fatalf("a local normalized legacy path was rejected: %v", err)
+	}
+}
+
+func lockHeld(r *Registry, id domain.ID) bool {
+	lock, err := security.TryLock(r.lockPath(id))
+	if err != nil {
+		return true
+	}
+	_ = lock.Close()
+	return false
+}
+
+func TestAcquireRollsBackAnUnpublishedProfileAndReleasesItsLease(t *testing.T) {
+	r, _ := workerRegistry(t, testRoot(t), nil)
+	ctx := context.Background()
+	key := conversationKey(domain.NewID(), domain.NewID())
+	original := writeRegistryFile
+	defer func() { writeRegistryFile = original }()
+	writeRegistryFile = func(string, []byte) error { return errors.New("disk full") }
+	if _, err := r.Acquire(ctx, key); err == nil {
+		t.Fatal("a failed publication was reported as success")
+	}
+	writeRegistryFile = original
+	if entries, err := os.ReadDir(r.profilesDir()); err != nil || len(entries) != 0 {
+		t.Fatalf("an unregistered profile directory remains: %v %v", entries, err)
+	}
+	if entries, err := os.ReadDir(r.locksDir()); err != nil {
+		t.Fatal(err)
+	} else {
+		for _, entry := range entries {
+			if lockHeld(r, domain.ID(strings.TrimSuffix(entry.Name(), ".lock"))) {
+				t.Fatalf("lease %s leaked", entry.Name())
+			}
+		}
+	}
+	lease, err := r.Acquire(ctx, key)
+	if err != nil || !lease.Created {
+		t.Fatalf("retry after rollback: %v", err)
+	}
+	lease.Close()
+}
+
+func TestAcquireKeepsADurableProfileButReleasesItsLease(t *testing.T) {
+	r, _ := workerRegistry(t, testRoot(t), nil)
+	ctx := context.Background()
+	key := conversationKey(domain.NewID(), domain.NewID())
+	original := writeRegistryFile
+	defer func() { writeRegistryFile = original }()
+	// The rename succeeds and a later directory sync fails.
+	writeRegistryFile = func(path string, raw []byte) error {
+		if err := original(path, raw); err != nil {
+			return err
+		}
+		return errors.New("directory sync failed")
+	}
+	if _, err := r.Acquire(ctx, key); err == nil {
+		t.Fatal("a failed publication was reported as success")
+	}
+	writeRegistryFile = original
+	info, ok, err := r.Lookup(ctx, key)
+	if err != nil || !ok {
+		t.Fatalf("durable entry lost: %v %v", ok, err)
+	}
+	if lockHeld(r, info.ID) {
+		t.Fatal("lease leaked")
+	}
+	lease, err := r.Acquire(ctx, key)
+	if err != nil || lease.Created || lease.ID != info.ID {
+		t.Fatalf("durable profile was not reused: %v", err)
+	}
+	lease.Close()
+}
+
+func TestRepeatedPublicationFailuresLeaveNoProfileDirectories(t *testing.T) {
+	r, _ := workerRegistry(t, testRoot(t), nil)
+	ctx := context.Background()
+	original := writeRegistryFile
+	defer func() { writeRegistryFile = original }()
+	writeRegistryFile = func(string, []byte) error { return errors.New("rename failed") }
+	for i := 0; i < 3; i++ {
+		if _, err := r.Acquire(ctx, conversationKey(domain.NewID(), domain.NewID())); err == nil {
+			t.Fatal("accepted a failed publication")
+		}
+	}
+	if entries, _ := os.ReadDir(r.profilesDir()); len(entries) != 0 {
+		t.Fatalf("leftover directories: %d", len(entries))
 	}
 }

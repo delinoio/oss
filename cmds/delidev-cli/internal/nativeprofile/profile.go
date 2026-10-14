@@ -186,6 +186,7 @@ const (
 	ReasonMigrationSettled   Reason = "migration_settled"
 	ReasonMigrationRetained  Reason = "migration_fence_retained"
 	ReasonMigrationCompleted Reason = "migration_already_complete"
+	ReasonCreateRolledBack   Reason = "create_rolled_back"
 )
 
 // Failure is a safe profile error. Reason is also published as the domain

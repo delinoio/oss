@@ -25,6 +25,10 @@ const (
 	lockPause        = 10 * time.Millisecond
 )
 
+// writeRegistryFile publishes the registry; tests replace it to inject
+// publication failures.
+var writeRegistryFile = security.WriteAtomic
+
 // Config selects the storage root and ownership of one registry. Server and
 // Worker owners never share a registry because each root is owner-local.
 type Config struct {
@@ -119,6 +123,14 @@ func busy() error {
 
 // withRegistry runs fn under the in-process and cross-process registry lock.
 func (r *Registry) withRegistry(ctx context.Context, fn func(*registryFile) (bool, error)) error {
+	return r.withRegistryPublish(ctx, fn, nil)
+}
+
+// withRegistryPublish is withRegistry with a hook for a failed publication.
+// failed runs under the registry lock after fn changed the file but the
+// registry could not be published, so a creator can decide from the on-disk
+// registry whether its new entry became durable and roll back otherwise.
+func (r *Registry) withRegistryPublish(ctx context.Context, fn func(*registryFile) (bool, error), failed func(error)) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if err := r.prepare(); err != nil {
@@ -159,12 +171,25 @@ func (r *Registry) withRegistry(ctx context.Context, fn func(*registryFile) (boo
 	sort.Slice(file.Profiles, func(i, j int) bool { return file.Profiles[i].ID < file.Profiles[j].ID })
 	raw, err := json.Marshal(file)
 	if err != nil {
+		if failed != nil {
+			failed(err)
+		}
 		return err
 	}
 	if len(raw) > maxRegistryBytes {
-		return Failure(domain.ResourceExhausted, ReasonRegistryInvalid, "The native profile registry exceeds its size limit.", "Delete unused sessions or accounts before creating more profiles.")
+		err := Failure(domain.ResourceExhausted, ReasonRegistryInvalid, "The native profile registry exceeds its size limit.", "Delete unused sessions or accounts before creating more profiles.")
+		if failed != nil {
+			failed(err)
+		}
+		return err
 	}
-	return security.WriteAtomic(r.registryPath(), raw)
+	if err := writeRegistryFile(r.registryPath(), raw); err != nil {
+		if failed != nil {
+			failed(err)
+		}
+		return err
+	}
+	return nil
 }
 
 func (r *Registry) load() (registryFile, error) {
@@ -187,7 +212,9 @@ func (r *Registry) load() (registryFile, error) {
 	}
 	seenID, seenKey := map[domain.ID]bool{}, map[string]bool{}
 	for _, e := range file.Profiles {
-		if e.ID.Validate() != nil || e.Key.Validate() != nil || e.Key.Owner != r.config.Owner || seenID[e.ID] || seenKey[e.Key.String()] || len(e.Histories) > maxHistories || (e.Origin != OriginManaged && e.Origin != OriginLegacy) || (e.Origin == OriginLegacy) == (e.Path == "") {
+		// Every stored key must belong to this owner root: a restored or reused
+		// root under another server or Worker identity is invalid as a whole.
+		if e.ID.Validate() != nil || e.Key.Validate() != nil || e.Key.Owner != r.config.Owner || e.Key.Server != r.config.Server || e.Key.Machine != r.config.Machine || (e.Origin == OriginLegacy && !validLegacyPath(e.Path)) || seenID[e.ID] || seenKey[e.Key.String()] || len(e.Histories) > maxHistories || (e.Origin != OriginManaged && e.Origin != OriginLegacy) || (e.Origin == OriginLegacy) == (e.Path == "") {
 			return registryFile{}, Failure(domain.RecoveryRequired, ReasonRegistryInvalid, "The native profile registry is invalid.", "Restore the registry from a trusted backup without deleting profile directories.")
 		}
 		seenID[e.ID], seenKey[e.Key.String()] = true, true
@@ -307,7 +334,23 @@ func (r *Registry) Acquire(ctx context.Context, key Key) (*Lease, error) {
 		return nil, err
 	}
 	var lease *Lease
-	err = r.withRegistry(ctx, func(file *registryFile) (bool, error) {
+	// created is the entry this attempt added; it stays set only until the
+	// registry publication proves durable, so every failure path can roll back
+	// exactly what this attempt created and release the lock it holds.
+	var created *entry
+	rollback := func(e entry) {
+		if lease != nil {
+			_ = lease.Close()
+			lease = nil
+		}
+		if rmErr := security.RemoveOwnedTree(ctx, r.config.Root, r.managedPath(e.ID)); rmErr != nil {
+			Log(r.config.Logger, "native_profile_rollback_blocked", e.Key, e.ID, ReasonDeleteBlocked)
+			return
+		}
+		_ = os.Remove(r.lockPath(e.ID))
+		Log(r.config.Logger, "native_profile_rolled_back", e.Key, e.ID, ReasonCreateRolledBack)
+	}
+	err = r.withRegistryPublish(ctx, func(file *registryFile) (bool, error) {
 		for _, e := range file.Profiles {
 			if e.Key == key {
 				l, err := r.lease(e, false)
@@ -329,25 +372,61 @@ func (r *Registry) Acquire(ctx context.Context, key Key) (*Lease, error) {
 		if err := security.CreatePrivateDirExclusive(root); err != nil {
 			return false, Failure(domain.RecoveryRequired, ReasonOwnerInvalid, "The native profile directory could not be created.", "Inspect the owner storage root before retrying.")
 		}
+		// From here the directory is this attempt's own unregistered state.
+		created = &e
 		raw, err := json.Marshal(ownerRecord{Version: Version, ID: e.ID, Key: key})
 		if err != nil {
+			rollback(e)
 			return false, err
 		}
 		if err := security.CreatePrivateDirExclusive(r.homeOf(e)); err != nil {
+			rollback(e)
 			return false, Failure(domain.RecoveryRequired, ReasonOwnerInvalid, "The native profile directory could not be created.", "Inspect the owner storage root before retrying.")
 		}
 		if err := security.WriteAtomic(filepath.Join(root, "owner.json"), raw); err != nil {
+			rollback(e)
 			return false, err
 		}
 		l, err := r.lease(e, true)
 		if err != nil {
+			rollback(e)
 			return false, err
 		}
 		lease = l
 		file.Profiles = append(file.Profiles, e)
 		Log(r.config.Logger, "native_profile_acquired", key, e.ID, ReasonCreated, "origin", e.Origin)
 		return true, nil
+	}, func(error) {
+		if created == nil {
+			return
+		}
+		// Publication failed after the callback created and locked the profile.
+		// A rename that failed late (for example a directory sync) may still have
+		// made the entry durable; keep the directory only in that case.
+		if durable, loadErr := r.load(); loadErr == nil {
+			for _, e := range durable.Profiles {
+				if e.ID == created.ID {
+					if lease != nil {
+						_ = lease.Close()
+						lease = nil
+					}
+					Log(r.config.Logger, "native_profile_publish_durable", created.Key, created.ID, ReasonRegistryInvalid)
+					return
+				}
+			}
+			rollback(*created)
+			return
+		}
+		// An unreadable registry cannot prove the entry; retain the directory and
+		// release the lock so a later reconciliation can still discover it.
+		if lease != nil {
+			_ = lease.Close()
+			lease = nil
+		}
 	})
+	if err != nil {
+		lease = nil
+	}
 	if err != nil {
 		var known *domain.Error
 		if errors.As(err, &known) && known.Cause != "" {
@@ -420,7 +499,7 @@ func (r *Registry) RegisterLegacy(ctx context.Context, key Key, relative string,
 		return Info{}, err
 	}
 	clean := filepath.ToSlash(filepath.Clean(filepath.FromSlash(relative)))
-	if relative == "" || filepath.IsAbs(relative) || clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || clean != filepath.ToSlash(relative) || strings.HasPrefix(clean, "native-profiles/") {
+	if !validLegacyPath(relative) {
 		return Info{}, Failure(domain.InvalidArgument, ReasonLegacyUnverified, "The legacy native history path is invalid.", "Use a path below the owner storage root.")
 	}
 	for _, h := range histories {
@@ -458,6 +537,18 @@ func (r *Registry) RegisterLegacy(ctx context.Context, key Key, relative string,
 		return true, nil
 	})
 	return result, err
+}
+
+// validLegacyPath accepts only a normalized, local, slash-separated path below
+// the owner root that does not enter the managed profile tree. Registration and
+// every registry load share it so a restored registry can never point a legacy
+// entry outside the owner root.
+func validLegacyPath(relative string) bool {
+	if relative == "" || filepath.IsAbs(relative) || strings.HasPrefix(relative, "/") || strings.ContainsRune(relative, '\\') || strings.ContainsRune(relative, 0) || !filepath.IsLocal(filepath.FromSlash(relative)) {
+		return false
+	}
+	clean := filepath.ToSlash(filepath.Clean(filepath.FromSlash(relative)))
+	return clean == relative && clean != "." && clean != ".." && !strings.HasPrefix(clean, "../") && clean != "native-profiles" && !strings.HasPrefix(clean, "native-profiles/")
 }
 
 func mergeHistories(e *entry, histories []domain.ID) bool {
@@ -637,6 +728,7 @@ func (r *Registry) Delete(ctx context.Context, scope DeleteScope) (int, error) {
 		return 0, invalidKey()
 	}
 	deleted := 0
+	var pending error
 	err := r.withRegistry(ctx, func(file *registryFile) (bool, error) {
 		var keep []entry
 		var doomed []entry
@@ -658,10 +750,12 @@ func (r *Registry) Delete(ctx context.Context, scope DeleteScope) (int, error) {
 			lock, err := security.TryLock(r.lockPath(e.ID))
 			if err != nil {
 				Log(r.config.Logger, "native_profile_delete_blocked", e.Key, e.ID, ReasonBusy)
-				if len(removed) == 0 {
-					return false, busy()
-				}
+				// Any locked match keeps the whole deletion pending, even when
+				// earlier matches were already removed and are committed below.
 				keep = append(keep, e)
+				if pending == nil {
+					pending = busy()
+				}
 				continue
 			}
 			err = removeProfile(ctx, r, e)
@@ -669,6 +763,9 @@ func (r *Registry) Delete(ctx context.Context, scope DeleteScope) (int, error) {
 			if err != nil {
 				Log(r.config.Logger, "native_profile_delete_blocked", e.Key, e.ID, ReasonDeleteBlocked)
 				keep = append(keep, e)
+				if pending == nil {
+					pending = err
+				}
 				continue
 			}
 			_ = os.Remove(r.lockPath(e.ID))
@@ -679,8 +776,10 @@ func (r *Registry) Delete(ctx context.Context, scope DeleteScope) (int, error) {
 		file.Profiles = keep
 		return len(removed) != 0, nil
 	})
-	if err == nil && deleted != 0 {
-		return deleted, nil
+	if err == nil {
+		// Removals are durable above; a surviving match is still reported so the
+		// caller never acknowledges a deletion while a matching profile remains.
+		err = pending
 	}
 	return deleted, err
 }
