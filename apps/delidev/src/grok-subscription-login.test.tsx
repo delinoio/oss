@@ -863,10 +863,23 @@ it("copies the code, opens the verification page once and reports failures", asy
       name: copy("grok-subscription.device.openVerification"),
     }),
   );
-  await waitFor(() => expect(externalOpen).toHaveBeenCalledTimes(1));
-  expect(externalOpen).toHaveBeenCalledWith(DEVICE_URL);
+  await waitFor(() =>
+    expect(
+      actions(f, OAuthNativeAction.GrokDeviceAuthorizationOpen),
+    ).toHaveLength(1),
+  );
+  // The authorization page goes through the closed OAuth native action with
+  // the original operation, never through the General/Local link opener.
+  expect(f.native).toHaveBeenCalledWith(
+    expect.any(String),
+    OAuthNativeAction.GrokDeviceAuthorizationOpen,
+    "",
+    f.login.mock.calls[0][0].mutation.requestId,
+    DEVICE_URL,
+  );
+  expect(externalOpen).not.toHaveBeenCalled();
 
-  externalOpen.mockRejectedValueOnce("browser-launch-failed");
+  f.native.mockRejectedValueOnce("browser-launch-failed");
   fireEvent.click(
     screen.getByRole("button", {
       name: copy("grok-subscription.device.openVerification"),
@@ -877,6 +890,7 @@ it("copies the code, opens the verification page once and reports failures", asy
   );
   // The code stays visible and copyable after a failed open.
   expect(screen.getByText(DEVICE_CODE)).toBeTruthy();
+  expect(externalOpen).not.toHaveBeenCalled();
 
   writeText.mockRejectedValueOnce(new Error("denied"));
   fireEvent.click(
@@ -980,7 +994,10 @@ it.each([
       name: copy("grok-subscription.device.copyCode"),
     }),
   ).toBeNull();
-  expect(externalOpen).not.toHaveBeenCalledWith(url);
+  expect(externalOpen).not.toHaveBeenCalled();
+  expect(
+    actions(f, OAuthNativeAction.GrokDeviceAuthorizationOpen),
+  ).toHaveLength(0);
 });
 
 it("refuses a user code on the browser method and a changed code mid-login", async () => {

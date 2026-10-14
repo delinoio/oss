@@ -54,7 +54,11 @@ The fixed official xAI OAuth profile validates PKCE, state, nonce and tokens.
 Browser callbacks bind the original IPv4 loopback address and ephemeral port.
 Remote desktop callbacks retain the same original address and use a trusted
 native receiver plus authenticated Connect forwarding. Device authorization
-honors RFC 8628 pending, slow-down, denial and expiry.
+honors RFC 8628 pending, slow-down, denial and expiry. The desktop opens the
+device verification page only through the closed native
+`grok-device-authorization-open` action (fixed `https://accounts.x.ai/oauth2/device`
+with at most one `user_code` query value), which uses the system default browser
+and never the General/Local link destinations.
 
 The trusted native receiver (`apps/delidev/src-tauri/src/oauth.rs`) exposes
 `grok-subscription-open` and `grok-subscription-reopen` for the server-returned
@@ -83,7 +87,7 @@ original evidence. Grok records at `domain.GrokProtocolVersion` (`1.0.41`) and v
 and acquire no new resume authority. API execution keeps its independent support
 boundary when revalidated against `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) or newer.
 
-The desktop browser flow is implemented in `apps/delidev/src/grok-subscription-login.tsx` and enabled only when the server advertises System capability 39. The explicit `Use a device code` action beside Add account (same capability, no separate device capability) sends `device_code` true once, displays the validated transient `accounts.x.ai` verification page and user code with Copy code and Open verification page, and clears them on every terminal state; see the subscription Settings contract. The approved desktop flow preserves service order, existing marks, navigation
+The desktop browser flow is implemented in `apps/delidev/src/grok-subscription-login.tsx` and enabled only when the server advertises System capability 39. The explicit `Use a device code` action beside Add account (same capability, no separate device capability) sends `device_code` true once, displays the validated transient `accounts.x.ai` verification page and user code with Copy code and Open verification page (system default browser through the closed native action), and clears them on every terminal state; see the subscription Settings contract. The approved desktop flow preserves service order, existing marks, navigation
 and theme. Add account starts browser login; Use a device code is explicit.
 Waiting offers reopen/copy/open-page/cancel as appropriate. Confirmed success
 advances to account naming. Preparing, waiting, canceled, expired, failed and

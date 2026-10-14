@@ -33,6 +33,9 @@ pub enum OAuthAction {
     ClaudeSubscriptionReopen,
     GrokSubscriptionOpen,
     GrokSubscriptionReopen,
+    // Stateless: opens the validated Grok device verification page in the
+    // system default browser. It binds no listener and records no attempt.
+    GrokDeviceAuthorizationOpen,
     Reopen,
     Take,
     Dispose,
@@ -365,6 +368,29 @@ impl OAuthHost {
         for expired in expired {
             self.remember_disposed(expired.clone(), &mut attempts)?;
             attempts.remove(&expired.window);
+        }
+        if action == OAuthAction::GrokDeviceAuthorizationOpen {
+            // Device sign-in has no PKCE listener, callback or attempt. The
+            // only native authority is opening the fixed xAI verification page
+            // through the OAuth dispatcher, which always uses the operating
+            // system default browser and ignores the General/Local choices.
+            canonical_id(attempt_id)?;
+            if !generation.is_empty() {
+                return Err(NativeFailure::InvalidInput);
+            }
+            if self
+                .disposed
+                .lock()
+                .map_err(|_| NativeFailure::Busy)?
+                .contains(&scope)
+            {
+                return Err(NativeFailure::Stopped);
+            }
+            validate_grok_device_authorization(authorization)?;
+            let url = Zeroizing::new(authorization.to_string());
+            drop(attempts);
+            opener(&url, &self.stopped)?;
+            return Ok(OAuthResult::default());
         }
         if matches!(
             action,
@@ -1300,6 +1326,7 @@ mod tests {
             OAuthAction::ClaudeSubscriptionReopen,
             OAuthAction::GrokSubscriptionOpen,
             OAuthAction::GrokSubscriptionReopen,
+            OAuthAction::GrokDeviceAuthorizationOpen,
         ] {
             let host = Arc::new(OAuthHost::default());
             let known = scope();
@@ -2944,6 +2971,51 @@ fn begin_grok_subscription_for(
     })
 }
 
+const GROK_DEVICE_HOST: &str = "accounts.x.ai";
+const GROK_DEVICE_PATH: &str = "/oauth2/device";
+const GROK_DEVICE_CODE_PARAMETER: &str = "user_code";
+
+fn grok_device_user_code(value: &str) -> bool {
+    (4..=32).contains(&value.len())
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'-')
+}
+
+// The device verification address is the fixed xAI page with, at most, one
+// `user_code` parameter. The renderer additionally pins it to the displayed
+// code; native only has to keep the destination closed.
+fn validate_grok_device_authorization(raw: &str) -> Result<(), NativeFailure> {
+    let invalid = NativeFailure::InvalidInput;
+    if raw.len() > 512 || !raw.bytes().all(|b| (33..=126).contains(&b)) {
+        return Err(invalid);
+    }
+    let url = url::Url::parse(raw).map_err(|_| invalid)?;
+    if url.scheme() != "https"
+        || url.host_str() != Some(GROK_DEVICE_HOST)
+        || url.port().is_some()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.path() != GROK_DEVICE_PATH
+        || url.fragment().is_some()
+        || url.as_str() != raw
+    {
+        return Err(invalid);
+    }
+    if url.query().is_none() {
+        return Ok(());
+    }
+    let mut pairs = url.query_pairs();
+    match (pairs.next(), pairs.next()) {
+        (Some((key, value)), None)
+            if key == GROK_DEVICE_CODE_PARAMETER && grok_device_user_code(&value) =>
+        {
+            Ok(())
+        }
+        _ => Err(invalid),
+    }
+}
+
 #[cfg(test)]
 mod grok_subscription_tests {
     use super::*;
@@ -3049,10 +3121,236 @@ mod grok_subscription_tests {
                 "grok-subscription-reopen",
                 OAuthAction::GrokSubscriptionReopen,
             ),
+            (
+                "grok-device-authorization-open",
+                OAuthAction::GrokDeviceAuthorizationOpen,
+            ),
         ] {
             let parsed: OAuthAction = serde_json::from_str(&format!("\"{wire}\"")).unwrap();
             assert_eq!(parsed, action);
         }
+    }
+
+    const DEVICE_PAGE: &str = "https://accounts.x.ai/oauth2/device";
+    const DEVICE_WITH_CODE: &str = "https://accounts.x.ai/oauth2/device?user_code=ABCD-1234";
+
+    #[test]
+    fn device_validator_accepts_only_the_fixed_verification_page() {
+        for accepted in [
+            DEVICE_PAGE,
+            DEVICE_WITH_CODE,
+            "https://accounts.x.ai/oauth2/device?user_code=AB12",
+        ] {
+            assert!(
+                validate_grok_device_authorization(accepted).is_ok(),
+                "{accepted}"
+            );
+        }
+        let long_code = format!("{DEVICE_PAGE}?user_code={}", "A".repeat(33));
+        let too_long = format!("{DEVICE_PAGE}?user_code={}", "A".repeat(600));
+        for rejected in [
+            "https://auth.x.ai/oauth2/device",
+            "https://accounts.x.ai.evil.test/oauth2/device",
+            "https://evil.test/oauth2/device?user_code=ABCD-1234",
+            "http://accounts.x.ai/oauth2/device",
+            "https://accounts.x.ai/oauth2/authorize",
+            "https://accounts.x.ai/oauth2/device/",
+            "https://accounts.x.ai:8443/oauth2/device",
+            "https://user@accounts.x.ai/oauth2/device",
+            "https://user:secret@accounts.x.ai/oauth2/device",
+            "https://accounts.x.ai/oauth2/device#fragment",
+            "https://accounts.x.ai/oauth2/device?",
+            "https://accounts.x.ai/oauth2/device?user_code=",
+            "https://accounts.x.ai/oauth2/device?user_code=abcd-1234",
+            "https://accounts.x.ai/oauth2/device?user_code=AB",
+            "https://accounts.x.ai/oauth2/device?next=https://evil.test",
+            "https://accounts.x.ai/oauth2/device?user_code=ABCD-1234&next=1",
+            "https://accounts.x.ai/oauth2/device?user_code=ABCD-1234&user_code=ABCD-1234",
+            "https://accounts.x.ai/oauth2/device?x=1",
+            "file:///etc/passwd",
+            "https://accounts.x.ai/oauth2/device ",
+            "not a url",
+            "",
+            long_code.as_str(),
+            too_long.as_str(),
+        ] {
+            assert!(
+                matches!(
+                    validate_grok_device_authorization(rejected),
+                    Err(NativeFailure::InvalidInput)
+                ),
+                "{rejected}"
+            );
+        }
+    }
+
+    #[test]
+    fn device_open_dispatches_the_exact_page_without_binding_or_attempt_state() {
+        let host = OAuthHost::default();
+        let scope = scope();
+        let operation = uuid::Uuid::now_v7().to_string();
+        let opened = std::sync::atomic::AtomicUsize::new(0);
+        let opener = |url: &str, _: &AtomicBool| {
+            assert_eq!(url, DEVICE_WITH_CODE);
+            opened.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        };
+        // A browser sign-in already bound in the same window is not disturbed,
+        // and the device action never consumes the single attempt slot.
+        let auth = authorization(free_port());
+        let browser_operation = uuid::Uuid::now_v7().to_string();
+        let bound = host
+            .control_with_browser(
+                scope.clone(),
+                OAuthAction::GrokSubscriptionOpen,
+                "",
+                &browser_operation,
+                &auth,
+                true,
+                |_, _| Ok(()),
+            )
+            .unwrap();
+        for expected in 1..=2 {
+            let result = host
+                .control_with_browser(
+                    scope.clone(),
+                    OAuthAction::GrokDeviceAuthorizationOpen,
+                    "",
+                    &operation,
+                    DEVICE_WITH_CODE,
+                    false,
+                    opener,
+                )
+                .unwrap();
+            // Each deliberate click opens the page once; nothing is retained.
+            assert!(result.generation.is_empty());
+            assert!(result.callback_url.is_empty());
+            assert!(result.code.is_none() && result.state.is_none());
+            assert_eq!(opened.load(Ordering::SeqCst), expected);
+        }
+        let attempts = host.attempts.lock().unwrap();
+        assert_eq!(attempts.len(), 1);
+        assert_eq!(attempts[&scope.window].generation, bound.generation);
+    }
+
+    #[test]
+    fn device_open_alone_creates_no_attempt_or_disposed_record() {
+        let host = OAuthHost::default();
+        host.control_with_browser(
+            scope(),
+            OAuthAction::GrokDeviceAuthorizationOpen,
+            "",
+            &uuid::Uuid::now_v7().to_string(),
+            DEVICE_PAGE,
+            true,
+            |url, _| {
+                assert_eq!(url, DEVICE_PAGE);
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert!(host.attempts.lock().unwrap().is_empty());
+        assert!(host.disposed.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn device_open_rejects_bad_input_before_the_browser_opens() {
+        let host = OAuthHost::default();
+        let scope = scope();
+        let operation = uuid::Uuid::now_v7().to_string();
+        let panics = |_: &str, _: &AtomicBool| -> Result<(), NativeFailure> {
+            panic!("rejected device authorization cannot open a browser")
+        };
+        for (generation, attempt, url) in [
+            ("", operation.as_str(), "https://auth.x.ai/oauth2/device"),
+            ("", operation.as_str(), "https://evil.test/oauth2/device"),
+            (
+                "",
+                operation.as_str(),
+                "https://accounts.x.ai/oauth2/device?x=1",
+            ),
+            ("", operation.as_str(), ""),
+            ("unexpected-generation", operation.as_str(), DEVICE_PAGE),
+        ] {
+            let result = host.control_with_browser(
+                scope.clone(),
+                OAuthAction::GrokDeviceAuthorizationOpen,
+                generation,
+                attempt,
+                url,
+                true,
+                panics,
+            );
+            assert!(
+                matches!(result, Err(NativeFailure::InvalidInput)),
+                "{generation:?} {attempt:?} {url:?}"
+            );
+        }
+        // The attempt identity must be the canonical original operation.
+        for attempt in ["not-an-operation", ""] {
+            assert!(matches!(
+                host.control_with_browser(
+                    scope.clone(),
+                    OAuthAction::GrokDeviceAuthorizationOpen,
+                    "",
+                    attempt,
+                    DEVICE_PAGE,
+                    true,
+                    panics,
+                ),
+                Err(NativeFailure::InvalidEvidence)
+            ));
+        }
+        // A browser authorization address is not a device verification page.
+        let browser = authorization(43817);
+        assert!(matches!(
+            host.control_with_browser(
+                scope,
+                OAuthAction::GrokDeviceAuthorizationOpen,
+                "",
+                &operation,
+                &browser,
+                true,
+                panics,
+            ),
+            Err(NativeFailure::InvalidInput)
+        ));
+        assert!(host.attempts.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn device_open_is_refused_after_dispose_and_surfaces_opener_failure() {
+        let host = OAuthHost::default();
+        let scope = scope();
+        let operation = uuid::Uuid::now_v7().to_string();
+        // An opener failure is reported to the renderer and records nothing.
+        assert!(matches!(
+            host.control_with_browser(
+                scope.clone(),
+                OAuthAction::GrokDeviceAuthorizationOpen,
+                "",
+                &operation,
+                DEVICE_PAGE,
+                true,
+                |_, _| Err(NativeFailure::SidecarFailed),
+            ),
+            Err(NativeFailure::SidecarFailed)
+        ));
+        assert!(host.attempts.lock().unwrap().is_empty());
+        host.control(scope.clone(), OAuthAction::Dispose, "", "", "")
+            .unwrap();
+        assert!(matches!(
+            host.control_with_browser(
+                scope,
+                OAuthAction::GrokDeviceAuthorizationOpen,
+                "",
+                &operation,
+                DEVICE_PAGE,
+                true,
+                |_, _| panic!("a disposed opening cannot open a browser"),
+            ),
+            Err(NativeFailure::Stopped)
+        ));
     }
 
     #[test]

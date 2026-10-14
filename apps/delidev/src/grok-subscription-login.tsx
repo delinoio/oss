@@ -20,7 +20,6 @@ import {
 import "./wizard-presentation.css";
 import { OAuthNativeAction, useOAuthNativeControl } from "./account-oauth";
 import { document, encode, object, text } from "./documents";
-import { externalLinksAvailable, openExternalUrl } from "./external-links";
 import { copy, useLocale, type MessageKey } from "./localization";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { useSettingsOpening } from "./settings-lifetime";
@@ -702,8 +701,10 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
       () => settle(CopyState.Failed),
     );
   };
-  // Opens the validated device verification page through the existing native
-  // external-link control. It never opens a second browser on its own.
+  // Opens the validated device verification page through the closed native
+  // device-authorization action. Like every OAuth/subscription authorization it
+  // uses the system default browser and never the General/Local browser choice
+  // that applies to ordinary links. It never opens a second browser on its own.
   const openVerification = () => {
     const p = pending.current;
     if (
@@ -711,13 +712,21 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
       !live(p) ||
       p.method !== GrokLoginMethod.DeviceCode ||
       !p.url ||
-      !externalLinksAvailable()
+      !native
     )
       return;
     const url = p.url;
     void run(
       p,
-      () => openExternalUrl(url),
+      async () => {
+        await native(
+          p.opening,
+          OAuthNativeAction.GrokDeviceAuthorizationOpen,
+          "",
+          p.operation,
+          url,
+        );
+      },
       "grok-subscription.problem.verificationOpenFailed",
     );
   };
@@ -1030,7 +1039,7 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
             </dl>
           ) : null}
           <SettingsTaskActions className="">
-            {waiting && device && v.urlReady && externalLinksAvailable() ? (
+            {waiting && device && v.urlReady ? (
               <SettingsActionButton
                 icon={SettingsActionIcon.Open}
                 type="button"
