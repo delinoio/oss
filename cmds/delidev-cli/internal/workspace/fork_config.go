@@ -233,6 +233,13 @@ func (l forkConfigLayer) matchesNormalized(child forkConfigLayer, normalized map
 // in each retained layer, the selected remote URL in config, and no selected
 // remote URL in config.worktree, which Git reads after config and would
 // otherwise keep the stale source endpoint effective).
+func forkChildConfigError(err error) error {
+	if domain.SafeError(err).Code == domain.ResourceExhausted {
+		return forkSnapshotChanged()
+	}
+	return err
+}
+
 func (i forkGitInventory) verifyChildConfig(ctx context.Context, git Git, target string, allowance uint64) error {
 	proof := i.configProof
 	if !proof.bound {
@@ -241,7 +248,7 @@ func (i forkGitInventory) verifyChildConfig(ctx context.Context, git Git, target
 	core := map[string]string{"core.bare": "false", "core.worktree": ".."}
 	config, size, err := readChildForkConfig(ctx, git, target, "config", allowance)
 	if err != nil {
-		return err
+		return forkChildConfigError(err)
 	}
 	allowance -= size
 	// Git recreates a missing source config, so config is always expected.
@@ -253,7 +260,7 @@ func (i forkGitInventory) verifyChildConfig(ctx context.Context, git Git, target
 	}
 	worktree, _, err := readChildForkConfig(ctx, git, target, "config.worktree", allowance)
 	if err != nil {
-		return err
+		return forkChildConfigError(err)
 	}
 	if worktree.present != proof.worktree.present || worktree.present && !proof.worktree.matchesNormalized(worktree, core, forkRemoteURLKey(proof.remoteName)) {
 		return forkSnapshotChanged()

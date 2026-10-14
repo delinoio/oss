@@ -365,6 +365,16 @@ func TestIndependentForkInventoryConfigProofIsFrozenSourceNotChild(t *testing.T)
 	}
 }
 
+func TestForkChildConfigOverflowIsSnapshotConflict(t *testing.T) {
+	err := forkChildConfigError(domain.Fail(domain.ResourceExhausted, "output exceeded", "retry"))
+	if domain.SafeError(err).Code != domain.Conflict {
+		t.Fatalf("child config output overflow was not classified as snapshot conflict: %v", err)
+	}
+	if err := forkChildConfigError(context.Canceled); domain.SafeError(err).Code != domain.Canceled {
+		t.Fatalf("child config cancellation was misclassified: %v", err)
+	}
+}
+
 func TestForkSnapshotVerifyRejectsChildConfigDrift(t *testing.T) {
 	m, input, _ := managedCloneFixture(t)
 	manifest, err := m.Prepare(context.Background(), input)
