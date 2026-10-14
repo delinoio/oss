@@ -177,15 +177,33 @@ func runParallelStream(t *testing.T, service *parallelStream, parallel bool, mac
 	return watchWithTimeout(ctx, config, client, Credential{MachineID: machine, Token: "private-fixture"}, instance, domain.WorkerConnectionTimeout), root
 }
 
+// requireStreamUnavailable fails unless the stream ended with the fixture's
+// Unavailable status, so a nil error, a different Connect code or a different
+// domain code can never pass as the expected stream end.
+func requireStreamUnavailable(t *testing.T, err error) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("stream end was not reported")
+	}
+	var typed *domain.Error
+	if errors.As(err, &typed) {
+		if typed.Code != domain.Unavailable {
+			t.Fatal("stream ended with an unexpected domain code", err)
+		}
+		return
+	}
+	if connect.CodeOf(err) != connect.CodeUnavailable {
+		t.Fatal("stream ended with an unexpected error", err)
+	}
+}
+
 func TestParallelSessionAssignmentsRunConcurrentlyAndReportOutOfOrder(t *testing.T) {
 	machine, instance := domain.NewID(), domain.NewID()
 	// Eight independent sessions exceed any fixed small ceiling. Each report
 	// blocks until all eight are in flight, which a serial executor can never do.
 	service := &parallelStream{jobs: parallelPreparations(t, machine, instance, 8), holdReports: 8, reportDone: make(chan string, 16)}
 	err, root := runParallelStream(t, service, true, machine, instance, 90*time.Second)
-	if connect.CodeOf(err) != connect.CodeUnavailable && err == nil {
-		t.Fatal("stream end was not reported")
-	}
+	requireStreamUnavailable(t, err)
 	if service.maxFlight != 8 || len(service.reported) != 8 {
 		t.Fatalf("assignments did not run concurrently: max=%d reported=%d", service.maxFlight, len(service.reported))
 	}
@@ -204,7 +222,8 @@ func TestParallelSessionAssignmentsRunConcurrentlyAndReportOutOfOrder(t *testing
 func TestSerialStreamKeepsOneAssignmentAtATime(t *testing.T) {
 	machine, instance := domain.NewID(), domain.NewID()
 	service := &parallelStream{jobs: parallelPreparations(t, machine, instance, 3), sequential: true, reportDone: make(chan string, 16)}
-	runParallelStream(t, service, false, machine, instance, 90*time.Second)
+	err, _ := runParallelStream(t, service, false, machine, instance, 90*time.Second)
+	requireStreamUnavailable(t, err)
 	if service.maxFlight != 1 || len(service.reported) != 3 {
 		t.Fatalf("legacy stream overlapped assignments: max=%d reported=%d", service.maxFlight, len(service.reported))
 	}
@@ -216,9 +235,7 @@ func TestLateControlForCompletedJobResolvesAgainstOriginalReceipt(t *testing.T) 
 	err, _ := runParallelStream(t, service, true, machine, instance, 90*time.Second)
 	// The stream ends only through the fixture's Unavailable status, never through
 	// a protocol failure raised by the late control for the completed first job.
-	if typed, ok := err.(*domain.Error); ok && typed.Code != domain.Unavailable {
-		t.Fatal("late completed-job control failed the stream", err)
-	}
+	requireStreamUnavailable(t, err)
 	if len(service.reported) != 3 {
 		t.Fatal("jobs did not finish before the late control", len(service.reported))
 	}
@@ -238,15 +255,17 @@ func TestStreamLossJoinsEveryOwnedParallelAssignment(t *testing.T) {
 	machine, instance := domain.NewID(), domain.NewID()
 	service := &parallelStream{jobs: parallelPreparations(t, machine, instance, 4), endAfterAssign: true, waiting: make(chan struct{}), reportDone: make(chan string, 16)}
 	done := make(chan struct{})
+	var streamErr error
 	go func() {
 		defer close(done)
-		runParallelStream(t, service, true, machine, instance, 90*time.Second)
+		streamErr, _ = runParallelStream(t, service, true, machine, instance, 90*time.Second)
 	}()
 	select {
 	case <-done:
 	case <-time.After(60 * time.Second):
 		t.Fatal("stream loss left parallel assignments running")
 	}
+	requireStreamUnavailable(t, streamErr)
 	service.mu.Lock()
 	defer service.mu.Unlock()
 	if service.inFlight != 0 {

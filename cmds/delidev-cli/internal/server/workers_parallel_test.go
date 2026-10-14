@@ -237,13 +237,12 @@ func TestParallelControlsStayScopedToTheirJobAndSurviveOutOfOrderCompletion(t *t
 	if _, err := f.service.Store.Mutate(f.ownerContext, domain.NewID(), "fixture.parallel-cancel", nil, func(tx *store.Tx) (any, error) { return nil, tx.RequestJobCancellation(b) }); err != nil {
 		t.Fatal(err)
 	}
-	for stream.Receive() {
-		if stream.Msg().CancelJobId != "" {
-			if stream.Msg().CancelJobId != string(b) {
-				t.Fatal("cancellation crossed job identities", stream.Msg().CancelJobId)
-			}
-			break
-		}
+	canceled := ""
+	for canceled == "" && stream.Receive() {
+		canceled = stream.Msg().CancelJobId
+	}
+	if canceled != string(b) {
+		t.Fatal("targeted cancellation control was missing or crossed job identities", canceled, stream.Err())
 	}
 	if jobState(t, f, a) != domain.JobClaimed {
 		t.Fatal("sibling session was affected by a targeted cancellation")
