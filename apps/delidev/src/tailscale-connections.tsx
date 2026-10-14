@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import {
   DeviceType,
@@ -39,6 +39,15 @@ interface Peer {
   online: boolean;
   shared_to: boolean;
 }
+// A peer the visit queue may check automatically: exactly the peers whose
+// manual Check control is enabled.
+const checkEligible = (peer: Peer) => peer.online && !peer.shared_to;
+interface QueuedPeer {
+  id: string;
+  host: string;
+}
+const queuedAndEligible = (queued: QueuedPeer, peer: Peer) =>
+  queued.id === peer.id && queued.host === peer.host && checkEligible(peer);
 interface Inventory {
   state: string;
   peers: Peer[];
@@ -477,6 +486,34 @@ function DeviceInventory({
     cancel.busy || cancel.uncertain || Boolean(cancel.input);
   const retainedHelpId = "tailscale-retained-request-help";
   const inventory = decode<Inventory>(discovery.data?.documentJson);
+  // Automatic availability checks belong to this mount, which is exactly one
+  // visit of the devices presentation: leaving the category unmounts it and
+  // reopening starts fresh. The queue is snapshotted once from the first
+  // successful running inventory, so rerenders, Strict Mode replay, focus,
+  // reconnect and Refresh never restart or extend it.
+  const [queue, setQueue] = useState<readonly QueuedPeer[]>();
+  const [settled, setSettled] = useState<readonly string[]>([]);
+  useEffect(() => {
+    if (queue || !discovery.isSuccess || discovery.isFetching) return;
+    if (inventory?.state !== "running") return;
+    const next = inventory.peers
+      .filter(checkEligible)
+      .map(({ id, host }) => ({ id, host }));
+    setQueue(next);
+  }, [queue, discovery.isSuccess, discovery.isFetching, inventory]);
+  const markSettled = useCallback(
+    (id: string) =>
+      setSettled((prev) => (prev.includes(id) ? prev : [...prev, id])),
+    [],
+  );
+  const currentPeers = inventory?.peers ?? [];
+  // Serial advance: only the first queued peer that is still eligible and has
+  // not settled is checked. A peer that vanished or went offline is skipped.
+  const activeId = queue?.find(
+    (q) =>
+      !settled.includes(q.id) &&
+      currentPeers.some((p) => queuedAndEligible(q, p)),
+  )?.id;
   const original = decode<Approval[]>(operations.data?.documentJson) ?? [];
   const retained = accepted
     ? [accepted, ...original.filter((a) => a.id !== accepted.id)]
@@ -533,14 +570,23 @@ function DeviceInventory({
               <p>{copy("tailscale.empty")}</p>
             ) : null}
             <ul className="tailscale-list">
-              {inventory?.peers.map((peer) => (
-                <PeerRow
-                  key={peer.id}
-                  peer={peer}
-                  workerEnabled={access?.state === "ready"}
-                  choose={(role) => setSelected({ peer, role })}
-                />
-              ))}
+              {inventory?.peers.map((peer) => {
+                const queued = queue?.find((q) => queuedAndEligible(q, peer));
+                const active = queued !== undefined && queued.id === activeId;
+                return (
+                  <PeerRow
+                    key={peer.id}
+                    peer={peer}
+                    workerEnabled={access?.state === "ready"}
+                    choose={(role) => setSelected({ peer, role })}
+                    automatic={
+                      active || (queued !== undefined && settled.includes(peer.id))
+                    }
+                    active={active}
+                    onSettled={markSettled}
+                  />
+                );
+              })}
             </ul>
           </section>
         ) : null}
@@ -700,30 +746,46 @@ function PeerRow({
   peer,
   choose,
   workerEnabled,
+  automatic,
+  active,
+  onSettled,
 }: {
   peer: Peer;
   choose: (role: DeviceType) => void;
   workerEnabled: boolean;
+  // The visit queue has started (or finished) the automatic check of this peer.
+  automatic: boolean;
+  // This peer is the one automatic check currently owning the queue.
+  active: boolean;
+  onSettled: (id: string) => void;
 }) {
   useLocale();
   const [checked, setChecked] = useState(false);
+  const enabled = checked || automatic;
   // Checking is an explicit single-peer read. Unmount cancels it; cached online
   // metadata never establishes DeliDev support or enables another peer's action.
   const check = useQuery(
     TailscaleQuery.checkTailscale,
     { peerId: peer.id },
     {
-      enabled: checked,
+      enabled,
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       staleTime: Infinity,
       gcTime: 0,
     },
   );
-  const identity = checked
+  const identity = enabled
     ? decode<Identity>(check.data?.documentJson)
     : undefined;
   useEffect(() => setChecked(false), [peer.host, peer.online]);
+  // The active automatic check is done once its read is no longer in flight and
+  // has produced a result or an error (including a check that a manual click
+  // already finished); the queue then advances to the next peer.
+  const settledRead = !check.isFetching && check.status !== "pending";
+  useEffect(() => {
+    if (active && settledRead) onSettled(peer.id);
+  }, [active, settledRead, onSettled, peer.id]);
   return (
     <li>
       <div>
@@ -734,20 +796,26 @@ function PeerRow({
         </p>
         <p role="status">
           {copy("tailscale.delidev")}:{" "}
-          {check.isFetching
-            ? copy("tailscale.checking")
-            : identity?.approval
-              ? copy("tailscale.accepting")
-              : checked
-                ? copy("tailscale.unavailable")
-                : copy("tailscale.notChecked")}
+          {check.isFetching ? (
+            <>
+              {copy("tailscale.checking")}
+              <span className="tailscale-progress" aria-hidden="true" />
+            </>
+          ) : identity?.approval
+            ? copy("tailscale.accepting")
+            : enabled
+              ? copy("tailscale.unavailable")
+              : copy("tailscale.notChecked")}
         </p>
       </div>
       <div className="tailscale-actions">
         <button
           type="button"
           disabled={!peer.online || peer.shared_to || check.isFetching}
-          onClick={() => (checked ? void check.refetch() : setChecked(true))}
+          onClick={() => {
+            setChecked(true);
+            if (enabled) void check.refetch();
+          }}
         >
           {copy("tailscale.check")}
         </button>

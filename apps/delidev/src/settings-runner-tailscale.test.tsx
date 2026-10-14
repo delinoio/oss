@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { create } from "@bufbuild/protobuf";
-import { useState } from "react";
+import { StrictMode, useState } from "react";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -61,6 +61,26 @@ const peer = {
   online: true,
   shared_to: false,
 };
+const second = {
+  ...peer,
+  id: "peer-2",
+  name: "Second peer",
+  host: "second.example",
+};
+const offline = {
+  ...peer,
+  id: "peer-off",
+  name: "Offline peer",
+  host: "off.example",
+  online: false,
+};
+const sharedTo = {
+  ...peer,
+  id: "peer-shared",
+  name: "Shared peer",
+  host: "shared.example",
+  shared_to: true,
+};
 function pending(id: string) {
   return {
     id,
@@ -87,6 +107,12 @@ interface Options {
   peerAccepts?: boolean;
   operations?: { id: string; state: string }[];
   entry?: SettingsNavigationEntry;
+  peers?: (typeof peer)[];
+  // Hold every check until the test releases it by peer ID.
+  holdChecks?: boolean;
+  // Peers whose check fails with an ordinary unavailable error.
+  failChecks?: string[];
+  strict?: boolean;
 }
 function fixture(options: Options = {}) {
   const {
@@ -100,7 +126,7 @@ function fixture(options: Options = {}) {
   const calls = {
     getAccess: vi.fn(),
     discover: vi.fn(),
-    check: vi.fn(),
+    check: vi.fn<(request: { peerId: string }) => void>(),
     listConnections: vi.fn(),
     listApprovals: vi.fn(),
     setAccess: vi.fn<(request: { requestId: string }) => void>(),
@@ -108,6 +134,12 @@ function fixture(options: Options = {}) {
     decide: vi.fn<(request: { requestId: string }) => void>(),
     resume: vi.fn<(request: { requestId: string }) => void>(),
     cancel: vi.fn(),
+  };
+  const holds = new Map<string, () => void>();
+  const checkState = { active: 0, maxActive: 0 };
+  const release = (peerId: string) => {
+    holds.get(peerId)?.();
+    holds.delete(peerId);
   };
   const lose = (flag: boolean | undefined, count: number) => {
     if (flag && count === 1) throw new ConnectError("Lost", Code.Unavailable);
@@ -154,13 +186,25 @@ function fixture(options: Options = {}) {
         return {
           documentJson: encode({
             state: "running",
-            peers: [peer],
+            peers: options.peers ?? [peer],
             observed_at: "2026-01-01T00:00:00Z",
           }),
         };
       },
-      checkTailscale: () => {
-        calls.check();
+      checkTailscale: async (request) => {
+        calls.check(request);
+        checkState.active += 1;
+        checkState.maxActive = Math.max(checkState.maxActive, checkState.active);
+        try {
+          if (options.holdChecks)
+            await new Promise<void>((resolve) =>
+              holds.set(request.peerId, resolve),
+            );
+        } finally {
+          checkState.active -= 1;
+        }
+        if (options.failChecks?.includes(request.peerId))
+          throw new ConnectError("Peer unavailable", Code.Unavailable);
         return {
           documentJson: encode({
             server_id: "s",
@@ -263,18 +307,21 @@ function fixture(options: Options = {}) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+  const Wrapper = options.strict ? StrictMode : ({ children }: { children: React.ReactNode }) => <>{children}</>;
   render(
-    <TransportProvider transport={transport}>
-      <QueryClientProvider client={client}>
-        <ProductIdentityProvider>
-          <MutationIntents>
-            <Owner />
-          </MutationIntents>
-        </ProductIdentityProvider>
-      </QueryClientProvider>
-    </TransportProvider>,
+    <Wrapper>
+      <TransportProvider transport={transport}>
+        <QueryClientProvider client={client}>
+          <ProductIdentityProvider>
+            <MutationIntents>
+              <Owner />
+            </MutationIntents>
+          </ProductIdentityProvider>
+        </QueryClientProvider>
+      </TransportProvider>
+    </Wrapper>,
   );
-  return { calls, paired };
+  return { calls, paired, release, checkState };
 }
 
 const category = (name: string) =>
@@ -360,6 +407,7 @@ it("renders no Tailscale controls in Runner Devices or Connections", async () =>
   expect(screen.queryByRole("heading", { name: "This computer" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Enable access" })).toBeNull();
   expect(calls.discover).not.toHaveBeenCalled();
+  expect(calls.check).not.toHaveBeenCalled();
   expect(mutations(calls)).toEqual(quiet);
 });
 
@@ -368,14 +416,12 @@ it("starts discovery only while the Tailscale category is mounted and never muta
   category(TAILSCALE);
   await screen.findByRole("heading", { name: "Devices on your tailnet" });
   await waitFor(() => expect(calls.discover).toHaveBeenCalled());
-  expect(calls.check).not.toHaveBeenCalled();
   category(AWAY);
   const left = calls.discover.mock.calls.length;
   await idle();
   expect(calls.discover.mock.calls.length).toBe(left);
   category(TAILSCALE);
   await screen.findByRole("heading", { name: "Devices on your tailnet" });
-  expect(calls.check).not.toHaveBeenCalled();
   expect(mutations(calls)).toEqual(quiet);
 });
 
@@ -478,7 +524,6 @@ it("treats cleanup-required with enabled intent as action needed and Worker regi
   category(TAILSCALE);
   await screen.findByText("Action needed");
   expect(screen.queryByText("Ready")).toBeNull();
-  fireEvent.click(await screen.findByRole("button", { name: "Check" }));
   await screen.findByText(/Accepting requests/);
   expect(screen.getByRole("button", { name: "Connect" })).toBeTruthy();
   expect(
@@ -513,17 +558,15 @@ it("presents Ready with Disable and Off with Enable, and a read failure without 
   expect(mutations(calls)).toEqual(quiet);
 });
 
-it("never enables a connection from online status alone and follows the explicit check result", async () => {
+it("never enables a connection from online status alone and follows the automatic check result", async () => {
   fixture({ peerAccepts: false });
   category(TAILSCALE);
   const row = (await screen.findByText("Fixture peer")).closest("li")!;
   expect(within(row).getByText(/Online/)).toBeTruthy();
-  expect(within(row).getByText(/Not checked/)).toBeTruthy();
   expect(within(row).queryByRole("button", { name: "Connect" })).toBeNull();
   expect(
     within(row).queryByRole("button", { name: "Register Worker" }),
   ).toBeNull();
-  fireEvent.click(within(row).getByRole("button", { name: "Check" }));
   await within(row).findByText(/Unavailable or blocked/);
   expect(within(row).queryByRole("button", { name: "Connect" })).toBeNull();
   expect(
@@ -536,7 +579,6 @@ it("enables Connect and Register Worker only after a successful check when acces
   fixture({ initialAccess: { enabled: true, state: "ready" } });
   category(TAILSCALE);
   const row = (await screen.findByText("Fixture peer")).closest("li")!;
-  fireEvent.click(within(row).getByRole("button", { name: "Check" }));
   await within(row).findByText(/Accepting requests/);
   expect(
     (within(row).getByRole("button", { name: "Connect" }) as HTMLButtonElement)
@@ -662,7 +704,6 @@ it("retains an uncertain resume across leaving and returning and retries the ori
 it("refreshes saved profiles through onPaired after a client connection completes", async () => {
   const { calls, paired } = fixture({ completeClient: true });
   category(TAILSCALE);
-  fireEvent.click(await screen.findByRole("button", { name: "Check" }));
   fireEvent.click(await screen.findByRole("button", { name: "Connect" }));
   const task = await screen.findByRole("dialog", { name: "Connect" });
   expect(paired).not.toHaveBeenCalled();
@@ -683,4 +724,155 @@ it("finds the Tailscale category and its sections through Settings search", asyn
     }),
   );
   await screen.findByRole("heading", { name: "Devices on your tailnet" });
+});
+
+const rowOf = async (name: string) =>
+  (await screen.findByText(name)).closest("li")!;
+const checkedIds = (calls: ReturnType<typeof fixture>["calls"]) =>
+  calls.check.mock.calls.map(([request]) => request.peerId);
+
+it("checks eligible peers automatically one at a time with an announced checking state", async () => {
+  const { calls, release, checkState } = fixture({
+    peers: [peer, second],
+    holdChecks: true,
+  });
+  category(TAILSCALE);
+  const first = await rowOf("Fixture peer");
+  const other = await rowOf("Second peer");
+  await waitFor(() => expect(checkedIds(calls)).toEqual(["peer-1"]));
+  const status = within(first).getByText(/DeliDev: Checking…/);
+  expect(status.getAttribute("role")).toBe("status");
+  expect(first.querySelector(".tailscale-progress")).toBeTruthy();
+  expect(
+    (within(first).getByRole("button", { name: "Check" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  expect(within(other).getByText(/Not checked/)).toBeTruthy();
+  await idle();
+  expect(checkedIds(calls)).toEqual(["peer-1"]);
+  release("peer-1");
+  await within(first).findByText(/Accepting requests/);
+  await waitFor(() => expect(checkedIds(calls)).toEqual(["peer-1", "peer-2"]));
+  expect(within(first).queryByText(/Checking…/)).toBeNull();
+  expect(within(other).getByText(/Checking…/)).toBeTruthy();
+  release("peer-2");
+  await within(other).findByText(/Accepting requests/);
+  expect(
+    (within(first).getByRole("button", { name: "Check" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(false);
+  expect(checkState.maxActive).toBe(1);
+  expect(checkedIds(calls)).toEqual(["peer-1", "peer-2"]);
+  expect(mutations(calls)).toEqual(quiet);
+});
+
+it("checks only online peers that are not shared to this tailnet user", async () => {
+  const { calls } = fixture({ peers: [offline, sharedTo, peer, second] });
+  category(TAILSCALE);
+  const row = await rowOf("Second peer");
+  await within(row).findByText(/Accepting requests/);
+  await idle();
+  expect(checkedIds(calls)).toEqual(["peer-1", "peer-2"]);
+  expect(within(await rowOf("Offline peer")).getByText(/Not checked/)).toBeTruthy();
+  expect(within(await rowOf("Shared peer")).getByText(/Not checked/)).toBeTruthy();
+  expect(mutations(calls)).toEqual(quiet);
+});
+
+it("keeps Check as a single-peer manual retry after an automatic failure or unapproved result", async () => {
+  const { calls } = fixture({
+    peers: [peer, second],
+    failChecks: ["peer-1"],
+    initialAccess: { enabled: true, state: "ready" },
+  });
+  category(TAILSCALE);
+  const failed = await rowOf("Fixture peer");
+  await within(failed).findByText(/Unavailable or blocked/);
+  await waitFor(() => expect(checkedIds(calls)).toEqual(["peer-1", "peer-2"]));
+  const accepted = await rowOf("Second peer");
+  await within(accepted).findByText(/Accepting requests/);
+  expect(within(failed).getByRole("alert")).toBeTruthy();
+  expect(within(accepted).queryByRole("alert")).toBeNull();
+  expect(within(failed).queryByRole("button", { name: "Connect" })).toBeNull();
+  expect(
+    within(failed).queryByRole("button", { name: "Register Worker" }),
+  ).toBeNull();
+  expect(within(accepted).getByRole("button", { name: "Connect" })).toBeTruthy();
+  fireEvent.click(within(failed).getByRole("button", { name: "Check" }));
+  await waitFor(() =>
+    expect(checkedIds(calls)).toEqual(["peer-1", "peer-2", "peer-1"]),
+  );
+  await idle();
+  expect(checkedIds(calls)).toEqual(["peer-1", "peer-2", "peer-1"]);
+  // A manual re-check of a settled accepted peer sends exactly one more read.
+  fireEvent.click(within(accepted).getByRole("button", { name: "Check" }));
+  await waitFor(() => expect(checkedIds(calls).at(-1)).toBe("peer-2"));
+  expect(checkedIds(calls)).toHaveLength(4);
+  expect(mutations(calls)).toEqual(quiet);
+});
+
+it("drops the queue when the category is left and starts a fresh visit on reopening", async () => {
+  const { calls, release } = fixture({
+    peers: [peer, second],
+    holdChecks: true,
+  });
+  category(TAILSCALE);
+  await waitFor(() => expect(checkedIds(calls)).toEqual(["peer-1"]));
+  category(AWAY);
+  await waitFor(() =>
+    expect(screen.queryByRole("heading", { name: "Devices on your tailnet" })).toBeNull(),
+  );
+  release("peer-1");
+  await idle();
+  expect(checkedIds(calls)).toEqual(["peer-1"]);
+  category(TAILSCALE);
+  await waitFor(() => expect(checkedIds(calls)).toEqual(["peer-1", "peer-1"]));
+  const first = await rowOf("Fixture peer");
+  expect(within(first).getByText(/Checking…/)).toBeTruthy();
+  release("peer-1");
+  await waitFor(() =>
+    expect(checkedIds(calls)).toEqual(["peer-1", "peer-1", "peer-2"]),
+  );
+  release("peer-2");
+  await within(await rowOf("Second peer")).findByText(/Accepting requests/);
+  await idle();
+  expect(checkedIds(calls)).toHaveLength(3);
+  expect(mutations(calls)).toEqual(quiet);
+});
+
+it("does not repeat or restart automatic checks on Strict Mode replay, focus, reconnect or Refresh", async () => {
+  const options = { peers: [peer], strict: true };
+  const { calls } = fixture(options);
+  category(TAILSCALE);
+  const first = await rowOf("Fixture peer");
+  await within(first).findByText(/Accepting requests/);
+  expect(checkedIds(calls)).toEqual(["peer-1"]);
+  act(() => {
+    document.dispatchEvent(new Event("visibilitychange"));
+    window.dispatchEvent(new Event("focus"));
+    window.dispatchEvent(new Event("online"));
+  });
+  await idle();
+  const discovered = calls.discover.mock.calls.length;
+  options.peers = [peer, second];
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  const added = await rowOf("Second peer");
+  await waitFor(() =>
+    expect(calls.discover.mock.calls.length).toBeGreaterThan(discovered),
+  );
+  await idle();
+  // A peer first seen after Refresh is only checked manually in this visit.
+  expect(checkedIds(calls)).toEqual(["peer-1"]);
+  expect(within(added).getByText(/Not checked/)).toBeTruthy();
+  fireEvent.click(within(added).getByRole("button", { name: "Check" }));
+  await within(added).findByText(/Accepting requests/);
+  expect(checkedIds(calls)).toEqual(["peer-1", "peer-2"]);
+  category(AWAY);
+  await idle();
+  category(TAILSCALE);
+  await waitFor(() =>
+    expect(checkedIds(calls)).toEqual(["peer-1", "peer-2", "peer-1", "peer-2"]),
+  );
+  await idle();
+  expect(checkedIds(calls)).toHaveLength(4);
+  expect(mutations(calls)).toEqual(quiet);
 });

@@ -109,6 +109,11 @@ Check refreshes the original visible peer identity and sends a single bounded
 normal-TLS request to its canonical HTTPS hostname on port 8443. No redirects,
 ambient proxies, alternate ports, scans, certificate bypass or automatic setup
 is allowed. Unsupported or offline peers retain manual pairing and SSH paths.
+The desktop may issue this Check automatically, once per visit of the Tailscale
+devices presentation, for each visible peer that is online and not shared to,
+strictly one at a time because every Check performs a fresh locked status read.
+It uses the same RPC and peer ID with no schema or storage change, and a failed
+automatic Check is an ordinary per-peer failure that the user retries manually.
 
 Access defaults to Off. Enable requires Running, exact Self FQDN certificate
 eligibility in CertDomains and Self.CapMap membership for `https`. Refuse existing
