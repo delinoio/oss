@@ -983,29 +983,14 @@
   box-shadow: none;
 }
 /* The strip, item, label, selected and close visuals come from tab-strip.css.
-   The New browser page button follows the last tab, and the tab strip alone
-   scrolls when tabs exceed the available width. */
+   The Open tool + button follows the last tab, and the tab strip alone scrolls
+   when tabs exceed the available width. */
 .session-tabs {
   flex: 0 1 auto;
-}
-.session-workspace .session-new-page {
-  display: flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  min-width: 40px;
-  height: 40px;
-  min-height: 40px;
-  padding: 0;
-  border-radius: 8px;
-  font-size: 20px;
-  line-height: 1;
 }
 .session-tool-popup {
   position: relative;
   flex: none;
-  margin-inline-start: auto;
 }
 .session-workspace .session-tool-popup > button {
   display: flex;
@@ -1702,4 +1687,37 @@
   .session-notice > button {
     width: 100%;
   }
+}
+/* Terminals stays visible but muted while workspace preparation is not ready.
+   The reason is hover-only: the noninteractive wrapper receives the pointer
+   because a disabled button does not, and the tooltip is positioned inside the
+   row so the scrolling dialog and narrow or zoomed viewports never clip it. */
+.session-tool-menu button:disabled {
+  color: var(--muted);
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.session-tool-hint {
+  position: relative;
+}
+.session-tool-tooltip {
+  position: absolute;
+  inset-inline: 8px;
+  top: calc(100% - 4px);
+  z-index: 1;
+  box-sizing: border-box;
+  max-width: calc(100% - 16px);
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--inverse-border);
+  color: var(--on-inverse);
+  background: var(--inverse-surface);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  visibility: hidden;
+}
+.session-tool-tooltip[data-visible="true"] {
+  visibility: visible;
 }

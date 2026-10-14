@@ -53,11 +53,8 @@ export function SessionTabBar({
   close,
   id,
   closeAria,
-  newPage,
 }: {
   closeAria?: string;
-  /** Opens the New browser page dialog; an ordinary button, never a tab. */
-  newPage?: (opener: HTMLButtonElement) => void;
   tabs: readonly SessionTab[];
   selected: string;
   select: (key: string) => void;
@@ -164,18 +161,6 @@ export function SessionTabBar({
           );
         })}
       </div>
-      {newPage ? (
-        <button
-          type="button"
-          className="session-new-page"
-          aria-label={copy("session-browser.newPage")}
-          title={copy("session-browser.newPage")}
-          aria-haspopup="dialog"
-          onClick={(event) => newPage(event.currentTarget)}
-        >
-          +
-        </button>
-      ) : null}
     </>
   );
 }

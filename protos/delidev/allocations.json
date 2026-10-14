@@ -9620,6 +9620,13 @@
       "number": 65
     },
     {
+      "issue": 3465,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_PARALLEL_SESSIONS_V1",
+      "number": 66
+    },
+    {
       "issue": 1980,
       "kind": "enum",
       "declaration": "SystemCapability",
@@ -13464,6 +13471,13 @@
       "declaration": "SystemCapability",
       "member": "SYSTEM_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1",
       "number": 102
+    },
+    {
+      "issue": 3666,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_PULL_REQUEST_PAGING_50_V1",
+      "number": 103
     },
     {
       "issue": 2397,

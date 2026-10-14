@@ -1158,10 +1158,10 @@ fn retains_chunks_that_encoded_references_name() {
     );
 }
 
-/// Boundary chunks stay byte-for-byte unchanged: a classic chunk that
-/// references an edited chunk keeps the old name, whose original is kept.
+/// A classic chunk is never edited by a pass, but its references follow
+/// renamed chunks like those of any text asset, so no original is kept.
 #[test]
-fn keeps_boundary_chunks_and_their_original_dependencies() {
+fn rewrites_references_of_classic_boundary_chunks() {
     let legacy = r#"var settingsUrl="./settings-BBBBBBBB.js";var legacyState={counter:0};"#;
     let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
     chunks[0] = (
@@ -1170,7 +1170,47 @@ fn keeps_boundary_chunks_and_their_original_dependencies() {
     );
     chunks.push(("assets/legacy-EEEE1111.js", legacy));
     let temp = bundle(&chunks);
-    optimize(temp.path(), &[]);
+    let report = optimize(temp.path(), &[]);
+    assert_eq!(report["size"]["retained"], 0, "{report:#}");
+    let assets = listing(&temp.path().join("out/assets"));
+    assert!(!assets.iter().any(|a| a.contains("BBBBBBBB")), "{assets:?}");
+    let settings = assets
+        .iter()
+        .find(|a| a.starts_with("settings-"))
+        .unwrap()
+        .clone();
+    // The classic chunk keeps its code with the new name in its string, and
+    // gets a new hash itself; the page follows.
+    let renamed_legacy = assets
+        .iter()
+        .find(|a| a.starts_with("legacy-"))
+        .unwrap()
+        .clone();
+    assert_ne!(renamed_legacy, "legacy-EEEE1111.js");
+    assert_eq!(
+        out(temp.path(), &format!("assets/{renamed_legacy}")),
+        legacy.replace("settings-BBBBBBBB.js", &settings)
+    );
+    assert!(out(temp.path(), "index.html").contains(&renamed_legacy));
+}
+
+/// An excluded chunk stays byte-for-byte unchanged: a string reference to an
+/// edited chunk keeps the old name, whose original is kept.
+#[test]
+fn keeps_excluded_chunks_and_their_original_dependencies() {
+    let legacy = r#"var settingsUrl="./settings-BBBBBBBB.js";var legacyState={counter:0};"#;
+    let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
+    chunks[0] = (
+        "index.html",
+        r#"<script src="/assets/legacy-EEEE1111.js"></script><script type="module" src="/assets/index-AAAAAAAA.js"></script>"#,
+    );
+    chunks.push(("assets/legacy-EEEE1111.js", legacy));
+    let temp = bundle(&chunks);
+    let report = optimize(temp.path(), &["--bundle-exclude", "legacy-"]);
+    assert!(
+        report["size"]["retained"].as_u64().unwrap() > 0,
+        "{report:#}"
+    );
     let assets = listing(&temp.path().join("out/assets"));
     assert_eq!(out(temp.path(), "assets/legacy-EEEE1111.js"), legacy);
     assert_eq!(
@@ -1184,10 +1224,36 @@ fn keeps_boundary_chunks_and_their_original_dependencies() {
     );
 }
 
-/// A name that a frozen boundary chunk carries is never renamed, even for an
+/// A name that an excluded chunk carries is never renamed, even for an
 /// edited chunk elsewhere that shares it.
 #[test]
-fn keeps_names_shared_with_boundary_chunks() {
+fn keeps_names_shared_with_excluded_chunks() {
+    let legacy = r#"var legacyState={counter:0};"#;
+    let temp = bundle(&[
+        (
+            "index.html",
+            r#"<script src="/legacy/x-AAAAAAAA.js"></script><script type="module" src="/index.js"></script>"#,
+        ),
+        ("legacy/x-AAAAAAAA.js", legacy),
+        (
+            "modern/x-AAAAAAAA.js",
+            r#"function make(n){return{verticalSpacing:n,horizontalSpacing:n*2}}function m(n){const o=make(n);return o.verticalSpacing+o.horizontalSpacing}export{m};"#,
+        ),
+        (
+            "index.js",
+            r#"import{m}from"./modern/x-AAAAAAAA.js";console.log(m(2));"#,
+        ),
+    ]);
+    optimize(temp.path(), &["--bundle-exclude", "legacy/"]);
+    same_behavior(temp.path());
+    assert_eq!(out(temp.path(), "legacy/x-AAAAAAAA.js"), legacy);
+    assert_eq!(listing(&temp.path().join("out/modern")), ["x-AAAAAAAA.js"]);
+}
+
+/// Without exclusion, files that share a name with an edited chunk are
+/// renamed together with it, classic scripts included.
+#[test]
+fn renames_classic_chunks_that_share_an_edited_name() {
     let legacy = r#"var legacyState={counter:0};"#;
     let temp = bundle(&[
         (
@@ -1206,8 +1272,15 @@ fn keeps_names_shared_with_boundary_chunks() {
     ]);
     optimize(temp.path(), &[]);
     same_behavior(temp.path());
-    assert_eq!(out(temp.path(), "legacy/x-AAAAAAAA.js"), legacy);
-    assert_eq!(listing(&temp.path().join("out/modern")), ["x-AAAAAAAA.js"]);
+    let legacy_files = listing(&temp.path().join("out/legacy"));
+    let modern_files = listing(&temp.path().join("out/modern"));
+    assert_eq!(legacy_files, modern_files);
+    assert_ne!(legacy_files, ["x-AAAAAAAA.js"]);
+    assert_eq!(
+        out(temp.path(), &format!("legacy/{}", legacy_files[0])),
+        legacy
+    );
+    assert!(out(temp.path(), "index.html").contains(&format!("/legacy/{}", legacy_files[0])));
 }
 
 /// JavaScript escapes in a reference also keep the original, with its map.
@@ -2327,10 +2400,11 @@ fn credits_the_first_boundary_through_nested_boundaries() {
     );
 }
 
-/// A classic `<script src>` with a literal dynamic import is a boundary that a
-/// page loads: the chunks it imports stay unchanged and the log warns.
+/// An excluded `<script src>` with a literal dynamic import is a pinned
+/// chunk that a page loads: the chunks it imports stay unchanged and the log
+/// warns.
 #[test]
-fn warns_when_a_classic_html_script_freezes_chunks() {
+fn warns_when_an_excluded_html_script_freezes_chunks() {
     let temp = bundle(&[
         (
             "index.html",
@@ -2345,7 +2419,7 @@ fn warns_when_a_classic_html_script_freezes_chunks() {
             r#"function v(){return"lazy"}function unusedLazyHelper(n){return n.toString(36).repeat(4)}export{v,unusedLazyHelper};"#,
         ),
     ]);
-    let output = run_typeopt(temp.path(), &[]);
+    let output = run_typeopt(temp.path(), &["--bundle-exclude", "app-"]);
     assert!(
         output.status.success(),
         "{}",
@@ -2371,6 +2445,118 @@ fn warns_when_a_classic_html_script_freezes_chunks() {
             .as_str()
             .unwrap()
             .ends_with("app-AAAAAAAA.js")
+    );
+}
+
+/// A classic `<script src>` with a literal dynamic import freezes nothing:
+/// the lazy chunk is optimized and renamed, and the classic chunk imports
+/// the new name under a new hash of its own.
+#[test]
+fn optimizes_chunks_that_a_classic_html_script_imports() {
+    let temp = bundle(&[
+        (
+            "index.html",
+            r#"<script src="/assets/app-AAAAAAAA.js"></script>"#,
+        ),
+        (
+            "assets/app-AAAAAAAA.js",
+            r#"import("./lazy-BBBBBBBB.js").then(m=>console.log(m.v()));"#,
+        ),
+        (
+            "assets/lazy-BBBBBBBB.js",
+            r#"function shape(n){return{verticalSpacing:n,horizontalSpacing:n*2}}function v(){const o=shape(2);return"lazy"+(o.verticalSpacing+o.horizontalSpacing)}export{v};"#,
+        ),
+    ]);
+    let report = optimize(temp.path(), &[]);
+    assert!(report.get("frozen_chunks").is_none(), "{report:#}");
+    assert!(saved(&report) > 0, "{report:#}");
+    let out_dir = temp.path().join("out");
+    let assets = listing(&out_dir.join("assets"));
+    let app = assets.iter().find(|a| a.starts_with("app-")).unwrap();
+    let lazy = assets.iter().find(|a| a.starts_with("lazy-")).unwrap();
+    assert_ne!(app, "app-AAAAAAAA.js", "{assets:?}");
+    assert_ne!(lazy, "lazy-BBBBBBBB.js", "{assets:?}");
+    assert!(out(temp.path(), &format!("assets/{app}")).contains(lazy.as_str()));
+    assert!(out(temp.path(), "index.html").contains(app.as_str()));
+    let before = node(&temp.path().join("dist/assets/app-AAAAAAAA.js"));
+    let after = node(&out_dir.join("assets").join(app));
+    assert_eq!(before.stdout, after.stdout);
+}
+
+/// A lazy route chunk that uses `eval` and imports the shared chunk back no
+/// longer freezes it: the shared chunk is optimized and both get new names,
+/// with one module instance.
+#[test]
+fn optimizes_chunks_that_an_eval_chunk_imports() {
+    let route = r#"import{ready as r}from"./index-AAAAAAAA.js";function run(){var f=eval("(function(){return 1})");return r()+f()}export{run};"#;
+    let temp = bundle(&[
+        (
+            "index.html",
+            r#"<script type="module" src="/assets/index-AAAAAAAA.js"></script>"#,
+        ),
+        (
+            "assets/index-AAAAAAAA.js",
+            r#"import{bump as b,count as c}from"./shared-BBBBBBBB.js";export const ready=()=>c();b();import("./route-CCCCCCCC.js").then(m=>console.log("route",m.run()));"#,
+        ),
+        (
+            "assets/shared-BBBBBBBB.js",
+            r#"let n=0;function shape(k){return{verticalSpacing:k,horizontalSpacing:k*2}}function bump(){n++;const o=shape(n);return o.verticalSpacing+o.horizontalSpacing}function count(){return n}export{bump,count};"#,
+        ),
+        ("assets/route-CCCCCCCC.js", route),
+    ]);
+    let report = optimize(temp.path(), &[]);
+    assert!(report.get("frozen_chunks").is_none(), "{report:#}");
+    assert!(saved(&report) > 0, "{report:#}");
+    let out_dir = temp.path().join("out");
+    let assets = listing(&out_dir.join("assets"));
+    assert_eq!(assets.len(), 3, "{assets:?}");
+    let index = assets.iter().find(|a| a.starts_with("index-")).unwrap();
+    let route_file = assets.iter().find(|a| a.starts_with("route-")).unwrap();
+    assert_ne!(route_file, "route-CCCCCCCC.js");
+    // The eval chunk keeps its code; only the import specifier follows.
+    assert_eq!(
+        out(temp.path(), &format!("assets/{route_file}")),
+        route.replace("index-AAAAAAAA.js", index)
+    );
+    let before = node(&temp.path().join("dist/assets/index-AAAAAAAA.js"));
+    let after = node(&out_dir.join("assets").join(index));
+    assert!(before.status.success() && after.status.success());
+    assert_eq!(before.stdout, after.stdout);
+}
+
+/// A Workbox precache manifest lists renamed chunks under their new names
+/// and gives changed files a new revision of the same length.
+#[test]
+fn refreshes_service_worker_precache_entries() {
+    let sw = r#"importScripts("./workbox-1a2b3c4d.js");self.workbox.precacheAndRoute([{url:"assets/index-AAAAAAAA.js",revision:null},{url:"assets/settings-BBBBBBBB.js",revision:null},{url:"assets/plain-CCCCCCCC.js",revision:null},{url:"index.html",revision:"dca4ee13e6e90a3b14607a0c53990951"},{revision:"a9b855bc4fa588808a72c126fa9ade00",url:"robots.txt"}],{});"#;
+    let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
+    chunks.push(("sw.js", sw));
+    chunks.push((
+        "workbox-1a2b3c4d.js",
+        "self.workbox={precacheAndRoute(){}};",
+    ));
+    chunks.push(("robots.txt", "User-agent: *"));
+    let temp = bundle(&chunks);
+    let report = optimize(temp.path(), &[]);
+    assert_eq!(report["size"]["retained"], 0, "{report:#}");
+    let assets = listing(&temp.path().join("out/assets"));
+    let published = out(temp.path(), "sw.js");
+    for asset in &assets {
+        assert!(
+            published.contains(&format!("assets/{asset}")),
+            "{published}"
+        );
+    }
+    assert!(!published.contains("BBBBBBBB"), "{published}");
+    assert_eq!(published.len(), sw.len());
+    // index.html names the renamed chunks: its revision changes. robots.txt
+    // did not change: its revision stays.
+    assert!(
+        !published.contains("dca4ee13e6e90a3b14607a0c53990951"),
+        "{published}"
+    );
+    assert!(
+        published.contains(r#"{revision:"a9b855bc4fa588808a72c126fa9ade00",url:"robots.txt"}"#)
     );
 }
 
@@ -2418,4 +2604,171 @@ fn freezes_same_named_chunks_in_other_directories() {
     let before = node(&dist.join("assets/index-AAAAAAAA.js"));
     let after = run_asset(&out_dir, "index-");
     assert_eq!(before.stdout, after.stdout);
+}
+
+// ---------------------------------------------------------------------------
+// call-inlining in bundle chunks
+// ---------------------------------------------------------------------------
+
+/// Unwritten `let` and `var` functions are inlined like `const` ones.
+#[test]
+fn inlines_unwritten_let_and_var_functions() {
+    let (temp, report) = run(&[
+        (
+            "index.js",
+            r#"import{run as r}from"./lib.js";console.log(r(2),r(5));"#,
+        ),
+        (
+            "lib.js",
+            r#"var twice=function(n){return n*2};let inc=n=>n+1;function run(x){return inc(twice(x))+inc(x)}export{run};"#,
+        ),
+    ]);
+    assert!(applied(&report, "call-inlining") >= 2, "{report:#}");
+    let lib = out(temp.path(), "lib.js");
+    assert!(!lib.contains("twice(") && !lib.contains("inc("), "{lib}");
+}
+
+/// A `var` in a nested block may be uninitialized at a site after the
+/// block, where the call throws.
+#[test]
+fn keeps_calls_of_var_functions_in_nested_blocks() {
+    let (temp, _) = run(&[
+        (
+            "index.js",
+            r#"import{run as r}from"./lib.js";try{console.log(r(true,1),r(false,1))}catch(e){console.log(e.constructor.name)}"#,
+        ),
+        (
+            "lib.js",
+            r#"function run(c,x){if(c){var f=function(n){return n+1}}return f(x)}export{run};"#,
+        ),
+    ]);
+    assert!(out(temp.path(), "lib.js").contains("f(x)"));
+}
+
+/// Unchecked chunks do not need matching inferred types, and missing
+/// arguments become `void 0`.
+#[test]
+fn inlines_calls_regardless_of_inferred_types_and_missing_arguments() {
+    let (temp, report) = run(&[
+        ("index.js", r#"import{show as s}from"./lib.js";s();"#),
+        (
+            "lib.js",
+            r#"function len(s){return s.length}function pick(a,b){return b===void 0?a:b}function show(){console.log(len([1,2]),len("abc"),pick(3),pick(3,4))}export{show};"#,
+        ),
+    ]);
+    // One bundle per target function covers all of its sites.
+    assert!(applied(&report, "call-inlining") >= 2, "{report:#}");
+    let lib = out(temp.path(), "lib.js");
+    assert!(!lib.contains("len(") && !lib.contains("pick("), "{lib}");
+}
+
+/// Assignments to properties and free bindings are inlined with their
+/// evaluation order; writes to parameters are not.
+#[test]
+fn inlines_assignments_but_not_parameter_writes() {
+    let (temp, report) = run(&[
+        ("index.js", r#"import{show as s}from"./lib.js";s();"#),
+        (
+            "lib.js",
+            r#"let count=0;function bump(o,v){return o.total+=v}function last(o,v){return o.last=v}function init(o){return o.v??=7}function tick(){return count++}function next(n){return n+=1}function show(){const s={total:1,last:0,v:null};console.log(bump(s,3),last(s,4),init(s),init(s),tick(),tick(),count);let a=1;console.log(next(a),a,s.total,s.last,s.v)}export{show};"#,
+        ),
+    ]);
+    assert!(applied(&report, "call-inlining") >= 4, "{report:#}");
+    let lib = out(temp.path(), "lib.js");
+    assert!(!lib.contains("bump(") && !lib.contains("tick("), "{lib}");
+    assert!(lib.contains("next(a)"), "{lib}");
+}
+
+/// An argument that reads a binding the body writes is read before the
+/// write; inlining would read it after.
+#[test]
+fn keeps_calls_whose_body_writes_an_argument_binding() {
+    let (temp, _) = run(&[
+        ("index.js", r#"import{show as s}from"./lib.js";s();"#),
+        (
+            "lib.js",
+            r#"let n=0;function reset(x){return n=1,x}function show(){console.log(reset(n),n)}export{show};"#,
+        ),
+    ]);
+    assert!(out(temp.path(), "lib.js").contains("reset(n)"));
+}
+
+/// A written binding imported at the site is read-only there, so a function
+/// that writes its own module binding is not inlined into an importer.
+#[test]
+fn keeps_calls_that_write_a_binding_imported_at_the_site() {
+    let (temp, _) = run(&[
+        (
+            "index.js",
+            r#"import{n,tick}from"./lib.js";console.log(tick(),tick(),n);"#,
+        ),
+        (
+            "lib.js",
+            r#"let n=0;function tick(){return n++}export{n,tick};"#,
+        ),
+    ]);
+    assert!(out(temp.path(), "index.js").contains("tick()"));
+}
+
+/// `{url, revision}` objects outside a Workbox precache call are application
+/// data and keep their values.
+#[test]
+fn keeps_revision_data_outside_precache_calls() {
+    let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
+    chunks[1] = (
+        "assets/index-AAAAAAAA.js",
+        r#"import{m as e}from"./settings-BBBBBBBB.js";import{p as t}from"./plain-CCCCCCCC.js";import{d}from"../config.js";console.log(e(2).verticalSpacing,t(),d[0].revision);"#,
+    );
+    chunks.push((
+        "config.js",
+        r#"export const d=[{url:"index.html",revision:"v1"}];"#,
+    ));
+    let temp = bundle(&chunks);
+    optimize(temp.path(), &[]);
+    assert_eq!(
+        out(temp.path(), "config.js"),
+        r#"export const d=[{url:"index.html",revision:"v1"}];"#
+    );
+}
+
+/// Formatted Workbox manifests put whitespace before keys; their entries are
+/// refreshed as well.
+#[test]
+fn refreshes_formatted_precache_entries() {
+    let sw = "self.workbox.precacheAndRoute([\n  {\n    url: \"index.html\",\n    revision: \
+              \"dca4ee13e6e90a3b14607a0c53990951\"\n  },\n  { revision: null, url: \
+              \"assets/settings-BBBBBBBB.js\" }\n]);\n";
+    let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
+    chunks.push(("sw.js", sw));
+    let temp = bundle(&chunks);
+    optimize(temp.path(), &[]);
+    let published = out(temp.path(), "sw.js");
+    assert!(
+        !published.contains("dca4ee13e6e90a3b14607a0c53990951"),
+        "{published}"
+    );
+    assert!(!published.contains("BBBBBBBB"), "{published}");
+    assert_eq!(published.len(), sw.len());
+}
+
+/// A precache URL that leaves the bundle directory is ignored: typeopt never
+/// reads outside the staged output for it.
+#[test]
+fn ignores_precache_entries_outside_the_bundle() {
+    let temp = bundle(&HASHED);
+    fs::write(temp.path().join("outside.txt"), "outside").unwrap();
+    let sw = r#"self.workbox.precacheAndRoute([{url:"../../outside.txt",revision:"00000000000000000000000000000000"},{url:"assets/../index.html",revision:"dca4ee13e6e90a3b14607a0c53990951"}]);"#;
+    fs::write(temp.path().join("dist/sw.js"), sw).unwrap();
+    optimize(temp.path(), &[]);
+    let published = out(temp.path(), "sw.js");
+    assert!(
+        published
+            .contains(r#"{url:"../../outside.txt",revision:"00000000000000000000000000000000"}"#),
+        "{published}"
+    );
+    // A `..` that stays inside the bundle still names index.html.
+    assert!(
+        !published.contains("dca4ee13e6e90a3b14607a0c53990951"),
+        "{published}"
+    );
 }

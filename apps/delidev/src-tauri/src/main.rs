@@ -7,6 +7,7 @@ mod badge_host;
 mod browser_host;
 mod browser_preferences_host;
 mod date_format_host;
+mod navigation_preference_host;
 mod notification_host;
 mod oauth_host;
 mod quit_dialog;
@@ -60,6 +61,7 @@ use browser_preferences_host::{
     update_browser_preferences,
 };
 use date_format_host::{read_date_format, update_date_format};
+use navigation_preference_host::{read_navigation_preference, update_navigation_preference};
 use session_creation_preferences_host::{
     read_runner_device_preferences, read_session_creation_preferences,
     update_runner_device_preferences, update_session_creation_preferences,
@@ -2206,6 +2208,8 @@ fn run() -> Result<(), NativeFailure> {
                 update_shortcut_preferences,
                 read_sidebar_preference,
                 update_sidebar_preference,
+                read_navigation_preference,
+                update_navigation_preference,
                 read_date_format,
                 update_date_format,
                 read_runner_device_preferences,
@@ -2406,6 +2410,9 @@ fn run() -> Result<(), NativeFailure> {
             ));
             app.manage(Arc::new(
                 delidev_desktop::sidebar_preference::SidebarStore::new(config_dir.clone()),
+            ));
+            app.manage(Arc::new(
+                delidev_desktop::navigation_preference::NavigationStore::new(config_dir.clone()),
             ));
             let language = Arc::new(delidev_desktop::language::LanguageStore::new(config_dir));
             let initial = language.read();

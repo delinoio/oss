@@ -79,9 +79,31 @@ plugins:
       - target=ts
       - import_extension=js
 
+  - local:
+      - pnpm
+      - exec
+      - protoc-gen-es
+    out: apps/bundlewhy-web/src/gen
+    types:
+      - "bundlewhy.v1"
+    opt:
+      - target=ts
+      - import_extension=js
+  - local:
+      - pnpm
+      - exec
+      - protoc-gen-connect-query
+    out: apps/bundlewhy-web/src/gen
+    types:
+      - "bundlewhy.v1"
+    opt:
+      - target=ts
+      - import_extension=js
+
 inputs:
   - directory: protos
     paths:
       - protos/devhud/v1
       - protos/async_commit_hook/v1
       - protos/delidev/v1
+      - protos/bundlewhy/v1

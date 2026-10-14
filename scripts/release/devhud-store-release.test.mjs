@@ -155,6 +155,90 @@ function appleVersionResponse(state, buildVersion = "1") {
   };
 }
 
+function isAppleVersionLookup(input, options = {}, env = environment()) {
+  const url = new URL(input);
+  if (!url.pathname.endsWith("/appStoreVersions") || options.method === "POST")
+    return false;
+  assert.equal(url.origin, "https://api.appstoreconnect.apple.com");
+  assert.equal(
+    url.pathname,
+    `/v1/apps/${encodeURIComponent(env.DEVHUD_APP_STORE_APP_ID)}/appStoreVersions`,
+  );
+  assert.equal(options.method, undefined);
+  assert.equal(options.redirect, "error");
+  assert.match(options.headers.authorization, /^Bearer /u);
+  assert.deepEqual(
+    [...url.searchParams],
+    [
+      ["filter[platform]", "IOS"],
+      ["filter[versionString]", loadReleaseMetadata().version],
+      ["include", "build"],
+      ["fields[builds]", "version"],
+      ["limit", "1"],
+    ],
+  );
+  return true;
+}
+
+function appleReviewFixture(
+  pages,
+  requests,
+  env,
+  versionState = "WAITING_FOR_REVIEW",
+) {
+  return async (input, options = {}) => {
+    const url = String(input);
+    requests.push({ url, method: options.method });
+    if (isAppleVersionLookup(input, options, env))
+      return jsonResponse(appleVersionResponse(versionState));
+    if (url.endsWith("appStoreVersionPhasedRelease"))
+      return new Response(null, { status: 404 });
+    if (url.includes("/v1/builds?"))
+      return jsonResponse({
+        data: [{ id: "build-id", attributes: { processingState: "VALID" } }],
+      });
+    if (url.includes("/reviewSubmissions?")) {
+      assert.equal(options.method, undefined);
+      assert.equal(options.redirect, "error");
+      assert.match(options.headers.authorization, /^Bearer /u);
+      const cursor = new URL(url).searchParams.get("cursor") ?? "first";
+      const page = pages[cursor];
+      if (page === undefined)
+        throw new Error(`unexpected review page: ${cursor}`);
+      if (page instanceof Response) return page;
+      return jsonResponse(
+        Object.prototype.hasOwnProperty.call(page, "links")
+          ? page
+          : { ...page, links: {} },
+      );
+    }
+    if (url.includes("/reviewSubmissions/") && options.method === "PATCH")
+      return jsonResponse({ data: { id: url.split("/").at(-1) } });
+    throw new Error(`unexpected request: ${url}`);
+  };
+}
+
+function appleReview(id, state, versionId, items = []) {
+  return {
+    type: "reviewSubmissions",
+    id,
+    attributes: { state },
+    relationships: {
+      ...(versionId
+        ? {
+            appStoreVersionForReview: {
+              data: { type: "appStoreVersions", id: versionId },
+            },
+          }
+        : {}),
+      items: { data: items },
+    },
+  };
+}
+
+const appleReviewPageTwo =
+  "https://api.appstoreconnect.apple.com/v1/apps/123/reviewSubmissions?cursor=page2";
+
 test("store states distinguish unsubmitted, pending, approved-held, public, and terminal results", () => {
   assert.equal(
     classifyApple("PREPARE_FOR_SUBMISSION"),
@@ -603,6 +687,7 @@ test("an absent App Store version is unsubmitted and can be withdrawn without mu
       environment(),
       async (input, options = {}) => {
         requests.push({ url: String(input), options });
+        assert.ok(isAppleVersionLookup(input, options));
         return jsonResponse({ data: [] });
       },
     );
@@ -611,6 +696,26 @@ test("an absent App Store version is unsubmitted and can be withdrawn without mu
       command === "status" ? StoreStatus.Unsubmitted : StoreStatus.Withdrawn,
     );
     assert.ok(requests.every(({ options }) => options.method === undefined));
+    assert.equal(requests.length, 1);
+  }
+});
+
+test("App Store lookup failures stop all release flows before mutation", async () => {
+  const env = {
+    ...environment(),
+    DEVHUD_APP_STORE_APP_ID: "app/id with space",
+  };
+  for (const command of ["status", "submit", "publish", "withdraw"]) {
+    const requests = [];
+    await assert.rejects(
+      run(command, StoreProvider.Apple, {}, env, async (input, options) => {
+        requests.push({ input, options });
+        assert.ok(isAppleVersionLookup(input, options, env));
+        return jsonResponse({}, 503);
+      }),
+      { message: "App Store version lookup failed with HTTP 503" },
+    );
+    assert.equal(requests.length, 1, command);
   }
 });
 
@@ -619,7 +724,7 @@ test("App Store submission creates one absent exact version after build processi
   const fetchImpl = async (input, options = {}) => {
     const url = String(input);
     requests.push({ url, options });
-    if (url.includes("appStoreVersions?")) return jsonResponse({ data: [] });
+    if (isAppleVersionLookup(input, options)) return jsonResponse({ data: [] });
     if (url.includes("/v1/builds?"))
       return jsonResponse({
         data: [{ id: "build-id", attributes: { processingState: "VALID" } }],
@@ -630,7 +735,8 @@ test("App Store submission creates one absent exact version after build processi
       });
     if (url.endsWith("appStoreVersionPhasedRelease"))
       return new Response(null, { status: 404 });
-    if (url.includes("/reviewSubmissions?")) return jsonResponse({ data: [] });
+    if (url.includes("/reviewSubmissions?"))
+      return jsonResponse({ data: [], links: {} });
     return jsonResponse({ data: { id: "mutation-result" } });
   };
   await run("submit", StoreProvider.Apple, {}, environment(), fetchImpl);
@@ -639,6 +745,10 @@ test("App Store submission creates one absent exact version after build processi
       url.endsWith("/v1/appStoreVersions") && options.method === "POST",
   );
   assert.equal(creations.length, 1);
+  assert.equal(
+    creations[0].url,
+    "https://api.appstoreconnect.apple.com/v1/appStoreVersions",
+  );
   assert.deepEqual(JSON.parse(creations[0].options.body), {
     data: {
       type: "appStoreVersions",
@@ -650,11 +760,45 @@ test("App Store submission creates one absent exact version after build processi
 
 test("App Store version lookup rejects duplicate exact records", async () => {
   await assert.rejects(
-    run("status", StoreProvider.Apple, {}, environment(), async () =>
-      jsonResponse({ data: [{ id: "one" }, { id: "two" }] }),
+    run(
+      "status",
+      StoreProvider.Apple,
+      {},
+      environment(),
+      async (input, options) => {
+        assert.ok(isAppleVersionLookup(input, options));
+        return jsonResponse({ data: [{ id: "one" }, { id: "two" }] });
+      },
     ),
     /at most one exact version/u,
   );
+});
+
+test("App Store pending, held, and public versions reject a wrong attached build", async () => {
+  for (const state of [
+    "WAITING_FOR_REVIEW",
+    "PENDING_DEVELOPER_RELEASE",
+    "READY_FOR_SALE",
+  ]) {
+    for (const command of ["status", "submit", "publish", "withdraw"]) {
+      const requests = [];
+      await assert.rejects(
+        run(
+          command,
+          StoreProvider.Apple,
+          {},
+          environment(),
+          async (input, options) => {
+            requests.push({ input, options });
+            assert.ok(isAppleVersionLookup(input, options));
+            return jsonResponse(appleVersionResponse(state, "wrong-build"));
+          },
+        ),
+        /attached build does not match the exact release build number/u,
+      );
+      assert.equal(requests.length, 1, `${command}: ${state}`);
+    }
+  }
 });
 
 test("App Store accepted states require the exact attached build number", async () => {
@@ -667,7 +811,7 @@ test("App Store accepted states require the exact attached build number", async 
     async (input, options = {}) => {
       const url = String(input);
       requests.push({ url, options });
-      if (url.includes("appStoreVersions?"))
+      if (isAppleVersionLookup(input, options))
         return jsonResponse(appleVersionResponse("READY_FOR_SALE"));
       if (url.endsWith("appStoreVersionPhasedRelease"))
         return new Response(null, { status: 404 });
@@ -680,29 +824,41 @@ test("App Store accepted states require the exact attached build number", async 
   assert.ok(requests.every(({ options }) => options.method === undefined));
 
   await assert.rejects(
-    run("status", StoreProvider.Apple, {}, environment(), async (input) => {
-      if (String(input).includes("appStoreVersions?"))
-        return jsonResponse(appleVersionResponse("WAITING_FOR_REVIEW", "2"));
-      throw new Error(`unexpected request: ${input}`);
-    }),
+    run(
+      "status",
+      StoreProvider.Apple,
+      {},
+      environment(),
+      async (input, options) => {
+        if (isAppleVersionLookup(input, options))
+          return jsonResponse(appleVersionResponse("WAITING_FOR_REVIEW", "2"));
+        throw new Error(`unexpected request: ${input}`);
+      },
+    ),
     /attached build does not match the exact release build number/u,
   );
 });
 
 test("App Store accepted states reject a missing attached build", async () => {
   await assert.rejects(
-    run("status", StoreProvider.Apple, {}, environment(), async (input) => {
-      if (String(input).includes("appStoreVersions?"))
-        return jsonResponse({
-          data: [
-            {
-              id: "version-id",
-              attributes: { appStoreState: "PENDING_DEVELOPER_RELEASE" },
-            },
-          ],
-        });
-      throw new Error(`unexpected request: ${input}`);
-    }),
+    run(
+      "status",
+      StoreProvider.Apple,
+      {},
+      environment(),
+      async (input, options) => {
+        if (isAppleVersionLookup(input, options))
+          return jsonResponse({
+            data: [
+              {
+                id: "version-id",
+                attributes: { appStoreState: "PENDING_DEVELOPER_RELEASE" },
+              },
+            ],
+          });
+        throw new Error(`unexpected request: ${input}`);
+      },
+    ),
     /attached build does not match the exact release build number/u,
   );
 });
@@ -712,7 +868,7 @@ test("App Store submission reconciles an already-submitted exact version without
   const fetchImpl = async (input, options = {}) => {
     const url = String(input);
     requests.push({ url, options });
-    if (url.includes("appStoreVersions?"))
+    if (isAppleVersionLookup(input, options))
       return jsonResponse(appleVersionResponse("WAITING_FOR_REVIEW"));
     if (url.endsWith("appStoreVersionPhasedRelease"))
       return new Response(null, { status: 404 });
@@ -734,6 +890,7 @@ test("App Store submission reconciles an already-submitted exact version without
             },
           },
         ],
+        links: {},
       });
     throw new Error(`unexpected request: ${url}`);
   };
@@ -753,7 +910,7 @@ test("App Store submission reuses one unbound draft and creates only its missing
   const fetchImpl = async (input, options = {}) => {
     const url = String(input);
     requests.push({ url, options });
-    if (url.includes("appStoreVersions?"))
+    if (isAppleVersionLookup(input, options))
       return jsonResponse({
         data: [
           {
@@ -777,6 +934,7 @@ test("App Store submission reuses one unbound draft and creates only its missing
             relationships: { items: { data: [] } },
           },
         ],
+        links: {},
       });
     return jsonResponse({ data: { id: "mutation-result" } });
   };
@@ -810,7 +968,7 @@ test("App Store submission replaces a canceled exact review submission", async (
   const fetchImpl = async (input, options = {}) => {
     const url = String(input);
     requests.push({ url, options });
-    if (url.includes("appStoreVersions?"))
+    if (isAppleVersionLookup(input, options))
       return jsonResponse({
         data: [
           {
@@ -839,6 +997,7 @@ test("App Store submission replaces a canceled exact review submission", async (
             },
           },
         ],
+        links: {},
       });
     if (url.endsWith("/v1/reviewSubmissions") && options.method === "POST")
       return jsonResponse({
@@ -1035,7 +1194,7 @@ test("store publication skips exact versions that are already public", async () 
   const appleFetch = async (input, options = {}) => {
     const url = String(input);
     appleRequests.push({ url, options });
-    if (url.includes("appStoreVersions?"))
+    if (isAppleVersionLookup(input, options))
       return jsonResponse(appleVersionResponse("READY_FOR_SALE"));
     if (url.endsWith("appStoreVersionPhasedRelease"))
       return new Response(null, { status: 404 });
@@ -1087,7 +1246,7 @@ test("store publication mutates each exact approved-held version once", async ()
   const appleFetch = async (input, options = {}) => {
     const url = String(input);
     appleRequests.push({ url, options });
-    if (url.includes("appStoreVersions?"))
+    if (isAppleVersionLookup(input, options))
       return jsonResponse(appleVersionResponse("PENDING_DEVELOPER_RELEASE"));
     if (url.endsWith("appStoreVersionPhasedRelease"))
       return new Response(null, { status: 404 });
@@ -1154,7 +1313,7 @@ test("withdrawal cancels the exact Apple submission and current Chrome submissio
   const appleRequests = [];
   const appleFetch = async (input, options = {}) => {
     appleRequests.push({ url: String(input), options });
-    if (String(input).includes("appStoreVersions?"))
+    if (isAppleVersionLookup(input, options))
       return jsonResponse(appleVersionResponse("PENDING_DEVELOPER_RELEASE"));
     if (String(input).includes("/reviewSubmissions?"))
       return jsonResponse({
@@ -1170,6 +1329,7 @@ test("withdrawal cancels the exact Apple submission and current Chrome submissio
             },
           },
         ],
+        links: {},
       });
     return jsonResponse({ data: { id: "submission-id" } });
   };
@@ -1213,6 +1373,298 @@ test("withdrawal cancels the exact Apple submission and current Chrome submissio
   );
   assert.match(chromeRequests.at(-1).url, /:cancelSubmission$/u);
   assert.equal(chromeRequests.at(-1).options.method, "POST");
+});
+
+test("App Store withdrawal finds and cancels an exact review after 200 canceled reviews", async () => {
+  const env = environment();
+  const requests = [];
+  const pages = {
+    first: {
+      data: Array.from({ length: 200 }, (_, index) =>
+        appleReview(`old-${index}`, "CANCELED"),
+      ),
+      meta: { paging: { total: 201, limit: 200 } },
+      links: { next: appleReviewPageTwo },
+    },
+    page2: {
+      data: [
+        appleReview("exact-submission", "WAITING_FOR_REVIEW", "version-id"),
+      ],
+      included: [],
+    },
+  };
+  const result = await run(
+    "withdraw",
+    StoreProvider.Apple,
+    {},
+    env,
+    appleReviewFixture(pages, requests, env),
+  );
+  assert.equal(result.submissionId, "exact-submission");
+  assert.equal(
+    requests.filter(({ url }) => url === appleReviewPageTwo).length,
+    1,
+  );
+  assert.deepEqual(
+    requests.filter(({ method }) => method === "PATCH").map(({ url }) => url),
+    [
+      "https://api.appstoreconnect.apple.com/v1/reviewSubmissions/exact-submission",
+    ],
+  );
+});
+
+test("App Store review selection uses included item ownership across pages", async () => {
+  const env = environment();
+  const requests = [];
+  const pages = {
+    first: {
+      data: [
+        appleReview("other", "WAITING_FOR_REVIEW", null, [
+          { type: "reviewSubmissionItems", id: "other-item" },
+        ]),
+      ],
+      included: [
+        {
+          type: "reviewSubmissionItems",
+          id: "other-item",
+          relationships: {
+            appStoreVersion: {
+              data: { type: "appStoreVersions", id: "other-version" },
+            },
+          },
+        },
+      ],
+      links: { next: appleReviewPageTwo },
+    },
+    page2: {
+      data: [
+        appleReview("exact", "WAITING_FOR_REVIEW", null, [
+          { type: "reviewSubmissionItems", id: "exact-item" },
+        ]),
+      ],
+      included: [
+        {
+          type: "reviewSubmissionItems",
+          id: "exact-item",
+          relationships: {
+            appStoreVersion: {
+              data: { type: "appStoreVersions", id: "version-id" },
+            },
+          },
+        },
+      ],
+    },
+  };
+  const result = await run(
+    "withdraw",
+    StoreProvider.Apple,
+    {},
+    env,
+    appleReviewFixture(pages, requests, env),
+  );
+  assert.equal(result.submissionId, "exact");
+  assert.deepEqual(
+    requests.filter(({ method }) => method === "PATCH").map(({ url }) => url),
+    ["https://api.appstoreconnect.apple.com/v1/reviewSubmissions/exact"],
+  );
+});
+
+test("App Store review ambiguity across pages fails before mutation", async (t) => {
+  for (const [name, first, second, error] of [
+    [
+      "exact reviews",
+      appleReview("first", "WAITING_FOR_REVIEW", "version-id"),
+      appleReview("second", "WAITING_FOR_REVIEW", "version-id"),
+      /multiple review submissions for the exact version/u,
+    ],
+    [
+      "empty ready drafts",
+      appleReview("first", "READY_FOR_REVIEW"),
+      appleReview("second", "READY_FOR_REVIEW"),
+      /multiple unbound review submissions/u,
+    ],
+  ]) {
+    await t.test(name, async () => {
+      const env = environment();
+      const requests = [];
+      const pages = {
+        first: { data: [first], links: { next: appleReviewPageTwo } },
+        page2: { data: [second] },
+      };
+      await assert.rejects(
+        run(
+          "withdraw",
+          StoreProvider.Apple,
+          {},
+          env,
+          appleReviewFixture(pages, requests, env),
+        ),
+        error,
+      );
+      assert.equal(requests.filter(({ method }) => method).length, 0);
+    });
+  }
+});
+
+test("App Store conflicting included ownership across pages fails before mutation", async () => {
+  const env = environment();
+  const requests = [];
+  const included = (versionId) => ({
+    type: "reviewSubmissionItems",
+    id: "same-item",
+    relationships: {
+      appStoreVersion: {
+        data: { type: "appStoreVersions", id: versionId },
+      },
+    },
+  });
+  const pages = {
+    first: {
+      data: [
+        appleReview("first", "WAITING_FOR_REVIEW", null, [
+          { type: "reviewSubmissionItems", id: "same-item" },
+        ]),
+      ],
+      included: [included("other-version")],
+      links: { next: appleReviewPageTwo },
+    },
+    page2: { data: [], included: [included("version-id")] },
+  };
+  await assert.rejects(
+    run(
+      "withdraw",
+      StoreProvider.Apple,
+      {},
+      env,
+      appleReviewFixture(pages, requests, env),
+    ),
+    /conflicting included resources/u,
+  );
+  assert.equal(requests.filter(({ method }) => method).length, 0);
+});
+
+test("App Store review discovery failures do not mutate submissions", async (t) => {
+  const cases = [
+    [
+      "later HTTP error",
+      { data: [], links: { next: appleReviewPageTwo } },
+      new Response(null, { status: 503 }),
+      /lookup failed with HTTP 503/u,
+    ],
+    [
+      "later invalid data",
+      { data: [], links: { next: appleReviewPageTwo } },
+      { data: null },
+      /returned invalid data/u,
+    ],
+    [
+      "later invalid included",
+      { data: [], links: { next: appleReviewPageTwo } },
+      { data: [], included: {} },
+      /returned invalid data/u,
+    ],
+    [
+      "missing links",
+      { data: [], links: undefined },
+      undefined,
+      /returned invalid links/u,
+    ],
+    [
+      "foreign origin",
+      {
+        data: [],
+        links: {
+          next: "https://example.test/v1/apps/123/reviewSubmissions?cursor=page2",
+        },
+      },
+      undefined,
+      /invalid next link/u,
+    ],
+    [
+      "wrong path",
+      {
+        data: [],
+        links: {
+          next: "https://api.appstoreconnect.apple.com/v1/reviewSubmissions?cursor=page2",
+        },
+      },
+      undefined,
+      /invalid next link/u,
+    ],
+    [
+      "malformed link",
+      { data: [], links: { next: 7 } },
+      undefined,
+      /invalid next link/u,
+    ],
+    [
+      "repeated link",
+      { data: [], links: { next: appleReviewPageTwo } },
+      { data: [], links: { next: appleReviewPageTwo } },
+      /pagination loop/u,
+    ],
+  ];
+  for (const [name, first, second, error] of cases) {
+    for (const command of ["withdraw", "submit"]) {
+      await t.test(`${command}: ${name}`, async () => {
+        const env = environment();
+        const requests = [];
+        const pages = { first, ...(second ? { page2: second } : {}) };
+        await assert.rejects(
+          run(
+            command,
+            StoreProvider.Apple,
+            {},
+            env,
+            appleReviewFixture(pages, requests, env),
+          ),
+          error,
+        );
+        assert.equal(requests.filter(({ method }) => method).length, 0);
+      });
+    }
+  }
+});
+
+test("App Store one-page absent and canceled reviews remain withdrawn", async () => {
+  for (const data of [
+    [],
+    [appleReview("canceled", "CANCELED", "version-id")],
+  ]) {
+    const env = environment();
+    const requests = [];
+    const result = await run(
+      "withdraw",
+      StoreProvider.Apple,
+      {},
+      env,
+      appleReviewFixture({ first: { data } }, requests, env),
+    );
+    assert.equal(result.status, StoreStatus.Withdrawn);
+    assert.equal(requests.filter(({ method }) => method).length, 0);
+  }
+});
+
+test("App Store public release remains protected from automatic withdrawal", async () => {
+  const env = environment();
+  const requests = [];
+  await assert.rejects(
+    run(
+      "withdraw",
+      StoreProvider.Apple,
+      {},
+      env,
+      appleReviewFixture(
+        { first: { data: [] } },
+        requests,
+        env,
+        "READY_FOR_SALE",
+      ),
+    ),
+    /already public and cannot be withdrawn automatically/u,
+  );
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].method, undefined);
 });
 
 test("Google withdrawal fails closed until the protected operator removes the held release", async () => {

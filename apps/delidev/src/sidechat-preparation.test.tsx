@@ -597,7 +597,14 @@ it("definite error on explicit replay keeps the original uncertainty and discard
   expect(input).toHaveProperty("value", "Keep this draft");
 });
 
-it.each(["parent-id", "empty-id"])(
+it.each([
+  "parent-id",
+  "empty-id",
+  "missing-session",
+  "wrong-kind",
+  "foreign-source",
+  "missing-overlay",
+])(
   "malformed succeeded readback never publishes, keeps pending state and reinspects only the original job: %s",
   async (mode) => {
     const f = await fixture();
@@ -610,14 +617,21 @@ it.each(["parent-id", "empty-id"])(
     fireEvent.change(input, { target: { value: "My original question" } });
     input.setSelectionRange(3, 8);
     fireEvent.select(input);
-    f.setResult({
-      job: f.job("succeeded"),
-      session: f.child(
-        f.sourceId,
-        true,
-        mode === "parent-id" ? f.sourceId : "",
-      ),
-    });
+    const session =
+      mode === "missing-session"
+        ? undefined
+        : mode === "wrong-kind"
+          ? { ...f.child(), kind: EntityKind.JOB }
+          : mode === "foreign-source"
+            ? f.child(newRequestId())
+            : mode === "missing-overlay"
+              ? f.child(f.sourceId, false)
+              : f.child(
+                  f.sourceId,
+                  true,
+                  mode === "parent-id" ? f.sourceId : "",
+                );
+    f.setResult({ job: f.job("succeeded"), session });
     await act(async () => {
       await f.client.invalidateQueries();
     });
@@ -627,6 +641,7 @@ it.each(["parent-id", "empty-id"])(
     });
     expect(f.store().parent(f.sourceId)).toBeUndefined();
     expect(f.store().parent("")).toBeUndefined();
+    expect(f.store().parent(f.childId)).toBeUndefined();
     expect(f.store().sidechats(f.sourceId)).toEqual([]);
     const snapshot = f.store().snapshot(f.sourceId);
     expect(
@@ -638,6 +653,8 @@ it.each(["parent-id", "empty-id"])(
       ),
     ).toHaveLength(1);
     expect(input).toHaveProperty("value", "My original question");
+    expect(input.selectionStart).toBe(3);
+    expect(input.selectionEnd).toBe(8);
     expect(
       info.mock.calls.some(
         (call) =>
@@ -676,6 +693,40 @@ it.each(["parent-id", "empty-id"])(
     ).toHaveLength(1);
     expect(f.fork).toHaveBeenCalledTimes(1);
     info.mockRestore();
+  },
+);
+
+it.each([
+  ["queued", false],
+  ["claimed", false],
+  ["failed", true],
+  ["canceled", true],
+] as const)(
+  "non-succeeded original job keeps its existing pending and terminal controls: %s",
+  async (state, terminal) => {
+    const f = await fixture();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open Sidechat" }));
+    await waitFor(() => expect(f.observe).toHaveBeenCalled());
+    f.setResult({ job: f.job(state), session: f.child() });
+    await act(async () => {
+      await f.client.invalidateQueries();
+    });
+    expect(screen.queryByText(/Sidechat could not be verified/)).toBeNull();
+    expect(f.store().parent(f.childId)).toBeUndefined();
+    expect(
+      f
+        .store()
+        .snapshot(f.sourceId)
+        .tabs.filter((tab) => tab.kind === SessionTabKind.PendingSidechat),
+    ).toHaveLength(1);
+    await waitFor(() =>
+      expect(
+        Boolean(
+          screen.queryByRole("button", { name: "Discard Sidechat draft" }),
+        ),
+      ).toBe(terminal),
+    );
+    expect(f.fork).toHaveBeenCalledTimes(1);
   },
 );
 

@@ -17,7 +17,21 @@ import (
 
 const helperDirectoryLimit = 32
 
-var executionHelperNames = [...]string{"apply_patch", "applypatch", "codex-execve-wrapper"}
+// executionHelperNamesFor returns the exact Unix aliases the pinned Codex
+// startup creates for goos (openai/codex arg0 prepare_path_entry_for_codex_aliases
+// at commit 78c290807ce710180111df227df3b7a4fe845452): apply_patch, applypatch and
+// codex-execve-wrapper on every Unix, plus codex-linux-sandbox on Linux only.
+// Windows regular batch scripts grant no removal authority, so capture records
+// no aliases there regardless of this list.
+func executionHelperNamesFor(goos string) []string {
+	names := []string{"apply_patch", "applypatch", "codex-execve-wrapper"}
+	if goos == "linux" {
+		names = append(names, "codex-linux-sandbox")
+	}
+	return names
+}
+
+var executionHelperNames = executionHelperNamesFor(runtime.GOOS)
 
 type helperStage string
 type helperReason string

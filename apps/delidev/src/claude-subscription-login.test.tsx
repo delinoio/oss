@@ -15,6 +15,7 @@ import { expect, it, vi } from "vitest";
 import {
   ConfigurationService,
   EntityKind,
+  NativeSubscriptionDiagnosticSchema,
   ResourceSchema,
   ResourceService,
   SubscriptionLoginMethod,
@@ -47,7 +48,11 @@ for (const [key, value] of Object.entries({
 }))
   authorization.searchParams.set(key, value);
 const originalURL = authorization.href;
-function fixture(dialog = false, diagnostics = false) {
+function fixture(
+  dialog = false,
+  diagnostics = false,
+  options: { version?: string; nativeFailure?: boolean } = {},
+) {
   const machine = create(ResourceSchema, {
     id: newRequestId(),
     kind: EntityKind.MACHINE,
@@ -60,7 +65,7 @@ function fixture(dialog = false, diagnostics = false) {
       installations: [
         {
           harness: "claude-code",
-          version: "2.1.236",
+          version: options.version ?? "2.1.236",
           state: "detected",
           protocol_verified: true,
           protocol: { state: "verified" },
@@ -109,12 +114,28 @@ function fixture(dialog = false, diagnostics = false) {
     });
     return { account: current, operationId: operation };
   });
-  const progress = vi.fn(() => ({
-    state,
-    url: state === SubscriptionLoginState.WAITING ? originalURL : "",
-    loginMethod: SubscriptionLoginMethod.BROWSER_CODE,
-    generation,
-  }));
+  const progress = vi.fn(() =>
+    options.nativeFailure
+      ? {
+          state: SubscriptionLoginState.UNSUPPORTED,
+          url: "",
+          loginMethod: SubscriptionLoginMethod.BROWSER_CODE,
+          generation,
+          nativeDiagnostic: create(NativeSubscriptionDiagnosticSchema, {
+            detectedVersion: options.version ?? "2.1.236",
+            requiredVersion: "2.1.236",
+            phase: 4,
+            code: "unsupported",
+            correlationId: newRequestId(),
+          }),
+        }
+      : {
+          state,
+          url: state === SubscriptionLoginState.WAITING ? originalURL : "",
+          loginMethod: SubscriptionLoginMethod.BROWSER_CODE,
+          generation,
+        },
+  );
   const submit = vi.fn(async (request) => {
     request.code.fill(0);
     return { accepted: true };
@@ -242,7 +263,7 @@ function fixture(dialog = false, diagnostics = false) {
     },
   };
 }
-async function start(f: ReturnType<typeof fixture>) {
+async function start(f: ReturnType<typeof fixture>, expectCode = true) {
   render(f.view());
   fireEvent.click(screen.getByRole("button", { name: "Add Claude" }));
   expect(
@@ -260,7 +281,8 @@ async function start(f: ReturnType<typeof fixture>) {
   );
   fireEvent.click(button);
   fireEvent.click(button);
-  await screen.findByLabelText("Approval code", {}, { timeout: 4000 });
+  if (expectCode)
+    await screen.findByLabelText("Approval code", {}, { timeout: 4000 });
 }
 it("creates and logs in once after explicit Runner selection and keeps sensitive data outside caches", async () => {
   const f = fixture();
@@ -295,6 +317,24 @@ it("creates and logs in once after explicit Runner selection and keeps sensitive
       ),
     ).toHaveLength(1),
   );
+});
+it("starts sign-in on a newer prerelease Claude Code and shows only observed validation details", async () => {
+  const f = fixture(false, false, {
+    version: "2.1.237-rc.1",
+    nativeFailure: true,
+  });
+  await start(f, false);
+  await screen.findByText("Claude Code validation did not complete.");
+  expect(f.login).toHaveBeenCalledTimes(1);
+  expect(
+    screen.getByText(/Review the native operation phase and error code/),
+  ).toBeTruthy();
+  expect(screen.getByText("2.1.237-rc.1")).toBeTruthy();
+  expect(screen.getByText("Native launch")).toBeTruthy();
+  expect(screen.getByText("unsupported")).toBeTruthy();
+  expect(screen.queryByText("Required version")).toBeNull();
+  expect(screen.queryByText(/2\.1\.236/)).toBeNull();
+  expect(screen.getByRole("button", { name: "Back" })).toBeTruthy();
 });
 it("does not retransmit approval input after an uncertain result", async () => {
   const f = fixture();

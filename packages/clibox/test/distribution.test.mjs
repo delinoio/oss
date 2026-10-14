@@ -19,6 +19,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
+import { gunzipSync, gzipSync } from "node:zlib";
 import platforms from "../src/platforms.cjs";
 import { metadata, npm, sourceText } from "../scripts/common.mjs";
 import {
@@ -44,6 +45,29 @@ const artifacts = names.map((name) => ({
   integrity: integrity(Buffer.from(name)),
 }));
 const quiet = () => {};
+
+function mutateTarEntry(file, member, mutate) {
+  const tar = gunzipSync(readFileSync(file));
+  let offset = 0;
+  while (offset + 512 <= tar.length) {
+    const header = tar.subarray(offset, offset + 512);
+    const name = header.subarray(0, 100).toString("utf8").split("\0", 1)[0];
+    const size = Number.parseInt(
+      header.subarray(124, 136).toString("ascii"),
+      8,
+    );
+    if (name === `package/${member}`) {
+      mutate(header, tar.subarray(offset + 512, offset + 512 + size));
+      header.fill(32, 148, 156);
+      const checksum = header.reduce((sum, value) => sum + value, 0);
+      header.write(`${checksum.toString(8).padStart(6, "0")}\0 `, 148, 8);
+      writeFileSync(file, gzipSync(tar, { level: 9 }));
+      return;
+    }
+    offset += 512 + Math.ceil(size / 512) * 512;
+  }
+  assert.fail(`Missing fixture tar entry: ${member}`);
+}
 
 test("source version checks reject drift before packaging", () => {
   for (const eol of ["\n", "\r\n"]) {
@@ -184,6 +208,8 @@ test("pack validates native executable versions and the complete nine-tarball bo
   const mainFile = path.join(tarballs, main.filename);
   const entries = tarEntries(readFileSync(mainFile));
   assert.equal(entries.size, 6);
+  assert.equal(entries.has("LICENSE.fspy"), false);
+  assert.equal(entries.has("LICENSE.detours"), false);
   assert.equal(entries.get("bin/clibox.cjs").mode & 0o111, 0o111);
   assert.throws(() => verifySet(tarballs, sourceRevision), /exactly nine/u);
   assert.throws(
@@ -198,6 +224,15 @@ test("pack validates native executable versions and the complete nine-tarball bo
   // archive validation only; release jobs execute real native binaries.
   for (const target of platforms.targets) {
     const fixture = path.join(directory, target.suffix);
+    const notices =
+      target.os === platforms.Platform.Darwin
+        ? [["LICENSE.fspy", "crates/fspy/LICENSE"]]
+        : target.os === platforms.Platform.Windows
+          ? [
+              ["LICENSE.fspy", "crates/fspy/LICENSE"],
+              ["LICENSE.detours", "crates/fspy_detours_sys/detours/LICENSE"],
+            ]
+          : [];
     mkdirSync(path.join(fixture, "bin"), { recursive: true });
     writeFileSync(
       path.join(fixture, "package.json"),
@@ -216,6 +251,8 @@ test("pack validates native executable versions and the complete nine-tarball bo
       path.join(fixture, "README.md"),
       sourceText("packages/clibox/README.md"),
     );
+    for (const [name, source] of notices)
+      writeFileSync(path.join(fixture, name), sourceText(source));
     npm(["pack", "--ignore-scripts", "--pack-destination", tarballs], {
       cwd: fixture,
     });
@@ -237,10 +274,80 @@ test("pack validates native executable versions and the complete nine-tarball bo
       writeFileSync(file, executableTarball(original, `bin/${target.binary}`));
     }
     inspectTarball(file, { version, sourceRevision });
+    const nativeEntries = tarEntries(readFileSync(file));
     assert.deepEqual(
-      tarEntries(readFileSync(file)).get(`bin/${target.binary}`).bytes,
-      payload,
+      [...nativeEntries.keys()].sort(),
+      [
+        `bin/${target.binary}`,
+        "package.json",
+        "README.md",
+        "LICENSE",
+        ...notices.map(([name]) => name),
+      ].sort(),
     );
+    for (const [name, source] of notices)
+      assert.deepEqual(
+        nativeEntries.get(name).bytes,
+        Buffer.from(sourceText(source)),
+      );
+    assert.deepEqual(nativeEntries.get(`bin/${target.binary}`).bytes, payload);
+    for (const [name] of notices) {
+      const original = readFileSync(file);
+      mutateTarEntry(file, name, (_header, bytes) => {
+        bytes[0] ^= 1;
+      });
+      assert.throws(
+        () => inspectTarball(file, { version, sourceRevision }),
+        new RegExp(`Notice mismatch: ${name.replace(".", "\\.")}`, "u"),
+      );
+      writeFileSync(file, original);
+
+      rmSync(path.join(fixture, name));
+      const missingDirectory = path.join(
+        directory,
+        "missing",
+        target.suffix,
+        name,
+      );
+      mkdirSync(missingDirectory, { recursive: true });
+      npm(
+        ["pack", "--ignore-scripts", "--pack-destination", missingDirectory],
+        {
+          cwd: fixture,
+        },
+      );
+      assert.throws(
+        () =>
+          inspectTarball(
+            path.join(missingDirectory, tarballName(target.name, version)),
+            {
+              version,
+              sourceRevision,
+            },
+          ),
+        /Unexpected package file inventory/u,
+      );
+      writeFileSync(path.join(fixture, name), nativeEntries.get(name).bytes);
+    }
+    if (target.suffix === "darwin-x64") {
+      const original = readFileSync(file);
+      for (const [replacement, type, message] of [
+        ["package/UNEXPECTED", 48, /Unexpected package file inventory/u],
+        ["package/../outside", 48, /Invalid tar entry path/u],
+        ["package/LICENSE.fspy", 50, /Unexpected tar entry type/u],
+      ]) {
+        mutateTarEntry(file, "LICENSE.fspy", (header) => {
+          header.fill(0, 0, 100);
+          header.write(replacement, 0, "utf8");
+          header[156] = type;
+        });
+        assert.throws(
+          () => inspectTarball(file, { version, sourceRevision }),
+          message,
+        );
+        writeFileSync(file, original);
+      }
+    }
   }
   assert.deepEqual(
     verifySet(tarballs, sourceRevision).map(({ name }) => name),
