@@ -2946,12 +2946,15 @@ account only creates the fixed private directory, and registration is
 idempotent across owner restarts. The Worker resolves it through the registry
 for every shared execution and for a version 1 history import, and
 checkpoint readers reject a registered path that differs from the derived
-account home. The Worker validates the registry before it creates anything: a
-key registered for another path, or the derived path registered for another
-profile, blocks with the closed `key_conflict` cause and creates no directory
-and changes no registry entry. A registered home that is no longer a real
-private directory, or a directory that is not a real private directory, blocks
-with a recovery-required failure and is never repaired or recreated.
+account home. The Worker validates an existing registration before it creates
+anything: a key registered for another path blocks with the closed
+`key_conflict` cause, and a registered home that is no longer a real private
+directory blocks with a recovery-required failure; both create no directory,
+change no registry entry and are never repaired or recreated. An unregistered
+account creates its fixed private directory exactly as the home was created
+before the registry existed, then registers it where it is. A directory that is
+not a real private directory, or whose parent is not a directory, blocks with a
+recovery-required failure.
 
 `shared_owner` is a registered-only purpose that is defined for the `codex`
 harness alone: a key for any other harness is invalid, including in a restored
@@ -2960,31 +2963,22 @@ registry. Only in-place registration creates its entry. Acquiring an unregistere
 creates no managed profile directory or registry entry, while acquiring an entry
 that was already registered in place locks it normally.
 
-Creation and registration of a new account home are all-or-nothing. The
-registry creates the empty private directory itself, under its own lock and only
-after it accepted the key and the path, so no concurrent resolution can observe
-or adopt a half-created home. If publishing the registry then fails, the empty
-directory is removed again unless the registry is re-read and proves that the
-entry became durable. A write that failed late but left the entry durable keeps
-the directory and reports the error; the retry is idempotent. A registry that is
-unreadable after the failure cannot prove the entry absent, so the empty
-directory is kept rather than orphaning a registered home. Removal is not
-recursive, so history that appeared in the directory is never deleted, and an
-existing directory is never created, repaired or removed. Missing parent
-directories stay because they hold no history.
+The registry never creates or removes the account home. Registration is the
+only registry write, so a failed publication leaves the directory exactly as it
+was before the attempt, and the next attempt registers it in place. Nothing is
+removed, so history is never deleted by a failed registration.
 
-| Starting state                                   | Registry publication                 | Directory afterwards | Entry afterwards | Result                                       |
-| ------------------------------------------------ | ------------------------------------ | -------------------- | ---------------- | -------------------------------------------- |
-| home absent, key unregistered                    | succeeds                             | created              | registered       | success                                      |
-| home absent, key unregistered                    | fails, nothing written               | removed              | absent           | error; retry creates it again                |
-| home absent, key unregistered                    | fails after the entry became durable | kept                 | registered       | error; retry is idempotent                   |
-| home absent, key unregistered                    | fails and the registry is unreadable | kept (empty)         | unproven         | error; retry registers the same empty home   |
-| home present, key unregistered                   | succeeds                             | untouched            | registered       | success                                      |
-| home present, key unregistered                   | fails                                | untouched            | absent           | error; history is never removed              |
-| home absent, key already registered at that path | none needed                          | not created          | registered       | resolution rejects a missing registered home |
-| home absent, key or path registered elsewhere    | none attempted                       | not created          | unchanged        | `key_conflict`                               |
-| home absent, a parent is not a directory         | none attempted                       | not created          | absent           | `owner_invalid`                              |
-| home is a link or not private                    | none attempted                       | untouched            | absent           | recovery required (`legacy_unverified`)      |
+| Starting state                                   | Registry publication | Directory afterwards | Entry afterwards | Result                                          |
+| ------------------------------------------------ | -------------------- | -------------------- | ---------------- | ----------------------------------------------- |
+| home absent, key unregistered                    | succeeds             | created              | registered       | success                                         |
+| home absent, key unregistered                    | fails                | kept (empty)         | absent           | error; retry registers the same empty directory |
+| home present, key unregistered                   | succeeds             | untouched            | registered       | success                                         |
+| home present, key unregistered                   | fails                | untouched            | absent           | error; history is never removed                 |
+| home absent, key already registered at that path | none attempted       | not created          | registered       | recovery required; never recreated              |
+| home absent, key registered elsewhere            | none attempted       | not created          | unchanged        | `key_conflict`                                  |
+| home absent, derived path registered for a key   | rejected             | kept (empty)         | unchanged        | `key_conflict` (corrupt registry only)          |
+| home absent, a parent is not a directory         | none attempted       | not created          | absent           | recovery required                               |
+| home is a link or not private                    | none attempted       | untouched            | absent           | recovery required                               |
 
 The founding owner takes the profile lock when it is founded and releases only
 the lock when the owner retires; joined members rely on that lock and take none.

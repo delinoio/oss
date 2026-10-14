@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -179,9 +180,12 @@ func TestSessionDeletionKeepsSharedCodexHome(t *testing.T) {
 	}
 }
 
-// Registry state is validated before the derived account home is created. Every
-// row below leaves the file system and the registry exactly as it found them,
-// except the rows that register a new home.
+// An existing registration is validated before the derived account home is
+// created. Every row below fails and leaves the registry exactly as it found
+// it. Rows with creates=false also leave the file system untouched; the row
+// with creates=true is a derived path that another profile already owns, which
+// only a corrupt registry can produce, and it keeps the empty fixed directory
+// that the home has always been created as.
 func TestSharedCodexHomeValidatesRegistryBeforeCreatingDirectory(t *testing.T) {
 	ctx := context.Background()
 	type row struct {
@@ -191,7 +195,7 @@ func TestSharedCodexHomeValidatesRegistryBeforeCreatingDirectory(t *testing.T) {
 		arrange func(t *testing.T, config Config, machine, account domain.ID, home string)
 		reason  nativeprofile.Reason
 		code    domain.Code
-		created bool
+		creates bool
 	}
 	otherPath := func(account domain.ID) string { return "runtimes/accounts/" + string(account) + "/codex-restored" }
 	rows := []row{
@@ -208,7 +212,7 @@ func TestSharedCodexHomeValidatesRegistryBeforeCreatingDirectory(t *testing.T) {
 					t.Fatal(err)
 				}
 			}},
-		{name: "derived path bound to another profile while the derived home is absent", reason: nativeprofile.ReasonKeyConflict, code: domain.Conflict,
+		{name: "derived path bound to another profile while the derived home is absent", reason: nativeprofile.ReasonKeyConflict, code: domain.Conflict, creates: true,
 			arrange: func(t *testing.T, config Config, machine, account domain.ID, home string) {
 				registry, err := nativeProfiles(config, machine)
 				if err != nil {
@@ -231,6 +235,15 @@ func TestSharedCodexHomeValidatesRegistryBeforeCreatingDirectory(t *testing.T) {
 					t.Fatal(err)
 				}
 				if err := os.Remove(home); err != nil {
+					t.Fatal(err)
+				}
+			}},
+		{name: "unregistered account directory is a regular file", code: domain.RecoveryRequired,
+			arrange: func(t *testing.T, config Config, machine, account domain.ID, home string) {
+				if err := security.PrivateDir(filepath.Dir(filepath.Dir(home))); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Dir(home), []byte("not a directory"), 0600); err != nil {
 					t.Fatal(err)
 				}
 			}},
@@ -276,7 +289,7 @@ func TestSharedCodexHomeValidatesRegistryBeforeCreatingDirectory(t *testing.T) {
 			if r.code != "" && domain.SafeError(err).Code != r.code {
 				t.Fatalf("code = %s, want %s", domain.SafeError(err).Code, r.code)
 			}
-			if _, afterErr := os.Lstat(home); (beforeErr == nil) != (afterErr == nil) {
+			if _, afterErr := os.Lstat(home); !r.creates && (beforeErr == nil) != (afterErr == nil) {
 				t.Fatal("a failed resolution created or removed the derived account home")
 			}
 			after, hasAfter, _ := registry.Lookup(ctx, sharedCodexOwnerKey(account))
@@ -393,4 +406,89 @@ func TestPublishAfterReleaseReportsUnverifiedReleaseAndStillPublishes(t *testing
 	if err := hold.release(); err != nil || hold.unverified {
 		t.Fatalf("a repaired home was not verified on retry: %v", err)
 	}
+}
+
+// blockRegistryPublication makes every later registry publication of the
+// Worker registry fail while reads keep working, and restores it on cleanup.
+func blockRegistryPublication(t *testing.T, config Config, machine domain.ID) {
+	t.Helper()
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("directory permissions do not block publication here")
+	}
+	registry, err := nativeProfiles(config, machine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Create the registry lock file first: opening an existing one needs no
+	// write access to the directory.
+	if _, _, err := registry.Lookup(context.Background(), sharedCodexOwnerKey(domain.NewID())); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(registry.Base(), 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(registry.Base(), 0o700) })
+}
+
+func restoreRegistryPublication(t *testing.T, config Config, machine domain.ID) {
+	t.Helper()
+	registry, err := nativeProfiles(config, machine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(registry.Base(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Registration timeline of the account home when the registry cannot publish.
+// The home is created or kept exactly as it was created before the registry
+// existed and is never removed, so a retry registers the same directory in
+// place and no history is lost.
+func TestResolveSharedCodexHomeRegistrationTimeline(t *testing.T) {
+	ctx := context.Background()
+	t.Run("home absent, publication fails, retry registers the same directory", func(t *testing.T) {
+		config, machine := profileTestConfig(t)
+		account := domain.NewID()
+		home, err := codexAccountHistoryHome(config.Root, account)
+		if err != nil {
+			t.Fatal(err)
+		}
+		blockRegistryPublication(t, config, machine)
+		if _, err := resolveSharedCodexHome(ctx, config, machine, account); err == nil {
+			t.Fatal("a failed registry publication was reported as success")
+		}
+		if security.CheckPrivateDir(home) != nil {
+			t.Fatal("the failed attempt did not leave the empty private home")
+		}
+		registry, err := nativeProfiles(config, machine)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok, err := registry.Lookup(ctx, sharedCodexOwnerKey(account)); err != nil || ok {
+			t.Fatalf("the failed attempt registered the account: ok=%v err=%v", ok, err)
+		}
+		restoreRegistryPublication(t, config, machine)
+		info, err := resolveSharedCodexHome(ctx, config, machine, account)
+		if err != nil || info.Root != home || info.Origin != nativeprofile.OriginLegacy {
+			t.Fatalf("the retry did not register the home in place: %v", err)
+		}
+	})
+	t.Run("home present, publication fails, history is untouched", func(t *testing.T) {
+		config, machine := profileTestConfig(t)
+		account := domain.NewID()
+		home, rollout := seedSharedCodexHistory(t, config, account)
+		blockRegistryPublication(t, config, machine)
+		if _, err := resolveSharedCodexHome(ctx, config, machine, account); err == nil {
+			t.Fatal("a failed registry publication was reported as success")
+		}
+		if raw, err := os.ReadFile(rollout); err != nil || string(raw) != "shared-history" {
+			t.Fatal("an existing home lost history", err)
+		}
+		restoreRegistryPublication(t, config, machine)
+		info, err := resolveSharedCodexHome(ctx, config, machine, account)
+		if err != nil || info.Root != home {
+			t.Fatalf("the retry did not register the existing home: %v", err)
+		}
+	})
 }
