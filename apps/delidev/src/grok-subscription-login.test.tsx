@@ -1442,3 +1442,57 @@ it("replays the exact original naming request after an uncertain failure on a se
   expect(saves[2][0].mutation.requestId).toBe(saves[1][0].mutation.requestId);
   expect(document(f.current())).toMatchObject({ alias: "Edited Grok" });
 }, 20000);
+it("recovers the polling notice on a healthy preparing read and keeps other notices", async () => {
+  const f = deviceFixture();
+  await startDevice(f);
+  f.setState(State.PREPARING);
+  f.progress.mockImplementationOnce(() => {
+    throw new ConnectError("Fixture status failure", Code.Unavailable);
+  });
+  const notice = copy("grok-subscription.problem.statusUnconfirmed");
+  await screen.findByText(notice, {}, { timeout: 3000 });
+  // Later successful reads still report PREPARING, which has no early path to
+  // a presentation update, yet they must recover the notice.
+  await waitFor(() => expect(screen.queryByText(notice)).toBeNull(), {
+    timeout: 4000,
+  });
+  expect(screen.getByText(copy("grok-subscription.status.preparing"))).toBeTruthy();
+  expect(screen.queryByRole("button", { name: openName() })).toBeNull();
+
+  // A one-shot opener failure is not a polling notice and survives healthy
+  // preparing reads.
+  f.setState(State.WAITING);
+  await screen.findByRole("button", { name: openName() }, { timeout: 3000 });
+  f.native.mockRejectedValueOnce("browser-launch-failed");
+  openVerification();
+  const failure = copy("grok-subscription.problem.verificationOpenFailed");
+  await screen.findByText(failure);
+  f.setState(State.PREPARING);
+  await pollTwice(f);
+  expect(screen.getByText(failure)).toBeTruthy();
+}, 30000);
+
+it("recovers the polling notice on a healthy read that reports an accepted cancellation", async () => {
+  const f = deviceFixture();
+  await startDevice(f);
+  f.progress.mockImplementationOnce(() => {
+    throw new ConnectError("Fixture status failure", Code.Unavailable);
+  });
+  const notice = copy("grok-subscription.problem.statusUnconfirmed");
+  await screen.findByText(notice, {}, { timeout: 3000 });
+  f.progress.mockImplementation(() => ({
+    state: State.WAITING,
+    url: DEVICE_URL,
+    userCode: DEVICE_CODE,
+    suggestedName: "",
+    generation: f.generation,
+    canceled: true,
+  }));
+  await waitFor(() => expect(screen.queryByText(notice)).toBeNull(), {
+    timeout: 4000,
+  });
+  // The server already canceled: the page is not offered any more.
+  expect(screen.queryByRole("button", { name: openName() })).toBeNull();
+  expect(nativeOpen(f)).toHaveLength(0);
+}, 20000);
+

@@ -557,6 +557,10 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
               }
             : {}),
         });
+        // A readable status is healthy whatever it says, so it recovers the
+        // polling notice before any early return below. Problems from explicit
+        // user actions and one-shot native steps are never cleared here.
+        settleStatus(p, true);
         if (progress.canceled) p.canceling = true;
         if (terminal) {
           finish(p);
@@ -575,7 +579,6 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
           p.url = progress.url;
           p.userCode = progress.userCode;
           update(p, { urlReady: true, userCode: p.userCode });
-          settleStatus(p, true);
           return;
         }
         if (
@@ -586,7 +589,6 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
           throw new Error("Invalid original browser login");
         p.url = progress.url;
         update(p, { urlReady: true });
-        settleStatus(p, true);
         if (!p.bound) {
           // Set before dispatch: an uncertain native reply must not open
           // another browser or callback receiver on the next poll.
