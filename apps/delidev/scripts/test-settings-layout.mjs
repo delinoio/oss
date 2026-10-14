@@ -102,6 +102,8 @@ const githubOnly = process.env.DELIDEV_LAYOUT_GITHUB_ONLY === "1";
 const wizardAccountsOnly =
   process.env.DELIDEV_LAYOUT_WIZARD_ACCOUNTS_ONLY === "1";
 const accountsOnly = process.env.DELIDEV_LAYOUT_ACCOUNTS_ONLY === "1";
+const hiddenAccount21Only =
+  process.env.DELIDEV_LAYOUT_HIDDEN_ACCOUNT_21_ONLY === "1";
 const dismissalOnly = process.env.DELIDEV_LAYOUT_DISMISSAL_ONLY === "1";
 const projectsOnly = process.env.DELIDEV_LAYOUT_PROJECTS_ONLY === "1";
 const projectRowsOnly = process.env.DELIDEV_LAYOUT_PROJECT_ROWS_ONLY === "1";
@@ -175,6 +177,22 @@ try {
     cwd: app,
     rsbuildConfig: {
       plugins: [pluginReact()],
+      tools: {
+        rspack: {
+          module: {
+            rules: [
+              {
+                test: /\.wasm$/,
+                resourceQuery: /url/,
+                type: "asset/resource",
+                generator: {
+                  filename: "static/wasm/[name].[contenthash:8][ext]",
+                },
+              },
+            ],
+          },
+        },
+      },
       source: {
         entry: { index: join(app, "src/settings-layout.fixture.tsx") },
       },
@@ -204,6 +222,7 @@ try {
           ".js": "application/javascript",
           ".css": "text/css",
           ".svg": "image/svg+xml",
+          ".wasm": "application/wasm",
         }[extname(file)] ?? "application/octet-stream",
       );
       response.end(await readFile(file));
@@ -227,7 +246,10 @@ try {
   const select = async (category) => {
     if (await page.locator(".sidebar-context-trigger").isVisible())
       await page.locator(".sidebar-context-trigger").click();
-    await page.getByRole("button", { name: l(category), exact: true }).click();
+    await page
+      .locator("[data-settings-groups]")
+      .getByRole("button", { name: l(category), exact: true })
+      .click();
     await page
       .locator(".settings-content h1:visible")
       .filter({ hasText: l(category) })
@@ -435,9 +457,9 @@ try {
               ".settings-category-button[aria-pressed=true]",
             ),
           ).backgroundColor,
-          accent: getComputedStyle(
+          selectedBorder: getComputedStyle(
             node.querySelector(".worker-harness-indicator"),
-          ).backgroundColor,
+          ).borderTopColor,
         };
       });
       assert.equal(
@@ -447,7 +469,7 @@ try {
       );
       assert.equal(
         selection.border,
-        selection.accent,
+        selection.selectedBorder,
         "Selected card retains its accent border on hover",
       );
       if (screenshotDirectory) {
@@ -486,44 +508,71 @@ try {
       .click();
     await page.getByRole("radio", { name: "Codex", exact: true }).click();
     await page
-      .getByRole("combobox", { name: l("Account source"), exact: true })
+      .getByRole("combobox", {
+        name: l("Account source {{v0}}").replace("{{v0}}", "1"),
+        exact: true,
+      })
       .click();
     await page
       .getByRole("option", { name: "Fixture provider", exact: true })
       .click();
     const form = page.locator(".worker-wizard");
-    await form
-      .getByText(l("No accounts to select on this page."), { exact: true })
-      .waitFor();
-    assert.equal(
-      await form.locator(".worker-account-row").count(),
-      0,
-      "Hidden accounts have no DOM/focusable rows",
-    );
-    assert.equal(
-      await form.getByRole("checkbox").count(),
-      0,
-      "Hidden accounts have no accessible checkbox",
-    );
-    assert(
+    const assertHiddenAccounts = async () => {
       await form
         .getByText(l("{{v0}} accounts selected").replace("{{v0}}", "0"), {
           exact: true,
         })
         .first()
-        .isVisible(),
-    );
-    assert(
-      await form
-        .getByText(l("Connect an account in AI Subscription or AI API Keys."), {
-          exact: true,
-        })
-        .isVisible(),
-    );
+        .waitFor();
+      assert.equal(
+        await form.locator(".worker-account-row").count(),
+        0,
+        "Hidden accounts have no DOM/focusable rows",
+      );
+      assert.equal(
+        await form.getByRole("checkbox").count(),
+        0,
+        "Hidden accounts have no accessible checkbox",
+      );
+      assert(
+        await form
+          .getByText(l("{{v0}} accounts selected").replace("{{v0}}", "0"), {
+            exact: true,
+          })
+          .first()
+          .isVisible(),
+      );
+      assert(
+        await form
+          .getByText(
+            l("Select accounts to configure their order and weights."),
+            {
+              exact: true,
+            },
+          )
+          .isVisible(),
+      );
+      assert.equal(
+        await form
+          .getByText(l("No accounts for this source."), { exact: true })
+          .count(),
+        0,
+        "Hidden-only account pages do not claim an empty inventory",
+      );
+      assert.equal(
+        await form
+          .getByRole("link", {
+            name: l("Add an account in AI API Keys"),
+            exact: true,
+          })
+          .count(),
+        0,
+        "Hidden-only account pages do not expose empty-inventory navigation",
+      );
+    };
+    await assertHiddenAccounts();
     await page.evaluate(() => window.refreshWizardAccounts());
-    await form
-      .getByText(l("No accounts to select on this page."), { exact: true })
-      .waitFor();
+    await assertHiddenAccounts();
     const workspace = form.locator(".worker-accounts-workspace");
     const geometry = await workspace.evaluate((node) => {
       const form = node.closest("form"),
@@ -585,8 +634,11 @@ try {
     await form.waitFor();
     assert.equal(await form.getByRole("checkbox").count(), 4);
     assert.equal(
-      await page
-        .getByLabel(l("Default account routing"), { exact: true })
+      await form
+        .getByRole("combobox", {
+          name: l("Default account routing"),
+          exact: true,
+        })
         .count(),
       1,
     );
@@ -1010,6 +1062,33 @@ try {
         generations: 2,
         viewports: wizardBaseViewports.length,
         effectiveZoomViewports: wizardEffectiveViewports.length,
+        nativeAcceptance: "not-performed",
+      }),
+    );
+  } else if (hiddenAccount21Only) {
+    for (const theme of ["light", "dark", "system"])
+      for (const [width, height] of scopedBaseViewports) {
+        await page.setViewportSize({ width, height });
+        await page.emulateMedia({
+          colorScheme: theme === "system" ? "dark" : theme,
+        });
+        await page.goto(
+          `${origin}/?theme=${theme}&populated=true&hiddenWorkerChoices=true&language=en`,
+        );
+        await page
+          .getByRole("button", { name: "Settings", exact: true })
+          .click();
+        await checkHiddenAccountChoices();
+      }
+    assert.equal(hiddenChoicesChecked, 21);
+    console.log(
+      JSON.stringify({
+        operation: "hidden_account_choices_layout",
+        result: "passed",
+        hiddenAccountChoiceChecks: hiddenChoicesChecked,
+        languages: 1,
+        themes: 3,
+        viewports: scopedBaseViewports.length,
         nativeAcceptance: "not-performed",
       }),
     );
@@ -1797,7 +1876,7 @@ try {
               colorScheme: theme === "system" ? "dark" : theme,
             });
             await page.goto(
-              `${origin}/?theme=${theme}&populated=${populated}&language=${language}`,
+              `${origin}/?theme=${theme}&populated=${populated}&language=${language}&codexCompatibleAccounts=true`,
             );
             await page
               .getByRole("button", { name: l("Settings"), exact: true })
@@ -1892,7 +1971,11 @@ try {
                 });
               const context = `${language}/${theme}/${populated}/${viewport}/${category}: ${JSON.stringify(layout)}`;
               assert.equal(layout.titles, 1, context);
-              assert.equal(layout.titleSize, "26px", context);
+              assert.equal(
+                layout.titleSize,
+                category === "Connections" ? "28px" : "26px",
+                context,
+              );
               assert.equal(
                 layout.padding,
                 viewport[0] >= 1100
@@ -1946,31 +2029,46 @@ try {
                 .click();
               await page
                 .getByRole("combobox", {
-                  name: l("Account source"),
+                  name: l("Account source {{v0}}").replace("{{v0}}", "1"),
                   exact: true,
                 })
                 .click();
               await page
                 .getByRole("option", { name: "Fixture provider", exact: true })
                 .click();
-              await page
-                .getByRole("checkbox", { name: /^Personal API/ })
-                .check();
-              await page.getByRole("checkbox", { name: /^Team API/ }).check();
+              for (const alias of ["Personal API", "Team API"]) {
+                await page
+                  .getByRole("checkbox", { name: new RegExp(`^${alias}`) })
+                  .click();
+                assert(
+                  await page
+                    .getByRole("checkbox", {
+                      name: l("Select {{v0}}").replace("{{v0}}", alias),
+                      exact: true,
+                    })
+                    .isChecked(),
+                  `${alias} remains selected after the checkbox row changes`,
+                );
+              }
               await checkWizard();
               await page
                 .getByRole("button", { name: l("Next"), exact: true })
                 .click();
               const input = page.getByRole("combobox", {
-                name: l("Model"),
+                name: l("Model for {{v0}}").replace(
+                  "{{v0}}",
+                  "Fixture provider",
+                ),
                 exact: true,
               });
-              await input.fill("example-model");
-              await page
-                .getByRole("option", { name: /^Fixture model/ })
-                .waitFor();
-              await input.press("ArrowDown");
-              await input.press("Enter");
+              const modelID = "example-model-native-".repeat(12);
+              await input.fill(modelID);
+              await input.press("Tab");
+              assert.equal(
+                await input.inputValue(),
+                modelID,
+                "Exact native model ID survives keyboard focus movement",
+              );
               await checkWizard();
               await page
                 .getByRole("button", { name: l("Next"), exact: true })
@@ -1990,23 +2088,23 @@ try {
                 .getByRole("button", { name: l("Back"), exact: true })
                 .click();
               assert.equal(
-                (await input.inputValue()).startsWith("example-model-native-"),
-                true,
+                await input.inputValue(),
+                modelID,
                 "Model selection survives Back",
               );
               await page
                 .getByRole("button", { name: l("Back"), exact: true })
                 .click();
-              assert(
-                await page
-                  .getByRole("checkbox", { name: /^Personal API/ })
-                  .isChecked(),
-              );
-              assert(
-                await page
-                  .getByRole("checkbox", { name: /^Team API/ })
-                  .isChecked(),
-              );
+              for (const alias of ["Personal API", "Team API"])
+                assert(
+                  await page
+                    .getByRole("checkbox", {
+                      name: l("Select {{v0}}").replace("{{v0}}", alias),
+                      exact: true,
+                    })
+                    .isChecked(),
+                  `${alias} remains selected after Back`,
+                );
               await page.locator(".settings-task-close").click();
               formsChecked += 4;
               if (language === "en") {
@@ -2097,19 +2195,21 @@ try {
                 if (category === "Repositories") {
                   // Local checkout inspection is optional in remote-first registration.
                   // Exercise its manual entry without inventing native folder authority.
-                  // These remote-first controls currently use English in both languages.
                   await page
                     .getByRole("button", {
-                      name: "Connect a Local folder (optional)",
+                      name: l("Connect a Local folder (optional)"),
                       exact: true,
                     })
                     .click();
                   await page
-                    .getByRole("button", { name: "Enter a path…", exact: true })
+                    .getByRole("button", {
+                      name: l("Enter a path…"),
+                      exact: true,
+                    })
                     .click();
                   await page
                     .getByRole("textbox", {
-                      name: "Absolute checkout path",
+                      name: l("Absolute checkout path"),
                       exact: true,
                     })
                     .waitFor();
@@ -2134,7 +2234,14 @@ try {
                 const dialog = page.getByRole("dialog");
                 await dialog.waitFor();
                 const form = dialog.locator("form:visible");
-                if (category !== "Repositories") await form.waitFor();
+                if (category !== "Repositories")
+                  await form.waitFor().catch((error) => {
+                    console.error(
+                      "fixture_form_wait_error",
+                      JSON.stringify({ category, language, theme, viewport }),
+                    );
+                    throw error;
+                  });
                 const dialogLayout = await dialog.evaluate((node) => {
                   const box = node.getBoundingClientRect(),
                     header = node.querySelector(".settings-task-header"),
@@ -2380,6 +2487,8 @@ try {
                 return {
                   width: rect.width,
                   height: rect.height,
+                  cssWidth: getComputedStyle(box).width,
+                  cssHeight: getComputedStyle(box).height,
                   indicatorWidth: indicator.width,
                   indicatorHeight: indicator.height,
                 };
@@ -2403,7 +2512,13 @@ try {
           assert.equal(geometry.minimumRows, true);
           assert(geometry.checkboxes.length > 0);
           for (const box of geometry.checkboxes) {
-            assert(box.width >= 40 && box.height >= 40);
+            assert.equal(box.cssWidth, "40px");
+            assert.equal(box.cssHeight, "40px");
+            // Fractional layout can round the browser rectangle just below its 40px CSS size.
+            assert(
+              box.width >= 39.5 && box.height >= 39.5,
+              `${fixtureLanguage}/${theme}/${width}x${height} checkbox target ${JSON.stringify(box)}`,
+            );
             assert.equal(box.indicatorWidth, "18px");
             assert.equal(box.indicatorHeight, "18px");
           }
@@ -2543,7 +2658,7 @@ try {
         node.scrollTop = 80;
         return node.scrollTop;
       });
-      await page.getByRole("button", { name: /^Inspect backup/ }).click();
+      await page.getByRole("button", { name: /^Inspect Backup\b/ }).click();
       await dialog.waitFor();
       await page
         .getByText(
@@ -2589,7 +2704,13 @@ try {
       await page.screenshot({ path: screenshotPath });
     }
   }
-  if (!projectRowsOnly && !projectsOnly && !accountsOnly && !dismissalOnly)
+  if (
+    !projectRowsOnly &&
+    !projectsOnly &&
+    !accountsOnly &&
+    !hiddenAccount21Only &&
+    !dismissalOnly
+  )
     console.log(
       JSON.stringify({
         operation: "settings_layout",
