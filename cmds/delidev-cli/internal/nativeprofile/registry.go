@@ -81,6 +81,16 @@ func Open(config Config) (*Registry, error) {
 	return &Registry{config: config, base: filepath.Join(config.Root, "native-profiles")}, nil
 }
 
+// UseLogger installs a structured logger when none is configured yet, so a
+// registry first opened by a log-free read path still reports later events.
+func (r *Registry) UseLogger(logger *slog.Logger) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.config.Logger == nil {
+		r.config.Logger = logger
+	}
+}
+
 // Base is the directory that contains the registry, managed profiles and locks.
 func (r *Registry) Base() string { return r.base }
 
@@ -487,8 +497,9 @@ func (r *Registry) RecordHistory(ctx context.Context, key Key, history domain.ID
 				}
 			}
 			if len(e.Histories) >= maxHistories {
-				// Only the newest histories are needed to resume the conversation.
-				file.Profiles[i].Histories = append([]domain.ID(nil), e.Histories[1:]...)
+				// The first identifier names the original history and is kept for the
+				// profile's lifetime; the oldest later identifier is evicted instead.
+				file.Profiles[i].Histories = append([]domain.ID{e.Histories[0]}, e.Histories[2:]...)
 			}
 			file.Profiles[i].Histories = append(file.Profiles[i].Histories, history)
 			Log(r.config.Logger, "native_profile_history_recorded", key, e.ID, ReasonHistoryRecorded)
@@ -598,6 +609,24 @@ func (s DeleteScope) matches(e entry) bool {
 		return false
 	}
 	return true
+}
+
+// Exists reports whether any registered profile matches the scope. Explicit
+// deletion uses it to prove absence before acknowledging completion.
+func (r *Registry) Exists(ctx context.Context, scope DeleteScope) (bool, error) {
+	if scope.Conversation == "" && scope.Account == "" && scope.History == "" {
+		return false, invalidKey()
+	}
+	found := false
+	err := r.withRegistry(ctx, func(file *registryFile) (bool, error) {
+		for _, e := range file.Profiles {
+			if scope.matches(e) {
+				found = true
+			}
+		}
+		return false, nil
+	})
+	return found, err
 }
 
 // Delete removes every matching unreferenced, unlocked profile directory and

@@ -535,7 +535,6 @@ const (
 	executionAuthFilesystem executionAuthenticationReason = "filesystem-failure"
 	executionAuthBundle     executionAuthenticationReason = "bundle-mismatch"
 	executionAuthIdentity   executionAuthenticationReason = "identity-changed"
-	executionAuthLink       executionAuthenticationReason = "symlink"
 	executionAuthPending    executionAuthenticationReason = "pending-file"
 	executionAuthSpecial    executionAuthenticationReason = "non-regular-file"
 	executionAuthLimit      executionAuthenticationReason = "inventory-limit"
@@ -637,7 +636,10 @@ func scanExecutionAuthentication(home string, latest, original []byte) error {
 			return fail(executionAuthFilesystem)
 		}
 		if entry.Type()&os.ModeSymlink != 0 {
-			return fail(executionAuthLink)
+			// Native-created helper links are ordinary retained profile data. They
+			// are never followed and never read for token matching, and they do not
+			// block cleanup of the transient credential file.
+			return nil
 		}
 		// WriteAtomic owns this temporary namespace. A failed write/removal can
 		// retain only a token prefix or no bytes, so token matching cannot prove

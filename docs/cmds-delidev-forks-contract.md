@@ -562,3 +562,12 @@ items grant no reply, dispatch, adoption or media retrieval. The restricted
 read-only Sidechat history profile rejects dynamic items and never obtains an
 original request responder. Existing immutable account, checkpoint, workspace,
 accepted-input and independent cleanup boundaries apply unchanged.
+
+## Fork profiles
+
+Fork reads the source history through its registered profile and creates the
+child's retained history in a distinct `fork` profile keyed by the fork runtime
+identifier. `runtimes/<runtime-id>` remains the exclusive operation journal
+holding `fork-completion.json`; a rejected pre-native attempt removes only that
+journal, never the profile. See the
+[harness contract](cmds-delidev-harness-contract.md#persistent-native-profiles).

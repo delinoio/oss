@@ -250,9 +250,16 @@ type serverQuotaRuntime struct {
 // eligible operation. Only a process or credential uncertainty does.
 func (r *serverQuotaRuntime) Close() error {
 	defer r.lease.Close()
-	if err := r.Client.Close(); err != nil {
+	nativeErr, helperErr := r.Client.CloseWithExecutionHelpers()
+	if nativeErr != nil {
 		nativeprofile.Log(r.logger, "native_profile_blocked", r.lease.Key, r.lease.ID, nativeprofile.ReasonProcessUncertain, "operation_id", r.owner)
 		return subscriptionDenied()
+	}
+	if helperErr != nil {
+		// A joined native tree that left its temporary helper aliases behind has
+		// produced ordinary retained profile data. It neither blocks this
+		// operation nor the next one; only process and credential state do.
+		nativeprofile.Log(r.logger, "native_profile_retained_data", r.lease.Key, r.lease.ID, nativeprofile.ReasonHelperRetained, "operation_id", r.owner)
 	}
 	if _, err := os.Lstat(filepath.Join(r.home, "codex", "auth.json")); !os.IsNotExist(err) {
 		nativeprofile.Log(r.logger, "native_profile_blocked", r.lease.Key, r.lease.ID, nativeprofile.ReasonCredentialPresent, "operation_id", r.owner)

@@ -317,3 +317,31 @@ func TestKeyValidationRejectsMissingScopeFields(t *testing.T) {
 		}
 	}
 }
+
+func TestHistoryIdentifiersKeepTheOriginalAndEvictOldestLater(t *testing.T) {
+	r, _ := workerRegistry(t, testRoot(t), nil)
+	ctx := context.Background()
+	key := conversationKey(domain.NewID(), domain.NewID())
+	lease, err := r.Acquire(ctx, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lease.Close()
+	original := domain.NewID()
+	if err := r.RecordHistory(ctx, key, original); err != nil {
+		t.Fatal(err)
+	}
+	var latest domain.ID
+	for i := 0; i < maxHistories+8; i++ {
+		latest = domain.NewID()
+		if err := r.RecordHistory(ctx, key, latest); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, id := range []domain.ID{original, latest} {
+		info, ok, err := r.History(ctx, id)
+		if err != nil || !ok || info.ID != lease.ID {
+			t.Fatalf("history %s was not resolved: %v", id, err)
+		}
+	}
+}

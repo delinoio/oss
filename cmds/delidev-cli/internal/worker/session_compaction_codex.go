@@ -127,23 +127,25 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 	if err != nil || !filepath.IsAbs(executable) || resolved != executable {
 		return nil, domain.CompactionUncertain()
 	}
-	runtimeRoot := filepath.Join(config.Root, "runtimes")
-	if security.PrivateDir(runtimeRoot) != nil {
-		return nil, domain.CompactionUncertain()
+	// The per-action directory is only the operation journal (fresh per attempt);
+	// the compacted history stays in the conversation's persistent profile.
+	if _, err := createOperationJournal(config.Root, i.ActionID); err != nil {
+		return nil, err
 	}
-	home := filepath.Join(runtimeRoot, string(i.ActionID))
-	if _, err := os.Lstat(home); !errors.Is(err, os.ErrNotExist) {
-		return nil, domain.CompactionUncertain()
-	}
-	env, err := harness.PrivateRuntimeEnvironment(home)
-	if err != nil {
-		return nil, domain.SafeError(err)
-	}
-	nativeHome := filepath.Join(runtimeRoot, string(i.Restore.Continuation.HistoryExecutionID), "codex")
-	env, err = replaceCodexHome(env, nativeHome)
+	profile, err := continuationProfile(ctx, config, i.Assignment.MachineID, domain.Codex, historyAccount(i.Restore), i.Restore.Continuation.HistoryExecutionID, i.ActionID)
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		if err := profile.Close(); err != nil && returned == nil {
+			output, returned = nil, domain.CompactionUncertain()
+		}
+	}()
+	env, err := harness.PrivateRuntimeEnvironment(profile.Root)
+	if err != nil {
+		return nil, domain.SafeError(err)
+	}
+	nativeHome := filepath.Join(profile.Root, "codex")
 	phase = compactionRestore
 	source, err := codexCheckpointForContinuation(config.Root, i.Restore, manifest)
 	if err != nil {

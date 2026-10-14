@@ -120,8 +120,15 @@ func TestManagedExecutionAuthenticationCleanup(t *testing.T) {
 				file.Close()
 			}
 			err := cleanupExecutionAuthentication(home, bundle, bundle)
-			if (err == nil) != (mode == "clean") {
+			// A native-created helper link is ordinary retained data: it is never
+			// followed and never blocks cleanup. Copied tokens and oversized files do.
+			if (err == nil) != (mode == "clean" || mode == "symlink") {
 				t.Fatalf("cleanup %s: %v", mode, err)
+			}
+			if mode == "symlink" {
+				if _, statErr := os.Lstat(filepath.Join(home, "history")); statErr != nil {
+					t.Fatal("cleanup removed a retained helper link", statErr)
+				}
 			}
 		})
 	}

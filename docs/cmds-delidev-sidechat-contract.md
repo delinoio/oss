@@ -459,3 +459,10 @@ ownership references and Worker envelopes. Raw native data is never copied into
 that reservation. Later attempts recheck retained capacity; the reservation does
 not grant another native attempt, bypass original recovery proof, or evict an
 older assignment.
+
+## Sidechat profiles
+
+Read-only Sidechat conversations keep distinct retained histories in `sidechat`
+(first execution) and `fork` profiles; they never share a profile with their
+source conversation. See the
+[harness contract](cmds-delidev-harness-contract.md#persistent-native-profiles).

@@ -147,3 +147,11 @@ Instruction-file updates in this requirement apply only to changes in developmen
 - [Repository defaults](repository-defaults.md)
 - The feature: automatic session titles
 - The feature: chat-first session page
+
+## Persistent title profiles
+
+Automatic title generation and the Codex title probe use the conversation's
+persistent `title` profile and the accountless `title_probe` profile. Only the
+small per-job journal `title-runtimes/<job-id>` (intent record) is removed when
+the job completes; the profile is retained and removed by session deletion. See
+the [harness contract](cmds-delidev-harness-contract.md#persistent-native-profiles).

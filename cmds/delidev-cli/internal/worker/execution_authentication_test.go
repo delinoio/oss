@@ -121,8 +121,19 @@ func TestManagedExecutionPreNativeFailureRemovesAuthentication(t *testing.T) {
 				bundle := workerSubscriptionBundle("first")
 				defer clear(bundle)
 				subscriptions := &earlyExecutionSubscriptionRPC{bundle: bundle, finished: make(chan *pb.FinishSubscriptionRequest, 1)}
+				// The conversation's persistent profile is resolved before the run so the
+				// credential destination can be observed and denied.
+				preLease, err := executionProfile(context.Background(), Config{Root: f.root}, domain.Codex, f.input)
+				if err != nil {
+					t.Fatal(err)
+				}
+				profileCodex := filepath.Join(preLease.Root, "codex")
+				if err := security.PrivateDir(profileCodex); err != nil {
+					t.Fatal(err)
+				}
+				_ = preLease.Close()
 				if mode == "auth-write" {
-					subscriptions.denyAuthenticationHome = filepath.Join(f.root, "runtimes", string(f.input.ExecutionID), "codex")
+					subscriptions.denyAuthenticationHome = profileCodex
 					t.Cleanup(func() { _ = os.Chmod(subscriptions.denyAuthenticationHome, 0700) })
 				}
 				_, handler := delidevv1connect.NewSubscriptionServiceHandler(subscriptions)
@@ -168,7 +179,7 @@ func TestManagedExecutionPreNativeFailureRemovesAuthentication(t *testing.T) {
 				if err == nil || len(output) != 0 {
 					t.Fatal("pre-native failure was reported as completed execution", err)
 				}
-				auth := filepath.Join(f.root, "runtimes", string(f.input.ExecutionID), "codex", "auth.json")
+				auth := filepath.Join(profileCodex, "auth.json")
 				if _, err := os.Lstat(auth); !os.IsNotExist(err) {
 					t.Fatal("pre-native failure retained plaintext authentication", err)
 				}

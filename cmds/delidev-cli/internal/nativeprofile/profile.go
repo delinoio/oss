@@ -176,6 +176,7 @@ const (
 	ReasonKeyConflict        Reason = "key_conflict"
 	ReasonCredentialPresent  Reason = "credential_file_present"
 	ReasonReferenced         Reason = "referenced"
+	ReasonHelperRetained     Reason = "helper_retained"
 	ReasonDeleted            Reason = "deleted"
 	ReasonDeleteBlocked      Reason = "delete_blocked"
 	ReasonCredentialCleaned  Reason = "credential_cleaned"
