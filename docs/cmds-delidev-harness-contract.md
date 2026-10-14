@@ -3006,9 +3006,30 @@ every retry of an uncertain Finish, so the admitted continuation never meets
 owner. A release that cannot be verified never skips the Finish, because the
 account lease must not stay held for a lock that is already closed.
 
+A release is verified when the lock was closed and a probe could take it and
+close it again, or when another holder took the lock after a clean close. The
+second case is a handoff: an exclusive continuation that was already retrying
+acquired the lock between the close and the probe. The probe meets `profile_busy`
+then, which after a clean close proves that the lock was released and passed on,
+so it is not a failure and nothing is parked. A holder met after a failed close
+(or after a failed probe close) is not proven to be a handoff, because it cannot
+be told apart from a lock that was never released, so that release stays
+unverified. A probe whose own close fails is never taken for free either: the hold
+stays unverified and the next call probes again.
+
+| Close and probe                                    | Release      |
+| -------------------------------------------------- | ------------ |
+| clean close, probe takes and closes the lock       | verified     |
+| clean close, another holder meets the probe        | verified (handoff) |
+| failed close, probe takes and closes the lock      | verified; the close error is reported once |
+| failed close, another holder meets the probe       | not verified |
+| probe takes the lock but its close fails           | not verified; retried by the next call |
+| probe fails for another cause, such as a replaced home | not verified |
+
 The release and the Finish settle as follows. The owner path is the founding
 owner retiring through its last member; the exclusive path is a version 2
-continuation that holds the lock itself.
+continuation that holds the lock itself. A verified handoff behaves like any
+other verified release in every row.
 
 | Release      | Finish    | Returned through the member outcome                 | Local owner or hold                                                           | Lock                                      |
 | ------------ | --------- | --------------------------------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------- |

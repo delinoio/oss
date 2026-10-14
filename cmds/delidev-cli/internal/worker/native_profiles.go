@@ -342,10 +342,26 @@ type sharedHomeHold struct {
 	machine domain.ID
 	account domain.ID
 	lease   *nativeprofile.Lease
-	// unverified is set once the lock was closed and cleared only after a probe
-	// proved that the lock is free again.
+	// unverified is set once the lock was closed and cleared only after the
+	// release was proven: a probe took the lock again and closed it without an
+	// error, or another holder took it after a clean close (a handoff).
 	unverified bool
+	// closedClean records that closing the lock reported no error. The close
+	// alone released the lock then, so a later probe that meets a holder is the
+	// handoff to that holder and not a failed release. After a close error a held
+	// lock cannot be told apart from an unreleased one and stays unverified.
+	closedClean bool
 }
+
+// Test hooks. closeSharedHomeLease and closeSharedHomeProbe close the held and
+// the probe lease, which production code cannot make fail on demand;
+// afterSharedHomeClose runs between closing the lock and probing it, the window
+// in which an admitted continuation can take the lock.
+var (
+	closeSharedHomeLease = func(lease *nativeprofile.Lease) error { return lease.Close() }
+	closeSharedHomeProbe = func(probe *nativeprofile.Lease) error { return probe.Close() }
+	afterSharedHomeClose = func() {}
+)
 
 // holdSharedCodexHome locks the shared Codex account home. A release that an
 // earlier owner or continuation of the account could not verify is verified
@@ -366,7 +382,22 @@ func (h *sharedHomeHold) root() string { return h.lease.Root }
 
 // release closes the lock and verifies that a new holder can take it. It only
 // unlocks: history, caches and helper files stay retained. It is idempotent and
-// safe on a nil hold; a failed verification is reported again by the next call.
+// safe on a nil hold; a release that is not verified stays unverified and is
+// verified again by the next call. Outcomes after the close:
+//
+//   - the probe takes the lock and closes it without error: verified.
+//   - the probe takes the lock but closing it fails: unverified, because the
+//     probe's own release was not proven; the next call probes again, and a
+//     holder it meets then is not a handoff because it may be the failed probe.
+//   - the probe meets another holder after a clean close: verified, because that
+//     holder (an admitted exclusive continuation) took the lock our close freed.
+//   - the probe meets another holder after a failed close: unverified, because a
+//     lock that was never released looks the same.
+//   - the probe fails for any other reason, for example a replaced home:
+//     unverified.
+//
+// A close error followed by a verified probe is reported once, and the lock is
+// proven free.
 func (h *sharedHomeHold) release() error {
 	if h == nil {
 		return nil
@@ -375,21 +406,34 @@ func (h *sharedHomeHold) release() error {
 	defer h.mu.Unlock()
 	var closeErr error
 	if h.lease != nil {
-		closeErr, h.lease, h.unverified = h.lease.Close(), nil, true
+		closeErr, h.lease, h.unverified = closeSharedHomeLease(h.lease), nil, true
+		h.closedClean = closeErr == nil
+		afterSharedHomeClose()
 	}
 	if !h.unverified {
 		return nil
 	}
 	probe, err := acquireSharedCodexHome(context.Background(), h.config, h.machine, h.account)
 	if err != nil {
+		if reason, ok := nativeprofile.Reasoned(err); ok && reason == nativeprofile.ReasonBusy && h.closedClean {
+			h.unverified = false
+			h.log("shared_codex_home_release_handed_off", err)
+			return nil
+		}
 		h.log("shared_codex_home_release_unverified", err)
 		return errors.Join(closeErr, err)
 	}
-	probeErr := probe.Close()
-	h.unverified = false
-	if closeErr != nil || probeErr != nil {
-		h.log("shared_codex_home_release_failed", errors.Join(closeErr, probeErr))
+	if probeErr := closeSharedHomeProbe(probe); probeErr != nil {
+		// The probe's own lock may still be held, so a holder met by the next
+		// probe is not proven to be a handoff.
+		h.closedClean = false
+		h.log("shared_codex_home_release_unverified", probeErr)
 		return errors.Join(closeErr, probeErr)
+	}
+	h.unverified = false
+	if closeErr != nil {
+		h.log("shared_codex_home_release_failed", closeErr)
+		return closeErr
 	}
 	return nil
 }
