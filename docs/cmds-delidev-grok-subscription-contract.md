@@ -15,13 +15,16 @@ service-aware callback forwarding described under
 device-code login described under
 [Server-owned device login](#server-owned-device-login) and the server-owned
 refresh (the `refresh_token` grant under the account lease with a durable claim,
-described under [Server-owned refresh](#server-owned-refresh)) together with the
+described under [Server-owned refresh](#server-owned-refresh)) and the
+server-owned logout (provider revocation under the account lease, protected
+cleanup and the Worker-lease logout retry, described under
+[Server-owned logout](#server-owned-logout)) together with the
 Worker-side confinement of a native refresh. System 39 is advertised because
 both login methods are implemented (decision D1: one capability for browser and
 device login together). The advertisement claims no real-account acceptance: the
-opt-in real-account run was not performed. Not activated: logout, Worker-side
-watch dispatch, the native process execution that produces a native refresh, and
-Grok execution (System 40, Worker 21).
+opt-in real-account run was not performed. Not activated: Worker-side watch
+dispatch, the native process execution that produces a native refresh, and Grok
+execution (System 40, Worker 21).
 The subscription profile declares `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) as its minimum SemVer baseline. `domain.GrokSubscriptionVersionAllowed` admits a valid SemVer at or above it (prereleases of the baseline are below it) and gates protected Take admission of a Grok lease; no capability, discovery or execution path references it. Newer releases are validated natively, not rejected by number. The API and history baseline stays `domain.GrokProtocolVersion` (`1.0.41`); Grok Build 1.0.52 inspection is accepted when its optional `experiments` inventory is an empty array (see `cmds-delidev-harness-contract.md`), which does not change these baselines. Reservation support is separate
 from implemented support and actual account/platform acceptance.
 
@@ -81,8 +84,8 @@ honors RFC 8628 pending, slow-down, denial and expiry; see
 and `device_code=false` creates the same `ServerSubscriptionOperation` as the
 Codex server login (15-minute expiry, original actor, epoch and finish
 generation). The login action is described here, and refresh under
-[Server-owned refresh](#server-owned-refresh); logout is refused with
-`Unsupported`, `device_code=true` selects the
+[Server-owned refresh](#server-owned-refresh) and logout under
+[Server-owned logout](#server-owned-logout); `device_code=true` selects the
 [device login](#server-owned-device-login) instead, and the Codex lifecycle still
 refuses every Grok account (`subscriptionAccount`); the service-neutral server
 gate is `serverSubscriptionAccount`. The Go flow lives in
@@ -177,7 +180,8 @@ conversations:write workspaces:read workspaces:write`, `referrer=grok-build`.
   cancellation and the expiry window record none. A server restart marks an active
   operation recovery-required; a restart that happened before the exchange claim
   is settled automatically as a failed login (`recoverGrokLogin`), and one after
-  the claim stays in recovery. Account removal and logout are separate work.
+  the claim stays in recovery. Account logout and deletion are described under
+  [Server-owned logout](#server-owned-logout).
 
 ### Server-owned device login
 
@@ -620,6 +624,108 @@ settlement and recovery).
 Fault-injection seams (`grokRefreshFault`, test-only) cover the points after the
 claim, after the response, after staging and after the commit.
 
+### Server-owned logout
+
+`RequestSubscription` for a connected Grok subscription account with `machine_id`
+omitted and action `LOGOUT` creates a `ServerSubscriptionOperation` with action
+`logout` (original actor, epoch and finish generation). The request is the
+acceptance: it sets the account health to `revoked`, cancels the account's queued
+executions and retires its queued titles, and a Take for new execution is refused
+with a typed `UNAVAILABLE` problem ("This Grok account is logging out", logged as
+`grok_subscription_take_logging_out`; `domain.Account.GrokLoggingOut` is the
+shared predicate) while the logout waits, revokes and cleans up. It follows the
+same lease rules as login and refresh: it cannot overlap another operation, an
+observation or a recovery fence, `CancelSubscription` stays login-only, and a
+separate account is never blocked. The Go flow lives in
+`internal/subscription/grok_revoke.go` (the revocation client) and
+`internal/server/grok_logout.go` (lease, claim, settlement, cleanup and recovery).
+
+- **Wait for the original execution.** The operation is claimed only while no
+  Worker lease exists. A Worker lease is released only by a Finish that confirmed
+  the original process exit and the removal of `auth.json`, `auth.json.lock` and
+  every attributed temporary from that Worker's private home (see
+  [Native refresh confinement](#native-refresh-confinement)), so a claimed logout
+  implies every Worker private home holds neither file. The claim starts a fresh
+  15-minute window; waiting never expires an accepted logout. Because a lease is
+  released only by a confirmed cleanup, an uncertain Worker cleanup keeps the
+  account fenced and the logout waiting.
+- **Claim before send.** The stored generation is opened against this server and
+  account (the server reads the vault itself and never delivers the bundle to a
+  Worker for a Go-owned logout), and `grok_revocation = claimed` is written in
+  its own transaction that rechecks the epoch, lease, generation and the stored
+  identity commitment. After the claim commits, the operation can only settle as an
+  outcome of the one request below.
+- **Request.** Exactly one `POST` to `https://auth.x.ai/oauth2/revoke` (RFC 7009,
+  the fixed `revocation_endpoint` of the issuer metadata) as a public client:
+  form fields `token` (the refresh token), `token_type_hint=refresh_token` and
+  `client_id` only (no client secret, no `Authorization` header, no redirect
+  following, no retry), through the same owned outbound route as login and
+  refresh. The request parameters and the real provider's responses were not
+  observed: the implementation and its tests model RFC 7009, and the opt-in
+  capture stays unperformed.
+- **Outcomes.** HTTP 200 is revoked. HTTP 400 or 401 with the OAuth error
+  `invalid_token` or `invalid_grant` is an already-invalid token and counts as
+  revoked. Any other 4xx is a definite refusal; 5xx, a transport failure, a
+  timeout, cancellation or shutdown, an oversized body and any unexpected status
+  are uncertain. A definite refusal and an uncertain outcome both end in
+  `RECOVERY_REQUIRED` (account fenced, health `failed`, operation and claim
+  retained, `grok_diagnostic` phase `LOGOUT` code `recovery_required`), the token
+  is never sent again, and the protected bundle and its account references are
+  never deleted. A failure before the claim (vault read, bundle validation, claim
+  preconditions) sent nothing: it settles as `FAILED` with the credential intact
+  and the account stays connected and `revoked`, so a new logout may be requested.
+- **Cleanup.** A proven revocation is recorded durably (`grok_revocation =
+  revoked` and `revoked_generation` equal to the current generation) before any
+  deletion. Only then is every vault generation of the account removed
+  (`cleanupSubscriptionReferences` with nothing kept), and then the account is
+  published as disconnected in one commit (no connection, generation, identity
+  commitment or owner machine; health `disconnected`; the operation `SUCCEEDED`).
+  A failed removal or publication keeps the account fenced with the revocation
+  proven; the scanner retries only this cleanup with bounded backoff
+  (`recoverGrokLogout`), so the token is never revoked twice.
+- **Restart.** A restart marks an active logout recovery-required. One that never
+  reached the claim sent nothing and settles automatically as a failed logout
+  (health stays `revoked`); one with a confirmed revocation resumes its cleanup;
+  one with only a claim stays in recovery and is never resolved or resent
+  automatically. Backup restore is blocked while a logout is pending or fenced
+  (the existing restore preflight covers the pending operation and recovery
+  fence), and a restored image never keeps a revoked generation
+  (`revoked_generation` retains recovery ownership).
+- **Worker-lease logout (Take/Finish).** The protected Take/Finish `logout` action
+  of the singleton lease stays available for a Worker-routed pending logout. Take
+  of a logout lease and a Finish that deletes the bundle both require
+  `revoked_generation` to equal the current generation, so the bundle is never
+  deleted without a proven revocation (a Finish without it fences the account and
+  keeps the generation). A logout whose Worker could not remove `auth.json` or
+  `auth.json.lock` is fenced on its original lease; only that lease's exact Worker
+  Device, Runner Device, instance and server epoch can report Finish again, and a
+  confirmed retry releases the lease and removes every generation. A different
+  Worker or instance is refused and the fence stays. Fenced leases of other
+  actions are never released by a retry.
+- **Deletion.** Deletion reuses logout-before-delete: a connected Grok account
+  (generation, connection, pending operation, lease or recovery fence) cannot be
+  deleted, so deletion proceeds only after the logout settled with the cleanup
+  confirmed. An unproven revocation, an unconfirmed cleanup and a lease fenced
+  by an unconfirmed Worker cleanup all block deletion. Failed-login cleanup
+  (System 41) never adopts a Grok logout or a claimed Grok login; a settled
+  Grok logout and a failed Grok login are ordinary disconnected accounts for the
+  disconnected-account batch cleanup, which retains any account that still owns
+  a protected vault reference.
+- **Protected credentials.** `subscription.CredentialFiles` lists
+  `grok/auth.json` and `grok/auth.json.lock` beside the Codex and Claude entries,
+  so presence checks and retirement of a retained profile cover the Grok
+  credential and its advisory lock file (and their attributed temporaries).
+  Diagnostics never read a Grok bundle (the Doctor inspection is unavailable for
+  the service), and restore never restores a Grok generation.
+- **Logging.** Records use phase `LOGOUT` (lease, claim, revocation, settlement)
+  or `CLEANUP` (vault removal and disconnect), a closed step, the operation id as
+  correlation id and stable codes; no token, URL, path, email or identity value
+  is logged, and the fixtures assert it.
+
+Fault-injection seams (`grokRefreshFault`, test-only) cover the points after the
+revocation claim, after the revocation response, after the revocation is
+recorded and after the vault removal.
+
 ### Native refresh confinement
 
 A native `grok` process may refresh the credential itself inside a Worker's
@@ -677,6 +783,10 @@ library tests are in `internal/worker/grok_subscriptions_test.go` and
 | Finish prepared for a lease that never bound a home                                                    | Cleanup never confirmed                                                                                                                                | `TestPrepareGrokFinishRefusesAnUnboundHome`, `TestGrokMaterializationBindsTheHomeForFinish`, `TestGrokMaterializationReleasesTheHomeWhenItFails`                                      |
 | Worker crash or restart with the native file on disk                                                   | The server fences the lease (row above); the plaintext stays in the private home until Worker-side recovery, which is not activated; nothing is resent | Server side: `TestGrokLostWorkerFencesTheLeaseAndRefusesLaterFinish`                                                                                                                  |
 | Server refresh with rotation, without rotation (omitted or unchanged token) or without an ID token     | Next generation staged, published by one commit and superseded generations removed; identity commitment unchanged                                      | `TestGrokRefreshReplacesTheBundleWithRotation`, `TestGrokRefreshWithoutRotationKeepsTheRefreshToken`, `TestGrokRefreshWorksWithoutAnIDToken`                                          |
+| Server logout claim, request and outcomes                                                              | Claim durable before the one revocation request; revoked and already-invalid settle; 4xx, 5xx and timeout fence with the bundle kept and are never resent | `TestGrokLogoutRevokesTheRefreshTokenThenDeletesTheBundle`, `TestGrokLogoutAlreadyInvalidTokenCountsAsRevoked`, `TestGrokLogoutUnprovenRevocationLeavesRecoveryAndKeepsTheBundle`, `TestGrokLogoutTimeoutOrShutdownDuringRevocationIsUncertain`, `TestGrokRevokeClassifiesEveryOutcome` |
+| Server logout crash points and cleanup failure                                                         | No resend and no bundle deletion without recovery state; a proven revocation only repeats the cleanup                                                   | `TestGrokLogoutCrashPointsNeverResendOrDeleteWithoutRecoveryState`, `TestGrokLogoutCleanupFailureIsFencedRetriedAndNeverRevokesTwice`, `TestGrokLogoutBeforeTheClaimRestartKeepsTheCredentialAndAllowsANewLogout` |
+| Logout during execution, serialization and deletion                                                    | Waits for the original lease; new execution is typed unavailable; one account serialized, others independent; deletion only after confirmed cleanup | `TestGrokLogoutWaitsForTheOriginalExecutionLease`, `TestGrokLogoutSerializesWithOtherOperationsOnOneAccountOnly`, `TestGrokDeletionRequiresAConfirmedLogoutFirst`, `TestGrokDeletionIsBlockedByUnprovenAndUnconfirmedLogouts` |
+| Worker-lease logout, Worker home removal failure                                                       | Revocation required; fenced on failure; same Worker retry succeeds; other Worker refused                                                                | `TestGrokWorkerLogoutRequiresRevocationAndRetriesOnlyOnTheOriginalOwner`, `TestGrokWorkerLogoutWithoutRevocationFencesInsteadOfDeleting`, `TestGrokFencedRefreshLeaseIsNotRetryable` |
 | Server refresh claim and lease                                                                         | The claim is durable before the token request; the account stays exclusively leased; no other operation, Take or logout is admitted                    | `TestGrokRefreshWritesTheClaimBeforeTheTokenRequestAndHoldsTheLease`                                                                                                                  |
 | Provider refuses the refresh token (`invalid_grant`)                                                   | Plain failure; bundle kept; health `expired`; exactly one request                                                                                      | `TestGrokRefreshFailuresNeverReplaceTheBundle`                                                                                                                                        |
 | 5xx, truncated body, malformed success, unverifiable ID token or userinfo, changed identity            | Bundle kept; `RECOVERY_REQUIRED`; claim retained; the token is never resent                                                                            | `TestGrokRefreshFailuresNeverReplaceTheBundle`                                                                                                                                        |
@@ -698,8 +808,9 @@ fenced Grok account are separate lifecycle work and are not activated here.
 ## Security
 
 Login, refresh, execution and logout share one exclusive account lease. Logout
-blocks new execution and completes only after original execution exit and
-credential cleanup are confirmed; deletion reuses logout-before-delete.
+blocks new execution and completes only after original execution exit, provider
+revocation of the refresh token and credential cleanup are confirmed; deletion
+reuses logout-before-delete (see [Server-owned logout](#server-owned-logout)).
 Workers use the exact verified binary and a fresh private home. Managed bundles
 move only through protected Take/Finish. Native refresh is confined to the lease;
 verify the latest bundle and original identity, process exit and authentication
@@ -720,8 +831,9 @@ trusted window, server, operation and Settings lifetime.
 ## Logging
 
 Use structured Go/Rust logs with stable phase/code and original operation
-correlation. Server-owned Grok login records use phase `LOGIN` and refresh
-records use phase `REFRESH`, each with a closed step and the operation id as
+correlation. Server-owned Grok login records use phase `LOGIN`, refresh
+records use phase `REFRESH`, logout records use phase `LOGOUT` and the logout's
+vault and metadata cleanup records use phase `CLEANUP`, each with a closed step and the operation id as
 correlation id. Diagnostics exclude credentials, URLs, paths, identity and raw native
 content. Record validation revision, commands, results and unresolved limits in
 PRs and CI logs/artifacts rather than repository evidence documents.
@@ -755,7 +867,13 @@ fault injection counting token requests, restart recovery, cleanup failure and a
 log and database leak scan), `internal/domain/grok_subscription_test.go` (claim
 validation), `internal/store/backup_restores_test.go` (restore) and
 `internal/worker/grok_refresh_test.go` (native refresh confinement with a fake
-native rewrite). The opt-in `TestManualNativeGrokLoginBundleIsAcceptedByNativeGrok`
+native rewrite). The server-owned logout is covered by
+`internal/subscription/grok_revoke_test.go` (request shape and outcome
+classification against the fake provider's `/oauth2/revoke`),
+`internal/server/grok_logout_test.go` (revocation outcomes, crash points,
+cleanup failure, execution wait, serialization, deletion, batch cleanup, Worker
+retry and the leak scan), `internal/domain/grok_subscription_test.go` (claim
+validation) and `internal/store/backup_restores_test.go` (restore). The opt-in `TestManualNativeGrokLoginBundleIsAcceptedByNativeGrok`
 writes the Go-produced `auth.json` into a scratch home and requires `grok models`
 and ACP `cached_token` to accept it; it skips unless
 `DELIDEV_NATIVE_GROK_EXECUTABLE` and

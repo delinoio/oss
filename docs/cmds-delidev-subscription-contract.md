@@ -205,6 +205,15 @@ a durable claim before the first poll and recovery instead of resend) is owned b
 its server-owned refresh (the same model with action refresh, a durable
 `refresh_claimed` exchange claim and recovery instead of resend) is owned by
 [the Grok contract](cmds-delidev-grok-subscription-contract.md#server-owned-refresh);
+its server-owned logout (the same model with action logout: health revoked and
+typed unavailable execution refusal at acceptance, a wait for the original
+execution lease, one RFC 7009 revocation request at `https://auth.x.ai/oauth2/revoke`
+behind a durable `grok_revocation` claim, then removal of every vault generation,
+with recovery instead of resend and no deletion without a proven revocation) is
+owned by
+[the Grok contract](cmds-delidev-grok-subscription-contract.md#server-owned-logout),
+and `subscription.CredentialFiles` also lists `grok/auth.json` and
+`grok/auth.json.lock`;
 the Codex lifecycle gate (`subscriptionAccount`) and Codex callback forwarding
 (port 1457) are unchanged and still refuse a Grok account. Mock and build evidence for this model is not real-account,
 real-renewal or cross-platform acceptance; that acceptance is future work and is
