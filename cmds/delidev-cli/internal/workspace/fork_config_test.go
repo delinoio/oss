@@ -185,7 +185,7 @@ func TestIndependentForkInventoryRejectsConfigRecordCardinalityOverflow(t *testi
 	}
 }
 
-func TestIndependentForkInventoryRetainsRawConfigInSharedBudget(t *testing.T) {
+func TestIndependentForkInventoryChargesRawAndParsedConfigInSharedBudget(t *testing.T) {
 	input := forkInventoryFixtureInputWith(t, false, retainedConfigSetup)
 	budget := newForkCopyBudget(1)
 	inventory, err := inspectForkGitInventory(context.Background(), input.git, input.selected, budget)
@@ -194,8 +194,23 @@ func TestIndependentForkInventoryRetainsRawConfigInSharedBudget(t *testing.T) {
 	}
 
 	expected := maxForkBytes - 4096 - inventory.commonFiles.Bytes - inventory.adminFiles.Bytes
+	for _, name := range []string{"config", "config.worktree"} {
+		path, _, ok := inventory.sourceFile(name)
+		if !ok {
+			continue
+		}
+		records, size, err := listForkConfigFile(context.Background(), input.git, input.selected, path, maxForkBytes)
+		if err != nil {
+			t.Fatal(err)
+		}
+		proofBytes, err := forkConfigProofBytes(size, len(records))
+		if err != nil {
+			t.Fatal(err)
+		}
+		expected -= proofBytes
+	}
 	if budget.bytes != expected {
-		t.Fatalf("shared budget did not retain raw config charge: got %d, want %d", budget.bytes, expected)
+		t.Fatalf("shared budget did not charge raw and parsed config: got %d, want %d", budget.bytes, expected)
 	}
 }
 

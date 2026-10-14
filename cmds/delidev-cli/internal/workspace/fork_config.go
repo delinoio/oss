@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"unsafe"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
@@ -22,6 +23,13 @@ type forkConfigLayer struct {
 	present bool
 	records []string
 }
+
+const (
+	// A retained record is a string header in the strings.Split backing array.
+	forkConfigRecordHeaderBytes = uint64(unsafe.Sizeof(string("")))
+	// Each retained layer also keeps its []string slice header.
+	forkConfigSliceHeaderBytes = uint64(unsafe.Sizeof([]string{}))
+)
 
 // forkConfigProof is the expected-config evidence of one independent Fork. The
 // source layers are frozen when the Fork source is inspected; the accepted remote
@@ -75,6 +83,35 @@ func listForkConfigFile(ctx context.Context, git Git, dir, path string, allowanc
 		records = records[:len(records)-1]
 	}
 	return records, uint64(len(out)), nil
+}
+
+// forkConfigProofBytes estimates the retained parsed representation: the
+// command output bytes, one string header per record, and the slice header.
+// The raw config bytes are charged separately by snapshotCopyBudget.take.
+func forkConfigProofBytes(size uint64, records int) (uint64, error) {
+	if records < 0 {
+		return 0, domain.Fail(domain.ResourceExhausted, "The complete workspace snapshot exceeds its bound.", "Reduce workspace data before retrying; sources remain intact.")
+	}
+	overhead := forkConfigSliceHeaderBytes
+	if uint64(records) > (^uint64(0)-overhead)/forkConfigRecordHeaderBytes {
+		return 0, domain.Fail(domain.ResourceExhausted, "The complete workspace snapshot exceeds its bound.", "Reduce workspace data before retrying; sources remain intact.")
+	}
+	overhead += uint64(records) * forkConfigRecordHeaderBytes
+	if size > ^uint64(0)-overhead {
+		return 0, domain.Fail(domain.ResourceExhausted, "The complete workspace snapshot exceeds its bound.", "Reduce workspace data before retrying; sources remain intact.")
+	}
+	return size + overhead, nil
+}
+
+func chargeForkConfigProof(budget *snapshotCopyBudget, layer forkConfigLayer, size uint64) error {
+	if !layer.present {
+		return nil
+	}
+	proofBytes, err := forkConfigProofBytes(size, len(layer.records))
+	if err != nil {
+		return err
+	}
+	return budget.takeBytes(proofBytes)
 }
 
 func readForkConfigBytes(ctx context.Context, file *os.File, limit int64) ([]byte, error) {
@@ -155,24 +192,17 @@ func (i *forkGitInventory) captureConfigProof(ctx context.Context, git Git, chec
 			return domain.Fail(domain.ResourceExhausted, "The complete workspace snapshot exceeds its bound.", "Reduce workspace data before retrying; sources remain intact.")
 		}
 		// Keep the raw config charge in the shared copy budget. The parsed proof
-		// has its own bounded output allowance and is retained only for comparison;
-		// replacing the raw charge would admit more data than preparation copies.
-		frozen, _, err := readFrozenForkConfig(ctx, git, checkout, path, entry, allowance+entry.Size)
+		// consumes the remaining shared allowance for its output and record headers.
+		frozen, size, err := readFrozenForkConfig(ctx, git, checkout, path, entry, allowance)
 		if err != nil {
+			return err
+		}
+		if err := chargeForkConfigProof(budget, frozen, size); err != nil {
 			return err
 		}
 		*layer.target = frozen
 	}
 	return nil
-}
-
-func forkConfigOutputAllowance(files snapshotInventory, remaining uint64) uint64 {
-	for _, entry := range files.Entries {
-		if entry.Path == "config" || entry.Path == "config.worktree" {
-			remaining += entry.Size
-		}
-	}
-	return remaining
 }
 
 // readChildForkConfig lists a copied config file; a missing file is an absent layer.
@@ -254,17 +284,19 @@ func forkChildConfigError(err error) error {
 	return err
 }
 
-func (i forkGitInventory) verifyChildConfig(ctx context.Context, git Git, target string, allowance uint64) error {
+func (i forkGitInventory) verifyChildConfig(ctx context.Context, git Git, target string, budget *snapshotCopyBudget) error {
 	proof := i.configProof
 	if !proof.bound {
 		return ResultUncertain()
 	}
 	core := map[string]string{"core.bare": "false", "core.worktree": ".."}
-	config, size, err := readChildForkConfig(ctx, git, target, "config", allowance)
+	config, size, err := readChildForkConfig(ctx, git, target, "config", budget.bytes)
 	if err != nil {
 		return forkChildConfigError(err)
 	}
-	allowance -= size
+	if err := chargeForkConfigProof(budget, config, size); err != nil {
+		return forkChildConfigError(err)
+	}
 	// Git recreates a missing source config, so config is always expected.
 	if !config.present || !proof.config.matchesNormalized(config, map[string]string{
 		"core.bare": core["core.bare"], "core.worktree": core["core.worktree"],
@@ -272,8 +304,11 @@ func (i forkGitInventory) verifyChildConfig(ctx context.Context, git Git, target
 	}) {
 		return forkSnapshotChanged()
 	}
-	worktree, _, err := readChildForkConfig(ctx, git, target, "config.worktree", allowance)
+	worktree, size, err := readChildForkConfig(ctx, git, target, "config.worktree", budget.bytes)
 	if err != nil {
+		return forkChildConfigError(err)
+	}
+	if err := chargeForkConfigProof(budget, worktree, size); err != nil {
 		return forkChildConfigError(err)
 	}
 	if worktree.present != proof.worktree.present || worktree.present && !proof.worktree.matchesNormalized(worktree, core, forkRemoteURLKey(proof.remoteName)) {

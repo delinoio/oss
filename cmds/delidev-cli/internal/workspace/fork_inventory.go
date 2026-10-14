@@ -144,7 +144,7 @@ func (i forkGitInventory) verify(ctx context.Context, git Git, source, target st
 	}
 	// The copied config files were excluded from the inventory comparison above
 	// because normalization rewrites them. Prove them against the frozen source.
-	if err = i.verifyChildConfig(ctx, git, target, forkConfigOutputAllowance(targetFiles, targetBudget.bytes)); err != nil {
+	if err = i.verifyChildConfig(ctx, git, target, targetBudget); err != nil {
 		return err
 	}
 	if _, err = os.Lstat(filepath.Join(expected, "objects", "info", "alternates")); !errors.Is(err, os.ErrNotExist) {
