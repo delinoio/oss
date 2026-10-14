@@ -67,7 +67,7 @@ const (
 
 func grokLogoutRecoveryKind(a domain.Account) grokLogoutKind {
 	st := a.Subscription
-	if a.Type != domain.SubscriptionAccount || a.SubscriptionService != domain.SubscriptionGrok || a.Removal != nil || a.Connection == nil || st == nil || st.Generation == "" || st.Lease != nil || !st.RecoveryRequired {
+	if a.Type != domain.SubscriptionAccount || a.SubscriptionService != domain.SubscriptionGrok || a.Removal != nil || a.Connection == nil || st == nil || st.Generation == "" || !st.RecoveryRequired {
 		return grokLogoutNone
 	}
 	o := st.ServerOperation
@@ -76,9 +76,14 @@ func grokLogoutRecoveryKind(a domain.Account) grokLogoutKind {
 	}
 	switch o.GrokRevocation {
 	case "":
+		// An unclaimed logout sent nothing and touches no lease, so it settles even
+		// while a Worker lease exists: a restart fences a logout that was still
+		// waiting for that lease, and the lease's own Finish is refused while the
+		// fence stands, so the fence has to clear first.
 		return grokLogoutUnclaimed
 	case domain.GrokRevocationConfirmed:
-		if st.RevokedGeneration == st.Generation {
+		// The cleanup deletes the bundle, which no lease may still hold.
+		if st.RevokedGeneration == st.Generation && st.Lease == nil {
 			return grokLogoutRevoked
 		}
 	}

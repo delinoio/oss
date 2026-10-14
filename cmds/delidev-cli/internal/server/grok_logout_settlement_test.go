@@ -6,11 +6,13 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
@@ -143,5 +145,47 @@ func TestGrokExecuteTakeStaysTypedWhileAFencedLogoutIsUnsettled(t *testing.T) {
 	op := &pb.RequestSubscriptionResponse{OperationId: string(domain.NewID())}
 	if _, err := g.take(op, pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE); err == nil || domain.SafeError(rpc.ClientError(err)).Code != domain.Unavailable {
 		t.Fatalf("execution during a fenced logout lost its typed refusal: %v", err)
+	}
+}
+
+// A restart fences a logout that was still waiting for an existing Worker lease.
+// The lease's own Finish is refused while that fence stands, so the unclaimed
+// logout must settle without touching the lease, which then finishes normally.
+func TestGrokRestartedLogoutWaitingForALeaseIsReleasedWithoutTouchingTheLease(t *testing.T) {
+	g := newGrokLoginFixture(t)
+	before := g.connected(t)
+	lease := &domain.SubscriptionLease{ID: domain.NewID(), OperationID: domain.NewID(), Action: domain.SubscriptionExecute, MachineID: g.input.MachineID, InstanceID: domain.NewID(), DeviceID: domain.NewID(), Epoch: g.service.subscriptionServerEpoch(), Generation: before.Subscription.Generation, StartedAt: time.Now().UTC()}
+	_, err := g.service.Store.Mutate(ownerContext(), domain.NewID(), "fixture.grok.lease", lease, func(tx *store.Tx) (any, error) {
+		r, a, err := accountFromTx(tx, g.input.AccountID, 0)
+		if err != nil {
+			return nil, err
+		}
+		a.Subscription.Lease = lease
+		return tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	op := g.serverStart(logoutAction)
+	g.restart(t)
+	_, a := g.record()
+	if !a.Subscription.RecoveryRequired || grokLogoutRecoveryKind(a) != grokLogoutUnclaimed {
+		t.Fatal("a restarted logout waiting for a lease is not recoverable")
+	}
+	if err := g.service.recoverGrokLogout(ownerContext(), g.input.AccountID, domain.ID(op.OperationId)); err != nil {
+		t.Fatal(err)
+	}
+	_, a = g.record()
+	st := a.Subscription
+	if st.RecoveryRequired || st.Pending != nil || st.Lease == nil || st.Lease.ID != lease.ID || st.ServerOperation.State != domain.SubscriptionFailed || a.Health != domain.AccountRevoked || g.idp.RevokeRequests() != 0 || st.Generation != before.Subscription.Generation {
+		t.Fatal("the restarted logout was not released with its Worker lease and credential intact")
+	}
+	// A confirmed revocation still waits for the lease to go: the cleanup deletes
+	// the bundle the lease holds.
+	a.Subscription.RecoveryRequired, a.Subscription.Pending = true, &domain.SubscriptionOperation{ID: st.ServerOperation.ID, Action: domain.SubscriptionLogout, Actor: st.ServerOperation.Actor, Phase: domain.SubscriptionQueued}
+	a.Subscription.ServerOperation.State, a.Subscription.ServerOperation.GrokRevocation = domain.SubscriptionRecovery, domain.GrokRevocationConfirmed
+	a.Subscription.RevokedGeneration = st.Generation
+	if grokLogoutRecoveryKind(a) != grokLogoutNone {
+		t.Fatal("a revoked logout was recoverable while a lease still holds the bundle")
 	}
 }
