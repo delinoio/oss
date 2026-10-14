@@ -348,7 +348,9 @@ pointer target is a noninteractive wrapper around the disabled button (which
 receives the text through `aria-describedby`), the disabled button stays outside
 keyboard activation and the enabled-row focus order is unchanged, and the tooltip
 is positioned inside the row so the scrolling dialog, narrow viewports and 200%
-zoom never clip it. Regained readiness re-enables the row and shortcut without
+zoom never clip it. Its colors use only the shared inverse theme tokens
+(`--inverse-surface`, `--inverse-border`, `--on-inverse`); no raw color literals
+appear in `session.css`. Regained readiness re-enables the row and shortcut without
 opening anything; a fresh gesture follows the original reuse-or-create flow. An
 unsent open intent that is waiting for inventory reads is discarded when
 readiness is lost (checked again immediately before `CreateTerminal`) and is not

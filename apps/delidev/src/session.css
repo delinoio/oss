@@ -1709,8 +1709,9 @@
   max-width: calc(100% - 16px);
   padding: 6px 10px;
   border-radius: 8px;
-  color: #fff;
-  background: rgb(31 31 31 / 94%);
+  border: 1px solid var(--inverse-border);
+  color: var(--on-inverse);
+  background: var(--inverse-surface);
   font-size: 12px;
   line-height: 1.4;
   overflow-wrap: anywhere;
