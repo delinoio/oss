@@ -2296,11 +2296,9 @@ function SettingsVisit({
           tailscaleAvailable,
         ),
   );
-  const reportCategory = useRef(categoryChanged);
-  reportCategory.current = categoryChanged;
   useEffect(() => {
-    reportCategory.current?.(selection.category);
-  }, [selection.category]);
+    categoryChanged?.(selection.category);
+  }, [selection.category, categoryChanged]);
   // The activation key is the category opening, so rendering, reads, edits and
   // preference changes inside the opening cannot replay the entrance.
   const entranceTarget = entranceCategories.get(selection.category);

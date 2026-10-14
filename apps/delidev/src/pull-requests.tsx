@@ -707,18 +707,15 @@ export function PullRequests({
     setPageSize(PullRequestPageSize.Twenty);
   };
   const restored = useRef("");
-  const latestSelect = useRef(selectRepositoryId);
-  latestSelect.current = selectRepositoryId;
   useEffect(() => {
     if (!restore || restored.current === restore.generation) return;
     restored.current = restore.generation;
-    latestSelect.current(restore.id);
-  }, [restore]);
-  const reportSelection = useRef(selectionChanged);
-  reportSelection.current = selectionChanged;
+    selectRepositoryId(restore.id);
+    // The generation guard makes a rerun with a newer closure a no-op.
+  }, [restore, selectRepositoryId]);
   useEffect(() => {
-    reportSelection.current?.(repositoryId);
-  }, [repositoryId]);
+    selectionChanged?.(repositoryId);
+  }, [repositoryId, selectionChanged]);
   useEffect(() => {
     const term = search.trim();
     if (!active || composing || !searchValid || term === appliedSearch) return;

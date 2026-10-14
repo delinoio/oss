@@ -1278,12 +1278,10 @@ export function Schedules({
     restored.current = restore.generation;
     setSelected(restore.resource);
   }, [restore]);
-  const reportSelection = useRef(selectionChanged);
-  reportSelection.current = selectionChanged;
   const selectedScheduleId = selected?.id ?? "";
   useEffect(() => {
-    reportSelection.current?.(selectedScheduleId);
-  }, [selectedScheduleId]);
+    selectionChanged?.(selectedScheduleId);
+  }, [selectedScheduleId, selectionChanged]);
   // One page-root entrance serves every explicit entry, so only one 4px
   // transform is ever active. Destination activation, New schedule, selecting a
   // schedule and opening an original notification occurrence each advance the

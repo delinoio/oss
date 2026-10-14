@@ -290,11 +290,9 @@ export function Usage({
   const [detail, setDetail] = useState<PriceSelection>();
 
   const [tab, setTab] = useState(initialTab);
-  const reportTab = useRef(tabChanged);
-  reportTab.current = tabChanged;
   useEffect(() => {
-    reportTab.current?.(tab);
-  }, [tab]);
+    tabChanged?.(tab);
+  }, [tab, tabChanged]);
   // Explicit destination activation owns one 160ms Y4 entrance on the page; an
   // explicit internal-tab selection owns one on the content below the tab strip,
   // so the strip itself never moves. Refresh, range and source changes, polling

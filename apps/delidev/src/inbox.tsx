@@ -309,11 +309,9 @@ export function Inbox({
     setSelectedId(restoreId);
     setReadTrigger((value) => value + 1);
   }, [restoreId, restoreActivation]);
-  const reportSelection = useRef(selectionChanged);
-  reportSelection.current = selectionChanged;
   useEffect(() => {
-    reportSelection.current?.(selectedId);
-  }, [selectedId]);
+    selectionChanged?.(selectedId);
+  }, [selectedId, selectionChanged]);
 
   useEffect(() => {
     if (
