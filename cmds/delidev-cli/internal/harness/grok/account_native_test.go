@@ -48,10 +48,11 @@ const (
 	accountCommandTimeout = 30 * time.Second
 	accountPromptTimeout  = 3 * time.Minute
 	accountCleanupTimeout = 30 * time.Second
-	// accountFixedBudget bounds every non-approval step: version 30s, models 30s,
-	// the 3m prompt turn, logout 30s, post-logout models 30s and the cleanup logout
-	// 30s, rounded up. The package timeout must cover the approval wait plus this.
-	accountFixedBudget = 6 * time.Minute
+	// accountFixedBudget bounds every non-approval step. It must cover
+	// productionBudgets().fixed() (setup 30s, version 30s, models 30s, the 3m prompt
+	// turn, logout 30s, post-logout models 30s and cleanup 30s: 6m) plus a minute of
+	// process-start slack. The package timeout must cover the approval wait plus this.
+	accountFixedBudget = 7 * time.Minute
 	maxAccountReply    = 16 << 10
 	expectedReply      = "ok"
 	maxAccountLine     = 16 << 10
@@ -59,6 +60,32 @@ const (
 	maxAccountOutput   = 64 << 10
 	cachedTokenMethod  = "cached_token"
 )
+
+// accountBudgets is the deadline of every non-approval step. Each step creates
+// its own context from context.Background() with exactly one of these budgets, so
+// a slow step can never shorten the next one; fixed() is their sum and is what
+// accountFixedBudget has to cover.
+type accountBudgets struct {
+	Setup            time.Duration // git init of the scratch repository
+	Version          time.Duration // grok --version
+	Models           time.Duration // grok models while logged in
+	Prompt           time.Duration // ACP start, initialize, authenticate, session/new and session/prompt
+	Logout           time.Duration // explicit grok logout
+	PostLogoutModels time.Duration // grok models after the explicit logout
+	Cleanup          time.Duration // the cleanup grok logout
+}
+
+func productionBudgets() accountBudgets {
+	return accountBudgets{
+		Setup: accountCommandTimeout, Version: accountCommandTimeout, Models: accountCommandTimeout,
+		Prompt: accountPromptTimeout, Logout: accountCommandTimeout,
+		PostLogoutModels: accountCommandTimeout, Cleanup: accountCleanupTimeout,
+	}
+}
+
+func (b accountBudgets) fixed() time.Duration {
+	return b.Setup + b.Version + b.Models + b.Prompt + b.Logout + b.PostLogoutModels + b.Cleanup
+}
 
 var (
 	ansiPattern       = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
@@ -349,6 +376,11 @@ type accountScratch struct {
 	repo       string
 	processes  string
 	env        []string
+	budgets    accountBudgets
+
+	// Seams for the harness self-tests; production uses internal/process directly.
+	runner  func(context.Context, process.Config) error
+	starter func(context.Context, process.Config) (*process.Handle, error)
 
 	mu        sync.Mutex
 	uncertain []error
@@ -409,6 +441,9 @@ func buildAccountScratch(t *testing.T, executable string, extraEnv []string) *ac
 		grokHome:   filepath.Join(root, "grok"),
 		repo:       filepath.Join(root, "repo"),
 		processes:  filepath.Join(root, "proc"),
+		budgets:    productionBudgets(),
+		runner:     process.Run,
+		starter:    process.Start,
 	}
 	t.Cleanup(func() {
 		// Backstop for a scratch built without newAccountScratch's reporting
@@ -458,7 +493,9 @@ func (s *accountScratch) initRepo() error {
 	if err := os.WriteFile(filepath.Join(s.repo, "README.md"), []byte("# scratch\n"), 0o600); err != nil {
 		return err
 	}
-	command := exec.Command("git", "init", "-q")
+	ctx, cancel := context.WithTimeout(context.Background(), s.budgets.Setup)
+	defer cancel()
+	command := exec.CommandContext(ctx, "git", "init", "-q")
 	command.Dir, command.Env = s.repo, s.env
 	if output, err := command.CombinedOutput(); err != nil {
 		return fmt.Errorf("git init in the scratch repository failed (%d bytes of output): %w", len(output), err)
@@ -486,7 +523,7 @@ func (s *accountScratch) config(args []string, stdout, stderr io.Writer) process
 // proves the owned process tree is gone.
 func (s *accountScratch) run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	config := s.config(args, stdout, stderr)
-	err := s.observe(process.Run(ctx, config))
+	err := s.observe(s.runner(ctx, config))
 	if reconcile := process.ReconcileOwner(config.Directory, config.OwnerID); reconcile != nil {
 		s.noteUncertain(errors.New("native process ownership reconciliation failed"))
 		err = errors.Join(err, reconcile)
@@ -499,6 +536,13 @@ func describeNativeError(err error) string {
 		return fmt.Sprintf("native command exited with status %d", code)
 	}
 	return fmt.Sprintf("native command failed with code %s", domain.SafeError(err).Code)
+}
+
+// LoginWithin runs Login under its own approval deadline.
+func (s *accountScratch) LoginWithin(approval time.Duration, sink io.Writer, logf func(string, ...any)) error {
+	ctx, cancel := context.WithTimeout(context.Background(), approval)
+	defer cancel()
+	return s.Login(ctx, sink, logf)
 }
 
 // Login runs the device-code login and reports success only for exit 0 plus the
@@ -530,7 +574,7 @@ func (s *accountScratch) Login(ctx context.Context, sink io.Writer, logf func(st
 // never its content) and the returned error fails the run.
 func (s *accountScratch) Cleanup() error {
 	s.once.Do(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), accountCleanupTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), s.budgets.Cleanup)
 		defer cancel()
 		var errs []error
 		if _, err := os.Lstat(s.grokHome); err == nil {
@@ -574,6 +618,79 @@ func (s *accountScratch) capture(ctx context.Context, args ...string) (string, e
 		return "", errors.New("native output exceeded its bound")
 	}
 	return out.String() + "\n" + errOut.String(), nil
+}
+
+// The verify* steps are the acceptance checks. Each owns its context: it is
+// created here from context.Background() with that step's budget, never taken
+// from an earlier step, so command N+1 always starts with its full budget.
+
+// verifyVersion runs `grok --version`. The returned line carries no account data
+// and is returned even when it is below the baseline.
+func (s *accountScratch) verifyVersion() (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), s.budgets.Version)
+	defer cancel()
+	output, err := s.capture(ctx, "--version")
+	if err != nil {
+		return "", fmt.Errorf("grok --version: %w", err)
+	}
+	return checkGrokVersion(output)
+}
+
+// verifyModels runs `grok models` for the logged-in account.
+func (s *accountScratch) verifyModels() error {
+	ctx, cancel := context.WithTimeout(context.Background(), s.budgets.Models)
+	defer cancel()
+	output, err := s.capture(ctx, "models")
+	if err != nil {
+		return fmt.Errorf("grok models: %w", err)
+	}
+	return checkModelsShape(output)
+}
+
+// verifyPromptTurn runs the whole ACP turn (start, initialize, authenticate,
+// session/new, session/prompt, stop) under one prompt budget and returns the
+// number of session updates.
+func (s *accountScratch) verifyPromptTurn() (int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), s.budgets.Prompt)
+	defer cancel()
+	client, closeACP, err := startACP(ctx, s)
+	if err != nil {
+		return 0, err
+	}
+	turnErr := runPromptTurn(ctx, client, s.repo)
+	if err := closeACP(); err != nil {
+		turnErr = errors.Join(turnErr, fmt.Errorf("ACP shutdown: %w", err))
+	}
+	return client.updates, turnErr
+}
+
+// verifyLogout runs the explicit `grok logout` and requires the scratch
+// credential file to be gone.
+func (s *accountScratch) verifyLogout() error {
+	ctx, cancel := context.WithTimeout(context.Background(), s.budgets.Logout)
+	defer cancel()
+	if err := s.run(ctx, []string{"logout"}, nil, nil); err != nil {
+		return fmt.Errorf("grok logout: %s", describeNativeError(err))
+	}
+	if _, err := os.Lstat(filepath.Join(s.grokHome, "auth.json")); !errors.Is(err, os.ErrNotExist) {
+		return errors.New("logout left the scratch credential file in place")
+	}
+	return nil
+}
+
+// verifyLoggedOut runs `grok models` after the logout, under its own budget
+// rather than whatever the logout left over.
+func (s *accountScratch) verifyLoggedOut() error {
+	ctx, cancel := context.WithTimeout(context.Background(), s.budgets.PostLogoutModels)
+	defer cancel()
+	output, err := s.capture(ctx, "models")
+	if err != nil {
+		return fmt.Errorf("grok models after logout: %w", err)
+	}
+	if !notSignedInOutput.MatchString(output) {
+		return errors.New("grok models still reported an authenticated account after logout")
+	}
+	return nil
 }
 
 func checkGrokVersion(output string) (string, error) {
@@ -689,7 +806,7 @@ func (f *acpFrames) pop() (acpMessage, bool, error) {
 func startACP(ctx context.Context, s *accountScratch) (*acpClient, func() error, error) {
 	frames := &acpFrames{notify: make(chan struct{}, 1)}
 	config := s.config([]string{"agent", "stdio"}, frames, nil)
-	handle, err := process.Start(ctx, config)
+	handle, err := s.starter(ctx, config)
 	if err != nil {
 		_ = s.observe(err)
 		return nil, nil, errors.New("ACP process could not start: " + describeNativeError(err))
@@ -925,14 +1042,10 @@ func TestAccountAcceptance(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	versionCtx, cancelVersion := context.WithTimeout(context.Background(), accountCommandTimeout)
-	versionOutput, err := scratch.capture(versionCtx, "--version")
-	cancelVersion()
-	if err != nil {
-		t.Fatalf("grok --version: %v", err)
-	}
+	// Every step below owns its context (see the verify* methods); none inherits
+	// time from an earlier step.
+	versionLine, err := scratch.verifyVersion()
 	// The CLI version line carries no account data; record it in the PR.
-	versionLine, err := checkGrokVersion(versionOutput)
 	if versionLine != "" {
 		t.Logf("Grok Build CLI under test: %s", versionLine)
 	}
@@ -940,58 +1053,30 @@ func TestAccountAcceptance(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	loginCtx, cancelLogin := context.WithTimeout(context.Background(), timeout)
-	err = scratch.Login(loginCtx, terminal, t.Logf)
-	cancelLogin()
-	if err != nil {
+	if err := scratch.LoginWithin(timeout, terminal, t.Logf); err != nil {
 		t.Fatal(err)
 	}
 
 	t.Run("models-shape", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), accountCommandTimeout)
-		defer cancel()
-		output, err := scratch.capture(ctx, "models")
-		if err != nil {
-			t.Fatalf("grok models: %v", err)
-		}
-		if err := checkModelsShape(output); err != nil {
+		if err := scratch.verifyModels(); err != nil {
 			t.Fatal(err)
 		}
 	})
 
 	t.Run("acp-cached-token-prompt-turn", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), accountPromptTimeout)
-		defer cancel()
-		client, closeACP, err := startACP(ctx, scratch)
+		updates, err := scratch.verifyPromptTurn()
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer func() {
-			if err := closeACP(); err != nil {
-				t.Errorf("ACP shutdown: %v", err)
-			}
-		}()
-		if err := runPromptTurn(ctx, client, scratch.repo); err != nil {
-			t.Fatal(err)
-		}
-		t.Logf("prompt turn completed with %d session updates", client.updates)
+		t.Logf("prompt turn completed with %d session updates", updates)
 	})
 
 	t.Run("logout-removes-credentials", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), accountCommandTimeout)
-		defer cancel()
-		if err := scratch.run(ctx, []string{"logout"}, nil, nil); err != nil {
-			t.Fatalf("grok logout: %s", describeNativeError(err))
+		if err := scratch.verifyLogout(); err != nil {
+			t.Fatal(err)
 		}
-		if _, err := os.Lstat(filepath.Join(scratch.grokHome, "auth.json")); !errors.Is(err, os.ErrNotExist) {
-			t.Fatal("logout left the scratch credential file in place")
-		}
-		output, err := scratch.capture(ctx, "models")
-		if err != nil {
-			t.Fatalf("grok models after logout: %v", err)
-		}
-		if !notSignedInOutput.MatchString(output) {
-			t.Fatal("grok models still reported an authenticated account after logout")
+		if err := scratch.verifyLoggedOut(); err != nil {
+			t.Fatal(err)
 		}
 	})
 
@@ -1017,6 +1102,16 @@ update() {
   printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"%s","content":{"type":"text","text":"%s"}}}}\n' "$1" "$2" "$3"
 }
 case "$cmd" in
+--version)
+  printf 'grok 1.0.52 (0920c8169e27) [stable]\n'
+  ;;
+models)
+  if [ -f "$GROK_HOME/auth.json" ]; then
+    printf 'You are logged in with grok.com.\nDefault model: grok-4.7\n\n  grok-4.7 (default)\n  grok-4.6\n'
+  else
+    printf 'You are not authenticated.\n'
+  fi
+  ;;
 login)
   if [ "$FAKE_GROK_PROMPT" = "stderr" ]; then prompt >&2; else prompt; fi
   if [ "$FAKE_GROK_LOGIN" = "hang" ]; then sleep 60; fi
@@ -1436,5 +1531,165 @@ func TestNativeAccountHarnessUncertainCleanupRetainsScratch(t *testing.T) {
 	}
 	if again := scratch.Cleanup(); again == nil {
 		t.Fatal("a repeated cleanup must keep reporting the failure")
+	}
+}
+
+// budgetCall is one native command (or ACP start) as seen by the self-test
+// seams: its first argument after --no-auto-update, when the seam was entered and
+// the deadline of the context it was given.
+type budgetCall struct {
+	name     string
+	entered  time.Time
+	deadline time.Time
+	hasLimit bool
+}
+
+// recordBudgets wraps the scratch seams so each native command reports the
+// deadline of its context.
+func recordBudgets(s *accountScratch) func() []budgetCall {
+	var mu sync.Mutex
+	var calls []budgetCall
+	note := func(ctx context.Context, config process.Config) {
+		call := budgetCall{name: config.Args[1], entered: time.Now()}
+		call.deadline, call.hasLimit = ctx.Deadline()
+		mu.Lock()
+		calls = append(calls, call)
+		mu.Unlock()
+	}
+	s.runner = func(ctx context.Context, config process.Config) error {
+		note(ctx, config)
+		return process.Run(ctx, config)
+	}
+	s.starter = func(ctx context.Context, config process.Config) (*process.Handle, error) {
+		note(ctx, config)
+		return process.Start(ctx, config)
+	}
+	return func() []budgetCall {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]budgetCall(nil), calls...)
+	}
+}
+
+// TestNativeAccountHarnessEveryStepOwnsItsBudget is the budget table in code. It
+// runs the acceptance steps in order against the fake grok and checks, for each
+// native command, that its context was created for that command alone:
+//
+//	step                  command          budget
+//	version               --version        Version
+//	login                 login            approval wait
+//	models-shape          models           Models
+//	acp prompt turn       agent stdio      Prompt (initialize..prompt share it)
+//	logout                logout           Logout
+//	post-logout models    models           PostLogoutModels
+//	cleanup               logout           Cleanup
+//
+// A context created after stepStart and before the command began has a deadline
+// in [stepStart+budget, entered+budget]. A step that reused its predecessor's
+// context would carry the predecessor's earlier deadline and fall below the
+// lower bound. The check uses the monotonic clock only, with no sleeps.
+func TestNativeAccountHarnessEveryStepOwnsItsBudget(t *testing.T) {
+	scratch, _ := fakeAccountScratch(t, "")
+	// Distinct budgets so a budget taken from the wrong step is also caught.
+	budgets := accountBudgets{
+		Setup: 31 * time.Second, Version: 32 * time.Second, Models: 33 * time.Second, Prompt: 34 * time.Second,
+		Logout: 35 * time.Second, PostLogoutModels: 36 * time.Second, Cleanup: 37 * time.Second,
+	}
+	approval := 38 * time.Second
+	scratch.budgets = budgets
+	calls := recordBudgets(scratch)
+
+	type stepCheck struct {
+		name   string
+		budget time.Duration
+		start  time.Time
+	}
+	var steps []stepCheck
+	begin := func(name string, budget time.Duration) { steps = append(steps, stepCheck{name, budget, time.Now()}) }
+
+	if err := scratch.initRepo(); err != nil {
+		t.Fatal(err)
+	}
+	begin("--version", budgets.Version)
+	if _, err := scratch.verifyVersion(); err != nil {
+		t.Fatalf("version: %v", err)
+	}
+	begin("login", approval)
+	if err := scratch.LoginWithin(approval, &lockedBuffer{}, func(string, ...any) {}); err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	begin("models", budgets.Models)
+	if err := scratch.verifyModels(); err != nil {
+		t.Fatalf("models: %v", err)
+	}
+	begin("agent", budgets.Prompt)
+	if _, err := scratch.verifyPromptTurn(); err != nil {
+		t.Fatalf("prompt turn: %v", err)
+	}
+	begin("logout", budgets.Logout)
+	if err := scratch.verifyLogout(); err != nil {
+		t.Fatalf("logout: %v", err)
+	}
+	begin("models", budgets.PostLogoutModels)
+	if err := scratch.verifyLoggedOut(); err != nil {
+		t.Fatalf("post-logout models: %v", err)
+	}
+	begin("logout", budgets.Cleanup)
+	if err := scratch.Cleanup(); err != nil {
+		t.Fatalf("cleanup: %v", err)
+	}
+
+	got := calls()
+	if len(got) != len(steps) {
+		t.Fatalf("native commands = %d, want %d", len(got), len(steps))
+	}
+	for i, step := range steps {
+		call := got[i]
+		if call.name != step.name || !call.hasLimit {
+			t.Fatalf("command %d = %q (deadline %v), want %q with a deadline", i, call.name, call.hasLimit, step.name)
+		}
+		if call.deadline.Before(step.start.Add(step.budget)) || call.deadline.After(call.entered.Add(step.budget)) {
+			t.Errorf("command %d (%s) did not get a context created for it with budget %s: deadline is outside [step start+budget, entry+budget]", i, step.name, step.budget)
+		}
+		for j := 0; j < i; j++ {
+			if got[j].deadline.Equal(call.deadline) {
+				t.Errorf("commands %d and %d share one deadline", j, i)
+			}
+		}
+	}
+}
+
+func TestNativeAccountHarnessFixedBudgetCoversEveryStep(t *testing.T) {
+	budgets := productionBudgets()
+	if budgets.fixed() >= accountFixedBudget {
+		t.Fatalf("steps need %s but accountFixedBudget is %s with no process-start slack", budgets.fixed(), accountFixedBudget)
+	}
+	for name, budget := range map[string]time.Duration{
+		"setup": budgets.Setup, "version": budgets.Version, "models": budgets.Models, "prompt": budgets.Prompt,
+		"logout": budgets.Logout, "post-logout models": budgets.PostLogoutModels, "cleanup": budgets.Cleanup,
+	} {
+		if budget <= 0 {
+			t.Errorf("%s has no budget", name)
+		}
+	}
+	// The runbook's 45m package timeout still covers the maximum approval wait.
+	now := time.Now()
+	if err := checkTimeBudget(now.Add(45*time.Minute), true, now, 30*time.Minute); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNativeAccountHarnessSetupHasABudget(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is required")
+	}
+	scratch, _ := fakeAccountScratch(t, "")
+	scratch.budgets.Setup = time.Nanosecond
+	if err := scratch.initRepo(); err == nil {
+		t.Fatal("git init ignored its setup budget")
+	}
+	scratch.budgets.Setup = 30 * time.Second
+	if err := scratch.initRepo(); err != nil {
+		t.Fatalf("git init within budget: %v", err)
 	}
 }

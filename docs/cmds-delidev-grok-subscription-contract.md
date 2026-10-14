@@ -474,10 +474,31 @@ Never record a run whose output ends in `(cached)`.
 
 `-timeout` must cover the longest approval wait plus the other steps. The owner
 may take up to 30 minutes (`DELIDEV_NATIVE_GROK_APPROVAL_TIMEOUT=30m`) and the
-remaining steps need up to 6 minutes, so the runbook uses `45m`. The test checks
+remaining steps need up to 7 minutes (6 minutes of step budgets plus a minute of
+process-start slack), so the runbook uses `45m`. The test checks
 `go test -timeout` first and fails before any login when the remaining time is
-shorter than the approval wait plus 6 minutes; raise `-timeout` for such a run
+shorter than the approval wait plus 7 minutes; raise `-timeout` for such a run
 instead of lowering the approval wait below what the owner needs.
+
+Every native command and the scratch `git init` run under a context created for
+that step alone, from `context.Background()`; no step inherits what an earlier
+step left over. The budgets are:
+
+| Step               | Command or context                                                                      | Budget                                     |
+| ------------------ | --------------------------------------------------------------------------------------- | ------------------------------------------ |
+| Setup              | `git init` of the scratch repository                                                    | 30s (`Setup`)                              |
+| Version            | `grok --version`                                                                        | 30s (`Version`)                            |
+| Login              | `grok login --device-auth`                                                              | approval wait (5m default, 10s-30m)        |
+| Models             | `grok models` while logged in                                                           | 30s (`Models`)                             |
+| ACP prompt turn    | `grok agent stdio` start, `initialize`, `authenticate`, `session/new`, `session/prompt` | 3m (`Prompt`, one shared budget by design) |
+| Logout             | `grok logout`                                                                           | 30s (`Logout`)                             |
+| Post-logout models | `grok models` after the logout                                                          | 30s (`PostLogoutModels`)                   |
+| Cleanup            | the cleanup `grok logout`                                                               | 30s (`Cleanup`)                            |
+
+The non-login budgets sum to 6 minutes, which `accountFixedBudget` (7 minutes)
+must cover; `TestNativeAccountHarnessFixedBudgetCoversEveryStep` and
+`TestNativeAccountHarnessEveryStepOwnsItsBudget` pin the sum and that each
+command starts with its own deadline.
 
 The test uses a fresh scratch tree (`HOME`, `GROK_HOME`, XDG and temp variables
 all inside it, a scratch git repository as working directory) and the CLI with
