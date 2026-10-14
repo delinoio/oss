@@ -80,18 +80,9 @@ pub const ALL: [BundlerChoice; 2] = [BundlerChoice::Vite, BundlerChoice::Rspack]
 /// Adapter sources embedded at build time so the adapter always matches the
 /// binary.
 pub const ADAPTER_FILES: [(&str, &str); 3] = [
-    (
-        "common.mjs",
-        include_str!("../../../packages/bundlewhy/adapters/common.mjs"),
-    ),
-    (
-        "vite.mjs",
-        include_str!("../../../packages/bundlewhy/adapters/vite.mjs"),
-    ),
-    (
-        "rspack.mjs",
-        include_str!("../../../packages/bundlewhy/adapters/rspack.mjs"),
-    ),
+    ("common.mjs", include_str!("../adapters/common.mjs")),
+    ("vite.mjs", include_str!("../adapters/vite.mjs")),
+    ("rspack.mjs", include_str!("../adapters/rspack.mjs")),
 ];
 
 pub fn matrix_text() -> String {

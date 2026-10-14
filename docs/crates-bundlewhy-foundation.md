@@ -2,7 +2,7 @@
 
 ## Scope
 
-`crates/bundlewhy` owns the `bundlewhy` binary: CLI, project and engine detection, adapter process lifecycle, analysis rules, size measurement, result bundle storage, the loopback Connect server and self-contained HTML export. It embeds the collector adapters from `packages/bundlewhy/adapters` and the built UI document from `apps/bundlewhy-web`.
+`crates/bundlewhy` owns the `bundlewhy` binary: CLI, project and engine detection, adapter process lifecycle, analysis rules, size measurement, result bundle storage, the loopback Connect server and self-contained HTML export. It owns and embeds the collector adapters in `crates/bundlewhy/adapters` (dependency-free Node.js ESM, kept inside the crate so Cargo change detection selects only this crate when they change) and the built UI document from `apps/bundlewhy-web`.
 
 ## Runtime and Language
 

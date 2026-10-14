@@ -28,7 +28,7 @@ function runAdapter(bundler, project, config, extra = {}, env = {}) {
   const result = spawnSync(
     process.execPath,
     [
-      path.join(root, "adapters", `${bundler}.mjs`),
+      path.join(root, "../../crates/bundlewhy/adapters", `${bundler}.mjs`),
       path.join(work, "request.json"),
     ],
     {

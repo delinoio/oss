@@ -2,7 +2,7 @@
 
 ## Scope
 
-`packages/bundlewhy` owns the engine collector adapters (`adapters/common.mjs`, `adapters/vite.mjs`, `adapters/rspack.mjs`), the npm/npx launcher (`bin/bundlewhy.cjs`), acceptance fixtures (`fixtures/vite-app`, `fixtures/rspack-app`) and acceptance scripts.
+`packages/bundlewhy` tests the engine collector adapters, which live in `crates/bundlewhy/adapters` (`common.mjs`, `vite.mjs`, `rspack.mjs`) and are embedded by the binary. It owns the npm/npx launcher (`bin/bundlewhy.cjs`), acceptance fixtures (`fixtures/vite-app`, `fixtures/rspack-app`) and acceptance scripts.
 
 ## Runtime and Language
 
