@@ -1,6 +1,7 @@
 import { afterEach, beforeEach } from "vitest";
 import { cleanup } from "@testing-library/react";
 import { i18n, SupportedLanguage } from "./localization";
+import { resetProductRouteClaim } from "./product-route";
 
 // Tests choose their language explicitly, independent of the validation host.
 beforeEach(async () => {
@@ -35,3 +36,14 @@ HTMLDialogElement.prototype.close = function () {
   this.removeAttribute("open");
 };
 afterEach(cleanup);
+
+// Every test starts from a fresh document: no product route in the URL and no
+// claimed route identity, so navigation in one test never restores in another.
+afterEach(() => {
+  resetProductRouteClaim();
+  try {
+    window.history.replaceState(null, "", "/");
+  } catch {
+    /* A test that replaced window.location owns its own URL. */
+  }
+});

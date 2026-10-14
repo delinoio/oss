@@ -420,6 +420,191 @@ store) and Settings through the read-only catalog loop, both with the effective
 platform keycaps, the existing disabled treatment and the English/Korean reason; no
 button or dialog is added.
 
+#### Product route retained across reload
+
+The whole-webview reload above keeps the current top-level screen and its selected
+item. `product-route.ts` owns a typed product route in the `index.html` URL query
+string (no server path, so no native fallback is needed). The only parameters are
+`screen` (a `Surface` value), `session` and optional `sidechat` (Sessions), `item`
+(Inbox entry, Schedule or Pull requests repository), `category` (a
+`SettingsCategory`) and `tab` (a `UsageTab`). Selections are canonical entity IDs
+(`isEntityId`) and enums only, never titles, prompts, credentials, search text or
+other user content. New session, New general chat and Search keep their screen
+only; Sessions Home and every selection-free screen write no selection, so a stale
+selection is never restored. Unrelated query parameters, the path and the `#main`
+skip-link hash are preserved.
+
+`Shell` in `App.tsx` mirrors committed in-app navigation and selection into the
+query with `history.replaceState` (never `pushState`), so Back/Forward gain no
+entries; a throttled or failing write is logged (`delidev.product_route.write_failed`)
+and ignored. Each mounted screen reports its own selection to `Shell`: Inbox
+(`selectionChanged`), Schedules, Pull requests (repository), Settings
+(`categoryChanged`) and Usage (`tabChanged`, `UsageTab` in `usage-tab.ts`).
+
+On document startup `readInitialRoute` parses the URL for a connection identity
+scope (the same server, endpoint and device identity key `App` already uses; an
+unpaired connection is scoped by its transport object). The read is pure, so React
+may invoke it any number of times for one render (StrictMode lazy initializers,
+discarded renders) and every call answers the same. The `Shell` records ownership of
+the URL with `commitInitialRouteScope` from a layout effect, i.e. only when it
+commits. A different identity never receives the previous identity's route. An unknown `screen`
+falls back to Sessions Home; malformed IDs, unknown categories and tabs, and
+parameters that do not belong to the screen are dropped. Screens without a selection
+(and the Settings category and Usage tab, which need no read) open immediately, so a
+pending route never flashes Home. A Session, Sidechat, Inbox entry, Schedule or
+repository selection stays pending until the connection is ready, then
+`product-route-restore.ts` verifies it with a fresh, uncached read through the
+current transport (`GetResource` for Session and repository, `GetSchedule`,
+`GetInboxEntry`; a Sidechat must resolve to a child of the requested parent). While
+the connection is unavailable the route stays pending, the URL keeps the original
+route, and the selection resumes only when the same connection becomes ready. A
+restore read is current only for the transport and the `ConnectionEpoch` it started
+in: a same-identity reconnect keeps the transport while the peer behind it can be
+replaced or downgraded, so an epoch change aborts the read and restarts the restore. A
+deleted, denied, malformed, wrong-kind or wrong-connection selection (not found,
+permission denied, unauthenticated, invalid argument such as an ID of another entity
+kind, an unexpected shape or an invalid envelope with a non-positive revision or an
+unsupported schema version, checked the same way for every restored kind) clears the
+selection and shows the requested screen's list, default category or Sessions Home.
+Failure codes are classified once, for every restored kind, by
+`routeFailureDispositions` in `search-session-routing.ts`, an exhaustive table over
+`FailureCode`: `invalid_argument`, `not_found`, `permission_denied` and
+`unauthenticated` are definitive (clear); every other code, including
+`recovery_required` (gRPC failed precondition), `unavailable`, `server_unavailable`
+(deadline exceeded and unmapped transport errors), `canceled` and `internal`, is
+retryable (retain). A retryable read failure
+reopens the Session or repository so its own mounted retry and error state shows; a
+Schedule needs the fresh resource, so it is cleared and the list's own retry applies.
+`readRouteSession` restores a Session selection strictly from two typed decision
+tables in `product-route-restore.ts` (`sessionSlotTable`, `sidechatSlotTable`).
+Each read is classified once relative to the requested parent: `TopLevel` (a
+Session that is not a Sidechat: work Session, General Chat or Fork),
+`SidechatOfRequestedParent`, `SidechatOfOtherParent`, `Rejected` (not found,
+denied, unauthenticated, an ID of another entity kind, a resource of the wrong kind,
+an invalid envelope, or malformed or unknown provenance such as a missing workspace
+or invalid Fork metadata) and `Transient` (any retryable failure). A Sidechat is
+valid only in the `sidechat` slot under a parent that this restore itself read as
+`TopLevel`; its retained original parent is never trusted unread.
+
+| `session` slot read                               | `session` only                                          | with `sidechat`                                                                |
+| ------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| TopLevel                                          | open the Session                                        | read the `sidechat` slot (below)                                               |
+| SidechatOfRequestedParent / SidechatOfOtherParent | clear                                                   | clear (child not read)                                                         |
+| Rejected                                          | clear                                                   | clear (child not read)                                                         |
+| Transient                                         | open the Session unverified (its own retry state shows) | open the requested Sidechat under the requested parent with a placeholder name |
+
+| `sidechat` slot read (parent verified `TopLevel`) | result                                                            |
+| ------------------------------------------------- | ----------------------------------------------------------------- |
+| SidechatOfRequestedParent                         | open the Sidechat with its verified name                          |
+| TopLevel, SidechatOfOtherParent or Rejected       | open the verified parent only; the `sidechat` ID leaves the URL   |
+| Transient                                         | retain the requested Sidechat under the parent (placeholder name) |
+
+"Clear" opens nothing and removes the selection from the URL, so the requested
+screen's list shows. A `Transient` row opens its Session without a verification
+read, so the Shell remembers the pair (the top-level Session and its optional
+Sidechat) and the mounted top-level pane judges it once loaded
+(`verifyRestored`). That pane keeps its Session metadata read active for as long
+as the pair is unverified, whichever of its tabs is selected: a selected Sidechat
+tab pauses the ordinary stream, and without this read the requested parent would
+never be verified. A Sidechat, malformed provenance or an invalid envelope there,
+or a definitive failure of the read itself (not found, denied, unauthenticated,
+invalid argument), is cleared exactly like a `Rejected` row: the Session and any
+provisional Sidechat under it end and the URL drops them. The pair is the
+restore's own state, so it ends whatever the user did since; a different Session
+the user selected meanwhile is left alone. A retained Sidechat is mounted under
+the requested parent so its own retry and error state runs, and the URL keeps the
+`sidechat` ID. A Sidechat tab opened without a verified name never shows its
+internal ID in its text, `title` or accessible name: it carries a localized
+product-identity label (the Session presentation label) and is marked
+provisional. The child's own pane judges its descriptor once it loads the Session
+(`loadedSessionProvenance`, the same checks route verification applies): a
+Session that is not a Sidechat of the requested parent, including malformed or
+unknown provenance or an invalid envelope, or a definitive read failure of the
+Sidechat itself, ends the placeholder tab and its `sidechat` ID leaves the URL.
+Only the acceptance (taking the verified name) waits until the requested parent
+has been verified as a top-level Session, because a child's own retained metadata
+cannot prove that the parent it names is itself valid.
+
+The URL mirror is a typed decision table (`product-route-mirror.ts`,
+`deriveProductRoute`) over the visible surface, the Schedules mode and the restore
+state. It derives the route only from state the visible, accepted destination
+shows, so a selection that a hidden workspace retains never describes another
+destination. Each surface owns fixed slots (`surfaceSlots`): Sessions the
+`session` and `sidechat`; Inbox, Schedules and Pull requests the `item`; Settings
+the `category`; Usage the `tab`; New session, New general chat and Search none. A
+`sidechat` is written only under a selected `session`.
+
+| Restore state | Mirror                                                                                               |
+| ------------- | ---------------------------------------------------------------------------------------------------- |
+| Pending       | hold: the URL keeps the original route until the selection is verified                               |
+| Provisional   | write the visible selection as requested (unverified after a transient failure; a reload retries it) |
+| Settled       | write the visible selection                                                                          |
+
+| Schedules mode   | `item`                                                                                                                 |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Workspace        | the selected Schedule (the editor and New schedule report no selection)                                                |
+| OccurrenceReview | none: the workspace and the Schedule it retains are hidden, so a reload opens the selection-free Schedules destination |
+
+The Settings category is dropped when the Settings visit ends (Settings remounts
+for every visit and reports its own category), so a visit never starts with an
+earlier visit's category in the URL. Usage stays mounted and shows its retained
+tab, so that tab is the visible one.
+
+Restore supersession uses one monotonic navigation-intent token owned by `Shell`
+(`navigationIntent`, a ref). Every handler that actually changes the surface, the
+selection or the tab, or opens a new-item, editor, review or project destination,
+registers an intent synchronously, never from an effect, through the closed
+`NavigationIntentSource` enum in `navigation-intent.tsx`. `Shell` handlers call
+`userNavigated(source)` directly: every surface change (`setSurface`), every
+Session or Sidechat opening (`openSession`), the Search result opener and the
+project creation opener. Child screens call the same function through
+`useNavigationIntent()` from their own handlers: Session tab selection, Inbox row
+selection and closing the detail, Schedule selection, New schedule, Edit schedule
+and returning to the list, Pull requests repository selection, Settings category
+changes and Usage tab changes. There is no window-level click or key listener:
+controls that do not navigate (retry, reconnect, refresh, dismiss, copy and
+similar) never register an intent, so a selection that waits for its connection is
+not cancelled by them and resumes when the same connection becomes ready.
+Registering an intent also aborts the pending restore's read and clears the pending
+selection in the same handler, and logs `delidev.product_route.navigation_intent`
+with the closed source value. A pending restore captures the token when it starts
+and compares it when its read settles, before any side effect (state change,
+Session opening or URL write), so a read that settles in the same tick as a click,
+before React renders the choice or flushes a passive effect, still cannot override
+it. The restore itself opens the Session through `showSession` and selects the
+repository through `selectRepositoryId`, which do not register an intent.
+Selection reports from screens only feed the URL mirror; they never decide
+supersession. A new navigation handler must add a `NavigationIntentSource` value,
+call the registration from the handler and add a driver to the exhaustive
+`Record<NavigationIntentSource, ...>` in `product-route-restore.test.tsx`, which
+fails typecheck without it.
+Restoration only selects and reads: no mutation is dispatched, no pending operation
+is replayed, and drafts, filters, search text, scroll, dialogs and in-memory
+presentation reset as before. The structured log `delidev.product_route.restore`
+carries only the screen and a closed outcome (including `superseded`).
+
+The reload shortcut, its saved override policy, capture and IME/modifier guards,
+focused external Browser ownership and the English/Korean copy are unchanged. No
+native, server, RPC, storage or migration change is involved. Regression coverage:
+`product-route.test.ts` (parse, serialize, hash and history, pure identity read and
+commit),
+`product-route-restore-table.test.tsx` (both decision tables row by row, and every
+slot by resource kind by read outcome by parent outcome through `readRouteSession`),
+`product-route-mirror.test.ts` (the mirror table: surface by retained state, restore
+state, Schedules mode, Sessions slots and the URL round trip),
+`product-route-restore.test.tsx` (mirroring, restore per screen, fallbacks, pending
+routes, reload-shortcut remount, envelope validation per kind, slow-read supersession
+per kind, same-tick supersession per restore kind and for New schedule and surface
+changes, non-navigation controls that keep a waiting selection, one driver per
+`NavigationIntentSource` handler, retained Sidechat selections after transient
+failures, placeholder Sidechat labels without a raw ID, provisional Sidechat pairs
+whose requested parent is itself a Sidechat, malformed or deleted (including a
+child that loads before its parent is verified), the Schedule retained behind an
+occurrence review, the Settings category of an earlier visit, a StrictMode scope change, an epoch
+bump with a retained transport, unpaired transport replacement, and a failure-code by
+restore-kind matrix including wrong-kind IDs) and
+`search-session-routing.test.ts` (the failure classification table).
+
 Read-only shortcut defaults yield to existing editable chords through one shared
 policy, `readOnlyShortcutSuppression` in `shortcut-preferences.ts`, keyed by
 shortcut ID and the unshifted primary key it protects. OpenTool protects `t`. A new
