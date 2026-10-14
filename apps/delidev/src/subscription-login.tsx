@@ -25,6 +25,7 @@ import {
   subscriptionServiceNames,
   type Resource,
   type CodexDiagnostic,
+  type GrokDiagnostic,
 } from "@delinoio/delidev-api-client";
 import { OAuthNativeAction, useOAuthNativeControl } from "./account-oauth";
 import { useSettingsOpening } from "./settings-lifetime";
@@ -47,6 +48,7 @@ interface View {
   busy: boolean;
   problem?: string | OwnedMessage;
   diagnostic?: CodexDiagnostic;
+  grokDiagnostic?: GrokDiagnostic;
   browserReady: boolean;
 }
 interface Pending {
@@ -367,6 +369,7 @@ export function useSubscriptionLogin(
         update(p, {
           stage,
           diagnostic: progress.diagnostic,
+          grokDiagnostic: progress.grokDiagnostic,
           ...(terminal ? { problem: undefined } : {}),
         });
         if (terminal) {
@@ -628,6 +631,7 @@ export function useSubscriptionLogin(
         await account(original);
         update(original, {
           diagnostic: progress.diagnostic,
+          grokDiagnostic: progress.grokDiagnostic,
           problem: ownedMessage("subscription-onboarding.inline.inspected"),
         });
       } catch {
@@ -652,6 +656,7 @@ export function useSubscriptionLogin(
         busy={view.busy}
         problem={resolveMessage(view.problem)}
         diagnostic={view.diagnostic}
+        grokDiagnostic={view.grokDiagnostic}
         inspect={p?.operation ? inspect : undefined}
         canReopen={view.stage === Stage.Waiting && view.browserReady}
         canCancel={
