@@ -3003,8 +3003,34 @@ the owner Finish (or the exclusive run's Finish), which admits a continuation
 that is already retrying its Take. The Worker therefore releases the lock and
 verifies that it can be taken again before it publishes that Finish, including
 every retry of an uncertain Finish, so the admitted continuation never meets
-`profile_busy`. Member Finishes leave the lock with the owner. A release that
-cannot be verified is logged and reported but never skips the Finish. Retained rollouts, caches and helper links never
+`profile_busy`. Member Finishes that are not the last leave the lock with the
+owner. A release that cannot be verified never skips the Finish, because the
+account lease must not stay held for a lock that is already closed.
+
+The release and the Finish settle as follows. The owner path is the founding
+owner retiring through its last member; the exclusive path is a version 2
+continuation that holds the lock itself.
+
+| Release            | Finish    | Returned through the member outcome                    | Local owner or hold                                         | Lock                                        |
+| ------------------ | --------- | ------------------------------------------------------ | ----------------------------------------------------------- | ------------------------------------------- |
+| verified           | succeeds  | success                                                | owner cleared                                               | free                                        |
+| verified           | fails     | the Finish error                                       | owner retained; the same Finish is retried                  | free                                        |
+| verified           | ambiguous | the Finish error                                       | owner retained with the pending request, retried unchanged  | free                                        |
+| not verified       | succeeds  | owner path: the release failure (recovery required)    | owner cleared; the unverified hold moves to the account gate | closed, verified again by the next holder   |
+| not verified       | succeeds  | exclusive path: the cleanup failure                    | hold moves to the account gate                              | closed, verified again by the next holder   |
+| not verified       | fails     | the Finish error                                       | owner or hold retained; the retry verifies the release again | closed, unverified                          |
+| not verified       | ambiguous | the Finish error                                       | owner retained with the pending request; the retry verifies the release again | closed, unverified                          |
+
+The release failure of a published owner Finish is returned like the exclusive
+path's cleanup failure: the member outcome is an unconfirmed cleanup that
+requires recovery, never a silent success, while the local owner is still
+cleared because nothing remains to publish. Because no local owner is left to
+retry the release, the unverified hold stays on the account gate. Before any
+founder or exclusive continuation of that account locks the home, it verifies
+that release again: a repaired home clears the retained release, and a home that
+still cannot be verified blocks the holder with the same recovery-required
+failure instead of letting it meet `profile_busy` with nothing left to retry.
+Retained rollouts, caches and helper links never
 block a later owner. An unremoved `auth.json` still blocks the next founder
 through the credential check. The profile has no conversation or history
 identifier, so session deletion never removes it; no automatic age-based pruning

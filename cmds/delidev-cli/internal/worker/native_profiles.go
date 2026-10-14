@@ -327,6 +327,7 @@ func acquireSharedCodexHome(ctx context.Context, config Config, machine, account
 // each hold one, and each must release it before it publishes the Finish that
 // lets the server admit the next holder.
 type sharedHomeHold struct {
+	mu      sync.Mutex
 	config  Config
 	machine domain.ID
 	account domain.ID
@@ -336,8 +337,13 @@ type sharedHomeHold struct {
 	unverified bool
 }
 
-// holdSharedCodexHome locks the shared Codex account home.
+// holdSharedCodexHome locks the shared Codex account home. A release that an
+// earlier owner or continuation of the account could not verify is verified
+// again first, so the lock is never taken over an unverified one.
 func holdSharedCodexHome(ctx context.Context, config Config, machine, account domain.ID) (*sharedHomeHold, error) {
+	if err := config.codexOwners.settleUnverifiedRelease(account); err != nil {
+		return nil, err
+	}
 	lease, err := acquireSharedCodexHome(ctx, config, machine, account)
 	if err != nil {
 		return nil, err
@@ -355,6 +361,8 @@ func (h *sharedHomeHold) release() error {
 	if h == nil {
 		return nil
 	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	var closeErr error
 	if h.lease != nil {
 		closeErr, h.lease, h.unverified = h.lease.Close(), nil, true

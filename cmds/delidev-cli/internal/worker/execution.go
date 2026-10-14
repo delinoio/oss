@@ -272,6 +272,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			accountHold = hold
 			defer func() {
 				if err := accountHold.release(); err != nil {
+					config.codexOwners.parkUnverifiedRelease(input.AccountID, accountHold)
 					output, returned = nil, config.startup.cleanupFailure(returned, err)
 				}
 			}()
@@ -366,7 +367,13 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			if !founderAbort {
 				finishErr = sharedOwner.gate.finishMember(sharedOwner, sharedMember, sharedMember.proven)
 			}
-			if finishErr != nil {
+			var releaseFailure *sharedHomeReleaseError
+			if errors.As(finishErr, &releaseFailure) {
+				// The owner Finish was published; only the shared home release is
+				// unverified. Report it like an exclusive continuation does, and
+				// keep it for the next holder of the account home.
+				output, returned = nil, config.startup.cleanupFailure(returned, finishErr)
+			} else if finishErr != nil {
 				output, returned = nil, &managedExecutionUncertain{finishErr}
 			}
 			clear(managed.response.Bundle)
@@ -385,6 +392,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 				return managed.finish(managedLatest, managedCleanup, false, managedSuccess)
 			})
 			if releaseErr != nil {
+				config.codexOwners.parkUnverifiedRelease(input.AccountID, accountHold)
 				output, returned = nil, config.startup.cleanupFailure(returned, releaseErr)
 			}
 			if err != nil {
