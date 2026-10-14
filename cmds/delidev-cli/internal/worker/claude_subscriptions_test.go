@@ -20,6 +20,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
@@ -320,6 +321,134 @@ func TestNativeClaudeWorkerLoginCancelAndOriginalRecovery(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestNativeClaudeRemovedProfileRegistryRecovery(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := Config{Root: root}
+	credential := Credential{ServerID: domain.NewID(), MachineID: domain.NewID()}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	executable, err = filepath.EvalSymlinks(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	installation := domain.Installation{Harness: domain.ClaudeCode, Version: domain.ClaudeProtocolVersion, ResolvedPath: executable}
+	account, profileID := domain.NewID(), domain.NewID()
+	profile, err := openClaudeProfile(config, credential, account, profileID, installation, domain.NewID(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := profile.close(); err != nil {
+		t.Fatal(err)
+	}
+	otherAccount, otherID := domain.NewID(), domain.NewID()
+	other, err := openClaudeProfile(config, credential, otherAccount, otherID, installation, domain.NewID(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := other.close(); err != nil {
+		t.Fatal(err)
+	}
+	registry, err := nativeProfiles(config, credential.MachineID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := nativeprofile.Key{Harness: domain.ClaudeCode, Purpose: nativeprofile.PurposeAuth, Account: account}
+	ref := nativeprofile.Reference{Kind: nativeprofile.ReferenceCheckpoint, ID: domain.NewID()}
+	if err := registry.AddReference(context.Background(), key, ref); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(profile.root); err != nil {
+		t.Fatal(err)
+	}
+	if err := recoverRemovedClaudeProfile(context.Background(), config, credential, account, profileID); err == nil {
+		t.Fatal("referenced profile was cleared")
+	}
+	if err := registry.RemoveReference(context.Background(), key, ref); err != nil {
+		t.Fatal(err)
+	}
+	if err := recoverRemovedClaudeProfile(context.Background(), config, credential, account, profileID); err != nil {
+		t.Fatal("original absent profile was not recovered", err)
+	}
+	if err := recoverRemovedClaudeProfile(context.Background(), config, credential, account, profileID); err != nil {
+		t.Fatal("repeated recovery was not idempotent", err)
+	}
+	if found, err := registry.Exists(context.Background(), nativeprofile.DeleteScope{Account: account, Purpose: nativeprofile.PurposeAuth, Harness: domain.ClaudeCode}); err != nil || found {
+		t.Fatal("original registry entry remains", err)
+	}
+	if found, err := registry.Exists(context.Background(), nativeprofile.DeleteScope{Account: otherAccount, Purpose: nativeprofile.PurposeAuth, Harness: domain.ClaudeCode}); err != nil || !found {
+		t.Fatal("unrelated Claude profile was changed", err)
+	}
+}
+
+func TestNativeClaudeOriginalRecoveryClearsStaleRegistryAfterRemoval(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var logs bytes.Buffer
+	config := Config{Root: root, Logger: slog.New(slog.NewJSONHandler(&logs, nil))}
+	credential := Credential{ServerID: domain.NewID(), MachineID: domain.NewID()}
+	account, profileID, generation := domain.NewID(), domain.NewID(), domain.NewID()
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	executable, err = filepath.EvalSymlinks(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	installation := domain.Installation{Harness: domain.ClaudeCode, Version: domain.ClaudeProtocolVersion, ResolvedPath: executable}
+	profile, err := openClaudeProfile(config, credential, account, profileID, installation, domain.NewID(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := profile.close(); err != nil {
+		t.Fatal(err)
+	}
+	leaseID, operation, instance := domain.NewID(), domain.NewID(), domain.NewID()
+	journal := managedSubscriptionJournal{Version: 1, Lease: leaseID, Account: account, Operation: operation, Instance: instance, Finish: domain.NewID(), Generation: generation, NativeProfileID: profileID, NativeStarted: true, Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT, State: managedClaimed}
+	journalDir := filepath.Join(root, "managed-auth")
+	if err := security.PrivateDir(journalDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeJSON(filepath.Join(journalDir, string(leaseID)+".json"), journal); err != nil {
+		t.Fatal(err)
+	}
+	if err := security.PrivateDir(filepath.Join(root, "processes", string(leaseID))); err != nil {
+		t.Fatal(err)
+	}
+	// The original native removal is complete; the registry publication failed.
+	if err := os.RemoveAll(profile.root); err != nil {
+		t.Fatal(err)
+	}
+	f := &nativeClaudeLifecycleFixture{t: t, config: config, credential: credential, account: account, profile: profileID, generation: generation, lease: leaseID}
+	_, handler := delidevv1connect.NewSubscriptionServiceHandler(f)
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	credential.Endpoint = server.URL
+	f.credential = credential
+	client := delidevv1connect.NewSubscriptionServiceClient(server.Client(), server.URL)
+	state := &domain.SubscriptionState{RecoveryRequired: true, NativeProfileID: profileID, OwnerMachineID: credential.MachineID, Generation: generation, Lease: &domain.SubscriptionLease{ID: leaseID, OperationID: operation, InstanceID: instance, Generation: generation, Revision: 3, Action: domain.SubscriptionLogout}}
+	if err := runClaudeRecovery(context.Background(), config, client, credential, account, domain.Account{Subscription: state}); err != nil {
+		t.Fatal("original cleanup did not clear the stale registry", err)
+	}
+	registry, err := nativeProfiles(config, credential.MachineID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found, err := registry.Exists(context.Background(), nativeprofile.DeleteScope{Account: account, Purpose: nativeprofile.PurposeAuth, Harness: domain.ClaudeCode}); err != nil || found {
+		t.Fatal("recovery reported cleanup with a retained registry entry", err)
+	}
+	if len(f.finishes) != 1 || !f.finishes[0].CleanupConfirmed || f.finishes[0].Succeeded || f.takes != 0 {
+		t.Fatal("recovery repeated a native claim or misreported cleanup")
 	}
 }
 

@@ -969,6 +969,11 @@ replays the request (see the
 [harness contract](cmds-delidev-harness-contract.md#legacy-access-only-quota-migration)).
 The Claude device-profile directory is registered in place and removed only by
 its logout.
+If native removal completes before the registry deletion is durable, original
+logout recovery may clear only the matching absent Claude auth registration
+after joined process cleanup. It does not reopen the deleted home or repeat
+native login or logout. A remaining, referenced or changed profile keeps the
+account cleanup pending.
 
 Explicit deletion of a server account removes every server-owned profile of that
 account (`auth`, `quota`, `credit`, `subscription_probe` with their native
