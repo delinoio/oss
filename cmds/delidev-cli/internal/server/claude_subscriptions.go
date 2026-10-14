@@ -116,7 +116,12 @@ func (s *Service) requestClaudeSubscription(ctx context.Context, req *connect.Re
 		if st.OwnerMachineID != "" && st.OwnerMachineID != machine {
 			return nil, domain.Fail(domain.Unsupported, "This Claude account belongs to another Runner Device.", "Select its original Runner Device; authentication cannot move between devices.")
 		}
-		if st.Pending != nil || st.RecoveryRequired || a.Removal != nil || st.Lease != nil && action != domain.SubscriptionLogout {
+		// A live shared Execute owner does not block a Refresh: the queued
+		// operation closes admission (the join branch of Take requires no Pending)
+		// and its lifecycle Take stays contended until the last runnable member
+		// retires the owner. Every other lease holder keeps the request exclusive.
+		refreshBehindSharedOwner := action == domain.SubscriptionRefresh && st.SharedOwner() && st.Lease.Action == domain.SubscriptionExecute
+		if st.Pending != nil || st.RecoveryRequired || a.Removal != nil || st.Lease != nil && action != domain.SubscriptionLogout && !refreshBehindSharedOwner {
 			return nil, subscriptionDenied()
 		}
 		if action == domain.SubscriptionLogin {
@@ -264,6 +269,14 @@ func wireNativeSubscriptionDiagnostic(d *domain.NativeSubscriptionDiagnostic) *p
 		return nil
 	}
 	return &pb.NativeSubscriptionDiagnostic{DetectedVersion: d.DetectedVersion, RequiredVersion: d.RequiredVersion, Phase: pb.NativeSubscriptionDiagnosticPhase(d.Phase), Code: string(d.Code), CorrelationId: string(d.CorrelationID)}
+}
+
+// claudeLifecycleLeaseHeld proves that the stored lease is the claimed
+// lifecycle lease of the pending operation. A Refresh may now queue behind a
+// live shared Execute owner; that owner's identifier must never read, advance or
+// consume the queued operation's native progress or login code.
+func claudeLifecycleLeaseHeld(st *domain.SubscriptionState) bool {
+	return st.Lease != nil && st.Pending != nil && !st.Lease.Shared && st.Lease.OperationID == st.Pending.ID && st.Lease.Action == st.Pending.Action
 }
 func (s *Service) claudeSubscriptionLease(ctx context.Context, tx *store.Tx, id, lease, machine, instance domain.ID) (store.Record, domain.Account, error) {
 	r, a, _, _, err := s.claudeSubscriptionLeaseView(ctx, tx, id, lease, machine, instance, false)
@@ -545,7 +558,7 @@ func (s *Service) publishClaudeSubscriptionProgress(ctx context.Context, req *co
 		st := a.Subscription
 		op := st.Pending
 		o := st.NativeOperation
-		if st.RecoveryRequired || op == nil || o == nil || op.Action == domain.SubscriptionLogout || !o.ExpiresAt.After(time.Now().UTC()) {
+		if st.RecoveryRequired || op == nil || o == nil || op.Action == domain.SubscriptionLogout || !o.ExpiresAt.After(time.Now().UTC()) || !claudeLifecycleLeaseHeld(st) {
 			return nil, subscriptionDenied()
 		}
 		operation = op.ID
@@ -658,7 +671,7 @@ func (s *Service) SubmitSubscriptionLoginCode(ctx context.Context, req *connect.
 			return nil, err
 		}
 		st := a.Subscription
-		if st == nil || st.RecoveryRequired || st.Lease == nil || st.Lease.Epoch != s.subscriptionServerEpoch() || st.Pending == nil || st.Pending.Canceled || st.NativeOperation == nil {
+		if st == nil || st.RecoveryRequired || st.Lease == nil || st.Lease.Epoch != s.subscriptionServerEpoch() || st.Pending == nil || st.Pending.Canceled || st.NativeOperation == nil || !claudeLifecycleLeaseHeld(st) {
 			return nil, subscriptionDenied()
 		}
 		o := st.NativeOperation
@@ -702,7 +715,7 @@ func (s *Service) TakeSubscriptionLoginCode(ctx context.Context, req *connect.Re
 		}
 		st := a.Subscription
 		o := st.NativeOperation
-		if st.RecoveryRequired || st.Pending == nil || st.Pending.Canceled || o == nil || o.ID != operation || o.State != domain.SubscriptionWaiting || o.LoginMethod != domain.SubscriptionBrowserCode || !o.ExpiresAt.After(time.Now().UTC()) || subscriptionActorValid(tx, o.Actor) != nil {
+		if st.RecoveryRequired || st.Pending == nil || st.Pending.Canceled || o == nil || o.ID != operation || o.State != domain.SubscriptionWaiting || o.LoginMethod != domain.SubscriptionBrowserCode || !o.ExpiresAt.After(time.Now().UTC()) || subscriptionActorValid(tx, o.Actor) != nil || !claudeLifecycleLeaseHeld(st) {
 			return nil, subscriptionDenied()
 		}
 		if o.CodeConsumed {

@@ -174,12 +174,17 @@ func (s SubscriptionState) validateOwnership() bool {
 		if member.LeaseID.Validate() != nil || member.OperationID.Validate() != nil || member.Revision == 0 || !member.State.Valid() || member.AdmittedAt.IsZero() || operations[member.OperationID] {
 			return false
 		}
-		// Only the founding member shares the owner's identifier.
+		// Only the founding member shares the owner's identifier, and it is the
+		// owner's own job at the owner's own revision. The same identifier
+		// resolves to the stored owner through OwnerLeaseFor and to this member
+		// through MemberLease, so the two views must never name different jobs.
+		// Conversely, the owner's founding job belongs to the founding member
+		// alone: no other member may carry it.
 		if member.LeaseID == l.ID {
-			if index != 0 {
+			if index != 0 || member.OperationID != l.OperationID || member.Revision != l.Revision {
 				return false
 			}
-		} else if leases[member.LeaseID] {
+		} else if leases[member.LeaseID] || member.OperationID == l.OperationID {
 			return false
 		}
 		leases[member.LeaseID] = true

@@ -5,8 +5,13 @@
 A managed subscription account runs independent sessions concurrently through a
 durable account owner plus execution members instead of account-wide execution
 exclusivity. The managed Codex lane is negotiated by Worker
-`SHARED_SUBSCRIPTION_OWNER_V1 = 67` (reserved in the
-[protocol contract](protos-delidev-v1-contract.md)). Independent sessions that
+`SHARED_SUBSCRIPTION_OWNER_V1 = 67` and the device-owned native Claude lane by
+Worker `CLAUDE_DEVICE_OWNED_MEMBERS_V1 = 68` (both reserved in the
+[protocol contract](protos-delidev-v1-contract.md)). Only capability 68 is
+advertised by the shipped Worker. Capability 67 is reserved and not advertised
+until the Codex Worker slice (tracked by issue 3466) lands, so the server's
+Codex shared-owner branch is inactive for the shipped Worker and managed Codex
+stays exclusive per account. Where a lane is negotiated, independent sessions that
 use one account on its original Runner Device run concurrently, including more
 than four, with no session-count cap, setting or queue depth. Account lifecycle
 authority stays exclusive.
@@ -17,11 +22,15 @@ execution member (lease identifier, session job, admission revision, `running` o
 `retained`, admission time). The owner is bound to the original account and
 connection, Runner, device, Worker instance, server epoch and credential
 generation. Exactly one member owns each session job; the founding member shares
-the owner's lease identifier. Historical accounts omit both fields and keep the
+the owner's lease identifier, job and revision, so that one identifier never
+resolves to two different jobs; no other member may carry the owner's own job.
+Historical accounts omit both fields and keep the
 singleton lease and its original receipts unchanged. A singleton lease never
 carries members, and a shared lease never carries a Fork or title revision.
 Validation rejects duplicate jobs or lease identifiers, an unknown member state,
-a non-execute owner and members without an owner. There is no SQLite migration:
+a non-execute owner, a founding member whose job or revision differs from the
+owner's, a later member that carries the owner's job, and members without an
+owner. There is no SQLite migration:
 the extension is account document JSON.
 
 **Negotiation.** Only a Worker whose current attach advertised capability 67 (and
@@ -64,7 +73,12 @@ confirmed settlement.
 **Lifecycle.** Login, reauthentication and explicit refresh close new member
 admission when accepted and take lifecycle authority only after the owner and
 every member (including retained cleanup) have drained, because the lifecycle
-Take is refused while any lease exists. Logout keeps immediate readiness
+Take is refused while any lease exists. The device-owned Claude lane accepts a
+refresh behind a live shared Execute owner as the pending operation, so a user can
+queue reauthentication to close admission and drain the owner; the queued
+operation grants no lease, and the owner's identifier cannot read or advance its
+native progress or login code. Any other lease holder keeps the refresh request
+refused. Logout keeps immediate readiness
 revocation, cancels every account execution, joins every member's ownership and
 only then runs the canonical native logout and credential deletion.
 

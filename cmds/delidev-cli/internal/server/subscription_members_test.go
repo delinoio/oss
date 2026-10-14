@@ -734,3 +734,75 @@ func TestUnknownFinishScopeFailsClosedForSingletonLease(t *testing.T) {
 		t.Fatal("a Claude Finish with an unknown scope was not rejected", err)
 	}
 }
+
+func TestClaudeRefreshQueuesBehindSharedOwnerAndClosesAdmission(t *testing.T) {
+	f := newClaudeMemberFixture(t, true)
+	jobs := f.prepareJobs(2)
+	var leases []*pb.TakeSubscriptionResponse
+	for index, job := range jobs[:2] {
+		lease, err := f.takeJob(job)
+		if err != nil {
+			t.Fatalf("Claude job %d was not admitted: %v", index, err)
+		}
+		leases = append(leases, lease)
+	}
+	refresh := claudeStart(t, f.subscriptionFixture, pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH)
+	_, account := f.record()
+	if account.Subscription.Pending == nil || account.Subscription.Pending.Action != domain.SubscriptionRefresh || !account.Subscription.SharedOwner() || len(account.Subscription.Members) != 2 {
+		t.Fatal("a refresh was not accepted behind the live shared owner")
+	}
+	if err := account.Validate(); err != nil {
+		t.Fatal("queued refresh behind the owner produced an invalid document", err)
+	}
+	// Admission is closed from acceptance and the lifecycle Take waits.
+	if _, err := f.takeJob(jobs[2]); err == nil {
+		t.Fatal("a queued refresh left shared admission open")
+	}
+	if _, err := f.take(refresh, pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH); domain.SafeError(rpc.ClientError(err)).Code != domain.ResourceExhausted {
+		t.Fatal("refresh authority overlapped live members", err)
+	}
+	// The shared owner's identifier never advances the queued operation's native progress.
+	progress := &pb.PublishSubscriptionProgressRequest{AccountId: string(f.input.AccountID), LeaseId: leases[0].LeaseId, MachineId: string(f.input.MachineID), InstanceId: string(f.instance), State: pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_WAITING, LoginMethod: pb.SubscriptionLoginMethod_SUBSCRIPTION_LOGIN_METHOD_BROWSER_CODE, Url: claudeFixtureURL()}
+	if _, err := f.client.PublishSubscriptionProgress(context.Background(), subscriptionRequest(f.workerToken, progress)); err == nil {
+		t.Fatal("the shared owner advanced a queued refresh")
+	}
+	taken := &pb.TakeSubscriptionLoginCodeRequest{AccountId: string(f.input.AccountID), LeaseId: leases[0].LeaseId, MachineId: string(f.input.MachineID), InstanceId: string(f.instance), OperationId: refresh.OperationId}
+	if _, err := f.client.TakeSubscriptionLoginCode(context.Background(), subscriptionRequest(f.workerToken, taken)); err == nil {
+		t.Fatal("the shared owner read a queued refresh's login code")
+	}
+	if _, err := f.finishScope(leases[1], leases[1].LeaseRevision, pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_MEMBER, leases[0].GenerationId, nil, true, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.take(refresh, pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH); err == nil {
+		t.Fatal("refresh authority overlapped the remaining member")
+	}
+	_, mid := f.record()
+	owner := &pb.FinishSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(f.input.AccountID), ExpectedRevision: leases[0].LeaseRevision}, LeaseId: leases[0].LeaseId, GenerationId: leases[0].GenerationId, MachineId: string(f.input.MachineID), InstanceId: string(f.instance), CleanupConfirmed: true, Succeeded: true, FinishScope: pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_OWNER, NativeIdentity: &pb.NativeSubscriptionIdentity{ProfileId: leases[0].NativeProfileId, IdentityCommitment: mid.Subscription.IdentityCommitment}}
+	if _, err := f.client.FinishSubscription(context.Background(), subscriptionRequest(f.workerToken, owner)); err != nil {
+		t.Fatal(err)
+	}
+	_, drained := f.record()
+	if drained.Subscription.Lease != nil || drained.Subscription.Pending == nil || drained.Subscription.Pending.Action != domain.SubscriptionRefresh {
+		t.Fatal("owner retirement did not leave the queued refresh pending")
+	}
+	if _, err := f.take(refresh, pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH); err != nil {
+		t.Fatal("refresh authority did not follow the drained owner", err)
+	}
+	_, held := f.record()
+	if held.Subscription.Lease == nil || held.Subscription.Lease.Shared || held.Subscription.Lease.Action != domain.SubscriptionRefresh || !claudeLifecycleLeaseHeld(held.Subscription) {
+		t.Fatal("the refresh Take did not hold the exclusive lifecycle lease")
+	}
+}
+
+func TestClaudeRefreshStaysDeniedBehindExclusiveLease(t *testing.T) {
+	f := newClaudeMemberFixture(t, false)
+	jobs := f.prepareJobs(0)
+	if _, err := f.takeJob(jobs[0]); err != nil {
+		t.Fatal(err)
+	}
+	r, _ := f.record()
+	_, err := f.client.RequestSubscription(context.Background(), subscriptionRequest(f.service.Identity.Token, &pb.RequestSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(r.ID), ExpectedRevision: r.Revision}, MachineId: string(f.input.MachineID), Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH}))
+	if err == nil {
+		t.Fatal("a refresh was accepted behind an exclusive singleton lease")
+	}
+}

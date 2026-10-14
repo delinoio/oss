@@ -42,6 +42,12 @@ func TestSharedOwnerRejectsInconsistentMembers(t *testing.T) {
 		"duplicate job":          func(s *SubscriptionState) { s.Members[2].OperationID = s.Members[1].OperationID },
 		"duplicate lease":        func(s *SubscriptionState) { s.Members[2].LeaseID = s.Members[1].LeaseID },
 		"owner id on later":      func(s *SubscriptionState) { s.Members[1].LeaseID = s.Lease.ID },
+		"founder job diverges":   func(s *SubscriptionState) { s.Members[0].OperationID = NewID() },
+		"founder revision skews": func(s *SubscriptionState) { s.Members[0].Revision = s.Lease.Revision + 1 },
+		"later member owns owner job": func(s *SubscriptionState) {
+			s.Members[1].OperationID = s.Lease.OperationID
+			s.Members[0].LeaseID, s.Members[0].OperationID = NewID(), NewID()
+		},
 		"zero revision":          func(s *SubscriptionState) { s.Members[1].Revision = 0 },
 		"unknown state":          func(s *SubscriptionState) { s.Members[1].State = "stopped" },
 		"missing admission time": func(s *SubscriptionState) { s.Members[1].AdmittedAt = time.Time{} },
@@ -109,5 +115,48 @@ func TestSingletonLeaseKeepsItsHistoricalRepresentation(t *testing.T) {
 	}
 	if _, ok := decoded.LeaseForOperation(NewID()); ok {
 		t.Fatal("a singleton lease resolved a foreign job")
+	}
+}
+
+// A founding member that was released leaves the owner's own job and revision
+// behind, so a surviving set without the founder stays valid and the owner
+// identifier keeps resolving to the stored owner alone.
+func TestSharedOwnerWithoutFounderKeepsOwnerIdentityUnambiguous(t *testing.T) {
+	account, _ := sharedFixture(t, 3)
+	state := account.Subscription
+	if !state.ReleaseMember(state.Lease.ID) {
+		t.Fatal("founder was not released")
+	}
+	if err := account.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, ok := state.MemberLease(state.Lease.ID); ok {
+		t.Fatal("the owner identifier resolved to a member after the founder left")
+	}
+	owner, ok := state.OwnerLeaseFor(state.Lease.ID)
+	if !ok || owner.OperationID != state.Lease.OperationID || owner.Revision != state.Lease.Revision {
+		t.Fatal("the owner identifier did not resolve to the stored owner")
+	}
+	if _, ok := state.LeaseForOperation(state.Lease.OperationID); ok {
+		t.Fatal("the released founder job kept execution authority")
+	}
+}
+
+// Decoding a stored document must reject a founder whose job or revision
+// differs from the owner, because OwnerLeaseFor and MemberLease would otherwise
+// answer the same identifier with two different jobs.
+func TestDecodedSharedOwnerRejectsDivergentFounder(t *testing.T) {
+	account, _ := sharedFixture(t, 2)
+	raw, err := json.Marshal(account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded Account
+	if err := json.Unmarshal(raw, &decoded); err != nil || decoded.Validate() != nil {
+		t.Fatal("a consistent document must round-trip", err)
+	}
+	decoded.Subscription.Members[0].OperationID = NewID()
+	if decoded.Validate() == nil {
+		t.Fatal("a decoded founder with a different job was accepted")
 	}
 }
