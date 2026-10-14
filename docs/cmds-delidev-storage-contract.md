@@ -328,6 +328,17 @@ and a manifest-less proof), so no discriminator exists. A strict obligation that
 depended only on such evidence stays pending rather than risk removing copies
 without original removal proof.
 
+Workspace cleanup also distrusts any manifest-less version-1 obligation workspace
+proof, removed or not, and re-derives it from current evidence under the caller's
+absence policy. The Worker derives that policy (absent workspace allowed only for
+positively failed preparations) from the validated job journals, which a retry
+does not re-read. The attempt that starts removal therefore persists it as
+`workspace_absence_allowed` in the obligation proof, and a retry restores that
+value. A started proof without the field, written by an earlier release, is
+strict: it never relaxes to the absent-workspace policy, so copies are removed only
+with current removal proof (a manifest, a stored snapshot manifest or version-2
+shared evidence) and otherwise stay pending.
+
 The same rule applies to the obligation-scoped workspace proof: it is written at
 version 2, and a manifest-less removed version-1 proof (which an older Worker also
 wrote after adopting version-1 shared evidence for an absent failed-only workspace,

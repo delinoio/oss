@@ -705,3 +705,75 @@ func TestSessionDeletionFailedOnlyPreparationPublishesNoSharedRemovalEvidence(t 
 		t.Fatal("second obligation evidence removed", e)
 	}
 }
+
+// An earlier Worker could persist removal_started for a strict obligation after
+// adopting version-1 evidence, leaving a manifest-less workspace proof. The
+// retry skips journal validation, so it must not default to the permissive
+// absent-workspace policy: without persisted removal proof it stays pending.
+func TestSessionDeletionStartedLegacyProofWithoutAbsencePolicyStaysStrict(t *testing.T) {
+	c, w, manifest, _ := deletionWorkerFixture(t, domain.GeneralChat)
+	if e := os.RemoveAll(filepath.Join(c.Root, "workspaces", string(manifest.SessionID))); e != nil {
+		t.Fatal(e)
+	}
+	if e := security.PrivateDir(filepath.Join(c.Root, "session-deletions")); e != nil {
+		t.Fatal(e)
+	}
+	proofPath := sessionDeletionObligationPath(c.Root, w, ".json")
+	if e := writeJSON(sessionDeletionPath(c.Root, w.SessionID), sessionDeletionProof{Version: sessionDeletionTombstoneVersion}); e != nil {
+		t.Fatal(e)
+	}
+	if e := writeJSON(proofPath, sessionDeletionProof{Version: 1, Digest: w.Digest(), ReportID: domain.NewID(), RemovalStarted: true}); e != nil {
+		t.Fatal(e)
+	}
+	workspaceProof := sessionDeletionObligationPath(c.Root, w, "-workspace.json")
+	if e := security.WriteAtomic(workspaceProof, []byte(`{"version":1,"digest":"`+w.Digest()+`","removed":true}`)); e != nil {
+		t.Fatal(e)
+	}
+	for attempt := 1; attempt <= 2; attempt++ {
+		if proof, e := deleteSessionCopies(context.Background(), c, w); e == nil || proof.Complete {
+			t.Fatal("started proof without a persisted absence policy was acknowledged", attempt, proof, e)
+		}
+	}
+	if saved := readDeletionProof(t, proofPath); saved.Complete || saved.WorkspaceAbsenceAllowed {
+		t.Fatal("strict retry relaxed its absence policy", saved)
+	}
+}
+
+// A failed-only obligation that already started removal keeps the absence policy
+// derived from its journals, so a crash after the start still completes.
+func TestSessionDeletionFailedOnlyRetryKeepsPersistedAbsencePolicy(t *testing.T) {
+	c, w, manifest, _ := deletionWorkerFixture(t, domain.GeneralChat)
+	if e := os.RemoveAll(filepath.Join(c.Root, "workspaces", string(manifest.SessionID))); e != nil {
+		t.Fatal(e)
+	}
+	copy := w.Copies[0]
+	if e := writeJSON(filepath.Join(c.Root, "jobs", string(copy.JobID)+".json"), journal{Version: 1, JobID: copy.JobID, InstanceID: copy.InstanceID, Revision: copy.Revision, Digest: copy.Digest, State: journalReported, ReportID: domain.NewID(), Problem: domain.Fail(domain.Unsupported, "Rejected.", "Preserve the source.")}); e != nil {
+		t.Fatal(e)
+	}
+	original := filepath.Join(c.Root, "processes", string(copy.JobID))
+	if e := os.MkdirAll(original, 0700); e != nil {
+		t.Fatal(e)
+	}
+	moved := filepath.Join(c.Root, "moved-original")
+	installDeletionHook(t, func() {
+		if e := os.Rename(original, moved); e != nil {
+			t.Fatal(e)
+		}
+		mustWrite(t, filepath.Join(original, "sentinel"), "foreign sentinel")
+	})
+	expectPendingDeletion(t, c, w)
+	sessionDeletionBeforeRemovalHook = nil
+	proofPath := sessionDeletionObligationPath(c.Root, w, ".json")
+	if saved := readDeletionProof(t, proofPath); !saved.RemovalStarted || !saved.WorkspaceAbsenceAllowed {
+		t.Fatal("removal start did not persist the absence policy", saved)
+	}
+	if e := os.RemoveAll(original); e != nil {
+		t.Fatal(e)
+	}
+	if e := os.Rename(moved, original); e != nil {
+		t.Fatal(e)
+	}
+	if proof, e := deleteSessionCopies(context.Background(), c, w); e != nil || !proof.Complete {
+		t.Fatal("failed-only retry lost its persisted absence policy", proof, e)
+	}
+}
