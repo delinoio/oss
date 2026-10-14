@@ -17,11 +17,20 @@ import (
 
 // quotaHelperAliasNames are the exact Codex temporary aliases that the original
 // startup proof can retire. They are repeated here to keep the server fixture
-// independent of the Codex adapter's unexported proof.
-var quotaHelperAliasNames = []string{"apply_patch", "applypatch", "codex-execve-wrapper"}
+// independent of the Codex adapter's unexported proof. The pinned startup also
+// creates codex-linux-sandbox on Linux only.
+var quotaHelperAliasNames = quotaHelperAliasNamesFor(runtime.GOOS)
+
+func quotaHelperAliasNamesFor(goos string) []string {
+	names := []string{"apply_patch", "applypatch", "codex-execve-wrapper"}
+	if goos == "linux" {
+		names = append(names, "codex-linux-sandbox")
+	}
+	return names
+}
 
 // writeQuotaHelperRuntime creates a retained quota runtime shaped like one whose
-// native tree exited and left its three Codex helper aliases behind.
+// native tree exited and left its Codex helper aliases behind.
 func writeQuotaHelperRuntime(t *testing.T, home string, aliases bool) string {
 	t.Helper()
 	directory := filepath.Join(home, "codex", "tmp", "arg0", "native-helpers")
@@ -83,7 +92,7 @@ func TestServerQuotaRuntimeCleanupAcceptsOnlyRetiredHelpers(t *testing.T) {
 	}
 }
 
-// A historical retained quota runtime has the three aliases and an empty
+// A historical retained quota runtime has the original aliases and an empty
 // original process index but no in-memory startup proof. Restart reconciliation
 // must keep the obligation fenced and unlink nothing.
 func TestServerQuotaRestartKeepsHistoricalHelperAliasesFenced(t *testing.T) {
