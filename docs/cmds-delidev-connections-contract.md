@@ -148,6 +148,52 @@ data. Exact receipt recovery preserves original pairing material after expiry;
 expiry never authorizes a fresh grant. Pending cancellation proves the requesting
 private key through the encrypted original transcript and creates no device.
 
+The approval recovery window is 24 hours after a request's five-minute `ExpiresAt`.
+An Approved receipt proves the target decided before expiry, so an Approved Worker
+setup is still reconciled through its original request inside that window: the
+requester's first resume after expiry creates the original Worker grant (original
+grant request UUID, one random verifier) and the target accepts its first
+delivery. Retries replay the retained grant bytes and the prepared pairing journal
+exactly once; a lost delivery response is reconciled from the target's Completed
+receipt without another grant. A first creation or first delivery after the window
+fails with Conflict and creates nothing. The requester rechecks the deadline on
+every retry until the encrypted delivery is durably journaled, so a retained but
+undelivered grant never creates its pairing after the window. Approving a request after `ExpiresAt`
+stays impossible, and a mismatched request ID, requester key, target or actor stays
+rejected.
+
+Admission of a new approval request first reclaims eligible records, then enforces
+the 256-record directory bound and a per-host cap of 8 live unapproved Pending
+requests. The ingress listens only on loopback behind `tailscale serve`, so the
+connection address is the shared local Serve proxy. The originating peer is the
+single well-formed address in the `X-Forwarded-For` header that Serve overwrites
+on every proxied request, honored only on a loopback connection; a missing,
+repeated, chained, zoned or unspecified value falls back to the connection
+address, which only makes the shared bucket stricter. The ingress stores a
+SHA-256 digest of that peer address with each request and keys the per-host
+approval throttle by the same peer; the digest is never exposed in public
+approval documents, the address grants no trust and the public identity endpoint
+is unchanged. Excess requests receive a
+bounded ResourceExhausted. Reclamation runs under the approval lock and derives
+only from durable records, so it is identical after restart. After the recovery
+window it removes only unapproved Pending, Denied/canceled/Expired and Approved
+Worker records that never accepted a delivery. Records inside the window,
+Completed receipts, Approved client receipts that froze an original grant, and any
+Worker record holding a delivered grant are never reclaimed, so exact retry and
+replay stay available. Reclamation touches only well-formed approval files in the
+approvals directory; foreign or malformed entries still count toward capacity and
+are left in place, and outgoing journals and Worker scopes are never visited.
+Reclamation deletes the only evidence that a request ID was used, so creating a
+record also requires the canonical UUID v7 request ID's embedded creation time to
+be no more than a five-minute clock skew ahead of the target's clock and no older
+than the five-minute lifetime plus the recovery window minus that skew. The skew
+allowance keeps an ID with a future-dated timestamp from outliving reclamation of
+its record. A retry of an
+original journal whose request was reclaimed (for example after a lost first
+response) is refused with Conflict and creates no record, key or expiry under the
+reused ID. Retained records are matched by ID first, so exact replays inside the
+window are unaffected; the check is stateless and identical after restart.
+
 Outgoing client completion uses the existing saved-profile pairing journal and
 immutable canonical origin. Approved Worker setup encrypts the selected server's
 original Worker grant to the target approval key, reauthenticates the original

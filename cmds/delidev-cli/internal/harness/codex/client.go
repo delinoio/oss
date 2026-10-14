@@ -48,6 +48,11 @@ type Config struct {
 	API              *APIConfig
 	// ManagedAuthentication is available only to an exclusive server lease.
 	ManagedAuthentication bool
+	// ManagedTitle selects the private automatic-title profile for protected
+	// ChatGPT authentication: a retry-free provider alias of the built-in OpenAI
+	// authority, fixed instructions and no tools, MCP, plugins, hooks, skills or
+	// ambient instructions. It is valid only with ManagedAuthentication.
+	ManagedTitle bool `json:"-"`
 }
 type Client struct {
 	codeReviewModel      string
@@ -87,6 +92,7 @@ type Client struct {
 	pendingEvent         *nativewire.Event
 	api                  *apiBinding
 	managedHome          string
+	managedTitle         bool
 	executionHelpers     *executionHelpers
 	revertHistory        bool
 	imageGeneration      bool
@@ -144,6 +150,9 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	if config.Mode != ProbeProtocol && config.Mode != ThreadProtocol && config.Mode != SubscriptionProtocol && config.Mode != QuotaProtocol && config.Mode != CreditProtocol {
 		return nil, incompatible()
 	}
+	if config.ManagedTitle && (config.Mode != ThreadProtocol || !config.ManagedAuthentication || config.API != nil || config.Sidechat != "" || config.ModelObservation || config.CodeReviewModel != "" || config.DynamicTools || config.ManagedForkHistory || config.EnableImageGeneration || config.RevertHistory || config.FrameProfile != DefaultFrameProfile) {
+		return nil, incompatible()
+	}
 	if config.ManagedForkHistory && (config.Mode != ThreadProtocol || !config.ManagedAuthentication || config.Sidechat != "") {
 		return nil, incompatible()
 	}
@@ -192,7 +201,11 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	}
 	if config.ManagedAuthentication {
 		config.Process.Args[1] = `cli_auth_credentials_store="file"`
-		config.Process.Args = append(config.Process.Args, "-c", `model_provider="openai"`, "-c", `forced_login_method="chatgpt"`)
+		if config.ManagedTitle {
+			config.Process.Args = append(config.Process.Args, "-c", `forced_login_method="chatgpt"`)
+		} else {
+			config.Process.Args = append(config.Process.Args, "-c", `model_provider="openai"`, "-c", `forced_login_method="chatgpt"`)
+		}
 	}
 	if err := configureImageGeneration(&config); err != nil {
 		return nil, err
@@ -209,6 +222,9 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 		return nil, err
 	}
 	if err := configureSidechat(&config); err != nil {
+		return nil, err
+	}
+	if err := configureManagedTitle(&config); err != nil {
 		return nil, err
 	}
 	configureOrdinaryTools(&config)
@@ -319,7 +335,7 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	if config.Process.Logger != nil {
 		config.Process.Logger.InfoContext(ctx, "Codex native handshake verified", "owner_id", config.Process.OwnerID, "version", config.Version, "image_observations", imageObservations, "frame_profile", config.FrameProfile)
 	}
-	client = &Client{codeReviewModel: config.CodeReviewModel, codeReviewRoot: config.Process.Cwd, reviewProtected: security.NewProtectedJSON(config.Process.ProtectedValues), dynamicToolsEnabled: config.DynamicTools, executionHelpers: helpers, imageObservations: imageObservations, imageGeneration: config.EnableImageGeneration, revertHistory: config.RevertHistory, managedForkHistory: config.ManagedForkHistory, home: home, skillsRoot: config.SkillsRoot, imageRoot: config.ImageRoot, imageMachine: config.ImageMachineID, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api, modelObservation: observation, sidechat: config.Sidechat}
+	client = &Client{codeReviewModel: config.CodeReviewModel, codeReviewRoot: config.Process.Cwd, reviewProtected: security.NewProtectedJSON(config.Process.ProtectedValues), dynamicToolsEnabled: config.DynamicTools, executionHelpers: helpers, imageObservations: imageObservations, imageGeneration: config.EnableImageGeneration, revertHistory: config.RevertHistory, managedForkHistory: config.ManagedForkHistory, home: home, skillsRoot: config.SkillsRoot, imageRoot: config.ImageRoot, imageMachine: config.ImageMachineID, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api, modelObservation: observation, sidechat: config.Sidechat, managedTitle: config.ManagedTitle}
 	phase = profilePhase
 	if err := client.verifyLifecyclePlugins(ctx); err != nil {
 		return nil, err
@@ -443,7 +459,7 @@ func (c *Client) recordFailureAtStage(ctx context.Context, phase domain.CodexPha
 }
 
 func configureOrdinaryTools(config *Config) {
-	if config.Mode != ThreadProtocol || config.Sidechat != "" || config.ModelObservation || config.API != nil && config.API.TitleProfile {
+	if config.Mode != ThreadProtocol || config.Sidechat != "" || config.ManagedTitle || config.ModelObservation || config.API != nil && config.API.TitleProfile {
 		config.OrdinaryTools = executionenv.Ordinary{}
 	}
 	config.Process.Env = config.OrdinaryTools.Apply(config.Process.Env)

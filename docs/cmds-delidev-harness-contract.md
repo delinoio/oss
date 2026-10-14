@@ -149,7 +149,10 @@ Retain typed `model/verification` values, including `trustedAccessForCyber`,
 without granting account readiness, model eligibility or permissions. Required
 empty verification arrays retain their existing discarded-metadata representation.
 `model/safetyBuffering/updated` retains the original model, ordered use cases and
-reasons, buffering UI flag and required nullable faster-model descriptor.
+reasons, buffering UI flag and required nullable faster-model descriptor. The
+buffering `model` must equal the selected execution model exactly; any other value
+is rejected as incompatible and is neither retained nor published as passive
+evidence. The faster-model descriptor is never compared with or adopted as a model.
 `turn/moderationMetadata` retains bounded JSONValue, including objects, arrays,
 scalars and explicit null. These private observations emit no product prompt,
 response, tool or input mutation. Neither buffering nor verification selects a
@@ -159,12 +162,22 @@ model; original usage and effective settings remain authoritative.
 and closed `highRiskCyberActivity` reason. Retain the safety decision without
 reversing it or adopting a faster-model descriptor. An actual model change pauses
 fresh sends and prevents selected-model success publication. Keep the first
-problem when earlier uncertainty exists. Original native terminal evidence remains
+problem when earlier uncertainty exists. The model-change latch and recovery problem
+are independent of evidence retention: when the aggregate evidence caps are full, an
+actual model change still latches them, and the overflowed evidence is neither
+retained nor counted. Overflow by non-reroute evidence keeps the generic
+incompatible rejection. Original native terminal evidence remains
 available for reconciliation and independent cleanup; neither terminal completion
 nor passive observations clears the pause or replays input.
 
 Reject unknown enums, malformed or ambiguous fields and unowned root turns.
-Foreign threads and server requests retain their existing private boundaries.
+Foreign threads and server requests retain their existing private boundaries:
+a foreign-thread safety notification is validated only for the 64 KiB envelope
+bound, the exact native field set and valid thread/turn identity. Closed
+verification and reroute enums and descriptor text bounds apply only to the owned
+root thread, so an unsupported foreign descriptor stays a private native extension
+and cannot pause the execution or alter safety evidence, model selection,
+completion or account authority.
 After terminal completion, accept only an exact previously retained observation
 as late private evidence; changed or unseen late observations fail validation.
 Deep-copy retained payloads. Bound each notification to 64 KiB, string descriptors
@@ -303,6 +316,10 @@ Managed subscriptions remain unsupported until their protected lifecycle exists.
 ### Codex automatic title profile
 
 Automatic titles reuse the successful original execution executable path/hash with the native Responses profile. Worker attachment performs no title probe; the actual auxiliary process validates its protocol. For each title, a separate private Codex runtime validates effective provider/model, zero request/stream retries, ephemeral credentials, read-only sandbox and approval-never settings before sending the single first-message request. The title run accepts no tool, interaction or auxiliary native event; it rejects malformed/oversized/multiline output without repair. The 30-second inference and 4 KiB raw-text bounds apply, and process cleanup plus private runtime removal must finish before success publication. See the [automatic title contract](cmds-delidev-session-titles-contract.md) for assignment ownership and evidence limits.
+
+### Codex managed automatic title profile
+
+Protected ChatGPT titles run the original startup-proven executable with `ManagedAuthentication` and the private `ManagedTitle` profile. Codex rejects overrides of the reserved built-in `openai` provider, so the profile selects the alias `delidev_chatgpt_title`: OpenAI display name, Responses wire protocol, ChatGPT-authenticated requests, the native default base URL, websockets disabled and `request_max_retries=0`, `stream_max_retries=0`. The alias names no base URL, key, header, query or credential command. The thread uses fixed instructions in an empty private workspace with a read-only sandbox, approval `never`, `project_doc_max_bytes=0`, disabled web search, empty MCP/plugin/hook/notify tables and the Sidechat denial list plus `shell_tool`, `unified_exec_tty`, `view_image`, `sleep_tool`, `write_stdin_approval` and `skill_search`. `config/read` must report the exact merged provider shape (a closed set: the six required fields, known inert fields only as null or absent, and a disabled standalone web-search flag; any other key is refused), retry limits and ambient-instruction settings, and `experimentalFeature/list` must report every denied flag observed off before any input; a missing or enabled flag, inherited provider authority or unobserved retry limit is refused as `unsupported` before sending. The pinned profile reports `unified_exec` enabled even when configured off; it is a transport of the disabled shell tool. Codex cannot disable `update_plan`, so any tool, interaction or unexpected native event fails the title closed and discards its text. See the [title contract](cmds-delidev-session-titles-contract.md#protected-chatgpt-subscription-titles).
 
 ### Codex JSON-RPC stdio transport
 
@@ -2596,8 +2613,17 @@ A nonempty sample list, positive extra count or failed scan can emit the existin
 generic native-warning notice on the original process and active known
 nonterminal turn. An empty successful scan emits no notice. Deduplicate each of
 three warning classifications (world-writable paths, failed scan, or both) for
-the lifetime of that original execution process. Replays and observations in
-paused, failed or completed contexts become validated discarded metadata. They
+the lifetime of that original execution process. Every valid nonempty
+classification observed on the bound original process records its class in that
+process-local registry, including observations between turns, while paused, in
+failed or completed contexts, with a recovery problem, or with an unknown or
+absent active turn. Those observations, and replays of an already-recorded
+class, become validated discarded metadata, so replaying the same class on a
+later eligible active turn in that process is also discarded metadata. A first
+observation of a different class on an eligible turn emits exactly one notice,
+and a fresh original process starts with an empty registry. Empty successful
+scans, malformed payloads, foreign or unbound process contexts, server requests
+and setup completions never write the registry. Discarded observations
 do not create a new current turn or change settings, approvals, account/provider,
 readiness, input delivery, response receipts, recovery or cleanup ownership.
 
@@ -2737,7 +2763,13 @@ encrypted-content presence only. Locator values and opaque encrypted bytes stay
 in the original protected native history and its digest, and logs record only
 shape counts. Never fetch, open, decrypt, replay or reconstruct content from a
 result observation. A Worker whose server did not negotiate the capability
-keeps the observation private and the original turn continues.
+keeps the observation private and the original turn continues. That private
+path still validates the observation, its native item identity (non-empty, at
+most 1024 bytes) and its `started`/`completed` stage before retaining anything,
+and retains that identity and the
+completion lifecycle, so it consumes one shared native item slot, rejects an ID
+already owned by a message, tool, artifact or dynamic tool, and blocks any later
+item family from claiming that ID. It publishes no function-output event.
 
 The lifecycle digest covers the authoritative history item, including private
 locator and ciphertext bytes, not the media-stripped notification.

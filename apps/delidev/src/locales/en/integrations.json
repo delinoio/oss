@@ -84,5 +84,6 @@
   "integrations.extra.3aeb00246038": "github.com",
   "integrations.checkingSupport": "Checking GitHub connection support…",
   "integrations.onboardingUnsupported": "Update the selected server to verify a token before creating a profile. You can still create a profile first below.",
-  "integrations.onboardingSupportChanged": "GitHub token verification support changed. Retry the support check or close this form and reopen it. Your original save can still be reconciled."
+  "integrations.onboardingSupportChanged": "GitHub token verification support changed. Retry the support check or close this form and reopen it. Your original save can still be reconciled.",
+  "integrations.onboardingSupportRecovered": "GitHub token verification is now available on the selected server. Close this form and reopen it to verify a token before creating a profile. Your current draft and any unfinished save are kept."
 }

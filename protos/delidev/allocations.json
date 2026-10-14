@@ -9613,6 +9613,13 @@
       "number": 38
     },
     {
+      "issue": 2324,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_BRANCH_PREFIX_EXACT_QUOTE_V1",
+      "number": 65
+    },
+    {
       "issue": 1980,
       "kind": "enum",
       "declaration": "SystemCapability",
@@ -14784,6 +14791,20 @@
       "declaration": "GetStatusResponse",
       "member": "production_root_ready",
       "number": 9
+    },
+    {
+      "issue": 1905,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_MANAGED_CODEX_TITLES_V1",
+      "number": 59
+    },
+    {
+      "issue": 1905,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_MANAGED_CODEX_TITLES_V1",
+      "number": 32
     }
   ],
   "rpcReservations": [

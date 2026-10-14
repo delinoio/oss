@@ -15,6 +15,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/tokenprices"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/updates"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/userservice"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/worker"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 	"log/slog"
 	"net"
@@ -68,6 +69,11 @@ type Service struct {
 	tailscale          *tailscale.Manager
 	tailnetMu          sync.Mutex
 	tailnetStartWorker func(context.Context, string) error
+	// Optional seams for tests; nil selects the production clock, outbound HTTP
+	// client and Worker pairing retry.
+	tailnetNow  func() time.Time
+	tailnetHTTP func() (*http.Client, *http.Transport)
+	tailnetPair func(context.Context, string, worker.PairingCode, domain.DeviceType, string) (worker.Credential, error)
 	delidevv1connect.UnimplementedTailscaleServiceHandler
 	delidevv1connect.UnimplementedAttachmentServiceHandler
 	imageTransfersMu      sync.Mutex
@@ -111,6 +117,7 @@ type Service struct {
 	github                githubIdentity
 	githubQueries         githubRepositoryQueries
 	githubWorkspaces      githubPullRequestWorkspaces
+	githubAvatars         githubAvatarFetcher
 	githubRepositories    githubRepositoryInventory
 	terminalOutputMu      sync.Mutex
 	terminalOutputChanged chan struct{}

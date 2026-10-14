@@ -106,6 +106,9 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 	if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.MachineID != connection.Credential.MachineID || input.OriginalJobID != job.ParentID {
 		return nil, publicationUncertain()
 	}
+	if input.IsManaged() {
+		return executeManagedSessionTitle(ctx, config, jobID, job, input)
+	}
 	runtimeRoot := filepath.Join(config.Root, "title-runtimes")
 	if err := security.PrivateDir(runtimeRoot); err != nil {
 		return nil, err
@@ -138,18 +141,9 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 		return nil, err
 	}
 	if input.Version == 2 {
-		raw, err := security.ReadPrivate(filepath.Join(config.Root, "jobs", string(input.OriginalJobID), "startup-executable.json"), 8192)
-		var original domain.Installation
-		if err != nil || domain.Decode(raw, &original) != nil || original.Harness != domain.Codex || original.ExecutableSHA256 != input.Startup.ExecutableSHA256 {
-			return nil, publicationUncertain()
-		}
-		selection := *input.Startup
-		selection.ExplicitPath = original.ResolvedPath
-		resolved, err := harness.ResolveExecution(ctx, selection)
-		if err != nil {
+		if err := resolveStartupTitleExecutable(ctx, config, &input); err != nil {
 			return nil, err
 		}
-		input.Executable = resolved.ResolvedPath
 	}
 	resolved, err := filepath.EvalSymlinks(input.Executable)
 	if err != nil || resolved != input.Executable || !filepath.IsAbs(input.Executable) {
@@ -237,6 +231,49 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 	if turn.TurnID.Validate() != nil {
 		return nil, publicationUncertain()
 	}
+	response, err := readTitleResponse(inferenceCtx, ctx, config, client, jobID, input, intent, thread, turn)
+	if err != nil {
+		return nil, err
+	}
+	final, usage := response.Title, response.Usage
+	if err := cleanup.run(); err != nil {
+		return nil, err
+	}
+	var usageRecord *domain.ResponseUsageRecord
+	if usage != nil {
+		usageRecord = &domain.ResponseUsageRecord{
+			Purpose: domain.SessionTitleUsage, SessionID: input.SessionID, ProjectID: input.ProjectID,
+			ExecutionID: input.OriginalExecutionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID,
+			ProviderID: input.ProviderID, ModelID: input.ModelID, Harness: domain.Codex, Version: input.NativeVersion,
+			ThreadID: string(thread.Thread.ID), TurnID: string(turn.TurnID), Sequence: 1, Usage: *usage,
+		}
+	}
+	result := domain.AuxiliaryTitleResult{Version: 1, OperationID: input.OperationID, NameGeneration: input.NameGeneration, Title: final, CleanupVerified: true, UsageRecord: usageRecord}
+	if err := result.Validate(input); err != nil {
+		return nil, err
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		return nil, publicationUncertain()
+	}
+	if config.Logger != nil {
+		config.Logger.InfoContext(ctx, "automatic title inference completed", "job_id", jobID, "operation_id", input.OperationID, "session_id", input.SessionID, "usage_observed", usageRecord != nil)
+	}
+	return encoded, nil
+}
+
+// titleResponse is the validated outcome of one bounded native title turn.
+type titleResponse struct {
+	Title string
+	Usage *domain.NativeResponseUsage
+}
+
+// readTitleResponse consumes native events for exactly one title turn. It is
+// shared by the API relay and managed profiles: both accept only the fixed user
+// input, one bounded final assistant message and bounded reasoning, and fail
+// closed on any tool, interaction or unexpected event. It never repairs,
+// truncates or retries invalid output.
+func readTitleResponse(inferenceCtx, ctx context.Context, config Config, client *codex.Client, jobID domain.ID, input domain.AuxiliaryTitleInput, intent titleIntent, thread codex.ThreadResult, turn codex.TurnResult) (*titleResponse, error) {
 	var final string
 	var finalCount int
 	var titleDeltas strings.Builder
@@ -358,28 +395,24 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 	if completed == nil || finalCount != 1 || !sawUserInput || !sawTurnStart || len(final) > 256 || domain.Text(final, "automatic title", 256, true) != nil || strings.ContainsAny(final, "\r\n\x00") {
 		return nil, domain.Fail(domain.InvalidArgument, "The native title response is not one bounded single-line title.", "Keep the placeholder; do not repair, truncate or retry it.")
 	}
-	if err := cleanup.run(); err != nil {
-		return nil, err
+	return &titleResponse{Title: final, Usage: usage}, nil
+}
+
+// resolveStartupTitleExecutable recovers the original executable identity from
+// the immutable startup proof retained by the original execution. It never
+// substitutes another PATH executable.
+func resolveStartupTitleExecutable(ctx context.Context, config Config, input *domain.AuxiliaryTitleInput) error {
+	raw, err := security.ReadPrivate(filepath.Join(config.Root, "jobs", string(input.OriginalJobID), "startup-executable.json"), 8192)
+	var original domain.Installation
+	if err != nil || domain.Decode(raw, &original) != nil || original.Harness != domain.Codex || original.ExecutableSHA256 != input.Startup.ExecutableSHA256 {
+		return publicationUncertain()
 	}
-	var usageRecord *domain.ResponseUsageRecord
-	if usage != nil {
-		usageRecord = &domain.ResponseUsageRecord{
-			Purpose: domain.SessionTitleUsage, SessionID: input.SessionID, ProjectID: input.ProjectID,
-			ExecutionID: input.OriginalExecutionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID,
-			ProviderID: input.ProviderID, ModelID: input.ModelID, Harness: domain.Codex, Version: input.NativeVersion,
-			ThreadID: string(thread.Thread.ID), TurnID: string(turn.TurnID), Sequence: 1, Usage: *usage,
-		}
-	}
-	result := domain.AuxiliaryTitleResult{Version: 1, OperationID: input.OperationID, NameGeneration: input.NameGeneration, Title: final, CleanupVerified: true, UsageRecord: usageRecord}
-	if err := result.Validate(input); err != nil {
-		return nil, err
-	}
-	encoded, err := json.Marshal(result)
+	selection := *input.Startup
+	selection.ExplicitPath = original.ResolvedPath
+	resolved, err := harness.ResolveExecution(ctx, selection)
 	if err != nil {
-		return nil, publicationUncertain()
+		return err
 	}
-	if config.Logger != nil {
-		config.Logger.InfoContext(ctx, "automatic title inference completed", "job_id", jobID, "operation_id", input.OperationID, "session_id", input.SessionID, "usage_observed", usageRecord != nil)
-	}
-	return encoded, nil
+	input.Executable = resolved.ResolvedPath
+	return nil
 }

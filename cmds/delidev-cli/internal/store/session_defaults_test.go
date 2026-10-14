@@ -81,3 +81,32 @@ func TestSessionDefaultsPinProjectOverrideAndExplicitEmpty(t *testing.T) {
 		t.Fatal("empty override appended instructions")
 	}
 }
+
+func TestSessionDefaultsPinExactQuoteOnlyForNegotiatedRunnerDevice(t *testing.T) {
+	s, _ := openTest(t)
+	f := newExecutionFixture(t, s)
+	preview := func() *domain.BranchPrefixSelection {
+		var result InitialExecutionPreview
+		err := s.Read(context.Background(), func(tx *Tx) error {
+			var err error
+			result, err = tx.PreviewInitialExecution(domain.Session{AgentID: f.agent, MachineID: f.machine})
+			return err
+		})
+		if err != nil || result.Configuration.BranchPrefix == nil {
+			t.Fatal("preview did not pin a branch prefix", err)
+		}
+		return result.Configuration.BranchPrefix
+	}
+	if got := preview(); got.Version != domain.BranchPrefixVersionLegacyQuote {
+		t.Fatalf("Runner Device without exact quoting received selection version %d", got.Version)
+	}
+	_, err := s.Mutate(context.Background(), domain.NewID(), "fixture.machine-capability", f.machine, func(tx *Tx) (any, error) {
+		return tx.Put(domain.MachineKind, f.machine, 1, "", "", domain.Machine{Name: "Fixture", OS: "linux", Architecture: "arm64", WorkerCapabilities: []domain.WorkerCapability{domain.BranchPrefixInstructionsV1, domain.BranchPrefixExactQuoteV1}})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := preview(); got.Version != domain.BranchPrefixVersionExactQuote {
+		t.Fatalf("Runner Device with exact quoting received selection version %d", got.Version)
+	}
+}

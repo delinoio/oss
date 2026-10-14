@@ -50,7 +50,7 @@ import {
   StartupObservedOperation,
   RetainedStartupTimes,
 } from "./session-progress-status";
-import { currentTurn } from "./turn-timing";
+import { currentTurn, turnTimingConfirmed } from "./turn-timing";
 import { ToolTurnTranscript } from "./tool-turn-transcript";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { NativeImageView } from "./native-image-view";
@@ -95,8 +95,7 @@ import { ScrollPayloadWindow } from "./scroll-payload-window";
 import {
   executionStartupFailure,
   canRetryExecutionStartup,
-  startupCorrection,
-  startupRecoveryGuidance,
+  StartupRecoverySummary,
   ExecutionStartupDetails,
 } from "./execution-startup";
 
@@ -189,6 +188,7 @@ import {
   SessionIconKind,
   SessionNotice,
   SessionProblemNotice,
+  sessionStreamFailureTitle,
   SessionNoticeSeverity,
 } from "./session-presentation";
 import "./session.css";
@@ -920,6 +920,7 @@ export function SessionView({
   initialSkills,
   changeSkills,
   active = true,
+  connectionReady = true,
   embedded = false,
   activateOnMount = !embedded,
 }: {
@@ -934,6 +935,7 @@ export function SessionView({
   initialSkills?: SkillTokenBinding[];
   changeSkills?: (bindings: SkillTokenBinding[]) => void;
   active?: boolean;
+  connectionReady?: boolean;
   embedded?: boolean;
   /**
    * Whether a mount that starts active is an explicit activation. Embedded
@@ -1301,7 +1303,7 @@ export function SessionView({
       messages.loaded &&
       !messages.error &&
       !messages.isFetching &&
-      messages.payloadPages.some((page) => page.token === ""),
+      messages.observed,
     ),
   );
   // A toolbar gesture can precede the initial session snapshot. Capture its
@@ -1758,6 +1760,37 @@ export function SessionView({
         readDocument(row).closure === "open"
       );
     }) || requestsOpen;
+  // A read failure stays sticky until a later read settles successfully. An
+  // explicit Retry or Reload clears the error as soon as it starts, so the
+  // retained empty snapshot must not look like a healthy empty tray while
+  // recovery is still pending (including a stalled read). Suspending the chain
+  // (for example by switching sessions) cancels that read without settling it,
+  // so only an advanced settled-read count releases the latch. A healthy
+  // background Refresh never sets this flag.
+  const requestsFailed = useRef(false);
+  const requestsFailedAt = useRef<number | undefined>(undefined);
+  const requestsFailure = useRef(interactions.error);
+  if (interactions.error) {
+    requestsFailed.current = true;
+    requestsFailedAt.current = interactions.settledReads;
+    requestsFailure.current = interactions.error;
+  } else if (
+    requestsFailed.current &&
+    interactions.settledReads !== requestsFailedAt.current &&
+    !interactions.isPending
+  )
+    requestsFailed.current = false;
+  // Retry and Reload clear the error as soon as they start, which would unmount
+  // the recovery control and its keyboard focus. While the latched read is in
+  // flight, keep presenting the prior failure so the control stays mounted
+  // (disabled by the pending read) until the read settles.
+  const requestsRecovery: typeof interactions =
+    requestsFailed.current &&
+    !interactions.error &&
+    interactions.loading &&
+    requestsFailure.current
+      ? { ...interactions, error: requestsFailure.current }
+      : interactions;
   const confirmedEmptyRequests = completeEmptyInteractionTray({
     loaded: Boolean(interactions.data),
     loading: Boolean(
@@ -1766,6 +1799,7 @@ export function SessionView({
       interactions.loading !== ReadStage.Reload,
     ),
     failed:
+      requestsFailed.current ||
       Boolean(interactions.error || live.error) ||
       live.state !== ConnectionState.Live,
     continuation: Boolean(interactions.nextPageToken),
@@ -2059,16 +2093,17 @@ export function SessionView({
       progressRevision.current.revision = session.revision;
   }, [id, session]);
   const timing = currentTurn(session, id);
-  const timingConfirmed =
-    live.state === ConnectionState.Live &&
-    !live.error &&
-    !messages.error &&
-    !queue.error &&
-    !interactions.error &&
-    !control.uncertain &&
-    !control.error &&
-    data.recovery !== "required" &&
-    !Number(object(data.execution).unconfirmed_responses);
+  // Only loss of synchronization of the owning Session resource unconfirms
+  // timing. Definitive control rejections and unrelated queue/interaction read
+  // failures stay visible through their own surfaces without freezing the clock.
+  const timingConfirmed = turnTimingConfirmed({
+    liveLive: live.state === ConnectionState.Live,
+    liveFailed: Boolean(live.error),
+    messagesFailed: Boolean(messages.error),
+    controlUncertain: Boolean(control.uncertain),
+    recoveryRequired: data.recovery === "required",
+    unconfirmedResponses: Number(object(data.execution).unconfirmed_responses),
+  });
   const observedProgress = sessionProgress({
     session,
     sessionId: id,
@@ -2396,7 +2431,12 @@ export function SessionView({
               newPage={() => setBrowserDialog(true)}
               closeAria={shortcuts.aria(ShortcutId.SessionCloseTab)}
             />
-            <SessionToolMenu key={id} active={active}>
+            <SessionToolMenu
+              key={id}
+              active={active}
+              ready={connectionReady}
+              recoveryFocus={() => sessionHeading.current}
+            >
               {tools.map((tool) => (
                 <button
                   role="menuitem"
@@ -2751,7 +2791,7 @@ export function SessionView({
                           ref={requestsRoot}
                           className="session-tray-content"
                         >
-                          <Failure failure={interactions.error?.failure} />
+                          <Failure failure={requestsRecovery.error?.failure} />
                           <ScrollPayloadWindow
                             identity={paginationIdentity}
                             revision={paginationRevision}
@@ -2794,7 +2834,7 @@ export function SessionView({
                               questionReceipt(requestId, projection),
                           )}
                           <ScrollContinuation
-                            query={interactions}
+                            query={requestsRecovery}
                             root={requestsRoot}
                             active={conversationActive && requestsExpanded}
                             label={copy("session.requestPages_d06a30")}
@@ -2942,7 +2982,7 @@ export function SessionView({
                   >
                     {live.error || live.state === ConnectionState.Failed ? (
                       <SessionNotice
-                        title={copy("session.connectionTitle")}
+                        title={sessionStreamFailureTitle(live.error?.code)}
                         details={(opener) => showInfo(opener)}
                       >
                         <p>{connectionLabel}</p>
@@ -2971,8 +3011,7 @@ export function SessionView({
                         }
                         details={(opener) => showInfo(opener)}
                       >
-                        <span>{startupCorrection(startupFailure)}</span>
-                        <p>{startupRecoveryGuidance(startupFailure)}</p>
+                        <StartupRecoverySummary failure={startupFailure} />
                         <StartupObservedOperation session={session} />
                         <ExecutionStartupDetails
                           key={text(startupFailure.correlation_id)}
@@ -3268,6 +3307,7 @@ export function SessionView({
                 >
                   <SessionFiles
                     active={active && panel === SessionPanel.Files}
+                    previewing={tabs.tab.kind === SessionTabKind.File}
                     sessionId={id}
                     close={closePanel}
                     openFile={(repository, path) =>

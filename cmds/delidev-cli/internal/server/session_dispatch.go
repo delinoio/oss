@@ -166,6 +166,9 @@ func checkedExecutionConfiguration(tx *store.Tx, session domain.Session, machine
 	if c.BranchPrefix != nil && !slices.Contains(machine.WorkerCapabilities, domain.BranchPrefixInstructionsV1) {
 		return empty, domain.Fail(domain.Unsupported, "This Runner Device cannot preserve branch prefix instructions.", "Update and reconnect the original Runner Device before execution.")
 	}
+	if c.BranchPrefix != nil && c.BranchPrefix.Version == domain.BranchPrefixVersionExactQuote && !slices.Contains(machine.WorkerCapabilities, domain.BranchPrefixExactQuoteV1) {
+		return empty, domain.Fail(domain.Unsupported, "This Runner Device cannot preserve exact branch prefix quoting.", "Update and reconnect the original Runner Device before execution.")
+	}
 	if err := c.ValidateNativeOptions(); err != nil {
 		return empty, err
 	}

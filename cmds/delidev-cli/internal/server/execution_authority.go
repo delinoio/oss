@@ -805,7 +805,9 @@ func (s *Service) RegisterExecution(ctx context.Context, req *connect.Request[pb
 			grant.ExecutionID = input.ActionID
 		} else if job.Type == domain.GenerateSessionTitleJob {
 			var input domain.AuxiliaryTitleInput
-			if domain.Decode(job.Input, &input) != nil || input.Validate() != nil {
+			// A managed title has no API relay registration; its one-time inference
+			// claim is committed only by TakeSubscription.
+			if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.IsManaged() {
 				return nil, executionDenied()
 			}
 			grant.ExecutionID = input.OriginalExecutionID

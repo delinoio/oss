@@ -1657,6 +1657,17 @@ enum PageCommandFailure {
     Uncertain { failure: NativeFailure },
 }
 
+fn page_command_failure(stage: browser_host::PageCommandStage) -> PageCommandFailure {
+    match stage {
+        browser_host::PageCommandStage::NotAdmitted(failure) => {
+            PageCommandFailure::NotAdmitted { failure }
+        }
+        browser_host::PageCommandStage::Uncertain(failure) => {
+            PageCommandFailure::Uncertain { failure }
+        }
+    }
+}
+
 // Resource operations use a native-created original window identity, never a
 // renderer-supplied path or presentation handle.
 #[allow(
@@ -1699,55 +1710,51 @@ async fn browser_pages(
         request.action,
         browser_host::PageAction::Create | browser_host::PageAction::Close
     );
-    let prepared = tauri::async_runtime::spawn_blocking(move || {
-        let record = worker_connector.browser_profile(scope.as_ref(), &id)?;
-        recheck_record(&windows, &worker_authority)?;
-        if !mutating {
-            let inventory =
-                worker_host.read_pages(&worker_owner, scope.as_ref(), &record, &worker_request)?;
-            recheck_record(&windows, &worker_authority)?;
-            return Ok(Some(inventory));
-        }
-        if record.data.state != delidev_desktop::browser::ProfileState::Active {
-            return Err(NativeFailure::Stopped);
-        }
-        let admission = worker_host.prepare_pages(
-            &worker_owner,
-            scope.clone(),
-            &record,
-            &worker_request,
-            |staged, committed| {
-                publish_browser_pages(
-                    &windows,
-                    &worker_authority,
-                    || {
-                        let current = worker_connector.browser_profile(scope.as_ref(), &id)?;
-                        verify_profile_authority(&record, &current)
+    // Errors before admission prove nothing changed (`NotAdmitted`); once the
+    // host admitted or replayed the operation, a later failure is `Uncertain`
+    // and only observing the original operation ID settles it.
+    let inventory = tauri::async_runtime::spawn_blocking(
+        move || -> Result<Option<browser_host::PageInventory>, PageCommandFailure> {
+            let not_admitted = |failure| PageCommandFailure::NotAdmitted { failure };
+            let record = worker_connector
+                .browser_profile(scope.as_ref(), &id)
+                .map_err(not_admitted)?;
+            recheck_record(&windows, &worker_authority).map_err(not_admitted)?;
+            if !mutating {
+                let inventory = worker_host
+                    .read_pages(&worker_owner, scope.as_ref(), &record, &worker_request)
+                    .map_err(not_admitted)?;
+                recheck_record(&windows, &worker_authority).map_err(not_admitted)?;
+                return Ok(Some(inventory));
+            }
+            if record.data.state != delidev_desktop::browser::ProfileState::Active {
+                return Err(not_admitted(NativeFailure::Stopped));
+            }
+            worker_host
+                .prepare_page_command(
+                    &worker_owner,
+                    scope.clone(),
+                    &record,
+                    &worker_request,
+                    |staged, committed| {
+                        publish_browser_pages(
+                            &windows,
+                            &worker_authority,
+                            || {
+                                let current =
+                                    worker_connector.browser_profile(scope.as_ref(), &id)?;
+                                verify_profile_authority(&record, &current)
+                            },
+                            staged,
+                            committed,
+                        )
                     },
-                    staged,
-                    committed,
                 )
-            },
-        )?;
-        if admission == browser_host::PageAdmission::Replayed {
-            // The original operation owns its result; read it without
-            // repeating the mutation.
-            let observe = browser_host::PageRequest {
-                action: browser_host::PageAction::Observe,
-                operation_id: worker_request.operation_id.clone(),
-                url: None,
-                page_id: None,
-            };
-            let inventory =
-                worker_host.read_pages(&worker_owner, scope.as_ref(), &record, &observe)?;
-            return Ok(Some(inventory));
-        }
-        Ok(None)
-    })
+                .map_err(page_command_failure)
+        },
+    )
     .await
-    .map_err(|_| not_admitted(NativeFailure::SidecarFailed))?
-    .map_err(not_admitted)?;
-    let inventory = prepared;
+    .map_err(|_| not_admitted(NativeFailure::SidecarFailed))??;
     let operation_id = request.operation_id.clone().unwrap_or_default();
     // A fresh mutation and a retried native cleanup finish on the UI loop. A
     // pure read, or a receipt whose cleanup completed, returns directly.
@@ -3401,6 +3408,24 @@ mod product_window_tests {
             })
             .unwrap(),
             serde_json::json!({"kind": "uncertain", "failure": "sidecar-failed"})
+        );
+    }
+
+    #[test]
+    fn page_command_stages_keep_admission_classification() {
+        assert_eq!(
+            serde_json::to_value(page_command_failure(
+                browser_host::PageCommandStage::NotAdmitted(NativeFailure::InvalidInput)
+            ))
+            .unwrap(),
+            serde_json::json!({"kind": "not-admitted", "failure": "invalid-input"})
+        );
+        assert_eq!(
+            serde_json::to_value(page_command_failure(
+                browser_host::PageCommandStage::Uncertain(NativeFailure::Stopped)
+            ))
+            .unwrap(),
+            serde_json::json!({"kind": "uncertain", "failure": "stopped"})
         );
     }
 

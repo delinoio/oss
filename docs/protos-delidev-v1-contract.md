@@ -1,5 +1,17 @@
 # DeliDev v1 Connect contract
 
+## Branch prefix exact-quote negotiation
+
+Worker `BRANCH_PREFIX_EXACT_QUOTE_V1 = 65` is allocated and activated with
+the immutable selection version 2 change. It is independent of `BRANCH_PREFIX_INSTRUCTIONS_V1 = 38`
+and advertises that the Worker validates immutable branch prefix selection
+version 2 (exact JSON-style quoting of the Execute instruction). The server
+echoes it in `AttachWorkerResponse.supported_worker_capabilities`; a Worker
+reports it only after observing that echo. Existing numeric assignments are
+unchanged. Go and TypeScript Worker descriptors expose the new enum. No public
+RPC, System capability or SQLite migration is added. The
+[catalog contract](cmds-delidev-catalog-contract.md) owns selection behavior.
+
 ## Named managed checkout negotiation
 
 Worker `NAMED_WORKSPACE_DIRECTORIES_V1 = 53` is allocated and activated with the complete frozen checkout layout. Preserve Worker 19 remote clone ownership and every existing numeric assignment. Private version-1 preparation/result JSON adds optional immutable `directory_name`; historical omission preserves bytes and UUID paths. Original session/Schedule admission, assignment, execution, storage/restoration and independent Fork separately require the negotiated capability. Unsupported peers cannot receive named work or substitute UUID directories. No public RPC, System capability or SQLite migration is added. Go and TypeScript Worker descriptors expose the new enum; other service/query declarations remain unchanged. Follow the [workspace contract](cmds-delidev-workspace-contract.md#frozen-repository-checkout-names) and [storage contract](cmds-delidev-storage-contract.md#frozen-live-checkout-layout).
@@ -523,7 +535,7 @@ values. Regenerate all bindings from this combined canonical schema.
 
 ### Protocol integration
 
-- DeliDev remote-first repositories record System 37 `REMOTE_REPOSITORIES_V1` and Worker 19 `REMOTE_WORKSPACE_CLONE_V1` in the owning feature PR. Preserve System 31/32 and Worker 18 as the separate immediate-clone/listing boundary; reservations alone grant no support or Git authority.
+- DeliDev remote-first repositories use System 37 `REMOTE_REPOSITORIES_V1` and Worker 19 `REMOTE_WORKSPACE_CLONE_V1`, allocated in the ledger (which does not advertise support) and recorded in the owning feature PR. Preserve System 31/32 and Worker 18 as the separate immediate-clone/listing boundary; capability support must be negotiated before use and grants no Git authority beyond the documented clone.
 
 - Agent Worker ordered source routes follow the catalog, desktop, protocol and sessions contracts. Main reservation the originating change owns System capability 36 and SaveAgentWorkerRequest.route_models field 5; preserve capability 35. Keep schema-3 routes exclusive with legacy fields, all models/accounts referenced and saved atomically, per-source routing state updated only with a successful first claim, confirmed-exhaustion-only fallback and observed-recovery preference for later new sessions. Preserve immutable executions, old-client write protection and portable v1/v2/v3 compatibility; add no SQLite migration.
 
@@ -612,6 +624,7 @@ Record implementation status and validation results in pull requests, issues and
 - DeliDev `SystemService.GetOverview` is owner/paired-client-only. Preserve exact uint64 ownership/request/Worker counts, observation time and server UTC usage boundaries; no resource bodies, credentials, native identities or paths enter this presentation response. Worker-compatible `GetStatus` stays separate. Connected Workers require independently sampled stream presence plus current database authorization and a fresh lease; observations never authorize execution or cleanup.
 
 - DeliDev automatic titles add an opt-in session name mode and typed server capability independently of the typed Worker capability. Keep `WatchAuxiliaryWork` isolated from ordinary `WatchWork`, preserve exact current generated Go/TypeScript bindings, and follow `cmds-delidev-session-titles-contract.md` for compatibility and ownership rules.
+- Protected ChatGPT titles add System 59 `MANAGED_CODEX_TITLES_V1` and Worker 32 `MANAGED_CODEX_TITLES_V1` (recorded in `allocations.json`). They are negotiated independently of `AUTOMATIC_TITLES_V1`/`AUTOMATIC_TITLES_CODEX_V1`, reuse `TakeSubscription`/`FinishSubscription` with the EXECUTE action and add no RPC, field or migration. Older peers receive no managed assignment. Regenerate Go and TypeScript bindings with `pnpm proto:generate`.
 
 - `protos/delidev/v1` and `protos/gen/go/delidev/v1`: DeliDev authenticated Connect schemas and tool-owned Go bindings; follow `protos-delidev-v1-contract.md`. Account credentials are bounded write-only inputs; an accepted disconnect with failed cleanup returns the current account and a sanitized typed cleanup problem, preserving its original retry identity. Account validation returns the accepted sanitized non-inference observation with current account metadata; replay cannot repeat provider requests or grant readiness from an old connection.
 
@@ -1115,7 +1128,7 @@ deletion enforcement, historical quarantine, bounds and recovery evidence limits
 
 `SystemService.GetUserService` and `ControlUserService` add owner/paired-client-only, closed typed kind/action/state messages and `USER_SERVICES_V1`. Preserve exact uint64 revisions, UUID-v7 request/installation identity, actor-bound current-state receipts and correlation. The target is the server computer's own server or fixed local Worker scope; no caller path, remote Worker, native PID or credential field exists. Stop acceptance and joined controller cleanup are independent. See the [user-service contract](cmds-delidev-user-services-contract.md).
 
-System capability wire values retain `AUTOMATIC_TITLES_V1 = 1`, `SESSION_FORWARDING_V1 = 2`, `USER_SERVICES_V1 = 3`, `NATIVE_ACCOUNTING_V1 = 4`, `STOPPED_CODEX_ACCOUNT_SWITCH_V1 = 5`, `SERVER_OUTBOUND_PROXY_V1 = 6`, `MANAGED_BACKUP_RESTORE_V1 = 7`, `PERMANENT_SESSION_DELETION_V1 = 9`, `WORKSPACE_STORAGE_V1 = 11` and `CODEX_SESSION_FORK_V1 = 13`. Managed restore, native accounting, workspace storage and same-account Codex Fork use their original reserved numbers. `GetStatus` advertises each implemented capability independently. Preserve these distinct meanings and regenerate both language bindings from the schema.
+System capability wire values retain `AUTOMATIC_TITLES_V1 = 1`, `SESSION_FORWARDING_V1 = 2`, `USER_SERVICES_V1 = 3`, `NATIVE_ACCOUNTING_V1 = 4`, `STOPPED_CODEX_ACCOUNT_SWITCH_V1 = 5`, `SERVER_OUTBOUND_PROXY_V1 = 6`, `MANAGED_BACKUP_RESTORE_V1 = 7`, `PERMANENT_SESSION_DELETION_V1 = 9`, `WORKSPACE_STORAGE_V1 = 11` and `CODEX_SESSION_FORK_V1 = 13`. `MANAGED_CODEX_TITLES_V1` uses System 59 / Worker 32. Managed restore, native accounting, workspace storage and same-account Codex Fork use their original reserved numbers. `GetStatus` advertises each implemented capability independently. Preserve these distinct meanings and regenerate both language bindings from the schema.
 
 `GetStatusResponse.production_root_ready = 9` is a presence-bearing `optional bool` recorded in `protos/delidev/allocations.json` as a reservation owned by issue 3069, not in the immutable baseline. The server sets it from `updates.ProductionReady()` on every status response (false while the repository trust root is unset); omission identifies a legacy server. It does not replace or alter the `SIGNED_UPDATES_V1` capability, and both the Go and TypeScript generated clients regenerate it through the existing buf workflow.
 

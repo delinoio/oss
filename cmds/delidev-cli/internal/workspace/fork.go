@@ -94,6 +94,7 @@ func (m *Manager) InspectForkSnapshot(ctx context.Context, source Manifest, requ
 				if err != nil {
 					return nil, err
 				}
+				inventory.bindRemote(request.Repositories[i])
 				copy.gitInventory = &inventory
 			}
 		}

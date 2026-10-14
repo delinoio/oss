@@ -103,6 +103,44 @@ function matchesCatalogCopy(value: string, key: MessageKey): boolean {
   );
 }
 
+/**
+ * Localized recovery-card heading for a typed failure. Classification uses the
+ * closed code/cause values only, never message text. `fallbackTitle` applies to
+ * codes without a dedicated heading.
+ */
+function sessionProblemTitle(
+  code: unknown,
+  cause?: unknown,
+  fallbackTitle?: string,
+): string {
+  if (failureCause(code, cause) === FailureCause.QuotaExhausted)
+    return copy("session.quotaTitle");
+  switch (code) {
+    case FailureCode.Unauthenticated:
+      return copy("session.authenticationTitle");
+    case FailureCode.RecoveryRequired:
+      return copy("session.recoveryTitle");
+    case FailureCode.BudgetReached:
+      return copy("session.budgetTitle");
+    case FailureCode.ServerUnavailable:
+    case FailureCode.Unavailable:
+      return copy("session.connectionTitle");
+    default:
+      return fallbackTitle ?? copy("session.attentionRequired");
+  }
+}
+
+/**
+ * Localized heading for the live-stream failure card. Only the typed
+ * `unauthenticated` code has a dedicated heading; every other code, including
+ * recovery, budget and quota classifications, keeps the connection heading.
+ */
+export function sessionStreamFailureTitle(code: unknown): string {
+  return code === FailureCode.Unauthenticated
+    ? copy("session.authenticationTitle")
+    : copy("session.connectionTitle");
+}
+
 /** Presentation only: callers retain actions, confirmations and request identity. */
 export function SessionProblemNotice({
   code,
@@ -125,18 +163,7 @@ export function SessionProblemNotice({
 }) {
   useLocale();
   const quota = failureCause(code, cause) === FailureCause.QuotaExhausted;
-  const title = quota
-    ? copy("session.quotaTitle")
-    : code === FailureCode.Unauthenticated
-      ? copy("session.authenticationTitle")
-      : code === FailureCode.RecoveryRequired
-        ? copy("session.recoveryTitle")
-        : code === FailureCode.BudgetReached
-          ? copy("session.budgetTitle")
-          : code === FailureCode.ServerUnavailable ||
-              code === FailureCode.Unavailable
-            ? copy("session.connectionTitle")
-            : (fallbackTitle ?? copy("session.attentionRequired"));
+  const title = sessionProblemTitle(code, cause, fallbackTitle);
   return (
     <SessionNotice title={title} details={details}>
       {quota ? (

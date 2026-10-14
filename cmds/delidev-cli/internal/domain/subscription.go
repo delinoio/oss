@@ -58,17 +58,20 @@ type SubscriptionOperation struct {
 	Phase      SubscriptionPhase  `json:"phase"`
 }
 type SubscriptionLease struct {
-	ForkRevision uint64             `json:"fork_revision,omitempty"`
-	ID           ID                 `json:"id"`
-	OperationID  ID                 `json:"operation_id"`
-	Revision     uint64             `json:"revision"`
-	Action       SubscriptionAction `json:"action"`
-	MachineID    ID                 `json:"machine_id"`
-	InstanceID   ID                 `json:"instance_id"`
-	DeviceID     ID                 `json:"device_id"`
-	Epoch        ID                 `json:"epoch"`
-	Generation   ID                 `json:"generation,omitempty"`
-	StartedAt    time.Time          `json:"started_at"`
+	ForkRevision uint64 `json:"fork_revision,omitempty"`
+	// TitleRevision binds an EXECUTE lease to the exact claimed managed title
+	// job revision, exactly as ForkRevision binds a managed Fork.
+	TitleRevision uint64             `json:"title_revision,omitempty"`
+	ID            ID                 `json:"id"`
+	OperationID   ID                 `json:"operation_id"`
+	Revision      uint64             `json:"revision"`
+	Action        SubscriptionAction `json:"action"`
+	MachineID     ID                 `json:"machine_id"`
+	InstanceID    ID                 `json:"instance_id"`
+	DeviceID      ID                 `json:"device_id"`
+	Epoch         ID                 `json:"epoch"`
+	Generation    ID                 `json:"generation,omitempty"`
+	StartedAt     time.Time          `json:"started_at"`
 }
 
 func (s SubscriptionState) Validate(account Account) error {
@@ -152,7 +155,7 @@ func (s SubscriptionState) Validate(account Account) error {
 				return invalid()
 			}
 		}
-		if l.ForkRevision != 0 && l.Action != SubscriptionExecute {
+		if (l.ForkRevision != 0 || l.TitleRevision != 0) && (l.Action != SubscriptionExecute || l.ForkRevision != 0 && l.TitleRevision != 0) {
 			return invalid()
 		}
 		if l.Revision == 0 || l.StartedAt.IsZero() || l.Generation != s.Generation || (l.Action != SubscriptionLogin && l.Action != SubscriptionRefresh && l.Action != SubscriptionLogout && l.Action != SubscriptionExecute && l.Action != SubscriptionQuota && l.Action != SubscriptionResetCredit) {

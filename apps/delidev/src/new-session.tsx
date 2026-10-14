@@ -76,6 +76,21 @@ import { Surface } from "./surface";
 import { useShortcuts } from "./shortcut-provider";
 import { ShortcutExecution, ShortcutId, ShortcutInput } from "./shortcuts";
 
+// An enabled first read that is paused (for example while offline) reports
+// isFetching false with a pending status, so it must still count as unsettled.
+// Disabled queries stay idle and are never treated as pending.
+function readUnsettled(query: {
+  isFetching: boolean;
+  isPending: boolean;
+  fetchStatus: string;
+  error: unknown;
+}) {
+  return (
+    query.isFetching ||
+    (query.isPending && query.fetchStatus === "paused" && !query.error)
+  );
+}
+
 // A failed connection cannot prove that an existing choice became ineligible.
 // Explicit denial/missing responses can; successful reads validate the resource.
 function eligibilityReadSettled(fetching: boolean, error: unknown) {
@@ -476,17 +491,18 @@ export function NewSession({
   ]);
   // Offer Agent Worker creation only after the creation preference read and the
   // retained Agent's exact read and eligibility have settled. Read errors settle
-  // the wait so they never block ordinary creation.
+  // the wait so they never block ordinary creation. A manual edit stops every
+  // automatic restoration, so it releases both waits.
   const agentRestorationPending =
-    preferences.reading ||
-    Boolean(
-      preferences.pair?.agent_id &&
-      !touched.current &&
-      !restoration.current.agent &&
-      (rememberedAgent.isFetching ||
-        (project && selectedProject.isFetching) ||
-        agentEligible),
-    );
+    !touched.current &&
+    (preferences.reading ||
+      Boolean(
+        preferences.pair?.agent_id &&
+        !restoration.current.agent &&
+        (readUnsettled(rememberedAgent) ||
+          (project && readUnsettled(selectedProject)) ||
+          agentEligible),
+      ));
   const editAgent = (id: string) => {
     touched.current = true;
     restoration.current.agent = false;

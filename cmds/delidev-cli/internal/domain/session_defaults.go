@@ -70,10 +70,72 @@ type BranchPrefixSelection struct {
 }
 
 func (p BranchPrefixSelection) Validate() error {
-	if p.Version != 1 || (p.SettingsID == "") != (p.SettingsRevision == 0) || (p.ProjectID == "") != (p.ProjectRevision == 0) || p.SettingsID != "" && p.SettingsID.Validate() != nil || p.ProjectID != "" && p.ProjectID.Validate() != nil {
+	if (p.Version != BranchPrefixVersionLegacyQuote && p.Version != BranchPrefixVersionExactQuote) || (p.SettingsID == "") != (p.SettingsRevision == 0) || (p.ProjectID == "") != (p.ProjectRevision == 0) || p.SettingsID != "" && p.SettingsID.Validate() != nil || p.ProjectID != "" && p.ProjectID.Validate() != nil {
 		return Fail(RecoveryRequired, "Invalid retained branch prefix provenance.", "Preserve the original execution configuration.")
 	}
 	return ValidateBranchPrefix(p.Prefix)
+}
+
+// Branch prefix selection versions. Version 1 selections were accepted before the
+// exact-quoting rule and their retained instruction bytes (and therefore Claude
+// continuation and recovery digests) depend on the legacy encoding/json escaping.
+const (
+	BranchPrefixVersionLegacyQuote uint32 = 1
+	BranchPrefixVersionExactQuote  uint32 = 2
+)
+
+// quoteBranchPrefixLiteral returns the JSON-style quoted prefix for the plain-text
+// instruction. Unlike encoding/json it keeps <, > & and the U+2028/U+2029
+// separators exact because the result is never embedded in HTML or JavaScript;
+// quotes, backslashes and control characters stay escaped.
+func quoteBranchPrefixLiteral(prefix string) string {
+	const hexDigits = "0123456789abcdef"
+	var b strings.Builder
+	b.WriteByte('"')
+	for i := 0; i < len(prefix); {
+		r, size := utf8.DecodeRuneInString(prefix[i:])
+		i += size
+		switch {
+		case r == '"' || r == '\\':
+			b.WriteByte('\\')
+			b.WriteRune(r)
+		case r == '\b':
+			b.WriteString(`\b`)
+		case r == '\f':
+			b.WriteString(`\f`)
+		case r == '\n':
+			b.WriteString(`\n`)
+		case r == '\r':
+			b.WriteString(`\r`)
+		case r == '\t':
+			b.WriteString(`\t`)
+		case r < 0x20:
+			b.WriteString(`\u00`)
+			b.WriteByte(hexDigits[r>>4])
+			b.WriteByte(hexDigits[r&0xf])
+		case r == utf8.RuneError && size == 1:
+			// Invalid UTF-8 becomes U+FFFD, as encoding/json does.
+			b.WriteString(`\ufffd`)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
+}
+
+// legacyQuoteBranchPrefixLiteral reproduces the version-1 encoding byte for byte.
+func legacyQuoteBranchPrefixLiteral(prefix string) string {
+	literal, _ := json.Marshal(prefix)
+	return string(literal)
+}
+
+// quoteBranchPrefixForVersion selects the quoting rule pinned by the retained selection.
+func quoteBranchPrefixForVersion(selection *BranchPrefixSelection) string {
+	if selection.Version == BranchPrefixVersionLegacyQuote {
+		return legacyQuoteBranchPrefixLiteral(selection.Prefix)
+	}
+	return quoteBranchPrefixLiteral(selection.Prefix)
 }
 
 // NativeInstructions retains template bytes and appends exactly one shared
@@ -81,11 +143,11 @@ func (p BranchPrefixSelection) Validate() error {
 func (c ExecutionConfiguration) NativeInstructions(mode SessionMode) (string, error) {
 	instructions := c.Instructions
 	if c.BranchPrefix != nil && c.BranchPrefix.Prefix != "" && mode == ExecuteMode && c.SidechatPolicy == "" {
-		literal, _ := json.Marshal(c.BranchPrefix.Prefix)
+		literal := quoteBranchPrefixForVersion(c.BranchPrefix)
 		if instructions != "" {
 			instructions += "\n\n"
 		}
-		instructions += "When creating a new Git branch, concatenate the literal prefix " + string(literal) + " with a suffix you choose. Do not insert a separator or rename existing branches. Preserve existing branches and workspace permissions."
+		instructions += "When creating a new Git branch, concatenate the literal prefix " + literal + " with a suffix you choose. Do not insert a separator or rename existing branches. Preserve existing branches and workspace permissions."
 	}
 	if len(instructions) > MaxAppliedInstructions {
 		return "", Fail(ResourceExhausted, "Combined instructions exceed the native adapter bound.", "Reduce the ordered templates before first execution; no contents were truncated.")

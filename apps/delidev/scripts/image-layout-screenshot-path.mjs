@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import assert from "node:assert/strict";
 import { lstat, realpath } from "node:fs/promises";
 import {
   basename,
@@ -79,4 +80,14 @@ export async function validateScreenshotFiles(directory, names) {
       if (error.code !== "ENOENT") throw error;
     }
   }
+}
+
+// Fail when a requested screenshot run did not write every expected file, so a
+// viewport-matrix or selection mismatch cannot pass silently.
+export function assertScreenshotsWritten(expected, written) {
+  assert.deepEqual(
+    [...written].sort(),
+    [...expected].sort(),
+    "A screenshot must be written for every expected layout case",
+  );
 }

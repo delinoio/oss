@@ -48,7 +48,7 @@ Servers without token-onboarding capability 34 retain the original create flow. 
 
 With capability 34, token-first creation verifies a transient write-only PAT before the profile confirmation step. The first step focuses the password input and provides a static Create a token on GitHub section with exactly two buttons, Classic then Fine grained. It has no token-kind, resource-owner or Classic-access input and no disclosure. A deliberate button click chooses the confirmation step's token kind and prepares the matching official form; it does not declare an owner. Confirmation still requires the explicit fine-grained owner, retains optional Classic owner and editable profile name, and preserves exact save/replacement retries and owned token-buffer clearing. Identity verification does not establish repository access.
 
-A creation opening pins the first admitted token-first or metadata-first controller until disposal. Failed status refreshes display a sanitized read failure and an explicit read-only retry without replacing its controller, draft or exact submitted request. Successful later capability changes also cannot replace admitted work. New token inspection and a new Save and connect require a completed valid capability-34 observation; a pending, failed or unsupported read grants no new token authority. An already authorized save sequence and explicit original metadata retry retain their original identity and bytes, with erased-token reentry rules unchanged. Initial unsupported/malformed status and initial read failure keep metadata-first fallback. Same-identity reconnect retains the opening; dialog/category/Settings departure and true connection identity replacement dispose it under the current Settings contract without restoring abandoned requests.
+A creation opening pins the first admitted token-first or metadata-first controller until disposal. Failed status refreshes display a sanitized read failure and an explicit read-only retry without replacing its controller, draft or exact submitted request. Successful later capability changes also cannot replace admitted work. New token inspection and a new Save and connect require a completed valid capability-34 observation; a pending, failed or unsupported read grants no new token authority. An already authorized save sequence and explicit original metadata retry retain their original identity and bytes, with erased-token reentry rules unchanged. Initial unsupported/malformed status and initial read failure keep metadata-first fallback. When a fallback opening later reads a valid capability-34 inventory, the editor keeps its controller, draft and any save uncertainty and shows localized recovered-support guidance (`integrations.onboardingSupportRecovered`) to close and reopen the form for token-first onboarding; the recovered guidance stays through later in-flight fetches and clears only when a settled read errors or returns an unsupported or malformed inventory, which then keeps the existing truthful messages, and loss of support after a token-first admission keeps `integrations.onboardingSupportChanged`. A capability status poll that toggles the new-click gate never retires an already admitted Classic or Fine grained form opening. Same-identity reconnect retains the opening; dialog/category/Settings departure and true connection identity replacement dispose it under the current Settings contract without restoring abandoned requests.
 
 Manage separates Connect a token, identity validation and confirmed deletion. The password input is empty, autocomplete-off, spellcheck-off and bounded to 512 visible ASCII characters; an empty/invalid value cannot submit. Stored tokens are never rendered, recovered or revealed. The complete verified official-form guidance appears in an informational native disclosure, initially expanded without a connection and collapsed with a connection. Collapsing preserves its current Classic selection/status; only the existing explicit official-form button requests its revision-bound URL. Preserve all repository-selection, owner, permission, expiry, organization-approval and broad Classic-scope caveats.
 
@@ -366,7 +366,7 @@ Reviewer identity reference: [Get a user using their durable ID](https://docs.gi
 
 Schema v20 adds an internal original-attempt journal with a typed index and an optional durable chain on the existing stable PR set. A partial unique index permits one reserved, bound, running or uncertain attempt per remote PR, independent of local repository alias, session and observed head. The original request actor, exact problem/content references, selected complete policy, input identity/content digest, execution identity and lifecycle times remain retained. Reservations and canceled preparations do not consume automatic attempts. The ordinary execution claim and fresh remediation gate must commit together; a shared queue-commit invariant rejects ordinary FIFO/Resume paths that try to claim a bound input without the matching remediation start.
 
-The selected kind's domain gate independently verifies a fresh complete observation, original stable PR identities and open state. Its maximum observation-to-claim interval is 30 seconds, with future observations rejected; this does not permit cached authorization. Automatic feedback requires the original content revision, original author namespace and a currently matching exact OR selector. Provider approval/dismissal does not change eligibility. Explicit manual feedback may address retained original content after provider edits or disappearance and needs a fresh PR detail binding without invented reviewer proof. CI requires the same original result version among freshly verified terminal active-ruleset requirements. Conflict requires a current original transition, matching refs/commits and confirmed false mergeability. Unknown prerequisites affect their own kind only. Multi-kind dispatch observations must agree on current local selection/generation and exact base/head refs/commits.
+The selected kind's domain gate independently verifies a fresh complete observation, original stable PR identities and open state. Its maximum observation-to-claim interval is 30 seconds, with future observations rejected; this does not permit cached authorization. Automatic feedback requires the original content revision, original author namespace and a currently matching exact OR selector. Provider approval/dismissal does not change eligibility. Explicit manual feedback may address retained original content after provider edits or disappearance and needs a fresh PR detail binding without invented reviewer proof. CI requires the same original result version among freshly verified terminal active-ruleset requirements. Conflict requires a current original transition, matching refs/commits and confirmed false mergeability. Unknown prerequisites affect their own kind only. Multi-kind dispatch observations must agree on current local selection/generation and exact base/head refs/commits. Automatic dispatch reads each enabled feedback/CI source (20-second bound, failures or slowness affect only that kind), then reads PR detail last (20-second bound) as the conflict observation and common Git target. The first successful source anchors a 27-second freshness window (the 30-second limit minus a 3-second selection margin); a later source is read only with the time left after reserving the full detail bound, and one that does not fit, or is cut short by that remainder, is deferred to a separate pass that reads it first with its own full bound and detail read. Deferral never drops or ages an observation, and it ends once an attempt is admitted; deferred kinds then join a later cycle. Every collected source is validated against its pass's final target; any identity, ref or commit drift rejects the pass with the existing conflict error. Expired evidence is never reused and reads are never retried.
 
 At start, the store rechecks exact repository revision, selected profile generation, absence of a pending profile operation, current complete effective remediation policy and live project repository membership. The session and exact queued input must share ownership, remain unarchived/unpaused and outside recovery, and retain Execute mode and their originally bound input digest. Worker, account, harness, workspace matching and Git access remain independent ordinary dispatch/controller responsibilities; the coordination record cannot replace them.
 
@@ -567,7 +567,11 @@ remediation operations remain unchanged. Unsupported peers retain a flat list,
 Description/Diff/Reviews and explicit unsupported stacks/Commits notices.
 
 Workspace requests bind the original local repository revision and at most 20
-accepted-page PR numbers. The adapter validates numeric GitHub repository and PR
+accepted-page PR numbers. Repository scope comes only from the authenticated
+identity and numeric repository metadata reads, which fail the request when
+unavailable or invalid; every accepted seed, including the first, is then read as
+an ordinary detail, so an unreadable seed in any position leaves a readable
+workspace incomplete (`seed_unavailable`, `access_unavailable`) instead of failing it. The adapter validates numeric GitHub repository and PR
 identities, exact head-repository identity and base/head branch relationships in
 all states. Context rows are labeled and never increase filtered match counts.
 Each component renders once under its earliest resident matching seed (a seed
@@ -584,6 +588,14 @@ no same-repository graph relationship; a PR whose head repository has a valid
 numeric identity different from the selected repository remains a complete flat
 node with no reason, while a missing head repository identity remains incomplete
 (`head_repository_unavailable`).
+
+Workspace nodes are body-free graph projections: the adapter validates each
+pull request description against its 128 KiB Detail limit but never retains it,
+so the 1 MiB response cap covers structure rather than up to 20 maximum-size
+descriptions. `PRWorkspace.Validate` and the desktop `validWorkspaceItem` accept
+only nodes without a `body` field and reject a node that carries one. The
+selected pull request's description still comes from its own Detail read with
+its existing limit and error handling.
 
 Each observed PR retains its own provider-reported additions/deletions, bound to
 its exact repository/PR/base/head. Commit counts come independently from commit
@@ -614,7 +626,9 @@ is introduced.
 
 Opaque avatar references retain their original actor, local repository revision,
 selected profile generation and numeric author in a bounded 64-entry memory
-cache. The authenticated byte read denies foreign, revoked and evicted scope.
+cache. The authenticated byte read denies foreign, revoked and evicted scope,
+including a reference evicted while the uncached network fetch is in flight: the
+fetched bytes are discarded and published only while the same cache entry remains.
 Only exact HTTPS `avatars.githubusercontent.com/u/<numeric actor>` locators with
 bounded known query fields are fetched through the selected outbound route. No
 PAT, client bearer, cookies or origin Authorization is attached, and redirects

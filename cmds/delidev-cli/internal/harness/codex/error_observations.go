@@ -87,7 +87,7 @@ func validRecoveryMisalignment(raw json.RawMessage) bool {
 }
 func nativeProviderDisplayName(providerKey string) (string, bool) {
 	switch providerKey {
-	case managedOpenAIProviderKey:
+	case managedOpenAIProviderKey, ManagedTitleProvider:
 		return managedOpenAIProviderName, true
 	default:
 		return "", false
