@@ -21,6 +21,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativetest"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
@@ -245,10 +246,7 @@ func nativeOwnedAPISessionWithProfile(t *testing.T, input, mismatch bool, relayM
 func nativeOwnedAPISessionWithRequestCheck(t *testing.T, input, mismatch bool, relayMode nativeRelayFixtureMode, configure func(*apiSessionConfig), check func(map[string]json.RawMessage)) {
 	t.Helper()
 	realRelay := relayMode != nativeDirectScriptedAPI
-	executable := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
-	if executable == "" {
-		t.Skip("explicit isolated native OpenCode owned API initializer")
-	}
+	executable, version := nativetest.NativeOpenCodeExecutable(t)
 	requireNoManagedOpenCodeConfig(t)
 	config := fixtureOwnedAPIConfig(t)
 	if configure != nil {
@@ -270,6 +268,7 @@ func nativeOwnedAPISessionWithRequestCheck(t *testing.T, input, mismatch bool, r
 		}
 	}()
 	config.Probe.Process.Executable = executable
+	config.Probe.Version = version
 	upstreamKey := "private-upstream-only-" + string(domain.NewID())
 	t.Cleanup(func() {
 		// All original native/HTTP cleanup defers have joined before Cleanup.

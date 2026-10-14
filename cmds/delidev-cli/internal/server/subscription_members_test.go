@@ -822,7 +822,7 @@ func TestClaudeRefreshStaysDeniedBehindExclusiveLease(t *testing.T) {
 		t.Fatal(err)
 	}
 	r, _ := f.record()
-	_, err := f.client.RequestSubscription(context.Background(), subscriptionRequest(f.service.Identity.Token, &pb.RequestSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(r.ID), ExpectedRevision: r.Revision}, MachineId: string(f.input.MachineID), Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH}))
+	_, err := claudeTryLegacyRequest(f.subscriptionFixture, &pb.RequestSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(r.ID), ExpectedRevision: r.Revision}, MachineId: string(f.input.MachineID), Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH})
 	if err == nil {
 		t.Fatal("a refresh was accepted behind an exclusive singleton lease")
 	}

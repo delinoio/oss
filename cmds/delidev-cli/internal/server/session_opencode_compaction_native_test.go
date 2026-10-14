@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativetest"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/worker"
@@ -31,10 +32,7 @@ func TestManualNativePublicOpenCodeCompactionMissingCommand(t *testing.T) {
 	nativePublicOpenCodeCompaction(t, "missing-command")
 }
 func nativePublicOpenCodeCompaction(t *testing.T, fault string) {
-	binary := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
-	if binary == "" {
-		t.Skip("explicit pinned native executable and private scripted provider required")
-	}
+	binary, version := nativetest.NativeOpenCodeExecutable(t)
 	binary, err := filepath.EvalSymlinks(binary)
 	if err != nil {
 		t.Fatal(err)
@@ -81,7 +79,7 @@ func nativePublicOpenCodeCompaction(t *testing.T, fault string) {
 		fmt.Fprint(w, "data: [DONE]\n\n")
 	}))
 	defer provider.Close()
-	f := newFirstDispatchFixtureProfile(t, domain.OpenCode, domain.ExecuteMode, binary, provider.URL, "fixture-model")
+	f := newFirstDispatchFixtureObserved(t, domain.OpenCode, domain.ExecuteMode, binary, version, provider.URL, "fixture-model", domain.GeneralChat)
 	f.workerStream.Close()
 	if _, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.release-setup-worker", nil, func(tx *store.Tx) (any, error) {
 		return nil, tx.SetWorkerInstance(f.selection.MachineID, domain.ID(f.workerInstance), time.Now().Add(-2*time.Minute))

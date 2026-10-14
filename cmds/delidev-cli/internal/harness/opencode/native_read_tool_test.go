@@ -14,21 +14,18 @@ import (
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativetest"
 )
 
 func TestManualNativeOpenCodeReadTool(t *testing.T) {
-	if os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE") == "" {
-		t.Skip("explicit private native OpenCode tool fixture")
-	}
+	_, _ = nativetest.NativeOpenCodeExecutable(t)
 	for _, missing := range []bool{false, true} {
 		t.Run(fmt.Sprintf("missing=%t", missing), func(t *testing.T) { nativeReadToolFixture(t, missing, "tool_calls") })
 	}
 }
 
 func TestManualNativeOpenCodeReadStopFinish(t *testing.T) {
-	if os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE") == "" {
-		t.Skip("explicit private native OpenCode provider-stop tool fixture")
-	}
+	_, _ = nativetest.NativeOpenCodeExecutable(t)
 	nativeReadToolFixture(t, false, "stop")
 }
 
