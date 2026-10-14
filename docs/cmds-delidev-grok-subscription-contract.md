@@ -488,9 +488,15 @@ through `internal/process`. It then checks, in order:
    `domain.GrokSubscriptionBaselineVersion`; the version line is logged for the PR.
 2. `grok login --device-auth` exits 0 after the owner approves. Expected output
    shape: an `https://` verification URL on an `x.ai` host and a user code
-   `[A-Z0-9]{4}-[A-Z0-9]{4}`. Only those two lines, never the identity line, are
-   shown, and only on the terminal. Test output carries just the fixed notice
+   `[A-Z0-9]{4}-[A-Z0-9]{4}`. The real CLI prints this prompt on stderr, so
+   stdout and stderr both pass through one filter; every other line of either
+   stream, including the identity line, is dropped. Only the URL and code lines
+   are shown, and only on the terminal; the login fails if they cannot be
+   written there. Test output carries just the fixed notice
    `waiting for account owner approval`. The scratch `auth.json` must exist.
+   Short native commands (`--version`, `models`, `logout`) check stdout and
+   stderr together without logging either. The ACP agent's stderr is discarded
+   by design because it can carry account details.
 3. `grok models` prints `You are logged in with ...`, a `Default model: <id>`
    line and at least one `grok-*` model entry.
 4. Raw ACP over `grok agent stdio`: `initialize` advertises the `cached_token`

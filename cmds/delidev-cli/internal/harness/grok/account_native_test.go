@@ -205,41 +205,65 @@ func (b *lockedBuffer) Overflowed() bool {
 	return b.overflow
 }
 
-// approvalFilter consumes `grok login --device-auth` stdout. It validates only
-// the verification URL host and the user-code shape, forwards exactly those two
-// lines to the operator sink, and drops everything else (including the
-// account identity the CLI prints after success).
+// approvalFilter consumes the `grok login --device-auth` output. The real CLI
+// prints its prompt on stderr while other builds print it on stdout, so both
+// streams (Stdout and Stderr) feed one verification state. It validates only the
+// verification URL host and the user-code shape, forwards exactly those two
+// lines to the operator sink, and drops everything else (including the account
+// identity the CLI prints after success).
 type approvalFilter struct {
 	mu      sync.Mutex
 	sink    io.Writer
-	pending []byte
-	overrun bool
+	stdout  lineAssembler
+	stderr  lineAssembler
 	host    string
 	badHost bool
 	code    bool
+	sinkErr error
 }
 
-func (f *approvalFilter) Write(p []byte) (int, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
+// lineAssembler splits one stream into bounded lines.
+type lineAssembler struct {
+	pending []byte
+	overrun bool
+}
+
+// approvalStream is one stream's view of the shared filter.
+type approvalStream struct {
+	filter    *approvalFilter
+	assembler *lineAssembler
+}
+
+func (a approvalStream) Write(p []byte) (int, error) {
+	a.filter.mu.Lock()
+	defer a.filter.mu.Unlock()
 	for _, b := range p {
 		if b == '\n' {
-			f.line(string(f.pending))
-			f.pending = f.pending[:0]
-			f.overrun = false
+			a.filter.line(string(a.assembler.pending))
+			a.assembler.pending = a.assembler.pending[:0]
+			a.assembler.overrun = false
 			continue
 		}
-		if f.overrun {
+		if a.assembler.overrun {
 			continue
 		}
-		if len(f.pending) >= maxAccountLine {
-			f.pending, f.overrun = f.pending[:0], true
+		if len(a.assembler.pending) >= maxAccountLine {
+			a.assembler.pending, a.assembler.overrun = a.assembler.pending[:0], true
 			continue
 		}
-		f.pending = append(f.pending, b)
+		a.assembler.pending = append(a.assembler.pending, b)
 	}
 	return len(p), nil
 }
+
+// Write consumes stdout.
+func (f *approvalFilter) Write(p []byte) (int, error) { return f.Stdout().Write(p) }
+
+// Stdout returns the writer for the CLI's standard output.
+func (f *approvalFilter) Stdout() io.Writer { return approvalStream{f, &f.stdout} }
+
+// Stderr returns the writer for the CLI's standard error.
+func (f *approvalFilter) Stderr() io.Writer { return approvalStream{f, &f.stderr} }
 
 func (f *approvalFilter) line(raw string) {
 	text := strings.TrimSpace(ansiPattern.ReplaceAllString(raw, ""))
@@ -260,8 +284,21 @@ func (f *approvalFilter) line(raw string) {
 }
 
 func (f *approvalFilter) forward(text string) {
-	if f.sink != nil {
-		_, _ = io.WriteString(f.sink, text)
+	if f.sink == nil {
+		return
+	}
+	if _, err := io.WriteString(f.sink, text); err != nil && f.sinkErr == nil {
+		f.sinkErr = err
+	}
+}
+
+// flush handles a final line that had no trailing newline.
+func (f *approvalFilter) flush() {
+	for _, assembler := range []*lineAssembler{&f.stdout, &f.stderr} {
+		if len(assembler.pending) > 0 && !assembler.overrun {
+			f.line(string(assembler.pending))
+		}
+		assembler.pending, assembler.overrun = assembler.pending[:0], false
 	}
 }
 
@@ -270,6 +307,7 @@ func (f *approvalFilter) forward(text string) {
 func (f *approvalFilter) Verified() error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.flush()
 	switch {
 	case f.badHost:
 		return errors.New("device login printed a verification URL outside the trusted x.ai hosts")
@@ -277,6 +315,8 @@ func (f *approvalFilter) Verified() error {
 		return errors.New("device login did not print an https verification URL")
 	case !f.code:
 		return errors.New("device login did not print a user code of the form XXXX-XXXX")
+	case f.sinkErr != nil:
+		return errors.New("the approval details could not be written to the terminal")
 	}
 	return nil
 }
@@ -384,21 +424,26 @@ func (s *accountScratch) initRepo() error {
 	return nil
 }
 
-func (s *accountScratch) config(args []string, stdout io.Writer) process.Config {
+// config builds one native command. A nil stream is discarded; stderr is
+// delivered only to a caller that needs it (login prompt, bounded captures).
+func (s *accountScratch) config(args []string, stdout, stderr io.Writer) process.Config {
 	if stdout == nil {
 		stdout = io.Discard
+	}
+	if stderr == nil {
+		stderr = io.Discard
 	}
 	return process.Config{
 		Directory: s.processes, OwnerID: domain.NewID(), Executable: s.executable,
 		Args: append([]string{"--no-auto-update"}, args...), Env: s.env, Cwd: s.repo,
-		Stdout: stdout, Stderr: io.Discard,
+		Stdout: stdout, Stderr: stderr,
 	}
 }
 
 // run executes one native command to completion through internal/process and
 // proves the owned process tree is gone.
-func (s *accountScratch) run(ctx context.Context, args []string, stdout io.Writer) error {
-	config := s.config(args, stdout)
+func (s *accountScratch) run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	config := s.config(args, stdout, stderr)
 	err := process.Run(ctx, config)
 	if reconcile := process.ReconcileOwner(config.Directory, config.OwnerID); reconcile != nil {
 		err = errors.Join(err, reconcile)
@@ -418,7 +463,7 @@ func describeNativeError(err error) string {
 func (s *accountScratch) Login(ctx context.Context, sink io.Writer, logf func(string, ...any)) error {
 	filter := &approvalFilter{sink: sink}
 	logf("%s", approvalNotice)
-	err := s.run(ctx, []string{"login", "--device-auth"}, filter)
+	err := s.run(ctx, []string{"login", "--device-auth"}, filter.Stdout(), filter.Stderr())
 	if err != nil {
 		if ctx.Err() != nil {
 			return fmt.Errorf("device login was not approved before it was canceled or its deadline passed: %s", describeNativeError(err))
@@ -444,7 +489,7 @@ func (s *accountScratch) Cleanup() error {
 		var errs []error
 		if _, err := os.Lstat(s.grokHome); err == nil {
 			// Logout failure matters only if the credential file survives.
-			_ = s.run(ctx, []string{"logout"}, nil)
+			_ = s.run(ctx, []string{"logout"}, nil, nil)
 			if _, err := os.Lstat(filepath.Join(s.grokHome, "auth.json")); err == nil {
 				errs = append(errs, errors.New("scratch credential file survived logout"))
 			}
@@ -460,17 +505,18 @@ func (s *accountScratch) Cleanup() error {
 	return s.cleanupErr
 }
 
-// capture runs a short native command and returns its bounded stdout.
+// capture runs a short native command and returns its bounded output: stdout,
+// then stderr. Neither stream is ever logged.
 func (s *accountScratch) capture(ctx context.Context, args ...string) (string, error) {
-	out := &lockedBuffer{}
-	err := s.run(ctx, args, out)
+	out, errOut := &lockedBuffer{}, &lockedBuffer{}
+	err := s.run(ctx, args, out, errOut)
 	if err != nil {
 		return "", errors.New(describeNativeError(err))
 	}
-	if out.Overflowed() {
+	if out.Overflowed() || errOut.Overflowed() {
 		return "", errors.New("native output exceeded its bound")
 	}
-	return out.String(), nil
+	return out.String() + "\n" + errOut.String(), nil
 }
 
 func checkGrokVersion(output string) (string, error) {
@@ -575,7 +621,7 @@ func (f *acpFrames) pop() (acpMessage, bool, error) {
 
 func startACP(ctx context.Context, s *accountScratch) (*acpClient, func(), error) {
 	frames := &acpFrames{notify: make(chan struct{}, 1)}
-	config := s.config([]string{"agent", "stdio"}, frames)
+	config := s.config([]string{"agent", "stdio"}, frames, nil)
 	handle, err := process.Start(ctx, config)
 	if err != nil {
 		return nil, nil, errors.New("ACP process could not start: " + describeNativeError(err))
@@ -784,7 +830,7 @@ func TestAccountAcceptance(t *testing.T) {
 	t.Run("logout-removes-credentials", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), accountCommandTimeout)
 		defer cancel()
-		if err := scratch.run(ctx, []string{"logout"}, nil); err != nil {
+		if err := scratch.run(ctx, []string{"logout"}, nil, nil); err != nil {
 			t.Fatalf("grok logout: %s", describeNativeError(err))
 		}
 		if _, err := os.Lstat(filepath.Join(scratch.grokHome, "auth.json")); !errors.Is(err, os.ErrNotExist) {
@@ -808,13 +854,18 @@ func TestAccountAcceptance(t *testing.T) {
 
 const fakeGrokScript = `#!/bin/sh
 # Fake grok for harness tests. Usage: fake --no-auto-update COMMAND [args]
+# FAKE_GROK_PROMPT=stderr prints the device-login prompt on stderr, as the real
+# CLI does.
 cmd="$2"
 printf '%s\n' "$cmd" >> "$FAKE_GROK_LOG"
+prompt() {
+  printf 'To sign in, open this URL in your browser:\n\n  https://accounts.x.ai/oauth2/device?user_code=ABCD-1234\n\nConfirm this code in your browser:\n\n  ABCD-1234\n\nWaiting for authorization...\n'
+  if [ "$FAKE_GROK_LOGIN" = "evil" ]; then printf '  https://evil.example/device?user_code=ABCD-1234\n'; fi
+}
 case "$cmd" in
 login)
-  printf 'To sign in, open this URL in your browser:\n\n  https://accounts.x.ai/oauth2/device?user_code=ABCD-1234\n\nConfirm this code in your browser:\n\n  ABCD-1234\n\nWaiting for authorization...\n'
+  if [ "$FAKE_GROK_PROMPT" = "stderr" ]; then prompt >&2; else prompt; fi
   if [ "$FAKE_GROK_LOGIN" = "hang" ]; then sleep 60; fi
-  if [ "$FAKE_GROK_LOGIN" = "evil" ]; then printf '  https://evil.example/device?user_code=ABCD-1234\n'; fi
   mkdir -p "$GROK_HOME"
   printf '{}' > "$GROK_HOME/auth.json"
   printf 'Signed in as person@example.com\n'
@@ -826,7 +877,7 @@ logout)
 esac
 `
 
-func fakeAccountScratch(t *testing.T, mode string) (*accountScratch, string) {
+func fakeAccountScratch(t *testing.T, mode string, extraEnv ...string) (*accountScratch, string) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("the fake grok is a POSIX shell script")
@@ -837,7 +888,7 @@ func fakeAccountScratch(t *testing.T, mode string) (*accountScratch, string) {
 		t.Fatal(err)
 	}
 	record := filepath.Join(dir, "calls.log")
-	scratch := newAccountScratch(t, executable, []string{"FAKE_GROK_LOG=" + record, "FAKE_GROK_LOGIN=" + mode})
+	scratch := newAccountScratch(t, executable, append([]string{"FAKE_GROK_LOG=" + record, "FAKE_GROK_LOGIN=" + mode}, extraEnv...))
 	return scratch, record
 }
 
@@ -1031,6 +1082,69 @@ func TestNativeAccountHarnessACPFrames(t *testing.T) {
 	_, _ = frames.Write([]byte("not json\n"))
 	if _, _, err := frames.pop(); err == nil {
 		t.Fatal("non-JSON frame accepted")
+	}
+}
+
+func TestNativeAccountHarnessLoginPromptOnStderr(t *testing.T) {
+	scratch, _ := fakeAccountScratch(t, "", "FAKE_GROK_PROMPT=stderr")
+	sink := &lockedBuffer{}
+	var logged []string
+	logf := func(format string, args ...any) { logged = append(logged, fmt.Sprintf(format, args...)) }
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	if err := scratch.Login(ctx, sink, logf); err != nil {
+		t.Fatalf("login with a stderr prompt: %v", err)
+	}
+	if got := sink.String(); !strings.Contains(got, "user_code=ABCD-1234") || !strings.Contains(got, "Confirm this code: ABCD-1234") || strings.Contains(got, "person@example.com") {
+		t.Fatalf("operator sink did not receive the stderr prompt: %q", got)
+	}
+	if len(logged) != 1 || logged[0] != approvalNotice {
+		t.Fatalf("test log must hold only the fixed notice, got %q", logged)
+	}
+}
+
+func TestNativeAccountHarnessRejectsUntrustedHostOnStderr(t *testing.T) {
+	scratch, _ := fakeAccountScratch(t, "evil", "FAKE_GROK_PROMPT=stderr")
+	sink := &lockedBuffer{}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	err := scratch.Login(ctx, sink, func(string, ...any) {})
+	if err == nil || !strings.Contains(err.Error(), "trusted x.ai hosts") {
+		t.Fatalf("untrusted stderr host accepted: %v", err)
+	}
+	if strings.Contains(sink.String(), "evil.example") || strings.Contains(err.Error(), "ABCD") {
+		t.Fatal("untrusted stderr URL leaked")
+	}
+}
+
+// failingWriter simulates an unwritable operator terminal.
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("terminal closed") }
+
+func TestNativeAccountHarnessApprovalFilterStreams(t *testing.T) {
+	// Chunks from the two streams interleave without corrupting each other.
+	sink := &lockedBuffer{}
+	filter := &approvalFilter{sink: sink}
+	out, errOut := filter.Stdout(), filter.Stderr()
+	_, _ = errOut.Write([]byte("  https://accounts.x.ai/oauth2/de"))
+	_, _ = out.Write([]byte("Signed in as person@exa"))
+	_, _ = errOut.Write([]byte("vice?user_code=ABCD-1234\n  ABCD-"))
+	_, _ = out.Write([]byte("mple.com\n"))
+	_, _ = errOut.Write([]byte("1234"))
+	// The final code line has no trailing newline and is still honored.
+	if err := filter.Verified(); err != nil {
+		t.Fatalf("interleaved streams: %v", err)
+	}
+	if got := sink.String(); !strings.Contains(got, "Confirm this code: ABCD-1234") || strings.Contains(got, "person@") {
+		t.Fatalf("unexpected sink content %q", got)
+	}
+
+	// A terminal that cannot show the approval details fails the login.
+	broken := &approvalFilter{sink: failingWriter{}}
+	_, _ = broken.Write([]byte("https://accounts.x.ai/device\nABCD-1234\n"))
+	if err := broken.Verified(); err == nil || strings.Contains(err.Error(), "ABCD") {
+		t.Fatalf("terminal write failure was not reported safely: %v", err)
 	}
 }
 
