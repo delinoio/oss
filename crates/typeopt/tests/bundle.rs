@@ -2612,7 +2612,7 @@ fn refreshes_classic_script_precache_entries() {
 
 #[test]
 fn ignores_ambiguous_precache_calls_with_empty_revisions() {
-    let sw = r#"function precache(){};precache([{url:"index.html",revision:""}]);const api={precacheAndRoute(){}};api.precacheAndRoute([{url:"index.html",revision:""}]);"#;
+    let sw = r#"function precache(){};precache([{url:"index.html",revision:""}]);function precacheAndRoute(){};precacheAndRoute([{url:"index.html",revision:""}]);const api={precacheAndRoute(){}};api.precacheAndRoute([{url:"index.html",revision:""}]);"#;
     let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
     chunks.push(("sw.js", sw));
     let temp = bundle(&chunks);
@@ -2623,6 +2623,47 @@ fn ignores_ambiguous_precache_calls_with_empty_revisions() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(out(temp.path(), "sw.js").contains(r#"revision:"""#));
+}
+
+#[test]
+fn fails_empty_revision_for_direct_workbox_precache_call() {
+    let sw = r#"precacheAndRoute([{url:"index.html",revision:""}]);"#;
+    let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
+    chunks.push(("sw.js", sw));
+    let temp = bundle(&chunks);
+    let output = run_typeopt(temp.path(), &[]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{stderr}");
+    assert!(
+        stderr.contains("cannot refresh empty precache revision"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn fails_empty_revision_for_imported_workbox_precache_call() {
+    let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
+    chunks[0] = (
+        "index.html",
+        r#"<script type="importmap">{"imports":{"workbox-precaching":"/workbox.js"}}</script><script type="module" src="./app.js"></script><script type="module" src="./sw.js"></script>"#,
+    );
+    chunks.push((
+        "app.js",
+        r#"import"./assets/index-AAAAAAAA.js";function unused(){return"removed"}console.log("app");"#,
+    ));
+    chunks.push((
+        "sw.js",
+        r#"import{precacheAndRoute}from"workbox-precaching";precacheAndRoute([{url:"app.js",revision:""}]);"#,
+    ));
+    chunks.push(("workbox.js", "export function precacheAndRoute() {}"));
+    let temp = bundle(&chunks);
+    let output = run_typeopt(temp.path(), &[]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{stderr}");
+    assert!(
+        stderr.contains("cannot refresh empty precache revision"),
+        "{stderr}"
+    );
 }
 
 #[test]

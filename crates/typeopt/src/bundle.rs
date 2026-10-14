@@ -12,8 +12,9 @@ use swc_core::{
     common::{FileName, GLOBALS, Globals, SourceMap, sync::Lrc},
     ecma::{
         ast::{
-            CallExpr, Callee, EsVersion, Expr, Lit, MemberProp, ObjectLit, Prop, PropName,
-            PropOrSpread,
+            BindingIdent, CallExpr, Callee, ClassDecl, ClassExpr, EsVersion, Expr, FnDecl, FnExpr,
+            ImportDecl, ImportSpecifier, Lit, MemberProp, ModuleExportName, ObjectLit, Prop,
+            PropName, PropOrSpread,
         },
         parser::{EsSyntax, Syntax, parse_file_as_program},
         visit::{Visit, VisitWith},
@@ -1331,9 +1332,82 @@ fn rehash(
 /// the revision string. Parsing JavaScript excludes apparent calls in strings,
 /// comments, template text and regular expressions.
 fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
+    struct WorkboxBindings {
+        direct: BTreeSet<String>,
+        ambiguous: BTreeSet<String>,
+    }
+
+    impl WorkboxBindings {
+        fn mark_declared(&mut self, name: &str) {
+            if matches!(name, "precache" | "precacheAndRoute") {
+                self.ambiguous.insert(name.to_owned());
+            }
+        }
+    }
+
+    impl Visit for WorkboxBindings {
+        fn visit_import_decl(&mut self, declaration: &ImportDecl) {
+            let workbox = declaration.src.value == "workbox-precaching";
+            for specifier in &declaration.specifiers {
+                let ImportSpecifier::Named(named) = specifier else {
+                    self.mark_declared(named_local_name(specifier));
+                    continue;
+                };
+                let imported = named
+                    .imported
+                    .as_ref()
+                    .and_then(|name| match name {
+                        ModuleExportName::Ident(name) => Some(name.sym.as_ref()),
+                        ModuleExportName::Str(name) => name.value.as_str(),
+                    })
+                    .unwrap_or(named.local.sym.as_ref());
+                if workbox && matches!(imported, "precache" | "precacheAndRoute") {
+                    self.direct.insert(named.local.sym.to_string());
+                } else {
+                    self.mark_declared(named.local.sym.as_ref());
+                }
+            }
+        }
+
+        fn visit_binding_ident(&mut self, binding: &BindingIdent) {
+            self.mark_declared(binding.id.sym.as_ref());
+            binding.visit_children_with(self);
+        }
+
+        fn visit_fn_decl(&mut self, declaration: &FnDecl) {
+            self.mark_declared(declaration.ident.sym.as_ref());
+            declaration.visit_children_with(self);
+        }
+
+        fn visit_fn_expr(&mut self, expression: &FnExpr) {
+            if let Some(ident) = &expression.ident {
+                self.mark_declared(ident.sym.as_ref());
+            }
+            expression.visit_children_with(self);
+        }
+
+        fn visit_class_decl(&mut self, declaration: &ClassDecl) {
+            self.mark_declared(declaration.ident.sym.as_ref());
+            declaration.visit_children_with(self);
+        }
+
+        fn visit_class_expr(&mut self, expression: &ClassExpr) {
+            if let Some(ident) = &expression.ident {
+                self.mark_declared(ident.sym.as_ref());
+            }
+            expression.visit_children_with(self);
+        }
+    }
+
+    fn named_local_name(specifier: &ImportSpecifier) -> &str {
+        specifier.local().sym.as_ref()
+    }
+
     struct Entries<'a> {
         text: &'a str,
         base: u32,
+        direct_workbox_bindings: BTreeSet<String>,
+        ambiguous_bindings: BTreeSet<String>,
         values: Vec<(String, usize, usize, bool)>,
     }
 
@@ -1394,7 +1468,12 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
         fn visit_call_expr(&mut self, call: &CallExpr) {
             let (name, trusted) = match &call.callee {
                 Callee::Expr(callee) => match &**callee {
-                    Expr::Ident(name) => (Some(name.sym.as_ref()), false),
+                    Expr::Ident(name) => (
+                        Some(name.sym.as_ref()),
+                        self.direct_workbox_bindings.contains(name.sym.as_ref())
+                            || (matches!(name.sym.as_ref(), "precache" | "precacheAndRoute")
+                                && !self.ambiguous_bindings.contains(name.sym.as_ref())),
+                    ),
                     Expr::Member(member) => match &member.prop {
                         MemberProp::Ident(name) => {
                             (Some(name.sym.as_ref()), is_workbox_receiver(&member.obj))
@@ -1405,8 +1484,10 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
                 },
                 _ => (None, false),
             };
-            if matches!(name, Some("precache" | "precacheAndRoute"))
-                && let Some(first) = call.args.first()
+            if name.is_some_and(|name| {
+                matches!(name, "precache" | "precacheAndRoute")
+                    || self.direct_workbox_bindings.contains(name)
+            }) && let Some(first) = call.args.first()
                 && let Expr::Array(array) = &*first.expr
             {
                 for element in array.elems.iter().flatten() {
@@ -1453,9 +1534,16 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
         if !errors.is_empty() {
             return Vec::new();
         }
+        let mut bindings = WorkboxBindings {
+            direct: BTreeSet::new(),
+            ambiguous: BTreeSet::new(),
+        };
+        program.visit_with(&mut bindings);
         let mut visitor = Entries {
             text,
             base: file.start_pos.0,
+            direct_workbox_bindings: bindings.direct,
+            ambiguous_bindings: bindings.ambiguous,
             values: Vec::new(),
         };
         program.visit_with(&mut visitor);
