@@ -930,7 +930,9 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
             required
             value={v.name}
             disabled={locked}
-            onChange={(event) => props.changeName(event.target.value)}
+            onChange={(event) => {
+              if (!locked) props.changeName(event.target.value);
+            }}
             aria-describedby="grok-subscription-name-help"
           />
           <p id="grok-subscription-name-help">
