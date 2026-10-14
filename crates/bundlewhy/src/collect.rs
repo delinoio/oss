@@ -43,15 +43,36 @@ pub struct Collection {
 pub struct CollectedExportUsage {
     /// False when the engine API, hook or graph could not be used.
     pub available: bool,
-    /// Why the graph is unavailable.
-    pub reason: Option<String>,
+    /// Why the graph is unavailable: a stable code, never adapter or engine
+    /// error text.
+    pub reason: Option<ExportUsageReason>,
     /// Engine edges that were dropped because a module could not be mapped.
     pub skipped_edges: u32,
     pub edges: Vec<CollectedExportEdge>,
 }
 
+/// Stable codes for export usage that the adapter could not collect. The
+/// analysis shows fixed text for each code; an unrecognized code (for example
+/// from a newer adapter) maps to `Unknown`, so no free text is ever displayed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ExportUsageReason {
+    PluginApiMissing,
+    PluginAlreadyConfigured,
+    PluginConstructionFailed,
+    PluginApplyFailed,
+    HookRegistrationFailed,
+    BuildFailedWithObserver,
+    GraphNotDelivered,
+    ModulesPayloadInvalid,
+    EdgesPayloadInvalid,
+    EdgeLimitExceeded,
+    #[serde(other)]
+    Unknown,
+}
+
 /// One engine-reported edge: `consumer` uses `provider`.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct CollectedExportEdge {
     pub consumer: CollectedExportRef,

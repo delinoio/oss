@@ -790,7 +790,7 @@ mod tests {
         let fixture = run_fixture(BundlerChoice::Rspack, |value| {
             value["exportUsage"] = serde_json::json!({
                 "available": false,
-                "reason": "This Rspack version does not provide experiments.RsdoctorPlugin.",
+                "reason": "plugin-api-missing",
                 "skippedEdges": 0,
                 "edges": []
             });
@@ -810,7 +810,10 @@ mod tests {
         assert!(!usages.is_empty());
         assert!(usages.iter().all(|usage| {
             usage.state == ExportUsageState::Unavailable
-                && usage.note.contains("RsdoctorPlugin")
+                && usage.note
+                    == super::rules::export_usage::reason_note(Some(
+                        crate::collect::ExportUsageReason::PluginApiMissing,
+                    ))
                 && usage.paths.is_empty()
         }));
         assert!(
@@ -821,6 +824,58 @@ mod tests {
             )
             .is_some()
         );
+    }
+
+    #[test]
+    fn edges_with_empty_segments_never_make_a_saved_result_unreadable() {
+        use crate::model::ExportUsageState;
+
+        let fixture = run_fixture(BundlerChoice::Rspack, |value| {
+            let usage = value["exportUsage"].as_object_mut().unwrap();
+            let edges = usage["edges"].as_array_mut().unwrap();
+            let leaf = edges
+                .iter()
+                .find(|edge| {
+                    edge["provider"]["module"]
+                        .as_str()
+                        .is_some_and(|module| module.ends_with("exports/leaf.js"))
+                })
+                .unwrap()
+                .clone();
+            let mut empty_segment = leaf.clone();
+            empty_segment["provider"]["export"] = serde_json::json!([""]);
+            let mut empty_module = leaf;
+            empty_module["consumer"]["module"] = serde_json::json!("");
+            edges.push(empty_segment);
+            edges.push(empty_module);
+        });
+        let analysis = &fixture.output.analysis;
+        let leaf = find(
+            &analysis.diagnostics,
+            "rspack/module-concatenation-bailout",
+            "src/exports/leaf.js",
+        )
+        .unwrap();
+        let usage = leaf.export_usage.as_ref().unwrap();
+        assert_eq!(usage.state, ExportUsageState::Available);
+        assert!(!usage.paths.is_empty());
+        assert!(
+            usage.note.starts_with("2 engine edge(s)"),
+            "the dropped edges are disclosed: {}",
+            usage.note
+        );
+        // The saved result reopens: every retained reference is valid.
+        let mut saved = analysis.clone();
+        saved.run_id = uuid::Uuid::now_v7().to_string();
+        let bundle = crate::bundle::ResultBundle {
+            schema_version: crate::model::SCHEMA_VERSION,
+            analysis: saved,
+            sources: fixture.output.sources.clone(),
+            project_relative: fixture.output.project_relative.clone(),
+            existence_relative: fixture.output.existence_relative.clone(),
+            ..crate::bundle::ResultBundle::default()
+        };
+        crate::bundle::parse(&serde_json::to_vec(&bundle).unwrap()).unwrap();
     }
 
     #[test]
