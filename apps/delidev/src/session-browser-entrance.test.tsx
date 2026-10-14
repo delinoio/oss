@@ -123,7 +123,6 @@ function Workspace({ f, active }: { f: Fixture; active: boolean }) {
         selected={tabs.selected}
         select={(key) => tabs.store.select(f.session.id, key)}
         close={(key) => tabs.store.close(f.session.id, key)}
-        newPage={() => {}}
       />
       <SessionBrowser
         session={f.session}

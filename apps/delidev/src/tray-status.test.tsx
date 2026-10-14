@@ -20,7 +20,17 @@ import { TrayStatus, type TrayPanelBridge } from "./tray-status";
 const instance = "11111111-1111-4111-8111-111111111111",
   first = "22222222-2222-4222-8222-222222222222",
   second = "33333333-3333-4333-8333-333333333333",
+  third = "55555555-5555-4555-8555-555555555555",
   scope = "44444444-4444-4444-8444-444444444444";
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<T>((complete, fail) => {
+    resolve = complete;
+    reject = fail;
+  });
+  return { promise, resolve, reject };
+}
 function fixture(): TrayPanelSnapshot {
   const observed_at = new Date(Date.now() - 60000).toISOString();
   return {
@@ -128,6 +138,14 @@ function secondWithSummary(): TrayPanelSnapshot {
       },
     },
   };
+  return snapshot;
+}
+function thirdWithSummary(): TrayPanelSnapshot {
+  const snapshot = secondWithSummary();
+  snapshot.recent = third;
+  snapshot.windows[1].target.instance = third;
+  snapshot.windows[1].summary!.overview!.active_sessions = "7";
+  snapshot.windows[1].summary!.accounts!.entries[0].alias = "Third account";
   return snapshot;
 }
 function controller(initial = fixture()) {
@@ -295,6 +313,226 @@ describe("isolated tray panel", () => {
     });
     await screen.findByText("57.00% remaining");
     await waitFor(() => expect(close).toBe(document.activeElement));
+  });
+  it("waits for a post-focus read before selecting and navigating to a new recent window", async () => {
+    const prior = deferred<TrayPanelSnapshot>();
+    const opening = deferred<TrayPanelSnapshot>();
+    const reads = [Promise.resolve(fixture()), prior.promise, opening.promise];
+    let changed = () => {};
+    let active = 0;
+    let maximumActive = 0;
+    const bridge: TrayPanelBridge = {
+      read: vi.fn(async () => {
+        active += 1;
+        maximumActive = Math.max(maximumActive, active);
+        try {
+          return await reads.shift()!;
+        } finally {
+          active -= 1;
+        }
+      }),
+      subscribe: vi.fn(async (callback) => {
+        changed = callback;
+        return vi.fn();
+      }),
+      activate: vi.fn(async () => {}),
+      dismiss: vi.fn(async () => {}),
+    };
+    render(<TrayStatus instance={instance} bridge={bridge} />);
+    await screen.findByText("57.00% remaining");
+    const close = screen.getByRole("button", { name: "Close status" });
+    await waitFor(() => expect(close).toBe(document.activeElement));
+    const open = screen.getByRole("button", { name: "Open DeliDev" });
+    open.focus();
+    act(() => changed());
+    await waitFor(() => expect(bridge.read).toHaveBeenCalledTimes(2));
+    act(() => window.dispatchEvent(new Event("focus")));
+    act(() => prior.resolve(fixture()));
+    await waitFor(() => expect(bridge.read).toHaveBeenCalledTimes(3));
+    expect(screen.getByText("57.00% remaining")).toBeTruthy();
+    expect(document.activeElement).toBe(open);
+    const recent = secondWithSummary();
+    recent.recent = second;
+    act(() => opening.resolve(recent));
+    await screen.findByText("88.00% remaining");
+    await waitFor(() => expect(close).toBe(document.activeElement));
+    expect(maximumActive).toBe(1);
+    expect(screen.queryByText("57.00% remaining")).toBeNull();
+    for (const [name, action] of [
+      ["Manage subscriptions", TrayPanelAction.Settings],
+      ["Active sessions 5", TrayPanelAction.Sessions],
+      ["Awaiting response 4", TrayPanelAction.Inbox],
+      ["Today tokens · UTC Unavailable", TrayPanelAction.Usage],
+      ["Open DeliDev", TrayPanelAction.Show],
+    ] as const) {
+      fireEvent.click(screen.getByRole("button", { name }));
+      await waitFor(() =>
+        expect(bridge.activate).toHaveBeenCalledWith(
+          action,
+          recent.windows[1].target,
+        ),
+      );
+    }
+  });
+  it("ignores a superseded opening read and focuses Close only for the latest one", async () => {
+    const older = deferred<TrayPanelSnapshot>();
+    const latest = deferred<TrayPanelSnapshot>();
+    const reads = [Promise.resolve(fixture()), older.promise, latest.promise];
+    const bridge: TrayPanelBridge = {
+      read: vi.fn(() => reads.shift()!),
+      subscribe: vi.fn(async () => vi.fn()),
+      activate: vi.fn(async () => {}),
+      dismiss: vi.fn(async () => {}),
+    };
+    render(<TrayStatus instance={instance} bridge={bridge} />);
+    await screen.findByText("57.00% remaining");
+    const close = screen.getByRole("button", { name: "Close status" });
+    await waitFor(() => expect(close).toBe(document.activeElement));
+    const open = screen.getByRole("button", { name: "Open DeliDev" });
+    open.focus();
+    act(() => window.dispatchEvent(new Event("focus")));
+    await waitFor(() => expect(bridge.read).toHaveBeenCalledTimes(2));
+    act(() => window.dispatchEvent(new Event("focus")));
+    const olderSnapshot = secondWithSummary();
+    olderSnapshot.recent = second;
+    act(() => older.resolve(olderSnapshot));
+    await waitFor(() => expect(bridge.read).toHaveBeenCalledTimes(3));
+    expect(screen.getByText("57.00% remaining")).toBeTruthy();
+    expect(document.activeElement).toBe(open);
+    act(() => latest.resolve(thirdWithSummary()));
+    await screen.findByRole("heading", { name: "Claude · Third account" });
+    await waitFor(() => expect(close).toBe(document.activeElement));
+    expect(
+      screen.getByRole("button", { name: "Active sessions 7" }),
+    ).toBeTruthy();
+  });
+  it("keeps a failed opening eligible for selection on Reload", async () => {
+    const failed = deferred<TrayPanelSnapshot>();
+    const retry = deferred<TrayPanelSnapshot>();
+    const reads = [Promise.resolve(fixture()), failed.promise, retry.promise];
+    const bridge: TrayPanelBridge = {
+      read: vi.fn(() => reads.shift()!),
+      subscribe: vi.fn(async () => vi.fn()),
+      activate: vi.fn(async () => {}),
+      dismiss: vi.fn(async () => {}),
+    };
+    render(<TrayStatus instance={instance} bridge={bridge} />);
+    await screen.findByText("57.00% remaining");
+    const close = screen.getByRole("button", { name: "Close status" });
+    await waitFor(() => expect(close).toBe(document.activeElement));
+    const open = screen.getByRole("button", { name: "Open DeliDev" });
+    open.focus();
+    act(() => window.dispatchEvent(new Event("focus")));
+    await waitFor(() => expect(bridge.read).toHaveBeenCalledTimes(2));
+    act(() => failed.reject(new Error("read failed")));
+    await screen.findByRole("alert");
+    expect(document.activeElement).toBe(open);
+    fireEvent.click(screen.getByRole("button", { name: "Reload status" }));
+    await waitFor(() => expect(bridge.read).toHaveBeenCalledTimes(3));
+    const recent = secondWithSummary();
+    recent.recent = second;
+    act(() => retry.resolve(recent));
+    await screen.findByText("88.00% remaining");
+    await waitFor(() => expect(close).toBe(document.activeElement));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+  it("shows localized loading through subscription and first read, then genuine observation states", async () => {
+    await i18n.changeLanguage(SupportedLanguage.Korean);
+    const subscription = deferred<() => void>();
+    const initial = deferred<TrayPanelSnapshot>();
+    const bridge: TrayPanelBridge = {
+      read: vi.fn(() => initial.promise),
+      subscribe: vi.fn(() => subscription.promise),
+      activate: vi.fn(async () => {}),
+      dismiss: vi.fn(async () => {}),
+    };
+    render(<TrayStatus instance={instance} bridge={bridge} />);
+    expect(screen.getAllByText("상태를 불러오는 중…")).toHaveLength(2);
+    expect(screen.queryByText("계정 관측을 사용할 수 없습니다.")).toBeNull();
+    expect(bridge.read).not.toHaveBeenCalled();
+    act(() => subscription.resolve(vi.fn()));
+    await waitFor(() => expect(bridge.read).toHaveBeenCalledOnce());
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+    expect(screen.getAllByText("상태를 불러오는 중…")).toHaveLength(2);
+    const observed = fixture();
+    observed.language = SupportedLanguage.Korean;
+    act(() => initial.resolve(observed));
+    await screen.findByText("57.00% 남음");
+    expect(screen.queryByText("상태를 불러오는 중…")).toBeNull();
+    expect(screen.queryByText("계정 관측을 사용할 수 없습니다.")).toBeNull();
+  });
+  it("keeps loading active while the fallback read is pending after subscription failure", async () => {
+    const subscription = Promise.reject(new Error("subscription failed"));
+    const fallback = deferred<TrayPanelSnapshot>();
+    const bridge: TrayPanelBridge = {
+      read: vi.fn(() => fallback.promise),
+      subscribe: vi.fn(async () => subscription),
+      activate: vi.fn(async () => {}),
+      dismiss: vi.fn(async () => {}),
+    };
+    render(<TrayStatus instance={instance} bridge={bridge} />);
+    await waitFor(() => expect(bridge.read).toHaveBeenCalledOnce());
+    expect(screen.getAllByText("Loading status…")).toHaveLength(2);
+    expect(
+      screen.queryByText("Account observations are unavailable."),
+    ).toBeNull();
+    const observed = fixture();
+    act(() => fallback.resolve(observed));
+    await screen.findByText("57.00% remaining");
+    expect(screen.queryByText("Loading status…")).toBeNull();
+  });
+  it("keeps loading active while a queued read replaces a failed initial read", async () => {
+    const initial = deferred<TrayPanelSnapshot>();
+    const queued = deferred<TrayPanelSnapshot>();
+    let changed = () => {};
+    let readCount = 0;
+    const bridge: TrayPanelBridge = {
+      read: vi.fn(() => (readCount++ === 0 ? initial.promise : queued.promise)),
+      subscribe: vi.fn(async (callback) => {
+        changed = callback;
+        return vi.fn();
+      }),
+      activate: vi.fn(async () => {}),
+      dismiss: vi.fn(async () => {}),
+    };
+    render(<TrayStatus instance={instance} bridge={bridge} />);
+    await waitFor(() => expect(bridge.read).toHaveBeenCalledOnce());
+    act(() => changed());
+    act(() => initial.reject(new Error("read failed")));
+    await waitFor(() => expect(bridge.read).toHaveBeenCalledTimes(2));
+    expect(screen.getAllByText("Loading status…")).toHaveLength(2);
+    expect(
+      screen.queryByText("Account observations are unavailable."),
+    ).toBeNull();
+    act(() => queued.resolve(fixture()));
+    await screen.findByText("57.00% remaining");
+    expect(screen.queryByText("Loading status…")).toBeNull();
+  });
+  it("distinguishes initial loading, unavailable and empty accounts, and recovers after a failed read", async () => {
+    const firstRead = deferred<TrayPanelSnapshot>();
+    const retry = deferred<TrayPanelSnapshot>();
+    const reads = [firstRead.promise, retry.promise];
+    const bridge: TrayPanelBridge = {
+      read: vi.fn(() => reads.shift()!),
+      subscribe: vi.fn(async () => vi.fn()),
+      activate: vi.fn(async () => {}),
+      dismiss: vi.fn(async () => {}),
+    };
+    render(<TrayStatus instance={instance} bridge={bridge} />);
+    await waitFor(() => expect(bridge.read).toHaveBeenCalledOnce());
+    expect(screen.getAllByText("Loading status…")).toHaveLength(2);
+    expect(
+      screen.queryByText("Account observations are unavailable."),
+    ).toBeNull();
+    act(() => firstRead.reject(new Error("read failed")));
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: "Reload status" }));
+    await waitFor(() => expect(bridge.read).toHaveBeenCalledTimes(2));
+    const observed = fixture();
+    observed.windows[0].summary!.accounts = null;
+    act(() => retry.resolve(observed));
+    await screen.findByText("Account observations are unavailable.");
+    expect(screen.queryByRole("alert")).toBeNull();
   });
   it("retains quota state, supports locale updates, and Escape hides without activating product windows", async () => {
     const { bridge, update } = controller();

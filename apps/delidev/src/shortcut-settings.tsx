@@ -23,10 +23,14 @@ import {
 } from "./shortcut-preferences";
 import {
   ShortcutPreferenceOperation,
+  shortcutSnapshotVerified,
   useShortcutPreferences,
 } from "./shortcut-preference-controller";
 import "./shortcut-settings.css";
-import { shortcutCapture } from "./shortcut-capture";
+import {
+  markShortcutCaptureListening,
+  shortcutCapture,
+} from "./shortcut-capture";
 import {
   SettingsActionButton,
   SettingsActionIcon,
@@ -210,7 +214,9 @@ export function ShortcutSettings() {
     window.addEventListener("blur", departed);
     document.addEventListener("visibilitychange", visibility);
     document.addEventListener("keydown", capture, true);
+    const releaseListening = markShortcutCaptureListening();
     return () => {
+      releaseListening();
       clearTimeout(expire);
       window.removeEventListener("blur", departed);
       document.removeEventListener("visibilitychange", visibility);
@@ -340,6 +346,7 @@ export function ShortcutSettings() {
                     action.id,
                     snapshot.overrides,
                     ready,
+                    shortcutSnapshotVerified(snapshot),
                   );
                   return (
                     <div key={action.id}>
@@ -355,6 +362,7 @@ export function ShortcutSettings() {
                             action.id,
                             snapshot.overrides,
                             ready,
+                            shortcutSnapshotVerified(snapshot),
                           )}
                           platform={platform}
                         />

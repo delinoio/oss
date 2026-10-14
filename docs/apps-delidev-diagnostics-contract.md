@@ -114,7 +114,7 @@ Every desktop task, row, dialog and startup surface presents its available safe 
 
 Presentation reuses the owning read, mutation or native controller and its exact busy, confirmation and uncertain-request state. Moving a view cannot create another server, registration, credential, Runner or account recovery controller. Rechecks read the original scope; they do not retry mutations. Never mount Doctor globally or in an account workflow to obtain causes: its protected credential inspection retains explicit diagnostic invocation and bounds.
 
-The Tailscale access panel diagnoses a logged-out client only from the explicit
+The Tailscale access section (This computer, in the Settings Tailscale category) diagnoses a logged-out client only from the explicit
 `setTailscaleAccess` failure: code `unavailable` with the exact safe message
 and guidance defined in the [connections contract](cmds-delidev-connections-contract.md#tailscale-connections).
 It then shows the localized heading and recovery steps (English "Tailscale login

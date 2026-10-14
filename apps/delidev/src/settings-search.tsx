@@ -65,6 +65,9 @@ export enum SettingsSearchTarget {
   LocalWorker = "local-worker",
   Ssh = "ssh",
   RunnerInventory = "runner-inventory",
+  TailscaleComputer = "tailscale-computer",
+  TailscaleDevices = "tailscale-devices",
+  TailscaleRequests = "tailscale-requests",
   GitProfiles = "git-profiles",
   CurrentConnection = "current-connection",
   AppInformation = "app-information",
@@ -323,6 +326,23 @@ export const settingsSearchTargets: Partial<
     target(
       SettingsSearchTarget.RunnerInventory,
       "settings.savedRunnerDevices_9e6092",
+    ),
+  ],
+  [Category.Tailscale]: [
+    target(
+      SettingsSearchTarget.TailscaleComputer,
+      "tailscale.thisComputer",
+      "tailscale.computerHelp",
+    ),
+    target(
+      SettingsSearchTarget.TailscaleDevices,
+      "tailscale.tailnetDevices",
+      "tailscale.help",
+    ),
+    target(
+      SettingsSearchTarget.TailscaleRequests,
+      "tailscale.requests",
+      "tailscale.requestsHelp",
     ),
   ],
   [Category.Integrations]: [

@@ -20,8 +20,8 @@ import {
 } from "./shortcut-provider";
 import { Surface } from "./surface";
 import {
+  availableSettingsGroups,
   settingsCategories,
-  settingsGroups,
   type SettingsNavigationEntry,
 } from "./settings";
 import {
@@ -73,8 +73,20 @@ export interface CommandActions {
   newProject: () => void;
   help: () => void;
 }
-/** This catalog contains bundled metadata and original callbacks only. */
-export function applicationCommands(actions: CommandActions): MenuCommand[] {
+/** Window capabilities that decide which Settings categories the catalog lists. */
+export interface CommandAvailability {
+  /** True only in the original local desktop window that hosts Tailscale. */
+  tailscale: boolean;
+}
+/**
+ * This catalog contains bundled metadata and original callbacks only. Settings
+ * commands follow the same availability as the Settings navigation and search,
+ * so a command never opens a category the window does not list.
+ */
+export function applicationCommands(
+  actions: CommandActions,
+  availability: CommandAvailability = { tailscale: false },
+): MenuCommand[] {
   const navigations: [CommandId, Surface, string][] = [
     [CommandId.Sessions, Surface.Sessions, copy("sidebar.sessions_6fa3cb")],
     [
@@ -118,7 +130,7 @@ export function applicationCommands(actions: CommandActions): MenuCommand[] {
       label: label as string,
       run: run as () => void,
     })),
-    ...settingsGroups.flatMap((group) =>
+    ...availableSettingsGroups(availability.tailscale).flatMap((group) =>
       group.categories.flatMap((category) => {
         const metadata = settingsCategories[category];
         return [
