@@ -149,7 +149,9 @@ it("keeps an interrupted Grok response tail inert after its message closes", () 
   };
   renderRows([data]);
   expect(screen.getByText("Partial response stopped")).toBeTruthy();
-  expect(screen.getByLabelText("Grok assistant text").querySelector("a")).toBeNull();
+  expect(
+    screen.getByLabelText("Grok assistant text").querySelector("a"),
+  ).toBeNull();
 });
 
 it("activates URLs only in Claude text blocks and keeps reasoning inert", () => {
