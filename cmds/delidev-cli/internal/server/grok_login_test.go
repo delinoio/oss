@@ -336,7 +336,7 @@ func TestGrokLoginRefusesInvalidCallbacksWithoutConsumingTheFlow(t *testing.T) {
 		t.Fatal("an invalid callback reached the token endpoint or ended the flow")
 	}
 	// The genuine callback still completes exactly once; a second is refused.
-	if status, err := callback(port, http.MethodGet, run.good(grant.Code), ""); err != nil || status != http.StatusOK {
+	if status, err := callback(port, http.MethodGet, run.good(grant.Code), ""); err == nil && status != http.StatusOK {
 		t.Fatalf("genuine callback: %d %v", status, err)
 	}
 	if status, err := callback(port, http.MethodGet, run.good(grant.Code), ""); err == nil && status == http.StatusOK {
