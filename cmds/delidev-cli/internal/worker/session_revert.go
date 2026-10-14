@@ -17,6 +17,9 @@ import (
 	"path/filepath"
 )
 
+// revertIntentClaim is persisted at most codex.MaxRevertIntentBytes, which
+// exceeds the ordinary compaction checkpoint bound so the largest profile-aware
+// retained history fits.
 type revertIntentClaim struct {
 	Version     uint32             `json:"version"`
 	JobID       domain.ID          `json:"job_id"`
@@ -26,7 +29,7 @@ type revertIntentClaim struct {
 
 func writeRevertIntent(root string, owner domain.ID, i domain.SessionCompactionInput, intent codex.RevertIntent) error {
 	raw, e := json.Marshal(revertIntentClaim{1, owner, executionInputDigest(mustForkJSON(i)), intent})
-	if e != nil || len(raw) > maxCompactionCheckpoint {
+	if e != nil || len(raw) > codex.MaxRevertIntentBytes {
 		return domain.CompactionUncertain()
 	}
 	return security.WriteAtomicOwned(filepath.Join(root, "runtimes", string(i.ActionID), "native-revert-intent.json"), raw)
@@ -90,9 +93,9 @@ func recoverSessionRevert(ctx context.Context, config Config, job domain.Job, re
 	if err != nil || domain.Decode(originalRaw, &original) != nil || original.Version != 1 || original.JobID != request.JobID || original.InstanceID != request.InstanceID || original.Revision != request.AssignmentRevision || original.Digest != request.AssignmentDigest || original.ReportID.Validate() != nil || original.State != journalStarted && original.State != journalFinished && original.State != journalReported {
 		return nil, fail()
 	}
-	raw, err := security.ReadPrivate(filepath.Join(config.Root, "runtimes", string(input.ActionID), "native-revert-intent.json"), maxCompactionCheckpoint)
+	raw, err := security.ReadPrivate(filepath.Join(config.Root, "runtimes", string(input.ActionID), "native-revert-intent.json"), codex.MaxRevertIntentBytes)
 	var intent revertIntentClaim
-	if err != nil || domain.DecodeWithLimit(raw, &intent, maxCompactionCheckpoint) != nil || intent.Version != 1 || intent.JobID != request.JobID || intent.InputDigest != request.AssignmentInputDigest || intent.Intent.ActionID != input.ActionID || intent.Intent.BeforeTurnID != domain.ID(input.Revert.NativeTurnID) || intent.Intent.Target.ID != input.Revert.InputID || intent.Intent.Target.PromptDigest != input.Revert.Prompt.InputDigest() {
+	if err != nil || domain.DecodeWithLimit(raw, &intent, codex.MaxRevertIntentBytes) != nil || intent.Version != 1 || intent.JobID != request.JobID || intent.InputDigest != request.AssignmentInputDigest || intent.Intent.ActionID != input.ActionID || intent.Intent.BeforeTurnID != domain.ID(input.Revert.NativeTurnID) || intent.Intent.Target.ID != input.Revert.InputID || intent.Intent.Target.PromptDigest != input.Revert.Prompt.InputDigest() {
 		return nil, fail()
 	}
 	raw, err = security.ReadPrivate(filepath.Join(config.Root, "runtimes", string(input.ActionID), "native-revert-cleanup.json"), maxCompactionCheckpoint)
@@ -149,7 +152,7 @@ func recoverSessionRevert(ctx context.Context, config Config, job domain.Job, re
 	if err != nil {
 		return nil, err
 	}
-	native, err := codex.Open(ctx, codex.Config{RevertHistory: true, ImageRoot: config.Root, ImageMachineID: request.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: home, Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: domain.ID(config.execution.Assignment.Id), Executable: installation.ResolvedPath, Cwd: inspection.WorkingDirectory(), Env: env, Logger: config.Logger}})
+	native, err := codex.Open(ctx, codex.Config{RevertHistory: true, FrameProfile: retainedHistoryFrameProfile(input.Assignment), ImageRoot: config.Root, ImageMachineID: request.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: home, Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: domain.ID(config.execution.Assignment.Id), Executable: installation.ResolvedPath, Cwd: inspection.WorkingDirectory(), Env: env, Logger: config.Logger}})
 	if err != nil {
 		return nil, err
 	}
@@ -239,9 +242,9 @@ func verifyRetainedRevertIntent(root string, source CodexExecutionCheckpoint, p 
 	if p.Input.Revert == nil {
 		return domain.CompactionUncertain()
 	}
-	raw, err := security.ReadPrivate(filepath.Join(root, "runtimes", string(p.Input.ActionID), "native-revert-intent.json"), maxCompactionCheckpoint)
+	raw, err := security.ReadPrivate(filepath.Join(root, "runtimes", string(p.Input.ActionID), "native-revert-intent.json"), codex.MaxRevertIntentBytes)
 	var claim revertIntentClaim
-	if err != nil || domain.DecodeWithLimit(raw, &claim, maxCompactionCheckpoint) != nil || claim.Version != 1 || claim.JobID != p.JobID || claim.InputDigest != executionInputDigest(mustForkJSON(p.Input)) || claim.Intent.Target.ID != p.Input.Revert.InputID || claim.Intent.Target.PromptDigest != p.Input.Revert.Prompt.InputDigest() || codex.VerifyRevertIntent(claim.Intent, p.Native) != nil || verifyRevertIntentSkillProof(root, source, p.Input, claim.Intent.Target, logger) != nil {
+	if err != nil || domain.DecodeWithLimit(raw, &claim, codex.MaxRevertIntentBytes) != nil || claim.Version != 1 || claim.JobID != p.JobID || claim.InputDigest != executionInputDigest(mustForkJSON(p.Input)) || claim.Intent.Target.ID != p.Input.Revert.InputID || claim.Intent.Target.PromptDigest != p.Input.Revert.Prompt.InputDigest() || codex.VerifyRevertIntent(claim.Intent, p.Native) != nil || verifyRevertIntentSkillProof(root, source, p.Input, claim.Intent.Target, logger) != nil {
 		return domain.CompactionUncertain()
 	}
 	raw, err = security.ReadPrivate(filepath.Join(root, "runtimes", string(p.Input.ActionID), "native-revert-cleanup.json"), maxCompactionCheckpoint)
