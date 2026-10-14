@@ -184,6 +184,20 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 	}
 	if nativeProfile != nil {
 		nativeConfig.Subscription = &claude.NativeSubscriptionProfile{ID: nativeProfile.owner.Profile, Home: nativeProfile.home}
+		if nativeProfile.historyVersion == claudeProfileV2 {
+			// Session-private configuration and history with the one canonical
+			// secure-storage namespace. A continuation re-binds the history to the
+			// previous private history profile before restoring its checkpoint.
+			history := nativeConfig.Home
+			if c := input.Continuation; c != nil {
+				historyRoot, err := historyNativeRoot(ctx, manager.Root, input.MachineID, domain.ClaudeCode, historyAccount(input), c.HistoryExecutionID)
+				if err != nil {
+					return nil, err
+				}
+				history = filepath.Join(historyRoot, "claude")
+			}
+			nativeConfig.Subscription = &claude.NativeSubscriptionProfile{ID: nativeProfile.owner.Profile, Home: history, SecureStorageHome: nativeProfile.home}
+		}
 		if err := security.PrivateDir(filepath.Join(manager.Root, "processes", string(owner))); err != nil {
 			return nil, err
 		}

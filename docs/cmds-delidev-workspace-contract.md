@@ -1,5 +1,16 @@
 # DeliDev Worker workspace contract
 
+## Retained member workspaces under a shared owner
+
+A shared-owner execution member releases its workspace lease only after its own
+native process and descendants are proven closed. When that proof is unavailable
+(for example a Stop without exact `thread/closed` plus independent descendant
+closure), the member is reported as retained: its workspace and cleanup ownership
+stay with the account owner until final owner containment closes, siblings keep
+running, and the retained workspace is neither deleted nor reused. Retention is
+not a completed Stop. See the
+[subscription contract](cmds-delidev-subscription-contract.md#shared-account-owner-and-execution-members).
+
 ## Frozen repository checkout names
 
 New Worktree session and Schedule acceptance freezes each registered Repository name as optional `directory_name` in the version-1 RepositorySpec. PreparedRepository must preserve that exact field. The primary checkout and initial terminal/agent cwd use `workspaces/<session UUID>/<directory_name>`. Repository UUIDs retain identity and snapshot indexing. Omitted historical fields retain UUID paths, serialized omission and original digests. Accepted requests (including a Wait schedule occurrence, which retains its frozen names until release) and independent Forks never consult later registration names; Fork inherits each original frozen field. Local, General Chat and Sidechat keep their original path and ownership rules.

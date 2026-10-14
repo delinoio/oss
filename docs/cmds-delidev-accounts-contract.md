@@ -2,10 +2,20 @@
 
 ## Connected API format changes
 
-ProviderInventory capability 9 and `ChangeAccountApiFormat` were reserved on main
+ProviderInventory capabilities 9 and 10 and `ChangeAccountApiFormat` were reserved on main
 in the originating change. The owner/client operation receives an account ID, expected revision,
 request ID, closed API protocol and editable preferences. Its transaction publishes
 all preferences and the selected profile together with an actor-bound retry receipt.
+The request also carries the exact inspected Provider resource revision. The
+transaction checks that revision against the Account's Provider identity and
+current Provider record before any preference or generation publication. An
+intervening Provider edit rejects the save without key access or a new
+generation, including when the edit is outside the selected profile. A new
+explicit inspection and request ID are required after that rejection; omitted
+Provider revisions from older clients fail safely. Desktop clients enable the
+connected key-preserving operation only when capability 10 is advertised, so an
+older server that ignores the additive revision field cannot receive a
+revision-bound save.
 The server resolves and validates the authenticated owner/client principal before
 any receipt lookup, and that principal is part of the digested receipt input.
 An exact replay by the same actor returns current account metadata without another
@@ -65,7 +75,8 @@ API accounts may declare the closed `api_protocol` selection under the
 Explicit selections use resource schema 3; legacy accounts retain their original
 provider tuple. Connect stores the selected protocol/URL/authentication in the
 immutable connection generation. Validation, discovery and execution resolve
-that same tuple. Capability 9 changes a connected account for future sessions
+that same tuple. Capabilities 9 and 10 authorize the connected-account change
+and its revision-bound provider check for future sessions
 without key input under the amendment below. Capability 7 alone requires
 Disconnect, confirmed cleanup, explicit key input and validation. An account cannot change
 between keyless and key-required authentication. Referenced profiles, including
@@ -202,7 +213,7 @@ The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) ow
 
 ## cmds/delidev-cli constraints
 
-- Key-preserving API format changes follow `cmds-delidev-accounts-contract.md#connected-api-format-changes` after main reservation the originating change. Capability 9 owns the atomic format/preferences RPC; preserve capability 7 and OAuth reservation 8, bounded server-owned generations sharing the original protected key, immutable original execution/continuation profiles, explicit current validation, all-generation cleanup and portable exclusions. Observation-only edits rebase protected fields/revision while retaining drafts; editable conflicts block saves. No migration, native change or format conversion.
+- Key-preserving API format changes follow `cmds-delidev-accounts-contract.md#connected-api-format-changes` after main reservation the originating change. Capability 9 owns the atomic format/preferences RPC and capability 10 gates its revision-bound provider check; preserve capability 7 and OAuth reservation 8, bounded server-owned generations sharing the original protected key, immutable original execution/continuation profiles, explicit current validation, all-generation cleanup and portable exclusions. Observation-only edits rebase protected fields/revision while retaining drafts; editable conflicts block saves. No migration, native change or format conversion.
 
 ## cmds/delidev-cli/internal/cli constraints
 

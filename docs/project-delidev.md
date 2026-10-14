@@ -13,8 +13,12 @@ The desktop-owned shared pure identity presentation at `apps/delidev/src/product
 ## Key-preserving format amendment
 
 After main reservation the originating change, ProviderInventory capability 9 owns connected API
-format changes through the dedicated atomic Account RPC. Current/retained
-server-owned connection generations share the original protected key, preserve
+format changes through the dedicated atomic Account RPC, while capability 10
+gates revision-bound provider checks. Each new format-change
+request binds the inspected Provider resource revision when capability 10 is
+advertised, checked with Account and
+Provider identity before publication. Current and retained server-owned connection
+generations share the original protected key, preserve
 original executions and continuations, and require fresh explicit validation for
 new sessions. Capability 7 and OAuth reservation 8 keep their separate meaning.
 Follow the [account](cmds-delidev-accounts-contract.md#connected-api-format-changes),
@@ -131,7 +135,7 @@ The standalone [Pull requests sidebar](apps-delidev-desktop-contract.md#standalo
 - [Session development-server forwarding](cmds-delidev-forwarding-contract.md)
 - [GitHub integration profiles](cmds-delidev-integrations-contract.md)
 - [Account lifecycle and AI API Keys presentation](cmds-delidev-accounts-contract.md)
-- [Managed Codex subscriptions](cmds-delidev-subscription-contract.md)
+- [Managed Codex subscriptions and shared account owner/member ownership](cmds-delidev-subscription-contract.md#shared-account-owner-and-execution-members), Worker 67 `SHARED_SUBSCRIPTION_OWNER_V1` and Worker 68 `CLAUDE_DEVICE_OWNED_MEMBERS_V1`
 - [OpenCode Go subscriptions](cmds-delidev-opencode-go-subscription-contract.md)
 - [Grok Build subscriptions (planned)](cmds-delidev-grok-subscription-contract.md)
 - [API account browser OAuth](cmds-delidev-account-oauth-contract.md)

@@ -31,6 +31,10 @@ import (
 // waiting operation.
 const maxSubscriptionLeaseWait = 5 * time.Second
 
+// subscriptionMemberNotAdmittedCause is the server's typed proof that a joined
+// execution member was released before any native side effect.
+const subscriptionMemberNotAdmittedCause = "subscription_member_not_admitted"
+
 type managedSubscriptionLease struct {
 	paidCredits bool
 	logger      *slog.Logger
@@ -57,10 +61,13 @@ const (
 )
 
 type managedSubscriptionJournal struct {
-	CleanupFinish                                           domain.ID `json:"cleanup_finish,omitempty"`
-	LeaseRevision                                           uint64    `json:"lease_revision,omitempty"`
-	Version                                                 uint32    `json:"version"`
-	NativeProfileID                                         domain.ID `json:"native_profile_id,omitempty"`
+	CleanupFinish   domain.ID `json:"cleanup_finish,omitempty"`
+	LeaseRevision   uint64    `json:"lease_revision,omitempty"`
+	Version         uint32    `json:"version"`
+	NativeProfileID domain.ID `json:"native_profile_id,omitempty"`
+	// OwnerLease names the shared account owner a joined execution member
+	// belongs to. A founding or singleton lease omits it.
+	OwnerLease                                              domain.ID `json:"owner_lease,omitempty"`
 	NativeIdentity                                          string    `json:"native_identity,omitempty"`
 	ExecutionStarted                                        bool      `json:"execution_started,omitempty"`
 	NativeStarted                                           bool      `json:"native_started,omitempty"`
@@ -69,6 +76,10 @@ type managedSubscriptionJournal struct {
 	Action                                                  pb.SubscriptionAction
 	State                                                   managedJournalState
 	Cleanup, Refresh, Success                               bool
+	// OwnerProfileCleaned records that recovery of a lost shared owner already
+	// logged out the canonical profile. A shared owner never infers this from any
+	// member's per-session Cleanup or NativeIdentity flags.
+	OwnerProfileCleaned bool `json:"owner_profile_cleaned,omitempty"`
 }
 
 func subscriptionRPC(ctx context.Context, config Config, credential Credential) (delidevv1connect.SubscriptionServiceClient, func(), error) {
@@ -80,17 +91,36 @@ func subscriptionRPC(ctx context.Context, config Config, credential Credential) 
 }
 
 func takeManagedSubscription(ctx context.Context, config Config, client delidevv1connect.SubscriptionServiceClient, credential Credential, instance, account, operation domain.ID, revision uint64, action pb.SubscriptionAction) (*managedSubscriptionLease, error) {
+	lease, release, err := takeManagedSubscriptionAdmitted(ctx, config, client, credential, instance, account, operation, revision, action, nil)
+	release()
+	return lease, err
+}
+
+// takeManagedSubscriptionAdmitted is takeManagedSubscription with an optional
+// per-account admission gate. The gate is held only around each individual Take
+// request and, when the Take is granted, stays held until the caller has
+// registered the granted lease locally and calls the returned release. A waiting
+// retry never holds it, so a finishing sibling can still retire the owner. The
+// returned release is always safe to call.
+func takeManagedSubscriptionAdmitted(ctx context.Context, config Config, client delidevv1connect.SubscriptionServiceClient, credential Credential, instance, account, operation domain.ID, revision uint64, action pb.SubscriptionAction, gate *claudeAccountGate) (*managedSubscriptionLease, func(), error) {
+	held := false
+	release := func() {
+		if held {
+			held = false
+			gate.release()
+		}
+	}
 	leaseID := domain.NewID()
 	root := filepath.Join(config.Root, "managed-auth")
 	if err := security.PrivateDir(root); err != nil {
-		return nil, domain.SafeError(err)
+		return nil, release, domain.SafeError(err)
 	}
 	// A durable claim precedes the protected delivery and every native side
 	// effect. Reconnect never regenerates this claim or replays the login.
 	claim := managedSubscriptionJournal{Version: 1, Lease: leaseID, Account: account, Operation: operation, Instance: instance, Finish: domain.NewID(), Action: action, State: managedClaimed}
 	journalPath := filepath.Join(root, string(leaseID)+".json")
 	if err := writeJSON(journalPath, claim); err != nil {
-		return nil, subscription.Invalid()
+		return nil, release, subscription.Invalid()
 	}
 	var response *connect.Response[pb.TakeSubscriptionResponse]
 	var err error
@@ -100,10 +130,19 @@ func takeManagedSubscription(ctx context.Context, config Config, client delidevv
 	// maxSubscriptionLeaseWait after the first few attempts.
 	wait := time.Second
 	for {
+		if gate != nil {
+			if acquireErr := gate.acquire(ctx); acquireErr != nil {
+				return nil, release, domain.SafeError(acquireErr)
+			}
+			held = true
+		}
 		response, err = client.TakeSubscription(ctx, authenticated(credential, &pb.TakeSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(leaseID), Id: string(account), ExpectedRevision: revision}, MachineId: string(credential.MachineID), InstanceId: string(instance), OperationId: string(operation), Action: action}))
 		if err == nil {
 			break
 		}
+		// A refused attempt grants nothing, so the admission gate is released
+		// before any classification or wait.
+		release()
 		problem := rpc.ClientError(err)
 		safe := domain.SafeError(problem)
 		lifecycle := action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN || action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH || action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT
@@ -112,9 +151,9 @@ func takeManagedSubscription(ctx context.Context, config Config, client delidevv
 			// Record local retirement without fabricating a Finish acknowledgment.
 			claim.State = managedNotAdmitted
 			if err := writeJSON(journalPath, claim); err != nil {
-				return nil, subscription.Invalid()
+				return nil, release, subscription.Invalid()
 			}
-			return nil, &managedTakeNotAdmitted{problem}
+			return nil, release, &managedTakeNotAdmitted{problem}
 		}
 		if action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE && safe.Cause == "subscription_title_not_delivered" {
 			// The server committed and then released this exact managed title lease
@@ -123,19 +162,32 @@ func takeManagedSubscription(ctx context.Context, config Config, client delidevv
 			// lease is never an uncertain execution.
 			claim.State = managedNotDelivered
 			if err := writeJSON(journalPath, claim); err != nil {
-				return nil, subscription.Invalid()
+				return nil, release, subscription.Invalid()
 			}
 			if config.Logger != nil {
 				config.Logger.InfoContext(ctx, "subscription_title_not_delivered", "account_id", account, "operation_id", operation)
 			}
-			return nil, &managedTakeNotDelivered{problem}
+			return nil, release, &managedTakeNotDelivered{problem}
+		}
+		if action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE && safe.Cause == subscriptionMemberNotAdmittedCause {
+			// The server admitted and then released this exact member before any
+			// native side effect. The owner and siblings are unchanged, so the
+			// session reports an ordinary definite failure without a fence.
+			claim.State = managedNotDelivered
+			if err := writeJSON(journalPath, claim); err != nil {
+				return nil, release, subscription.Invalid()
+			}
+			if config.Logger != nil {
+				config.Logger.InfoContext(ctx, "subscription_member_not_admitted", "account_id", account, "operation_id", operation)
+			}
+			return nil, release, &managedTakeNotDelivered{problem}
 		}
 		if safe.Code != domain.ResourceExhausted {
 			code := domain.SafeError(problem).Code
 			if action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE && (code == domain.ServerUnavailable || code == domain.Unavailable || code == domain.Canceled || code == domain.Internal || code == domain.RecoveryRequired) {
-				return nil, &managedExecutionUncertain{problem}
+				return nil, release, &managedExecutionUncertain{problem}
 			}
-			return nil, problem
+			return nil, release, problem
 		}
 		// A definite busy refusal has no delivery or native side effect. Wait on
 		// the exact selected account using the unchanged claim; unknown delivery
@@ -148,23 +200,24 @@ func takeManagedSubscription(ctx context.Context, config Config, client delidevv
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			return nil, domain.SafeError(ctx.Err())
+			return nil, release, domain.SafeError(ctx.Err())
 		case <-timer.C:
 		}
 		wait = min(wait*2, maxSubscriptionLeaseWait)
 	}
 	if response.Msg.LeaseId != string(leaseID) || response.Msg.LeaseRevision == 0 {
 		clear(response.Msg.Bundle)
-		return nil, &managedExecutionUncertain{subscription.Invalid()}
+		return nil, release, &managedExecutionUncertain{subscription.Invalid()}
 	}
 	claim.LeaseRevision = response.Msg.LeaseRevision
 	claim.Generation = domain.ID(response.Msg.GenerationId)
 	claim.NativeProfileID = domain.ID(response.Msg.NativeProfileId)
+	claim.OwnerLease = domain.ID(response.Msg.OwnerLeaseId)
 	if err := writeJSON(journalPath, claim); err != nil {
 		clear(response.Msg.Bundle)
-		return nil, &managedExecutionUncertain{subscription.Invalid()}
+		return nil, release, &managedExecutionUncertain{subscription.Invalid()}
 	}
-	return &managedSubscriptionLease{paidCredits: config.paidCredits, logger: config.Logger, client: client, credential: credential, instance: instance, account: account, response: response.Msg, finishID: claim.Finish, journalPath: journalPath, journal: claim}, nil
+	return &managedSubscriptionLease{paidCredits: config.paidCredits, logger: config.Logger, client: client, credential: credential, instance: instance, account: account, response: response.Msg, finishID: claim.Finish, journalPath: journalPath, journal: claim}, release, nil
 }
 
 func (l *managedSubscriptionLease) finish(bundle []byte, cleanup, refresh, success bool) error {

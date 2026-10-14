@@ -337,6 +337,10 @@ or duplicate paragraph appears and the paragraph count never depends on the
 active locale. Locale changes retain the original Session,
 composer, Info and operation identities without replay or focus movement.
 
+## Tailscale check causes
+
+The `tailscale` catalog localizes the proved Check failure causes in English and Korean: `tailscale.cause.connectionRefused`, `timeout`, `certificateInvalid`, `unexpectedHttp` and `invalidIdentity` (each with `.heading` and `.body`, both using the `{{device}}` slot) and the `tailscale.couldNotConnect` row status. Switching language while a cause alert shows re-translates the visible heading, body and row status; the original safe message, guidance, code and correlation ID inside Technical details stay unchanged and no Check request is replayed.
+
 ## Browser destination copy
 
 The `browser-settings` and `external-link` catalogs localize the Settings > Browser category and link-opening failures in English and Korean. The selector labels are `General URL destination` / `일반 URL 열기 대상` and `Local URL destination` / `로컬 URL 열기 대상`; the default option is `System default browser` / `시스템 기본 브라우저`. Native browser identities and display names come from the operating system and are shown unchanged; the unavailable-saved-browser suffix is localized. Selector option values are structural identities, never copy, and catalog text is never used to match or select a browser. Failure copy for a missing browser, a failed launch, unreadable browser settings, an unsupported address and unclassified failures points at Settings > Browser and is shared by message links, terminal links, Provider guidance, App information and GitHub opening. Success copy for those openers says the link was sent to the user's browser rather than the default browser. Locale changes re-render without replaying a pending launch.

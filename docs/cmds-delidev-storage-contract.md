@@ -1,5 +1,22 @@
 # DeliDev storage operations
 
+## Shared owner and member records
+
+The account document's optional `subscription.lease.shared` flag and
+`subscription.members` list are additive JSON, so no SQLite migration is needed;
+historical documents omit both and keep the singleton representation. Database restore is refused while any lease or member exists, and a restored
+backup image retains them as quarantined evidence under a recovery fence that
+never grants a credential. Worker `managed-auth/<lease>.json` journals
+gain an optional `owner_lease`, and a version 2 Claude Worker checkpoint gains an
+optional `profile_version`; both are omitted for historical records. Session-private
+Claude history lives in the `claude` directory of the session's persistent
+conversation profile (resolved through the native profile registry; a history
+that predates persistent profiles resolves to its registered legacy
+`runtimes/<execution>` directory); only the canonical `native-claude/<server>/<account>/<profile>/claude`
+directory is the secure-storage namespace. Backup, deletion and Doctor treat the
+whole owner/member set as live ownership. See the
+[subscription contract](cmds-delidev-subscription-contract.md#shared-account-owner-and-execution-members).
+
 ## Frozen live checkout layout
 
 Workspace request/result history retains optional immutable `directory_name` under the [workspace contract](cmds-delidev-workspace-contract.md#frozen-repository-checkout-names). Omission preserves version-1 UUID layout and bytes. Capture maps each original live repository root into its UUID-indexed snapshot root; Git administration remains independently stored under that repository UUID. Restore maps the exact snapshot UUID root back to the frozen live name. Complete inventory comparisons translate only these original top-level roots and retain deterministic directory traversal order. Native inode claims, bounded anchored copying, symlink preservation, synchronized no-replace publication, joined cleanup and root confinement remain unchanged.

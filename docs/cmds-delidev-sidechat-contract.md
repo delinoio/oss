@@ -392,6 +392,16 @@ recorded actor. Revoking that paired client prevents the retained question from
 being claimed or sent; the published runtime stays a cleanup owner and no other
 actor, generation or Worker adopts the authority.
 
+For a managed retry, the Worker replays the exact original execution registration
+request after native thread binding and startup readiness, immediately before
+`StartTurn`. The authenticated server resolves the original grant and checks its
+current actor and execution scope on receipt replay. Only an acknowledged replay
+of the original managed binding permits the retained question to be sent. A
+denied, unavailable or unverified response sends no input and retains the
+published runtime, active generation, selected previous answer and cleanup owner.
+The check creates no replacement grant, changes no assignment and cannot
+authorize an automatic input retry.
+
 Keep public child ID, title, original `ForkOrigin`, snapshots and parent dependency
 entry immutable. Each retry owns one fresh private native Fork of its accepted
 prefix. Verify the original metadata-only child reference without preparing it

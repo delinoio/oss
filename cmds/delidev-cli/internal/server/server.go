@@ -74,6 +74,11 @@ type Service struct {
 	tailnetNow  func() time.Time
 	tailnetHTTP func() (*http.Client, *http.Transport)
 	tailnetPair func(context.Context, string, worker.PairingCode, domain.DeviceType, string) (worker.Credential, error)
+	// tailnetPeerLookup and tailnetProbe replace native peer discovery and the
+	// outbound identity probe in tests. withCause is true only for the explicit
+	// CheckTailscale contract.
+	tailnetPeerLookup func(context.Context, string) (tailscale.Peer, error)
+	tailnetProbe      func(ctx context.Context, origin string, out any, withCause bool) error
 	delidevv1connect.UnimplementedTailscaleServiceHandler
 	delidevv1connect.UnimplementedAttachmentServiceHandler
 	imageTransfersMu      sync.Mutex

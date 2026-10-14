@@ -77,6 +77,9 @@
   margin: 0;
   width: 100%;
 }
+.tailscale-list[hidden] {
+  display: none;
+}
 .tailscale-list > li {
   display: flex;
   flex-wrap: wrap;
@@ -120,6 +123,13 @@
 }
 .tailscale-section .problem {
   min-width: 0;
+  overflow-wrap: anywhere;
+}
+.tailscale-list > li > .tailscale-check-cause {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+.tailscale-check-cause .problem {
   overflow-wrap: anywhere;
 }
 .tailscale-progress {

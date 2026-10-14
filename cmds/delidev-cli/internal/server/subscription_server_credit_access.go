@@ -38,8 +38,9 @@ func automaticEpisodeAuthority(st *domain.SubscriptionState, episode *domain.Aut
 	if episode.ServerFinishGeneration != "" {
 		return st.Generation == episode.ServerFinishGeneration && st.Pending == nil
 	}
-	c, l := st.AutomaticCreditConsent, st.Lease
-	return c != nil && *c == proof.Consent && st.Generation == generation && l != nil && l.ID == proof.LeaseID && l.Action == domain.SubscriptionExecute && l.Epoch == proof.Epoch && l.MachineID == proof.MachineID && l.InstanceID == proof.InstanceID && l.DeviceID == proof.DeviceID && l.Revision == proof.LeaseRevision && l.OperationID == proof.OperationID && l.Generation == generation
+	c := st.AutomaticCreditConsent
+	l, owned := automaticCreditLease(st, proof.LeaseID)
+	return c != nil && *c == proof.Consent && st.Generation == generation && owned && l.ID == proof.LeaseID && l.Action == domain.SubscriptionExecute && l.Epoch == proof.Epoch && l.MachineID == proof.MachineID && l.InstanceID == proof.InstanceID && l.DeviceID == proof.DeviceID && l.Revision == proof.LeaseRevision && l.OperationID == proof.OperationID && l.Generation == generation
 }
 
 // quotaGenerationBound reports whether a pending access-only quota read is still

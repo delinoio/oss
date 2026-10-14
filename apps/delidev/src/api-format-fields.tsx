@@ -29,6 +29,7 @@ interface Props {
   initial?: Resource;
   keepsFormatKey?: (ready: boolean) => void;
   saveBlocked?: (blocked: boolean) => void;
+  inspectedProviderRevision?: (revision: bigint) => void;
 }
 
 function useFormatCapability(active: boolean) {
@@ -42,6 +43,16 @@ function useFormatCapability(active: boolean) {
     keepsKey: Boolean(
       inventory.data?.capabilities.includes(
         ProviderInventoryCapability.ACCOUNT_API_FORMAT_CHANGE_V1,
+      ) &&
+      !inventory.error &&
+      !inventory.isFetching,
+    ),
+    revisionBound: Boolean(
+      inventory.data?.capabilities.includes(
+        ProviderInventoryCapability.ACCOUNT_API_FORMAT_CHANGE_V1,
+      ) &&
+      inventory.data?.capabilities.includes(
+        ProviderInventoryCapability.ACCOUNT_API_FORMAT_CHANGE_REVISION_V1,
       ) &&
       !inventory.error &&
       !inventory.isFetching,
@@ -352,20 +363,32 @@ export function AccountAPIFormatField({
   initial,
   saveBlocked,
   keepsFormatKey,
+  inspectedProviderRevision,
 }: Props) {
   useLocale();
   const labelId = useId();
-  const { inventory, ready, keepsKey } = useFormatCapability(active);
+  const { inventory, ready, keepsKey, revisionBound } =
+    useFormatCapability(active);
   const provider = useQuery(
     ResourceQuery.getResource,
     { kind: EntityKind.PROVIDER, id: text(data.provider_id) },
     { enabled: active && Boolean(data.provider_id), retry: false },
   );
   const metadata = document(provider.data?.resource);
+  const observedProviderRevision =
+    !provider.error &&
+    !provider.isFetching &&
+    provider.data?.resource?.id === text(data.provider_id)
+      ? provider.data.resource.revision
+      : 0n;
   useEffect(() => {
-    keepsFormatKey?.(ready && keepsKey);
+    inspectedProviderRevision?.(observedProviderRevision);
+    return () => inspectedProviderRevision?.(0n);
+  }, [inspectedProviderRevision, observedProviderRevision]);
+  useEffect(() => {
+    keepsFormatKey?.(ready && revisionBound);
     return () => keepsFormatKey?.(false);
-  }, [ready, keepsKey, keepsFormatKey]);
+  }, [ready, revisionBound, keepsFormatKey]);
   const previous = initial ? document(initial) : data;
   const originalProfile = accountAPIProfile(metadata, previous);
   const profile = accountAPIProfile(metadata, data);
@@ -373,10 +396,11 @@ export function AccountAPIFormatField({
   const canChange =
     ready &&
     Boolean(originalProfile) &&
+    observedProviderRevision > 0n &&
     !provider.error &&
     !provider.isFetching &&
     !data.removal &&
-    (keepsKey || (!data.connection && data.health === "disconnected"));
+    (revisionBound || (!data.connection && data.health === "disconnected"));
   const blocked =
     changed &&
     (!canChange ||
@@ -442,6 +466,15 @@ export function AccountAPIFormatField({
         </p>
       ) : null}
       <Problem error={inventory.error || provider.error} />
+      {provider.error ? (
+        <SettingsActionButton
+          icon={SettingsActionIcon.Retry}
+          type="button"
+          onClick={() => void provider.refetch()}
+        >
+          {copy("configuration-fields.retryApiFormats")}
+        </SettingsActionButton>
+      ) : null}
     </>
   );
 }

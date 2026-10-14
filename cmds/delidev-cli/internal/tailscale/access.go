@@ -3,6 +3,8 @@ package tailscale
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"io"
@@ -12,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -394,31 +397,148 @@ type Identity struct {
 	Approval        bool      `json:"approval"`
 }
 
+// ProbeCause is the closed set of safe, proven Check-only failure causes. It
+// crosses rpc.Error as ErrorDetail.cause; no hostname, URL, status body,
+// certificate or native error text is ever attached to it.
+type ProbeCause string
+
+const (
+	ProbeConnectionRefused  ProbeCause = "tailscale_connection_refused"
+	ProbeTimeout            ProbeCause = "tailscale_timeout"
+	ProbeCertificateInvalid ProbeCause = "tailscale_certificate_invalid"
+	ProbeUnexpectedHTTP     ProbeCause = "tailscale_unexpected_http"
+	ProbeInvalidIdentity    ProbeCause = "tailscale_invalid_identity"
+)
+
+// probeTimeout bounds the whole single request.
+const probeTimeout = 5 * time.Second
+
+// wsaeConnRefused is the Windows socket error for a refused connection. Go's
+// syscall.ECONNREFUSED is a distinct invented value on Windows, so the native
+// code is matched explicitly; no other platform produces this value.
+const wsaeConnRefused syscall.Errno = 10061
+
+// ProbeCauseOf returns the cause carried by a Check-only probe failure, or the
+// empty cause for generic failures.
+func ProbeCauseOf(err error) ProbeCause {
+	var known *domain.Error
+	if errors.As(err, &known) {
+		switch cause := ProbeCause(known.Cause); cause {
+		case ProbeConnectionRefused, ProbeTimeout, ProbeCertificateInvalid, ProbeUnexpectedHTTP, ProbeInvalidIdentity:
+			return cause
+		}
+	}
+	return ""
+}
+
+func probeFailure(code domain.Code, cause ProbeCause) error {
+	failure := fail(code).(*domain.Error)
+	failure.Cause = string(cause)
+	return failure
+}
+
+// classifyTransport proves a cause only from the typed Go error. DNS, proxy,
+// peer-refresh, local access and every unidentified socket or TLS failure return
+// the empty cause. parent is the caller context: a canceled or expired parent
+// never proves a peer timeout.
+func classifyTransport(parent context.Context, err error) ProbeCause {
+	if err == nil || parent.Err() != nil {
+		return ""
+	}
+	var errno syscall.Errno
+	if errors.Is(err, syscall.ECONNREFUSED) || errors.As(err, &errno) && errno == wsaeConnRefused {
+		return ProbeConnectionRefused
+	}
+	var verification *tls.CertificateVerificationError
+	var unknownAuthority x509.UnknownAuthorityError
+	var hostname x509.HostnameError
+	var invalid x509.CertificateInvalidError
+	if errors.As(err, &verification) || errors.As(err, &unknownAuthority) || errors.As(err, &hostname) || errors.As(err, &invalid) {
+		return ProbeCertificateInvalid
+	}
+	var dns *net.DNSError
+	if errors.As(err, &dns) {
+		return ""
+	}
+	var network net.Error
+	if errors.Is(err, context.DeadlineExceeded) || errors.As(err, &network) && network.Timeout() {
+		return ProbeTimeout
+	}
+	return ""
+}
+
 // Probe sends only one normal-TLS request to the exact admitted origin. There
 // are no redirects, ambient proxies, alternative ports or connectivity scans.
+// Failures stay generic; Manager.enable relies on that.
 func Probe(ctx context.Context, origin string, out any) error {
+	return probe(ctx, newProbeClient(), origin, probeTimeout, out, false)
+}
+
+// CheckProbe is Probe for the explicit per-peer Check. It applies the same
+// request policy but additionally attaches a safe ProbeCause when the failure
+// is proven by the Go error or by the bounded response. Identity field
+// validation stays with the caller, which may use ProbeInvalidIdentity.
+func CheckProbe(ctx context.Context, origin string, out any) error {
+	return probe(ctx, newProbeClient(), origin, probeTimeout, out, true)
+}
+
+// InvalidIdentity is the safe failure for a decoded but incompatible identity.
+func InvalidIdentity() error { return probeFailure(domain.Unsupported, ProbeInvalidIdentity) }
+
+func newProbeClient() *http.Client {
+	transport := &http.Transport{Proxy: nil, DisableKeepAlives: true, TLSHandshakeTimeout: 3 * time.Second}
+	return &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+}
+
+// probe is the shared single-request implementation. The client is injectable
+// only for tests; production callers always use newProbeClient.
+func probe(ctx context.Context, client *http.Client, origin string, timeout time.Duration, out any, classify bool) error {
 	if err := ValidateOrigin(origin); err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	return probeURL(ctx, client, origin+"/delidev/tailscale/v1/identity", timeout, out, classify)
+}
+
+func probeURL(parent context.Context, client *http.Client, target string, timeout time.Duration, out any, classify bool) error {
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
-	transport := &http.Transport{Proxy: nil, DisableKeepAlives: true, TLSHandshakeTimeout: 3 * time.Second}
-	defer transport.CloseIdleConnections()
-	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, origin+"/delidev/tailscale/v1/identity", nil)
+	defer client.CloseIdleConnections()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
 		return fail(domain.InvalidArgument)
 	}
 	res, err := client.Do(req)
 	if err != nil {
+		if classify {
+			if cause := classifyTransport(parent, err); cause != "" {
+				return probeFailure(domain.Unavailable, cause)
+			}
+		}
 		return fail(domain.Unavailable)
 	}
 	defer res.Body.Close()
+	if classify && res.StatusCode != http.StatusOK {
+		return probeFailure(domain.Unavailable, ProbeUnexpectedHTTP)
+	}
 	raw, err := io.ReadAll(io.LimitReader(res.Body, 8193))
-	if err != nil || len(raw) > 8192 || res.StatusCode != http.StatusOK {
+	if err != nil {
+		// A peer that sends headers and then stalls surfaces the request
+		// deadline from the body read, not from client.Do. Apply the same typed
+		// classification while the caller context is still live.
+		if classify {
+			if cause := classifyTransport(parent, err); cause != "" {
+				return probeFailure(domain.Unavailable, cause)
+			}
+		}
+		return fail(domain.Unavailable)
+	}
+	if len(raw) > 8192 || res.StatusCode != http.StatusOK {
 		return fail(domain.Unavailable)
 	}
 	if out != nil && domain.Decode(raw, out) != nil {
+		if classify {
+			return InvalidIdentity()
+		}
 		return fail(domain.Unsupported)
 	}
 	return nil
