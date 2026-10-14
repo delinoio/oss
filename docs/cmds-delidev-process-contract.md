@@ -3,10 +3,13 @@
 ## Shared subscription owner process ownership
 
 Under the [shared account owner model](cmds-delidev-subscription-contract.md#shared-account-owner-and-execution-members)
-every execution member keeps its own process owner (its session job identifier),
-journal and cleanup: one member's completion, Stop or failure never terminates,
-reconciles or adopts a sibling's processes. The owner's own authentication
-operations use the founding lease's owner. A final owner containment joins every
+each Claude execution member keeps its own process owner (its session job identifier),
+journal and cleanup. Managed Codex uses one account process owner (the founding
+lease identifier) for the shared app-server; per-session Worker helpers retain
+their job process owners. One member's completion, Stop or failure never
+terminates, reconciles or adopts a sibling's processes. The owner's own authentication
+operations use the founding lease's owner. A final owner containment joins the
+account process owner and every
 retained member's process owner before it reports confirmed cleanup, and recovery
 of a lost owner joins every member's process owner before touching the canonical
 profile. A missing owner directory is a never-started proof only for a member whose

@@ -6,12 +6,10 @@ A managed subscription account runs independent sessions concurrently through a
 durable account owner plus execution members instead of account-wide execution
 exclusivity. The managed Codex lane is negotiated by Worker
 `SHARED_SUBSCRIPTION_OWNER_V1 = 67` and the device-owned native Claude lane by
-Worker `CLAUDE_DEVICE_OWNED_MEMBERS_V1 = 68` (both reserved in the
-[protocol contract](protos-delidev-v1-contract.md)). Only capability 68 is
-advertised by the shipped Worker. Capability 67 is reserved and not advertised
-until the Codex Worker slice (tracked by issue 3466) lands, so the server's
-Codex shared-owner branch is inactive for the shipped Worker and managed Codex
-stays exclusive per account. Where a lane is negotiated, independent sessions that
+Worker `CLAUDE_DEVICE_OWNED_MEMBERS_V1 = 68` (both declared in the
+[protocol contract](protos-delidev-v1-contract.md)). The Worker advertises 67
+only after a server echo, verified managed Codex installation and parallel-session
+negotiation. An older server or Worker retains exclusive Codex execution. Where a lane is negotiated, independent sessions that
 use one account on its original Runner Device run concurrently, including more
 than four, with no session-count cap, setting or queue depth. Account lifecycle
 authority stays exclusive.
@@ -165,17 +163,25 @@ version 2; a continuation keeps the version of its predecessor and binds the
 previous session's private directory. A foreign owner, history directory or
 digest fails closed.
 
-**Codex Worker activation (not yet implemented).** The server accepts and
-echoes Worker capability 67 and models members for the managed Codex lane, but no
-Worker advertises it yet, so managed Codex execution stays exclusive per account.
-Activation requires one account-scoped app-server and private authentication
-runtime that shares the native `AuthManager` across independently routed threads;
-completion of one thread must not rotate credentials or close a sibling; early
-workspace release requires exact `thread/closed` after `thread/unsubscribe` plus
-independently proven descendant closure, otherwise the member's workspace and
-cleanup stay retained until final owner containment; and the retained per-session
-history needs an explicit owner-home design before simultaneous threads can share
-one native home. These remain unimplemented and unvalidated.
+**Codex Worker activation.** A negotiated managed Codex owner launches one
+account-scoped app-server in a private `CODEX_HOME`; each execution owns a
+separate native thread, event route, publication journal and workspace lease.
+Only the owner captures refreshed authentication and reports an `OWNER` Finish.
+Earlier members report `MEMBER` Finish without authentication. A member releases
+its workspace only after its exact `thread/unsubscribe` and `thread/closed`,
+native descendant inventory and its own process-index reconciliation succeed.
+Missing proof retains the member workspace until the owner process and its
+descendants are contained. The owner reconciles its original process index before
+authentication removal and retained workspace cleanup. Unknown Finish outcomes
+retain their original request identifiers and block admission until settlement.
+Native owner loss fences every member and never replays input. Fresh checkpoints
+bind an account home and exact native thread-history digest; version 1 history is
+imported only after the original checkpoint and rollout are verified. Invalid or
+unreadable history remains recovery-required. Native modes with process-wide
+options (including image generation, sidechat, fork, revert and compaction) keep
+exclusive singleton execution until their independent shared-profile behavior is
+verified. Fixture and build checks do not establish real-account or native-platform
+acceptance.
 
 **Scope boundary.** The server-owned Claude setup-token lane (Worker capability
 41, `claude_credential = server-token`) is explicitly outside the owner/member

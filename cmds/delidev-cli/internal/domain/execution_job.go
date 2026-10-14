@@ -38,6 +38,14 @@ type ExecutionJobInput struct {
 	NativeImageGeneration bool `json:"native_image_generation,omitempty"`
 }
 
+// SharedCodexOwnerEligible identifies native profiles whose process-wide
+// configuration is compatible with one account-owned app-server. Other
+// managed Codex profiles retain the existing exclusive lease until their
+// native per-thread configuration and history shape are independently verified.
+func (i ExecutionJobInput) SharedCodexOwnerEligible() bool {
+	return i.Configuration.Harness == Codex && i.Configuration.Subscription && i.Configuration.SidechatPolicy == "" && !i.NativeImageGeneration && i.ContextRevision == 0 && i.Fork == nil && (i.Continuation == nil || i.Continuation.Compaction == nil)
+}
+
 // ExecutionCompletion proves only a fully published native terminal boundary
 // followed by owned process/workspace-lease cleanup. Interrupted or incomplete
 // publication must report recovery instead of manufacturing this document.

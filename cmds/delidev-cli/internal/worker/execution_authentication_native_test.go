@@ -53,6 +53,10 @@ func init() {
 	// Tagged lifecycle drivers retain their separate fixture by requiring direct
 	// native arguments here, rather than intercepting their wrapper arguments.
 	home := os.Getenv("CODEX_HOME")
+	if _, err := os.Stat(filepath.Join(home, "shared-fixture")); err == nil {
+		runSharedCodexNativeFixture(home)
+		os.Exit(0)
+	}
 	if runManagedSidechatProcess(home) {
 		os.Exit(0)
 	}

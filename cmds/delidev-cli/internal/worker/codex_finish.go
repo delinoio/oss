@@ -3,6 +3,7 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -18,7 +19,7 @@ func (l *managedSubscriptionLease) finishCodexScopedRetry(bundle []byte, cleanup
 	delay := time.Second
 	for attempt := 1; ; attempt++ {
 		err := l.finishCodexScoped(bundle, cleanup, success, scope, revision)
-		if !claudeFinishOutcomeUnknown(err) || attempt >= claudeFinishAttempts {
+		if !codexFinishOutcomeUnknown(err) || attempt >= claudeFinishAttempts {
 			return err
 		}
 		if l.logger != nil {
@@ -27,6 +28,11 @@ func (l *managedSubscriptionLease) finishCodexScopedRetry(bundle []byte, cleanup
 		time.Sleep(delay)
 		delay = min(delay*2, 8*time.Second)
 	}
+}
+
+func codexFinishOutcomeUnknown(err error) bool {
+	var uncertain *managedExecutionUncertain
+	return errors.As(err, &uncertain) || claudeFinishOutcomeUnknown(err)
 }
 
 func (l *managedSubscriptionLease) finishCodexScoped(bundle []byte, cleanup, success bool, scope pb.SubscriptionFinishScope, revision uint64) error {

@@ -131,6 +131,21 @@ func (s *SharedRuntime) Close() (nativeErr, helperErr error) {
 	return nativeErr, helperErr
 }
 
+// ManagedBundle reads the single account owner's current authentication while
+// its native process is still open. A member never receives this bundle.
+func (s *SharedRuntime) ManagedBundle(ctx context.Context) ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return nil, sharedEventUncertain()
+	}
+	return s.owner.ManagedBundle(ctx, false)
+}
+
+// Health reports loss of the account event connection without attempting a
+// new native request or replaying any member input.
+func (s *SharedRuntime) Health() error { return s.events.check() }
+
 func (s *sharedEvents) check() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
