@@ -441,9 +441,13 @@ and ignored. Each mounted screen reports its own selection to `Shell`: Inbox
 (`selectionChanged`), Schedules, Pull requests (repository), Settings
 (`categoryChanged`) and Usage (`tabChanged`, `UsageTab` in `usage-tab.ts`).
 
-On document startup `claimInitialRoute` parses the URL once per connection identity
-scope (the same server, endpoint and device identity key `App` already uses). A
-different identity never receives the previous identity's route. An unknown `screen`
+On document startup `readInitialRoute` parses the URL for a connection identity
+scope (the same server, endpoint and device identity key `App` already uses; an
+unpaired connection is scoped by its transport object). The read is pure, so React
+may invoke it any number of times for one render (StrictMode lazy initializers,
+discarded renders) and every call answers the same. The `Shell` records ownership of
+the URL with `commitInitialRouteScope` from a layout effect, i.e. only when it
+commits. A different identity never receives the previous identity's route. An unknown `screen`
 falls back to Sessions Home; malformed IDs, unknown categories and tabs, and
 parameters that do not belong to the screen are dropped. Screens without a selection
 (and the Settings category and Usage tab, which need no read) open immediately, so a
@@ -454,6 +458,9 @@ current transport (`GetResource` for Session and repository, `GetSchedule`,
 `GetInboxEntry`; a Sidechat must resolve to a child of the requested parent). While
 the connection is unavailable the route stays pending, the URL keeps the original
 route, and the selection resumes only when the same connection becomes ready. A
+restore read is current only for the transport and the `ConnectionEpoch` it started
+in: a same-identity reconnect keeps the transport while the peer behind it can be
+replaced or downgraded, so an epoch change aborts the read and restarts the restore. A
 deleted, denied, malformed, wrong-kind or wrong-connection selection (not found,
 permission denied, unauthenticated, invalid argument such as an ID of another entity
 kind, an unexpected shape or an invalid envelope with a non-positive revision or an
@@ -473,7 +480,12 @@ rejection of the parent clears the selection; a definitive rejection of the Side
 (missing, denied, not a child of the parent) opens the verified parent only; a
 retryable failure of the Sidechat read, or of the parent read, retains the requested
 Sidechat (the child tab is mounted under the requested parent so its own retry and
-error state runs, and the URL keeps the `sidechat` ID) instead of dropping it.
+error state runs, and the URL keeps the `sidechat` ID) instead of dropping it. A
+Sidechat tab opened without a verified name never shows its internal ID in its text,
+`title` or accessible name: it carries a localized product-identity label (the
+Session presentation label) and is marked provisional. When the child's own pane
+loads the Session, the descriptor takes the verified name; if the loaded Session is
+not a Sidechat of that parent, the placeholder tab ends.
 
 Restore supersession uses one monotonic navigation-intent token owned by `Shell`
 (`navigationIntent`, a ref). Every handler that actually changes the surface, the
@@ -511,13 +523,16 @@ carries only the screen and a closed outcome (including `superseded`).
 The reload shortcut, its saved override policy, capture and IME/modifier guards,
 focused external Browser ownership and the English/Korean copy are unchanged. No
 native, server, RPC, storage or migration change is involved. Regression coverage:
-`product-route.test.ts` (parse, serialize, hash and history, identity claim),
+`product-route.test.ts` (parse, serialize, hash and history, pure identity read and
+commit),
 `product-route-restore.test.tsx` (mirroring, restore per screen, fallbacks, pending
 routes, reload-shortcut remount, envelope validation per kind, slow-read supersession
 per kind, same-tick supersession per restore kind and for New schedule and surface
 changes, non-navigation controls that keep a waiting selection, one driver per
 `NavigationIntentSource` handler, retained Sidechat selections after transient
-failures, and a failure-code by restore-kind matrix including wrong-kind IDs) and
+failures, placeholder Sidechat labels without a raw ID, a StrictMode scope change, an epoch
+bump with a retained transport, unpaired transport replacement, and a failure-code by
+restore-kind matrix including wrong-kind IDs) and
 `search-session-routing.test.ts` (the failure classification table).
 
 Read-only shortcut defaults yield to existing editable chords through one shared
