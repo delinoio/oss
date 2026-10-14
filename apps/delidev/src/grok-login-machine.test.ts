@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  GrokCopyTarget,
   GrokHelp,
   GrokLoginEvent,
   GrokLoginMethod,
@@ -13,6 +14,7 @@ import {
   GrokProblemRule,
   GrokRetry,
   GrokRetryRule,
+  grokCopyOffered,
   grokLoginCell,
   grokLoginEvents,
   grokLoginPhases,
@@ -308,6 +310,44 @@ describe("table invariants", () => {
             expect(next.problem).toBe(state.problem);
         }
   });
+  it("offers each copy value exactly as its phase column says", () => {
+    for (const s of reachable) {
+      const ui = grokLoginPresentation(s);
+      expect(grokCopyOffered(ui, GrokCopyTarget.Link)).toBe(ui.copyLink);
+      expect(grokCopyOffered(ui, GrokCopyTarget.Code)).toBe(ui.copyCode);
+      expect(grokCopyOffered(ui, GrokCopyTarget.Address)).toBe(ui.copyAddress);
+    }
+  });
+  it("retires a copy notice with its own value, not with the phase's other copy actions", () => {
+    // A failed verification open reveals the address beside the code; a later
+    // successful open hides the address while the code stays offered.
+    const failed = transition(
+      transition(
+        transition(
+          { ...initialGrokLoginState(true, GrokLoginMethod.DeviceCode) },
+          E.StartAccepted,
+        ),
+        E.PollWaiting,
+      ),
+      E.CodeReady,
+    );
+    const open = transition(failed, E.VerificationOpenStarted);
+    const address = transition(open, E.VerificationOpenFailed);
+    const reopened = transition(address, E.VerificationOpenStarted);
+    expect(address.phase).toBe(P.DeviceAddress);
+    expect(reopened.phase).toBe(P.DeviceOpened);
+    const before = grokLoginPresentation(address),
+      after = grokLoginPresentation(reopened);
+    expect(grokCopyOffered(before, GrokCopyTarget.Address)).toBe(true);
+    expect(grokCopyOffered(after, GrokCopyTarget.Address)).toBe(false);
+    expect(grokCopyOffered(after, GrokCopyTarget.Code)).toBe(true);
+    // A cancellation retires every copy value together.
+    const canceling = transition(address, E.CancelAccepted);
+    for (const target of Object.values(GrokCopyTarget))
+      expect(grokCopyOffered(grokLoginPresentation(canceling), target)).toBe(
+        false,
+      );
+  });
   it("marks Disposed as absorbing", () => {
     for (const event of grokLoginEvents)
       expect(
@@ -517,7 +557,7 @@ function renderTables(): string {
   }
   out.push(
     "",
-    "Retry original request is shown exactly while a retry kind other than `none` is retained. While it is retained, Cancel, Open browser again and Open verification page are disabled and the naming field is locked (`locked` replaces `editable`). `owed` means a native Dispose is owed when the opening is left: a browser login owns its receiver for the whole opening, a device login only once Open verification page was requested. The device code and address are shown only in the phases that offer Copy code and Copy address and are cleared with them.",
+    "Retry original request is shown exactly while a retry kind other than `none` is retained. While it is retained, Cancel, Open browser again and Open verification page are disabled and the naming field is locked (`locked` replaces `editable`). `owed` means a native Dispose is owed when the opening is left: a browser login owns its receiver for the whole opening, a device login only once Open verification page was requested. The device code and address are shown only in the phases that offer Copy code and Copy address and are cleared with them. A copy notice belongs to the value it copied (link, code or address): it is kept exactly while the current phase still offers that value and is cleared the moment it does not, even when the phase still offers another copy action.",
     "",
     "#### Events",
     "",

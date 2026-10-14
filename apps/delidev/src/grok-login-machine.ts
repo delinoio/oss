@@ -722,6 +722,30 @@ export function grokNativeBinding(
   }
 }
 
+// What a copy action copies and which copy notice belongs to it. Every value
+// is display-only.
+export enum GrokCopyTarget {
+  Link = "link",
+  Code = "code",
+  Address = "address",
+}
+// A copy notice belongs to the value it copied and survives exactly while the
+// current phase still offers that value (the Copy link, Copy code and Copy
+// address columns of the phase table), whatever else it offers.
+export function grokCopyOffered(
+  offered: Pick<GrokLoginPresentation, "copyLink" | "copyCode" | "copyAddress">,
+  target: GrokCopyTarget,
+): boolean {
+  switch (target) {
+    case GrokCopyTarget.Link:
+      return offered.copyLink;
+    case GrokCopyTarget.Code:
+      return offered.copyCode;
+    case GrokCopyTarget.Address:
+      return offered.copyAddress;
+  }
+}
+
 export interface GrokLoginPresentation {
   stage?: GrokLoginStage;
   native: GrokNativeBinding;

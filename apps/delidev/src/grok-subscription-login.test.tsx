@@ -2487,6 +2487,80 @@ it("hides the verification address after a later open succeeds", async () => {
   expect(screen.getByText(DEVICE_CODE)).toBeTruthy();
 }, 20000);
 
+// Copy notice cells: a notice belongs to the value it copied and is kept exactly
+// while the phase still offers that value.
+//
+//   copied     then                                 notice
+//   address    a later open succeeds (code stays)   cleared with the address
+//   code       open fails (address appears)         kept (code still offered)
+//   code       a later open succeeds                kept (code still offered)
+//   address    cancellation accepted or observed    cleared with everything
+//   address    clipboard write settles after the    none (no stale notice)
+//              address was hidden
+function stubClipboard(writeText: (value: string) => Promise<void>) {
+  Object.defineProperty(window.navigator, "clipboard", {
+    configurable: true,
+    value: { writeText },
+  });
+}
+const copyCodeName = () => copy("grok-subscription.device.copyCode");
+const addressNotice = () => copy("grok-subscription.device.addressCopied");
+const codeNotice = () => copy("grok-subscription.device.codeCopied");
+
+it("clears the address copy notice when a later open hides the address although the code stays copyable", async () => {
+  stubClipboard(async () => undefined);
+  const f = deviceFixture();
+  await startDevice(f);
+  await failVerificationOpen(f);
+  fireEvent.click(screen.getByRole("button", { name: copyAddressName() }));
+  await screen.findByText(addressNotice());
+  fireEvent.click(screen.getByRole("button", { name: openName() }));
+  await waitFor(() => expect(nativeOpen(f)).toHaveLength(2));
+  await waitFor(addressHidden);
+  // The code is still copyable, but the notice belonged to the address.
+  expect(screen.getByRole("button", { name: copyCodeName() })).toBeTruthy();
+  expect(screen.queryByText(addressNotice())).toBeNull();
+  expect(
+    screen.queryByText(copy("grok-subscription.device.addressCopyFailed")),
+  ).toBeNull();
+}, 20000);
+
+it("keeps the code copy notice when the address appears and disappears around it", async () => {
+  stubClipboard(async () => undefined);
+  const f = deviceFixture();
+  await startDevice(f);
+  fireEvent.click(screen.getByRole("button", { name: copyCodeName() }));
+  await screen.findByText(codeNotice());
+  await failVerificationOpen(f);
+  expect(screen.getByText(codeNotice())).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: openName() }));
+  await waitFor(() => expect(nativeOpen(f)).toHaveLength(2));
+  await waitFor(addressHidden);
+  expect(screen.getByText(codeNotice())).toBeTruthy();
+}, 20000);
+
+it("shows no address copy notice when the address was hidden before the clipboard write settled", async () => {
+  let finish: () => void = () => undefined;
+  stubClipboard(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const f = deviceFixture();
+  await startDevice(f);
+  await failVerificationOpen(f);
+  fireEvent.click(screen.getByRole("button", { name: copyAddressName() }));
+  fireEvent.click(screen.getByRole("button", { name: openName() }));
+  await waitFor(() => expect(nativeOpen(f)).toHaveLength(2));
+  await waitFor(addressHidden);
+  await act(async () => {
+    finish();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  });
+  expect(screen.queryByText(addressNotice())).toBeNull();
+}, 20000);
+
 it("hides the verification address once the server accepted the cancellation", async () => {
   const f = deviceFixture();
   await startDevice(f);

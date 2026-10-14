@@ -34,6 +34,7 @@ import {
   subscriptionAliasDocument,
 } from "./subscription-resource";
 import {
+  GrokCopyTarget,
   GrokHelp,
   GrokLoginEvent,
   GrokLoginMethod,
@@ -41,6 +42,7 @@ import {
   GrokNameField,
   GrokNativeBinding,
   GrokRetry,
+  grokCopyOffered,
   grokLoginPresentation,
   grokPollEvent,
   grokRetryOutcomes,
@@ -67,25 +69,19 @@ class GrokReceiptRejected extends Error {}
 enum NativeFailureReason {
   Incompatible = "incompatible",
 }
-// What the transient clipboard action copies. Every value is display-only.
-enum CopyTarget {
-  Link = "link",
-  Code = "code",
-  Address = "address",
-}
 const copyNotices: Record<
-  CopyTarget,
+  GrokCopyTarget,
   { copied: MessageKey; failed: MessageKey }
 > = {
-  [CopyTarget.Link]: {
+  [GrokCopyTarget.Link]: {
     copied: "grok-subscription.linkCopied",
     failed: "grok-subscription.copyFailed",
   },
-  [CopyTarget.Code]: {
+  [GrokCopyTarget.Code]: {
     copied: "grok-subscription.device.codeCopied",
     failed: "grok-subscription.device.codeCopyFailed",
   },
-  [CopyTarget.Address]: {
+  [GrokCopyTarget.Address]: {
     copied: "grok-subscription.device.addressCopied",
     failed: "grok-subscription.device.addressCopyFailed",
   },
@@ -245,7 +241,7 @@ interface View {
   userCode?: string;
   address?: string;
   copyState: CopyState;
-  copyTarget: CopyTarget;
+  copyTarget: GrokCopyTarget;
 }
 interface Pending {
   opening: string;
@@ -262,6 +258,8 @@ interface Pending {
   // The single transition-table state; see grok-login-machine.ts.
   machine: GrokLoginState;
   copyTimer?: ReturnType<typeof setTimeout>;
+  // The value the visible copy notice belongs to.
+  copyTarget: GrokCopyTarget;
   // The exact original request of the retained mutation. It is held exactly
   // while machine.retry is not None and replays only through Retry original
   // request.
@@ -312,8 +310,9 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
       after.native === GrokNativeBinding.Disposed
     )
       disposeNative(p);
-    // The copy notice belongs to a value that is no longer offered.
-    const copyable = after.copyLink || after.copyCode;
+    // A copy notice belongs to the value it copied: it survives only while that
+    // very value is still offered, whatever else the phase still offers.
+    const copyable = grokCopyOffered(after, p.copyTarget);
     if (!copyable && p.copyTimer) {
       clearTimeout(p.copyTimer);
       p.copyTimer = undefined;
@@ -441,6 +440,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
       disposed: false,
       polling: false,
       busy: false,
+      copyTarget: GrokCopyTarget.Link,
       machine: initialGrokLoginState(Boolean(native), method),
     };
     pending.current = p;
@@ -450,7 +450,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
       suggested: false,
       busy: false,
       copyState: CopyState.Idle,
-      copyTarget: CopyTarget.Link,
+      copyTarget: GrokCopyTarget.Link,
     });
     if (!native) return;
     const create = {
@@ -756,24 +756,23 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
       },
     );
   };
-  const copyValue = (target: CopyTarget) => {
+  const copyValue = (target: GrokCopyTarget) => {
     const p = pending.current;
     if (!p || !live(p)) return;
-    const offered = grokLoginPresentation(p.machine);
-    const value = target === CopyTarget.Code ? p.userCode : p.url;
+    const value = target === GrokCopyTarget.Code ? p.userCode : p.url;
     // Only a value the machine currently offers is copied.
-    if (
-      !value ||
-      !{
-        [CopyTarget.Link]: offered.copyLink,
-        [CopyTarget.Code]: offered.copyCode,
-        [CopyTarget.Address]: offered.copyAddress,
-      }[target]
-    )
+    if (!value || !grokCopyOffered(grokLoginPresentation(p.machine), target))
       return;
     const clipboard = globalThis.navigator?.clipboard;
     const settle = (copyState: CopyState) => {
-      if (!live(p)) return;
+      // The clipboard settles later: a value that stopped being offered while
+      // the write was pending shows no notice.
+      if (
+        !live(p) ||
+        !grokCopyOffered(grokLoginPresentation(p.machine), target)
+      )
+        return;
+      p.copyTarget = target;
       update(p, { copyState, copyTarget: target });
       if (p.copyTimer) clearTimeout(p.copyTimer);
       p.copyTimer = setTimeout(
@@ -949,9 +948,9 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
       changeName={(name) => setView((v) => v && { ...v, name })}
       saveName={save}
       reopen={reopen}
-      copyLink={() => copyValue(CopyTarget.Link)}
-      copyCode={() => copyValue(CopyTarget.Code)}
-      copyAddress={() => copyValue(CopyTarget.Address)}
+      copyLink={() => copyValue(GrokCopyTarget.Link)}
+      copyCode={() => copyValue(GrokCopyTarget.Code)}
+      copyAddress={() => copyValue(GrokCopyTarget.Address)}
       openVerification={openVerification}
       cancel={cancel}
       retry={retry}
