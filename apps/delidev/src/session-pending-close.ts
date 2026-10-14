@@ -601,7 +601,10 @@ export class PendingCloseRegistry {
    * released, so a Close awaiting its barrier must not proceed.
    */
   holds(key: string, owner: object): boolean {
-    return (this.active || !this.channel) && (this.local.get(key)?.has(owner) ?? false);
+    return (
+      (this.active || !this.channel) &&
+      (this.local.get(key)?.has(owner) ?? false)
+    );
   }
 
   /** Whether any Session or product window still owns an unsettled Close. */
