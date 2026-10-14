@@ -116,12 +116,13 @@ while the shared `Probe` used by access enable keeps its current generic errors.
 Normal TLS, one request, no redirect and no proxy are unchanged. A cause is set
 only when proven: `connection_refused` from `syscall.ECONNREFUSED` (and the Windows
 `WSAECONNREFUSED` code) through `errors.Is/As`; `timeout` from the request's own
-deadline or a `net.Error` timeout while the caller context is still live (never
-parent cancellation, and never a DNS lookup); `certificate_invalid` from x509 or
+deadline or a `net.Error` timeout while the caller context is still live, whether
+it surfaces from the request or from reading the identity body after a peer has sent
+headers and stalled (never parent cancellation, and never a DNS lookup); `certificate_invalid` from x509 or
 `tls.CertificateVerificationError`; `unexpected_http` from any non-200 status
 including an un-followed redirect (code `unavailable` for these four); and
 `invalid_identity` from an undecodable or incompatible identity document (code
-`unsupported`). Oversized or unreadable bodies, DNS, other socket or TLS errors,
+`unsupported`). Oversized bodies, body-read failures that are not a proven timeout, DNS, other socket or TLS errors,
 peer refresh and local access failures keep the generic error without a cause.
 Hostnames, URLs, status bodies, certificates and native error text never enter
 `ErrorDetail`, logs or UI; the Check log records only the phase, code and cause.

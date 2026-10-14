@@ -521,7 +521,18 @@ func probeURL(parent context.Context, client *http.Client, target string, timeou
 		return probeFailure(domain.Unavailable, ProbeUnexpectedHTTP)
 	}
 	raw, err := io.ReadAll(io.LimitReader(res.Body, 8193))
-	if err != nil || len(raw) > 8192 || res.StatusCode != http.StatusOK {
+	if err != nil {
+		// A peer that sends headers and then stalls surfaces the request
+		// deadline from the body read, not from client.Do. Apply the same typed
+		// classification while the caller context is still live.
+		if classify {
+			if cause := classifyTransport(parent, err); cause != "" {
+				return probeFailure(domain.Unavailable, cause)
+			}
+		}
+		return fail(domain.Unavailable)
+	}
+	if len(raw) > 8192 || res.StatusCode != http.StatusOK {
 		return fail(domain.Unavailable)
 	}
 	if out != nil && domain.Decode(raw, out) != nil {

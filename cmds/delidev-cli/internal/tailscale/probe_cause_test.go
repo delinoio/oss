@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -155,5 +156,70 @@ func TestProbeCauseCrossesRPCErrorDetail(t *testing.T) {
 	client := rpc.ClientError(rpc.Error(InvalidIdentity(), ""))
 	if client.Code != domain.Unsupported || client.Cause != string(ProbeInvalidIdentity) {
 		t.Fatalf("%#v", client)
+	}
+}
+
+// stalledBody sends 200 headers and part of a declared body, then waits for the
+// request to end so client.Do succeeds and the failure surfaces from the body read.
+func stalledBody(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Length", "64")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"version"`))
+	w.(http.Flusher).Flush()
+	<-r.Context().Done()
+}
+
+func TestCheckProbeClassifiesBodyReadTimeout(t *testing.T) {
+	err := probeCase(t, stalledBody, true, 150*time.Millisecond, true)
+	safe := domain.SafeError(err)
+	if safe.Code != domain.Unavailable || ProbeCauseOf(err) != ProbeTimeout || safe.Cause != string(ProbeTimeout) {
+		t.Fatalf("stalled identity body was not proven a timeout: code=%s cause=%q err=%v", safe.Code, safe.Cause, err)
+	}
+	// The access-enable path keeps the generic error without any cause.
+	err = probeCase(t, stalledBody, true, 150*time.Millisecond, false)
+	safe = domain.SafeError(err)
+	if safe.Code != domain.Unavailable || safe.Cause != "" {
+		t.Fatalf("non-classifying probe attached a body-read cause: %#v", safe)
+	}
+}
+
+func TestCheckProbeBodyReadKeepsGenericWithoutProof(t *testing.T) {
+	// A connection closed mid-body is not a proven timeout.
+	truncated := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "64")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"version"`))
+		w.(http.Flusher).Flush()
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err == nil {
+			_ = conn.Close()
+		}
+	}
+	err := probeCase(t, truncated, true, time.Second, true)
+	if safe := domain.SafeError(err); safe.Code != domain.Unavailable || safe.Cause != "" {
+		t.Fatalf("truncated body gained a cause: %#v", safe)
+	}
+
+	// A canceled parent never proves a peer timeout, even for a stalled body.
+	server := httptest.NewTLSServer(http.HandlerFunc(stalledBody))
+	defer server.Close()
+	client := server.Client()
+	client.CheckRedirect = newProbeClient().CheckRedirect
+	parent, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(100*time.Millisecond, cancel)
+	var out probeIdentity
+	err = probeURL(parent, client, server.URL+"/delidev/tailscale/v1/identity", 5*time.Second, &out, true)
+	if safe := domain.SafeError(err); safe.Code != domain.Unavailable || safe.Cause != "" {
+		t.Fatalf("parent cancellation during body read gained a cause: %#v", safe)
+	}
+}
+
+func TestClassifyTransportBodyReadErrors(t *testing.T) {
+	bodyTimeout := fmt.Errorf("read: %w", &net.OpError{Op: "read", Err: context.DeadlineExceeded})
+	if got := classifyTransport(context.Background(), bodyTimeout); got != ProbeTimeout {
+		t.Errorf("body timeout: got %q", got)
+	}
+	if got := classifyTransport(context.Background(), io.ErrUnexpectedEOF); got != "" {
+		t.Errorf("unexpected EOF: got %q", got)
 	}
 }
