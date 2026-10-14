@@ -113,6 +113,45 @@ it("shows detected and supported versions for an unsupported release", async () 
   expect(korean).toContain("지원되는 버전:1.0.46");
 });
 
+// Mirrors TestGrokVersionReasonFollowsFullSemVerValidation in the Go domain
+// package: every version passes the installation-version shape, and full SemVer
+// validation alone decides which reason the server reconstructs.
+it.each([
+  "1.0.43",
+  "1.0.0-rc.1",
+  "1.0.0-0",
+  "1.0.0-alpha-1",
+  "1.0.0+build.01",
+  "1.0.0-rc.1+20260101",
+])("names the supported baseline for valid SemVer %s", (version) => {
+  const message = safeGrokDiagnostic(
+    diagnostic(GrokDiagnosticPhase.VERSION, FailureCode.Unsupported, version),
+  )!.message;
+  expect(message).toBe(
+    `Grok Build ${version} did not complete version validation. Grok Build requires valid SemVer at or above ${supported}.`,
+  );
+});
+
+it.each([
+  "01.0.0",
+  "1.00.0",
+  "1.0.00",
+  "1.0.0-01",
+  "1.0.0-rc.01",
+  "1.0.0-a..b",
+  "1.0.0-.a",
+  "1.0.0-a.",
+  "1.0.0+a..b",
+  "1.0.0+.a",
+])("reports invalid metadata for the non-SemVer version %s", (version) => {
+  const message = safeGrokDiagnostic(
+    diagnostic(GrokDiagnosticPhase.VERSION, FailureCode.Unsupported, version),
+  )!.message;
+  expect(message).toBe(
+    `Grok Build ${version} did not complete version validation. The native version metadata is invalid.`,
+  );
+});
+
 it("describes undetected, invalid and timed out failures from closed metadata", () => {
   const undetected = create(GrokDiagnosticSchema, {
     supportedVersion: supported,

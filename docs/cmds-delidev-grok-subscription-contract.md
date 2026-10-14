@@ -454,6 +454,15 @@ installation row (`machine-settings.tsx`), which reads the stored
 `protocol.grok_diagnostic`. The catalog keeps Grok Planned/Coming soon: the
 notice adds no login control.
 
+The desktop validates versions with the same rules as the server. A nonempty
+detected version must satisfy `validInstallationVersion` (mirrors
+`domain.ValidInstallationVersion`), and the `version` phase names the supported
+baseline only when `validSemVer` (mirrors `golang.org/x/mod/semver.IsValid`,
+so `01.0.0`, `1.0.0-01` and empty prerelease or build identifiers are invalid)
+accepts it; otherwise it reports invalid version metadata exactly like
+`GrokDiagnostic.text`. `TestGrokVersionReasonFollowsFullSemVerValidation` and
+`grok-diagnostic.test.tsx` share one version table.
+
 Login, refresh, execution and logout share one exclusive account lease. Logout
 blocks new execution and completes only after original execution exit and
 credential cleanup are confirmed; deletion reuses logout-before-delete.

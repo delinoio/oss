@@ -92,6 +92,32 @@ func TestGrokVersionFailureReportsDetectedAndSupportedVersions(t *testing.T) {
 	}
 }
 
+// The desktop reconstructs the same version reason from the closed metadata, so
+// this table is mirrored by apps/delidev/src/grok-diagnostic.test.tsx. Every
+// version below passes ValidInstallationVersion; only x/mod/semver decides
+// whether the reason names the supported baseline or invalid metadata.
+func TestGrokVersionReasonFollowsFullSemVerValidation(t *testing.T) {
+	for _, version := range []string{"1.0.43", "1.0.0-rc.1", "1.0.0-0", "1.0.0-alpha-1", "1.0.0+build.01", "1.0.0-rc.1+20260101"} {
+		t.Run("valid "+version, func(t *testing.T) {
+			d := GrokErrorDiagnostic(GrokVersionFailure(version))
+			if d == nil || d.DetectedVersion != version || d.Validate() != nil || !strings.Contains(d.Message, "valid SemVer at or above "+GrokSubscriptionBaselineVersion) {
+				t.Fatalf("unexpected diagnostic: %#v", d)
+			}
+		})
+	}
+	for _, version := range []string{"01.0.0", "1.00.0", "1.0.00", "1.0.0-01", "1.0.0-rc.01", "1.0.0-a..b", "1.0.0-.a", "1.0.0-a.", "1.0.0+a..b", "1.0.0+.a"} {
+		t.Run("invalid "+version, func(t *testing.T) {
+			if !ValidInstallationVersion(version) {
+				t.Fatalf("fixture %q must be an admitted installation version", version)
+			}
+			d := GrokErrorDiagnostic(GrokVersionFailure(version))
+			if d == nil || d.DetectedVersion != version || d.Validate() != nil || !strings.Contains(d.Message, "The native version metadata is invalid.") {
+				t.Fatalf("unexpected diagnostic: %#v", d)
+			}
+		})
+	}
+}
+
 func TestGrokDiagnosticTimeoutAndValidation(t *testing.T) {
 	d := GrokErrorDiagnostic(WithGrokDiagnostic("1.0.52", GrokLogin, context.DeadlineExceeded))
 	if d.Code != Unavailable || !strings.HasSuffix(d.Message, "The native operation timed out.") || d.Validate() != nil {

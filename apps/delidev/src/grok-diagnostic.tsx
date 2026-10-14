@@ -10,6 +10,7 @@ import {
 } from "@delinoio/delidev-api-client";
 import { copy, useLocale, type MessageKey } from "./localization";
 import { object, text } from "./documents";
+import { validInstallationVersion, validSemVer } from "./harness-version";
 import { InlineRemediation } from "./ui";
 
 /** Stable phase identifiers shared by the wire enum and Worker documents. */
@@ -82,9 +83,6 @@ const reasonKeys: Partial<Record<FailureCode, MessageKey>> = {
   [FailureCode.Canceled]: "grok-diagnostic.reason.canceled",
 };
 
-const versionText = (value: string) =>
-  value.length <= 64 && /^[a-zA-Z0-9.+_-]+$/.test(value);
-const semver = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$/;
 
 export interface SafeGrokDiagnostic {
   version: string;
@@ -105,8 +103,8 @@ export function safeGrokDiagnostic(
 ): SafeGrokDiagnostic | undefined {
   if (
     !d ||
-    (d.detectedVersion && !versionText(d.detectedVersion)) ||
-    (d.supportedVersion && !versionText(d.supportedVersion)) ||
+    (d.detectedVersion && !validInstallationVersion(d.detectedVersion)) ||
+    (d.supportedVersion && !validInstallationVersion(d.supportedVersion)) ||
     !phaseKeys[d.phase] ||
     !Object.values(FailureCode).includes(d.code as FailureCode)
   )
@@ -120,7 +118,7 @@ export function safeGrokDiagnostic(
   if (timeout) reason = copy("grok-diagnostic.reason.timeout");
   else if (d.phase === GrokDiagnosticPhase.VERSION)
     reason =
-      supported && semver.test(d.detectedVersion)
+      supported && validSemVer(d.detectedVersion)
         ? copy("grok-diagnostic.reason.versionSupported", { supported })
         : copy("grok-diagnostic.reason.versionInvalid");
   else
