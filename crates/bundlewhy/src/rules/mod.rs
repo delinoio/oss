@@ -97,6 +97,8 @@ pub struct Context<'a> {
     pub modules: HashMap<&'a str, &'a CollectedModule>,
     pub chunks: Vec<Chunk>,
     pub sources: SourceStore,
+    /// Polled cooperatively by long-running detectors; true stops them.
+    pub cancelled: Option<&'a (dyn Fn() -> bool + Sync)>,
 }
 
 /// Original or generated location plus a snippet for one diagnostic.
@@ -139,7 +141,14 @@ impl<'a> Context<'a> {
             modules,
             chunks,
             sources,
+            cancelled: None,
         }
+    }
+
+    /// True when the run was cancelled; detectors stop early and the caller
+    /// discards the partial output.
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.is_some_and(|cancelled| cancelled())
     }
 
     pub fn display_path(&self, path: &Path) -> String {
@@ -390,7 +399,9 @@ pub fn run(context: &mut Context<'_>) -> Vec<Diagnostic> {
         "vite" => vite::run(context, &mut drafts),
         other => tracing::warn!(bundler = other, "no rules for bundler"),
     }
-    common::run(context, &mut drafts);
+    if !context.is_cancelled() {
+        common::run(context, &mut drafts);
+    }
     let engine = context.engine.clone();
     let mut diagnostics: Vec<Diagnostic> = drafts
         .into_iter()

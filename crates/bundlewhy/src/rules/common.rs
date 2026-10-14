@@ -15,6 +15,9 @@ use crate::{
 
 pub fn run(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
     duplicate_packages(context, drafts);
+    if context.is_cancelled() {
+        return;
+    }
     // Without a minifier, retained `process.env` reads are expected; the
     // confirmed minification-disabled finding explains them instead.
     if context.collection.minify_enabled {
@@ -271,6 +274,9 @@ fn unresolved_env_conditions(context: &mut Context<'_>, drafts: &mut Vec<Diagnos
     .expect("static regex");
     let mut seen: BTreeSet<(String, String)> = BTreeSet::new();
     for index in 0..context.chunks.len() {
+        if context.is_cancelled() {
+            return;
+        }
         let ignored = non_code_ranges(&context.chunks[index].code);
         let matches: Vec<(usize, String)> = pattern
             .captures_iter(&context.chunks[index].code)
@@ -896,6 +902,9 @@ fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
         return;
     }
     for module in &collection.modules {
+        if context.is_cancelled() {
+            return;
+        }
         if !module.included || module.path.is_none() {
             continue;
         }

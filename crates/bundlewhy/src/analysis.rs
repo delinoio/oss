@@ -304,6 +304,7 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
         chunks,
         store,
     );
+    context.cancelled = input.cancelled;
     let mut diagnostics = rules::run(&mut context);
     if !input.include_sources {
         // Snippets are source excerpts; excluding sources excludes them too.
@@ -996,6 +997,15 @@ mod tests {
             cancelled: Some(&always),
         });
         assert!(output.analysis.chunks.is_empty());
+        // Rule analysis also stops: the shared detectors never run.
+        assert!(
+            !output
+                .analysis
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.rule.starts_with("minifier/")
+                    || diagnostic.rule == "bundle/duplicate-package")
+        );
     }
 
     #[test]
