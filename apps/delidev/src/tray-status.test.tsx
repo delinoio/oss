@@ -461,6 +461,26 @@ describe("isolated tray panel", () => {
     expect(screen.queryByText("상태를 불러오는 중…")).toBeNull();
     expect(screen.queryByText("계정 관측을 사용할 수 없습니다.")).toBeNull();
   });
+  it("keeps loading active while the fallback read is pending after subscription failure", async () => {
+    const subscription = Promise.reject(new Error("subscription failed"));
+    const fallback = deferred<TrayPanelSnapshot>();
+    const bridge: TrayPanelBridge = {
+      read: vi.fn(() => fallback.promise),
+      subscribe: vi.fn(async () => subscription),
+      activate: vi.fn(async () => {}),
+      dismiss: vi.fn(async () => {}),
+    };
+    render(<TrayStatus instance={instance} bridge={bridge} />);
+    await waitFor(() => expect(bridge.read).toHaveBeenCalledOnce());
+    expect(screen.getAllByText("Loading status…")).toHaveLength(2);
+    expect(
+      screen.queryByText("Account observations are unavailable."),
+    ).toBeNull();
+    const observed = fixture();
+    act(() => fallback.resolve(observed));
+    await screen.findByText("57.00% remaining");
+    expect(screen.queryByText("Loading status…")).toBeNull();
+  });
   it("distinguishes initial loading, unavailable and empty accounts, and recovers after a failed read", async () => {
     const firstRead = deferred<TrayPanelSnapshot>();
     const retry = deferred<TrayPanelSnapshot>();

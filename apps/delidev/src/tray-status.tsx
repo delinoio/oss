@@ -266,11 +266,6 @@ export function TrayStatus({
         })
         .catch(() => {
           if (!disposed) {
-            setInitialRead((state) =>
-              state === InitialReadState.Loading
-                ? InitialReadState.Failed
-                : state,
-            );
             setProblem(true);
             void read();
           }
