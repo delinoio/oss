@@ -695,3 +695,47 @@ func TestGrokSubscriptionRegistrationRequiresTheExecuteLeaseAndAdvertisesNoRelay
 		t.Fatal("the registration token granted upstream relay authority to a subscription")
 	}
 }
+
+// Disabling new Grok execution must not strand the cleanup of a lease that was
+// already granted: the original Runner Device still negotiates Worker 21 so its
+// Worker can retire the credential, while a device without such a lease keeps
+// seeing 21 as unknown.
+func TestGrokDisablingExecutionKeepsOwnedLeaseRecoveryAvailable(t *testing.T) {
+	attach := func(f *grokExecutionFixture) (*connect.Response[pb.AttachWorkerResponse], error) {
+		return f.authorityFixture.client.AttachWorker(context.Background(), subscriptionRequest(f.workerToken, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: string(f.input.MachineID), InstanceId: string(f.instance), Version: rpc.Version, Capabilities: []pb.WorkerCapability{grokWorkerReservation}}))
+	}
+	t.Run("owned lease", func(t *testing.T) {
+		f := newGrokExecutionFixture(t)
+		jobs := f.prepareJobs(0)
+		lease, err := f.takeJob(jobs[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		clear(lease.Bundle)
+		f.service.grokExecution = false
+		if err := f.service.retainLostSubscriptionLeases(f.input.MachineID, f.instance, true); err != nil {
+			t.Fatal(err)
+		}
+		response, err := attach(f)
+		if err != nil {
+			t.Fatalf("the owning device could not negotiate Worker 21 for recovery: %v", err)
+		}
+		if !slices.Contains(response.Msg.SupportedWorkerCapabilities, grokWorkerReservation) {
+			t.Fatal("Worker 21 was not echoed to the owning device")
+		}
+		if !f.watched(t) {
+			t.Fatal("the fenced lease was not delivered for recovery after execution was disabled")
+		}
+		// Execution itself stays refused while the switch is off.
+		if _, err := f.takeJob(jobs[0]); err == nil {
+			t.Fatal("an execute Take was granted with execution disabled")
+		}
+	})
+	t.Run("no lease", func(t *testing.T) {
+		f := newGrokExecutionFixture(t)
+		f.service.grokExecution = false
+		if _, err := attach(f); connect.CodeOf(err) != connect.CodeInvalidArgument {
+			t.Fatalf("Worker 21 was accepted from a device that owns no lease: %v", err)
+		}
+	})
+}

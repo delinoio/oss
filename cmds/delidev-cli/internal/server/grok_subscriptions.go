@@ -829,3 +829,29 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 	s.logger.InfoContext(ctx, "grok_subscription_operation_finished", "account_id", input.Account, "lease_id", input.Lease, "cleanup_confirmed", input.Cleanup, "replayed", replayed)
 	return connect.NewResponse(&pb.FinishSubscriptionResponse{Account: rpc.Resource(r), Replayed: result.Replayed}), nil
 }
+
+// grokExecuteLeaseOwnedBy reports whether a Grok account still holds an execute
+// lease granted to the Runner Device. Such a lease can be cleaned up only by that
+// Device's Worker, which needs Worker 21 even when new Grok execution is
+// disabled.
+func (s *Service) grokExecuteLeaseOwnedBy(ctx context.Context, machine domain.ID) bool {
+	owned := false
+	_ = s.Store.Read(ctx, func(tx *store.Tx) error {
+		records, err := all(tx, domain.AccountKind)
+		if err != nil {
+			return err
+		}
+		for _, r := range records {
+			a, err := store.Decode[domain.Account](r)
+			if err != nil {
+				return err
+			}
+			if a.Type == domain.SubscriptionAccount && a.SubscriptionService == domain.SubscriptionGrok && a.Subscription != nil && a.Subscription.Lease != nil && a.Subscription.Lease.Action == domain.SubscriptionExecute && a.Subscription.Lease.MachineID == machine {
+				owned = true
+				return nil
+			}
+		}
+		return nil
+	})
+	return owned
+}

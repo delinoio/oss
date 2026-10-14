@@ -62,7 +62,9 @@ advertises System 39 (browser and device login together) only when
 40, and AttachWorker never lists Worker 21, unless the server enabled Grok
 subscription execution. The Worker does not report 21 unless it was enabled and
 the server echoed it, and a server that did not enable execution rejects 21 as
-an unknown capability. GetSubscriptionProgress
+an unknown capability unless the Runner Device still owns an execute lease: disabling
+new execution must not strand the cleanup of a lease already granted, so the
+original Worker negotiates 21 for recovery only, and execute Takes stay refused. GetSubscriptionProgress
 populates `grok_diagnostic` only for a failed or uncertain server-owned Grok
 browser or device login (phase `LOGIN`; see
 [Server-owned browser login](#server-owned-browser-login) and
@@ -101,11 +103,11 @@ Each capability has one switch and one default. A switch is set only by a produc
 entry point that can actually reach the feature; no entry point sets any of them
 yet. Tests pin every row (`grok_reservations_test.go`, `grok_execution_test.go`).
 
-| Capability                                                                 | Switch                                                              | Default                                                           | Advertised when                                        |
-| -------------------------------------------------------------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------ |
-| System 39 `GROK_SUBSCRIPTION_LOGIN_V1` (browser and device login together) | `server.Config.GrokSubscriptionLogin`                               | off                                                               | the switch is set                                      |
-| System 40 `GROK_SUBSCRIPTION_EXECUTION_V1`                                 | `server.Config.GrokSubscriptionExecution`                           | off                                                               | the switch is set                                      |
-| Worker 21 `MANAGED_GROK_SUBSCRIPTIONS_V1`                                  | `worker.Config.ManagedGrokSubscriptions`, and the server echoing it | off, rejected as unknown by a server without the execution switch | the Worker enabled it and the server enabled execution |
+| Capability                                                                 | Switch                                                              | Default                                                           | Advertised when                                                                                                                                         |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| System 39 `GROK_SUBSCRIPTION_LOGIN_V1` (browser and device login together) | `server.Config.GrokSubscriptionLogin`                               | off                                                               | the switch is set                                                                                                                                       |
+| System 40 `GROK_SUBSCRIPTION_EXECUTION_V1`                                 | `server.Config.GrokSubscriptionExecution`                           | off                                                               | the switch is set                                                                                                                                       |
+| Worker 21 `MANAGED_GROK_SUBSCRIPTIONS_V1`                                  | `worker.Config.ManagedGrokSubscriptions`, and the server echoing it | off, rejected as unknown by a server without the execution switch | the Worker enabled it and the server enabled execution, or (recovery only) the Runner Device still owns an execute lease while the server switch is off |
 
 ### Server-owned browser login
 
