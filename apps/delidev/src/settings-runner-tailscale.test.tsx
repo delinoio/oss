@@ -437,7 +437,9 @@ it("opens Runner Devices instead of an empty page when a saved-server window rec
     },
   });
   await screen.findByRole("heading", { level: 1, name: RUNNER });
-  expect(screen.queryByRole("heading", { level: 1, name: TAILSCALE })).toBeNull();
+  expect(
+    screen.queryByRole("heading", { level: 1, name: TAILSCALE }),
+  ).toBeNull();
   await idle();
   for (const call of [
     calls.getAccess,

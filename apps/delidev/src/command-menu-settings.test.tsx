@@ -158,7 +158,9 @@ it("lists Tailscale commands only for a window that hosts Tailscale", () => {
     saved.some((command) => command.value === "settings:appearance:language"),
   ).toBe(true);
   expect(
-    saved.some((command) => command.value === "settings:execution-workers:category"),
+    saved.some(
+      (command) => command.value === "settings:execution-workers:category",
+    ),
   ).toBe(true);
 });
 it("retains an uncommitted Git policy draft and read identity through same-category static targets", async () => {

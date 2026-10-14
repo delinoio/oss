@@ -421,7 +421,9 @@ function readFixture(options: {
   render(
     <TransportProvider transport={transport}>
       <QueryClientProvider
-        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
       >
         <MutationIntents>
           <TailscaleConnections
