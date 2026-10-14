@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -17,7 +17,7 @@ test("JavaScript build provenance binds required dist files to the revision", as
     for (const file of files) await writeFile(join(directory, file), file);
     await writeJavaScriptBuildProvenance(directory, revision);
     const metadata = await readJavaScriptBuildMetadata(directory, revision);
-    assert.deepEqual(Object.keys(metadata.files), files);
+    assert.deepEqual(Object.keys(metadata.files), [...files].sort());
     await writeFile(join(directory, "glb.js"), "stale");
     await assert.rejects(
       readJavaScriptBuildMetadata(directory, revision),
@@ -26,6 +26,41 @@ test("JavaScript build provenance binds required dist files to the revision", as
     assert.match(
       await readFile(join(directory, "release", "js-build.json"), "utf8"),
       /sourceRevision/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("JavaScript build provenance binds transitive local modules", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "react-forge-js-build-"));
+  try {
+    await mkdir(join(directory, "scene"));
+    for (const file of files)
+      await writeFile(
+        join(directory, file),
+        file === "glb.js" ? 'export * from "./scene/session.js";' : file,
+      );
+    await writeFile(
+      join(directory, "scene/session.js"),
+      "export const session = true;",
+    );
+    await writeJavaScriptBuildProvenance(directory, revision);
+    const metadata = await readJavaScriptBuildMetadata(directory, revision);
+    assert.deepEqual(Object.keys(metadata.files), [
+      "fbx.js",
+      "glb.js",
+      "index.js",
+      "scene/session.js",
+    ]);
+
+    await writeFile(
+      join(directory, "scene/session.js"),
+      "export const session = false;",
+    );
+    await assert.rejects(
+      readJavaScriptBuildMetadata(directory, revision),
+      /digest mismatch/,
     );
   } finally {
     await rm(directory, { recursive: true, force: true });

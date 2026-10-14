@@ -1,13 +1,17 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const schemaVersion = 1;
 const metadataFile = "js-build.json";
 const requiredFiles = ["index.js", "glb.js", "fbx.js"];
 const repositoryRoot = fileURLToPath(new URL("../../../", import.meta.url));
+const moduleImportPatterns = [
+  /\b(?:import|export)\s+(?:[^"'`]*?\sfrom\s*)?["']([^"']+)["']/gu,
+  /\bimport\s*\(\s*["']([^"']+)["']\s*\)/gu,
+];
 
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
@@ -22,13 +26,72 @@ function assertRevision(revision) {
     throw new Error("Invalid React Forge source revision.");
 }
 
+async function resolveLocalModule(output, importer, specifier) {
+  if (!specifier.startsWith(".")) return undefined;
+
+  const candidate = join(output, dirname(importer), specifier);
+  const relativeCandidate = relative(output, candidate);
+  if (
+    isAbsolute(relativeCandidate) ||
+    relativeCandidate === ".." ||
+    relativeCandidate.startsWith(`..${sep}`)
+  )
+    return undefined;
+
+  const candidates = [
+    candidate,
+    `${candidate}.js`,
+    `${candidate}.json`,
+    join(candidate, "index.js"),
+  ];
+  for (const resolved of candidates) {
+    try {
+      await readFile(resolved);
+      return relative(output, resolved).split(sep).join("/");
+    } catch {
+      // Try the next Node-compatible extension.
+    }
+  }
+  throw new Error(
+    `React Forge JavaScript build output dependency is missing: ${specifier} imported by ${importer}.`,
+  );
+}
+
+async function importedLocalModules(output, file) {
+  const source = await readFile(join(output, file), "utf8");
+  const specifiers = new Set();
+  for (const pattern of moduleImportPatterns) {
+    for (const match of source.matchAll(pattern)) specifiers.add(match[1]);
+  }
+  return (
+    await Promise.all(
+      [...specifiers].map((specifier) =>
+        resolveLocalModule(output, file, specifier),
+      ),
+    )
+  ).filter((dependency) => dependency !== undefined);
+}
+
 async function fileDigests(output) {
+  const files = new Set(requiredFiles);
+  const pending = [...requiredFiles];
+  while (pending.length > 0) {
+    const file = pending.pop();
+    for (const dependency of await importedLocalModules(output, file)) {
+      if (!files.has(dependency)) {
+        files.add(dependency);
+        pending.push(dependency);
+      }
+    }
+  }
   return Object.fromEntries(
     await Promise.all(
-      requiredFiles.map(async (file) => [
-        file,
-        digest(await readFile(join(output, file))),
-      ]),
+      [...files]
+        .sort()
+        .map(async (file) => [
+          file,
+          digest(await readFile(join(output, file))),
+        ]),
     ),
   );
 }
