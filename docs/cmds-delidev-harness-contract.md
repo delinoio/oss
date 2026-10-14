@@ -2986,14 +2986,6 @@ directories stay because they hold no history.
 | home absent, a parent is not a directory         | none attempted                       | not created          | absent           | `owner_invalid`                              |
 | home is a link or not private                    | none attempted                       | untouched            | absent           | recovery required (`legacy_unverified`)      |
 
-The Claude device-profile directory is the other path that creates a directory
-and then registers it in place, and it follows the same rule: a login that
-creates a new profile directory holds the profile lock, and when any step before
-a durable registration fails it removes the directory it created unless the
-registry proves the entry durable or cannot prove either way. The directory holds
-no credential at that point, and the retry of the same profile identifier is not
-blocked by an unregistered leftover. An existing profile is never rolled back.
-
 The founding owner takes the profile lock when it is founded and releases only
 the lock when the owner retires; joined members rely on that lock and take none.
 An exclusive continuation of a version 2 account history takes the same lock, so

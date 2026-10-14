@@ -3,7 +3,6 @@ package worker
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"runtime"
 	"testing"
 
@@ -98,93 +97,4 @@ func TestResolveSharedCodexHomeKeepsAnExistingHomeWhenPublicationFails(t *testin
 	if err != nil || info.Root != home {
 		t.Fatalf("the retry did not register the existing home: %v", err)
 	}
-}
-
-// A failed Claude device-profile creation removes the directory it created
-// unless its registration is durable, so the retry of the same profile
-// identifier is not blocked by an unregistered leftover.
-func TestOpenClaudeProfileRollsBackACreatedProfileWhenRegistrationFails(t *testing.T) {
-	ctx := context.Background()
-	executable, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	executable, err = filepath.EvalSymlinks(executable)
-	if err != nil {
-		t.Fatal(err)
-	}
-	installation := domain.Installation{Harness: domain.ClaudeCode, Version: domain.ClaudeProtocolVersion, ResolvedPath: executable}
-	credential := func() Credential { return Credential{ServerID: domain.NewID(), MachineID: domain.NewID()} }
-	t.Run("publication fails", func(t *testing.T) {
-		config, _ := profileTestConfig(t)
-		credential := credential()
-		account, profile := domain.NewID(), domain.NewID()
-		root, err := claudeProfileRoot(config.Root, credential, account, profile)
-		if err != nil {
-			t.Fatal(err)
-		}
-		blockRegistryPublication(t, config, credential.MachineID)
-		if _, err := openClaudeProfile(config, credential, account, profile, installation, domain.NewID(), true); err == nil {
-			t.Fatal("a failed registration was reported as success")
-		}
-		if _, err := os.Lstat(root); !os.IsNotExist(err) {
-			t.Fatalf("the failed login left an unregistered profile directory: %v", err)
-		}
-		restoreRegistryPublication(t, config, credential.MachineID)
-		opened, err := openClaudeProfile(config, credential, account, profile, installation, domain.NewID(), true)
-		if err != nil {
-			t.Fatalf("the retry of the same profile was blocked: %v", err)
-		}
-		if err := opened.close(); err != nil {
-			t.Fatal(err)
-		}
-	})
-	t.Run("registration conflicts", func(t *testing.T) {
-		config, _ := profileTestConfig(t)
-		credential := credential()
-		account, profile := domain.NewID(), domain.NewID()
-		root, err := claudeProfileRoot(config.Root, credential, account, profile)
-		if err != nil {
-			t.Fatal(err)
-		}
-		registry, err := nativeProfiles(config, credential.MachineID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		key, _ := claudeProfileKey(credential, account, profile)
-		otherRelative := "native-claude/elsewhere"
-		if err := security.PrivateDir(filepath.Join(config.Root, filepath.FromSlash(otherRelative))); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := registry.RegisterLegacy(ctx, key, otherRelative); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := openClaudeProfile(config, credential, account, profile, installation, domain.NewID(), true); err == nil {
-			t.Fatal("a conflicting registration was reported as success")
-		}
-		if _, err := os.Lstat(root); !os.IsNotExist(err) {
-			t.Fatalf("the failed login left a profile directory: %v", err)
-		}
-		if _, err := os.Lstat(filepath.Join(config.Root, filepath.FromSlash(otherRelative))); err != nil {
-			t.Fatalf("the rollback touched the other registered directory: %v", err)
-		}
-	})
-	t.Run("an existing profile is never rolled back", func(t *testing.T) {
-		config, _ := profileTestConfig(t)
-		credential := credential()
-		account, profile := domain.NewID(), domain.NewID()
-		first, err := openClaudeProfile(config, credential, account, profile, installation, domain.NewID(), true)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := first.close(); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := openClaudeProfile(config, credential, account, profile, installation, domain.NewID(), true); err == nil {
-			t.Fatal("a duplicate login replaced the original profile")
-		}
-		if err := security.CheckPrivateDir(first.root); err != nil {
-			t.Fatalf("a rejected duplicate login removed the original profile: %v", err)
-		}
-	})
 }

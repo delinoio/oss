@@ -120,15 +120,6 @@ func openClaudeProfile(config Config, credential Credential, account, profile do
 		if err := security.PrivateDir(root); err != nil {
 			return nil, err
 		}
-		// From here the directory is this login's own unregistered state. It holds
-		// no credential yet, so a failure that cannot be followed by a durable
-		// registration removes it instead of leaving a directory that blocks the
-		// retry of the same profile identifier.
-		defer func() {
-			if !ok {
-				rollbackNewClaudeProfile(config, credential, account, profile, root)
-			}
-		}()
 		if _, err := harness.PrivateRuntimeEnvironment(root); err != nil {
 			return nil, err
 		}
@@ -168,55 +159,12 @@ func openClaudeProfile(config Config, credential Credential, account, profile do
 	if err != nil {
 		return nil, err
 	}
-	key, relative := claudeProfileKey(credential, account, profile)
-	if _, err := profiles.RegisterLegacy(context.Background(), key, relative); err != nil {
+	if _, err := profiles.RegisterLegacy(context.Background(), nativeprofile.Key{Harness: domain.ClaudeCode, Purpose: nativeprofile.PurposeAuth, Account: account}, filepath.ToSlash(filepath.Join("native-claude", string(credential.ServerID), string(account), string(profile)))); err != nil {
 		return nil, err
 	}
 	ok = true
 	return &nativeClaudeProfile{root: root, home: auth.Home, original: info, lock: lock, owner: observed, config: auth, newProfile: create, registry: profiles}, nil
 }
-
-// claudeProfileKey is the registry key and in-place path of a device profile.
-func claudeProfileKey(credential Credential, account, profile domain.ID) (nativeprofile.Key, string) {
-	return nativeprofile.Key{Harness: domain.ClaudeCode, Purpose: nativeprofile.PurposeAuth, Account: account}, filepath.ToSlash(filepath.Join("native-claude", string(credential.ServerID), string(account), string(profile)))
-}
-
-// rollbackNewClaudeProfile removes the directory that a failed login created
-// for a new device profile, unless the registry entry for it is proven durable
-// or the registry cannot prove either way (an unreadable or busy registry, or a
-// removal that is blocked). The caller still holds the profile lock, so no
-// other opener can see the directory meanwhile. A failure only keeps the
-// directory, never changes the outcome the caller already returns.
-func rollbackNewClaudeProfile(config Config, credential Credential, account, profile domain.ID, root string) {
-	log := func(event string, reason nativeprofile.Reason) {
-		if config.Logger != nil {
-			config.Logger.Warn(event, "account_id", account, "profile_id", profile, "reason", reason)
-		}
-	}
-	profiles, err := nativeProfiles(config, credential.MachineID)
-	if err != nil {
-		log("claude_profile_create_rollback_unproven", nativeprofile.ReasonRegistryInvalid)
-		return
-	}
-	ctx, stop := context.WithTimeout(context.Background(), 30*time.Second)
-	defer stop()
-	key, relative := claudeProfileKey(credential, account, profile)
-	durable, known := profiles.LegacyDurable(ctx, key, relative)
-	if !known {
-		log("claude_profile_create_rollback_unproven", nativeprofile.ReasonRegistryInvalid)
-		return
-	}
-	if durable {
-		log("claude_profile_create_registration_durable", nativeprofile.ReasonRegisteredLegacy)
-		return
-	}
-	if err := security.RemoveOwnedTree(ctx, config.Root, root); err != nil {
-		log("claude_profile_create_rollback_blocked", nativeprofile.ReasonDeleteBlocked)
-		return
-	}
-	log("claude_profile_create_rolled_back", nativeprofile.ReasonCreateRolledBack)
-}
-
 func (p *nativeClaudeProfile) close() error {
 	// A shared-owner member's view holds no lock: the owner keeps the profile lock
 	// for its whole lifetime.
