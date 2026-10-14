@@ -31,6 +31,10 @@
 //! function could then run with another receiver. When an instance escapes,
 //! the parameters and results of every instance and static method and the
 //! `this` cells of its class chain become unknown.
+//!
+//! A value on the left of `instanceof` stays owned only when the right
+//! operand is a closed class whose chain has no computed static member, so no
+//! custom `Symbol.hasInstance` can receive it.
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use super::{
@@ -87,6 +91,9 @@ pub(super) struct Class {
     /// `C.name` references through this class's symbols, with the call
     /// that each one is the callee of.
     static_uses: Vec<(&'static str, Option<Node>)>,
+    /// A static member has a computed name (it may define
+    /// `Symbol.hasInstance`).
+    static_computed: bool,
 }
 
 /// A closed-class candidate: binding symbols (the inner name of a named
@@ -400,7 +407,10 @@ impl Builder<'_, '_> {
         let mut members: Vec<(&'static str, Member)> = Vec::new();
         let mut constructor = None;
         let mut statics = Vec::new();
+        let mut static_computed = false;
         for member in node.members().iter() {
+            static_computed |=
+                is_static(member) && member.name().kind() == SyntaxKind::ComputedPropertyName;
             if member.kind() == SyntaxKind::Constructor {
                 constructor = Some(member);
                 continue;
@@ -492,6 +502,7 @@ impl Builder<'_, '_> {
             constructor,
             statics,
             static_uses: candidate.static_uses.clone(),
+            static_computed,
         });
     }
 
@@ -684,6 +695,28 @@ impl Builder<'_, '_> {
             }
             _ => None,
         }
+    }
+
+    /// `x instanceof right` only walks the prototype chain of `x`: `right`
+    /// is a closed class, and no class of its chain can define a custom
+    /// `Symbol.hasInstance` that would receive `x`.
+    pub(super) fn ordinary_instance_check(&self, right: Node) -> bool {
+        let right = skip_outer(right);
+        let Some(mut current) = (right.kind() == SyntaxKind::Identifier)
+            .then(|| self.symbol(right))
+            .flatten()
+            .and_then(|symbol| self.class_by_symbol.get(&symbol).copied())
+            .map(Some)
+        else {
+            return false;
+        };
+        while let Some(class) = current {
+            if self.classes[class].static_computed {
+                return false;
+            }
+            current = self.classes[class].parent;
+        }
+        true
     }
 
     /// A static or private name of an instance field initializer of a closed

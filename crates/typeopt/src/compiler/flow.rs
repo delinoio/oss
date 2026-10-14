@@ -1675,7 +1675,11 @@ impl Builder<'_, '_> {
                     (None, true, "")
                 }
                 // Reads only the prototype chain of the left operand.
-                SyntaxKind::InstanceOfKeyword if parent.left() == node => (None, true, ""),
+                SyntaxKind::InstanceOfKeyword
+                    if parent.left() == node && self.ordinary_instance_check(parent.right()) =>
+                {
+                    (None, true, "")
+                }
                 _ => escape("binary-operator"),
             },
             SyntaxKind::VariableDeclaration if parent.initializer() == node => {

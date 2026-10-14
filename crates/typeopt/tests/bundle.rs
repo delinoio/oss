@@ -2972,7 +2972,7 @@ fn keeps_classes_exported_through_dynamic_namespaces() {
 /// an instance member by name, so the names stay.
 #[test]
 fn keeps_class_members_that_unknown_code_can_observe() {
-    let cases: [(&str, &[&str]); 11] = [
+    let cases: [(&str, &[&str]); 13] = [
         // A method loaded without a call runs with another receiver.
         (
             r#"class W{constructor(){this.fieldName=1}methodName(){return this.fieldName}}const w=new W;const f=w.methodName;console.log(w.methodName(),f.call({fieldName:9}));"#,
@@ -3023,6 +3023,15 @@ fn keeps_class_members_that_unknown_code_can_observe() {
         (
             r#"class K{static create(o){return o.optionLabel}keyField=1}console.log(K.create({optionLabel:"a"}));const k=new K;globalThis.hook=function(x){return x.constructor.create({optionLabel:"b"})};console.log(globalThis.hook(k));"#,
             &["optionLabel"],
+        ),
+        // `Symbol.hasInstance` receives the left operand of `instanceof`.
+        (
+            r#"class M{static[Symbol.hasInstance](v){return v.matchedValue===1}}const value={matchedValue:1};console.log(value instanceof M);"#,
+            &["matchedValue"],
+        ),
+        (
+            r#"globalThis.Matcher={[Symbol.hasInstance]:v=>v.matchedValue===1};const value={matchedValue:1};console.log(value instanceof globalThis.Matcher);"#,
+            &["matchedValue"],
         ),
         // A function-valued field names its function.
         (
