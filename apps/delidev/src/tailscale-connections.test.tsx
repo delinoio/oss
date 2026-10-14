@@ -287,7 +287,9 @@ const accessAlert = () =>
 async function enable() {
   // The action stays disabled until the first access read establishes the state.
   const button = await screen.findByRole("button", { name: "Enable access" });
-  await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
+  await waitFor(() =>
+    expect((button as HTMLButtonElement).disabled).toBe(false),
+  );
   fireEvent.click(button);
   const dialog = await screen.findByRole("dialog");
   fireEvent.click(
