@@ -1310,7 +1310,7 @@ agent/model remains private until the first real input independently proves
 selection. No migration is allocated.
 
 System capability 104 and Worker capability 69
-(`OPENCODE_GENERAL_CHAT_FORK_REASONING_V1`, allocated for issue 3840) are an
+(`OPENCODE_GENERAL_CHAT_FORK_REASONING_V1`) are an
 independent pair that adds Fork profile `opencode-general-chat-v2`: completed plain
 timed reasoning history is cloned with its messages. They refine capability
 26/15, which every v2 peer must also hold, and never change what 26/15 mean. The
