@@ -1055,6 +1055,27 @@ it("ends a definitively refused request without offering a replacement login", a
   expect(f.progress).not.toHaveBeenCalled();
 });
 
+it("rejects a created account whose alias differs from the requested name before any login starts", async () => {
+  const f = fixture();
+  f.save.mockImplementationOnce(async (request) => ({
+    requestId: request.mutation.requestId,
+    resource: create(ResourceSchema, {
+      ...f.current(),
+      documentJson: encode({ ...document(f.current()), alias: "Renamed" }),
+    }),
+  }));
+  render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Start Grok" }));
+  // The receipt is not accepted: nothing is adopted, so the original request is
+  // retained for an explicit replay and no login request is sent.
+  await screen.findByRole("button", {
+    name: copy("grok-subscription.retryOriginal"),
+  });
+  expect(f.login).not.toHaveBeenCalled();
+  expect(f.progress).not.toHaveBeenCalled();
+  expect(f.changed).not.toHaveBeenCalled();
+});
+
 it("replaces the unconfirmed request notice when an uncertain start replay is refused definitively", async () => {
   const f = fixture();
   f.login.mockImplementationOnce(() => {
