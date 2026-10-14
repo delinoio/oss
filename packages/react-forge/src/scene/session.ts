@@ -28,6 +28,8 @@ import {
   type AnimationSamplerHandle,
   type AnimationSamplerInput,
   type BakeAnimationSamplerInput,
+  type BakeParametricGeometryInput,
+  type ParametricGeometrySample,
   AnimationInterpolation,
 } from "./components.js";
 import { sceneModel, type SceneModel, type SceneNode } from "./model.js";
@@ -251,6 +253,148 @@ export class SceneSession {
       geometryBytes(input, limits.sceneBytes - this.bytes - this.reserved),
       options.signal,
     ) as Promise<GeometryHandle>;
+  }
+  bakeParametricGeometry(
+    input: BakeParametricGeometryInput,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<GeometryHandle> {
+    if (
+      !input ||
+      typeof input !== "object" ||
+      Object.keys(input).some(
+        (key) =>
+          !["uSegments", "vSegments", "maxTriangles", "sample"].includes(key),
+      ) ||
+      !options ||
+      typeof options !== "object" ||
+      Object.keys(options).some((key) => key !== "signal") ||
+      (options.signal !== undefined && !(options.signal instanceof AbortSignal))
+    )
+      throw malformed();
+    const signal = this.signal(options.signal);
+    checkSignal(signal);
+    const { uSegments, vSegments, maxTriangles, sample } = input;
+    if (
+      !Number.isSafeInteger(uSegments) ||
+      uSegments < 1 ||
+      !Number.isSafeInteger(vSegments) ||
+      vSegments < 1 ||
+      !Number.isSafeInteger(maxTriangles) ||
+      maxTriangles < 1 ||
+      typeof sample !== "function"
+    )
+      throw malformed();
+
+    // All arithmetic and admission precede allocation and caller callbacks.
+    const vertices = (uSegments + 1) * (vSegments + 1);
+    const triangles = 2 * uSegments * vSegments;
+    const length = 16 + 48 * vertices + 12 * triangles;
+    if (
+      !Number.isSafeInteger(vertices) ||
+      !Number.isSafeInteger(triangles) ||
+      !Number.isSafeInteger(length) ||
+      triangles > maxTriangles
+    )
+      throw new ForgeError(
+        ErrorCode.ResourceLimit,
+        "Parametric geometry exceeds its triangle or byte budget.",
+      );
+    budget(length, limits.sceneBytes - this.bytes - this.reserved);
+    this.reserved += length;
+    let released = false;
+    const task = this.track(Stage.Render, async () => {
+      try {
+        // The typed arrays account for precisely the FSG1 payload reserved above.
+        const positions = new Float32Array(vertices * 3);
+        const normals = new Float32Array(vertices * 3);
+        const uv = new Float32Array(vertices * 2);
+        const tangents = new Float32Array(vertices * 4);
+        const indices = new Uint32Array(triangles * 3);
+        for (let j = 0, vertex = 0; j <= vSegments; j++) {
+          for (let i = 0; i <= uSegments; i++, vertex++) {
+            if (vertex % 128 === 0)
+              await new Promise<void>((resolve) => setImmediate(resolve));
+            checkSignal(signal);
+            let result: ParametricGeometrySample;
+            try {
+              result = sample(i / uSegments, j / vSegments);
+            } catch {
+              // Caller exceptions can contain private sample data, including
+              // when the callback itself throws a ForgeError.
+              throw new ForgeError(
+                ErrorCode.Render,
+                "Parametric geometry sampling failed.",
+              );
+            }
+            if (result instanceof Promise) {
+              void result.catch(() => {});
+              throw malformed();
+            }
+            const valid = (
+              value: unknown,
+              count: number,
+            ): value is number[] => {
+              if (!Array.isArray(value) || value.length !== count) return false;
+              for (let component = 0; component < count; component++)
+                if (
+                  typeof value[component] !== "number" ||
+                  !Number.isFinite(value[component])
+                )
+                  return false;
+              return true;
+            };
+            if (
+              !result ||
+              typeof result !== "object" ||
+              Object.keys(result).some(
+                (key) => !["position", "normal", "uv", "tangent"].includes(key),
+              ) ||
+              !valid(result.position, 3) ||
+              !valid(result.normal, 3) ||
+              !valid(result.uv, 2) ||
+              !valid(result.tangent, 4)
+            )
+              throw malformed();
+            positions.set(result.position, vertex * 3);
+            normals.set(result.normal, vertex * 3);
+            uv.set(result.uv, vertex * 2);
+            tangents.set(result.tangent, vertex * 4);
+          }
+        }
+        let offset = 0;
+        for (let j = 0; j < vSegments; j++)
+          for (let i = 0; i < uSegments; i++) {
+            const a = j * (uSegments + 1) + i;
+            const b = a + 1;
+            const c = a + uSegments + 1;
+            const d = c + 1;
+            indices.set([a, b, d, a, d, c], offset);
+            offset += 6;
+          }
+        checkSignal(signal);
+        // This handoff is synchronous: registration replaces the bake reservation
+        // before any other operation can observe the aggregate admission budget.
+        this.reserved -= length;
+        released = true;
+        return await this.registerGeometry(
+          { positions, normals, uv, tangents, indices },
+          { signal },
+        );
+      } catch (error) {
+        if (error instanceof ForgeError) throw error;
+        throw new ForgeError(
+          ErrorCode.Render,
+          "Parametric geometry sampling failed.",
+          {},
+          error,
+        );
+      } finally {
+        if (!released) this.reserved -= length;
+      }
+    });
+    this.pending.add(task);
+    void task.finally(() => this.pending.delete(task)).catch(() => {});
+    return task;
   }
   registerAnimationSampler(
     input: AnimationSamplerInput,

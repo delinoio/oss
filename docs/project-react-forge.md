@@ -16,6 +16,10 @@ acceptance uses Khronos, Three.js, ufbx and Blender 4.5.14. No npm publication,
 scene import, automatic rigging, IK, retargeting, physics or playback runtime is
 part of this extension.
 
+The scene contract also defines an unreleased budgeted parametric surface helper
+for both formats. Callers choose explicit tessellation and a triangle ceiling;
+the helper adds no adaptive quality or hidden surface faces.
+
 ## Project ID
 
 `react-forge` (`ProjectId::ReactForge`). Product name: **React Forge**. The public npm package is `@delino/react-forge`; its CLI executable is `react-forge`.

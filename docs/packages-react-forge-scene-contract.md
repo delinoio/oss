@@ -10,6 +10,33 @@ The GLB/FBX extension adds generation-only local scenes. `packages/react-forge` 
 
 `registerGeometry` copies Float32 position/normal arrays, optional Float32 UV/tangents, and Uint32 triangle indices. Normals/tangents must be unit length, tangent xyz orthogonal to the normal, and tangent w is +1 or -1. UV0 uses glTF's top-left convention, repeat wrapping and linear filtering. Normal maps require UVs and tangents; any texture requires UVs. `registerTexture` accepts explicit regular local files or copied PNG/JPEG bytes. Handles cannot cross sessions. Binary arrays remain registered assets rather than React JSON props.
 
+`bakeParametricGeometry({uSegments,vSegments,maxTriangles,sample},{signal})` is
+an unreleased authoring helper on both scene formats. The three counts are
+required positive safe integers; no quality preset or adaptive curvature bound
+is implied. It rejects unknown fields. A preflight calculates exactly
+`V=(uSegments+1)*(vSegments+1)` vertices, `T=2*uSegments*vSegments` triangles,
+and `16+48*V+12*T` FSG1 bytes before invoking callbacks or allocating result
+arrays. Exceeding the caller's triangle cap, the 64 MiB asset limit, or the
+256 MiB aggregate reservation fails with `ResourceLimit`. Invalid options fail
+with `MalformedInput`.
+
+The helper samples `[0,1]²` in row-major order, with `v=j/vSegments` outside
+and `u=i/uSegments` inside, including both endpoints. Each cell with lower
+indices `a`, `b=a+1`, `c=a+uSegments+1`, `d=c+1` emits `(a,b,d)` and `(a,d,c)`.
+The callback supplies finite position, unit normal, top-left-convention UV,
+and orthogonal unit tangent with handedness `+1` or `-1`; native geometry
+validation enforces the geometric constraints. The method creates one surface
+with separate seam vertices. It never adds backfaces, shell walls, caps,
+smoothing, seam welds, skin or morph data, and `doubleSided` changes only
+material behavior. Raw `registerGeometry` keeps its existing vocabulary.
+
+Callbacks run synchronously on Node, once per vertex, with cancellation polled
+before each call and a yield at least every 128 samples. A promise return or
+malformed sample fails. A synchronous callback cannot be interrupted while it
+is executing. Failure, cancellation, and disposal release the reservation and
+publish no partial asset; successful results use the existing immutable
+registration path. Exports wait for pending baking and registration work.
+
 Materials support linear baseColor RGBA, metallic/roughness factors, emissive RGB, opaque/blend alpha and doubleSided. PNG/JPEG base-color/emissive maps use sRGB; metallic/roughness use linear red-channel scalar maps and normal maps use linear +Y tangent space. Factors are 0–1. Opaque materials require alpha factor 1 and ignore texture alpha. Packed GLB metallic/roughness maps require equal source dimensions. Separate AO, texture transforms, alternate UV sets and procedural runtime shaders are excluded.
 
 Sessions expose render, synchronous inspect, settled snapshot, revision-pinned world AABB measure, Buffer/file export, diagnostics and idempotent disposal. Empty groups and camera/light-only targets have no mesh bounds. Inspect reports authored nodes as non-mountable; updates use React render. CLI/MCP export accepts matching .glb/.fbx extensions. MCP retains the same nine tools and protocol isolation.
