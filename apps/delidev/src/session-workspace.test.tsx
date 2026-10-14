@@ -2379,7 +2379,11 @@ it.each(["missing", "pending", "failed", "canceled", "uncertain", "stale"])(
       () => [],
       true,
     );
-    const view = render(<ShortcutProvider><SessionHelpHost>{f.view()}</SessionHelpHost></ShortcutProvider>);
+    const view = render(
+      <ShortcutProvider>
+        <SessionHelpHost>{f.view()}</SessionHelpHost>
+      </ShortcutProvider>,
+    );
     try {
       const composer = await screen.findByRole("textbox", { name: "Message" });
       fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
@@ -2405,7 +2409,11 @@ it.each(["missing", "pending", "failed", "canceled", "uncertain", "stale"])(
       fireEvent.keyDown(document.activeElement!, { key: "Escape" });
       // The shortcut creates no intent and Help reports the readiness reason.
       composer.focus();
-      fireEvent.keyDown(composer, { key: "`", code: "Backquote", ctrlKey: true });
+      fireEvent.keyDown(composer, {
+        key: "`",
+        code: "Backquote",
+        ctrlKey: true,
+      });
       fireEvent.click(screen.getByRole("button", { name: "Help opener" }));
       const help = await screen.findByRole("dialog", {
         name: "Keyboard shortcuts",
@@ -2457,7 +2465,11 @@ it("localizes the Terminals readiness reason and keeps the Sidechat reason disti
     () => [],
     true,
   );
-  const view = render(<ShortcutProvider><SessionHelpHost>{f.view()}</SessionHelpHost></ShortcutProvider>);
+  const view = render(
+    <ShortcutProvider>
+      <SessionHelpHost>{f.view()}</SessionHelpHost>
+    </ShortcutProvider>,
+  );
   try {
     await screen.findByRole("textbox", { name: "Message" });
     await act(() => i18n.changeLanguage("ko"));
@@ -2481,7 +2493,11 @@ it("localizes the Terminals readiness reason and keeps the Sidechat reason disti
     () => [],
     true,
   );
-  const second = render(<ShortcutProvider><SessionHelpHost>{sidechat.view()}</SessionHelpHost></ShortcutProvider>);
+  const second = render(
+    <ShortcutProvider>
+      <SessionHelpHost>{sidechat.view()}</SessionHelpHost>
+    </ShortcutProvider>,
+  );
   try {
     await screen.findByRole("textbox", { name: "Message" });
     fireEvent.click(screen.getByRole("button", { name: "Open tool" }));

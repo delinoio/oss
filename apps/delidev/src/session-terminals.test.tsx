@@ -2906,7 +2906,9 @@ it("discards an unsent open intent when workspace readiness is lost during inven
     hold = true;
     const before = reads.mock.calls.length;
     fireEvent.click(screen.getByRole("button", { name: "Open fixture" }));
-    await waitFor(() => expect(reads.mock.calls.length).toBeGreaterThan(before));
+    await waitFor(() =>
+      expect(reads.mock.calls.length).toBeGreaterThan(before),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Toggle readiness" }));
     expect(plus).toHaveProperty("disabled", true);
     await act(async () => release());
