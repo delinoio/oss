@@ -245,11 +245,16 @@ type ServerSubscriptionOperation struct {
 	// refresh_token grant. It is written, in its own transaction, before the one
 	// token request is sent and is never cleared: a refresh whose claim exists
 	// but whose outcome was not published is uncertain and is never resent.
-	RefreshClaimed bool                     `json:"refresh_claimed,omitempty"`
-	StartedAt      time.Time                `json:"started_at"`
-	ExpiresAt      time.Time                `json:"expires_at"`
-	Diagnostic     *CodexDiagnostic         `json:"diagnostic,omitempty"`
-	CleanupPhase   SubscriptionCleanupPhase `json:"cleanup_phase,omitempty"`
+	RefreshClaimed bool `json:"refresh_claimed,omitempty"`
+	// HealthBefore is the account health a Grok refresh was admitted under. A
+	// restart fences the account as failed whatever its health was, so the
+	// recovery of a refresh that never reached its claim restores this value
+	// instead of presuming the account was ready.
+	HealthBefore AccountHealth            `json:"health_before,omitempty"`
+	StartedAt    time.Time                `json:"started_at"`
+	ExpiresAt    time.Time                `json:"expires_at"`
+	Diagnostic   *CodexDiagnostic         `json:"diagnostic,omitempty"`
+	CleanupPhase SubscriptionCleanupPhase `json:"cleanup_phase,omitempty"`
 }
 
 // Cleanup checkpoints release only a failed initial server login. They cannot

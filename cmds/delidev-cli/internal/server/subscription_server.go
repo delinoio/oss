@@ -87,6 +87,9 @@ func (s *Service) requestServerSubscription(ctx context.Context, req *connect.Re
 		}
 		now := time.Now().UTC()
 		state.ServerOperation = &domain.ServerSubscriptionOperation{ID: domain.ID(m.RequestId), Action: action, Epoch: s.subscriptionServerEpoch(), FinishID: domain.NewID(), Actor: actor, State: domain.SubscriptionPreparing, StartedAt: now, ExpiresAt: now.Add(15 * time.Minute)}
+		if action == domain.SubscriptionRefresh && a.SubscriptionService == domain.SubscriptionGrok {
+			state.ServerOperation.HealthBefore = a.Health
+		}
 		state.Pending = &domain.SubscriptionOperation{ID: domain.ID(m.RequestId), Action: action, Actor: actor, DeviceCode: input.DeviceCode, Phase: domain.SubscriptionQueued}
 		if action == domain.SubscriptionLogout {
 			a.Health = domain.AccountRevoked
