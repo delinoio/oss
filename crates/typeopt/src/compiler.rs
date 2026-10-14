@@ -414,7 +414,9 @@ impl Project {
         // renamed copies and freeze nothing.
         let boundaries: Paths = chunks
             .iter()
-            .filter(|chunk| crate::app::bundle_excluded(chunk))
+            .filter(|chunk| {
+                crate::app::bundle_excluded(chunk) || crate::app::bundle_dynamic_package(chunk)
+            })
             .cloned()
             .collect();
         let reach = boundary_reach(&chunks, &boundaries, &edges);

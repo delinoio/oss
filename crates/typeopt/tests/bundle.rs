@@ -2149,6 +2149,14 @@ fn guarded_dynamic_package_import_is_a_boundary() {
         "{stderr}"
     );
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(
+        report["frozen_chunks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|chunk| chunk["file"].as_str().unwrap().ends_with("shared.js")),
+        "{report:#}"
+    );
     for name in ["guarded.js", "shared.js"] {
         assert_eq!(
             fs::read(temp.path().join("dist").join(name)).unwrap(),
