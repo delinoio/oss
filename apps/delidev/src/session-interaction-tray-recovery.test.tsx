@@ -229,6 +229,9 @@ it("keeps the requests disclosure and loading status mounted while an explicit R
       retry,
     );
     expect(retry).toHaveProperty("disabled", true);
+    // The prior failure alert and its technical evidence stay mounted too.
+    expect(within(disclosure).getByRole("alert")).not.toBeNull();
+    expect(within(disclosure).getByText("Technical details")).not.toBeNull();
   }
   await act(async () => control.release());
   // Empty success after recovery hides the disclosure again.
@@ -288,6 +291,8 @@ it("keeps the surface through a boundary Reload from a failed empty list until i
       within(disclosure).getByRole("button", { name: "Reload list" }),
     ).toBe(reload);
     expect(reload).toHaveProperty("disabled", true);
+    expect(within(disclosure).getByRole("alert")).not.toBeNull();
+    expect(within(disclosure).getByText("Technical details")).not.toBeNull();
   }
   await act(async () => control.release());
   await waitFor(() => expect(region.querySelector(".requests")).toBeNull());

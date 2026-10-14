@@ -2791,7 +2791,7 @@ export function SessionView({
                           ref={requestsRoot}
                           className="session-tray-content"
                         >
-                          <Failure failure={interactions.error?.failure} />
+                          <Failure failure={requestsRecovery.error?.failure} />
                           <ScrollPayloadWindow
                             identity={paginationIdentity}
                             revision={paginationRevision}
