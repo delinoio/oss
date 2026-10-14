@@ -110,6 +110,11 @@ mod app {
     pub(crate) fn bundle_frozen() -> impl Iterator<Item = (&'static String, &'static String)> {
         BUNDLE_FROZEN.get().into_iter().flatten()
     }
+    pub(crate) fn bundle_frozen_chunk(path: &str) -> bool {
+        BUNDLE_FROZEN
+            .get()
+            .is_some_and(|frozen| frozen.contains_key(path))
+    }
     pub(crate) fn set_bundle_modules(
         modules: std::collections::BTreeSet<String>,
         classic: std::collections::BTreeSet<String>,
@@ -141,7 +146,13 @@ mod app {
     }
     pub(crate) fn bundle_boundary(path: &str, esm_statements: bool) -> bool {
         bundle_dynamic_package(path)
-            || bundle_pinned(path)
+            || bundle_frozen_chunk(path)
+            || bundle_excluded_or_classic(path, esm_statements)
+    }
+    /// The operator exclusion and classic-script decisions, without reach
+    /// propagation. Logging checks these before a chunk's own syntax rule.
+    pub(crate) fn bundle_excluded_or_classic(path: &str, esm_statements: bool) -> bool {
+        bundle_excluded(path)
             // A chunk that any page loads as a classic script shares its
             // top-level bindings as globals there, even if it is also
             // imported as a module.
