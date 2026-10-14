@@ -205,7 +205,7 @@ func (s *Service) grokLogoutSteps(ctx context.Context, id domain.ID, original do
 	}
 	outcome.claimed = true
 	s.logGrok(ctx, slog.LevelInfo, "grok_logout_revocation_claimed", original, grokStepClaim)
-	s.grokFault(grokFaultAfterRevokeClaim)
+	_ = s.grokFault(grokFaultAfterRevokeClaim)
 	transport, closeTransport := s.grokOAuthRoundTripper()
 	defer closeTransport()
 	client := subscription.GrokOAuthClient{Transport: transport}
@@ -219,7 +219,7 @@ func (s *Service) grokLogoutSteps(ctx context.Context, id domain.ID, original do
 		s.logGrok(ctx, slog.LevelWarn, "grok_logout_revocation_unproven", original, grokStepRevoke, "reason", reason)
 		return uncertain(grokStepRevoke)
 	}
-	s.grokFault(grokFaultAfterRevoke)
+	_ = s.grokFault(grokFaultAfterRevoke)
 	s.logGrok(ctx, slog.LevelInfo, "grok_logout_revoked", original, grokStepRevoke, "result", result)
 	return grokLogoutOutcome{state: domain.SubscriptionSucceeded, step: grokStepRevoke, claimed: true, revoked: true}
 }
@@ -279,7 +279,7 @@ func (s *Service) finishGrokLogout(ctx context.Context, id domain.ID, o domain.S
 	if err := s.recordGrokRevocation(ctx, id, o); err != nil {
 		return err
 	}
-	s.grokFault(grokFaultAfterRevocationRecorded)
+	_ = s.grokFault(grokFaultAfterRevocationRecorded)
 	return s.completeGrokLogoutCleanup(ctx, id, o)
 }
 
@@ -405,7 +405,7 @@ func (s *Service) completeGrokLogoutCleanup(ctx context.Context, id domain.ID, o
 		s.logGrokCleanup(ctx, slog.LevelWarn, "grok_logout_cleanup_pending", o, "code", domain.SafeError(err).Code)
 		return err
 	}
-	s.grokFault(grokFaultAfterLogoutCleanup)
+	_ = s.grokFault(grokFaultAfterLogoutCleanup)
 	_, err = s.Store.Mutate(ctx, domain.NewID(), "grok.server.logout-disconnect", struct{ Account, Operation domain.ID }{id, o.ID}, func(tx *store.Tx) (any, error) {
 		r, a, err := grokSubscriptionAccount(tx, id, 0)
 		if err != nil {
