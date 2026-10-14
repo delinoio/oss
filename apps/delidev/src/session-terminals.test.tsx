@@ -191,6 +191,16 @@ it.each([false, true])(
       );
       expect(revealed).toEqual([button]);
       expect(document.activeElement).toBe(sentinel);
+      const strip = view.container.querySelector<HTMLElement>(".terminal-tabs");
+      expect(strip).toBeTruthy();
+      strip!.scrollLeft = strip!.scrollWidth - strip!.clientWidth;
+      fireEvent.scroll(strip!);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      // The selected resource is synthetic and follows the reached history;
+      // revealing it must not page history again from the synthetic tail.
+      expect(reads).toHaveBeenCalledTimes(1);
       await act(() => client.invalidateQueries({ refetchType: "active" }));
       await waitFor(() => expect(reads).toHaveBeenCalledTimes(2));
       expect(revealed).toEqual([button]);

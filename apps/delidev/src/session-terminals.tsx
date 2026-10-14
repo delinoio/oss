@@ -226,6 +226,7 @@ export function SessionTerminals({
   latest.current.createdTerminal = createdTerminal;
   const [selectedTerminal, setSelectedTerminal] = useState<Resource>();
   const listRoot = useRef<HTMLDivElement>(null);
+  const historyTail = useRef<HTMLButtonElement>(null);
   const resolving = sessionActive && Boolean(openIntent);
   const status = useQuery(
     SystemQuery.getStatus,
@@ -574,6 +575,9 @@ export function SessionTerminals({
     }
   }, [reachedSelection, selectedTerminal]);
   const tabs = list.rows.filter((row) => !presentationRecords.hidden(row.id));
+  const historyTailId = [...list.rows]
+    .reverse()
+    .find((row) => !presentationRecords.hidden(row.id))?.id;
   if (
     createdTerminal &&
     !presentationRecords.hidden(createdTerminal.id) &&
@@ -872,6 +876,7 @@ export function SessionTerminals({
         {tabs.map((row, index) => (
           <button
             key={row.id}
+            ref={row.id === historyTailId ? historyTail : undefined}
             className={`tab-item tab-label tab-item-dynamic${selected === row.id ? " is-selected" : ""}`}
             id={`terminal-tab-${row.id}`}
             role={tabbed ? undefined : "tab"}
@@ -948,6 +953,7 @@ export function SessionTerminals({
       </div>
       <ScrollContinuation
         axis={ContinuationAxis.Horizontal}
+        horizontalTail={historyTail}
         showInitial={!(list.loaded && list.loading === ReadStage.Refresh)}
         query={list}
         root={listRoot}

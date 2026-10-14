@@ -40,6 +40,7 @@ export function ScrollContinuation({
   showInitial = true,
   axis = ContinuationAxis.Vertical,
   showProgress = false,
+  horizontalTail,
 }: {
   query: ScrollContinuationQuery;
   label: string;
@@ -52,6 +53,8 @@ export function ScrollContinuation({
    * show a distinct end state once the accepted chain has no next page. A
    * pending or failed read never counts as exhaustion. */
   showProgress?: boolean;
+  /** The last reached history row when synthetic rows follow the loaded tail. */
+  horizontalTail?: RefObject<HTMLElement | null>;
 }) {
   const sidebarActivity = useSidebarActivity();
   active = active && sidebarActivity;
@@ -98,12 +101,33 @@ export function ScrollContinuation({
       if (axis === ContinuationAxis.Horizontal) {
         // The continuation control is a sibling of the single-row strip, so
         // its vertical rectangle cannot identify the loaded horizontal tail.
+        const tail = horizontalTail?.current;
+        // Retained or newly created rows can follow the reached history. They
+        // must not turn selection reveal into an automatic history read.
+        if (tail && tail !== container.lastElementChild) return;
         if (
           container.clientWidth > 0 &&
-          container.scrollWidth -
-            container.scrollLeft -
-            container.clientWidth <=
-            continuationDistance
+          (() => {
+            if (!tail) {
+              return (
+                container.scrollWidth -
+                container.scrollLeft -
+                container.clientWidth
+              );
+            }
+            const tailBounds = tail.getBoundingClientRect(),
+              containerBounds = container.getBoundingClientRect();
+            if (tailBounds.width <= 0 || containerBounds.width <= 0)
+              return (
+                container.scrollWidth -
+                container.scrollLeft -
+                container.clientWidth
+              );
+            const tailEnd =
+              container.scrollLeft + tailBounds.right - containerBounds.left;
+            if (tailEnd < container.scrollLeft) return Infinity;
+            return tailEnd - container.scrollLeft - container.clientWidth;
+          })() <= continuationDistance
         )
           append();
       } else {
@@ -151,7 +175,7 @@ export function ScrollContinuation({
       container.removeEventListener("scroll", check);
       window.removeEventListener("resize", check);
     };
-  }, [allowed, append, axis, root]);
+  }, [allowed, append, axis, horizontalTail, root]);
   const reloadRequired =
     error?.stalled || error?.failure.code === FailureCode.CursorExpired;
   return (
