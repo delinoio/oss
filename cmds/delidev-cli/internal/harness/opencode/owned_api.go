@@ -2,6 +2,7 @@ package opencode
 
 import (
 	"context"
+	"crypto/sha256"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
@@ -74,17 +75,22 @@ func (a *OwnedAPI) InspectSession(ctx context.Context) (SessionReceipt, error) {
 // lifetime. A lost HTTP reply still binds an observer to the original claim;
 // the returned scheduling error is retained without replay or replacement.
 func (a *OwnedAPI) StartText(ctx context.Context, request domain.ID, text string) (InputReceipt, error) {
-	return a.StartInput(ctx, request, text, nil)
+	return a.StartInput(ctx, request, text, nil, sha256.Sum256([]byte(text)))
 }
 
 // StartInput is StartText for an input with ordered image attachments. Each
 // image must be a validated private Worker file; a nonempty text part is
 // required so the native message keeps its single original text part.
-func (a *OwnedAPI) StartInput(ctx context.Context, request domain.ID, text string, images []InputImage) (InputReceipt, error) {
+//
+// identity is the attachment-aware input digest of the immutable assignment
+// (domain.SessionInput.InputDigest). It becomes the checkpoint input identity,
+// so a text-only input must pass the SHA-256 of its text, and an image-bearing
+// input must pass a digest that differs from it.
+func (a *OwnedAPI) StartInput(ctx context.Context, request domain.ID, text string, images []InputImage, identity [sha256.Size]byte) (InputReceipt, error) {
 	if !a.valid() {
 		return InputReceipt{}, sessionInvalid()
 	}
-	if request.Validate() != nil || domain.Text(text, "input", 256<<10, true) != nil || !validInputImages(images) {
+	if request.Validate() != nil || domain.Text(text, "input", 256<<10, true) != nil || !validInputImages(images) || !validInputIdentity(text, images, identity) {
 		return InputReceipt{}, sessionInvalid()
 	}
 	if err := a.session.enter(ctx); err != nil {
@@ -108,7 +114,7 @@ func (a *OwnedAPI) StartInput(ctx context.Context, request domain.ID, text strin
 	if _, err := a.session.openEvents(ctx); err != nil {
 		return InputReceipt{}, err
 	}
-	receipt, submission := a.session.submitInput(ctx, request, message, part, text, images)
+	receipt, submission := a.session.submitInput(ctx, request, message, part, text, images, identity)
 	if receipt.MessageID == "" {
 		return receipt, submission
 	}

@@ -140,7 +140,8 @@ func (a *OwnedAPI) RetainCheckpoint(ctx context.Context) (raw []byte, reference 
 	}
 	requiresResume := stop != nil || s.observer.progress.StoppedOnRejection || last.value.Assistant.Error != nil
 	s.observer.mu.Unlock()
-	ref := CheckpointReference{OwnerID: s.owner, CreationRequestID: c.request, InputRequestID: i.receipt.RequestID, SessionID: history.SessionID, InputID: history.InputID, PartID: i.receipt.PartID, InputSHA256: hex.EncodeToString(i.digest[:]), HistorySHA256: history.Digest, RequiresResume: requiresResume}
+	identity := i.inputIdentity()
+	ref := CheckpointReference{OwnerID: s.owner, CreationRequestID: c.request, InputRequestID: i.receipt.RequestID, SessionID: history.SessionID, InputID: history.InputID, PartID: i.receipt.PartID, InputSHA256: hex.EncodeToString(identity[:]), HistorySHA256: history.Digest, RequiresResume: requiresResume}
 	value := nativeCheckpoint{Version: 1, NativeVersion: s.nativeVersion, Reference: ref, RuntimeHome: s.runtimeHome, Workspace: s.cwd, NativeRoot: s.runtimeRoot, Project: c.identity.project, Slug: c.identity.slug, Created: c.identity.created, SettingsSHA256: settings, CredentialSHA256: mutationDigest([]byte(s.apiProfile.Token)), History: history, Stop: stop, Files: files}
 	if scope := s.apiProfile.WorkspaceRoot; scope != nil && scope.windowsGlobal() {
 		if scope.native != s.runtimeRoot || scope.directory != s.cwd || c.identity.project != "global" {

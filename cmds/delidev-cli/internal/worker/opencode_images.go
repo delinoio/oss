@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"encoding/hex"
 	"log/slog"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -45,4 +46,12 @@ func openCodeInputImages(root string, input domain.ExecutionJobInput, logger *sl
 		logger.Info("opencode_image_input_resolved", "execution_id", input.ExecutionID, "image_count", len(images), "image_media_types", media, "image_sha256", digests)
 	}
 	return images, nil
+}
+
+// openCodeInputDigest is the one attachment-aware identity of an OpenCode
+// input. Native checkpoints, Worker checkpoint references, continuation and
+// Fork comparisons all use it; text-only inputs keep the SHA-256 of the prompt.
+func openCodeInputDigest(input domain.SessionInput) string {
+	digest := input.InputDigest()
+	return hex.EncodeToString(digest[:])
 }

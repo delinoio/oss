@@ -309,7 +309,7 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 		return nil, err
 	}
 	config.startup.claimInput()
-	if _, err := api.StartInput(nativeCtx, input.TurnRequestID, input.Input.Prompt, images); err != nil {
+	if _, err := api.StartInput(nativeCtx, input.TurnRequestID, input.Input.Prompt, images, input.Input.InputDigest()); err != nil {
 		return nil, err
 	}
 	phase = "first-input"

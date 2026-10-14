@@ -265,6 +265,27 @@ func verifyImageDataURL(location string, image storedInputImage) bool {
 	return bytes.Equal([]byte(hex.EncodeToString(digest[:])), []byte(image.sha256))
 }
 
+// validInputIdentity binds the checkpoint input identity to the attachments:
+// a text-only input keeps the historical text digest, and an image-bearing
+// input must carry a different, nonzero digest of its text and references.
+func validInputIdentity(text string, images []InputImage, identity [sha256.Size]byte) bool {
+	textDigest := sha256.Sum256([]byte(text))
+	if len(images) == 0 {
+		return identity == textDigest
+	}
+	return identity != textDigest && identity != [sha256.Size]byte{}
+}
+
+// inputIdentity is the digest retained as the checkpoint input identity. Every
+// text-only input keeps its historical text digest, which also identifies the
+// stored original text part; an image-bearing input binds its ordered images.
+func (i *sessionInput) inputIdentity() [sha256.Size]byte {
+	if len(i.images) == 0 {
+		return i.digest
+	}
+	return i.identity
+}
+
 // partTotal is the exact part count of the complete stored input.
 func (i *sessionInput) partTotal() int { return 1 + 2*len(i.images) }
 

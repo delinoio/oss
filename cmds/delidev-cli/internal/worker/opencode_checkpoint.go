@@ -127,8 +127,7 @@ func (c *OpenCodeEventPublisher) RetainCheckpoint(ctx context.Context) (string, 
 	if err != nil {
 		return fail(executionCheckpointUncertain())
 	}
-	promptDigest := input.Input.InputDigest()
-	ref := openCodeCheckpointReference{Claim: b.reference, Completion: *c.completion, InputMode: input.Input.Mode, PromptSHA256: hex.EncodeToString(promptDigest[:]), ClaimsSHA256: executionInputDigest(claimBytes)}
+	ref := openCodeCheckpointReference{Claim: b.reference, Completion: *c.completion, InputMode: input.Input.Mode, PromptSHA256: openCodeInputDigest(input.Input), ClaimsSHA256: executionInputDigest(claimBytes)}
 	var assignment domain.Job
 	if domain.Decode(b.publisher.config.Assignment.DocumentJson, &assignment) != nil {
 		return fail(executionCheckpointUncertain())
