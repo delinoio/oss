@@ -85,11 +85,12 @@ async function caseMain(format, workload, output) {
     const handles = [];
     for (const geometry of geometries)
       handles.push(await session.registerGeometry(geometry));
+    const material = {};
     const nodes = Array.from({ length: expected.meshes }, (_, index) =>
       React.createElement(Mesh, {
         key: index,
         geometry: handles[workload === "overlay" ? index : 0],
-        material: {},
+        material,
         translation: workload === "shared" ? [2 * index, 0, 0] : [0, 0, 0],
       }),
     );
