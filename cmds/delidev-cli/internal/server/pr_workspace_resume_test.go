@@ -453,7 +453,7 @@ func TestWorkspaceFailedForegroundJoinCannotReplay(t *testing.T) {
 			}
 			close(release)
 			r := h.await(pending)
-			if r.response != nil || r.err == nil || foregroundCalls.Load() != 0 || h.provider.calls.Load() != 1 || h.tokens.gets.Load()-h.baseGets != 1 {
+			if r.response != nil || connect.CodeOf(r.err) != connect.CodeUnavailable || foregroundCalls.Load() != 0 || h.provider.calls.Load() != 1 || h.tokens.gets.Load()-h.baseGets != 1 {
 				t.Fatal("failed foreground join replayed or published workspace", r.err, foregroundCalls.Load(), h.provider.calls.Load(), h.tokens.gets.Load()-h.baseGets)
 			}
 			if len(h.logs.records(t, "repository_integration_displacement_failed")) != 1 {

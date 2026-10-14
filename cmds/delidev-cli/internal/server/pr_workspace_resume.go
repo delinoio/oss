@@ -35,6 +35,9 @@ func (s *Service) readResumablePullRequestWorkspace(ctx context.Context, id doma
 			s.logger.Info("pull_request_workspace_resumed", "repository_id", id, "attempt_count", attempts, "correlation_id", correlation)
 		}
 		selected, err := s.admitRepositoryIntegration(ctx, id, "workspace", correlation, attempts, resume, read)
+		if resume.failedDisplacement.Load() {
+			return repositoryIntegrationSelection{}, attempts, errIntegrationDisplacementFailed
+		}
 		if errors.Is(err, errIntegrationDisplacementFailed) {
 			return repositoryIntegrationSelection{}, attempts - 1, err
 		}
