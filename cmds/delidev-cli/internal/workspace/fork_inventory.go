@@ -113,6 +113,12 @@ func (i forkGitInventory) copiedFiles() snapshotInventory {
 func (i forkGitInventory) verify(ctx context.Context, git Git, source, target string) error {
 	current, err := inspectForkGitInventory(ctx, git, source, newForkCopyBudget(1))
 	if err != nil {
+		// This is a recheck of an already admitted source. A changed source
+		// that now exceeds a resource bound is snapshot drift, not a fresh
+		// admission failure.
+		if domain.SafeError(err).Code == domain.ResourceExhausted {
+			return forkSnapshotChanged()
+		}
 		return err
 	}
 	if !i.sourceMatches(current) {

@@ -200,6 +200,18 @@ func TestIndependentForkInventoryRejectsConfigRecordCardinalityOverflow(t *testi
 	}
 }
 
+func TestIndependentForkInventoryRecheckMapsConfigCardinalityDriftToConflict(t *testing.T) {
+	m, source, manifest, proof, _ := forkInventoryCopyFixture(t, false)
+	path := filepath.Join(gitTest(t, source, "rev-parse", "--absolute-git-dir"), "config")
+	appendForkConfigRecords(t, path, maxForkEntries)
+
+	git := m.Git
+	git.OwnerID = manifest.SessionID
+	if err := proof.gitInventory.verify(context.Background(), git, source, proof.target); domain.SafeError(err).Code != domain.Conflict {
+		t.Fatalf("source config cardinality drift was misclassified: %v", err)
+	}
+}
+
 func TestIndependentForkInventoryChargesRawAndParsedConfigInSharedBudget(t *testing.T) {
 	input := forkInventoryFixtureInputWith(t, false, retainedConfigSetup)
 	budget := newForkCopyBudget(1)
