@@ -535,7 +535,7 @@ values. Regenerate all bindings from this combined canonical schema.
 
 ### Protocol integration
 
-- DeliDev remote-first repositories record System 37 `REMOTE_REPOSITORIES_V1` and Worker 19 `REMOTE_WORKSPACE_CLONE_V1` in the owning feature PR. Preserve System 31/32 and Worker 18 as the separate immediate-clone/listing boundary; reservations alone grant no support or Git authority.
+- DeliDev remote-first repositories use System 37 `REMOTE_REPOSITORIES_V1` and Worker 19 `REMOTE_WORKSPACE_CLONE_V1`, allocated in the ledger (which does not advertise support) and recorded in the owning feature PR. Preserve System 31/32 and Worker 18 as the separate immediate-clone/listing boundary; capability support must be negotiated before use and grants no Git authority beyond the documented clone.
 
 - Agent Worker ordered source routes follow the catalog, desktop, protocol and sessions contracts. Main reservation the originating change owns System capability 36 and SaveAgentWorkerRequest.route_models field 5; preserve capability 35. Keep schema-3 routes exclusive with legacy fields, all models/accounts referenced and saved atomically, per-source routing state updated only with a successful first claim, confirmed-exhaustion-only fallback and observed-recovery preference for later new sessions. Preserve immutable executions, old-client write protection and portable v1/v2/v3 compatibility; add no SQLite migration.
 
