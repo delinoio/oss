@@ -1272,3 +1272,173 @@ it("offers Use a device code beside Add account only with capability 39 and star
   present.rendered.unmount();
   present.client.clear();
 });
+
+// Device login state table (renderer half). Rows are the server stage, columns
+// the pending work and the way the screen can leave; every cell has a test.
+//
+//   stage      retry closure   verification open   leave (Back/unmount/abort) | terminal
+//   PREPARING  none            hidden              no native call             | n/a
+//   WAITING    none            enabled             Dispose only if opened     | Dispose only if opened
+//   WAITING    held (cancel)   disabled            Dispose only if opened     | retry dropped
+//   WAITING    canceling       hidden              Dispose only if opened     | Dispose only if opened
+//   WAITING    open pending    busy/disabled       Dispose retires the open   | Dispose retires the open
+//   terminal   none            hidden              Dispose only if opened     | settled
+//
+// A status-read notice recovers on any later healthy read (any stage); every
+// other notice stays until the user acts again.
+const openName = () => copy("grok-subscription.device.openVerification");
+const nativeOpen = (f: ReturnType<typeof fixture>) =>
+  actions(f, OAuthNativeAction.GrokDeviceAuthorizationOpen);
+const cancelRequests = (f: ReturnType<typeof fixture>) =>
+  f.cancel.mock.calls as unknown as Array<
+    [{ mutation: { requestId: string } }]
+  >;
+const failCancelOnce = (f: ReturnType<typeof fixture>) =>
+  f.cancel.mockImplementationOnce(() => {
+    throw new ConnectError("Fixture cancel failure", Code.Unavailable);
+  });
+
+it("keeps the held cancellation retry when the verification page cannot be opened", async () => {
+  const f = deviceFixture();
+  await startDevice(f);
+  failCancelOnce(f);
+  fireEvent.click(
+    screen.getByRole("button", { name: copy("grok-subscription.cancel") }),
+  );
+  await screen.findByText(copy("grok-subscription.problem.cancelUnconfirmed"));
+  const retry = screen.getByRole("button", {
+    name: copy("grok-subscription.retryOriginal"),
+  });
+  // Only the retry settles the uncertain cancellation: the opener and a second
+  // cancel are unavailable, so neither can replace the original request.
+  const opener = screen.getByRole("button", { name: openName() });
+  expect((opener as HTMLButtonElement).disabled).toBe(true);
+  expect(
+    (
+      screen.getByRole("button", {
+        name: copy("grok-subscription.cancel"),
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  fireEvent.click(opener);
+  fireEvent.click(
+    screen.getByRole("button", { name: copy("grok-subscription.cancel") }),
+  );
+  await pollTwice(f);
+  expect(nativeOpen(f)).toHaveLength(0);
+  expect(f.cancel).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole("button", { name: retry.textContent! })).toBeTruthy();
+  fireEvent.click(retry);
+  await waitFor(() => expect(f.cancel).toHaveBeenCalledTimes(2));
+  // The retry replays the exact original request.
+  expect(cancelRequests(f)[1][0]).toEqual(cancelRequests(f)[0][0]);
+  expect(cancelRequests(f)[1][0].mutation.requestId).toBe(
+    cancelRequests(f)[0][0].mutation.requestId,
+  );
+  await screen.findByText(copy("grok-subscription.problem.canceling"));
+  // Once the cancellation is accepted the verification page is not offered.
+  expect(screen.queryByRole("button", { name: openName() })).toBeNull();
+  expect(screen.queryByRole("button", { name: copy("grok-subscription.cancel") }))
+    .toBeNull();
+  expect(
+    screen.queryByRole("button", {
+      name: copy("grok-subscription.retryOriginal"),
+    }),
+  ).toBeNull();
+  expect(nativeOpen(f)).toHaveLength(0);
+}, 20000);
+
+it("keeps the held cancellation retry when the browser login cannot be reopened", async () => {
+  const f = fixture();
+  await start(f);
+  failCancelOnce(f);
+  fireEvent.click(
+    screen.getByRole("button", { name: copy("grok-subscription.cancel") }),
+  );
+  await screen.findByText(copy("grok-subscription.problem.cancelUnconfirmed"));
+  const reopen = screen.getByRole("button", {
+    name: copy("grok-subscription.openBrowser"),
+  });
+  expect((reopen as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(reopen);
+  await pollTwice(f);
+  expect(actions(f, OAuthNativeAction.GrokSubscriptionReopen)).toHaveLength(0);
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: copy("grok-subscription.retryOriginal"),
+    }),
+  );
+  await waitFor(() => expect(f.cancel).toHaveBeenCalledTimes(2));
+  expect(cancelRequests(f)[1][0]).toEqual(cancelRequests(f)[0][0]);
+}, 20000);
+
+it("drops the held retry and every opener when a terminal state arrives", async () => {
+  const f = deviceFixture();
+  await startDevice(f);
+  failCancelOnce(f);
+  fireEvent.click(
+    screen.getByRole("button", { name: copy("grok-subscription.cancel") }),
+  );
+  await screen.findByText(copy("grok-subscription.problem.cancelUnconfirmed"));
+  f.setState(State.EXPIRED);
+  await screen.findByText(
+    copy("grok-subscription.status.expired"),
+    {},
+    { timeout: 3000 },
+  );
+  expect(
+    screen.queryByRole("button", {
+      name: copy("grok-subscription.retryOriginal"),
+    }),
+  ).toBeNull();
+  expect(screen.queryByRole("button", { name: openName() })).toBeNull();
+  expect(screen.queryByText(DEVICE_CODE)).toBeNull();
+  expect(f.cancel).toHaveBeenCalledTimes(1);
+  // No opener was ever requested, so no native state exists to dispose.
+  expect(nativeActions(f)).toEqual([]);
+}, 20000);
+
+it("hides the verification page when the server accepted the cancellation", async () => {
+  const f = deviceFixture();
+  await startDevice(f);
+  fireEvent.click(
+    screen.getByRole("button", { name: copy("grok-subscription.cancel") }),
+  );
+  await screen.findByText(copy("grok-subscription.problem.canceling"));
+  expect(screen.queryByRole("button", { name: openName() })).toBeNull();
+  // The code stays copyable until the terminal state clears it.
+  expect(screen.getByText(DEVICE_CODE)).toBeTruthy();
+  expect(nativeOpen(f)).toHaveLength(0);
+  expect(f.cancel).toHaveBeenCalledTimes(1);
+}, 20000);
+
+it("replays the exact original naming request after an uncertain failure on a settled login", async () => {
+  const f = deviceFixture();
+  await startDevice(f);
+  f.success();
+  const input = await screen.findByLabelText(
+    copy("grok-subscription.accountName"),
+    {},
+    { timeout: 3000 },
+  );
+  f.save.mockImplementationOnce(() => {
+    throw typedFailure(Code.Internal, FailureCode.Internal);
+  });
+  fireEvent.change(input, { target: { value: "Edited Grok" } });
+  fireEvent.click(
+    screen.getByRole("button", { name: copy("grok-subscription.saveName") }),
+  );
+  // The settled (terminal) login still owns the retry for its naming request.
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: copy("grok-subscription.retryOriginal"),
+    }),
+  );
+  await screen.findByRole("button", { name: "Start Grok device" });
+  const saves = f.save.mock.calls as unknown as Array<
+    [{ mutation: { requestId: string } }]
+  >;
+  expect(saves).toHaveLength(3);
+  expect(saves[2][0].mutation.requestId).toBe(saves[1][0].mutation.requestId);
+  expect(document(f.current())).toMatchObject({ alias: "Edited Grok" });
+}, 20000);

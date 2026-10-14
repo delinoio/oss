@@ -218,6 +218,9 @@ interface View {
   copyTarget: CopyTarget;
   canRetry: boolean;
   canCancel: boolean;
+  // The server accepted a cancellation, so the verification page is no longer
+  // worth opening. The terminal canceled state arrives through polling.
+  canceling: boolean;
 }
 interface Pending {
   opening: string;
@@ -230,6 +233,7 @@ interface Pending {
   bound: boolean;
   callbackDispatched: boolean;
   disposed: boolean;
+  canceling: boolean;
   polling: boolean;
   busy: boolean;
   terminal: boolean;
@@ -275,6 +279,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
   };
   const finish = (p: Pending) => {
     p.terminal = true;
+    p.retry = undefined;
     p.url = "";
     p.userCode = "";
     if (native && p.method === GrokLoginMethod.Browser)
@@ -348,8 +353,14 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
   ) => {
     if (!live(p) || p.busy) return;
     p.busy = true;
-    p.retry = undefined;
-    update(p, { busy: true, problem: undefined, canRetry: false });
+    // Only a replayable mutation owns the retry closure. An auxiliary action
+    // (opening or reopening a browser) never consumes or hides it.
+    if (replay) p.retry = undefined;
+    update(p, {
+      busy: true,
+      problem: undefined,
+      ...(replay ? { canRetry: false } : {}),
+    });
     try {
       await action();
     } catch (error) {
@@ -365,7 +376,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
         if (replay && uncertain) p.retry = action;
         update(p, {
           problem,
-          canRetry: Boolean(p.retry),
+          ...(replay ? { canRetry: Boolean(p.retry) } : {}),
           ...(replay && !uncertain && !p.operation
             ? { stage: GrokLoginStage.Failed }
             : {}),
@@ -389,6 +400,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
       bound: false,
       callbackDispatched: false,
       disposed: false,
+      canceling: false,
       polling: false,
       busy: false,
       terminal: false,
@@ -406,6 +418,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
       copyTarget: CopyTarget.Link,
       canRetry: false,
       canCancel: false,
+      canceling: false,
     });
     if (!native) {
       update(p, { problem: "grok-subscription.problem.desktopRequired" });
@@ -533,6 +546,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
           stage,
           diagnostic: progress.grokDiagnostic,
           canCancel: !terminal,
+          ...(progress.canceled ? { canceling: true } : {}),
           ...(terminal
             ? {
                 problem: undefined,
@@ -543,6 +557,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
               }
             : {}),
         });
+        if (progress.canceled) p.canceling = true;
         if (terminal) {
           finish(p);
           return;
@@ -667,9 +682,16 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
     return () => clearInterval(timer);
   }, [active, Boolean(view), clients, native]);
 
+  // An auxiliary action opens a browser page for the original login. It is not
+  // available once the login settled, while a replayable mutation is waiting
+  // for its explicit retry, or after a cancellation was accepted.
+  const auxiliary = (p: Pending | undefined): p is Pending =>
+    Boolean(
+      p && live(p) && !p.terminal && !p.canceling && !p.retry && !p.busy,
+    );
   const reopen = () => {
     const p = pending.current;
-    if (!p || !live(p) || !p.url || !native) return;
+    if (!auxiliary(p) || !p.url || !native) return;
     void run(
       p,
       async () => {
@@ -721,8 +743,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
   const openVerification = () => {
     const p = pending.current;
     if (
-      !p ||
-      !live(p) ||
+      !auxiliary(p) ||
       p.method !== GrokLoginMethod.DeviceCode ||
       !p.url ||
       !native
@@ -745,7 +766,10 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
   };
   const cancel = () => {
     const p = pending.current;
-    if (!p || !live(p) || !p.operation || p.terminal) return;
+    // A held retry closure is the one authoritative way to settle an uncertain
+    // cancellation; a second request would not be the original request.
+    if (!p || !live(p) || !p.operation || p.terminal || p.canceling || p.retry)
+      return;
     let request:
       Parameters<typeof clients.subscription.cancelSubscription>[0] | undefined;
     void run(
@@ -779,7 +803,11 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
           throw new Error("Invalid cancellation");
         if (live(p)) {
           p.account = result.account;
-          update(p, { problem: "grok-subscription.problem.canceling" });
+          p.canceling = true;
+          update(p, {
+            problem: "grok-subscription.problem.canceling",
+            canceling: true,
+          });
         }
       },
       "grok-subscription.problem.cancelUnconfirmed",
@@ -1052,12 +1080,12 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
             </dl>
           ) : null}
           <SettingsTaskActions className="">
-            {waiting && device && v.urlReady ? (
+            {waiting && device && v.urlReady && !v.canceling ? (
               <SettingsActionButton
                 icon={SettingsActionIcon.Open}
                 type="button"
                 className="primary"
-                disabled={busy}
+                disabled={busy || v.canRetry}
                 onClick={props.openVerification}
               >
                 {copy("grok-subscription.device.openVerification")}
@@ -1073,12 +1101,12 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
                 {copy("grok-subscription.device.copyCode")}
               </SettingsActionButton>
             ) : null}
-            {waiting && !device && v.browserReady ? (
+            {waiting && !device && v.browserReady && !v.canceling ? (
               <SettingsActionButton
                 icon={SettingsActionIcon.Open}
                 type="button"
                 className="primary"
-                disabled={busy}
+                disabled={busy || v.canRetry}
                 onClick={props.reopen}
               >
                 {copy("grok-subscription.openBrowser")}
@@ -1094,11 +1122,11 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
                 {copy("grok-subscription.copyLink")}
               </SettingsActionButton>
             ) : null}
-            {v.canCancel && inFlight ? (
+            {v.canCancel && inFlight && !v.canceling ? (
               <SettingsActionButton
                 icon={SettingsActionIcon.Cancel}
                 type="button"
-                disabled={busy}
+                disabled={busy || v.canRetry}
                 onClick={props.cancel}
               >
                 {copy("grok-subscription.cancel")}
