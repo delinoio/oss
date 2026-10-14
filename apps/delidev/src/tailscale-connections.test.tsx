@@ -1093,7 +1093,10 @@ it("restores the access action after a later successful read", async () => {
 // later successful Refresh would issue the Check again without user action.
 const peerRow = () =>
   document.querySelector<HTMLElement>(".tailscale-list > li");
-const settleDiscoveries = async (f: { discoveries: () => number }, n: number) => {
+const settleDiscoveries = async (
+  f: { discoveries: () => number },
+  n: number,
+) => {
   await waitFor(() => expect(f.discoveries()).toBe(n));
   // Give any wrongly re-enabled check time to be issued.
   await act(async () => {
