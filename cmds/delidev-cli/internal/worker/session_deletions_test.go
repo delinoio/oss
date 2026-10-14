@@ -636,3 +636,37 @@ func TestSessionDeletionCompletedLegacyProofMigratesWorkspaceProof(t *testing.T)
 		t.Fatal("second obligation stayed pending behind a migrated legacy proof", err)
 	}
 }
+
+// A positively failed preparation never produced a workspace. Its cleanup
+// completes through the Worker but must not publish shared removal evidence that
+// a second device obligation with successful preparation could adopt.
+func TestSessionDeletionFailedOnlyPreparationPublishesNoSharedRemovalEvidence(t *testing.T) {
+	c, w, manifest, _ := deletionWorkerFixture(t, domain.GeneralChat)
+	if e := os.RemoveAll(filepath.Join(c.Root, "workspaces", string(manifest.SessionID))); e != nil {
+		t.Fatal(e)
+	}
+	copy := w.Copies[0]
+	if e := writeJSON(filepath.Join(c.Root, "jobs", string(copy.JobID)+".json"), journal{Version: 1, JobID: copy.JobID, InstanceID: copy.InstanceID, Revision: copy.Revision, Digest: copy.Digest, State: journalReported, ReportID: domain.NewID(), Problem: domain.Fail(domain.Unsupported, "Rejected.", "Preserve the source.")}); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := deleteSessionCopies(context.Background(), c, w); e != nil {
+		t.Fatal("failed-only cleanup did not finish", e)
+	}
+	evidence := filepath.Join(c.Root, "session-deletions", string(w.SessionID)+"-workspace-removed.json")
+	if _, e := os.Lstat(evidence); !os.IsNotExist(e) {
+		t.Fatal("failed-only cleanup published shared removal evidence", e)
+	}
+	// A second device obligation with successful preparation stays pending.
+	second := w
+	second.DeletionID, second.DeviceID = domain.NewID(), domain.NewID()
+	second.Copies = []domain.SessionDeletionCopy{{JobID: domain.NewID(), Type: domain.PrepareWorkspaceJob, Revision: 2, Digest: strings.Repeat("ab", 32), InstanceID: domain.NewID()}}
+	if e := writeJSON(filepath.Join(c.Root, "jobs", string(second.Copies[0].JobID)+".json"), journal{Version: 1, JobID: second.Copies[0].JobID, InstanceID: second.Copies[0].InstanceID, Revision: 2, Digest: second.Copies[0].Digest, State: journalReported, ReportID: domain.NewID(), Output: json.RawMessage(`{}`)}); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := deleteSessionCopies(context.Background(), c, second); e == nil {
+		t.Fatal("absence from a failed-only obligation was treated as original removal proof")
+	}
+	if _, e := os.Lstat(filepath.Join(c.Root, "jobs", string(second.Copies[0].JobID)+".json")); e != nil {
+		t.Fatal("second obligation evidence removed", e)
+	}
+}

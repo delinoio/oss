@@ -295,7 +295,7 @@ both primary and auxiliary lanes, reconciles exact retained process indexes,
 and acquires the same workspace lock as preparation/execution/reads. Missing,
 foreign, busy or uncertain evidence remains pending. A missing workspace without
 original removal proof is not completion, except for positively failed preparations
-that never produced a workspace. Worker attempts are bounded to two minutes.
+that never produced a workspace. Such a failed-only cleanup finishes its own obligation but publishes no session-scoped workspace-removal evidence; only removal of an owned workspace (retained manifest) publishes it for later device obligations. Worker attempts are bounded to two minutes.
 
 Worker retained deletion state is bound to each original device obligation, not
 only to the session. The Worker keeps `session-deletions/<session>.json` solely

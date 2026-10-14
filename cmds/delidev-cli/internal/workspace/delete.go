@@ -263,10 +263,18 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 		if e := security.SyncParent(root); e != nil {
 			return domain.SafeError(e)
 		}
-		// Publish the shared evidence before this obligation's own proof so a
-		// crash between the writes never strands another device obligation.
-		if e := writeSharedWorkspaceRemoval(m.Root, w); e != nil {
-			return e
+		if proof.Manifest != nil {
+			// Publish the shared evidence before this obligation's own proof so a
+			// crash between the writes never strands another device obligation.
+			// The retained manifest is the original ownership proof; the proof is
+			// persisted before removal, so recovery still publishes.
+			if e := writeSharedWorkspaceRemoval(m.Root, w); e != nil {
+				return e
+			}
+		} else if m.Logger != nil {
+			// A failed-only preparation never owned a workspace. Its absent-root
+			// cleanup must not become original removal proof for other obligations.
+			m.Logger.InfoContext(ctx, "workspace_deletion_shared_removal_skipped", "session_id", w.SessionID, "deletion_id", w.DeletionID, "reason", "no_owned_manifest")
 		}
 		proof.Removed = true
 		if e := writeDeletionWorkspaceProof(proofPath, proof); e != nil {

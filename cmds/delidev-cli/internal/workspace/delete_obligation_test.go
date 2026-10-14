@@ -100,3 +100,97 @@ func TestSecondDeviceObligationVerifiesSharedWorkspaceRemoval(t *testing.T) {
 		}
 	}
 }
+
+func absentObligation(serverID, sessionID, machineID domain.ID, digest string) domain.SessionDeletionWork {
+	return domain.SessionDeletionWork{Version: 1, DeletionID: domain.NewID(), ServerID: serverID, SessionID: sessionID, MachineID: machineID, DeviceID: domain.NewID(), Copies: []domain.SessionDeletionCopy{{JobID: domain.NewID(), Type: domain.PrepareWorkspaceJob, Revision: 2, Digest: strings.Repeat("ab", 32), InstanceID: domain.NewID()}}, PreparationDigests: []string{digest}}
+}
+
+// A failed-only preparation never owned a workspace. Its absent-root cleanup
+// finishes locally but must not publish removal evidence that a later
+// successful-preparation obligation could mistake for original removal proof.
+func TestAbsentFailedOnlyCleanupPublishesNoSharedRemovalEvidence(t *testing.T) {
+	ctx := context.Background()
+	m := manager(t)
+	session, machine, server := domain.NewID(), domain.NewID(), domain.NewID()
+	if err := m.initialize(); err != nil {
+		t.Fatal(err)
+	}
+	if err := security.PrivateDir(filepath.Join(m.Root, "session-deletions")); err != nil {
+		t.Fatal(err)
+	}
+	failed := absentObligation(server, session, machine, strings.Repeat("ab", 32))
+	strict := absentObligation(server, session, machine, strings.Repeat("cd", 32))
+	evidencePath := sharedWorkspaceRemovalPath(m.Root, failed)
+	copies := 0
+	for i := 0; i < 2; i++ {
+		// A reconstructed Manager must repeat the cleanup idempotently.
+		mm := &Manager{Root: m.Root, Logger: m.Logger}
+		if err := mm.DeleteOwnedWorkspace(ctx, failed, true, func() error { copies++; return nil }); err != nil {
+			t.Fatal("failed-only cleanup", i, err)
+		}
+		if _, err := os.Lstat(evidencePath); !os.IsNotExist(err) {
+			t.Fatal("shared removal evidence was published", i, err)
+		}
+		if _, err := os.Lstat(filepath.Join(m.Root, "workspaces", string(session))); !os.IsNotExist(err) {
+			t.Fatal("workspace was fabricated", i, err)
+		}
+	}
+	if copies != 2 {
+		t.Fatal("failed-only cleanup did not finish its own copy cleanup on each replay", copies)
+	}
+	called := false
+	if err := (&Manager{Root: m.Root, Logger: m.Logger}).DeleteOwnedWorkspace(ctx, strict, false, func() error { called = true; return nil }); err == nil || called {
+		t.Fatal("strict obligation adopted absence without original proof", err)
+	}
+	if _, err := os.Lstat(evidencePath); !os.IsNotExist(err) {
+		t.Fatal("pending strict obligation fabricated evidence", err)
+	}
+}
+
+// Real owned removal still publishes durable shared evidence, and unreadable or
+// foreign evidence keeps later obligations pending.
+func TestOwnedRemovalPublishesEvidenceAndUnreadableEvidenceStaysPending(t *testing.T) {
+	ctx := context.Background()
+	m := manager(t)
+	checkout := repository(t)
+	request, _ := requestFor(checkout)
+	source, err := m.Prepare(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := security.PrivateDir(filepath.Join(m.Root, "session-deletions")); err != nil {
+		t.Fatal(err)
+	}
+	server := domain.NewID()
+	first := absentObligation(server, source.SessionID, source.MachineID, source.InputDigest)
+	second := absentObligation(server, source.SessionID, source.MachineID, strings.Repeat("cd", 32))
+	if err := m.DeleteOwnedWorkspace(ctx, first, true, func() error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	evidencePath := sharedWorkspaceRemovalPath(m.Root, first)
+	if _, err := os.Lstat(evidencePath); err != nil {
+		t.Fatal("owned removal did not publish evidence", err)
+	}
+	// Unreadable evidence leaves the obligation pending.
+	good, err := os.ReadFile(evidencePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(evidencePath, []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	called := false
+	if err := (&Manager{Root: m.Root, Logger: m.Logger}).DeleteOwnedWorkspace(ctx, second, false, func() error { called = true; return nil }); err == nil || called {
+		t.Fatal("unreadable evidence was adopted", err)
+	}
+	if err := os.WriteFile(evidencePath, good, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// A reappearing root is not an absent workspace; the obligation stays pending.
+	if err := os.MkdirAll(filepath.Join(m.Root, "workspaces", string(source.SessionID)), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := (&Manager{Root: m.Root, Logger: m.Logger}).DeleteOwnedWorkspace(ctx, second, false, func() error { called = true; return nil }); err == nil || called {
+		t.Fatal("reappearing root was adopted", err)
+	}
+}
