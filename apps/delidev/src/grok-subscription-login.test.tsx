@@ -474,6 +474,82 @@ it("advances to naming only after verified success, prefilling and focusing the 
   expect(f.cancel).not.toHaveBeenCalled();
 });
 
+// Naming cells: the form is editable only while no uncertain save is retained.
+//
+//   save outcome        name input   Save account name   Retry original request
+//   none yet            enabled      enabled             hidden
+//   in flight           disabled     disabled            hidden
+//   uncertain (kept)    disabled     disabled            enabled; replays the same request
+//   definite refusal    enabled      enabled             hidden
+it("locks the name to the retained request after an uncertain save and replays it unchanged", async () => {
+  const f = fixture();
+  await start(f);
+  f.success();
+  const input = (await screen.findByLabelText(
+    copy("grok-subscription.accountName"),
+    {},
+    { timeout: 3000 },
+  )) as HTMLInputElement;
+  const saveButton = () =>
+    screen.getByRole("button", {
+      name: copy("grok-subscription.saveName"),
+    }) as HTMLButtonElement;
+  fireEvent.change(input, { target: { value: "Retained Grok" } });
+  f.save.mockImplementationOnce(() => {
+    throw typedFailure(Code.Internal, FailureCode.Internal);
+  });
+  fireEvent.click(saveButton());
+  const retry = await screen.findByRole("button", {
+    name: copy("grok-subscription.retryOriginal"),
+  });
+  expect(f.save).toHaveBeenCalledTimes(2);
+  expect(input.disabled).toBe(true);
+  expect(saveButton().disabled).toBe(true);
+  // Neither another submission nor an edit can start a different request.
+  fireEvent.submit(input.closest("form")!);
+  fireEvent.change(input, { target: { value: "Different Grok" } });
+  expect(f.save).toHaveBeenCalledTimes(2);
+  expect(input.value).toBe("Retained Grok");
+  fireEvent.click(retry);
+  await screen.findByRole("button", { name: "Start Grok" });
+  expect(f.save).toHaveBeenCalledTimes(3);
+  expect(f.save.mock.calls[2][0].mutation.requestId).toBe(
+    f.save.mock.calls[1][0].mutation.requestId,
+  );
+  expect(document(f.current())).toMatchObject({ alias: "Retained Grok" });
+});
+
+it("keeps the name editable after a definite naming refusal", async () => {
+  const f = fixture();
+  await start(f);
+  f.success();
+  const input = (await screen.findByLabelText(
+    copy("grok-subscription.accountName"),
+    {},
+    { timeout: 3000 },
+  )) as HTMLInputElement;
+  f.save.mockImplementationOnce(() => {
+    throw typedFailure(Code.PermissionDenied, FailureCode.PermissionDenied);
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: copy("grok-subscription.saveName") }),
+  );
+  await screen.findByText(copy("grok-subscription.problem.nameUnconfirmed"));
+  expect(input.disabled).toBe(false);
+  expect(
+    (
+      screen.getByRole("button", {
+        name: copy("grok-subscription.saveName"),
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(false);
+  expect(
+    screen.queryByRole("button", {
+      name: copy("grok-subscription.retryOriginal"),
+    }),
+  ).toBeNull();
+});
+
 it("falls back to the default name when no valid suggestion exists", async () => {
   const f = fixture();
   f.suggestion("");
@@ -738,6 +814,120 @@ it("never opens a browser or takes a callback for a login whose cancellation was
   ] as const)
     expect(screen.queryByRole("button", { name: copy(name) }), name).toBeNull();
 });
+
+// Native completion after an acknowledged cancellation. The acknowledgement
+// disposes the native binding at once; a native step that was already pending
+// is discarded when it settles.
+//
+//   pending native step   settles with   result
+//   GrokSubscriptionOpen  generation     discarded: no Take, notice kept
+//   GrokSubscriptionOpen  failure        discarded: notice kept
+//   Take                  callback       zeroed, never forwarded
+//   Take                  failure        discarded: notice kept
+it.each([
+  ["a generation", "resolve"],
+  ["a failure", "reject"],
+] as const)(
+  "discards a pending native open that settles with %s after the cancellation was acknowledged",
+  async (_name, outcome) => {
+    const f = fixture();
+    let settle: () => void = () => undefined;
+    f.native.mockImplementation(async (_scope, action, generation) => {
+      if (action !== OAuthNativeAction.GrokSubscriptionOpen)
+        return { generation: generation || newRequestId() };
+      return new Promise((resolve, reject) => {
+        settle = () =>
+          outcome === "resolve"
+            ? resolve({ generation: newRequestId() })
+            : reject("browser-launch-failed");
+      });
+    });
+    render(f.view());
+    fireEvent.click(screen.getByRole("button", { name: "Start Grok" }));
+    await waitFor(
+      () =>
+        expect(actions(f, OAuthNativeAction.GrokSubscriptionOpen)).toHaveLength(
+          1,
+        ),
+      { timeout: 3000 },
+    );
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: copy("grok-subscription.cancel"),
+      }),
+    );
+    await screen.findByText(copy("grok-subscription.problem.canceling"));
+    // The binding is retired at the acknowledgement, before the open settles.
+    expect(actions(f, OAuthNativeAction.Dispose).length).toBeGreaterThan(0);
+    await act(async () => {
+      settle();
+      await new Promise((resolve) => setTimeout(resolve, 1300));
+    });
+    expect(actions(f, OAuthNativeAction.Take)).toHaveLength(0);
+    expect(f.forward).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(copy("grok-subscription.problem.canceling")),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText(copy("grok-subscription.problem.browserFailed")),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", {
+        name: copy("grok-subscription.openBrowser"),
+      }),
+    ).toBeNull();
+    expect(f.cancel).toHaveBeenCalledTimes(1);
+  },
+  20000,
+);
+
+it.each([
+  ["a callback", "callback"],
+  ["a failure", "failure"],
+] as const)(
+  "discards a pending native take that settles with %s after the cancellation was acknowledged",
+  async (_name, outcome) => {
+    const f = fixture();
+    const code = [99, 111, 100, 101];
+    let settle: () => void = () => undefined;
+    f.native.mockImplementation(async (_scope, action, generation) => {
+      if (action !== OAuthNativeAction.Take)
+        return { generation: generation || newRequestId() };
+      return new Promise((resolve, reject) => {
+        settle = () =>
+          outcome === "callback"
+            ? resolve({ generation, code })
+            : reject("take-failed");
+      });
+    });
+    render(f.view());
+    fireEvent.click(screen.getByRole("button", { name: "Start Grok" }));
+    await waitFor(
+      () => expect(actions(f, OAuthNativeAction.Take)).toHaveLength(1),
+      { timeout: 3000 },
+    );
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: copy("grok-subscription.cancel"),
+      }),
+    );
+    await screen.findByText(copy("grok-subscription.problem.canceling"));
+    await act(async () => {
+      settle();
+      await new Promise((resolve) => setTimeout(resolve, 1300));
+    });
+    // The callback is zeroed and never forwarded to the server.
+    if (outcome === "callback") expect(code).toEqual([0, 0, 0, 0]);
+    expect(f.forward).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(copy("grok-subscription.problem.canceling")),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText(copy("grok-subscription.problem.callbackUncertain")),
+    ).toBeNull();
+  },
+  20000,
+);
 
 it("replays an uncertain cancel only through Retry original request and never as a second cancel", async () => {
   const f = fixture();
@@ -2026,6 +2216,93 @@ it("replays the exact original naming request after an uncertain failure on a se
   expect(saves[2][0].mutation.requestId).toBe(saves[1][0].mutation.requestId);
   expect(document(f.current())).toMatchObject({ alias: "Edited Grok" });
 }, 20000);
+
+// Grok Add account availability cells (capability 39 x status read state).
+//
+//   status read              Add account   starts a login
+//   settled, advertised      enabled       yes
+//   settled, not advertised  Coming soon   no
+//   refetching (stale data)  disabled      no
+//   refetch failed           disabled      no
+it.each([
+  ["while a status refetch is in flight", "hang"],
+  ["after a failed status refetch", "fail"],
+] as const)(
+  "disables Grok Add account from stale capability 39 %s",
+  async (_name, mode) => {
+    let next: "ok" | "hang" | "fail" = "ok";
+    const save = vi.fn((request) => ({
+      requestId: request.mutation.requestId,
+      resource: create(ResourceSchema, { id: newRequestId() }),
+    }));
+    const transport = createRouterTransport((router) => {
+      router.service(ConfigurationService, { saveConfiguration: save });
+      router.service(SystemService, {
+        getStatus: () => {
+          if (next === "hang") return new Promise(() => undefined);
+          if (next === "fail")
+            throw typedFailure(Code.Unavailable, FailureCode.Unavailable);
+          return {
+            capabilities: [
+              SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,
+              SystemCapability.GROK_SUBSCRIPTION_LOGIN_V1,
+            ],
+          };
+        },
+      });
+      router.service(ResourceService, {
+        listResources: () => ({ resources: [] }),
+      });
+    });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const native = vi.fn(async () => ({ generation: newRequestId() }));
+    const view = render(
+      <TransportProvider transport={transport}>
+        <QueryClientProvider client={client}>
+          <OAuthNativeProvider control={native}>
+            <SettingsLifetime>
+              {() => (
+                <MutationIntents>
+                  <SubscriptionAccounts
+                    active
+                    editAccount={vi.fn()}
+                    deleteAccount={vi.fn()}
+                  />
+                </MutationIntents>
+              )}
+            </SettingsLifetime>
+          </OAuthNativeProvider>
+        </QueryClientProvider>
+      </TransportProvider>,
+    );
+    const label = (state: string) =>
+      copy("subscription-settings.message_78735b", { v0: "Grok", v1: state });
+    const add = label(copy("subscription-settings.addAccount_ee7ee5"));
+    await waitFor(async () => {
+      const button = await screen.findByRole("button", { name: add });
+      expect((button as HTMLButtonElement).disabled).toBe(false);
+    });
+    next = mode;
+    void client.invalidateQueries();
+    await waitFor(() => {
+      const button = screen.queryByRole("button", { name: add });
+      // The enabled Add account action is gone while the capability is stale.
+      expect(button === null || (button as HTMLButtonElement).disabled).toBe(
+        true,
+      );
+    });
+    const stale = screen.queryByRole("button", { name: add });
+    if (stale) fireEvent.click(stale);
+    // No account was written and no native browser step started.
+    expect(save).not.toHaveBeenCalled();
+    expect(native).not.toHaveBeenCalled();
+    view.unmount();
+    client.clear();
+  },
+  20000,
+);
 
 it.each([[SupportedLanguage.English], [SupportedLanguage.Korean]] as const)(
   "names the real Claude and Grok sign-in state in the connect notice (%s)",

@@ -656,6 +656,10 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
               p.url,
             );
             if (!live(p)) return;
+            // A cancellation acknowledged while the open was pending already
+            // disposed the native binding: the late result is discarded and
+            // never overwrites the cancellation notice.
+            if (p.canceling) return;
             if (!isEntityId(result.generation))
               throw new Error("Invalid native generation");
             p.generation = result.generation;
@@ -666,6 +670,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
               problem: undefined,
             });
           } catch (error) {
+            if (p.canceling) return;
             // A closed incompatible refusal leaves no native binding, so
             // Open browser again would only be refused again: keep it hidden
             // and leave the copyable link as the only way forward. Any other
@@ -693,12 +698,15 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
             );
           } catch {
             p.callbackDispatched = true;
-            update(p, {
-              problem: "grok-subscription.problem.callbackUncertain",
-            });
+            if (!p.canceling)
+              update(p, {
+                problem: "grok-subscription.problem.callbackUncertain",
+              });
             return;
           }
-          if (!live(p)) {
+          // A callback taken after the cancellation was acknowledged is
+          // zeroed and never forwarded.
+          if (!live(p) || p.canceling) {
             result.code?.fill(0);
             return;
           }
@@ -727,9 +735,10 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
                 callbackQuery: query,
               });
             } catch {
-              update(p, {
-                problem: "grok-subscription.problem.forwardUncertain",
-              });
+              if (!p.canceling)
+                update(p, {
+                  problem: "grok-subscription.problem.forwardUncertain",
+                });
             } finally {
               query.fill(0);
               result.code.fill(0);
@@ -777,7 +786,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
           });
           return;
         }
-        if (!live(p)) return;
+        if (!live(p) || p.canceling) return;
         if (
           !isEntityId(result.generation) ||
           (p.generation && result.generation !== p.generation)
@@ -900,6 +909,9 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
           // observing until it reports the terminal state, but a second
           // click must not send another cancel mutation.
           p.canceling = true;
+          // Retire the native receiver now: no browser binding, callback take
+          // or forwarding can complete after the acknowledged cancellation.
+          disposeNative(p);
           update(p, {
             problem: "grok-subscription.problem.canceling",
             canCancel: false,
@@ -918,7 +930,8 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
       !p ||
       !live(p) ||
       view?.stage !== GrokLoginStage.Naming ||
-      !subscriptionNameValid(view.name)
+      !subscriptionNameValid(view.name) ||
+      p.retry
     )
       return;
     const alias = view.name;
@@ -1064,14 +1077,17 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
     waiting = v.stage === GrokLoginStage.Waiting,
     inFlight = waiting || v.stage === GrokLoginStage.Preparing,
     busy = !active || v.busy;
+  // An uncertain naming save keeps its exact request: the name stays frozen and
+  // Retry original request is the only mutation path until it settles.
+  const locked = busy || v.canRetry;
   const nameInput = useRef<HTMLInputElement>(null),
     focused = useRef(false);
   useEffect(() => {
-    if (visible && active && naming && !busy && !focused.current) {
+    if (visible && active && naming && !locked && !focused.current) {
       focused.current = true;
       nameInput.current?.focus({ preventScroll: true });
     }
-  }, [visible, active, naming, busy]);
+  }, [visible, active, naming, locked]);
   const d = v.diagnostic,
     diagnostic =
       d &&
@@ -1152,7 +1168,7 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
           id={formId}
           onSubmit={(event) => {
             event.preventDefault();
-            if (!busy && subscriptionNameValid(v.name)) props.saveName();
+            if (!locked && subscriptionNameValid(v.name)) props.saveName();
           }}
         >
           <label htmlFor="grok-subscription-name">
@@ -1164,8 +1180,10 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
             autoComplete="off"
             required
             value={v.name}
-            disabled={busy}
-            onChange={(event) => props.changeName(event.target.value)}
+            disabled={locked}
+            onChange={(event) => {
+              if (!locked) props.changeName(event.target.value);
+            }}
             aria-describedby="grok-subscription-name-help"
           />
           <p id="grok-subscription-name-help">
@@ -1179,7 +1197,7 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
             <SettingsActionButton
               icon={SettingsActionIcon.Save}
               className="primary"
-              disabled={busy || !subscriptionNameValid(v.name)}
+              disabled={locked || !subscriptionNameValid(v.name)}
             >
               {copy("grok-subscription.saveName")}
             </SettingsActionButton>

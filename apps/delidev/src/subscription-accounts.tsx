@@ -801,7 +801,14 @@ export function SubscriptionAccounts({
     status.data?.capabilities.includes(
       SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1,
     ) === true;
+  // Capability 39 counts only from a settled, error-free status read. React
+  // Query keeps the previous data during a refetch and after a failed one, so a
+  // stale advertisement must not keep Grok Add account enabled (it would create
+  // an account before the server could refuse the login).
   const grokLoginCapable =
+    status.isSuccess &&
+    !status.error &&
+    !status.isFetching &&
     status.data?.capabilities.includes(
       SystemCapability.GROK_SUBSCRIPTION_LOGIN_V1,
     ) === true;
