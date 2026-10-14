@@ -994,6 +994,24 @@ mod tests {
     }
 
     #[test]
+    fn disabled_minification_suppresses_env_condition_findings() {
+        let fixture = run_fixture(BundlerChoice::Rspack, |value| {
+            value["minifyEnabled"] = serde_json::json!(false);
+        });
+        let diagnostics = &fixture.output.analysis.diagnostics;
+        assert!(
+            !diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.rule == "minifier/unresolved-env-condition")
+        );
+        assert!(
+            diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.rule == "minifier/minification-disabled")
+        );
+    }
+
+    #[test]
     fn disabled_minification_does_not_claim_a_non_default_minifier() {
         let fixture = run_fixture(BundlerChoice::Vite, |value| {
             value["minifyEnabled"] = serde_json::json!(false);

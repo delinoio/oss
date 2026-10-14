@@ -15,7 +15,11 @@ use crate::{
 
 pub fn run(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
     duplicate_packages(context, drafts);
-    unresolved_env_conditions(context, drafts);
+    // Without a minifier, retained `process.env` reads are expected; the
+    // confirmed minification-disabled finding explains them instead.
+    if context.collection.minify_enabled {
+        unresolved_env_conditions(context, drafts);
+    }
     minification_disabled(context, drafts);
     direct_eval_mangling(context, drafts);
 }
