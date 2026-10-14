@@ -48,10 +48,14 @@ const (
 	accountCommandTimeout = 30 * time.Second
 	accountPromptTimeout  = 3 * time.Minute
 	accountCleanupTimeout = 30 * time.Second
-	maxAccountLine        = 16 << 10
-	maxAccountFrame       = 4 << 20
-	maxAccountOutput      = 64 << 10
-	cachedTokenMethod     = "cached_token"
+	// accountFixedBudget bounds every non-approval step: version 30s, models 30s,
+	// the 3m prompt turn, logout 30s, post-logout models 30s and the cleanup logout
+	// 30s, rounded up. The package timeout must cover the approval wait plus this.
+	accountFixedBudget = 6 * time.Minute
+	maxAccountLine     = 16 << 10
+	maxAccountFrame    = 4 << 20
+	maxAccountOutput   = 64 << 10
+	cachedTokenMethod  = "cached_token"
 )
 
 var (
@@ -93,6 +97,20 @@ func approvalTimeout(raw string) (time.Duration, error) {
 		return 0, fmt.Errorf("%s must be a Go duration between 10s and 30m", approvalTimeoutEnv)
 	}
 	return value, nil
+}
+
+// checkTimeBudget fails fast when the go test deadline cannot cover the approval
+// wait plus the fixed steps, so a documented approval override is never cut off
+// by the package timeout in the middle of a login.
+func checkTimeBudget(deadline time.Time, hasDeadline bool, now time.Time, approval time.Duration) error {
+	if !hasDeadline {
+		return nil
+	}
+	need := approval + accountFixedBudget
+	if remaining := deadline.Sub(now); remaining < need {
+		return fmt.Errorf("the go test -timeout leaves %s but an approval wait of %s needs at least %s; raise -timeout (the runbook uses 45m)", remaining.Round(time.Second), approval, need)
+	}
+	return nil
 }
 
 // authFileDigest hashes a file without returning or printing any of its content.
@@ -665,6 +683,10 @@ func TestAccountAcceptance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	deadline, hasDeadline := t.Deadline()
+	if err := checkTimeBudget(deadline, hasDeadline, time.Now(), timeout); err != nil {
+		t.Fatal(err)
+	}
 	// Registered first so it runs last, after the scratch cleanup.
 	checkRealAuth := guardRealAuth(t)
 	terminal, err := approvalTerminal()
@@ -1009,5 +1031,22 @@ func TestNativeAccountHarnessACPFrames(t *testing.T) {
 	_, _ = frames.Write([]byte("not json\n"))
 	if _, _, err := frames.pop(); err == nil {
 		t.Fatal("non-JSON frame accepted")
+	}
+}
+
+func TestNativeAccountHarnessTimeBudget(t *testing.T) {
+	now := time.Now()
+	if err := checkTimeBudget(time.Time{}, false, now, 30*time.Minute); err != nil {
+		t.Fatalf("no deadline must pass: %v", err)
+	}
+	// The runbook's 45m package timeout covers the maximum 30m approval wait.
+	if err := checkTimeBudget(now.Add(45*time.Minute), true, now, 30*time.Minute); err != nil {
+		t.Fatalf("45m must cover a 30m approval: %v", err)
+	}
+	if err := checkTimeBudget(now.Add(10*time.Minute), true, now, defaultApprovalTimeout); err == nil {
+		t.Fatal("a 10m package timeout cannot cover the default approval plus the fixed steps")
+	}
+	if err := checkTimeBudget(now.Add(10*time.Minute), true, now, 30*time.Minute); err == nil {
+		t.Fatal("a 10m package timeout cannot cover a 30m approval override")
 	}
 }

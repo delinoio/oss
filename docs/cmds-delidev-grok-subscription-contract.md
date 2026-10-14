@@ -464,13 +464,20 @@ the controlling terminal, `/dev/tty` or `CONOUT$`; the run fails without one):
 ```sh
 cd cmds/delidev-cli
 DELIDEV_NATIVE_GROK_ACCOUNT=1 DELIDEV_NATIVE_GROK_EXECUTABLE="$HOME/.grok/bin/grok" \
-  go test ./internal/harness/grok/ -run 'TestAccountAcceptance' -count=1 -v -timeout 10m
+  go test ./internal/harness/grok/ -run 'TestAccountAcceptance' -count=1 -v -timeout 45m
 ```
 
 `-count=1` is mandatory. Go caches a passing result and would replay a cached
 PASS without launching the CLI even after the Grok binary, its release or the
 account changed; the test environment does not include the binary's contents.
 Never record a run whose output ends in `(cached)`.
+
+`-timeout` must cover the longest approval wait plus the other steps. The owner
+may take up to 30 minutes (`DELIDEV_NATIVE_GROK_APPROVAL_TIMEOUT=30m`) and the
+remaining steps need up to 6 minutes, so the runbook uses `45m`. The test checks
+`go test -timeout` first and fails before any login when the remaining time is
+shorter than the approval wait plus 6 minutes; raise `-timeout` for such a run
+instead of lowering the approval wait below what the owner needs.
 
 The test uses a fresh scratch tree (`HOME`, `GROK_HOME`, XDG and temp variables
 all inside it, a scratch git repository as working directory) and the CLI with
