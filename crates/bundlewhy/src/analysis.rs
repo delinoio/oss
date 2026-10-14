@@ -1139,7 +1139,9 @@ mod tests {
             ("false", None),
             ("null", Some("false")),
             ("false", Some("false")),
-            ("true", Some("false")),
+            // A module value takes precedence over the package declaration.
+            ("false", Some("true")),
+            ("false", Some("[array of 2]")),
         ] {
             let finding = retained_register(module, package);
             assert_eq!(
@@ -1185,6 +1187,11 @@ mod tests {
             ("true", None),
             ("no-treeshake", None),
             ("null", Some("true")),
+            // A module value takes precedence over package `sideEffects: false`.
+            ("true", Some("false")),
+            ("no-treeshake", Some("false")),
+            ("true", Some("true")),
+            ("true", Some("[array of 2]")),
         ] {
             let finding = retained_register(module, package);
             assert_eq!(

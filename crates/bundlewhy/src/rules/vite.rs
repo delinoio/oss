@@ -151,10 +151,11 @@ fn side_effect_retained(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
 /// say about a module that Rolldown rendered without any used export.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SideEffectDeclaration {
-    /// Either source declares the module side-effect free (`false`).
+    /// The effective declaration is side-effect free (`false`): the module
+    /// value, or the package value when the module value is unspecified.
     Free,
-    /// Neither source declares it free and one declares effects (`true` or
-    /// `no-treeshake`).
+    /// The effective declaration is effectful (`true` or `no-treeshake`),
+    /// chosen with the same module-over-package precedence.
     Effectful,
     /// An array summary or unrecognized value cannot be matched to this file.
     Unresolved,
@@ -163,16 +164,23 @@ enum SideEffectDeclaration {
 }
 
 impl SideEffectDeclaration {
+    /// Rolldown gives a `moduleSideEffects` value set by a resolve, load or
+    /// transform hook precedence over the package `sideEffects` field, so the
+    /// collected module value is the effective decision. The package value
+    /// applies only when the module value is unspecified (`null`).
     fn from_collected(module: &str, package: &str) -> Self {
-        if module == "false" || package == "false" {
-            Self::Free
-        } else if matches!(module, "true" | "no-treeshake") || package == "true" {
-            Self::Effectful
-        } else if module == "null" && package == "not declared" {
-            Self::Undeclared
-        } else {
-            // Array summaries and unrecognized values prove nothing either way.
-            Self::Unresolved
+        match module {
+            "false" => Self::Free,
+            "true" | "no-treeshake" => Self::Effectful,
+            "null" | "undefined" => match package {
+                "false" => Self::Free,
+                "true" => Self::Effectful,
+                "not declared" => Self::Undeclared,
+                // Array summaries and unrecognized values prove nothing either way.
+                _ => Self::Unresolved,
+            },
+            // An unrecognized module value cannot be matched to the package value.
+            _ => Self::Unresolved,
         }
     }
 
@@ -180,20 +188,33 @@ impl SideEffectDeclaration {
         let values = format!("moduleSideEffects: {module}; package sideEffects: {package}");
         match self {
             Self::Free => {
-                let source = match (module == "false", package == "false") {
-                    (true, true) => "moduleSideEffects and package sideEffects",
-                    (true, false) => "moduleSideEffects",
-                    _ => "package sideEffects",
+                // The module value wins when it is set, so only it is named
+                // then.
+                let source = if module == "false" {
+                    "moduleSideEffects"
+                } else {
+                    "package sideEffects"
                 };
                 (
                     ConditionOutcome::Met,
                     format!("Declared side-effect free by {source}; {values}"),
                 )
             }
-            Self::Effectful => (
-                ConditionOutcome::Unmet,
-                format!("Side effects are declared; {values}"),
-            ),
+            Self::Effectful => {
+                let source = if matches!(module, "true" | "no-treeshake") {
+                    if package == "false" {
+                        "moduleSideEffects, which takes precedence over package sideEffects: false"
+                    } else {
+                        "moduleSideEffects"
+                    }
+                } else {
+                    "package sideEffects"
+                };
+                (
+                    ConditionOutcome::Unmet,
+                    format!("Side effects are declared by {source}; {values}"),
+                )
+            }
             Self::Unresolved => (
                 ConditionOutcome::Unknown,
                 format!(
@@ -218,8 +239,9 @@ impl SideEffectDeclaration {
             }
             Self::Effectful => {
                 "Move top-level side effects into an exported function that callers invoke \
-                 explicitly, or narrow the \"sideEffects\" declaration in package.json to the \
-                 files that do have side effects."
+                 explicitly, or narrow the side-effect declaration (a plugin's moduleSideEffects \
+                 value or the \"sideEffects\" list in package.json) to the files that do have side \
+                 effects."
             }
             Self::Unresolved => {
                 "Check whether this file is covered by the \"sideEffects\" list in package.json. \
@@ -447,4 +469,63 @@ fn tree_shaking_disabled_finding(context: &mut Context<'_>, drafts: &mut Vec<Dia
             .to_owned(),
         dependency: false,
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn side_effect_declaration_precedence_table() {
+        use SideEffectDeclaration::{Effectful, Free, Undeclared, Unresolved};
+        // (moduleSideEffects, package sideEffects, effective declaration)
+        let table = [
+            // A set module value wins over every package value.
+            ("false", "not declared", Free),
+            ("false", "false", Free),
+            ("false", "true", Free),
+            ("false", "[array of 2]", Free),
+            ("true", "not declared", Effectful),
+            ("true", "false", Effectful),
+            ("true", "true", Effectful),
+            ("true", "[array of 2]", Effectful),
+            ("no-treeshake", "not declared", Effectful),
+            ("no-treeshake", "false", Effectful),
+            ("no-treeshake", "true", Effectful),
+            ("no-treeshake", "[array of 2]", Effectful),
+            // An unspecified module value falls back to the package value.
+            ("null", "false", Free),
+            ("null", "true", Effectful),
+            ("null", "not declared", Undeclared),
+            ("null", "[array of 2]", Unresolved),
+            ("undefined", "false", Free),
+            ("undefined", "not declared", Undeclared),
+            // Unrecognized module summaries prove nothing either way.
+            ("[array of 2]", "false", Unresolved),
+            ("[function]", "true", Unresolved),
+            ("[object]", "not declared", Unresolved),
+        ];
+        for (module, package, expected) in table {
+            let declaration = SideEffectDeclaration::from_collected(module, package);
+            assert_eq!(declaration, expected, "{module} / {package}");
+            let (outcome, detail) = declaration.condition(module, package);
+            let expected_outcome = match expected {
+                Free => ConditionOutcome::Met,
+                Effectful | Undeclared => ConditionOutcome::Unmet,
+                Unresolved => ConditionOutcome::Unknown,
+            };
+            assert_eq!(outcome, expected_outcome, "{module} / {package}");
+            assert!(
+                detail.contains(module) && detail.contains(package),
+                "{detail}"
+            );
+        }
+    }
+
+    #[test]
+    fn module_override_is_named_in_the_condition_detail() {
+        let declaration = SideEffectDeclaration::from_collected("true", "false");
+        let (_, detail) = declaration.condition("true", "false");
+        assert!(detail.contains("takes precedence over package sideEffects"));
+    }
 }
