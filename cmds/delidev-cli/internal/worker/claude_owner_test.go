@@ -16,6 +16,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
@@ -776,6 +777,31 @@ func TestClaudeSharedOwnerRecoveryCleansCanonicalProfileAfterFoundingMemberFinis
 	var settled managedSubscriptionJournal
 	if err != nil || domain.Decode(raw, &settled) != nil || !settled.OwnerProfileCleaned {
 		t.Fatal("recovery did not record the canonical profile cleanup durably", err)
+	}
+}
+
+func TestNativeClaudeSharedOwnerRecoversRemovedProfileRegistration(t *testing.T) {
+	f := newSharedClaudeFixture(t, true)
+	members := f.start(t, 2)
+	state := f.lostOwnerState(members)
+	// Model the durable point after the original native profile was removed
+	// but before its registry entry was published as deleted.
+	if err := os.RemoveAll(f.profileRoot); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.recover(state); err != nil {
+		t.Fatal("original cleanup could not retire the stale registry entry", err)
+	}
+	registry, err := nativeProfiles(f.config, f.cred.MachineID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found, err := registry.Exists(context.Background(), nativeprofile.DeleteScope{Account: f.account, Purpose: nativeprofile.PurposeAuth, Harness: domain.ClaudeCode}); err != nil || found {
+		t.Fatal("original cleanup left a stale profile registration", err)
+	}
+	last := f.lastFinish()
+	if !last.CleanupConfirmed || last.Succeeded {
+		t.Fatal("original cleanup was not reported accurately")
 	}
 }
 
