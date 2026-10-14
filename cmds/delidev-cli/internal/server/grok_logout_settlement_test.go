@@ -32,6 +32,37 @@ func TestGrokLogoutAmbiguousDisconnectCommitIsReconciledNotFenced(t *testing.T) 
 	}
 }
 
+// The revocation claim committed but reported a lost commit acknowledgement. The
+// durable claim decides: the logout is uncertain and fenced, so no later logout
+// can overwrite the claim and send the same refresh token again.
+func TestGrokLogoutAmbiguousClaimCommitStaysClaimedAndFenced(t *testing.T) {
+	g := newGrokLoginFixture(t)
+	before := g.connected(t)
+	g.failAt(grokFaultAfterRevokeClaimCommit)
+	op := g.logout(t)
+	g.service.grokFaultHook = nil
+	if g.idp.RevokeRequests() != 0 {
+		t.Fatal("a revocation was sent after a claim error")
+	}
+	g.requireRetained(t, before, domain.GrokRevocationClaimed)
+	p := g.progressFor(op.OperationId)
+	if p.State != pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_RECOVERY_REQUIRED || p.GrokDiagnostic == nil || p.GrokDiagnostic.Phase != pb.GrokDiagnosticPhase_GROK_DIAGNOSTIC_PHASE_LOGOUT || p.GrokDiagnostic.Code != string(domain.RecoveryRequired) {
+		t.Fatalf("progress lacks the LOGOUT recovery diagnostic: %v", p.State)
+	}
+	_, a := g.record()
+	if grokLogoutRecoveryKind(a) != grokLogoutNone {
+		t.Fatal("a claimed revocation is automatically recoverable")
+	}
+	// A new logout cannot overwrite the claim while the fence stands.
+	if _, err := g.client.RequestSubscription(context.Background(), subscriptionRequest(g.service.Identity.Token, &pb.RequestSubscriptionRequest{Mutation: g.mutation(), Action: logoutAction})); err == nil {
+		t.Fatal("a second logout was accepted over a claimed revocation")
+	}
+	g.restart(t)
+	if g.idp.RevokeRequests() != 0 {
+		t.Fatal("a restart sent the claimed revocation")
+	}
+}
+
 // A logout lease whose commit acknowledgement was lost is fenced so that the
 // scanner settles it; nothing was sent and the credential is intact.
 func TestGrokLogoutLeaseWithALostAcknowledgementIsFencedForTheScanner(t *testing.T) {

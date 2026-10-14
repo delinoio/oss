@@ -61,9 +61,10 @@ const (
 	grokFaultAfterRevoke             grokFaultPoint = "after_revoke"
 	grokFaultAfterRevocationRecorded grokFaultPoint = "after_revocation_recorded"
 	grokFaultAfterLogoutCleanup      grokFaultPoint = "after_logout_cleanup"
-	// grokFaultAfterLogoutDisconnect runs after a committed transaction and stands
-	// for a lost commit acknowledgement.
-	grokFaultAfterLogoutDisconnect grokFaultPoint = "after_logout_disconnect"
+	// grokFaultAfterRevokeClaimCommit and grokFaultAfterLogoutDisconnect run after
+	// a committed transaction and stand for a lost commit acknowledgement.
+	grokFaultAfterRevokeClaimCommit grokFaultPoint = "after_revoke_claim_commit"
+	grokFaultAfterLogoutDisconnect  grokFaultPoint = "after_logout_disconnect"
 )
 
 // grokFault runs the test seam at point. Only the lease and settlement points

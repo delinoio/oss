@@ -246,7 +246,13 @@ func (s *Service) claimGrokRevocation(ctx context.Context, id domain.ID, o domai
 		}
 		return struct{}{}, nil
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	// A claim whose commit acknowledgement is lost reports an error although the
+	// claim is durable; settlement re-reads the claim instead of trusting this
+	// error.
+	return s.grokFault(grokFaultAfterRevokeClaimCommit)
 }
 
 // grokLogoutDiagnostic builds the durable diagnostic of a failed or uncertain
@@ -281,7 +287,6 @@ func (s *Service) settleGrokLogoutWithoutRevocation(ctx context.Context, id doma
 		return err
 	}
 	defer unlock()
-	diagnostic := grokLogoutDiagnostic(o, outcome.state, outcome.code)
 	_, err = s.Store.Mutate(ctx, o.FinishID, "grok.server.logout-finish", struct {
 		Account, Operation domain.ID
 		State              domain.SubscriptionLoginState
@@ -295,7 +300,15 @@ func (s *Service) settleGrokLogoutWithoutRevocation(ctx context.Context, id doma
 		if st == nil || st.ServerOperation == nil || st.ServerOperation.ID != o.ID || !st.ServerOperation.NativeStarted || st.Generation != o.Generation || st.RecoveryRequired || st.Pending == nil || st.Pending.ID != o.ID {
 			return nil, subscriptionDenied()
 		}
-		st.ServerOperation.GrokDiagnostic = diagnostic
+		// The durable claim decides, not the error that reported the claim: a claim
+		// whose commit acknowledgement was lost is still a claim, and the token may
+		// be sent by a later logout once the pending operation is cleared. Such a
+		// failure is therefore uncertain, never a plain failed logout.
+		outcome := outcome
+		if st.ServerOperation.GrokRevocation != "" && outcome.state != domain.SubscriptionRecovery {
+			outcome.state, outcome.code, outcome.claimed = domain.SubscriptionRecovery, domain.RecoveryRequired, true
+		}
+		st.ServerOperation.GrokDiagnostic = grokLogoutDiagnostic(o, outcome.state, outcome.code)
 		if outcome.state == domain.SubscriptionRecovery {
 			st.RecoveryRequired = true
 			a.Health = domain.AccountFailed
