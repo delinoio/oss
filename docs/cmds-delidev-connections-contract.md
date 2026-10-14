@@ -123,6 +123,19 @@ The separate ephemeral loopback ingress mounts connection identity, bounded
 approval and existing authenticated Connect business transports. It excludes
 private generation challenges, native relays, locators and UI paths. Authenticated
 status exposes the public ingress origin instead of the private listener.
+When Enable observes `NeedsLogin` (State `logged-out`), `Manager.enable` fails
+before the generic Running/HTTPS/Self guard with code `unavailable`, message
+exactly `Tailscale login is required.` and guidance exactly `Open Tailscale on
+this computer and sign in. Then refresh Tailscale devices and inspect the
+original access request.` (`tailscale.LoginRequired`). The enabled receipt and
+request ID are retained, access is `setup-required`, and no ingress listener or
+Serve child starts. Only `NeedsLogin` is relabelled: NeedsMachineAuth, Stopped,
+Starting, NoState, missing client, unsupported status, HTTPS ineligibility and
+cleanup failures keep the generic unavailable message and guidance. The text
+crosses `rpc.Error` and `rpc.ClientError` unchanged with no proto schema
+change. The log line records only the phase and `login_required` reason, never
+native output or the identity inventory.
+
 Disable, native child exit, server Stop and Quit fence ingress before joining
 only the retained child. Never call global reset or port-wide off. Reconcile a
 retained owner even when Enabled is false. Unknown native cleanup stays required.

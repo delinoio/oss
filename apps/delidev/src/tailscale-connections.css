@@ -50,3 +50,7 @@
     width: 100%;
   }
 }
+.tailscale-access .problem {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
