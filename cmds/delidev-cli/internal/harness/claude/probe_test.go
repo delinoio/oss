@@ -382,7 +382,7 @@ func TestInitializeValidatesClaude287Fields(t *testing.T) {
 }
 
 func TestProbeRejectsInvalidProfileOrRuntimeBeforeLaunch(t *testing.T) {
-	for _, change := range []string{"version", "cwd", "home", "retained-config", "retained-cache", "path", "duplicate-path", "nonprivate"} {
+	for _, change := range []string{"version", "cwd", "home", "retained-config", "path", "duplicate-path", "nonprivate"} {
 		t.Run(change, func(t *testing.T) {
 			if change == "nonprivate" && runtime.GOOS == "windows" {
 				t.Skip("Unix mode fixture; Windows uses native ACLs")
@@ -397,10 +397,6 @@ func TestProbeRejectsInvalidProfileOrRuntimeBeforeLaunch(t *testing.T) {
 				cfg.Home = "relative"
 			case "retained-config":
 				if err := os.WriteFile(filepath.Join(cfg.Home, "settings.json"), []byte(`{}`), 0600); err != nil {
-					t.Fatal(err)
-				}
-			case "retained-cache":
-				if err := os.WriteFile(filepath.Join(cfg.Process.Cwd, "cache", "previous"), []byte("private"), 0600); err != nil {
 					t.Fatal(err)
 				}
 			case "path":
@@ -533,6 +529,21 @@ func TestProbeCancellationAtPreparedNativeBarrierIsTypedAndJoined(t *testing.T) 
 	}
 	if err := process.ReconcileOwner(cfg.Process.Directory, cfg.Process.OwnerID); err != nil {
 		t.Fatal("canceled prepared probe did not join cleanup", err)
+	}
+}
+
+// A persistent profile keeps native caches and history; only user-authored
+// configuration surfaces are refused.
+func TestProbeAcceptsRetainedNativeCacheAndHelperState(t *testing.T) {
+	cfg, _ := fixtureConfig(t, "valid")
+	if err := os.WriteFile(filepath.Join(cfg.Process.Cwd, "cache", "previous"), []byte("private"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(cfg.Home, "projects"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := probeEnvironment(cfg); err != nil {
+		t.Fatalf("retained native state blocked reuse: %v", err)
 	}
 }
 

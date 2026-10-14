@@ -172,8 +172,9 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			}
 		}()
 	}
-	// The private runtime is retained for native resume/reconciliation. Never
-	// inherit an existing directory after an interrupted first execution.
+	// The per-execution directory is only the operation journal. It must be fresh
+	// so an interrupted first execution is never inherited; native state lives in
+	// the persistent conversation profile resolved below.
 	runtimeRoot := filepath.Join(manager.Root, "runtimes")
 	if err := security.PrivateDir(runtimeRoot); err != nil {
 		return nil, domain.SafeError(err)
@@ -182,15 +183,27 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	if _, err := os.Lstat(home); !errors.Is(err, os.ErrNotExist) {
 		return nil, publicationUncertain()
 	}
+	if err := security.CreatePrivateDirExclusive(home); err != nil {
+		return nil, publicationUncertain()
+	}
 	var ordinaryTools executionenv.Ordinary
 	if input.Configuration.SidechatPolicy == "" {
 		ordinaryTools = ordinaryExecutionTools(config.Logger)
 	}
-	env, err := harness.PrivateRuntimeEnvironment(home)
+	profile, err := codexExecutionProfile(ctx, config, input)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := profile.Close(); err != nil {
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
+		}
+	}()
+	env, err := harness.PrivateRuntimeEnvironment(profile.Root)
 	if err != nil {
 		return nil, domain.SafeError(err)
 	}
-	nativeHome := filepath.Join(home, "codex")
+	nativeHome := filepath.Join(profile.Root, "codex")
 	var checkpoint CodexExecutionCheckpoint
 	var compacted *codex.CompactedCheckpoint
 	if c := input.Continuation; c != nil {
@@ -208,15 +221,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		if err != nil {
 			return nil, err
 		}
-		nativeHome = filepath.Join(runtimeRoot, string(c.HistoryExecutionID), "codex")
-		replaced := 0
-		for i, entry := range env {
-			if strings.HasPrefix(entry, "CODEX_HOME=") {
-				env[i] = "CODEX_HOME=" + nativeHome
-				replaced++
-			}
-		}
-		if replaced != 1 {
+		if security.CheckPrivateDir(nativeHome) != nil {
 			return nil, executionCheckpointUncertain()
 		}
 		if c.Compaction == nil {
@@ -242,10 +247,8 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			return nil, err
 		}
 		checkpoint.Native = native
-		nativeHome = filepath.Join(runtimeRoot, string(f.RuntimeID), "codex")
-		env, err = replaceCodexHome(env, nativeHome)
-		if err != nil {
-			return nil, err
+		if security.CheckPrivateDir(nativeHome) != nil {
+			return nil, executionCheckpointUncertain()
 		}
 	}
 	if prGit != nil {
@@ -343,7 +346,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 				}
 			}
 		}()
-		if err := security.WriteAtomic(filepath.Join(nativeHome, "auth.json"), managed.response.Bundle); err != nil {
+		if err := subscription.WriteCredentialFile(filepath.Join(nativeHome, "auth.json"), managed.response.Bundle); err != nil {
 			return nil, subscription.Invalid()
 		}
 	}

@@ -78,7 +78,15 @@ func WriteAtomic(path string, contents []byte) error {
 // Storage cleanup must inventory these files even when their contents are partial.
 // Ordinary callers retain their existing temporary-file naming contract.
 func WriteAtomicOwned(path string, contents []byte) error {
-	return writeAtomic(path, contents, ".pending-"+filepath.Base(path)+"-")
+	return writeAtomic(path, contents, OwnedTemporaryPrefix(path))
+}
+
+// OwnedTemporaryPrefix is the name prefix of every temporary file that
+// WriteAtomicOwned and WriteAtomicOwnedMode create for path. A crash between
+// the temporary write and the rename leaves a file with this prefix, which
+// lets a cleaner attribute the remnant to its target.
+func OwnedTemporaryPrefix(path string) string {
+	return ".pending-" + filepath.Base(path) + "-"
 }
 
 // WriteAtomicOwnedMode retains only owner read/write and an optional owner execute bit.
@@ -87,7 +95,7 @@ func WriteAtomicOwnedMode(path string, contents []byte, executable bool) error {
 	if executable {
 		mode = 0700
 	}
-	return writeAtomicMode(path, contents, ".pending-"+filepath.Base(path)+"-", mode)
+	return writeAtomicMode(path, contents, OwnedTemporaryPrefix(path), mode)
 }
 
 func writeAtomic(path string, contents []byte, prefix string) error {

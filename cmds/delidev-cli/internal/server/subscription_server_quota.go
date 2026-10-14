@@ -263,7 +263,7 @@ func (s *Service) runServerQuota(parent context.Context, id domain.ID) {
 				opener = openServerQuota
 			}
 			auth := codex.QuotaAuthentication{Access: parsed.Tokens.Access, Account: identity.Account, Plan: identity.Plan}
-			native, openErr := opener(ctx, s.Store.Root(), original.ID, auth, s.logger)
+			native, openErr := opener(ctx, s.scopeFor(id), original.ID, auth, s.logger)
 			readErr = openErr
 			if native == nil {
 				cleanup = openErr != nil && domain.SafeError(openErr).Code != domain.RecoveryRequired

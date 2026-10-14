@@ -63,15 +63,30 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
 	}()
+	// The per-execution directory is only the fresh operation journal; native
+	// state lives in the persistent conversation profile resolved below.
 	runtimeRoot := filepath.Join(manager.Root, "runtimes")
 	if err := security.PrivateDir(runtimeRoot); err != nil {
 		return nil, domain.SafeError(err)
 	}
-	home := filepath.Join(runtimeRoot, string(input.ExecutionID))
-	if _, err := os.Lstat(home); !errors.Is(err, os.ErrNotExist) {
+	journal := filepath.Join(runtimeRoot, string(input.ExecutionID))
+	if _, err := os.Lstat(journal); !errors.Is(err, os.ErrNotExist) {
+		return nil, publicationUncertain()
+	}
+	if err := security.CreatePrivateDirExclusive(journal); err != nil {
 		return nil, publicationUncertain()
 	}
 	ordinaryTools := ordinaryExecutionTools(config.Logger)
+	profile, err := executionProfile(ctx, config, domain.ClaudeCode, input)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := profile.Close(); err != nil {
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
+		}
+	}()
+	home := profile.Root
 	env, err := harness.PrivateRuntimeEnvironment(home)
 	if err != nil {
 		return nil, domain.SafeError(err)
@@ -172,10 +187,14 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 		if nativeProfile.historyVersion == claudeProfileV2 {
 			// Session-private configuration and history with the one canonical
 			// secure-storage namespace. A continuation re-binds the history to the
-			// previous private directory before restoring its checkpoint.
+			// previous private history profile before restoring its checkpoint.
 			history := nativeConfig.Home
 			if c := input.Continuation; c != nil {
-				history = filepath.Join(manager.Root, "runtimes", string(c.HistoryExecutionID), "claude")
+				historyRoot, err := historyNativeRoot(ctx, manager.Root, input.MachineID, domain.ClaudeCode, historyAccount(input), c.HistoryExecutionID)
+				if err != nil {
+					return nil, err
+				}
+				history = filepath.Join(historyRoot, "claude")
 			}
 			nativeConfig.Subscription = &claude.NativeSubscriptionProfile{ID: nativeProfile.owner.Profile, Home: history, SecureStorageHome: nativeProfile.home}
 		}

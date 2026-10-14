@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
@@ -30,7 +32,8 @@ func TestInstalledCodexSubscriptionBrowserPreparation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	root, owner := t.TempDir(), domain.NewID()
-	native, err := openServerSubscription(ctx, root, owner, nil, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	scope := testNativeScope(t, root)
+	native, err := openServerSubscription(ctx, scope, owner, nil, slog.New(slog.NewJSONHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal("isolated native initialization failed", domain.SafeError(err).Code)
 	}
@@ -55,7 +58,7 @@ func TestInstalledCodexSubscriptionBrowserPreparation(t *testing.T) {
 	if !valid || progress.UserCode != "" {
 		t.Fatal("native preparation did not return a supported original browser callback")
 	}
-	if _, err := os.Lstat(filepath.Join(root, "subscription-runtime", "auth", string(owner), "codex", "auth.json")); !os.IsNotExist(err) {
+	if present, _ := subscription.CredentialFilePresent(profileRootFor(t, scope, domain.Codex, nativeprofile.PurposeAuth)); present {
 		t.Fatal("preparation unexpectedly created account credentials")
 	}
 	t.Logf("version=%s callback=%s; preparation only, no browser, OAuth completion or inference", native.Version(), callback)
@@ -95,9 +98,8 @@ func TestInstalledCodexInterruptedLoginCleanup(t *testing.T) {
 	if a.Health != domain.AccountDisconnected || a.Subscription.RecoveryRequired || a.Subscription.Pending != nil || a.Subscription.ServerOperation.NativeStarted || a.Subscription.ServerOperation.CleanupPhase != domain.SubscriptionCredentialCleanupConfirmed || a.Subscription.ServerOperation.State != domain.SubscriptionCanceled {
 		t.Fatal("interrupted native login did not confirm resource cleanup")
 	}
-	home := filepath.Join(f.service.Store.Root(), "subscription-runtime", "auth", op.OperationId)
-	if _, err := os.Lstat(home); !os.IsNotExist(err) {
-		t.Fatal("original native runtime was retained")
+	if present, _ := subscription.CredentialFilePresent(profileRootFor(t, f.service.scopeFor(f.input.AccountID), domain.Codex, nativeprofile.PurposeAuth)); present {
+		t.Fatal("original native credential file was retained")
 	}
 	if err := f.deleteFailedLogin(f.failedLoginDeletion()); err != nil {
 		t.Fatal("cleaned native account could not be deleted", domain.SafeError(err).Code)
@@ -119,17 +121,18 @@ func TestInstalledCodexSubscriptionEmptyLogout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	root, owner := t.TempDir(), domain.NewID()
-	native, err := openServerSubscription(ctx, root, owner, nil, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	scope := testNativeScope(t, root)
+	native, err := openServerSubscription(ctx, scope, owner, nil, slog.New(slog.NewJSONHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal("isolated native initialization failed", domain.SafeError(err).Code)
 	}
-	home := filepath.Join(root, "subscription-runtime", "auth", string(owner))
+	home := profileRootFor(t, scope, domain.Codex, nativeprofile.PurposeAuth)
 	defer func() {
 		if err := native.Close(nil); err != nil {
 			t.Error("native process/private runtime cleanup was not confirmed", domain.SafeError(err).Code)
 		}
-		if _, err := os.Lstat(home); !os.IsNotExist(err) {
-			t.Error("original private runtime remains after native closure")
+		if present, _ := subscription.CredentialFilePresent(home); present {
+			t.Error("transient credential file remains after native closure")
 		}
 	}()
 	auth := filepath.Join(home, "codex", "auth.json")

@@ -2,6 +2,7 @@
 package codex
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -24,6 +25,14 @@ func codeReviewClientFixture(t *testing.T) *Client {
 }
 
 func reviewRollout(t *testing.T, c *Client, change func(map[string]any)) []byte {
+	return reviewRolloutWithRecords(t, c, func(records []map[string]any) {
+		if change != nil {
+			change(records[2]["payload"].(map[string]any))
+		}
+	}, true)
+}
+
+func reviewRolloutWithRecords(t *testing.T, c *Client, change func([]map[string]any), escapeHTML bool) []byte {
 	t.Helper()
 	records := []map[string]any{
 		{"timestamp": "2026-10-10T00:00:00Z", "type": "session_meta", "payload": map[string]any{"id": c.thread, "session_id": c.thread}},
@@ -31,18 +40,79 @@ func reviewRollout(t *testing.T, c *Client, change func(map[string]any)) []byte 
 		{"timestamp": "2026-10-10T00:00:02Z", "type": "event_msg", "payload": map[string]any{"type": "exited_review_mode", "turn_id": c.codeReview.turn, "item_id": "exit", "review_output": map[string]any{"findings": []any{map[string]any{"title": "Original finding", "body": "Explain the original defect.", "confidence_score": 0.9, "priority": 1, "code_location": map[string]any{"absolute_file_path": filepath.Join(c.execution.settings.Cwd, "file.go"), "line_range": map[string]any{"start": 3, "end": 4}}}}, "overall_correctness": "patch is incorrect", "overall_explanation": "Original structured result.", "overall_confidence_score": 0.9}}},
 	}
 	if change != nil {
-		change(records[2]["payload"].(map[string]any))
+		change(records)
 	}
-	var raw []byte
+	var raw bytes.Buffer
+	encoder := json.NewEncoder(&raw)
+	encoder.SetEscapeHTML(escapeHTML)
 	for _, r := range records {
-		b, err := json.Marshal(r)
-		if err != nil {
+		if err := encoder.Encode(r); err != nil {
 			t.Fatal(err)
 		}
-		raw = append(raw, b...)
-		raw = append(raw, '\n')
 	}
-	return raw
+	return raw.Bytes()
+}
+
+func TestNativeCodeReviewCustomRolloutMatchesExactSentInstructions(t *testing.T) {
+	for _, instructions := range []string{"  Inspect changes.  ", "Inspect changes."} {
+		t.Run(instructions, func(t *testing.T) {
+			c := codeReviewClientFixture(t)
+			c.codeReview.selection.Target.Kind = domain.ReviewCustom
+			c.codeReview.selection.Target.Instructions = instructions
+			rollout := func(enteredInstructions string) []byte {
+				return reviewRolloutWithRecords(t, c, func(records []map[string]any) {
+					entered := records[1]["payload"].(map[string]any)
+					entered["target"] = map[string]any{"type": "custom", "instructions": enteredInstructions}
+				}, true)
+			}
+			result, err := c.decodeCodeReviewRollout(rollout(instructions))
+			if err != nil || result.Selection.Target.Instructions != instructions || result.CleanupVerified {
+				t.Fatalf("original custom target did not survive rollout: %v", err)
+			}
+			if _, err := c.decodeCodeReviewRollout(rollout(instructions + " different")); err == nil || domain.SafeError(err).Code != domain.RecoveryRequired {
+				t.Fatalf("different custom target was accepted: %v", err)
+			}
+		})
+	}
+}
+
+func TestNativeCodeReviewEscapeHeavyRolloutDefersEncodedLimitUntilCleanup(t *testing.T) {
+	for _, body := range []string{"<", "x"} {
+		t.Run(body, func(t *testing.T) {
+			c := codeReviewClientFixture(t)
+			raw := reviewRolloutWithRecords(t, c, func(records []map[string]any) {
+				output := records[2]["payload"].(map[string]any)["review_output"].(map[string]any)
+				findings := make([]any, 22)
+				for i := range findings {
+					findings[i] = map[string]any{"title": "finding", "body": strings.Repeat(body, 8192), "confidence_score": 0.9, "priority": 1, "code_location": map[string]any{"absolute_file_path": filepath.Join(c.execution.settings.Cwd, "file.go"), "line_range": map[string]any{"start": 3, "end": 4}}}
+				}
+				output["findings"] = findings
+			}, false)
+			for _, line := range bytes.Split(bytes.TrimSuffix(raw, []byte{'\n'}), []byte{'\n'}) {
+				if len(line) >= 1<<20 {
+					t.Fatalf("fixture line exceeds rollout scanner bound: %d", len(line))
+				}
+			}
+			result, err := c.decodeCodeReviewRollout(raw)
+			if err != nil || len(result.Findings) != 22 || result.CleanupVerified || result.RolloutDigest != "" {
+				t.Fatalf("bounded structural rollout was not decoded: %v", err)
+			}
+			for _, finding := range result.Findings {
+				if err := finding.Validate(); err != nil {
+					t.Fatalf("fixture finding invalid: %v", err)
+				}
+			}
+			result.RolloutDigest = strings.Repeat("0", 64)
+			result.CleanupVerified = true
+			err = result.Validate()
+			if body == "<" && (err == nil || domain.SafeError(err).Code != domain.ResourceExhausted) {
+				t.Fatalf("escape-heavy completed result did not retain size error: %v", err)
+			}
+			if body == "x" && err != nil {
+				t.Fatalf("in-limit completed result rejected: %v", err)
+			}
+		})
+	}
 }
 
 func TestNativeReviewFindingsRequireOriginalStructuredRollout(t *testing.T) {
@@ -165,7 +235,7 @@ func TestDedicatedReviewSendsFrozenTargetOnceAndRetainsResponseLoss(t *testing.T
 				selected.Target.Reference = strings.Repeat("e", 40)
 			}
 			if kind == domain.ReviewCustom {
-				selected.Target.Instructions = "Inspect the original selection."
+				selected.Target.Instructions = "  Inspect the original selection.  "
 			}
 			action := domain.NewID()
 			if _, err := c.StartCodeReview(context.Background(), action, selected); err != nil {
