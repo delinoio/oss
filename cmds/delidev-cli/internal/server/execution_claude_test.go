@@ -76,7 +76,7 @@ func TestClaudeRegistrationRejectsUnimplementedProfiles(t *testing.T) {
 	}{
 		{name: "responses", protocol: domain.OpenAIResponses},
 		{name: "chat", protocol: domain.OpenAIChat},
-		{name: "version", configure: func(i *domain.ExecutionJobInput) { i.Installation.Version = "2.1.237" }},
+		{name: "version", configure: func(i *domain.ExecutionJobInput) { i.Installation.Version = "2.1.235" }},
 		{name: "protocol-discovery", configure: func(i *domain.ExecutionJobInput) { i.Installation.ProtocolVerified = false }},
 		{name: "effort", configure: func(i *domain.ExecutionJobInput) { i.Configuration.Effort = "invalid\x00effort" }},
 		{name: "subagent-model", configure: func(i *domain.ExecutionJobInput) { i.Configuration.Options.SubagentModel = "other-model" }},

@@ -8,6 +8,7 @@ import {
 } from "./native-claude-response";
 import { claudeToolReference } from "./native-claude-tool";
 import type { InteractionDraftState } from "./inbox-drafts";
+import { HarnessId, harnessVersionAllowed } from "./harness-version";
 
 enum Kind {
   Tool = "tool-permission",
@@ -118,7 +119,7 @@ function request(data: Document) {
       "input_json",
       "metadata",
     ]) ||
-    r.version !== "2.1.236" ||
+    !harnessVersionAllowed(HarnessId.Claude, r.version) ||
     !Object.values(Kind).includes(r.kind as Kind) ||
     !uuid(r.arrival_id) ||
     !ref ||

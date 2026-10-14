@@ -545,7 +545,7 @@ DeliDev QA preparation and its original signal-test children rebuild the API cli
 
 - DeliDev validation separates schema/binding freshness, TypeScript client and desktop jobs. Preserve the exact checks/four-Vitest-shard matrix, Turbo client build dependencies, uncached real-server fixtures and complete CI Result aggregation. A runner-owned source build may share only its executable path; retain private fixture state and QA build ownership.
 
-- The separate Runmoor PR Docker workflow also uses uncached `scripts/ci` Turbo tasks, preserving the explicit Docker opt-in, race coverage, read-only contents authority and successful-main-only dependency-cache saves. It requires no remote-cache token.
+- The separate Runmoor PR Docker workflow also uses uncached `scripts/ci` Turbo tasks, preserving the explicit Docker opt-in, race coverage, read-only contents authority and successful-main-only dependency-cache saves. Both Go test commands use `-count=1` so successful result-cache entries cannot skip validation of the current subprocess-built command. The Runmoor release build gate uses the same flag for its plain Go tests. Compiled-object and module caches remain reusable. It requires no remote-cache token.
 
 - DeliDev release coordinator and independent release workflow external actions use full commit SHAs. Keep macOS signing in a fresh Environment job with only checkout, Node and artifact transfer actions; no package manager/toolchain/build dependency installation precedes credentials. Build jobs have no signing Environment or secret references. Preserve same-run keyless DMG/Worker/CEF notice digest inventory and signed-candidate reuse before rebuild/resign.
 

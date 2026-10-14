@@ -1,7 +1,7 @@
 {
   "native-model-settings.nativeCodexModelObservations_e3a909": "Native Codex model observations",
   "native-model-settings.observeNativeCodexModels_7d4b36": "Observe native Codex models",
-  "native-model-settings.chooseARunnerDeviceWithCodex_8f2ab4": "Choose a Runner Device with Codex 0.151.0 and a connected account. Advisory observations do not establish account support, entitlement, readiness or fresh provider data. Saving a model requires explicit registration.",
+  "native-model-settings.chooseARunnerDeviceWithCodex_8f2ab4": "Choose a Runner Device with a supported Codex installation and a connected account. Advisory observations do not establish account support, entitlement, readiness or fresh provider data. Saving a model requires explicit registration.",
   "native-model-settings.thisServerDoesNotSupportNative_b59968": "This server does not support native model observation.",
   "native-model-settings.observationScope_329506": "Observation scope",
   "native-model-settings.runnerDevice_37efe3": "Runner Device",
