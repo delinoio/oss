@@ -49,7 +49,7 @@ export function acknowledgeRefreshAllSubscriptionQuotas(
  * no retry authority: an uncertain original request is only ever retried by the
  * explicit Settings action, and a busy request is never replaced. */
 export function SubscriptionQuotaAutoRefresh({ ready }: { ready: boolean }) {
-  const { foreground, activation } = useDocumentForeground();
+  const { foreground, activation, reconcile } = useDocumentForeground();
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: ready });
   const supported =
     status.data?.capabilities.includes(
@@ -75,9 +75,11 @@ export function SubscriptionQuotaAutoRefresh({ ready }: { ready: boolean }) {
     };
     const tick = () => {
       const { mutation: current, eligible: open } = latest.current;
-      if (!open || !isDocumentForeground()) {
+      const foregroundNow = isDocumentForeground();
+      if (!open || !foregroundNow) {
         // A closed gate ends this wait. Regaining eligibility starts a fresh one,
         // and missed ticks are never replayed.
+        if (!foregroundNow) reconcile();
         console.info("delidev.subscription.quota_refresh_tick", {
           outcome: SubscriptionQuotaTickOutcome.GateClosed,
         });
@@ -96,6 +98,6 @@ export function SubscriptionQuotaAutoRefresh({ ready }: { ready: boolean }) {
     };
     arm();
     return () => window.clearTimeout(timer);
-  }, [eligible, activation]);
+  }, [eligible, activation, reconcile]);
   return null;
 }
