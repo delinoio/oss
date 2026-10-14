@@ -14,7 +14,13 @@ enum MoreGlyph {
   Pin = "pin",
 }
 
-function Glyph({ name, filled = false }: { name: MoreGlyph; filled?: boolean }) {
+function Glyph({
+  name,
+  filled = false,
+}: {
+  name: MoreGlyph;
+  filled?: boolean;
+}) {
   const common = {
     "aria-hidden": true as const,
     className: "sidebar-icon",
@@ -106,9 +112,7 @@ export function SidebarMore({
   }, [open]);
   const blocked =
     navigation.operation !== undefined || navigation.snapshot.problem !== null;
-  const label = pinned
-    ? copy("sidebar.unpinUsage")
-    : copy("sidebar.pinUsage");
+  const label = pinned ? copy("sidebar.unpinUsage") : copy("sidebar.pinUsage");
   return (
     <>
       <button
@@ -141,8 +145,9 @@ export function SidebarMore({
               return;
             }
             const buttons = [
-              ...(popup.current?.querySelectorAll<HTMLButtonElement>("button") ??
-                []),
+              ...(popup.current?.querySelectorAll<HTMLButtonElement>(
+                "button",
+              ) ?? []),
             ];
             const index = buttons.indexOf(
               document.activeElement as HTMLButtonElement,

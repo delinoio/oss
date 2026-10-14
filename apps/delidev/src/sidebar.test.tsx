@@ -2413,8 +2413,8 @@ it("closes logical activity and focus before the visual interval, then settles o
 });
 
 function railNames() {
-  return [...document.querySelectorAll(".sidebar-rail > button")].map((button) =>
-    button.getAttribute("aria-label"),
+  return [...document.querySelectorAll(".sidebar-rail > button")].map(
+    (button) => button.getAttribute("aria-label"),
   );
 }
 const emptyLists = {
@@ -2526,7 +2526,9 @@ it("localizes More and the pin controls in Korean", async () => {
   try {
     fireEvent.click(screen.getByRole("button", { name: "더보기" }));
     const popover = screen.getByRole("dialog", { name: "더보기" });
-    fireEvent.click(within(popover).getByRole("button", { name: "사용량 고정" }));
+    fireEvent.click(
+      within(popover).getByRole("button", { name: "사용량 고정" }),
+    );
     await within(popover).findByRole("button", { name: "사용량 고정 해제" });
   } finally {
     await act(async () => {
@@ -2561,7 +2563,9 @@ it("keeps the confirmed pin state and offers explicit reload after read or uncer
   expect(bridge.update).not.toHaveBeenCalled();
   failRead = false;
   fireEvent.click(
-    within(popover).getByRole("button", { name: "Reload navigation preference" }),
+    within(popover).getByRole("button", {
+      name: "Reload navigation preference",
+    }),
   );
   await waitFor(() => expect(within(popover).queryByRole("alert")).toBeNull());
   expect(document.activeElement).toBe(pin);
@@ -2578,7 +2582,9 @@ it("keeps the confirmed pin state and offers explicit reload after read or uncer
   expect(bridge.update).toHaveBeenCalledTimes(1);
   failUpdate = false;
   fireEvent.click(
-    within(popover).getByRole("button", { name: "Reload navigation preference" }),
+    within(popover).getByRole("button", {
+      name: "Reload navigation preference",
+    }),
   );
   await waitFor(() => expect(within(popover).queryByRole("alert")).toBeNull());
   expect(railNames()).not.toContain("Usage");

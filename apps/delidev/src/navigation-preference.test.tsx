@@ -122,10 +122,7 @@ test("pending and uncertain writes never replay; unrelated events cannot clear r
   );
   fireEvent.click(toggle);
   fireEvent.click(toggle);
-  expect(value.bridge.update).toHaveBeenCalledExactlyOnceWith(
-    true,
-    1,
-  );
+  expect(value.bridge.update).toHaveBeenCalledExactlyOnceWith(true, 1);
   await act(async () => reject(new Error("private storage detail")));
   const reload = await screen.findByRole("button", {
     name: "Reload navigation preference",
@@ -209,10 +206,7 @@ test.each([
       expect(toggle.getAttribute("aria-disabled")).toBe("false"),
     );
     fireEvent.click(toggle);
-    expect(value.bridge.update).toHaveBeenCalledExactlyOnceWith(
-      true,
-      1,
-    );
+    expect(value.bridge.update).toHaveBeenCalledExactlyOnceWith(true, 1);
     act(() =>
       value.publish({
         revision: 3,
@@ -260,10 +254,7 @@ test.each([
     );
     fireEvent.click(toggle);
     await waitFor(() => expect(value.bridge.update).toHaveBeenCalledTimes(2));
-    expect(value.bridge.update).toHaveBeenLastCalledWith(
-      false,
-      4,
-    );
+    expect(value.bridge.update).toHaveBeenLastCalledWith(false, 4);
   },
 );
 test.each([

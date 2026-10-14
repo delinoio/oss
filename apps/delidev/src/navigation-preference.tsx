@@ -37,10 +37,7 @@ export interface NavigationSnapshot {
 }
 export interface NavigationBridge {
   read: () => Promise<unknown>;
-  update: (
-    usage_pinned: boolean,
-    revision: number,
-  ) => Promise<unknown>;
+  update: (usage_pinned: boolean, revision: number) => Promise<unknown>;
   subscribe: (changed: (snapshot: unknown) => void) => Promise<() => void>;
 }
 const defaultNavigationSnapshot: NavigationSnapshot = {
@@ -94,14 +91,15 @@ export function parseNavigation(value: unknown): NavigationSnapshot {
     throw new Error("Invalid navigation-preference snapshot");
   const data = value as Record<string, unknown>;
   if (
-    Object.keys(data).sort().join(",") !==
-      "problem,revision,usage_pinned" ||
+    Object.keys(data).sort().join(",") !== "problem,revision,usage_pinned" ||
     !Number.isInteger(data.revision) ||
     Number(data.revision) < 0 ||
     Number(data.revision) > 0xffffffff ||
     typeof data.usage_pinned !== "boolean" ||
     (data.problem !== null &&
-      !Object.values(NavigationProblem).includes(data.problem as NavigationProblem))
+      !Object.values(NavigationProblem).includes(
+        data.problem as NavigationProblem,
+      ))
   )
     throw new Error("Invalid navigation-preference snapshot");
   return data as unknown as NavigationSnapshot;
@@ -113,7 +111,9 @@ interface NavigationController {
   select: (usage_pinned: boolean) => boolean;
   reload: () => void;
 }
-const NavigationContext = createContext<NavigationController | undefined>(undefined);
+const NavigationContext = createContext<NavigationController | undefined>(
+  undefined,
+);
 
 export function NavigationProvider({
   children,
