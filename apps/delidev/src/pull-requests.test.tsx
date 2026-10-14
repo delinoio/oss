@@ -365,10 +365,10 @@ it("shows only the selected name and loads the selected default query automatica
   expect(row.getAttribute("aria-pressed")).toBe("true");
   expect(row.querySelector('svg[aria-hidden="true"]')).toBeTruthy();
   expect(
-    pane.getByText(
+    pane.queryByText(
       "Pull requests load automatically when you select a repository or change filters.",
     ),
-  ).toBeTruthy();
+  ).toBeNull();
   expect(pane.queryByRole("button", { name: "Load pull requests" })).toBeNull();
 
   await screen.findByText(/Original fixture title/);
@@ -380,6 +380,46 @@ it("shows only the selected name and loads the selected default query automatica
     page: 1,
     page_size: 20,
   });
+});
+
+it("ends Query options after the PR page size control in both languages without extra queries", async () => {
+  const value = fixture();
+  // A server that supports 50-item pages shows no page-size capability note.
+  value.capabilities([SystemCapability.PULL_REQUEST_PAGING_50_V1]);
+  render(<App transport={value.transport} />);
+  let pane = await open();
+  await choose(value.rows[0]);
+  await screen.findByText(/Original fixture title/);
+  await waitFor(() =>
+    expect(
+      (pane.getByLabelText("PR page size") as HTMLSelectElement).options[2]
+        .disabled,
+    ).toBe(false),
+  );
+  expect(value.query).toHaveBeenCalledTimes(1);
+  const english =
+    "Pull requests load automatically when you select a repository or change filters.";
+  const korean =
+    "저장소를 선택하거나 필터를 변경하면 풀 리퀘스트를 자동으로 불러옵니다.";
+  const queryOptions = () => {
+    const form = pane.getByLabelText("PR page size").closest("form");
+    expect(form).toBeTruthy();
+    return form as HTMLFormElement;
+  };
+  expect(queryOptions().lastElementChild?.tagName).toBe("LABEL");
+  expect(pane.queryByText(english)).toBeNull();
+  expect(pane.queryByText(korean)).toBeNull();
+
+  await act(() => i18n.changeLanguage(SupportedLanguage.Korean));
+  pane = within(
+    screen.getByRole("region", { name: "풀 리퀘스트 탐색 및 필터" }),
+  );
+  const form = pane.getByLabelText("PR 페이지 크기").closest("form");
+  expect(form?.lastElementChild?.tagName).toBe("LABEL");
+  expect(pane.queryByText(english)).toBeNull();
+  expect(pane.queryByText(korean)).toBeNull();
+  expect(value.query).toHaveBeenCalledTimes(1);
+  await act(() => i18n.changeLanguage(SupportedLanguage.English));
 });
 
 it("discloses one exact duplicate-name identity without selecting or reading it", async () => {

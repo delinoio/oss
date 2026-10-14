@@ -114,11 +114,23 @@ Every desktop task, row, dialog and startup surface presents its available safe 
 
 Presentation reuses the owning read, mutation or native controller and its exact busy, confirmation and uncertain-request state. Moving a view cannot create another server, registration, credential, Runner or account recovery controller. Rechecks read the original scope; they do not retry mutations. Never mount Doctor globally or in an account workflow to obtain causes: its protected credential inspection retains explicit diagnostic invocation and bounds.
 
+The Tailscale access panel diagnoses a logged-out client only from the explicit
+`setTailscaleAccess` failure: code `unavailable` with the exact safe message
+and guidance defined in the [connections contract](cmds-delidev-connections-contract.md#tailscale-connections).
+It then shows the localized heading and recovery steps (English "Tailscale login
+is required." / Korean "Tailscale 로그인이 필요합니다.") outside the closed Technical
+details disclosure in the existing `role="alert"` problem panel, while the code,
+reference and raw message stay inside it. Code `unavailable` alone, a retained
+logged-out discovery observation, and access-read, inbox or decision errors never
+produce this diagnosis; they keep the generic problem presentation. The panel adds
+no button, automatic login or retry: the existing Inspect original request control
+still retries the retained original request, and Refresh only reads discovery.
+
 Successful empty inventory, loading, failed reads, retained stale observations, malformed evidence, current-page exclusions and continuation availability remain distinct. Unknown evidence grants neither a diagnosis nor eligibility. External installation, OS permission and remote administration remedies use concrete manual guidance plus an existing explicit recheck; they grant no new repair authority. Preserve original IDs, revisions, native generations, once-only exchange, cleanup, terminal confirmation, Stop intent, borrowed Worker lifetimes, drafts and disposed-callback guards. Account-storage presentation remains removed.
 
 ## Inline Connections presentation
 
-The feature exposes current connection and main-window saved-profile management inline in the stable `diagnostics` Settings category, named Connections/연결. `connections-page.tsx` owns presentation slots and stable movable hosts, never diagnostics or repair authority. Original desktop controllers retain requests, revisions, confirmations and uncertainty across page disposal. Advanced owns registration recovery, updates, installation inspection and removed-profile/retained Worker controls; its attention text remains visible when collapsed. Doctor stays absent. Saved inventory cannot claim remote authorization or readiness and cannot probe saved endpoints. Saved windows retain their pinned connect-only authority.
+The feature exposes current connection and main-window saved-profile management inline in the stable `diagnostics` Settings category, named Connections/연결. `connections-page.tsx` owns presentation slots and stable movable hosts, never diagnostics or repair authority. Original desktop controllers retain requests, revisions, confirmations and uncertainty across page disposal. Tailscale access and devices are not part of this page: the original desktop-owned Tailscale controller presents them in Runner Devices through typed Runner slots, and this page has no Tailscale slot. Advanced owns registration recovery, updates, installation inspection and removed-profile/retained Worker controls; its attention text remains visible when collapsed. Doctor stays absent. Saved inventory cannot claim remote authorization or readiness and cannot probe saved endpoints. Saved windows retain their pinned connect-only authority.
 
 ### Session technical evidence
 

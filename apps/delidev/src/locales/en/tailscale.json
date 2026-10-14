@@ -46,6 +46,8 @@
   "tailscale.uncertain": "Outcome unconfirmed",
   "tailscale.completedHelp": "Open a paired client from Saved servers. Registered Workers are managed through Runner Devices.",
   "tailscale.loggedOut": "Tailscale login required",
+  "tailscale.loginRequired.heading": "Tailscale login is required.",
+  "tailscale.loginRequired.body": "Open Tailscale on this computer and sign in. Then refresh Tailscale devices and inspect the original access request.",
   "tailscale.machineApproval": "Tailscale device approval required",
   "tailscale.stopped": "Tailscale stopped",
   "tailscale.starting": "Tailscale starting",

@@ -584,7 +584,7 @@ Record implementation status and validation results in pull requests, issues and
 `internal/tailscale` owns the installed-client adapter and original foreground
 Serve process. `internal/server/tailscale.go` owns the separate ingress, bounded
 private approval/outgoing journals and existing pairing integration.
-`apps/delidev/src/tailscale-connections.tsx` owns Local Connections presentation;
+`apps/delidev/src/tailscale-connections.tsx` owns the Local Tailscale access and devices presentation shown in Runner Devices through the slots of `apps/delidev/src/runner-tailscale-slots.tsx`;
 `protos/delidev/v1/tailscale.proto` owns the additive Connect surface and System 93.
 Follow the [connections contract](cmds-delidev-connections-contract.md#tailscale-connections).
 The existing SSH installer and detached outbound Worker controller retain their

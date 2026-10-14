@@ -145,6 +145,12 @@ function fixture() {
 
 const column = () =>
   document.querySelector<HTMLElement>(".settings-content-column > div")!;
+// Issue 3660: Runner Devices hosts the persistent Tailscale portal hosts, so
+// only the static category heading moves (EntranceTarget.Heading).
+const heading = () =>
+  document.querySelector<HTMLElement>(
+    ".settings-content-column > div > .settings-category-heading",
+  )!;
 const dialogs = () =>
   [
     ...document.querySelectorAll<HTMLDialogElement>(
@@ -163,6 +169,7 @@ const mount = (value: ReturnType<typeof fixture>, destination?: boolean) =>
     value.view(
       <Settings
         controlLocalWorker={value.control}
+        runnerTailscale={() => {}}
         entryDestination={
           destination ? SettingsEntryDestination.RunnerDevices : undefined
         }
@@ -186,11 +193,16 @@ it("plays the Runner Devices category entrance once per explicit opening without
   const value = fixture();
   mount(value);
   category(unoptedSettingsCategory);
-  expect(column().getAttribute("data-entrance")).toBeNull();
+  expect(heading().getAttribute("data-entrance")).toBeNull();
   category(CATEGORY);
-  const node = column();
+  const node = heading();
   expect(node.getAttribute("data-entrance")).toBe("y4");
   expect(node.querySelectorAll("[data-entrance]")).toHaveLength(0);
+  // The content column and the persistent portal hosts below it never move.
+  expect(column().hasAttribute("data-entrance")).toBe(false);
+  expect(
+    document.querySelector(".runner-tailscale")?.closest("[data-entrance]"),
+  ).toBeNull();
   dispatchAnimation(node);
   expect(node.getAttribute("data-entrance")).toBeNull();
   await screen.findByRole("heading", { name: "Fixture runner" });
@@ -201,41 +213,41 @@ it("plays the Runner Devices category entrance once per explicit opening without
   });
   fireEvent.click(screen.getByRole("button", { name: "Refresh local Worker" }));
   category(CATEGORY);
-  expect(column()).toBe(node);
+  expect(heading()).toBe(node);
   expect(node.getAttribute("data-entrance")).toBeNull();
   expect(value.nativeActions()).toEqual([]);
   expect(value.inspectHost).not.toHaveBeenCalled();
   expect(value.startSetup).not.toHaveBeenCalled();
   // Leaving and returning is a new explicit activation.
   category(unoptedSettingsCategory);
-  expect(column().getAttribute("data-entrance")).toBeNull();
+  expect(heading().getAttribute("data-entrance")).toBeNull();
   category(CATEGORY);
-  expect(column().getAttribute("data-entrance")).toBe("y4");
+  expect(heading().getAttribute("data-entrance")).toBe("y4");
 });
 
 it("plays the entrance for a targeted Runner Devices entry", async () => {
   const value = fixture();
   mount(value, true);
   expect(column().querySelector("h1")?.textContent).toBe(CATEGORY);
-  expect(column().getAttribute("data-entrance")).toBe("y4");
-  dispatchAnimation(column());
-  expect(column().getAttribute("data-entrance")).toBeNull();
+  expect(heading().getAttribute("data-entrance")).toBe("y4");
+  dispatchAnimation(heading());
+  expect(heading().getAttribute("data-entrance")).toBeNull();
   await screen.findByRole("heading", { name: "Fixture runner" });
-  expect(column().getAttribute("data-entrance")).toBeNull();
+  expect(heading().getAttribute("data-entrance")).toBeNull();
 });
 
 it("leaves no stale Runner Devices motion when the category changes before completion", () => {
   const value = fixture();
   mount(value);
   category(CATEGORY);
-  const old = column();
+  const old = heading();
   expect(old.getAttribute("data-entrance")).toBe("y4");
   category(unoptedSettingsCategory);
   expect(document.contains(old)).toBe(false);
   dispatchAnimation(old);
-  expect(column().getAttribute("data-entrance")).toBeNull();
+  expect(heading().getAttribute("data-entrance")).toBeNull();
   category(CATEGORY);
-  const fresh = column();
+  const fresh = heading();
   expect(fresh).not.toBe(old);
   expect(fresh.getAttribute("data-entrance")).toBe("y4");
   // The stale completion of the first visit cannot settle the new one.
@@ -249,7 +261,7 @@ it("settles Runner Devices motion for Animation Off then OS reduced motion witho
   const value = fixture();
   mount(value);
   category(CATEGORY);
-  const node = column();
+  const node = heading();
   expect(node.getAttribute("data-entrance")).toBe("y4");
   await setAnimation("false");
   expect(node.getAttribute("data-entrance")).toBeNull();
@@ -257,15 +269,15 @@ it("settles Runner Devices motion for Animation Off then OS reduced motion witho
   expect(node.getAttribute("data-entrance")).toBeNull();
   category(unoptedSettingsCategory);
   category(CATEGORY);
-  expect(column().getAttribute("data-entrance")).toBe("y4");
+  expect(heading().getAttribute("data-entrance")).toBe("y4");
   setReduced(true);
-  expect(column().getAttribute("data-entrance")).toBeNull();
+  expect(heading().getAttribute("data-entrance")).toBeNull();
   setReduced(false);
-  expect(column().getAttribute("data-entrance")).toBeNull();
+  expect(heading().getAttribute("data-entrance")).toBeNull();
   await setAnimation("false");
   category(unoptedSettingsCategory);
   category(CATEGORY);
-  expect(column().getAttribute("data-entrance")).toBeNull();
+  expect(heading().getAttribute("data-entrance")).toBeNull();
 });
 
 // Opens the Runner settings task with a held read, dismisses it, then opens and
@@ -281,7 +293,7 @@ async function taskScenario(animation: boolean) {
   const inspect = await screen.findByRole("button", {
     name: "Inspect installed harnesses",
   });
-  if (animation) dispatchAnimation(column());
+  if (animation) dispatchAnimation(heading());
   inspect.focus();
   fireEvent.click(inspect);
   const machineHost = topDialog();
@@ -361,7 +373,7 @@ it("animates the Runner settings and SSH setup tasks once each without extra ope
 it("does not replay the task entrance for inventory refetch or Local Worker status reads", async () => {
   const value = fixture();
   mount(value, true);
-  dispatchAnimation(column());
+  dispatchAnimation(heading());
   const inspect = await screen.findByRole("button", {
     name: "Inspect installed harnesses",
   });

@@ -96,6 +96,24 @@ const weekdayNames = {
     return copy("schedule-creation.saturday_dbe35c");
   },
 };
+// Native controls whose platform picker closes on the Escape default action,
+// which runs after the bubbling keydown dispatch without defaultPrevented.
+const nativePickerInputTypes = new Set([
+  "color",
+  "date",
+  "datetime-local",
+  "file",
+  "month",
+  "time",
+  "week",
+]);
+function hasNativePicker(target: EventTarget): boolean {
+  if (target instanceof HTMLSelectElement) return true;
+  return (
+    target instanceof HTMLInputElement &&
+    (nativePickerInputTypes.has(target.type) || target.hasAttribute("list"))
+  );
+}
 const validTime = (value: string) => /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
 function presetCron(
   frequency: Frequency,
@@ -333,6 +351,32 @@ export function ScheduleCreation({
             else next();
           }}
           onKeyDown={(event) => {
+            // Escape dismisses the idle wizard exactly like Cancel. An open
+            // custom picker consumes its own Escape first (defaultPrevented),
+            // native pickers (select popups, time pickers) close on the
+            // browser default action that runs after this handler and never
+            // set defaultPrevented, so Escape from those controls is left to
+            // the platform, and any locked state keeps the recovery controls
+            // authoritative.
+            if (event.key === "Escape") {
+              if (
+                event.defaultPrevented ||
+                hasNativePicker(event.target) ||
+                event.nativeEvent.isComposing ||
+                event.keyCode === 229 ||
+                event.repeat ||
+                event.altKey ||
+                event.ctrlKey ||
+                event.metaKey ||
+                event.shiftKey ||
+                blocked
+              )
+                return;
+              event.preventDefault();
+              event.stopPropagation();
+              cancel();
+              return;
+            }
             if (
               event.key === "Enter" &&
               event.target instanceof HTMLInputElement &&

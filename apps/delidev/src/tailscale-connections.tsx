@@ -1,15 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import {
   DeviceType,
+  FailureCode,
   SystemCapability,
   SystemQuery,
   TailscaleQuery,
+  clientFailure,
   newRequestId,
 } from "@delinoio/delidev-api-client";
 import { copy, useLocale } from "./localization";
-import { Modal, Problem } from "./ui";
+import { InlineRemediation, Modal, Problem } from "./ui";
 import { PersistentConnectionView } from "./connections-page";
 import { useRetainedMutation } from "./mutation";
 import { SSHSetup } from "./ssh-setup";
@@ -70,6 +72,45 @@ function decode<T>(raw?: Uint8Array): T | undefined {
   if (raw.length > 1 << 20) throw new Error("Oversized Tailscale observation");
   return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(raw)) as T;
 }
+// Exact safe text of the Go login failure (tailscale.LoginRequired). Only this
+// code, message and guidance triple is diagnosed; a generic unavailable failure
+// or a retained logged-out discovery observation is never promoted to it.
+enum LoginRequiredError {
+  Message = "Tailscale login is required.",
+  Guidance = "Open Tailscale on this computer and sign in. Then refresh Tailscale devices and inspect the original access request.",
+}
+function isLoginRequired(error: unknown): boolean {
+  if (!error) return false;
+  const failure = clientFailure(error);
+  return (
+    failure.code === FailureCode.Unavailable &&
+    failure.message === LoginRequiredError.Message &&
+    failure.guidance === LoginRequiredError.Guidance
+  );
+}
+// Presentation only: the original retained mutation owns the Inspect control.
+function LoginRequiredProblem({ error }: { error: unknown }) {
+  useLocale();
+  const failure = clientFailure(error);
+  return (
+    <InlineRemediation
+      summary={
+        <>
+          <strong>{copy("tailscale.loginRequired.heading")}</strong>
+          <p>{copy("tailscale.loginRequired.body")}</p>
+        </>
+      }
+      details={
+        <>
+          <strong>{failure.message}</strong>
+          <p>{failure.guidance}</p>
+          <code>{failure.code}</code>
+          {failure.correlationId ? <code>{failure.correlationId}</code> : null}
+        </>
+      }
+    />
+  );
+}
 const ownershipCopy = {
   [Ownership.Own]: "tailscale.own",
   [Ownership.Shared]: "tailscale.shared",
@@ -88,8 +129,9 @@ function approvalLabel(state: ApprovalState) {
   return copy(keys[state] ?? "tailscale.uncertain");
 }
 
-// This controller stays with the original Local connection. Page departure
-// disposes discovery while exact accepted requests and approvals remain owned.
+// This controller stays with the original Local connection. The Runner Devices
+// presentation supplies the access and devices slots; leaving it disposes
+// discovery while exact accepted requests and approvals remain owned.
 export function TailscaleConnections({
   current,
   target,
@@ -100,6 +142,7 @@ export function TailscaleConnections({
   onPaired: () => void;
 }) {
   useLocale();
+  const accessHeading = useId();
   const status = useQuery(SystemQuery.getStatus, {});
   const supported =
     status.data?.capabilities.includes(
@@ -148,10 +191,8 @@ export function TailscaleConnections({
     <>
       <PersistentConnectionView target={current} hidden>
         {supported ? (
-          <section
-            className="tailscale-access"
-            aria-label={copy("tailscale.access")}
-          >
+          <section className="tailscale-access" aria-labelledby={accessHeading}>
+            <h2 id={accessHeading}>{copy("tailscale.access")}</h2>
             <p role="status">
               {copy("tailscale.access")}:{" "}
               {access?.state === "ready"
@@ -179,14 +220,18 @@ export function TailscaleConnections({
                 ? copy("tailscale.disable")
                 : copy("tailscale.enable")}
             </button>
-            <Problem
-              error={
-                accessRead.error ??
-                accessMutation.error ??
-                inbox.error ??
-                decisions.error
-              }
-            />
+            {!accessRead.error && isLoginRequired(accessMutation.error) ? (
+              <LoginRequiredProblem error={accessMutation.error} />
+            ) : (
+              <Problem
+                error={
+                  accessRead.error ??
+                  accessMutation.error ??
+                  inbox.error ??
+                  decisions.error
+                }
+              />
+            )}
             {decisions.uncertain ? (
               <button type="button" onClick={() => void decisions.retry()}>
                 {copy("tailscale.reconcile")}

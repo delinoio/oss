@@ -46,6 +46,8 @@
   "tailscale.uncertain": "결과 미확인",
   "tailscale.completedHelp": "연결된 클라이언트는 저장된 서버에서 여세요. 등록한 Worker는 Runner Devices에서 관리하세요.",
   "tailscale.loggedOut": "Tailscale 로그인 필요",
+  "tailscale.loginRequired.heading": "Tailscale 로그인이 필요합니다.",
+  "tailscale.loginRequired.body": "이 컴퓨터에서 Tailscale을 열고 로그인하세요. Tailscale 기기 목록을 새로고침한 뒤 원래 접근 요청을 확인하세요.",
   "tailscale.machineApproval": "Tailscale 기기 승인 필요",
   "tailscale.stopped": "Tailscale 중지됨",
   "tailscale.starting": "Tailscale 시작 중",

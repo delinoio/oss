@@ -17,6 +17,7 @@ import { createDeliDevTransport } from "@delinoio/delidev-api-client";
 import { Updates, type DesktopUpdateControls } from "./updates";
 import { App } from "./App";
 import { TailscaleConnections } from "./tailscale-connections";
+import type { RunnerTailscaleSlots } from "./runner-tailscale-slots";
 import {
   PersistentConnectionView,
   ConnectionsPage,
@@ -102,6 +103,7 @@ function LocalDesktop() {
     useState<HTMLElement>();
   const [showConnection, setShowConnection] = useState(false);
   const [pageSlots, setPageSlots] = useState<ConnectionPageSlots>();
+  const [runnerSlots, setRunnerSlots] = useState<RunnerTailscaleSlots>();
   const [savedRefresh, setSavedRefresh] = useState(0);
   const [appInformationTarget, setAppInformationTarget] =
     useState<HTMLElement>();
@@ -384,8 +386,8 @@ function LocalDesktop() {
   const controls = (
     <>
       <TailscaleConnections
-        current={pageSlots?.current}
-        target={pageSlots?.tailscale}
+        current={runnerSlots?.access}
+        target={runnerSlots?.devices}
         onPaired={() => setSavedRefresh((value) => value + 1)}
       />
       <LocalServerControls
@@ -456,6 +458,7 @@ function LocalDesktop() {
                 }
                 connectionEpoch={connectionEpoch}
                 connectionSettings={connectionSettings}
+                runnerTailscale={setRunnerSlots}
                 appInformationSettings={
                   <AppInformationSlot onTarget={setAppInformationTarget} />
                 }

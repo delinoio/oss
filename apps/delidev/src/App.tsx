@@ -94,6 +94,7 @@ import { SessionForkProvider } from "./session-fork";
 import { SessionStorageProvider } from "./session-storage";
 import { PRWorkflowProvider } from "./pr-workflow";
 import { ProjectCreationDialog } from "./project-creation";
+import type { PublishRunnerTailscaleSlots } from "./runner-tailscale-slots";
 import {
   ShortcutProvider,
   useShortcutHelp,
@@ -113,6 +114,7 @@ function Shell({
   connectionReady,
   connectionSettings,
   appInformationSettings,
+  runnerTailscale,
   connectionTarget,
   onConnectionHelp,
   readLocalWorker,
@@ -129,6 +131,7 @@ function Shell({
   connectionReady: boolean;
   connectionSettings?: ReactNode;
   appInformationSettings?: ReactNode;
+  runnerTailscale?: PublishRunnerTailscaleSlots;
   connectionTarget?: HTMLElement;
   onConnectionHelp?: (target: HTMLElement | undefined) => void;
   readLocalWorker?: ReadLocalWorkerProof;
@@ -918,6 +921,7 @@ function Shell({
                         readLocalWorker={readLocalWorker}
                         connectionSettings={connectionSettings}
                         appInformationSettings={appInformationSettings}
+                        runnerTailscale={runnerTailscale}
                         pairingAuthority={pairingAuthority}
                         currentDeviceId={currentDeviceId}
                         controlLocalWorker={controlLocalWorker}
@@ -947,6 +951,7 @@ export function App({
   localServer,
   connectionSettings,
   appInformationSettings,
+  runnerTailscale,
   connectionTarget,
   onConnectionHelp,
   connectionReady = true,
@@ -966,6 +971,7 @@ export function App({
   localServer?: ReactNode;
   connectionSettings?: ReactNode;
   appInformationSettings?: ReactNode;
+  runnerTailscale?: PublishRunnerTailscaleSlots;
   connectionTarget?: HTMLElement;
   onConnectionHelp?: (target: HTMLElement | undefined) => void;
   connectionReady?: boolean;
@@ -1013,6 +1019,7 @@ export function App({
                                 chooseRepositoryFolder={chooseRepositoryFolder}
                                 connectionSettings={connectionSettings}
                                 appInformationSettings={appInformationSettings}
+                                runnerTailscale={runnerTailscale}
                                 connectionTarget={connectionTarget}
                                 onConnectionHelp={onConnectionHelp}
                                 localServer={localServer}
