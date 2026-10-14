@@ -666,7 +666,11 @@ with a typed `UNAVAILABLE` problem ("This Grok account is logging out", logged a
 shared predicate) while the logout waits, revokes and cleans up. It follows the
 same lease rules as login and refresh: it cannot overlap another operation, an
 observation or a recovery fence, `CancelSubscription` stays login-only, and a
-separate account is never blocked. The Go flow lives in
+separate account is never blocked. A request that carries a `machine_id` is never a
+Grok logout: it enters the Codex gate, which refuses a Grok account before any
+mutation (`TestGrokMachineScopedRequestsAreRefusedBeforeAnyMutation`), so no
+Worker-routed Grok operation can be created by a request. The Worker logout lease
+guards below protect only operations seeded directly in storage. The Go flow lives in
 `internal/subscription/grok_revoke.go` (the revocation client) and
 `internal/server/grok_logout.go` (lease, claim, settlement, cleanup and recovery).
 

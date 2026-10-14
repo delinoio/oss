@@ -624,3 +624,29 @@ func TestGrokCleanupFailedLoginSelection(t *testing.T) {
 		t.Fatal("a claimed Grok login was selected for cleanup")
 	}
 }
+
+// A Runner Device cannot carry a Grok lifecycle request: RequestSubscription with
+// a machine_id enters the Codex gate, which refuses Grok accounts before any
+// mutation. A machine-scoped logout therefore never creates a Worker-routed
+// operation that the revoked-generation guard of Take would reject.
+func TestGrokMachineScopedRequestsAreRefusedBeforeAnyMutation(t *testing.T) {
+	for _, action := range []pb.SubscriptionAction{
+		pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN,
+		pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH,
+		logoutAction,
+	} {
+		t.Run(action.String(), func(t *testing.T) {
+			g := newGrokLoginFixture(t)
+			g.connected(t)
+			before, account := g.record()
+			_, err := g.client.RequestSubscription(context.Background(), subscriptionRequest(g.service.Identity.Token, &pb.RequestSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(before.ID), ExpectedRevision: before.Revision}, Action: action, MachineId: string(g.input.MachineID)}))
+			if err == nil {
+				t.Fatal("a machine-scoped Grok request was accepted")
+			}
+			after, current := g.record()
+			if after.Revision != before.Revision || current.Health != account.Health || current.Subscription.Pending != nil || current.Subscription.ServerOperation.Action != domain.SubscriptionLogin {
+				t.Fatal("a refused machine-scoped Grok request changed the account")
+			}
+		})
+	}
+}
