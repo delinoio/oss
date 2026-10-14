@@ -150,10 +150,7 @@ export function TailscaleConnections({
     <>
       <PersistentConnectionView target={current} hidden>
         {supported ? (
-          <section
-            className="tailscale-access"
-            aria-labelledby={accessHeading}
-          >
+          <section className="tailscale-access" aria-labelledby={accessHeading}>
             <h2 id={accessHeading}>{copy("tailscale.access")}</h2>
             <p role="status">
               {copy("tailscale.access")}:{" "}

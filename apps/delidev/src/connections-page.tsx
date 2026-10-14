@@ -96,9 +96,7 @@ export function ConnectionsPage({
         <h2>{copy("settings.connections.current")}</h2>
         <div className="connections-current" ref={current} />
       </section>
-      {local ? (
-        <div ref={saved} />
-      ) : null}
+      {local ? <div ref={saved} /> : null}
       {attention ? (
         <p className="connections-attention" role="status">
           {copy("settings.connections.attention")}

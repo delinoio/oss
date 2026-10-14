@@ -105,8 +105,7 @@ function fixture(options: Options = {}) {
   const transport = createRouterTransport((router) => {
     router.service(ResourceService, {
       listResources: (request) => ({
-        resources:
-          request.filter?.kind === EntityKind.MACHINE ? [runner] : [],
+        resources: request.filter?.kind === EntityKind.MACHINE ? [runner] : [],
         nextPageToken: "",
       }),
       getResource: () => ({ resource: runner }),
@@ -187,12 +186,22 @@ function fixture(options: Options = {}) {
       decideTailscaleApproval: (request) => {
         calls.decide(request);
         lose(options.loseDecision, calls.decide.mock.calls.length);
-        return { documentJson: encode({ ...pending(request.requestId), state: "approved" }) };
+        return {
+          documentJson: encode({
+            ...pending(request.requestId),
+            state: "approved",
+          }),
+        };
       },
       resumeTailscaleConnection: (request) => {
         calls.resume(request);
         lose(options.loseResume, calls.resume.mock.calls.length);
-        return { documentJson: encode({ ...pending(request.requestId), state: "denied" }) };
+        return {
+          documentJson: encode({
+            ...pending(request.requestId),
+            state: "denied",
+          }),
+        };
       },
       cancelTailscaleConnection: () => {
         calls.cancel();
@@ -273,9 +282,7 @@ it("presents Tailscale access then devices below the Runner inventory and nothin
     Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
   expect(before(inventory, access)).toBe(true);
   expect(before(access, devices)).toBe(true);
-  expect(
-    screen.getByRole("button", { name: "Enable access" }),
-  ).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Enable access" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Refresh" })).toBeTruthy();
   expect(
     screen.getAllByRole("button", { name: "Set up a Worker over SSH" }).length,
@@ -283,7 +290,9 @@ it("presents Tailscale access then devices below the Runner inventory and nothin
   await screen.findByText("Tailscale connected");
   category("Connections");
   await screen.findByRole("heading", { name: "Current connection" });
-  expect(screen.queryByRole("heading", { name: "Tailscale access" })).toBeNull();
+  expect(
+    screen.queryByRole("heading", { name: "Tailscale access" }),
+  ).toBeNull();
   expect(
     screen.queryByRole("heading", { name: "Tailscale devices" }),
   ).toBeNull();
@@ -321,7 +330,9 @@ it("keeps unsupported guidance in Runner Devices and sends no Tailscale requests
   const { calls } = fixture({ scenario: Scenario.Unsupported });
   category(RUNNER);
   await screen.findByText(/does not support Tailscale connections/);
-  expect(screen.queryByRole("heading", { name: "Tailscale access" })).toBeNull();
+  expect(
+    screen.queryByRole("heading", { name: "Tailscale access" }),
+  ).toBeNull();
   expect(screen.queryByRole("button", { name: "Enable access" })).toBeNull();
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -339,7 +350,9 @@ it("shows no Tailscale controls and sends no Tailscale requests in a saved-serve
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
   });
-  expect(screen.queryByRole("heading", { name: "Tailscale access" })).toBeNull();
+  expect(
+    screen.queryByRole("heading", { name: "Tailscale access" }),
+  ).toBeNull();
   expect(
     screen.queryByRole("heading", { name: "Tailscale devices" }),
   ).toBeNull();
@@ -363,7 +376,9 @@ it("retains a pending confirmation and an uncertain access request across catego
   // The owner-level confirmation survives; navigation sent nothing.
   expect(screen.getByRole("dialog", { name: "Enable access" })).toBe(confirm);
   expect(calls.setAccess).not.toHaveBeenCalled();
-  fireEvent.click(within(confirm).getByRole("button", { name: "Enable access" }));
+  fireEvent.click(
+    within(confirm).getByRole("button", { name: "Enable access" }),
+  );
   await waitFor(() => expect(calls.setAccess).toHaveBeenCalledTimes(1));
   const original = calls.setAccess.mock.calls[0][0].requestId;
   category(AWAY);
@@ -404,7 +419,9 @@ it("retains an uncertain resume across leaving and returning and retries the ori
   const id = newRequestId();
   const { calls } = fixture({ operation: id, loseResume: true });
   category(RUNNER);
-  fireEvent.click(await screen.findByRole("button", { name: "Inspect original request" }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Inspect original request" }),
+  );
   await waitFor(() => expect(calls.resume).toHaveBeenCalledTimes(1));
   category(AWAY);
   category(RUNNER);
@@ -430,7 +447,9 @@ it("refreshes saved profiles through onPaired after a client connection complete
   fireEvent.click(await screen.findByRole("button", { name: "Connect" }));
   const task = await screen.findByRole("dialog", { name: "Connect" });
   expect(paired).not.toHaveBeenCalled();
-  fireEvent.click(within(task).getByRole("button", { name: "Request approval" }));
+  fireEvent.click(
+    within(task).getByRole("button", { name: "Request approval" }),
+  );
   await waitFor(() => expect(calls.begin).toHaveBeenCalledTimes(1));
   await waitFor(() => expect(paired).toHaveBeenCalledTimes(1));
 });
