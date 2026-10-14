@@ -397,7 +397,9 @@ fn env_guards(
                     guards[read] = Some(EnvGuard::NullishCoalescing);
                 }
             }
-            b'?' if bytes.get(index + 1) != Some(&b'.') => {
+            b'?' if bytes.get(index + 1) != Some(&b'.')
+                && bytes.get(index.wrapping_sub(1)) != Some(&b'?') =>
+            {
                 for &read in &scopes[current_scope].pending_reads {
                     guards[read] = Some(EnvGuard::Conditional);
                 }
@@ -1459,6 +1461,10 @@ y=/process.env.F/.test(z),process.env.G"#;
         assert_eq!(
             guard("process.env.VERSION?on():off()", "process.env.VERSION"),
             Some("the retained read controls a conditional (?:) branch")
+        );
+        assert_eq!(
+            guard("process.env.VERSION??fallback", "process.env.VERSION"),
+            Some("the retained read controls a ?? fallback branch")
         );
     }
 
