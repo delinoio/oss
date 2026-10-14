@@ -43,5 +43,18 @@
   "grok-subscription.problem.nameUnconfirmed": "계정 이름을 저장하지 못했습니다. 입력한 내용은 유지됩니다. 현재 계정을 확인한 뒤 다시 저장하세요.",
   "grok-subscription.diagnostic.version": "Grok 버전:",
   "grok-subscription.diagnostic.code": "오류 코드:",
-  "grok-subscription.diagnostic.notDetected": "감지되지 않음"
+  "grok-subscription.diagnostic.notDetected": "감지되지 않음",
+  "grok-subscription.device.action": "기기 코드 사용",
+  "grok-subscription.device.codeLabel": "인증 페이지에서 이 코드를 입력하세요:",
+  "grok-subscription.device.codeAria": "Grok 인증 코드",
+  "grok-subscription.device.openVerification": "인증 페이지 열기",
+  "grok-subscription.device.copyCode": "코드 복사",
+  "grok-subscription.device.codeCopied": "인증 코드를 복사했습니다",
+  "grok-subscription.device.codeCopyFailed": "인증 코드를 복사할 수 없습니다. 코드를 선택해 직접 복사하세요.",
+  "grok-subscription.device.help.waiting": "아무 기기에서나 인증 페이지를 열고 이 코드를 확인한 뒤 로그인을 승인하세요. 완료한 후 이곳으로 돌아오세요. 이 코드는 이번 로그인에만 사용됩니다.",
+  "grok-subscription.device.help.canceled": "연결된 계정이 없습니다. AI 구독으로 돌아가 계정 추가 또는 기기 코드 사용을 선택해 다시 시도하세요.",
+  "grok-subscription.device.help.expired": "로그인이 끝나기 전에 코드가 만료되었습니다. AI 구독으로 돌아가 기기 코드 사용을 선택해 새 코드를 받으세요.",
+  "grok-subscription.device.help.unsupported": "서버가 Grok 기기 코드 로그인을 수락하지 않았습니다. 서버가 이를 지원하는지 확인한 뒤 다시 시도하세요.",
+  "grok-subscription.device.help.failed": "로그인이 거부되었거나 완료되지 않았습니다. AI 구독으로 돌아가 계정 추가 또는 기기 코드 사용을 선택해 다시 시도하세요.",
+  "grok-subscription.problem.verificationOpenFailed": "인증 페이지를 열 수 없습니다. 코드를 복사해 다른 브라우저에서 페이지를 여세요."
 }

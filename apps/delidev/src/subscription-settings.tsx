@@ -135,6 +135,9 @@ export interface SubscriptionSettingsViewProps {
   lifecycleUnavailable?: string;
   selectService?: (brand: SubscriptionBrand) => void;
   serviceLoginAvailable?: (brand: SubscriptionBrand) => boolean;
+  /** Secondary explicit device-code sign-in beside Add account. */
+  selectDeviceCode?: (brand: SubscriptionBrand) => void;
+  deviceCodeAvailable?: (brand: SubscriptionBrand) => boolean;
   activeFilter?: string;
   clearFilter: () => void;
   pagination?: ReactNode;
@@ -872,6 +875,8 @@ export function SubscriptionSettingsView({
   lifecycleUnavailable = copy("subscription-settings.extra.f874aed4a97c"),
   selectService,
   serviceLoginAvailable = () => true,
+  selectDeviceCode,
+  deviceCodeAvailable = () => false,
   activeFilter,
   clearFilter,
   pagination,
@@ -1116,35 +1121,58 @@ export function SubscriptionSettingsView({
           {lifecycleUnavailable}
         </p>
         <div className="subscription-provider-cards">
-          {subscriptionCatalog.map((provider) => (
-            <article
-              className="subscription-provider-card"
-              key={provider.brand}
-            >
-              <ProviderMark brand={provider.brand} />
-              <h3>{provider.name}</h3>
-              <p>{provider.purpose}</p>
+          {subscriptionCatalog.map((provider) => {
+            const addAvailable =
+              Boolean(selectService) && serviceLoginAvailable(provider.brand);
+            const add = (
               <SettingsActionButton
                 icon={SettingsActionIcon.Add}
                 type="button"
-                disabled={
-                  !selectService || !serviceLoginAvailable(provider.brand)
-                }
+                disabled={!addAvailable}
                 aria-label={copy("subscription-settings.message_78735b", {
                   v0: provider.name,
-                  v1:
-                    selectService && serviceLoginAvailable(provider.brand)
-                      ? copy("subscription-settings.addAccount_ee7ee5")
-                      : copy("subscription-settings.comingSoon_4f7d64"),
+                  v1: addAvailable
+                    ? copy("subscription-settings.addAccount_ee7ee5")
+                    : copy("subscription-settings.comingSoon_4f7d64"),
                 })}
                 onClick={() => selectService?.(provider.brand)}
               >
-                {selectService && serviceLoginAvailable(provider.brand)
+                {addAvailable
                   ? copy("subscription-settings.addAccount_ee7ee5")
                   : copy("subscription-settings.comingSoon_4f7d64")}
               </SettingsActionButton>
-            </article>
-          ))}
+            );
+            return (
+              <article
+                className="subscription-provider-card"
+                key={provider.brand}
+              >
+                <ProviderMark brand={provider.brand} />
+                <h3>{provider.name}</h3>
+                <p>{provider.purpose}</p>
+                {addAvailable &&
+                selectDeviceCode &&
+                deviceCodeAvailable(provider.brand) ? (
+                  <div className="subscription-provider-actions">
+                    {add}
+                    <SettingsActionButton
+                      icon={SettingsActionIcon.Connect}
+                      type="button"
+                      aria-label={copy("subscription-settings.message_78735b", {
+                        v0: provider.name,
+                        v1: copy("grok-subscription.device.action"),
+                      })}
+                      onClick={() => selectDeviceCode(provider.brand)}
+                    >
+                      {copy("grok-subscription.device.action")}
+                    </SettingsActionButton>
+                  </div>
+                ) : (
+                  add
+                )}
+              </article>
+            );
+          })}
         </div>
       </section>
 

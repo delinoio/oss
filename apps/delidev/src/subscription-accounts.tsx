@@ -1110,6 +1110,31 @@ export function SubscriptionAccounts({
               }
             : undefined
         }
+        deviceCodeAvailable={(brand) =>
+          brand === SubscriptionBrand.Grok && grokLoginCapable && flow.available
+        }
+        selectDeviceCode={
+          capable && !blocked
+            ? (brand) => {
+                if (
+                  subscriptionService(brand) !== SubscriptionServiceId.Grok ||
+                  !grokLoginCapable ||
+                  !flow.available ||
+                  !cleanup.canMutate()
+                )
+                  return;
+                // One deliberate click starts the device-code method; it never
+                // falls back to or from browser login automatically.
+                flow.begin(
+                  SubscriptionServiceId.Grok,
+                  undefined,
+                  false,
+                  false,
+                  true,
+                );
+              }
+            : undefined
+        }
         serviceLoginAvailable={(brand) =>
           brand === SubscriptionBrand.OpenCodeGo
             ? status.data?.capabilities.includes(

@@ -83,7 +83,7 @@ original evidence. Grok records at `domain.GrokProtocolVersion` (`1.0.41`) and v
 and acquire no new resume authority. API execution keeps its independent support
 boundary when revalidated against `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) or newer.
 
-The desktop browser flow is implemented in `apps/delidev/src/grok-subscription-login.tsx` and enabled only when the server advertises System capability 39; the device-code method remains planned. The approved desktop flow preserves service order, existing marks, navigation
+The desktop browser flow is implemented in `apps/delidev/src/grok-subscription-login.tsx` and enabled only when the server advertises System capability 39. The explicit `Use a device code` action beside Add account (same capability, no separate device capability) sends `device_code` true once, displays the validated transient `accounts.x.ai` verification page and user code with Copy code and Open verification page, and clears them on every terminal state; see the subscription Settings contract. The approved desktop flow preserves service order, existing marks, navigation
 and theme. Add account starts browser login; Use a device code is explicit.
 Waiting offers reopen/copy/open-page/cancel as appropriate. Confirmed success
 advances to account naming. Preparing, waiting, canceled, expired, failed and

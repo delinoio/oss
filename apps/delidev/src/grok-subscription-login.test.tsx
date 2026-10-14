@@ -6,6 +6,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   act,
+  cleanup,
   fireEvent,
   render,
   screen,
@@ -28,7 +29,10 @@ import {
 } from "@delinoio/delidev-api-client";
 import { OAuthNativeAction, OAuthNativeProvider } from "./account-oauth";
 import { document, encode } from "./documents";
-import { grokLoginURL } from "./grok-subscription-login";
+import {
+  grokDeviceVerification,
+  grokLoginURL,
+} from "./grok-subscription-login";
 import { copy, i18n, SupportedLanguage } from "./localization";
 import { SettingsLifetime } from "./settings-lifetime";
 import { SubscriptionAccounts } from "./subscription-accounts";
@@ -37,6 +41,15 @@ import { MutationIntents } from "./mutation";
 import english from "./locales/en/grok-subscription.json";
 import korean from "./locales/ko/grok-subscription.json";
 
+const externalOpen = vi.hoisted(() => vi.fn(async (_url: string) => undefined));
+vi.mock("./external-links", async (original) => ({
+  ...(await original<typeof import("./external-links")>()),
+  externalLinksAvailable: () => true,
+  openExternalUrl: externalOpen,
+}));
+
+const DEVICE_CODE = "ABCD-1234";
+const DEVICE_URL = `https://accounts.x.ai/oauth2/device?user_code=${DEVICE_CODE}`;
 const CHALLENGE = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
 function authorization(edit: (url: URL) => void = () => {}) {
   const url = new URL("https://auth.x.ai/oauth2/authorize");
@@ -75,6 +88,7 @@ function fixture(url = loginURL) {
     }),
   });
   let state = State.WAITING,
+    userCode = "",
     operation = "",
     suggested = "grok.fixture@example.invalid",
     successOperation = "";
@@ -107,6 +121,7 @@ function fixture(url = loginURL) {
   const progress = vi.fn(() => ({
     state,
     url: state === State.WAITING ? url : "",
+    userCode: state === State.WAITING ? userCode : "",
     suggestedName: suggested,
     generation,
   }));
@@ -147,9 +162,24 @@ function fixture(url = loginURL) {
     return (
       <>
         {flow.body ?? (
-          <button onClick={() => flow.begin(SubscriptionServiceId.Grok)}>
-            Start Grok
-          </button>
+          <>
+            <button onClick={() => flow.begin(SubscriptionServiceId.Grok)}>
+              Start Grok
+            </button>
+            <button
+              onClick={() =>
+                flow.begin(
+                  SubscriptionServiceId.Grok,
+                  undefined,
+                  false,
+                  false,
+                  true,
+                )
+              }
+            >
+              Start Grok device
+            </button>
+          </>
         )}
       </>
     );
@@ -180,6 +210,9 @@ function fixture(url = loginURL) {
     current: () => current,
     setState: (value: State) => {
       state = value;
+    },
+    setUserCode: (value: string) => {
+      userCode = value;
     },
     suggestion: (name: string) => {
       suggested = name;
@@ -214,6 +247,7 @@ async function start(f: ReturnType<typeof fixture>) {
   return rendered;
 }
 afterEach(async () => {
+  externalOpen.mockClear();
   await i18n.changeLanguage(SupportedLanguage.English);
   vi.restoreAllMocks();
 });
@@ -713,5 +747,418 @@ it("keeps the Grok row unchanged without capability 39 and enables Add account w
     expect((button as HTMLButtonElement).disabled).toBe(false);
   });
   present.view.unmount();
+  present.client.clear();
+});
+
+function deviceFixture(url = DEVICE_URL, code = DEVICE_CODE) {
+  const f = fixture(url);
+  f.setUserCode(code);
+  return f;
+}
+async function startDevice(f: ReturnType<typeof fixture>) {
+  const rendered = render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Start Grok device" }));
+  await screen.findByText(DEVICE_CODE, {}, { timeout: 3000 });
+  return rendered;
+}
+const nativeActions = (f: ReturnType<typeof fixture>) =>
+  f.native.mock.calls.map((call) => call[1]);
+
+it("accepts only the fixed accounts.x.ai device verification page and matching code", () => {
+  expect(grokDeviceVerification(DEVICE_URL, DEVICE_CODE)).toBe(true);
+  expect(
+    grokDeviceVerification("https://accounts.x.ai/oauth2/device", DEVICE_CODE),
+  ).toBe(true);
+  const rejected: Array<[string, string, string]> = [
+    ["host", "https://auth.x.ai/oauth2/device", DEVICE_CODE],
+    ["lookalike", "https://accounts.x.ai.evil.test/oauth2/device", DEVICE_CODE],
+    ["scheme", "http://accounts.x.ai/oauth2/device", DEVICE_CODE],
+    ["path", "https://accounts.x.ai/oauth2/token", DEVICE_CODE],
+    ["port", "https://accounts.x.ai:8443/oauth2/device", DEVICE_CODE],
+    ["credentials", "https://u@accounts.x.ai/oauth2/device", DEVICE_CODE],
+    ["fragment", `${DEVICE_URL}#x`, DEVICE_CODE],
+    ["extra query", `${DEVICE_URL}&next=1`, DEVICE_CODE],
+    ["foreign query", "https://accounts.x.ai/oauth2/device?x=1", DEVICE_CODE],
+    ["mismatched code", DEVICE_URL, "WXYZ-9876"],
+    ["lowercase code", DEVICE_URL, "abcd-1234"],
+    ["short code", "https://accounts.x.ai/oauth2/device", "AB"],
+    ["long code", "https://accounts.x.ai/oauth2/device", "A".repeat(33)],
+    ["empty code", "https://accounts.x.ai/oauth2/device", ""],
+    ["not a url", "not a url", DEVICE_CODE],
+  ];
+  for (const [name, url, code] of rejected)
+    expect(grokDeviceVerification(url, code), name).toBe(false);
+});
+
+it("sends one deviceCode login despite double click, Strict Mode and polling and shows the transient code", async () => {
+  const f = deviceFixture();
+  const logs = (["log", "info", "warn", "error", "debug"] as const).map(
+    (level) => vi.spyOn(console, level).mockImplementation(() => undefined),
+  );
+  render(f.view());
+  const add = screen.getByRole("button", { name: "Start Grok device" });
+  fireEvent.click(add);
+  fireEvent.click(add);
+  const code = await screen.findByText(DEVICE_CODE, {}, { timeout: 3000 });
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 2300));
+  });
+  expect(f.save).toHaveBeenCalledTimes(1);
+  expect(f.login).toHaveBeenCalledTimes(1);
+  expect(f.login.mock.calls[0][0]).toMatchObject({
+    action: 1,
+    deviceCode: true,
+  });
+  expect(f.progress.mock.calls.length).toBeGreaterThan(1);
+  // Device sign-in binds no native receiver and never takes a callback.
+  expect(nativeActions(f)).toEqual([]);
+  expect(f.forward).not.toHaveBeenCalled();
+  expect(code.tagName).toBe("OUTPUT");
+  expect(code.className).toContain("grok-device-user-code");
+  expect(
+    screen.getByLabelText(copy("grok-subscription.device.codeAria")),
+  ).toBe(code);
+  expect(screen.getByRole("status").textContent).toContain(
+    copy("grok-subscription.status.waiting"),
+  );
+  expect(
+    screen.getByText(copy("grok-subscription.device.help.waiting")),
+  ).toBeTruthy();
+  // The code and URL never reach the shared query cache, title, location or logs.
+  expect(
+    f.client
+      .getQueryCache()
+      .getAll()
+      .filter((query) =>
+        JSON.stringify(query.queryKey).includes("SubscriptionService"),
+      ),
+  ).toHaveLength(0);
+  expect(window.document.title).not.toContain(DEVICE_CODE);
+  expect(window.location.href).not.toContain(DEVICE_CODE);
+  expect(window.document.body.textContent).not.toContain("accounts.x.ai");
+  for (const log of logs)
+    expect(JSON.stringify(log.mock.calls)).not.toContain(DEVICE_CODE);
+});
+
+it("copies the code, opens the verification page once and reports failures", async () => {
+  const f = deviceFixture();
+  const writeText = vi.fn(async (_value: string) => undefined);
+  Object.defineProperty(window.navigator, "clipboard", {
+    configurable: true,
+    value: { writeText },
+  });
+  externalOpen.mockClear();
+  await startDevice(f);
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: copy("grok-subscription.device.copyCode"),
+    }),
+  );
+  await screen.findByText(copy("grok-subscription.device.codeCopied"));
+  expect(writeText).toHaveBeenCalledWith(DEVICE_CODE);
+  expect(writeText).toHaveBeenCalledTimes(1);
+
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: copy("grok-subscription.device.openVerification"),
+    }),
+  );
+  await waitFor(() => expect(externalOpen).toHaveBeenCalledTimes(1));
+  expect(externalOpen).toHaveBeenCalledWith(DEVICE_URL);
+
+  externalOpen.mockRejectedValueOnce("browser-launch-failed");
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: copy("grok-subscription.device.openVerification"),
+    }),
+  );
+  await screen.findByText(
+    copy("grok-subscription.problem.verificationOpenFailed"),
+  );
+  // The code stays visible and copyable after a failed open.
+  expect(screen.getByText(DEVICE_CODE)).toBeTruthy();
+
+  writeText.mockRejectedValueOnce(new Error("denied"));
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: copy("grok-subscription.device.copyCode"),
+    }),
+  );
+  await screen.findByText(copy("grok-subscription.device.codeCopyFailed"));
+  expect(screen.getByText(DEVICE_CODE)).toBeTruthy();
+});
+
+it.each([
+  [State.EXPIRED, "grok-subscription.status.expired", "device.help.expired"],
+  [State.FAILED, "grok-subscription.status.failed", "device.help.failed"],
+  [State.CANCELED, "grok-subscription.status.canceled", "device.help.canceled"],
+  [
+    State.RECOVERY_REQUIRED,
+    "grok-subscription.status.recovery",
+    "help.recovery",
+  ],
+] as const)(
+  "clears the code on terminal state %s and returns to the picker without a connected account",
+  async (state, status, help) => {
+    const f = deviceFixture();
+    await startDevice(f);
+    f.setState(state);
+    await screen.findByText(copy(status as never), {}, { timeout: 3000 });
+    expect(screen.queryByText(DEVICE_CODE)).toBeNull();
+    expect(
+      screen.queryByRole("button", {
+        name: copy("grok-subscription.device.copyCode"),
+      }),
+    ).toBeNull();
+    expect(
+      screen.getByText(copy(`grok-subscription.${help}` as never)),
+    ).toBeTruthy();
+    expect(f.save).toHaveBeenCalledTimes(1);
+    fireEvent.click(
+      screen.getByRole("button", { name: copy("grok-subscription.back") }),
+    );
+    await screen.findByRole("button", { name: "Start Grok device" });
+    expect(window.document.body.textContent).not.toContain(DEVICE_CODE);
+    // Never an automatic second login or fallback to the browser method.
+    expect(f.login).toHaveBeenCalledTimes(1);
+    expect(nativeActions(f)).not.toContain(
+      OAuthNativeAction.GrokSubscriptionOpen,
+    );
+  },
+);
+
+it("cancels through the server and clears the code when the screen closes", async () => {
+  const f = deviceFixture();
+  const view = await startDevice(f);
+  fireEvent.click(
+    screen.getByRole("button", { name: copy("grok-subscription.cancel") }),
+  );
+  await waitFor(() => expect(f.cancel).toHaveBeenCalledTimes(1));
+  f.setState(State.CANCELED);
+  await screen.findByText(copy("grok-subscription.status.canceled"), {}, {
+    timeout: 3000,
+  });
+  expect(screen.queryByText(DEVICE_CODE)).toBeNull();
+  view.unmount();
+  expect(window.document.body.textContent).not.toContain(DEVICE_CODE);
+});
+
+it("clears the code on unmount without canceling the accepted operation", async () => {
+  const f = deviceFixture();
+  const view = await startDevice(f);
+  const polls = f.progress.mock.calls.length;
+  view.unmount();
+  expect(window.document.body.textContent).not.toContain(DEVICE_CODE);
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 1300));
+  });
+  expect(f.progress.mock.calls.length).toBeLessThanOrEqual(polls + 1);
+  expect(f.cancel).not.toHaveBeenCalled();
+});
+
+it.each([
+  ["foreign host", "https://auth.x.ai/oauth2/device", DEVICE_CODE],
+  ["mismatched query code", DEVICE_URL, "WXYZ-9876"],
+  ["malformed code", "https://accounts.x.ai/oauth2/device", "ab"],
+  ["browser URL", loginURL, DEVICE_CODE],
+])("refuses an invalid device authorization (%s)", async (_name, url, code) => {
+  const f = deviceFixture(url, code);
+  render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Start Grok device" }));
+  await screen.findByText(
+    copy("grok-subscription.problem.statusUnconfirmed"),
+    {},
+    { timeout: 3000 },
+  );
+  expect(screen.queryByText(code)).toBeNull();
+  expect(
+    screen.queryByRole("button", {
+      name: copy("grok-subscription.device.copyCode"),
+    }),
+  ).toBeNull();
+  expect(externalOpen).not.toHaveBeenCalledWith(url);
+});
+
+it("refuses a user code on the browser method and a changed code mid-login", async () => {
+  const browser = fixture();
+  browser.setUserCode(DEVICE_CODE);
+  render(browser.view());
+  fireEvent.click(screen.getByRole("button", { name: "Start Grok" }));
+  await screen.findByText(
+    copy("grok-subscription.problem.statusUnconfirmed"),
+    {},
+    { timeout: 3000 },
+  );
+  expect(screen.queryByText(DEVICE_CODE)).toBeNull();
+  expect(actions(browser, OAuthNativeAction.GrokSubscriptionOpen)).toHaveLength(
+    0,
+  );
+  cleanup();
+
+  const device = deviceFixture();
+  await startDevice(device);
+  device.setUserCode("WXYZ-9876");
+  await screen.findByText(
+    copy("grok-subscription.problem.statusUnconfirmed"),
+    {},
+    { timeout: 3000 },
+  );
+  // The originally pinned code stays; the replacement is never displayed.
+  expect(screen.queryByText("WXYZ-9876")).toBeNull();
+});
+
+it("keeps the same device screen while the server slows polling", async () => {
+  const f = deviceFixture();
+  await startDevice(f);
+  // Slow-down is server side: repeated identical Waiting progress changes nothing.
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 2300));
+  });
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.getByText(DEVICE_CODE)).toBeTruthy();
+  expect(f.login).toHaveBeenCalledTimes(1);
+});
+
+it("advances to naming after verified device success and drops the code", async () => {
+  const f = deviceFixture();
+  await startDevice(f);
+  f.success();
+  const input = await screen.findByLabelText(
+    copy("grok-subscription.accountName"),
+    {},
+    { timeout: 3000 },
+  );
+  expect((input as HTMLInputElement).value).toBe("grok.fixture@example.invalid");
+  expect(screen.queryByText(DEVICE_CODE)).toBeNull();
+});
+
+it("renders English and Korean device text and keeps the locale key sets aligned", async () => {
+  const deviceKeys = [
+    "grok-subscription.device.action",
+    "grok-subscription.device.codeAria",
+    "grok-subscription.device.codeCopied",
+    "grok-subscription.device.codeCopyFailed",
+    "grok-subscription.device.codeLabel",
+    "grok-subscription.device.copyCode",
+    "grok-subscription.device.help.canceled",
+    "grok-subscription.device.help.expired",
+    "grok-subscription.device.help.failed",
+    "grok-subscription.device.help.unsupported",
+    "grok-subscription.device.help.waiting",
+    "grok-subscription.device.openVerification",
+    "grok-subscription.problem.verificationOpenFailed",
+  ];
+  for (const catalog of [english, korean])
+    expect(
+      Object.keys(catalog)
+        .filter(
+          (key) =>
+            key.startsWith("grok-subscription.device.") ||
+            key === "grok-subscription.problem.verificationOpenFailed",
+        )
+        .sort(),
+    ).toEqual(deviceKeys);
+  expect(Object.keys(korean).sort()).toEqual(Object.keys(english).sort());
+  for (const key of deviceKeys)
+    expect((korean as Record<string, string>)[key]).not.toBe(
+      (english as Record<string, string>)[key],
+    );
+  await i18n.changeLanguage(SupportedLanguage.Korean);
+  const f = deviceFixture();
+  render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Start Grok device" }));
+  await screen.findByText(DEVICE_CODE, {}, { timeout: 3000 });
+  expect(
+    screen.getByRole("button", {
+      name: korean["grok-subscription.device.openVerification"],
+    }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole("button", {
+      name: korean["grok-subscription.device.copyCode"],
+    }),
+  ).toBeTruthy();
+});
+
+it("offers Use a device code beside Add account only with capability 39 and starts one deviceCode login", async () => {
+  async function render39(capabilities: SystemCapability[]) {
+    const f = deviceFixture();
+    const transport = createRouterTransport((router) => {
+      router.service(SystemService, { getStatus: () => ({ capabilities }) });
+      router.service(ResourceService, {
+        listResources: () => ({ resources: [] }),
+        getResource: f.read,
+      });
+      router.service(ConfigurationService, { saveConfiguration: f.save });
+      router.service(SubscriptionService, {
+        requestSubscription: f.login,
+        getSubscriptionProgress: f.progress,
+        cancelSubscription: f.cancel,
+        forwardSubscriptionCallback: f.forward,
+      });
+    });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const rendered = render(
+      <StrictMode>
+        <TransportProvider transport={transport}>
+          <QueryClientProvider client={client}>
+            <OAuthNativeProvider control={f.native}>
+              <SettingsLifetime>
+                {() => (
+                  <MutationIntents>
+                    <SubscriptionAccounts
+                      active
+                      editAccount={vi.fn()}
+                      deleteAccount={vi.fn()}
+                    />
+                  </MutationIntents>
+                )}
+              </SettingsLifetime>
+            </OAuthNativeProvider>
+          </QueryClientProvider>
+        </TransportProvider>
+      </StrictMode>,
+    );
+    return { f, rendered, client };
+  }
+  const deviceLabel = copy("subscription-settings.message_78735b", {
+    v0: "Grok",
+    v1: copy("grok-subscription.device.action"),
+  });
+  const without = await render39([
+    SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,
+  ]);
+  await screen.findByRole("button", {
+    name: copy("subscription-settings.message_78735b", {
+      v0: "Grok",
+      v1: copy("subscription-settings.comingSoon_4f7d64"),
+    }),
+  });
+  expect(screen.queryByRole("button", { name: deviceLabel })).toBeNull();
+  without.rendered.unmount();
+  without.client.clear();
+
+  const present = await render39([
+    SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,
+    SystemCapability.GROK_SUBSCRIPTION_LOGIN_V1,
+  ]);
+  const device = await screen.findByRole("button", { name: deviceLabel });
+  const add = screen.getByRole("button", {
+    name: copy("subscription-settings.message_78735b", {
+      v0: "Grok",
+      v1: copy("subscription-settings.addAccount_ee7ee5"),
+    }),
+  });
+  expect(device.parentElement).toBe(add.parentElement);
+  expect((device as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(device);
+  fireEvent.click(device);
+  await screen.findByText(DEVICE_CODE, {}, { timeout: 3000 });
+  expect(present.f.login).toHaveBeenCalledTimes(1);
+  expect(present.f.login.mock.calls[0][0]).toMatchObject({ deviceCode: true });
+  expect(present.f.save).toHaveBeenCalledTimes(1);
+  present.rendered.unmount();
   present.client.clear();
 });

@@ -1,6 +1,9 @@
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { useClaudeSubscriptionLogin } from "./claude-subscription-login";
-import { useGrokSubscriptionLogin } from "./grok-subscription-login";
+import {
+  GrokLoginMethod,
+  useGrokSubscriptionLogin,
+} from "./grok-subscription-login";
 import {
   useLocale,
   ownedMessage,
@@ -217,6 +220,7 @@ export function useSubscriptionLogin(
     initial?: Resource,
     reauth = false,
     claudeServerLogin = false,
+    grokDeviceCode = false,
   ) => {
     if (service === SubscriptionServiceId.Claude) {
       if (!pending.current && !grok.workflow)
@@ -225,7 +229,11 @@ export function useSubscriptionLogin(
     }
     if (service === SubscriptionServiceId.Grok) {
       // Grok keeps its own controller; it never reuses the ChatGPT view.
-      if (!pending.current && !claude.workflow) grok.begin();
+      // The method is the user's explicit choice and never switches later.
+      if (!pending.current && !claude.workflow)
+        grok.begin(
+          grokDeviceCode ? GrokLoginMethod.DeviceCode : GrokLoginMethod.Browser,
+        );
       return;
     }
     if (claude.workflow || grok.workflow) return;

@@ -89,3 +89,25 @@
 .subscription-onboarding-diagnostic dd {
   margin: 0;
 }
+
+.grok-device-code {
+  margin: 16px 0;
+}
+.grok-device-code p {
+  margin: 0 0 8px;
+}
+.grok-device-user-code {
+  display: inline-block;
+  box-sizing: border-box;
+  min-height: 40px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  user-select: all;
+}
