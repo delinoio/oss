@@ -1502,11 +1502,20 @@ fn dynamic_package_files(
         let mut nodes = Vec::new();
         collect(file, &mut nodes);
         with_type_checker_for_file(file, |checker| {
+            for reference in source_file_reference_targets(file) {
+                if let Some(target) = resolve_dynamic_package_entry(&name, &reference)
+                    && !dynamic.contains(&target)
+                {
+                    pending.push(target);
+                }
+            }
             for node in nodes {
                 let specifier = match node.kind() {
                     SyntaxKind::ImportDeclaration | SyntaxKind::ExportDeclaration => {
                         node.module_specifier()
                     }
+                    SyntaxKind::ImportEqualsDeclaration => node.module_reference().expression(),
+                    SyntaxKind::ImportType => node.argument().literal(),
                     SyntaxKind::CallExpression
                         if node.expression().kind() == SyntaxKind::ImportKeyword =>
                     {

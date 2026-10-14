@@ -2082,7 +2082,12 @@ fn allows_transitive_dynamic_package_declarations() {
     )
     .unwrap();
     fs::write(package.join("index.js"), "export const x=1;").unwrap();
-    fs::write(package.join("index.d.ts"), "export {y} from \"dep\";").unwrap();
+    fs::write(
+        package.join("index.d.ts"),
+        "/// <reference types=\"dep\" />\ntype Y = import(\"dep\").Y;\nimport Dep = \
+         require(\"dep\");\nexport type {Y};",
+    )
+    .unwrap();
     fs::write(
         dependency.join("package.json"),
         r#"{"name":"dep","types":"index.d.ts"}"#,
