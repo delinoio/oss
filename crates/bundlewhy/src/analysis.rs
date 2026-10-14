@@ -1109,12 +1109,10 @@ mod tests {
 
     fn retained_register(
         module_side_effects: &str,
-        resolve_side_effects: &str,
         treeshake_side_effects: &str,
         package_side_effects: Option<&str>,
     ) -> Diagnostic {
         let module_side_effects = module_side_effects.to_owned();
-        let resolve_side_effects = resolve_side_effects.to_owned();
         let treeshake_side_effects = treeshake_side_effects.to_owned();
         let package_side_effects = package_side_effects.map(str::to_owned);
         let fixture = run_fixture(BundlerChoice::Vite, |value| {
@@ -1124,7 +1122,6 @@ mod tests {
                     .is_some_and(|id| id.ends_with("src/effects/register.js"))
                 {
                     module["moduleSideEffects"] = serde_json::json!(module_side_effects);
-                    module["resolveSideEffects"] = serde_json::json!(resolve_side_effects);
                     module["treeshakeSideEffects"] = serde_json::json!(treeshake_side_effects);
                     module["packageSideEffects"] = serde_json::json!(package_side_effects);
                 }
@@ -1152,28 +1149,21 @@ mod tests {
 
     #[test]
     fn vite_side_effect_retained_honors_free_declarations() {
-        for (module, resolve, option, package) in [
-            ("false", "null", "null", None),
-            // Vite's resolver reports a package declaration as the resolved value.
-            ("null", "false", "null", Some("false")),
-            ("false", "null", "null", Some("false")),
+        for (module, option, package) in [
+            ("false", "null", None),
             // A hook value takes precedence over the option and the package.
-            ("false", "true", "true", Some("true")),
-            ("false", "null", "null", Some("[array of 2]")),
-            // A resolved value outranks a listed option, as in Rolldown.
-            ("null", "false", "true", Some("[array of 2]")),
-            // Without a hook value the configured option decides.
-            ("null", "null", "false", None),
-            ("null", "unavailable", "false", None),
-            // The option takes precedence over a package the resolver skipped.
-            ("null", "null", "false", Some("true")),
-            ("null", "null", "false", Some("[array of 2]")),
+            ("false", "true", Some("true")),
+            ("false", "null", Some("false")),
+            ("false", "null", Some("[array of 2]")),
+            // Without a hook value or a package declaration the option decides.
+            ("null", "false", None),
+            ("undefined", "false", None),
         ] {
-            let finding = retained_register(module, resolve, option, package);
+            let finding = retained_register(module, option, package);
             assert_eq!(
                 declared_free_outcome(&finding),
                 ConditionOutcome::Met,
-                "{module} / {resolve} / {option} / {package:?}"
+                "{module} / {option} / {package:?}"
             );
             assert_eq!(finding.status, EvidenceStatus::Inferred);
             assert!(
@@ -1225,24 +1215,20 @@ mod tests {
 
     #[test]
     fn vite_side_effect_retained_reports_explicit_effect_declarations() {
-        for (module, resolve, option, package) in [
-            ("no-treeshake", "null", "null", None),
+        for (module, option, package) in [
+            ("no-treeshake", "null", None),
             // A hook value takes precedence over the option and the package.
-            ("no-treeshake", "false", "false", Some("false")),
-            ("no-treeshake", "null", "null", Some("false")),
-            ("null", "no-treeshake", "false", None),
-            // The option decides when no hook value is set.
-            ("null", "null", "true", None),
-            ("null", "null", "true", Some("false")),
-            ("null", "null", "true", Some("[array of 2]")),
-            // Without an option verdict the package decides.
-            ("null", "null", "null", Some("true")),
+            ("no-treeshake", "false", Some("false")),
+            ("no-treeshake", "null", Some("false")),
+            // The option decides when no hook value is set and the package
+            // declares nothing.
+            ("null", "true", None),
         ] {
-            let finding = retained_register(module, resolve, option, package);
+            let finding = retained_register(module, option, package);
             assert_eq!(
                 declared_free_outcome(&finding),
                 ConditionOutcome::Unmet,
-                "{module} / {resolve} / {option} / {package:?}"
+                "{module} / {option} / {package:?}"
             );
             assert_eq!(finding.status, EvidenceStatus::Confirmed);
             assert!(finding.summary.contains("declares side effects"));
@@ -1260,21 +1246,20 @@ mod tests {
     }
 
     #[test]
-    fn vite_side_effect_retained_analyzes_hook_true_and_keeps_package_guidance() {
-        // `true` from a hook asks for Rolldown's analysis and skips both the
-        // option and the package, whatever they say. Vite's resolver reports a
-        // package declaration that matches the file as this value, so the
-        // guidance keeps the package edit that changes it.
-        for (module, resolve, option, package) in [
-            ("true", "null", "false", Some("false")),
-            ("null", "true", "false", Some("true")),
-            ("null", "true", "false", Some("[array of 2]")),
-            ("null", "true", "true", Some("true")),
-            ("null", "true", "null", None),
-            ("true", "null", "true", None),
+    fn vite_side_effect_retained_analyzes_hook_true_and_names_the_plugin() {
+        // `true` from a JavaScript hook asks for Rolldown's analysis and skips
+        // both the option and the package, whatever they say. The package
+        // declaration is not the source of this value, so the guidance never
+        // asks to edit it.
+        for (module, option, package) in [
+            ("true", "false", Some("false")),
+            ("true", "true", Some("true")),
+            ("true", "false", Some("[array of 2]")),
+            ("true", "true", None),
+            ("true", "null", None),
         ] {
-            let finding = retained_register(module, resolve, option, package);
-            let case = format!("{module} / {resolve} / {option} / {package:?}");
+            let finding = retained_register(module, option, package);
+            let case = format!("{module} / {option} / {package:?}");
             assert_eq!(
                 declared_free_outcome(&finding),
                 ConditionOutcome::Unmet,
@@ -1283,26 +1268,18 @@ mod tests {
             assert_eq!(finding.status, EvidenceStatus::Inferred, "{case}");
             assert!(has_inferred_effect_evidence(&finding), "{case}");
             assert!(!direction(&finding).contains("will not help"), "{case}");
-            if package.is_some() {
-                assert!(
-                    direction(&finding).contains("narrowing that declaration"),
-                    "{}",
-                    direction(&finding)
-                );
-            } else {
-                assert!(
-                    direction(&finding).contains("stop the plugin"),
-                    "{}",
-                    direction(&finding)
-                );
-                assert!(!direction(&finding).contains("narrowing"), "{case}");
-            }
+            assert!(
+                direction(&finding).contains("stop the plugin"),
+                "{}",
+                direction(&finding)
+            );
+            assert!(!direction(&finding).contains("narrowing"), "{case}");
         }
     }
 
     #[test]
     fn vite_side_effect_retained_is_unknown_for_unmatched_values() {
-        let list = retained_register("null", "null", "null", Some("[array of 2]"));
+        let list = retained_register("null", "null", Some("[array of 2]"));
         assert_eq!(declared_free_outcome(&list), ConditionOutcome::Unknown);
         assert_eq!(list.status, EvidenceStatus::Inferred);
         // A retained file is most likely covered by the list; the guidance
@@ -1312,33 +1289,43 @@ mod tests {
         assert!(!direction(&list).contains("add the declaration"));
         assert!(has_inferred_effect_evidence(&list));
 
-        // A configured function cannot be matched, and the lower-precedence
-        // package list does not resolve it.
-        for option in ["[function]", "[array of 2]"] {
-            let finding = retained_register("null", "null", option, Some("[array of 2]"));
-            assert_eq!(declared_free_outcome(&finding), ConditionOutcome::Unknown);
-            assert!(
-                direction(&finding).contains("build.rolldownOptions.treeshake.moduleSideEffects"),
-                "{}",
-                direction(&finding)
-            );
-            assert!(!direction(&finding).contains("covered"));
-        }
+        // A configured function cannot be evaluated.
+        let option = retained_register("null", "[function]", None);
+        assert_eq!(declared_free_outcome(&option), ConditionOutcome::Unknown);
+        assert!(
+            direction(&option).contains("build.rolldownOptions.treeshake.moduleSideEffects"),
+            "{}",
+            direction(&option)
+        );
+        assert!(!direction(&option).contains("covered"));
 
-        // A declared package may have given the module a resolved value that
-        // outranks the option and cannot be read, whatever the declaration is.
-        for package in ["false", "true", "[array of 2]"] {
-            let finding = retained_register("null", "unavailable", "null", Some(package));
-            assert_eq!(declared_free_outcome(&finding), ConditionOutcome::Unknown);
+        // A declared package may have given the module a value that outranks
+        // the option and is not collected, whatever the declaration is and
+        // whatever the option says.
+        for (option, package) in [
+            ("null", "false"),
+            ("null", "true"),
+            ("false", "true"),
+            ("true", "false"),
+            ("[function]", "[array of 2]"),
+            ("[array of 2]", "true"),
+        ] {
+            let finding = retained_register("null", option, Some(package));
+            assert_eq!(
+                declared_free_outcome(&finding),
+                ConditionOutcome::Unknown,
+                "{option} / {package}"
+            );
+            assert_eq!(finding.status, EvidenceStatus::Inferred);
             assert!(direction(&finding).contains("most likely covered"));
             assert!(!direction(&finding).contains("add the declaration"));
         }
 
-        let hook = retained_register("[function]", "null", "null", Some("true"));
+        let hook = retained_register("[function]", "null", Some("true"));
         assert_eq!(declared_free_outcome(&hook), ConditionOutcome::Unknown);
         assert!(direction(&hook).contains("plugin"));
         assert!(!direction(&hook).contains("covered"));
-        for finding in [&list, &hook] {
+        for finding in [&list, &option, &hook] {
             assert!(
                 !finding
                     .corrective_action
@@ -1353,24 +1340,22 @@ mod tests {
     #[test]
     fn vite_side_effect_retained_id_ignores_the_declaration() {
         let ids: Vec<String> = [
-            ("null", "null", "null", None),
-            ("false", "null", "null", None),
-            ("true", "null", "null", Some("false")),
-            ("null", "true", "false", Some("true")),
-            ("null", "null", "false", Some("true")),
-            ("null", "unavailable", "null", Some("[array of 2]")),
+            ("null", "null", None),
+            ("false", "null", None),
+            ("true", "null", Some("false")),
+            ("null", "false", Some("true")),
+            ("null", "false", None),
+            ("null", "null", Some("[array of 2]")),
         ]
         .into_iter()
-        .map(|(module, resolve, option, package)| {
-            retained_register(module, resolve, option, package).id
-        })
+        .map(|(module, option, package)| retained_register(module, option, package).id)
         .collect();
         assert!(ids.iter().all(|id| id == &ids[0]), "{ids:?}");
     }
 
     #[test]
     fn vite_side_effect_retained_keeps_provenance_and_paths() {
-        let finding = retained_register("null", "null", "null", None);
+        let finding = retained_register("null", "null", None);
         assert_eq!(
             finding.evidence[0].provenance,
             "rolldown module info (getModuleInfo)"

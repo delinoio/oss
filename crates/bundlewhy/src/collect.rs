@@ -60,12 +60,10 @@ pub struct CollectedModule {
     pub dynamic_imported_ids: Vec<String>,
     pub exports: Option<Vec<String>>,
     pub used_exports: Option<Vec<String>>,
+    /// The `moduleSideEffects` value that a JavaScript resolve, load or
+    /// transform hook set (`getModuleInfo()`); values from native plugins such
+    /// as Vite's resolver are not visible here.
     pub module_side_effects: Option<String>,
-    /// The `moduleSideEffects` value that resolving the module ID again gives
-    /// (`null` when no resolve hook sets one, `unavailable` when the module
-    /// could not be resolved again). It includes the values of native resolve
-    /// hooks such as Vite's resolver, which `module_side_effects` lacks.
-    pub resolve_side_effects: Option<String>,
     /// What the configured `treeshake.moduleSideEffects` decides for the
     /// module: `true`, `false`, `null` (no verdict) or a value summary.
     pub treeshake_side_effects: Option<String>,
