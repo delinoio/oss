@@ -390,6 +390,28 @@ describe("source viewer", () => {
     expect(within(dialog).queryByText("// header")).toBeNull();
   });
 
+  it("describes unavailable stale source without assuming removal", async () => {
+    const source = create(SourceFileSchema, {
+      ...fixtureSource(),
+      content: "",
+      contentIncluded: false,
+      revisionEvidence: SourceRevisionEvidence.UNAVAILABLE,
+    });
+    await renderAnalysis(fixtureAnalysis(), {
+      getSourceFile: () => ({ source }),
+    });
+    fireEvent.click(screen.getByRole("button", { name: "View full source" }));
+    const dialog = await screen.findByRole("dialog", { name: "src/main.ts" });
+    expect(
+      within(dialog).getByText(
+        "The source file could not be read; it may have been removed since this analysis.",
+      ),
+    ).toBeTruthy();
+    expect(
+      within(dialog).queryByText("The source file was removed since this analysis."),
+    ).toBeNull();
+  });
+
 });
 
 describe("notices and banners", () => {

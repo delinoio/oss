@@ -1245,7 +1245,7 @@ function SourceDialog({
                   ? "The current file differs from the version that was analyzed."
                   : file.revisionEvidence === SourceRevisionEvidence.UNSPECIFIED
                     ? "The current source file differs from or was removed since this analysis."
-                    : "The source file was removed since this analysis."}
+                    : "The source file could not be read; it may have been removed since this analysis."}
               </p>
             </div>
           ) : null}
