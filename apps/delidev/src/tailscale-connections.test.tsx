@@ -205,6 +205,12 @@ function accessFixture(options: {
   accessReadFailure?: () => ConnectError;
   // 1-based read count from which the read fails (after earlier successes).
   accessReadFailFrom?: number;
+  // The access document served before the failing read (default: ready).
+  accessBeforeFailure?: Record<string, unknown>;
+  // The 1-based read after which reads succeed again (default: never).
+  accessReadFailUntil?: number;
+  // Holds every access read until this promise settles.
+  accessReadGate?: Promise<void>;
 }) {
   let reads = 0;
   const set = vi.fn((_: { requestId: string; enabled: boolean }) => {
@@ -224,17 +230,23 @@ function accessFixture(options: {
       }),
     });
     router.service(TailscaleService, {
-      getTailscaleAccess: () => {
+      getTailscaleAccess: async () => {
+        await options.accessReadGate;
         reads += 1;
         if (
           options.accessReadFailure &&
-          reads >= (options.accessReadFailFrom ?? 1)
+          reads >= (options.accessReadFailFrom ?? 1) &&
+          reads <= (options.accessReadFailUntil ?? Infinity)
         )
           throw options.accessReadFailure();
         return {
           documentJson: encode(
             options.accessReadFailFrom
-              ? { enabled: true, state: "ready", server_id: "s" }
+              ? (options.accessBeforeFailure ?? {
+                  enabled: true,
+                  state: "ready",
+                  server_id: "s",
+                })
               : { enabled: false, state: "off", server_id: "s" },
           ),
         };
@@ -273,7 +285,10 @@ const outsideDisclosure = (text: string) =>
 const accessAlert = () =>
   document.querySelector<HTMLElement>(".tailscale-access [role='alert']");
 async function enable() {
-  fireEvent.click(await screen.findByRole("button", { name: "Enable access" }));
+  // The action stays disabled until the first access read establishes the state.
+  const button = await screen.findByRole("button", { name: "Enable access" });
+  await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(button);
   const dialog = await screen.findByRole("dialog");
   fireEvent.click(
     within(dialog).getByRole("button", { name: "Enable access" }),
@@ -843,4 +858,78 @@ it("stays Not checked when the peer returns online after being offline", async (
   runCheck();
   expect(await screen.findByText("DeliDev: Accepting requests")).toBeTruthy();
   expect(f.attempts()).toBe(2);
+});
+
+// Unknown-state action class (issue 3687 review): while the access state is
+// unknown, Enable and Disable are disabled so a failed read never sends a fresh
+// request that could clean up a working ingress.
+const accessButton = () =>
+  screen.getByRole("button", { name: /^(Enable|Disable) access$/ });
+it("disables the access action while the first access read is pending", async () => {
+  let release!: () => void;
+  const f = accessFixture({
+    failure: () => unavailable("Unused", "Unused"),
+    accessReadGate: new Promise<void>((resolve) => (release = resolve)),
+  });
+  const button = (await screen.findByRole("button", {
+    name: "Enable access",
+  })) as HTMLButtonElement;
+  expect(button.disabled).toBe(true);
+  fireEvent.click(button);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  release();
+  await waitFor(() => expect(button.disabled).toBe(false));
+  expect(f.set).not.toHaveBeenCalled();
+});
+
+it("disables Enable and Disable when the latest access read fails after ready", async () => {
+  const f = accessFixture({
+    failure: () => unavailable("Unused", "Unused"),
+    accessReadFailure: () => unavailable("Read failed", "Retry the read."),
+    accessReadFailFrom: 2,
+  });
+  expect(await screen.findByText("Tailscale access: On")).toBeTruthy();
+  expect((accessButton() as HTMLButtonElement).disabled).toBe(false);
+  expect(accessButton().textContent).toBe("Disable access");
+  await waitFor(() => expect(accessAlert()).not.toBeNull(), { timeout: 4000 });
+  const button = accessButton() as HTMLButtonElement;
+  expect(button.disabled).toBe(true);
+  fireEvent.click(button);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(f.set).not.toHaveBeenCalled();
+});
+
+it("disables the confirmation when the access read fails while it is open", async () => {
+  const f = accessFixture({
+    failure: () => unavailable("Unused", "Unused"),
+    accessReadFailure: () => unavailable("Read failed", "Retry the read."),
+    accessReadFailFrom: 2,
+    accessBeforeFailure: { enabled: false, state: "off", server_id: "s" },
+  });
+  fireEvent.click(await screen.findByRole("button", { name: "Enable access" }));
+  const dialog = await screen.findByRole("dialog");
+  const confirm = within(dialog).getByRole("button", {
+    name: "Enable access",
+  }) as HTMLButtonElement;
+  await waitFor(() => expect(accessAlert()).not.toBeNull(), { timeout: 4000 });
+  expect(confirm.disabled).toBe(true);
+  fireEvent.click(confirm);
+  expect(f.set).not.toHaveBeenCalled();
+});
+
+it("restores the access action after a later successful read", async () => {
+  accessFixture({
+    failure: () => unavailable("Unused", "Unused"),
+    accessReadFailure: () => unavailable("Read failed", "Retry the read."),
+    accessReadFailFrom: 2,
+    accessReadFailUntil: 2,
+  });
+  await screen.findByText("Tailscale access: On");
+  await waitFor(() => expect(accessAlert()).not.toBeNull(), { timeout: 4000 });
+  expect((accessButton() as HTMLButtonElement).disabled).toBe(true);
+  await waitFor(
+    () => expect((accessButton() as HTMLButtonElement).disabled).toBe(false),
+    { timeout: 4000 },
+  );
+  expect(accessButton().textContent).toBe("Disable access");
 });

@@ -237,6 +237,11 @@ export function TailscaleConnections({
   const access = accessRead.error
     ? undefined
     : (acceptedAccess ?? decode<Access>(accessRead.data?.documentJson));
+  // The access action depends on a successful read of the current state. While
+  // that state is unknown (first read pending or latest read failed), neither
+  // Enable nor Disable is offered: a fresh Enable request would clean up a
+  // working ingress, and a Disable would be chosen without knowing the state.
+  const accessUnknown = access === undefined;
   const accessMutation = useRetainedMutation(
     "tailscale:access",
     TailscaleQuery.setTailscaleAccess,
@@ -276,7 +281,7 @@ export function TailscaleConnections({
             ) : null}
             <button
               type="button"
-              disabled={accessMutation.busy}
+              disabled={accessMutation.busy || accessUnknown}
               onClick={() =>
                 access?.enabled
                   ? void accessMutation.send({
@@ -338,7 +343,7 @@ export function TailscaleConnections({
           <p>{copy("tailscale.visibility")}</p>
           <button
             type="button"
-            disabled={accessMutation.busy}
+            disabled={accessMutation.busy || accessUnknown}
             onClick={() => {
               setConfirmation(false);
               void accessMutation.send({

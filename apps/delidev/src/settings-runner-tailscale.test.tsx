@@ -369,7 +369,14 @@ it("shows no Tailscale controls and sends no Tailscale requests in a saved-serve
 it("retains a pending confirmation and an uncertain access request across category changes", async () => {
   const { calls } = fixture({ loseAccess: true });
   category(RUNNER);
-  fireEvent.click(await screen.findByRole("button", { name: "Enable access" }));
+  // The action stays disabled until the first access read establishes the state.
+  const enableButton = await screen.findByRole("button", {
+    name: "Enable access",
+  });
+  await waitFor(() =>
+    expect((enableButton as HTMLButtonElement).disabled).toBe(false),
+  );
+  fireEvent.click(enableButton);
   const confirm = await screen.findByRole("dialog", { name: "Enable access" });
   category(AWAY);
   category(RUNNER);
