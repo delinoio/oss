@@ -61,18 +61,15 @@ test("opaque and alpha artwork reuse one four-vertex quad", () => {
   assert.deepEqual(pixel(opaque, 0, 0), [128, 24, 32, 255]);
   assert.deepEqual(pixel(opaque, 15, 15), [24, 32, 255, 255]);
   assert.deepEqual(pixel(opaque, 7, 7), [16, 220, 40, 255]);
-  for (let x = 0; x < 16; x++) {
-    assert.deepEqual(pixel(alpha, x, 0), [
-      255,
-      255,
-      255,
-      Math.round((255 * x) / 15),
-    ]);
-    assert.deepEqual(pixel(alpha, x, 15), [
-      255,
-      255,
-      255,
-      Math.round((255 * x) / 15),
-    ]);
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      assert.equal(pixel(opaque, x, y)[3], 255);
+      assert.deepEqual(pixel(alpha, x, y), [
+        255,
+        255,
+        255,
+        Math.round((255 * x) / 15),
+      ]);
+    }
   }
 });
