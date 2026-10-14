@@ -44,7 +44,7 @@ func automaticPromptFixture(t *testing.T, bodies []string) *automaticPRFixture {
 func automaticPromptOriginals(t *testing.T, f *automaticPRFixture) (domain.PRFixRequest, []domain.PRProblem, domain.PRGitTarget, map[domain.PRProblemKind]domain.RepositoryQueryResult) {
 	t.Helper()
 	link, _ := store.Decode[domain.SessionPullRequest](f.link)
-	target, observed, err := f.service.automaticPRObservations(f.owner, link, []domain.PRProblemKind{domain.PRFeedbackProblem})
+	target, observed, _, err := f.service.automaticPRObservations(f.owner, link, []domain.PRProblemKind{domain.PRFeedbackProblem})
 	if err != nil {
 		t.Fatal(err)
 	}
