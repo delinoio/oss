@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   PendingCloseRegistry,
   type PendingCloseChannel,
@@ -199,12 +199,89 @@ describe("pending Close ownership across product windows", () => {
     expect(endpoint.closed).toBe(1);
     expect(endpoint.onmessage).toBeNull();
     expect(registry.has("k")).toBe(false);
-    expect(seen.at(-1)).toMatchObject({ kind: "release", key: "k" });
+    expect(seen).toContainEqual(expect.objectContaining({ kind: "release", key: "k" }));
+    expect(seen.at(-1)).toMatchObject({ kind: "bye" });
     // Disposal is idempotent and a disposed registry can reconnect.
     registry.dispose();
     expect(endpoint.closed).toBe(1);
     registry.connect();
     expect(endpoint.onmessage).not.toBeNull();
     expect(observer.has("k")).toBe(false);
+  });
+
+  describe("hold synchronization barrier", () => {
+    /** Queues posts so delivery order is controlled by the test. */
+    class QueuedBus {
+      queue: (() => void)[] = [];
+      endpoints: QueuedEndpoint[] = [];
+      endpoint(drop = false) {
+        const endpoint = new QueuedEndpoint(this, drop);
+        this.endpoints.push(endpoint);
+        return endpoint;
+      }
+      flush() {
+        while (this.queue.length) this.queue.shift()?.();
+      }
+    }
+    class QueuedEndpoint implements PendingCloseChannel {
+      onmessage: ((event: { data: unknown }) => void) | null = null;
+      constructor(
+        private bus: QueuedBus,
+        private drop: boolean,
+      ) {}
+      postMessage(message: unknown) {
+        for (const other of this.bus.endpoints)
+          if (other !== this && !other.drop)
+            this.bus.queue.push(() => other.onmessage?.({ data: message }));
+      }
+      close() {}
+    }
+
+    it("resolves only after every sibling recorded the hold", async () => {
+      const bus = new QueuedBus();
+      const first = new PendingCloseRegistry({ channel: bus.endpoint(), locks: null, window: "a" });
+      const second = new PendingCloseRegistry({ channel: bus.endpoint(), locks: null, window: "b" });
+      bus.flush();
+      let synced = false;
+      void first.hold("k", {}).then(() => (synced = true));
+      await Promise.resolve();
+      expect(synced).toBe(false);
+      expect(second.has("k")).toBe(false);
+      bus.flush();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(second.has("k")).toBe(true);
+      expect(synced).toBe(true);
+    });
+
+    it("stops waiting for a window that never answers", async () => {
+      vi.useFakeTimers();
+      try {
+        const bus = new QueuedBus();
+        const first = new PendingCloseRegistry({ channel: bus.endpoint(), locks: null, window: "a" });
+        const silent = bus.endpoint();
+        // The silent window announces itself once, then never acknowledges.
+        silent.postMessage({
+          scope: "delidev.browser.pending-close",
+          kind: "presence",
+          window: "z",
+        });
+        bus.flush();
+        (silent as unknown as { drop: boolean }).drop = true;
+        let synced = false;
+        void first.hold("k", {}).then(() => (synced = true));
+        await vi.advanceTimersByTimeAsync(999);
+        expect(synced).toBe(false);
+        await vi.advanceTimersByTimeAsync(2);
+        expect(synced).toBe(true);
+        // The unresponsive window is no longer awaited.
+        let again = false;
+        void first.hold("k2", {}).then(() => (again = true));
+        await Promise.resolve();
+        expect(again).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 });

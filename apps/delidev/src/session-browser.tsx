@@ -499,6 +499,8 @@ function NativeSessionBrowser({
   // store, so every Session keeps the page descriptor until the proof settles.
   const closeOwner = useRef({});
   const heldClose = useRef<{ profile: string; page: string }>(undefined);
+  // Resolves once sibling product windows recorded this view's pending Close.
+  const closeSynced = useRef<Promise<void>>(Promise.resolve());
   const releaseClose = () => {
     const held = heldClose.current;
     heldClose.current = undefined;
@@ -709,6 +711,16 @@ function NativeSessionBrowser({
     setBusy(true);
     if (!observe) original.sent = true;
     try {
+      // Sibling windows must own the unsettled Close before the native page can
+      // disappear from their inventory reads.
+      if (!observe && original.action === PageAction.Close) {
+        await closeSynced.current;
+        if (
+          !alive.current ||
+          operationRef.current?.operation_id !== original.operation_id
+        )
+          return;
+      }
       const value = pageInventory(
         await invoke<PageInventory>("browser_pages", {
           profileId,
@@ -856,7 +868,11 @@ function NativeSessionBrowser({
     releaseClose();
     if (next.action === PageAction.Close && next.page_id && profileId) {
       heldClose.current = { profile: profileId, page: next.page_id };
-      tabsStore.holdPendingClose(profileId, next.page_id, closeOwner.current);
+      closeSynced.current = tabsStore.holdPendingClose(
+        profileId,
+        next.page_id,
+        closeOwner.current,
+      );
     }
     operationRef.current = next;
     setOperation(next);

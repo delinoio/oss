@@ -231,7 +231,11 @@ until the owner observes the proof or abandons the operation. Product windows
 have independent renderer memory, so the store announces each hold, a
 heartbeat refresh and its release over a same-origin `BroadcastChannel`
 (`delidev.browser.pending-close`). A newly opened window queries the current
-holds. A hold whose window stopped refreshing (for example after a crash)
+holds, and windows learn each other through that exchange. Before the native
+Close is sent, the initiating window waits until every known sibling window has
+acknowledged the new hold (at most one second; a window that does not answer is
+presumed gone), so a sibling's inventory read cannot find the page unowned after
+it disappears natively. A hold whose window stopped refreshing (for example after a crash)
 expires after 15 seconds, except that when the Web Locks API is available each
 window also holds a liveness lock named after its window identity and an expired
 hold is kept while that lock is still held, because renderer timers of a hidden

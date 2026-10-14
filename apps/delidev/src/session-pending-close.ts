@@ -4,11 +4,19 @@
 const channelName = "delidev.browser.pending-close";
 const heartbeatMs = 5000;
 const expiryMs = heartbeatMs * 3;
+/** Longest a Close waits for sibling windows to acknowledge a new hold. */
+const syncTimeoutMs = 1000;
 
 enum PendingCloseMessageKind {
   Hold = "hold",
   Release = "release",
   Query = "query",
+  /** A window announces itself so siblings can wait for its acknowledgement. */
+  Presence = "presence",
+  /** Acknowledges that the target window recorded the announced hold. */
+  Ack = "ack",
+  /** A window is going away. */
+  Bye = "bye",
 }
 
 interface PendingCloseMessage {
@@ -16,6 +24,10 @@ interface PendingCloseMessage {
   kind: PendingCloseMessageKind;
   window: string;
   key?: string;
+  /** On a Hold: the sender waits for an Ack from every known window. */
+  ack?: boolean;
+  /** On an Ack: the window whose Hold is acknowledged. */
+  to?: string;
 }
 
 /** The slice of BroadcastChannel the registry needs (injectable in tests). */
@@ -82,7 +94,9 @@ function isMessage(value: unknown): value is PendingCloseMessage {
     Object.values(PendingCloseMessageKind).includes(
       message.kind as PendingCloseMessageKind,
     ) &&
-    (message.key === undefined || typeof message.key === "string")
+    (message.key === undefined || typeof message.key === "string") &&
+    (message.ack === undefined || typeof message.ack === "boolean") &&
+    (message.to === undefined || typeof message.to === "string")
   );
 }
 
@@ -102,10 +116,17 @@ export class PendingCloseRegistry {
   private now: () => number;
   private window: string;
   private options: PendingCloseOptions;
-  private onPageHide = () => this.releaseAll();
+  private onPageHide = () => {
+    this.releaseAll();
+    this.send({ kind: PendingCloseMessageKind.Bye });
+  };
   private locks: PendingCloseLocks | null = null;
   private unlock: (() => void) | undefined;
   private probing = new Set<string>();
+  // Sibling windows seen on the channel, and the Holds still awaiting acks.
+  private peers = new Set<string>();
+  private syncing = new Map<string, Promise<void>>();
+  private waiters = new Map<string, { awaiting: Set<string>; done: () => void }>();
 
   constructor(options: PendingCloseOptions = {}) {
     this.options = options;
@@ -183,6 +204,7 @@ export class PendingCloseRegistry {
   dispose() {
     if (!this.channel) return;
     this.releaseAll();
+    this.send({ kind: PendingCloseMessageKind.Bye });
     if (typeof window !== "undefined")
       window.removeEventListener("pagehide", this.onPageHide);
     this.channel.onmessage = null;
@@ -194,6 +216,8 @@ export class PendingCloseRegistry {
     this.channel = null;
     this.remote.clear();
     this.probing.clear();
+    this.peers.clear();
+    for (const waiter of [...this.waiters.values()]) waiter.done();
     this.unlock?.();
     this.unlock = undefined;
     this.locks = null;
@@ -213,9 +237,27 @@ export class PendingCloseRegistry {
 
   private receive(data: unknown) {
     if (!isMessage(data) || data.window === this.window) return;
+    if (data.kind === PendingCloseMessageKind.Bye) {
+      this.peers.delete(data.window);
+      for (const [key, holders] of this.remote) {
+        holders.delete(data.window);
+        if (!holders.size) this.remote.delete(key);
+      }
+      return;
+    }
+    this.peers.add(data.window);
     if (data.kind === PendingCloseMessageKind.Query) {
+      this.send({ kind: PendingCloseMessageKind.Presence });
       for (const key of this.local.keys())
         this.send({ kind: PendingCloseMessageKind.Hold, key });
+      return;
+    }
+    if (data.kind === PendingCloseMessageKind.Presence) return;
+    if (data.kind === PendingCloseMessageKind.Ack) {
+      if (data.to !== this.window || data.key === undefined) return;
+      const waiter = this.waiters.get(data.key);
+      waiter?.awaiting.delete(data.window);
+      if (waiter && !waiter.awaiting.size) waiter.done();
       return;
     }
     if (data.key === undefined) return;
@@ -225,6 +267,41 @@ export class PendingCloseRegistry {
     else holders.delete(data.window);
     if (holders.size) this.remote.set(data.key, holders);
     else this.remote.delete(data.key);
+    // The hold is recorded: tell the announcing window it may proceed.
+    if (data.kind === PendingCloseMessageKind.Hold && data.ack)
+      this.send({
+        kind: PendingCloseMessageKind.Ack,
+        key: data.key,
+        to: data.window,
+      });
+  }
+
+  /**
+   * Announces a new hold and resolves once every known sibling window has
+   * recorded it, so a sibling's reconciliation can never observe the page as
+   * unowned after the native Close ran. A window that does not answer within
+   * the timeout is presumed gone and no longer awaited.
+   */
+  private announce(key: string): Promise<void> {
+    const awaiting = new Set(this.peers);
+    if (!this.channel || !awaiting.size) {
+      this.send({ kind: PendingCloseMessageKind.Hold, key });
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const done = () => {
+        if (timer !== undefined) clearTimeout(timer);
+        if (this.waiters.get(key) === waiter) this.waiters.delete(key);
+        for (const peer of awaiting) this.peers.delete(peer);
+        resolve();
+      };
+      const waiter = { awaiting, done };
+      this.waiters.set(key, waiter);
+      timer = setTimeout(done, syncTimeoutMs);
+      (timer as unknown as { unref?: () => void }).unref?.();
+      this.send({ kind: PendingCloseMessageKind.Hold, key, ack: true });
+    });
   }
 
   private startHeartbeat() {
@@ -241,15 +318,24 @@ export class PendingCloseRegistry {
     this.timer = undefined;
   }
 
-  /** Marks `key` as owned by an unsettled Close held by `owner`. */
-  hold(key: string, owner: object) {
+  /**
+   * Marks `key` as owned by an unsettled Close held by `owner`. The promise
+   * resolves once every known sibling window recorded the hold; await it before
+   * the native Close is sent.
+   */
+  hold(key: string, owner: object): Promise<void> {
     const owners = this.local.get(key) ?? new Set<object>();
     const first = !owners.size;
     owners.add(owner);
     this.local.set(key, owners);
-    if (!first) return;
-    this.send({ kind: PendingCloseMessageKind.Hold, key });
+    if (!first) return this.syncing.get(key) ?? Promise.resolve();
+    const synced = this.announce(key);
+    this.syncing.set(key, synced);
+    void synced.finally(() => {
+      if (this.syncing.get(key) === synced) this.syncing.delete(key);
+    });
     this.startHeartbeat();
+    return synced;
   }
 
   /** Releases one holder once its Close settled, was rejected or abandoned. */
