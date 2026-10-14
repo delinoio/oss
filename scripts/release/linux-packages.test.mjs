@@ -286,9 +286,7 @@ test("legacy archive terms are compared with the supplied source revision", () =
     extractExecutable(archive, "binpm", sourceTerms),
     executable.data,
   );
-  assert.throws(() =>
-    extractExecutable(archive, "binpm", { license, notice }),
-  );
+  assert.throws(() => extractExecutable(archive, "binpm", { license, notice }));
 });
 test("legacy executable-only archives require an authenticated historical revision", () => {
   assert.equal(legacyArchiveTermsRequired("behind"), false);

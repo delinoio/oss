@@ -125,9 +125,13 @@ export function downloadRelease(plan, output) {
       .includes("./.github/workflows/release-linux-packages.yml"),
     "RELEASE_PREDATES_PACKAGE_SUPPORT",
   );
-  const terms = ["binpm", "cargo-mono", "nodeup", "with-watch", "derun"].includes(
-    plan.project,
-  )
+  const terms = [
+    "binpm",
+    "cargo-mono",
+    "nodeup",
+    "with-watch",
+    "derun",
+  ].includes(plan.project)
     ? {
         license: readSourceFile("LICENSE"),
         notice: readSourceFile("NOTICE"),
