@@ -48,10 +48,13 @@ func ValidateWorkerRoot(root string) error {
 // documented reserves above.
 func (r PrepareRequest) MaxManifestBytes() (int, error) {
 	digest := strings.Repeat("f", 64)
-	root := strings.Repeat("r", ManifestWorkerRootReserveBytes) + "/workspaces/" + string(r.SessionID)
-	manifest := Manifest{Version: 1, SessionID: r.SessionID, MachineID: r.MachineID, Type: r.Type, State: CleanupPending, InputDigest: digest, PrimaryPath: root + "/" + string(r.SessionID), Repositories: []PreparedRepository{}, CreatedAt: time.Date(2006, 1, 2, 15, 4, 5, 123456789, time.UTC)}
+	// Generated separators use the Windows backslash, which JSON encodes in two
+	// bytes, so the bound holds on every platform (filepath.Join emits it there).
+	const sep = `\`
+	root := strings.Repeat("r", ManifestWorkerRootReserveBytes) + sep + "workspaces" + sep + string(r.SessionID)
+	manifest := Manifest{Version: 1, SessionID: r.SessionID, MachineID: r.MachineID, Type: r.Type, State: CleanupPending, InputDigest: digest, PrimaryPath: root + sep + string(r.SessionID), Repositories: []PreparedRepository{}, CreatedAt: time.Date(2006, 1, 2, 15, 4, 5, 123456789, time.UTC)}
 	if r.Type == domain.GeneralChat {
-		manifest.PrimaryPath = root + "/chat"
+		manifest.PrimaryPath = root + sep + "chat"
 	}
 	if r.SidechatSource != nil || r.ForkProfile == CodexSidechatReferenceV1 {
 		manifest.Reference = &SidechatReference{SessionID: r.SessionID, PreparationDigest: digest, ManifestDigest: digest, DirectoryIdentity: digest, MetadataIdentity: digest}
@@ -61,7 +64,7 @@ func (r PrepareRequest) MaxManifestBytes() (int, error) {
 		prepared := PreparedRepository{DirectoryName: spec.DirectoryName, SourceKind: spec.SourceKind, RemoteURL: spec.RemoteURL, PRTarget: spec.PRTarget, ID: spec.ID, Base: spec.Base, Starting: spec.Starting, BaseCommit: digest, StartingCommit: digest, Owned: r.Type == domain.Worktree}
 		path := spec.Checkout
 		if r.Type == domain.Worktree {
-			path = root + "/" + RepositoryDirectory(spec.ID, spec.DirectoryName)
+			path = root + sep + RepositoryDirectory(spec.ID, spec.DirectoryName)
 		}
 		prepared.Path, prepared.Source = path, spec.Checkout
 		if managed {

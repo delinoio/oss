@@ -156,6 +156,21 @@ func TestWorkerRootEncodedLengthIsEnforced(t *testing.T) {
 	}
 }
 
+// Generated separators are backslashes on Windows. The bound must hold with a
+// root that already uses the whole reserve and many managed repositories.
+func TestMaxManifestBytesReservesWindowsGeneratedSeparators(t *testing.T) {
+	request := budgetRequest(100, "https://github.com/fixture/repo.git", domain.Worktree)
+	bound, err := request.MaxManifestBytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := strings.Repeat("r", ManifestWorkerRootReserveBytes)
+	raw, _ := json.Marshal(realisticManifestWithSeparator(request, root, `\`))
+	if bound < len(raw) {
+		t.Fatalf("bound %d is below the manifest with Windows separators %d", bound, len(raw))
+	}
+}
+
 // The root reserve is an admission limit for new preparation. initialize backs
 // delete, recover and cleanup retry, so a previously valid longer root must keep
 // working there while new preparation is refused.
