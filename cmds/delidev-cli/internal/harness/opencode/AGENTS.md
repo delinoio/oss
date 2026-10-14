@@ -3,6 +3,7 @@
 - Follow the root instruction-update policy and the nearest parent instructions.
 - This file covers `cmds/delidev-cli/internal/harness/opencode/` and its descendants unless a more specific instruction file applies.
 - Read the owning contracts below before changing behavior, including affected cross-domain consumers.
+- A persistent profile resumes its checkpoint in place (`stageInPlace`): verify the retained files, record the claim, rebuild the snapshot repository from the archive, retire only the per-run DeliDev files, then write the new configuration. Never delete native history, caches, logs or helper links, never follow links, and never let a new native history adopt a retained database. Only the newest checkpoint of a profile can resume or Fork; keep older ones as metadata evidence.
 
 ## Owning contracts
 

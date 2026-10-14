@@ -10,6 +10,7 @@
 - A deletion scope succeeds only when no matching profile remains: any locked, referenced or unremovable match must return an error even when other matches were already removed.
 - Creation is all-or-nothing: close the lease on every failure and roll back a new directory unless its registry entry is proven durable.
 - Registry load validates every entry's owner kind, server, machine and (for legacy entries) the normalized local path below the owner root; reject the whole root otherwise.
+- OpenCode resumes a checkpoint in place in its profile; its checkpoints digest the whole runtime tree, so only the newest checkpoint of a profile can resume or Fork. Never retire anything beyond the per-run DeliDev files (`instructions.txt`, `opencode/opencode.json`, `snapshot-checkpoint`, `tmp` contents).
 - Write credential files through `subscription.WriteCredentialFile` so interrupted-write temporaries stay attributable and are retired with the credential files.
 
 ## Owning contracts
