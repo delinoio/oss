@@ -90,6 +90,26 @@ type networkSnapshot struct {
 	metadata workernetwork.Cache
 	bundle   workernetwork.Bundle
 }
+
+// captureNativeRoute retains the route and credential generation for one
+// native owner. Synchronization publishes a new snapshot only for later owners.
+func captureNativeRoute(config Config) *networkSnapshot {
+	if config.network == nil {
+		return nil
+	}
+	snapshot := config.network.current()
+	if snapshot.bundle.Route.Binding != nil {
+		binding := *snapshot.bundle.Route.Binding
+		snapshot.bundle.Route.Binding = &binding
+	}
+	snapshot.bundle.Route.Profile.Bypass = append([]domain.ProxyBypass(nil), snapshot.bundle.Route.Profile.Bypass...)
+	if snapshot.bundle.Credential != nil {
+		credential := *snapshot.bundle.Credential
+		snapshot.bundle.Credential = &credential
+	}
+	return &snapshot
+}
+
 type workerNetworkRuntime struct {
 	mu        sync.Mutex
 	root      string
@@ -126,10 +146,13 @@ func (n *workerNetworkRuntime) current() networkSnapshot {
 	return n.snapshot
 }
 func (n *workerNetworkRuntime) resolver(ctx context.Context) (domain.NetworkProfile, []byte, error) {
+	return resolveNetworkSnapshot(ctx, n.current())
+}
+
+func resolveNetworkSnapshot(ctx context.Context, s networkSnapshot) (domain.NetworkProfile, []byte, error) {
 	if ctx.Err() != nil {
 		return domain.NetworkProfile{}, nil, domain.SafeError(ctx.Err())
 	}
-	s := n.current()
 	var raw []byte
 	if s.bundle.Credential != nil {
 		var err error
@@ -139,6 +162,27 @@ func (n *workerNetworkRuntime) resolver(ctx context.Context) (domain.NetworkProf
 		}
 	}
 	return s.bundle.Route.Profile, raw, nil
+}
+
+// Native forwarders use their owner's captured route, including each later
+// request. A missing network runtime is the original Direct route and must
+// not load a newly imported route from disk while the owner is active.
+func networkHTTPClientForNativeRoute(ctx context.Context, config Config, credential Credential, snapshot *networkSnapshot, headerTimeout time.Duration) (*http.Client, func(), error) {
+	client, base := rpc.HTTPClient()
+	if headerTimeout > 0 {
+		base.ResponseHeaderTimeout = headerTimeout
+	}
+	if snapshot != nil {
+		pinned := *snapshot
+		client.Transport = &outbound.Transport{Base: base, Resolve: func(ctx context.Context) (domain.NetworkProfile, []byte, error) {
+			return resolveNetworkSnapshot(ctx, pinned)
+		}}
+	}
+	if err := desktopHTTPClient(ctx, config.Root, credential, client); err != nil {
+		base.CloseIdleConnections()
+		return nil, nil, err
+	}
+	return client, base.CloseIdleConnections, nil
 }
 
 type networkClientCloser struct {

@@ -135,11 +135,16 @@ fn deny_write() -> String {
 
 impl Project {
     pub fn load(path: &str, entries: Vec<String>) -> Result<Self> {
-        Self::load_rooted(path, entries, Vec::new())
+        Self::load_rooted(path, entries, Vec::new(), Some("/"))
     }
 
     /// Loads the program rooted at `entries`, `roots` and declaration files.
-    fn load_rooted(path: &str, entries: Vec<String>, extra_roots: Vec<String>) -> Result<Self> {
+    fn load_rooted(
+        path: &str,
+        entries: Vec<String>,
+        extra_roots: Vec<String>,
+        root_dir_override: Option<&str>,
+    ) -> Result<Self> {
         let region = tsrs_core::arena::Region::new(1 << 20);
         let region_scope = region.enter();
         let cwd = std::env::current_dir()?.to_string_lossy().into_owned();
@@ -238,6 +243,14 @@ impl Project {
         options.source_root.clear();
         options.map_root.clear();
         options.out_dir = "/__typeopt_output__".into();
+        if let Some(root_dir) = root_dir_override {
+            // Stage 1 publishes numbered modules instead of the compiler's
+            // directory layout. Forced emit otherwise raises TS5011 for a
+            // nested entry. Keep this until forced emit accepts such entries
+            // without a rootDir override.
+            options.root_dir = root_dir.into();
+            tracing::debug!(root_dir = %options.root_dir, "overriding stage 1 output root");
+        }
         // Size evaluation uses the same emitter settings without maps, so the
         // metric never includes source-map comments.
         let mut size_options = options.clone();
@@ -314,6 +327,7 @@ impl Project {
             &path.canonicalize()?.to_string_lossy(),
             Vec::new(),
             chunks.clone(),
+            None,
         )?;
         if let Some(outside) = project.application_file_outside(dir) {
             bail!(
@@ -328,8 +342,6 @@ impl Project {
             computed: computed_import,
             bare,
             worker_scripts,
-            non_esm,
-            eval_or_with,
         } = project.bundle_imported(dir);
         // Chunks known to run as ES modules: imported by another chunk or
         // loaded by an HTML module script. Others count as modules only with
@@ -394,16 +406,17 @@ impl Project {
         let mut classic = classic;
         classic.extend(worker_scripts);
         crate::app::set_bundle_modules(modules, classic);
-        // Boundary chunks stay byte-for-byte unchanged and keep importing the
-        // original names of what they reach. Whatever a boundary chunk can
+        // Excluded chunks stay byte-for-byte unchanged and keep importing the
+        // original names of what they reach. Whatever an excluded chunk can
         // import must therefore keep its name and content too: a renamed copy
         // would be evaluated next to the original, with a second module state.
+        // Other boundary chunks (classic scripts and chunks with `eval`, `with`
+        // or `importScripts`) are not edited by passes, but publication
+        // rewrites their references to renamed chunks, so they import the
+        // renamed copies and freeze nothing.
         let boundaries: Paths = chunks
             .iter()
-            .filter(|chunk| {
-                crate::app::bundle_boundary(chunk, !non_esm.contains(*chunk))
-                    || eval_or_with.contains(*chunk)
-            })
+            .filter(|chunk| crate::app::bundle_excluded(chunk))
             .cloned()
             .collect();
         let reach = boundary_reach(&chunks, &boundaries, &edges);
@@ -476,7 +489,6 @@ impl Project {
         let mut bare = None;
         let (mut worker_scripts, mut worker_computed) = (Paths::new(), false);
         let mut non_esm = Paths::new();
-        let mut eval_or_with = Paths::new();
         for file in source_files() {
             if !is_application(file) {
                 continue;
@@ -490,9 +502,6 @@ impl Project {
             collect(file, &mut nodes);
             if !has_esm_statements(file) && !uses_import_meta(&nodes) {
                 non_esm.insert(name.clone());
-            }
-            if uses_eval_or_with(&nodes) {
-                eval_or_with.insert(name.clone());
             }
             for node in nodes {
                 // `importScripts(…)` loads its targets as classic scripts.
@@ -592,7 +601,6 @@ impl Project {
         if worker_computed {
             worker_scripts.extend(non_esm.iter().cloned());
         }
-        let (non_esm_all, eval_or_with_all) = (non_esm, eval_or_with);
         BundleImports {
             imported,
             unlinked: public,
@@ -600,8 +608,6 @@ impl Project {
             computed,
             bare,
             worker_scripts,
-            non_esm: non_esm_all,
-            eval_or_with: eval_or_with_all,
         }
     }
 
@@ -1006,12 +1012,6 @@ impl crate::pipeline::Backend for Backend<'_> {
     }
 
     fn emit_module(&mut self, file: &str, text: &str) -> Result<crate::pipeline::Emitted> {
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        text.hash(&mut hasher);
-        let key = (file.to_owned(), hasher.finish());
-        if let Some(emitted) = self.sizes.get(&key) {
-            return Ok(emitted.clone());
-        }
         if crate::app::bundle_mode() {
             // Bundle chunks are published as edited text, so the text itself
             // is the measured output. Parsing every candidate chunk would
@@ -1028,6 +1028,14 @@ impl crate::pipeline::Backend for Backend<'_> {
                 size: text.len(),
                 imports: crate::pipeline::static_imports(text),
             });
+        }
+        // Only transpiled sizes are cached; the bundle and JavaScript paths
+        // above measure the text directly, so hashing it there is wasted.
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        text.hash(&mut hasher);
+        let key = (file.to_owned(), hasher.finish());
+        if let Some(emitted) = self.sizes.get(&key) {
+            return Ok(emitted.clone());
         }
         let output = tsrs_api::transpile::transpile(
             text,
@@ -1332,10 +1340,6 @@ struct BundleImports {
     bare: Option<String>,
     /// Chunks that `importScripts` can load as classic scripts.
     worker_scripts: Paths,
-    /// Chunks without ESM statements or `import.meta`.
-    non_esm: Paths,
-    /// Chunks that use direct `eval`, `with` or `importScripts`.
-    eval_or_with: Paths,
 }
 
 /// Chunks that a boundary chunk can import, statically or through a literal
@@ -2073,11 +2077,14 @@ fn collect(node: Node, nodes: &mut Vec<Node>) {
 
 /// Start of the node's first token, excluding leading trivia.
 fn token_start(node: Node) -> usize {
-    tsrs_scanner::get_token_pos_of_node(
-        node.raw(),
-        get_source_file_of_node(node).raw().as_source_file_p(),
-        false,
-    ) as usize
+    token_start_in(node, get_source_file_of_node(node))
+}
+
+/// [`token_start`] for a node of a known source file. Finding the source file
+/// walks every parent, which dominated planning on deeply nested bundles.
+fn token_start_in(node: Node, source_file: Node) -> usize {
+    tsrs_scanner::get_token_pos_of_node(node.raw(), source_file.raw().as_source_file_p(), false)
+        as usize
 }
 
 #[cfg(test)]

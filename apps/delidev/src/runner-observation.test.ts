@@ -75,6 +75,35 @@ it("projects independent closed Claude exclusion causes without interpreting nat
       observed({ installations: [{ ...installation, version: "2.1.235" }] }),
     ),
   ).toEqual({ cause: "version", detectedVersion: "2.1.235" });
+  for (const detectedVersion of ["2.1.237", "3.0.0-rc.1", "2.1.236+build.5"])
+    expect(
+      claudeRunnerObservation(
+        observed({
+          installations: [{ ...installation, version: detectedVersion }],
+        }),
+      ),
+    ).toEqual({ detectedVersion });
+  expect(
+    claudeRunnerObservation(
+      observed({
+        installations: [{ ...installation, version: "2.1.236-rc.1" }],
+      }),
+    ),
+  ).toEqual({ cause: "version", detectedVersion: "2.1.236-rc.1" });
+  expect(
+    claudeRunnerObservation(
+      observed({
+        installations: [
+          {
+            ...installation,
+            version: "2.1.237",
+            protocol: { state: "failed" },
+            protocol_verified: false,
+          },
+        ],
+      }),
+    ),
+  ).toEqual({ cause: "protocolFailed", detectedVersion: "2.1.237" });
   expect(
     claudeRunnerObservation(
       observed({

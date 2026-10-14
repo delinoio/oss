@@ -385,3 +385,44 @@ func TestNativeClaudeProfileExclusiveOriginalMachineOwnership(t *testing.T) {
 		t.Fatal("cleanup removed an independent profile", err)
 	}
 }
+
+// TestNativeClaudeProfileAdmitsBaselineSemVerOnly proves the Worker lifecycle
+// uses the shared baseline predicate and never the exact pinned constant.
+func TestNativeClaudeProfileAdmitsBaselineSemVerOnly(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	executable, err = filepath.EvalSymlinks(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for version, want := range map[string]bool{
+		domain.ClaudeProtocolVersion:           true,
+		"2.1.237":                              true,
+		"3.0.0-rc.1":                           true,
+		domain.ClaudeProtocolVersion + "+b.7":  true,
+		"2.1.235":                              false,
+		domain.ClaudeProtocolVersion + "-rc.1": false,
+		"not-a-version":                        false,
+		"":                                     false,
+	} {
+		root, err := filepath.EvalSymlinks(t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		installation := domain.Installation{Harness: domain.ClaudeCode, Version: version, ResolvedPath: executable}
+		profile, err := openClaudeProfile(Config{Root: root}, Credential{ServerID: domain.NewID(), MachineID: domain.NewID()}, domain.NewID(), domain.NewID(), installation, domain.NewID(), true)
+		if (err == nil) != want {
+			t.Errorf("version %q: admitted=%v err=%v, want admitted=%v", version, err == nil, err, want)
+		}
+		if err == nil {
+			if profile.config.Version != version {
+				t.Errorf("profile attributed version %q, want observed %q", profile.config.Version, version)
+			}
+			if err := profile.close(); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+}

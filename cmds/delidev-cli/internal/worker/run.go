@@ -20,7 +20,6 @@ import (
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/claude"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
@@ -46,6 +45,7 @@ type Config struct {
 	remoteWorkspaceClone      bool
 	repositoryClone           bool
 	updatesEnabled            bool
+	parallelSessions          bool
 	terminals                 *terminalManager
 	Root                      string
 	StartupID                 domain.ID
@@ -93,6 +93,52 @@ type assignment struct {
 	steers      chan *pb.SteerInputControl
 	steerIDs    map[domain.ID]steerControlIdentity
 	native      bool
+}
+
+// maxAssignmentReceipts bounds the original assignment identities one stream
+// retains so late controls for completed jobs can be recognized without growing
+// with the lifetime of the connection.
+const maxAssignmentReceipts = 4096
+
+// assignmentReceipts retains the identities of assignments this stream received.
+// A control for a completed job is resolved against its original receipt, never
+// against whichever assignment happened to arrive last.
+type assignmentReceipts struct {
+	mu   sync.Mutex
+	seen map[string]struct{}
+	ring []string
+	next int
+}
+
+func newAssignmentReceipts() *assignmentReceipts {
+	return &assignmentReceipts{seen: map[string]struct{}{}, ring: make([]string, maxAssignmentReceipts)}
+}
+
+func (r *assignmentReceipts) record(id string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.seen[id]; ok {
+		return
+	}
+	if evicted := r.ring[r.next]; evicted != "" {
+		delete(r.seen, evicted)
+	}
+	r.ring[r.next] = id
+	r.seen[id] = struct{}{}
+	r.next = (r.next + 1) % len(r.ring)
+}
+
+func (r *assignmentReceipts) has(id string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	_, ok := r.seen[id]
+	return ok
+}
+
+// parallelAssignment reports whether the Worker may run this assignment on the
+// parallel session lane. Everything else stays on the serial main loop.
+func parallelAssignment(resource *pb.Resource, jobType domain.JobType) bool {
+	return resource.SessionId != "" && (jobType == domain.PrepareWorkspaceJob || jobType == domain.ExecuteSessionJob)
 }
 
 func authenticated[T any](credential Credential, message *T) *connect.Request[T] {
@@ -153,7 +199,7 @@ func workerOpenCodeCompactionInstallation(resource *pb.Resource) bool {
 		return false
 	}
 	for _, installation := range machine.Installations {
-		if installation.Harness == domain.OpenCode && installation.State == domain.InstallationDetected && installation.Version == domain.OpenCodeProtocolVersion && installation.ProtocolVerified && installation.Protocol != nil && installation.Protocol.Protocol == domain.OpenCodeHTTP && installation.Protocol.State == domain.ProtocolVerified && installation.Protocol.Problem == nil && filepath.IsAbs(installation.ResolvedPath) {
+		if installation.Harness == domain.OpenCode && installation.State == domain.InstallationDetected && domain.HarnessVersionAllowed(domain.OpenCode, installation.Version) && installation.ProtocolVerified && installation.Protocol != nil && installation.Protocol.Protocol == domain.OpenCodeHTTP && installation.Protocol.State == domain.ProtocolVerified && installation.Protocol.Problem == nil && filepath.IsAbs(installation.ResolvedPath) {
 			return true
 		}
 	}
@@ -357,7 +403,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 					if domain.Decode(attached.Msg.Machine.DocumentJson, &machine) == nil {
 						for index := range machine.Installations {
 							candidate := machine.Installations[index]
-							if candidate.Harness == domain.ClaudeCode && candidate.Version == claude.SupportedVersion && candidate.ProtocolVerified && candidate.State == domain.InstallationDetected && candidate.Problem == nil && candidate.Protocol != nil && candidate.Protocol.State == domain.ProtocolVerified && candidate.Protocol.Problem == nil {
+							if candidate.Harness == domain.ClaudeCode && domain.HarnessVersionAllowed(domain.ClaudeCode, candidate.Version) && candidate.ProtocolVerified && candidate.State == domain.InstallationDetected && candidate.Problem == nil && candidate.Protocol != nil && candidate.Protocol.State == domain.ProtocolVerified && candidate.Protocol.Problem == nil {
 								config.nativeClaudeInstallation = &candidate
 								break
 							}
@@ -461,6 +507,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_EXACT_QUOTE_V1) {
 				profile += "\x00branch-prefix-exact-quote-v1"
+			}
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_PARALLEL_SESSIONS_V1) {
+				profile += "\x00parallel-sessions-v1"
 			}
 			if capabilityAttachID == "" || capabilityProfile != profile {
 				capabilityAttachID, capabilityProfile = domain.NewID(), profile
@@ -573,6 +622,11 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_EXACT_QUOTE_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_EXACT_QUOTE_V1)
 			}
+			// Older servers reject unknown enums and keep singleton dispatch. Advertise
+			// only after the original server echoes support for parallel sessions.
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_PARALLEL_SESSIONS_V1) {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_PARALLEL_SESSIONS_V1)
+			}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1) && openCodeChildExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1)
 			}
@@ -620,6 +674,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				config.Logger.InfoContext(ctx, "worker auxiliary title capability not negotiated", "machine_id", credential.MachineID)
 			}
 			config.updatesEnabled = machineCapability(attached.Msg.Machine, domain.SignedWorkerUpdatesV1)
+			config.parallelSessions = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_PARALLEL_SESSIONS_V1) && machineCapability(attached.Msg.Machine, domain.ParallelSessionsV1)
 			config.startupProgress = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1) && machineCapability(attached.Msg.Machine, domain.SessionStartupProgressV1)
 			config.namedWorkspaceDirectories = namedDirectoriesExpected && machineCapability(attached.Msg.Machine, domain.NamedWorkspaceDirectoriesV1)
 			// The terminal owner was created before attachment and holds a Config copy.
@@ -719,6 +774,10 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 
 	jobs := make(chan assignment, 1)
 	var active sync.Map
+	receipts := newAssignmentReceipts()
+	// Parallel-lane assignments run in their own goroutines. The receiver is the
+	// only place that adds to the group, and teardown waits for it before joining.
+	var parallelJobs sync.WaitGroup
 	received := make(chan struct{})
 	// Receive independently of native execution. Revocation, stream replacement
 	// and server loss must cancel owned Git/harness work while it is running.
@@ -726,7 +785,6 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 	// protocol failure, never permission to buffer arbitrary future execution.
 	go func() {
 		defer close(received)
-		var lastAssigned string
 		for stream.Receive() {
 			deadline.Reset(heartbeatTimeout)
 			message := stream.Msg()
@@ -739,7 +797,7 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 				}
 				value, ok := active.Load(control.JobId)
 				if !ok {
-					if control.JobId == lastAssigned {
+					if receipts.has(control.JobId) {
 						continue
 					}
 					cancel(publicationUncertain())
@@ -787,7 +845,7 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 				if !ok {
 					// A control read before terminal publication may arrive after
 					// the local job finished. It cannot reopen that assignment.
-					if control.JobId == lastAssigned {
+					if receipts.has(control.JobId) {
 						continue
 					}
 					cancel(publicationUncertain())
@@ -839,7 +897,7 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 				if !ok {
 					// A control read before terminal publication may arrive after
 					// the local job finished. It cannot reopen that assignment.
-					if control.JobId == lastAssigned {
+					if receipts.has(control.JobId) {
 						continue
 					}
 					cancel(publicationUncertain())
@@ -923,7 +981,17 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 			if message.CancelRequested {
 				stopJob()
 			}
-			lastAssigned = resource.Id
+			receipts.record(resource.Id)
+			if config.parallelSessions && parallelAssignment(resource, envelope.Type) {
+				parallelJobs.Add(1)
+				go func(work assignment) {
+					defer parallelJobs.Done()
+					if err := runAssignment(ctx, config, client, credential, instance, &active, work); err != nil {
+						cancel(err)
+					}
+				}(*work)
+				continue
+			}
 			select {
 			case jobs <- *work:
 			case <-ctx.Done():
@@ -967,6 +1035,10 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 		cancel(context.Canceled)
 		_ = stream.Close()
 		<-received
+		// Every owned parallel assignment observes the cancellation above and is
+		// joined before any shared Worker resource is released.
+		parallelJobs.Wait()
+		config.Logger.InfoContext(context.WithoutCancel(ctx), "worker_stream_joined", "machine_id", credential.MachineID, "instance_id", instance, "parallel_sessions", config.parallelSessions)
 		<-readsDone
 		<-imagesDone
 		<-forwardsDone
@@ -979,41 +1051,53 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 			return context.Cause(ctx)
 		case work = <-jobs:
 		}
-		resource := work.resource
-		if ctx.Err() != nil {
-			return context.Cause(ctx)
-		}
-		if resource.Kind != pb.EntityKind_ENTITY_KIND_JOB || resource.SchemaVersion != 1 || resource.Revision == 0 {
-			return domain.Fail(domain.RecoveryRequired, "The Worker received an invalid job envelope.", "Check server protocol compatibility.")
-		}
-		id := domain.ID(resource.Id)
-		if err := id.Validate(); err != nil {
-			return err
-		}
-		var job domain.Job
-		if err := decodeAssignedJob(resource.DocumentJson, &job); err != nil {
-			return err
-		}
-		if err := job.Validate(); err != nil {
-			return err
-		}
-		if job.MachineID != credential.MachineID || job.InstanceID != instance || job.State != domain.JobClaimed {
-			return domain.Fail(domain.PermissionDenied, "The received job belongs to another machine or process.", "Inspect the paired server and job ownership.")
-		}
-		err := runAndReportJob(ctx, config, client, credential, instance, work, resource, job)
-		active.Delete(resource.Id)
-		if err != nil {
-			// Deletion can fence native publication before cancellation arrives.
-			// Release the original assignment only after authenticated inspection
-			// proves its exact immutable retirement work. This is not completion
-			// or cleanup proof; the independent deletion lane still joins owners.
-			if ctx.Err() == nil && retiringAssignment(ctx, config, client, credential, instance, resource) {
-				config.Logger.InfoContext(ctx, "worker_assignment_retiring", "job_id", resource.Id, "session_id", resource.SessionId)
-				continue
-			}
+		if err := runAssignment(ctx, config, client, credential, instance, &active, work); err != nil {
 			return err
 		}
 	}
+}
+
+// runAssignment validates and runs one received assignment to its durable
+// report, then retires its live context. It is shared by the serial main loop
+// and the parallel lane, so both apply identical identity checks.
+func runAssignment(ctx context.Context, config Config, client delidevv1connect.WorkerServiceClient, credential Credential, instance domain.ID, active *sync.Map, work assignment) error {
+	resource := work.resource
+	if ctx.Err() != nil {
+		return context.Cause(ctx)
+	}
+	if resource.Kind != pb.EntityKind_ENTITY_KIND_JOB || resource.SchemaVersion != 1 || resource.Revision == 0 {
+		return domain.Fail(domain.RecoveryRequired, "The Worker received an invalid job envelope.", "Check server protocol compatibility.")
+	}
+	id := domain.ID(resource.Id)
+	if err := id.Validate(); err != nil {
+		return err
+	}
+	var job domain.Job
+	if err := decodeAssignedJob(resource.DocumentJson, &job); err != nil {
+		return err
+	}
+	if err := job.Validate(); err != nil {
+		return err
+	}
+	if job.MachineID != credential.MachineID || job.InstanceID != instance || job.State != domain.JobClaimed {
+		return domain.Fail(domain.PermissionDenied, "The received job belongs to another machine or process.", "Inspect the paired server and job ownership.")
+	}
+	config.Logger.InfoContext(ctx, "worker_assignment_started", "machine_id", credential.MachineID, "instance_id", instance, "job_id", resource.Id, "session_id", resource.SessionId, "type", job.Type, "parallel_lane", config.parallelSessions && parallelAssignment(resource, job.Type))
+	err := runAndReportJob(ctx, config, client, credential, instance, work, resource, job)
+	active.Delete(resource.Id)
+	if err != nil {
+		// Deletion can fence native publication before cancellation arrives.
+		// Release the original assignment only after authenticated inspection
+		// proves its exact immutable retirement work. This is not completion
+		// or cleanup proof; the independent deletion lane still joins owners.
+		if ctx.Err() == nil && retiringAssignment(ctx, config, client, credential, instance, resource) {
+			config.Logger.InfoContext(ctx, "worker_assignment_retiring", "job_id", resource.Id, "session_id", resource.SessionId)
+			return nil
+		}
+		config.Logger.WarnContext(ctx, "worker_assignment_failed", "machine_id", credential.MachineID, "instance_id", instance, "job_id", resource.Id, "session_id", resource.SessionId, "code", domain.SafeError(err).Code)
+		return err
+	}
+	return nil
 }
 
 // Native/workspace cleanup releases inner ownership before its final journal and

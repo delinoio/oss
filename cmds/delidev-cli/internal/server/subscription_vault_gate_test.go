@@ -188,41 +188,22 @@ func TestServerSubscriptionNativeWaitReleasesVaultGate(t *testing.T) {
 	awaitServerFixture(t, done)
 }
 
-// holdClaimedLoginGate keeps the account gate from the moment the server
-// controller commits its claim until release is called. The controller releases
-// the gate after the claim and re-enters it for credentials; the waiting hog is
-// handed the gate between those two acquisitions.
-func (f *subscriptionFixture) holdClaimedLoginGate() (claimed <-chan struct{}, release func()) {
+// pauseBeforeServerSubscriptionCredentials pauses after the server controller
+// claims the operation and starts its watcher, before credential access begins.
+func (f *subscriptionFixture) pauseBeforeServerSubscriptionCredentials() (claimed <-chan struct{}, release func()) {
 	f.t.Helper()
 	claimedCh := make(chan struct{})
-	stop := make(chan struct{})
-	finished := make(chan struct{})
-	go func() {
-		defer close(finished)
-		for {
-			select {
-			case <-stop:
-				return
-			default:
-			}
-			unlock, err := f.service.lockAccounts(context.Background())
-			if err != nil {
-				return
-			}
-			_, a := f.record()
-			if a.Subscription != nil && a.Subscription.ServerOperation != nil && a.Subscription.ServerOperation.NativeStarted {
-				close(claimedCh)
-				<-stop
-				unlock()
-				return
-			}
-			unlock()
-		}
-	}()
+	proceed := make(chan struct{})
+	hookFinished := make(chan struct{})
+	f.service.beforeServerSubscriptionCredentials = func() {
+		close(claimedCh)
+		<-proceed
+		close(hookFinished)
+	}
 	var once sync.Once
 	return claimedCh, func() {
-		once.Do(func() { close(stop) })
-		<-finished
+		once.Do(func() { close(proceed) })
+		<-hookFinished
 	}
 }
 
@@ -332,7 +313,7 @@ func TestServerSubscriptionOperationEndedBeforeCredentialsReconciles(t *testing.
 				opened.Add(1)
 				return nil, domain.Fail(domain.Unsupported, "Synthetic native refusal.", "")
 			}
-			claimed, release := f.holdClaimedLoginGate()
+			claimed, release := f.pauseBeforeServerSubscriptionCredentials()
 			defer release()
 			done := make(chan struct{})
 			go func() {

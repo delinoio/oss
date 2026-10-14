@@ -395,6 +395,18 @@ function fixture(
       change: { session },
     }),
   );
+  const forkJob = create(ResourceSchema, {
+    id: newRequestId(),
+    kind: EntityKind.JOB,
+    revision: 1n,
+    schemaVersion: 1,
+    documentJson: encode({
+      state: "claimed",
+      input: { source_session_id: session.id },
+    }),
+  });
+  const forks = vi.fn(async () => ({ job: forkJob }));
+  const forkReads = vi.fn(async () => ({ job: forkJob }));
   const agent = create(ResourceSchema, {
     id: newRequestId(),
     kind: EntityKind.AGENT,
@@ -509,6 +521,8 @@ function fixture(
       enqueueInput: enqueues,
       controlSession: controls,
       createSession: creates,
+      forkSession: forks,
+      getSessionFork: forkReads,
     });
     router.service(ResourceService, {
       getResource: async (request, context) => {
@@ -602,6 +616,8 @@ function fixture(
     enqueues,
     controls,
     creates,
+    forks,
+    forkReads,
     status,
     githubQuery,
     saveConfiguration,
@@ -3765,7 +3781,7 @@ it.each([false, true])(
     fireEvent.keyDown(name, { key: "Escape" });
     expect(screen.getByRole("textbox", { name: "Name" })).toBe(name);
     expect(
-      rail.getByRole("button", { name: "Usage" }).hasAttribute("disabled"),
+      rail.getByRole("button", { name: "More" }).hasAttribute("disabled"),
     ).toBe(false);
     fireEvent.click(rail.getByRole("button", { name: "Settings" }));
     expect(screen.getByRole("textbox", { name: "Name" })).toBe(name);
@@ -3779,6 +3795,7 @@ it.each([false, true])(
     expect(
       (screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value,
     ).toBe("Visit draft");
+    fireEvent.click(rail.getByRole("button", { name: "More" }));
     fireEvent.click(rail.getByRole("button", { name: "Usage" }));
     expect(
       screen.queryByRole("region", { name: "Settings content" }),
@@ -4585,6 +4602,85 @@ async function searchRetained(view: ReturnType<typeof fixture>) {
 }
 const sidechatTabs = () =>
   screen.queryAllByRole("tab", { name: /Side question/ });
+
+it(
+  "keeps later Session focus after a retained Sidechat reopens and navigation returns to its parent",
+  async () => {
+    const value = fixture();
+    const settled = (name: string) =>
+      encode({
+        name,
+        machine_id: value.machine.id,
+        workspace: "general-chat",
+        archive: "active",
+        outcome: "succeeded",
+        dispatch: "paused",
+        recovery: "none",
+        initial_execution: { configuration: { harness: "codex" } },
+        execution: { native_turn_id: "original-turn", cleanup_verified: true },
+      });
+    value.session.documentJson = settled("Retained session");
+    value.other.documentJson = settled("Other session");
+    value.machine.documentJson = encode({
+      name: "Worker One",
+      worker_capabilities: ["codex-read-only-sidechat-v1"],
+    });
+    value.extraResources.push(value.session, value.other);
+    value.status.mockResolvedValue({
+      version: "0.1.0",
+      protocolVersion: 2,
+      capabilities: [SystemCapability.NATIVE_SIDECHAT_V1],
+    });
+    render(<App transport={value.transport} />);
+    const openSession = async (name: string) => {
+      fireEvent.click(
+        await screen.findByRole("button", {
+          name: new RegExp(`General Chat ${name}`),
+        }),
+      );
+      await screen.findByRole("heading", { name });
+    };
+    const openSidechat = async () => {
+      fireEvent.click(await screen.findByRole("button", { name: "Open tool" }));
+      fireEvent.click(
+        await screen.findByRole("menuitem", { name: "Open Sidechat" }),
+      );
+    };
+    await openSession("Retained session");
+    await openSidechat();
+    const composer = (await screen.findByRole("textbox", {
+      name: "Message",
+    })) as HTMLTextAreaElement;
+    const requestId = composer.dataset.sidechatRequest;
+    fireEvent.change(composer, { target: { value: "Retained question" } });
+    await waitFor(() => expect(value.forks).toHaveBeenCalledTimes(1));
+    await openSession("Other session");
+
+    const callbacks: FrameRequestCallback[] = [];
+    const frame = vi
+      .spyOn(globalThis, "requestAnimationFrame")
+      .mockImplementation((callback) => callbacks.push(callback));
+    await openSidechat();
+    frame.mockRestore();
+    expect(callbacks).toHaveLength(1);
+    await openSession("Other session");
+    await openSession("Retained session");
+    expect(composer.closest("[hidden], [inert]")).toBeNull();
+    const laterFocus = document.createElement("button");
+    document.body.append(laterFocus);
+    laterFocus.focus();
+    act(() => callbacks[0]!(0));
+    expect(document.activeElement).toBe(laterFocus);
+    expect(composer.value).toBe("Retained question");
+    expect(document.getElementById(composer.id)).toBe(composer);
+    expect(composer.dataset.sidechatRequest).toBe(requestId);
+    expect(value.forks).toHaveBeenCalledTimes(1);
+    expect(value.enqueues).not.toHaveBeenCalled();
+    expect(value.controls).not.toHaveBeenCalled();
+    laterFocus.remove();
+  },
+  fullShellTimeoutMs,
+);
 
 it("opens a never-visited Sidechat search result under its original parent without duplicates", async () => {
   const value = fixture([], [], [], false, true);

@@ -80,9 +80,8 @@ it("labels each direct terminal tab with a friendly number and no internal ID", 
   ).toBeTruthy();
 });
 
-it("renders the New browser page button after the tab items, outside the tablist and numeric positions", () => {
-  const newPage = vi.fn();
-  render(
+it("renders only the tablist: no direct New browser page button, and no Browser singleton tab", () => {
+  const { container } = render(
     <SessionTabBar
       id="original"
       tabs={[
@@ -98,20 +97,14 @@ it("renders the New browser page button after the tab items, outside the tablist
       selected={SessionTabKind.Conversation}
       select={() => {}}
       close={() => {}}
-      newPage={newPage}
     />,
   );
-  const add = screen.getByRole("button", { name: "New browser page" });
+  // The + entry is the Open tool trigger owned by SessionToolMenu, not the tab bar.
+  expect(screen.queryByRole("button", { name: "New browser page" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Open tool" })).toBeNull();
+  expect(container.querySelector(".session-new-page")).toBeNull();
   expect(screen.getAllByRole("tab")).toHaveLength(2);
-  expect(screen.getByRole("tablist").contains(add)).toBe(false);
-  expect(add.getAttribute("role")).toBeNull();
-  expect(add.hasAttribute("aria-keyshortcuts")).toBe(false);
-  expect(
-    screen.getByRole("tablist").compareDocumentPosition(add) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
-  fireEvent.click(add);
-  expect(newPage).toHaveBeenCalledWith(add);
+  expect(screen.getByRole("tablist")).toBeTruthy();
   // No Browser singleton tab exists; the page is a peer of Conversation.
   expect(screen.queryByRole("tab", { name: "Browser" })).toBeNull();
   expect(

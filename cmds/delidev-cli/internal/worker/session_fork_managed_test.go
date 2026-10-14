@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -25,6 +26,29 @@ import (
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
+
+// nativeFixtureHelperAliasNames returns the temporary Unix aliases the pinned
+// Codex startup creates for goos: apply_patch, applypatch and
+// codex-execve-wrapper on every Unix, plus codex-linux-sandbox on Linux only.
+// Native fixtures must create the same set, because original startup capture
+// requires every alias of the platform profile to be present.
+func nativeFixtureHelperAliasNames(goos string) []string {
+	names := []string{"apply_patch", "applypatch", "codex-execve-wrapper"}
+	if goos == "linux" {
+		names = append(names, "codex-linux-sandbox")
+	}
+	return names
+}
+
+func TestNativeFixtureHelperAliasNamesMatchPlatformProfile(t *testing.T) {
+	unix := []string{"apply_patch", "applypatch", "codex-execve-wrapper"}
+	if got := nativeFixtureHelperAliasNames("darwin"); !slices.Equal(got, unix) {
+		t.Fatalf("darwin aliases = %v", got)
+	}
+	if got := nativeFixtureHelperAliasNames("linux"); !slices.Equal(got, append(unix, "codex-linux-sandbox")) {
+		t.Fatalf("linux aliases = %v", got)
+	}
+}
 
 type managedSidechatProcess struct {
 	Thread               map[string]any
@@ -81,7 +105,7 @@ func runManagedSidechatProcess(home string) bool {
 				if err != nil || os.MkdirAll(helperDirectory, 0700) != nil {
 					os.Exit(97)
 				}
-				for _, name := range []string{"apply_patch", "applypatch", "codex-execve-wrapper"} {
+				for _, name := range nativeFixtureHelperAliasNames(runtime.GOOS) {
 					if os.Symlink(executable, filepath.Join(helperDirectory, name)) != nil {
 						os.Exit(97)
 					}

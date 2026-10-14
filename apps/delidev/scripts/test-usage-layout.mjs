@@ -444,6 +444,13 @@ try {
           await page.goto(
             `${origin}/?theme=${theme}&language=${language}&empty=${empty}`,
           );
+          // Usage is reached through the More popover while it is unpinned.
+          await page
+            .getByRole("button", {
+              name: language === "ko" ? "더보기" : "More",
+              exact: true,
+            })
+            .click();
           await page
             .getByRole("button", {
               name: language === "ko" ? "사용량" : "Usage",
@@ -949,6 +956,13 @@ try {
         await page.goto(
           `${origin}/?theme=${theme}&language=${language}&failure=true`,
         );
+        // Usage is reached through the More popover while it is unpinned.
+        await page
+          .getByRole("button", {
+            name: language === "ko" ? "더보기" : "More",
+            exact: true,
+          })
+          .click();
         await page
           .getByRole("button", {
             name: language === "ko" ? "사용량" : "Usage",
@@ -1028,6 +1042,13 @@ try {
       ]) {
         await page.setViewportSize({ width, height });
         await page.goto(`${origin}/?${scenario}=true&language=${language}`);
+        // Usage is reached through the More popover while it is unpinned.
+        await page
+          .getByRole("button", {
+            name: language === "ko" ? "더보기" : "More",
+            exact: true,
+          })
+          .click();
         await page
           .getByRole("button", {
             name: language === "ko" ? "사용량" : "Usage",

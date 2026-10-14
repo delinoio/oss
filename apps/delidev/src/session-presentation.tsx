@@ -28,7 +28,7 @@ export enum SessionIconKind {
   Terminals = "terminals",
   Browser = "browser",
   Sidechat = "sidechat",
-  Tools = "tools",
+  Plus = "plus",
   Diagnostics = "diagnostics",
   Conversation = "conversation",
   Warning = "warning",
@@ -36,9 +36,7 @@ export enum SessionIconKind {
 
 const paths: Record<SessionIconKind, ReactNode> = {
   [SessionIconKind.Sidechat]: <path d="M4 4h16v12H9l-5 4V4Z" />,
-  [SessionIconKind.Tools]: (
-    <path d="m14 6 4 4 3-3a6 6 0 0 1-8 8l-6 6a3 3 0 0 1-4-4l6-6a6 6 0 0 1 8-8z" />
-  ),
+  [SessionIconKind.Plus]: <path d="M12 5v14M5 12h14" />,
   [SessionIconKind.Diff]: (
     <>
       <path d="M5 3h8l4 4v14H5zM13 3v5h4M8 12h6M11 9v6M8 18h6" />

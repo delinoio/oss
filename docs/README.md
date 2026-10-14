@@ -52,6 +52,14 @@ Record new implementation status, validation results and unresolved limits in pu
 
 ## Project Catalog
 
+### bundlewhy
+
+- [Project index](project-bundlewhy.md)
+- [Rust core, CLI and local server](crates-bundlewhy-foundation.md)
+- [Web UI](apps-bundlewhy-web-contract.md)
+- [Connect protocol v1](protos-bundlewhy-v1-contract.md)
+- [Engine adapters and distribution](packages-bundlewhy-distribution-contract.md)
+
 ### typeopt
 
 - [Project index](project-typeopt.md)
@@ -175,7 +183,7 @@ Record new implementation status, validation results and unresolved limits in pu
 ### public-docs
 
 - `docs/project-public-docs.md`
-- `docs/apps-public-docs-foundation.md` (single `oss.delino.io` publisher, seven project subpaths, site selector, and stable `/devhud` section)
+- `docs/apps-public-docs-foundation.md` (single `oss.delino.io` publisher, eight project subpaths including bundlewhy, site selector, and stable `/devhud` section)
 - `docs/packages-docs-site-switcher-contract.md` (shared accessible documentation site selector package and fixed site registry)
 
 ### serde-feather

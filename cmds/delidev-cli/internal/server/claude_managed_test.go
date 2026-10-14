@@ -113,8 +113,8 @@ func newManagedClaudeFixture(t *testing.T) *managedFixture {
 		t.Fatal(err)
 	}
 	m := &managedFixture{subscriptionFixture: f, native: newFakeManagedLogin()}
-	f.service.claudeSetupOpen = func(context.Context, string, domain.ID, *slog.Logger) (managedClaudeLogin, error) {
-		return m.native, nil
+	f.service.claudeSetupOpen = func(context.Context, string, domain.ID, *slog.Logger) (managedClaudeLogin, string, error) {
+		return m.native, domain.ClaudeProtocolVersion, nil
 	}
 	return m
 }
@@ -1149,6 +1149,203 @@ func TestManagedClaudeFinishClearsAnUnconsumedApprovalCode(t *testing.T) {
 	awaitServerFixture(t, done)
 	if _, retained := f.service.claudeLoginCodes[domain.ID(op.OperationId)]; retained || strings.Contains(string(code), "fixture-approval") {
 		t.Fatal("a finished operation retained its approval code")
+	}
+}
+
+// delayedPollWindow spans at least two 250 ms polls of the login loop, so a
+// regression that polls for the single-use code again surfaces as a failure.
+const delayedPollWindow = 800 * time.Millisecond
+
+// startDeliveredLogin drives one login until the original child received the
+// approval code, leaving the child running so tests can hold it for several polls.
+func (f *managedFixture) startDeliveredLogin() (string, <-chan struct{}) {
+	f.t.Helper()
+	op, err := f.request(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	done := f.run()
+	close(f.native.ready)
+	f.awaitState(op.OperationId, pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_WAITING)
+	if err := f.submitCode(op.OperationId, "fixture-approval#original-state"); err != nil {
+		f.t.Fatal(err)
+	}
+	select {
+	case <-f.native.codes:
+	case <-time.After(10 * time.Second):
+		f.t.Fatal("approval code never reached the original child")
+	}
+	return op.OperationId, done
+}
+
+// requireStillPending holds the delivered child across several polls and proves
+// the operation neither failed nor fenced and no second code was delivered.
+func (f *managedFixture) requireStillPending(op string, done <-chan struct{}) {
+	f.t.Helper()
+	time.Sleep(delayedPollWindow)
+	select {
+	case <-done:
+		f.t.Fatal("the login ended while the original child was still running")
+	default:
+	}
+	_, a := f.record()
+	if a.Subscription.RecoveryRequired || a.Connection != nil {
+		f.t.Fatal("a pending delivered login fenced or connected the account")
+	}
+	if got := f.progressFor(op); got.State != pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_WAITING {
+		f.t.Fatalf("pending state %v, want waiting", got.State)
+	}
+	if f.native.closeCall.Load() != 0 {
+		f.t.Fatal("the original child was closed before it finished")
+	}
+	if f.native.submitCalls.Load() != 1 {
+		f.t.Fatalf("submit calls = %d, want 1", f.native.submitCalls.Load())
+	}
+	if err := f.submitCode(op, "second#attempt"); err == nil {
+		f.t.Fatal("a second approval input was admitted")
+	}
+	if len(f.native.codes) != 0 {
+		f.t.Fatal("a second code reached the original child")
+	}
+}
+
+func TestManagedClaudeDelayedChildSuccessStaysPendingAndConnectsOnce(t *testing.T) {
+	f := newManagedClaudeFixture(t)
+	op, done := f.startDeliveredLogin()
+	f.requireStillPending(op, done)
+	close(f.native.finish)
+	awaitServerFixture(t, done)
+	_, a := f.record()
+	if a.Connection == nil || a.Subscription.Generation == "" || a.Subscription.RecoveryRequired || a.Subscription.Generation != a.Subscription.ServerOperation.FinishID {
+		t.Fatal("the delayed login did not connect one generation")
+	}
+	if f.native.closeCall.Load() == 0 || f.native.submitCalls.Load() != 1 {
+		t.Fatal("the original child was not joined exactly once-delivered")
+	}
+	if got := f.progressFor(op); got.State != pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_SUCCEEDED {
+		t.Fatalf("final state %v", got.State)
+	}
+}
+
+func TestManagedClaudeDelayedChildFailureEndsFailedWithoutRecovery(t *testing.T) {
+	f := newManagedClaudeFixture(t)
+	f.native.waitErr = domain.Fail(domain.Unavailable, "exit", "")
+	op, done := f.startDeliveredLogin()
+	f.requireStillPending(op, done)
+	close(f.native.finish)
+	awaitServerFixture(t, done)
+	_, a := f.record()
+	if a.Connection != nil || a.Subscription.Generation != "" || a.Subscription.RecoveryRequired || len(f.secrets.values) != 0 || f.secrets.puts != 0 {
+		t.Fatal("a failed delayed child connected, fenced or wrote a credential")
+	}
+	if got := f.progressFor(op); got.State != pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_FAILED {
+		t.Fatalf("final state %v, want failed", got.State)
+	}
+	if f.native.closeCall.Load() == 0 || f.native.submitCalls.Load() != 1 {
+		t.Fatal("cleanup was not confirmed or a second code was sent")
+	}
+}
+
+func TestManagedClaudeCancelWhileDeliveredChildRunsJoinsWithoutResending(t *testing.T) {
+	f := newManagedClaudeFixture(t)
+	op, done := f.startDeliveredLogin()
+	f.requireStillPending(op, done)
+	r, _ := f.record()
+	if _, err := f.client.CancelSubscription(context.Background(), subscriptionRequest(f.service.Identity.Token, &pb.CancelSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(r.ID), ExpectedRevision: r.Revision}})); err != nil {
+		t.Fatal(err)
+	}
+	awaitServerFixture(t, done)
+	_, a := f.record()
+	if a.Connection != nil || a.Subscription.Pending != nil || f.secrets.puts != 0 || !f.native.closed.Load() {
+		t.Fatal("cancellation published authentication or skipped cleanup")
+	}
+	if got := f.progressFor(op); got.State != pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_CANCELED {
+		t.Fatalf("cancel state %v", got.State)
+	}
+	if f.native.submitCalls.Load() != 1 {
+		t.Fatal("cancellation sent the approval code again")
+	}
+}
+
+func TestManagedClaudeSubmitErrorAfterClaimStillEndsTheOperation(t *testing.T) {
+	f := newManagedClaudeFixture(t)
+	f.native.submitErr = domain.Fail(domain.Unavailable, "write failed", "")
+	op, err := f.request(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := f.run()
+	close(f.native.ready)
+	f.awaitState(op.OperationId, pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_WAITING)
+	if err := f.submitCode(op.OperationId, "fixture-approval#original-state"); err != nil {
+		t.Fatal(err)
+	}
+	awaitServerFixture(t, done)
+	_, a := f.record()
+	if a.Connection != nil || f.secrets.puts != 0 || f.native.closeCall.Load() == 0 {
+		t.Fatal("a failed submit connected the account or skipped cleanup")
+	}
+	if f.native.submitCalls.Load() != 1 {
+		t.Fatalf("submit retried: %d calls", f.native.submitCalls.Load())
+	}
+	if got := f.progressFor(op.OperationId); got.State == pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_WAITING || got.State == pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_SUCCEEDED {
+		t.Fatalf("a failed submit left state %v", got.State)
+	}
+}
+
+// codeDroppingLogin loses the in-memory approval bytes between claim and
+// delivery, as a restart would, by clearing them right before the next take.
+type codeDroppingLogin struct {
+	*fakeManagedLogin
+	service *Service
+}
+
+func (n *codeDroppingLogin) Progress() (claude.SetupTokenProgress, error) {
+	if unlock, err := n.service.lockAccounts(context.Background()); err == nil {
+		for operation := range n.service.claudeLoginCodes {
+			clear(n.service.claudeLoginCodes[operation])
+			delete(n.service.claudeLoginCodes, operation)
+		}
+		unlock()
+	}
+	return n.fakeManagedLogin.Progress()
+}
+
+func TestManagedClaudeMissingApprovalBytesBeforeDeliveryStillFailClosed(t *testing.T) {
+	f := newManagedClaudeFixture(t)
+	f.service.claudeSetupOpen = func(context.Context, string, domain.ID, *slog.Logger) (managedClaudeLogin, string, error) {
+		return &codeDroppingLogin{fakeManagedLogin: f.native, service: f.service}, "2.1.237-rc.1", nil
+	}
+	op, err := f.request(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := f.run()
+	close(f.native.ready)
+	f.awaitState(op.OperationId, pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_WAITING)
+	if err := f.submitCode(op.OperationId, "fixture-approval#original-state"); err != nil {
+		t.Fatal(err)
+	}
+	awaitServerFixture(t, done)
+	if f.native.submitCalls.Load() != 0 {
+		t.Fatal("a code was delivered although its bytes were missing")
+	}
+	_, a := f.record()
+	if a.Connection != nil || f.secrets.puts != 0 {
+		t.Fatal("missing approval bytes connected the account")
+	}
+	// The operation ends with the recovery_required denial code and no retry.
+	if d := a.Subscription.ServerOperation.ClaudeDiagnostic; d == nil || d.Code != domain.RecoveryRequired {
+		t.Fatalf("diagnostic %+v, want recovery_required", d)
+	} else if d.DetectedVersion != "2.1.237-rc.1" || d.Phase != domain.NativeSubscriptionLogin || d.Validate() != nil {
+		// The newer observed version, not the pinned baseline, is attributed.
+		t.Fatalf("diagnostic %+v, want the observed version and login phase", d)
+	}
+	if got := f.progressFor(op.OperationId); got.State == pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_WAITING || got.State == pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_SUCCEEDED {
+		t.Fatalf("state %v, want a failed-closed end", got.State)
+	}
+	if f.native.closeCall.Load() == 0 {
+		t.Fatal("the original child was not joined")
 	}
 }
 

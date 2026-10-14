@@ -85,7 +85,7 @@ func init() {
 				response["newMeaning"] = "unknown"
 			}
 			write(request.ID, response)
-			if strings.HasPrefix(mode, helperFixturePrefix) && !createHelperFixtureAliases() {
+			if isHelperFixtureMode(mode) && !createHelperFixtureAliases() {
 				os.Exit(44)
 			}
 			_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"method": "remoteControl/status/changed", "params": map[string]any{"status": "disabled", "installationId": "fixture-installation", "serverName": "fixture-server", "environmentId": nil}, "emittedAtMs": time.Now().UnixMilli()})
@@ -109,8 +109,11 @@ func init() {
 				switch request.Method {
 				case "config/read":
 					store := "ephemeral"
-					if mode == "quota-foreign-store" {
+					if mode == "quota-foreign-store" || strings.HasPrefix(mode, quotaHelperForeignStore) {
 						store = "file"
+					}
+					if strings.HasSuffix(mode, "-tamper") && strings.HasPrefix(mode, quotaHelperPrefix) {
+						tamperHelperFixtureAlias()
 					}
 					write(request.ID, map[string]any{"config": map[string]any{"cli_auth_credentials_store": store, "model_provider": "openai", "forced_login_method": "chatgpt", "model_providers": map[string]any{}}, "origins": nil, "layers": nil})
 					continue
@@ -170,7 +173,7 @@ func init() {
 					if len(request.Params) != 0 {
 						os.Exit(56)
 					}
-					if mode == "quota-credit-readfail" {
+					if mode == "quota-credit-readfail" || mode == quotaHelperReadFail {
 						_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"id": json.RawMessage(request.ID), "error": map[string]any{"code": -32000, "message": "fixture quota failure"}})
 						continue
 					}
@@ -251,6 +254,9 @@ func init() {
 			}
 			os.Exit(8)
 		}
+	}
+	if strings.HasPrefix(mode, quotaHelperPrefix+"eof-") {
+		mutateQuotaHelperFixtureAtEOF(mode)
 	}
 	if strings.HasSuffix(mode, "-hang") {
 		// Ignore stdin EOF so a graceful close cannot join this original process.

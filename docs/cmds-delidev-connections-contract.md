@@ -109,6 +109,37 @@ Check refreshes the original visible peer identity and sends a single bounded
 normal-TLS request to its canonical HTTPS hostname on port 8443. No redirects,
 ambient proxies, alternate ports, scans, certificate bypass or automatic setup
 is allowed. Unsupported or offline peers retain manual pairing and SSH paths.
+The desktop may issue this Check automatically, once per visit of the Tailscale
+devices presentation, for each visible peer that is online and not shared to,
+strictly one at a time because every Check performs a fresh locked status read.
+It uses the same RPC and peer ID with no schema or storage change, and a failed
+automatic Check is an ordinary per-peer failure that the user retries manually.
+
+Check-only failures may carry one closed safe cause in the existing
+`ErrorDetail.cause` (no proto change). Every Check-only cause value is namespaced with the
+`tailscale_` prefix so a generic emitter (for example the Codex app-server handshake,
+which emits `unavailable` with `timeout`) can never collide with it; the cause-aware
+probe and `invalid_identity` rejection are reachable only from `CheckTailscale`, and a
+Go test rejects any other emitter of these values. `CheckTailscale` uses a cause-aware probe
+while the shared `Probe` used by access enable keeps its current generic errors.
+`BeginTailscaleConnection` also revalidates the peer identity before it creates a journal, but it
+uses the generic probe and the generic unsupported identity failure: a Begin mutation error
+never carries any `tailscale_*` cause, so no handler other than `CheckTailscale` can surface a
+Check-only outcome. The shared server revalidation takes an explicit with-cause flag that only
+`CheckTailscale` sets, and Go tests cover every cause for both handlers.
+Normal TLS, one request, no redirect and no proxy are unchanged. A cause is set
+only when proven: `tailscale_connection_refused` from `syscall.ECONNREFUSED` (and the Windows
+`WSAECONNREFUSED` code) through `errors.Is/As`; `tailscale_timeout` from the request's own
+deadline or a `net.Error` timeout while the caller context is still live, whether
+it surfaces from the request or from reading the identity body after a peer has sent
+headers and stalled (never parent cancellation, and never a DNS lookup); `tailscale_certificate_invalid` from x509 or
+`tls.CertificateVerificationError`; `tailscale_unexpected_http` from any non-200 status
+including an un-followed redirect (code `unavailable` for these four); and
+`tailscale_invalid_identity` from an undecodable or incompatible identity document (code
+`unsupported`). Oversized bodies, body-read failures that are not a proven timeout, DNS, other socket or TLS errors,
+peer refresh and local access failures keep the generic error without a cause.
+Hostnames, URLs, status bodies, certificates and native error text never enter
+`ErrorDetail`, logs or UI; the Check log records only the phase, code and cause.
 
 Access defaults to Off. Enable requires Running, exact Self FQDN certificate
 eligibility in CertDomains and Self.CapMap membership for `https`. Refuse existing
@@ -216,7 +247,7 @@ then retry only that journal. Startup uses the existing detached Worker controll
 registration. Client/Worker completion does not create an Agent Worker or infer
 harness/account readiness.
 
-The desktop Tailscale access and device views appear in Settings Runner Devices (not Connections), presented by the original desktop-owned controller through Runner slots, and retain resume and cancel requests through
+The desktop Tailscale access, device and connection-request views appear in the dedicated Settings Tailscale category in the original local desktop window (not Runner Devices or Connections), presented by the original desktop-owned controller through typed slots, and retain resume and cancel requests through
 connection-owned retained mutations. While either retains input or is uncertain,
 its row action stays disabled, and a separately labelled retry control replays
 only the original request ID and bytes; it never creates a second request.

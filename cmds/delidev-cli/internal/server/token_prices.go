@@ -42,6 +42,18 @@ func (s *Service) tokenPrices() *tokenprices.Manager {
 	return s.prices
 }
 
+func (s *Service) installAutomaticPricingResolver() *tokenprices.Manager {
+	manager := s.tokenPrices()
+	s.Store.SetAutomaticPricing(func(tx *store.Tx, model domain.ModelIdentity) error {
+		snapshot, err := s.tokenPriceSnapshot(tx, model)
+		if err != nil {
+			return err
+		}
+		return s.applyReference(tx, model, snapshot)
+	})
+	return manager
+}
+
 // Only an unchanged managed endpoint maps to an upstream provider namespace.
 // User labels and canonical model aliases never establish a pricing identity.
 func priceNamespace(tx *store.Tx, m domain.ModelIdentity) (string, uint64, error) {

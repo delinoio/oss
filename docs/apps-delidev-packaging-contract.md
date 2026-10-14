@@ -74,11 +74,11 @@ English/Korean presentation follows [the localization contract](apps-delidev-loc
 
 - DeliDev native packaging follows `apps-delidev-packaging-contract.md` and the repository workflow contract. Keep its dry run manually dispatched, limited to `contents: read`, LFS-hydrated and free of production signing, notarization, publication credentials and stored checkout tokens.
 
-- DeliDev automated releases follow `apps-delidev-packaging-contract.md` and the owner-authorized download-only exception in the updates contract. `Release Project` ends after exact `delidev-v<semver>` tagging; tag pushes start the independent release workflow. Recover downstream failures by rerunning the original tag workflow without moving its tag; DeliDev requires no Cargo/npm publication token. Keep macOS/Linux four-native publication separate from the unchanged six-native, read-only, keyless manual dry runs. Windows signing is unimplemented and skipped; no variable grants support. The coordinator forwards no signing secrets; the independent release workflow reads the eight required named signing secrets directly from its Environment-owned preflight/sign jobs; its jobs select the `delidev-release` Environment and preflight rejects empty values. Require Environment credentials only in configuration/signing steps, retain original same-run candidates, verify all public bytes before/after publication and never mutate public inventories. Partial releases must not contain an updater manifest. Keep installed-native/account/WidgetKit acceptance explicit and separate.
+- DeliDev automated releases follow `apps-delidev-packaging-contract.md` and the owner-authorized download-only exception in the updates contract. `Release Project` ends after exact `delidev@v<semver>` tagging; tag pushes start the independent release workflow. Recover downstream failures by rerunning the original tag workflow without moving its tag; DeliDev requires no Cargo/npm publication token. Keep macOS/Linux four-native publication separate from the unchanged six-native, read-only, keyless manual dry runs. Windows signing is unimplemented and skipped; no variable grants support. The coordinator forwards no signing secrets; the independent release workflow reads the eight required named signing secrets directly from its Environment-owned preflight/sign jobs; its jobs select the `delidev-release` Environment and preflight rejects empty values. Require Environment credentials only in configuration/signing steps, retain original same-run candidates, verify all public bytes before/after publication and never mutate public inventories. Partial releases must not contain an updater manifest. Keep installed-native/account/WidgetKit acceptance explicit and separate.
 
 ### Project requirements
 
-- DeliDev automated distribution follows `apps-delidev-packaging-contract.md#automated-download-only-releases` and the owner-authorized download-only exception in the updates contract. `Release Project` may prepare exact `delidev-v<semver>` versions and ends after tagging; the independent tag workflow automatically publishes immutable macOS/Linux x64/arm64 downloads with Windows signing unavailable and Windows builds skipped. Do not publish a partial updater manifest, activate an unset/test trust root, mutate public release bytes or claim installed-platform/WidgetKit/account acceptance from fixtures. Full updater support requires a new complete six-target version and its original signing/acceptance authority; no RPC or database migration.
+- DeliDev automated distribution follows `apps-delidev-packaging-contract.md#automated-download-only-releases` and the owner-authorized download-only exception in the updates contract. `Release Project` may prepare exact `delidev@v<semver>` versions and ends after tagging; the independent tag workflow automatically publishes immutable macOS/Linux x64/arm64 downloads with Windows signing unavailable and Windows builds skipped. Do not publish a partial updater manifest, activate an unset/test trust root, mutate public release bytes or claim installed-platform/WidgetKit/account acceptance from fixtures. Full updater support requires a new complete six-target version and its original signing/acceptance authority; no RPC or database migration.
 
 ### apps/delidev/scripts constraints
 
@@ -241,7 +241,7 @@ The desktop and resident CLI ship from the same package/source revision with pri
 
 `Release Project` accepts `delidev` with a stable patch/minor/major increment.
 It updates the desktop package, Cargo manifest/lock and Tauri versions together,
-records the original run/source revision, and creates `delidev-v<semver>`.
+records the original run/source revision, and creates `delidev@v<semver>`, the same `<project>@v<semver>` form as other projects. Historical `delidev-v<semver>` tags and release assets stay untouched and do not trigger the workflow.
 The tag push starts the independent `release-delidev.yml` workflow. The coordinator
 ends after tagging and reports preparation only. Recover downstream failure by
 rerunning the original tag workflow without moving its tag. The existing Go
@@ -292,7 +292,7 @@ The independent workflow reads these secrets directly from the Environment in
 its preflight and signing jobs. The coordinator neither forwards signing secrets
 nor invokes the release workflow. Runtime preflight rejects missing or empty
 signing material before native builds. Build jobs remain credential-free.
-The tag workflow accepts only first-party `delidev-v<semver>` pushes and validates
+The tag workflow accepts only first-party `delidev@v<semver>` pushes and validates
 the exact stable version against synchronized source files, checkout revision and
 tag target before passing version/revision outputs to dependent jobs.
 

@@ -102,8 +102,54 @@ or the native system `cmd.exe` when that setting is absent. Failed discovery or
 an invalid configured/default/explicit executable never selects another shell.
 Explicit overrides must be absolute existing regular executable files, resolved
 on the Worker. Unix shells receive `-i`; Windows shells receive no synthetic
-Unix flags. The child receives bounded ordinary account/system context without
+Unix flags. General Chat shells may additionally receive the prompt
+integration arguments described below. The child receives bounded ordinary account/system context without
 the Worker's pairing or provider credentials.
+
+### General Chat prompt label
+
+A General Chat terminal (never a repository Worktree or Local terminal) shows
+the display label `chat` in place of the shell's directory segment while the
+shell's physical working directory is exactly the verified original General
+Chat `chat` directory, including after the user `cd`s away and returns. The
+actual directory, `pwd`, `PWD`, `result.Cwd`, workspace names and every
+authorization identity are unchanged; no workspace is renamed. The Worker
+detects the shell family from the validated executable name
+(`ShellKind`: `zsh`, `bash`, `fish`, `powershell`, `cmd`, `unknown`) and adds a
+process-local integration that loads only after the account's own shell
+initialization:
+
+- `zsh`: a per-terminal `ZDOTDIR` wrapper sources the account's `.zshenv` and
+  `.zshrc` (honoring an account-defined `ZDOTDIR` and history file), then
+  registers a `precmd` hook that rewrites the recognized zsh directory escapes
+  (`%~`, `%d`, `%/`, `%c`, `%C`, `%.`, with optional numeric argument) in
+  `PROMPT` and restores the native prompt away from the directory.
+- `bash`: `--rcfile` loads the account's `~/.bashrc`, then a `PROMPT_COMMAND`
+  hook rewrites the `\w` and `\W` escapes of `PS1`, preserving `$?`.
+- `fish`: `--init-command` runs after the account's configuration and wraps
+  `prompt_pwd`.
+- `powershell`: `-NoExit -Command` dot-sources a wrapper after the profile and
+  replaces the displayed current location in the `prompt` function's result.
+  PowerShell is reachable only through an explicit shell override on
+  Windows; it is also supported on Unix.
+- `cmd.exe` and unknown shells keep their native prompt: `cmd` has a static
+  `PROMPT` string with no conditional or hook facility, so a directory-only
+  label cannot be implemented safely.
+
+The integration never writes user dotfiles, never types a startup command into
+the terminal, never changes `PWD`, and never rewrites command output or the
+stored/streamed terminal bytes. Wrapper files live in a private per-terminal
+directory `terminal-integrations/<terminal-id>` under the Worker root and are
+removed when the shell is joined or closed, and by acknowledged retirement for
+crash leftovers. The directory is passed to the scripts through the private
+environment variable `DELIDEV_TERMINAL_CHAT_DIRECTORY`, which they unset after
+copying it into a shell-local variable. A prompt whose directory segment is
+not one of the recognized forms (for example a theme that computes its own
+cwd), an unsupported shell, or any failure to prepare the wrapper leaves the
+native prompt unchanged and the shell interactive. The integration is applied
+only at creation; reattach, output gaps and reconnect never start another
+shell or transform retained bytes. No RPC, schema, stored preference or
+feature flag is involved.
 
 The launch directory is fixed to the original ready manifest's primary
 repository, or its General Chat directory. The existing anchored continuation
@@ -387,7 +433,10 @@ Structured logs identify terminal/session/machine IDs, accepted action, replay,
 state, cleanup fact and stable error code. Interrupted auxiliary channels log
 the machine and safe code. Existing process-scope logs retain ownership IDs and
 safe lifecycle facts. Never log raw bytes, shell command text, paths, tokens,
-environment values or raw OS errors.
+environment values or raw OS errors. Each General Chat terminal start logs one
+`terminal_prompt_integration` event with only the terminal ID, `shell_kind` and
+`outcome` (`applied` or `unsupported`); it never logs the directory, prompt
+text, user configuration or output bytes.
 Worker-reported problems accept only the closed native terminal classifications:
 `invalid_argument`, `not_found`, `conflict`, `permission_denied`, `unavailable`,
 `missing_input`, `unsupported`, `recovery_required`, `resource_exhausted`,

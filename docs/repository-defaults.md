@@ -40,6 +40,7 @@ Treat project IDs as stable enum-style values:
 ```ts
 enum ProjectId {
   Binpm = "binpm",
+  Bundlewhy = "bundlewhy",
   CargoMono = "cargo-mono",
   Clibox = "clibox",
   Pnport = "pnport",
