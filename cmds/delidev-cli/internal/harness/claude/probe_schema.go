@@ -26,9 +26,8 @@ type initializeResult struct {
 	FastModeDisabledReason       string          `json:"fast_mode_disabled_reason"`
 
 	// Claude Code 2.1.287 additions. They are optional so earlier verified
-	// profiles keep passing; raw messages distinguish absent from null.
-	PendingPermissionRequests       json.RawMessage `json:"pending_permission_requests"`
-	PendingUserDialogRequests       json.RawMessage `json:"pending_user_dialog_requests"`
+	// profiles keep passing; raw messages distinguish absent from null. The
+	// pending request lists are control-response envelope members, not here.
 	AnalyticsDisabled               json.RawMessage `json:"analytics_disabled"`
 	Capabilities                    json.RawMessage `json:"capabilities"`
 	FeedbackMode                    json.RawMessage `json:"feedback_mode"`
@@ -73,19 +72,10 @@ type probeModel struct {
 }
 
 func validateInitialize(raw []byte, expected domain.ID) error {
-	var message struct {
-		Type     string `json:"type"`
-		Response *struct {
-			Subtype   string          `json:"subtype"`
-			RequestID domain.ID       `json:"request_id"`
-			Response  json.RawMessage `json:"response,omitempty"`
-			Error     json.RawMessage `json:"error,omitempty"`
-		} `json:"response"`
-	}
-	if domain.Decode(raw, &message) != nil || message.Type != "control_response" || message.Response == nil || message.Response.RequestID != expected {
+	response, err := decodeControlResponse(raw)
+	if err != nil || domain.ID(response.RequestID) != expected {
 		return incompatible()
 	}
-	response := message.Response
 	if response.Subtype == "error" && len(response.Error) != 0 && len(response.Response) == 0 {
 		var message *string
 		if json.Unmarshal(response.Error, &message) != nil || message == nil {
@@ -111,7 +101,7 @@ func validateInitializeMode(raw []byte, permission, apiKeySource string, subscri
 	if apiKeySource != "" {
 		tokenSource = "ANTHROPIC_AUTH_TOKEN"
 	}
-	if domain.Decode(raw, &result) != nil || result.Commands == nil ||
+	if !requireExactNativeKeys(raw, &result) || domain.Decode(raw, &result) != nil || result.Commands == nil ||
 		result.Account == nil || result.Account.APIProvider != "firstParty" ||
 		result.PID <= 0 || result.CurrentPermissionMode != permission || result.OutputStyle != "default" ||
 		!explicitFalse(result.RemoteControlAutoEnable) || !explicitFalse(result.RemoteControlAutoOnByDefault) || !explicitFalse(result.IDERCAutoEnableGate) ||
@@ -164,7 +154,7 @@ const managedTokenSource = "CLAUDE_CODE_OAUTH_TOKEN"
 // report that source, no API-key source and no profile identity metadata.
 func validateInitializeManagedToken(raw []byte, permission string) error {
 	var result initializeResult
-	if domain.Decode(raw, &result) != nil || result.Commands == nil ||
+	if !requireExactNativeKeys(raw, &result) || domain.Decode(raw, &result) != nil || result.Commands == nil ||
 		result.Account == nil || result.Account.APIProvider != "firstParty" ||
 		result.PID <= 0 || result.CurrentPermissionMode != permission || result.OutputStyle != "default" ||
 		!explicitFalse(result.RemoteControlAutoEnable) || !explicitFalse(result.RemoteControlAutoOnByDefault) || !explicitFalse(result.IDERCAutoEnableGate) ||

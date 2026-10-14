@@ -3,6 +3,8 @@ package claude
 import (
 	"bytes"
 	"encoding/json"
+	"reflect"
+	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
@@ -20,34 +22,141 @@ const (
 	maxProbeStylesDir    = 4096
 )
 
-// probePrelude is the exact accepted startup frame schema. domain.Decode
-// rejects unknown and duplicate keys, so only these optional identity fields can
-// accompany the closed type/subtype pair.
+// probePrelude is the exact accepted startup frame schema. Keys must match
+// these spellings exactly (see requireExactNativeKeys); domain.Decode rejects
+// unknown and duplicate keys. The identity fields keep their raw JSON so that a
+// declared null is distinguishable from an absent field.
 type probePrelude struct {
-	Type      string  `json:"type"`
-	Subtype   string  `json:"subtype"`
-	UUID      *string `json:"uuid,omitempty"`
-	SessionID *string `json:"session_id,omitempty"`
+	Type      string          `json:"type"`
+	Subtype   string          `json:"subtype"`
+	UUID      json.RawMessage `json:"uuid"`
+	SessionID json.RawMessage `json:"session_id"`
+}
+
+// controlResponseEnvelope and controlResponseBody are the closed control-response
+// schema (claude-agent-sdk ControlResponse). The pending lists are members of the
+// inner envelope next to subtype, request_id and response, never of the
+// initialize result. Raw messages preserve presence versus null.
+type controlResponseEnvelope struct {
+	Type     string          `json:"type"`
+	Response json.RawMessage `json:"response"`
+}
+
+type controlResponseBody struct {
+	Subtype                   string          `json:"subtype"`
+	RequestID                 string          `json:"request_id"`
+	Response                  json.RawMessage `json:"response,omitempty"`
+	Error                     json.RawMessage `json:"error,omitempty"`
+	PendingPermissionRequests json.RawMessage `json:"pending_permission_requests,omitempty"`
+	PendingUserDialogRequests json.RawMessage `json:"pending_user_dialog_requests,omitempty"`
+}
+
+// decodeControlResponse strictly decodes one control_response frame: exact
+// lowercase keys at every level, unique keys, a non-null inner envelope and
+// empty pending lists when declared. Callers translate the generic failure.
+func decodeControlResponse(raw []byte) (controlResponseBody, error) {
+	var outer controlResponseEnvelope
+	var body controlResponseBody
+	if !requireExactNativeKeys(raw, &outer) || domain.Decode(raw, &outer) != nil || outer.Type != "control_response" || len(outer.Response) == 0 ||
+		!requireExactNativeKeys(outer.Response, &body) || domain.Decode(outer.Response, &body) != nil || bytes.Equal(bytes.TrimSpace(outer.Response), []byte("null")) {
+		return controlResponseBody{}, incompatible()
+	}
+	if err := validatePendingLists(body.PendingPermissionRequests, body.PendingUserDialogRequests); err != nil {
+		return controlResponseBody{}, err
+	}
+	return body, nil
+}
+
+// validatePendingLists admits only declared empty arrays: a pending request
+// would be unanswered native interaction state that the handshake cannot own.
+func validatePendingLists(lists ...json.RawMessage) error {
+	for _, pending := range lists {
+		if len(pending) == 0 {
+			continue
+		}
+		var items []json.RawMessage
+		if json.Unmarshal(pending, &items) != nil || items == nil || len(items) != 0 {
+			return incompatible()
+		}
+	}
+	return nil
+}
+
+var rawMessageType = reflect.TypeOf(json.RawMessage(nil))
+
+// requireExactNativeKeys reports whether every object key in raw, at every
+// level described by target's struct types, matches a declared json tag with
+// exact case. encoding/json otherwise matches keys case-insensitively and
+// domain.Decode only detects duplicates with identical spelling, so differently
+// cased aliases could shadow canonical keys. Shapes that do not parse as the
+// expected container are left for the typed decode to reject.
+func requireExactNativeKeys(raw []byte, target any) bool {
+	return exactNativeShape(raw, reflect.TypeOf(target))
+}
+
+func exactNativeShape(raw []byte, shape reflect.Type) bool {
+	for shape.Kind() == reflect.Pointer {
+		shape = shape.Elem()
+	}
+	if shape == rawMessageType {
+		return true
+	}
+	switch shape.Kind() {
+	case reflect.Struct:
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(raw, &fields) != nil || fields == nil {
+			return true
+		}
+		allowed := make(map[string]reflect.Type, shape.NumField())
+		for i := 0; i < shape.NumField(); i++ {
+			name, _, _ := strings.Cut(shape.Field(i).Tag.Get("json"), ",")
+			allowed[name] = shape.Field(i).Type
+		}
+		for name, value := range fields {
+			fieldShape, declared := allowed[name]
+			if !declared || !exactNativeShape(value, fieldShape) {
+				return false
+			}
+		}
+	case reflect.Slice:
+		var items []json.RawMessage
+		if json.Unmarshal(raw, &items) != nil {
+			return true
+		}
+		for _, item := range items {
+			if !exactNativeShape(item, shape.Elem()) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // probeFrameIsPrelude reports whether a frame claims the startup event
-// envelope. Any other frame type is validated as the initialize response.
+// envelope through its exact lowercase type key. Any other frame is validated as
+// the initialize response, which rejects differently cased aliases.
 func probeFrameIsPrelude(raw []byte) bool {
-	var envelope struct {
-		Type string `json:"type"`
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil {
+		return false
 	}
-	return json.Unmarshal(raw, &envelope) == nil && envelope.Type == probePreludeType
+	var kind string
+	return json.Unmarshal(fields["type"], &kind) == nil && kind == probePreludeType
 }
 
 // validateProbePrelude accepts only the closed ui_invalidate startup event. It
 // never retains or logs the frame.
 func validateProbePrelude(raw []byte) error {
 	var prelude probePrelude
-	if domain.Decode(raw, &prelude) != nil || prelude.Type != probePreludeType || prelude.Subtype != probePreludeSubtype {
+	if !requireExactNativeKeys(raw, &prelude) || domain.Decode(raw, &prelude) != nil || prelude.Type != probePreludeType || prelude.Subtype != probePreludeSubtype {
 		return incompatible()
 	}
-	for _, value := range []*string{prelude.UUID, prelude.SessionID} {
-		if value != nil && domain.Text(*value, "native startup identity", maxProbeIdentity, true) != nil {
+	for _, value := range []json.RawMessage{prelude.UUID, prelude.SessionID} {
+		if len(value) == 0 {
+			continue
+		}
+		var identity *string
+		if json.Unmarshal(value, &identity) != nil || identity == nil || domain.Text(*identity, "native startup identity", maxProbeIdentity, true) != nil {
 			return incompatible()
 		}
 	}
@@ -57,17 +166,10 @@ func validateProbePrelude(raw []byte) error {
 // validateInitializeExtensions checks the 2.1.287 additions. Each field is
 // optional so earlier verified profiles keep passing, but a declared field must
 // have the exact safe shape; null, wrong types and unsafe values are rejected.
+// The pending request lists live in the control-response envelope instead
+// (see controlResponseBody).
 func validateInitializeExtensions(result initializeResult) error {
-	for _, pending := range []json.RawMessage{result.PendingPermissionRequests, result.PendingUserDialogRequests} {
-		if len(pending) == 0 {
-			continue
-		}
-		var items []json.RawMessage
-		if json.Unmarshal(pending, &items) != nil || items == nil || len(items) != 0 {
-			return incompatible()
-		}
-	}
-	if !optionalBool(result.AnalyticsDisabled) {
+	if len(result.AnalyticsDisabled) != 0 && !bytes.Equal(bytes.TrimSpace(result.AnalyticsDisabled), []byte("true")) {
 		return incompatible()
 	}
 	for _, gate := range []json.RawMessage{result.RemoteControlAvailable, result.RemoteControlAutoConnectDefault} {
@@ -97,14 +199,6 @@ func validateInitializeExtensions(result initializeResult) error {
 		return incompatible()
 	}
 	return nil
-}
-
-func optionalBool(raw json.RawMessage) bool {
-	if len(raw) == 0 {
-		return true
-	}
-	trimmed := bytes.TrimSpace(raw)
-	return bytes.Equal(trimmed, []byte("true")) || bytes.Equal(trimmed, []byte("false"))
 }
 
 // validProbeCapabilities admits a bounded list of unique descriptor names or a

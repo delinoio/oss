@@ -33,12 +33,11 @@ func fixtureResult() map[string]any {
 	}
 }
 
-// fixtureResult287 is the sanitized Claude Code 2.1.287 initialize shape: the
-// 2.1.236 profile plus empty pending arrays and bounded private metadata.
+// fixtureResult287 is the sanitized Claude Code 2.1.287 initialize result: the
+// 2.1.236 profile plus bounded private metadata. The empty pending request
+// arrays are members of the control-response envelope (fixtureEnvelope287).
 func fixtureResult287() map[string]any {
 	result := fixtureResult()
-	result["pending_permission_requests"] = []any{}
-	result["pending_user_dialog_requests"] = []any{}
 	result["analytics_disabled"] = true
 	result["capabilities"] = []any{"fixture-capability"}
 	result["feedback_mode"] = "disabled"
@@ -49,11 +48,29 @@ func fixtureResult287() map[string]any {
 	return result
 }
 
+// fixtureEnvelope287 holds the 2.1.287 members of the inner control-response
+// envelope, next to subtype, request_id and response.
+func fixtureEnvelope287() map[string]any {
+	return map[string]any{"pending_permission_requests": []any{}, "pending_user_dialog_requests": []any{}}
+}
+
+// fixtureResponseWith builds a control response whose inner envelope also
+// carries the given members.
+func fixtureResponseWith(id domain.ID, result any, envelope map[string]any) []byte {
+	inner := map[string]any{"subtype": "success", "request_id": id, "response": result}
+	for key, value := range envelope {
+		inner[key] = value
+	}
+	raw, _ := json.Marshal(map[string]any{"type": "control_response", "response": inner})
+	return append(raw, '\n')
+}
+
 const fixturePrelude = `{"type":"system","subtype":"ui_invalidate","uuid":"fixture-uuid","session_id":"fixture-session"}` + "\n"
 
 // fixture287Frames builds the stdout for a "v287*" fixture mode.
 func fixture287Frames(mode string, id domain.ID) []byte {
 	result := fixtureResult287()
+	envelope := fixtureEnvelope287()
 	prelude := fixturePrelude
 	switch mode {
 	case "v287-subtype":
@@ -63,9 +80,11 @@ func fixture287Frames(mode string, id domain.ID) []byte {
 	case "v287-malformed":
 		prelude = `{"type":"system",` + "\n"
 	case "v287-pending":
-		result["pending_permission_requests"] = []any{map[string]any{"id": "x"}}
+		envelope["pending_permission_requests"] = []any{map[string]any{"id": "x"}}
 	case "v287-dialog":
-		result["pending_user_dialog_requests"] = []any{map[string]any{"id": "x"}}
+		envelope["pending_user_dialog_requests"] = []any{map[string]any{"id": "x"}}
+	case "v287-result-pending":
+		result["pending_permission_requests"] = []any{}
 	case "v287-busy":
 		result["session_state"] = "running"
 	case "v287-remote":
@@ -77,7 +96,7 @@ func fixture287Frames(mode string, id domain.ID) []byte {
 	case "v287-foreign":
 		id = domain.NewID()
 	}
-	response := string(fixtureResponse(id, result))
+	response := string(fixtureResponseWith(id, result, envelope))
 	switch mode {
 	case "v287-twice":
 		return []byte(prelude + prelude + response)
@@ -273,7 +292,7 @@ func TestProbeAcceptsClaude287StartupFrameAndInitializeFields(t *testing.T) {
 		{"v287-twice", domain.Unsupported}, {"v287-late", domain.Unsupported}, {"v287-subtype", domain.Unsupported},
 		{"v287-field", domain.Unsupported}, {"v287-malformed", domain.Unsupported}, {"v287-oversize", domain.ResourceExhausted},
 		{"v287-foreign", domain.Unsupported}, {"v287-duplicate", domain.Unsupported}, {"v287-trailing", domain.Unsupported},
-		{"v287-pending", domain.Unsupported}, {"v287-dialog", domain.Unsupported}, {"v287-busy", domain.Unsupported},
+		{"v287-pending", domain.Unsupported}, {"v287-dialog", domain.Unsupported}, {"v287-result-pending", domain.Unsupported}, {"v287-busy", domain.Unsupported},
 		{"v287-remote", domain.Unsupported}, {"v287-feedback", domain.Unsupported}, {"v287-account", domain.Unsupported},
 	} {
 		t.Run(test.mode, func(t *testing.T) {
@@ -306,9 +325,9 @@ func TestProbeWireAcceptsOnePreludeBeforeResponse(t *testing.T) {
 		frames []string
 		ok     bool
 	}{
-		{"prelude-then-response", []string{fixturePrelude, string(fixtureResponse("ID", fixtureResult287()))}, true},
+		{"prelude-then-response", []string{fixturePrelude, string(fixtureResponseWith("ID", fixtureResult287(), fixtureEnvelope287()))}, true},
 		{"second-prelude", []string{fixturePrelude, fixturePrelude}, false},
-		{"prelude-after-response", []string{string(fixtureResponse("ID", fixtureResult287())), fixturePrelude}, false},
+		{"prelude-after-response", []string{string(fixtureResponseWith("ID", fixtureResult287(), fixtureEnvelope287())), fixturePrelude}, false},
 		{"other-system-event", []string{`{"type":"system","subtype":"init"}`}, false},
 		{"non-system-event", []string{`{"type":"assistant"}`}, false},
 	} {
@@ -329,7 +348,7 @@ func TestProbeWireAcceptsOnePreludeBeforeResponse(t *testing.T) {
 
 func TestInitializeValidatesClaude287Fields(t *testing.T) {
 	id := domain.NewID()
-	if err := validateInitialize(fixtureResponse(id, fixtureResult287()), id); err != nil {
+	if err := validateInitialize(fixtureResponseWith(id, fixtureResult287(), fixtureEnvelope287()), id); err != nil {
 		t.Fatal(err)
 	}
 	for _, change := range []struct {
@@ -337,10 +356,8 @@ func TestInitializeValidatesClaude287Fields(t *testing.T) {
 		field string
 		value any
 	}{
-		{"pending-null", "pending_permission_requests", nil},
-		{"pending-object", "pending_user_dialog_requests", map[string]any{}},
-		{"pending-nonempty", "pending_permission_requests", []any{1}},
 		{"analytics-string", "analytics_disabled", "yes"},
+		{"analytics-false", "analytics_disabled", false},
 		{"analytics-null", "analytics_disabled", nil},
 		{"capabilities-scalar", "capabilities", "all"},
 		{"capabilities-null", "capabilities", nil},
@@ -378,6 +395,163 @@ func TestInitializeValidatesClaude287Fields(t *testing.T) {
 		if err := validateInitialize(fixtureResponse(id, result), id); err != nil {
 			t.Fatal("bounded capabilities rejected", err)
 		}
+	}
+}
+
+// rawFrame marshals a frame so tests can control exact key spelling.
+func rawFrame(t *testing.T, value any) []byte {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+// TestControlResponseEnvelopeIsClosedAndExact covers the control-response
+// schema: pending lists belong to the inner envelope, are empty when declared,
+// and every key must use its exact lowercase spelling.
+func TestControlResponseEnvelopeIsClosedAndExact(t *testing.T) {
+	id := domain.NewID()
+	build := func(mutate func(outer, inner map[string]any)) []byte {
+		inner := map[string]any{"subtype": "success", "request_id": id, "response": fixtureResult287()}
+		for key, value := range fixtureEnvelope287() {
+			inner[key] = value
+		}
+		outer := map[string]any{"type": "control_response", "response": inner}
+		mutate(outer, inner)
+		return rawFrame(t, outer)
+	}
+	for _, test := range []struct {
+		name   string
+		mutate func(outer, inner map[string]any)
+		ok     bool
+	}{
+		{"both-empty", func(outer, inner map[string]any) {}, true},
+		{"absent", func(outer, inner map[string]any) {
+			delete(inner, "pending_permission_requests")
+			delete(inner, "pending_user_dialog_requests")
+		}, true},
+		{"only-permission", func(outer, inner map[string]any) { delete(inner, "pending_user_dialog_requests") }, true},
+		{"permission-null", func(outer, inner map[string]any) { inner["pending_permission_requests"] = nil }, false},
+		{"dialog-null", func(outer, inner map[string]any) { inner["pending_user_dialog_requests"] = nil }, false},
+		{"permission-object", func(outer, inner map[string]any) { inner["pending_permission_requests"] = map[string]any{} }, false},
+		{"permission-string", func(outer, inner map[string]any) { inner["pending_permission_requests"] = "none" }, false},
+		{"permission-nonempty", func(outer, inner map[string]any) {
+			inner["pending_permission_requests"] = []any{map[string]any{"request_id": "x"}}
+		}, false},
+		{"dialog-nonempty", func(outer, inner map[string]any) { inner["pending_user_dialog_requests"] = []any{1} }, false},
+		{"unknown-envelope-member", func(outer, inner map[string]any) { inner["pending_other"] = []any{} }, false},
+		{"unknown-outer-member", func(outer, inner map[string]any) { outer["extra"] = true }, false},
+		{"inner-null", func(outer, inner map[string]any) { outer["response"] = nil }, false},
+		{"alias-subtype", func(outer, inner map[string]any) { inner["Subtype"] = "success" }, false},
+		{"alias-request-id", func(outer, inner map[string]any) { inner["Request_Id"] = id }, false},
+		{"alias-pending", func(outer, inner map[string]any) { inner["Pending_Permission_Requests"] = []any{} }, false},
+		{"alias-only-pending", func(outer, inner map[string]any) {
+			delete(inner, "pending_permission_requests")
+			inner["PENDING_PERMISSION_REQUESTS"] = []any{}
+		}, false},
+		{"alias-outer-type", func(outer, inner map[string]any) { outer["Type"] = "control_response" }, false},
+		{"alias-outer-response", func(outer, inner map[string]any) { outer["Response"] = inner }, false},
+		{"alias-only-outer-response", func(outer, inner map[string]any) {
+			outer["Response"] = outer["response"]
+			delete(outer, "response")
+		}, false},
+		{"alias-result-key", func(outer, inner map[string]any) {
+			result := inner["response"].(map[string]any)
+			result["Commands"] = result["commands"]
+			delete(result, "commands")
+		}, false},
+		{"alias-result-account-key", func(outer, inner map[string]any) {
+			inner["response"].(map[string]any)["account"].(map[string]any)["APIProvider"] = "firstParty"
+		}, false},
+		{"alias-result-model-key", func(outer, inner map[string]any) {
+			result := inner["response"].(map[string]any)
+			models := result["models"].([]any)
+			models[0].(map[string]any)["DisplayName"] = "Shadow"
+		}, false},
+		{"pending-in-result", func(outer, inner map[string]any) {
+			inner["response"].(map[string]any)["pending_permission_requests"] = []any{}
+		}, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateInitialize(build(test.mutate), id)
+			if test.ok != (err == nil) {
+				t.Fatalf("outcome: %v; want ok=%t", err, test.ok)
+			}
+		})
+	}
+	// Duplicate keys with identical spelling stay rejected by the shared decoder.
+	duplicate := strings.Replace(string(build(func(outer, inner map[string]any) {})), `"subtype":"success"`, `"subtype":"success","subtype":"success"`, 1)
+	if err := validateInitialize([]byte(duplicate), id); err == nil {
+		t.Fatal("duplicate envelope key accepted")
+	}
+}
+
+// TestProbePreludeIsClosedExactAndNonNull is table-driven over real-shaped
+// startup frames: declared null is not a bounded text value, keys must use
+// their exact lowercase spelling and the schema stays closed.
+func TestProbePreludeIsClosedExactAndNonNull(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		frame string
+		ok    bool
+	}{
+		{"full", `{"type":"system","subtype":"ui_invalidate","uuid":"0b1e2d3c-1111-4222-8333-444455556666","session_id":"fixture-session"}`, true},
+		{"bare", `{"type":"system","subtype":"ui_invalidate"}`, true},
+		{"uuid-only", `{"type":"system","subtype":"ui_invalidate","uuid":"fixture-uuid"}`, true},
+		{"session-only", `{"type":"system","subtype":"ui_invalidate","session_id":"fixture-session"}`, true},
+		{"uuid-null", `{"type":"system","subtype":"ui_invalidate","uuid":null,"session_id":"fixture-session"}`, false},
+		{"session-null", `{"type":"system","subtype":"ui_invalidate","uuid":"fixture-uuid","session_id":null}`, false},
+		{"both-null", `{"type":"system","subtype":"ui_invalidate","uuid":null,"session_id":null}`, false},
+		{"uuid-number", `{"type":"system","subtype":"ui_invalidate","uuid":7}`, false},
+		{"session-object", `{"type":"system","subtype":"ui_invalidate","session_id":{}}`, false},
+		{"uuid-empty", `{"type":"system","subtype":"ui_invalidate","uuid":""}`, false},
+		{"uuid-oversize", `{"type":"system","subtype":"ui_invalidate","uuid":"` + strings.Repeat("u", maxProbeIdentity+1) + `"}`, false},
+		{"uuid-control", `{"type":"system","subtype":"ui_invalidate","uuid":"a\u0000b"}`, false},
+		{"subtype-null", `{"type":"system","subtype":null}`, false},
+		{"subtype-other", `{"type":"system","subtype":"init"}`, false},
+		{"unknown-field", `{"type":"system","subtype":"ui_invalidate","extra":1}`, false},
+		{"alias-type", `{"Type":"system","Subtype":"ui_invalidate"}`, false},
+		{"alias-subtype", `{"type":"system","Subtype":"ui_invalidate"}`, false},
+		{"alias-uuid", `{"type":"system","subtype":"ui_invalidate","UUID":"fixture-uuid"}`, false},
+		{"alias-session", `{"type":"system","subtype":"ui_invalidate","Session_ID":"fixture-session"}`, false},
+		{"alias-shadows-canonical", `{"type":"system","subtype":"ui_invalidate","uuid":"fixture-uuid","UUID":null}`, false},
+		{"alias-shadows-type", `{"type":"system","Type":"assistant","subtype":"ui_invalidate"}`, false},
+		{"duplicate-key", `{"type":"system","subtype":"ui_invalidate","uuid":"a","uuid":"b"}`, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			id := domain.NewID()
+			_, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			wire := &probeWire{id: id, ready: make(chan struct{}, 2), cancel: cancel}
+			wire.receive([]byte(test.frame))
+			if test.ok != (wire.status() == nil) {
+				t.Fatalf("prelude outcome: problem=%v want ok=%t", wire.status(), test.ok)
+			}
+		})
+	}
+}
+
+// TestProbeFramesWithCaseAliasedTypeAreNeverPreludes checks that an aliased
+// type key cannot route a control response around the exact-key validation.
+func TestProbeFramesWithCaseAliasedTypeAreNeverPreludes(t *testing.T) {
+	id := domain.NewID()
+	if !probeFrameIsPrelude([]byte(`{"type":"system","subtype":"ui_invalidate"}`)) {
+		t.Fatal("exact prelude not recognized")
+	}
+	for _, frame := range []string{`{"Type":"system"}`, `{"type":"control_response","Type":"system"}`, `{"type":null}`, `[]`, `{`} {
+		if probeFrameIsPrelude([]byte(frame)) {
+			t.Fatalf("%s treated as prelude", frame)
+		}
+	}
+	shadowed := `{"type":"system","Type":"control_response","response":{"subtype":"success","request_id":"` + string(id) + `","response":{}}}`
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	wire := &probeWire{id: id, ready: make(chan struct{}, 2), cancel: cancel}
+	wire.receive([]byte(shadowed))
+	if wire.status() == nil || wire.initialized() {
+		t.Fatal("aliased type frame was accepted")
 	}
 }
 
