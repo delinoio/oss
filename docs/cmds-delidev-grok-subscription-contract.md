@@ -199,8 +199,13 @@ rejects a duplicate owner before staging; refresh and later Finish calls require
 the stored commitment to match, and refresh additionally requires the same
 identity with a later expiry and a changed key or refresh token. The new
 generation is staged under `credentials.AccountLogin` before the account
-document points to it; superseded generations and every generation after logout
-are removed, and an unconfirmed cleanup keeps the lease fenced.
+document points to it. The account keeps referencing, and the vault keeps, its
+current generation until the document durably publishes the replacement (or the
+logout), so a failed publication never leaves the account pointing at a deleted
+generation. Only after that commit are superseded generations and every
+generation after logout removed; a removal that cannot be confirmed marks the
+account recovery-required, and an unconfirmed Worker cleanup keeps the lease
+fenced.
 
 Worker custody mirrors this. The Worker opens the delivered envelope against its
 own server, the account and the delivered generation, then writes

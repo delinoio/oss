@@ -567,6 +567,125 @@ func TestGrokLateReplayedTakeDoesNotFenceAReleasedAccount(t *testing.T) {
 	}
 }
 
+// orderedGrokSecrets records every vault deletion that happens while the
+// account document still references the deleted generation.
+type orderedGrokSecrets struct {
+	*accountTestSecrets
+	f          *grokFixture
+	deletes    int
+	prematures int
+}
+
+func (v *orderedGrokSecrets) Delete(ctx context.Context, ref credentials.Ref) error {
+	v.deletes++
+	if _, a := v.f.record(); a.Subscription != nil && a.Subscription.Generation == ref.ID {
+		v.prematures++
+	}
+	return v.accountTestSecrets.Delete(ctx, ref)
+}
+
+// A superseded generation is removed only after the account document durably
+// stops referencing it, for both a refresh and a logout.
+func TestGrokFinishDeletesTheReferencedGenerationOnlyAfterPublication(t *testing.T) {
+	f := newGrokFixture(t)
+	vault := &orderedGrokSecrets{accountTestSecrets: f.secrets, f: f}
+	f.service.accountSecrets = vault
+	f.login("synthetic-principal-1")
+	lease, err := f.take(f.queue(pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH), pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rotated := domain.NewID()
+	raw, err := json.Marshal(map[string]any{subscription.GrokScopeKey: map[string]any{
+		"key": "synthetic-key-rotated", "auth_mode": "oidc", "create_time": "2026-10-14T00:00:00Z", "expires_at": "2026-10-14T12:00:00Z",
+		"user_id": "synthetic-user", "principal_type": "user", "principal_id": "synthetic-principal-1", "refresh_token": "synthetic-refresh-rotated",
+		"oidc_issuer": subscription.GrokIssuer, "oidc_client_id": subscription.GrokClientID,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := subscription.ParseGrokAuthFile(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealed, err := subscription.SealGrokBundle(f.service.Identity.ServerID, f.input.AccountID, rotated, next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.finishWith(lease, rotated, sealed, true, true, true); err != nil {
+		t.Fatal(err)
+	}
+	if vault.deletes != 1 || vault.prematures != 0 {
+		t.Fatalf("refresh removed the superseded generation while it was still referenced (%d deletes, %d premature)", vault.deletes, vault.prematures)
+	}
+	lease, err = f.take(f.queue(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT), pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.finishWith(lease, domain.NewID(), nil, true, false, true); err != nil {
+		t.Fatal(err)
+	}
+	if vault.deletes != 2 || vault.prematures != 0 {
+		t.Fatalf("logout removed the generation while it was still referenced (%d deletes, %d premature)", vault.deletes, vault.prematures)
+	}
+}
+
+// A publication that fails after the new generation is staged must leave the
+// account pointing at a generation that still exists.
+func TestGrokFinishFailedPublicationKeepsTheCurrentGeneration(t *testing.T) {
+	f := newGrokFixture(t)
+	generation := f.login("synthetic-principal-1")
+	lease, err := f.take(f.queue(pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH), pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.secrets.afterPut = func() {
+		_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.revoke-grok-worker", nil, func(tx *store.Tx) (any, error) {
+			r, err := tx.Get(domain.DeviceKind, f.device)
+			if err != nil {
+				return nil, err
+			}
+			d, err := store.Decode[domain.Device](r)
+			if err != nil {
+				return nil, err
+			}
+			d.Revoked = true
+			_, err = tx.Put(domain.DeviceKind, r.ID, r.Revision, "", "", d)
+			return nil, err
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	}
+	rotated := domain.NewID()
+	raw, err := json.Marshal(map[string]any{subscription.GrokScopeKey: map[string]any{
+		"key": "synthetic-key-rotated", "auth_mode": "oidc", "create_time": "2026-10-14T00:00:00Z", "expires_at": "2026-10-14T12:00:00Z",
+		"user_id": "synthetic-user", "principal_type": "user", "principal_id": "synthetic-principal-1", "refresh_token": "synthetic-refresh-rotated",
+		"oidc_issuer": subscription.GrokIssuer, "oidc_client_id": subscription.GrokClientID,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := subscription.ParseGrokAuthFile(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealed, err := subscription.SealGrokBundle(f.service.Identity.ServerID, f.input.AccountID, rotated, next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.finishWith(lease, rotated, sealed, true, true, true); err == nil {
+		t.Fatal("a revoked Worker published a generation")
+	}
+	_, a := f.record()
+	if a.Subscription.Generation != generation || a.Subscription.Lease == nil || !a.Subscription.RecoveryRequired {
+		t.Fatal("a failed publication changed the generation or released uncertain ownership")
+	}
+	if stored, err := f.secrets.Get(context.Background(), credentials.Ref{Owner: f.input.AccountID, ID: generation, Purpose: credentials.AccountLogin}); err != nil || len(stored) == 0 {
+		t.Fatal("a failed publication deleted the generation the account still references")
+	}
+}
+
 func (f *grokFixture) start2(action pb.SubscriptionAction) (*pb.RequestSubscriptionResponse, error) {
 	r, _ := f.record()
 	response, err := f.client.RequestSubscription(context.Background(), subscriptionRequest(f.service.Identity.Token, &pb.RequestSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(r.ID), ExpectedRevision: r.Revision}, MachineId: string(f.input.MachineID), Action: action}))

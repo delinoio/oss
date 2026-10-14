@@ -424,17 +424,9 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 				return nil, rpc.Error(err, c)
 			}
 		}
-		if input.Cleanup {
-			keep := state.Generation
-			if usable && lease.Action != domain.SubscriptionLogout {
-				keep = newGeneration
-			} else if lease.Action == domain.SubscriptionLogout {
-				keep = ""
-			}
-			if err := cleanupSubscriptionReferences(ctx, vault, input.Account, keep, protectedGenerations(original.Subscription)...); err != nil {
-				return nil, rpc.Error(err, c)
-			}
-		}
+		// The superseded generation stays referenced and readable until the
+		// account document durably publishes its replacement (or the logout), so a
+		// failed or retried publication never points at a deleted generation.
 		result, err = s.Store.Mutate(ctx, domain.ID(m.RequestId), "grok.subscription.finish", input, func(tx *store.Tx) (any, error) {
 			if err := tx.Authorize(); err != nil {
 				return nil, err
@@ -503,12 +495,16 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 		if original.Subscription.Pending != nil {
 			delete(s.subscriptionProgress, original.Subscription.Pending.ID)
 		}
-		// Cancellation can win during vault staging; tombstone the unpublished
-		// new generation too so the account gate never keeps an orphan.
-		if !usable && input.Cleanup {
+		// Only after the commit are the unreferenced generations removed: the
+		// superseded one after a publication, the staged new one after a
+		// cancellation that won during vault staging, and every generation after
+		// logout. A failed removal is fenced for recovery by the owned-error guard.
+		if input.Cleanup {
 			keep := original.Subscription.Generation
 			if lease.Action == domain.SubscriptionLogout {
 				keep = ""
+			} else if usable {
+				keep = newGeneration
 			}
 			if err := cleanupSubscriptionReferences(ctx, vault, input.Account, keep, protectedGenerations(original.Subscription)...); err != nil {
 				return nil, rpc.Error(err, c)
