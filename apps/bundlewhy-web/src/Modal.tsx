@@ -4,6 +4,7 @@ import {
   useRef,
   type KeyboardEvent,
   type ReactNode,
+  type RefObject,
 } from "react";
 
 const FOCUSABLE =
@@ -16,6 +17,11 @@ export interface ModalProps {
   /** Optional footer, usually the dialog actions. */
   footer?: ReactNode;
   wide?: boolean;
+  /**
+   * Element that receives focus when the dialog opens, for dialogs whose most
+   * important control is not the first focusable one.
+   */
+  initialFocus?: RefObject<HTMLElement | null>;
 }
 
 /**
@@ -23,7 +29,14 @@ export interface ModalProps {
  * the dialog, Tab is trapped, Escape closes it, and on unmount focus returns to
  * the element that was focused before it opened.
  */
-export function Modal({ title, onClose, children, footer, wide }: ModalProps) {
+export function Modal({
+  title,
+  onClose,
+  children,
+  footer,
+  wide,
+  initialFocus,
+}: ModalProps) {
   const titleId = useId();
   const ref = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
@@ -36,7 +49,7 @@ export function Modal({ title, onClose, children, footer, wide }: ModalProps) {
         : null;
     const dialog = ref.current;
     const first = dialog?.querySelector<HTMLElement>(FOCUSABLE);
-    (first ?? dialog)?.focus();
+    (initialFocus?.current ?? first ?? dialog)?.focus();
     return () => {
       if (previous && previous.isConnected) previous.focus();
     };

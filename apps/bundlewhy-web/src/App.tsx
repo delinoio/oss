@@ -1441,12 +1441,16 @@ function OpenReportDialog({
 
 function ExportDialog({ onClose }: { onClose: () => void }) {
   const [includeSources, setIncludeSources] = useState(true);
+  // The source-inclusion choice controls whether code is embedded; focus it
+  // first so it is not overlooked.
+  const sourcesCheckbox = useRef<HTMLInputElement>(null);
   const run = useMutation(exportReport);
   const result = run.data;
   return (
     <Modal
       title="Export HTML report"
       onClose={onClose}
+      initialFocus={sourcesCheckbox}
       footer={
         result ? (
           <button type="button" className="button-primary" onClick={onClose}>
@@ -1497,6 +1501,7 @@ function ExportDialog({ onClose }: { onClose: () => void }) {
           </p>
           <label className="checkbox">
             <input
+              ref={sourcesCheckbox}
               type="checkbox"
               checked={includeSources}
               onChange={(event) => setIncludeSources(event.target.checked)}

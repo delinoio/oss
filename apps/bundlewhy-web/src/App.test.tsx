@@ -550,6 +550,7 @@ describe("header dialogs", () => {
       name: "Include source content",
     });
     expect((checkbox as HTMLInputElement).checked).toBe(true);
+    expect(document.activeElement).toBe(checkbox);
     fireEvent.click(checkbox);
     fireEvent.click(within(dialog).getByRole("button", { name: "Export" }));
     expect(
