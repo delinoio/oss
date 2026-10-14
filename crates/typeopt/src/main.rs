@@ -130,11 +130,11 @@ mod app {
             .is_some_and(|patterns| patterns.iter().any(|p| path.contains(p.as_str())))
     }
     /// Whether a bundle chunk stays byte-for-byte unchanged under its original
-    /// name: excluded by the operator, or importable by an excluded chunk.
-    /// Other boundary chunks are never edited by a pass, but their references
-    /// to renamed chunks are rewritten like those of any text asset.
+    /// name: excluded by the operator, reached by an excluded chunk, or
+    /// containing a dynamic package import whose specifier must be preserved.
     pub(crate) fn bundle_pinned(path: &str) -> bool {
         bundle_excluded(path)
+            || bundle_dynamic_package(path)
             || BUNDLE_FROZEN
                 .get()
                 .is_some_and(|frozen| frozen.contains_key(path))

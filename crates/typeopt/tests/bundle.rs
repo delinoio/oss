@@ -2309,6 +2309,49 @@ fn guarded_dynamic_package_import_is_a_boundary() {
     assert_eq!(check_report["frozen_chunks"], report["frozen_chunks"]);
 }
 
+/// A dynamic package specifier that resembles a hashed chunk name keeps its
+/// original text when publication rehashes another chunk.
+#[test]
+fn preserves_hashed_dynamic_package_specifiers() {
+    let chunks = [
+        (
+            "index-AAAAAAAA.js",
+            r#"import{value}from"./settings-BBBBBBBB.js";import("./guarded-CCCCCCCC.js");console.log(value(3).verticalSpacing);"#,
+        ),
+        (
+            "guarded-CCCCCCCC.js",
+            r#"if(false)import("settings-BBBBBBBB.js");export const answer=1;"#,
+        ),
+        (
+            "settings-BBBBBBBB.js",
+            r#"function value(n){return{verticalSpacing:n,horizontalSpacing:n*2}}export{value};"#,
+        ),
+    ];
+    let temp = bundle(&chunks);
+    let package = temp.path().join("node_modules/settings-BBBBBBBB.js");
+    fs::create_dir_all(&package).unwrap();
+    fs::write(
+        package.join("package.json"),
+        r#"{"name":"settings-BBBBBBBB.js","type":"module","main":"index.js"}"#,
+    )
+    .unwrap();
+    fs::write(package.join("index.js"), "export const value=1;").unwrap();
+
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        out(temp.path(), "guarded-CCCCCCCC.js"),
+        chunks[1].1,
+        "dynamic package specifier was rewritten"
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(saved(&report) > 0, "{report:#}");
+}
+
 /// An excluded chunk keeps a dynamically importing dependency and its imports
 /// under their original names, so publication cannot split the module graph.
 #[test]
