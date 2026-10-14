@@ -657,6 +657,35 @@ it("sends one cancel mutation, keeps polling and hides every login action once t
   expect(f.login).toHaveBeenCalledTimes(1);
 });
 
+it("never opens a browser or takes a callback for a login whose cancellation was acknowledged first", async () => {
+  const f = fixture();
+  f.setState(State.PREPARING);
+  render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Start Grok" }));
+  fireEvent.click(
+    await screen.findByRole(
+      "button",
+      { name: copy("grok-subscription.cancel") },
+      { timeout: 3000 },
+    ),
+  );
+  await screen.findByText(copy("grok-subscription.problem.canceling"));
+  // The server now reports the login as waiting before it reports cancellation.
+  f.setState(State.WAITING);
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 2300));
+  });
+  expect(actions(f, OAuthNativeAction.GrokSubscriptionOpen)).toHaveLength(0);
+  expect(actions(f, OAuthNativeAction.Take)).toHaveLength(0);
+  expect(f.cancel).toHaveBeenCalledTimes(1);
+  for (const name of [
+    "grok-subscription.cancel",
+    "grok-subscription.openBrowser",
+    "grok-subscription.copyLink",
+  ] as const)
+    expect(screen.queryByRole("button", { name: copy(name) }), name).toBeNull();
+});
+
 it("replays an uncertain cancel only through Retry original request and never as a second cancel", async () => {
   const f = fixture();
   await start(f);

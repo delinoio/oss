@@ -472,7 +472,14 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
           finish(p);
           return;
         }
-        if (stage !== GrokLoginStage.Waiting || progress.canceled) return;
+        // A canceled or cancellation-acknowledged login never opens a browser
+        // or takes a callback, even while the server still reports waiting.
+        if (
+          stage !== GrokLoginStage.Waiting ||
+          progress.canceled ||
+          p.cancelAcknowledged
+        )
+          return;
         if (
           progress.userCode ||
           !grokLoginURL(progress.url) ||
