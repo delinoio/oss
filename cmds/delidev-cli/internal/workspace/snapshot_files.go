@@ -95,6 +95,21 @@ func (b *snapshotCopyBudget) take(size uint64) error {
 	return nil
 }
 
+// replaceBytes changes a charge without consuming another inventory entry.
+// Fork config files are inventoried by their source bytes but retained by the
+// bounded parsed Git output, so the shared budget must carry the latter charge.
+func (b *snapshotCopyBudget) replaceBytes(original, replacement uint64) error {
+	if original > ^uint64(0)-b.bytes {
+		return domain.Fail(domain.ResourceExhausted, "The complete workspace snapshot exceeds its bound.", "Reduce workspace data before retrying; sources remain intact.")
+	}
+	available := b.bytes + original
+	if replacement > available {
+		return domain.Fail(domain.ResourceExhausted, "The complete workspace snapshot exceeds its bound.", "Reduce workspace data before retrying; sources remain intact.")
+	}
+	b.bytes = available - replacement
+	return nil
+}
+
 func snapshotUnsupported() error {
 	return domain.Fail(domain.Unsupported, "The workspace cannot be copied faithfully.", "Remove unsupported special files or external Git object/configuration dependencies before retrying; source files were preserved.")
 }

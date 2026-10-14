@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
 // forkConfigLayer is the ordered list of raw `git config --list -z` records of
@@ -80,7 +82,7 @@ func readFrozenForkConfig(ctx context.Context, git Git, checkout, path string, e
 		defer file.Close()
 		// Inventory bounded entry.Size; a changed file cannot force an
 		// unbounded read before the digest comparison reports drift.
-		raw, err := io.ReadAll(io.LimitReader(file, int64(entry.Size)+1))
+		raw, err := io.ReadAll(forkReader{ctx, io.LimitReader(file, int64(entry.Size)+1)})
 		if err != nil {
 			return false, err
 		}
@@ -125,14 +127,7 @@ func (i forkGitInventory) sourceFile(name string) (string, snapshotEntry, bool) 
 }
 
 // captureConfigProof freezes both retained config layers from the source.
-func (i *forkGitInventory) captureConfigProof(ctx context.Context, git Git, checkout string, allowance uint64) error {
-	// Inventory already charged the source config bytes. Replace those charges
-	// with the parsed output bytes so valid large configs are not counted twice.
-	for _, name := range []string{"config", "config.worktree"} {
-		if _, entry, ok := i.sourceFile(name); ok {
-			allowance += entry.Size
-		}
-	}
+func (i *forkGitInventory) captureConfigProof(ctx context.Context, git Git, checkout string, budget *snapshotCopyBudget) error {
 	for _, layer := range []struct {
 		name   string
 		target *forkConfigLayer
@@ -141,11 +136,17 @@ func (i *forkGitInventory) captureConfigProof(ctx context.Context, git Git, chec
 		if !ok {
 			continue
 		}
-		frozen, size, err := readFrozenForkConfig(ctx, git, checkout, path, entry, allowance)
+		allowance := budget.bytes
+		if entry.Size > ^uint64(0)-allowance {
+			return domain.Fail(domain.ResourceExhausted, "The complete workspace snapshot exceeds its bound.", "Reduce workspace data before retrying; sources remain intact.")
+		}
+		frozen, size, err := readFrozenForkConfig(ctx, git, checkout, path, entry, allowance+entry.Size)
 		if err != nil {
 			return err
 		}
-		allowance -= size
+		if err := budget.replaceBytes(entry.Size, size); err != nil {
+			return err
+		}
 		*layer.target = frozen
 	}
 	return nil

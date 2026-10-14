@@ -81,7 +81,7 @@ func inspectForkGitInventory(ctx context.Context, git Git, source string, budget
 			return result, err
 		}
 	}
-	if err = result.captureConfigProof(ctx, git, source, budget.bytes); err != nil {
+	if err = result.captureConfigProof(ctx, git, source, budget); err != nil {
 		return result, err
 	}
 	return result, nil
