@@ -16,6 +16,8 @@ acceptance uses Khronos, Three.js, ufbx and Blender 4.5.14. No npm publication,
 scene import, automatic rigging, IK, retargeting, physics or playback runtime is
 part of this extension.
 
+An unreleased explicit static-geometry simplification operation is owned by the scene contract. It derives an immutable GLB/FBX geometry asset with bounded native scratch and truthful counts/error while preserving normal registration and export behavior.
+
 ## Project ID
 
 `react-forge` (`ProjectId::ReactForge`). Product name: **React Forge**. The public npm package is `@delino/react-forge`; its CLI executable is `react-forge`.

@@ -7,7 +7,11 @@ import {
   readSource,
   withOutputReservation,
 } from "../files.js";
-import { processDocument, validateSceneAsset } from "../native.js";
+import {
+  processDocument,
+  simplifySceneGeometry,
+  validateSceneAsset,
+} from "../native.js";
 import { RenderRoot } from "../renderer.js";
 import {
   ErrorCode,
@@ -50,6 +54,20 @@ export interface SceneGeometry {
   readonly min: Vec3;
   readonly max: Vec3;
   readonly revision: number;
+}
+export interface SimplifyGeometryOptions {
+  targetTriangles: number;
+  maxError: number;
+}
+export interface SimplifyGeometryResult {
+  geometry: GeometryHandle;
+  inputTriangles: number;
+  outputTriangles: number;
+  inputVertices: number;
+  outputVertices: number;
+  targetReached: boolean;
+  /** Accumulated plane-quadric estimate, not a visual distance guarantee. */
+  estimatedError: number;
 }
 
 /** Independent 3D lifecycle; shares React and atomic local publication with documents. */
@@ -251,6 +269,103 @@ export class SceneSession {
       geometryBytes(input, limits.sceneBytes - this.bytes - this.reserved),
       options.signal,
     ) as Promise<GeometryHandle>;
+  }
+  simplifyGeometry(
+    handle: GeometryHandle,
+    options: SimplifyGeometryOptions,
+    control: { signal?: AbortSignal } = {},
+  ): Promise<SimplifyGeometryResult> {
+    const signal = this.signal(control?.signal);
+    checkSignal(signal);
+    if (
+      !control ||
+      typeof control !== "object" ||
+      Object.keys(control).some((key) => key !== "signal") ||
+      !options ||
+      typeof options !== "object" ||
+      Object.keys(options).some(
+        (key) => key !== "targetTriangles" && key !== "maxError",
+      )
+    )
+      throw malformed();
+    if (
+      !handle ||
+      handle.kind !== SceneAssetKind.Geometry ||
+      handle.documentId !== this.documentId ||
+      typeof handle.assetId !== "string"
+    )
+      throw new ForgeError(ErrorCode.InvalidTarget, "Invalid geometry handle.");
+    const source = this.assets.get(handle.assetId);
+    if (!source || !handle.assetId.startsWith(`${SceneAssetKind.Geometry}:`))
+      throw new ForgeError(
+        ErrorCode.InvalidTarget,
+        "Geometry is not registered.",
+      );
+    const indexOffset = source.subarray(0, 4).toString() === "FSG2" ? 28 : 12;
+    const inputTriangles = source.readUInt32LE(indexOffset) / 3;
+    if (
+      !Number.isSafeInteger(options.targetTriangles) ||
+      options.targetTriangles < 1 ||
+      options.targetTriangles > inputTriangles ||
+      !Number.isFinite(options.maxError) ||
+      options.maxError < 0
+    )
+      throw malformed();
+    // A derived asset is at most as large as the source. Reserve that upper
+    // bound before native work so concurrent registrations see its admission.
+    if (this.bytes + this.reserved + source.length > limits.sceneBytes)
+      throw new ForgeError(
+        ErrorCode.ResourceLimit,
+        "Scene assets exceed 256 MiB.",
+      );
+    this.reserved += source.length;
+    const task = this.track(Stage.Layout, async () => {
+      try {
+        const result = await simplifySceneGeometry(
+          source,
+          options.targetTriangles,
+          options.maxError,
+          signal,
+        );
+        checkSignal(signal);
+        if (result.bytes.length > limits.geometryBytes)
+          throw new ForgeError(
+            ErrorCode.ResourceLimit,
+            "Derived geometry exceeds 64 MiB.",
+          );
+        const id = `${SceneAssetKind.Geometry}:${digest(result.bytes)}`;
+        if (!this.assets.has(id)) {
+          if (this.bytes + result.bytes.length > limits.sceneBytes)
+            throw new ForgeError(
+              ErrorCode.ResourceLimit,
+              "Scene assets exceed 256 MiB.",
+            );
+          // Native output is validated by the same forge-scene geometry rules
+          // before it can be returned or registered here.
+          checkSignal(signal);
+          this.assets.set(id, result.bytes);
+          this.bytes += result.bytes.length;
+        }
+        return Object.freeze({
+          geometry: Object.freeze({
+            assetId: id,
+            documentId: this.documentId,
+            kind: SceneAssetKind.Geometry,
+          }),
+          inputTriangles: result.inputTriangles,
+          outputTriangles: result.outputTriangles,
+          inputVertices: result.inputVertices,
+          outputVertices: result.outputVertices,
+          targetReached: result.targetReached,
+          estimatedError: result.estimatedError,
+        });
+      } finally {
+        this.reserved -= source.length;
+      }
+    });
+    this.pending.add(task);
+    void task.finally(() => this.pending.delete(task)).catch(() => {});
+    return task;
   }
   registerAnimationSampler(
     input: AnimationSamplerInput,

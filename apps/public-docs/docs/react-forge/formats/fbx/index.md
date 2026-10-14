@@ -14,6 +14,10 @@ The accompanying GLB is useful for comparison because glTF defines a standard me
 
 Blender 4.5 ignores FBX mesh culling flags and shades both sides. Use closed surfaces when matching GLB appearance; a single-sided open surface can look different from its GLB counterpart.
 
+## Static geometry simplification (unreleased)
+
+`SceneSession.simplifyGeometry()` is implemented in source for both scene formats but **not released on npm**. It derives a separate static geometry handle, reports actual vertex/triangle counts and whether the target was reached, and leaves the original mesh unchanged. The accumulated plane error is an estimate, not a visual-quality guarantee. See the [GLB simplification guide](/react-forge/formats/glb/#static-geometry-simplification-unreleased) for the call and constraints. FBX export itself never simplifies a mesh implicitly.
+
 ## Animation authoring (unreleased)
 
 The animation extension is implemented but **not released on npm**. It shares

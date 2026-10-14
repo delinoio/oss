@@ -39,6 +39,20 @@ Materials accept linear `baseColor` RGBA, `metallic`, `roughness`, `emissive` RG
 
 Perspective cameras take `yfov` in radians, `aspect`, `near`, and `far`; orthographic cameras take half-extents `xmag`/`ymag`, `near`, and `far`. Directional intensity is lux; point/spot intensity is candela. Spot cone angles are radians. Lights use `KHR_lights_punctual`.
 
+## Static geometry simplification (unreleased)
+
+The following explicit API is implemented in source but **not released on npm**. It accepts a registered static geometry handle and creates a separate immutable result. Ordinary registration and export do not simplify geometry.
+
+```ts
+const result = await session.simplifyGeometry(geometry, {
+  targetTriangles: 100,
+  maxError: 0.01,
+});
+// Use result.geometry in a Mesh only if the returned counts suit your scene.
+```
+
+`targetTriangles` is a safe integer between one and the input triangle count. `maxError` is finite and nonnegative. The result includes `inputTriangles`, `outputTriangles`, `inputVertices`, `outputVertices`, `targetReached`, and `estimatedError`. A target may be unreachable because boundaries, seams, or topology must remain intact; check `targetReached` and the actual counts. `estimatedError` is an accumulated plane-quadric estimate, not a visual-quality or maximum-distance guarantee. Skin and morph geometry are unsupported; a static mesh may still be used by a node with translation, rotation, or scale animation. The source handle remains usable.
+
 ## Revisions and limits
 
 Use `snapshot()` for a settled revision and targets. `measure(handle, { revision })` returns `{ coordinateSpace: "world", min, max, revision }`, a mesh/descendant world-space bounding box in meters. Cameras and empty groups have no mesh bounds. Stale revisions fail. `inspect()` is synchronous; `onDiagnostic()` subscribes to content-free diagnostics. React updates, Suspense waiting, cancellation, atomic file export, and `dispose()` retain the session behavior described in [sessions](/react-forge/sessions).

@@ -13,12 +13,27 @@ export interface NativeOutput {
   geometry: string;
   diagnostics: string;
 }
+export interface NativeSimplifiedGeometry {
+  bytes: Buffer;
+  inputTriangles: number;
+  outputTriangles: number;
+  inputVertices: number;
+  outputVertices: number;
+  targetReached: boolean;
+  estimatedError: number;
+}
 interface Binding {
   validateSceneAsset(
     kind: string,
     bytes: Buffer,
     cancellation: Cancellation,
   ): Promise<boolean>;
+  simplifySceneGeometry(
+    bytes: Buffer,
+    targetTriangles: number,
+    maxError: number,
+    cancellation: Cancellation,
+  ): Promise<NativeSimplifiedGeometry>;
   validateFigmaImage(
     bytes: Buffer,
     cancellation: Cancellation,
@@ -297,6 +312,38 @@ export async function validateSceneAsset(
       /* Redact native details. */
     }
     throw new ForgeError(code, "Scene asset validation failed.");
+  } finally {
+    signal.removeEventListener("abort", cancel);
+  }
+}
+
+export async function simplifySceneGeometry(
+  bytes: Buffer,
+  targetTriangles: number,
+  maxError: number,
+  signal: AbortSignal,
+): Promise<NativeSimplifiedGeometry> {
+  const native = load();
+  const cancellation = new native.Cancellation();
+  const cancel = () => cancellation.cancel();
+  signal.addEventListener("abort", cancel, { once: true });
+  if (signal.aborted) cancel();
+  try {
+    return await native.simplifySceneGeometry(
+      bytes,
+      targetTriangles,
+      maxError,
+      cancellation,
+    );
+  } catch (error) {
+    let code = ErrorCode.MalformedInput;
+    try {
+      const detail = JSON.parse((error as Error).message);
+      code = codes[detail.code] ?? code;
+    } catch {
+      /* Native errors may contain host details; never forward them. */
+    }
+    throw new ForgeError(code, "Scene geometry simplification failed.");
   } finally {
     signal.removeEventListener("abort", cancel);
   }
