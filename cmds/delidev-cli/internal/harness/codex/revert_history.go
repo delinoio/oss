@@ -44,7 +44,7 @@ func (c *Client) revertHistoryLocked(ctx context.Context, direction string, turn
 	}
 	budget := revertScanBudget{history: c.historyAggregateLimit()}
 	for {
-		reply, err := c.wire.Call(ctx, domain.NewID(), "thread/items/list", struct {
+		reply, err := c.call(ctx, domain.NewID(), "thread/items/list", struct {
 			Thread    domain.ID `json:"threadId"`
 			Limit     int       `json:"limit"`
 			Direction string    `json:"sortDirection"`

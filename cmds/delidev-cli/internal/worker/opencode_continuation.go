@@ -14,6 +14,13 @@ import (
 // lease. Server-accepted version-2 completion supplies the independent digest;
 // neither local history nor a finished-but-unaccepted report can create it.
 func readOpenCodeContinuationCheckpoint(ctx context.Context, root string, credential Credential, input domain.ExecutionJobInput) (openCodeExecutionCheckpoint, error) {
+	return readOpenCodeContinuationCheckpointFiles(ctx, root, credential, input, input.Continuation == nil || input.Continuation.Compaction == nil)
+}
+
+// readOpenCodeContinuationCheckpointFiles reads the ordinary checkpoint a
+// continuation resumes. inspectFiles must be false when a later action of the
+// same persistent profile already advanced its files.
+func readOpenCodeContinuationCheckpointFiles(ctx context.Context, root string, credential Credential, input domain.ExecutionJobInput, inspectFiles bool) (openCodeExecutionCheckpoint, error) {
 	var empty openCodeExecutionCheckpoint
 	c := input.Continuation
 	if c == nil || input.Validate() != nil || input.Configuration.Harness != domain.OpenCode || credential.MachineID != input.MachineID || c.Completion.Version != 2 {
@@ -39,7 +46,7 @@ func readOpenCodeContinuationCheckpoint(ctx context.Context, root string, creden
 	if r.Completion != terminal || r.InputMode != c.InputMode || r.PromptSHA256 != c.PromptDigest || r.AssignmentInputSHA256 != c.AssignmentInputDigest || r.HistoryExecutionID != c.HistoryExecutionID || ref.ServerID != credential.ServerID || ref.DeviceID != credential.DeviceID || ref.MachineID != input.MachineID || ref.SessionID != input.SessionID || ref.ExecutionID != c.Previous.ExecutionID || ref.JobID != c.Previous.JobID || ref.InputID != c.Previous.InputID || ref.AccountID != input.AccountID || ref.ConnectionID != input.ConnectionID || ref.ConfigurationDigest != input.ConfigurationDigest || ref.InputRequestID == input.TurnRequestID || ref.ThreadRequestID == input.ThreadRequestID {
 		return empty, executionCheckpointUncertain()
 	}
-	checkpoint, err := readOpenCodeExecutionCheckpoint(ctx, root, r, c.Completion.NativeCheckpointDigest)
+	checkpoint, err := readOpenCodeExecutionCheckpoint(ctx, root, r, c.Completion.NativeCheckpointDigest, inspectFiles)
 	if err != nil {
 		return empty, err
 	}
@@ -51,7 +58,16 @@ func readOpenCodeContinuationCheckpoint(ctx context.Context, root string, creden
 	if err := verifyOpenCodeContinuationJournals(root, ref, c.Completion); err != nil {
 		return empty, err
 	}
-	home := filepath.Join(root, "runtimes", string(ref.ExecutionID))
+	home, err := openCodeHistoryRoot(ctx, root, ref.MachineID, ref.AccountID, ref.ExecutionID)
+	if err != nil {
+		return empty, err
+	}
+	if !inspectFiles {
+		if err := opencode.InspectReplacementMetadata(checkpoint.Native, checkpoint.NativeReference, home); err != nil {
+			return empty, err
+		}
+		return checkpoint, nil
+	}
 	if err := opencode.InspectReplacementCheckpoint(ctx, home, checkpoint.Native, checkpoint.NativeReference); err != nil {
 		return empty, err
 	}

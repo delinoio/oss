@@ -113,7 +113,7 @@ func (c *Client) verifyAPI(ctx context.Context, cwd string) error {
 	if c.api == nil {
 		return nil
 	}
-	response, err := c.wire.Call(ctx, domain.NewID(), "config/read", struct {
+	response, err := c.call(ctx, domain.NewID(), "config/read", struct {
 		Cwd           string `json:"cwd"`
 		IncludeLayers bool   `json:"includeLayers"`
 	}{Cwd: cwd})

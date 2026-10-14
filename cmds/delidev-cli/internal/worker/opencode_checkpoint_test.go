@@ -120,7 +120,7 @@ func TestOpenCodeWorkerCheckpointReaderCannotManufactureNativeEvidence(t *testin
 	if err := security.WriteAtomic(path, raw); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := readOpenCodeExecutionCheckpoint(context.Background(), p.config.Root, value.Reference, executionInputDigest(raw)); err == nil {
+	if _, err := readOpenCodeExecutionCheckpoint(context.Background(), p.config.Root, value.Reference, executionInputDigest(raw), true); err == nil {
 		t.Fatal("outer metadata manufactured original native proof")
 	}
 	after, err := os.ReadFile(path)
@@ -130,7 +130,7 @@ func TestOpenCodeWorkerCheckpointReaderCannotManufactureNativeEvidence(t *testin
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := readOpenCodeExecutionCheckpoint(context.Background(), p.config.Root, value.Reference, executionInputDigest(raw)); err == nil {
+	if _, err := readOpenCodeExecutionCheckpoint(context.Background(), p.config.Root, value.Reference, executionInputDigest(raw), true); err == nil {
 		t.Fatal("missing checkpoint was reconstructed")
 	}
 	if _, err := os.Lstat(path); !os.IsNotExist(err) {

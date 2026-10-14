@@ -105,6 +105,10 @@ enum SystemCapability {
   // Server-owned access-only reset-credit consumption beside Execute, without a Runner.
   SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_RESET_CREDITS_V2 = 101;
   SYSTEM_CAPABILITY_CLAUDE_SUBSCRIPTIONS_V1 = 38;
+  // Declared Grok Build login and execution identifiers. They grant no authority
+  // and are not advertised until the owning feature activates them.
+  SYSTEM_CAPABILITY_GROK_SUBSCRIPTION_LOGIN_V1 = 39;
+  SYSTEM_CAPABILITY_GROK_SUBSCRIPTION_EXECUTION_V1 = 40;
   SYSTEM_CAPABILITY_FAILED_SUBSCRIPTION_CLEANUP_V1 = 41;
   // Explicit DeleteConfiguration cleanup of a terminal original server ChatGPT
   // LOGOUT account whose only remaining blocker is protected credential cleanup.

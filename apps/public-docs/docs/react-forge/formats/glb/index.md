@@ -47,6 +47,41 @@ Materials accept linear `baseColor` RGBA, `metallic`, `roughness`, `emissive` RG
 
 Perspective cameras take `yfov` in radians, `aspect`, `near`, and `far`; orthographic cameras take half-extents `xmag`/`ymag`, `near`, and `far`. Directional intensity is lux; point/spot intensity is candela. Spot cone angles are radians. Lights use `KHR_lights_punctual`.
 
+## Static geometry simplification (unreleased)
+
+The following explicit API is implemented in source but **not released on npm**. It accepts a registered static geometry handle and creates a separate immutable result. Ordinary registration and export do not simplify geometry.
+
+```ts
+const result = await session.simplifyGeometry(geometry, {
+  targetTriangles: 100,
+  maxError: 0.01,
+});
+// Use result.geometry in a Mesh only if the returned counts suit your scene.
+```
+
+`targetTriangles` is a safe integer between one and the input triangle count. `maxError` is finite and nonnegative. The result includes `inputTriangles`, `outputTriangles`, `inputVertices`, `outputVertices`, `targetReached`, and `estimatedError`. A target may be unreachable because boundaries, seams, or topology must remain intact; check `targetReached` and the actual counts. `estimatedError` is an accumulated plane-quadric estimate, not a visual-quality or maximum-distance guarantee. Skin and morph geometry are unsupported; a static mesh may still be used by a node with translation, rotation, or scale animation. The source handle remains usable.
+
+## Polygon-efficient static authoring
+
+Choose the triangle count for each physical part before you register its geometry. An indexed sheet with `u` by `v` cells has `(u + 1) * (v + 1)` vertices and `2 * u * v` triangles. The original `polygon-efficient.tsx` example in the [React Forge repository](https://github.com/delinoio/oss) uses `z = 0.1 * sin(pi * x) * sin(pi * y)` for a curved sheet. Its 6-by-16 grid has 119 vertices and 192 triangles; its 20-by-60 grid has 1,281 vertices and 2,400 triangles. Sum `indices.length / 3` across the mesh instances you intend to render. No single triangle budget fits every view or device.
+
+Add a back and side edges only when the object needs physical thickness or must be seen from those directions. For two separate grid sheets with matching edge divisions, a closed shell has `4 * u * v + 4 * (u + v)` triangles: 472 for 6-by-16 and 5,120 for 20-by-60. This is a count formula, not a second exported example. A recursive one-to-four triangle split multiplies a surface's triangles by `4^passes`; four passes cost 256 times the starting surface count before adding a back. Preserve real backs, UV seams, tangent frames, and separate material or animation ownership when the model needs them. Do not join unrelated parts only to reduce the mesh count.
+
+The example supplies analytic smooth normals and orthogonal tangents on both grids. Smooth normals can soften shading within the existing silhouette; they do not add silhouette detail. Add subdivisions where the outline or deformation needs them. Geometry reuse can reduce stored geometry bytes, but every rendered instance still contributes its triangles. Compression and smaller index types reduce file bytes, not triangle work.
+
+For painted detail on an opaque surface, put the colors in one precomposited base-color texture. The example's 16-by-16 PNG has a red gradient on top, a blue gradient below, and a small green stripe across the middle. Its badge remains one mesh, one material, four vertices, and two triangles. Changing the texture resolution or colors does not change those geometry counts. The separate transparent sheet uses the same quad and a white RGBA texture whose alpha rises from transparent at the left edge to opaque at the right edge. It uses `AlphaMode.Blend` on one material. Keep an opaque body `Opaque`: changing the body to `Blend` is not equivalent to painting on it, and blending can increase render cost or change sorting.
+
+After you build the package, run any variant as a one-shot task. The companion `polygon-efficient-assets.ts` source generates the images in memory. The CLI writes only the requested model; it does not need a network download or an image converter.
+
+```sh
+react-forge run polygon-efficient.tsx --data '{"format":"glb","variant":"low"}' --output low.glb
+react-forge run polygon-efficient.tsx --data '{"format":"glb","variant":"dense"}' --output dense.glb
+react-forge run polygon-efficient.tsx --data '{"format":"glb","variant":"badge"}' --output badge.glb
+react-forge run polygon-efficient.tsx --data '{"format":"glb","variant":"alpha"}' --output alpha.glb
+```
+
+Copy both source files beside each other before running an installed CLI task. Use `"format":"fbx"` and an `.fbx` output path to export the same authored surfaces as FBX. A structural validator can confirm mesh topology and material bindings. Check the actual colors, alpha fade, winding, and performance in the target application. GLB viewers that support glTF honor `doubleSided`; Blender 4.5 ignores FBX culling flags and shades both sides. Neither behavior makes a sheet physically closed.
+
 ## Revisions and limits
 
 Use `snapshot()` for a settled revision and targets. `measure(handle, { revision })` returns `{ coordinateSpace: "world", min, max, revision }`, a mesh/descendant world-space bounding box in meters. Cameras and empty groups have no mesh bounds. Stale revisions fail. `inspect()` is synchronous; `onDiagnostic()` subscribes to content-free diagnostics. React updates, Suspense waiting, cancellation, atomic file export, and `dispose()` retain the session behavior described in [sessions](/react-forge/sessions).

@@ -2,9 +2,10 @@
 
 ## Scope
 
-This contract owns the planned Grok Build subscription lifecycle in
+This contract owns the planned Grok Build subscription lifecycle (not yet
+implemented or advertised; only the protocol identifiers below are declared) in
 `cmds/delidev-cli`, its Connect interface and the desktop AI Subscription flow.
-The implementation pins Grok Build `1.0.46`. Reservation support is separate
+The subscription profile declares `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) as its minimum SemVer baseline. `domain.GrokSubscriptionVersionAllowed` admits a valid SemVer at or above it (prereleases of the baseline are below it) and is not yet referenced by any capability, discovery or execution path. Newer releases are validated natively, not rejected by number. The API and history baseline stays `domain.GrokProtocolVersion` (`1.0.41`); the known Grok Build 1.0.52 inspection failure is a separate limitation and does not change these baselines. Reservation support is separate
 from implemented support and actual account/platform acceptance.
 
 ## Runtime and Language
@@ -21,7 +22,11 @@ private runtime. Separate accounts can run independently.
 
 ## Interfaces and Contracts
 
-Record these the feature allocations in the owning feature PR:
+These allocations are declared in the protos and generated bindings but are
+unadvertised: GetStatus and AttachWorker never list System 39/40 or Worker 21,
+the Worker does not report 21 and the server rejects it as an unknown
+capability, and GetSubscriptionProgress never populates `grok_diagnostic`. The
+owning feature change advertises and activates them:
 
 - System `GROK_SUBSCRIPTION_LOGIN_V1 = 39`.
 - System `GROK_SUBSCRIPTION_EXECUTION_V1 = 40`.
@@ -45,14 +50,32 @@ Remote desktop callbacks retain the same original address and use a trusted
 native receiver plus authenticated Connect forwarding. Device authorization
 honors RFC 8628 pending, slow-down, denial and expiry.
 
+The trusted native receiver (`apps/delidev/src-tauri/src/oauth.rs`) exposes
+`grok-subscription-open` and `grok-subscription-reopen` for the server-returned
+browser URL. It validates the fixed `https://auth.x.ai/oauth2/authorize` shape
+(public client `b1a00492-073a-47ea-816f-4c329264a828`, S256 PKCE, nonempty
+state and nonce, redirect exactly `http://127.0.0.1:<port>/callback`), opens it
+once. A local desktop binds nothing because the server listener receives the
+redirect. A remote desktop is refused explicitly (`Incompatible`) until the
+server can forward Grok callbacks: today `ForwardSubscriptionCallback` accepts
+only the ChatGPT/Codex login (`auth.openai.com`, fixed port 1457) and rejects
+Grok accounts, so forwarding must first become service-aware (Grok host,
+state and the dynamic port bound for that login) with Codex behavior unchanged.
+Once enabled, the receiver binds that IPv4 loopback port, accepts one
+`code`/`state`/`scope` redirect and returns it through Take for a single
+`ForwardSubscriptionCallback` call bound to the operation id. The server must
+therefore emit `state` and `nonce` from `[A-Za-z0-9-_.~]` (at most 512 bytes),
+an unprivileged port and no other query keys than `scope` and `referrer`. See
+the [desktop contract](apps-delidev-desktop-contract.md).
+
 General Chat and prepared Local/Worktree repositories require a complete ordered
 manifest, primary cwd and original ownership of additional roots. Execute/Plan,
 tools, questions and approvals retain original input authority. Follow-up input
 resumes verified complete native history on the same account and Worker without
 replaying previous prompts. Stop, restart and uncertain delivery reconcile only
-original evidence. Grok 1.0.41 records and version-1 results retain attribution
+original evidence. Grok records at `domain.GrokProtocolVersion` (`1.0.41`) and version-1 results retain attribution
 and acquire no new resume authority. API execution keeps its independent support
-boundary when revalidated against 1.0.46.
+boundary when revalidated against `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) or newer.
 
 The approved desktop flow preserves service order, existing marks, navigation
 and theme. Add account starts browser login; Use a device code is explicit.
@@ -71,7 +94,7 @@ compaction are excluded.
 
 ### Project requirements
 
-- DeliDev Grok Build subscription support follows `cmds-delidev-grok-subscription-contract.md`. Record System 39/40, Worker 21, progress field 10 and the new Grok diagnostic declarations in the owning feature PR. Reservations grant no login, native execution or migration. Preserve existing capability ownership, server-owned OAuth/protected credentials, original account leases and same-account/Worker history; verify the exact 1.0.46 profile before activation.
+- DeliDev Grok Build subscription support follows `cmds-delidev-grok-subscription-contract.md`. System 39/40, Worker 21, progress field 10 and the Grok diagnostic messages are declared but unadvertised until the owning feature activates them. Declarations grant no login, native execution or migration. Preserve existing capability ownership, server-owned OAuth/protected credentials, original account leases and same-account/Worker history; verify the subscription profile at or above `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) by native validation before activation.
 
 ## Storage
 
@@ -119,7 +142,7 @@ cleanup failures, deletion and backup/restore. Exercise General Chat, single and
 multiple repositories, Local/Worktree, Execute/Plan, native interactions, follow-up,
 Stop/resume and process/server restart plus API/ChatGPT regressions.
 
-Verify actual 1.0.46 OAuth/native profiles and real local/remote account execution
+Verify actual OAuth/native profiles at or above `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) and real local/remote account execution
 before activation. A failed profile keeps support disabled until resolved.
 Fixture/build/package results do not establish actual account or OS acceptance;
 record supported-platform native and packaging evidence separately.

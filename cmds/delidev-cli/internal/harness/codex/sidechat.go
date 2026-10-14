@@ -172,7 +172,7 @@ func (c *Client) verifySidechat(ctx context.Context, cwd string, thread domain.I
 			return err
 		}
 	}
-	response, err := c.wire.Call(ctx, domain.NewID(), "config/read", struct {
+	response, err := c.call(ctx, domain.NewID(), "config/read", struct {
 		Cwd           string `json:"cwd"`
 		IncludeLayers bool   `json:"includeLayers"`
 	}{Cwd: cwd})
@@ -206,7 +206,7 @@ func (c *Client) verifySidechat(ctx context.Context, cwd string, thread domain.I
 			return err
 		}
 	}
-	response, err = c.wire.Call(ctx, domain.NewID(), "experimentalFeature/list", struct {
+	response, err = c.call(ctx, domain.NewID(), "experimentalFeature/list", struct {
 		Thread domain.ID `json:"threadId,omitempty"`
 		Limit  int       `json:"limit"`
 	}{thread, 256})

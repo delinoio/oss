@@ -30,10 +30,10 @@ jobs:
       dry_run: ${{ steps.source.outputs.dry_run }}
       revision: ${{ steps.source.outputs.revision }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
           package-manager-cache: false
@@ -88,16 +88,16 @@ jobs:
             target: aarch64-unknown-linux-musl
             suffix: linux-arm64-musl
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.prepare.outputs.revision }}
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
           package-manager-cache: false
           architecture: ${{ startsWith(matrix.target, 'aarch64-') && 'arm64' || 'x64' }}
-      - uses: pnpm/action-setup@v5
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
         with:
           version: 10.26.2
       - uses: dtolnay/rust-toolchain@v1
@@ -172,11 +172,11 @@ jobs:
     needs: [prepare, build]
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.prepare.outputs.revision }}
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
           package-manager-cache: false
@@ -206,11 +206,11 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.prepare.outputs.revision }}
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
           package-manager-cache: false
@@ -240,11 +240,11 @@ jobs:
       contents: write
       id-token: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.prepare.outputs.revision }}
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
           package-manager-cache: false
@@ -252,7 +252,7 @@ jobs:
         with:
           name: clibox-npm-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.revision }}
           path: packages/clibox/dist/tarballs
-      - uses: sigstore/cosign-installer@v4.1.1
+      - uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # v4.1.1
       - name: Publish verified GNU and macOS archives and Sigstore bundles
         env:
           GH_TOKEN: ${{ github.token }}
@@ -277,15 +277,15 @@ jobs:
       HOMEBREW_NO_ANALYTICS: 1
       HOMEBREW_NO_INSTALL_CLEANUP: 1
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.prepare.outputs.revision }}
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
           package-manager-cache: false
-      - uses: sigstore/cosign-installer@v4.1.1
+      - uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # v4.1.1
       - name: Verify public release and render Formula
         env:
           GH_TOKEN: ${{ github.token }}
@@ -316,15 +316,15 @@ jobs:
     if: ${{ needs.prepare.outputs.dry_run == 'false' && github.repository == 'delinoio/oss' && startsWith(github.ref, 'refs/tags/clibox@v') }}
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.prepare.outputs.revision }}
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
           package-manager-cache: false
-      - uses: sigstore/cosign-installer@v4.1.1
+      - uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # v4.1.1
       - uses: actions/download-artifact@v8
         with:
           name: clibox-homebrew-amd64-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.revision }}
