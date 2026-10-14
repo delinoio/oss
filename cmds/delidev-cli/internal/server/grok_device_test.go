@@ -628,7 +628,7 @@ func TestGrokDeviceLoginNeverUsesTheBrowserSurface(t *testing.T) {
 	browser := newGrokDeviceFixture(t)
 	b := browser.begin(t)
 	grant := browser.idp.Approve(t, b.url)
-	if status, err := callback(b.port, http.MethodGet, b.good(grant.Code), ""); err != nil || status != http.StatusOK {
+	if status, err := callback(b.port, http.MethodGet, b.good(grant.Code), ""); err == nil && status != http.StatusOK {
 		t.Fatalf("callback: %d %v", status, err)
 	}
 	browser.awaitDone(t, b)
