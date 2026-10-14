@@ -48,7 +48,9 @@ export function curvedSheet(
         -dzdy / normalLength,
         1 / normalLength,
       );
-      tangents.push(1 / tangentLength, 0, dzdx / tangentLength, 1);
+      // V is flipped to match glTF's top-left UV convention, so the tangent
+      // frame's bitangent must use the opposite handedness.
+      tangents.push(1 / tangentLength, 0, dzdx / tangentLength, -1);
       uv.push(x, 1 - y);
     }
   }

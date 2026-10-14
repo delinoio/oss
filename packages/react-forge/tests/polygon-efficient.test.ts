@@ -33,10 +33,12 @@ test("curved sheets keep the selected vertex and triangle budgets", () => {
     assert.equal(4 * u * v + 4 * (u + v), closedShell);
     for (let i = 0; i < vertices; i++) {
       const n = geometry.normals.subarray(i * 3, i * 3 + 3);
-      const t = geometry.tangents!.subarray(i * 4, i * 4 + 3);
+      const tangent = geometry.tangents!.subarray(i * 4, i * 4 + 4);
+      const t = tangent.subarray(0, 3);
       assert.ok(Math.abs(Math.hypot(...n) - 1) < 1e-6);
       assert.ok(Math.abs(Math.hypot(...t) - 1) < 1e-6);
       assert.ok(Math.abs(n[0] * t[0] + n[1] * t[1] + n[2] * t[2]) < 1e-6);
+      assert.equal(tangent[3], -1);
     }
     for (let i = 0; i < geometry.indices.length; i += 3) {
       const [a, b, c] = geometry.indices.subarray(i, i + 3);
