@@ -1420,7 +1420,9 @@ describe("every navigation handler registers an intent and cancels a pending res
       );
     },
     [NavigationIntentSource.ProjectCreation]: async () => {
-      fireEvent.click(await screen.findByRole("button", { name: "New project" }));
+      fireEvent.click(
+        await screen.findByRole("button", { name: "New project" }),
+      );
     },
     [NavigationIntentSource.InboxSelect]: async () => {
       fireEvent.click(await screen.findByText(/Other session/));
@@ -1473,7 +1475,10 @@ describe("every navigation handler registers an intent and cancels a pending res
   };
   // The screen each driver starts from.
   const startRoutes: Partial<
-    Record<NavigationIntentSource, (value: ReturnType<typeof fixture>) => string>
+    Record<
+      NavigationIntentSource,
+      (value: ReturnType<typeof fixture>) => string
+    >
   > = {
     [NavigationIntentSource.SessionOpen]: (value) =>
       `?screen=sessions&session=${value.session.id}`,

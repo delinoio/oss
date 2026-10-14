@@ -2373,7 +2373,12 @@ function SettingsVisit({
         generation: entryDestination.generation,
       });
     destinationConsumed?.();
-  }, [destinationConsumed, entryDestination, applyCategory, tailscaleAvailable]);
+  }, [
+    destinationConsumed,
+    entryDestination,
+    applyCategory,
+    tailscaleAvailable,
+  ]);
   return (
     <>
       <SidebarSurface
