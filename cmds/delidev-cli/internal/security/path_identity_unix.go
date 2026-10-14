@@ -69,3 +69,17 @@ func pathError(e error) error {
 	}
 	return e
 }
+
+// lockRecord describes the object a Lock holds open, read from its handle.
+func lockRecord(f *os.File) (PathIdentityRecord, error) {
+	conn, e := f.SyscallConn()
+	if e != nil {
+		return PathIdentityRecord{}, e
+	}
+	var record PathIdentityRecord
+	var recordErr error
+	if e := conn.Control(func(fd uintptr) { record, recordErr = recordFromFD(int(fd)) }); e != nil {
+		return PathIdentityRecord{}, e
+	}
+	return record, recordErr
+}

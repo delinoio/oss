@@ -101,6 +101,37 @@ func ReopenPathIdentity(path string, record PathIdentityRecord) (PathIdentity, e
 	return PathIdentity{present: true, record: record, held: f}, nil
 }
 
+// BindPathIdentity holds the object that path names right now and proves it is
+// the object this Lock already holds open: the lock handle pins the inode, so
+// the new handle cannot bind a recycled or substituted object. A path that names
+// anything else (a replacement, a different file kind, a link) or has vanished
+// is pending cleanup. The caller must Close the returned identity.
+func (l *Lock) BindPathIdentity(path string) (PathIdentity, error) {
+	locked, e := lockRecord(l.f)
+	if e != nil {
+		return PathIdentity{}, domain.SessionDeletionPending()
+	}
+	f, current, e := openPathIdentity(path)
+	if e != nil {
+		return PathIdentity{}, domain.SessionDeletionPending()
+	}
+	if f == nil || !locked.sameObject(current) {
+		if f != nil {
+			f.Close()
+		}
+		return PathIdentity{}, domain.SessionDeletionPending()
+	}
+	return PathIdentity{present: true, record: current, held: f}, nil
+}
+
+// Take moves the captured object out of i, leaving i empty so that closing it
+// later cannot release a handle that now belongs to the caller.
+func (i *PathIdentity) Take() PathIdentity {
+	taken := *i
+	*i = PathIdentity{}
+	return taken
+}
+
 // Present reports whether the captured path existed.
 func (i PathIdentity) Present() bool { return i.present }
 

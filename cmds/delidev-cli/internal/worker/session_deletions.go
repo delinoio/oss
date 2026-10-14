@@ -156,7 +156,11 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 	// owner must finish cancellation and release its handles before removal.
 	locks := []*security.Lock{}
 	jobLocks := []*security.Lock{}
+	// Maintenance locks the job-owner reconciliations created, bound to the
+	// reconciler's own object. Whatever adoption does not take is closed here.
+	var jobMaintenance []*maintenanceBinding
 	defer func() {
+		closeMaintenanceBindings(jobMaintenance)
 		for i := len(locks) - 1; i >= 0; i-- {
 			locks[i].Close()
 		}
@@ -257,9 +261,11 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 			}
 			ownerRoot := filepath.Join(root, "processes", string(copy.JobID))
 			if _, e := os.Lstat(ownerRoot); e == nil {
-				if e := process.ReconcileOwnerContext(ctx, filepath.Join(root, "processes"), copy.JobID); e != nil {
+				bound, e := process.ReconcileOwnerContextBound(ctx, filepath.Join(root, "processes"), copy.JobID)
+				if e != nil {
 					return proof, e
 				}
+				jobMaintenance = append(jobMaintenance, &maintenanceBinding{owner: copy.JobID, identity: bound})
 			} else if !errors.Is(e, os.ErrNotExist) {
 				return proof, domain.SessionDeletionPending()
 			} else if copy.Type != domain.WorkspaceStorageJob && (j.State == journalStarted || j.Problem != nil && j.Problem.Code == domain.RecoveryRequired) {
@@ -268,14 +274,11 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 		}
 	}
 	// Job owner maintenance locks were created by the reconciliation above. Only
-	// those exact names may be adopted, and only now: nothing later may grant a
-	// path that was absent at capture any deletion authority.
+	// the objects those reconciliations locked may be adopted, and only now:
+	// nothing later may grant a path that was absent at capture any deletion
+	// authority.
 	if !proof.RemovalStarted {
-		jobIDs := make([]domain.ID, 0, len(w.Copies))
-		for _, copy := range w.Copies {
-			jobIDs = append(jobIDs, copy.JobID)
-		}
-		if e := adoptMaintenanceLocks(root, validated, jobIDs); e != nil {
+		if e := adoptMaintenanceLocks(root, validated, jobMaintenance); e != nil {
 			config.Logger.WarnContext(ctx, "session_deletion_identity_adoption_failed", "deletion_id", w.DeletionID, "code", domain.SafeError(e).Code)
 			return proof, domain.SessionDeletionPending()
 		}
@@ -311,7 +314,7 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 		}
 	}
 	if len(w.Copies) != 0 || w.Fork != nil {
-		e = manager.DeleteOwnedWorkspace(ctx, w, allowAbsentWorkspace, func() error {
+		e = manager.DeleteOwnedWorkspaceWithOwner(ctx, w, allowAbsentWorkspace, func(sessionOwner *security.PathIdentity) error {
 			// Admission is tombstoned and every native/publisher owner was joined.
 			// Release handles before unlinking their lock files on Windows.
 			for _, lock := range locks {
@@ -321,12 +324,15 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 			}
 			locks = nil
 			// Workspace retirement just reconciled the session owner, which may
-			// have created its maintenance lock. It is the only name adopted, and
-			// only in the attempt that starts removal: a retry restores the
-			// retained inventory and has no legitimate new lock to acquire, so a
-			// lock that appeared since stays foreign.
-			if !proof.RemovalStarted {
-				if e := adoptMaintenanceLocks(root, validated, []domain.ID{w.SessionID}); e != nil {
+			// have created its maintenance lock. The object that reconciliation
+			// locked is the only one adopted, and only in the attempt that
+			// starts removal: a retry restores the retained inventory and has
+			// no legitimate new lock to acquire, so a lock that appeared since
+			// stays foreign.
+			if !proof.RemovalStarted && sessionOwner.Present() {
+				sessionMaintenance := []*maintenanceBinding{{owner: w.SessionID, identity: sessionOwner.Take()}}
+				defer closeMaintenanceBindings(sessionMaintenance)
+				if e := adoptMaintenanceLocks(root, validated, sessionMaintenance); e != nil {
 					return e
 				}
 			}
@@ -497,11 +503,14 @@ func sessionDeletionUpgradable(proof sessionDeletionProof, w domain.SessionDelet
 
 // sessionDeletionAfterCaptureHook runs right after identity capture and before
 // ownership validation; sessionDeletionBeforeRemovalHook runs after validation,
-// immediately before managed copies are removed. Tests use them to install
-// replacements deterministically; both are nil in production.
+// immediately before managed copies are removed; sessionDeletionBeforeAdoptionHook
+// runs between owner reconciliation and the adoption decision for one
+// maintenance lock, receiving its pathname. Tests use them to install
+// replacements deterministically; all are nil in production.
 var (
-	sessionDeletionAfterCaptureHook  func()
-	sessionDeletionBeforeRemovalHook func()
+	sessionDeletionAfterCaptureHook   func()
+	sessionDeletionBeforeRemovalHook  func()
+	sessionDeletionBeforeAdoptionHook func(lockPath string)
 )
 
 // maxHeldIdentityHandles bounds the descriptors one attempt keeps open. Beyond it
@@ -630,30 +639,45 @@ func persistSessionCopyIdentities(root string, w domain.SessionDeletionWork, ide
 	return nil
 }
 
-// adoptMaintenanceLocks captures the Worker's own process-owner maintenance
-// locks (processes/<id>.recovery.lock) for exactly the listed owner IDs. Owner
-// reconciliation creates them after validation began, so they are the one
-// exception to proven absence. Each is adopted only when it is an empty private
-// regular file; any other object at the name, and every name outside the listed
-// owners, keeps the absence it was captured with.
-func adoptMaintenanceLocks(root string, identities map[string]security.PathIdentity, owners []domain.ID) error {
-	for _, owner := range owners {
-		path := filepath.Join(root, "processes", string(owner)+".recovery.lock")
+// maintenanceBinding is the process-owner maintenance lock object that one
+// owner reconciliation locked, held open from inside that reconciliation.
+type maintenanceBinding struct {
+	owner    domain.ID
+	identity security.PathIdentity
+}
+
+func closeMaintenanceBindings(bindings []*maintenanceBinding) {
+	for _, binding := range bindings {
+		binding.identity.Close()
+	}
+}
+
+// adoptMaintenanceLocks adds the Worker's own process-owner maintenance locks
+// (processes/<id>.recovery.lock) to the validated identities for exactly the
+// owners whose reconciliation produced a binding. Owner reconciliation creates
+// them after validation began, so they are the one exception to proven absence.
+// What is adopted is the object the reconciler itself locked, never whatever the
+// pathname resolves to now: a binding is accepted only when it is an empty
+// regular file and the name still holds that same object. A replacement of any
+// kind (file, directory, link) is rejected and left untouched, and every name
+// without a binding keeps the absence it was captured with.
+func adoptMaintenanceLocks(root string, identities map[string]security.PathIdentity, bindings []*maintenanceBinding) error {
+	for _, binding := range bindings {
+		path := filepath.Join(root, "processes", string(binding.owner)+".recovery.lock")
+		if sessionDeletionBeforeAdoptionHook != nil {
+			sessionDeletionBeforeAdoptionHook(path)
+		}
 		if identities[path].Present() {
 			continue
 		}
-		info, e := os.Lstat(path)
-		if errors.Is(e, os.ErrNotExist) {
-			continue
-		}
-		if e != nil || !info.Mode().IsRegular() || info.Size() != 0 || security.RegularPrivate(path) != nil {
+		record := binding.identity.Record()
+		if !binding.identity.Present() || record.Kind != security.ObjectRegular || record.Size != 0 {
 			return domain.SessionDeletionPending()
 		}
-		identity, e := security.CapturePathIdentity(path)
-		if e != nil {
+		if e := binding.identity.StillAt(path); e != nil {
 			return e
 		}
-		identities[path] = identity
+		identities[path] = binding.identity.Take()
 	}
 	return nil
 }
