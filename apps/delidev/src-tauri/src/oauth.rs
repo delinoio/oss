@@ -182,6 +182,10 @@ pub struct OAuthHost {
     attempts: Mutex<BTreeMap<String, Attempt>>,
     epochs: Mutex<BTreeMap<String, u64>>,
     stopped: AtomicBool,
+    // Remote Grok login needs the Go server to validate and forward the captured
+    // Grok callback. It does not yet, so production leaves this false and a
+    // remote Grok open is refused before any listener or browser exists.
+    grok_remote_forwarding: bool,
     // Deterministic unit scheduling after pre-admission and before attempts.
     #[cfg(test)]
     admission_barrier: Mutex<Option<Arc<std::sync::Barrier>>>,
@@ -442,9 +446,13 @@ impl OAuthHost {
                 BrowserBindingKind::ClaudeSubscription => {
                     begin_claude_subscription(scope, attempt_id, authorization)?
                 }
-                BrowserBindingKind::GrokSubscription => {
-                    begin_grok_subscription(scope, attempt_id, authorization, local)?
-                }
+                BrowserBindingKind::GrokSubscription => begin_grok_subscription(
+                    scope,
+                    attempt_id,
+                    authorization,
+                    local,
+                    self.grok_remote_forwarding,
+                )?,
                 _ => begin_subscription(scope, attempt_id, authorization, local)?,
             };
             let result = OAuthResult {
@@ -2722,6 +2730,12 @@ mod claude_subscription_tests {
 // IPv4 loopback address and numeric port, accepts exactly one redirect and
 // hands the code/state query to the authenticated Connect forwarder via Take.
 // A bind conflict is explicit; the port is never remapped.
+//
+// The Go server's `ForwardSubscriptionCallback` accepts only the Codex login
+// today (ChatGPT accounts, `auth.openai.com`, fixed port 1457). A captured Grok
+// callback could not be forwarded, and the one-shot code would be consumed for
+// nothing, so a remote Grok open is refused up front with
+// `NativeFailure::Incompatible` until the server gains Grok forwarding.
 const GROK_AUTHORIZATION_HOST: &str = "auth.x.ai";
 const GROK_AUTHORIZATION_PATH: &str = "/oauth2/authorize";
 const GROK_CLIENT_ID: &str = "b1a00492-073a-47ea-816f-4c329264a828";
@@ -2821,8 +2835,16 @@ fn begin_grok_subscription(
     attempt_id: &str,
     authorization: &str,
     local: bool,
+    remote_forwarding: bool,
 ) -> Result<Attempt, NativeFailure> {
     let (state, port) = validate_grok_subscription_authorization(authorization)?;
+    if !local && !remote_forwarding {
+        tracing::warn!(
+            operation = "grok_subscription_callback",
+            phase = "remote-forwarding-unavailable"
+        );
+        return Err(NativeFailure::Incompatible);
+    }
     let shared = Arc::new(Shared {
         expected_state: Some(state),
         api_state: Mutex::new(None),
@@ -2950,6 +2972,14 @@ mod grok_subscription_tests {
                 .collect();
             u.query_pairs_mut().clear().extend_pairs(kept);
         }
+    }
+
+    // Production leaves remote Grok forwarding disabled; these tests exercise
+    // the receiver itself.
+    fn remote_host() -> OAuthHost {
+        let mut host = OAuthHost::default();
+        host.grok_remote_forwarding = true;
+        host
     }
 
     fn scope() -> OAuthScope {
@@ -3255,7 +3285,7 @@ mod grok_subscription_tests {
         let port = free_port();
         let auth = authorization(port);
         let authority = format!("127.0.0.1:{port}");
-        let host = OAuthHost::default();
+        let host = remote_host();
         let scope = scope();
         let operation = uuid::Uuid::now_v7().to_string();
         let opened = std::sync::atomic::AtomicUsize::new(0);
@@ -3371,7 +3401,7 @@ mod grok_subscription_tests {
         let _guard = super::tests::loopback_listener_test_guard();
         let port = free_port();
         let auth = authorization(port);
-        let host = OAuthHost::default();
+        let host = remote_host();
         let scope = scope();
         let operation = uuid::Uuid::now_v7().to_string();
         host.control_with_browser(
@@ -3413,7 +3443,7 @@ mod grok_subscription_tests {
         let occupied = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         let port = occupied.local_addr().unwrap().port();
         let auth = authorization(port);
-        let host = OAuthHost::default();
+        let host = remote_host();
         let result = host.control_with_browser(
             scope(),
             OAuthAction::GrokSubscriptionOpen,
@@ -3429,11 +3459,55 @@ mod grok_subscription_tests {
     }
 
     #[test]
-    fn expired_remote_attempt_stops_accepting_and_drops_the_code() {
+    fn remote_open_is_refused_while_the_server_cannot_forward_grok_callbacks() {
         let _guard = super::tests::loopback_listener_test_guard();
         let port = free_port();
         let auth = authorization(port);
         let host = OAuthHost::default();
+        let result = host.control_with_browser(
+            scope(),
+            OAuthAction::GrokSubscriptionOpen,
+            "",
+            &uuid::Uuid::now_v7().to_string(),
+            &auth,
+            false,
+            |_, _| panic!("a refused remote login cannot open a browser"),
+        );
+        assert!(matches!(result, Err(NativeFailure::Incompatible)));
+        assert!(host.attempts.lock().unwrap().is_empty());
+        // No listener was created, so the numeric port is still free.
+        drop(TcpListener::bind((Ipv4Addr::LOCALHOST, port)).unwrap());
+        // An invalid URL is still reported as invalid input, and a local login
+        // is unaffected because the server owns that loopback listener.
+        let bad = authorization_with(port, replaced("client_id", "other-client"));
+        let invalid = host.control_with_browser(
+            scope(),
+            OAuthAction::GrokSubscriptionOpen,
+            "",
+            &uuid::Uuid::now_v7().to_string(),
+            &bad,
+            false,
+            |_, _| panic!("invalid URL cannot open a browser"),
+        );
+        assert!(matches!(invalid, Err(NativeFailure::InvalidInput)));
+        host.control_with_browser(
+            scope(),
+            OAuthAction::GrokSubscriptionOpen,
+            "",
+            &uuid::Uuid::now_v7().to_string(),
+            &auth,
+            true,
+            |_, _| Ok(()),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn expired_remote_attempt_stops_accepting_and_drops_the_code() {
+        let _guard = super::tests::loopback_listener_test_guard();
+        let port = free_port();
+        let auth = authorization(port);
+        let host = remote_host();
         let scope = scope();
         let operation = uuid::Uuid::now_v7().to_string();
         let first = host
