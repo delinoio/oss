@@ -133,14 +133,21 @@ type Manager struct {
 	Logger                        *slog.Logger
 }
 
+// requireAdmissibleRoot applies ManifestWorkerRootReserveBytes to new workspace
+// preparation only. initialize deliberately does not enforce it: a Worker
+// upgraded with a previously valid longer data root must still delete, recover
+// and retry cleanup of workspaces it already retains.
+func (m *Manager) requireAdmissibleRoot() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return ValidateWorkerRoot(m.Root)
+}
+
 func (m *Manager) initialize() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.initialized {
 		return nil
-	}
-	if err := ValidateWorkerRoot(m.Root); err != nil {
-		return err
 	}
 	if err := security.PrivateDir(m.Root); err != nil {
 		return err
@@ -149,9 +156,6 @@ func (m *Manager) initialize() error {
 	// ownership journals and registration comparisons in that same namespace.
 	canonical, err := filepath.EvalSymlinks(m.Root)
 	if err != nil {
-		return err
-	}
-	if err := ValidateWorkerRoot(canonical); err != nil {
 		return err
 	}
 	m.Root = canonical
@@ -307,8 +311,16 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 		logger.Warn("workspace_preparation_uncertain", "session_id", request.SessionID, "machine_id", request.MachineID, "code", domain.SafeError(cause).Code)
 		return Manifest{}, ResultUncertain()
 	}
+	// The configured root is checked before initialize creates anything under it;
+	// the canonical root that initialize installs is the one manifests record.
+	if err := m.requireAdmissibleRoot(); err != nil {
+		return Manifest{}, err
+	}
 	if err := m.initialize(); err != nil {
 		return uncertain(err)
+	}
+	if err := m.requireAdmissibleRoot(); err != nil {
+		return Manifest{}, err
 	}
 	lock, err := security.TryLock(filepath.Join(m.Root, "locks", string(request.SessionID)+".lock"))
 	if err != nil {
