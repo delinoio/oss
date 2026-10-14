@@ -333,6 +333,15 @@ const EXPORT_USAGE_TAP = "bundlewhy-export-usage";
  */
 function prepareExportUsage(rspackModule, plugins) {
   const state = { graph: null, unavailable: null };
+  // Only a list can take an extra plugin. Any other value (null, a single
+  // plugin instance, a function, ...) is passed to Rspack exactly as the
+  // project wrote it, so the diagnostic build keeps the project's semantics
+  // instead of silently replacing the value with the observer.
+  if (plugins !== undefined && !Array.isArray(plugins)) {
+    state.unavailable = ExportUsageReason.PluginsNotArray;
+    return { state, plugins };
+  }
+  const projectPlugins = plugins ?? [];
   const RsdoctorPlugin = rspackModule.experiments?.RsdoctorPlugin;
   if (
     typeof RsdoctorPlugin !== "function" ||
@@ -341,7 +350,7 @@ function prepareExportUsage(rspackModule, plugins) {
     state.unavailable = ExportUsageReason.PluginApiMissing;
     return { state, plugins };
   }
-  if (plugins.some((entry) => entry instanceof RsdoctorPlugin)) {
+  if (projectPlugins.some((entry) => entry instanceof RsdoctorPlugin)) {
     state.unavailable = ExportUsageReason.PluginAlreadyConfigured;
     return { state, plugins };
   }
@@ -391,7 +400,7 @@ function prepareExportUsage(rspackModule, plugins) {
       }
     },
   };
-  return { state, plugins: [...plugins, guardedObserver, collector] };
+  return { state, plugins: [...projectPlugins, guardedObserver, collector] };
 }
 
 /** Builds the collection's export usage record from the captured payload. */
@@ -498,10 +507,11 @@ await runAdapter(async (request) => {
     watch: false,
     output: { ...(config.output ?? {}), path: request.buildDir, clean: true },
   };
-  const exportUsage = prepareExportUsage(
-    rspackModule,
-    Array.isArray(config.plugins) ? config.plugins : [],
-  );
+  // The value that the build receives for `plugins`, read once so that a
+  // getter cannot answer differently later. It is restored unchanged when the
+  // observer is removed again.
+  const projectPlugins = diagnosticConfig.plugins;
+  const exportUsage = prepareExportUsage(rspackModule, projectPlugins);
   const observerAttached = exportUsage.state.unavailable === null;
   if (observerAttached) {
     diagnosticConfig.plugins = exportUsage.plugins;
@@ -525,8 +535,8 @@ await runAdapter(async (request) => {
     if (!observed) {
       exportUsage.state.unavailable ??=
         ExportUsageReason.BuildFailedWithObserver;
-      if (config.plugins === undefined) delete diagnosticConfig.plugins;
-      else diagnosticConfig.plugins = config.plugins;
+      if (projectPlugins === undefined) delete diagnosticConfig.plugins;
+      else diagnosticConfig.plugins = projectPlugins;
       progress(
         "building",
         "Repeating the production build without the export usage observer",

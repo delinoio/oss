@@ -697,8 +697,29 @@ Patched.getCompilationHooks = (compilation) => {
   }
   return hooks;
 };
+const dumpPath = process.env.BUNDLEWHY_TEST_CONFIG_DUMP;
+const describeEntry = (entry) =>
+  entry === null || (typeof entry !== "object" && typeof entry !== "function")
+    ? String(entry)
+    : (entry.name ?? entry.constructor?.name ?? "anonymous");
+const describePlugins = (value) => {
+  if (value === undefined) return "undefined";
+  if (value === null) return "null";
+  if (Array.isArray(value)) return value.map(describeEntry);
+  return { type: typeof value };
+};
 module.exports = new Proxy(real, {
   get(target, key) {
+    if (key === "rspack" && dumpPath) {
+      // Records the plugins value that the engine receives on every build.
+      return Object.assign((config, ...rest) => {
+        require("node:fs").appendFileSync(
+          dumpPath,
+          JSON.stringify({ plugins: describePlugins(config.plugins) }) + "\\n",
+        );
+        return target.rspack(config, ...rest);
+      }, target.rspack);
+    }
     if (key === "experiments") {
       return {
         ...target.experiments,
@@ -713,17 +734,31 @@ module.exports = new Proxy(real, {
   return dir;
 }
 
-function runWrapped(dir, mode) {
-  return runAdapter(
+function runWrapped(dir, mode, extra = {}) {
+  const dumpFile = path.join(dir, "config-dump.jsonl");
+  const result = runAdapter(
     "rspack",
     "rspack-app",
     "rspack.config.mjs",
     {
       projectRoot: dir,
       configFile: path.join(dir, "rspack.config.mjs"),
+      ...extra,
     },
-    { BUNDLEWHY_TEST_EXPORT_USAGE_MODE: mode },
+    {
+      BUNDLEWHY_TEST_EXPORT_USAGE_MODE: mode,
+      BUNDLEWHY_TEST_CONFIG_DUMP: dumpFile,
+    },
   );
+  // One entry per engine build: the plugins value that Rspack received.
+  const calls = fs.existsSync(dumpFile)
+    ? fs
+        .readFileSync(dumpFile, "utf8")
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => JSON.parse(line).plugins)
+    : [];
+  return { ...result, calls };
 }
 
 test("rspack adapter works through the wrapped engine when the API is intact", () => {
@@ -782,6 +817,7 @@ for (const [mode, reason, addsPlugin] of adapterOutcomes) {
 test("every export usage reason code has an adapter outcome test or a payload test", () => {
   const covered = new Set(adapterOutcomes.map(([, reason]) => reason));
   covered.add(ExportUsageReason.PluginAlreadyConfigured);
+  covered.add(ExportUsageReason.PluginsNotArray);
   covered.add(ExportUsageReason.EdgeLimitExceeded);
   assert.deepEqual(
     [...covered].sort(),
@@ -823,4 +859,148 @@ export default {
   assert.ok(
     !collection.overrides.some((entry) => entry.includes("RsdoctorPlugin")),
   );
+});
+
+// Every shape of `plugins` and what the engine receives. A list gets the
+// observer appended after the project's own entries (a new list; the project's
+// list is never changed). Any other value is passed through unchanged and
+// export usage is unavailable with a fixed reason. Mirrors the "Plugin
+// configuration" table in the contract.
+const probePreamble = 'const probe = { name: "project-probe", apply() {} };\n';
+const OBSERVER = ["Object", "Object"];
+const pluginShapes = [
+  {
+    name: "no plugins key",
+    config: "",
+    received: OBSERVER,
+    available: true,
+  },
+  {
+    name: "undefined",
+    config: "plugins: undefined,",
+    received: OBSERVER,
+    available: true,
+  },
+  {
+    name: "empty list",
+    config: "plugins: [],",
+    received: OBSERVER,
+    available: true,
+  },
+  {
+    name: "list of plugins",
+    config: "plugins: [probe],",
+    received: ["project-probe", ...OBSERVER],
+    available: true,
+  },
+  {
+    name: "list with falsy entries",
+    config: "plugins: [false, null, probe],",
+    received: ["false", "null", "project-probe", ...OBSERVER],
+    available: true,
+  },
+  {
+    name: "frozen list",
+    config: "plugins: Object.freeze([probe]),",
+    received: ["project-probe", ...OBSERVER],
+    available: true,
+  },
+  {
+    name: "null",
+    config: "plugins: null,",
+    received: "null",
+    reason: ExportUsageReason.PluginsNotArray,
+  },
+  {
+    name: "a single plugin instance",
+    config: "plugins: probe,",
+    received: { type: "object" },
+    reason: ExportUsageReason.PluginsNotArray,
+  },
+  {
+    name: "a function",
+    config: "plugins: function plugin() {},",
+    received: { type: "function" },
+    reason: ExportUsageReason.PluginsNotArray,
+  },
+  {
+    name: "a string",
+    config: 'plugins: "plugin",',
+    received: { type: "string" },
+    reason: ExportUsageReason.PluginsNotArray,
+  },
+];
+
+function pluginConfig(body) {
+  return `${probePreamble}export default {
+  mode: "production",
+  context: import.meta.dirname,
+  entry: "./src/main.js",
+  ${body}
+};
+`;
+}
+
+for (const shape of pluginShapes) {
+  test(`rspack adapter passes plugins (${shape.name}) to the engine as documented`, () => {
+    const dir = wrappedProject({ config: pluginConfig(shape.config) });
+    const { status, events, collection, calls } = runWrapped(dir, "intact");
+    fs.rmSync(dir, { recursive: true, force: true });
+    assert.equal(status, 0, JSON.stringify(events));
+    assert.deepEqual(calls, [shape.received]);
+    const attached = shape.available === true;
+    assert.equal(collection.exportUsage.available, attached);
+    assert.equal(collection.exportUsage.reason, shape.reason ?? null);
+    assert.equal(
+      collection.overrides.some((entry) => entry.includes("RsdoctorPlugin")),
+      attached,
+    );
+    // The build itself is unaffected either way.
+    assert.ok(
+      collection.modules.some((module) => module.path?.endsWith("value.js")),
+    );
+  });
+}
+
+test("a plugins list that Rspack rejects is rejected for the project's value, not the observer's", () => {
+  const dir = wrappedProject({ config: pluginConfig("plugins: [[probe]],") });
+  const { status, events, collection, calls } = runWrapped(dir, "intact");
+  fs.rmSync(dir, { recursive: true, force: true });
+  assert.notEqual(status, 0);
+  assert.equal(collection, null);
+  assert.equal(
+    events.find((event) => event.event === "error").code,
+    "BW_BUILD_FAILED",
+  );
+  // First attempt with the observer, then the repeat with the project's own
+  // value, which is what decides the result.
+  assert.deepEqual(calls, [["Array", ...OBSERVER], ["Array"]]);
+});
+
+test("only the selected build of a multi-build configuration is changed", () => {
+  const config = `${probePreamble}const base = {
+  mode: "production",
+  context: import.meta.dirname,
+  entry: "./src/main.js",
+};
+export default [
+  { ...base, name: "first", plugins: null },
+  { ...base, name: "second", plugins: [probe] },
+  { ...base, name: "third", plugins: Object.freeze([probe]) },
+];
+`;
+  const expected = {
+    first: { received: "null", available: false },
+    second: { received: ["project-probe", ...OBSERVER], available: true },
+    third: { received: ["project-probe", ...OBSERVER], available: true },
+  };
+  for (const [name, { received, available }] of Object.entries(expected)) {
+    const dir = wrappedProject({ config });
+    const result = runWrapped(dir, "intact", { configName: name });
+    fs.rmSync(dir, { recursive: true, force: true });
+    assert.equal(result.status, 0, name);
+    // Exactly one build: the unselected builds are never started.
+    assert.deepEqual(result.calls, [received], name);
+    assert.equal(result.collection.exportUsage.available, available, name);
+  }
 });

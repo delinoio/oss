@@ -59,6 +59,7 @@ pub struct CollectedExportUsage {
 pub enum ExportUsageReason {
     PluginApiMissing,
     PluginAlreadyConfigured,
+    PluginsNotArray,
     PluginConstructionFailed,
     PluginApplyFailed,
     HookRegistrationFailed,

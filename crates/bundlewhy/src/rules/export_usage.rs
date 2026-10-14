@@ -68,6 +68,10 @@ pub fn reason_note(reason: Option<ExportUsageReason>) -> &'static str {
             "The project already configures RsdoctorPlugin, so bundlewhy did not add a second \
              instance."
         }
+        Some(ExportUsageReason::PluginsNotArray) => {
+            "The project sets plugins to a value that is not a list, so bundlewhy passed it to \
+             Rspack unchanged and did not add the RsdoctorPlugin observer."
+        }
         Some(ExportUsageReason::PluginConstructionFailed) => {
             "bundlewhy could not create the RsdoctorPlugin observer with this Rspack version."
         }
@@ -659,12 +663,13 @@ mod tests {
         assert_eq!(usage.note, NOTE_NOT_COLLECTED);
     }
 
-    const REASONS: [(ExportUsageReason, &str); 11] = [
+    const REASONS: [(ExportUsageReason, &str); 12] = [
         (ExportUsageReason::PluginApiMissing, "plugin-api-missing"),
         (
             ExportUsageReason::PluginAlreadyConfigured,
             "plugin-already-configured",
         ),
+        (ExportUsageReason::PluginsNotArray, "plugins-not-array"),
         (
             ExportUsageReason::PluginConstructionFailed,
             "plugin-construction-failed",

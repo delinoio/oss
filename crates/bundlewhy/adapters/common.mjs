@@ -224,6 +224,7 @@ export const MAX_EXPORT_USAGE_EDGES = 100_000;
 export const ExportUsageReason = Object.freeze({
   PluginApiMissing: "plugin-api-missing",
   PluginAlreadyConfigured: "plugin-already-configured",
+  PluginsNotArray: "plugins-not-array",
   PluginConstructionFailed: "plugin-construction-failed",
   PluginApplyFailed: "plugin-apply-failed",
   HookRegistrationFailed: "hook-registration-failed",
