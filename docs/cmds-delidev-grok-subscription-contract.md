@@ -376,6 +376,33 @@ Finish; a Finish whose response is lost leaves the fenced lease for recovery
 rather than resending a credential. Owner recovery, cancellation and removal of a
 fenced Grok account are separate lifecycle work and are not activated here.
 
+### Grok backup and restore
+
+A managed database backup is a SQLite image of server metadata. The protected
+vault is outside the image, so a Grok bundle, its `key` and `refresh_token`, and
+the native auth file never enter a backup; only the generation reference and
+keyed identity commitment do. Restore treats a Grok account like every other
+managed subscription (the quarantine is service-agnostic):
+
+- The account is disconnected: no connection and health `disconnected`.
+- An account that owned a generation, identity commitment, pending operation,
+  lease or recovery fence becomes recovery-required and keeps only the keyed
+  identity commitment and the historical generation reference as evidence. An
+  allocated state with none of those is cleared.
+- A pending operation and lease in the image (for example an unsettled logout
+  cleanup) are retained unchanged as quarantined evidence, including owner
+  machine, device, instance and epoch. Restore grants no authority to any
+  Worker, and Take, Finish and execution admission are refused until a new login.
+- Deleting the account never starts a native logout on a Worker that lacks the
+  original home. Deletion stays refused by the recovery fence and, once that is
+  cleared, by `protectedAccountDeletion` while the vault holds unremoved
+  references.
+- Finishing an unsettled Grok cleanup on the original Worker needs the Grok
+  owner-recovery path, which is not activated. Until then restore retains the
+  ownership evidence and never completes or reassigns the cleanup.
+
+Restore also keeps copied Worker device records readable after revoking them.
+
 ## Security
 
 Login, refresh, execution and logout share one exclusive account lease. Logout
