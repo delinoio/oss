@@ -30,6 +30,14 @@ const apiDockerfile = readFileSync(
   ),
   "utf8",
 );
+const apiScripts = JSON.parse(
+  readFileSync(
+    fileURLToPath(
+      new URL("../../servers/devhud-api/package.json", import.meta.url),
+    ),
+    "utf8",
+  ),
+).scripts;
 const windowsStep = yaml
   .load(workflow)
   .jobs.desktop.steps.find(
@@ -466,7 +474,7 @@ test("private workflow runs PostgreSQL schema readiness before recording OCI evi
     workflow.indexOf("\n  assemble:"),
   );
   const integration =
-    "go test -tags=integration ./servers/devhud-api/internal/postgres";
+    "go test -count=1 -tags=integration ./servers/devhud-api/internal/postgres";
   const evidence =
     "node scripts/release/devhud-evidence.mjs record --id ${{ matrix.id }}";
   assert.ok(ociJob.includes("image: postgres:15-bookworm"));
@@ -476,6 +484,21 @@ test("private workflow runs PostgreSQL schema readiness before recording OCI evi
     ),
   );
   assert.ok(ociJob.indexOf(integration) < ociJob.indexOf(evidence));
+  const postgresStep = yaml
+    .load(workflow)
+    .jobs.oci.steps.find(
+      ({ name }) =>
+        name === "Validate PostgreSQL migrations and schema readiness",
+    );
+  assert.equal(postgresStep.run, integration);
+  assert.equal(
+    apiScripts["ci:integration"],
+    "go test -count=1 -tags=integration ./internal/postgres",
+  );
+  assert.equal(
+    apiScripts["ci:oci:integration"],
+    `node ../../scripts/ci/from-root.mjs ${integration}`,
+  );
 });
 
 test("private workflow binds provenance to its run attempt and actual timestamps", () => {

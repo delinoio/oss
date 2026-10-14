@@ -976,7 +976,7 @@ test("OCI validation is multi-architecture, non-root, migration-bearing, and loc
     "io.delino.devhud.administrator-assets",
     "spdx-json",
     "packages | length > 0",
-    "go test -tags=integration ./servers/devhud-api/internal/postgres",
+    "go test -count=1 -tags=integration ./servers/devhud-api/internal/postgres",
     "--load",
     "--platform linux/amd64",
     "docker:$image",
