@@ -603,6 +603,7 @@ export function ConfigurationEditor({
     false,
   );
   const notifications = useNotifications();
+  const queryClient = useQueryClient();
   const inline =
     kind === EntityKind.SETTINGS &&
     presentation === ConfigurationEditorPresentation.InlineServerPreferences;
@@ -866,6 +867,26 @@ export function ConfigurationEditor({
             request.apiProtocol),
       ),
   );
+  useEffect(() => {
+    if (
+      !formatMutation.error ||
+      clientFailure(formatMutation.error).code !== FailureCode.Conflict
+    )
+      return;
+    const providerId = text(data.provider_id);
+    if (!providerId) return;
+    console.info("delidev.settings.account_format_provider_refetch", {
+      providerId,
+    });
+    void queryClient.invalidateQueries({
+      queryKey: createConnectQueryKey({
+        schema: ResourceQuery.getResource,
+        input: { kind: EntityKind.PROVIDER, id: providerId },
+        cardinality: "finite",
+      }),
+      refetchType: "active",
+    });
+  }, [data.provider_id, formatMutation.error, queryClient]);
   const polled = current.data?.resource;
   const latest = inline
     ? latestServerPreferences(

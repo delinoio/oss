@@ -59,6 +59,7 @@ function fixture(supported = true, cleanup = false) {
       ],
     }),
   });
+  let providerReads = 0;
   const original = create(ResourceSchema, {
     id: newRequestId(),
     kind: EntityKind.ACCOUNT,
@@ -104,9 +105,12 @@ function fixture(supported = true, cleanup = false) {
   });
   const transport = createRouterTransport((router) => {
     router.service(ResourceService, {
-      getResource: (request) => ({
-        resource: request.id === provider.id ? provider : current,
-      }),
+      getResource: (request) => {
+        if (request.id === provider.id) providerReads += 1;
+        return {
+          resource: request.id === provider.id ? provider : current,
+        };
+      },
       listResources: () => ({ resources: [provider] }),
     });
     router.service(ProviderService, {
@@ -149,6 +153,9 @@ function fixture(supported = true, cleanup = false) {
   return {
     original,
     provider,
+    get providerReads() {
+      return providerReads;
+    },
     view,
     client,
     changeFormat,
@@ -167,6 +174,9 @@ function fixture(supported = true, cleanup = false) {
       await act(async () => {
         await client.invalidateQueries();
       });
+    },
+    setProvider: (resource: Resource) => {
+      provider = resource;
     },
   };
 }
@@ -217,6 +227,43 @@ it("uses the newly inspected Provider revision for a new format request", async 
   fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() => expect(value.changeFormat).toHaveBeenCalledTimes(1));
   expect(value.changeFormat.mock.calls[0][0].providerRevision).toBe(2n);
+});
+
+it("refetches Provider evidence after a revision conflict", async () => {
+  const value = fixture();
+  await screen.findByRole("option", { name: "OpenAI Responses" });
+  const readsBeforeConflict = value.providerReads;
+  value.changeFormat.mockImplementationOnce(async () => {
+    value.setProvider(
+      create(ResourceSchema, { ...value.provider, revision: 2n }),
+    );
+    throw new ConnectError("Provider changed", Code.Aborted);
+  });
+  const select = screen.getByRole("combobox", { name: "API format" });
+  await waitFor(() => expect(select.matches(":disabled")).toBe(false));
+  fireEvent.change(select, { target: { value: "openai-responses" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(value.changeFormat).toHaveBeenCalledTimes(1));
+  await waitFor(() =>
+    expect(value.providerReads).toBeGreaterThan(readsBeforeConflict),
+  );
+
+  value.changeFormat.mockImplementationOnce(async (request) => {
+    expect(request.providerRevision).toBe(2n);
+    return {
+      account: create(ResourceSchema, {
+        ...value.original,
+        revision: 4n,
+        documentJson: encode({
+          ...document(value.original),
+          api_protocol: "openai-responses",
+        }),
+      }),
+      requestId: request.mutation?.requestId,
+    };
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(value.changeFormat).toHaveBeenCalledTimes(2));
 });
 
 it("adopts status-only revisions without discarding editable drafts", async () => {
