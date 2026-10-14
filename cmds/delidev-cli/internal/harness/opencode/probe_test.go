@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativetest"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
@@ -223,15 +224,10 @@ func TestProbeRejectsExistingRuntimeBeforeLaunch(t *testing.T) {
 }
 
 func TestManualNativeOpenCodeInitialization(t *testing.T) {
-	executable := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
-	if executable == "" {
-		t.Skip("explicit private OpenCode initialization")
-	}
-	if !filepath.IsAbs(executable) {
-		t.Fatal("select an absolute native executable")
-	}
+	executable, version := nativetest.NativeOpenCodeExecutable(t)
 	config, logs := fixtureConfig(t, "native")
 	config.Process.Executable = executable
+	config.Version = version
 	if err := Probe(context.Background(), config); err != nil {
 		t.Fatalf("native probe: %v; logs: %s", err, logs.String())
 	}
