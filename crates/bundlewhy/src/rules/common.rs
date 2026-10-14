@@ -851,10 +851,7 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
             if depth != 0 {
                 return None;
             }
-            while bytes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
-                cursor += 1;
-            }
-            let body = blocks.iter().find(|(open, _)| *open == cursor).copied()?;
+            let body = function_body_block(&code, bytes, &blocks, cursor)?;
             Some((found.start(), body))
         })
         .collect();
@@ -954,6 +951,43 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
         scopes.push(scope);
     }
     scopes
+}
+
+/// Finds the block that starts a function body after its parameter list.
+/// TypeScript return annotations can contain object types with braces of
+/// their own, so skip those before selecting the executable block.
+fn function_body_block(
+    code: &str,
+    bytes: &[u8],
+    blocks: &[(usize, usize)],
+    mut cursor: usize,
+) -> Option<(usize, usize)> {
+    let mut return_annotation = false;
+    while let Some(byte) = bytes.get(cursor) {
+        if byte.is_ascii_whitespace() {
+            cursor += 1;
+            continue;
+        }
+        if *byte == b'{' {
+            if !return_annotation
+                || code[..cursor]
+                    .bytes()
+                    .rev()
+                    .find(|byte| !byte.is_ascii_whitespace())
+                    != Some(b':')
+            {
+                return blocks.iter().find(|(open, _)| *open == cursor).copied();
+            }
+            let (_, close) = blocks.iter().find(|(open, _)| *open == cursor).copied()?;
+            cursor = close + 1;
+            continue;
+        }
+        if *byte == b':' {
+            return_annotation = true;
+        }
+        cursor += 1;
+    }
+    None
 }
 
 fn named_function_is_expression(code: &str, start: usize) -> bool {
@@ -1405,6 +1439,12 @@ y=/process.env.F/.test(z),process.env.G"#;
         assert_eq!(drafts[0].rule, RuleId::DirectEvalBlocksMangling);
         assert_eq!(drafts[0].status, EvidenceStatus::Inferred);
         assert_eq!(drafts[0].located.location.as_ref().unwrap().line, 3);
+    }
+
+    #[test]
+    fn function_bodies_skip_typescript_return_annotations() {
+        let source = "function run(): void { var eval = helper; } eval(code);";
+        assert!(direct_eval_line(source).is_some());
     }
 
     #[test]
