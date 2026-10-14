@@ -16,6 +16,14 @@ const (
 	// character count: it covers a root of up to 1,536 plain bytes, 768 Windows
 	// separators (two bytes each) or 256 '<', '>' or '&' bytes (six bytes each).
 	ManifestWorkerRootReserveBytes = 1536
+	// CheckoutRootReserveBytes is the minimum JSON-encoded length budgeted for
+	// the canonical root of an existing checkout. Git inspection resolves
+	// symlinks and records that canonical root as the prepared path and source,
+	// so a short saved path can become longer (for example /tmp ->
+	// /private/tmp). The budget for each checkout is the larger of this reserve
+	// and the encoded saved path, and preparation refuses a canonical root that
+	// exceeds it.
+	CheckoutRootReserveBytes = 1024
 	// UnresolvedReferenceNameReserveBytes is the accepted maximum of a Git
 	// reference name the Worker may resolve (default branch) when the accepted
 	// request left it unspecified.
@@ -38,6 +46,27 @@ func ValidateWorkerRoot(root string) error {
 	}
 	if len(encoded)-2 > ManifestWorkerRootReserveBytes {
 		return domain.Fail(domain.InvalidArgument, "The Worker data directory path is too long once JSON-escaped.", "Choose a shorter Worker data directory with fewer separators or special characters.")
+	}
+	return nil
+}
+
+// checkoutRootBudget returns the JSON-encoded byte budget of the canonical
+// root of the saved checkout path, measured as encoding/json writes it.
+func checkoutRootBudget(checkout string) int {
+	encoded, err := json.Marshal(checkout)
+	size := len(encoded) - 2
+	if err != nil || size < CheckoutRootReserveBytes {
+		return CheckoutRootReserveBytes
+	}
+	return size
+}
+
+// ValidateCheckoutRoot enforces checkoutRootBudget for the canonical root that
+// inspection resolved from the saved checkout path.
+func ValidateCheckoutRoot(saved, canonical string) error {
+	encoded, err := json.Marshal(canonical)
+	if err != nil || len(encoded)-2 > checkoutRootBudget(saved) {
+		return domain.Fail(domain.ResourceExhausted, "The canonical checkout path is too long once JSON-escaped.", "Select the checkout through its canonical path or move it to a shorter path.")
 	}
 	return nil
 }
@@ -66,7 +95,16 @@ func (r PrepareRequest) MaxManifestBytes() (int, error) {
 		if r.Type == domain.Worktree {
 			path = root + sep + RepositoryDirectory(spec.ID, spec.DirectoryName)
 		}
-		prepared.Path, prepared.Source = path, spec.Checkout
+		prepared.Source = spec.Checkout
+		if spec.Checkout != "" && !managed && spec.SourceKind != RemoteCloneSource {
+			// Inspection replaces the saved path by its canonical root, which
+			// preparation bounds by the same budget.
+			prepared.Source = strings.Repeat("a", checkoutRootBudget(spec.Checkout))
+			if r.Type != domain.Worktree {
+				path = prepared.Source
+			}
+		}
+		prepared.Path = path
 		if managed {
 			prepared.Source = path
 			prepared.CloneRootDigest, prepared.CloneIdentityDigest = digest, digest

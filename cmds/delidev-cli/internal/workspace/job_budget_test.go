@@ -200,3 +200,50 @@ func TestOverlongWorkerRootRefusesPreparationButKeepsLifecycleCleanup(t *testing
 		t.Fatalf("Prepare did not reject the over-long root: %v", err)
 	}
 }
+
+// Inspection replaces a saved checkout path by its canonical root, which can be
+// longer or JSON-escaped. The bound must cover every root preparation accepts.
+func TestMaxManifestBytesReservesCanonicalCheckoutRoot(t *testing.T) {
+	for _, kind := range []domain.WorkspaceType{domain.Local, domain.Worktree} {
+		request := budgetRequest(40, "https://github.com/fixture/repo.git", kind)
+		for i := range request.Repositories {
+			request.Repositories[i].SourceKind = CheckoutSource
+			request.Repositories[i].Checkout = "/work/c"
+		}
+		bound, err := request.MaxManifestBytes()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for name, root := range map[string]string{
+			"long plain": "/" + strings.Repeat("r", CheckoutRootReserveBytes-1),
+			"escaped":    "/" + strings.Repeat("<", (CheckoutRootReserveBytes-1)/6),
+		} {
+			if err := ValidateCheckoutRoot("/work/c", root); err != nil {
+				t.Fatalf("%s %s: root within the reserve was refused: %v", kind, name, err)
+			}
+			published := request
+			published.Repositories = append([]RepositorySpec(nil), request.Repositories...)
+			for i := range published.Repositories {
+				published.Repositories[i].Checkout = root
+			}
+			raw, _ := json.Marshal(realisticManifest(published, "/data"))
+			if bound < len(raw) {
+				t.Fatalf("%s %s: bound %d is below the canonical manifest %d", kind, name, bound, len(raw))
+			}
+		}
+	}
+}
+
+func TestValidateCheckoutRootRefusesRootsBeyondTheBudget(t *testing.T) {
+	long := "/" + strings.Repeat("r", CheckoutRootReserveBytes)
+	if domain.SafeError(ValidateCheckoutRoot("/work/c", long)).Code != domain.ResourceExhausted {
+		t.Fatal("canonical root longer than the reserve was accepted")
+	}
+	if domain.SafeError(ValidateCheckoutRoot("/work/c", "/"+strings.Repeat("<", CheckoutRootReserveBytes/6+1))).Code != domain.ResourceExhausted {
+		t.Fatal("escaped canonical root longer than the reserve was accepted")
+	}
+	// A saved path longer than the reserve budgets itself.
+	if err := ValidateCheckoutRoot(long, long); err != nil {
+		t.Fatal("canonical root equal to a long saved path was refused", err)
+	}
+}

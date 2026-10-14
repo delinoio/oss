@@ -470,6 +470,9 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 			if err != nil {
 				return failed(err)
 			}
+			if err := ValidateCheckoutRoot(spec.Checkout, inspection.Root); err != nil {
+				return failed(err)
+			}
 			if request.Type == domain.Local && spec.RemoteURL != "" {
 				expected, err := domain.RepositoryCloneSourceIdentity(spec.RemoteURL)
 				if err != nil {
