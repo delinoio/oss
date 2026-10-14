@@ -2454,6 +2454,54 @@ it.each(["held", "rejected"] as const)(
     expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
   },
 );
+it.each(["queued", "claimed", "accepted"] as const)(
+  "keeps startup Info visible for a follow-up receipt in the %s phase while the stale original-only queue refreshes",
+  async (delivery) => {
+    const f = fixture(
+      BudgetState.ALLOW_INCOMPLETE,
+      false,
+      initialResponseWaiting(),
+    );
+    const { container } = render(f.view("Retained startup draft"));
+    const info = await startupInfo(container);
+    await waitFor(() => expect(info).toHaveProperty("hidden", true));
+    const composer = screen.getByRole("textbox", { name: "Message" });
+    composer.focus();
+    // The retained mutation publishes its receipt, then rereads the queue; the
+    // reread is held and (like the retained snapshot) lists only the original.
+    const script = scriptRead(f, "queue");
+    const gate = script.hold();
+    f.enqueue.mockImplementation((async (
+      request: Parameters<typeof sessionInputReceipt>[1],
+    ) => {
+      const receipt = sessionInputReceipt(f.session, request);
+      receipt.change.input = create(ResourceSchema, {
+        ...receipt.change.input,
+        documentJson: encode({
+          ...readDocument(receipt.change.input),
+          delivery,
+          sequence: 2,
+          content_revision: 1,
+        }),
+      });
+      return receipt;
+    }) as never);
+    fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
+    await waitFor(() => expect(f.enqueue).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(script.state.started).toBe(1));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(info).toHaveProperty("hidden", false);
+    expect(info.hasAttribute("inert")).toBe(false);
+    gate.release();
+    await waitFor(() => expect(f.client.isFetching()).toBe(0));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    // The settled queue may still list only the original input: the receipt
+    // remains local follow-up evidence, so Info never flashes hidden.
+    expect(info).toHaveProperty("hidden", false);
+    expect(f.enqueue).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(composer);
+  },
+);
 it.each(["parent-snapshot", "embedded"] as const)(
   "keeps Sidechat child Info in every initial execution phase (%s)",
   async (mode) => {

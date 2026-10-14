@@ -6470,7 +6470,13 @@ Info and its existing Retry; threshold-reached remains blocking. The budget
 controller reports a closed status (Pending, Failed, Ready, Blocked) keyed to the
 session ID without a new RPC or query owner. A projected later local follow-up in
 the Preparing, Sending, Rejected or Uncertain phase retains Info before any
-enqueue response; original-input Queued, Claimed and Accepted projections do not.
+enqueue response. Any other projected submission, including a Queued, Claimed or
+Accepted receipt, also retains Info unless its queue identity is the original
+first input (the initial execution input or the retained sequence-one queue
+row): the retained enqueue publishes its receipt before the queue reread or
+stream arrival, and the retained queue snapshot may still list only the original
+input, so that stale original-only read never qualifies Info to hide. Original-input
+Queued, Claimed and Accepted projections do not retain Info.
 Embedded Sidechat children and `sidechat_parent_snapshot` sessions keep their own
 Info in every initial execution phase.
 Before hiding focused Info, move focus to its original connected, enabled and

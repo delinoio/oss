@@ -2167,15 +2167,29 @@ export function SessionView({
   const startupInteractionsCurrent = startupReadCurrent(interactions);
   const startupBudgetCurrent =
     budgetEvidence?.id === id && budgetEvidence.status === BudgetEvidence.Ready;
-  // A projected later follow-up (not the original Queued/Claimed/Accepted
-  // input) is local evidence that startup is no longer pristine.
-  const startupLocalFollowUp = projectedSubmissions.some((row) =>
+  // Any projected submission other than the original input is local evidence
+  // that startup is no longer pristine, in every phase. A Queued, Claimed or
+  // Accepted receipt of a later follow-up (published by the retained enqueue
+  // before its queue refresh or stream arrival) is such evidence even while the
+  // retained queue snapshot still lists only the original input.
+  const originalInputIds = new Set<string>(
     [
-      SubmissionPhase.Preparing,
-      SubmissionPhase.Sending,
-      SubmissionPhase.Rejected,
-      SubmissionPhase.Uncertain,
-    ].includes(row.phase),
+      text(object(data.initial_execution).input_id),
+      ...pending
+        .filter((input) => readDocument(input).sequence === 1)
+        .map((input) => input.id),
+    ].filter(Boolean),
+  );
+  const startupLocalFollowUp = projectedSubmissions.some(
+    (row) =>
+      [
+        SubmissionPhase.Preparing,
+        SubmissionPhase.Sending,
+        SubmissionPhase.Rejected,
+        SubmissionPhase.Uncertain,
+      ].includes(row.phase) ||
+      !row.queueId ||
+      !originalInputIds.has(row.queueId),
   );
   // Sidechat children keep their own Info in every initial execution phase.
   const sidechatChild =
