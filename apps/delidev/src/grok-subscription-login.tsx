@@ -728,7 +728,8 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
       !p ||
       !live(p) ||
       view?.stage !== GrokLoginStage.Naming ||
-      !subscriptionNameValid(view.name)
+      !subscriptionNameValid(view.name) ||
+      p.retry
     )
       return;
     const alias = view.name;
@@ -828,14 +829,17 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
     waiting = v.stage === GrokLoginStage.Waiting,
     inFlight = waiting || v.stage === GrokLoginStage.Preparing,
     busy = !active || v.busy;
+  // An uncertain naming save keeps its exact request: the name stays frozen and
+  // Retry original request is the only mutation path until it settles.
+  const locked = busy || v.canRetry;
   const nameInput = useRef<HTMLInputElement>(null),
     focused = useRef(false);
   useEffect(() => {
-    if (visible && active && naming && !busy && !focused.current) {
+    if (visible && active && naming && !locked && !focused.current) {
       focused.current = true;
       nameInput.current?.focus({ preventScroll: true });
     }
-  }, [visible, active, naming, busy]);
+  }, [visible, active, naming, locked]);
   const d = v.diagnostic,
     diagnostic =
       d &&
@@ -913,7 +917,7 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
           id={formId}
           onSubmit={(event) => {
             event.preventDefault();
-            if (!busy && subscriptionNameValid(v.name)) props.saveName();
+            if (!locked && subscriptionNameValid(v.name)) props.saveName();
           }}
         >
           <label htmlFor="grok-subscription-name">
@@ -925,7 +929,7 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
             autoComplete="off"
             required
             value={v.name}
-            disabled={busy}
+            disabled={locked}
             onChange={(event) => props.changeName(event.target.value)}
             aria-describedby="grok-subscription-name-help"
           />
@@ -940,7 +944,7 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
             <SettingsActionButton
               icon={SettingsActionIcon.Save}
               className="primary"
-              disabled={busy || !subscriptionNameValid(v.name)}
+              disabled={locked || !subscriptionNameValid(v.name)}
             >
               {copy("grok-subscription.saveName")}
             </SettingsActionButton>

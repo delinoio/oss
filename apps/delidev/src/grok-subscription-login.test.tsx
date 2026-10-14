@@ -445,6 +445,82 @@ it("advances to naming only after verified success, prefilling and focusing the 
   expect(f.cancel).not.toHaveBeenCalled();
 });
 
+// Naming cells: the form is editable only while no uncertain save is retained.
+//
+//   save outcome        name input   Save account name   Retry original request
+//   none yet            enabled      enabled             hidden
+//   in flight           disabled     disabled            hidden
+//   uncertain (kept)    disabled     disabled            enabled; replays the same request
+//   definite refusal    enabled      enabled             hidden
+it("locks the name to the retained request after an uncertain save and replays it unchanged", async () => {
+  const f = fixture();
+  await start(f);
+  f.success();
+  const input = (await screen.findByLabelText(
+    copy("grok-subscription.accountName"),
+    {},
+    { timeout: 3000 },
+  )) as HTMLInputElement;
+  const saveButton = () =>
+    screen.getByRole("button", {
+      name: copy("grok-subscription.saveName"),
+    }) as HTMLButtonElement;
+  fireEvent.change(input, { target: { value: "Retained Grok" } });
+  f.save.mockImplementationOnce(() => {
+    throw typedFailure(Code.Internal, FailureCode.Internal);
+  });
+  fireEvent.click(saveButton());
+  const retry = await screen.findByRole("button", {
+    name: copy("grok-subscription.retryOriginal"),
+  });
+  expect(f.save).toHaveBeenCalledTimes(2);
+  expect(input.disabled).toBe(true);
+  expect(saveButton().disabled).toBe(true);
+  // Neither another submission nor an edit can start a different request.
+  fireEvent.submit(input.closest("form")!);
+  fireEvent.change(input, { target: { value: "Different Grok" } });
+  expect(f.save).toHaveBeenCalledTimes(2);
+  expect(input.value).toBe("Retained Grok");
+  fireEvent.click(retry);
+  await screen.findByRole("button", { name: "Start Grok" });
+  expect(f.save).toHaveBeenCalledTimes(3);
+  expect(f.save.mock.calls[2][0].mutation.requestId).toBe(
+    f.save.mock.calls[1][0].mutation.requestId,
+  );
+  expect(document(f.current())).toMatchObject({ alias: "Retained Grok" });
+});
+
+it("keeps the name editable after a definite naming refusal", async () => {
+  const f = fixture();
+  await start(f);
+  f.success();
+  const input = (await screen.findByLabelText(
+    copy("grok-subscription.accountName"),
+    {},
+    { timeout: 3000 },
+  )) as HTMLInputElement;
+  f.save.mockImplementationOnce(() => {
+    throw typedFailure(Code.PermissionDenied, FailureCode.PermissionDenied);
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: copy("grok-subscription.saveName") }),
+  );
+  await screen.findByText(copy("grok-subscription.problem.nameUnconfirmed"));
+  expect(input.disabled).toBe(false);
+  expect(
+    (
+      screen.getByRole("button", {
+        name: copy("grok-subscription.saveName"),
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(false);
+  expect(
+    screen.queryByRole("button", {
+      name: copy("grok-subscription.retryOriginal"),
+    }),
+  ).toBeNull();
+});
+
 it("falls back to the default name when no valid suggestion exists", async () => {
   const f = fixture();
   f.suggestion("");
