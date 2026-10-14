@@ -363,7 +363,7 @@ impl View {
                     });
                 let graph_owned =
                     self.graph.is_location_ancestor(&archive) || virtual_archive_owned;
-                if !graph_owned {
+                if !graph_owned || (archive.is_dir() && info.virtual_segments.is_none()) {
                     self.native_backing(logical.clone())
                 } else if archive.is_dir() {
                     // A graph-owned virtual ZIP can be backed by an unpacked

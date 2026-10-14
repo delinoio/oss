@@ -691,6 +691,7 @@ fn virtual_zip_directories_keep_physical_backing_in_inline_and_split_views() {
         fs::remove_file(&archive).unwrap();
         fs::create_dir_all(archive.join("node_modules/dep")).unwrap();
         fs::write(archive.join("node_modules/dep/file.txt"), b"unpacked bytes").unwrap();
+        fs::write(archive.join("native-entry.txt"), b"native bytes").unwrap();
 
         let cache_root = tempfile::tempdir().unwrap();
         let session = tempfile::tempdir().unwrap();
@@ -711,6 +712,15 @@ fn virtual_zip_directories_keep_physical_backing_in_inline_and_split_views() {
         assert!(translated.readonly, "split={split}");
         assert_eq!(fs::read(&translated.physical).unwrap(), b"unpacked bytes");
         assert!(!session.path().join("active").exists());
+
+        let native = view.translate(&archive.join("native-entry.txt")).unwrap();
+        assert_eq!(
+            native.physical,
+            archive.join("native-entry.txt"),
+            "split={split}"
+        );
+        assert!(!native.readonly, "split={split}");
+        assert_eq!(fs::read(&native.physical).unwrap(), b"native bytes");
     }
 }
 
