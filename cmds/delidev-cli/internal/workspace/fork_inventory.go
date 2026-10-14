@@ -31,6 +31,18 @@ type forkGitInventory struct {
 }
 
 func inspectForkGitInventory(ctx context.Context, git Git, source string, budget *snapshotCopyBudget) (forkGitInventory, error) {
+	return inspectForkGitInventoryWithConfigProof(ctx, git, source, budget, true)
+}
+
+// inspectForkGitInventoryWithoutConfigProof rechecks the source inventory while
+// retaining the config proof captured by the original snapshot. Re-parsing the
+// same large config here would pin a second command buffer during preparation or
+// final verification, defeating the aggregate Fork allowance.
+func inspectForkGitInventoryWithoutConfigProof(ctx context.Context, git Git, source string, budget *snapshotCopyBudget) (forkGitInventory, error) {
+	return inspectForkGitInventoryWithConfigProof(ctx, git, source, budget, false)
+}
+
+func inspectForkGitInventoryWithConfigProof(ctx context.Context, git Git, source string, budget *snapshotCopyBudget, captureConfigProof bool) (forkGitInventory, error) {
 	var result forkGitInventory
 	git.readOnly, git.offline = true, true
 	if err := validateSnapshotGitEntry(source); err != nil {
@@ -81,8 +93,10 @@ func inspectForkGitInventory(ctx context.Context, git Git, source string, budget
 			return result, err
 		}
 	}
-	if err = result.captureConfigProof(ctx, git, source, budget); err != nil {
-		return result, err
+	if captureConfigProof {
+		if err = result.captureConfigProof(ctx, git, source, budget); err != nil {
+			return result, err
+		}
 	}
 	return result, nil
 }
@@ -110,8 +124,9 @@ func (i forkGitInventory) copiedFiles() snapshotInventory {
 	slices.SortFunc(result.Entries, func(a, b snapshotEntry) int { return strings.Compare(a.Path, b.Path) })
 	return result
 }
-func (i forkGitInventory) verify(ctx context.Context, git Git, source, target string) error {
-	current, err := inspectForkGitInventory(ctx, git, source, newForkCopyBudget(1))
+
+func (i forkGitInventory) recheckSource(ctx context.Context, git Git, source string) error {
+	current, err := inspectForkGitInventoryWithoutConfigProof(ctx, git, source, newForkCopyBudget(1))
 	if err != nil {
 		// This is a recheck of an already admitted source. A changed source
 		// that now exceeds a resource bound is snapshot drift, not a fresh
@@ -123,6 +138,13 @@ func (i forkGitInventory) verify(ctx context.Context, git Git, source, target st
 	}
 	if !i.sourceMatches(current) {
 		return forkSnapshotChanged()
+	}
+	return nil
+}
+
+func (i forkGitInventory) verify(ctx context.Context, git Git, source, target string) error {
+	if err := i.recheckSource(ctx, git, source); err != nil {
+		return err
 	}
 	targetBudget := newForkCopyBudget(1)
 	targetFiles, err := walkSnapshotBudget(ctx, filepath.Join(target, ".git"), "", nil, maxForkEntries, targetBudget)
@@ -182,18 +204,26 @@ func (m *Manager) prepareForkGitInventory(ctx context.Context, git Git, spec Rep
 	if pinned := snapshot.sourceMarker(spec.Checkout); pinned != nil {
 		marker = *pinned
 	}
-	proof, err := inspectForkGitInventory(ctx, git, spec.Checkout, newForkCopyBudget(1))
-	if err != nil {
-		return *entry, nil, err
-	}
-	proof.bindRemote(spec)
+	var proof forkGitInventory
 	if snapshot != nil {
 		for _, copy := range snapshot.copies {
-			if copy.source == spec.Checkout && copy.gitInventory != nil && !copy.gitInventory.sourceMatches(proof) {
-				return *entry, nil, forkSnapshotChanged()
+			if copy.source == spec.Checkout && copy.gitInventory != nil {
+				proof = *copy.gitInventory
+				if err := proof.recheckSource(ctx, git, spec.Checkout); err != nil {
+					return *entry, nil, err
+				}
+				break
 			}
 		}
 	}
+	if !proof.configProof.bound {
+		var err error
+		proof, err = inspectForkGitInventory(ctx, git, spec.Checkout, newForkCopyBudget(1))
+		if err != nil {
+			return *entry, nil, err
+		}
+	}
+	proof.bindRemote(spec)
 	if spec.Starting.Type != domain.CommitReference || spec.Base.Type != domain.CommitReference || spec.Starting.Name != spec.Base.Name {
 		return *entry, nil, forkUnsupported()
 	}
