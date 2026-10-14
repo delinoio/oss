@@ -2,7 +2,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { newRequestId } from "@delinoio/delidev-api-client";
 import {
-  claimInitialRoute,
+  commitInitialRouteScope,
+  readInitialRoute,
   parseProductRoute,
   ProductRouteParam,
   resetProductRouteClaim,
@@ -163,11 +164,23 @@ describe("product route URL writes", () => {
 });
 
 describe("initial route claim", () => {
-  it("gives the route only to the connection identity that first claims it", () => {
+  it("gives the route only to the connection identity that first commits it", () => {
     window.history.replaceState(null, "", `/?screen=inbox&item=${id()}`);
-    expect(claimInitialRoute("server-a")?.surface).toBe(Surface.Inbox);
-    expect(claimInitialRoute("server-a")?.surface).toBe(Surface.Inbox);
-    expect(claimInitialRoute("server-b")).toBeUndefined();
-    expect(claimInitialRoute("server-a")).toBeUndefined();
+    expect(readInitialRoute("server-a")?.surface).toBe(Surface.Inbox);
+    commitInitialRouteScope("server-a");
+    expect(readInitialRoute("server-a")?.surface).toBe(Surface.Inbox);
+    expect(readInitialRoute("server-b")).toBeUndefined();
+    commitInitialRouteScope("server-b");
+    expect(readInitialRoute("server-a")).toBeUndefined();
+  });
+
+  it("answers every uncommitted read the same, however many times it runs", () => {
+    window.history.replaceState(null, "", `/?screen=inbox&item=${id()}`);
+    commitInitialRouteScope("server-a");
+    // A render-time read of a rejected identity changes nothing, so a second
+    // (StrictMode) invocation cannot receive what the first one rejected.
+    expect(readInitialRoute("server-b")).toBeUndefined();
+    expect(readInitialRoute("server-b")).toBeUndefined();
+    expect(readInitialRoute("server-a")?.surface).toBe(Surface.Inbox);
   });
 });

@@ -152,18 +152,26 @@ export function writeProductRoute(route: ProductRoute): boolean {
   }
 }
 
-let claimedScope: string | undefined;
+/**
+ * Connection identity scope that owns the document's initial route. It changes
+ * only in `commitInitialRouteScope`, which a Shell calls from its committed
+ * mount lifecycle, never from a render.
+ */
+let committedScope: string | undefined;
 
 /**
- * Claims the document's initial route for one connection identity scope.
- * The first Shell of a document, and a remount of the same identity, read the
+ * Reads the document's initial route for one connection identity scope. The
+ * first Shell of a document, and a remount of the committed identity, read the
  * current URL. A different identity never receives the previous identity's
  * route, so a connection change cannot open another account's selection.
+ *
+ * This is a pure read: it mutates nothing, so React may invoke it any number of
+ * times for one render (StrictMode double-invokes lazy state initializers, and
+ * a discarded concurrent render never commits) and every call answers the same.
  */
-export function claimInitialRoute(scope: string): ProductRoute | undefined {
-  const previous = claimedScope;
-  claimedScope = scope;
-  if (previous !== undefined && previous !== scope) return undefined;
+export function readInitialRoute(scope: string): ProductRoute | undefined {
+  if (committedScope !== undefined && committedScope !== scope)
+    return undefined;
   try {
     return parseProductRoute(window.location.search);
   } catch {
@@ -171,7 +179,15 @@ export function claimInitialRoute(scope: string): ProductRoute | undefined {
   }
 }
 
-/** Test hook: forget the claimed identity, as a fresh document would. */
+/**
+ * Records that a Shell for `scope` committed, so a later Shell of another
+ * identity cannot inherit the URL that this identity now owns. Idempotent.
+ */
+export function commitInitialRouteScope(scope: string) {
+  committedScope = scope;
+}
+
+/** Test hook: forget the committed identity, as a fresh document would. */
 export function resetProductRouteClaim() {
-  claimedScope = undefined;
+  committedScope = undefined;
 }

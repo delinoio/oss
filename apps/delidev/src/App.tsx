@@ -75,7 +75,8 @@ import {
   NavigationIntentSource,
 } from "./navigation-intent";
 import {
-  claimInitialRoute,
+  commitInitialRouteScope,
+  readInitialRoute,
   writeProductRoute,
   type ProductRoute,
 } from "./product-route";
@@ -204,7 +205,12 @@ function Shell({
   // The product route in the URL (screen plus selection) survives a full webview
   // reload. Screens without a selection open immediately; a selection waits for
   // a fresh read through this connection before it is reopened.
-  const [initialRoute] = useState(() => claimInitialRoute(routeScope));
+  // The read is pure (StrictMode double-invokes lazy initializers); the identity
+  // takes ownership of the URL only when this Shell commits.
+  const [initialRoute] = useState(() => readInitialRoute(routeScope));
+  useLayoutEffect(() => {
+    commitInitialRouteScope(routeScope);
+  }, [routeScope]);
   const [surface, setSurfaceState] = useState(
     initialRoute?.surface ?? Surface.Sessions,
   );

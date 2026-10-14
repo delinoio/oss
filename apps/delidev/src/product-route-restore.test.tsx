@@ -607,6 +607,40 @@ describe("route fallbacks", () => {
     await waitFor(() => expect(search().has("item")).toBe(false));
   });
 
+  it("ignores another connection's route when StrictMode double-invokes the Shell initializer", async () => {
+    const value = fixture();
+    const identity = (endpoint: string) => ({
+      pairingAuthority: { endpoint, serverId: newRequestId() },
+      currentDeviceId: newRequestId(),
+    });
+    const first = identity("http://127.0.0.1:46310");
+    const second = identity("http://127.0.0.1:46311");
+    route(`?screen=schedules&item=${value.schedule.id}`);
+    const view = render(
+      <StrictMode>
+        <App transport={value.transport} {...first} />
+      </StrictMode>,
+    );
+    expect(
+      await screen.findByRole("heading", { name: "Restored schedule" }),
+    ).toBeTruthy();
+    // The URL still names the first connection's Schedule. The second
+    // connection's Shell parses it at most as a rejected, side-effect-free read.
+    value.reads.schedule.mockClear();
+    view.rerender(
+      <StrictMode>
+        <App transport={value.transport} {...second} />
+      </StrictMode>,
+    );
+    expect(
+      await screen.findByText(
+        "Select a schedule from the sidebar to inspect its details and retained history.",
+      ),
+    ).toBeTruthy();
+    await waitFor(() => expect(search().has("item")).toBe(false));
+    expect(value.reads.schedule).not.toHaveBeenCalled();
+  });
+
   it("keeps the Repository selection for the screen's own retry after a retryable read failure", async () => {
     const value = fixture();
     value.failure.code = Code.Unavailable;
