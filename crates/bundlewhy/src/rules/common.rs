@@ -914,19 +914,7 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
         let Some(close) = matching_delimiter(bytes, open, b'(', b')') else {
             continue;
         };
-        let mut after = close + 1;
-        while bytes.get(after).is_some_and(u8::is_ascii_whitespace) {
-            after += 1;
-        }
-        let (body, arrow) = if bytes.get(after) == Some(&b'{') {
-            (after, false)
-        } else if bytes.get(after..after.saturating_add(2)) == Some(b"=>") {
-            after += 2;
-            while bytes.get(after).is_some_and(u8::is_ascii_whitespace) {
-                after += 1;
-            }
-            (after, true)
-        } else {
+        let Some((body, arrow)) = arrow_or_function_body(bytes, close) else {
             continue;
         };
         let keyword = code[..open]
@@ -1005,6 +993,62 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
         scopes.push(scope);
     }
     scopes
+}
+
+/// Finds a block-bodied function or arrow body after a parameter list.
+/// TypeScript arrow return annotations can sit between `)` and `=>`, and
+/// their nested delimiters must be skipped before locating the executable body.
+fn arrow_or_function_body(bytes: &[u8], close: usize) -> Option<(usize, bool)> {
+    let mut cursor = close + 1;
+    while bytes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
+        cursor += 1;
+    }
+    if bytes.get(cursor) == Some(&b'{') {
+        return Some((cursor, false));
+    }
+    if bytes.get(cursor..cursor.saturating_add(2)) == Some(b"=>") {
+        cursor += 2;
+        while bytes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
+            cursor += 1;
+        }
+        return (bytes.get(cursor) == Some(&b'{')).then_some((cursor, true));
+    }
+    if bytes.get(cursor) != Some(&b':') {
+        return None;
+    }
+    cursor += 1;
+    let mut parentheses = 0i32;
+    let mut brackets = 0i32;
+    let mut braces = 0i32;
+    let mut angles = 0i32;
+    while let Some(byte) = bytes.get(cursor) {
+        if *byte == b'='
+            && bytes.get(cursor + 1) == Some(&b'>')
+            && parentheses == 0
+            && brackets == 0
+            && braces == 0
+            && angles == 0
+        {
+            cursor += 2;
+            while bytes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
+                cursor += 1;
+            }
+            return (bytes.get(cursor) == Some(&b'{')).then_some((cursor, true));
+        }
+        match *byte {
+            b'(' => parentheses += 1,
+            b')' => parentheses = parentheses.checked_sub(1)?,
+            b'[' => brackets += 1,
+            b']' => brackets = brackets.checked_sub(1)?,
+            b'{' => braces += 1,
+            b'}' => braces = braces.checked_sub(1)?,
+            b'<' => angles += 1,
+            b'>' if angles > 0 => angles -= 1,
+            _ => {}
+        }
+        cursor += 1;
+    }
+    None
 }
 
 /// Finds the block that starts a function body after its parameter list.
@@ -1557,6 +1601,10 @@ y=/process.env.F/.test(z),process.env.G"#;
         assert!(direct_eval_line("const make = () => function eval() {}; eval(code);").is_some());
         assert!(
             direct_eval_line("const run = (value = make()) => { var eval = helper; }; eval(code);")
+                .is_some()
+        );
+        assert!(
+            direct_eval_line("const run = (value): void => { var eval = helper; }; eval(code);")
                 .is_some()
         );
         assert!(
