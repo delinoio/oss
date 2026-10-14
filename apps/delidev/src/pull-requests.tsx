@@ -844,9 +844,6 @@ export function PullRequests({
                     ))}
                   </select>
                 </label>
-                <p className="sidebar-help">
-                  {copy("pull-requests.noGithubRequestIsMadeUntil_55d1b2")}
-                </p>
                 {loaded && filtersChanged ? (
                   <p className="sidebar-help">
                     {copy(
