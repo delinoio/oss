@@ -436,6 +436,27 @@ authoritative when owned-process cleanup is also unconfirmed
 | failed in phase P                                       | unconfirmed                      | P with the failure's code       | `recovery_required` (discovery aborts) |
 | configuration inspection leaves its process unconfirmed | n/a                              | `cleanup` / `recovery_required` | `recovery_required`                    |
 
+Timeout identity survives normalization. `domain.SafeError` collapses every
+non-`*domain.Error` into a message-only `*domain.Error`, so the probe uses
+`domain.SafeTimeoutError`, which marks an `Unavailable` result of an expired
+deadline with `domain.TimeoutCause` (`timeout`) and makes it match
+`context.DeadlineExceeded` with `errors.Is`. `WithGrokDiagnostic` then reports
+the dedicated timeout reason ("The native operation timed out.") instead of the
+generic "failed or timed out" reason:
+
+| Error reaching `WithGrokDiagnostic`                            | Code          | Marker / `errors.Is(DeadlineExceeded)` | Reason              |
+| -------------------------------------------------------------- | ------------- | -------------------------------------- | ------------------- |
+| raw, wrapped or joined `context.DeadlineExceeded`              | `unavailable` | by `errors.Is`                         | timeout             |
+| `SafeTimeoutError` of a deadline (probe wait, launch, inspect) | `unavailable` | `Cause=timeout`, matches               | timeout             |
+| `SafeError` of a deadline (no marker)                          | `unavailable` | none                                   | failed or timed out |
+| `unavailable` without a deadline (native exit, no frame)       | `unavailable` | none                                   | failed or timed out |
+| `unavailable` with its own cause (for example `clone_timeout`) | `unavailable` | the original cause is kept             | failed or timed out |
+| cancellation                                                   | `canceled`    | none                                   | canceled            |
+
+The diagnostic's transport error never repeats the marker, and a timeout under
+unconfirmed cleanup keeps the timeout reason while the transport code becomes
+`recovery_required`.
+
 An unconfirmed cleanup never replaces the first failure's phase, code or
 timeout reason, but it always forces the transport error to `recovery_required`
 because discovery must stop and reconcile the owned process before retrying.

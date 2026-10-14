@@ -125,6 +125,7 @@ func TestProbeCleanupFailureNeverReplacesTheFirstFailure(t *testing.T) {
 		{name: "version failure", mode: "valid", version: "1.0.40", phases: []domain.GrokPhase{domain.GrokVersion}, code: domain.Unsupported},
 		{name: "profile failure", mode: "inspect-managed", phases: []domain.GrokPhase{domain.GrokProfile}, code: domain.Unsupported},
 		{name: "profile inspection exit", mode: "inspect-exit", phases: []domain.GrokPhase{domain.GrokProfile}, code: domain.Unavailable},
+		{name: "profile deadline", mode: "inspect-timeout", deadline: time.Second, phases: []domain.GrokPhase{domain.GrokProfile}, code: domain.Unavailable},
 		{name: "runtime failure", mode: "foreign", handle: true, phases: []domain.GrokPhase{domain.GrokRuntime}, code: domain.Unsupported},
 		{name: "runtime exit", mode: "exit", handle: true, phases: []domain.GrokPhase{domain.GrokRuntime}, code: domain.Unavailable},
 		{name: "late protocol failure", mode: "duplicate", handle: true, phases: []domain.GrokPhase{domain.GrokRuntime}, code: domain.Unsupported},
@@ -185,6 +186,13 @@ func TestProbeCleanupFailureNeverReplacesTheFirstFailure(t *testing.T) {
 				}
 				if got := domain.SafeError(err).Code; got != wantTransport {
 					t.Fatalf("transport code = %q, want %q", got, wantTransport)
+				}
+				if test.deadline != 0 {
+					// A real expired deadline keeps its identity through every
+					// normalization and reports the dedicated timeout reason.
+					if !errors.Is(err, context.DeadlineExceeded) || !strings.HasSuffix(d.Message, "The native operation timed out.") {
+						t.Fatalf("a probe deadline lost its identity: %q", d.Message)
+					}
 				}
 				if got := strings.Contains(logs.String(), `"cleanup_unconfirmed":true`); got != cleanupFails {
 					t.Fatalf("cleanup_unconfirmed logged = %v, want %v: %s", got, cleanupFails, logs.String())

@@ -88,7 +88,7 @@ func probeCleanupRequired() *domain.Error {
 }
 
 func nativeLaunchError(err error) error {
-	problem := domain.SafeError(err)
+	problem := domain.SafeTimeoutError(err)
 	if problem.Code == domain.Internal {
 		// Cancellation can close the private controller socket during Resume.
 		// Its raw OS error includes a local path and is not protocol evidence.
@@ -209,7 +209,7 @@ func Probe(ctx context.Context, config ProbeConfig) (returned error) {
 		if problem := wire.status(); problem != nil {
 			return problem
 		}
-		return domain.SafeError(bounded.Err())
+		return domain.SafeTimeoutError(bounded.Err())
 	case <-h.Done():
 		if problem := wire.status(); problem != nil {
 			return problem
@@ -225,7 +225,7 @@ func Probe(ctx context.Context, config ProbeConfig) (returned error) {
 		return problem
 	}
 	if err := bounded.Err(); err != nil {
-		return domain.SafeError(err)
+		return domain.SafeTimeoutError(err)
 	}
 	if !wire.initialized() {
 		return probeUnavailable()

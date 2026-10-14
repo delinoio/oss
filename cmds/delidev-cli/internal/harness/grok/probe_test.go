@@ -91,6 +91,9 @@ func init() {
 			_, _ = os.Stderr.Write(bytes.Repeat([]byte{'e'}, maxProbeStderr+1))
 		case "inspect-exit":
 			os.Exit(2)
+		case "inspect-timeout":
+			// Never report: the caller's deadline must end the inspection.
+			time.Sleep(time.Minute)
 		}
 		_ = json.NewEncoder(os.Stdout).Encode(report)
 		os.Exit(0)

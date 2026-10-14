@@ -82,7 +82,7 @@ func WithGrokDiagnostic(version string, phase GrokPhase, err error) error {
 	safe := SafeError(err)
 	diagnostic := GrokDiagnostic{DetectedVersion: version, SupportedVersion: GrokSubscriptionBaselineVersion, Phase: phase, Code: safe.Code}
 	diagnostic.Message, diagnostic.Guidance = diagnostic.text()
-	if safe.Code == Unavailable && (errors.Is(err, context.DeadlineExceeded) || safe.Cause == "timeout") {
+	if safe.Code == Unavailable && (errors.Is(err, context.DeadlineExceeded) || safe.Cause == TimeoutCause) {
 		diagnostic.Message = strings.Replace(diagnostic.Message, grokFailedReason, grokTimeoutReason, 1)
 	}
 	if ID(safe.CorrelationID).Validate() == nil {
