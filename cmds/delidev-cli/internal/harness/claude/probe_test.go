@@ -33,6 +33,68 @@ func fixtureResult() map[string]any {
 	}
 }
 
+// fixtureResult287 is the sanitized Claude Code 2.1.287 initialize shape: the
+// 2.1.236 profile plus empty pending arrays and bounded private metadata.
+func fixtureResult287() map[string]any {
+	result := fixtureResult()
+	result["pending_permission_requests"] = []any{}
+	result["pending_user_dialog_requests"] = []any{}
+	result["analytics_disabled"] = true
+	result["capabilities"] = []any{"fixture-capability"}
+	result["feedback_mode"] = "disabled"
+	result["remote_control_available"] = false
+	result["remote_control_auto_connect_default"] = false
+	result["session_state"] = "idle"
+	result["user_output_styles_dir"] = "/private/fixture/output-styles"
+	return result
+}
+
+const fixturePrelude = `{"type":"system","subtype":"ui_invalidate","uuid":"fixture-uuid","session_id":"fixture-session"}` + "\n"
+
+// fixture287Frames builds the stdout for a "v287*" fixture mode.
+func fixture287Frames(mode string, id domain.ID) []byte {
+	result := fixtureResult287()
+	prelude := fixturePrelude
+	switch mode {
+	case "v287-subtype":
+		prelude = `{"type":"system","subtype":"unknown_event"}` + "\n"
+	case "v287-field":
+		prelude = `{"type":"system","subtype":"ui_invalidate","token":"private"}` + "\n"
+	case "v287-malformed":
+		prelude = `{"type":"system",` + "\n"
+	case "v287-pending":
+		result["pending_permission_requests"] = []any{map[string]any{"id": "x"}}
+	case "v287-dialog":
+		result["pending_user_dialog_requests"] = []any{map[string]any{"id": "x"}}
+	case "v287-busy":
+		result["session_state"] = "running"
+	case "v287-remote":
+		result["remote_control_auto_connect_default"] = true
+	case "v287-feedback":
+		result["feedback_mode"] = "enabled"
+	case "v287-account":
+		result["account"] = map[string]any{"tokenSource": "oauth", "apiProvider": "firstParty"}
+	case "v287-foreign":
+		id = domain.NewID()
+	}
+	response := string(fixtureResponse(id, result))
+	switch mode {
+	case "v287-twice":
+		return []byte(prelude + prelude + response)
+	case "v287-late":
+		return []byte(response + prelude)
+	case "v287-duplicate":
+		return []byte(prelude + response + response)
+	case "v287-trailing":
+		return []byte(prelude + response + "{")
+	case "v287-oversize":
+		return append([]byte(prelude), bytes.Repeat([]byte{'x'}, maxProbeFrame+1)...)
+	case "v287-noprelude":
+		return []byte(response)
+	}
+	return []byte(prelude + response)
+}
+
 func fixtureResponse(id domain.ID, result any) []byte {
 	raw, _ := json.Marshal(map[string]any{"type": "control_response", "response": map[string]any{"subtype": "success", "request_id": id, "response": result}})
 	return append(raw, '\n')
@@ -77,6 +139,13 @@ func init() {
 	}
 	result := fixtureResult()
 	id := request.RequestID
+	if strings.HasPrefix(mode, "v287") {
+		_, _ = os.Stdout.Write(fixture287Frames(mode, id))
+		if scanner.Scan() {
+			os.Exit(16)
+		}
+		os.Exit(0)
+	}
 	if mode == "foreign" {
 		id = domain.NewID()
 	}
@@ -190,6 +259,125 @@ func TestProbeOwnsOnlyBoundedPrivateInitialization(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+// TestProbeAcceptsClaude287StartupFrameAndInitializeFields covers the sanitized
+// 2.1.287 shape; installed-native and real-account results are separate.
+func TestProbeAcceptsClaude287StartupFrameAndInitializeFields(t *testing.T) {
+	for _, test := range []struct {
+		mode string
+		code domain.Code
+	}{
+		{"v287", ""}, {"v287-noprelude", ""},
+		{"v287-twice", domain.Unsupported}, {"v287-late", domain.Unsupported}, {"v287-subtype", domain.Unsupported},
+		{"v287-field", domain.Unsupported}, {"v287-malformed", domain.Unsupported}, {"v287-oversize", domain.ResourceExhausted},
+		{"v287-foreign", domain.Unsupported}, {"v287-duplicate", domain.Unsupported}, {"v287-trailing", domain.Unsupported},
+		{"v287-pending", domain.Unsupported}, {"v287-dialog", domain.Unsupported}, {"v287-busy", domain.Unsupported},
+		{"v287-remote", domain.Unsupported}, {"v287-feedback", domain.Unsupported}, {"v287-account", domain.Unsupported},
+	} {
+		t.Run(test.mode, func(t *testing.T) {
+			cfg, logs := fixtureConfig(t, test.mode)
+			cfg.Version = "2.1.287"
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			err := Probe(ctx, cfg)
+			if test.code == "" && err != nil || test.code != "" && (err == nil || domain.SafeError(err).Code != test.code) {
+				t.Fatalf("probe outcome: %v; want %s; logs: %s", err, test.code, logs.String())
+			}
+			if test.code == "" && !strings.Contains(logs.String(), "2.1.287") {
+				t.Fatal("observed installed version was not logged")
+			}
+			if strings.Contains(logs.String(), "private") || strings.Contains(logs.String(), "fixture-session") {
+				t.Fatal("raw native content entered logs")
+			}
+			if err := process.ReconcileOwner(cfg.Process.Directory, cfg.Process.OwnerID); err != nil {
+				t.Fatal("probe cleanup was not confirmed", err)
+			}
+		})
+	}
+}
+
+// TestProbeWireAcceptsOnePreludeBeforeResponse checks the prelude state machine
+// without a native process.
+func TestProbeWireAcceptsOnePreludeBeforeResponse(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		frames []string
+		ok     bool
+	}{
+		{"prelude-then-response", []string{fixturePrelude, string(fixtureResponse("ID", fixtureResult287()))}, true},
+		{"second-prelude", []string{fixturePrelude, fixturePrelude}, false},
+		{"prelude-after-response", []string{string(fixtureResponse("ID", fixtureResult287())), fixturePrelude}, false},
+		{"other-system-event", []string{`{"type":"system","subtype":"init"}`}, false},
+		{"non-system-event", []string{`{"type":"assistant"}`}, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			id := domain.NewID()
+			_, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			wire := &probeWire{id: id, ready: make(chan struct{}, 2), cancel: cancel}
+			for _, frame := range test.frames {
+				wire.receive([]byte(strings.ReplaceAll(strings.TrimSuffix(frame, "\n"), `"request_id":"ID"`, `"request_id":"`+string(id)+`"`)))
+			}
+			if test.ok != (wire.status() == nil && wire.initialized()) {
+				t.Fatalf("wire outcome: problem=%v initialized=%v", wire.status(), wire.initialized())
+			}
+		})
+	}
+}
+
+func TestInitializeValidatesClaude287Fields(t *testing.T) {
+	id := domain.NewID()
+	if err := validateInitialize(fixtureResponse(id, fixtureResult287()), id); err != nil {
+		t.Fatal(err)
+	}
+	for _, change := range []struct {
+		name  string
+		field string
+		value any
+	}{
+		{"pending-null", "pending_permission_requests", nil},
+		{"pending-object", "pending_user_dialog_requests", map[string]any{}},
+		{"pending-nonempty", "pending_permission_requests", []any{1}},
+		{"analytics-string", "analytics_disabled", "yes"},
+		{"analytics-null", "analytics_disabled", nil},
+		{"capabilities-scalar", "capabilities", "all"},
+		{"capabilities-null", "capabilities", nil},
+		{"capabilities-duplicate", "capabilities", []any{"a", "a"}},
+		{"capabilities-too-many", "capabilities", make([]any, 65)},
+		{"capabilities-nested", "capabilities", map[string]any{"a": []any{}}},
+		{"feedback-enabled", "feedback_mode", "enabled"},
+		{"feedback-type", "feedback_mode", true},
+		{"remote-available", "remote_control_available", true},
+		{"remote-null", "remote_control_auto_connect_default", nil},
+		{"session-running", "session_state", "running"},
+		{"session-type", "session_state", 1},
+		{"styles-empty", "user_output_styles_dir", ""},
+		{"styles-oversize", "user_output_styles_dir", strings.Repeat("x", maxProbeStylesDir+1)},
+		{"styles-type", "user_output_styles_dir", 7},
+	} {
+		t.Run(change.name, func(t *testing.T) {
+			result := fixtureResult287()
+			if change.name == "capabilities-too-many" {
+				names := make([]any, 65)
+				for i := range names {
+					names[i] = strings.Repeat("c", i+1)
+				}
+				change.value = names
+			}
+			result[change.field] = change.value
+			if err := validateInitialize(fixtureResponse(id, result), id); err == nil {
+				t.Fatal("unsafe 2.1.287 field accepted")
+			}
+		})
+	}
+	for _, shape := range []any{map[string]any{"a": true, "b": "text"}, []any{}} {
+		result := fixtureResult287()
+		result["capabilities"] = shape
+		if err := validateInitialize(fixtureResponse(id, result), id); err != nil {
+			t.Fatal("bounded capabilities rejected", err)
+		}
 	}
 }
 
@@ -397,5 +585,26 @@ func TestProbeNewerVersionStillFailsChangedNativeBehavior(t *testing.T) {
 	}
 	if err := process.ReconcileOwner(config.Process.Directory, config.Process.OwnerID); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestManagedTokenInitializeSharesClaude287Validation proves the API/session
+// initializer applies the same strict additions and still rejects unsafe state.
+func TestManagedTokenInitializeSharesClaude287Validation(t *testing.T) {
+	build := func() map[string]any {
+		result := fixtureResult287()
+		result["account"] = map[string]any{"tokenSource": managedTokenSource, "apiProvider": "firstParty"}
+		result["commands"] = []any{map[string]any{"name": "compact", "description": "Compact", "argumentHint": ""}}
+		return result
+	}
+	raw, _ := json.Marshal(build())
+	if err := validateInitializeManagedToken(raw, "dontAsk"); err != nil {
+		t.Fatal(err)
+	}
+	result := build()
+	result["session_state"] = "running"
+	raw, _ = json.Marshal(result)
+	if err := validateInitializeManagedToken(raw, "dontAsk"); err == nil {
+		t.Fatal("non-idle managed session accepted")
 	}
 }

@@ -24,6 +24,18 @@ type initializeResult struct {
 	IDERCAutoEnableGate          *bool           `json:"ide_rc_auto_enable_gate"`
 	FastModeState                string          `json:"fast_mode_state"`
 	FastModeDisabledReason       string          `json:"fast_mode_disabled_reason"`
+
+	// Claude Code 2.1.287 additions. They are optional so earlier verified
+	// profiles keep passing; raw messages distinguish absent from null.
+	PendingPermissionRequests       json.RawMessage `json:"pending_permission_requests"`
+	PendingUserDialogRequests       json.RawMessage `json:"pending_user_dialog_requests"`
+	AnalyticsDisabled               json.RawMessage `json:"analytics_disabled"`
+	Capabilities                    json.RawMessage `json:"capabilities"`
+	FeedbackMode                    json.RawMessage `json:"feedback_mode"`
+	RemoteControlAvailable          json.RawMessage `json:"remote_control_available"`
+	RemoteControlAutoConnectDefault json.RawMessage `json:"remote_control_auto_connect_default"`
+	SessionState                    json.RawMessage `json:"session_state"`
+	UserOutputStylesDir             json.RawMessage `json:"user_output_styles_dir"`
 }
 
 type nativeCommand struct {
@@ -179,6 +191,9 @@ func validateInitializeManagedToken(raw []byte, permission string) error {
 }
 
 func validateInitializeCatalog(result initializeResult) error {
+	if err := validateInitializeExtensions(result); err != nil {
+		return err
+	}
 	if !uniqueText(result.AvailableOutputStyles, 32, 128) || !slices.Contains(result.AvailableOutputStyles, result.OutputStyle) ||
 		len(result.Agents) == 0 || len(result.Agents) > 64 || len(result.Models) == 0 || len(result.Models) > 256 {
 		return incompatible()
