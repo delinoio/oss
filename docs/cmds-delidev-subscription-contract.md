@@ -74,7 +74,12 @@ admission, observation or credential write is accepted, no other process adopts
 the owner and no input replays. Doctor, account deletion, database restore and
 recovery treat any live lease, including a shared owner and its members, as
 unsettled and cannot clear or reuse its credentials; a restored image retains the
-owner/member set as quarantined evidence under a recovery fence. Structured logs
+owner/member set as quarantined evidence under a recovery fence. Worker recovery
+of a lost shared owner joins each member's process owner (a missing directory is
+accepted only for a member whose durable journal records no started execution),
+then always logs out the canonical profile and records that cleanup in an
+owner-level durable claim; it never infers either step from the founding
+member's per-session cleanup or identity flags. Structured logs
 (`subscription_lease_granted`, `subscription_member_finished`,
 `subscription_member_released_undelivered`, `subscription_shared_owner_lost`)
 carry account, lease, operation and counts only, never authentication, prompts or

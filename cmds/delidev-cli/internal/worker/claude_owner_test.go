@@ -616,3 +616,172 @@ func TestClaudeSharedOwnerStillFencesWhileTheTrackedOwnerHasRunnableMembers(t *t
 		t.Fatal("a founding lease replaced an owner with runnable members")
 	}
 }
+
+// claimMemberExecution records the durable started-execution claim a member
+// writes before its first process launch, without creating the process owner
+// directory that launch would have indexed.
+func claimMemberExecution(t *testing.T, member startedMember) {
+	t.Helper()
+	lease := member.profile.managedLease
+	lease.journal.ExecutionStarted = true
+	if err := writeJSON(lease.journalPath, lease.journal); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// lostOwnerState models the fenced account after a Worker restart: the local
+// owner is gone, its profile lock is released and only durable claims remain.
+func (f *sharedClaudeFixture) lostOwnerState(members []startedMember) *domain.SubscriptionState {
+	owner := members[0].profile.managedLease.response
+	state := &domain.SubscriptionState{RecoveryRequired: true, NativeProfileID: f.profile, OwnerMachineID: f.cred.MachineID, Generation: f.gen}
+	state.Lease = &domain.SubscriptionLease{ID: domain.ID(owner.LeaseId), OperationID: members[0].job, InstanceID: f.config.execution.Instance, Generation: f.gen, Revision: owner.LeaseRevision, Action: domain.SubscriptionExecute, Shared: true}
+	for _, member := range members {
+		state.Members = append(state.Members, domain.SubscriptionMember{LeaseID: domain.ID(member.profile.managedLease.response.LeaseId), OperationID: member.job, Revision: member.profile.managedLease.response.LeaseRevision, State: domain.SubscriptionMemberRunning, AdmittedAt: time.Now().UTC()})
+	}
+	gate := f.config.claudeOwners.gate(f.account)
+	gate.mu.Lock()
+	if gate.owner != nil {
+		_ = gate.owner.profile.close()
+	}
+	gate.mu.Unlock()
+	f.config.nativeClaudeInstallation = &f.installaton
+	f.mu.Lock()
+	f.recovering = true
+	f.mu.Unlock()
+	return state
+}
+
+func (f *sharedClaudeFixture) recover(state *domain.SubscriptionState) error {
+	client := delidevv1connect.NewSubscriptionServiceClient(http.DefaultClient, f.cred.Endpoint)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return runClaudeRecovery(ctx, f.config, client, f.cred, f.account, domain.Account{Subscription: state})
+}
+
+func (f *sharedClaudeFixture) lastFinish() *pb.FinishSubscriptionRequest {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.finishes[len(f.finishes)-1]
+}
+
+func TestClaudeSharedOwnerStartedRetainedMemberWithoutProcessDirectoryFencesTheOwner(t *testing.T) {
+	f := newSharedClaudeFixture(t, true)
+	members := f.start(t, 3)
+	claimMemberExecution(t, members[1])
+	if err := members[1].finish(false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(filepath.Join(f.config.Root, "processes", string(members[1].job))); err == nil {
+		t.Fatal("the fixture unexpectedly has a process owner directory")
+	}
+	if err := members[2].finish(true); err != nil {
+		t.Fatal(err)
+	}
+	if err := members[0].finish(true); err != nil {
+		t.Fatal(err)
+	}
+	last := f.lastFinish()
+	if last.FinishScope != pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_OWNER || last.CleanupConfirmed || last.Succeeded || last.NativeIdentity != nil {
+		t.Fatal("a started member with a missing process owner directory was treated as never started")
+	}
+}
+
+func TestClaudeSharedOwnerRetainedMemberWithUnreadableClaimIsNotProvenNeverStarted(t *testing.T) {
+	f := newSharedClaudeFixture(t, true)
+	members := f.start(t, 2)
+	if err := members[1].finish(false); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(members[1].profile.managedLease.journalPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := members[0].finish(true); err != nil {
+		t.Fatal(err)
+	}
+	if last := f.lastFinish(); last.CleanupConfirmed || last.NativeIdentity != nil {
+		t.Fatal("a member without a durable claim was treated as never started")
+	}
+}
+
+func TestClaudeSharedOwnerRecoveryFailsClosedForStartedMemberWithoutProcessDirectory(t *testing.T) {
+	f := newSharedClaudeFixture(t, true)
+	members := f.start(t, 3)
+	claimMemberExecution(t, members[2])
+	state := f.lostOwnerState(members)
+	f.mu.Lock()
+	before := len(f.finishes)
+	f.mu.Unlock()
+	if err := f.recover(state); err == nil {
+		t.Fatal("recovery treated a missing process owner directory of a started member as proof")
+	}
+	f.mu.Lock()
+	after := len(f.finishes)
+	f.mu.Unlock()
+	if after != before {
+		t.Fatal("recovery reported a Finish while a started member's closure was unproven")
+	}
+	if _, err := os.Lstat(f.profileRoot); err != nil {
+		t.Fatal("recovery touched the canonical profile before every member was joined", err)
+	}
+	// A member whose durable claim is unreadable is equally unproven.
+	if err := os.Remove(members[2].profile.managedLease.journalPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.recover(state); err == nil {
+		t.Fatal("recovery treated a member without a durable claim as never started")
+	}
+}
+
+func TestClaudeSharedOwnerRecoveryCleansCanonicalProfileAfterFoundingMemberFinishedNormally(t *testing.T) {
+	f := newSharedClaudeFixture(t, true)
+	members := f.start(t, 2)
+	// The founding member completes normally while another member still runs, so
+	// its own journal is already a clean per-session close with no identity.
+	if err := members[0].finish(true); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := security.ReadPrivate(members[0].profile.managedLease.journalPath, 16<<10)
+	var founder managedSubscriptionJournal
+	if err != nil || domain.Decode(raw, &founder) != nil || !founder.Cleanup || founder.NativeIdentity != "" || founder.State != managedReported {
+		t.Fatal("the founding member's journal is not a settled per-session close", err)
+	}
+	// The later member's owner Finish never committed: recovery owns the cleanup.
+	state := f.lostOwnerState(members)
+	if err := f.recover(state); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(f.profileRoot); !os.IsNotExist(err) {
+		t.Fatal("recovery skipped the canonical profile logout because the founding member had finished", err)
+	}
+	last := f.lastFinish()
+	if last.FinishScope != pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_OWNER || !last.CleanupConfirmed || last.Succeeded || last.NativeIdentity != nil {
+		t.Fatal("recovery did not report the owner cleanup")
+	}
+	raw, err = security.ReadPrivate(members[0].profile.managedLease.journalPath, 16<<10)
+	var settled managedSubscriptionJournal
+	if err != nil || domain.Decode(raw, &settled) != nil || !settled.OwnerProfileCleaned {
+		t.Fatal("recovery did not record the canonical profile cleanup durably", err)
+	}
+}
+
+func TestClaudeSharedOwnerRecoveryRetryAfterLostFinishDoesNotRepeatLogout(t *testing.T) {
+	f := newSharedClaudeFixture(t, true)
+	members := f.start(t, 2)
+	if err := members[0].finish(true); err != nil {
+		t.Fatal(err)
+	}
+	state := f.lostOwnerState(members)
+	f.mu.Lock()
+	f.loseOwnerAck = true
+	f.mu.Unlock()
+	if err := f.recover(state); err == nil {
+		t.Fatal("a lost owner Finish acknowledgment was reported as settled")
+	}
+	if _, err := os.Lstat(f.profileRoot); !os.IsNotExist(err) {
+		t.Fatal("the first recovery attempt did not clean the canonical profile", err)
+	}
+	// The retry must not need the (already removed) profile again.
+	if err := f.recover(state); err != nil {
+		t.Fatal("the recovery retry repeated a completed profile cleanup", err)
+	}
+}

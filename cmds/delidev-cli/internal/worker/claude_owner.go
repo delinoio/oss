@@ -365,15 +365,14 @@ func (g *claudeAccountGate) retire(owner *claudeSharedOwner, last *claudeSharedM
 	}
 	g.mu.Unlock()
 	for _, m := range retained {
-		directory := filepath.Join(config.Root, "processes", string(m.job))
-		if _, err := os.Stat(directory); errors.Is(err, os.ErrNotExist) {
-			continue
-		}
 		bounded, stop := context.WithTimeout(context.Background(), 30*time.Second)
-		err := process.ReconcileOwnerContext(bounded, filepath.Join(config.Root, "processes"), m.job)
+		err := settleClaudeMemberProcesses(bounded, config, m.lease.leaseID(), m.job, &m.lease.journal)
 		stop()
 		if err != nil {
 			contained = false
+			if config.Logger != nil {
+				config.Logger.WarnContext(context.Background(), "claude_shared_member_closure_unproven", "account_id", last.lease.account, "owner_lease_id", owner.lease.response.LeaseId, "lease_id", m.lease.response.LeaseId, "operation_id", m.job, "code", domain.SafeError(err).Code)
+			}
 		}
 	}
 	bounded, stop := context.WithTimeout(context.Background(), 30*time.Second)
@@ -416,15 +415,43 @@ func (g *claudeAccountGate) acquireLegacyHistory(ctx context.Context) (func(), e
 	}
 }
 
-// reconcileSharedClaudeMembers joins every process owner of a lost shared owner's
-// members. A member that never started a process has no owner directory.
-func reconcileSharedClaudeMembers(ctx context.Context, config Config, members []domain.SubscriptionMember) error {
+// claudeMemberExecutionClaimed reports whether a member's durable journal
+// records that its native execution may have launched processes. The claim is
+// written before the first launch, so a journal that says nothing started proves
+// no process owner exists. A journal that cannot be read, or that names another
+// lease or operation, proves nothing: the member is treated as started. The live
+// journal, when the caller holds one, can only add to the claim.
+func claudeMemberExecutionClaimed(config Config, leaseID, operation domain.ID, live *managedSubscriptionJournal) bool {
+	if live != nil && live.ExecutionStarted {
+		return true
+	}
+	raw, err := security.ReadPrivate(filepath.Join(config.Root, "managed-auth", string(leaseID)+".json"), 16<<10)
+	var journal managedSubscriptionJournal
+	if err != nil || domain.Decode(raw, &journal) != nil || journal.Lease != leaseID || journal.Operation != operation {
+		return true
+	}
+	return journal.ExecutionStarted
+}
+
+// settleClaudeMemberProcesses joins one member's process owner. A missing owner
+// directory is a never-started proof only for a member whose durable claim says
+// no execution started; for a started member it is recovery uncertainty, because
+// the descendants the directory indexed may still run. Joining a missing
+// directory fails closed with the process package's ownership error.
+func settleClaudeMemberProcesses(ctx context.Context, config Config, leaseID, operation domain.ID, live *managedSubscriptionJournal) error {
 	root := filepath.Join(config.Root, "processes")
+	if _, err := os.Lstat(filepath.Join(root, string(operation))); errors.Is(err, os.ErrNotExist) && !claudeMemberExecutionClaimed(config, leaseID, operation, live) {
+		return nil
+	}
+	return process.ReconcileOwnerContext(ctx, root, operation)
+}
+
+// reconcileSharedClaudeMembers joins every process owner of a lost shared owner's
+// members. A member whose durable claim says it never started a process has no
+// owner directory; a started member must still have one.
+func reconcileSharedClaudeMembers(ctx context.Context, config Config, members []domain.SubscriptionMember) error {
 	for _, member := range members {
-		if _, err := os.Stat(filepath.Join(root, string(member.OperationID))); errors.Is(err, os.ErrNotExist) {
-			continue
-		}
-		if err := process.ReconcileOwnerContext(ctx, root, member.OperationID); err != nil {
+		if err := settleClaudeMemberProcesses(ctx, config, member.LeaseID, member.OperationID, nil); err != nil {
 			return err
 		}
 	}

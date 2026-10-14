@@ -75,6 +75,10 @@ type managedSubscriptionJournal struct {
 	Action                                                  pb.SubscriptionAction
 	State                                                   managedJournalState
 	Cleanup, Refresh, Success                               bool
+	// OwnerProfileCleaned records that recovery of a lost shared owner already
+	// logged out the canonical profile. A shared owner never infers this from any
+	// member's per-session Cleanup or NativeIdentity flags.
+	OwnerProfileCleaned bool `json:"owner_profile_cleaned,omitempty"`
 }
 
 func subscriptionRPC(ctx context.Context, config Config, credential Credential) (delidevv1connect.SubscriptionServiceClient, func(), error) {

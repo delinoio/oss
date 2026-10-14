@@ -599,13 +599,20 @@ func runClaudeRecovery(ctx context.Context, config Config, client delidevv1conne
 			return subscription.Invalid()
 		}
 	}
-	if !journal.Cleanup || journal.NativeIdentity != "" {
+	// A lost shared owner always cleans the canonical profile: the founding
+	// member's per-session Cleanup and NativeIdentity say nothing about the
+	// owner's shared authentication, so only the owner-level claim counts.
+	profileCleanupPending := !journal.Cleanup || journal.NativeIdentity != ""
+	if original.Shared {
+		profileCleanupPending = !journal.OwnerProfileCleaned
+	}
+	if profileCleanupPending {
 		root, err := claudeProfileRoot(config.Root, credential, accountID, state.NativeProfileID)
 		if err != nil {
 			return err
 		}
 		_, statErr := os.Lstat(root)
-		noNative := !journal.NativeStarted && original.Action == domain.SubscriptionLogin && errors.Is(statErr, os.ErrNotExist)
+		noNative := !original.Shared && !journal.NativeStarted && original.Action == domain.SubscriptionLogin && errors.Is(statErr, os.ErrNotExist)
 		if !noNative {
 			if config.nativeClaudeInstallation == nil {
 				return subscription.Invalid()
@@ -628,6 +635,7 @@ func runClaudeRecovery(ctx context.Context, config Config, client delidevv1conne
 		journal.Success = false
 		journal.NativeIdentity = ""
 		journal.State = managedClosed
+		journal.OwnerProfileCleaned = original.Shared
 		if err := writeJSON(path, journal); err != nil {
 			return subscription.Invalid()
 		}

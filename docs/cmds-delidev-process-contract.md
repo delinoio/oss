@@ -9,8 +9,11 @@ reconciles or adopts a sibling's processes. The owner's own authentication
 operations use the founding lease's owner. A final owner containment joins every
 retained member's process owner before it reports confirmed cleanup, and recovery
 of a lost owner joins every member's process owner before touching the canonical
-profile. A missing owner directory means the member never started a process; it is
-not a failure and not a cleanup proof for a member that did. Logs carry owner,
+profile. A missing owner directory is a never-started proof only for a member whose
+durable journal records no started execution; for a member that recorded a
+started execution (or whose journal cannot be read) a missing or unreadable
+directory is unproven closure, so final containment reports unconfirmed cleanup
+and owner recovery stops before touching the canonical profile. Logs carry owner,
 lease, operation and counts only.
 
 ## Scope
