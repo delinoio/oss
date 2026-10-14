@@ -5,7 +5,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import React from "react";
 import {
   parseLockedUfbxVersion,
@@ -124,7 +124,7 @@ test("scene case children do not load the GLB validator", async () => {
       [
         "--experimental-loader",
         loader,
-        file,
+        process.platform === "win32" ? pathToFileURL(file).href : file,
         "--case",
         "fbx",
         "small",

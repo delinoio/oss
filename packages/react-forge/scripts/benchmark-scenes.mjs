@@ -21,7 +21,7 @@ import {
   sep,
 } from "node:path";
 import { monitorEventLoopDelay, performance } from "node:perf_hooks";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import React from "react";
 import manifest from "../package.json" with { type: "json" };
@@ -201,10 +201,19 @@ export function assertSample(sample, format, workload, bytes) {
 function runChild(script, args, signal) {
   return new Promise((resolveChild, reject) => {
     if (signal?.aborted) return reject(new Error("Scene benchmark cancelled."));
-    const child = spawn(process.execPath, [script, ...args], {
-      cwd: fileURLToPath(new URL("../", import.meta.url)),
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    // Windows ESM entry points require file URLs for drive-letter paths;
+    // POSIX Node CLI entry points expect filesystem paths.
+    const child = spawn(
+      process.execPath,
+      [
+        process.platform === "win32" ? pathToFileURL(script).href : script,
+        ...args,
+      ],
+      {
+        cwd: fileURLToPath(new URL("../", import.meta.url)),
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
     let stdout = "";
     let stderr = "";
     let failed;
