@@ -1295,6 +1295,23 @@ function Shell({
   );
 }
 
+const transportScopes = new WeakMap<Transport, string>();
+/**
+ * The product-route identity scope of a connection identity. A saved identity is
+ * its own scope; an unpaired connection is scoped by its transport object, so
+ * two different transports never share a route. The lookup is idempotent for a
+ * given transport, which keeps it safe to call during render.
+ */
+function routeScopeOf(identity: string | Transport): string {
+  if (typeof identity === "string") return identity;
+  let scope = transportScopes.get(identity);
+  if (!scope) {
+    scope = `transport:${newRequestId()}`;
+    transportScopes.set(identity, scope);
+  }
+  return scope;
+}
+
 // Reconnects for one server/device retain this memory and its mutation receipts
 // even when authentication creates a replacement transport. Selecting another
 // identity creates a fresh query, draft and mutation scope.
@@ -1365,11 +1382,7 @@ export function App({
                             <SessionNameEditorProvider>
                               <SessionInboxReadBoundary ready={connectionReady}>
                                 <Shell
-                                  routeScope={
-                                    typeof connectionIdentity === "string"
-                                      ? connectionIdentity
-                                      : "transport"
-                                  }
+                                  routeScope={routeScopeOf(connectionIdentity)}
                                   connectionReady={connectionReady}
                                   pairingAuthority={pairingAuthority}
                                   currentDeviceId={currentDeviceId}

@@ -641,6 +641,24 @@ describe("route fallbacks", () => {
     expect(value.reads.schedule).not.toHaveBeenCalled();
   });
 
+  it("ignores a selection when an unpaired connection is replaced by another transport", async () => {
+    const first = fixture();
+    const second = fixture();
+    route(`?screen=schedules&item=${first.schedule.id}`);
+    const view = render(<App transport={first.transport} />);
+    expect(
+      await screen.findByRole("heading", { name: "Restored schedule" }),
+    ).toBeTruthy();
+    view.rerender(<App transport={second.transport} />);
+    expect(
+      await screen.findByText(
+        "Select a schedule from the sidebar to inspect its details and retained history.",
+      ),
+    ).toBeTruthy();
+    await waitFor(() => expect(search().has("item")).toBe(false));
+    expect(second.reads.schedule).not.toHaveBeenCalled();
+  });
+
   it("keeps the Repository selection for the screen's own retry after a retryable read failure", async () => {
     const value = fixture();
     value.failure.code = Code.Unavailable;
