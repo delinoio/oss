@@ -148,9 +148,9 @@ pub struct SourceStore {
 /// Largest live source file read.
 pub const MAX_SOURCE_BYTES: u64 = 16 * 1024 * 1024;
 
-/// Marker Vite writes into the stub of an imported asset (for example a PNG)
-/// in builds before the Rolldown-based releases.
-const VITE_ASSET_STUB_PREFIX: &str = "__VITE_ASSET__";
+// The stub of an imported asset in builds before the Rolldown-based Vite
+// releases is `export default "__VITE_ASSET__<id>__"`. It is a single string
+// literal, so the string-literal rule of `is_generated_asset_module` covers it.
 
 /// Prefix of the file URL placeholder Rolldown-based Vite releases write into
 /// the stub of an emitted asset: `export default
@@ -170,66 +170,95 @@ const BINARY_ASSET_EXTENSIONS: &[&str] = &[
     "otf", "eot", "mp3", "mp4", "webm", "ogg", "wav", "flac", "aac", "pdf",
 ];
 
+/// Import query keys after which Vite turns a file into a string module: the
+/// file URL (`?url`, `?no-inline`), the inlined data URL (`?inline`) or the
+/// file text (`?raw`).
+const ASSET_QUERY_KEYS: &[&str] = &["raw", "url", "inline", "no-inline"];
+
+/// Splits a module path at its first `?` into the file part and the import
+/// query. A `#fragment` ends the query.
+fn split_query(path: &str) -> (&str, Option<&str>) {
+    match path.split_once('?') {
+        Some((file, rest)) => (file, Some(rest.split_once('#').map_or(rest, |(q, _)| q))),
+        None => (path, None),
+    }
+}
+
+/// True when the import query of `path` selects a string module (`?raw`,
+/// `?url`, `?inline` or `?no-inline`, alone or combined with other keys).
+fn has_asset_query(path: &str) -> bool {
+    split_query(path).1.is_some_and(|query| {
+        query.split('&').any(|part| {
+            let key = part.split_once('=').map_or(part, |(key, _)| key);
+            ASSET_QUERY_KEYS.contains(&key)
+        })
+    })
+}
+
 /// Returns the lowercase extension of the file name of `path`, ignoring any
-/// `?query` suffix, and whether the path carried a query.
-fn extension_of(path: &str) -> (Option<String>, bool) {
-    let (clean, has_query) = match path.split_once('?') {
-        Some((clean, _)) => (clean, true),
-        None => (path, false),
-    };
-    let name = clean.rsplit(['/', '\\']).next().unwrap_or(clean);
-    let extension = name
-        .rsplit_once('.')
+/// `?query` and `#fragment` suffix.
+fn extension_of(path: &str) -> Option<String> {
+    let (file, _) = split_query(path);
+    let name = file.rsplit(['/', '\\']).next().unwrap_or(file);
+    name.rsplit_once('.')
         .filter(|(stem, _)| !stem.is_empty())
-        .map(|(_, extension)| extension.to_ascii_lowercase());
-    (extension, has_query)
+        .map(|(_, extension)| {
+            extension
+                .split_once('#')
+                .map_or(extension, |(extension, _)| extension)
+                .to_ascii_lowercase()
+        })
+        .filter(|extension| !extension.is_empty())
 }
 
 /// True when `path` names a binary asset file (for example `logo.png`).
 pub fn is_binary_asset_path(path: &str) -> bool {
     extension_of(path)
-        .0
         .is_some_and(|extension| BINARY_ASSET_EXTENSIONS.contains(&extension.as_str()))
+}
+
+/// True when the module at `path` can be a bundler-generated asset module: it
+/// is not a JavaScript-family file, or its import query selects a string
+/// module. A script without such a query is ordinary code.
+fn is_asset_module_path(path: &str) -> bool {
+    has_asset_query(path)
+        || extension_of(path)
+            .is_none_or(|extension| !SCRIPT_EXTENSIONS.contains(&extension.as_str()))
 }
 
 /// True when `snapshot` is the module code a bundler generated for an imported
 /// asset instead of the text of the file at `path`.
 ///
-/// Recognized shapes, all of the form `export default <expression>`:
-/// - the `__VITE_ASSET__` marker string and the
-///   `import.meta.ROLLDOWN_FILE_URL_` placeholder, which stand for an emitted
-///   asset file;
-/// - a single string literal (an inlined `data:` URL, a `?url` path, the text
-///   of a `?raw` import or a `?inline` asset), when the path is not a
-///   JavaScript-family file or carries an import query such as `?raw`.
+/// Recognized shapes, all of the form `export default <expression>`, and only
+/// when the whole expression is the shape (anything after it, such as
+/// `+ suffix`, makes the module ordinary code):
+/// - a single string literal: the `"__VITE_ASSET__<id>__"` marker, an inlined
+///   `data:` URL, a `?url` path, or the text of a `?raw` or `?inline` import;
+/// - the `import.meta.ROLLDOWN_FILE_URL_<id>` placeholder of an emitted asset.
 ///
-/// A string-only default export in an ordinary script stays a source snapshot.
+/// Every shape additionally requires an asset path (see
+/// [`is_asset_module_path`]): a string-only default export in an ordinary
+/// script, including one that starts with the `__VITE_ASSET__` marker text,
+/// stays a source snapshot.
 pub fn is_generated_asset_module(path: &str, snapshot: &str) -> bool {
     let code = snapshot.trim();
     let code = code.strip_suffix(';').unwrap_or(code).trim_end();
-    let Some(expression) = code.strip_prefix("export default ") else {
+    let Some(expression) = code.strip_prefix("export default") else {
         return false;
     };
-    let expression = expression.trim_start();
-    if let Some(marker) = expression.strip_prefix('"')
-        && marker.starts_with(VITE_ASSET_STUB_PREFIX)
-    {
-        return true;
-    }
-    if let Some(placeholder) = expression.strip_prefix(ROLLDOWN_FILE_URL_PREFIX) {
-        return !placeholder.is_empty()
-            && placeholder
-                .chars()
-                .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '$');
-    }
-    if serde_json::from_str::<String>(expression).is_err() {
+    if !expression.starts_with(char::is_whitespace) {
         return false;
     }
-    let (extension, has_query) = extension_of(path);
-    has_query
-        || extension
-            .as_deref()
-            .is_none_or(|extension| !SCRIPT_EXTENSIONS.contains(&extension))
+    let expression = expression.trim_start();
+    let shape = if let Some(placeholder) = expression.strip_prefix(ROLLDOWN_FILE_URL_PREFIX) {
+        !placeholder.is_empty()
+            && placeholder
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '$')
+    } else {
+        serde_json::from_str::<String>(expression).is_ok()
+    };
+    shape && is_asset_module_path(path)
 }
 
 /// Returns the text of `bytes` when they are valid UTF-8 without NUL bytes.
@@ -754,6 +783,64 @@ mod tests {
             ("src/label.ts", "export default \"hello\"", false),
             ("src/Label.TSX", "export default \"hello\"", false),
             ("src/label.mjs", LONG_DATA_URL, false),
+            // The marker text is not enough: a script that happens to export
+            // the marker string is ordinary code, with or without a plain
+            // query, fragment or lookalike query key.
+            ("src/a.js", VITE_STUB, false),
+            ("src/a.ts", VITE_STUB, false),
+            ("src/a.vue", VITE_STUB, false),
+            ("src/a.js?v=1", VITE_STUB, false),
+            ("src/a.js?foo=raw", VITE_STUB, false),
+            ("src/a.js?rawish", VITE_STUB, false),
+            ("src/a.js#raw", VITE_STUB, false),
+            ("src/C#.js", VITE_STUB, false),
+            (
+                "src/a.js",
+                "export default \"__VITE_ASSET__ and then some text\";",
+                false,
+            ),
+            // The Rolldown placeholder follows the same path rule.
+            (
+                "src/a.js",
+                "export default import.meta.ROLLDOWN_FILE_URL_ref1",
+                false,
+            ),
+            (
+                "src/a.js?url",
+                "export default import.meta.ROLLDOWN_FILE_URL_ref1",
+                true,
+            ),
+            // An asset import query makes a script path an asset module, alone
+            // or combined with other keys, before a fragment, or with a value.
+            ("src/a.js?raw", VITE_STUB, true),
+            ("src/a.js?url", VITE_STUB, true),
+            ("src/a.js?inline", VITE_STUB, true),
+            ("src/a.js?no-inline", VITE_STUB, true),
+            ("src/a.js?worker&url", VITE_STUB, true),
+            ("src/a.js?raw&v=1", VITE_STUB, true),
+            ("src/a.js?raw#frag", VITE_STUB, true),
+            ("src/a.js?url=1", VITE_STUB, true),
+            // A non-script path needs no query; a fragment or other query does
+            // not change that.
+            ("src/logo.png?v=2", VITE_STUB, true),
+            ("src/icon.svg#frag", VITE_STUB, true),
+            ("src/Makefile", VITE_STUB, true),
+            // Only the complete expression counts, not a prefix of it.
+            (
+                "src/logo.png",
+                "export default \"__VITE_ASSET__abc__\" + suffix",
+                false,
+            ),
+            (
+                "src/logo.png",
+                "export default \"__VITE_ASSET__abc__\"; run()",
+                false,
+            ),
+            ("src/logo.png", "export default \"__VITE_ASSET__abc", false),
+            ("src/logo.png", "export default \"a\", \"b\"", false),
+            ("src/logo.png", "export defaulted \"a\"", false),
+            // Whitespace between the keyword and the expression is free.
+            ("src/logo.png", "export default\n\"/logo.png\"", true),
             // Other module code is never an asset module.
             ("src/icon.svg", "export default {}", false),
             ("src/icon.svg", "export default \"a\" + b", false),
@@ -776,6 +863,10 @@ mod tests {
             ("src/logo.png", true),
             ("src/LOGO.PNG", true),
             ("src/font.woff2?v=1", true),
+            ("src/logo.png#frag", true),
+            ("src/logo.png?raw#frag", true),
+            ("src/C#.png", true),
+            ("src/main.js?url.png", false),
             ("src/main.js", false),
             ("src/icon.svg", false),
             ("src/png", false),
@@ -837,6 +928,12 @@ mod tests {
             ("icon.svg", DataUrlStub, ChangedText, (false, false, false)),
             ("logo.png", DataUrlStub, Binary, (false, false, false)),
             ("note.txt", RawStub, MatchingText, (false, false, false)),
+            // A script whose snapshot is the asset marker text is ordinary
+            // code: compared with the live file, content kept.
+            ("a.js", MarkerStub, MatchingText, (true, true, true)),
+            ("a.js", MarkerStub, Removed, (true, true, true)),
+            ("a.js", FileUrlStub, ChangedText, (true, true, true)),
+            ("a.js", DataUrlStub, ChangedText, (true, true, true)),
         ];
         for (file, snapshot, live, expected) in cases {
             let dir = tempfile::tempdir().unwrap();
