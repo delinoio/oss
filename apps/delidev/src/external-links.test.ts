@@ -54,10 +54,17 @@ it("keeps only the unfinished buffer-ending URL inert", () => {
     text: second,
     url: second,
   });
-  expect(splitLinkedText(`See ${second}.`, false).at(-2)).toEqual({
-    text: second,
-    url: second,
-  });
+  expect(splitLinkedText(`See ${second}.`, false)).toEqual([
+    { text: `See ${second}.` },
+  ]);
+  expect(splitLinkedText(`See (${second}).`, false)).toEqual([
+    { text: `See (${second}).` },
+  ]);
+  expect(splitLinkedText(`See ${second}. Next`, false)).toEqual([
+    { text: "See " },
+    { text: second, url: second },
+    { text: ". Next" },
+  ]);
 });
 
 it("activates only the token under the pointer and joins full-width wrapped rows", () => {

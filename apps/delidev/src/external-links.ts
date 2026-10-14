@@ -77,6 +77,10 @@ export interface UrlToken {
   url: string;
 }
 
+interface UrlMatch extends UrlToken {
+  rawEnd: number;
+}
+
 const candidate = /https?:\/\/[^\s<>"'`\\^{|}]+/giu;
 const closers: Record<string, string> = { ")": "(", "]": "[" };
 const trailing = new Set([".", ",", ";", ":", "!", "?", "'", '"']);
@@ -109,17 +113,26 @@ function trimmedEnd(text: string): number {
  * unbalanced closing brackets stay outside the URL. The native host repeats
  * validation; this detection only decides which text is activatable.
  */
-export function findUrlTokens(text: string): UrlToken[] {
-  const tokens: UrlToken[] = [];
+function findUrlMatches(text: string): UrlMatch[] {
+  const tokens: UrlMatch[] = [];
   if (text.length > 1_000_000) return tokens;
   for (const match of text.matchAll(candidate)) {
     const begin = match.index!;
     const raw = match[0];
     const url = raw.slice(0, trimmedEnd(raw));
     if (url.length > 2048 || !validHttpUrl(url)) continue;
-    tokens.push({ start: begin, end: begin + url.length, url });
+    tokens.push({
+      start: begin,
+      end: begin + url.length,
+      rawEnd: begin + raw.length,
+      url,
+    });
   }
   return tokens;
+}
+
+export function findUrlTokens(text: string): UrlToken[] {
+  return findUrlMatches(text).map(({ rawEnd: _rawEnd, ...token }) => token);
 }
 
 export function validHttpUrl(value: string): boolean {
@@ -146,8 +159,8 @@ export function splitLinkedText(
 ): ({ text: string } | { text: string; url: string })[] {
   const parts: ({ text: string } | { text: string; url: string })[] = [];
   let offset = 0;
-  for (const token of findUrlTokens(text)) {
-    if (!complete && token.end === text.length) continue;
+  for (const token of findUrlMatches(text)) {
+    if (!complete && token.rawEnd === text.length) continue;
     if (token.start > offset)
       parts.push({ text: text.slice(offset, token.start) });
     parts.push({ text: text.slice(token.start, token.end), url: token.url });
