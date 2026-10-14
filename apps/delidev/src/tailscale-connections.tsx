@@ -578,6 +578,13 @@ function DeviceInventory({
   // successful running inventory, so rerenders, Strict Mode replay, focus,
   // reconnect and Refresh never restart or extend it.
   const [queue, setQueue] = useState<readonly QueuedPeer[]>();
+  // The visit queue alone owns "this peer was checked automatically in this
+  // visit": a peer is claimed the moment its automatic read is handed out and
+  // settled when that read ended. Both facts live here, not in the peer rows,
+  // the check query cache (gcTime 0) or the live and active flags, so a hidden
+  // row, a failed discovery refresh or a recovery never starts, repeats or
+  // forgets an automatic read.
+  const [claimed, setClaimed] = useState<readonly string[]>([]);
   const [settled, setSettled] = useState<readonly string[]>([]);
   useEffect(() => {
     if (queue || !discovery.isSuccess || discovery.isFetching) return;
@@ -587,6 +594,11 @@ function DeviceInventory({
       .map(({ id, host }) => ({ id, host }));
     setQueue(next);
   }, [queue, discovery.isSuccess, discovery.isFetching, inventory]);
+  const markClaimed = useCallback(
+    (id: string) =>
+      setClaimed((prev) => (prev.includes(id) ? prev : [...prev, id])),
+    [],
+  );
   const markSettled = useCallback(
     (id: string) =>
       setSettled((prev) => (prev.includes(id) ? prev : [...prev, id])),
@@ -636,6 +648,9 @@ function DeviceInventory({
   const activeId = waiting
     ? undefined
     : queue?.find((q) => !settled.includes(q.id) && live(q))?.id;
+  useEffect(() => {
+    if (activeId) markClaimed(activeId);
+  }, [activeId, markClaimed]);
   const original = decode<Approval[]>(operations.data?.documentJson) ?? [];
   const retained = accepted
     ? [accepted, ...original.filter((a) => a.id !== accepted.id)]
@@ -696,18 +711,21 @@ function DeviceInventory({
                 const queued = queue?.find(
                   (q) => !dropped.includes(q.id) && queuedAndEligible(q, peer),
                 );
-                const active = queued !== undefined && queued.id === activeId;
+                // A claimed peer keeps its automatic check, in flight or
+                // settled, whether or not it is currently live; the queue
+                // waits for its read to end and then marks it settled.
+                const automatic =
+                  queued !== undefined &&
+                  (queued.id === activeId || claimed.includes(queued.id));
+                const awaiting = automatic && !settled.includes(peer.id);
                 return (
                   <PeerRow
                     key={peer.id}
                     peer={peer}
                     workerEnabled={access?.state === "ready"}
                     choose={(role) => setSelected({ peer, role })}
-                    automatic={
-                      active ||
-                      (queued !== undefined && settled.includes(peer.id))
-                    }
-                    active={active}
+                    automatic={automatic}
+                    awaiting={awaiting}
                     onSettled={markSettled}
                     onReading={markReading}
                   />
@@ -873,7 +891,7 @@ function PeerRow({
   choose,
   workerEnabled,
   automatic,
-  active,
+  awaiting,
   onSettled,
   onReading,
 }: {
@@ -882,8 +900,8 @@ function PeerRow({
   workerEnabled: boolean;
   // The visit queue has started (or finished) the automatic check of this peer.
   automatic: boolean;
-  // This peer is the one automatic check currently owning the queue.
-  active: boolean;
+  // The queue started this peer's automatic check and has not seen it end yet.
+  awaiting: boolean;
   onSettled: (id: string) => void;
   // Reports whether this row has a check read in flight.
   onReading: (id: string, busy: boolean) => void;
@@ -954,13 +972,15 @@ function PeerRow({
     transport,
     peer.id,
   ]);
-  // The active automatic check is done once its read is no longer in flight and
+  // The awaited automatic check is done once its read is no longer in flight and
   // has produced a result or an error (including a check that a manual click
-  // already finished); the queue then advances to the next peer.
+  // already finished); the queue then advances to the next peer. This holds
+  // while discovery is failing and the row is hidden, so that result is still
+  // reported to the queue.
   const settledRead = !check.isFetching && check.status !== "pending";
   useEffect(() => {
-    if (active && settledRead) onSettled(peer.id);
-  }, [active, settledRead, onSettled, peer.id]);
+    if (awaiting && settledRead) onSettled(peer.id);
+  }, [awaiting, settledRead, onSettled, peer.id]);
   useEffect(() => {
     onReading(peer.id, check.isFetching);
   }, [check.isFetching, onReading, peer.id]);

@@ -112,6 +112,8 @@ interface Options {
   holdChecks?: boolean;
   // Peers whose check fails with an ordinary unavailable error.
   failChecks?: string[];
+  // Every discovery read fails while this is true (read live by the fixture).
+  discoveryFails?: boolean;
   strict?: boolean;
 }
 function fixture(options: Options = {}) {
@@ -183,6 +185,8 @@ function fixture(options: Options = {}) {
       },
       discoverTailscale: () => {
         calls.discover();
+        if (options.discoveryFails)
+          throw new ConnectError("Discovery unavailable", Code.Unavailable);
         return {
           documentJson: encode({
             state: "running",
@@ -1127,4 +1131,233 @@ it("discards the result of a read that was in flight when the peer changed", asy
   await within(row).findByText(/Unavailable or blocked/);
   expect(within(row).queryByRole("button", { name: "Connect" })).toBeNull();
   expect(mutations(calls)).toEqual(quiet);
+});
+
+// Visit-queue ownership matrix (issue 3687 review): the visit queue alone owns
+// whether a peer was already checked automatically in this visit. Row mounting,
+// the gcTime 0 check cache and the live or active flags never decide it, so no
+// combination of check state and recovery event may repeat, restart or lose an
+// automatic check.
+enum QueueState {
+  InFlight = "an automatic check in flight",
+  InFlightFailing = "an automatic check in flight that then fails",
+  Success = "a settled successful automatic check",
+  Failure = "a settled failed automatic check",
+  NeverStarted = "an automatic check that never started",
+}
+enum QueueEvent {
+  DiscoveryError = "a failed Refresh that recovers",
+  RepeatedDiscoveryError = "repeated failed Refreshes that recover",
+  AccessError = "a failed access read that recovers",
+  PeerChange = "a peer that goes offline, moves host and returns",
+  Reentry = "leaving and reopening the category",
+  Refresh = "an unchanged Refresh",
+  // The held read ends in the middle of the event, while the rows are hidden or
+  // the peer is invalidated, before the event recovers.
+  DiscoveryErrorReadEnds = "a failed Refresh during which the read ends",
+  RepeatedDiscoveryErrorReadEnds = "repeated failed Refreshes during which the read ends",
+  PeerChangeReadEnds = "a peer that goes offline, whose read ends, and returns",
+}
+const readEndsMidEvent = (event: QueueEvent) =>
+  event === QueueEvent.DiscoveryErrorReadEnds ||
+  event === QueueEvent.RepeatedDiscoveryErrorReadEnds ||
+  event === QueueEvent.PeerChangeReadEnds;
+const queueStates = Object.values(QueueState);
+const queueEvents = Object.values(QueueEvent);
+const holding = (state: QueueState) =>
+  state === QueueState.InFlight ||
+  state === QueueState.InFlightFailing ||
+  state === QueueState.NeverStarted;
+const failing = (state: QueueState) =>
+  state === QueueState.InFlightFailing || state === QueueState.Failure;
+const pause = (ms: number) =>
+  act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  });
+
+// Automatic reads one visit sends, in order, once nothing is held back.
+function expectedQueueChecks(state: QueueState, event: QueueEvent) {
+  const visit = ["peer-1", "peer-2"];
+  if (event === QueueEvent.Reentry)
+    return holding(state)
+      ? ["peer-1", "peer-1", "peer-2"]
+      : [...visit, ...visit];
+  // A peer that left the queue never returns to it in this visit.
+  if (
+    (event === QueueEvent.PeerChange ||
+      event === QueueEvent.PeerChangeReadEnds) &&
+    state === QueueState.NeverStarted
+  )
+    return ["peer-1"];
+  return visit;
+}
+
+async function endReads(f: ReturnType<typeof fixture>) {
+  for (let i = 0; i < 4; i += 1) {
+    f.release("peer-1");
+    f.release("peer-2");
+    await idle();
+  }
+  await pause(100);
+}
+
+async function applyQueueEvent(
+  event: QueueEvent,
+  options: Options,
+  f: ReturnType<typeof fixture>,
+  subject: typeof peer,
+) {
+  const { calls } = f;
+  const peers = (change: Partial<typeof peer>) =>
+    [peer, second].map((p) => (p.id === subject.id ? { ...p, ...change } : p));
+  switch (event) {
+    case QueueEvent.DiscoveryError:
+    case QueueEvent.RepeatedDiscoveryError:
+    case QueueEvent.DiscoveryErrorReadEnds:
+    case QueueEvent.RepeatedDiscoveryErrorReadEnds:
+      options.discoveryFails = true;
+      await refresh(calls);
+      if (readEndsMidEvent(event)) await endReads(f);
+      if (
+        event === QueueEvent.RepeatedDiscoveryError ||
+        event === QueueEvent.RepeatedDiscoveryErrorReadEnds
+      ) {
+        await refresh(calls);
+        await refresh(calls);
+      }
+      options.discoveryFails = false;
+      await refresh(calls);
+      return;
+    case QueueEvent.AccessError: {
+      const reads = () => calls.getAccess.mock.calls.length;
+      options.readFails = true;
+      let before = reads();
+      await waitFor(() => expect(reads()).toBeGreaterThan(before), {
+        timeout: 4000,
+      });
+      await pause(50);
+      options.readFails = false;
+      before = reads();
+      await waitFor(() => expect(reads()).toBeGreaterThan(before), {
+        timeout: 4000,
+      });
+      await pause(50);
+      return;
+    }
+    case QueueEvent.PeerChange:
+    case QueueEvent.PeerChangeReadEnds:
+      options.peers = peers({ online: false });
+      await refresh(calls);
+      if (readEndsMidEvent(event)) await endReads(f);
+      options.peers = peers({ host: "moved.example" });
+      await refresh(calls);
+      options.peers = [peer, second];
+      await refresh(calls);
+      return;
+    case QueueEvent.Reentry:
+      category(AWAY);
+      await waitFor(() =>
+        expect(
+          screen.queryByRole("heading", { name: "Devices on your tailnet" }),
+        ).toBeNull(),
+      );
+      category(TAILSCALE);
+      await rowOf("Fixture peer");
+      return;
+    case QueueEvent.Refresh:
+      await refresh(calls);
+      await refresh(calls);
+      return;
+  }
+}
+
+for (const state of queueStates)
+  for (const event of queueEvents)
+    if (holding(state) || !readEndsMidEvent(event))
+      it(`sends each automatic check once per visit for ${state} across ${event}`, async () => {
+        const options: Options = {
+          peers: [peer, second],
+          holdChecks: holding(state),
+          failChecks: failing(state) ? ["peer-1"] : [],
+        };
+        const f = fixture(options);
+        category(TAILSCALE);
+        const first = await rowOf("Fixture peer");
+        const other = await rowOf("Second peer");
+        if (holding(state))
+          await waitFor(() => expect(checkedIds(f.calls)).toEqual(["peer-1"]));
+        else {
+          await within(first).findByText(
+            failing(state) ? /Unavailable or blocked/ : /Accepting requests/,
+          );
+          await within(other).findByText(/Accepting requests/);
+        }
+        const subject = state === QueueState.NeverStarted ? second : peer;
+        await applyQueueEvent(event, options, f, subject);
+        // Nothing was sent by the event itself, except a new visit's first read.
+        if (event !== QueueEvent.Reentry && !readEndsMidEvent(event))
+          expect(checkedIds(f.calls)).toEqual(
+            holding(state) ? ["peer-1"] : ["peer-1", "peer-2"],
+          );
+        await endReads(f);
+        expect(checkedIds(f.calls)).toEqual(expectedQueueChecks(state, event));
+        if (event !== QueueEvent.Reentry)
+          expect(f.checkState.maxActive).toBe(1);
+        // The displayed outcome follows the one automatic read of this visit.
+        const row = await rowOf(subject.name);
+        const changed =
+          event === QueueEvent.PeerChange ||
+          event === QueueEvent.PeerChangeReadEnds;
+        if (changed) {
+          expect(within(row).getByText(/Not checked/)).toBeTruthy();
+          expect(within(row).queryByRole("alert")).toBeNull();
+        } else if (failing(state) && subject.id === "peer-1") {
+          expect(within(row).getByText(/Unavailable or blocked/)).toBeTruthy();
+          expect(within(row).getByRole("alert")).toBeTruthy();
+        } else {
+          expect(within(row).getByText(/Accepting requests/)).toBeTruthy();
+        }
+        // Only an explicit Check sends another read, and only for its peer.
+        if (failing(state) && !changed && event !== QueueEvent.Reentry) {
+          options.failChecks = [];
+          fireEvent.click(checkButton(row));
+          await waitFor(() => expect(checkedIds(f.calls)).toHaveLength(3));
+          f.release("peer-1");
+          await within(row).findByText(/Accepting requests/);
+          expect(checkedIds(f.calls)).toEqual([
+            ...expectedQueueChecks(state, event),
+            "peer-1",
+          ]);
+        }
+        expect(mutations(f.calls)).toEqual(quiet);
+      }, 30000);
+
+it("keeps the failed result of a hidden in-flight read when discovery recovers", async () => {
+  const options: Options = {
+    peers: [peer, second],
+    holdChecks: true,
+    failChecks: ["peer-1"],
+  };
+  const f = fixture(options);
+  category(TAILSCALE);
+  await waitFor(() => expect(checkedIds(f.calls)).toEqual(["peer-1"]));
+  options.discoveryFails = true;
+  await refresh(f.calls);
+  // The read ends while the rows are hidden by the failed Refresh.
+  f.release("peer-1");
+  await pause(100);
+  options.discoveryFails = false;
+  await refresh(f.calls);
+  const first = await rowOf("Fixture peer");
+  expect(within(first).getByText(/Unavailable or blocked/)).toBeTruthy();
+  expect(within(first).getByRole("alert")).toBeTruthy();
+  await waitFor(() =>
+    expect(checkedIds(f.calls)).toEqual(["peer-1", "peer-2"]),
+  );
+  f.release("peer-2");
+  await within(await rowOf("Second peer")).findByText(/Accepting requests/);
+  await pause(100);
+  expect(checkedIds(f.calls)).toEqual(["peer-1", "peer-2"]);
+  expect(f.checkState.maxActive).toBe(1);
+  expect(mutations(f.calls)).toEqual(quiet);
 });
