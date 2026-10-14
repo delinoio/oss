@@ -41,6 +41,7 @@ describe("DocsSiteSwitcher", () => {
       "clibox",
       "pnport",
       "React Forge",
+      "bundlewhy",
     ]);
     expect(menu.getAttribute("id")).toBe(trigger.getAttribute("aria-controls"));
     expect(items[1]?.getAttribute("aria-current")).toBe("page");
@@ -53,6 +54,7 @@ describe("DocsSiteSwitcher", () => {
       "/clibox/",
       "/pnport/",
       "/react-forge/",
+      "/bundlewhy/",
     ]);
   });
 
@@ -185,11 +187,32 @@ describe("DocsSiteSwitcher", () => {
     }
   });
 
-  it("reaches React Forge at the end and restores its trigger on Escape", () => {
-    renderSwitcher(DocumentationSiteId.ReactForge);
-    const trigger = screen.getByRole("button", { name: "React Forge" });
+  it.each([
+    "/bundlewhy",
+    "/bundlewhy/",
+    "/bundlewhy/supported-engines",
+    "/bundlewhy/troubleshooting/",
+  ])("selects bundlewhy for %s", (pathname) => {
+    renderSwitcher(getDocumentationSiteForPathname(pathname));
+    fireEvent.click(screen.getByRole("button", { name: "bundlewhy" }));
+    const selected = screen.getByRole("menuitem", { name: "bundlewhy" });
+    expect(selected.getAttribute("aria-current")).toBe("page");
+    expect(document.activeElement).toBe(selected);
+  });
+
+  it.each(["/bundlewhy-extra", "/bundlewhyish/limitations"])(
+    "does not select bundlewhy for unrelated path %s",
+    (pathname) =>
+      expect(getDocumentationSiteForPathname(pathname)).toBe(
+        DocumentationSiteId.PublicDocs,
+      ),
+  );
+
+  it("reaches bundlewhy at the end and restores its trigger on Escape", () => {
+    renderSwitcher(DocumentationSiteId.Bundlewhy);
+    const trigger = screen.getByRole("button", { name: "bundlewhy" });
     fireEvent.keyDown(trigger, { key: "ArrowUp" });
-    const item = screen.getByRole("menuitem", { name: "React Forge" });
+    const item = screen.getByRole("menuitem", { name: "bundlewhy" });
     expect(document.activeElement).toBe(item);
     fireEvent.keyDown(item, { key: "Home" });
     expect(document.activeElement).toBe(screen.getAllByRole("menuitem")[0]);
