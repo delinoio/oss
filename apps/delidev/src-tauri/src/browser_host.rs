@@ -107,6 +107,15 @@ pub enum PageAdmission {
     Admitted,
     Replayed,
 }
+/// Where a page command failed relative to operation admission.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PageCommandStage {
+    /// Rejected before admission; nothing changed.
+    NotAdmitted(NativeFailure),
+    /// Failed after admission; only observing the original operation settles
+    /// it.
+    Uncertain(NativeFailure),
+}
 #[derive(Clone)]
 struct PageOperation {
     request: PageRequest,
@@ -1135,6 +1144,63 @@ impl BrowserHost {
             state,
             receipt: key.and_then(|key| self.page_receipt(&key)),
         })
+    }
+
+    /// Blocking worker only. Runs `prepare_pages` and, for an identical replay,
+    /// reads the original operation's retained result. A failure before the
+    /// operation is admitted or replayed is `NotAdmitted` and proves nothing
+    /// changed; once admission succeeded, a failed replay observation is
+    /// `Uncertain` because the original mutation may already be committed.
+    /// Observing the same operation ID later settles it. Returns `None` for a
+    /// fresh admission, whose result is produced when cleanup finishes.
+    pub fn prepare_page_command(
+        &self,
+        owner: &str,
+        scope: Option<SavedConnection>,
+        record: &ProfileRecord,
+        request: &PageRequest,
+        publish: impl FnOnce(browser::PrivateWrite, &mut bool) -> Result<()>,
+    ) -> std::result::Result<Option<PageInventory>, PageCommandStage> {
+        let admission = self
+            .prepare_pages(owner, scope.clone(), record, request, publish)
+            .map_err(PageCommandStage::NotAdmitted)?;
+        self.observe_admitted_pages(admission, owner, scope.as_ref(), record, request)
+    }
+
+    /// Blocking worker only. Post-admission step of `prepare_page_command`;
+    /// it never repeats the mutation.
+    fn observe_admitted_pages(
+        &self,
+        admission: PageAdmission,
+        owner: &str,
+        scope: Option<&SavedConnection>,
+        record: &ProfileRecord,
+        request: &PageRequest,
+    ) -> std::result::Result<Option<PageInventory>, PageCommandStage> {
+        match admission {
+            PageAdmission::Admitted => Ok(None),
+            PageAdmission::Replayed => {
+                // The original operation owns its result; read it without
+                // repeating the mutation.
+                let observe = PageRequest {
+                    action: PageAction::Observe,
+                    operation_id: request.operation_id.clone(),
+                    url: None,
+                    page_id: None,
+                };
+                match self.read_pages(owner, scope, record, &observe) {
+                    Ok(inventory) => Ok(Some(inventory)),
+                    Err(failure) => {
+                        tracing::warn!(
+                            ?failure,
+                            profile_id = %record.id,
+                            "replayed browser page operation could not be observed; outcome is uncertain"
+                        );
+                        Err(PageCommandStage::Uncertain(failure))
+                    }
+                }
+            }
+        }
     }
 
     /// Blocking worker only. Admission records the original operation before
@@ -5546,6 +5612,100 @@ esac
             )
             .unwrap();
         assert!(observed.receipt.is_none());
+    }
+
+    #[test]
+    fn page_command_replay_returns_original_receipt_without_second_mutation() {
+        let (_temp, host, record) = storage_fixture();
+        let request = page_request(PageAction::Create, Some("https://fixture.test/a"), None);
+        // A fresh admission yields no inventory; the UI loop finishes it.
+        assert!(matches!(
+            host.prepare_page_command(OWNER, None, &record, &request, commit_fixture),
+            Ok(None)
+        ));
+        let replayed = host
+            .prepare_page_command(OWNER, None, &record, &request, commit_fixture)
+            .unwrap()
+            .unwrap();
+        let receipt = replayed.receipt.unwrap();
+        assert_eq!(receipt.phase, PagePhase::CleanupPending);
+        assert!(receipt.metadata_committed);
+        assert_eq!(replayed.state.tabs.tabs.len(), 1);
+        assert_eq!(inventory(&host, &record).tabs.tabs.len(), 1);
+    }
+
+    #[test]
+    fn page_command_pre_admission_rejection_stays_not_admitted() {
+        let (_temp, host, record) = storage_fixture();
+        let request = page_request(PageAction::Create, Some("https://fixture.test/a"), None);
+        assert!(matches!(
+            host.prepare_page_command(OWNER, None, &record, &request, commit_fixture),
+            Ok(None)
+        ));
+        // The same identity with a different request is rejected, not replayed.
+        let mut changed = request.clone();
+        changed.url = Some("https://fixture.test/changed".into());
+        assert_eq!(
+            host.prepare_page_command(OWNER, None, &record, &changed, commit_fixture)
+                .err(),
+            Some(PageCommandStage::NotAdmitted(NativeFailure::InvalidInput))
+        );
+        // A different mutation is serialized behind the pending one.
+        let other = page_request(PageAction::Create, Some("https://fixture.test/b"), None);
+        assert_eq!(
+            host.prepare_page_command(OWNER, None, &record, &other, commit_fixture)
+                .err(),
+            Some(PageCommandStage::NotAdmitted(NativeFailure::Busy))
+        );
+        // A stopped host rejects before admission.
+        host.stopping.store(true, Ordering::Release);
+        let late = page_request(PageAction::Create, Some("https://fixture.test/c"), None);
+        assert_eq!(
+            host.prepare_page_command(OWNER, None, &record, &late, commit_fixture)
+                .err(),
+            Some(PageCommandStage::NotAdmitted(NativeFailure::Stopped))
+        );
+    }
+
+    #[test]
+    fn page_command_replay_observation_failure_is_uncertain_and_observable_later() {
+        let (_temp, host, record) = storage_fixture();
+        let request = page_request(PageAction::Create, Some("https://fixture.test/a"), None);
+        assert_eq!(
+            host.prepare_pages(OWNER, None, &record, &request, commit_fixture),
+            Ok(PageAdmission::Admitted)
+        );
+        let key = operation_key(OWNER, &record.id, request.operation_id.as_deref().unwrap());
+        // The identical request is admitted as a replay, then stop() races in
+        // before the replay observation runs.
+        let replay = host
+            .prepare_pages(OWNER, None, &record, &request, commit_fixture)
+            .unwrap();
+        assert_eq!(replay, PageAdmission::Replayed);
+        host.stopping.store(true, Ordering::Release);
+        assert_eq!(
+            host.observe_admitted_pages(replay, OWNER, None, &record, &request)
+                .err(),
+            Some(PageCommandStage::Uncertain(NativeFailure::Stopped))
+        );
+        // The retained operation and its committed receipt are untouched.
+        assert!(host.page_receipt(&key).unwrap().metadata_committed);
+        host.stopping.store(false, Ordering::Release);
+        let observed = host
+            .read_pages(
+                OWNER,
+                None,
+                &record,
+                &PageRequest {
+                    action: PageAction::Observe,
+                    operation_id: request.operation_id.clone(),
+                    url: None,
+                    page_id: None,
+                },
+            )
+            .unwrap();
+        assert!(observed.receipt.unwrap().metadata_committed);
+        assert_eq!(observed.state.tabs.tabs.len(), 1);
     }
 
     #[test]
