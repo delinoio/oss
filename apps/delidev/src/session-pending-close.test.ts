@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   PendingCloseRegistry,
   type PendingCloseChannel,
@@ -242,6 +242,9 @@ describe("pending Close ownership across product windows", () => {
       close() {}
     }
 
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
     it("resolves only after every sibling recorded the hold", async () => {
       const bus = new QueuedBus();
       const first = new PendingCloseRegistry({
@@ -262,43 +265,95 @@ describe("pending Close ownership across product windows", () => {
       expect(second.has("k")).toBe(false);
       bus.flush();
       await Promise.resolve();
-      await Promise.resolve();
+      expect(second.has("k")).toBe(true);
+      // Without Web Locks the Close still waits out the discovery period.
+      expect(synced).toBe(false);
+      await vi.advanceTimersByTimeAsync(101);
+      expect(synced).toBe(true);
+    });
+
+    it("waits for a live window whose handshake has not arrived", async () => {
+      const held = new Set<string>();
+      const locks: PendingCloseLocks = {
+        request: (name, callback) => {
+          held.add(name);
+          return callback().finally(() => held.delete(name));
+        },
+        query: async () => ({ held: [...held].map((name) => ({ name })) }),
+      };
+      const bus = new QueuedBus();
+      const first = new PendingCloseRegistry({
+        channel: bus.endpoint(),
+        locks,
+        window: "a",
+      });
+      // The sibling exists and holds its liveness lock, but its Query has not
+      // been delivered, so "a" has never seen it on the channel.
+      const second = new PendingCloseRegistry({
+        channel: bus.endpoint(),
+        locks,
+        window: "b",
+      });
+      bus.queue.length = 0;
+      let synced = false;
+      void first.hold("k", {}).then(() => (synced = true));
+      await vi.advanceTimersByTimeAsync(50);
+      expect(synced).toBe(false);
+      bus.flush();
+      await vi.advanceTimersByTimeAsync(0);
       expect(second.has("k")).toBe(true);
       expect(synced).toBe(true);
     });
 
+    it("waits out discovery for an unintroduced window without Web Locks", async () => {
+      const bus = new QueuedBus();
+      const first = new PendingCloseRegistry({
+        channel: bus.endpoint(),
+        locks: null,
+        window: "a",
+      });
+      new PendingCloseRegistry({
+        channel: bus.endpoint(),
+        locks: null,
+        window: "b",
+      });
+      bus.queue.length = 0;
+      let synced = false;
+      void first.hold("k", {}).then(() => (synced = true));
+      await vi.advanceTimersByTimeAsync(99);
+      expect(synced).toBe(false);
+      bus.flush();
+      await vi.advanceTimersByTimeAsync(2);
+      expect(synced).toBe(true);
+    });
+
     it("stops waiting for a window that never answers", async () => {
-      vi.useFakeTimers();
-      try {
-        const bus = new QueuedBus();
-        const first = new PendingCloseRegistry({
-          channel: bus.endpoint(),
-          locks: null,
-          window: "a",
-        });
-        const silent = bus.endpoint();
-        // The silent window announces itself once, then never acknowledges.
-        silent.postMessage({
-          scope: "delidev.browser.pending-close",
-          kind: "presence",
-          window: "z",
-        });
-        bus.flush();
-        (silent as unknown as { drop: boolean }).drop = true;
-        let synced = false;
-        void first.hold("k", {}).then(() => (synced = true));
-        await vi.advanceTimersByTimeAsync(999);
-        expect(synced).toBe(false);
-        await vi.advanceTimersByTimeAsync(2);
-        expect(synced).toBe(true);
-        // The unresponsive window is no longer awaited.
-        let again = false;
-        void first.hold("k2", {}).then(() => (again = true));
-        await Promise.resolve();
-        expect(again).toBe(true);
-      } finally {
-        vi.useRealTimers();
-      }
+      const bus = new QueuedBus();
+      const first = new PendingCloseRegistry({
+        channel: bus.endpoint(),
+        locks: null,
+        window: "a",
+      });
+      const silent = bus.endpoint();
+      // The silent window announces itself once, then never acknowledges.
+      silent.postMessage({
+        scope: "delidev.browser.pending-close",
+        kind: "presence",
+        window: "z",
+      });
+      bus.flush();
+      (silent as unknown as { drop: boolean }).drop = true;
+      let synced = false;
+      void first.hold("k", {}).then(() => (synced = true));
+      await vi.advanceTimersByTimeAsync(999);
+      expect(synced).toBe(false);
+      await vi.advanceTimersByTimeAsync(2);
+      expect(synced).toBe(true);
+      // The unresponsive window is no longer awaited (only discovery remains).
+      let again = false;
+      void first.hold("k2", {}).then(() => (again = true));
+      await vi.advanceTimersByTimeAsync(101);
+      expect(again).toBe(true);
     });
   });
 

@@ -6,6 +6,11 @@ const heartbeatMs = 5000;
 const expiryMs = heartbeatMs * 3;
 /** Longest a Close waits for sibling windows to acknowledge a new hold. */
 const syncTimeoutMs = 1000;
+/**
+ * Without the Web Locks API there is no authoritative window list, so a Close
+ * also waits this long for windows whose handshake has not arrived yet.
+ */
+const discoveryMs = 100;
 
 enum PendingCloseMessageKind {
   Hold = "hold",
@@ -105,6 +110,15 @@ function isMessage(value: unknown): value is PendingCloseMessage {
   );
 }
 
+interface Waiter {
+  /** Windows that acknowledged the Hold so far. */
+  acked: Set<string>;
+  /** Windows whose acknowledgement is required; null until discovery ends. */
+  required: Set<string> | null;
+  check: () => void;
+  done: () => void;
+}
+
 /**
  * Tracks unsettled original browser Close operations. A Close is
  * profile-scoped, so the descriptor must survive reconciliation in every
@@ -131,11 +145,8 @@ export class PendingCloseRegistry {
   // Sibling windows seen on the channel, and the Holds still awaiting acks.
   private peers = new Set<string>();
   private syncing = new Map<string, Promise<void>>();
+  private waiters = new Map<string, Waiter>();
   private settledListeners = new Set<(key: string) => void>();
-  private waiters = new Map<
-    string,
-    { awaiting: Set<string>; done: () => void }
-  >();
 
   constructor(options: PendingCloseOptions = {}) {
     this.options = options;
@@ -235,6 +246,7 @@ export class PendingCloseRegistry {
     this.probing.clear();
     this.peers.clear();
     for (const waiter of [...this.waiters.values()]) waiter.done();
+    this.syncing.clear();
     this.unlock?.();
     this.unlock = undefined;
     this.locks = null;
@@ -280,8 +292,8 @@ export class PendingCloseRegistry {
     if (data.kind === PendingCloseMessageKind.Ack) {
       if (data.to !== this.window || data.key === undefined) return;
       const waiter = this.waiters.get(data.key);
-      waiter?.awaiting.delete(data.window);
-      if (waiter && !waiter.awaiting.size) waiter.done();
+      waiter?.acked.add(data.window);
+      waiter?.check();
       return;
     }
     if (data.key === undefined) return;
@@ -300,31 +312,75 @@ export class PendingCloseRegistry {
       });
   }
 
+  /** Windows currently holding a liveness lock, or null when unknowable. */
+  private async liveWindows(): Promise<Set<string> | null> {
+    if (!this.locks) return null;
+    const prefix = this.lockName("");
+    try {
+      const state = await this.locks.query();
+      const live = new Set<string>();
+      for (const held of state.held ?? []) {
+        const name = held.name;
+        if (name?.startsWith(prefix) && name !== this.lockName(this.window))
+          live.add(name.slice(prefix.length));
+      }
+      return live;
+    } catch {
+      return null;
+    }
+  }
+
   /**
-   * Announces a new hold and resolves once every known sibling window has
-   * recorded it, so a sibling's reconciliation can never observe the page as
-   * unowned after the native Close ran. A window that does not answer within
-   * the timeout is presumed gone and no longer awaited.
+   * Announces a new hold and resolves once every sibling window has recorded
+   * it, so a sibling's reconciliation can never observe the page as unowned
+   * after the native Close ran. Siblings are the windows already seen on the
+   * channel plus, when Web Locks is available, every window currently holding
+   * a liveness lock (which covers windows whose handshake has not arrived yet).
+   * Without Web Locks, the Close also waits a short discovery period for
+   * windows that have not introduced themselves. A window that does not answer
+   * within the timeout is presumed gone and no longer awaited.
    */
   private announce(key: string): Promise<void> {
-    const awaiting = new Set(this.peers);
-    if (!this.channel || !awaiting.size) {
-      this.send({ kind: PendingCloseMessageKind.Hold, key });
-      return Promise.resolve();
-    }
+    if (!this.channel) return Promise.resolve();
     return new Promise<void>((resolve) => {
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const done = () => {
-        if (timer !== undefined) clearTimeout(timer);
-        if (this.waiters.get(key) === waiter) this.waiters.delete(key);
-        for (const peer of awaiting) this.peers.delete(peer);
-        resolve();
+      let finished = false;
+      const timers: ReturnType<typeof setTimeout>[] = [];
+      const waiter: Waiter = {
+        acked: new Set(),
+        required: null,
+        check: () => {
+          const { required, acked } = waiter;
+          if (required && [...required].every((peer) => acked.has(peer)))
+            waiter.done();
+        },
+        done: () => {
+          if (finished) return;
+          finished = true;
+          for (const timer of timers) clearTimeout(timer);
+          if (this.waiters.get(key) === waiter) this.waiters.delete(key);
+          for (const peer of waiter.required ?? [])
+            if (!waiter.acked.has(peer)) this.peers.delete(peer);
+          resolve();
+        },
       };
-      const waiter = { awaiting, done };
+      const later = (callback: () => void, ms: number) => {
+        const timer = setTimeout(callback, ms);
+        (timer as unknown as { unref?: () => void }).unref?.();
+        timers.push(timer);
+      };
       this.waiters.set(key, waiter);
-      timer = setTimeout(done, syncTimeoutMs);
-      (timer as unknown as { unref?: () => void }).unref?.();
+      later(waiter.done, syncTimeoutMs);
+      // Every window listening now receives the Hold and answers it.
       this.send({ kind: PendingCloseMessageKind.Hold, key, ack: true });
+      const discovered = (live: Set<string> | null) => {
+        if (finished) return;
+        waiter.required = new Set([...this.peers, ...(live ?? [])]);
+        waiter.check();
+      };
+      void this.liveWindows().then((live) => {
+        if (live) discovered(live);
+        else later(() => discovered(null), discoveryMs);
+      });
     });
   }
 

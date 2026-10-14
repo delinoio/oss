@@ -232,9 +232,12 @@ have independent renderer memory, so the store announces each hold, a
 heartbeat refresh and its release over a same-origin `BroadcastChannel`
 (`delidev.browser.pending-close`). A newly opened window queries the current
 holds, and windows learn each other through that exchange. Before the native
-Close is sent, the initiating window waits until every known sibling window has
+Close is sent, the initiating window waits until every sibling window has
 acknowledged the new hold (at most one second; a window that does not answer is
-presumed gone), so a sibling's inventory read cannot find the page unowned after
+presumed gone). Siblings are the windows already seen on the channel plus, when
+Web Locks is available, every window currently holding a liveness lock, so a
+window whose handshake has not arrived yet is still awaited; without Web Locks
+the Close also waits a 100 ms discovery period for unintroduced windows. This ensures a sibling's inventory read cannot find the page unowned after
 it disappears natively. A hold whose window stopped refreshing (for example after a crash)
 expires after 15 seconds, except that when the Web Locks API is available each
 window also holds a liveness lock named after its window identity and an expired
