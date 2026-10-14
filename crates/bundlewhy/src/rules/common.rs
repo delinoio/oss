@@ -826,6 +826,14 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
     let function_bodies: Vec<(usize, (usize, usize))> = function
         .find_iter(&code)
         .filter_map(|found| {
+            // A member call such as `obj.function()` is not a declaration.
+            let preceding = code[..found.start()]
+                .bytes()
+                .rev()
+                .find(|byte| !byte.is_ascii_whitespace());
+            if preceding == Some(b'.') {
+                return None;
+            }
             let mut cursor = found.end();
             while bytes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
                 cursor += 1;
@@ -833,24 +841,7 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
             if bytes.get(cursor) != Some(&b'(') {
                 return None;
             }
-            let mut depth = 0usize;
-            while let Some(byte) = bytes.get(cursor) {
-                match byte {
-                    b'(' => depth += 1,
-                    b')' => {
-                        depth -= 1;
-                        if depth == 0 {
-                            cursor += 1;
-                            break;
-                        }
-                    }
-                    _ => {}
-                }
-                cursor += 1;
-            }
-            if depth != 0 {
-                return None;
-            }
+            cursor = matching_delimiter(bytes, cursor, b'(', b')')? + 1;
             let body = function_body_block(&code, bytes, &blocks, cursor)?;
             Some((found.start(), body))
         })
@@ -913,6 +904,69 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
             scopes.push((list.start(), end));
         }
     }
+    // The compatibility regex above handles the common case. Scan balanced
+    // delimiters as well so defaults such as `value = make()` do not hide a
+    // parameter binding.
+    for (open, byte) in bytes.iter().enumerate() {
+        if *byte != b'(' {
+            continue;
+        }
+        let Some(close) = matching_delimiter(bytes, open, b'(', b')') else {
+            continue;
+        };
+        let mut after = close + 1;
+        while bytes.get(after).is_some_and(u8::is_ascii_whitespace) {
+            after += 1;
+        }
+        let (body, arrow) = if bytes.get(after) == Some(&b'{') {
+            (after, false)
+        } else if bytes.get(after..after.saturating_add(2)) == Some(b"=>") {
+            after += 2;
+            while bytes.get(after).is_some_and(u8::is_ascii_whitespace) {
+                after += 1;
+            }
+            (after, true)
+        } else {
+            continue;
+        };
+        let keyword = code[..open]
+            .trim_end()
+            .rsplit(|character: char| {
+                !(character.is_alphanumeric() || character == '_' || character == '$')
+            })
+            .next()
+            .unwrap_or("");
+        if !arrow && matches!(keyword, "if" | "while" | "for" | "switch" | "with") {
+            continue;
+        }
+        let list = &code[open + 1..close];
+        let mut names = Vec::new();
+        for parameter in split_top_level(list, b',') {
+            let target = split_top_level(binding_target(parameter), b':')[0]
+                .trim()
+                .trim_end_matches('?')
+                .trim_start_matches("...");
+            collect_binding_names(target, &mut names);
+        }
+        let block = blocks.iter().find(|(start, _)| *start == body).copied();
+        let end = block.map_or_else(
+            || {
+                code[body..]
+                    .find([';', '\n'])
+                    .map_or(bytes.len(), |offset| body + offset)
+            },
+            |(_, close)| close,
+        );
+        if let Some(block) = block
+            && keyword != "catch"
+        {
+            bodies.push(block);
+        }
+        if names.iter().any(|name| name == "eval") {
+            scopes.push((open + 1, end));
+        }
+    }
+
     let single = Regex::new(r"\beval\s*=>").expect("static regex");
     for found in single.find_iter(&code) {
         let end = code[found.end()..]
@@ -969,13 +1023,15 @@ fn function_body_block(
             continue;
         }
         if *byte == b'{' {
-            if !return_annotation
-                || code[..cursor]
+            let type_brace = return_annotation
+                && code[..cursor]
                     .bytes()
                     .rev()
                     .find(|byte| !byte.is_ascii_whitespace())
-                    != Some(b':')
-            {
+                    .is_some_and(|byte| {
+                        matches!(byte, b':' | b'<' | b'|' | b'&' | b',' | b'[' | b'(')
+                    });
+            if !type_brace {
                 return blocks.iter().find(|(open, _)| *open == cursor).copied();
             }
             let (_, close) = blocks.iter().find(|(open, _)| *open == cursor).copied()?;
@@ -991,8 +1047,12 @@ fn function_body_block(
 }
 
 fn named_function_is_expression(code: &str, start: usize) -> bool {
-    let prefix = code[..start].trim_end();
+    let raw_prefix = &code[..start];
+    let prefix = raw_prefix.trim_end();
     let prefix = prefix.strip_suffix("async").unwrap_or(prefix).trim_end();
+    if prefix.ends_with("=>") {
+        return true;
+    }
     let preceding = prefix.as_bytes().last().copied();
     if preceding == Some(b':') && is_case_label(prefix) {
         return false;
@@ -1000,12 +1060,36 @@ fn named_function_is_expression(code: &str, start: usize) -> bool {
     if preceding.is_some_and(|byte| b"=([,:?!+-*/%&|^~".contains(&byte)) {
         return true;
     }
-    matches!(
-        prefix
-            .rsplit(|character: char| !(character.is_alphanumeric() || character == '_'))
-            .next(),
+    let keyword = prefix
+        .rsplit(|character: char| !(character.is_alphanumeric() || character == '_'))
+        .next();
+    if !matches!(
+        keyword,
         Some("return" | "throw" | "yield" | "await" | "void")
-    )
+    ) {
+        return false;
+    }
+    let keyword_start = prefix
+        .len()
+        .saturating_sub(keyword.unwrap_or_default().len());
+    !raw_prefix[keyword_start..].contains(['\n', '\r'])
+}
+
+fn matching_delimiter(bytes: &[u8], open: usize, opening: u8, closing: u8) -> Option<usize> {
+    let mut depth = 0usize;
+    for (index, byte) in bytes.iter().enumerate().skip(open) {
+        match byte {
+            byte if *byte == opening => depth += 1,
+            byte if *byte == closing => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    return Some(index);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn is_case_label(prefix: &str) -> bool {
@@ -1460,6 +1544,25 @@ y=/process.env.F/.test(z),process.env.G"#;
     fn function_bodies_skip_typescript_return_annotations() {
         let source = "function run(): void { var eval = helper; } eval(code);";
         assert!(direct_eval_line(source).is_some());
+        let source = "function run(): Promise<{ ok: boolean }> { var eval = helper; } eval(code);";
+        assert!(direct_eval_line(source).is_some());
+    }
+
+    #[test]
+    fn eval_shadowing_handles_function_scan_edge_cases() {
+        assert_eq!(
+            direct_eval_line("obj.function(); if (condition) { var eval = helper; } eval(code);"),
+            None
+        );
+        assert!(direct_eval_line("const make = () => function eval() {}; eval(code);").is_some());
+        assert!(
+            direct_eval_line("const run = (value = make()) => { var eval = helper; }; eval(code);")
+                .is_some()
+        );
+        assert!(
+            direct_eval_line("function outer() { return\nfunction eval() {}; } eval(code);")
+                .is_some()
+        );
     }
 
     #[test]
