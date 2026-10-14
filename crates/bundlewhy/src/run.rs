@@ -624,6 +624,25 @@ pub async fn open(run_dir: &Path, no_open: bool) -> BwResult<()> {
     Ok(())
 }
 
+/// Creates `output` exclusively and runs `write`. The file was created by this
+/// call, so removing it on a failed write cannot touch anything else and
+/// leaves no truncated report blocking a retry.
+fn write_new_file(
+    output: &Path,
+    write: impl FnOnce(&mut std::fs::File) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(output)?;
+    let written = write(&mut file);
+    if written.is_err() {
+        drop(file);
+        let _ = std::fs::remove_file(output);
+    }
+    written
+}
+
 /// Creates the export exclusively (never following a link). A replacement is
 /// written to an exclusively created sibling and renamed over the target.
 fn write_export(output: &Path, bytes: &[u8], replace: bool) -> std::io::Result<()> {
@@ -635,7 +654,9 @@ fn write_export(output: &Path, bytes: &[u8], replace: bool) -> std::io::Result<(
             .open(path)
     };
     if !replace {
-        return create(output)?.write_all(bytes);
+        return write_new_file(output, |file| {
+            file.write_all(bytes).and_then(|()| file.sync_all())
+        });
     }
     let name = output.file_name().map_or_else(
         || "report".into(),
@@ -731,6 +752,25 @@ mod tests {
         assert!(!saved.message.contains("apiKey"));
         assert_eq!(saved.code, "BW_BUILD_FAILED");
         assert!(saved_problem(&error, false).message.contains("apiKey"));
+    }
+
+    #[test]
+    fn failed_new_exports_do_not_leave_truncated_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join("report.html");
+        let error = write_new_file(&output, |file| {
+            std::io::Write::write_all(file, b"<html partial")?;
+            Err(std::io::Error::other("disk full"))
+        })
+        .unwrap_err();
+        assert_eq!(error.to_string(), "disk full");
+        assert!(
+            !output.exists(),
+            "a failed export must not leave a truncated file"
+        );
+        // A retry without --force then succeeds.
+        write_export(&output, b"ok", false).unwrap();
+        assert_eq!(std::fs::read(&output).unwrap(), b"ok");
     }
 
     #[cfg(unix)]
