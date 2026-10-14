@@ -361,10 +361,18 @@ impl SourceStore {
         // Key by the resolved path rather than the display path.
         let key = normalize(path).to_string_lossy().into_owned();
         if let Some(existing) = self.files.get(&key) {
-            return Some((
-                existing.id.clone(),
-                existing.content_included.then(|| existing.content.clone()),
-            ));
+            let id = existing.id.clone();
+            let content = existing.content_included.then(|| existing.content.clone());
+            let existing_path = existing.path.clone();
+            let unavailable = existing.revision_evidence == SourceRevisionEvidence::Unavailable;
+            if track_coverage_gap
+                && unavailable
+                && !self.unverified.iter().any(|path| path == &existing_path)
+            {
+                tracing::debug!(path = %existing_path, "promoting cached unavailable source to coverage gap");
+                self.unverified.push(existing_path);
+            }
+            return Some((id, content));
         }
         // The module path may carry an import query that is not part of the
         // file name; filesystem access uses the backing file.
@@ -705,6 +713,28 @@ mod tests {
             assert!(source.sha256.is_empty());
             assert!(!source.stale);
         }
+    }
+
+    #[test]
+    fn cached_unavailable_source_is_promoted_when_coverage_is_tracked() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("a.js");
+        std::fs::write(&file, "export const value = 1;").unwrap();
+        let mut store = SourceStore::new(true);
+
+        let first = store
+            .add_file_without_coverage_gap(dir.path(), &file)
+            .unwrap();
+        assert!(first.1.is_none());
+        assert!(store.unverified.is_empty());
+
+        let second = store.add_file(dir.path(), &file).unwrap();
+        assert_eq!(second.0, first.0);
+        assert_eq!(store.unverified, vec!["a.js".to_owned()]);
+
+        // Repeated detector visits keep the coverage-gap list deduplicated.
+        store.add_file(dir.path(), &file).unwrap();
+        assert_eq!(store.unverified, vec!["a.js".to_owned()]);
     }
 
     #[cfg(unix)]
