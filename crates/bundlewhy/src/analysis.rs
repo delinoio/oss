@@ -46,9 +46,20 @@ pub struct AnalysisOutput {
 }
 
 /// Returns the root that owns collected sources and their saved freshness
-/// paths. Adapters resolve their build context before writing a collection;
-/// older collections without a context continue to use the selected root.
+/// paths. Vite's resolved root identifies source ownership; Rspack's context
+/// only resolves relative config and source-map paths, so it must not move the
+/// ownership boundary for files imported from outside that context.
 pub fn effective_root(collection: &Collection, selected_root: &Path) -> PathBuf {
+    if collection.bundler != "vite" {
+        return selected_root.to_path_buf();
+    }
+    context_root(collection, selected_root)
+}
+
+/// Returns the bundler context used to resolve source-map paths. This remains
+/// distinct from `effective_root` because Rspack permits imports outside its
+/// context while still resolving relative source-map entries from it.
+pub fn context_root(collection: &Collection, selected_root: &Path) -> PathBuf {
     collection.context.as_deref().map_or_else(
         || selected_root.to_path_buf(),
         |context| {
@@ -234,7 +245,8 @@ fn coverage(
 
 pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
     let collection = input.collection;
-    let context_dir = effective_root(collection, &input.project_root);
+    let ownership_root = effective_root(collection, &input.project_root);
+    let context_dir = context_root(collection, &input.project_root);
     let mut problems: Vec<Problem> = Vec::new();
     let mut chunks = Vec::new();
     let mut failed_chunks = 0usize;
@@ -318,8 +330,9 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
             }
         }
     }
-    let mut context = Context::new(
+    let mut context = Context::with_context(
         collection,
+        ownership_root.clone(),
         context_dir.clone(),
         input.project_name.clone(),
         chunks,
@@ -333,7 +346,7 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
             diagnostic.snippet = None;
         }
     }
-    let root = context_dir.clone();
+    let root = ownership_root.clone();
     let display = |path: &Path| classify(&root, path).display;
     if let Some(on_measuring) = input.on_measuring {
         on_measuring();
@@ -394,7 +407,7 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
         config_file: collection
             .config_file
             .as_deref()
-            .map(|file| classify(&context_dir, Path::new(file)).display)
+            .map(|file| classify(&ownership_root, Path::new(file)).display)
             .unwrap_or_default(),
         status: if partial {
             RunStatus::Partial
@@ -747,6 +760,22 @@ mod tests {
                 .project_relative
                 .values()
                 .all(|path| !Path::new(path).is_absolute())
+        );
+    }
+
+    #[test]
+    fn rspack_context_resolves_maps_without_changing_source_ownership() {
+        let selected_root = PathBuf::from("/workspace/project");
+        let collection = Collection {
+            bundler: "rspack".to_owned(),
+            context: Some("/workspace/config".to_owned()),
+            ..Collection::default()
+        };
+
+        assert_eq!(effective_root(&collection, &selected_root), selected_root);
+        assert_eq!(
+            context_root(&collection, &selected_root),
+            PathBuf::from("/workspace/config")
         );
     }
 

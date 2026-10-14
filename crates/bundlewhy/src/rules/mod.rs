@@ -116,15 +116,33 @@ impl<'a> Context<'a> {
         chunks: Vec<Chunk>,
         sources: SourceStore,
     ) -> Self {
+        let context_dir = collection
+            .context
+            .as_ref()
+            .map_or_else(|| project_root.clone(), PathBuf::from);
+        Self::with_context(
+            collection,
+            project_root,
+            context_dir,
+            project_name,
+            chunks,
+            sources,
+        )
+    }
+
+    pub fn with_context(
+        collection: &'a Collection,
+        project_root: PathBuf,
+        context_dir: PathBuf,
+        project_name: String,
+        chunks: Vec<Chunk>,
+        sources: SourceStore,
+    ) -> Self {
         let modules = collection
             .modules
             .iter()
             .map(|module| (module.id.as_str(), module))
             .collect();
-        let context_dir = collection
-            .context
-            .as_ref()
-            .map_or_else(|| project_root.clone(), PathBuf::from);
         let engine = format!(
             "{} {} + {} {}",
             collection.bundler_package,
