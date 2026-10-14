@@ -17,16 +17,17 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = "1"
 sha2.workspace = true
 sourcemap = "9"
+swc_core = { version = "82.1.0", default-features = false, features = ["ecma_minifier", "ecma_parser", "ecma_codegen", "ecma_transforms", "common", "common_sourcemap", "ecma_ast", "ecma_visit"] }
 tempfile.workspace = true
 tracing.workspace = true
 tracing-subscriber = { version = "0.3", features = ["fmt"] }
-tsrs_core = { git = "https://github.com/maschwenk/tsrs", rev = "00f16261082fbb2465f0603c667b450d5aa6694b" }
-tsrs_ast = { git = "https://github.com/maschwenk/tsrs", rev = "00f16261082fbb2465f0603c667b450d5aa6694b" }
-tsrs_checker = { git = "https://github.com/maschwenk/tsrs", rev = "00f16261082fbb2465f0603c667b450d5aa6694b" }
-tsrs_compiler = { git = "https://github.com/maschwenk/tsrs", rev = "00f16261082fbb2465f0603c667b450d5aa6694b" }
-tsrs_tsoptions = { git = "https://github.com/maschwenk/tsrs", rev = "00f16261082fbb2465f0603c667b450d5aa6694b" }
-tsrs_vfs = { git = "https://github.com/maschwenk/tsrs", rev = "00f16261082fbb2465f0603c667b450d5aa6694b" }
-tsrs_api = { git = "https://github.com/maschwenk/tsrs", rev = "00f16261082fbb2465f0603c667b450d5aa6694b" }
-tsrs_scanner = { git = "https://github.com/maschwenk/tsrs", rev = "00f16261082fbb2465f0603c667b450d5aa6694b" }
-tsrs_diagnostics = { git = "https://github.com/maschwenk/tsrs", rev = "00f16261082fbb2465f0603c667b450d5aa6694b" }
+tsrs_core = { git = "https://github.com/kdy1/tsrs", rev = "abddaae32e5d4c17806095bd3874233fa29b26bf" }
+tsrs_ast = { git = "https://github.com/kdy1/tsrs", rev = "abddaae32e5d4c17806095bd3874233fa29b26bf" }
+tsrs_checker = { git = "https://github.com/kdy1/tsrs", rev = "abddaae32e5d4c17806095bd3874233fa29b26bf" }
+tsrs_compiler = { git = "https://github.com/kdy1/tsrs", rev = "abddaae32e5d4c17806095bd3874233fa29b26bf" }
+tsrs_tsoptions = { git = "https://github.com/kdy1/tsrs", rev = "abddaae32e5d4c17806095bd3874233fa29b26bf" }
+tsrs_vfs = { git = "https://github.com/kdy1/tsrs", rev = "abddaae32e5d4c17806095bd3874233fa29b26bf" }
+tsrs_api = { git = "https://github.com/kdy1/tsrs", rev = "abddaae32e5d4c17806095bd3874233fa29b26bf" }
+tsrs_scanner = { git = "https://github.com/kdy1/tsrs", rev = "abddaae32e5d4c17806095bd3874233fa29b26bf" }
+tsrs_diagnostics = { git = "https://github.com/kdy1/tsrs", rev = "abddaae32e5d4c17806095bd3874233fa29b26bf" }
 url = "2"

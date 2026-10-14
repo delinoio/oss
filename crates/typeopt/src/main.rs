@@ -3,6 +3,8 @@ mod bundle;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 mod compiler;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
+mod minify;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 mod optimizer;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 mod output;
@@ -50,7 +52,7 @@ mod app {
 
     /// Upstream compiler revision recorded in reports. It must match the
     /// `tsrs` pin in Cargo.toml; a unit test enforces this.
-    pub(crate) const COMPILER_REVISION: &str = "00f16261082fbb2465f0603c667b450d5aa6694b";
+    pub(crate) const COMPILER_REVISION: &str = "abddaae32e5d4c17806095bd3874233fa29b26bf";
 
     pub(crate) static CANCELLED: AtomicBool = AtomicBool::new(false);
     pub(crate) static VERBOSE: AtomicBool = AtomicBool::new(false);
@@ -62,6 +64,11 @@ mod app {
     static KEEP_CHUNK_NAMES: AtomicBool = AtomicBool::new(false);
     pub(crate) fn keep_chunk_names() -> bool {
         KEEP_CHUNK_NAMES.load(Ordering::Relaxed)
+    }
+    static MINIFY: AtomicBool = AtomicBool::new(false);
+    /// Bundle mode: minify edited chunks with SWC when that compresses smaller.
+    pub(crate) fn minify() -> bool {
+        MINIFY.load(Ordering::Relaxed)
     }
     /// Bundle chunks (path substrings) kept as unchecked boundaries.
     static BUNDLE_EXCLUDE: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
@@ -92,12 +99,6 @@ mod app {
         let _ = BUNDLE_MODULES.set(modules);
         let _ = BUNDLE_CLASSIC.set(classic);
     }
-    /// Whether a bundle chunk is an unchecked boundary: excluded by the
-    /// operator, or not known to be an ES module (a classic script shares
-    /// its top-level bindings with other scripts). `.mjs` files, chunks with
-    /// ESM statements and chunks that a chunk or an HTML module script loads
-    /// are ES modules. A chunk that an excluded chunk can import is a boundary
-    /// as well: the excluded chunk keeps importing its original name.
     /// Whether `--bundle-exclude` matches a bundle chunk.
     pub(crate) fn bundle_excluded(path: &str) -> bool {
         BUNDLE_EXCLUDE
@@ -114,6 +115,12 @@ mod app {
                 .get()
                 .is_some_and(|frozen| frozen.contains_key(path))
     }
+    /// Whether a bundle chunk is an unchecked boundary: excluded by the
+    /// operator, or not known to be an ES module (a classic script shares
+    /// its top-level bindings with other scripts). `.mjs` files, chunks with
+    /// ESM statements and chunks that a chunk or an HTML module script loads
+    /// are ES modules. A chunk that an excluded chunk can import is a boundary
+    /// as well: the excluded chunk keeps importing its original name.
     pub(crate) fn bundle_boundary(path: &str, esm_statements: bool) -> bool {
         bundle_pinned(path)
             // A chunk that any page loads as a classic script shares its
@@ -151,6 +158,10 @@ mod app {
         /// Bundle mode: keep the names of edited content-hashed chunks.
         #[arg(long, requires = "bundle")]
         keep_chunk_names: bool,
+        /// Bundle mode: minify every edited chunk with SWC and keep the result
+        /// when its Brotli size shrinks and its gzip size does not grow.
+        #[arg(long, requires = "bundle")]
+        minify: bool,
         #[arg(long, required_unless_present = "check", conflicts_with = "check")]
         out_dir: Option<PathBuf>,
         #[arg(long)]
@@ -292,6 +303,7 @@ mod app {
     fn run_bundle(args: Args, dir: &std::path::Path, started: Instant) -> Result<()> {
         BUNDLE.store(true, Ordering::Relaxed);
         KEEP_CHUNK_NAMES.store(args.keep_chunk_names, Ordering::Relaxed);
+        MINIFY.store(args.minify, Ordering::Relaxed);
         let _ = BUNDLE_EXCLUDE.set(args.bundle_exclude.clone());
         let dir = dir.canonicalize().context("cannot find bundle directory")?;
         ensure!(dir.is_dir(), "--bundle must be a directory");
@@ -354,6 +366,11 @@ mod app {
         // Original chunks kept for encoded or boundary references are
         // published next to the optimized graph; the report discloses them.
         report.size.retained = staged.retained_bytes;
+        // Minification happens at publication; the report describes the
+        // published chunk text.
+        report.size.minified = staged.minified_bytes;
+        report.size.after -= staged.minified_bytes;
+        report.size.saved += staged.minified_bytes as isize;
         let staged = args.out_dir.is_some().then_some(staged);
         report.measure(started);
         // The report is part of the result: publish only after it was

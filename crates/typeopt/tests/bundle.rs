@@ -2772,3 +2772,130 @@ fn ignores_precache_entries_outside_the_bundle() {
         "{published}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// --minify
+// ---------------------------------------------------------------------------
+
+const VERBOSE: [(&str, &str); 2] = [
+    (
+        "index.js",
+        r#"import{describeSettings as describe,makeSettings as make}from"./settings.js";
+const firstSettings = make(3);
+const secondSettings = make(7);
+console.log(describe(firstSettings), describe(secondSettings));
+"#,
+    ),
+    (
+        "settings.js",
+        r#"function makeSettings(count) {
+  const result = { verticalSpacing: count, horizontalSpacing: count * 2, highlightColour: count > 4 ? "red" : "blue" };
+  return result;
+}
+function describeSettings(settings) {
+  const description = settings.verticalSpacing + ":" + settings.horizontalSpacing + ":" + settings.highlightColour;
+  return description;
+}
+export { makeSettings, describeSettings };
+"#,
+    ),
+];
+
+/// `--minify` shrinks edited chunks further with SWC and reports it.
+#[test]
+fn minifies_edited_chunks() {
+    let temp = bundle(&VERBOSE);
+    let plain = optimize(temp.path(), &[]);
+    let plain_settings = out(temp.path(), "settings.js");
+    fs::remove_dir_all(temp.path().join("out")).unwrap();
+    let report = optimize(temp.path(), &["--minify"]);
+    same_behavior(temp.path());
+    let minified = report["size"]["minified"].as_u64().unwrap();
+    assert!(minified > 0, "{report:#}");
+    assert_eq!(
+        report["size"]["saved"].as_i64().unwrap(),
+        plain["size"]["saved"].as_i64().unwrap() + minified as i64,
+        "{report:#}"
+    );
+    let settings = out(temp.path(), "settings.js");
+    assert!(settings.len() < plain_settings.len(), "{settings}");
+    // Exports keep their names for importers.
+    assert!(settings.contains("makeSettings") && settings.contains("describeSettings"));
+}
+
+/// The published map leads from the minified code to the original sources.
+#[test]
+fn composes_maps_of_minified_chunks() {
+    let mut chunks: Vec<(&str, &str)> = VERBOSE.to_vec();
+    let settings = format!("{}//# sourceMappingURL=settings.js.map\n", VERBOSE[1].1);
+    chunks[1] = ("settings.js", &settings);
+    // One mapping per generated line, each to the same line of src/settings.ts.
+    let lines = VERBOSE[1].1.lines().count();
+    let mappings = std::iter::once("AAAA")
+        .chain(std::iter::repeat_n("AACA", lines - 1))
+        .collect::<Vec<_>>()
+        .join(";");
+    let map = format!(
+        r#"{{"version":3,"sources":["src/settings.ts"],"names":[],"mappings":"{mappings}"}}"#
+    );
+    chunks.push(("settings.js.map", &map));
+    let temp = bundle(&chunks);
+    let report = optimize(temp.path(), &["--minify"]);
+    assert!(
+        report["size"]["minified"].as_u64().unwrap() > 0,
+        "{report:#}"
+    );
+    same_behavior(temp.path());
+    let published = out(temp.path(), "settings.js");
+    assert!(
+        published
+            .trim_end()
+            .ends_with("//# sourceMappingURL=settings.js.map"),
+        "{published}"
+    );
+    let map: Value = serde_json::from_str(&out(temp.path(), "settings.js.map")).unwrap();
+    assert_eq!(
+        map["sources"],
+        serde_json::json!(["src/settings.ts"]),
+        "{map:#}"
+    );
+    // The exported name in the minified code maps to the source line of
+    // the export statement.
+    let decoded =
+        sourcemap::SourceMap::from_slice(out(temp.path(), "settings.js.map").as_bytes()).unwrap();
+    let column = published
+        .find("describeSettings")
+        .expect("export name kept") as u32;
+    let token = decoded.lookup_token(0, column).expect("mapped");
+    assert_eq!(token.get_source(), Some("src/settings.ts"));
+    assert_eq!(token.get_src_line(), 8, "{published}\n{map:#}");
+}
+
+/// Chunks that typeopt does not edit are never minified.
+#[test]
+fn leaves_unedited_chunks_unminified() {
+    let mut chunks: Vec<(&str, &str)> = VERBOSE.to_vec();
+    let untouched = "export function untouchedHelper(value) {\n  return value + 1;\n}\n";
+    chunks.push(("untouched.js", untouched));
+    chunks[0] = (
+        "index.js",
+        r#"import{describeSettings as describe,makeSettings as make}from"./settings.js";
+import{untouchedHelper as h}from"./untouched.js";
+const firstSettings = make(h(2));
+console.log(describe(firstSettings));
+"#,
+    );
+    let temp = bundle(&chunks);
+    optimize(
+        temp.path(),
+        &[
+            "--minify",
+            "--disable-pass",
+            "call-inlining",
+            "--disable-pass",
+            "signature-reduction",
+        ],
+    );
+    same_behavior(temp.path());
+    assert_eq!(out(temp.path(), "untouched.js"), untouched);
+}

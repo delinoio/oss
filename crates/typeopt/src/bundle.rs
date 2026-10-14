@@ -753,26 +753,33 @@ fn map_reference(text: &str) -> Option<MapComment<'_>> {
 /// Composes the source map of one edited chunk in place. Returns whether a
 /// map was composed (`Some(true)`), dropped because it could not be composed
 /// (`Some(false)`) or absent (`None`).
+/// Composes the source map of an edited chunk. `text` is the edited chunk
+/// that `chain` produced from `original`; `published` is the text written,
+/// which differs from `text` when minification replaced its code, and then
+/// `minified` maps `published` back to `text`.
+#[allow(clippy::too_many_arguments)]
 fn update_chunk_map(
     root: &Path,
     target: &Path,
     original: &str,
     text: &str,
+    published: &str,
+    minified: Option<&sourcemap::SourceMap>,
     chain: &[Vec<Edit>],
     original_maps: &mut BTreeMap<PathBuf, Vec<u8>>,
 ) -> Result<Option<bool>> {
-    let location = match chunk_map(root, target, text) {
+    let location = match chunk_map(root, target, published) {
         None => return Ok(None),
         Some(MapRef::Local(location)) => location,
         Some(MapRef::Uncomposable(url)) => {
             // Such a map describes the pre-optimization chunk and cannot be
             // composed here; a missing map is better than a wrong one.
             tracing::warn!("dropping an uncomposable source map reference of an edited chunk");
-            let comment = map_reference(text)
+            let comment = map_reference(published)
                 .filter(|comment| comment.url == url)
                 .context("cannot locate the source map comment of an edited chunk")?;
             let (start, end) = (comment.start, comment.end);
-            let updated = format!("{}{}", &text[..start], &text[end..]);
+            let updated = format!("{}{}", &published[..start], &published[end..]);
             std::fs::write(target, &updated).context("cannot write an edited chunk")?;
             return Ok(Some(false));
         }
@@ -789,7 +796,18 @@ fn update_chunk_map(
             .and_then(|bytes| sourcemap::decode_slice(&bytes).map_err(anyhow::Error::from)),
     };
     let composed = match decoded {
-        Ok(sourcemap::DecodedMap::Regular(map)) => compose_bundle_map(&map, original, text, chain),
+        Ok(sourcemap::DecodedMap::Regular(map)) => {
+            compose_bundle_map(&map, original, text, chain).map(|mut edited| {
+                // The composed map leads from the edited chunk to the
+                // sources; the minifier's map leads from the published code
+                // to the edited chunk. Adjusting the first by the second
+                // leads from the published code to the sources.
+                if let Some(minified) = minified {
+                    edited.adjust_mappings(minified);
+                }
+                edited
+            })
+        }
         Ok(_) => Err(anyhow::anyhow!(
             "indexed or Hermes chunk maps are unsupported"
         )),
@@ -803,12 +821,14 @@ fn update_chunk_map(
             Ok(Some(true))
         }
         (ChunkMap::Inline(url), Ok(map)) => {
-            let at = text.rfind(&url).context("inline source map disappeared")?;
+            let at = published
+                .rfind(&url)
+                .context("inline source map disappeared")?;
             let updated = format!(
                 "{}{}{}",
-                &text[..at],
+                &published[..at],
                 map.to_data_url()?,
-                &text[at + url.len()..]
+                &published[at + url.len()..]
             );
             std::fs::write(target, &updated).context("cannot write an edited chunk")?;
             Ok(Some(true))
@@ -819,20 +839,20 @@ fn update_chunk_map(
             std::fs::remove_file(path)?;
             // An explicit trailing directive would point at the deleted map;
             // a hidden adjacent map has no directive to remove.
-            if let Some(comment) = map_reference(text) {
+            if let Some(comment) = map_reference(published) {
                 let (start, end) = (comment.start, comment.end);
-                let updated = format!("{}{}", &text[..start], &text[end..]);
+                let updated = format!("{}{}", &published[..start], &published[end..]);
                 std::fs::write(target, &updated).context("cannot write an edited chunk")?;
             }
             Ok(Some(false))
         }
         (ChunkMap::Inline(url), Err(error)) => {
             tracing::warn!(%error, "dropping an unreadable inline chunk source map");
-            let comment = map_reference(text)
+            let comment = map_reference(published)
                 .filter(|comment| comment.url == url)
                 .context("cannot locate the unreadable inline source map comment")?;
             let (start, end) = (comment.start, comment.end);
-            let updated = format!("{}{}", &text[..start], &text[end..]);
+            let updated = format!("{}{}", &published[..start], &published[end..]);
             std::fs::write(target, &updated).context("cannot write an edited chunk")?;
             Ok(Some(false))
         }
@@ -1644,6 +1664,8 @@ pub fn fingerprint(dir: &Path) -> Result<Fingerprint> {
 /// published only by [`Staged::commit`]; dropping it removes the staging
 /// directory, so a failure after staging never leaves a published result.
 pub struct Staged {
+    /// Code bytes that `--minify` removed from edited chunks.
+    pub minified_bytes: usize,
     _staging: tempfile::TempDir,
     root: PathBuf,
     destination: PathBuf,
@@ -1712,6 +1734,7 @@ pub fn stage(
     // Original bytes of map files that composition changes or removes.
     let mut original_maps = BTreeMap::new();
     let (mut maps, mut dropped) = (0usize, 0usize);
+    let mut minified_bytes = 0usize;
     for (name, text) in &outcome.texts {
         crate::app::check_cancelled()?;
         let original = &snapshot.sources[name];
@@ -1722,11 +1745,28 @@ pub fn stage(
             .strip_prefix(source)
             .context("edited chunk is outside the bundle directory")?;
         let target = root.join(relative);
-        std::fs::write(&target, text).context("cannot write an edited chunk")?;
+        let (published, minified) = if crate::app::minify() {
+            minify_chunk(name, text)
+        } else {
+            (text.clone(), None)
+        };
+        if minified.is_some() {
+            minified_bytes += chunk_code_len(text) - chunk_code_len(&published);
+        }
+        std::fs::write(&target, &published).context("cannot write an edited chunk")?;
         edited.insert(target.clone());
         originals.insert(target.clone(), original.clone());
         let chain = outcome.chains.get(name).map_or(&[][..], Vec::as_slice);
-        match update_chunk_map(&root, &target, original, text, chain, &mut original_maps)? {
+        match update_chunk_map(
+            &root,
+            &target,
+            original,
+            text,
+            &published,
+            minified.as_ref(),
+            chain,
+            &mut original_maps,
+        )? {
             Some(true) => maps += 1,
             Some(false) => dropped += 1,
             None => {}
@@ -1754,6 +1794,7 @@ pub fn stage(
         rehashed = rehashed.renamed,
         precache_revisions = revisions,
         retained_bytes = rehashed.retained_bytes,
+        minified_bytes,
         "bundle chunks written"
     );
     Ok(Staged {
@@ -1761,7 +1802,55 @@ pub fn stage(
         root,
         destination: destination.to_path_buf(),
         retained_bytes: rehashed.retained_bytes,
+        minified_bytes,
     })
+}
+
+/// The published text of an edited chunk under `--minify`: its code minified
+/// with SWC when that compresses smaller, followed by its original source
+/// map comment, with the map from the published code to the edited chunk.
+/// Otherwise the edited chunk itself.
+fn minify_chunk(name: &str, text: &str) -> (String, Option<sourcemap::SourceMap>) {
+    let (code, comment) = match map_reference(text) {
+        Some(comment) => (
+            format!("{}{}", &text[..comment.start], &text[comment.end..]),
+            Some(text[comment.start..comment.end].to_owned()),
+        ),
+        None => (text.to_owned(), None),
+    };
+    let Some(minified) = crate::minify::minify_module(&code) else {
+        tracing::debug!(
+            chunk = name,
+            "SWC could not minify an edited chunk; kept as is"
+        );
+        return (text.to_owned(), None);
+    };
+    let before = crate::minify::compressed(&code);
+    let after = crate::minify::compressed(&minified.code);
+    if !crate::minify::better(before, after) {
+        tracing::debug!(
+            chunk = name,
+            brotli_before = before.brotli,
+            brotli_after = after.brotli,
+            gzip_before = before.gzip,
+            gzip_after = after.gzip,
+            "minified chunk does not compress smaller; kept as is"
+        );
+        return (text.to_owned(), None);
+    }
+    tracing::debug!(
+        chunk = name,
+        bytes_before = code.len(),
+        bytes_after = minified.code.len(),
+        brotli_before = before.brotli,
+        brotli_after = after.brotli,
+        "edited chunk minified"
+    );
+    let published = match comment {
+        Some(comment) => format!("{}\n{comment}", minified.code),
+        None => minified.code,
+    };
+    (published, Some(minified.map))
 }
 
 #[cfg(test)]
