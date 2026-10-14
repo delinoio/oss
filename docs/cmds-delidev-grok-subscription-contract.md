@@ -264,11 +264,11 @@ library tests are in `internal/worker/grok_subscriptions_test.go` and
 | Interleaving | Outcome | Test |
 | --- | --- | --- |
 | Take of the queued original | Lease committed, stored envelope re-opened and delivered once | `TestGrokLifecycleMovesBundleOnlyThroughProtectedTakeAndFinish` |
-| Take on an unverified, below-baseline or removed installation, or for execute | Refused before any lease; account untouched | `TestGrokTakeRefusesUnsupportedAndUnverifiedWork`, `TestGrokTakeRequiresSubscriptionBaselineVersion` |
+| Take on an unverified or below-baseline installation, or for execute | Refused before any lease; account untouched | `TestGrokTakeRefusesUnsupportedAndUnverifiedWork`, `TestGrokTakeRequiresSubscriptionBaselineVersion` |
 | Take replayed after a lost first response | Denied; the exact unfinished lease is fenced; a finished or foreign lease is untouched | `TestGrokReplayedTakeFencesTheUnfinishedLease`, `TestGrokLateReplayedTakeDoesNotFenceAReleasedAccount` |
 | Take whose stored envelope is invalid or missing, or whose operation is canceled during the vault read | Nothing delivered; lease kept and account fenced under the current generation | `TestGrokTakeFailuresAfterTheLeaseCommitFenceWithoutDelivery` |
 | Installation rediscovered after Take | Finish still accepted from the exact owner | `TestGrokFinishSurvivesInstallationRediscoveryAfterTake` |
-| Finish with a stale lease revision, generation or lease, or from another Worker | Denied before any write; no fence; the genuine owner can still finish | `TestGrokFinishWithAStaleLeaseIsDeniedWithoutFencing` |
+| Finish with a stale lease revision, generation or lease | Denied before any write; no fence; the genuine owner can still finish | `TestGrokFinishWithAStaleLeaseIsDeniedWithoutFencing` |
 | Finish with a rebound, foreign, native, empty or wrong-identity bundle, or an unrotated refresh | Refused; account fenced; nothing staged | `TestGrokFinishRejectsReboundAndForeignBundles`, `TestGrokRefreshRequiresSameIdentityAndRotation`, `TestGrokLoginRejectsDuplicateIdentityAndAdmitsDifferentPrincipal` |
 | Finish reports of login, refresh and logout (success, native refresh, cleanup) | Table-driven: released only when fully confirmed (or a failed login with confirmed cleanup); otherwise fenced under the existing generation | `TestGrokFinishReportsMapToExplicitOutcomes`, `TestGrokFinishFencedLogoutKeepsTheReferencedGeneration` |
 | Finish publishes, then removes the superseded generation | Removal only after the document stops referencing it; logout removes every generation | `TestGrokFinishDeletesTheReferencedGenerationOnlyAfterPublication` |
