@@ -1041,7 +1041,9 @@ export class SceneSession {
           sample: { clip: animation.clip.nodeId, time: animation.time },
         }
       : p.model;
-    const run = (kind: "generate" | "inspect" | "analyze") =>
+    const run = (
+      kind: "generate" | "inspect" | "analyze" | "analyze_quality",
+    ) =>
       processDocument(
         this.format,
         kind,
