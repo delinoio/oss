@@ -430,11 +430,15 @@ installation whose validation did not succeed, which is how a populated
 1.0.52 `experiments` inventory becomes a `profile` / `unsupported` observation;
 a verified profile, a non-Grok harness or a mismatched version rejects it.
 Protected Take classifies a refusal in this order: a missing or undiscovered
-installation is `discovery`, a version below the subscription baseline or invalid
+installation is `discovery` and keeps the code discovery recorded (`missing` is
+`not_found`, `permission-denied` is `permission_denied`, `failed` is
+`unavailable`, `incompatible` and an unreported or unchecked installation are
+`unsupported`; a recorded problem on a detected installation keeps its code), a version below the subscription baseline or invalid
 metadata is `version` (even when the probe stored a `profile` diagnostic for a
 release between the discovery baseline `1.0.41` and the subscription baseline),
 and only a discovered installation at or above the baseline restores its stored
-diagnostic unchanged or, without one, reports `profile`; the refusal carries the
+diagnostic unchanged or, without one, reports `profile` with the protocol state's
+code (`failed` is `unavailable`, otherwise `unsupported`); the refusal carries the
 diagnostic text and a structured warning log. Login, refresh,
 logout, models, execution and history producers wrap their failures with
 `WithGrokDiagnostic` and the matching phase when they land.

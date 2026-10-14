@@ -38,16 +38,35 @@ func grokDiagnosticMessage(d *domain.GrokDiagnostic) *pb.GrokDiagnostic {
 }
 
 // grokAdmissionFailure classifies a refused Grok installation by the original
-// phase. Discovery validity and the subscription version baseline are decided
-// first: a release between the discovery baseline and the subscription
-// baseline can retain a stored profile diagnostic from its probe, but admission
-// must still report it as a version failure. Only an installation that is
-// discovered and at or above the subscription baseline restores its stored
-// failed-validation diagnostic unchanged, so the first native failure stays
-// authoritative.
+// phase and preserves the failure code that discovery or protocol validation
+// already recorded. Discovery validity and the subscription version baseline
+// are decided first: a release between the discovery baseline and the
+// subscription baseline can retain a stored profile diagnostic from its probe,
+// but admission must still report it as a version failure. Only an installation
+// that is discovered and at or above the subscription baseline restores its
+// stored failed-validation diagnostic unchanged, so the first native failure
+// stays authoritative.
+//
+// Classification table (installation -> phase / code):
+//
+//	no Grok installation reported         -> discovery / unsupported
+//	missing                               -> discovery / not_found
+//	permission-denied                     -> discovery / permission_denied
+//	incompatible                          -> discovery / unsupported
+//	failed                                -> discovery / unavailable
+//	unchecked, or detected without a
+//	  resolved path or observation time   -> discovery / unsupported
+//	detected with a recorded problem      -> discovery / the problem's code
+//	version below the baseline or invalid -> version / unsupported
+//	stored Grok diagnostic                -> the stored phase and code
+//	protocol failed                       -> profile / unavailable
+//	protocol unsupported or unverified    -> profile / unsupported
 func grokAdmissionFailure(found *domain.Installation) error {
 	if found == nil {
 		return domain.WithGrokDiagnostic("", domain.GrokDiscovery, grokInstallationRequired())
+	}
+	if problem := grokDiscoveryProblem(found); problem != nil {
+		return domain.WithGrokDiagnostic(found.Version, domain.GrokDiscovery, problem)
 	}
 	switch {
 	case found.State != domain.InstallationDetected || found.ResolvedPath == "" || found.ObservedAt == nil || found.ObservedAt.IsZero():
@@ -58,7 +77,25 @@ func grokAdmissionFailure(found *domain.Installation) error {
 	if stored := found.Protocol; stored != nil && stored.GrokDiagnostic != nil && stored.GrokDiagnostic.DetectedVersion == found.Version && stored.GrokDiagnostic.Validate() == nil {
 		return domain.RestoreGrokDiagnostic(*stored.GrokDiagnostic)
 	}
+	if found.Protocol != nil {
+		if problem := domain.ProtocolProblem(found.Protocol.State); problem != nil {
+			return domain.WithGrokDiagnostic(found.Version, domain.GrokProfile, problem)
+		}
+	}
 	return domain.WithGrokDiagnostic(found.Version, domain.GrokProfile, grokInstallationRequired())
+}
+
+// grokDiscoveryProblem returns the safe problem that discovery recorded for the
+// installation, reconstructed locally from its state so no Worker text is
+// trusted. It falls back to a recorded problem on a detected installation.
+func grokDiscoveryProblem(found *domain.Installation) error {
+	if problem := domain.InstallationProblem(found.State); problem != nil {
+		return problem
+	}
+	if found.Problem != nil {
+		return found.Problem
+	}
+	return nil
 }
 
 func grokInstallationRequired() *domain.Error {
