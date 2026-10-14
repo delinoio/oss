@@ -113,6 +113,15 @@ fn duplicate_packages(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraf
     }
 }
 
+/// True when `text` reads `process.env.NAME` or `process.env["NAME"]`.
+fn reads_process_env(text: &str, name: &str) -> bool {
+    let name = regex::escape(name);
+    Regex::new(&format!(
+        r#"process\.env(?:\.{name}\b|\[\s*"{name}"\s*\]|\[\s*'{name}'\s*\])"#
+    ))
+    .is_ok_and(|pattern| pattern.is_match(text))
+}
+
 /// Byte ranges of string literals, template literal text, comments and regular
 /// expression literals in JavaScript. Text there is never a property read.
 ///
@@ -251,10 +260,13 @@ fn unresolved_env_conditions(context: &mut Context<'_>, drafts: &mut Vec<Diagnos
     let vite = context.collection.bundler == "vite";
     // Vite replaces `process.env` with `{}` in client builds; Rspack leaves
     // unknown `process.env.X` reads untouched.
+    // Dotted reads and static bracket-string reads (`["NAME"]`, `['NAME']`).
+    let member =
+        r#"(?:\.([A-Za-z_$][\w$]*)|\[\s*"([A-Za-z_$][\w$]*)"\s*\]|\[\s*'([A-Za-z_$][\w$]*)'\s*\])"#;
     let pattern = if vite {
-        Regex::new(r"\(\{\}\)\.([A-Za-z_$][\w$]*)")
+        Regex::new(&format!(r"\(\{{\}}\){member}"))
     } else {
-        Regex::new(r"\bprocess\.env\.([A-Za-z_$][\w$]*)")
+        Regex::new(&format!(r"\bprocess\.env{member}"))
     }
     .expect("static regex");
     let mut seen: BTreeSet<(String, String)> = BTreeSet::new();
@@ -276,7 +288,11 @@ fn unresolved_env_conditions(context: &mut Context<'_>, drafts: &mut Vec<Diagnos
                 } else {
                     whole.start()
                 };
-                Some((offset, captures[1].to_owned()))
+                let name = captures
+                    .get(1)
+                    .or_else(|| captures.get(2))
+                    .or_else(|| captures.get(3))?;
+                Some((offset, name.as_str().to_owned()))
             })
             .collect();
         for (offset, name) in matches {
@@ -296,7 +312,7 @@ fn unresolved_env_conditions(context: &mut Context<'_>, drafts: &mut Vec<Diagnos
                 let Some(snippet) = located.snippet.as_ref() else {
                     continue;
                 };
-                if !mapped || !snippet.text.contains(&format!("process.env.{name}")) {
+                if !mapped || !reads_process_env(&snippet.text, &name) {
                     continue;
                 }
             }
@@ -1031,6 +1047,26 @@ y=/process.env.F/.test(z),process.env.G"#;
         assert!(!names.contains(&"void".to_owned()));
         let names = declared_names("const f = (inputValue): Promise<Map<string, number>> => g();");
         assert!(names.contains(&"inputValue".to_owned()));
+    }
+
+    #[test]
+    fn computed_env_reads_are_recognized() {
+        assert!(reads_process_env(
+            r#"if (process.env["FEATURE_FLAG"]) {}"#,
+            "FEATURE_FLAG"
+        ));
+        assert!(reads_process_env(
+            "if (process.env['FEATURE_FLAG']) {}",
+            "FEATURE_FLAG"
+        ));
+        assert!(reads_process_env(
+            "if (process.env.FEATURE_FLAG) {}",
+            "FEATURE_FLAG"
+        ));
+        assert!(!reads_process_env(
+            "if (process.env.FEATURE_FLAGS) {}",
+            "FEATURE_FLAG"
+        ));
     }
 
     #[test]

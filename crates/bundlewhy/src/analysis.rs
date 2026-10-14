@@ -417,6 +417,7 @@ mod tests {
 
     struct Fixture {
         _dir: tempfile::TempDir,
+        project: PathBuf,
         output: AnalysisOutput,
     }
 
@@ -461,7 +462,7 @@ mod tests {
         let collection: Collection = serde_json::from_value(value).unwrap();
         let output = analyze(&AnalysisInput {
             run_id: "test-run".to_owned(),
-            project_root: project,
+            project_root: project.clone(),
             project_name: format!("bundlewhy-fixture-{}-app", bundler.as_str()),
             bundler,
             collection: &collection,
@@ -471,7 +472,11 @@ mod tests {
             on_measuring: None,
             cancelled: None,
         });
-        Fixture { _dir: dir, output }
+        Fixture {
+            _dir: dir,
+            project,
+            output,
+        }
     }
 
     fn walk(dir: &Path) -> Vec<PathBuf> {
@@ -991,6 +996,48 @@ mod tests {
             cancelled: Some(&always),
         });
         assert!(output.analysis.chunks.is_empty());
+    }
+
+    #[test]
+    fn computed_process_env_reads_in_rspack_output_are_reported() {
+        let fixture = run_fixture(BundlerChoice::Rspack, |_| {});
+        let build = fixture._dir.path().join("build/main.js");
+        let code = std::fs::read_to_string(&build).unwrap();
+        // Rewrite the dotted read in the emitted chunk to the computed form.
+        let rewritten = code.replace(
+            "process.env.BUNDLEWHY_FIXTURE_FLAG",
+            "process.env[\"BUNDLEWHY_FIXTURE_FLAG\"]",
+        );
+        assert_ne!(code, rewritten);
+        std::fs::write(&build, rewritten).unwrap();
+        let collection: Collection = serde_json::from_str(
+            &std::fs::read_to_string(manifest_dir().join("tests/fixtures/rspack/collect.json"))
+                .unwrap()
+                .replace("/__bundlewhy_project__", &fixture.project.to_string_lossy()),
+        )
+        .unwrap();
+        let output = analyze(&AnalysisInput {
+            run_id: "test-run".to_owned(),
+            project_root: fixture.project.clone(),
+            project_name: "bundlewhy-fixture-rspack-app".to_owned(),
+            bundler: BundlerChoice::Rspack,
+            collection: &collection,
+            build_dir: fixture._dir.path().join("build"),
+            include_sources: true,
+            started_at: String::new(),
+            on_measuring: None,
+            cancelled: None,
+        });
+        assert!(
+            output
+                .analysis
+                .diagnostics
+                .iter()
+                .any(
+                    |diagnostic| diagnostic.rule == "minifier/unresolved-env-condition"
+                        && diagnostic.title.contains("BUNDLEWHY_FIXTURE_FLAG")
+                )
+        );
     }
 
     #[test]
