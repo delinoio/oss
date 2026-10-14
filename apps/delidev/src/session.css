@@ -1703,3 +1703,35 @@
     width: 100%;
   }
 }
+/* Terminals stays visible but muted while workspace preparation is not ready.
+   The reason is hover-only: the noninteractive wrapper receives the pointer
+   because a disabled button does not, and the tooltip is positioned inside the
+   row so the scrolling dialog and narrow or zoomed viewports never clip it. */
+.session-tool-menu button:disabled {
+  color: var(--muted);
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.session-tool-hint {
+  position: relative;
+}
+.session-tool-tooltip {
+  position: absolute;
+  inset-inline: 8px;
+  top: calc(100% - 4px);
+  z-index: 1;
+  box-sizing: border-box;
+  max-width: calc(100% - 16px);
+  padding: 6px 10px;
+  border-radius: 8px;
+  color: #fff;
+  background: rgb(31 31 31 / 94%);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  visibility: hidden;
+}
+.session-tool-tooltip[data-visible="true"] {
+  visibility: visible;
+}

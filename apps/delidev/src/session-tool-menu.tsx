@@ -24,6 +24,43 @@ const enabledControls = (root: ParentNode | null | undefined) => [
 ];
 
 /**
+ * Hover-only reason for a disabled tool row. The pointer target is a
+ * noninteractive wrapper because disabled buttons do not receive pointer
+ * events in every engine; the button receives the same reason through
+ * aria-describedby. The tooltip is positioned inside the row so the dialog's
+ * scrolling and narrow or zoomed viewports never clip it, and it is never
+ * shown from keyboard focus because the disabled button is not focusable.
+ */
+export function SessionToolHint({
+  reason,
+  children,
+}: {
+  reason: string;
+  children: (describedBy: string) => ReactNode;
+}) {
+  const id = useId();
+  const [hovered, setHovered] = useState(false);
+  return (
+    <div
+      role="presentation"
+      className="session-tool-hint"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      {children(id)}
+      <span
+        id={id}
+        role="tooltip"
+        className="session-tool-tooltip"
+        data-visible={hovered ? "true" : "false"}
+      >
+        {reason}
+      </span>
+    </div>
+  );
+}
+
+/**
  * Compact tool dialog shared by the Open tool button and the OpenTool shortcut.
  * Rows keep their original callbacks; this dialog only owns presentation, focus
  * and the shortcut registration. Opening performs no tool action.

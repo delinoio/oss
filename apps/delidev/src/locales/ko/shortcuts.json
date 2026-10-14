@@ -11,6 +11,7 @@
   "shortcuts.preferencesPending": "저장된 단축키 설정을 불러오는 동안에는 사용자 지정 단축키에 영향을 받는 기본 단축키가 비활성화됩니다.",
   "shortcuts.openTerminals": "터미널 열기",
   "shortcuts.terminalsUnavailable": "읽기 전용 사이드챗에서는 터미널을 사용할 수 없습니다.",
+  "shortcuts.terminalsPreparing": "작업공간 준비가 끝나면 터미널을 사용할 수 있습니다.",
   "shortcuts.terminalCreate": "새 터미널(터미널 입력에 포커스가 있을 때)",
   "shortcuts.newSession": "새 세션",
   "shortcuts.focusMessage": "메시지 입력창으로 이동",

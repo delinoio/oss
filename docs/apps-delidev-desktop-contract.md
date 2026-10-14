@@ -327,6 +327,34 @@ Open Sidechat action follows as an additional row; this feature neither moves no
 redesigns it. Keep all original eligibility, including disabled Terminals for a
 Sidechat parent snapshot. Child controllers stay mounted across dialog visits.
 
+Terminal opening has one desktop eligibility rule derived from the authenticated
+Session document (`TerminalOpenEligibility`: `Eligible`, `SidechatBlocked`,
+`PreparationNotReady`). Terminals is eligible only when the document's
+`preparation.state` is `ready` and the Session is not a Sidechat parent snapshot;
+a missing, pending, failed, canceled, uncertain or stale preparation, and a
+Session that has not loaded, is `PreparationNotReady`. The Terminals row, the
+Open terminals shortcut (primary+backtick) and the open handler (including its
+no-Session pending branch) share it, so an unready gesture creates no open intent
+and sends no `CreateTerminal` request. Additional-terminal creation (the + button
+and the terminal-input primary+T shortcut) is disabled by the same readiness
+while existing terminal tabs stay unchanged. While preparation is not ready the
+Terminals row is disabled and muted and its Help entry reports the localized
+`shortcuts.terminalsPreparing` reason (Available when workspace is ready. /
+작업공간 준비가 끝나면 터미널을 사용할 수 있습니다.); the Sidechat-specific
+`shortcuts.terminalsUnavailable` reason wins when Sidechat is the blocker. The
+same text appears only as a hover tooltip: no persistent helper text is added, the
+pointer target is a noninteractive wrapper around the disabled button (which
+receives the text through `aria-describedby`), the disabled button stays outside
+keyboard activation and the enabled-row focus order is unchanged, and the tooltip
+is positioned inside the row so the scrolling dialog, narrow viewports and 200%
+zoom never clip it. Regained readiness re-enables the row and shortcut without
+opening anything; a fresh gesture follows the original reuse-or-create flow. An
+unsent open intent that is waiting for inventory reads is discarded when
+readiness is lost (checked again immediately before `CreateTerminal`) and is not
+replayed when readiness returns; already accepted or uncertain terminal requests
+keep their reconciliation behavior. The server readiness rule, RPC shapes and
+Worker connection behavior are unchanged.
+
 The dialog uses the localized Open tool / 도구 열기 title and a named close button.
 It has no search field or footer. Width is `min(360px, viewport minus 32px)` with
 20px padding, 12px corners, 44px row and close targets, semantic theme tokens and

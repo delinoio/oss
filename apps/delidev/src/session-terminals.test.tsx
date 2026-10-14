@@ -2817,3 +2817,171 @@ it("keeps exact additional-creation retry bytes after Session departure and retu
     f.cleanup();
   }
 });
+
+it("discards an unsent open intent when workspace readiness is lost during inventory reads and never replays it", async () => {
+  const session = create(ResourceSchema, {
+    id: newRequestId(),
+    kind: EntityKind.SESSION,
+    schemaVersion: 1,
+    revision: 7n,
+    documentJson: encode({ archive: "active" }),
+  });
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const opened = vi.fn(),
+    createTerminal = vi.fn((_request: unknown) => ({
+      terminal: create(ResourceSchema, {
+        id: newRequestId(),
+        kind: EntityKind.TERMINAL,
+        sessionId: session.id,
+        schemaVersion: 1,
+        revision: 1n,
+        documentJson: encode({ state: "running" }),
+      }),
+    }));
+  let hold = false;
+  const reads = vi.fn(async () => {
+    if (hold) await held;
+    return { resources: [] as Resource[] };
+  });
+  const transport = createRouterTransport((router) => {
+    router.service(SystemService, {
+      getStatus: () => ({
+        capabilities: [SystemCapability.SESSION_TERMINALS_V1],
+      }),
+    });
+    router.service(ResourceService, { listResources: reads });
+    router.service(TerminalService, { createTerminal });
+  });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  function View() {
+    const [ready, setReady] = useState(true);
+    const [intent, setIntent] = useState<{
+      requestId: string;
+      revision: bigint;
+    }>();
+    return (
+      <>
+        <button
+          onClick={() =>
+            setIntent({ requestId: newRequestId(), revision: session.revision })
+          }
+        >
+          Open fixture
+        </button>
+        <button onClick={() => setReady((value) => !value)}>
+          Toggle readiness
+        </button>
+        <SessionTerminals
+          session={session}
+          selectedId=""
+          tabbed
+          workspaceReady={ready}
+          openIntent={intent}
+          finishOpenIntent={() => setIntent(undefined)}
+          openTerminal={opened}
+          close={() => {}}
+        />
+      </>
+    );
+  }
+  const view = render(
+    <QueryClientProvider client={client}>
+      <TransportProvider transport={transport}>
+        <MutationIntents>
+          <View />
+        </MutationIntents>
+      </TransportProvider>
+    </QueryClientProvider>,
+  );
+  try {
+    const plus = await screen.findByRole("button", { name: "Create terminal" });
+    await waitFor(() => expect(reads).toHaveBeenCalled());
+    await waitFor(() => expect(plus).toHaveProperty("disabled", false));
+    // Hold the next inventory read behind the gesture, then lose readiness.
+    hold = true;
+    const before = reads.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "Open fixture" }));
+    await waitFor(() => expect(reads.mock.calls.length).toBeGreaterThan(before));
+    fireEvent.click(screen.getByRole("button", { name: "Toggle readiness" }));
+    expect(plus).toHaveProperty("disabled", true);
+    await act(async () => release());
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(createTerminal).not.toHaveBeenCalled();
+    // Readiness returning neither replays the discarded intent nor opens.
+    hold = false;
+    fireEvent.click(screen.getByRole("button", { name: "Toggle readiness" }));
+    await waitFor(() => expect(plus).toHaveProperty("disabled", false));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(createTerminal).not.toHaveBeenCalled();
+    expect(opened).not.toHaveBeenCalled();
+    // A fresh gesture follows the original reuse-or-create flow once.
+    fireEvent.click(screen.getByRole("button", { name: "Open fixture" }));
+    await waitFor(() => expect(createTerminal).toHaveBeenCalledOnce());
+    expect(createTerminal.mock.calls[0]?.[0]).toMatchObject({
+      creationMode: TerminalCreationMode.REUSE_OR_CREATE,
+    });
+  } finally {
+    release();
+    view.unmount();
+    client.clear();
+  }
+});
+
+it("blocks an open intent and additional creation while the workspace is not ready", async () => {
+  const session = create(ResourceSchema, {
+    id: newRequestId(),
+    kind: EntityKind.SESSION,
+    schemaVersion: 1,
+    revision: 7n,
+    documentJson: encode({ archive: "active" }),
+  });
+  const createTerminal = vi.fn();
+  const transport = createRouterTransport((router) => {
+    router.service(SystemService, {
+      getStatus: () => ({
+        capabilities: [SystemCapability.SESSION_TERMINALS_V1],
+      }),
+    });
+    router.service(ResourceService, {
+      listResources: () => ({ resources: [] }),
+    });
+    router.service(TerminalService, { createTerminal });
+  });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const finish = vi.fn();
+  const view = render(
+    <QueryClientProvider client={client}>
+      <TransportProvider transport={transport}>
+        <MutationIntents>
+          <SessionTerminals
+            session={session}
+            selectedId=""
+            tabbed
+            workspaceReady={false}
+            openIntent={{ requestId: newRequestId(), revision: 7n }}
+            finishOpenIntent={finish}
+            close={() => {}}
+          />
+        </MutationIntents>
+      </TransportProvider>
+    </QueryClientProvider>,
+  );
+  try {
+    const plus = await screen.findByRole("button", { name: "Create terminal" });
+    expect(plus).toHaveProperty("disabled", true);
+    await waitFor(() => expect(finish).toHaveBeenCalled());
+    fireEvent.click(plus);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(createTerminal).not.toHaveBeenCalled();
+  } finally {
+    view.unmount();
+    client.clear();
+  }
+});

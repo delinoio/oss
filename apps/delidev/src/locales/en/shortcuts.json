@@ -11,6 +11,7 @@
   "shortcuts.preferencesPending": "Shortcuts that depend on saved customizations stay inactive until your saved shortcut preferences finish loading.",
   "shortcuts.openTerminals": "Open terminals",
   "shortcuts.terminalsUnavailable": "Terminals are unavailable in a read-only Sidechat.",
+  "shortcuts.terminalsPreparing": "Available when workspace is ready.",
   "shortcuts.terminalCreate": "New terminal (while terminal input has focus)",
   "shortcuts.newSession": "New session",
   "shortcuts.focusMessage": "Focus message input",

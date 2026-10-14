@@ -15,7 +15,13 @@ import {
   useActivationCount,
   useEntranceActivation,
 } from "./entrance-motion";
-import { SessionToolMenu } from "./session-tool-menu";
+import { SessionToolHint, SessionToolMenu } from "./session-tool-menu";
+import {
+  TerminalOpenEligibility,
+  terminalOpenEligibility,
+  terminalUnavailableReason,
+  workspacePreparationReady,
+} from "./session-terminal-eligibility";
 import { NativeAutoReview } from "./native-auto-review";
 import { useSessionRevert } from "./session-revert";
 import { isImageStartupRejectedInput } from "./startup-rejection";
@@ -1557,7 +1563,24 @@ export function SessionView({
       attachments,
     });
   };
-  const terminalsDisabled = Boolean(object(data.fork).sidechat_parent_snapshot);
+  // One eligibility rule gates the Terminals row, shortcut and open handler:
+  // Sidechat parents and sessions whose workspace is not prepared cannot open
+  // terminals. The server rule is unchanged.
+  const terminalEligibility = terminalOpenEligibility(data);
+  const terminalsDisabled =
+    terminalEligibility !== TerminalOpenEligibility.Eligible;
+  const terminalsPreparing =
+    terminalEligibility === TerminalOpenEligibility.PreparationNotReady;
+  const workspaceReady = workspacePreparationReady(data);
+  // Losing readiness discards unsent open intents without replaying them when
+  // readiness returns. Accepted or uncertain CreateTerminal requests live in the
+  // creation controller and keep their reconciliation behavior.
+  useEffect(() => {
+    if (terminalsDisabled) {
+      setPendingTerminalOpen(undefined);
+      setTerminalOpenIntent(undefined);
+    }
+  }, [terminalsDisabled]);
   const shortcuts = useShortcuts([
     {
       id: ShortcutId.OpenFiles,
@@ -1577,7 +1600,7 @@ export function SessionView({
       input: ShortcutInput.Allow,
       active: active && !embedded,
       enabled: !terminalsDisabled,
-      unavailableReason: "shortcuts.terminalsUnavailable",
+      unavailableReason: terminalUnavailableReason(terminalEligibility),
       run: () => togglePanel(SessionPanel.Terminals),
     },
     ...(!embedded
@@ -2437,39 +2460,57 @@ export function SessionView({
               ready={connectionReady}
               recoveryFocus={() => sessionHeading.current}
             >
-              {tools.map((tool) => (
-                <button
-                  role="menuitem"
-                  key={tool.panel}
-                  type="button"
-                  ref={panelButtons[tool.panel]}
-                  disabled={
-                    tool.panel === SessionPanel.Terminals && terminalsDisabled
-                  }
-                  aria-keyshortcuts={
-                    tool.panel === SessionPanel.Files
-                      ? shortcuts.aria(ShortcutId.OpenFiles) || undefined
-                      : tool.panel === SessionPanel.Terminals
-                        ? shortcuts.aria(ShortcutId.OpenTerminals)
-                        : undefined
-                  }
-                  onClick={() => togglePanel(tool.panel)}
-                >
-                  <SessionIcon kind={tool.icon} />
-                  <span className="session-tool-label">{tool.label}</span>
-                  {tool.panel === SessionPanel.Files &&
-                  shortcuts.bindings(ShortcutId.OpenFiles).length ? (
-                    <kbd className="session-tool-shortcut" aria-hidden="true">
-                      {shortcuts
-                        .bindings(ShortcutId.OpenFiles)
-                        .map((binding) =>
-                          bindingKeys(binding, shortcuts.platform).join(" + "),
-                        )
-                        .join(` ${copy("shortcuts.or")} `)}
-                    </kbd>
-                  ) : null}
-                </button>
-              ))}
+              {tools.map((tool) => {
+                const row = (describedBy?: string) => (
+                  <button
+                    role="menuitem"
+                    key={tool.panel}
+                    type="button"
+                    ref={panelButtons[tool.panel]}
+                    disabled={
+                      tool.panel === SessionPanel.Terminals && terminalsDisabled
+                    }
+                    aria-describedby={describedBy}
+                    aria-keyshortcuts={
+                      tool.panel === SessionPanel.Files
+                        ? shortcuts.aria(ShortcutId.OpenFiles) || undefined
+                        : tool.panel === SessionPanel.Terminals
+                          ? shortcuts.aria(ShortcutId.OpenTerminals)
+                          : undefined
+                    }
+                    onClick={() => togglePanel(tool.panel)}
+                  >
+                    <SessionIcon kind={tool.icon} />
+                    <span className="session-tool-label">{tool.label}</span>
+                    {tool.panel === SessionPanel.Files &&
+                    shortcuts.bindings(ShortcutId.OpenFiles).length ? (
+                      <kbd className="session-tool-shortcut" aria-hidden="true">
+                        {shortcuts
+                          .bindings(ShortcutId.OpenFiles)
+                          .map((binding) =>
+                            bindingKeys(binding, shortcuts.platform).join(
+                              " + ",
+                            ),
+                          )
+                          .join(` ${copy("shortcuts.or")} `)}
+                      </kbd>
+                    ) : null}
+                  </button>
+                );
+                // Only the readiness blocker explains itself on hover; the
+                // enabled rows keep their original markup and focus order.
+                return tool.panel === SessionPanel.Terminals &&
+                  terminalsPreparing ? (
+                  <SessionToolHint
+                    key={tool.panel}
+                    reason={copy("shortcuts.terminalsPreparing")}
+                  >
+                    {(describedBy) => row(describedBy)}
+                  </SessionToolHint>
+                ) : (
+                  row()
+                );
+              })}
               {session &&
               tabs.tab.kind !== SessionTabKind.Sidechat &&
               tabs.tab.kind !== SessionTabKind.PendingSidechat ? (
@@ -3353,6 +3394,7 @@ export function SessionView({
                   <SessionTerminals
                     session={session}
                     close={closeTerminal}
+                    workspaceReady={workspaceReady}
                     openIntent={terminalOpenIntent}
                     finishOpenIntent={() => setTerminalOpenIntent(undefined)}
                     sessionActive={active}
