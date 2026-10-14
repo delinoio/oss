@@ -202,8 +202,10 @@ generation is staged under `credentials.AccountLogin` before the account
 document points to it. The account keeps referencing, and the vault keeps, its
 current generation until the document durably publishes the replacement (or the
 logout), so a failed publication never leaves the account pointing at a deleted
-generation. Only after that commit are superseded generations and every
-generation after logout removed; a removal that cannot be confirmed marks the
+generation. Only after that commit are the generations the account no longer
+references removed (superseded generations, an unpublished staged generation and
+every generation after a completed logout); a logout fenced for recovery keeps
+its generation. A removal that cannot be confirmed marks the
 account recovery-required, and an unconfirmed Worker cleanup keeps the lease
 fenced.
 

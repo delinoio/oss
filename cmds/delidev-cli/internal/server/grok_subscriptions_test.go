@@ -686,6 +686,27 @@ func TestGrokFinishFailedPublicationKeepsTheCurrentGeneration(t *testing.T) {
 	}
 }
 
+// A logout the Worker could not complete is fenced for recovery and the account
+// still references its generation, so the vault must keep that generation.
+func TestGrokFinishFencedLogoutKeepsTheReferencedGeneration(t *testing.T) {
+	f := newGrokFixture(t)
+	generation := f.login("synthetic-principal-1")
+	lease, err := f.take(f.queue(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT), pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.finishWith(lease, domain.NewID(), nil, false, false, true); err != nil {
+		t.Fatal(err)
+	}
+	_, a := f.record()
+	if !a.Subscription.RecoveryRequired || a.Subscription.Generation != generation || a.Connection == nil {
+		t.Fatal("a failed logout did not stay fenced with its connection")
+	}
+	if stored, err := f.secrets.Get(context.Background(), credentials.Ref{Owner: f.input.AccountID, ID: generation, Purpose: credentials.AccountLogin}); err != nil || len(stored) == 0 {
+		t.Fatal("a fenced logout deleted the generation the account still references")
+	}
+}
+
 func (f *grokFixture) start2(action pb.SubscriptionAction) (*pb.RequestSubscriptionResponse, error) {
 	r, _ := f.record()
 	response, err := f.client.RequestSubscription(context.Background(), subscriptionRequest(f.service.Identity.Token, &pb.RequestSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(r.ID), ExpectedRevision: r.Revision}, MachineId: string(f.input.MachineID), Action: action}))

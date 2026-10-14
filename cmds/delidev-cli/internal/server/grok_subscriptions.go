@@ -339,6 +339,8 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 	if req.Msg.FinishScope != pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_UNSPECIFIED {
 		return nil, rpc.Error(grokUnsupported(), c)
 	}
+	// The request owns a copy of the sealed credential; clear it on every path.
+	defer clear(req.Msg.Bundle)
 	if len(req.Msg.Bundle) > subscription.MaxGrokBundleEnvelope {
 		return nil, rpc.Error(subscription.GrokBundleInvalid(), c)
 	}
@@ -427,6 +429,8 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 		// The superseded generation stays referenced and readable until the
 		// account document durably publishes its replacement (or the logout), so a
 		// failed or retried publication never points at a deleted generation.
+		// committed is the one generation the account references after the commit.
+		var committed domain.ID
 		result, err = s.Store.Mutate(ctx, domain.ID(m.RequestId), "grok.subscription.finish", input, func(tx *store.Tx) (any, error) {
 			if err := tx.Authorize(); err != nil {
 				return nil, err
@@ -487,6 +491,7 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 			if _, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
 				return nil, err
 			}
+			committed = state.Generation
 			return accountReceipt{ID: r.ID}, nil
 		})
 		if err != nil {
@@ -497,16 +502,12 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 		}
 		// Only after the commit are the unreferenced generations removed: the
 		// superseded one after a publication, the staged new one after a
-		// cancellation that won during vault staging, and every generation after
-		// logout. A failed removal is fenced for recovery by the owned-error guard.
+		// cancellation that won during vault staging, and every generation after a
+		// completed logout. A logout fenced for recovery still references its
+		// generation, so that generation is kept. A failed removal is fenced for
+		// recovery by the owned-error guard.
 		if input.Cleanup {
-			keep := original.Subscription.Generation
-			if lease.Action == domain.SubscriptionLogout {
-				keep = ""
-			} else if usable {
-				keep = newGeneration
-			}
-			if err := cleanupSubscriptionReferences(ctx, vault, input.Account, keep, protectedGenerations(original.Subscription)...); err != nil {
+			if err := cleanupSubscriptionReferences(ctx, vault, input.Account, committed, protectedGenerations(original.Subscription)...); err != nil {
 				return nil, rpc.Error(err, c)
 			}
 		}
