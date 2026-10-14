@@ -2961,6 +2961,13 @@ rename therefore leaves an attributable plaintext remnant: the presence check
 entry with that name blocks without being removed, and the next credential write
 to the same target retires an earlier remnant before writing.
 
+For a validated existing credential parent, an empty attributed-temporary scan
+and an absent credential target each require a successful parent-directory sync
+before cleanup reports success. This includes retries after removal succeeded but
+the earlier sync failed. A sync failure retains the typed cleanup error and
+blocks server or Worker cleanup checkpoints. Missing, linked and non-directory
+parents retain their validation behavior; unrelated profile files remain intact.
+
 The transient executable copy of a native model observation is created by
 exactly one attempt (`O_EXCL`) and removed only after that operation's owned
 processes are joined; an unproven owner keeps the copy and the failure. A retry
