@@ -65,6 +65,10 @@ export enum GrokLoginMethod {
 enum NativeFailureReason {
   Incompatible = "incompatible",
 }
+// The only notice a later successful status read may clear. Every other problem
+// comes from an explicit user action or a one-shot native step and stays until
+// the user acts again, so polling can never hide an actionable failure.
+const statusProblem: MessageKey = "grok-subscription.problem.statusUnconfirmed";
 const copiedNoticeMilliseconds = 4000;
 const pollIntervalMilliseconds = 1000;
 
@@ -321,6 +325,21 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
     if (live(p)) p.account = result.resource;
     return result.resource;
   };
+  // Records the outcome of a status read. A healthy read recovers only the
+  // polling notice; a failing read never replaces a more specific problem.
+  const settleStatus = (p: Pending, healthy: boolean) => {
+    if (!live(p)) return;
+    setView((current) => {
+      if (!current) return current;
+      if (healthy)
+        return current.problem === statusProblem
+          ? { ...current, problem: undefined }
+          : current;
+      return current.problem && current.problem !== statusProblem
+        ? current
+        : { ...current, problem: statusProblem };
+    });
+  };
   const run = async (
     p: Pending,
     action: () => Promise<void>,
@@ -540,11 +559,8 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
             throw new Error("Invalid original device authorization");
           p.url = progress.url;
           p.userCode = progress.userCode;
-          update(p, {
-            urlReady: true,
-            userCode: p.userCode,
-            problem: undefined,
-          });
+          update(p, { urlReady: true, userCode: p.userCode });
+          settleStatus(p, true);
           return;
         }
         if (
@@ -555,6 +571,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
           throw new Error("Invalid original browser login");
         p.url = progress.url;
         update(p, { urlReady: true });
+        settleStatus(p, true);
         if (!p.bound) {
           // Set before dispatch: an uncertain native reply must not open
           // another browser or callback receiver on the next poll.
@@ -572,11 +589,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
             if (!isEntityId(result.generation))
               throw new Error("Invalid native generation");
             p.generation = result.generation;
-            update(p, {
-              stage: GrokLoginStage.Waiting,
-              browserReady: true,
-              problem: undefined,
-            });
+            update(p, { stage: GrokLoginStage.Waiting, browserReady: true });
           } catch (error) {
             update(p, {
               stage: GrokLoginStage.Waiting,
@@ -644,7 +657,7 @@ export function useGrokSubscriptionLogin(active: boolean, changed: () => void) {
           }
         }
       } catch {
-        update(p, { problem: "grok-subscription.problem.statusUnconfirmed" });
+        settleStatus(p, false);
       } finally {
         p.polling = false;
       }

@@ -1040,6 +1040,92 @@ it("keeps the same device screen while the server slows polling", async () => {
   expect(f.login).toHaveBeenCalledTimes(1);
 });
 
+const openVerification = () =>
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: copy("grok-subscription.device.openVerification"),
+    }),
+  );
+async function pollTwice(f: ReturnType<typeof fixture>) {
+  const before = f.progress.mock.calls.length;
+  await waitFor(
+    () => expect(f.progress.mock.calls.length).toBeGreaterThanOrEqual(before + 2),
+    { timeout: 4000 },
+  );
+}
+
+it("keeps a verification-open failure visible across later waiting polls until another open succeeds", async () => {
+  const f = deviceFixture();
+  await startDevice(f);
+  f.native.mockRejectedValueOnce("browser-launch-failed");
+  openVerification();
+  const failure = copy("grok-subscription.problem.verificationOpenFailed");
+  await screen.findByText(failure);
+  // Normal one-second WAITING polls neither clear nor replace the failure.
+  await pollTwice(f);
+  expect(screen.getByText(failure)).toBeTruthy();
+  expect(screen.getByText(DEVICE_CODE)).toBeTruthy();
+  // A failing status read keeps the more specific opener failure too.
+  f.progress.mockImplementationOnce(() => {
+    throw new ConnectError("Fixture status failure", Code.Unavailable);
+  });
+  await pollTwice(f);
+  expect(screen.getByText(failure)).toBeTruthy();
+  expect(
+    screen.queryByText(copy("grok-subscription.problem.statusUnconfirmed")),
+  ).toBeNull();
+  // The next deliberate open attempt succeeds and the failure goes away.
+  openVerification();
+  await waitFor(() => expect(screen.queryByText(failure)).toBeNull());
+  await pollTwice(f);
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(
+    actions(f, OAuthNativeAction.GrokDeviceAuthorizationOpen),
+  ).toHaveLength(2);
+  expect(externalOpen).not.toHaveBeenCalled();
+}, 20000);
+
+it("recovers only the polling notice after a later successful status read", async () => {
+  const f = deviceFixture();
+  await startDevice(f);
+  f.progress.mockImplementationOnce(() => {
+    throw new ConnectError("Fixture status failure", Code.Unavailable);
+  });
+  await screen.findByText(
+    copy("grok-subscription.problem.statusUnconfirmed"),
+    {},
+    { timeout: 3000 },
+  );
+  await waitFor(
+    () =>
+      expect(
+        screen.queryByText(copy("grok-subscription.problem.statusUnconfirmed")),
+      ).toBeNull(),
+    { timeout: 3000 },
+  );
+  expect(screen.getByText(DEVICE_CODE)).toBeTruthy();
+});
+
+it("keeps a failed cancellation and its retry visible across later waiting polls", async () => {
+  const f = deviceFixture();
+  await startDevice(f);
+  f.cancel.mockImplementationOnce(() => {
+    throw new ConnectError("Fixture cancel failure", Code.Unavailable);
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: copy("grok-subscription.cancel") }),
+  );
+  const failure = copy("grok-subscription.problem.cancelUnconfirmed");
+  await screen.findByText(failure);
+  await pollTwice(f);
+  expect(screen.getByText(failure)).toBeTruthy();
+  expect(
+    screen.getByRole("button", {
+      name: copy("grok-subscription.retryOriginal"),
+    }),
+  ).toBeTruthy();
+});
+
 it("advances to naming after verified device success and drops the code", async () => {
   const f = deviceFixture();
   await startDevice(f);
