@@ -2900,3 +2900,124 @@ console.log(describe(firstSettings));
     same_behavior(temp.path());
     assert_eq!(out(temp.path(), "untouched.js"), untouched);
 }
+
+// ---------------------------------------------------------------------------
+// Closed classes
+// ---------------------------------------------------------------------------
+
+/// Fields, methods, accessors and `super` calls of closed classes are
+/// renamed together across chunks and the class hierarchy.
+#[test]
+fn renames_closed_class_members_across_chunks() {
+    let (temp, report) = run(&[
+        (
+            "index.js",
+            r#"import{Shape as S,Square as Q}from"./shapes.js";const g=new S(1,"green");console.log(g.describeShape());const q=new Q(5,"pink");console.log(q.describeShape(),q.areaOfShape(),q instanceof S,q.shapeLabel);q.shapeLabel="relabelled";console.log(q.describeShape());"#,
+        ),
+        (
+            "shapes.js",
+            r#"class Shape{#hiddenCount=0;constructor(s,c){this.sizeOfShape=s;this.colourOfShape=c}areaOfShape(){this.#hiddenCount++;return this.sizeOfShape*this.sizeOfShape}describeShape(){return this.colourOfShape+":"+this.areaOfShape()+":"+this.#hiddenCount}}class Square extends Shape{storedLabel={labelText:"sq"};constructor(n,c){super(n,c)}get shapeLabel(){return this.storedLabel.labelText}set shapeLabel(v){this.storedLabel={labelText:v}}describeShape(){return this.shapeLabel+super.describeShape()}}export{Shape,Square};"#,
+        ),
+    ]);
+    assert!(saved(&report) > 0, "{report:#}");
+    let shapes = out(temp.path(), "shapes.js");
+    for name in [
+        "sizeOfShape",
+        "colourOfShape",
+        "areaOfShape",
+        "describeShape",
+        "storedLabel",
+        "shapeLabel",
+        "labelText",
+    ] {
+        assert!(!shapes.contains(name), "{name} kept:\n{shapes}");
+    }
+    assert!(shapes.contains("#hiddenCount"), "{shapes}");
+}
+
+/// Named class expressions construct through their inner name, and static
+/// factories that are only called directly return tracked instances.
+#[test]
+fn renames_instances_of_static_factories() {
+    let (temp, _) = run(&[(
+        "index.js",
+        r#"const Store=class e{static create(t){return new e(t,{parentValue:1})}storeOptions;rootValue;constructor(t,n){this.storeOptions=t,this.rootValue=n}describeStore(){return this.storeOptions.optionLabel+this.rootValue.parentValue}};const s=Store.create({optionLabel:"x"});console.log(s.describeStore(),s instanceof Store);export{};"#,
+    )]);
+    let index = out(temp.path(), "index.js");
+    for name in ["storeOptions", "rootValue", "describeStore", "optionLabel"] {
+        assert!(!index.contains(name), "{name} kept:\n{index}");
+    }
+}
+
+/// Every fixture gives code that the analysis does not own a way to observe
+/// an instance member by name, so the names stay.
+#[test]
+fn keeps_class_members_that_unknown_code_can_observe() {
+    let cases: [(&str, &[&str]); 11] = [
+        // A method loaded without a call runs with another receiver.
+        (
+            r#"class W{constructor(){this.fieldName=1}methodName(){return this.fieldName}}const w=new W;const f=w.methodName;console.log(w.methodName(),f.call({fieldName:9}));"#,
+            &["fieldName", "methodName"],
+        ),
+        // Serialization reads every own property name.
+        (
+            r#"class P{constructor(v){this.payloadValue=v}}console.log(JSON.stringify(new P(1)));"#,
+            &["payloadValue"],
+        ),
+        // A function stored in a field runs with the instance as `this`.
+        (
+            r#"class Q{constructor(cb){this.callbackFn=cb;this.valueField=3}run(){return this.callbackFn()}}console.log(new Q(function(){return this.valueField}).run());"#,
+            &["valueField"],
+        ),
+        // An escaped instance's methods receive objects from unknown code.
+        (
+            r#"class R{readValue(o){return o.innerValue}}const r=new R;console.log(r.readValue({innerValue:1}));globalThis.hook=function(x){return x.readValue({innerValue:2})};console.log(globalThis.hook(r));"#,
+            &["innerValue", "readValue"],
+        ),
+        // A base class outside the program reads its own property names.
+        (
+            r#"class E extends Error{constructor(m){super(m);this.codeValue=2}}try{throw new E("x")}catch(e){console.log(e.codeValue,e.message)}"#,
+            &["codeValue"],
+        ),
+        // `arguments` reaches the arguments without parameters.
+        (
+            r#"class A{sum(){let t=0;for(const o of arguments)t+=o.partValue;return t}}console.log(new A().sum({partValue:1},{partValue:2}));"#,
+            &["partValue"],
+        ),
+        // A private method loaded without a call runs with another receiver.
+        (
+            r#"class Pm{#secretHelper(){return this.visibleValue}constructor(){this.visibleValue=4}leak(){return this.#secretHelper}}const p=new Pm;console.log(p.leak().call({visibleValue:5}),p.visibleValue);"#,
+            &["visibleValue"],
+        ),
+        // The prototype exposes method names.
+        (
+            r#"class Pr{greetPerson(){return 1}}console.log(new Pr().greetPerson(),Object.getOwnPropertyNames(Pr.prototype));"#,
+            &["greetPerson"],
+        ),
+        // A static factory loaded without a call returns instances to
+        // unknown callers.
+        (
+            r#"class L{static make(){return new L}longFieldName=1}const mk=L.make;console.log(mk().longFieldName);"#,
+            &["longFieldName"],
+        ),
+        // An escaped instance reaches the static methods of its class.
+        (
+            r#"class K{static create(o){return o.optionLabel}keyField=1}console.log(K.create({optionLabel:"a"}));const k=new K;globalThis.hook=function(x){return x.constructor.create({optionLabel:"b"})};console.log(globalThis.hook(k));"#,
+            &["optionLabel"],
+        ),
+        // A function-valued field names its function.
+        (
+            r#"class H{handlerFn=()=>this.countValue;countValue=2}const h=new H;console.log(h.handlerFn(),h.handlerFn.name);"#,
+            &["handlerFn"],
+        ),
+    ];
+    for (code, names) in cases {
+        // An export makes the chunk a module rather than a classic script.
+        let code = format!("{code}export{{}};");
+        let (temp, _) = run(&[("index.js", &code)]);
+        let index = out(temp.path(), "index.js");
+        for name in names {
+            assert!(index.contains(name), "{name} renamed in {code}:\n{index}");
+        }
+    }
+}
