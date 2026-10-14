@@ -63,6 +63,7 @@ func TestGrokFinishResultTableKeepsTheFirstFailure(t *testing.T) {
 			if test.stop {
 				f.cancelPending()
 			}
+			logs := f.captureLogs()
 			generation := domain.NewID()
 			var bundle []byte
 			usable := test.success && test.cleanup && !test.stop && (test.action != refresh || test.refreshed)
@@ -74,6 +75,12 @@ func TestGrokFinishResultTableKeepsTheFirstFailure(t *testing.T) {
 			}
 			if _, err := f.finishWith(lease, generation, bundle, test.success, test.refreshed, test.cleanup); err != nil {
 				t.Fatal(err)
+			}
+			// Every Finish settles its original operation once, and the line follows
+			// the committed record: it carries the diagnostic only for a failure.
+			settled := logs.requireLogged(t, "grok_subscription_operation_settled", 1)[0]
+			if settled["diagnostic_attached"] != (test.phase != "") {
+				t.Fatalf("settlement line = %v, want diagnostic_attached=%v", settled, test.phase != "")
 			}
 			p := f.progressFor(op.OperationId)
 			if test.phase == "" {
@@ -133,8 +140,20 @@ func TestGrokFinishVaultCleanupFailureNeverReplacesTheFirstFailure(t *testing.T)
 			f.secrets.mu.Lock()
 			f.secrets.deleteError = domain.Fail(domain.Unavailable, "The vault removal failed.", "")
 			f.secrets.mu.Unlock()
+			logs := f.captureLogs()
 			if _, err := f.finishWith(lease, domain.NewID(), nil, test.success, false, true); err == nil {
 				t.Fatal("a failed removal of an unreferenced generation was reported as success")
+			}
+			// The cleanup diagnostic is logged as recorded only when it replaced the
+			// outcome; a native failure keeps its own diagnostic and the cleanup
+			// failure is reported as not recorded.
+			replaced := 0
+			if test.phase == domain.GrokCleanup {
+				replaced = 1
+			}
+			logs.requireLogged(t, "grok_subscription_cleanup_failure_recorded", replaced)
+			if kept := logs.requireLogged(t, "grok_subscription_cleanup_failure_not_recorded", 1-replaced); replaced == 0 && kept[0]["reason"] != string(grokRecordKept) {
+				t.Fatalf("not-recorded reason = %v", kept[0]["reason"])
 			}
 			requireGrokProgress(t, f.progressFor(op.OperationId), pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_RECOVERY_REQUIRED, test.phase, test.code, op.OperationId)
 			f.assertGrokOperationValid(t)

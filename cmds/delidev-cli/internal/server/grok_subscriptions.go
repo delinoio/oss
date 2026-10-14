@@ -184,6 +184,15 @@ func grokTakeRefusalTarget(tx *store.Tx, a domain.Account, operation, machine do
 	return st.Pending
 }
 
+// grokSettledEvent is the settlement that one Finish transaction wrote.
+type grokSettledEvent struct {
+	Account            domain.ID
+	Operation          domain.ID
+	Action             domain.SubscriptionAction
+	State              domain.SubscriptionLoginState
+	DiagnosticAttached bool
+}
+
 func (s *Service) takeGrokSubscription(ctx context.Context, req *connect.Request[pb.TakeSubscriptionRequest]) (response *connect.Response[pb.TakeSubscriptionResponse], returned error) {
 	c := req.Header().Get(rpc.CorrelationHeader)
 	m := req.Msg.Mutation
@@ -250,7 +259,10 @@ func (s *Service) takeGrokSubscription(ctx context.Context, req *connect.Request
 				if recordable {
 					refusal = d
 				}
-				s.logger.WarnContext(ctx, "grok_subscription_take_installation_refused", "account_id", input.Account, "operation_id", input.Operation, "action", action, "refusal_recorded", recordable, "phase", d.Phase, "code", d.Code, "installed_version", d.DetectedVersion, "supported_version", d.SupportedVersion)
+				// This transaction rolls back, so nothing is persisted here: the
+				// field only says that recording is allowed. The outcome is logged
+				// by recordGrokTakeRefusal once its own transaction has finished.
+				s.logger.WarnContext(ctx, "grok_subscription_take_installation_refused", "account_id", input.Account, "operation_id", input.Operation, "action", action, "refusal_recordable", recordable, "phase", d.Phase, "code", d.Code, "installed_version", d.DetectedVersion, "supported_version", d.SupportedVersion)
 			}
 			return nil, err
 		}
@@ -563,7 +575,12 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 		// settledVersion is the installed Grok Build version observed while the
 		// outcome was settled; it only labels a later cleanup diagnostic.
 		var settledVersion string
+		// settled describes the outcome the committed transaction wrote. It is
+		// logged only after the commit, because the transaction can still fail
+		// after the in-memory record changed.
+		var settled *grokSettledEvent
 		result, err = s.Store.Mutate(ctx, domain.ID(m.RequestId), "grok.subscription.finish", input, func(tx *store.Tx) (any, error) {
+			settled = nil
 			if err := tx.Authorize(); err != nil {
 				return nil, err
 			}
@@ -652,7 +669,7 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 					}
 				}
 				if settleGrokOperation(state, settlement, time.Now().UTC()) {
-					s.logger.InfoContext(ctx, "grok_subscription_operation_settled", "account_id", r.ID, "operation_id", settling.ID, "action", lease.Action, "state", settlement.State, "diagnostic_attached", state.ServerOperation.GrokDiagnostic != nil)
+					settled = &grokSettledEvent{Account: r.ID, Operation: settling.ID, Action: lease.Action, State: settlement.State, DiagnosticAttached: state.ServerOperation.GrokDiagnostic != nil}
 				}
 			}
 			if _, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
@@ -663,6 +680,9 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 		})
 		if err != nil {
 			return nil, rpc.Error(err, c)
+		}
+		if settled != nil {
+			s.logger.InfoContext(ctx, "grok_subscription_operation_settled", "account_id", settled.Account, "operation_id", settled.Operation, "action", settled.Action, "state", settled.State, "diagnostic_attached", settled.DiagnosticAttached)
 		}
 		if original.Subscription.Pending != nil {
 			delete(s.subscriptionProgress, original.Subscription.Pending.ID)

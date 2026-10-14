@@ -195,6 +195,26 @@ func settleGrokOperation(st *domain.SubscriptionState, in grokSettlement, now ti
 	return true
 }
 
+// grokRecordOutcome is what a Grok diagnostic bookkeeping mutation actually did
+// to the account. A log line that says "recorded" must be backed by
+// grokRecordPersisted, never by the intent to record.
+type grokRecordOutcome string
+
+const (
+	// grokRecordPersisted: the mutation changed the stored operation record and
+	// committed it.
+	grokRecordPersisted grokRecordOutcome = "persisted"
+	// grokRecordTargetChanged: the account no longer holds the exact operation
+	// the mutation was meant to annotate, so it wrote nothing.
+	grokRecordTargetChanged grokRecordOutcome = "target_changed"
+	// grokRecordKept: the stored record already settles the operation (an
+	// identical refusal, a settled outcome or another owner's active operation)
+	// and stays authoritative, so the mutation wrote nothing.
+	grokRecordKept grokRecordOutcome = "record_kept"
+	// grokRecordInvalid: the diagnostic failed local validation and was dropped.
+	grokRecordInvalid grokRecordOutcome = "diagnostic_invalid"
+)
+
 // recordGrokTakeRefusal makes the original refusal of a Take visible through
 // progress. The refusal does not consume the operation: it stays queued and a
 // later Take at a supported installation supersedes this record. The write is
@@ -203,8 +223,9 @@ func settleGrokOperation(st *domain.SubscriptionState, in grokSettlement, now ti
 func (s *Service) recordGrokTakeRefusal(requestCtx context.Context, account, operation, machine domain.ID, action domain.SubscriptionAction, d *domain.GrokDiagnostic) {
 	ctx, cancel := grokBookkeepingContext(requestCtx, grokBookkeepingTimeout)
 	defer cancel()
-	recorded := false
+	var outcome grokRecordOutcome
 	_, err := s.Store.Mutate(ctx, domain.NewID(), "grok.subscription.take-refusal", struct{ Account, Operation domain.ID }{account, operation}, func(tx *store.Tx) (any, error) {
+		outcome = grokRecordTargetChanged
 		r, a, err := grokSubscriptionAccount(tx, account, 0)
 		if err != nil {
 			return nil, err
@@ -218,18 +239,22 @@ func (s *Service) recordGrokTakeRefusal(requestCtx context.Context, account, ope
 		}
 		st := a.Subscription
 		if !settleGrokOperation(st, grokSettlement{Operation: operation, Action: p.Action, Actor: p.Actor, Epoch: s.subscriptionServerEpoch(), State: domain.SubscriptionUnsupported, Diagnostic: d}, time.Now().UTC()) {
+			outcome = grokRecordKept
 			return struct{}{}, nil
 		}
-		recorded = true
+		outcome = grokRecordPersisted
 		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
 		return struct{}{}, err
 	})
-	if err != nil {
+	// The event is chosen by what the mutation persisted: a failed commit is
+	// never reported as recorded, and a mutation that wrote nothing says why.
+	switch {
+	case err != nil:
 		s.logger.WarnContext(ctx, "grok_subscription_take_refusal_unrecorded", "account_id", account, "operation_id", operation, "code", domain.SafeError(err).Code)
-		return
-	}
-	if recorded {
+	case outcome == grokRecordPersisted:
 		s.logger.InfoContext(ctx, "grok_subscription_take_refusal_recorded", "account_id", account, "operation_id", operation, "phase", d.Phase, "code", d.Code, "installed_version", d.DetectedVersion, "supported_version", d.SupportedVersion)
+	default:
+		s.logger.InfoContext(ctx, "grok_subscription_take_refusal_not_recorded", "account_id", account, "operation_id", operation, "reason", outcome, "phase", d.Phase, "code", d.Code)
 	}
 }
 
@@ -242,7 +267,9 @@ func (s *Service) recordGrokCleanupFailure(requestCtx context.Context, account, 
 	ctx, cancel := grokBookkeepingContext(requestCtx, grokBookkeepingTimeout)
 	defer cancel()
 	d := grokLocalDiagnostic(version, domain.GrokCleanup, domain.SafeError(cause).Code)
+	var outcome grokRecordOutcome
 	_, err := s.Store.Mutate(ctx, domain.NewID(), "grok.subscription.cleanup-failure", struct{ Account, Operation domain.ID }{account, operation}, func(tx *store.Tx) (any, error) {
+		outcome = grokRecordTargetChanged
 		r, a, err := grokSubscriptionAccount(tx, account, 0)
 		if err != nil {
 			return nil, err
@@ -258,22 +285,31 @@ func (s *Service) recordGrokCleanupFailure(requestCtx context.Context, account, 
 		// already settled keeps its diagnostic, and the recovery fence reports the
 		// outstanding cleanup. Only a succeeded or canceled outcome is replaced.
 		if o.State == domain.SubscriptionFailed && o.GrokDiagnostic != nil {
+			outcome = grokRecordKept
 			return struct{}{}, nil
 		}
 		value := *d
 		value.CorrelationID = string(operation)
 		if value.Validate() != nil {
+			outcome = grokRecordInvalid
 			return struct{}{}, nil
 		}
 		o.State, o.Generation, o.GrokDiagnostic = domain.SubscriptionFailed, "", &value
+		outcome = grokRecordPersisted
 		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
 		return struct{}{}, err
 	})
-	if err != nil {
+	// "recorded" is logged only when the cleanup diagnostic was persisted. When an
+	// earlier native diagnostic stays authoritative the cleanup failure is still
+	// real: the account is fenced for recovery, so responders get a distinct event.
+	switch {
+	case err != nil:
 		s.logger.WarnContext(ctx, "grok_subscription_cleanup_failure_unrecorded", "account_id", account, "operation_id", operation, "code", domain.SafeError(err).Code)
-		return
+	case outcome == grokRecordPersisted:
+		s.logger.WarnContext(ctx, "grok_subscription_cleanup_failure_recorded", "account_id", account, "operation_id", operation, "phase", d.Phase, "code", d.Code)
+	default:
+		s.logger.WarnContext(ctx, "grok_subscription_cleanup_failure_not_recorded", "account_id", account, "operation_id", operation, "reason", outcome, "cleanup_phase", d.Phase, "cleanup_code", d.Code)
 	}
-	s.logger.WarnContext(ctx, "grok_subscription_cleanup_failure_recorded", "account_id", account, "operation_id", operation, "phase", d.Phase, "code", d.Code)
 }
 
 // grokProgress is the presentation of one Grok lifecycle operation.
