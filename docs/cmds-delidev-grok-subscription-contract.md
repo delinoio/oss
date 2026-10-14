@@ -9,12 +9,16 @@ partial and nothing is advertised. Implemented: the protocol identifiers below
 generations, the protected Take/Finish lease handlers on the server, the
 Worker-side credential custody described under Storage, the fixed xAI OAuth
 profile, the server-owned Go browser login (loopback listener, PKCE, token
-exchange, ID-token validation, bundle mapping and durable exchange claim) and the
+exchange, ID-token validation, bundle mapping and durable exchange claim), the
 service-aware callback forwarding described under
-[Server-owned browser login](#server-owned-browser-login). Not activated: the
+[Server-owned browser login](#server-owned-browser-login) and the server-owned
+refresh (the `refresh_token` grant under the account lease with a durable claim,
+described under [Server-owned refresh](#server-owned-refresh)) together with the
+Worker-side confinement of a native refresh. Not activated: the
 System 39 advertisement (it waits for the complete browser and device login and
 for the opt-in real-account run, which this change did not perform), device-code
-login, refresh, logout, Worker-side watch dispatch and Grok execution.
+login, logout, Worker-side watch dispatch, the native process execution that
+produces a native refresh, and Grok execution.
 The subscription profile declares `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) as its minimum SemVer baseline. `domain.GrokSubscriptionVersionAllowed` admits a valid SemVer at or above it (prereleases of the baseline are below it) and gates protected Take admission of a Grok lease; no capability, discovery or execution path references it. Newer releases are validated natively, not rejected by number. The API and history baseline stays `domain.GrokProtocolVersion` (`1.0.41`); Grok Build 1.0.52 inspection is accepted when its optional `experiments` inventory is an empty array (see `cmds-delidev-harness-contract.md`), which does not change these baselines. Reservation support is separate
 from implemented support and actual account/platform acceptance.
 
@@ -37,7 +41,8 @@ unadvertised: GetStatus and AttachWorker never list System 39/40 or Worker 21,
 the Worker does not report 21 and the server rejects it as an unknown
 capability. GetSubscriptionProgress populates `grok_diagnostic` only for a failed
 or uncertain server-owned Grok browser login (phase `LOGIN`; see
-[Server-owned browser login](#server-owned-browser-login)) and never for a
+[Server-owned browser login](#server-owned-browser-login)) or refresh (phase
+`REFRESH`; see [Server-owned refresh](#server-owned-refresh)) and never for a
 Codex or Claude operation. The owning feature change advertises and activates
 the capabilities:
 
@@ -70,7 +75,8 @@ work and is refused today with `Unsupported`).
 `RequestSubscription` for a Grok subscription account with `machine_id` omitted
 and `device_code=false` creates the same `ServerSubscriptionOperation` as the
 Codex server login (15-minute expiry, original actor, epoch and finish
-generation). Only the login action is available: refresh, logout and
+generation). The login action is described here, and refresh under
+[Server-owned refresh](#server-owned-refresh); logout and
 `device_code=true` are refused with `Unsupported`, and the Codex lifecycle still
 refuses every Grok account (`subscriptionAccount`); the service-neutral server
 gate is `serverSubscriptionAccount`. The Go flow lives in
@@ -211,7 +217,7 @@ compaction are excluded.
 
 ### Project requirements
 
-- DeliDev Grok Build subscription support follows `cmds-delidev-grok-subscription-contract.md`. System 39/40 and Worker 21 are declared but unadvertised until the owning feature activates them; the server-owned browser login and progress field 10 (failed login only) are implemented. Declarations grant no native execution or migration. Preserve existing capability ownership, server-owned OAuth/protected credentials, original account leases and same-account/Worker history; verify the subscription profile at or above `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) by native validation before activation.
+- DeliDev Grok Build subscription support follows `cmds-delidev-grok-subscription-contract.md`. System 39/40 and Worker 21 are declared but unadvertised until the owning feature activates them; the server-owned browser login and refresh and progress field 10 (failed login or refresh only) are implemented. Declarations grant no native execution or migration. Preserve existing capability ownership, server-owned OAuth/protected credentials, original account leases and same-account/Worker history; verify the subscription profile at or above `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) by native validation before activation.
 
 ## Storage
 
@@ -220,9 +226,11 @@ references; add no database migration. Claim exchange and refresh durably before
 sending. Uncertain results remain in recovery and are never resent. The browser
 login claim is the optional `ServerSubscriptionOperation` `code_consumed`,
 `code_submission_id`, `callback_forwarded` and `login_method` fields (shared
-with the Claude server login) and the optional `grok_diagnostic`; none holds a
+with the Claude server login) and the optional `grok_diagnostic`; the refresh
+claim is the optional `refresh_claimed` field (omitted when false, so older
+records are unchanged); none holds a
 URL, code, verifier, state, nonce or token, which exist only in server memory for
-the life of the login. Service
+the life of the login or refresh. Service
 bundle validation binds service, issuer, user and principal and rejects duplicate
 identity ownership. Native identity and complete history have a separate owned
 checkpoint. Preserve older records without granting continuation authority.
@@ -443,8 +451,109 @@ confirmation only against same-directory links and links that predate Finish.
 `auth.json` or an attributed temporary is outside the attributed-name inventory;
 runtime cleanup of the rest of the home handles it.
 
-Native refresh, login execution and Worker-side watch dispatch for
-Grok are separate lifecycle work and are not activated by this storage contract.
+Native login execution and Worker-side watch dispatch for Grok are separate
+lifecycle work and are not activated by this storage contract. The Worker half
+of a native refresh (custody, verification and cleanup of the latest
+`auth.json`) is implemented and tested under
+[Native refresh confinement](#native-refresh-confinement); the process execution
+and watch dispatch that would produce one are not.
+
+### Server-owned refresh
+
+`RequestSubscription` for a connected Grok subscription account with `machine_id`
+omitted, action `REFRESH` and `device_code=false` creates a
+`ServerSubscriptionOperation` with action `refresh` (15-minute window, original
+actor, epoch and finish generation). A refresh is available only to an account
+that has a connection, a current generation and an identity commitment, and
+cannot overlap another operation, an observation or a managed title reservation;
+`CancelSubscription` remains login-only. The refresh is the explicit trigger: no
+timer, maintenance task or pre-execution hook starts one yet. The Go flow lives in
+`internal/subscription/grok_refresh.go` (the `refresh_token` client and the
+refreshed-bundle mapping) and `internal/server/grok_refresh.go` (lease, claim,
+settlement and recovery).
+
+- **Lease.** The queued operation is claimed with `NativeStarted` and a claimed
+  pending operation, with no Worker lease. That is the account's exclusive lease:
+  Take, another operation and the login/refresh/logout gates all observe it, and
+  a Worker Take of the server operation is refused.
+- **Claim before send.** The stored generation is opened against this server and
+  account, discovery supplies the JWKS and userinfo endpoints, and only then
+  `refresh_claimed` is written in its own transaction that rechecks the actor,
+  epoch, window, generation and the stored identity commitment. After the claim
+  commits, the operation can only settle as an outcome of the one request below.
+- **Request.** Exactly one `POST` to `https://auth.x.ai/oauth2/token` as a public
+  client: `grant_type=refresh_token`, `client_id` and `refresh_token` only (no
+  client secret, no `Authorization` header, no scope, no redirect following, no
+  retry). The token endpoint is fixed; the refresh grant does not depend on a
+  discovery answer.
+- **Response.** A success needs an access token, a bearer token type and a
+  positive `expires_in`; `refresh_token` and `id_token` are optional. An omitted
+  or unchanged `refresh_token` means no rotation and the current one is kept. An
+  ID token, when present, is verified like the login's (ES256 signature from the
+  JWKS, issuer, audience and time; a refresh carries no nonce). The userinfo
+  endpoint is read with the new access token; without an ID token its `sub` is
+  the only subject evidence and must be present. The identity is mapped with the
+  login mapping (`BuildGrokBundle`) and must equal the bound identity (user,
+  principal type, principal ID); profile members the provider omits are carried
+  over from the current bundle. `GrokRefreshed` then requires a later expiry and a
+  changed key or refresh token. The rotation, field names and `invalid_grant`
+  behavior of the real provider were not observed: the implementation and its
+  tests model RFC 6749, and the opt-in capture stays unperformed.
+- **Outcomes.** Success publishes the next generation (below). A definitive
+  provider refusal (HTTP 400 or 401 with an OAuth `error`, for example
+  `invalid_grant`) means the token did not rotate: the operation settles as
+  `FAILED` with `grok_diagnostic` code `unauthenticated`, the stored bundle is
+  kept, and the account health becomes `expired` until the owner signs in again.
+  Everything else that happens after the claim is uncertain, because the
+  provider may already have rotated the token that is now unrecorded: a
+  transport failure, cancellation or shutdown, a timeout, a truncated or
+  oversized body, an unexpected status (including 5xx), a malformed success, an
+  unverifiable ID token or userinfo, an identity that differs from the bound
+  one, and a crash at any later point. These end in `RECOVERY_REQUIRED` (account
+  fenced, operation and claim retained, `grok_diagnostic` code
+  `recovery_required`), and the old refresh token is never sent again. A failure
+  before the claim (vault read, bundle validation, discovery, claim
+  preconditions) sent nothing: it settles as `FAILED` with the stored credential
+  untouched and the account health unchanged.
+- **Publication.** The next bundle is sealed for the finish generation, staged
+  under `credentials.AccountLogin` and published by one account commit that
+  records the generation, clears the operation's lease and settles `SUCCEEDED`;
+  the identity commitment is unchanged. Only after the commit are unreferenced
+  generations removed. A removal that cannot be confirmed does not undo or fence
+  the committed refresh: the superseded generation is unreferenced, never
+  granted and removed by the next cleanup (it is logged as
+  `grok_refresh_cleanup_pending`). A staging or commit failure retires the staged
+  generation only after proving the account does not reference it. A claimed
+  refresh is not discarded by a late cancellation or actor change, because its
+  result is the only usable credential.
+- **Restart.** A restart marks an active refresh recovery-required. One that
+  never reached the claim sent nothing and settles automatically as a failed
+  refresh (`recoverGrokRefresh`, health restored to ready); one with a claim
+  stays in recovery and is never resolved automatically. Backup restore is
+  blocked while a refresh is pending or fenced (the existing restore preflight
+  covers the pending operation and the recovery fence), so a restored image can
+  never resend a claimed token.
+- **Logging.** Records use phase `REFRESH`, a closed step, the operation id as
+  correlation id and stable codes; no token, URL, path or identity value is
+  logged, and the fixture asserts it.
+
+Fault-injection seams (`grokRefreshFault`, test-only) cover the points after the
+claim, after the response, after staging and after the commit.
+
+### Native refresh confinement
+
+A native `grok` process may refresh the credential itself inside a Worker's
+private home. That refresh stays inside the lease: before release the Worker
+reads the latest `auth.json` once and requires the original bound identity,
+requires the native process to have exited, retires `auth.json`, its
+`auth.json.lock` advisory lock file and every attributed temporary through the
+held home handle, and reports cleanup as confirmed only when none remains (the
+lock file is a retirement target and counts in the presence check, so a lock that
+cannot be removed leaves cleanup unconfirmed). A mismatched identity, an
+unreadable or truncated file, a failed process or an unconfirmed cleanup returns
+no bundle and no refresh confirmation, so the server keeps the lease and sets
+`RECOVERY_REQUIRED`. The process execution and watch dispatch that would produce
+a native refresh remain separate work.
 
 ### Grok lease interleavings
 
@@ -487,6 +596,19 @@ library tests are in `internal/worker/grok_subscriptions_test.go` and
 | Home renamed away or replaced after materialization                                                    | No bundle and no cleanup for refresh, login and logout; nothing read or removed in the substitute; the original keeps its file                         | `TestPrepareGrokFinishRefusesARenamedOrReplacedHome`, `TestGrokHomeVerifiesTheBoundDirectoryIdentity`                                                                                 |
 | Finish prepared for a lease that never bound a home                                                    | Cleanup never confirmed                                                                                                                                | `TestPrepareGrokFinishRefusesAnUnboundHome`, `TestGrokMaterializationBindsTheHomeForFinish`, `TestGrokMaterializationReleasesTheHomeWhenItFails`                                      |
 | Worker crash or restart with the native file on disk                                                   | The server fences the lease (row above); the plaintext stays in the private home until Worker-side recovery, which is not activated; nothing is resent | Server side: `TestGrokLostWorkerFencesTheLeaseAndRefusesLaterFinish`                                                                                                                  |
+| Server refresh with rotation, without rotation (omitted or unchanged token) or without an ID token | Next generation staged, published by one commit and superseded generations removed; identity commitment unchanged | `TestGrokRefreshReplacesTheBundleWithRotation`, `TestGrokRefreshWithoutRotationKeepsTheRefreshToken`, `TestGrokRefreshWorksWithoutAnIDToken` |
+| Server refresh claim and lease | The claim is durable before the token request; the account stays exclusively leased; no other operation, Take or logout is admitted | `TestGrokRefreshWritesTheClaimBeforeTheTokenRequestAndHoldsTheLease` |
+| Provider refuses the refresh token (`invalid_grant`) | Plain failure; bundle kept; health `expired`; exactly one request | `TestGrokRefreshFailuresNeverReplaceTheBundle` |
+| 5xx, truncated body, malformed success, unverifiable ID token or userinfo, changed identity | Bundle kept; `RECOVERY_REQUIRED`; claim retained; the token is never resent | `TestGrokRefreshFailuresNeverReplaceTheBundle` |
+| Failure before the claim (for example discovery) | Plain failure; no token request; the credential is refreshable by a later request | `TestGrokRefreshProviderFailureBeforeTheClaimSendsNothing` |
+| Crash after the claim, after the response or after staging | `RECOVERY_REQUIRED` after restart; at most one request and none after the restart; the current generation unchanged | `TestGrokRefreshFaultInjectionSendsOneRequestAndFencesUncertainOutcomes` |
+| Crash after the commit | Refresh published; the superseded generation is removed by the next refresh | `TestGrokRefreshFaultInjectionSendsOneRequestAndFencesUncertainOutcomes` |
+| Restart before the claim | Settles as a failed refresh; credential intact; health restored | `TestGrokRefreshRestartBeforeTheClaimFreesTheOperation` |
+| Removal of the superseded generation fails after the refresh commit | Refresh stays published and unfenced; the old generation awaits the next cleanup | `TestGrokRefreshCleanupFailureAfterThePublishDoesNotUndoIt` |
+| Restore while a refresh is claimed, fenced or pending | Restore refused; settled refresh admitted | `TestBackupRestoreBlocksAnUnsettledGrokRefresh` |
+| Native refresh rewrites `auth.json` and leaves `auth.json.lock` | Rotated credential sealed and reported with refresh and cleanup confirmed; both files removed | `TestNativeRefreshFinishReturnsTheRotatedCredentialAndRetiresBothFiles`, `TestRetireGrokAuthFileRemovesTheNativeLockFile` |
+| Native refresh with a foreign identity, an unreadable or truncated file, or a failed process | No bundle and no refresh confirmation; files retired; the server keeps the lease fenced | `TestNativeRefreshFinishNeverConfirmsAMismatchedOrUnreadableCredential`, `TestGrokFinishReportsMapToExplicitOutcomes` |
+| Native refresh with a lock or temporary that cannot be removed, or a swapped home | No bundle, no cleanup confirmation; lease stays fenced | `TestNativeRefreshFinishWithholdsEverythingWhenCleanupIsUnconfirmed`, `TestNativeRefreshFinishRefusesASwappedHome` |
 
 The Worker holds the only copy of a freshly produced bundle in memory until
 Finish; a Finish whose response is lost leaves the fenced lease for recovery
@@ -501,8 +623,9 @@ credential cleanup are confirmed; deletion reuses logout-before-delete.
 Workers use the exact verified binary and a fresh private home. Managed bundles
 move only through protected Take/Finish. Native refresh is confined to the lease;
 verify the latest bundle and original identity, process exit and authentication
-file cleanup before release. Backup/restore and deletion preserve protected
-credential and unsettled original cleanup ownership.
+file cleanup (`auth.json` and `auth.json.lock`) before release. Backup/restore
+and deletion preserve protected credential and unsettled original cleanup
+ownership, including a claimed Grok refresh.
 
 Never retain tokens, authorization codes, device codes, login URLs or raw native
 stderr in database documents, logs, events or frontend caches. The server-owned
@@ -517,8 +640,9 @@ trusted window, server, operation and Settings lifetime.
 ## Logging
 
 Use structured Go/Rust logs with stable phase/code and original operation
-correlation. Server-owned Grok login records use phase `LOGIN`, a closed step
-and the operation id as correlation id. Diagnostics exclude credentials, URLs, paths, identity and raw native
+correlation. Server-owned Grok login records use phase `LOGIN` and refresh
+records use phase `REFRESH`, each with a closed step and the operation id as
+correlation id. Diagnostics exclude credentials, URLs, paths, identity and raw native
 content. Record validation revision, commands, results and unresolved limits in
 PRs and CI logs/artifacts rather than repository evidence documents.
 
@@ -543,7 +667,15 @@ token and userinfo endpoints from `internal/subscription/grokidp`, which only
 tests import): success, every refused callback shape, each failure without a
 second token request or leaked value, uncertain exchange, cancellation before and
 during the exchange, expiry, shutdown, restart, duplicate identity, forwarding and
-closed-port probes. The opt-in `TestManualNativeGrokLoginBundleIsAcceptedByNativeGrok`
+closed-port probes. The server-owned refresh is covered by `internal/subscription/grok_refresh_test.go`
+(request shape, rotation modes, identity and ID-token refusals, outcome
+classification), `internal/server/grok_refresh_test.go` (the same fake IdP with
+rotation, omission, invalid_grant, 5xx, truncation, identity change, crash-point
+fault injection counting token requests, restart recovery, cleanup failure and a
+log and database leak scan), `internal/domain/grok_subscription_test.go` (claim
+validation), `internal/store/backup_restores_test.go` (restore) and
+`internal/worker/grok_refresh_test.go` (native refresh confinement with a fake
+native rewrite). The opt-in `TestManualNativeGrokLoginBundleIsAcceptedByNativeGrok`
 writes the Go-produced `auth.json` into a scratch home and requires `grok models`
 and ACP `cached_token` to accept it; it skips unless
 `DELIDEV_NATIVE_GROK_EXECUTABLE` and

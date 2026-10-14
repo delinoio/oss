@@ -199,6 +199,9 @@ and grant no execution. Its server-owned browser login (a Go OAuth client on the
 shared `ServerSubscriptionOperation` model, selected when a Grok account requests
 login without a machine) and its service-aware callback forwarding are owned by
 [the Grok contract](cmds-delidev-grok-subscription-contract.md#server-owned-browser-login);
+its server-owned refresh (the same model with action refresh, a durable
+`refresh_claimed` exchange claim and recovery instead of resend) is owned by
+[the Grok contract](cmds-delidev-grok-subscription-contract.md#server-owned-refresh);
 the Codex lifecycle gate (`subscriptionAccount`) and Codex callback forwarding
 (port 1457) are unchanged and still refuse a Grok account. Mock and build evidence for this model is not real-account,
 real-renewal or cross-platform acceptance; that acceptance is future work and is

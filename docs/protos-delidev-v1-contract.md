@@ -227,7 +227,10 @@ existing RPCs: `RequestSubscription` (machine omitted, `device_code=false`) star
 it, `GetSubscriptionProgress` returns the transient `url` while waiting, the
 generation and `suggested_name` on success and `grok_diagnostic` (phase LOGIN)
 only for a failed or uncertain login, and `ForwardSubscriptionCallback` is
-service-aware for Grok accounts. No field, enum value or capability changed. The
+service-aware for Grok accounts. The server-owned Grok refresh is likewise
+implemented behind `RequestSubscription` (action REFRESH, machine omitted) and
+reports through `GetSubscriptionProgress` (`grok_diagnostic` phase REFRESH only
+for a failed or uncertain refresh). No field, enum value or capability changed. The
 owning feature change advertises and activates System 39 once device login and
 the opt-in real-account acceptance run are complete. Codex field 7, native
 field 9 and existing System 30/35/36/37 and Worker 19 ownership remain
@@ -625,7 +628,7 @@ Record implementation status and validation results in pull requests, issues and
 
 - Failed subscription cleanup follows `cmds-delidev-subscription-contract.md#failed-subscription-cleanup-reservations` after main reservation the originating change (System 41). Preserve server-owned complete batches, original actor/login/revision, shared vault/reference deletion checks, atomic result/tombstone receipts, joined shutdown and restore quarantine. Terminal failures require a new explicit batch; status/restart never relaunches login or callbacks. No database migration or Rust/native change.
 
-- DeliDev Grok Build subscription support follows `cmds-delidev-grok-subscription-contract.md`. System 39/40 and Worker 21 are declared in the protos but unadvertised until the owning feature activates them; progress field 10 is populated only for a failed or uncertain server-owned Grok browser login. Reservations grant no native execution or migration. Preserve existing capability ownership, server-owned OAuth/protected credentials, original account leases and same-account/Worker history; verify the subscription profile at or above `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) by native validation before activation.
+- DeliDev Grok Build subscription support follows `cmds-delidev-grok-subscription-contract.md`. System 39/40 and Worker 21 are declared in the protos but unadvertised until the owning feature activates them; progress field 10 is populated only for a failed or uncertain server-owned Grok browser login or refresh. Reservations grant no native execution or migration. Preserve existing capability ownership, server-owned OAuth/protected credentials, original account leases and same-account/Worker history; verify the subscription profile at or above `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) by native validation before activation.
 
 - Known subscription model suggestions follow `cmds-delidev-catalog-contract.md#known-subscription-model-suggestions`. The originating change established System capability 35 and the advisory declarations on main before activation. Keep bounded read-only owner/client metadata, explicit server outbound routing, joined cache refresh and review-only daily PRs separate from account/native/execution authority. Preserve atomic native-ID Worker saves and saved revision/history checks; no database migration.
 
