@@ -305,10 +305,26 @@ a crash after success cannot leave the leased `auth.json` missing or stale. A
 directory handle cannot be flushed on Windows, and the removal of a credential
 entry has no file left to flush, so the durability of an unlink relies on NTFS
 metadata journaling; if a crash undoes an unlink the credential reappears in the
-private home, the next presence scan reports it, and the lease stays fenced
-until it is retired again. The Windows code is validated by cross-compilation (`GOOS=windows go vet` and
+private home and a Finish that finds it reports the cleanup as unconfirmed, so
+the lease stays fenced until the file is retired again. The Windows code is validated by cross-compilation (`GOOS=windows go vet` and
 `go test -c`) only, so the Windows behavior stays fail closed: any unconfirmed
 identity, owner, ACL or link count reports an unconfirmed cleanup.
+
+Residuals that no filesystem call can close, all failing closed where they are
+observable. (1) Any process of the same user that opens or copies `auth.json`
+while it exists keeps its own descriptor or copy of the plaintext after the
+entry is retired; retirement removes directory entries and cannot revoke what a
+process already read. (2) On Unix the link check is exact: the link count of the
+retained descriptor after the unlink is final. On Windows an unlinked file that
+is still open does not expose an exact remaining link count, so a hard link that
+another process creates in a different directory in the instant between the
+count read before the unlink and the unlink itself is not detectable; a link in
+the same directory is found by the identity rescan, and a link that already
+existed is found by the count. The Windows lease therefore guarantees
+confirmation only against same-directory links and links that predate Finish.
+(3) A credential written by the native Grok child into a path other than
+`auth.json` or an attributed temporary is outside the attributed-name inventory;
+runtime cleanup of the rest of the home handles it.
 
 Native refresh, login execution and Worker-side watch dispatch for
 Grok are separate lifecycle work and are not activated by this storage contract.
@@ -350,6 +366,7 @@ library tests are in `internal/worker/grok_subscriptions_test.go` and
 | Fresh login in a home that already holds a credential or temporary                                     | Refused; a leftover is never sealed as the login result                                                                                                | `TestGrokFreshLoginRefusesLeftoverCredentialFiles`                                                                                                                                    |
 | Native process rotates, fails, changes identity or leaves an unparsable file                           | Rotated credential sealed; otherwise no bundle; the file is retired in every case                                                                      | `TestPrepareGrokFinishSealsRotatedCredentialAndRetiresFile`                                                                                                                           |
 | Remnant that cannot be removed, or a hard-linked credential                                            | No bundle; cleanup unconfirmed; lease stays fenced                                                                                                     | `TestPrepareGrokFinishWithholdsBundleWhenCleanupIsUnconfirmed`, `TestPrepareGrokFinishWithholdsBundleForHardLinkedCredential`                                                         |
+| Hard link created after the credential was inspected and before its name is unlinked | No bundle; cleanup unconfirmed (retained-handle link count and identity rescan); lease stays fenced | `TestRetireGrokAuthFileDetectsALinkCreatedBeforeTheUnlink`, `TestRetireGrokAuthFileDetectsALinkCreatedBeforeTheTemporaryUnlink`, `TestGrokWriteRefusesAnOlderLinkedCredential` |
 | Home renamed away or replaced after materialization                                                    | No bundle and no cleanup for refresh, login and logout; nothing read or removed in the substitute; the original keeps its file                         | `TestPrepareGrokFinishRefusesARenamedOrReplacedHome`, `TestGrokHomeVerifiesTheBoundDirectoryIdentity`                                                                                 |
 | Finish prepared for a lease that never bound a home                                                    | Cleanup never confirmed                                                                                                                                | `TestPrepareGrokFinishRefusesAnUnboundHome`, `TestGrokMaterializationBindsTheHomeForFinish`, `TestGrokMaterializationReleasesTheHomeWhenItFails`                                      |
 | Worker crash or restart with the native file on disk                                                   | The server fences the lease (row above); the plaintext stays in the private home until Worker-side recovery, which is not activated; nothing is resent | Server side: `TestGrokLostWorkerFencesTheLeaseAndRefusesLaterFinish`                                                                                                                  |

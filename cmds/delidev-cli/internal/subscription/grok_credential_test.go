@@ -464,6 +464,9 @@ func TestRetireGrokAuthFileDetectsALinkCreatedBeforeTheUnlink(t *testing.T) {
 		"other directory": func(string) string { return t.TempDir() },
 	} {
 		t.Run(name, func(t *testing.T) {
+			if runtime.GOOS == "windows" && name == "other directory" {
+				t.Skip("Windows reports no exact link count after an unlink; only same-directory links are rescanned")
+			}
 			home := grokHomeForTest(t)
 			bundle, _ := ParseGrokAuthFile(grokFixtureFile(t, nil))
 			bound := boundGrokHome(t, home)
@@ -497,6 +500,9 @@ func TestRetireGrokAuthFileDetectsALinkCreatedBeforeTheUnlink(t *testing.T) {
 }
 
 func TestRetireGrokAuthFileDetectsALinkCreatedBeforeTheTemporaryUnlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows reports no exact link count after an unlink")
+	}
 	home := grokHomeForTest(t)
 	temporary := filepath.Join(home, security.OwnedTemporaryPrefix(filepath.Join(home, GrokAuthFileName))+"old")
 	if err := os.WriteFile(temporary, []byte(grokTestRefresh), 0o600); err != nil {
