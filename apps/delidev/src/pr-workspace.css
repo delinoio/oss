@@ -123,21 +123,22 @@
   overflow-wrap: anywhere;
 }
 /* The detail owns its insets so the prompt and list keep their own padding.
- * Header and tabs scroll with the body; nothing here is sticky or elevated. */
-.pr-workspace-selected:has(> .pr-workspace-detail) {
+ * Header and tabs scroll with the body; nothing here is sticky or elevated.
+ * The extra .pr-workspace ancestor raises this reset to the specificity of the
+ * wide selected-pane rule above, and its later source order lets it win, so the
+ * wide layout does not add a second start inset on top of the detail padding. */
+.pr-workspace .pr-workspace-selected:has(> .pr-workspace-detail) {
   padding: 0;
 }
 .pr-workspace-detail {
-  --pr-detail-inset: 16px;
-  padding: 16px var(--pr-detail-inset) 32px;
+  padding: 16px 16px 32px;
   background: var(--surface);
   color: var(--text);
   font-size: 16px;
   line-height: 1.65;
 }
 .pr-workspace[data-wide="true"] .pr-workspace-detail {
-  --pr-detail-inset: 28px;
-  padding-block-start: 20px;
+  padding: 20px 28px 32px;
 }
 .pr-detail-toolbar,
 .pr-detail-toolbar-end,
