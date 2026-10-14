@@ -664,7 +664,9 @@ acceptance: it sets the account health to `revoked`, cancels the account's queue
 executions and retires its queued titles, and a Take for new execution is refused
 with a typed `UNAVAILABLE` problem ("This Grok account is logging out", logged as
 `grok_subscription_take_logging_out`; `domain.Account.GrokLoggingOut` is the
-shared predicate) while the logout waits, revokes and cleans up. It follows the
+shared predicate, derived from the retained logout operation and its pending
+ownership, so it holds until the logout settles whatever the health became while
+it waited or was fenced for recovery) while the logout waits, revokes and cleans up. It follows the
 same lease rules as login and refresh: it cannot overlap another operation, an
 observation or a recovery fence, `CancelSubscription` stays login-only, and a
 separate account is never blocked. A request that carries a `machine_id` is never a

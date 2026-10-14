@@ -280,9 +280,21 @@ func TestGrokServerLogoutStateValidation(t *testing.T) {
 	}
 }
 
+// An unsettled logout stays identifiable whatever the health became while it
+// waited, was fenced for recovery or retries its cleanup.
+func TestGrokLoggingOutSurvivesTheHealthOfAFencedLogout(t *testing.T) {
+	for _, health := range []AccountHealth{AccountRevoked, AccountFailed} {
+		a := grokServerLogoutFixture()
+		a.Health = health
+		a.Subscription.RecoveryRequired = health == AccountFailed
+		if !a.GrokLoggingOut() {
+			t.Fatalf("an unsettled logout with health %s was not reported as logging out", health)
+		}
+	}
+}
+
 func TestGrokLoggingOutIsLimitedToAnAcceptedGrokLogout(t *testing.T) {
 	for name, mutate := range map[string]func(*Account){
-		"ready":    func(a *Account) { a.Health = AccountReady },
 		"chatgpt":  func(a *Account) { a.SubscriptionService = SubscriptionChatGPT },
 		"refresh":  func(a *Account) { a.Subscription.ServerOperation.Action = SubscriptionRefresh },
 		"no op":    func(a *Account) { a.Subscription.Pending = nil },

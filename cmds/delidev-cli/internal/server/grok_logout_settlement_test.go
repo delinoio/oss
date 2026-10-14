@@ -3,12 +3,14 @@ package server
 
 import (
 	"context"
+	"net/http"
 	"strings"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
@@ -125,4 +127,21 @@ func TestGrokFailedLogoutAllowsOnlyAnotherLogout(t *testing.T) {
 	g.secrets.mu.Unlock()
 	g.logout(t)
 	g.requireDisconnected(t)
+}
+
+// An uncertain revocation settles the health to failed while the logout is still
+// unsettled. New execution keeps the typed logging-out answer instead of falling
+// back to the generic unsupported refusal.
+func TestGrokExecuteTakeStaysTypedWhileAFencedLogoutIsUnsettled(t *testing.T) {
+	g := newGrokLoginFixture(t)
+	g.connected(t)
+	g.idp.RevokeStatus, g.idp.RevokeBody = http.StatusBadRequest, `{"error":"invalid_grant"}`
+	g.logout(t)
+	if _, a := g.record(); a.Health != domain.AccountFailed || !a.Subscription.RecoveryRequired || !a.GrokLoggingOut() {
+		t.Fatal("the unproven revocation did not leave an identifiable fenced logout")
+	}
+	op := &pb.RequestSubscriptionResponse{OperationId: string(domain.NewID())}
+	if _, err := g.take(op, pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE); err == nil || domain.SafeError(rpc.ClientError(err)).Code != domain.Unavailable {
+		t.Fatalf("execution during a fenced logout lost its typed refusal: %v", err)
+	}
 }
