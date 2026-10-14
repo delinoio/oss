@@ -1650,6 +1650,126 @@ it("falls back to a visible Schedules control when the New schedule opener is hi
   );
 });
 
+// Mirrors the stylesheet contract: the compact opener is display:none outside
+// the compact breakpoint, so a collapsed wide sidebar must fall through to main.
+function dismissWithCollapsedSidebar(
+  shell: (children: React.ReactNode) => React.ReactNode,
+  css: string,
+  beforeDismiss?: () => void,
+) {
+  const value = fixture();
+  const style = globalThis.document.createElement("style");
+  style.textContent = css;
+  globalThis.document.head.append(style);
+  render(<>{shell(value.view(<Schedules active open={() => {}} />))}</>);
+  fireEvent.click(newScheduleOpener());
+  newScheduleOpener().closest("section")!.setAttribute("inert", "");
+  beforeDismiss?.();
+  pressEscape(screen.getByLabelText("Schedule name"));
+  expect(screen.queryByLabelText("Schedule name")).toBeNull();
+  return { value, style };
+}
+
+it("skips the CSS-hidden compact opener on a wide layout and focuses main", () => {
+  const { style } = dismissWithCollapsedSidebar(
+    (children) => (
+      <main id="main" tabIndex={-1}>
+        <button type="button" className="sidebar-context-trigger">
+          Open Schedules
+        </button>
+        {children}
+      </main>
+    ),
+    ".sidebar-context-trigger { display: none; }",
+  );
+  try {
+    expect(globalThis.document.activeElement).toBe(
+      globalThis.document.getElementById("main"),
+    );
+  } finally {
+    style.remove();
+  }
+});
+
+it("focuses the compact opener when its rule renders it in the compact layout", () => {
+  const { style } = dismissWithCollapsedSidebar(
+    (children) => (
+      <main id="main" tabIndex={-1}>
+        <button type="button" className="sidebar-context-trigger">
+          Open Schedules
+        </button>
+        {children}
+      </main>
+    ),
+    ".sidebar-context-trigger { display: block; }",
+  );
+  try {
+    expect(globalThis.document.activeElement).toBe(
+      screen.getByRole("button", { name: "Open Schedules" }),
+    );
+  } finally {
+    style.remove();
+  }
+});
+
+it.each([
+  ["a hidden ancestor", { hidden: true }],
+  ["an inert ancestor", { inert: true }],
+  ["a display:none ancestor", { style: "display: none" }],
+  ["a visibility:hidden opener", { buttonStyle: "visibility: hidden" }],
+])("falls through to main when the compact opener has %s", (_name, init) => {
+  const { style } = dismissWithCollapsedSidebar(
+    (children) => (
+      <main id="main" tabIndex={-1}>
+        <div
+          {...("hidden" in init ? { hidden: true } : {})}
+          inert={"inert" in init}
+          style={"style" in init ? { display: "none" } : undefined}
+        >
+          <button
+            type="button"
+            className="sidebar-context-trigger"
+            style={"buttonStyle" in init ? { visibility: "hidden" } : undefined}
+          >
+            Open Schedules
+          </button>
+        </div>
+        {children}
+      </main>
+    ),
+    "",
+  );
+  try {
+    expect(globalThis.document.activeElement).toBe(
+      globalThis.document.getElementById("main"),
+    );
+  } finally {
+    style.remove();
+  }
+});
+
+it("leaves focus untouched when no candidate is rendered", () => {
+  const { style } = dismissWithCollapsedSidebar(
+    (children) => (
+      <main id="main" tabIndex={-1}>
+        <button type="button" className="sidebar-context-trigger">
+          Open Schedules
+        </button>
+        {children}
+      </main>
+    ),
+    ".sidebar-context-trigger { display: none; }",
+    () => {
+      globalThis.document.getElementById("main")!.style.display = "none";
+    },
+  );
+  try {
+    expect(globalThis.document.activeElement).toBe(globalThis.document.body);
+  } finally {
+    style.remove();
+  }
+});
+
 it("does not take focus back after Escape when focus already moved elsewhere", () => {
   const value = fixture();
   render(

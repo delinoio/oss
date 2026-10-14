@@ -107,6 +107,24 @@ const emptyDefinition = (): Document => ({
   overlap: Overlap.Overlap,
 });
 
+// A focus target is available only when it is connected, enabled, outside any
+// hidden or inert ancestor, and rendered: stylesheet rules such as the compact
+// opener's display:none outside the compact breakpoint leave the element
+// connected but unfocusable, so focus() on it would silently do nothing.
+function isFocusAvailable(
+  element: HTMLElement | null | undefined,
+): element is HTMLElement {
+  if (!element?.isConnected) return false;
+  if (element.matches(":disabled") || element.closest("[hidden], [inert]"))
+    return false;
+  const view = element.ownerDocument.defaultView;
+  if (!view) return false;
+  const visibility = view.getComputedStyle(element).visibility;
+  if (visibility === "hidden" || visibility === "collapse") return false;
+  for (let node: Element | null = element; node; node = node.parentElement)
+    if (view.getComputedStyle(node).display === "none") return false;
+  return true;
+}
 function hasDuplicateIds(rows: readonly { id: string }[]) {
   return new Set(rows.map((row) => row.id)).size !== rows.length;
 }
@@ -1373,25 +1391,18 @@ export function Schedules({
       current.isConnected
     )
       return;
-    const available = (element: HTMLElement | null | undefined) =>
-      Boolean(
-        element?.isConnected &&
-        !(element as HTMLButtonElement).disabled &&
-        !element.closest("[hidden], [inert]"),
-      );
     const opener = newScheduleButton.current;
     const main = workspace.current?.closest("main");
     const compact = (main ?? globalThis.document).querySelector<HTMLElement>(
       ".sidebar-context-trigger",
     );
-    const target = available(opener)
-      ? opener
-      : available(compact)
-        ? compact
-        : available(main)
-          ? main
-          : undefined;
-    target?.focus({ preventScroll: true });
+    // Try each candidate in order; one that is unavailable, or that does not
+    // actually take focus, falls through to the next candidate.
+    for (const candidate of [opener, compact, main]) {
+      if (!isFocusAvailable(candidate)) continue;
+      candidate.focus({ preventScroll: true });
+      if (globalThis.document.activeElement === candidate) return;
+    }
   }, [editing]);
   const selectSchedule = (row: Resource) => {
     if (locked) return;
