@@ -1,5 +1,9 @@
 import React from "react";
-import { createSession, Format } from "@delino/react-forge";
+import {
+  createSession,
+  Format,
+  type SceneGeometryBudget,
+} from "@delino/react-forge";
 import {
   Scene,
   Group,
@@ -11,9 +15,12 @@ import {
 /** Portable scene with repeated and unused geometry for analysis consumers. */
 export default async function task({
   data,
-}: { data?: { format?: "glb" | "fbx" } } = {}) {
+}: {
+  data?: { format?: "glb" | "fbx"; geometryBudget?: SceneGeometryBudget };
+} = {}) {
   const session = createSession(
     data?.format === "fbx" ? Format.Fbx : Format.Glb,
+    { geometryBudget: data?.geometryBudget },
   );
   try {
     const q = await session.registerGeometry({

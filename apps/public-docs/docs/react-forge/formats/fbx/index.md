@@ -10,6 +10,8 @@ The explicit [`compactGeometry` operation](/react-forge/formats/glb/#explicit-ge
 
 For worked grid counts, one-texture painted detail, and an RGBA sheet, follow [polygon-efficient static authoring](/react-forge/formats/glb/#polygon-efficient-static-authoring). The example accepts `"format":"fbx"` with the same `low`, `dense`, `badge`, and `alpha` variants. Inspect the actual FBX in your target application; the embedded texture and opacity connections follow the Blender 4.5 compatibility profile below.
 
+The unreleased [caller geometry budget policy](/react-forge/formats/glb/#caller-geometry-budgets-unreleased) also applies to FBX with the same thresholds, warning and error types, and pre-publication behavior. Set it in trusted task code when creating `Format.Fbx`; no separate CLI or MCP threshold flags are needed.
+
 ## Compatibility profile
 
 The supported material profile targets Blender 4.5 LTS. It carries base color, metallic, roughness, normal, emissive, and opacity through the importer's legacy material properties and texture connections. Color and scalar factors are baked into embedded texture copies where the importer replaces connected values. Original registered bytes stay unchanged. Assets use meters and right-handed Y-up; camera/light axes and UV orientation are converted by the exporter.

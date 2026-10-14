@@ -39,6 +39,8 @@ Local document work has no hosted service, telemetry, URL fetching, automatic re
 
 If a static model is dense, count `indices.length / 3` per mesh instance before export and compare [the low and dense sheet examples](/react-forge/formats/glb/#polygon-efficient-static-authoring). Use a single opaque texture for painted detail that does not change the physical outline. Keep physical backs, required seams, and distinct material or animation parts. Smaller files and successful structural validation do not establish target-application appearance or performance.
 
+An unreleased [caller geometry budget option](/react-forge/formats/glb/#caller-geometry-budgets-unreleased) can warn or reject before GLB/FBX serialization. It is separate from the hard byte and tree ceilings. If a budget rejects export, inspect `ForgeError.context.sceneBudget` for the metric, actual count and limit, then explicitly reduce the scene or choose a different policy. Warnings describe the pinned scene but do not prove that a file was published.
+
 ## Animation extension limits (unreleased)
 
 The unreleased scene extension adds at most four joint influences per vertex and

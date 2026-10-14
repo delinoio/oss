@@ -204,6 +204,8 @@ The unreleased source extension adds `SceneSession.analyze({ revision?, signal? 
 
 For deliberate triangle counts and texture-carried artwork, see [polygon-efficient static authoring](https://oss.delino.io/react-forge/formats/glb/#polygon-efficient-static-authoring) and the [portable source example](examples/polygon-efficient.tsx). It compares 192 and 2,400 triangle curved sheets with opaque painted and transparent two-triangle quads. Its PNGs are generated in memory; copy both example source files for an installed CLI task.
 
+The unreleased source extension also accepts `geometryBudget` when creating a GLB/FBX session. `SceneBudgetAction.Warn` reports typed `onSceneWarning` events and file/CLI/MCP warnings while preserving output; `SceneBudgetAction.Error` rejects before generation with `resource_limit` and a `sceneBudget` context. The optional limits are scene triangles, triangles per Mesh, and Mesh count. No default polygon limit is imposed. See the [GLB budget guide](https://oss.delino.io/react-forge/formats/glb/#caller-geometry-budgets-unreleased) for semantics and availability.
+
 ## Sprite authoring (available in npm 0.2.0)
 
 `Format.Sprite` and `@delino/react-forge/sprite` are available in npm `0.2.0`. See the [Sprite guide](https://oss.delino.io/react-forge/formats/sprite/) for the workflow and limits.
