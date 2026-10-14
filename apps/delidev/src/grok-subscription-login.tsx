@@ -931,6 +931,15 @@ interface OnboardingProps {
   retry: () => void;
   leave: () => void;
 }
+// Selects only the given element's text, for a keyboard-reachable manual copy.
+const selectContents = (element: HTMLElement) => {
+  const selection = element.ownerDocument.defaultView?.getSelection();
+  if (!selection) return;
+  const range = element.ownerDocument.createRange();
+  range.selectNodeContents(element);
+  selection.removeAllRanges();
+  selection.addRange(range);
+};
 const diagnosticVersion = (value: string) =>
   value.length <= 64 && /^[a-zA-Z0-9.+_-]+$/.test(value);
 
@@ -1077,8 +1086,23 @@ function GrokSubscriptionOnboarding(props: OnboardingProps) {
               <output
                 aria-label={copy("grok-subscription.device.codeAria")}
                 aria-live="off"
-                role="group"
+                aria-readonly="true"
+                role="textbox"
+                // Keyboard users reach the code without a pointer; focus and
+                // Ctrl/Cmd+A select exactly the code so the manual copy
+                // fallback works after a clipboard failure.
+                tabIndex={0}
                 className="grok-device-user-code"
+                onFocus={(event) => selectContents(event.currentTarget)}
+                onKeyDown={(event) => {
+                  if (
+                    (event.ctrlKey || event.metaKey) &&
+                    event.key.toLowerCase() === "a"
+                  ) {
+                    event.preventDefault();
+                    selectContents(event.currentTarget);
+                  }
+                }}
               >
                 {v.userCode}
               </output>

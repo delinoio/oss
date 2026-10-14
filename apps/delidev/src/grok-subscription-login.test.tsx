@@ -853,6 +853,8 @@ it("sends one deviceCode login despite double click, Strict Mode and polling and
   expect(screen.getByLabelText(copy("grok-subscription.device.codeAria"))).toBe(
     code,
   );
+  expect(code.tabIndex).toBe(0);
+  expect(screen.getByRole("textbox", { name: copy("grok-subscription.device.codeAria") })).toBe(code);
   expect(screen.getByRole("status").textContent).toContain(
     copy("grok-subscription.status.waiting"),
   );
@@ -935,6 +937,39 @@ it("copies the code, opens the verification page once and reports failures", asy
   );
   await screen.findByText(copy("grok-subscription.device.codeCopyFailed"));
   expect(screen.getByText(DEVICE_CODE)).toBeTruthy();
+});
+
+it("keeps the device code keyboard-reachable and selectable for manual copy", async () => {
+  Object.defineProperty(window.navigator, "clipboard", {
+    configurable: true,
+    value: { writeText: vi.fn().mockRejectedValue(new Error("denied")) },
+  });
+  const f = deviceFixture();
+  await startDevice(f);
+  const code = screen.getByRole("textbox", {
+    name: copy("grok-subscription.device.codeAria"),
+  });
+  expect(code.tabIndex).toBe(0);
+  expect(code.getAttribute("aria-readonly")).toBe("true");
+  // The documented fallback after a clipboard failure is selecting the code.
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: copy("grok-subscription.device.copyCode"),
+    }),
+  );
+  await screen.findByText(copy("grok-subscription.device.codeCopyFailed"));
+  // The code is a tab stop, and focusing it selects exactly the code.
+  act(() => code.focus());
+  expect(window.document.activeElement).toBe(code);
+  expect(window.getSelection()?.toString()).toBe(DEVICE_CODE);
+  // Ctrl+A re-selects only the code instead of the whole page.
+  window.getSelection()?.removeAllRanges();
+  const handled = fireEvent.keyDown(code, { key: "a", ctrlKey: true });
+  expect(handled).toBe(false);
+  expect(window.getSelection()?.toString()).toBe(DEVICE_CODE);
+  // Other keys never edit the code.
+  fireEvent.keyDown(code, { key: "z" });
+  expect(code.textContent).toBe(DEVICE_CODE);
 });
 
 it.each([
