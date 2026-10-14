@@ -217,7 +217,7 @@ id with the other method is a conflict.
   field.
 - **Polling.** The loop waits one interval before the first poll and between
   polls, so requests never come faster than the effective interval. `POST
-  /oauth2/token` (discovered endpoint) carries `grant_type`
+/oauth2/token` (discovered endpoint) carries `grant_type`
   `urn:ietf:params:oauth:grant-type:device_code`, `client_id` and `device_code`.
   `authorization_pending` continues; `slow_down` adds 5 seconds to the interval
   for this and every later poll; `access_denied` ends the login as failed
