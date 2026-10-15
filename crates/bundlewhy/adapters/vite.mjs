@@ -24,7 +24,7 @@ import {
 } from "./common.mjs";
 
 export const ADAPTER_ID = "bundlewhy-collector-vite";
-export const ADAPTER_VERSION = "1";
+export const ADAPTER_VERSION = "2";
 
 /** Plugins that the adapter adds; they are not part of the project's config. */
 const BUNDLEWHY_PLUGIN_NAMES = new Set([
@@ -316,6 +316,10 @@ function collectorPlugin(state) {
           facadeModuleId: output.facadeModuleId ?? null,
           modules: chunkModules,
           map: output.sourcemapFileName ?? `${output.fileName}.map`,
+          // Emitted chunk graph: static imports are loaded together with the
+          // chunk, dynamic imports are requested later.
+          imports: [...(output.imports ?? [])],
+          dynamicImports: [...(output.dynamicImports ?? [])],
         });
       }
       state.collection = { modules: [...modules.values()], chunks, assets };

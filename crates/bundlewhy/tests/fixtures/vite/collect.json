@@ -8,7 +8,7 @@
  "defaultMinifier": true,
  "minifyEnabled": true,
  "adapterId": "bundlewhy-collector-vite",
- "adapterVersion": "1",
+ "adapterVersion": "2",
  "engineDetails": {
   "rolldownVersion": "1.2.13"
  },
@@ -678,7 +678,12 @@
     "/__bundlewhy_project__/src/main.js",
     "/__bundlewhy_project__/index.html"
    ],
-   "map": "assets/index-BHjrzQLH.js.map"
+   "map": "assets/index-BHjrzQLH.js.map",
+   "imports": [],
+   "dynamicImports": [
+    "assets/a-4N49Vh0M.js",
+    "assets/b-Hz8DdLjS.js"
+   ]
   },
   {
    "file": "assets/a-4N49Vh0M.js",
@@ -688,7 +693,11 @@
    "modules": [
     "/__bundlewhy_project__/src/lazy/a.js"
    ],
-   "map": "assets/a-4N49Vh0M.js.map"
+   "map": "assets/a-4N49Vh0M.js.map",
+   "imports": [
+    "assets/common-DMiq4WEy.js"
+   ],
+   "dynamicImports": []
   },
   {
    "file": "assets/b-Hz8DdLjS.js",
@@ -698,7 +707,11 @@
    "modules": [
     "/__bundlewhy_project__/src/lazy/b.js"
    ],
-   "map": "assets/b-Hz8DdLjS.js.map"
+   "map": "assets/b-Hz8DdLjS.js.map",
+   "imports": [
+    "assets/common-DMiq4WEy.js"
+   ],
+   "dynamicImports": []
   },
   {
    "file": "assets/common-DMiq4WEy.js",
@@ -708,7 +721,9 @@
    "modules": [
     "/__bundlewhy_project__/src/lazy/common.js"
    ],
-   "map": "assets/common-DMiq4WEy.js.map"
+   "map": "assets/common-DMiq4WEy.js.map",
+   "imports": [],
+   "dynamicImports": []
   }
  ],
  "assets": [

@@ -1,6 +1,6 @@
 //! Vite rules backed by Rolldown module info, rendered modules and engine logs.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use super::{Context, DiagnosticDraft, FinalEmission, RuleId};
 use crate::model::{Condition, ConditionOutcome, Evidence, EvidenceStatus};
@@ -790,6 +790,106 @@ fn commonjs_wrapped(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>
     }
 }
 
+/// One dynamic importer whose `import()` of the target module does not load a
+/// separate chunk, proven from the emitted chunk graph.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RequesterProof {
+    /// Collected module id of the dynamic importer.
+    importer: String,
+    /// Chunk file that holds the importer.
+    requester_chunk: String,
+    /// Chunk files from the requesting chunk to the chunk that holds the target
+    /// module. A single entry means that both live in the same chunk.
+    chunk_path: Vec<String>,
+}
+
+/// Finds the chunk that holds `targets` among the requesting chunk and the
+/// chunks it imports statically (transitively), and returns the chunk path.
+/// A chunk whose static imports were not collected contributes no edges, so
+/// only the chunk itself can be proven for it.
+fn static_closure_path(
+    chunks: &BTreeMap<&str, &crate::collect::CollectedChunk>,
+    requester_chunk: &str,
+    targets: &BTreeSet<&str>,
+) -> Option<Vec<String>> {
+    let mut parents: BTreeMap<&str, &str> = BTreeMap::new();
+    let mut seen: BTreeSet<&str> = BTreeSet::from([requester_chunk]);
+    let mut queue: VecDeque<&str> = VecDeque::from([requester_chunk]);
+    while let Some(current) = queue.pop_front() {
+        if targets.contains(current) {
+            let mut path = vec![current.to_owned()];
+            let mut cursor = current;
+            while let Some(parent) = parents.get(cursor) {
+                path.push((*parent).to_owned());
+                cursor = parent;
+            }
+            path.reverse();
+            return Some(path);
+        }
+        let Some(imports) = chunks.get(current).and_then(|chunk| chunk.imports.as_ref()) else {
+            continue;
+        };
+        for next in imports {
+            if seen.insert(next.as_str()) {
+                parents.insert(next.as_str(), current);
+                queue.push_back(next.as_str());
+            }
+        }
+    }
+    None
+}
+
+/// Evaluates every dynamic importer of `module` on its own. An importer is
+/// proven when each chunk that holds it already contains the module or loads
+/// the module's chunk statically. An importer that is not included in any
+/// chunk, or whose chunk loads the module's chunk only through a dynamic
+/// request, is not proven. Returns the proven and the unproven importers.
+fn dynamic_requester_proofs(
+    context: &Context<'_>,
+    module: &crate::collect::CollectedModule,
+) -> (Vec<RequesterProof>, Vec<String>) {
+    let chunks: BTreeMap<&str, &crate::collect::CollectedChunk> = context
+        .collection
+        .chunks
+        .iter()
+        .map(|chunk| (chunk.file.as_str(), chunk))
+        .collect();
+    let targets: BTreeSet<&str> = module.chunks.iter().map(String::as_str).collect();
+    let mut proven = Vec::new();
+    let mut unproven = Vec::new();
+    for importer_id in &module.dynamic_importers {
+        let requester_chunks: Vec<&str> = context
+            .modules
+            .get(importer_id.as_str())
+            .map(|importer| importer.chunks.iter().map(String::as_str).collect())
+            .unwrap_or_default();
+        let paths: Option<Vec<Vec<String>>> = requester_chunks
+            .iter()
+            .map(|chunk| static_closure_path(&chunks, chunk, &targets))
+            .collect();
+        match paths {
+            Some(paths) if !paths.is_empty() => proven.push(RequesterProof {
+                importer: importer_id.clone(),
+                requester_chunk: requester_chunks[0].to_owned(),
+                chunk_path: paths.into_iter().next().unwrap_or_default(),
+            }),
+            _ => unproven.push(importer_id.clone()),
+        }
+    }
+    (proven, unproven)
+}
+
+fn describe_chunk_path(path: &[String]) -> String {
+    match path {
+        [only] => format!("the same chunk {only}"),
+        _ => format!(
+            "chunk {} through static imports {}",
+            path[path.len() - 1],
+            path.join(" -> ")
+        ),
+    }
+}
+
 fn ineffective_dynamic_import(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
     let collection = context.collection;
     let logged: BTreeSet<&str> = collection
@@ -798,26 +898,33 @@ fn ineffective_dynamic_import(context: &mut Context<'_>, drafts: &mut Vec<Diagno
         .filter(|log| log.code.as_deref() == Some("INEFFECTIVE_DYNAMIC_IMPORT"))
         .filter_map(|log| log.id.as_deref())
         .collect();
-    let dynamic_entry_chunks: BTreeSet<&str> = collection
-        .chunks
-        .iter()
-        .filter(|chunk| chunk.is_dynamic_entry)
-        .map(|chunk| chunk.file.as_str())
-        .collect();
     for module in &collection.modules {
         // Poll before each module so Ctrl+C or `CancelRun` is observed between
         // modules instead of after the final-emission attribution of every one.
         if context.is_cancelled() {
             return;
         }
-        let graph_blocked = !module.importers.is_empty()
-            && !module.dynamic_importers.is_empty()
-            && !module
-                .chunks
-                .iter()
-                .any(|chunk| dynamic_entry_chunks.contains(chunk.as_str()));
+        if !module.included {
+            continue;
+        }
         let engine_reported = logged.contains(module.id.as_str());
-        if !module.included || !(graph_blocked || engine_reported) {
+        // The emitted chunk graph decides per requester. A static importer in
+        // an unrelated lazy chunk does not put the module into the requester's
+        // static closure, so importer lists alone never prove the claim.
+        let (proofs, unproven) =
+            if !module.importers.is_empty() && !module.dynamic_importers.is_empty() {
+                dynamic_requester_proofs(context, module)
+            } else {
+                (Vec::new(), Vec::new())
+            };
+        if proofs.is_empty() && !engine_reported {
+            if !module.importers.is_empty() && !module.dynamic_importers.is_empty() {
+                tracing::debug!(
+                    module = %context.module_log_label(&module.id),
+                    dynamic_importers = module.dynamic_importers.len(),
+                    "vite ineffective-dynamic-import not reported: no requester is proven by the emitted chunk graph"
+                );
+            }
             continue;
         }
         let display = context.module_display(module);
@@ -841,6 +948,39 @@ fn ineffective_dynamic_import(context: &mut Context<'_>, drafts: &mut Vec<Diagno
                 dynamic_importers.join(", ")
             ),
         )];
+        if !proofs.is_empty() {
+            let lines: Vec<String> = proofs
+                .iter()
+                .map(|proof| {
+                    format!(
+                        "{} (in {}) requests the module, which it already loads from {}",
+                        context.module_display_by_id(&proof.importer),
+                        proof.requester_chunk,
+                        describe_chunk_path(&proof.chunk_path)
+                    )
+                })
+                .collect();
+            evidence.push(Evidence::new(
+                "emitted chunk graph",
+                EvidenceStatus::Confirmed,
+                format!("{}.", lines.join("; ")),
+            ));
+        }
+        if !unproven.is_empty() {
+            let names: Vec<String> = unproven
+                .iter()
+                .map(|id| context.module_display_by_id(id))
+                .collect();
+            evidence.push(Evidence::new(
+                "emitted chunk graph",
+                EvidenceStatus::Confirmed,
+                format!(
+                    "These dynamic importers load the module through a separate chunk and are not \
+                     affected: {}.",
+                    names.join(", ")
+                ),
+            ));
+        }
         if engine_reported {
             evidence.push(Evidence::new(
                 "rolldown log INEFFECTIVE_DYNAMIC_IMPORT",
@@ -849,13 +989,34 @@ fn ineffective_dynamic_import(context: &mut Context<'_>, drafts: &mut Vec<Diagno
                  chunk.",
             ));
         }
+        let loaded_detail = if proofs.is_empty() {
+            "Reported by Rolldown INEFFECTIVE_DYNAMIC_IMPORT".to_owned()
+        } else {
+            format!(
+                "Requesting chunks: {}",
+                proofs
+                    .iter()
+                    .map(|proof| proof.requester_chunk.as_str())
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        };
         drafts.push(DiagnosticDraft {
             rule: RuleId::ViteIneffectiveDynamicImport,
             status: EvidenceStatus::Confirmed,
             title: format!("Dynamic import of {display} does not create a separate chunk"),
-            summary: "The module is also imported statically, so it is bundled with its static \
-                      importer and the dynamic import only defers evaluation, not loading."
-                .to_owned(),
+            summary: if proofs.is_empty() {
+                "Rolldown reported that the dynamic import does not move the module into another \
+                 chunk, so it only defers evaluation, not loading."
+                    .to_owned()
+            } else {
+                "For the dynamic importers named in the evidence, the module is already part of \
+                 the requesting chunk or of a chunk it imports statically, so the dynamic import \
+                 only defers evaluation, not loading."
+                    .to_owned()
+            },
             conditions: vec![
                 Condition::new(
                     "The module is imported only dynamically",
@@ -863,9 +1024,10 @@ fn ineffective_dynamic_import(context: &mut Context<'_>, drafts: &mut Vec<Diagno
                     format!("Static importers: {}", static_importers.join(", ")),
                 ),
                 Condition::new(
-                    "The module is emitted in its own dynamic chunk",
+                    "The dynamic import loads the module from a chunk that the requester does not \
+                     already load",
                     ConditionOutcome::Unmet,
-                    format!("Emitted in: {}", module.chunks.join(", ")),
+                    format!("{loaded_detail}. Emitted in: {}", module.chunks.join(", ")),
                 ),
             ],
             located,
@@ -1225,5 +1387,213 @@ mod tests {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod ineffective_dynamic_import_tests {
+    use super::*;
+    use crate::collect::{CollectedChunk, CollectedModule, Collection, EngineLog};
+
+    fn module(id: &str, importers: &[&str], dynamic: &[&str], chunks: &[&str]) -> CollectedModule {
+        CollectedModule {
+            id: id.to_owned(),
+            path: Some(format!("/project/{id}")),
+            included: true,
+            importers: importers.iter().map(|v| (*v).to_owned()).collect(),
+            dynamic_importers: dynamic.iter().map(|v| (*v).to_owned()).collect(),
+            chunks: chunks.iter().map(|v| (*v).to_owned()).collect(),
+            ..CollectedModule::default()
+        }
+    }
+
+    fn chunk(file: &str, imports: Option<&[&str]>) -> CollectedChunk {
+        CollectedChunk {
+            file: file.to_owned(),
+            imports: imports.map(|list| list.iter().map(|v| (*v).to_owned()).collect()),
+            dynamic_imports: imports.map(|_| Vec::new()),
+            ..CollectedChunk::default()
+        }
+    }
+
+    fn run(collection: &Collection) -> Vec<DiagnosticDraft> {
+        let mut context = Context::new(
+            collection,
+            std::path::PathBuf::from("/project"),
+            "project".to_owned(),
+            Vec::new(),
+            crate::sources::SourceStore::new(false),
+        );
+        let mut drafts = Vec::new();
+        ineffective_dynamic_import(&mut context, &mut drafts);
+        drafts
+    }
+
+    fn engine_log(id: &str) -> EngineLog {
+        EngineLog {
+            code: Some("INEFFECTIVE_DYNAMIC_IMPORT".to_owned()),
+            id: Some(id.to_owned()),
+            ..EngineLog::default()
+        }
+    }
+
+    /// The target lives in its own chunk; its only static importer is another
+    /// lazy chunk. The entry's dynamic import loads a separate chunk.
+    fn lazy_route_collection() -> Collection {
+        Collection {
+            modules: vec![
+                module("src/entry.js", &[], &[], &["entry.js"]),
+                module("src/lazy-page.js", &[], &["src/entry.js"], &["page.js"]),
+                module(
+                    "src/shared.js",
+                    &["src/lazy-page.js"],
+                    &["src/entry.js"],
+                    &["shared.js"],
+                ),
+            ],
+            chunks: vec![
+                chunk("entry.js", Some(&[])),
+                chunk("page.js", Some(&["shared.js"])),
+                chunk("shared.js", Some(&[])),
+            ],
+            ..Collection::default()
+        }
+    }
+
+    #[test]
+    fn static_importer_in_another_lazy_chunk_is_not_ineffective() {
+        assert!(run(&lazy_route_collection()).is_empty());
+    }
+
+    #[test]
+    fn same_chunk_requester_is_reported_with_chunk_evidence() {
+        let collection = Collection {
+            modules: vec![
+                module("src/main.js", &[], &[], &["main.js"]),
+                module(
+                    "src/shared.js",
+                    &["src/main.js"],
+                    &["src/main.js"],
+                    &["main.js"],
+                ),
+            ],
+            chunks: vec![chunk("main.js", Some(&[]))],
+            ..Collection::default()
+        };
+        let drafts = run(&collection);
+        assert_eq!(drafts.len(), 1);
+        assert_eq!(drafts[0].status, EvidenceStatus::Confirmed);
+        let graph = drafts[0]
+            .evidence
+            .iter()
+            .find(|e| e.provenance == "emitted chunk graph")
+            .expect("chunk graph evidence");
+        assert!(graph.detail.contains("src/main.js"), "{}", graph.detail);
+        assert!(graph.detail.contains("main.js"), "{}", graph.detail);
+        assert!(graph.detail.contains("same chunk"), "{}", graph.detail);
+    }
+
+    #[test]
+    fn requester_with_the_target_in_its_static_closure_is_reported() {
+        let mut collection = lazy_route_collection();
+        // The entry chunk now imports the shared chunk statically.
+        collection.chunks[0] = chunk("entry.js", Some(&["vendor.js"]));
+        collection
+            .chunks
+            .push(chunk("vendor.js", Some(&["shared.js"])));
+        let drafts = run(&collection);
+        assert_eq!(drafts.len(), 1);
+        let graph = drafts[0]
+            .evidence
+            .iter()
+            .find(|e| e.provenance == "emitted chunk graph")
+            .unwrap();
+        assert!(
+            graph.detail.contains("entry.js -> vendor.js -> shared.js"),
+            "{}",
+            graph.detail
+        );
+    }
+
+    #[test]
+    fn one_proven_requester_reports_and_names_the_unaffected_one() {
+        let mut collection = lazy_route_collection();
+        collection
+            .modules
+            .push(module("src/other.js", &[], &[], &["other.js"]));
+        collection.modules[2]
+            .dynamic_importers
+            .push("src/other.js".to_owned());
+        collection
+            .chunks
+            .push(chunk("other.js", Some(&["shared.js"])));
+        let drafts = run(&collection);
+        assert_eq!(drafts.len(), 1);
+        let details: Vec<&str> = drafts[0]
+            .evidence
+            .iter()
+            .filter(|e| e.provenance == "emitted chunk graph")
+            .map(|e| e.detail.as_str())
+            .collect();
+        assert_eq!(details.len(), 2, "{details:?}");
+        assert!(details[0].contains("src/other.js"), "{details:?}");
+        assert!(details[1].contains("not affected"), "{details:?}");
+        assert!(details[1].contains("src/entry.js"), "{details:?}");
+    }
+
+    #[test]
+    fn engine_log_keeps_the_finding_as_engine_reported_evidence() {
+        let mut collection = lazy_route_collection();
+        collection.logs.push(engine_log("src/shared.js"));
+        let drafts = run(&collection);
+        assert_eq!(drafts.len(), 1);
+        assert!(
+            drafts[0]
+                .evidence
+                .iter()
+                .any(|e| e.provenance.contains("INEFFECTIVE_DYNAMIC_IMPORT"))
+        );
+        assert!(drafts[0].summary.contains("Rolldown reported"));
+    }
+
+    #[test]
+    fn collection_without_chunk_imports_proves_only_the_same_chunk_case() {
+        // Old collection: no `imports` data on any chunk.
+        let mut collection = lazy_route_collection();
+        for chunk in &mut collection.chunks {
+            chunk.imports = None;
+            chunk.dynamic_imports = None;
+        }
+        assert!(run(&collection).is_empty());
+
+        let same_chunk = Collection {
+            modules: vec![
+                module("src/main.js", &[], &[], &["main.js"]),
+                module(
+                    "src/shared.js",
+                    &["src/main.js"],
+                    &["src/main.js"],
+                    &["main.js"],
+                ),
+            ],
+            chunks: vec![chunk("main.js", None)],
+            ..Collection::default()
+        };
+        assert_eq!(run(&same_chunk).len(), 1);
+    }
+
+    #[test]
+    fn dynamic_importer_that_is_not_emitted_is_not_proven() {
+        let mut collection = lazy_route_collection();
+        collection.modules[0].chunks.clear();
+        assert!(run(&collection).is_empty());
+    }
+
+    #[test]
+    fn chunk_graph_cycles_terminate() {
+        let mut collection = lazy_route_collection();
+        collection.chunks[0] = chunk("entry.js", Some(&["a.js"]));
+        collection.chunks.push(chunk("a.js", Some(&["entry.js"])));
+        assert!(run(&collection).is_empty());
     }
 }
