@@ -230,99 +230,117 @@ function collectorPlugin(state) {
         column: log.loc?.column ?? null,
       });
     },
-    generateBundle(_options, bundle) {
-      // generateBundle runs once per output. bundlewhy analyzes one output;
-      // several outputs are rejected after the build instead of silently
-      // keeping only the last one.
-      state.outputs += 1;
-      if (state.outputs > 1) return;
-      const modules = new Map();
-      const recordModule = (id) => {
-        if (modules.has(id)) return modules.get(id);
-        const info = this.getModuleInfo(id);
-        const file = moduleFilePath(id);
-        const pkg = file ? nearestPackage(file) : null;
-        const record = {
-          id,
-          path: file,
-          virtual: !file,
-          isEntry: Boolean(info?.isEntry),
-          importers: info?.importers ?? [],
-          dynamicImporters: info?.dynamicImporters ?? [],
-          importedIds: info?.importedIds ?? [],
-          dynamicImportedIds: info?.dynamicallyImportedIds ?? [],
-          exports: info?.exports ?? null,
-          usedExports: null,
-          moduleSideEffects: info
-            ? summarizeValue(info.moduleSideEffects)
-            : null,
-          // Hook-level values (getModuleInfo) list only what JavaScript hooks
-          // set. They never reflect the configured
-          // treeshake.moduleSideEffects option, which Rolldown consults next,
-          // or a value that a native plugin (such as Vite's resolver) set.
-          treeshakeSideEffects: configuredModuleSideEffects(
-            state.moduleSideEffectsOption,
+    // `enforce: "post"` orders the plugin, while hook ordering is separate: a
+    // project plugin with `generateBundle: { order: "post" }` can still add,
+    // remove or rewrite chunk imports. This hook is post-ordered as well, so the
+    // snapshot is taken from the final bundle.
+    generateBundle: {
+      order: "post",
+      handler(_options, bundle) {
+        // generateBundle runs once per output. bundlewhy analyzes one output;
+        // several outputs are rejected after the build instead of silently
+        // keeping only the last one.
+        state.outputs += 1;
+        if (state.outputs > 1) return;
+        const modules = new Map();
+        const recordModule = (id) => {
+          if (modules.has(id)) return modules.get(id);
+          const info = this.getModuleInfo(id);
+          const file = moduleFilePath(id);
+          const pkg = file ? nearestPackage(file) : null;
+          const record = {
             id,
-          ),
-          inputFormat: info?.inputFormat ?? "unknown",
-          renderedLength: 0,
-          included: false,
-          chunks: [],
-          bailouts: [],
-          reasons: [],
-          packageName: pkg?.name ?? null,
-          packageVersion: pkg?.version ?? null,
-          packageDir: pkg?.dir ?? null,
-          // A string is a glob, so quote it: the bare words `true` and
-          // `false` stay reserved for the boolean values.
-          packageSideEffects:
-            pkg && pkg.sideEffects !== null
-              ? typeof pkg.sideEffects === "string"
-                ? JSON.stringify(pkg.sideEffects)
-                : summarizeValue(pkg.sideEffects)
+            path: file,
+            virtual: !file,
+            isEntry: Boolean(info?.isEntry),
+            importers: info?.importers ?? [],
+            dynamicImporters: info?.dynamicImporters ?? [],
+            importedIds: info?.importedIds ?? [],
+            dynamicImportedIds: info?.dynamicallyImportedIds ?? [],
+            exports: info?.exports ?? null,
+            usedExports: null,
+            moduleSideEffects: info
+              ? summarizeValue(info.moduleSideEffects)
               : null,
+            // Hook-level values (getModuleInfo) list only what JavaScript hooks
+            // set. They never reflect the configured
+            // treeshake.moduleSideEffects option, which Rolldown consults next,
+            // or a value that a native plugin (such as Vite's resolver) set.
+            treeshakeSideEffects: configuredModuleSideEffects(
+              state.moduleSideEffectsOption,
+              id,
+            ),
+            inputFormat: info?.inputFormat ?? "unknown",
+            renderedLength: 0,
+            included: false,
+            chunks: [],
+            bailouts: [],
+            reasons: [],
+            packageName: pkg?.name ?? null,
+            packageVersion: pkg?.version ?? null,
+            packageDir: pkg?.dir ?? null,
+            // A string is a glob, so quote it: the bare words `true` and
+            // `false` stay reserved for the boolean values.
+            packageSideEffects:
+              pkg && pkg.sideEffects !== null
+                ? typeof pkg.sideEffects === "string"
+                  ? JSON.stringify(pkg.sideEffects)
+                  : summarizeValue(pkg.sideEffects)
+                : null,
+          };
+          modules.set(id, record);
+          return record;
         };
-        modules.set(id, record);
-        return record;
-      };
 
-      for (const id of this.getModuleIds()) recordModule(id);
+        const externalIds = new Set();
+        for (const id of this.getModuleIds()) {
+          recordModule(id);
+          if (this.getModuleInfo(id)?.code === null) externalIds.add(id);
+        }
 
-      const chunks = [];
-      const assets = [];
-      for (const output of Object.values(bundle)) {
-        if (output.type === "asset") {
-          assets.push(output.fileName);
-          continue;
+        const chunks = [];
+        const assets = [];
+        for (const output of Object.values(bundle)) {
+          if (output.type === "asset") {
+            assets.push(output.fileName);
+            continue;
+          }
+          const chunkModules = [];
+          for (const [id, rendered] of Object.entries(output.modules)) {
+            const record = recordModule(id);
+            record.renderedLength += rendered.renderedLength;
+            record.usedExports = [
+              ...new Set([
+                ...(record.usedExports ?? []),
+                ...rendered.renderedExports,
+              ]),
+            ];
+            record.included = record.included || rendered.renderedLength > 0;
+            record.chunks.push(output.fileName);
+            chunkModules.push(id);
+          }
+          chunks.push({
+            file: output.fileName,
+            isEntry: output.isEntry,
+            isDynamicEntry: output.isDynamicEntry,
+            facadeModuleId: output.facadeModuleId ?? null,
+            modules: chunkModules,
+            map: output.sourcemapFileName ?? `${output.fileName}.map`,
+            // Emitted chunk graph: static imports are loaded together with the
+            // chunk, dynamic imports are requested later.
+            imports: [...(output.imports ?? [])],
+            // `imports` mixes emitted chunk files with external specifiers, and
+            // an external can share its name with an emitted chunk. An external
+            // has no source (`code === null`), so name the imports that refer
+            // to one.
+            externalImports: [...(output.imports ?? [])].filter((name) =>
+              externalIds.has(name),
+            ),
+            dynamicImports: [...(output.dynamicImports ?? [])],
+          });
         }
-        const chunkModules = [];
-        for (const [id, rendered] of Object.entries(output.modules)) {
-          const record = recordModule(id);
-          record.renderedLength += rendered.renderedLength;
-          record.usedExports = [
-            ...new Set([
-              ...(record.usedExports ?? []),
-              ...rendered.renderedExports,
-            ]),
-          ];
-          record.included = record.included || rendered.renderedLength > 0;
-          record.chunks.push(output.fileName);
-          chunkModules.push(id);
-        }
-        chunks.push({
-          file: output.fileName,
-          isEntry: output.isEntry,
-          isDynamicEntry: output.isDynamicEntry,
-          facadeModuleId: output.facadeModuleId ?? null,
-          modules: chunkModules,
-          map: output.sourcemapFileName ?? `${output.fileName}.map`,
-          // Emitted chunk graph: static imports are loaded together with the
-          // chunk, dynamic imports are requested later.
-          imports: [...(output.imports ?? [])],
-          dynamicImports: [...(output.dynamicImports ?? [])],
-        });
-      }
-      state.collection = { modules: [...modules.values()], chunks, assets };
+        state.collection = { modules: [...modules.values()], chunks, assets };
+      },
     },
   };
 }
