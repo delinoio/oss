@@ -268,9 +268,11 @@ server re-verifies, the server publishes the captured bundle as exactly one
 immutable generation named by the recovery request, releases the lease and every
 member, clears the fence and returns the account to ready (a revoked or queued
 operation keeps its state), then retires the old generation and capture. When
-cleanup is proven but the credential is not usable, the server deletes every
-protected reference first (and refuses while an access-only quota or credit
-reader still holds one), then settles the account disconnected so only the
+cleanup is proven but the credential is not usable, the server first commits a durable
+retirement checkpoint (`subscription.recovery_retiring`, non-secret) and only then deletes every
+protected reference (it refuses while an access-only quota or credit
+reader still holds one), then settles the account disconnected; a retry of the same request after
+a crash or store failure resumes from the checkpoint without re-reading the possibly deleted capture so only the
 existing explicit login applies. A vault failure leaves the fence in place or
 the committed state with a retry: the same recovery request replays and finishes
 the reference retirement. Insufficient proof never clears the fence.

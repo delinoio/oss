@@ -25,8 +25,9 @@ protected-capture identity and its acknowledgement), `recovery_request` (the
 durable recovery identity, distinct from `finish`) and `recovered`; journals
 written before the lane omit them and are never guessed from the filesystem. The
 account document gains optional `subscription.recovery_capture` (capture
-identity, lease, generation, identity commitment, `usable`, sync time) and the
-closed `subscription.recovery_reason`; no SQLite migration is needed. The capture
+identity, lease, generation, identity commitment, `usable`, sync time) the
+closed `subscription.recovery_reason` and the boolean `subscription.recovery_retiring` (the
+durable retirement checkpoint committed before protected references are deleted); no SQLite migration is needed. The capture
 bytes live only in the server credential vault under an `AccountLogin` reference
 whose identity is the capture request. See the
 [subscription contract](cmds-delidev-subscription-contract.md#chatgpt-execution-authentication-recovery).

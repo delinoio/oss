@@ -478,3 +478,65 @@ func TestSubscriptionRecoveryCapturesSurvivingFileOnceUnderTheFence(t *testing.T
 		t.Fatal("legacy recovery did not restore readiness")
 	}
 }
+
+// A crash after the protected references were deleted but before the settlement
+// committed must leave a resumable state: the same recovery request finishes the
+// retirement even though the capture and the old generation are gone.
+func TestSubscriptionRecoveryRetirementResumesAfterEvidenceWasDeleted(t *testing.T) {
+	f := newSubscriptionFixture(t)
+	foreign := subscriptionTestBundle("another-provider-account", "second", time.Now().UTC())
+	defer clear(foreign)
+	lease, capture, original := f.fencedExecute(foreign)
+	defer clear(original)
+	request := f.recoverRequest(lease, capture, pb.SubscriptionRecoveryOutcome_SUBSCRIPTION_RECOVERY_OUTCOME_SETTLED, pb.SubscriptionRecoveryBlockedReason_SUBSCRIPTION_RECOVERY_BLOCKED_REASON_UNSPECIFIED, string(domain.NewID()))
+	// The store failure lands right after the last deletion.
+	f.secrets.mu.Lock()
+	f.secrets.enumerationFailsAfterDeletes = f.secrets.deletes + len(f.secrets.values)
+	f.secrets.mu.Unlock()
+	if _, err := f.recoverCall(request); err == nil {
+		t.Fatal("an interrupted retirement was reported as complete")
+	}
+	if live := f.liveReferences(); len(live) != 0 {
+		t.Fatal("the interrupted retirement did not delete the evidence", live)
+	}
+	_, mid := f.record()
+	if mid.Subscription.Lease == nil || !mid.Subscription.RecoveryRequired || !mid.Subscription.RecoveryRetiring || mid.Subscription.RecoveryCapture == nil {
+		t.Fatal("the retirement checkpoint was not committed before the evidence was deleted")
+	}
+	f.secrets.mu.Lock()
+	f.secrets.enumerationFailsAfterDeletes = 0
+	f.secrets.mu.Unlock()
+	response, err := f.recoverCall(request)
+	if err != nil || response.Replayed {
+		t.Fatal("the identical recovery request did not resume the retirement", err)
+	}
+	_, account := f.record()
+	state := account.Subscription
+	if account.Connection != nil || account.Health != domain.AccountDisconnected || state.Lease != nil || state.RecoveryRequired || state.RecoveryRetiring || state.RecoveryCapture != nil || state.Generation != "" {
+		t.Fatal("the resumed retirement did not settle the account as disconnected", account.Health)
+	}
+	if again, err := f.recoverCall(request); err != nil || !again.Replayed {
+		t.Fatal("the settled retirement did not replay", err)
+	}
+}
+
+// The restore path never writes the checkpoint, and a vault read failure never
+// degrades a restore into a retirement.
+func TestSubscriptionRecoveryRestoreDoesNotCheckpointRetirement(t *testing.T) {
+	f := newSubscriptionFixture(t)
+	latest := subscriptionTestBundle("fixture-account", "second", time.Now().UTC())
+	defer clear(latest)
+	lease, capture, original := f.fencedExecute(latest)
+	defer clear(original)
+	request := f.recoverRequest(lease, capture, pb.SubscriptionRecoveryOutcome_SUBSCRIPTION_RECOVERY_OUTCOME_SETTLED, pb.SubscriptionRecoveryBlockedReason_SUBSCRIPTION_RECOVERY_BLOCKED_REASON_UNSPECIFIED, string(domain.NewID()))
+	f.secrets.mu.Lock()
+	f.secrets.referenceError = nil
+	f.secrets.mu.Unlock()
+	if _, err := f.recoverCall(request); err != nil {
+		t.Fatal(err)
+	}
+	_, account := f.record()
+	if account.Subscription.RecoveryRetiring || account.Connection == nil || account.Health == domain.AccountDisconnected {
+		t.Fatal("a restore was recorded as a retirement")
+	}
+}

@@ -58,6 +58,11 @@ type SubscriptionState struct {
 	// RecoveryReason is the closed diagnostic of a fenced Execute lease whose
 	// automatic recovery is blocked. It is observation only and grants nothing.
 	RecoveryReason SubscriptionRecoveryReason `json:"recovery_reason,omitempty"`
+	// RecoveryRetiring is the durable checkpoint of a recovery that decided to
+	// retire the account. It is committed before any protected reference is
+	// deleted, so a retry resumes the retirement instead of re-reading evidence
+	// that may already be gone.
+	RecoveryRetiring bool `json:"recovery_retiring,omitempty"`
 }
 
 // SubscriptionRecoveryCapture binds a protected capture to the original lease,
@@ -214,6 +219,9 @@ func (s SubscriptionState) Validate(account Account) error {
 		return invalid()
 	}
 	if s.RecoveryReason != "" && (!s.RecoveryReason.Valid() || !s.RecoveryRequired || s.Lease == nil || s.Lease.Action != SubscriptionExecute || account.SubscriptionService != SubscriptionChatGPT) {
+		return invalid()
+	}
+	if s.RecoveryRetiring && (!s.RecoveryRequired || s.RecoveryCapture == nil || s.Lease == nil || s.Lease.Action != SubscriptionExecute || account.SubscriptionService != SubscriptionChatGPT) {
 		return invalid()
 	}
 	if s.Lease != nil {

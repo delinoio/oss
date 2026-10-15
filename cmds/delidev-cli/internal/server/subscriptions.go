@@ -1322,7 +1322,7 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 				if state.RecoveryCapture != nil {
 					releasedCapture = state.RecoveryCapture.ID
 				}
-				state.RecoveryCapture, state.RecoveryReason = nil, ""
+				state.RecoveryCapture, state.RecoveryReason, state.RecoveryRetiring = nil, "", false
 				if state.Pending != nil && state.Pending.ID == lease.OperationID {
 					state.Pending = nil
 				}

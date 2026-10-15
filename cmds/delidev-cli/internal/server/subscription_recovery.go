@@ -368,9 +368,16 @@ func (s *Service) RecoverSubscription(ctx context.Context, req *connect.Request[
 		if state.RecoveryCapture == nil || state.RecoveryCapture.ID != input.Capture || state.RecoveryCapture.LeaseID != input.Lease || state.RecoveryCapture.Generation != input.Generation || original.Connection == nil || state.IdentityCommitment == "" {
 			return nil, rpc.Error(subscriptionDenied(), c)
 		}
-		outcome, err := s.recoveryDecision(ctx, vault, input, state)
-		if err != nil {
-			return nil, rpc.Error(err, c)
+		// A committed retirement checkpoint means the retire decision was already
+		// made and the protected references may be partly or fully deleted, so
+		// the decision is never re-derived from the (possibly missing) capture.
+		outcome := recoverRetire
+		if !state.RecoveryRetiring {
+			var err error
+			outcome, err = s.recoveryDecision(ctx, vault, input, state)
+			if err != nil {
+				return nil, rpc.Error(err, c)
+			}
 		}
 		if outcome == recoverRetire {
 			if held := independentCredentialGenerations(state); len(held) != 0 {
@@ -378,6 +385,16 @@ func (s *Service) RecoverSubscription(ctx context.Context, req *connect.Request[
 				// their own cleanup settles; the owner is not retired under them.
 				s.logger.WarnContext(ctx, "subscription_recovery_waiting_for_credential_users", "account_id", input.Account, "lease_id", input.Lease)
 				return nil, rpc.Error(domain.Fail(domain.ResourceExhausted, "Independent credential users of this account have not settled.", "Wait for the original quota or credit readers to finish; the recovery fence stays."), c)
+			}
+			if !state.RecoveryRetiring {
+				// Persist the retirement before any evidence is deleted, so a crash
+				// or store failure between the deletions and the settlement leaves
+				// a resumable state instead of a fence that references deleted
+				// evidence.
+				if err := s.checkpointRecoveryRetirement(ctx, input, instance); err != nil {
+					return nil, rpc.Error(err, c)
+				}
+				s.logger.InfoContext(ctx, "subscription_recovery_retirement_checkpointed", "account_id", input.Account, "lease_id", input.Lease, "recovery_id", m.RequestId)
 			}
 			// Every protected reference is denied and removed before the account
 			// may be disconnected, so no login or execution is admitted while an
@@ -439,6 +456,29 @@ func (s *Service) RecoverSubscription(ctx context.Context, req *connect.Request[
 	}
 	s.logger.InfoContext(ctx, "subscription_recovery_settled", "account_id", input.Account, "lease_id", input.Lease, "recovery_id", m.RequestId, "replayed", replayed)
 	return s.recoveryResponse(ctx, input.Account, replayed || result.Replayed, c)
+}
+
+// checkpointRecoveryRetirement commits the decision to retire the fenced
+// account. It is idempotent: an already recorded checkpoint is left unchanged.
+func (s *Service) checkpointRecoveryRetirement(ctx context.Context, input subscriptionRecoverInput, instance domain.ID) error {
+	_, err := s.Store.Mutate(ctx, domain.NewID(), "subscription.recover-retirement", struct{ Account, Lease domain.ID }{input.Account, input.Lease}, func(tx *store.Tx) (any, error) {
+		r, a, err := s.subscriptionRecoveryLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, instance, recoveryFenced)
+		if err != nil {
+			return nil, err
+		}
+		st := a.Subscription
+		if st.Lease.Revision != input.Revision || st.Generation != input.Generation || st.RecoveryCapture == nil || st.RecoveryCapture.ID != input.Capture || a.Connection == nil {
+			return nil, subscriptionDenied()
+		}
+		if !st.RecoveryRetiring {
+			st.RecoveryRetiring = true
+			if _, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
+				return nil, err
+			}
+		}
+		return accountReceipt{ID: r.ID}, nil
+	})
+	return err
 }
 
 func (s *Service) recoveryResponse(ctx context.Context, account domain.ID, replayed bool, correlation string) (*connect.Response[pb.RecoverSubscriptionResponse], error) {
@@ -508,6 +548,7 @@ func applyRecoverySettlement(a *domain.Account, outcome subscriptionRecoverOutco
 	state.Members = nil
 	state.RecoveryRequired = false
 	state.RecoveryCapture = nil
+	state.RecoveryRetiring = false
 	state.RecoveryReason = ""
 	if state.Pending != nil && state.Pending.ID == lease.OperationID {
 		state.Pending = nil

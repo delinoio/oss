@@ -32,6 +32,9 @@ type accountTestSecrets struct {
 	enumerations                          int
 	afterPut                              func()
 	puts, deletes                         int
+	// enumerationFailsAfterDeletes, when positive, fails reference enumeration
+	// once that many deletions happened (a crash after the deletions).
+	enumerationFailsAfterDeletes int
 }
 
 func (v *accountTestSecrets) Put(ctx context.Context, ref credentials.Ref, key []byte) (string, error) {
@@ -78,6 +81,9 @@ func (v *accountTestSecrets) UnremovedReferences(ctx context.Context, owner doma
 	v.enumerations++
 	if v.referenceError != nil {
 		return nil, v.referenceError
+	}
+	if v.enumerationFailsAfterDeletes > 0 && v.deletes >= v.enumerationFailsAfterDeletes {
+		return nil, domain.Fail(domain.Unavailable, "Injected crash after deletions.", "")
 	}
 	refs := []credentials.Ref{}
 	for ref := range v.values {
