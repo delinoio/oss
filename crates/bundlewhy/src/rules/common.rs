@@ -3008,6 +3008,84 @@ y=/process.env.F/.test(z),process.env.G"#;
         }
     }
 
+    /// Every way an `eval` call can appear in emitted text, with the number of
+    /// direct calls it contains. The same table drives the offset scan and the
+    /// rule, so a form is classified the same way in the source and in the
+    /// emitted chunk.
+    const EMITTED_EVAL_FORMS: &[(&str, usize)] = &[
+        // Plain and spread calls are direct.
+        ("eval(c);", 1),
+        ("export const r = (c) => eval(c);", 1),
+        ("run(...eval(c));", 1),
+        ("eval(...args);", 1),
+        ("eval(c), eval(d);", 2),
+        // Whitespace and comments between the callee and its arguments.
+        ("eval /* c */ (c);", 1),
+        ("eval/*!x*/(c);", 1),
+        ("eval // c\n(c);", 1),
+        // Grouping parentheses keep the reference, so the call stays direct.
+        ("(eval)(c);", 1),
+        ("((eval))(c);", 1),
+        ("(/* c */ eval /* c */)(c);", 1),
+        ("export const r = (c) => (eval)(c);", 1),
+        ("run((eval)(c));", 1),
+        ("(eval)(c); eval(d);", 2),
+        // A comma expression yields a value, so these calls are indirect.
+        ("(0, eval)(c);", 0),
+        ("(0,eval)(c);", 0),
+        ("(void 0, eval)(c);", 0),
+        ("(eval, 0)(c);", 0),
+        // An optional call is never a direct eval.
+        ("eval?.(c);", 0),
+        ("(eval)?.(c);", 0),
+        // Other uses of the name.
+        ("run(eval)(c);", 0),
+        ("obj.eval(c);", 0),
+        ("(obj.eval)(c);", 0),
+        ("obj?.eval(c);", 0),
+        ("globalThis.eval(c);", 0),
+        ("window['eval'](c);", 0),
+        ("const f = eval;", 0),
+        ("run(eval, c);", 0),
+        ("new (eval)(c);", 0),
+        ("evaluate(c);", 0),
+        ("myeval(c);", 0),
+        ("eval$(c);", 0),
+        // Text that is not code.
+        ("// eval(c)\nrun();", 0),
+        ("/* (eval)(c) */ run();", 0),
+        ("run('eval(c)', \"(eval)(c)\", `eval(c)`);", 0),
+        ("const re = /eval(c)/;", 0),
+        // Scope: a binding named `eval` makes its calls ordinary.
+        ("function f(eval) { (eval)(c); eval(c); }", 0),
+        ("function f(eval) { return eval(c); } eval(d);", 1),
+    ];
+
+    #[test]
+    fn emitted_eval_call_forms_are_classified_by_one_table() {
+        for (form, expected) in EMITTED_EVAL_FORMS {
+            let offsets = direct_eval_offsets(form);
+            assert_eq!(offsets.len(), *expected, "offsets for {form}");
+            for offset in &offsets {
+                assert!(form[*offset..].starts_with("eval"), "{form}: {offset}");
+            }
+            let emitted = EmittedChunk::plain(&format!("const longLocalName = 1;\n{form}"));
+            for engine_reports_eval in [true, false] {
+                let drafts = eval_rule_drafts_for_chunk(
+                    DEAD_EVAL_SOURCE,
+                    engine_reports_eval,
+                    ManglingSetting::Enabled,
+                    &emitted,
+                );
+                assert_eq!(
+                    drafts.len(),
+                    usize::from(*expected > 0),
+                    "{form}, engine report: {engine_reports_eval}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn emitted_eval_with_comment_before_arguments_reports() {
         let emitted =

@@ -730,6 +730,14 @@ impl<'a> Scanner<'a> {
             .get(index + 1)
             .is_some_and(|next| next.is_punct("("));
         if !followed_by_parenthesis {
+            // `(eval)(code)` keeps the reference to `eval` through the
+            // grouping parentheses, so it is a direct call as well.
+            if token.is_word("eval") && self.is_parenthesized_call(index) {
+                self.sites.push(EvalSite {
+                    start: token.start,
+                    kind: EvalSiteKind::DirectCall,
+                });
+            }
             return;
         }
         let kind = match token.kind {
@@ -794,6 +802,48 @@ impl<'a> Scanner<'a> {
             },
             _ => EvalSiteKind::DirectCall,
         }
+    }
+
+    /// Reports whether the `eval` word at `index` is the whole callee of a call
+    /// that sits inside grouping parentheses, as in `(eval)(code)` or
+    /// `((eval))(code)`.
+    ///
+    /// ECMAScript evaluates a parenthesized reference to the same reference, so
+    /// the call is a direct eval. A comma expression (`(0, eval)(code)`) yields
+    /// a value and an optional call (`eval?.(code)`, `(eval)?.(code)`) is never
+    /// direct; neither has `eval` alone between the parentheses followed by a
+    /// plain `(`, so they are not matched here. The opening parenthesis must
+    /// group an expression; after a name, `)` or `]` it would be an argument
+    /// list (`run(eval)(code)` calls the result of `run`), and after `if`,
+    /// `while`, `for`, `switch`, `with`, `catch`, `function` or `new` it
+    /// belongs to a header or a construction.
+    fn is_parenthesized_call(&self, index: usize) -> bool {
+        let closing = self.tokens[index + 1..]
+            .iter()
+            .take_while(|token| token.is_punct(")"))
+            .count();
+        if closing == 0
+            || index < closing
+            || !self
+                .tokens
+                .get(index + 1 + closing)
+                .is_some_and(|next| next.is_punct("("))
+        {
+            return false;
+        }
+        if !self.tokens[index - closing..index]
+            .iter()
+            .all(|token| token.is_punct("("))
+        {
+            return false;
+        }
+        if self.top().in_type() {
+            return false;
+        }
+        let before = (index - closing)
+            .checked_sub(1)
+            .map(|position| self.tokens[position]);
+        before.is_none_or(|token| opens_grouping(&token))
     }
 
     /// The token after the parenthesis list that opens at `index + 1`.
@@ -1352,6 +1402,22 @@ impl<'a> Scanner<'a> {
             | FrameKind::JsxChildren
             | FrameKind::JsxExpr => {}
         }
+    }
+}
+
+/// Reports whether a `(` that follows `token` groups an expression instead of
+/// opening an argument list, a parameter list or a statement header. Unknown
+/// cases such as `}` count as grouping, which only ever reports more calls.
+fn opens_grouping(token: &Token<'_>) -> bool {
+    match token.kind {
+        // Text that ends in `${` opens a template substitution.
+        TokenKind::Value => matches!(token.template, TemplateEdge::Open | TemplateEdge::Middle),
+        TokenKind::Private | TokenKind::Property => false,
+        TokenKind::Word => {
+            matches!(token.text, "return" | "void")
+                || (OPERATOR_KEYWORDS.contains(&token.text) && token.text != "new")
+        }
+        TokenKind::Punct => !matches!(token.text, ")" | "]" | "++" | "--" | "." | "?."),
     }
 }
 
@@ -2227,6 +2293,68 @@ mod tests {
             (
                 "const o = { eval(v) {} }; eval(code);",
                 &[DECLARATION, CALL],
+            ),
+        ]);
+    }
+
+    #[test]
+    fn parenthesized_eval_keeps_the_reference_and_is_a_direct_call() {
+        assert_table(&[
+            ("(eval)(code);", &[CALL]),
+            ("((eval))(code);", &[CALL]),
+            ("(/* c */ eval /* c */)(code);", &[CALL]),
+            ("(eval)\n(code);", &[CALL]),
+            ("x = (eval)(code);", &[CALL]),
+            ("const f = (c) => (eval)(c);", &[CALL]),
+            ("return (eval)(code);", &[CALL]),
+            ("typeof (eval)(code);", &[CALL]),
+            ("void (eval)(code);", &[CALL]),
+            ("await (eval)(code);", &[CALL]),
+            ("run((eval)(code));", &[CALL]),
+            ("run(a, (eval)(code));", &[CALL]),
+            ("((eval)(code));", &[CALL]),
+            ("a ? (eval)(b) : c;", &[CALL]),
+            ("x = a || (eval)(code);", &[CALL]),
+            ("[(eval)(code)];", &[CALL]),
+            ("const s = `${(eval)(code)}`;", &[CALL]),
+            ("{ (eval)(code) }", &[CALL]),
+            ("} (eval)(code);", &[CALL]),
+            ("(eval)(...args);", &[CALL]),
+            ("(eval)(code); (eval)(other);", &[CALL, CALL]),
+            ("(eval)(code); eval(other);", &[CALL, CALL]),
+            // A comma expression yields a value, so the call is indirect.
+            ("(0, eval)(code);", &[]),
+            ("(eval, 0)(code);", &[]),
+            ("(void 0, eval)(code);", &[]),
+            ("(a || eval)(code);", &[]),
+            ("(eval || a)(code);", &[]),
+            // An optional call is never a direct eval.
+            ("eval?.(code);", &[]),
+            ("(eval)?.(code);", &[]),
+            ("((eval))?.(code);", &[]),
+            // `eval` is an argument, a header or a construction here.
+            ("run(eval)(code);", &[]),
+            ("run\n(eval)(code);", &[]),
+            ("run()(eval)(code);", &[]),
+            ("items[0](eval)(code);", &[]),
+            ("a?.(eval)(code);", &[]),
+            ("new (eval)(code);", &[]),
+            ("if (eval)(code);", &[]),
+            ("while (eval)(code);", &[]),
+            ("for (eval)(code);", &[]),
+            ("switch (eval)(code) {}", &[]),
+            ("with (eval)(code);", &[]),
+            ("try {} catch (eval)(code);", &[]),
+            ("function f(eval)(code) {}", &[]),
+            ("const f = (eval) => eval;", &[]),
+            ("const s = 'x'(eval)(code);", &[]),
+            // Member access and private names keep their own kinds.
+            ("(obj.eval)(code);", &[]),
+            ("(this.#eval)(code);", &[]),
+            // Text that is not code is never a call.
+            (
+                "// (eval)(code)\n/* (eval)(code) */ const s = '(eval)(code)';",
+                &[],
             ),
         ]);
     }
