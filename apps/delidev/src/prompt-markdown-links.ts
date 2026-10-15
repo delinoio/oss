@@ -48,6 +48,76 @@ export interface MarkdownScan {
 
 const ASCII_PUNCTUATION = /[!-/:-@[-`{-~]/u;
 
+// --- Line endings ----------------------------------------------------------
+
+/** Replaces every CRLF and lone CR with LF, the form a textarea reports. */
+export function normalizeLineEndings(text: string): string {
+  return text.includes("\r") ? text.replace(/\r\n?/gu, "\n") : text;
+}
+
+function countBelow(sorted: readonly number[], limit: number): number {
+  let low = 0,
+    high = sorted.length;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (sorted[mid]! < limit) low = mid + 1;
+    else high = mid;
+  }
+  return low;
+}
+
+/**
+ * Offset map between exact text and its line-ending-normalized form. A
+ * textarea reports its value with every CRLF and lone CR as one LF, so a draft
+ * that retains other endings can only be compared and addressed through this
+ * map. A lone CR becomes one LF unit (offsets unchanged); a CRLF pair becomes
+ * one LF unit. An offset between the CR and the LF of a pair maps to the start
+ * of the normalized line ending.
+ */
+export class LineEndings {
+  /** The text with every line ending written as LF. */
+  readonly text: string;
+  /** Exact offset of the CR of each CRLF pair, ascending. */
+  private readonly pairs: number[] = [];
+  /** Normalized offset of the LF that stands for each CRLF pair, ascending. */
+  private readonly normalizedPairs: number[] = [];
+  constructor(exact: string) {
+    this.text = normalizeLineEndings(exact);
+    if (!exact.includes("\r")) return;
+    for (let index = 0; index < exact.length - 1; index++) {
+      if (exact[index] === "\r" && exact[index + 1] === "\n") {
+        this.normalizedPairs.push(index - this.pairs.length);
+        this.pairs.push(index);
+        index++;
+      }
+    }
+  }
+  /** True when the exact and normalized offsets are identical. */
+  get uniform(): boolean {
+    return this.pairs.length === 0;
+  }
+  /** Exact offset -> normalized offset. */
+  toNormalized(offset: number): number {
+    return offset - countBelow(this.pairs, offset);
+  }
+  /** Normalized offset -> exact offset (the start of a mapped line ending). */
+  toExact(offset: number): number {
+    return offset + countBelow(this.normalizedPairs, offset);
+  }
+}
+
+/**
+ * Joins `prefix` with `rest` for an edit. A lone CR left before an inserted or
+ * newly adjacent LF would silently fuse into one CRLF pair, which a textarea
+ * shows as a single line ending; writing the CR as LF keeps the exact text and
+ * the displayed text the same length apart from the intended edit.
+ */
+export function joinKeepingLineEndings(prefix: string, rest: string): string {
+  return prefix.endsWith("\r") && rest.startsWith("\n")
+    ? `${prefix.slice(0, -1)}\n${rest}`
+    : prefix + rest;
+}
+
 // --- Escaping --------------------------------------------------------------
 
 export function escapeLinkLabel(text: string): string {
@@ -322,10 +392,37 @@ function mergeRanges(ranges: MarkdownRange[]): MarkdownRange[] {
 /**
  * Finds valid inline HTTP(S) links plus every range where bare URLs must stay
  * untouched (any inline link or image, code spans, fenced code, autolinks and
- * reference definitions). Work is linear in the text length with a fixed
- * budget; an exhausted budget reports `complete: false`.
+ * reference definitions). Every
+ * line-ending form (LF, CRLF, lone CR) scans alike: the text is read through
+ * its LF-normalized form and all offsets are mapped back to the exact text.
+ * Work is linear in the text length with a fixed budget; an exhausted budget
+ * reports `complete: false`.
  */
 export function scanMarkdown(text: string): MarkdownScan {
+  if (!text.includes("\r")) return scanNormalized(text);
+  const endings = new LineEndings(text),
+    scan = scanNormalized(endings.text),
+    exact = (offset: number) => endings.toExact(offset);
+  return {
+    complete: scan.complete,
+    protectedRanges: scan.protectedRanges.map((range) => ({
+      start: exact(range.start),
+      end: exact(range.end),
+    })),
+    links: scan.links.map((link) => ({
+      ...link,
+      start: exact(link.start),
+      end: exact(link.end),
+      labelStart: exact(link.labelStart),
+      labelEnd: exact(link.labelEnd),
+      destStart: exact(link.destStart),
+      destEnd: exact(link.destEnd),
+      labelOffsets: link.labelOffsets.map(exact),
+    })),
+  };
+}
+
+function scanNormalized(text: string): MarkdownScan {
   const budget = new Budget(text.length),
     code = /[`~]/u.test(text) ? codeRanges(text, budget) : [],
     protectedRanges: MarkdownRange[] = [...code],
@@ -382,43 +479,47 @@ export function scanMarkdown(text: string): MarkdownScan {
   for (const open of opens) {
     if (open < consumed) continue;
     const close = closeOf.get(open);
-    if (close === undefined || text[close + 1] !== "(") continue;
-    if (!budget.spend(2)) break;
-    const parsed = parseDestination(text, close + 2, budget);
-    if (budget.exhausted) break;
-    if (!parsed) continue;
+    if (close === undefined) continue;
     const image =
         open > 0 && text[open - 1] === "!" && !escapedAt(text, open - 1),
       start = image ? open - 1 : open;
-    // An image description is flattened text, so it may hold links; the whole
-    // image is protected before any nested-label rejection applies. Only a
-    // link label may not hold another link.
-    if (!image && labelHasNestedLink(markers, open + 1, close)) continue;
-    protectedRanges.push({ start, end: parsed.end });
-    consumed = parsed.end;
-    if (image || !parsed.simple) continue;
-    const raw = text.slice(parsed.destStart, parsed.destEnd);
-    const url = unescapeMarkdown(raw),
-      { label, offsets } = unescapeLabel(text, open + 1, close);
-    if (
-      url.length > MAX_LINK_URL_LENGTH ||
-      !validHttpUrl(url) ||
-      /[\u0000- \u007f]/u.test(url) ||
-      !/\S/u.test(label) ||
-      label.includes("\n")
-    )
-      continue;
-    links.push({
-      start,
-      end: parsed.end,
-      labelStart: open + 1,
-      labelEnd: close,
-      destStart: parsed.destStart,
-      destEnd: parsed.destEnd,
-      label,
-      labelOffsets: offsets,
-      url,
-    });
+    if (text[close + 1] === "(") {
+      if (!budget.spend(2)) break;
+      const parsed = parseDestination(text, close + 2, budget);
+      if (budget.exhausted) break;
+      if (parsed) {
+        // An image description is flattened text, so it may hold links; the
+        // whole image is protected before any nested-label rejection applies.
+        // Only a link label may not hold another link.
+        if (!image && labelHasNestedLink(markers, open + 1, close)) continue;
+        protectedRanges.push({ start, end: parsed.end });
+        consumed = parsed.end;
+        if (image || !parsed.simple) continue;
+        const raw = text.slice(parsed.destStart, parsed.destEnd);
+        const url = unescapeMarkdown(raw),
+          { label, offsets } = unescapeLabel(text, open + 1, close);
+        if (
+          url.length > MAX_LINK_URL_LENGTH ||
+          !validHttpUrl(url) ||
+          /[\u0000- \u007f]/u.test(url) ||
+          !/\S/u.test(label) ||
+          label.includes("\n")
+        )
+          continue;
+        links.push({
+          start,
+          end: parsed.end,
+          labelStart: open + 1,
+          labelEnd: close,
+          destStart: parsed.destStart,
+          destEnd: parsed.destEnd,
+          label,
+          labelOffsets: offsets,
+          url,
+        });
+        continue;
+      }
+    }
   }
   return {
     links,
@@ -559,7 +660,10 @@ export function isUrlDelimiter(char: string | undefined): boolean {
 interface ProjectionRegion {
   srcStart: number;
   srcEnd: number;
+  /** Start in the displayed (line-ending normalized) text. */
   displayStart: number;
+  /** Start in the projected text before line endings are normalized. */
+  rawStart: number;
   label: string;
   /** Absolute source offset of each label unit, plus the label end. */
   offsets: number[];
@@ -568,14 +672,32 @@ interface ProjectionRegion {
 /**
  * Display text in which collapsed links show only their labels, with
  * monotonic offset maps in both directions. Offsets are UTF-16 code units.
+ * The display text writes every line ending as LF, exactly as a textarea
+ * reports its value, so a draft that retains CRLF or lone CR endings still
+ * equals the native field and every offset maps back to the exact source.
+ * Collapsed links never contain a line ending.
  */
 export class MarkdownProjection {
   readonly text: string;
   readonly regions: readonly ProjectionRegion[];
+  private readonly raw: string;
+  private readonly endings: LineEndings;
   private readonly hiddenBefore: number[];
-  constructor(text: string, regions: ProjectionRegion[]) {
-    this.text = text;
-    this.regions = regions;
+  /**
+   * `raw` is the projected text before line-ending normalization; each region
+   * gives its `rawStart` there (`displayStart` is derived from it).
+   */
+  constructor(
+    raw: string,
+    regions: readonly Omit<ProjectionRegion, "displayStart">[],
+  ) {
+    this.raw = raw;
+    this.endings = new LineEndings(raw);
+    this.text = this.endings.text;
+    this.regions = regions.map((region) => ({
+      ...region,
+      displayStart: this.endings.toNormalized(region.rawStart),
+    }));
     // hiddenBefore[i] is the number of hidden units before region i; the last
     // entry is the total.
     this.hiddenBefore = [0];
@@ -598,9 +720,10 @@ export class MarkdownProjection {
       else high = mid;
     }
     const index = low - 1;
-    if (index < 0) return offset;
+    if (index < 0) return this.endings.toNormalized(offset);
     const region = this.regions[index]!;
-    if (offset >= region.srcEnd) return offset - this.hiddenBefore[index + 1]!;
+    if (offset >= region.srcEnd)
+      return this.endings.toNormalized(offset - this.hiddenBefore[index + 1]!);
     // Strictly inside: count label units that start before the offset.
     let lo = 0,
       hi = region.label.length;
@@ -612,13 +735,16 @@ export class MarkdownProjection {
     return region.displayStart + lo;
   }
   /** Display offset -> source offset. Region edges map to the link edges. */
-  toSource(offset: number): number {
+  toSource(displayOffset: number): number {
+    // A display offset on a normalized line ending maps to the start of the
+    // exact ending (before a CR of a CRLF pair).
+    const offset = this.endings.toExact(displayOffset);
     let low = 0,
       high = this.regions.length;
     while (low < high) {
       const mid = (low + high) >> 1;
       if (
-        this.regions[mid]!.displayStart + this.regions[mid]!.label.length <=
+        this.regions[mid]!.rawStart + this.regions[mid]!.label.length <=
         offset
       )
         low = mid + 1;
@@ -626,8 +752,8 @@ export class MarkdownProjection {
     }
     // `low` is the first region whose display end is after the offset.
     const region = this.regions[low];
-    if (region && offset > region.displayStart)
-      return region.offsets[offset - region.displayStart]!;
+    if (region && offset > region.rawStart)
+      return region.offsets[offset - region.rawStart]!;
     return offset + this.hiddenBefore[low]!;
   }
   /**
@@ -661,17 +787,24 @@ export class MarkdownProjection {
   }
   /**
    * Applies a display edit that lies outside every collapsed region, keeping
-   * the same collapsed set. Returns undefined when the edit overlaps a region.
+   * the same collapsed set. `inserted` is the text now between the display
+   * offsets (written with LF endings) and `sourceDelta` its change in source
+   * length. Returns undefined when the edit overlaps a region.
    */
   shifted(
     displayStart: number,
     displayEnd: number,
-    inserted: number,
+    inserted: string,
     sourceDelta: number,
-    text: string,
   ): MarkdownProjection | undefined {
-    const displayDelta = inserted - (displayEnd - displayStart),
-      regions: ProjectionRegion[] = [];
+    const rawFrom = this.endings.toExact(displayStart),
+      rawTo = this.endings.toExact(displayEnd),
+      rawDelta = inserted.length - (rawTo - rawFrom),
+      regions: Omit<ProjectionRegion, "displayStart">[] = [];
+    const raw = joinKeepingLineEndings(
+      this.raw.slice(0, rawFrom),
+      inserted + this.raw.slice(rawTo),
+    );
     for (const region of this.regions) {
       const end = region.displayStart + region.label.length;
       if (end <= displayStart) regions.push(region);
@@ -679,13 +812,13 @@ export class MarkdownProjection {
         regions.push({
           srcStart: region.srcStart + sourceDelta,
           srcEnd: region.srcEnd + sourceDelta,
-          displayStart: region.displayStart + displayDelta,
+          rawStart: region.rawStart + rawDelta,
           label: region.label,
           offsets: region.offsets.map((offset) => offset + sourceDelta),
         });
       else return undefined;
     }
-    return new MarkdownProjection(text, regions);
+    return new MarkdownProjection(raw, regions);
   }
 }
 
@@ -698,7 +831,7 @@ export function projectMarkdown(
   links: readonly MarkdownLink[],
   collapse: (link: MarkdownLink) => boolean,
 ): MarkdownProjection {
-  const regions: ProjectionRegion[] = [];
+  const regions: Omit<ProjectionRegion, "displayStart">[] = [];
   let text = "",
     cursor = 0,
     collapsedCount = 0;
@@ -710,7 +843,7 @@ export function projectMarkdown(
     regions.push({
       srcStart: link.start,
       srcEnd: link.end,
-      displayStart: text.length,
+      rawStart: text.length,
       label: link.label,
       offsets: link.labelOffsets,
     });

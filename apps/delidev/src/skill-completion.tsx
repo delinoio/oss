@@ -42,6 +42,7 @@ import {
   convertBareUrls,
   convertDelimitedWords,
   isUrlDelimiter,
+  joinKeepingLineEndings,
   MAX_COLLAPSED_LINKS,
   projectMarkdown,
   scanMarkdown,
@@ -827,8 +828,10 @@ export function useSkillCompletion({
     if (!canEdit()) return;
     const map = projectionRef.current,
       edit = canonicalEditFromDisplay(map, nextDisplay, position),
-      plain =
-        value.slice(0, edit.start) + edit.inserted + value.slice(edit.end),
+      plain = joinKeepingLineEndings(
+        value.slice(0, edit.start),
+        edit.inserted + value.slice(edit.end),
+      ),
       caretAfter = edit.caret(position),
       composingNow = composing.current;
     if (plain === value) {
@@ -878,9 +881,8 @@ export function useSkillCompletion({
       map.shifted(
         edit.displayStart,
         edit.displayEnd,
-        edit.inserted.length,
+        edit.inserted,
         edit.inserted.length - (edit.end - edit.start),
-        nextDisplay,
       ) ?? freshProjection(plain, collapsedAt(caretAfter));
     rerender((count) => count + 1);
   };
@@ -890,7 +892,10 @@ export function useSkillCompletion({
     range: HistorySelection,
     kind: EditKind,
   ): boolean => {
-    const plain = value.slice(0, range.start) + text + value.slice(range.end),
+    const plain = joinKeepingLineEndings(
+        value.slice(0, range.start),
+        text + value.slice(range.end),
+      ),
       end = range.start + text.length;
     const result =
       kind === EditKind.Paste

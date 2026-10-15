@@ -2,11 +2,14 @@
 import { describe, expect, it } from "vitest";
 import { findUrlTokens } from "./external-links";
 import {
+  LineEndings,
   MAX_COLLAPSED_LINKS,
   canonicalEditFromDisplay,
   convertBareUrls,
   convertTerminatedUrl,
+  joinKeepingLineEndings,
   markdownLinkFor,
+  normalizeLineEndings,
   projectMarkdown,
   scanMarkdown,
   selectionRevealsLink,
@@ -392,10 +395,10 @@ describe("display edits", () => {
     expect(canonicalEditFromDisplay(flat, "aaa", 3).start).toBe(2);
   });
   it("shifts collapsed regions through an edit outside them", () => {
-    const shifted = projection.shifted(0, 0, 1, 1, "xHi Docs there");
+    const shifted = projection.shifted(0, 0, "x", 1);
     expect(shifted?.regions[0]?.srcStart).toBe(4);
     expect(shifted?.toSource(5)).toBe(6);
-    expect(projection.shifted(4, 5, 0, -1, "Hi Dcs there")).toBeUndefined();
+    expect(projection.shifted(4, 5, "", -1)).toBeUndefined();
   });
 });
 
@@ -413,6 +416,8 @@ const FUZZ_PIECES = [
   "😀",
   " ",
   "\n",
+  "\r\n",
+  "\r",
   "\\",
   "[",
   "]",
@@ -530,4 +535,248 @@ describe("round-trip invariants", () => {
       expect(links[0]!.label).toBe(expected);
     }
   });
+});
+
+// --- Line endings -----------------------------------------------------------
+
+/** Writes every LF of `text` with the given ending form. */
+function withEndings(text: string, ending: "\n" | "\r\n" | "\r"): string {
+  return text.replace(/\n/gu, ending);
+}
+
+describe("line endings", () => {
+  it("maps exact and normalized offsets around CRLF, lone CR and LF", () => {
+    const exact = "a\r\nb\rc\nd\r\n",
+      endings = new LineEndings(exact);
+    expect(endings.text).toBe("a\nb\nc\nd\n");
+    expect(endings.uniform).toBe(false);
+    // Offsets: a=0 CR=1 LF=2 b=3 CR=4 c=5 LF=6 d=7 CR=8 LF=9 end=10.
+    const normalized = [0, 1, 1, 2, 3, 4, 5, 6, 7, 7, 8];
+    for (let offset = 0; offset <= exact.length; offset++)
+      expect(endings.toNormalized(offset)).toBe(normalized[offset]);
+    // A normalized line ending maps to the start of the exact ending.
+    expect(endings.toExact(1)).toBe(1);
+    expect(endings.toExact(2)).toBe(3);
+    expect(endings.toExact(3)).toBe(4);
+    expect(endings.toExact(4)).toBe(5);
+    expect(endings.toExact(7)).toBe(8);
+    expect(endings.toExact(8)).toBe(10);
+    for (let offset = 0; offset <= endings.text.length; offset++)
+      expect(endings.toNormalized(endings.toExact(offset))).toBe(offset);
+    expect(new LineEndings("plain\nlines").uniform).toBe(true);
+    expect(normalizeLineEndings("a\r\nb\rc\n")).toBe("a\nb\nc\n");
+  });
+  it("fuses no CR with a following LF when an edit makes them adjacent", () => {
+    expect(joinKeepingLineEndings("a\r", "\nb")).toBe("a\n\nb");
+    expect(joinKeepingLineEndings("a\r", "xb")).toBe("a\rxb");
+    expect(joinKeepingLineEndings("a\n", "\nb")).toBe("a\n\nb");
+  });
+  const TEXTS = [
+    "see [Docs](https://e.com/d)\nhttps://a.test/x end\n[ref]:\n  https://r.test\n",
+    "```\nhttps://c.test\n```\nhttps://a.test/y\n",
+    "![i https://i.test][logo]\n\n[logo]: i.png\n\nhttps://z.test\n",
+    "line one\n\n[a]: /u\n  'T https://t.test'\nhttps://b.test\n",
+  ];
+  it("scans every ending form like LF with offsets in the exact text", () => {
+    for (const text of TEXTS)
+      for (const ending of ["\r\n", "\r"] as const) {
+        const exact = withEndings(text, ending),
+          lf = scanMarkdown(text),
+          scan = scanMarkdown(exact),
+          endings = new LineEndings(exact);
+        expect(scan.complete).toBe(true);
+        expect(scan.links.map((link) => link.url)).toEqual(
+          lf.links.map((link) => link.url),
+        );
+        for (const link of scan.links) {
+          expect(exact.slice(link.start, link.end)).toBe(
+            withEndings(
+              text.slice(
+                lf.links[scan.links.indexOf(link)]!.start,
+                lf.links[scan.links.indexOf(link)]!.end,
+              ),
+              ending,
+            ),
+          );
+          expect(link.labelOffsets.at(-1)).toBe(link.labelEnd);
+        }
+        expect(
+          scan.protectedRanges.map((range) => [
+            endings.toNormalized(range.start),
+            endings.toNormalized(range.end),
+          ]),
+        ).toEqual(lf.protectedRanges.map((range) => [range.start, range.end]));
+        // Conversion agrees too: the same URLs convert, endings stay exact.
+        expect(normalizeLineEndings(convert(exact))).toBe(convert(text));
+        expect(convert(exact).split(ending).length).toBe(
+          convert(text).split("\n").length,
+        );
+      }
+  });
+  it("shows the textarea text and maps selections inside CRLF text exactly", () => {
+    const source = "a\r\n[Docs](https://e.com/d)\r\nb\rc";
+    const projection = projectMarkdown(
+      source,
+      scanMarkdown(source).links,
+      () => true,
+    );
+    expect(projection.text).toBe("a\nDocs\nb\nc");
+    // Source offsets: a=0 CR=1 LF=2 link=3..26 CR=26 LF=27 b=28 CR=29 c=30.
+    expect(projection.toDisplay(2)).toBe(1);
+    expect(projection.toDisplay(3)).toBe(2);
+    expect(projection.toDisplay(26)).toBe(6);
+    expect(projection.toDisplay(28)).toBe(7);
+    expect(projection.toDisplay(source.length)).toBe(projection.text.length);
+    expect(projection.toSource(1)).toBe(1);
+    expect(projection.toSource(2)).toBe(3);
+    expect(projection.toSource(6)).toBe(26);
+    expect(projection.toSource(7)).toBe(28);
+    for (let display = 0; display <= projection.text.length; display++)
+      expect(projection.toDisplay(projection.toSource(display))).toBe(display);
+    // A caret inside the CRLF pair clamps to the start of the line ending.
+    expect(projection.toDisplay(27)).toBe(projection.toDisplay(26));
+  });
+  it("turns a native edit across a line ending into the exact source range", () => {
+    const source = "ab\r\ncd\ref";
+    const projection = projectMarkdown(source, [], () => true);
+    // Deleting the LF shown between "ab" and "cd" removes the whole CRLF.
+    const joined = canonicalEditFromDisplay(projection, "abcd\nef", 2);
+    expect([joined.start, joined.end, joined.inserted]).toEqual([2, 4, ""]);
+    // Deleting a lone CR's shown LF removes only that unit.
+    const lone = canonicalEditFromDisplay(projection, "ab\ncdef", 5);
+    expect([lone.start, lone.end, lone.inserted]).toEqual([6, 7, ""]);
+    const inserted = canonicalEditFromDisplay(projection, "ab\nx\ncd\nef", 4);
+    // The textual diff may place the new line before or after the old one;
+    // both leave the CRLF pair intact.
+    expect([inserted.start, inserted.end, inserted.inserted]).toEqual([
+      2,
+      2,
+      "\nx",
+    ]);
+  });
+  it("shifts a frozen projection through an edit next to line endings", () => {
+    for (const source of [
+      "a\r\n[Docs](https://e.com/d) b",
+      "a\r[Docs](https://e.com/d)\r\nb\r",
+      "\r\n\r\n[Docs](https://e.com/d)",
+    ]) {
+      const projection = projectMarkdown(
+        source,
+        scanMarkdown(source).links,
+        () => true,
+      );
+      for (const [from, to, inserted] of [
+        [0, 0, "x"],
+        [0, 0, "\n"],
+        [1, 1, "x"],
+        [1, 2, ""],
+        [2, 3, "yz"],
+        [projection.text.length, projection.text.length, "!\n"],
+        [projection.text.length - 1, projection.text.length, ""],
+      ] as const) {
+        if (to > projection.text.length) continue;
+        const start = projection.toSource(from),
+          end = projection.toSource(to);
+        if (projection.regionAt(from) || projection.regionAt(to)) continue;
+        const next = joinKeepingLineEndings(
+          source.slice(0, start),
+          inserted + source.slice(end),
+        );
+        const shifted = projection.shifted(
+          from,
+          to,
+          inserted,
+          next.length - source.length,
+        );
+        const fresh = projectMarkdown(
+          next,
+          scanMarkdown(next).links,
+          () => true,
+        );
+        // A region the edit touches forces a rebuild; every other edit must
+        // equal the projection of the edited source exactly.
+        if (!shifted) continue;
+        expect(shifted.text).toBe(fresh.text);
+        for (let display = 0; display <= fresh.text.length; display++)
+          expect(shifted.toSource(display)).toBe(fresh.toSource(display));
+        for (let offset = 0; offset <= next.length; offset++)
+          expect(shifted.toDisplay(offset)).toBe(fresh.toDisplay(offset));
+      }
+    }
+  });
+  it("converts a URL pasted next to each ending form", () => {
+    for (const ending of ["\n", "\r\n", "\r"]) {
+      const text = `first${ending}https://a.test/x${ending}last`,
+        from = 5 + ending.length,
+        to = from + 16;
+      const result = convertBareUrls(text, from, to);
+      expect(result.text).toBe(
+        `first${ending}[https://a.test/x](https://a.test/x)${ending}last`,
+      );
+    }
+  });
+});
+
+describe("line-ending equivalence", () => {
+  for (let seed = 1; seed <= 120; seed++) {
+    it(`scans and projects every ending form alike (seed ${seed})`, () => {
+      const next = random(seed * 7919);
+      let text = "";
+      const count = 1 + Math.floor(next() * 24);
+      for (let index = 0; index < count; index++) {
+        const piece = FUZZ_PIECES[Math.floor(next() * FUZZ_PIECES.length)]!;
+        text += piece.replace(/\r\n?/gu, "\n");
+      }
+      const lf = scanMarkdown(text);
+      for (const exact of [
+        withEndings(text, "\r\n"),
+        withEndings(text, "\r"),
+        // Mixed: every other line break is CRLF, the rest a lone CR.
+        text.replace(
+          /\n/gu,
+          (() => {
+            let toggle = false;
+            return () => ((toggle = !toggle) ? "\r\n" : "\r");
+          })(),
+        ),
+      ]) {
+        const scan = scanMarkdown(exact),
+          endings = new LineEndings(exact);
+        expect(scan.complete).toBe(lf.complete);
+        expect(scan.links.map((link) => [link.label, link.url])).toEqual(
+          lf.links.map((link) => [link.label, link.url]),
+        );
+        expect(
+          scan.protectedRanges.map((range) => [
+            endings.toNormalized(range.start),
+            endings.toNormalized(range.end),
+          ]),
+        ).toEqual(lf.protectedRanges.map((range) => [range.start, range.end]));
+        expect(normalizeLineEndings(convert(exact))).toBe(convert(text));
+        const projection = projectMarkdown(exact, scan.links, () => true),
+          reference = projectMarkdown(text, lf.links, () => true);
+        expect(projection.text).toBe(reference.text);
+        // The shown text is exactly what a textarea reports for it.
+        expect(projection.text).toBe(normalizeLineEndings(projection.text));
+        let last = -1;
+        for (let display = 0; display <= projection.text.length; display++) {
+          const source = projection.toSource(display);
+          expect(source).toBeGreaterThanOrEqual(last);
+          last = source;
+          expect(projection.toDisplay(source)).toBe(display);
+          // Same position as the LF text, through the line-ending map.
+          expect(endings.toNormalized(source)).toBe(
+            reference.toSource(display),
+          );
+        }
+        let lastDisplay = -1;
+        for (let source = 0; source <= exact.length; source++) {
+          const display = projection.toDisplay(source);
+          expect(display).toBeGreaterThanOrEqual(lastDisplay);
+          lastDisplay = display;
+        }
+        expect(projection.toSource(projection.text.length)).toBe(exact.length);
+      }
+    });
+  }
 });

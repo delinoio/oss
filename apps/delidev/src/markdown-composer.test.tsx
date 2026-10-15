@@ -1173,6 +1173,177 @@ it("paints an unavailable skill token after a collapsed link at its displayed po
   );
 });
 
+// --- Line endings (R27) ----------------------------------------------------
+
+// Exact offset that a textarea offset stands for: a CRLF pair is one shown
+// unit, a lone CR is one shown unit and an offset on a line ending is the
+// start of that ending.
+function exactOffset(text: string, shown: number): number {
+  let index = 0;
+  for (let unit = 0; unit < shown && index < text.length; unit++)
+    index += text[index] === "\r" && text[index + 1] === "\n" ? 2 : 1;
+  return index;
+}
+const normalized = (text: string) => text.replace(/\r\n?/gu, "\n");
+
+it("R27 line endings: the field equals the normalized draft and every selection reads back exactly", () => {
+  for (const draft of [
+    "a\r\nb\r\nc",
+    "a\rb\rc",
+    "a\r\nb\rc\nd\r\n",
+    "\r\n\r\n",
+    "x\r",
+    "\r",
+  ]) {
+    const { view, input } = mount(draft);
+    expect(input.value).toBe(normalized(draft));
+    const length = input.value.length;
+    for (let start = 0; start <= length; start++)
+      for (let end = start; end <= length; end++) {
+        select(input, start, end);
+        const at = probe.api.readCanonical();
+        expect(at.text).toBe(draft);
+        expect([at.start, at.end]).toEqual([
+          exactOffset(draft, start),
+          exactOffset(draft, end),
+        ]);
+        expect(input.value).toBe(normalized(draft));
+      }
+    view.unmount();
+  }
+});
+
+it("R27 line endings: paste and cut edit the exact range and undo restores the exact text", () => {
+  const draft = "head\r\n[Docs](https://e.com/d)\r\ntail\rend";
+  const { input } = mount(draft);
+  expect(input.value).toBe("head\nDocs\ntail\nend");
+  // Paste at the start of the line after the CRLF that follows the link.
+  select(input, 10);
+  expect(probe.api.readCanonical().start).toBe(draft.indexOf("tail"));
+  paste(input, "P");
+  expect(probe.canonical).toBe("head\r\n[Docs](https://e.com/d)\r\nPtail\rend");
+  expect(input.value).toBe("head\nDocs\nPtail\nend");
+  expect(input.selectionStart).toBe(11);
+  undo(input);
+  expect(probe.canonical).toBe(draft);
+  expect(input.selectionStart).toBe(10);
+  // Cut the shown line break after the link: the whole CRLF leaves.
+  select(input, 9, 10);
+  const setData = vi.fn();
+  expect(fireEvent.cut(input, { clipboardData: { setData } })).toBe(false);
+  expect(setData).toHaveBeenCalledWith("text/plain", "\r\n");
+  expect(probe.canonical).toBe("head\r\n[Docs](https://e.com/d)tail\rend");
+  expect(input.value).toBe("head\nDocstail\nend");
+  expect(input.selectionStart).toBe(9);
+  undo(input);
+  expect(probe.canonical).toBe(draft);
+  // Cut across a lone CR and the text after it.
+  select(input, 13, 16);
+  expect(probe.api.readCanonical()).toMatchObject({
+    start: draft.indexOf("\rend") - 1,
+    end: draft.indexOf("\rend") + 2,
+  });
+  expect(fireEvent.cut(input, { clipboardData: { setData } })).toBe(false);
+  expect(probe.canonical).toBe("head\r\n[Docs](https://e.com/d)\r\ntai" + "nd");
+  redo(input);
+  undo(input);
+  expect(probe.canonical).toBe(draft);
+  // Paste over the shown line break replaces the whole CRLF; the URL is glued
+  // to the preceding word, so it stays plain text.
+  select(input, 4, 5);
+  paste(input, "https://a.test/x");
+  expect(probe.canonical).toBe(
+    "headhttps://a.test/x[Docs](https://e.com/d)\r\ntail\rend",
+  );
+  expect(input.value).toBe("head" + "https://a.test/x" + "Docs\ntail\nend");
+});
+
+it("R27 line endings: copy serializes the exact selected text", () => {
+  const { input } = mount("a\r\nb\rc");
+  select(input, 1, 4);
+  const setData = vi.fn();
+  expect(fireEvent.copy(input, { clipboardData: { setData } })).toBe(false);
+  expect(setData).toHaveBeenCalledWith("text/plain", "\r\nb\r");
+});
+
+it("R27 line endings: typing and deleting next to a lone CR never fuse it with an LF", () => {
+  // Typing a new line break right after a lone CR must not form a CRLF pair.
+  const { input, view } = mount("a\rb");
+  select(input, 2);
+  nativeEdit(input, "a\n\nb", 3);
+  expect(normalized(probe.canonical)).toBe("a\n\nb");
+  expect(input.value).toBe("a\n\nb");
+  expect(probe.canonical).toHaveLength(4);
+  expect(probe.api.readCanonical().start).toBe(3);
+  undo(input);
+  expect(probe.canonical).toBe("a\rb");
+  expect(input.value).toBe("a\nb");
+  view.unmount();
+  // Deleting the text between a lone CR and an LF keeps both line breaks.
+  const second = mount("a\rX\nb");
+  select(second.input, 3);
+  nativeEdit(second.input, "a\n\nb", 2);
+  expect(normalized(probe.canonical)).toBe("a\n\nb");
+  expect(second.input.value).toBe("a\n\nb");
+  expect(probe.canonical).toHaveLength(4);
+  second.view.unmount();
+  // An existing CRLF pair is never rewritten by an unrelated edit.
+  const third = mount("a\r\nb");
+  select(third.input, 3);
+  nativeEdit(third.input, "a\nbc", 4);
+  expect(probe.canonical).toBe("a\r\nbc");
+  nativeEdit(third.input, "a\n\nbc", 2);
+  expect(normalized(probe.canonical)).toBe("a\n\nbc");
+  expect(third.input.value).toBe("a\n\nbc");
+  expect(probe.canonical).toContain("\r\n");
+});
+
+it("R27 line endings: IME composition around CRLF text keeps the field and selection exact", () => {
+  const draft = "a\r\n[Docs](https://e.com/d)\r\nb";
+  for (const caret of [2, 6, 7]) {
+    const { input, view } = mount(draft);
+    select(input, caret);
+    const start = probe.api.readCanonical().start;
+    fireEvent.compositionStart(input);
+    for (const chunk of ["ㅎ", "하", "한"]) {
+      const base = input.value;
+      const at = input.selectionStart;
+      const from = chunk === "ㅎ" ? at : at - 1;
+      nativeEdit(input, base.slice(0, from) + chunk + base.slice(at), from + 1);
+    }
+    fireEvent.compositionEnd(input);
+    expect(probe.canonical).toBe(
+      draft.slice(0, start) + "한" + draft.slice(start),
+    );
+    expect(input.value).toBe(
+      projectMarkdown(
+        probe.canonical,
+        scanMarkdown(probe.canonical).links,
+        (link) => !selectionRevealsLink(link, probe.api.readCanonical()),
+      ).text,
+    );
+    expect(probe.api.readCanonical().start).toBe(start + 1);
+    undo(input);
+    expect(probe.canonical).toBe(draft);
+    view.unmount();
+  }
+});
+
+it("R27 line endings: owner replacement and recall select exact offsets in CRLF text", () => {
+  const { input } = mount("");
+  act(() => {
+    probe.api.replaceUnbound("x\r\ny\r\nz", 6);
+  });
+  expect(input.value).toBe("x\ny\nz");
+  expect(input.selectionStart).toBe(4);
+  expect(probe.api.readCanonical().start).toBe(6);
+  act(() => {
+    probe.api.select(3, 6);
+  });
+  expect([input.selectionStart, input.selectionEnd]).toEqual([2, 4]);
+  expect(probe.api.readCanonical()).toMatchObject({ start: 3, end: 6 });
+});
+
 // Seeded random walk over the whole state machine. After every operation the
 // field must show exactly the projection of the canonical text for the
 // canonical selection, selection maps must agree, and undoing every edit must
@@ -1203,7 +1374,10 @@ const WALK_CHARS = ["a", "한", " ", "\n", "[", "]", "(", ")", "`", "!", "\\"];
 for (let seed = 1; seed <= 60; seed++) {
   it(`holds the display, selection and history invariants on a random walk (seed ${seed})`, () => {
     const next = walker(seed);
-    const initial = next() < 0.5 ? DRAFT : "";
+    const roll = next();
+    // Drafts that retain CRLF and lone CR endings walk the same machine.
+    const initial =
+      roll < 0.35 ? DRAFT : roll < 0.6 ? `a\r\n${LINK}\rb\r\n` : "";
     const { input } = mount(initial);
     const pick = <T,>(items: readonly T[]) =>
       items[Math.floor(next() * items.length)]!;
