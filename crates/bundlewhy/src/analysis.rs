@@ -3589,6 +3589,261 @@ mod tests {
         }
     }
 
+    /// Separators between a control keyword and its opening parenthesis. Every
+    /// entry must keep the keyword guard of the equivalent plain input.
+    const KEYWORD_SEPARATORS: [&str; 8] = [
+        " ",
+        " /* preserved */ ",
+        " // preserved\n",
+        " // preserved\r\n",
+        " //\n",
+        " // preserved \t \n",
+        " // one\n// two\n /* three */ // four\n",
+        "\n// preserved\n\n  ",
+    ];
+
+    /// Control keywords and the phrase their guard evidence must contain.
+    const KEYWORD_PHRASES: [(&str, &str); 3] = [
+        ("if", "in an if condition"),
+        ("while", "in a while condition"),
+        ("switch", "in a switch condition"),
+    ];
+
+    const RSPACK_FLAG_GUARD: &str =
+        "\"on\"===process.env.BUNDLEWHY_FIXTURE_FLAG&&console.log(\"flag branch\")";
+    const RSPACK_FLAG_READ: &str = "process.env.BUNDLEWHY_FIXTURE_FLAG";
+    const VITE_FLAG_GUARD: &str = "({}).BUNDLEWHY_FIXTURE_FLAG===`on`&&";
+    const VITE_FLAG_READ: &str = "({}).BUNDLEWHY_FIXTURE_FLAG";
+    const VITE_CHUNK: &str = "assets/index-BHjrzQLH.js";
+
+    fn env_diagnostics(output: &AnalysisOutput) -> Vec<&Diagnostic> {
+        output
+            .analysis
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.rule == "minifier/unresolved-env-condition")
+            .collect()
+    }
+
+    /// Blanks the fixture's own guard with spaces, which keeps every generated
+    /// offset (and so the source map) intact, and appends `tail` as the last
+    /// statement. A tail at the end of the chunk is not followed by a comma,
+    /// semicolon or newline, which would otherwise end the read's pending
+    /// scope before the condition is classified.
+    fn replace_flag_guard_with_tail(
+        build: &Path,
+        file: &str,
+        guard: &str,
+        tail: &str,
+    ) -> (String, String) {
+        let path = build.join(file);
+        let code = std::fs::read_to_string(&path).unwrap();
+        assert!(code.contains(guard));
+        let mut rewritten = code.replace(guard, &" ".repeat(guard.len()));
+        if !rewritten.ends_with('\n') {
+            rewritten.push('\n');
+        }
+        let appended_at = rewritten.len();
+        rewritten.push_str(tail);
+        std::fs::write(&path, &rewritten).unwrap();
+        (code, rewritten[..appended_at].to_owned())
+    }
+
+    #[test]
+    fn rspack_comments_before_a_condition_keep_the_env_diagnostic() {
+        for (keyword, phrase) in KEYWORD_PHRASES {
+            for separator in KEYWORD_SEPARATORS {
+                let fixture = run_fixture_patched(
+                    BundlerChoice::Rspack,
+                    true,
+                    |_| {},
+                    |build, _| {
+                        let tail =
+                            format!("{keyword}{separator}({RSPACK_FLAG_READ})run(\"flag branch\")");
+                        replace_flag_guard_with_tail(build, "main.js", RSPACK_FLAG_GUARD, &tail);
+                    },
+                );
+                let diagnostics = env_diagnostics(&fixture.output);
+                assert_eq!(diagnostics.len(), 1, "{keyword} {separator:?}");
+                let env = diagnostics[0];
+                assert_eq!(env.status, EvidenceStatus::Inferred);
+                assert!(env.title.contains("BUNDLEWHY_FIXTURE_FLAG"));
+                assert!(
+                    env.conditions.iter().any(|condition| {
+                        condition.outcome == ConditionOutcome::Met
+                            && condition.detail.contains(phrase)
+                    }),
+                    "{keyword} {separator:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rspack_comment_separated_calls_are_not_branch_guards() {
+        for tail in [
+            "run // preserved\n(process.env.BUNDLEWHY_FIXTURE_FLAG)",
+            "run // preserved\r\n(process.env.BUNDLEWHY_FIXTURE_FLAG)",
+            "obj.if // preserved\n(process.env.BUNDLEWHY_FIXTURE_FLAG)",
+            "obj.while // preserved\n(process.env.BUNDLEWHY_FIXTURE_FLAG)",
+            "// if (process.env.BUNDLEWHY_FIXTURE_FLAG) run()\nrun()",
+            "for // preserved\n(process.env.BUNDLEWHY_FIXTURE_FLAG;;) run()",
+            "for // preserved\n(;;process.env.BUNDLEWHY_FIXTURE_FLAG) run()",
+        ] {
+            let fixture = run_fixture_patched(
+                BundlerChoice::Rspack,
+                true,
+                |_| {},
+                |build, _| {
+                    replace_flag_guard_with_tail(build, "main.js", RSPACK_FLAG_GUARD, tail);
+                },
+            );
+            assert!(
+                env_diagnostics(&fixture.output).is_empty(),
+                "reported a branch for {tail:?}"
+            );
+        }
+        let fixture = run_fixture_patched(
+            BundlerChoice::Rspack,
+            true,
+            |_| {},
+            |build, _| {
+                let tail = "for // preserved\n(;process.env.BUNDLEWHY_FIXTURE_FLAG;) run()";
+                replace_flag_guard_with_tail(build, "main.js", RSPACK_FLAG_GUARD, tail);
+            },
+        );
+        let diagnostics = env_diagnostics(&fixture.output);
+        assert_eq!(diagnostics.len(), 1);
+        assert!(diagnostics[0].conditions.iter().any(|condition| {
+            condition.outcome == ConditionOutcome::Met
+                && condition.detail.contains("in a for condition")
+        }));
+    }
+
+    /// Replaces the Vite fixture's guard with `tail` appended at the end of the
+    /// chunk. With `remap`, a source-map token is added so the appended
+    /// `({}).FLAG` read maps to the original `process.env.FLAG` read; without
+    /// it the appended read has no mapping to the original source.
+    fn patch_vite_tail(build: &Path, tail: &str, remap: bool) {
+        let (old_code, before) =
+            replace_flag_guard_with_tail(build, VITE_CHUNK, VITE_FLAG_GUARD, tail);
+        if !remap {
+            return;
+        }
+        // The original guard position. The detector maps Vite's `{}` (one
+        // column after the opening parenthesis) to the original read.
+        let guard_offset = old_code.find(VITE_FLAG_GUARD).unwrap();
+        let line_start = old_code[..guard_offset]
+            .rfind('\n')
+            .map_or(0, |index| index + 1);
+        let guard_line = u32::try_from(old_code[..guard_offset].matches('\n').count()).unwrap();
+        let guard_col =
+            u32::try_from(old_code[line_start..guard_offset].encode_utf16().count()).unwrap();
+        // The appended read's position: after the last newline of `before`
+        // plus the text of the tail up to the read.
+        let tail_offset = tail.find(VITE_FLAG_READ).unwrap();
+        let read_line = u32::try_from(before.matches('\n').count()).unwrap()
+            + u32::try_from(tail[..tail_offset].matches('\n').count()).unwrap();
+        let read_col = u32::try_from(
+            tail[..tail_offset]
+                .rsplit('\n')
+                .next()
+                .unwrap()
+                .encode_utf16()
+                .count(),
+        )
+        .unwrap();
+
+        let map_path = build.join(format!("{VITE_CHUNK}.map"));
+        let old = sourcemap::SourceMap::from_slice(&std::fs::read(&map_path).unwrap()).unwrap();
+        let read_token = old.lookup_token(guard_line, guard_col + 1).unwrap();
+        let mut builder = sourcemap::SourceMapBuilder::new(old.get_file());
+        builder.set_source_root(old.get_source_root());
+        for (index, source) in old.sources().enumerate() {
+            let id = builder.add_source(source);
+            builder.set_source_contents(id, old.get_source_contents(index as u32));
+        }
+        for token in old.tokens() {
+            builder.add_raw(
+                token.get_dst_line(),
+                token.get_dst_col(),
+                token.get_src_line(),
+                token.get_src_col(),
+                token.has_source().then(|| token.get_src_id()),
+                None,
+                false,
+            );
+        }
+        builder.add_raw(
+            read_line,
+            read_col + 1,
+            read_token.get_src_line(),
+            read_token.get_src_col(),
+            Some(read_token.get_src_id()),
+            None,
+            false,
+        );
+        let mut out = Vec::new();
+        builder.into_sourcemap().to_writer(&mut out).unwrap();
+        std::fs::write(map_path, out).unwrap();
+    }
+
+    #[test]
+    fn vite_comments_before_a_condition_keep_the_mapped_env_diagnostic() {
+        for (keyword, phrase) in KEYWORD_PHRASES {
+            for separator in KEYWORD_SEPARATORS {
+                let fixture = run_fixture_patched(
+                    BundlerChoice::Vite,
+                    true,
+                    |_| {},
+                    |build, _| {
+                        let tail =
+                            format!("{keyword}{separator}({VITE_FLAG_READ})run(`flag branch`)");
+                        patch_vite_tail(build, &tail, true);
+                    },
+                );
+                let diagnostics = env_diagnostics(&fixture.output);
+                assert_eq!(diagnostics.len(), 1, "{keyword} {separator:?}");
+                assert_eq!(diagnostics[0].status, EvidenceStatus::Inferred);
+                assert!(diagnostics[0].conditions.iter().any(|condition| {
+                    condition.outcome == ConditionOutcome::Met && condition.detail.contains(phrase)
+                }));
+            }
+        }
+    }
+
+    #[test]
+    fn vite_unmapped_comment_separated_reads_still_need_the_original_read() {
+        // Without a mapping to the original `process.env` read, the existing
+        // confirmation requirement still suppresses the diagnostic.
+        for separator in ["", " // preserved\n"] {
+            let fixture = run_fixture_patched(
+                BundlerChoice::Vite,
+                true,
+                |_| {},
+                |build, _| {
+                    let tail = format!("if{separator}({VITE_FLAG_READ})run(`flag branch`)");
+                    patch_vite_tail(build, &tail, false);
+                },
+            );
+            assert!(env_diagnostics(&fixture.output).is_empty(), "{separator:?}");
+        }
+    }
+
+    #[test]
+    fn vite_comment_separated_calls_are_not_branch_guards() {
+        let fixture = run_fixture_patched(
+            BundlerChoice::Vite,
+            true,
+            |_| {},
+            |build, _| {
+                let tail = format!("run // preserved\n({VITE_FLAG_READ})");
+                patch_vite_tail(build, &tail, true);
+            },
+        );
+        assert!(env_diagnostics(&fixture.output).is_empty());
+    }
+
     /// Rewrites the fixture's guarded env branch into `replacement(read)` in
     /// the generated chunk, keeping the read at the same generated offset.
     fn patch_env_branch(build: &Path, bundler: BundlerChoice, replacement: &str) {

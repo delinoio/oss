@@ -3,6 +3,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::Path,
+    sync::LazyLock,
 };
 
 use regex::Regex;
@@ -129,50 +130,237 @@ fn reads_process_env(text: &str, name: &str) -> bool {
     .is_ok_and(|pattern| pattern.is_match(text))
 }
 
-/// One row per word that precedes an expression. `regex_follows` is whether a
-/// `/` after the word starts a regular expression literal.
-struct ExpressionKeyword {
-    word: &'static str,
-    regex_follows: bool,
+/// True for the four ECMAScript line terminators: LF, CR, U+2028 and U+2029.
+fn is_line_terminator(character: char) -> bool {
+    matches!(character, '\n' | '\r' | '\u{2028}' | '\u{2029}')
 }
 
-const fn keyword(word: &'static str, regex_follows: bool) -> ExpressionKeyword {
-    ExpressionKeyword {
-        word,
-        regex_follows,
+/// True for a character that ends a statement in the heuristic scans: `;` or
+/// any line terminator.
+fn is_statement_end(character: char) -> bool {
+    character == ';' || is_line_terminator(character)
+}
+
+/// Byte length of the ECMAScript line terminator that starts at `index`, or 0
+/// when none does: 1 for LF and CR, 3 for U+2028 and U+2029 (`E2 80 A8` and
+/// `E2 80 A9`). Every byte-level scan uses this with [`is_line_terminator`] so
+/// that all consumers agree on what ends a line.
+fn line_terminator_len(bytes: &[u8], index: usize) -> usize {
+    match bytes.get(index) {
+        Some(b'\n' | b'\r') => 1,
+        Some(0xe2)
+            if bytes.get(index + 1) == Some(&0x80)
+                && matches!(bytes.get(index + 2), Some(0xa8 | 0xa9)) =>
+        {
+            3
+        }
+        _ => 0,
     }
 }
 
-const EXPRESSION_KEYWORDS: &[ExpressionKeyword] = &[
-    keyword("return", true),
-    keyword("throw", true),
-    keyword("void", true),
-    keyword("typeof", true),
-    keyword("delete", true),
-    keyword("case", true),
-    keyword("default", true),
-    keyword("extends", true),
-    keyword("else", true),
-    keyword("do", true),
-    keyword("in", true),
-    keyword("instanceof", false),
-    keyword("new", true),
-    keyword("of", true),
-    keyword("yield", true),
-    keyword("await", false),
-];
-
-/// Whether `byte` can be part of an identifier. Non-ASCII bytes count so that a
-/// keyword is never matched inside a longer identifier.
-fn is_identifier_byte(byte: u8) -> bool {
-    byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'$') || !byte.is_ascii()
+/// A lexical token as far as the heuristic scans need to classify it.
+///
+/// The scans are not a JavaScript parser. Every question of the form "what is
+/// the previous (or next) significant token" goes through
+/// [`previous_significant_token`] and [`next_significant_token`], so the
+/// regular expression context, the statement-boundary (ASI) decision, the
+/// expression-bodied arrow end, control keyword detection and the direct
+/// `eval` call check agree on comments, line terminators and member names.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Token<'a> {
+    /// Nothing but whitespace and comments in this direction.
+    Edge,
+    /// An identifier name or keyword. `member` is true in a name position that
+    /// is never a keyword: after `.` or `?.` (`obj.return`) and after `#` (a
+    /// private name). A spread `...name` is not a member access.
+    Word {
+        text: &'a str,
+        member: bool,
+    },
+    Number,
+    /// A string literal, a closed template literal or a regular expression
+    /// literal.
+    Literal,
+    /// The start of a template literal that follows (next token only).
+    Template,
+    /// An operator or punctuator: one character, or `++`, `--` or `...`.
+    Punct(&'a str),
 }
 
-/// Looks up the keyword row for a whole identifier-like `word`.
-fn expression_keyword(word: &[u8]) -> Option<&'static ExpressionKeyword> {
-    EXPRESSION_KEYWORDS
-        .iter()
-        .find(|entry| entry.word.as_bytes() == word)
+/// Keywords after which an expression, and so a regular expression, starts.
+/// `await` counts as the unary operator; a script that uses `await` as a plain
+/// identifier is a known limit of the scan.
+const REGEX_KEYWORDS: [&str; 16] = [
+    "return",
+    "typeof",
+    "case",
+    "do",
+    "else",
+    "in",
+    "instanceof",
+    "of",
+    "void",
+    "yield",
+    "delete",
+    "throw",
+    "new",
+    "await",
+    "default",
+    "extends",
+];
+
+/// Keywords that cannot end an expression: a line terminator after them never
+/// starts a new statement. Every entry is also in [`REGEX_KEYWORDS`]; the
+/// restricted productions `return`, `throw` and `yield` are left out because a
+/// line terminator after them does end the statement.
+const OPEN_KEYWORDS: [&str; 8] = [
+    "in",
+    "instanceof",
+    "typeof",
+    "void",
+    "delete",
+    "new",
+    "of",
+    "await",
+];
+
+/// True when the range is a comment rather than a string, template or regular
+/// expression literal.
+fn is_comment_range(code: &str, (start, end): (usize, usize)) -> bool {
+    let text = &code.as_bytes()[start..end.min(code.len())];
+    text.starts_with(b"//") || text.starts_with(b"/*")
+}
+
+/// The last significant token before `index`: comments, whitespace and every
+/// ECMAScript line terminator are skipped, and a word right after `.`, `?.` or
+/// `#` is reported as a member name even when comments or line terminators
+/// separate the two (`obj. // c` + newline + `return`).
+///
+/// `ignored` holds the non-code ranges found before `index`; a range that ends
+/// at the token is a literal (or the `${` that opens a template substitution,
+/// which reads as `{`).
+fn previous_significant_token<'a>(
+    code: &'a str,
+    index: usize,
+    ignored: &[(usize, usize)],
+) -> Token<'a> {
+    let end = strip_comments_for_prefix(code, index, ignored).len();
+    let Some(last) = code[..end].chars().next_back() else {
+        return Token::Edge;
+    };
+    if let Some(range_index) = ignored
+        .partition_point(|(start, _)| *start < end)
+        .checked_sub(1)
+    {
+        let range = ignored[range_index];
+        if range.1 == end && !is_comment_range(code, range) {
+            let text = &code.as_bytes()[range.0..range.1];
+            let substitution = text.starts_with(b"`") || text.starts_with(b"}");
+            let substitution = substitution && text.ends_with(b"${");
+            return if substitution {
+                Token::Punct(&code[end - 1..end])
+            } else {
+                Token::Literal
+            };
+        }
+    }
+    let prefix = &code[..end];
+    if is_identifier_part(last) {
+        let text = trailing_word(prefix);
+        if text.starts_with(|character: char| character.is_ascii_digit()) {
+            return Token::Number;
+        }
+        let before = strip_comments_for_prefix(code, end - text.len(), ignored);
+        let member = before.ends_with('#')
+            || (before.ends_with('.')
+                && !before.ends_with("...")
+                // `1. in x`: the dot belongs to a number literal.
+                && !trailing_word(&before[..before.len() - 1]).starts_with(|character: char| {
+                    character.is_ascii_digit()
+                }));
+        return Token::Word { text, member };
+    }
+    for operator in ["...", "++", "--"] {
+        if prefix.ends_with(operator) {
+            return Token::Punct(&prefix[end - operator.len()..]);
+        }
+    }
+    Token::Punct(&prefix[end - last.len_utf8()..])
+}
+
+/// The first significant token at or after `start`, with its position:
+/// comments, whitespace and every line terminator are skipped. A string or
+/// regular expression literal is a [`Token::Literal`] and a template literal is
+/// a [`Token::Template`]; the text of a literal is never read as code.
+fn next_significant_token<'a>(
+    code: &'a str,
+    start: usize,
+    ignored: &[(usize, usize)],
+) -> (usize, Token<'a>) {
+    let mut index = start;
+    while index < code.len() {
+        let index_range = ignored.partition_point(|(begin, _)| *begin <= index);
+        if let Some(range) = index_range.checked_sub(1).map(|found| ignored[found])
+            && index < range.1
+        {
+            if is_comment_range(code, range) {
+                index = range.1;
+                continue;
+            }
+            let token = if code.as_bytes()[range.0] == b'`' {
+                Token::Template
+            } else {
+                Token::Literal
+            };
+            return (index, token);
+        }
+        let Some(character) = code[index..].chars().next() else {
+            break;
+        };
+        if character.is_whitespace() {
+            index += character.len_utf8();
+            continue;
+        }
+        if is_identifier_part(character) {
+            let length = code[index..]
+                .find(|part: char| !is_identifier_part(part))
+                .unwrap_or(code.len() - index);
+            let text = &code[index..index + length];
+            let token = if character.is_ascii_digit() {
+                Token::Number
+            } else {
+                Token::Word {
+                    text,
+                    member: false,
+                }
+            };
+            return (index, token);
+        }
+        let doubled = matches!(character, '+' | '-') && code[index + 1..].starts_with(character);
+        let length = if doubled { 2 } else { character.len_utf8() };
+        return (index, Token::Punct(&code[index..index + length]));
+    }
+    (code.len(), Token::Edge)
+}
+
+/// Whether a `/` at `start` begins a regular expression literal, decided from
+/// the previous significant token and the non-code `ranges` found so far.
+///
+/// A keyword counts only outside member-name position, so `else` followed by a
+/// comment still starts a regular expression while `obj.return // c` + newline
+/// + `/ x / 2` divides.
+fn regex_allowed(code: &str, ranges: &[(usize, usize)], start: usize) -> bool {
+    match previous_significant_token(code, start, ranges) {
+        Token::Edge => true,
+        Token::Word { text, member } => !member && REGEX_KEYWORDS.contains(&text),
+        Token::Number | Token::Literal | Token::Template => false,
+        Token::Punct(text) => {
+            !matches!(text, "++" | "--")
+                && text
+                    .chars()
+                    .all(|character| "(,=:[!&|?{};+-*%<>~^".contains(character))
+        }
+    }
 }
 
 /// Byte ranges of string literals, template literal text, comments and regular
@@ -186,33 +374,20 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
     let mut ranges = Vec::new();
     // Open `${` substitutions; each entry is the brace depth inside it.
     let mut templates: Vec<usize> = Vec::new();
-    let mut previous_significant: Option<u8> = None;
     let mut index = 0usize;
-    let regex_allowed = |previous: Option<u8>, start: usize| -> bool {
-        match previous {
-            None => true,
-            Some(byte) if b"(,=:[!&|?{};+-*%<>~^".contains(&byte) => true,
-            Some(byte) if byte.is_ascii_alphabetic() => {
-                let head = code[..start].trim_end().as_bytes();
-                let mut word_start = head.len();
-                while word_start > 0 && is_identifier_byte(head[word_start - 1]) {
-                    word_start -= 1;
-                }
-                expression_keyword(&head[word_start..]).is_some_and(|entry| entry.regex_follows)
-            }
-            _ => false,
-        }
-    };
     // Scans a quoted string or template text starting after the opener.
     let scan_until = |mut position: usize, terminator: u8, template: bool| -> (usize, bool) {
         while position < bytes.len() {
             match bytes[position] {
+                // A backslash continues the string over a line terminator; CRLF
+                // counts as a single terminator.
+                b'\\' if bytes[position + 1..].starts_with(b"\r\n") => position += 3,
                 b'\\' => position += 2,
                 byte if byte == terminator => return (position + 1, false),
                 b'$' if template && bytes.get(position + 1) == Some(&b'{') => {
                     return (position + 2, true);
                 }
-                b'\n' if !template => return (position, false),
+                b'\n' | b'\r' if !template => return (position, false),
                 _ => position += 1,
             }
         }
@@ -225,7 +400,6 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
                 let (end, _) = scan_until(index + 1, byte, false);
                 ranges.push((index, end));
                 index = end;
-                previous_significant = Some(b'"');
             }
             b'`' => {
                 let (end, opened) = scan_until(index + 1, b'`', true);
@@ -234,7 +408,6 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
                     templates.push(0);
                 }
                 index = end;
-                previous_significant = Some(b'"');
             }
             b'}' if templates.last() == Some(&0) => {
                 templates.pop();
@@ -244,11 +417,13 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
                     templates.push(0);
                 }
                 index = end;
-                previous_significant = Some(b'"');
             }
             b'/' if bytes.get(index + 1) == Some(&b'/') => {
+                // A line comment stops before any ECMAScript line terminator:
+                // LF, CR, U+2028 or U+2029. A lone CR ends it just as CRLF
+                // does.
                 let end = code[index..]
-                    .find('\n')
+                    .find(is_line_terminator)
                     .map_or(bytes.len(), |offset| index + offset);
                 ranges.push((index, end));
                 index = end;
@@ -260,24 +435,39 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
                 ranges.push((index, end));
                 index = end;
             }
-            b'/' if regex_allowed(previous_significant, index) => {
+            b'/' if regex_allowed(code, &ranges, index) => {
                 let mut position = index + 1;
                 let mut in_class = false;
+                // True when a multi-byte line terminator ended the literal. It
+                // stays outside the range so range ends fall on char
+                // boundaries.
+                let mut stopped_before = false;
                 while position < bytes.len() {
                     match bytes[position] {
                         b'\\' => position += 1,
                         b'[' => in_class = true,
                         b']' => in_class = false,
                         b'/' if !in_class => break,
-                        b'\n' => break,
+                        _ if line_terminator_len(bytes, position) > 0 => {
+                            stopped_before = line_terminator_len(bytes, position) > 1;
+                            break;
+                        }
                         _ => {}
                     }
                     position += 1;
                 }
-                let end = (position + 1).min(bytes.len());
+                let end = if stopped_before {
+                    position
+                } else {
+                    (position + 1).min(bytes.len())
+                };
                 ranges.push((index, end));
                 index = end;
-                previous_significant = Some(b'"');
+            }
+            // U+2028 and U+2029 are whitespace, not a token that decides
+            // whether a following `/` starts a regular expression.
+            _ if line_terminator_len(bytes, index) == 3 => {
+                index += 3;
             }
             _ => {
                 if let Some(depth) = templates.last_mut() {
@@ -286,9 +476,6 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
                     } else if byte == b'}' {
                         *depth -= 1;
                     }
-                }
-                if !byte.is_ascii_whitespace() {
-                    previous_significant = Some(byte);
                 }
                 index += 1;
             }
@@ -300,6 +487,114 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
 fn in_ranges(ranges: &[(usize, usize)], offset: usize) -> bool {
     let index = ranges.partition_point(|(start, _)| *start <= offset);
     index > 0 && offset < ranges[index - 1].1
+}
+
+/// Whether the line terminator that starts at `terminator` (and ends at
+/// `after`) ends an expression-bodied arrow function, by the ECMAScript
+/// automatic semicolon insertion rule: the body ends when the next token
+/// cannot continue the expression, unless the previous token cannot end one.
+/// A `{` cannot continue an expression, so there it opens a block statement
+/// (`(eval) => eval` + line terminator + `{ eval(code) }`).
+fn arrow_body_ends(
+    code: &str,
+    terminator: usize,
+    after: usize,
+    ignored: &[(usize, usize)],
+) -> bool {
+    statement_boundary(code, terminator, after, ignored, true)
+}
+
+fn statement_boundary(
+    code: &str,
+    terminator: usize,
+    after: usize,
+    ignored: &[(usize, usize)],
+    block_starts_statement: bool,
+) -> bool {
+    let ends_expression = match previous_significant_token(code, terminator, ignored) {
+        Token::Word { text, member } => member || !OPEN_KEYWORDS.contains(&text),
+        Token::Punct(text) => matches!(text, ")" | "]" | "}" | "++" | "--" | ";"),
+        Token::Edge | Token::Number | Token::Literal | Token::Template => true,
+    };
+    if !ends_expression {
+        return false;
+    }
+    let (position, next) = next_significant_token(code, after, ignored);
+    !match next {
+        Token::Word { text, .. } => matches!(text, "in" | "instanceof"),
+        Token::Template => true,
+        Token::Punct("++" | "--") => false,
+        // `!=` and `!==` continue; a prefix `!` starts a new statement.
+        Token::Punct("!") => code[position..].starts_with("!="),
+        Token::Punct("{") => !block_starts_statement,
+        Token::Punct(text) => text
+            .chars()
+            .all(|character| "%&()*+,-./:;<=>?[]^|}".contains(character)),
+        Token::Edge | Token::Number | Token::Literal => false,
+    }
+}
+
+/// Returns the code before `index` with trailing whitespace and comments
+/// removed, so a control keyword separated from its `(` by comments is still
+/// the last token of the prefix.
+///
+/// A block comment must end exactly at the trimmed end. A line comment ends at
+/// its line terminator (see [`is_line_terminator`]), so trimming whitespace may
+/// stop inside the comment (trailing spaces); the remainder after the trimmed
+/// end is then only whitespace that lies before `index`. String, template and
+/// regular expression ranges are never skipped.
+///
+/// Every consumer that needs the previous token (regular expression context,
+/// control keywords, member names) reads it from this prefix.
+fn strip_comments_for_prefix<'a>(
+    code: &'a str,
+    index: usize,
+    ignored: &[(usize, usize)],
+) -> &'a str {
+    let mut end = code[..index].trim_end().len();
+    loop {
+        let Some(range_index) = ignored
+            .partition_point(|(start, _)| *start < end)
+            .checked_sub(1)
+        else {
+            return &code[..end];
+        };
+        let (start, stop) = ignored[range_index];
+        let comment = &code[start..stop];
+        let is_block_comment = comment.starts_with("/*") && stop == end;
+        let is_line_comment = comment.starts_with("//") && stop >= end && stop <= index;
+        if !is_block_comment && !is_line_comment {
+            return &code[..end];
+        }
+        end = code[..start].trim_end().len();
+    }
+}
+
+/// True for a character that can continue a JavaScript identifier
+/// (`IdentifierPart`): any Unicode `ID_Continue` character (letters, digits,
+/// combining marks, connector punctuation such as `_`), `$`, and the
+/// zero-width joiners U+200C and U+200D.
+///
+/// Every scan that must tell a keyword from a longer name uses this one
+/// definition. Identifier escapes (`\u0069f`) are not decoded.
+fn is_identifier_part(character: char) -> bool {
+    if character.is_ascii() {
+        return character.is_ascii_alphanumeric() || matches!(character, '_' | '$');
+    }
+    static ID_CONTINUE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^\p{ID_Continue}$").expect("static regex"));
+    matches!(character, '\u{200c}' | '\u{200d}')
+        || ID_CONTINUE.is_match(character.encode_utf8(&mut [0; 4]))
+}
+
+/// The identifier-like word at the end of `text`, or an empty string.
+fn trailing_word(text: &str) -> &str {
+    let start = text
+        .rfind(|character: char| !is_identifier_part(character))
+        .map_or(0, |index| {
+            index + text[index..].chars().next().map_or(1, char::len_utf8)
+        });
+    &text[start..]
 }
 
 fn unresolved_env_conditions(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
@@ -681,9 +976,7 @@ fn collect_parameter_names(code: &str, names: &mut Vec<String>) {
             }
         } else {
             let start = before
-                .rfind(|character: char| {
-                    !(character.is_alphanumeric() || character == '_' || character == '$')
-                })
+                .rfind(|character: char| !is_identifier_part(character))
                 .map_or(0, |index| index + 1);
             if start < before.len() {
                 names.push(before[start..].to_owned());
@@ -850,9 +1143,7 @@ fn collect_binding_names(pattern: &str, names: &mut Vec<String>) {
                 .chars()
                 .next()
                 .is_some_and(|first| first.is_alphabetic() || first == '_' || first == '$')
-            && name.chars().all(|character| {
-                character.is_alphanumeric() || character == '_' || character == '$'
-            })
+            && name.chars().all(is_identifier_part)
         {
             names.push(name.to_owned());
         }
@@ -951,9 +1242,7 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
         // parameter lists. `catch (eval) {` does bind `eval`.
         let keyword = code[..whole.start()]
             .trim_end()
-            .rsplit(|character: char| {
-                !(character.is_alphanumeric() || character == '_' || character == '$')
-            })
+            .rsplit(|character: char| !is_identifier_part(character))
             .next()
             .unwrap_or("");
         if whole.as_str().ends_with('{')
@@ -971,21 +1260,18 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
         }
         let body = whole.end();
         let open = if whole.as_str().ends_with('{') {
-            Some(body - 1)
+            Some(body - 1).filter(|open| !literal_between(source, ignored, whole.start(), *open))
         } else {
             code[body..]
                 .bytes()
                 .position(|byte| !byte.is_ascii_whitespace())
                 .map(|offset| body + offset)
                 .filter(|open| bytes.get(*open) == Some(&b'{'))
+                .filter(|open| !literal_between(source, ignored, body, *open))
         };
         let block = open.and_then(|open| blocks.iter().find(|(start, _)| *start == open).copied());
         let end = block.map_or_else(
-            || {
-                code[body..]
-                    .find([';', '\n'])
-                    .map_or(bytes.len(), |offset| body + offset)
-            },
+            || arrow_expression_end(source, body, ignored),
             |(_, close)| close,
         );
         if let Some(block) = block
@@ -1012,9 +1298,7 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
         };
         let keyword = code[..open]
             .trim_end()
-            .rsplit(|character: char| {
-                !(character.is_alphanumeric() || character == '_' || character == '$')
-            })
+            .rsplit(|character: char| !is_identifier_part(character))
             .next()
             .unwrap_or("");
         if !arrow && is_control_flow_parentheses(&code, open, keyword) {
@@ -1029,13 +1313,22 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
                 .trim_start_matches("...");
             collect_binding_names(target, &mut names);
         }
-        let block = blocks.iter().find(|(start, _)| *start == body).copied();
+        // A literal between the parameters and the next `{` makes that brace
+        // part of a later statement: the arrow body is the literal expression.
+        let literal_body = literal_between(source, ignored, close, body);
+        let block = blocks
+            .iter()
+            .find(|(start, _)| *start == body && !literal_body)
+            .copied();
+        let expression_start = if literal_body {
+            source[close..]
+                .find("=>")
+                .map_or(body, |offset| close + offset + 2)
+        } else {
+            body
+        };
         let end = block.map_or_else(
-            || {
-                code[body..]
-                    .find([';', '\n'])
-                    .map_or(bytes.len(), |offset| body + offset)
-            },
+            || arrow_expression_end(source, expression_start, ignored),
             |(_, close)| close,
         );
         if let Some(block) = block
@@ -1050,9 +1343,7 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
 
     let single = Regex::new(r"\beval\s*=>").expect("static regex");
     for found in single.find_iter(&code) {
-        let end = code[found.end()..]
-            .find([';', '\n'])
-            .map_or(bytes.len(), |offset| found.end() + offset);
+        let end = arrow_expression_end(source, found.end(), ignored);
         scopes.push((found.start(), end));
     }
     // A single-parameter arrow does not have parentheses to identify its
@@ -1106,6 +1397,55 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
         }
     }
     scopes
+}
+
+/// True when a string, template or regular expression literal lies in
+/// `from..to`. The scopes are found on a copy of the code whose literals are
+/// blanked, so a literal body (`=> 's'`) would otherwise look like whitespace
+/// before the next `{`.
+fn literal_between(source: &str, ignored: &[(usize, usize)], from: usize, to: usize) -> bool {
+    ignored
+        .iter()
+        .any(|range| range.0 >= from && range.0 < to && !is_comment_range(source, *range))
+}
+
+/// End of an expression-bodied arrow function whose body starts at `from`:
+/// the first top-level `;` or `,`, the closer of the enclosing group, or a
+/// line terminator at which automatic semicolon insertion starts a new
+/// statement ([`arrow_body_ends`]). A line terminator before a binary operator
+/// (`(eval) => 1` + CR + `+eval(code)`) continues the body.
+fn arrow_expression_end(source: &str, from: usize, ignored: &[(usize, usize)]) -> usize {
+    let bytes = source.as_bytes();
+    let mut depth = 0usize;
+    let mut index = from;
+    while index < bytes.len() {
+        let range = ignored.partition_point(|(start, _)| *start <= index);
+        if let Some((_, stop)) = range.checked_sub(1).map(|found| ignored[found])
+            && index < stop
+        {
+            index = stop;
+            continue;
+        }
+        let terminator = line_terminator_len(bytes, index);
+        if terminator > 0 {
+            if depth == 0 && arrow_body_ends(source, index, index + terminator, ignored) {
+                return index;
+            }
+            index += terminator;
+            continue;
+        }
+        match bytes[index] {
+            b'(' | b'[' | b'{' => depth += 1,
+            b')' | b']' | b'}' => match depth.checked_sub(1) {
+                Some(next) => depth = next,
+                None => return index,
+            },
+            b';' | b',' if depth == 0 => return index,
+            _ => {}
+        }
+        index += 1;
+    }
+    bytes.len()
 }
 
 /// ECMAScript identifier syntax: Unicode `ID_Start` or `$`/`_`, then
@@ -1354,9 +1694,10 @@ fn is_control_flow_parentheses(code: &str, open: usize, keyword: &str) -> bool {
     let await_start = prefix.len().saturating_sub("await".len());
     let before_await = prefix[..await_start].trim_end();
     before_await.strip_suffix("for").is_some_and(|before_for| {
-        before_for.chars().next_back().is_none_or(|character| {
-            !(character.is_alphanumeric() || character == '_' || character == '$')
-        })
+        before_for
+            .chars()
+            .next_back()
+            .is_none_or(|character| !is_identifier_part(character))
     })
 }
 
@@ -1415,7 +1756,7 @@ fn named_function_is_expression(code: &str, start: usize) -> bool {
         return true;
     }
     let keyword = prefix
-        .rsplit(|character: char| !(character.is_alphanumeric() || character == '_'))
+        .rsplit(|character: char| !is_identifier_part(character))
         .next();
     if !matches!(
         keyword,
@@ -1426,7 +1767,7 @@ fn named_function_is_expression(code: &str, start: usize) -> bool {
     let keyword_start = prefix
         .len()
         .saturating_sub(keyword.unwrap_or_default().len());
-    !raw_prefix[keyword_start..].contains(['\n', '\r'])
+    !raw_prefix[keyword_start..].contains(is_line_terminator)
 }
 
 fn matching_delimiter(bytes: &[u8], open: usize, opening: u8, closing: u8) -> Option<usize> {
@@ -1449,7 +1790,9 @@ fn matching_delimiter(bytes: &[u8], open: usize, opening: u8, closing: u8) -> Op
 fn is_case_label(prefix: &str) -> bool {
     let label = prefix.strip_suffix(':').unwrap_or(prefix);
     let statement = label
-        .rsplit_once(['{', '}', ';', '\n'])
+        .rsplit_once(|character: char| {
+            matches!(character, '{' | '}') || is_statement_end(character)
+        })
         .map_or(label, |(_, rest)| rest)
         .trim();
     statement == "default"
@@ -1459,23 +1802,64 @@ fn is_case_label(prefix: &str) -> bool {
 }
 
 fn direct_eval_line(source: &str) -> Option<(u32, u32)> {
-    let pattern = Regex::new(r"(^|[^.\w$])eval\s*\(").expect("static regex");
     // `eval(` inside strings, templates, comments or regular expressions is
     // not a call.
     let ignored = non_code_ranges(source);
     // A binding named `eval` makes calls inside its scope ordinary calls that
     // cannot observe the surrounding scope; shadowing is decided per call.
     let shadows = eval_shadow_scopes(source, &ignored);
-    let start = pattern.find_iter(source).find_map(|found| {
-        let start = found.start() + found.as_str().find("eval")?;
+    let start = source.match_indices("eval").find_map(|(start, name)| {
+        let end = start + name.len();
+        let whole_word = !source[..start].ends_with(is_identifier_part)
+            && !source[end..].starts_with(is_identifier_part);
+        if !whole_word || in_ranges(&ignored, start) {
+            return None;
+        }
+        // A property or private name (`obj.eval(x)`, `obj. // c` + newline +
+        // `eval(x)`, `this.#eval(x)`) is an ordinary call. A spread
+        // (`...eval(x)`) is not a member access.
+        let member = matches!(
+            previous_significant_token(source, end, &ignored),
+            Token::Word { member: true, .. }
+        );
+        // Comments and line terminators may separate the name and `(`.
+        let called = next_significant_token(source, end, &ignored).1 == Token::Punct("(");
         let shadowed = shadows
             .iter()
-            .any(|(begin, end)| (*begin..*end).contains(&start));
-        (!in_ranges(&ignored, start) && !shadowed).then_some(start)
+            .any(|(begin, finish)| (*begin..*finish).contains(&start));
+        (!member && called && !shadowed).then_some(start)
     })?;
-    let line = source[..start].matches('\n').count();
-    let column = start - source[..start].rfind('\n').map_or(0, |index| index + 1);
+    let (line, column) = line_and_column(source, start);
     Some((u32::try_from(line).ok()?, u32::try_from(column).ok()?))
+}
+
+/// Zero-based line and byte column of `offset`, counting every ECMAScript
+/// line terminator (CRLF is one terminator) so the position agrees with the
+/// scanners that end comments and statements at those terminators.
+fn line_and_column(source: &str, offset: usize) -> (usize, usize) {
+    let bytes = source.as_bytes();
+    let mut line = 0usize;
+    let mut line_start = 0usize;
+    let mut index = 0usize;
+    while index < offset {
+        let length = line_terminator_len(bytes, index);
+        if length == 0 {
+            index += 1;
+            continue;
+        }
+        // A CR directly followed by LF is a single terminator.
+        let length = if bytes[index] == b'\r' && bytes.get(index + 1) == Some(&b'\n') {
+            2
+        } else {
+            length
+        };
+        index += length;
+        if index <= offset {
+            line += 1;
+            line_start = index;
+        }
+    }
+    (line, offset - line_start)
 }
 
 fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
@@ -1609,7 +1993,10 @@ fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        env_guard::{EnvGuard, env_guard},
+        *,
+    };
 
     fn eval_rule_drafts(source: &str, engine_reports_eval: bool) -> Vec<DiagnosticDraft> {
         let dir = tempfile::tempdir().unwrap();
@@ -1822,12 +2209,11 @@ y=/process.env.F/.test(z),process.env.G"#;
     }
 
     #[test]
-    fn regex_after_keyword_follows_the_keyword_table() {
-        for entry in EXPRESSION_KEYWORDS {
-            let code = format!("{} /process.env.FLAG/.test(x)", entry.word);
+    fn regex_after_default_and_extends_starts_a_regular_expression() {
+        for word in ["default", "extends"] {
+            let code = format!("{word} /process.env.FLAG/.test(x)");
             let start = code.find("process.env.FLAG").unwrap();
-            let ranges = non_code_ranges(&code);
-            assert_eq!(in_ranges(&ranges, start), entry.regex_follows, "{code}");
+            assert!(in_ranges(&non_code_ranges(&code), start), "{code}");
         }
         let code = "xreturn /process.env.FLAG/.test(x)";
         let start = code.find("process.env.FLAG").unwrap();
@@ -2386,5 +2772,1067 @@ y=/process.env.F/.test(z),process.env.G"#;
         minification_disabled(&mut context, &mut drafts);
         assert_eq!(drafts.len(), 2);
         assert!(context.sources.unverified.is_empty());
+    }
+
+    #[test]
+    fn comments_between_a_keyword_and_its_condition_keep_the_guard() {
+        let guard = |code: &str, read: &str| {
+            let start = code.find(read).unwrap();
+            env_guard(code, start, start + read.len(), &non_code_ranges(code))
+                .map(EnvGuard::evidence)
+        };
+        let read = "process.env.FLAG";
+        let vite_read = "({}).FLAG";
+        for (keyword, body, evidence) in [
+            (
+                "if",
+                "{read}) run()",
+                "the retained read is in an if condition",
+            ),
+            (
+                "while",
+                "{read}) run()",
+                "the retained read is in a while condition",
+            ),
+            (
+                "switch",
+                "{read}) {default: run()}",
+                "the retained read is in a switch condition",
+            ),
+            (
+                "for",
+                ";{read};) run()",
+                "the retained read is in a for condition",
+            ),
+        ] {
+            for read in [read, vite_read] {
+                let body = body.replace("{read}", read);
+                let plain = format!("{keyword} ({body}");
+                assert_eq!(guard(&plain, read), Some(evidence), "{plain}");
+                for separator in [
+                    "/* c */",
+                    "/*!license*/\n",
+                    "// c\n",
+                    "// c\r\n",
+                    "//\n",
+                    "// c   \n",
+                    "// c \t\r\n",
+                    "// one\n// two\n",
+                    "// one\n/* two */ // three\n",
+                    "\n// c\n\n  ",
+                    "// if (x)\n",
+                ] {
+                    let code = format!("{keyword} {separator}({body}");
+                    assert_eq!(guard(&code, read), Some(evidence), "{code:?}");
+                    let code = format!("{keyword}{separator}({body}");
+                    assert_eq!(guard(&code, read), Some(evidence), "{code:?}");
+                }
+            }
+        }
+        for code in [
+            "run // c\n(process.env.FLAG)",
+            "run // c\r\n(process.env.FLAG)",
+            "obj.if // c\n(process.env.FLAG)",
+            "obj.while /* c */ (process.env.FLAG)",
+            "notif // c\n(process.env.FLAG)",
+            "if // c\n(process.env.FLAG, ready) run()",
+            "for // c\n(process.env.FLAG;;) work()",
+            "for // c\n(;;process.env.FLAG) work()",
+            "console.log // c\n(process.env.FLAG)",
+            "\"if\" // c\n(process.env.FLAG)",
+            "`if` // c\n(process.env.FLAG)",
+        ] {
+            assert_eq!(guard(code, "process.env.FLAG"), None, "{code:?}");
+        }
+        // A string ending in a keyword is not a keyword.
+        assert_eq!(
+            guard("x = 'if' // c\n(process.env.FLAG)", "process.env.FLAG"),
+            None
+        );
+    }
+
+    #[test]
+    fn line_comments_end_at_every_ecmascript_line_terminator() {
+        for terminator in LINE_TERMINATORS {
+            // The comment range stops before the terminator, so the code that
+            // follows a lone CR, U+2028 or U+2029 is scanned as code.
+            let code = format!("a // c{terminator}b");
+            let ranges = non_code_ranges(&code);
+            assert_eq!(ranges, vec![(2, 6)], "{code:?}");
+            assert!(code.is_char_boundary(ranges[0].1), "{code:?}");
+
+            let read = "process.env.FLAG";
+            let code = format!("// c{terminator}{read} && run()");
+            let ignored = non_code_ranges(&code);
+            assert!(!in_ranges(&ignored, code.find(read).unwrap()), "{code:?}");
+            assert_eq!(
+                env_guard(
+                    &code,
+                    code.find(read).unwrap(),
+                    code.find(read).unwrap() + read.len(),
+                    &ignored
+                )
+                .map(EnvGuard::evidence),
+                Some("the retained read controls a && short-circuit branch"),
+                "{code:?}"
+            );
+
+            // A block comment may contain any terminator and still ends at
+            // `*/`.
+            let code = format!("/* c{terminator}d */ {read}");
+            let ignored = non_code_ranges(&code);
+            assert_eq!(ignored.len(), 1, "{code:?}");
+            assert!(!in_ranges(&ignored, code.find(read).unwrap()), "{code:?}");
+
+            // A quoted string or regular expression ends at a line terminator
+            // that is not escaped, so the next line is code again. Strings may
+            // contain U+2028 and U+2029; regular expressions may not.
+            // U+2028 and U+2029 are legal inside string literals (ES2019).
+            let openers: &[&str] =
+                if terminator.starts_with('\u{2028}') || terminator.starts_with('\u{2029}') {
+                    &["x = /a"]
+                } else {
+                    &["x = 'a", "x = \"a", "x = /a"]
+                };
+            for opener in openers {
+                let code = format!("{opener}{terminator}{read}");
+                let ignored = non_code_ranges(&code);
+                assert!(!in_ranges(&ignored, code.find(read).unwrap()), "{code:?}");
+                assert!(
+                    ignored.iter().all(|(_, end)| code.is_char_boundary(*end)),
+                    "{code:?}"
+                );
+            }
+
+            // A regular expression after a line terminator is still a regular
+            // expression: the terminator is whitespace, not a division operand.
+            let code = format!("x = // c{terminator}/a|b/.test(y)");
+            let ignored = non_code_ranges(&code);
+            assert!(in_ranges(&ignored, code.find("a|b").unwrap()), "{code:?}");
+        }
+        // A backslash continues a string over CRLF as a single terminator.
+        let code = "x = 'a\\\r\nb'; process.env.FLAG";
+        let ignored = non_code_ranges(code);
+        assert!(in_ranges(&ignored, code.find('b').unwrap()), "{code:?}");
+        assert!(
+            !in_ranges(&ignored, code.find("process").unwrap()),
+            "{code:?}"
+        );
+    }
+
+    #[test]
+    fn every_line_terminator_after_a_comment_keeps_the_guard() {
+        let guard = |code: &str, read: &str| {
+            let start = code.find(read).unwrap();
+            env_guard(code, start, start + read.len(), &non_code_ranges(code))
+                .map(EnvGuard::evidence)
+        };
+        let read = "process.env.FLAG";
+        for terminator in LINE_TERMINATORS {
+            for (keyword, body, evidence) in [
+                ("if", ") run()", "the retained read is in an if condition"),
+                (
+                    "while",
+                    ") run()",
+                    "the retained read is in a while condition",
+                ),
+                (
+                    "switch",
+                    ") {default: run()}",
+                    "the retained read is in a switch condition",
+                ),
+                (
+                    "for",
+                    ";;) work()",
+                    "the retained read is in a for condition",
+                ),
+            ] {
+                let body = if keyword == "for" {
+                    format!(";{read};) work()")
+                } else {
+                    format!("{read}{body}")
+                };
+                for comment in ["// c", "// c  ", "//", "// c \t", "// if (x)"] {
+                    for gap in [" ", ""] {
+                        let code = format!("{keyword}{gap}{comment}{terminator}({body}");
+                        assert_eq!(guard(&code, read), Some(evidence), "{code:?}");
+                        let code = format!(
+                            "{keyword}{gap}/* a{terminator}b \
+                             */{gap}{comment}{terminator}{gap}({body}"
+                        );
+                        assert_eq!(guard(&code, read), Some(evidence), "{code:?}");
+                    }
+                }
+                let code = format!("{keyword} /* a{terminator}b */ ({body}");
+                assert_eq!(guard(&code, read), Some(evidence), "{code:?}");
+            }
+            // A comment before a non-keyword never creates a guard.
+            for code in [
+                format!("run // c{terminator}({read})"),
+                format!("run /* a{terminator}b */ ({read})"),
+                format!("x = 1 // c{terminator}({read})"),
+            ] {
+                assert_eq!(guard(&code, read), None, "{code:?}");
+            }
+        }
+    }
+
+    /// Like `keyword_guard`, but skips reads that sit in non-code text.
+    fn keyword_guard_in_code(code: &str, read: &str) -> Option<&'static str> {
+        let start = code.find(read).unwrap();
+        let ignored = non_code_ranges(code);
+        if in_ranges(&ignored, start) {
+            return None;
+        }
+        env_guard(code, start, start + read.len(), &ignored).map(EnvGuard::evidence)
+    }
+
+    fn keyword_guard(code: &str, read: &str) -> Option<&'static str> {
+        let start = code.find(read).unwrap();
+        env_guard(code, start, start + read.len(), &non_code_ranges(code)).map(EnvGuard::evidence)
+    }
+
+    #[test]
+    fn every_line_terminator_is_an_asi_boundary() {
+        let read = "process.env.FLAG";
+        for terminator in LINE_TERMINATORS {
+            // A statement boundary before `ready` ends the read, so the later
+            // `&&` belongs to another expression.
+            for code in [
+                format!("// c{terminator}{read}{terminator}ready&&run()"),
+                format!("/* c */ {read}{terminator}ready&&run()"),
+                format!("{read}{terminator}// c{terminator}ready&&run()"),
+                format!("x = 1; {read}{terminator} {terminator}ready||run()"),
+            ] {
+                assert_eq!(keyword_guard(&code, read), None, "{code:?}");
+            }
+            // A line that continues the expression keeps the read guarded,
+            // however many terminators and comments come first.
+            for code in [
+                format!("{read}{terminator}&&run()"),
+                format!("{read}{terminator}// c{terminator}{terminator}&&run()"),
+                format!("{read}{terminator}/* c */ ||run()"),
+                format!("// c{terminator}{read}{terminator}?run():stop()"),
+            ] {
+                assert!(keyword_guard(&code, read).is_some(), "{code:?}");
+            }
+        }
+        // The scan resumes after a three-byte terminator, not inside it.
+        assert_eq!(
+            line_terminator_len("\u{2028}".as_bytes(), 0),
+            3,
+            "U+2028 is three bytes"
+        );
+        assert_eq!(line_terminator_len("a\r".as_bytes(), 1), 1);
+        assert_eq!(line_terminator_len("\u{2027}".as_bytes(), 0), 0);
+    }
+
+    #[test]
+    fn regex_context_ignores_comments_before_the_slash() {
+        let read = "process.env.FLAG";
+        let in_regex = |code: &str| in_ranges(&non_code_ranges(code), code.find(read).unwrap());
+        for terminator in LINE_TERMINATORS {
+            for keyword in [
+                "return", "typeof", "else", "do", "void", "yield", "delete", "throw", "new", "in",
+                "of",
+            ] {
+                for comment in ["// c", "//", "// c  ", "/* c */ // d", "/* a\nb */"] {
+                    for gap in [" ", ""] {
+                        let code =
+                            format!("{keyword}{gap}{comment}{terminator}/{read}/.test(x)&&run()");
+                        assert!(in_regex(&code), "{code:?}");
+                    }
+                }
+            }
+            // The slash after `if(x)foo();else` from a real bundle shape.
+            let code = format!("if(x)foo();else // c{terminator}/{read}/.test(x)&&run()");
+            assert!(in_regex(&code), "{code:?}");
+            assert_eq!(keyword_guard_in_code(&code, read), None, "{code:?}");
+            // An identifier that merely ends in a keyword before a comment is
+            // an operand, so the slash divides.
+            for name in ["notreturn", "$do", "x_in"] {
+                let code = format!("{name} // c{terminator}/{read}/ 2");
+                assert!(!in_regex(&code), "{code:?}");
+            }
+        }
+    }
+
+    const AND_GUARD: &str = "the retained read controls a && short-circuit branch";
+
+    #[test]
+    fn keyword_named_properties_are_division_operands() {
+        let read = "process.env.FLAG";
+        let in_regex = |code: &str| in_ranges(&non_code_ranges(code), code.find(read).unwrap());
+        for terminator in LINE_TERMINATORS {
+            for keyword in REGEX_KEYWORDS {
+                for access in [".", "?.", ". /* c */ ", ".// c\n", ". "] {
+                    for comment in ["// c", "//", "/* c */ // d", "/* a\nb */"] {
+                        let code = format!(
+                            "obj{access}{keyword} {comment}{terminator}/ {read} / 2 && run()"
+                        );
+                        assert!(!in_regex(&code), "{code:?}");
+                        assert_eq!(
+                            keyword_guard_in_code(&code, read),
+                            Some(AND_GUARD),
+                            "{code:?}"
+                        );
+                    }
+                }
+                // A private name is a name too, while a dot that ends a number
+                // literal is not a member access.
+                let code = format!("this.#{keyword} // c{terminator}/ {read} / 2 && run()");
+                assert!(!in_regex(&code), "{code:?}");
+                let code = format!("1. {keyword} // c{terminator}/{read}/.test(x)");
+                assert!(in_regex(&code), "{code:?}");
+                // The keyword itself still starts a regular expression, also
+                // as a spread operand.
+                let code = format!("{keyword} // c{terminator}/{read}/.test(x) && run()");
+                assert!(in_regex(&code), "{code:?}");
+            }
+            // A postfix increment or decrement ends an operand, so the slash
+            // divides; after a prefix operator or an operator it starts a
+            // regular expression.
+            for code in [
+                format!("x = i++{terminator}/{read}/2"),
+                format!("x = i-- /{read}/ 2"),
+            ] {
+                assert!(!in_regex(&code), "{code:?}");
+            }
+            let code = format!("x = i + {terminator}/{read}/.test(y)");
+            assert!(in_regex(&code), "{code:?}");
+        }
+        // A template substitution starts an expression.
+        let code = format!("`${{/{read}/.test(x)}}`");
+        assert!(in_regex(&code), "{code:?}");
+    }
+
+    #[test]
+    fn asi_decision_follows_the_previous_and_next_token() {
+        let read = "process.env.FLAG";
+        for terminator in LINE_TERMINATORS {
+            // The next token continues the expression, so the later `&&`
+            // still sees the read.
+            for continuation in [
+                "+ready",
+                "- ready",
+                "+ +ready",
+                "* ready",
+                "% ready",
+                "/ ready",
+                ".ready",
+                "?.ready",
+                "[0]",
+                "(ready)",
+                "`t`",
+                "in ready",
+                "instanceof ready",
+                "!= ready",
+                "!== ready",
+                "== ready",
+                "< ready",
+                "> ready",
+                "|| ready",
+                "?? ready",
+                "& ready",
+                "^ ready",
+                "| ready",
+                "?ready:ready",
+            ] {
+                for comment in ["", "// c", "/* c */"] {
+                    let code =
+                        format!("{read}{terminator}{comment}{terminator}{continuation} && run()");
+                    assert!(keyword_guard(&code, read).is_some(), "{code:?}");
+                }
+            }
+            // The next token starts a new statement, so the read is not a
+            // guard for the later `&&`.
+            for statement in [
+                "++ready",
+                "--ready",
+                "/* c */ ++ready",
+                "// c\n++ready",
+                "ready",
+                "12",
+                "'a'",
+                "\"a\"",
+                "!ready",
+                "~ready",
+                "@ready",
+                "#ready",
+                "return",
+                "const",
+            ] {
+                for before in ["", " // c", " /* c */", "  // c  "] {
+                    let code = format!("{read}{before}{terminator}{statement} && run()");
+                    assert_eq!(keyword_guard(&code, read), None, "{code:?}");
+                }
+            }
+            // A prefix operator pair needs adjacent characters.
+            let code = format!("{read}{terminator}+ +ready && run()");
+            assert!(keyword_guard(&code, read).is_some(), "{code:?}");
+            // A previous token that cannot end an expression continues it.
+            for operator in [
+                "+",
+                "-",
+                "*",
+                "/",
+                ".",
+                "in",
+                "instanceof",
+                ",",
+                "=>",
+                "&",
+                "<",
+            ] {
+                if operator == "," || operator == "=>" {
+                    continue;
+                }
+                let code = format!("{read} {operator}{terminator}ready && run()");
+                assert!(keyword_guard(&code, read).is_some(), "{code:?}");
+            }
+            // The statement before the read is not affected by the next line.
+            let code = format!("x = 1{terminator}++y; {read} && run()");
+            assert!(keyword_guard(&code, read).is_some(), "{code:?}");
+        }
+        // Tokens that need a parser stay on the conservative side: `as` and
+        // `satisfies` (TypeScript) and `of` do not continue an expression, so
+        // the read is not treated as guarded.
+        for word in ["as T", "satisfies T", "of items"] {
+            let code = format!("{read}\n{word} && run()");
+            assert_eq!(keyword_guard(&code, read), None, "{code:?}");
+        }
+    }
+
+    #[test]
+    fn keyword_tables_agree_on_operand_keywords() {
+        let read = "process.env.FLAG";
+        for keyword in OPEN_KEYWORDS {
+            assert!(REGEX_KEYWORDS.contains(&keyword), "{keyword}");
+        }
+        for terminator in LINE_TERMINATORS {
+            for keyword in REGEX_KEYWORDS {
+                // A comment and any line terminator between the keyword and
+                // the slash still leave the slash starting a regular
+                // expression.
+                for comment in ["// c", "/* c */ // c", "/* a\nb */"] {
+                    let code = format!("{keyword} {comment}{terminator}/{read}/.test(x) && run()");
+                    assert!(
+                        in_ranges(&non_code_ranges(&code), code.find(read).unwrap()),
+                        "{code:?}"
+                    );
+                }
+            }
+            // A keyword that cannot end an expression takes its operand from
+            // the next line.
+            for keyword in OPEN_KEYWORDS {
+                let code = format!("x = {keyword}{terminator}{read} && run()");
+                // `typeof`, `void`, `delete` and `new` do not pass the value
+                // of their operand on, so the read does not control the
+                // branch.
+                let expected = if matches!(keyword, "typeof" | "void" | "delete" | "new") {
+                    None
+                } else {
+                    Some(AND_GUARD)
+                };
+                assert_eq!(keyword_guard(&code, read), expected, "{code:?}");
+            }
+        }
+        // The operand of `await` is a regular expression, not a division.
+        let code = "async () => await // c\r/process.env.FLAG/.test(x) && run()";
+        assert!(in_ranges(&non_code_ranges(code), code.find(read).unwrap()));
+    }
+
+    #[test]
+    fn a_statement_boundary_ends_an_expression_bodied_arrow_for_guards() {
+        let read = "process.env.FLAG";
+        for terminator in LINE_TERMINATORS {
+            // The arrow ends at the boundary, so the read after it is a plain
+            // statement that its own `&&` guards.
+            let code = format!("f = () => x{terminator}{read} && run()");
+            assert_eq!(keyword_guard(&code, read), Some(AND_GUARD), "{code:?}");
+            // A continuation keeps the read inside the arrow body, where it
+            // still controls the branch.
+            let code = format!("f = () => {read}{terminator}&& run()");
+            assert_eq!(keyword_guard(&code, read), Some(AND_GUARD), "{code:?}");
+            let code = format!("f = () => {read}{terminator}++x; g(run && y)");
+            assert_eq!(keyword_guard(&code, read), None, "{code:?}");
+        }
+    }
+
+    #[test]
+    fn lexical_token_limits_stay_conservative() {
+        let read = "process.env.FLAG";
+        // A method named `eval` looks like a call, and a comma inside
+        // TypeScript type arguments ends an arrow body early: both are
+        // reported as a possible direct eval.
+        for source in [
+            "class A { eval(code) { return 1; } }",
+            "const f = (eval) => g<A, B>(eval(code));",
+        ] {
+            assert!(direct_eval_line(source).is_some(), "{source:?}");
+        }
+        // The keywords `as`, `satisfies` and `of` never continue an
+        // expression after a line terminator, so the read stays unguarded.
+        for source in [
+            format!("{read}\nas boolean && run()"),
+            format!("{read}\nsatisfies boolean && run()"),
+        ] {
+            assert_eq!(keyword_guard(&source, read), None, "{source:?}");
+        }
+        // A slash after `)` or `}` divides, as in the previous token rule.
+        let code = format!("if (x) /{read}/.test(y)");
+        assert!(!in_ranges(
+            &non_code_ranges(&code),
+            code.find(read).unwrap()
+        ));
+    }
+
+    const CONTROL_KEYWORDS: [(&str, &str); 4] = [
+        ("if", "the retained read is in an if condition"),
+        ("while", "the retained read is in a while condition"),
+        ("switch", "the retained read is in a switch condition"),
+        ("for", "the retained read is in a for condition"),
+    ];
+
+    /// The argument list that follows a keyword, with the read in a position
+    /// that is a guard for that keyword (`for` guards its test clause).
+    fn keyword_arguments(keyword: &str, read: &str) -> String {
+        if keyword == "for" {
+            format!(";{read};) work()")
+        } else {
+            format!("{read}) work()")
+        }
+    }
+
+    #[test]
+    fn keyword_named_members_are_never_guards() {
+        let read = "process.env.FLAG";
+        for (keyword, _) in CONTROL_KEYWORDS {
+            let arguments = keyword_arguments(keyword, read);
+            let mut members = vec![
+                format!("obj.{keyword}("),
+                format!("obj?.{keyword}("),
+                format!("obj. {keyword}("),
+                format!("obj .{keyword}("),
+                format!("obj./* c */{keyword}("),
+                format!("obj. /* c */ {keyword} /* d */ ("),
+                format!("obj.{keyword} // c\n("),
+                format!("obj.{keyword} /* c */ ("),
+                format!("obj?. /* c */ // d\n {keyword}("),
+                format!("this.#{keyword}("),
+                format!("this.#{keyword} /* c */ ("),
+                format!("a.b.c.{keyword}("),
+                format!("a[0].{keyword}("),
+                format!("a().{keyword}("),
+                format!("a.\n{keyword}("),
+            ];
+            for terminator in LINE_TERMINATORS {
+                members.push(format!("obj.{terminator}{keyword}("));
+                members.push(format!("obj. // c{terminator}{keyword}("));
+                members.push(format!("obj. /* a{terminator}b */ {keyword}("));
+                members.push(format!("obj.{keyword} // c{terminator}("));
+                members.push(format!(
+                    "obj?.// c{terminator}/* d */{terminator}{keyword}("
+                ));
+            }
+            for member in members {
+                let code = format!("{member}{arguments}");
+                assert_eq!(keyword_guard(&code, read), None, "{code:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn keyword_named_methods_are_never_guards() {
+        let read = "process.env.FLAG";
+        for terminator in LINE_TERMINATORS {
+            for (keyword, _) in CONTROL_KEYWORDS {
+                for gap in ["", " ", " /* c */ ", " // c\n", " // c\r"] {
+                    let gap = format!("{gap}{terminator}");
+                    let call = format!("{keyword}{gap}(a={read}){{}}");
+                    for member in [
+                        // Object literals in every expression position.
+                        format!("const o={{{call}}}"),
+                        format!("o={{a:1,{call}}}"),
+                        format!("o={{a(){{}}{call}}}"),
+                        format!("f({{{call}}})"),
+                        format!("return {{{call}}}"),
+                        format!("[{{{call}}}]"),
+                        format!("x=y?{{{call}}}:z"),
+                        format!("o={{get {call}}}"),
+                        format!("o={{set {call}}}"),
+                        format!("o={{async {call}}}"),
+                        format!("o={{*{call}}}"),
+                        format!("o={{async *{call}}}"),
+                        // Class bodies, including call-expression heritage.
+                        format!("class A{{{call}}}"),
+                        format!("class A extends B{{{call}}}"),
+                        format!("class A extends mix(B, {{x: 1}}){{{call}}}"),
+                        format!("x=class{{{call}}}"),
+                        format!("class A{{x=1;{call}}}"),
+                        format!("class A{{m(){{}}{call}}}"),
+                        format!("class A{{static {call}}}"),
+                        format!("class A{{static async {call}}}"),
+                        format!("class A{{#p=1;{call}}}"),
+                    ] {
+                        assert_eq!(keyword_guard(&member, read), None, "{member:?}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn keywords_in_statement_blocks_stay_guards() {
+        let read = "process.env.FLAG";
+        for (keyword, evidence) in CONTROL_KEYWORDS {
+            let arguments = keyword_arguments(keyword, read);
+            for gap in ["", " ", " /* c */ ", " // c\n"] {
+                let statement = format!("{keyword}{gap}({arguments}");
+                for code in [
+                    format!("function f(){{{statement}}}"),
+                    format!("function f(a){{x();{statement}}}"),
+                    format!("if(x){{{statement}}}"),
+                    format!("if(x){{}}else{{{statement}}}"),
+                    format!("try{{{statement}}}finally{{{statement}}}"),
+                    format!("do{{{statement}}}while(y)"),
+                    format!("const f=()=>{{{statement}}}"),
+                    format!("const f=x=>{{{statement}}}"),
+                    format!("class A{{m(){{{statement}}}}}"),
+                    format!("class A{{static{{{statement}}}}}"),
+                    format!("class A extends mix(B){{m(){{{statement}}}}}"),
+                    format!("o={{m(){{{statement}}}}}"),
+                    format!("o={{get v(){{{statement}}}}}"),
+                    format!("switch(a){{case 1:{{{statement}}}}}"),
+                    format!("switch(a){{default:{{{statement}}}}}"),
+                    format!("x=1;{{{statement}}}"),
+                    format!("{{}}{{{statement}}}"),
+                    format!("o={{a:function(){{{statement}}}}}"),
+                ] {
+                    assert_eq!(keyword_guard(&code, read), Some(evidence), "{code:?}");
+                }
+            }
+        }
+    }
+
+    /// A labeled block is a statement block, so a keyword that starts it is a
+    /// control keyword and keeps its guard.
+    #[test]
+    fn labeled_blocks_are_statement_blocks() {
+        let read = "process.env.FLAG";
+        for (keyword, evidence) in CONTROL_KEYWORDS {
+            let arguments = keyword_arguments(keyword, read);
+            let code = format!("outer:{{{keyword}({arguments}}}");
+            assert_eq!(keyword_guard(&code, read), Some(evidence), "{code:?}");
+        }
+    }
+
+    /// Known limits: identifier escapes are not decoded, and source snippets
+    /// split lines on LF and CRLF only.
+    #[test]
+    fn undecidable_lexical_cases_stay_conservative() {
+        let read = "process.env.FLAG";
+        for code in [
+            format!("\\u0069f ({read}) run()"),
+            format!("i\\u0066 ({read}) run()"),
+        ] {
+            assert_eq!(keyword_guard(&code, read), None, "{code:?}");
+        }
+        let (start, text) = crate::chunks::snippet_lines("a\u{2028}b\rc\nd", 1);
+        assert_eq!((start, text.as_str()), (1, "a\u{2028}b\rc\nd"));
+    }
+
+    #[test]
+    fn identifiers_ending_in_a_keyword_are_never_guards() {
+        let read = "process.env.FLAG";
+        for (keyword, _) in CONTROL_KEYWORDS {
+            let arguments = keyword_arguments(keyword, read);
+            for name in [
+                "not",
+                "_",
+                "$",
+                "x1",
+                "\u{e9}",
+                "\u{4e2d}",
+                "a\u{200d}",
+                "\u{3b1}\u{3b2}",
+                // Combining marks, connector punctuation, ZWNJ and
+                // `Other_ID_Continue` characters continue an identifier too.
+                "a\u{301}",
+                "\u{203f}",
+                "a\u{200c}",
+                "a\u{b7}",
+                "\u{e33}",
+                "\u{1d7d8}",
+            ] {
+                for gap in ["", " ", " /* c */ ", " // c\n"] {
+                    let code = format!("{name}{keyword}{gap}({arguments}");
+                    assert_eq!(keyword_guard(&code, read), None, "{code:?}");
+                }
+            }
+            // A keyword inside a longer identifier is not the identifier's end.
+            let code = format!("{keyword}Value({arguments}");
+            assert_eq!(keyword_guard(&code, read), None, "{code:?}");
+        }
+    }
+
+    #[test]
+    fn combining_marks_keep_keywords_from_guarding() {
+        let read = "process.env.FLAG";
+        for terminator in LINE_TERMINATORS {
+            for (keyword, _) in CONTROL_KEYWORDS {
+                let arguments = keyword_arguments(keyword, read);
+                for name in ["a\u{301}", "\u{203f}", "a\u{200c}", "a\u{200d}"] {
+                    let code = format!("{name}{keyword} // c{terminator}({arguments}");
+                    assert_eq!(keyword_guard(&code, read), None, "{code:?}");
+                }
+            }
+            // A keyword-like suffix of a longer name before a comment is an
+            // operand, so the next slash divides.
+            let code = format!("a\u{301}else // c{terminator}/{read}/ 2");
+            assert!(
+                !in_ranges(&non_code_ranges(&code), code.find(read).unwrap()),
+                "{code:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn keywords_after_statement_boundaries_and_comments_stay_guards() {
+        let read = "process.env.FLAG";
+        for (keyword, evidence) in CONTROL_KEYWORDS {
+            let arguments = keyword_arguments(keyword, read);
+            let mut prefixes = vec![
+                String::new(),
+                "run();".to_string(),
+                "{".to_string(),
+                "{}".to_string(),
+                "run()\n".to_string(),
+                "x = 1; ".to_string(),
+                "else ".to_string(),
+                "do ".to_string(),
+                // Dots that belong to comments or numbers never make a member.
+                "a; /* end. */ ".to_string(),
+                "a; // end.\n".to_string(),
+                "a; // end.\n/* more. */\n".to_string(),
+                "x = 1.5;".to_string(),
+                "x = a.b;".to_string(),
+                "x = '.';".to_string(),
+                "x = \".\";".to_string(),
+                "x = `.`;".to_string(),
+                "x = /./;".to_string(),
+                "run() // see obj.\n".to_string(),
+            ];
+            for terminator in LINE_TERMINATORS {
+                prefixes.push(format!("a; // end.{terminator}"));
+                prefixes.push(format!("a; // end.{terminator}// more.{terminator}"));
+                prefixes.push(format!("a.b; /* end. */{terminator}"));
+            }
+            for prefix in prefixes {
+                for gap in ["", " ", " /* c */ ", " // c\n"] {
+                    let code = format!("{prefix}{keyword}{gap}({arguments}");
+                    assert_eq!(keyword_guard(&code, read), Some(evidence), "{code:?}");
+                }
+            }
+        }
+    }
+
+    const LINE_TERMINATORS: [&str; 5] = ["\n", "\r", "\r\n", "\u{2028}", "\u{2029}"];
+
+    /// The previous token for the text before the marker `|` in `code`.
+    fn previous_token_before_bar(code: &str) -> Token<'_> {
+        let index = code.find('|').unwrap();
+        let ignored = non_code_ranges(code);
+        previous_significant_token(code, index, &ignored)
+    }
+
+    #[test]
+    fn previous_token_skips_comments_and_every_line_terminator() {
+        for terminator in LINE_TERMINATORS {
+            let word = |text, member| Token::Word { text, member };
+            let cases: Vec<(String, Token<'static>)> = vec![
+                (String::new(), Token::Edge),
+                (format!("// c{terminator}/* d */ |"), Token::Edge),
+                (format!("a // c{terminator}|"), word("a", false)),
+                (format!("a /* c{terminator}d */ |"), word("a", false)),
+                (format!("else // c{terminator}|"), word("else", false)),
+                (
+                    format!("obj.return // c{terminator}|"),
+                    word("return", true),
+                ),
+                ("obj?.typeof|".to_string(), word("typeof", true)),
+                (format!("obj. // c{terminator}else|"), word("else", true)),
+                (format!("obj.{terminator}in|"), word("in", true)),
+                ("obj /* c */ . /* d */ do|".to_string(), word("do", true)),
+                ("this.#new|".to_string(), word("new", true)),
+                ("x = ...of|".to_string(), word("of", false)),
+                ("1. in|".to_string(), word("in", false)),
+                (format!("x.a{terminator}return|"), word("return", false)),
+                (format!("x = 12{terminator}|"), Token::Number),
+                (format!("x = 1.5 // c{terminator}|"), Token::Number),
+                (format!("x = 'a' // c{terminator}|"), Token::Literal),
+                ("x = \"a\"/* c */|".to_string(), Token::Literal),
+                (format!("x = `a${{b}}c` // c{terminator}|"), Token::Literal),
+                (format!("x = /a b/ // c{terminator}|"), Token::Literal),
+                ("x = /a b/g|".to_string(), word("g", false)),
+                ("x = `a${|".to_string(), Token::Punct("{")),
+                (format!("f() // c{terminator}|"), Token::Punct(")")),
+                (format!("a++ // c{terminator}|"), Token::Punct("++")),
+                ("a -- /* c */|".to_string(), Token::Punct("--")),
+                (format!("[...{terminator}|"), Token::Punct("...")),
+                (format!("a = // c{terminator}|"), Token::Punct("=")),
+                (format!("f = x =>{terminator}|"), Token::Punct(">")),
+                ("a \u{e9}\u{bb}|".to_string(), Token::Punct("\u{bb}")),
+            ];
+            for (code, expected) in cases {
+                let code = if code.contains('|') {
+                    code
+                } else {
+                    format!("{code}|")
+                };
+                assert_eq!(previous_token_before_bar(&code), expected, "{code:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn next_token_skips_comments_and_classifies_literals() {
+        for terminator in LINE_TERMINATORS {
+            let word = |text| Token::Word {
+                text,
+                member: false,
+            };
+            let cases: Vec<(String, Token<'static>)> = vec![
+                (String::new(), Token::Edge),
+                (
+                    format!("{terminator} // c{terminator}/* d */ "),
+                    Token::Edge,
+                ),
+                (format!("{terminator}ready"), word("ready")),
+                (format!("{terminator}// c{terminator}in x"), word("in")),
+                (format!("{terminator}12"), Token::Number),
+                (format!("{terminator}'a'"), Token::Literal),
+                (format!("{terminator}`a`"), Token::Template),
+                (format!("{terminator}/* c */ ++x"), Token::Punct("++")),
+                (format!("{terminator}--x"), Token::Punct("--")),
+                (format!("{terminator}+ +x"), Token::Punct("+")),
+                (format!("{terminator}-x"), Token::Punct("-")),
+                (format!("{terminator}.a"), Token::Punct(".")),
+                (format!("{terminator}(a)"), Token::Punct("(")),
+                (format!("{terminator}\u{e9}a"), word("\u{e9}a")),
+            ];
+            for (code, expected) in cases {
+                let ignored = non_code_ranges(&code);
+                assert_eq!(
+                    next_significant_token(&code, 0, &ignored).1,
+                    expected,
+                    "{code:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_block_after_an_arrow_expression_is_a_new_statement() {
+        for terminator in LINE_TERMINATORS {
+            for body in ["eval", "g(1)", "a.b", "[1]", "'s'", "1"] {
+                for comment in ["", "// c", "/* c */"] {
+                    // The line terminator ends the arrow body, so `eval` in
+                    // the block is the global one.
+                    let source = format!(
+                        "const f = (eval) => {body}{terminator}{comment}{terminator}{{ eval(code) \
+                         }}"
+                    );
+                    assert!(direct_eval_line(&source).is_some(), "{source:?}");
+                    // After an operator the block is the arrow body.
+                    let source = "const f = (eval) => { eval(code) }".to_string();
+                    assert_eq!(direct_eval_line(&source), None, "{source:?}");
+                    let source = format!(
+                        "const f = (eval) =>{terminator}{comment}{terminator}{{ eval(code) }}"
+                    );
+                    assert_eq!(direct_eval_line(&source), None, "{source:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn continued_arrow_bodies_keep_the_shadow_scope() {
+        for terminator in LINE_TERMINATORS {
+            // The next line starts with a binary operator, so the call is part
+            // of the arrow body and `eval` is the parameter.
+            for source in [
+                format!("const f = (eval) => 1{terminator}+eval(code)"),
+                format!("const f = eval => 1{terminator}+eval(code)"),
+                format!("const f = (eval) => 1{terminator}-eval(code)"),
+                format!("const f = (eval) => a{terminator}.b(eval(code))"),
+                format!("const f = (eval) => a{terminator}|| eval(code)"),
+                format!("const f = (eval) => a {terminator}// c{terminator}* eval(code)"),
+                format!("const f = (eval) => a{terminator}[eval(code)]"),
+                format!("const f = (eval) =>{terminator}eval(code)"),
+                format!("const f = (eval) => 1 +{terminator}eval(code)"),
+                format!("const f = eval => g(1,{terminator}eval(code))"),
+            ] {
+                assert_eq!(direct_eval_line(&source), None, "{source:?}");
+            }
+            // A statement boundary ends the body, so the next call is direct.
+            for source in [
+                format!("const f = (eval) => 1{terminator}++x; eval(code)"),
+                format!("const f = (eval) => 1{terminator}--x\neval(code)"),
+                format!("const f = (eval) => 1{terminator}x\neval(code)"),
+                format!("const f = (eval) => 1{terminator}'s'; eval(code)"),
+                format!("const f = (eval) => 1;{terminator}eval(code)"),
+                "foo((eval) => eval(1), eval(2))".to_string(),
+                format!("foo((eval) => eval(1)){terminator}eval(2)"),
+                "x = [eval => eval(1)]; eval(2)".to_string(),
+            ] {
+                assert!(direct_eval_line(&source).is_some(), "{source:?}");
+            }
+        }
+        let source = "foo((eval) => eval(1), eval(2))";
+        assert_eq!(direct_eval_line(source), Some((0, 23)));
+    }
+
+    #[test]
+    fn member_calls_named_eval_are_never_direct_across_comments() {
+        for terminator in LINE_TERMINATORS {
+            for source in [
+                "obj.eval(code)".to_string(),
+                "obj?.eval(code)".to_string(),
+                format!("obj. // c{terminator}eval(code)"),
+                format!("obj.{terminator}eval(code)"),
+                format!("obj. /* c{terminator}d */ eval(code)"),
+                format!("obj?. // c{terminator}eval(code)"),
+                "obj /* a */ . /* b */ eval(code)".to_string(),
+                format!("obj // a{terminator}.{terminator}eval(code)"),
+                "this.#eval(code)".to_string(),
+                format!("this. // c{terminator}#eval(code)"),
+                format!("eval{terminator}`t`"),
+                format!("eval // c{terminator}"),
+                "eval?.(code)".to_string(),
+            ] {
+                assert_eq!(direct_eval_line(&source), None, "{source:?}");
+            }
+            // A call, including one with comments before the parenthesis or
+            // after a spread operator, is direct.
+            for source in [
+                format!("eval // c{terminator}(code)"),
+                "eval /* c */ (code)".to_string(),
+                format!("eval{terminator}(code)"),
+                "f(...eval(code))".to_string(),
+                format!("[...{terminator}eval(code)]"),
+                format!("x = 1.{terminator}+eval(code)"),
+                format!("a; // obj.{terminator}eval(code)"),
+            ] {
+                assert!(direct_eval_line(&source).is_some(), "{source:?}");
+            }
+        }
+        // Whole words only.
+        for source in [
+            "evaluate(code)",
+            "x.eval2(code)",
+            "reeval(code)",
+            "éeval(code)",
+        ] {
+            assert_eq!(direct_eval_line(source), None, "{source:?}");
+        }
+    }
+
+    #[test]
+    fn identifier_parts_follow_ecmascript_id_continue() {
+        for character in [
+            'a',
+            'Z',
+            '0',
+            '_',
+            '$',
+            '\u{e9}',
+            '\u{4e2d}',
+            '\u{301}',
+            '\u{200c}',
+            '\u{200d}',
+            '\u{203f}',
+            '\u{b7}',
+            '\u{e33}',
+            '\u{3099}',
+            '\u{1d7d8}',
+            '\u{ff9e}',
+        ] {
+            assert!(is_identifier_part(character), "{character:?}");
+        }
+        for character in [
+            ' ',
+            '-',
+            '.',
+            '#',
+            '(',
+            '\n',
+            '\r',
+            '\u{2028}',
+            '\u{2029}',
+            '\u{a0}',
+            '\u{2e2e}',
+            '\u{1f600}',
+        ] {
+            assert!(!is_identifier_part(character), "{character:?}");
+        }
+        // The definition matches the Unicode property over the whole BMP and
+        // the first supplementary plane, apart from the three ECMAScript
+        // additions.
+        let property = Regex::new(r"^\p{ID_Continue}$").unwrap();
+        for code in 0..0x2_0000u32 {
+            let Some(character) = char::from_u32(code) else {
+                continue;
+            };
+            let expected = property.is_match(&character.to_string())
+                || matches!(character, '$' | '\u{200c}' | '\u{200d}');
+            assert_eq!(is_identifier_part(character), expected, "{code:#x}");
+        }
+    }
+
+    #[test]
+    fn direct_eval_positions_count_every_line_terminator() {
+        for terminator in LINE_TERMINATORS {
+            let source = format!("// note{terminator}eval(code)");
+            assert_eq!(direct_eval_line(&source), Some((1, 0)), "{source:?}");
+            let source = format!("a{terminator}b{terminator}  return eval(x)");
+            assert_eq!(direct_eval_line(&source), Some((2, 9)), "{source:?}");
+            let source = format!("{terminator}{terminator}eval(x)");
+            assert_eq!(direct_eval_line(&source), Some((2, 0)), "{source:?}");
+        }
+        // CRLF is one terminator; a CR and an LF that are not adjacent are
+        // two.
+        assert_eq!(line_and_column("a\r\nb", 3), (1, 0));
+        assert_eq!(line_and_column("a\r\r\nb", 4), (2, 0));
+        assert_eq!(line_and_column("a\n\rb", 3), (2, 0));
+        assert_eq!(line_and_column("a\u{2028}b", 4), (1, 0));
+        // The column counts bytes after the last terminator.
+        assert_eq!(line_and_column("\u{2029}\u{e9}x", 5), (1, 2));
+        assert_eq!(line_and_column("abc", 2), (0, 2));
+    }
+
+    #[test]
+    fn eval_shadow_scopes_end_at_every_line_terminator() {
+        for terminator in LINE_TERMINATORS {
+            // An expression-bodied arrow ends at the line terminator, so the
+            // next line's eval is a real direct eval.
+            for source in [
+                format!("const f = (eval) => eval(1){terminator}eval(2)"),
+                format!("const f = eval => eval(1){terminator}eval(2)"),
+            ] {
+                let (line, _) = direct_eval_line(&source).expect(&source);
+                assert_eq!(line, 1, "{source:?}");
+            }
+            // `return` followed by a line terminator ends the statement, so
+            // the function is a declaration scoped to its block.
+            let source = format!(
+                "function outer() {{ return{terminator}function eval() {{}} }} eval(code);"
+            );
+            assert!(direct_eval_line(&source).is_some(), "{source:?}");
+            // A `case` label is recognized after any terminator.
+            let source =
+                format!("switch (a) {{ case 1:{terminator}function eval() {{}} }} eval(code);");
+            assert!(direct_eval_line(&source).is_some(), "{source:?}");
+        }
     }
 }
