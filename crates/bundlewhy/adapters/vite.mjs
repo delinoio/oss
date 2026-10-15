@@ -204,15 +204,21 @@ export function resolveEffectiveMangle({ buildMinify, configured, finalized }) {
  *
  * `build.minify: false` disables minification unless a plugin `outputOptions`
  * hook replaced the output's `minify` value with one that runs the Oxc
- * minifier, which the finalized options report. Every other `build.minify`
- * value keeps the minifier it names.
+ * minifier, which the finalized options report. The Oxc minifier (the default,
+ * `true` and `"oxc"`) is disabled when the finalized options report that it
+ * does not run, for example after a hook set `minify` to `false` or
+ * `"dce-only"`. `"terser"` and `"esbuild"` keep the minifier they name,
+ * because the Rolldown output option says nothing about them.
  */
 export function resolveEffectiveMinifier({ buildMinify, finalizedActive }) {
   if (buildMinify === false && finalizedActive === true) {
     return { enabled: true, name: "oxc" };
   }
+  const oxcSelected =
+    buildMinify === true || buildMinify === undefined || buildMinify === "oxc";
   return {
-    enabled: buildMinify !== false,
+    enabled:
+      buildMinify !== false && !(oxcSelected && finalizedActive === false),
     // Vite documents `build.minify` default as 'oxc' for client builds; `true`
     // selects the same default minifier.
     name:

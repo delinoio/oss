@@ -177,14 +177,21 @@ test("finalized output options decide whether the Oxc minifier runs", () => {
       { enabled: false, name: "false" },
     );
   }
-  // Other `build.minify` values keep the minifier they name.
-  for (const finalizedActive of [true, false, undefined]) {
-    for (const buildMinify of [undefined, true, "oxc"]) {
+  // A plugin hook can turn the Oxc minifier off after it was selected.
+  for (const buildMinify of [undefined, true, "oxc"]) {
+    assert.deepEqual(
+      resolveEffectiveMinifier({ buildMinify, finalizedActive: false }),
+      { enabled: false, name: "oxc" },
+    );
+    for (const finalizedActive of [true, undefined]) {
       assert.deepEqual(
         resolveEffectiveMinifier({ buildMinify, finalizedActive }),
         { enabled: true, name: "oxc" },
       );
     }
+  }
+  // Other `build.minify` values keep the minifier they name.
+  for (const finalizedActive of [true, false, undefined]) {
     assert.deepEqual(
       resolveEffectiveMinifier({ buildMinify: "terser", finalizedActive }),
       { enabled: true, name: "terser" },
