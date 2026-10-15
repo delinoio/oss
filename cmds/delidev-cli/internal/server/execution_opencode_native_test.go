@@ -22,6 +22,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/opencode"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativetest"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
@@ -259,13 +260,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 	var readPath atomic.Value
 	const readSentinel = "Original native Read fixture."
 	t.Helper()
-	binary := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
-	if binary == "" {
-		t.Skip("explicit pinned native binary with generated state and a scripted provider only")
-	}
-	if !filepath.IsAbs(binary) {
-		t.Fatal("the selected native executable must be absolute")
-	}
+	binary, version := nativetest.NativeOpenCodeExecutable(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 	defer cancel()
 	var calls atomic.Int32
@@ -597,7 +592,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		}
 	})
 	config := opencode.APIExecutionConfig{
-		Probe:     opencode.ProbeConfig{Process: process.Config{Directory: filepath.Join(root, "processes"), OwnerID: f.job, Executable: binary, Cwd: runtimeRoot, Env: env, Logger: nativeLogger}, Version: opencode.SupportedVersion, Home: filepath.Join(runtimeRoot, "opencode")},
+		Probe:     opencode.ProbeConfig{Process: process.Config{Directory: filepath.Join(root, "processes"), OwnerID: f.job, Executable: binary, Cwd: runtimeRoot, Env: env, Logger: nativeLogger}, Version: version, Home: filepath.Join(runtimeRoot, "opencode")},
 		Workspace: workspace, NativeRoot: filepath.VolumeName(workspace) + string(filepath.Separator), ServerOrigin: f.http.URL, Token: f.token,
 		Settings: settings, Rejection: opencode.StopOnInteractionRejection, Claim: claim,
 	}
