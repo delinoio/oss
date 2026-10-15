@@ -429,13 +429,40 @@ fn previous_token_end(bytes: &[u8], end: usize, ignored: &[(usize, usize)]) -> O
     None
 }
 
+/// True for a character that can be part of an identifier-like word. Every
+/// non-ASCII character counts except ECMAScript whitespace and line
+/// terminators, which separate tokens.
+fn is_identifier_char(character: char) -> bool {
+    character.is_ascii_alphanumeric()
+        || matches!(character, '_' | '$')
+        || (!character.is_ascii() && !is_js_whitespace(character) && !is_line_terminator(character))
+}
+
 /// The identifier-like word that ends at `end`, if the token there is one.
 fn word_before(bytes: &[u8], end: usize) -> &str {
     let mut start = end;
-    while start > 0 && is_identifier_byte(bytes[start - 1]) {
-        start -= 1;
+    while let Some(character) = char_before(bytes, start).filter(|c| is_identifier_char(*c)) {
+        start -= character.len_utf8();
     }
     std::str::from_utf8(&bytes[start..end]).unwrap_or("")
+}
+
+/// The identifier-like word that starts at `start`.
+fn word_at(bytes: &[u8], start: usize) -> &str {
+    let mut end = start;
+    while let Some(character) = char_at(bytes, end).filter(|c| is_identifier_char(*c)) {
+        end += character.len_utf8();
+    }
+    std::str::from_utf8(&bytes[start..end]).unwrap_or("")
+}
+
+/// True when the word that starts at `start` is a property name, that is, the
+/// previous token (trivia skipped) is a member-access `.` or `?.` and not the
+/// end of a `...` spread.
+fn is_property_name(bytes: &[u8], start: usize, ignored: &[(usize, usize)]) -> bool {
+    previous_token_end(bytes, start, ignored).is_some_and(|end| {
+        bytes[end - 1] == b'.' && !in_ranges(ignored, end - 1) && !bytes[..end].ends_with(b"...")
+    })
 }
 
 /// Keywords that need an operand after them, so a line terminator behind
@@ -452,6 +479,14 @@ const OPERAND_KEYWORDS: [&str; 8] = [
     "case",
 ];
 
+/// True when the word that ends at `end` is an operand-requiring keyword in
+/// keyword position. The same word after a member-access `.` (whitespace and
+/// comments allowed) is an ordinary property name.
+fn operand_keyword_before(bytes: &[u8], end: usize, ignored: &[(usize, usize)]) -> bool {
+    let word = word_before(bytes, end);
+    OPERAND_KEYWORDS.contains(&word) && !is_property_name(bytes, end - word.len(), ignored)
+}
+
 /// True when the token that ends at `end` can end an operand (identifier,
 /// literal, closing bracket), so that a following `++` or `--` is postfix.
 fn token_ends_operand(bytes: &[u8], end: usize, ignored: &[(usize, usize)]) -> bool {
@@ -460,9 +495,7 @@ fn token_ends_operand(bytes: &[u8], end: usize, ignored: &[(usize, usize)]) -> b
         return !ends_template_substitution(bytes, end - 1, ignored);
     }
     if is_identifier_byte(last) {
-        let word = word_before(bytes, end);
-        return !OPERAND_KEYWORDS.contains(&word)
-            || end > word.len() && bytes[end - word.len() - 1] == b'.';
+        return !operand_keyword_before(bytes, end, ignored);
     }
     matches!(last, b')' | b']' | b'}')
 }
@@ -508,11 +541,7 @@ fn expression_is_unfinished(bytes: &[u8], end: usize, ignored: &[(usize, usize)]
         }
         b'!' | b'%' | b'&' | b'(' | b'*' | b',' | b'.' | b'/' | b':' | b'<' | b'=' | b'>'
         | b'?' | b'[' | b'^' | b'|' | b'~' => true,
-        byte if is_identifier_byte(byte) => {
-            let word = word_before(bytes, token_end);
-            OPERAND_KEYWORDS.contains(&word)
-                && !(token_end > word.len() && bytes[token_end - word.len() - 1] == b'.')
-        }
+        byte if is_identifier_byte(byte) => operand_keyword_before(bytes, token_end, ignored),
         _ => false,
     }
 }
@@ -542,17 +571,8 @@ fn asi_terminates(bytes: &[u8], start: usize, ignored: &[(usize, usize)]) -> boo
         b'`' => false,
         b'!' | b'%' | b'&' | b'(' | b')' | b'*' | b',' | b'.' | b'/' | b':' | b';' | b'<'
         | b'=' | b'>' | b'?' | b'[' | b']' | b'^' | b'{' | b'}' | b'|' | b'~' => false,
-        _ => !matches!(next_word(bytes, token), "in" | "instanceof"),
+        _ => !matches!(word_at(bytes, token), "in" | "instanceof"),
     }
-}
-
-/// The identifier-like word that starts at `start`.
-fn next_word(bytes: &[u8], start: usize) -> &str {
-    let mut end = start;
-    while end < bytes.len() && is_identifier_byte(bytes[end]) {
-        end += 1;
-    }
-    std::str::from_utf8(&bytes[start..end]).unwrap_or("")
 }
 
 #[derive(Clone, Copy)]
@@ -2669,6 +2689,84 @@ y=/process.env.F/.test(z),process.env.G"#;
             "process.env.FLAG\nsuffix&&run()",
         ] {
             assert_eq!(flag_guard(code), None, "{code:?}");
+        }
+    }
+
+    const KEYWORD_SEPARATORS: [&str; 9] = [
+        "", " ", "/* c */", "\n", "\r\n", "\u{a0}", "\u{2028}", "/*\n*/", "// c\n",
+    ];
+
+    #[test]
+    fn env_guard_keyword_property_names_are_decided_across_trivia() {
+        for keyword in OPERAND_KEYWORDS {
+            // A keyword in keyword position leaves the expression unfinished.
+            let code = format!("process.env.FLAG + {keyword}\nsuffix&&run()");
+            assert_eq!(flag_guard(&code), AND_GUARD, "{code:?}");
+            let code = format!("process.env.FLAG + {keyword} ++\n++suffix&&run()");
+            assert_eq!(flag_guard(&code), AND_GUARD, "{code:?}");
+            for before in KEYWORD_SEPARATORS {
+                for after in KEYWORD_SEPARATORS {
+                    for dot in [".", "?."] {
+                        // The same word after a member access is a property
+                        // name, so the expression is finished.
+                        let access = format!("obj{before}{dot}{after}{keyword}");
+                        let code = format!("process.env.FLAG + {access}\nsuffix&&run()");
+                        assert_eq!(flag_guard(&code), None, "{code:?}");
+                        let code = format!("process.env.FLAG.{access}\nsuffix&&run()");
+                        assert_eq!(flag_guard(&code), None, "{code:?}");
+                        let code = format!("process.env.FLAG + {access} ++\n++suffix&&run()");
+                        assert_eq!(flag_guard(&code), None, "{code:?}");
+                    }
+                }
+            }
+            // Separators before the keyword, other than a member access, keep
+            // it a keyword.
+            for separator in KEYWORD_SEPARATORS {
+                let code = format!("process.env.FLAG +{separator}{keyword}\nsuffix&&run()");
+                assert_eq!(flag_guard(&code), AND_GUARD, "{code:?}");
+            }
+        }
+        let bytes = b"a...typeof";
+        assert!(!is_property_name(bytes, 4, &[]));
+        assert!(is_property_name(b"a . typeof", 4, &[]));
+        assert!(is_property_name(b"a?.typeof", 3, &[]));
+        assert!(is_property_name(
+            b"a./* c */typeof",
+            9,
+            &non_code_ranges("a./* c */typeof")
+        ));
+    }
+
+    #[test]
+    fn env_guard_words_stop_at_unicode_separators() {
+        for keyword in ["in", "instanceof"] {
+            for separator in JS_WHITESPACE
+                .into_iter()
+                .chain(JS_WHITESPACE_TAIL)
+                .map(String::from)
+                .chain(LINE_TERMINATORS.map(String::from))
+                .chain(["/* c */".to_owned(), "/*\n*/".to_owned()])
+            {
+                // The operator ends before the separator, so the next line
+                // continues the expression.
+                let code = format!("process.env.FLAG\n{keyword}{separator}suffix&&run()");
+                assert_eq!(flag_guard(&code), AND_GUARD, "{code:?}");
+                // The keyword is found when separators precede it as well.
+                let code =
+                    format!("process.env.FLAG +{separator}{keyword}{separator}\nsuffix&&run()");
+                assert_eq!(flag_guard(&code), AND_GUARD, "{code:?}");
+            }
+            // A non-separator character makes the word a different identifier.
+            for suffix in ["\u{e9}", "x", "$", "_", "\u{3b1}"] {
+                let code = format!("process.env.FLAG\n{keyword}{suffix}&&run()");
+                assert_eq!(flag_guard(&code), None, "{code:?}");
+            }
+        }
+        for keyword in OPERAND_KEYWORDS {
+            for prefix in ["\u{e9}", "x", "$", "_", "\u{3b1}"] {
+                let code = format!("process.env.FLAG + {prefix}{keyword}\nsuffix&&run()");
+                assert_eq!(flag_guard(&code), None, "{code:?}");
+            }
         }
     }
 
