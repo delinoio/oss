@@ -116,7 +116,7 @@ try {
         const primary = await page.evaluate(() =>
           /mac/i.test(navigator.platform) ? "Meta" : "Control",
         );
-        await page.keyboard.press(`${primary}+Shift+N`);
+        await page.keyboard.press(`${primary}+N`);
         await dialog.waitFor({ state: "detached" });
         assert.equal(await page.locator("output").textContent(), "1");
         await page.keyboard.up("?");

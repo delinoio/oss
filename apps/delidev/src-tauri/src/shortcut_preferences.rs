@@ -9,6 +9,9 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 const DOCUMENT_LIMIT: u64 = 4096;
+/// Native File > New Window is menu-click only. Primary+N belongs to the
+/// renderer New session shortcut, so the native menu must not claim it.
+pub const NEW_WINDOW_MENU_ACCELERATOR: Option<&str> = None;
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "kebab-case")]
 pub enum ShortcutAction {
@@ -75,7 +78,6 @@ fn chord_valid(chord: &ShortcutChord) -> bool {
                 | "m"
                 | "b"
                 | "k"
-                | "n"
                 | "w"
                 | "1"
                 | "2"
@@ -114,7 +116,7 @@ fn valid(overrides: &ShortcutOverrides) -> bool {
         Some(ShortcutOverride::Binding { chord }) => Some(chord.clone()),
         None => Some(ShortcutChord {
             key: "n".into(),
-            shift: true,
+            shift: false,
         }),
     };
     help.is_none() || help != new
@@ -366,7 +368,7 @@ mod tests {
             ShortcutAction::NewSessionSend,
             ShortcutAction::SearchFocus,
         ] {
-            for key in ["q", "h", "m", "n", "w"] {
+            for key in ["q", "h", "m", "w"] {
                 assert!(!valid(&BTreeMap::from([(action, binding(key, false))])));
                 assert!(chord_valid(&ShortcutChord {
                     key: key.into(),
@@ -376,7 +378,7 @@ mod tests {
         }
     }
     #[test]
-    fn retired_new_window_chord_is_editable_and_persists_without_admitting_n() {
+    fn retired_new_window_chord_is_editable_and_persists() {
         for action in [
             ShortcutAction::Help,
             ShortcutAction::NewSession,
@@ -397,8 +399,173 @@ mod tests {
                 ShortcutStore::new(Some(dir.path().into())).read().overrides,
                 overrides
             );
-            assert!(!valid(&BTreeMap::from([(action, binding("n", false))])));
         }
+    }
+    #[test]
+    fn new_window_menu_item_claims_no_accelerator() {
+        assert_eq!(NEW_WINDOW_MENU_ACCELERATOR, None);
+    }
+    #[test]
+    fn unshifted_n_is_the_new_session_default_not_a_native_reservation() {
+        assert!(chord_valid(&ShortcutChord {
+            key: "n".into(),
+            shift: false
+        }));
+        // The default chord overlaps an unshifted Help binding, never Shift+N.
+        assert!(!valid(&BTreeMap::from([(
+            ShortcutAction::Help,
+            binding("n", false)
+        )])));
+        assert!(valid(&BTreeMap::from([(
+            ShortcutAction::Help,
+            binding("n", true)
+        )])));
+        // Saved overrides keep their meaning and are stored without rewriting.
+        for saved in [binding("n", true), ShortcutOverride::Disabled] {
+            let dir = tempfile::tempdir().unwrap();
+            let store = ShortcutStore::new(Some(dir.path().into()));
+            let initial = store.read();
+            let overrides = BTreeMap::from([(ShortcutAction::NewSession, saved)]);
+            let result = store.update(overrides.clone(), initial.revision);
+            assert_eq!(result.problem, None);
+            assert_eq!(
+                ShortcutStore::new(Some(dir.path().into())).read().overrides,
+                overrides
+            );
+        }
+    }
+    #[test]
+    fn persisted_documents_from_the_shifted_default_stay_valid_unchanged() {
+        for document in [
+            r#"{"version":1,"revision":4,"overrides":{"new-session":{"state":"binding","chord":{"key":"n","shift":true}}}}"#,
+            r#"{"version":1,"revision":4,"overrides":{"new-session":{"state":"disabled"}}}"#,
+            r#"{"version":1,"revision":4,"overrides":{"new-session":{"state":"binding","chord":{"key":"t","shift":false}}}}"#,
+            r#"{"version":1,"revision":4,"overrides":{"help":{"state":"binding","chord":{"key":"j","shift":true}}}}"#,
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("shortcuts.json");
+            fs::write(&path, document).unwrap();
+            let state = ShortcutStore::new(Some(dir.path().into())).read();
+            assert_eq!(state.problem, None, "{document}");
+            assert_eq!(state.overrides.len(), 1, "{document}");
+            assert_eq!(fs::read_to_string(&path).unwrap(), document);
+        }
+    }
+    #[derive(Deserialize)]
+    struct ChordCase {
+        key: String,
+        shift: bool,
+        valid: bool,
+    }
+    #[derive(Deserialize)]
+    struct OverrideCase {
+        name: String,
+        overrides: ShortcutOverrides,
+        valid: bool,
+    }
+    #[derive(Deserialize)]
+    struct ChordFixtures {
+        chords: Vec<ChordCase>,
+        overrides: Vec<OverrideCase>,
+    }
+    // The renderer test suite reads the same fixture table, so both runtimes
+    // must accept and reject identical chords and override maps.
+    #[test]
+    fn shared_chord_fixture_table_matches_the_renderer_validator() {
+        let fixtures: ChordFixtures =
+            serde_json::from_str(include_str!("../../src/shortcut-chord-fixtures.json")).unwrap();
+        assert!(!fixtures.chords.is_empty() && !fixtures.overrides.is_empty());
+        for case in &fixtures.chords {
+            let chord = ShortcutChord {
+                key: case.key.clone(),
+                shift: case.shift,
+            };
+            assert_eq!(
+                chord_valid(&chord),
+                case.valid,
+                "{}/{}",
+                case.key,
+                case.shift
+            );
+            for action in [
+                ShortcutAction::NewSession,
+                ShortcutAction::SessionFocus,
+                ShortcutAction::SessionSend,
+                ShortcutAction::NewSessionFocus,
+                ShortcutAction::NewSessionSend,
+                ShortcutAction::SearchFocus,
+            ] {
+                let overrides = BTreeMap::from([(
+                    action,
+                    ShortcutOverride::Binding {
+                        chord: chord.clone(),
+                    },
+                )]);
+                assert_eq!(valid(&overrides), case.valid, "{:?} {}", action, case.key);
+            }
+        }
+        for case in &fixtures.overrides {
+            assert_eq!(valid(&case.overrides), case.valid, "{}", case.name);
+        }
+    }
+    fn contract_cells(contract: &str, label: &str) -> Vec<String> {
+        let rows: Vec<Vec<String>> = contract
+            .lines()
+            .filter(|line| line.starts_with('|'))
+            .map(|line| line.split('|').map(|cell| cell.trim().to_owned()).collect())
+            .filter(|cells: &Vec<String>| cells.get(1).is_some_and(|cell| cell == label))
+            .collect();
+        assert_eq!(rows.len(), 1, "{label}");
+        rows[0].clone()
+    }
+    fn contract_row(contract: &str, label: &str) -> Vec<String> {
+        contract_cells(contract, label)[2]
+            .split('`')
+            .skip(1)
+            .step_by(2)
+            .map(str::to_owned)
+            .collect()
+    }
+    // The desktop contract owns the shortcut chord table; the renderer suite
+    // checks the same table against its validator and the localized help text.
+    #[test]
+    fn native_validator_matches_the_contract_shortcut_chord_table() {
+        let contract = include_str!("../../../../docs/apps-delidev-desktop-contract.md");
+        let plain = contract_row(contract, "Reserved unshifted primary keys");
+        let shifted = contract_row(contract, "Reserved Shift primary keys");
+        let default = contract_row(contract, "Editable New session default");
+        assert!(!plain.is_empty() && !shifted.is_empty());
+        assert_eq!(default, ["N"]);
+        for key in ('a'..='z').chain('0'..='9') {
+            let key = key.to_string();
+            for (shift, reserved) in [(false, &plain), (true, &shifted)] {
+                assert_eq!(
+                    chord_valid(&ShortcutChord {
+                        key: key.clone(),
+                        shift
+                    }),
+                    !reserved.contains(&key),
+                    "{key}/{shift}"
+                );
+            }
+        }
+        assert!(!plain.iter().any(|key| key == "n"));
+        // The default chord is the unshifted table key: a Help binding on it
+        // overlaps, while the same key with Shift does not.
+        let key = default[0].to_lowercase();
+        assert!(!valid(&BTreeMap::from([(
+            ShortcutAction::Help,
+            binding(&key, false)
+        )])));
+        assert!(valid(&BTreeMap::from([(
+            ShortcutAction::Help,
+            binding(&key, true)
+        )])));
+        assert_eq!(
+            contract_cells(contract, "Native New Window accelerator")[2],
+            "none"
+        );
+        assert_eq!(NEW_WINDOW_MENU_ACCELERATOR, None);
     }
     #[test]
     fn defaults_restart_and_stale_revision_preserve_original_map() {
@@ -441,7 +608,7 @@ mod tests {
     }
     #[test]
     fn reserved_chords_and_overlapping_actions_are_rejected() {
-        for key in ["b", "k", "n", "w", "1", "9", "c", "Escape", "é"] {
+        for key in ["b", "k", "w", "1", "9", "c", "Escape", "é"] {
             assert!(!valid(&BTreeMap::from([(
                 ShortcutAction::Help,
                 binding(key, false)
@@ -458,6 +625,10 @@ mod tests {
             (ShortcutAction::NewSession, binding("j", true))
         ])));
         assert!(!valid(&BTreeMap::from([(
+            ShortcutAction::Help,
+            binding("n", false)
+        )])));
+        assert!(valid(&BTreeMap::from([(
             ShortcutAction::Help,
             binding("n", true)
         )])));
