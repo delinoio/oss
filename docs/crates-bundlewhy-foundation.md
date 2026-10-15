@@ -199,12 +199,12 @@ Queue bound. A dense graph can give one chain as many extensions as it has edges
 
 Cancellation. Deriving chains is analysis work, so Ctrl+C or `CancelRun` must stop it. The shared cancellation signal is polled at fixed points and a set signal ends the work at the next one; the partial result is discarded with the rest of the cancelled analysis and is never saved.
 
-| Work                                                          | Polled                                               | Signal set                                                                |
-| ------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------- |
-| Each Rspack module detector (side effects, concatenation, multiple chunks) | Before each module                    | The detector returns; the later detectors stop at their first module      |
-| Traversal for one diagnostic                                  | Before each chain is taken from the queue            | The traversal stops without extending another chain                       |
-| Work between two polls                                        | Not polled                                           | At most one chain extension (bounded by the queue bound and the 24 edge depth), one module's dependency paths, or the one-time edge index build |
-| Signal never set                                              | Polled at the same points                            | No effect on the result                                                   |
+| Work                                                                       | Polled                                    | Signal set                                                                                                                                      |
+| -------------------------------------------------------------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Each Rspack module detector (side effects, concatenation, multiple chunks) | Before each module                        | The detector returns; the later detectors stop at their first module                                                                            |
+| Traversal for one diagnostic                                               | Before each chain is taken from the queue | The traversal stops without extending another chain                                                                                             |
+| Work between two polls                                                     | Not polled                                | At most one chain extension (bounded by the queue bound and the 24 edge depth), one module's dependency paths, or the one-time edge index build |
+| Signal never set                                                           | Polled at the same points                 | No effect on the result                                                                                                                         |
 
 `truncation` records the first limit reached; `NONE` means nothing was cut. A chain ends `ROOT` when no edge consumes its first export and no dropped edge could have (see the chain end table), `INCOMPLETE` when no usable edge consumes its first export but a dropped edge could have, `CYCLE` when the next edge would revisit an export already in the chain (the closing edge is included as the first edge, and a self-referencing edge ends the chain once), and `TRUNCATED` at a limit. A chain whose root is reached does not prove that no other consumer exists.
 
@@ -265,9 +265,9 @@ Project configuration, plugins and adapters execute with the user's permissions;
 
 `tracing` writes human-readable, ANSI-colored stderr logs by default (`--no-color` or `NO_COLOR` disables color, `--verbose` adds debug detail). The loopback listener logs accept failures with the bound address and error, then waits 250 ms before retrying; a later successful accept resumes normal connection handling. Each run writes `bundlewhy.log` JSON lines with timestamp, run ID, stage, duration, engine versions and error codes. Logs never include source content, environment variable values, credentials or access tokens. A bundler module identifier can carry inline loader options or resource queries, so logs never name a module by its raw identifier:
 
-| Module in a log line                                                     | Logged as                                                      |
-| ------------------------------------------------------------------------ | -------------------------------------------------------------- |
-| Collected module with a resource path                                    | Its display path (project-relative or dependency display path) |
+| Module in a log line                                                      | Logged as                                                               |
+| ------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Collected module with a resource path                                     | Its display path (project-relative or dependency display path)          |
 | Collected module without a resource path, or module that is not collected | `module-` plus the first 16 hex digits of the SHA-256 of its identifier |
 
 ## Build and Test

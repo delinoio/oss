@@ -751,7 +751,12 @@ test("decodeExportUsageEdges keeps a graph at the edge limit and ignores repeats
     tuple(index),
   );
   // Repeats of stored edges and dropped edges add no distinct edge.
-  const raw = [...distinct, tuple(0), tuple(1), [999, null, 2, null, "x", null]];
+  const raw = [
+    ...distinct,
+    tuple(0),
+    tuple(1),
+    [999, null, 2, null, "x", null],
+  ];
   const result = decodeExportUsageEdges(
     raw,
     decodeIdentifiers,
