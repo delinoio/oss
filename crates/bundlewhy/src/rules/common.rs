@@ -2295,7 +2295,11 @@ y=/process.env.F/.test(z),process.env.G"#;
                 .map(EnvGuard::evidence)
         };
         let chain = Some(EnvGuard::OptionalChain.evidence());
-        assert!(chain.unwrap().contains("short-circuits"));
+        assert!(
+            EnvGuard::OptionalChain
+                .evidence()
+                .contains("short-circuits")
+        );
         for code in [
             "process.env.FLAG?.trim();",
             "process.env.FLAG?.[key()];",
