@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -415,9 +416,27 @@ func (s *Store) Replay(ctx context.Context, id domain.ID, operation string, inpu
 // Request IDs are globally unique within the data scope and bound to the exact
 // canonical command. A failed transaction does not reserve its request identity.
 func (s *Store) Mutate(ctx context.Context, id domain.ID, operation string, input any, apply func(*Tx) (any, error)) (Result, error) {
+	return s.MutateCompatible(ctx, id, operation, input, nil, apply)
+}
+
+// MutateCompatible behaves like Mutate and additionally replays a receipt whose
+// saved digest equals the digest of any earlier identity in predecessors. A
+// predecessor is the canonical identity an older server computed for the same
+// command after ignoring additive fields it did not understand. Matching one
+// returns the saved result without applying the command again; a different
+// digest still conflicts. New receipts always use the current identity.
+func (s *Store) MutateCompatible(ctx context.Context, id domain.ID, operation string, input any, predecessors []any, apply func(*Tx) (any, error)) (Result, error) {
 	digest, err := mutationDigest(id, operation, input)
 	if err != nil {
 		return Result{}, err
+	}
+	accepted := []string{digest}
+	for _, predecessor := range predecessors {
+		legacy, err := mutationDigest(id, operation, predecessor)
+		if err != nil {
+			return Result{}, err
+		}
+		accepted = append(accepted, legacy)
 	}
 	s.gate.RLock()
 	defer s.gate.RUnlock()
@@ -444,7 +463,7 @@ func (s *Store) Mutate(ctx context.Context, id domain.ID, operation string, inpu
 	var saved []byte
 	err = tx.QueryRowContext(ctx, "SELECT digest,result FROM receipts WHERE id=?", id).Scan(&savedHash, &saved)
 	if err == nil {
-		if digest != savedHash {
+		if !slices.Contains(accepted, savedHash) {
 			return Result{}, domain.Fail(domain.Conflict, "The request ID was already used for different input.", "Retry the original command unchanged or use a new request ID.")
 		}
 		if string(saved) == quarantinedReceipt {

@@ -137,3 +137,38 @@ func TestSubagentPublicationWithoutDisplayNamesKeepsHistoricalProjection(t *test
 		t.Fatal("historical nameless record gained a display name")
 	}
 }
+
+// A receipt written by a server that predates display names carries only the
+// historical identity. After an upgrade, the exact replay of that publication
+// with its names attached must still be acknowledged without a second apply,
+// while a receipt written with names keeps binding the exact names.
+func TestSubagentDisplayNameReplayAcceptsReceiptFromPreNameServer(t *testing.T) {
+	f := newPublicationFixture(t)
+	f.registerGrant(t)
+	f.publish(t, f.event(domain.ExecutionThreadBound, 1))
+	f.publish(t, f.event(domain.ExecutionInputAccepted, 2))
+	child := codexChild(string(f.thread), "spawn-one")
+	e := f.event(domain.ExecutionSubagentObserved, 3)
+	e.Subagents = []domain.SubagentObservation{child}
+	legacy := f.publish(t, e)
+
+	named := withNames(f.requestEvent(t, e), &pb.ExecutionChildDisplayName{ChildId: string(child.ID), Name: "Atlas"})
+	named.Mutation = legacy.Mutation
+	response, err := f.call(named)
+	if err != nil || !response.Msg.Replayed {
+		t.Fatal("named replay of a pre-name receipt was not acknowledged", err)
+	}
+	if row := f.children(t)[string(child.ID)]; row == nil || row.DisplayName != "" {
+		t.Fatal("replay applied display metadata a second time")
+	}
+
+	// A different event under the same request ID still conflicts.
+	other := f.event(domain.ExecutionSubagentObserved, 3)
+	child.SourceID = "other-source"
+	other.Subagents = []domain.SubagentObservation{child}
+	changed := withNames(f.requestEvent(t, other), &pb.ExecutionChildDisplayName{ChildId: string(child.ID), Name: "Atlas"})
+	changed.Mutation = legacy.Mutation
+	if _, err := f.call(changed); connect.CodeOf(err) != connect.CodeAborted {
+		t.Fatal("a different event reused the pre-name receipt", err)
+	}
+}

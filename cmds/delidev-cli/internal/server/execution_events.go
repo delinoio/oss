@@ -18,6 +18,16 @@ type executionEventReceipt struct {
 	Sequence uint64 `json:"sequence"`
 }
 
+// executionPublishIdentity is the canonical receipt identity of one execution
+// publication. Exact display metadata is part of it; publications without
+// names keep their historical identity bytes (omitempty).
+type executionPublishIdentity struct {
+	Job, Machine, Instance, Device domain.ID
+	Revision                       uint64
+	Event                          domain.ExecutionEvent
+	ChildNames                     []domain.SubagentDisplayName `json:"ChildNames,omitempty"`
+}
+
 func executionEventConflict() *domain.Error {
 	return domain.Fail(domain.Conflict, "The execution event does not follow retained native ownership.", "Reconcile the original event sequence, input and native identities without replaying input.")
 }
@@ -47,15 +57,18 @@ func (s *Service) PublishExecution(ctx context.Context, req *connect.Request[pb.
 		return nil, rpc.Error(err, correlation)
 	}
 	actor, _ := domain.PrincipalFrom(ctx)
-	identity := struct {
-		Job, Machine, Instance, Device domain.ID
-		Revision                       uint64
-		Event                          domain.ExecutionEvent
-		// Exact display metadata is part of receipt identity. Publications
-		// without names keep their historical identity bytes (omitempty).
-		ChildNames []domain.SubagentDisplayName `json:"ChildNames,omitempty"`
-	}{domain.ID(meta.Id), domain.ID(req.Msg.MachineId), domain.ID(req.Msg.InstanceId), actor.DeviceID, meta.ExpectedRevision, event, event.ChildNames}
-	result, err := s.Store.Mutate(ctx, domain.ID(meta.RequestId), "execution.publish", identity, func(tx *store.Tx) (any, error) {
+	identity := executionPublishIdentity{domain.ID(meta.Id), domain.ID(req.Msg.MachineId), domain.ID(req.Msg.InstanceId), actor.DeviceID, meta.ExpectedRevision, event, event.ChildNames}
+	// A server that predates display names ignored the unknown field and saved
+	// a receipt over the historical identity alone. An exact replay of that
+	// publication after an upgrade must still be acknowledged, so the identity
+	// without names is accepted as a predecessor of the named identity.
+	var predecessors []any
+	if len(event.ChildNames) != 0 {
+		legacy := identity
+		legacy.ChildNames = nil
+		predecessors = append(predecessors, legacy)
+	}
+	result, err := s.Store.MutateCompatible(ctx, domain.ID(meta.RequestId), "execution.publish", identity, predecessors, func(tx *store.Tx) (any, error) {
 		if err := currentInstance(tx, identity.Machine, identity.Instance); err != nil {
 			return nil, err
 		}
