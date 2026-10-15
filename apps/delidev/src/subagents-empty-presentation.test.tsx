@@ -39,6 +39,7 @@ function harness(capabilities = [SystemCapability.SUBAGENT_OBSERVATION_V1]) {
   const state = {
     hold: false,
     next: { resources: [], nextPageToken: "" } as Reply,
+    byToken: {} as Record<string, Reply>,
     held: [] as Held[],
     reads: [] as { sessionId: string; token: string }[],
   };
@@ -57,7 +58,7 @@ function harness(capabilities = [SystemCapability.SUBAGENT_OBSERVATION_V1]) {
             nextPageToken: reply.nextPageToken ?? "",
           };
         };
-        if (!state.hold) return answer(state.next);
+        if (!state.hold) return answer(state.byToken[token] ?? state.next);
         return new Promise((resolve, reject) => {
           state.held.push({
             sessionId,
@@ -282,5 +283,29 @@ test("resets presentation when the session owner changes and ignores a stale old
   expect(t.hidden()).toBe(false);
   await act(async () => t.state.held.splice(0).forEach((h) => h.settle({})));
   await settled(t.hidden);
+  t.client.clear();
+});
+
+test("keeps Subagents visible after a continuation chain ends in an empty terminal page", async () => {
+  const t = setup(newRequestId());
+  // The first accepted page is empty but carries a continuation token.
+  t.state.next = { nextPageToken: "second" };
+  t.state.byToken.second = {};
+  render(t.view("1"));
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Load more Subagents" }),
+  );
+  // The Additional read completes with no rows and no further token, so the
+  // chain holds two pages and zero rows but is not a single-page snapshot.
+  await waitFor(() =>
+    expect(t.state.reads.map((read) => read.token)).toContain("second"),
+  );
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("button", { name: "Load more Subagents" }),
+    ).toBeNull(),
+  );
+  expect(t.hidden()).toBe(false);
+  expect(t.published.includes(true)).toBe(false);
   t.client.clear();
 });

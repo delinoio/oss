@@ -495,14 +495,17 @@ export function Subagents({
   // healthy background Refresh over that snapshot keeps it hidden, so every
   // session revision does not flash the section. Initial, Reload, Retry and
   // Additional reads, any error, the failed-read latch (`unrecovered`, which
-  // outlives `error` while Retry/Reload is pending) and a continuation token
-  // never count as confirmed empty.
+  // outlives `error` while Retry/Reload is pending), a continuation token and a
+  // multi-page chain (an empty terminal page reached through Additional leaves
+  // no token or rows but is not a single-page snapshot) never count as
+  // confirmed empty.
   const confirmedEmpty =
     supported &&
     query.loaded &&
     !query.error &&
     !query.unrecovered &&
     !query.nextPageToken &&
+    query.pages.length === 1 &&
     query.rows.length === 0 &&
     (!query.loading || query.loading === ReadStage.Refresh);
   useEffect(() => {
