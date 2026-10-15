@@ -313,6 +313,18 @@ type Id = usize;
 /// cannot (a literal, an identifier, `void x`, `new X()` and so on).
 type Expr = Option<Id>;
 
+/// A selector still to be applied to a value, and the selectors after it.
+#[derive(Clone, Copy, Debug)]
+struct Pending<'a> {
+    selector: Selector<'a>,
+    /// Index of the next pending selector.
+    rest: Option<usize>,
+}
+
+/// Expressions whose reads are still to be collected, each with the index of
+/// its first pending selector.
+type Work = Vec<(Expr, Option<usize>)>;
+
 /// How a member access picks its property.
 #[derive(Clone, Copy, Debug)]
 enum Selector<'a> {
@@ -375,6 +387,9 @@ enum Node<'a> {
     Call { callee: Id, element: Option<usize> },
     /// A synchronous function whose result can carry reads.
     Function { returns: Vec<Id> },
+    /// `new function () { ... }`: an object returned by the inline function
+    /// replaces the new instance; any other returned value is ignored.
+    Construct { callee: Id },
     /// An array literal.
     Array { elements: Vec<Element> },
     /// An object literal.
@@ -1441,10 +1456,7 @@ impl<'a> Parser<'a> {
                 self.parse_class_rest();
                 (None, false)
             }
-            "new" => {
-                self.parse_new();
-                (None, false)
-            }
+            "new" => (self.parse_new(), false),
             "async" => self.parse_async(),
             text if NON_OPERAND_WORDS.contains(&text) => (None, false),
             _ => {
@@ -1486,28 +1498,32 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// `new Callee(arguments)`: the value is an object, never a read.
-    fn parse_new(&mut self) {
+    /// `new Callee(arguments)`: the value is an object, never a read itself.
+    /// An inline function constructor keeps the object it returns.
+    fn parse_new(&mut self) -> Expr {
         if self.chain >= MAX_CHAIN {
-            self.skip_nested();
-            return;
+            return self.skip_nested();
         }
         self.chain += 1;
         self.bump();
+        let mut constructed = None;
         if self.eat_punct(".") {
             // `new.target`
             self.bump();
         } else {
-            if self.is_word("new") {
+            let mut callee = if self.is_word("new") {
                 self.parse_new();
+                None
             } else {
-                self.parse_primary();
-            }
+                self.parse_primary().0
+            };
             loop {
                 if self.eat_punct(".") {
                     self.bump();
+                    callee = None;
                 } else if self.is_punct("[") {
                     self.parse_index();
+                    callee = None;
                 } else {
                     break;
                 }
@@ -1515,8 +1531,14 @@ impl<'a> Parser<'a> {
             if self.is_punct("(") {
                 self.parse_call_arguments();
             }
+            if let Some(callee) = callee
+                && matches!(self.nodes[callee], Node::Function { .. })
+            {
+                constructed = self.push(Node::Construct { callee });
+            }
         }
         self.chain -= 1;
+        constructed
     }
 
     fn parse_array(&mut self) -> Expr {
@@ -1649,9 +1671,11 @@ impl<'a> Parser<'a> {
         let mut done = vec![false; self.nodes.len()];
         let sites = std::mem::take(&mut self.sites);
         let mut reads = Vec::new();
+        let mut paths = Vec::new();
         for (guard, root) in sites {
             reads.clear();
-            self.value_reads(root, &mut done, &mut reads);
+            paths.clear();
+            self.value_reads(root, &mut done, &mut paths, &mut reads);
             for &read in &reads {
                 if guards[read].is_none() {
                     guards[read] = Some(guard);
@@ -1661,83 +1685,120 @@ impl<'a> Parser<'a> {
         guards
     }
 
-    /// Collect the reads that may determine the value of `root`. A node is
-    /// expanded once: its value set never changes, and an earlier site already
-    /// gave its reads a guard.
-    fn value_reads(&self, root: Id, done: &mut [bool], out: &mut Vec<usize>) {
-        let mut work: Vec<Expr> = vec![Some(root)];
-        while let Some(expr) = work.pop() {
+    /// Collect the reads that may determine the value of `root`.
+    ///
+    /// A work item is an expression and the selectors still to be applied to
+    /// its value (innermost first, as a chain through `paths`). A member
+    /// access adds its selector to the item of its object; a call, a
+    /// conditional and a constructor pass the chain on to the values they
+    /// produce; an array or object literal consumes the next selector. Any
+    /// other node ends the chain: its whole value counts. A node without a
+    /// pending selector is expanded once, because its value set never changes
+    /// and an earlier site already gave its reads a guard.
+    fn value_reads(
+        &self,
+        root: Id,
+        done: &mut [bool],
+        paths: &mut Vec<Pending<'a>>,
+        out: &mut Vec<usize>,
+    ) {
+        let mut work: Work = vec![(Some(root), None)];
+        while let Some((expr, path)) = work.pop() {
             let Some(id) = expr else {
                 continue;
             };
-            if std::mem::replace(&mut done[id], true) {
+            if path.is_none() && std::mem::replace(&mut done[id], true) {
                 continue;
             }
-            match &self.nodes[id] {
-                Node::Read(read) => out.push(*read),
-                Node::Derived(operand) => work.push(Some(*operand)),
-                Node::TypeOf(_)
-                | Node::Function { .. }
-                | Node::Array { .. }
-                | Node::Object { .. } => {}
-                Node::Either(left, right) | Node::Conditional(left, right) => {
-                    work.push(*left);
-                    work.push(*right);
+            match (&self.nodes[id], path) {
+                (Node::Member { object, selector }, _) => {
+                    if let Selector::Computed(key) = selector {
+                        work.push((*key, None));
+                    }
+                    paths.push(Pending {
+                        selector: *selector,
+                        rest: path,
+                    });
+                    work.push((*object, Some(paths.len() - 1)));
                 }
-                Node::Equality(left, right) => {
-                    work.push(*left);
-                    work.push(*right);
-                    // `typeof x === "undefined"` tests x.
-                    for operand in [left, right].into_iter().flatten() {
-                        if let Node::TypeOf(inner) = &self.nodes[*operand] {
-                            work.push(Some(*inner));
+                (Node::Call { callee, element }, _) => {
+                    self.call_value(*callee, *element, path, &mut work);
+                }
+                (Node::Conditional(left, right), Some(_)) => {
+                    work.push((*left, path));
+                    work.push((*right, path));
+                }
+                (Node::Array { elements }, Some(next)) => {
+                    let Pending { selector, rest } = paths[next];
+                    if let Selector::Literal {
+                        index: Some(index), ..
+                    } = selector
+                    {
+                        array_element(elements, index, rest, &mut work);
+                    }
+                }
+                (Node::Object { properties }, Some(next)) => {
+                    let Pending { selector, rest } = paths[next];
+                    if let Some(key) = selector.static_key() {
+                        object_property(properties, key, rest, &mut work);
+                    }
+                }
+                (Node::Construct { callee }, Some(_)) => {
+                    if let Node::Function { returns } = &self.nodes[*callee] {
+                        for &value in returns {
+                            if matches!(self.nodes[value], Node::Array { .. } | Node::Object { .. })
+                            {
+                                work.push((Some(value), path));
+                            }
                         }
                     }
                 }
-                Node::Member { object, selector } => {
-                    self.member_value(*object, *selector, &mut work);
+                // Not a container to select from: the whole value counts.
+                (_, Some(_)) => work.push((expr, None)),
+                (Node::Read(read), None) => out.push(*read),
+                (Node::Derived(operand), None) => work.push((Some(*operand), None)),
+                (
+                    Node::TypeOf(_)
+                    | Node::Function { .. }
+                    | Node::Construct { .. }
+                    | Node::Array { .. }
+                    | Node::Object { .. },
+                    None,
+                ) => {}
+                (Node::Either(left, right) | Node::Conditional(left, right), None) => {
+                    work.push((*left, None));
+                    work.push((*right, None));
                 }
-                Node::Call { callee, element } => self.call_value(*callee, *element, &mut work),
+                (Node::Equality(left, right), None) => {
+                    work.push((*left, None));
+                    work.push((*right, None));
+                    // `typeof x === "undefined"` tests x.
+                    for operand in [left, right].into_iter().flatten() {
+                        if let Node::TypeOf(inner) = &self.nodes[*operand] {
+                            work.push((Some(*inner), None));
+                        }
+                    }
+                }
             }
         }
     }
 
-    fn member_value(&self, object: Expr, selector: Selector<'a>, work: &mut Vec<Expr>) {
-        if let Selector::Computed(key) = selector {
-            work.push(key);
-        }
-        let Some(object_id) = object else {
-            return;
-        };
-        match &self.nodes[object_id] {
-            Node::Array { elements } => {
-                if let Selector::Literal {
-                    index: Some(index), ..
-                } = selector
-                {
-                    array_element(elements, index, work);
-                }
-            }
-            Node::Object { properties } => {
-                if let Some(key) = selector.static_key() {
-                    object_property(properties, key, work);
-                }
-            }
-            _ => work.push(object),
-        }
-    }
-
-    fn call_value(&self, callee: Id, element: Option<usize>, work: &mut Vec<Expr>) {
+    /// The values a call can produce, each with the selectors still pending.
+    fn call_value(&self, callee: Id, element: Option<usize>, path: Option<usize>, work: &mut Work) {
         match &self.nodes[callee] {
-            Node::Function { returns } => work.extend(returns.iter().map(|id| Some(*id))),
+            Node::Function { returns } => {
+                work.extend(returns.iter().map(|id| (Some(*id), path)));
+            }
             Node::Member {
                 object: Some(object),
                 selector: Selector::Name("at"),
             } if element.is_some() => match (&self.nodes[*object], element) {
-                (Node::Array { elements }, Some(index)) => array_element(elements, index, work),
-                _ => work.push(Some(callee)),
+                (Node::Array { elements }, Some(index)) => {
+                    array_element(elements, index, path, work);
+                }
+                _ => work.push((Some(callee), None)),
             },
-            _ => work.push(Some(callee)),
+            _ => work.push((Some(callee), None)),
         }
     }
 }
@@ -1773,21 +1834,21 @@ fn string_content(text: &str) -> Option<&str> {
 
 /// The element of an array literal at `index`, unless a spread at or before it
 /// makes the position unknown.
-fn array_element(elements: &[Element], index: usize, work: &mut Vec<Expr>) {
+fn array_element(elements: &[Element], index: usize, path: Option<usize>, work: &mut Work) {
     if index < elements.len() && !elements[..=index].iter().any(|element| element.spread) {
-        work.push(elements[index].value);
+        work.push((elements[index].value, path));
     }
 }
 
 /// The value of the last property that defines `key`, unless a later spread or
 /// computed key may have replaced it.
-fn object_property(properties: &[Property<'_>], key: &str, work: &mut Vec<Expr>) {
+fn object_property(properties: &[Property<'_>], key: &str, path: Option<usize>, work: &mut Work) {
     for property in properties.iter().rev() {
         if property.wildcard {
             return;
         }
         if property.key == Some(key) {
-            work.push(property.value);
+            work.push((property.value, path));
             return;
         }
     }
@@ -2145,6 +2206,164 @@ mod tests {
             "[process.env.FLAG,1][1]&&run()",
         ] {
             assert_eq!(guard(code), None, "{code}");
+        }
+    }
+
+    /// A selector applied to a call, a conditional or a constructor is carried
+    /// to the values they produce. Each row is a cell of the Member, Call and
+    /// New rows of the node-kind table in
+    /// `docs/crates-bundlewhy-foundation.md`.
+    #[test]
+    fn selectors_are_carried_into_produced_values() {
+        let rows: &[(&str, &str, Option<&str>)] = &[
+            (
+                "invoked function returning an object",
+                "(function(){return {a:process.env.FLAG}})().a&&run()",
+                Some("and"),
+            ),
+            (
+                "invoked function returning an array",
+                "(function(){return [process.env.FLAG]})()[0]&&run()",
+                Some("and"),
+            ),
+            (
+                "invoked arrow returning an object",
+                "(()=>({a:process.env.FLAG}))().a&&run()",
+                Some("and"),
+            ),
+            (
+                "invoked arrow with a block body",
+                "(()=>{return [process.env.FLAG]})()[0]||run()",
+                Some("or"),
+            ),
+            (
+                "string key on an invoked function result",
+                "(function(){return {a:process.env.FLAG}})()[\"a\"]&&run()",
+                Some("and"),
+            ),
+            (
+                "optional member on an invoked function result",
+                "(function(){return {a:process.env.FLAG}})()?.a&&run()",
+                Some("and"),
+            ),
+            (
+                "one of several returns",
+                "(function(){if(x)return {a:1};return {a:process.env.FLAG}})().a&&run()",
+                Some("and"),
+            ),
+            (
+                "nested containers in a returned value",
+                "(function(){return {a:{b:process.env.FLAG}}})().a.b&&run()",
+                Some("and"),
+            ),
+            (
+                "nested containers in a literal",
+                "[[process.env.FLAG]][0][0]&&run()",
+                Some("and"),
+            ),
+            (
+                "object inside an array",
+                "[{a:process.env.FLAG}][0].a&&run()",
+                Some("and"),
+            ),
+            (
+                "element of an array selected by at",
+                "[{a:process.env.FLAG}].at(0).a&&run()",
+                Some("and"),
+            ),
+            (
+                "either branch of a conditional",
+                "(c?{a:process.env.FLAG}:{a:1}).a&&run()",
+                Some("and"),
+            ),
+            (
+                "invoked function inside a conditional",
+                "(c?1:(function(){return [process.env.FLAG]})())[0]&&run()",
+                Some("and"),
+            ),
+            (
+                "computed key read through a call result",
+                "(function(){return {a:1}})()[process.env.FLAG]&&run()",
+                Some("and"),
+            ),
+            (
+                "other property of an invoked function result",
+                "(function(){return {a:process.env.FLAG}})().b&&run()",
+                None,
+            ),
+            (
+                "invoked function result without a selector",
+                "(function(){return {a:process.env.FLAG}})()&&run()",
+                None,
+            ),
+            (
+                "other element of an invoked function result",
+                "(function(){return [process.env.FLAG]})()[1]&&run()",
+                None,
+            ),
+            (
+                "sibling property of the read",
+                "(function(){return {a:process.env.FLAG,b:1}})().b&&run()",
+                None,
+            ),
+            (
+                "async function result",
+                "(async function(){return {a:process.env.FLAG}})().a&&run()",
+                None,
+            ),
+            (
+                "constructor with an object return",
+                "new function(){return {a:process.env.FLAG}}().a&&run()",
+                Some("and"),
+            ),
+            (
+                "constructor with an array return",
+                "new function(){return [process.env.FLAG]}()[0]&&run()",
+                Some("and"),
+            ),
+            (
+                "constructor without arguments",
+                "new function(){return {a:process.env.FLAG}}.a&&run()",
+                None,
+            ),
+            (
+                "grouped constructor function",
+                "new (function(){return {a:process.env.FLAG}})().a&&run()",
+                Some("and"),
+            ),
+            (
+                "grouped constructor call",
+                "(new function(){return {a:process.env.FLAG}}).a&&run()",
+                Some("and"),
+            ),
+            (
+                "constructor with a nested object return",
+                "new function(){return {a:{b:process.env.FLAG}}}().a.b&&run()",
+                Some("and"),
+            ),
+            (
+                "constructor with one object return among several",
+                "new function(){if(x)return 1;return {a:process.env.FLAG}}().a&&run()",
+                Some("and"),
+            ),
+            (
+                "constructor result tested without a selector",
+                "new function(){return {a:process.env.FLAG}}()&&run()",
+                None,
+            ),
+            (
+                "constructor with another property",
+                "new function(){return {a:process.env.FLAG}}().b&&run()",
+                None,
+            ),
+            (
+                "constructor with a primitive return",
+                "new function(){return process.env.FLAG}()&&run()",
+                None,
+            ),
+        ];
+        for &(kind, code, expected) in rows {
+            assert_eq!(flag_guard(code), expected, "{kind}: {code}");
         }
     }
 
@@ -2933,10 +3152,6 @@ mod tests {
                 "[process.env.FLAG][index]&&run()",
             ),
             (
-                "array element selected through a nested literal",
-                "[[process.env.FLAG]][0][0]&&run()",
-            ),
-            (
                 "array element selected through a method",
                 "[process.env.FLAG].find(Boolean)&&run()",
             ),
@@ -2959,6 +3174,31 @@ mod tests {
             (
                 "function value called through a variable",
                 "var f=function(){return process.env.FLAG};f()&&run()",
+            ),
+            (
+                "selector applied to a logical operand",
+                "(a||{x:process.env.FLAG}).x&&run()",
+            ),
+            (
+                "selector applied to an arithmetic operand",
+                "(a+[process.env.FLAG])[0]&&run()",
+            ),
+            (
+                "constructor returning a call result",
+                "new function(){return f({a:process.env.FLAG})}().a&&run()",
+            ),
+            (
+                "constructor returning a primitive",
+                "new function(){return process.env.FLAG}().a&&run()",
+            ),
+            ("template tested directly", "`${process.env.FLAG}`&&run()"),
+            (
+                "template as a unary operand",
+                "!`${process.env.FLAG}`&&run()",
+            ),
+            (
+                "template as an arithmetic operand",
+                "(+`${process.env.FLAG}`)&&run()",
             ),
             (
                 "function returned by an immediately invoked function",
