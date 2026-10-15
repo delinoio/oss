@@ -217,6 +217,12 @@ Confirmed deletion, tombstone/browser obligations, the existing configuration re
 
 ## Native Claude subscriptions
 
+Live native `rate_limit_event` notifications are bounded, identity-checked
+private observations. The Worker consumes them without publishing account quota,
+changing account readiness, granting paid-credit or fallback authority, accepting
+input or completing a turn. Original native result and cleanup proofs remain
+required. This does not activate Claude quota or reset-credit support.
+
 The originating change established System `CLAUDE_SUBSCRIPTIONS_V1 = 38`, Worker
 `NATIVE_CLAUDE_SUBSCRIPTIONS_V1 = 20` and the complete protocol allocation
 closure on main at `8a698d04d51f9db3a041b909edf85a7811f09ff3` before feature

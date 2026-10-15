@@ -31,6 +31,7 @@ const (
 	ContinuationInitialized         LifecycleKind = "continuation-initialized"
 	ContinuationFinished            LifecycleKind = "continuation-finished"
 	PrivateObservation              LifecycleKind = "private-observation"
+	NativeRateLimitObserved         LifecycleKind = "native-rate-limit-observed"
 	CompactionCommandObserved       LifecycleKind = "compaction-command-observed"
 	CompactionResultObserved        LifecycleKind = "compaction-result-observed"
 )
@@ -250,6 +251,11 @@ func (b *ExecutionBinding) Observe(event StreamEvent) (observation LifecycleObse
 		return LifecycleObservation{}, lifecycleUncertain()
 	}
 	switch event.Type {
+	case "rate_limit_event":
+		if !b.initialized || !validNativeRateLimitEvent(event.Body) {
+			return LifecycleObservation{}, lifecycleUncertain()
+		}
+		observation.Kind, observation.InputID, observation.Accepted = NativeRateLimitObserved, "", false
 	case "command_lifecycle":
 		phase = commandValidation
 		var command struct {
