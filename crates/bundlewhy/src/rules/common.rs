@@ -345,11 +345,37 @@ struct ScanScope {
     pending_reads: Vec<usize>,
     conditional_pending: Vec<usize>,
     arrow_expression: bool,
-    /// True when this scope is itself a value container (array literal,
-    /// object literal, function body or call argument list). Scopes that only
-    /// inherit an invalid context, such as a parenthesized sub-expression
-    /// inside an array, are not containers.
-    value_container: bool,
+    /// How the opener of this scope was classified. See `ContainerKind`.
+    kind: ContainerKind,
+}
+
+/// Classification of a `(`, `[` or `{` opener, decided by `preceding_token`
+/// and documented as one table in `docs/crates-bundlewhy-foundation.md`.
+/// Call arguments, array and object literals and blocks are value containers:
+/// a closed value container evaluates to a value, so reads that were only
+/// values inside it do not inherit an operator that follows it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ContainerKind {
+    /// Parenthesized sub-expression; inherits the surrounding context.
+    Grouping,
+    /// Parentheses of an `if`, `while`, `for` or `switch` head.
+    StatementHead,
+    /// Computed member access; inherits the surrounding context.
+    ComputedMember,
+    CallArguments,
+    ArrayLiteral,
+    ObjectLiteral,
+    /// Function, class or statement block.
+    Block,
+}
+
+impl ContainerKind {
+    fn is_value_container(self) -> bool {
+        matches!(
+            self,
+            Self::CallArguments | Self::ArrayLiteral | Self::ObjectLiteral | Self::Block
+        )
+    }
 }
 
 fn env_guards(
@@ -371,12 +397,14 @@ fn env_guards(
         pending_reads: Vec::new(),
         conditional_pending: Vec::new(),
         arrow_expression: false,
-        value_container: false,
+        kind: ContainerKind::Grouping,
     }];
     let mut current_scope = 0;
     let mut next_start = 0;
     let mut next_end = 0;
     let mut ignored_index = 0;
+    // Closing bracket most recently seen and how its scope was classified.
+    let mut last_close: Option<(usize, ContainerKind)> = None;
 
     for index in 0..bytes.len() {
         while next_start < reads.len() && reads[next_start].0 == index {
@@ -428,11 +456,12 @@ fn env_guards(
 
         match bytes[index] {
             b'(' | b'[' | b'{' => {
-                let (context, value_container) = scope_context(
+                let (context, kind) = scope_context(
                     code,
                     index,
                     bytes[index],
                     scopes[current_scope].context,
+                    last_close,
                     ignored,
                 );
                 scopes.push(ScanScope {
@@ -442,7 +471,7 @@ fn env_guards(
                     pending_reads: Vec::new(),
                     conditional_pending: Vec::new(),
                     arrow_expression: false,
-                    value_container,
+                    kind,
                 });
                 current_scope = scopes.len() - 1;
             }
@@ -456,7 +485,9 @@ fn env_guards(
                 // only values inside it must not inherit an operator that
                 // follows the container. Guards found inside the container
                 // remain recorded on their own reads.
-                if !scopes[current_scope].value_container {
+                let kind = scopes[current_scope].kind;
+                last_close = Some((index, kind));
+                if !kind.is_value_container() {
                     scopes[parent].pending_reads.extend(pending_reads);
                     scopes[parent].pending_reads.extend(conditional_pending);
                     scopes[parent].pending_reads.sort_unstable();
@@ -538,7 +569,7 @@ fn env_guards(
                         pending_reads: Vec::new(),
                         conditional_pending: Vec::new(),
                         arrow_expression: true,
-                        value_container: false,
+                        kind: ContainerKind::Grouping,
                     });
                     current_scope = scopes.len() - 1;
                 }
@@ -618,20 +649,143 @@ fn env_guards(
 }
 
 fn scope_prefix<'a>(code: &'a str, index: usize, ignored: &[(usize, usize)]) -> &'a str {
+    let bytes = code.as_bytes();
     let mut end = code[..index].trim_end().len();
     loop {
-        let Some(comment_index) = ignored
-            .partition_point(|(_, stop)| *stop <= end)
+        // Last ignored range that starts before `end`.
+        let Some(range_index) = ignored
+            .partition_point(|(start, _)| *start < end)
             .checked_sub(1)
         else {
             return &code[..end];
         };
-        let (start, stop) = ignored[comment_index];
-        if stop != end || !code[start..stop].starts_with("/*") {
+        let (start, stop) = ignored[range_index];
+        let is_comment = bytes[start] == b'/' && matches!(bytes.get(start + 1), Some(b'/' | b'*'));
+        if stop < end || !is_comment {
             return &code[..end];
         }
         end = code[..start].trim_end().len();
     }
+}
+
+/// The token before an opener, reduced to what decides how the opener parses.
+#[derive(Clone, Copy)]
+enum PrecedingToken {
+    /// A new statement starts here (input start, `;`, `{`, `=>`, `else`, `do`,
+    /// a block's `}` or the `)` that closes a statement head).
+    StatementStart,
+    /// An operator, separator or operator keyword; an operand starts here.
+    Operator,
+    /// `if`, `while`, `for` or `switch`, which take a parenthesized head.
+    StatementHead(ScopeContext),
+    /// An operand just ended (identifier, number, `)`, `]`, an object
+    /// literal's `}`, a property name, a string, template or regular
+    /// expression literal).
+    OperandEnd,
+}
+
+const OPERATOR_KEYWORDS: [&str; 14] = [
+    "return",
+    "typeof",
+    "await",
+    "yield",
+    "in",
+    "of",
+    "instanceof",
+    "case",
+    "void",
+    "delete",
+    "throw",
+    "new",
+    "extends",
+    "default",
+];
+
+fn is_identifier_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'$') || byte >= 0x80
+}
+
+/// Classify the token that ends `prefix` (see `ContainerKind` for the table).
+fn preceding_token(
+    code: &str,
+    prefix: &str,
+    last_close: Option<(usize, ContainerKind)>,
+    ignored: &[(usize, usize)],
+) -> PrecedingToken {
+    let bytes = prefix.as_bytes();
+    let Some(&last) = bytes.last() else {
+        return PrecedingToken::StatementStart;
+    };
+    let last_index = bytes.len() - 1;
+    if in_ranges(ignored, last_index) {
+        // Strings, templates and regular expressions end an operand. Template
+        // text that stops at `${` opens a substitution instead. Comments were
+        // removed from the prefix already.
+        return if code.as_bytes()[..=last_index].ends_with(b"${") {
+            PrecedingToken::Operator
+        } else {
+            PrecedingToken::OperandEnd
+        };
+    }
+    let closed = |kind: fn(ContainerKind) -> bool| {
+        last_close.is_some_and(|(index, closed)| index == last_index && kind(closed))
+    };
+    match last {
+        b';' | b'{' => PrecedingToken::StatementStart,
+        b'}' if closed(|kind| kind == ContainerKind::Block) => PrecedingToken::StatementStart,
+        b')' if closed(|kind| kind == ContainerKind::StatementHead) => {
+            PrecedingToken::StatementStart
+        }
+        b')' | b']' | b'}' => PrecedingToken::OperandEnd,
+        b'>' if prefix.ends_with("=>") => PrecedingToken::StatementStart,
+        // Spread is an operator; any other `.` is a member access.
+        b'.' if prefix.ends_with("...") => PrecedingToken::Operator,
+        b'.' => PrecedingToken::OperandEnd,
+        b'*' => {
+            // `function*` is followed by a parameter list.
+            let head = prefix[..last_index].trim_end();
+            if word_before(head).is_some_and(|word| word == "function") {
+                PrecedingToken::OperandEnd
+            } else {
+                PrecedingToken::Operator
+            }
+        }
+        byte if is_identifier_byte(byte) => {
+            let word = word_before(prefix).expect("identifier byte ends a word");
+            let head = prefix[..prefix.len() - word.len()].trim_end();
+            // A property name is never a keyword. A spread `...` is not a
+            // member access.
+            if head.ends_with('.') && !head.ends_with("...") {
+                return PrecedingToken::OperandEnd;
+            }
+            match word {
+                "else" | "do" => PrecedingToken::StatementStart,
+                "if" => PrecedingToken::StatementHead(ScopeContext::Guard(EnvGuard::If)),
+                "while" => PrecedingToken::StatementHead(ScopeContext::Guard(EnvGuard::While)),
+                "switch" => PrecedingToken::StatementHead(ScopeContext::Guard(EnvGuard::Switch)),
+                "for" => PrecedingToken::StatementHead(ScopeContext::For(ForClause::Initializer)),
+                word if OPERATOR_KEYWORDS.contains(&word) => PrecedingToken::Operator,
+                _ => PrecedingToken::OperandEnd,
+            }
+        }
+        // Quotes always end a string or template literal.
+        b'\'' | b'"' | b'`' => PrecedingToken::OperandEnd,
+        // Every other punctuation byte, including postfix `++`/`--` (which
+        // cannot be followed by a call or member access), starts an operand.
+        _ => PrecedingToken::Operator,
+    }
+}
+
+/// The identifier word that ends `text`, if any.
+fn word_before(text: &str) -> Option<&str> {
+    let bytes = text.as_bytes();
+    let mut start = bytes.len();
+    while start > 0 && is_identifier_byte(bytes[start - 1]) {
+        start -= 1;
+    }
+    // Non-ASCII identifier bytes are never split because every byte of a
+    // multi-byte character is >= 0x80.
+    (start < bytes.len()).then(|| &text[start..])
 }
 
 fn scope_context(
@@ -639,61 +793,26 @@ fn scope_context(
     index: usize,
     opener: u8,
     parent: ScopeContext,
+    last_close: Option<(usize, ContainerKind)>,
     ignored: &[(usize, usize)],
-) -> (ScopeContext, bool) {
+) -> (ScopeContext, ContainerKind) {
     let prefix = scope_prefix(code, index, ignored);
-    if opener == b'[' {
-        // A bracket after an expression is a computed member access and keeps
-        // the surrounding condition. A bracket after an operator starts an
-        // array literal, whose contents do not form a guard by themselves.
-        if prefix.as_bytes().last().is_some_and(|byte| {
-            byte.is_ascii_alphanumeric()
-                || matches!(
-                    *byte,
-                    b'_' | b'$' | b']' | b')' | b'}' | b'\'' | b'"' | b'`' | b'.'
-                )
-        }) {
-            return (parent, false);
-        }
-        return (ScopeContext::Invalid, true);
-    }
-    if opener != b'(' {
-        return (ScopeContext::Invalid, true);
-    }
-    if prefix.ends_with("for")
-        && prefix
-            .as_bytes()
-            .get(..prefix.len() - "for".len())
-            .and_then(|prefix| prefix.last())
-            .is_none_or(|byte| {
-                !byte.is_ascii_alphanumeric() && *byte != b'_' && *byte != b'$' && *byte != b'.'
-            })
-    {
-        return (ScopeContext::For(ForClause::Initializer), false);
-    }
-    for (keyword, guard) in [
-        ("if", EnvGuard::If),
-        ("while", EnvGuard::While),
-        ("switch", EnvGuard::Switch),
-    ] {
-        if prefix.ends_with(keyword)
-            && prefix
-                .as_bytes()
-                .get(..prefix.len() - keyword.len())
-                .and_then(|prefix| prefix.last())
-                .is_none_or(|byte| {
-                    !byte.is_ascii_alphanumeric() && *byte != b'_' && *byte != b'$' && *byte != b'.'
-                })
-        {
-            return (ScopeContext::Guard(guard), false);
-        }
-    }
-    if prefix.as_bytes().last().is_some_and(|byte| {
-        byte.is_ascii_alphanumeric() || matches!(*byte, b'_' | b'$' | b']' | b')' | b'.')
-    }) {
-        (ScopeContext::Invalid, true)
-    } else {
-        (parent, false)
+    let preceding = preceding_token(code, prefix, last_close, ignored);
+    match (opener, preceding) {
+        // A statement head owns its parenthesized condition.
+        (b'(', PrecedingToken::StatementHead(context)) => (context, ContainerKind::StatementHead),
+        // Parentheses after an operand are call arguments; elsewhere they
+        // only group and keep the surrounding condition.
+        (b'(', PrecedingToken::OperandEnd) => (ScopeContext::Invalid, ContainerKind::CallArguments),
+        (b'(', _) => (parent, ContainerKind::Grouping),
+        // A bracket after an operand is a computed member access and keeps the
+        // surrounding condition; elsewhere it starts an array literal.
+        (b'[', PrecedingToken::OperandEnd) => (parent, ContainerKind::ComputedMember),
+        (b'[', _) => (ScopeContext::Invalid, ContainerKind::ArrayLiteral),
+        // A brace where an operand starts is an object literal; elsewhere it
+        // is a function, class or statement block.
+        (_, PrecedingToken::Operator) => (ScopeContext::Invalid, ContainerKind::ObjectLiteral),
+        _ => (ScopeContext::Invalid, ContainerKind::Block),
     }
 }
 
@@ -2267,6 +2386,263 @@ y=/process.env.F/.test(z),process.env.G"#;
         ] {
             assert_eq!(guard(code), Some(evidence), "{code}");
         }
+    }
+
+    /// Classify the opener that follows `prefix`. `closed` is the kind of the
+    /// scope whose closing bracket ends `prefix`, when it does.
+    fn opener_kind(prefix: &str, opener: char, closed: Option<ContainerKind>) -> ContainerKind {
+        let code = format!("{prefix}{opener}");
+        let ignored = non_code_ranges(&code);
+        let last_close = closed.map(|kind| (prefix.trim_end().len() - 1, kind));
+        scope_context(
+            &code,
+            prefix.len(),
+            opener as u8,
+            ScopeContext::Neutral,
+            last_close,
+            &ignored,
+        )
+        .1
+    }
+
+    #[test]
+    fn opener_classification_table_covers_every_preceding_token() {
+        use ContainerKind::{
+            ArrayLiteral, Block, CallArguments, ComputedMember, Grouping, ObjectLiteral,
+            StatementHead,
+        };
+        // Each row: preceding code, then the kinds of `(`, `[` and `{`.
+        let rows: &[(&str, ContainerKind, ContainerKind, ContainerKind)] = &[
+            // Start of input and statement boundaries.
+            ("", Grouping, ArrayLiteral, Block),
+            ("a;", Grouping, ArrayLiteral, Block),
+            ("a{", Grouping, ArrayLiteral, Block),
+            ("f=>", Grouping, ArrayLiteral, Block),
+            ("f =>", Grouping, ArrayLiteral, Block),
+            ("else", Grouping, ArrayLiteral, Block),
+            ("else ", Grouping, ArrayLiteral, Block),
+            ("do", Grouping, ArrayLiteral, Block),
+            // Statement heads take a condition list in `(` only.
+            ("if", StatementHead, ArrayLiteral, Block),
+            ("while ", StatementHead, ArrayLiteral, Block),
+            ("for", StatementHead, ArrayLiteral, Block),
+            ("switch", StatementHead, ArrayLiteral, Block),
+            ("a;if", StatementHead, ArrayLiteral, Block),
+            // Operator keywords start an operand.
+            ("return", Grouping, ArrayLiteral, ObjectLiteral),
+            ("return ", Grouping, ArrayLiteral, ObjectLiteral),
+            ("typeof", Grouping, ArrayLiteral, ObjectLiteral),
+            ("await", Grouping, ArrayLiteral, ObjectLiteral),
+            ("yield", Grouping, ArrayLiteral, ObjectLiteral),
+            ("a in", Grouping, ArrayLiteral, ObjectLiteral),
+            ("a of", Grouping, ArrayLiteral, ObjectLiteral),
+            ("a instanceof", Grouping, ArrayLiteral, ObjectLiteral),
+            ("case", Grouping, ArrayLiteral, ObjectLiteral),
+            ("void", Grouping, ArrayLiteral, ObjectLiteral),
+            ("delete", Grouping, ArrayLiteral, ObjectLiteral),
+            ("throw", Grouping, ArrayLiteral, ObjectLiteral),
+            ("new", Grouping, ArrayLiteral, ObjectLiteral),
+            ("class A extends", Grouping, ArrayLiteral, ObjectLiteral),
+            ("export default", Grouping, ArrayLiteral, ObjectLiteral),
+            // Words that merely contain a keyword, and property names, end an
+            // operand.
+            ("returns", CallArguments, ComputedMember, Block),
+            ("myreturn", CallArguments, ComputedMember, Block),
+            ("$in", CallArguments, ComputedMember, Block),
+            ("a.return", CallArguments, ComputedMember, Block),
+            ("a. return", CallArguments, ComputedMember, Block),
+            ("a?.await", CallArguments, ComputedMember, Block),
+            ("a.if", CallArguments, ComputedMember, Block),
+            ("a.for", CallArguments, ComputedMember, Block),
+            ("a....return", Grouping, ArrayLiteral, ObjectLiteral),
+            // Operands: identifiers, numbers, other words and non-ASCII names.
+            ("foo", CallArguments, ComputedMember, Block),
+            ("foo ", CallArguments, ComputedMember, Block),
+            ("$", CallArguments, ComputedMember, Block),
+            ("_a1", CallArguments, ComputedMember, Block),
+            ("1", CallArguments, ComputedMember, Block),
+            ("this", CallArguments, ComputedMember, Block),
+            ("function", CallArguments, ComputedMember, Block),
+            ("function*", CallArguments, ComputedMember, Block),
+            ("function *", CallArguments, ComputedMember, Block),
+            ("catch", CallArguments, ComputedMember, Block),
+            ("\u{e9}t\u{e9}", CallArguments, ComputedMember, Block),
+            // Member access dots.
+            ("a.", CallArguments, ComputedMember, Block),
+            ("a?.", CallArguments, ComputedMember, Block),
+            // Spread is an operator.
+            ("f(...", Grouping, ArrayLiteral, ObjectLiteral),
+            ("[...", Grouping, ArrayLiteral, ObjectLiteral),
+            // Punctuation and operators start an operand.
+            ("a(", Grouping, ArrayLiteral, ObjectLiteral),
+            ("a[", Grouping, ArrayLiteral, ObjectLiteral),
+            ("a,", Grouping, ArrayLiteral, ObjectLiteral),
+            ("a=", Grouping, ArrayLiteral, ObjectLiteral),
+            ("a==", Grouping, ArrayLiteral, ObjectLiteral),
+            ("a:", Grouping, ArrayLiteral, ObjectLiteral),
+            ("a?", Grouping, ArrayLiteral, ObjectLiteral),
+            ("a??", Grouping, ArrayLiteral, ObjectLiteral),
+            ("!", Grouping, ArrayLiteral, ObjectLiteral),
+            ("a&&", Grouping, ArrayLiteral, ObjectLiteral),
+            ("a||", Grouping, ArrayLiteral, ObjectLiteral),
+            ("a&", Grouping, ArrayLiteral, ObjectLiteral),
+            ("a|", Grouping, ArrayLiteral, ObjectLiteral),
+            ("a+", Grouping, ArrayLiteral, ObjectLiteral),
+            ("a-", Grouping, ArrayLiteral, ObjectLiteral),
+            ("a*", Grouping, ArrayLiteral, ObjectLiteral),
+            ("a**", Grouping, ArrayLiteral, ObjectLiteral),
+            ("a%", Grouping, ArrayLiteral, ObjectLiteral),
+            ("a<", Grouping, ArrayLiteral, ObjectLiteral),
+            ("a>", Grouping, ArrayLiteral, ObjectLiteral),
+            ("a>=", Grouping, ArrayLiteral, ObjectLiteral),
+            ("~", Grouping, ArrayLiteral, ObjectLiteral),
+            ("a^", Grouping, ArrayLiteral, ObjectLiteral),
+            ("a /", Grouping, ArrayLiteral, ObjectLiteral),
+            // Postfix operators cannot be followed by a call or member access.
+            ("a++", Grouping, ArrayLiteral, ObjectLiteral),
+            ("a--", Grouping, ArrayLiteral, ObjectLiteral),
+            ("++", Grouping, ArrayLiteral, ObjectLiteral),
+            // Strings, templates and regular expressions end an operand.
+            ("'x'", CallArguments, ComputedMember, Block),
+            ("\"x\"", CallArguments, ComputedMember, Block),
+            ("`x`", CallArguments, ComputedMember, Block),
+            ("a=/x/", CallArguments, ComputedMember, Block),
+            ("a=/x/g", CallArguments, ComputedMember, Block),
+            ("return /x/", CallArguments, ComputedMember, Block),
+            ("a=/[/]/", CallArguments, ComputedMember, Block),
+            // Template text that opens a substitution starts an operand.
+            ("`a${", Grouping, ArrayLiteral, ObjectLiteral),
+            ("`a${b}c${", Grouping, ArrayLiteral, ObjectLiteral),
+            ("`a${b}`", CallArguments, ComputedMember, Block),
+            // Comments are transparent.
+            ("a/* c */", CallArguments, ComputedMember, Block),
+            ("a // c\n", CallArguments, ComputedMember, Block),
+            ("a // c  \n", CallArguments, ComputedMember, Block),
+            ("a /* x */ /* y */", CallArguments, ComputedMember, Block),
+            ("a= // c\n", Grouping, ArrayLiteral, ObjectLiteral),
+            ("return/* c */", Grouping, ArrayLiteral, ObjectLiteral),
+            ("return // c\n", Grouping, ArrayLiteral, ObjectLiteral),
+            ("// c\n", Grouping, ArrayLiteral, Block),
+        ];
+        for &(prefix, call, bracket, brace) in rows {
+            assert_eq!(opener_kind(prefix, '(', None), call, "{prefix:?} (");
+            assert_eq!(opener_kind(prefix, '[', None), bracket, "{prefix:?} [");
+            assert_eq!(opener_kind(prefix, '{', None), brace, "{prefix:?} {{");
+        }
+        // Closing brackets depend on what they closed.
+        let closers: &[(
+            &str,
+            ContainerKind,
+            ContainerKind,
+            ContainerKind,
+            ContainerKind,
+        )] = &[
+            // `)` of a statement head and a block's `}` end a statement.
+            (")", StatementHead, Grouping, ArrayLiteral, Block),
+            ("}", Block, Grouping, ArrayLiteral, Block),
+            // Every other closing bracket ends an operand.
+            (")", Grouping, CallArguments, ComputedMember, Block),
+            (")", CallArguments, CallArguments, ComputedMember, Block),
+            ("]", ComputedMember, CallArguments, ComputedMember, Block),
+            ("]", ArrayLiteral, CallArguments, ComputedMember, Block),
+            ("}", ObjectLiteral, CallArguments, ComputedMember, Block),
+        ];
+        for &(prefix, closed, call, bracket, brace) in closers {
+            let prefix = format!("x{prefix} ");
+            let closed = Some(closed);
+            assert_eq!(
+                opener_kind(&prefix, '(', closed),
+                call,
+                "{prefix:?} {closed:?} ("
+            );
+            assert_eq!(
+                opener_kind(&prefix, '[', closed),
+                bracket,
+                "{prefix:?} {closed:?} ["
+            );
+            assert_eq!(
+                opener_kind(&prefix, '{', closed),
+                brace,
+                "{prefix:?} {closed:?} {{"
+            );
+        }
+        // A closing bracket the scanner never saw close is an operand end.
+        assert_eq!(opener_kind("a)", '(', None), CallArguments);
+        assert_eq!(opener_kind("a}", '[', None), ComputedMember);
+    }
+
+    #[test]
+    fn reported_container_shapes_keep_their_branch_evidence() {
+        let guard = |code: &str| {
+            let read = "process.env.FLAG";
+            let start = code.find(read).unwrap();
+            env_guard(code, start, start + read.len(), &non_code_ranges(code))
+                .map(EnvGuard::evidence)
+        };
+        let and = Some("the retained read controls a && short-circuit branch");
+        // An array literal after a keyword is a value, not a member access.
+        for code in [
+            "return[process.env.FLAG]&&run()",
+            "return [process.env.FLAG] && run()",
+            "typeof[process.env.FLAG]&&run()",
+            "await[process.env.FLAG]&&run()",
+            "yield[process.env.FLAG]&&run()",
+            "void[process.env.FLAG]&&run()",
+            "throw[process.env.FLAG]&&run()",
+            "a=1;else[process.env.FLAG]&&run()",
+            "if(a)[process.env.FLAG]&&run()",
+            "while(a)[process.env.FLAG]&&run()",
+            "for(;;)[process.env.FLAG]&&run()",
+            "x++;[process.env.FLAG]&&run()",
+            "f(...[process.env.FLAG])&&run()",
+            "a{}[process.env.FLAG]&&run()",
+        ] {
+            assert_eq!(guard(code), None, "{code}");
+        }
+        // Parentheses after a keyword only group their operand.
+        for code in [
+            "return(process.env.FLAG)&&run()",
+            "return (process.env.FLAG) && run()",
+            "await(process.env.FLAG)&&run()",
+            "yield(process.env.FLAG)&&run()",
+            "typeof(process.env.FLAG)&&run()",
+            "void(process.env.FLAG)&&run()",
+            "x=a in(process.env.FLAG)&&run()",
+            "if(a)(process.env.FLAG)&&run()",
+        ] {
+            assert_eq!(guard(code), and, "{code}");
+        }
+        // A property named like a keyword is an ordinary call or member.
+        assert_eq!(guard("a.return(process.env.FLAG)&&run()"), None);
+        assert_eq!(guard("a.return[process.env.FLAG]&&run()"), and);
+        // A bracket after a regular expression literal is a computed member.
+        for code in [
+            "/x/[process.env.FLAG]&&run()",
+            "a=/x/g[process.env.FLAG]&&run()",
+            "return/x/[process.env.FLAG]&&run()",
+            "a=/[/]/[process.env.FLAG]&&run()",
+        ] {
+            assert_eq!(guard(code), and, "{code}");
+        }
+        // Computed members of strings, templates and closed brackets, and a
+        // line comment before the bracket, keep their evidence.
+        for code in [
+            "'x'[process.env.FLAG]&&run()",
+            "`x`[process.env.FLAG]&&run()",
+            "a[0][process.env.FLAG]&&run()",
+            "a(0)[process.env.FLAG]&&run()",
+            "a // c\n[process.env.FLAG]&&run()",
+            "a /* c */[process.env.FLAG]&&run()",
+            "this[process.env.FLAG]&&run()",
+            "a?.[process.env.FLAG]&&run()",
+        ] {
+            assert_eq!(guard(code), and, "{code}");
+        }
+        // A statement-start bracket after a line comment is an array literal.
+        assert_eq!(guard("a=\n// c\n[process.env.FLAG]&&run()"), None);
+        // Template substitutions start an operand.
+        assert_eq!(guard("`x${[process.env.FLAG]&&run()}`"), None);
+        assert_eq!(guard("`x${(process.env.FLAG)&&run()}`"), and);
     }
 
     #[test]

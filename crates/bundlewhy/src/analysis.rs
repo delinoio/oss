@@ -2459,6 +2459,51 @@ mod tests {
     }
 
     #[test]
+    fn env_reads_keep_their_container_classification_after_keywords_and_regexes() {
+        let guard = "\"on\"===process.env.BUNDLEWHY_FIXTURE_FLAG&&console.log(\"flag branch\")";
+        let read = "process.env.BUNDLEWHY_FIXTURE_FLAG";
+        let diagnostic_count = |replacement: String| {
+            let fixture = run_fixture_patched(
+                BundlerChoice::Rspack,
+                true,
+                |_| {},
+                |build, _| {
+                    let path = build.join("main.js");
+                    let code = std::fs::read_to_string(&path).unwrap();
+                    assert!(code.contains(guard));
+                    std::fs::write(&path, code.replace(guard, &replacement)).unwrap();
+                },
+            );
+            fixture
+                .output
+                .analysis
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.rule == "minifier/unresolved-env-condition")
+                .count()
+        };
+        let suffix = "&&console.log(\"flag branch\")";
+        // An array literal after `return` is a value, not a computed member.
+        assert_eq!(
+            diagnostic_count(format!("function run(){{return[{read}]{suffix}}}run()")),
+            0
+        );
+        // Parentheses after `return` and `await` only group their operand.
+        assert_eq!(
+            diagnostic_count(format!("function run(){{return({read}){suffix}}}run()")),
+            1
+        );
+        assert_eq!(
+            diagnostic_count(format!(
+                "async function run(){{await({read}){suffix}}}run()"
+            )),
+            1
+        );
+        // A bracket after a regular expression literal is a computed member.
+        assert_eq!(diagnostic_count(format!("/x/[{read}]{suffix}")), 1);
+    }
+
+    #[test]
     fn disabled_minification_suppresses_env_condition_findings() {
         let fixture = run_fixture(BundlerChoice::Rspack, |value| {
             value["minifyEnabled"] = serde_json::json!(false);
