@@ -126,6 +126,11 @@ fn reads_process_env(text: &str, name: &str) -> bool {
     .is_ok_and(|pattern| pattern.is_match(text))
 }
 
+/// True for the four ECMAScript line terminators: LF, CR, U+2028 and U+2029.
+fn is_line_terminator(character: char) -> bool {
+    matches!(character, '\n' | '\r' | '\u{2028}' | '\u{2029}')
+}
+
 /// Byte ranges of string literals, template literal text, comments and regular
 /// expression literals in JavaScript. Text there is never a property read.
 ///
@@ -165,12 +170,15 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
     let scan_until = |mut position: usize, terminator: u8, template: bool| -> (usize, bool) {
         while position < bytes.len() {
             match bytes[position] {
+                // A backslash continues the string over a line terminator; CRLF
+                // counts as a single terminator.
+                b'\\' if bytes[position + 1..].starts_with(b"\r\n") => position += 3,
                 b'\\' => position += 2,
                 byte if byte == terminator => return (position + 1, false),
                 b'$' if template && bytes.get(position + 1) == Some(&b'{') => {
                     return (position + 2, true);
                 }
-                b'\n' if !template => return (position, false),
+                b'\n' | b'\r' if !template => return (position, false),
                 _ => position += 1,
             }
         }
@@ -205,8 +213,11 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
                 previous_significant = Some(b'"');
             }
             b'/' if bytes.get(index + 1) == Some(&b'/') => {
+                // A line comment stops before any ECMAScript line terminator:
+                // LF, CR, U+2028 or U+2029. A lone CR ends it just as CRLF
+                // does.
                 let end = code[index..]
-                    .find('\n')
+                    .find(is_line_terminator)
                     .map_or(bytes.len(), |offset| index + offset);
                 ranges.push((index, end));
                 index = end;
@@ -221,21 +232,43 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
             b'/' if regex_allowed(previous_significant, index) => {
                 let mut position = index + 1;
                 let mut in_class = false;
+                // True when a multi-byte line terminator ended the literal. It
+                // stays outside the range so range ends fall on char
+                // boundaries.
+                let mut stopped_before = false;
                 while position < bytes.len() {
                     match bytes[position] {
                         b'\\' => position += 1,
                         b'[' => in_class = true,
                         b']' => in_class = false,
                         b'/' if !in_class => break,
-                        b'\n' => break,
+                        b'\n' | b'\r' => break,
+                        // U+2028 and U+2029 are `E2 80 A8` and `E2 80 A9`.
+                        0xe2 if bytes.get(position + 1) == Some(&0x80)
+                            && matches!(bytes.get(position + 2), Some(0xa8 | 0xa9)) =>
+                        {
+                            stopped_before = true;
+                            break;
+                        }
                         _ => {}
                     }
                     position += 1;
                 }
-                let end = (position + 1).min(bytes.len());
+                let end = if stopped_before {
+                    position
+                } else {
+                    (position + 1).min(bytes.len())
+                };
                 ranges.push((index, end));
                 index = end;
                 previous_significant = Some(b'"');
+            }
+            // U+2028 and U+2029 are whitespace, not a token that decides
+            // whether a following `/` starts a regular expression.
+            0xe2 if bytes.get(index + 1) == Some(&0x80)
+                && matches!(bytes.get(index + 2), Some(0xa8 | 0xa9)) =>
+            {
+                index += 3;
             }
             _ => {
                 if let Some(depth) = templates.last_mut() {
@@ -2263,6 +2296,134 @@ y=/process.env.F/.test(z),process.env.G"#;
             guard("x = 'if' // c\n(process.env.FLAG)", "process.env.FLAG"),
             None
         );
+    }
+
+    const LINE_TERMINATORS: [&str; 5] = ["\n", "\r", "\r\n", "\u{2028}", "\u{2029}"];
+
+    #[test]
+    fn line_comments_end_at_every_ecmascript_line_terminator() {
+        for terminator in LINE_TERMINATORS {
+            // The comment range stops before the terminator, so the code that
+            // follows a lone CR, U+2028 or U+2029 is scanned as code.
+            let code = format!("a // c{terminator}b");
+            let ranges = non_code_ranges(&code);
+            assert_eq!(ranges, vec![(2, 6)], "{code:?}");
+            assert!(code.is_char_boundary(ranges[0].1), "{code:?}");
+
+            let read = "process.env.FLAG";
+            let code = format!("// c{terminator}{read} && run()");
+            let ignored = non_code_ranges(&code);
+            assert!(!in_ranges(&ignored, code.find(read).unwrap()), "{code:?}");
+            assert_eq!(
+                env_guard(
+                    &code,
+                    code.find(read).unwrap(),
+                    code.find(read).unwrap() + read.len(),
+                    &ignored
+                )
+                .map(EnvGuard::evidence),
+                Some("the retained read controls a && short-circuit branch"),
+                "{code:?}"
+            );
+
+            // A block comment may contain any terminator and still ends at
+            // `*/`.
+            let code = format!("/* c{terminator}d */ {read}");
+            let ignored = non_code_ranges(&code);
+            assert_eq!(ignored.len(), 1, "{code:?}");
+            assert!(!in_ranges(&ignored, code.find(read).unwrap()), "{code:?}");
+
+            // A quoted string or regular expression ends at a line terminator
+            // that is not escaped, so the next line is code again. Strings may
+            // contain U+2028 and U+2029; regular expressions may not.
+            // U+2028 and U+2029 are legal inside string literals (ES2019).
+            let openers: &[&str] =
+                if terminator.starts_with('\u{2028}') || terminator.starts_with('\u{2029}') {
+                    &["x = /a"]
+                } else {
+                    &["x = 'a", "x = \"a", "x = /a"]
+                };
+            for opener in openers {
+                let code = format!("{opener}{terminator}{read}");
+                let ignored = non_code_ranges(&code);
+                assert!(!in_ranges(&ignored, code.find(read).unwrap()), "{code:?}");
+                assert!(
+                    ignored.iter().all(|(_, end)| code.is_char_boundary(*end)),
+                    "{code:?}"
+                );
+            }
+
+            // A regular expression after a line terminator is still a regular
+            // expression: the terminator is whitespace, not a division operand.
+            let code = format!("x = // c{terminator}/a|b/.test(y)");
+            let ignored = non_code_ranges(&code);
+            assert!(in_ranges(&ignored, code.find("a|b").unwrap()), "{code:?}");
+        }
+        // A backslash continues a string over CRLF as a single terminator.
+        let code = "x = 'a\\\r\nb'; process.env.FLAG";
+        let ignored = non_code_ranges(code);
+        assert!(in_ranges(&ignored, code.find('b').unwrap()), "{code:?}");
+        assert!(
+            !in_ranges(&ignored, code.find("process").unwrap()),
+            "{code:?}"
+        );
+    }
+
+    #[test]
+    fn every_line_terminator_after_a_comment_keeps_the_guard() {
+        let guard = |code: &str, read: &str| {
+            let start = code.find(read).unwrap();
+            env_guard(code, start, start + read.len(), &non_code_ranges(code))
+                .map(EnvGuard::evidence)
+        };
+        let read = "process.env.FLAG";
+        for terminator in LINE_TERMINATORS {
+            for (keyword, body, evidence) in [
+                ("if", ") run()", "the retained read is in an if condition"),
+                (
+                    "while",
+                    ") run()",
+                    "the retained read is in a while condition",
+                ),
+                (
+                    "switch",
+                    ") {default: run()}",
+                    "the retained read is in a switch condition",
+                ),
+                (
+                    "for",
+                    ";;) work()",
+                    "the retained read is in a for condition",
+                ),
+            ] {
+                let body = if keyword == "for" {
+                    format!(";{read};) work()")
+                } else {
+                    format!("{read}{body}")
+                };
+                for comment in ["// c", "// c  ", "//", "// c \t", "// if (x)"] {
+                    for gap in [" ", ""] {
+                        let code = format!("{keyword}{gap}{comment}{terminator}({body}");
+                        assert_eq!(guard(&code, read), Some(evidence), "{code:?}");
+                        let code = format!(
+                            "{keyword}{gap}/* a{terminator}b \
+                             */{gap}{comment}{terminator}{gap}({body}"
+                        );
+                        assert_eq!(guard(&code, read), Some(evidence), "{code:?}");
+                    }
+                }
+                let code = format!("{keyword} /* a{terminator}b */ ({body}");
+                assert_eq!(guard(&code, read), Some(evidence), "{code:?}");
+            }
+            // A comment before a non-keyword never creates a guard.
+            for code in [
+                format!("run // c{terminator}({read})"),
+                format!("run /* a{terminator}b */ ({read})"),
+                format!("x = 1 // c{terminator}({read})"),
+            ] {
+                assert_eq!(guard(&code, read), None, "{code:?}");
+            }
+        }
     }
 
     #[test]
