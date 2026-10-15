@@ -55,7 +55,7 @@ func cloneFixtureWithSource(t *testing.T) (Git, string, CloneRequest, string, st
 	body += quote(git) + " -c core.hooksPath=/dev/null clone --no-local $bare $origin -- " + quote(source) + " \"$target\" || exit 1\n"
 	body += quote(git) + " -C \"$target\" remote set-url origin https://github.com/fixture/repo.git\n;;\n"
 	body += "*) exec " + quote(git) + " \"$@\" ;;\nesac\n;;\n"
-	body += "*' fetch '*) exec " + quote(git) + " -c url." + source + ".insteadOf=https://github.com/fixture/repo.git -c protocol.file.allow=always \"$@\" ;;\n"
+	body += "*' fetch '*|*' ls-remote --symref '*) exec " + quote(git) + " -c url." + source + ".insteadOf=https://github.com/fixture/repo.git -c protocol.file.allow=always \"$@\" ;;\n"
 	body += "*) exec " + quote(git) + " \"$@\" ;;\nesac\n"
 	if err := os.WriteFile(executable, []byte(body), 0700); err != nil {
 		t.Fatal(err)

@@ -4,6 +4,7 @@ package workspace
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -34,6 +35,11 @@ const (
 	repositoryCacheMaxJournal     = 1 << 16
 	repositoryCacheLockPoll       = 20 * time.Millisecond
 	repositoryCacheCleanupTimeout = 30 * time.Second
+	// repositoryCacheUnbornHead is the symbolic target of a cache HEAD whose
+	// upstream HEAD names no existing branch. It is outside refs/heads, so it can
+	// never collide with an upstream branch, and a clone from the cache then
+	// records no default branch exactly like a clone of that upstream.
+	repositoryCacheUnbornHead = "refs/delidev/unborn-head"
 )
 
 type repositoryCacheState string
@@ -382,12 +388,25 @@ func (c *repositoryCacheLease) verifyAt(ctx context.Context, path string, full b
 		return false, err
 	}
 	// --git-dir prevents Git from discovering an unrelated parent repository
-	// when the store itself lost its repository markers.
-	raw, err := c.git.run(ctx, path, "--git-dir=.", "rev-parse", "--is-bare-repository")
+	// when the store itself lost its repository markers. A shallow or partial
+	// store cannot give a session the complete history that a fresh clone has.
+	raw, err := c.git.run(ctx, path, "--git-dir=.", "rev-parse", "--is-bare-repository", "--is-shallow-repository")
 	if err != nil {
 		return classify(err)
 	}
-	if strings.TrimSpace(string(raw)) != "true" {
+	if strings.Join(strings.Fields(string(raw)), " ") != "true false" {
+		return true, nil
+	}
+	partial, exit, err := c.git.runCommand(ctx, path, "--git-dir=.", "config", "--get-regexp", `^(extensions\.partialclone|remote\..*\.(promisor|partialclonefilter))$`)
+	if err != nil {
+		// Status 1 is Git's documented answer for no matching key.
+		if exit == 1 && domain.SafeError(err).Cause == "git_exit" {
+			partial = nil
+		} else {
+			return classify(err)
+		}
+	}
+	if len(strings.TrimSpace(string(partial))) != 0 {
 		return true, nil
 	}
 	if _, err := c.git.run(ctx, path, "--git-dir=.", "for-each-ref", "--count=1", "--format=%(refname)"); err != nil {
@@ -515,9 +534,10 @@ func (c *repositoryCacheLease) abandonFill(ctx context.Context, staging string, 
 }
 
 // update refreshes the cache from the session's pinned URL before the session
-// copy. It is best effort: an ordinary failed fetch leaves a verified entry and
-// the session's own required fetch still fails closed. Cancellation and
-// unproven process cleanup mark the entry unverified and fail the preparation.
+// copy, so that it mirrors the upstream branches, tags and default branch. It
+// is best effort: an ordinary failed refresh leaves a verified entry and the
+// session's own required fetch still fails closed. Cancellation and unproven
+// process cleanup mark the entry unverified and fail the preparation.
 func (c *repositoryCacheLease) update(ctx context.Context, source string) error {
 	published := c.journal
 	pending := published
@@ -526,7 +546,7 @@ func (c *repositoryCacheLease) update(ctx context.Context, source string) error 
 		c.failure(ctx, repositoryCacheStageUpdate, err)
 		return err
 	}
-	_, err := c.git.run(ctx, c.store, "--git-dir=.", "fetch", "--no-tags", "--no-recurse-submodules", "--", source, "+refs/heads/*:refs/heads/*")
+	err := c.refresh(ctx, source)
 	if err == nil {
 		if err := c.writeJournal(published); err != nil {
 			c.failure(ctx, repositoryCacheStageUpdate, err)
@@ -541,12 +561,93 @@ func (c *repositoryCacheLease) update(ctx context.Context, source string) error 
 		return err
 	}
 	if safe.Cause == "git_exit" || safe.Cause == "clone_authentication" {
-		// Git exited normally: its ref updates are atomic and nothing is partial.
+		// Git exited normally. Every ref update is individually atomic and
+		// the objects of every ref are complete, so the store stays valid even
+		// if only some refs or the default branch were refreshed.
 		if err := c.writeJournal(published); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// upstreamHead is the pinned remote's HEAD as advertised before the fetch.
+type upstreamHead struct {
+	// Symref is the branch ref HEAD points to; empty for a detached or absent HEAD.
+	Symref string
+	// Advertised reports that HEAD resolves to an object.
+	Advertised bool
+}
+
+// parseUpstreamHead reads `git ls-remote --symref -- <url> HEAD`. The pattern
+// also matches refs that merely end in /HEAD, so only the exact HEAD name counts.
+func parseUpstreamHead(raw []byte) (upstreamHead, error) {
+	var head upstreamHead
+	for _, line := range strings.Split(strings.TrimSuffix(string(raw), "\n"), "\n") {
+		line = strings.TrimSuffix(line, "\r")
+		if line == "" {
+			continue
+		}
+		value, name, ok := strings.Cut(line, "\t")
+		if !ok || name != "HEAD" {
+			continue
+		}
+		if target, symbolic := strings.CutPrefix(value, "ref: "); symbolic {
+			if !strings.HasPrefix(target, "refs/heads/") || len(target) == len("refs/heads/") || strings.ContainsAny(target, "\r\n\x00") || domain.Text(target, "remote symbolic reference", 4096, true) != nil {
+				return upstreamHead{}, ResultUncertain()
+			}
+			head.Symref = target
+			continue
+		}
+		if len(value) != 40 && len(value) != 64 {
+			return upstreamHead{}, ResultUncertain()
+		}
+		if _, err := hex.DecodeString(value); err != nil {
+			return upstreamHead{}, ResultUncertain()
+		}
+		head.Advertised = true
+	}
+	return head, nil
+}
+
+// refresh mirrors the upstream refs into the store: branches and tags are
+// force-updated and pruned, so force-pushes, moved tags and deleted refs follow
+// the remote, and then the store's HEAD follows the upstream HEAD, so that a
+// session clone derives the same default branch as a fresh clone would.
+// The upstream HEAD is read before the fetch; a HEAD branch created in between
+// is simply not mirrored yet and is applied by the next refresh.
+func (c *repositoryCacheLease) refresh(ctx context.Context, source string) error {
+	raw, err := c.git.run(ctx, c.store, "--git-dir=.", "ls-remote", "--symref", "--", source, "HEAD")
+	if err != nil {
+		return err
+	}
+	head, err := parseUpstreamHead(raw)
+	if err != nil {
+		return err
+	}
+	if _, err := c.git.run(ctx, c.store, "--git-dir=.", "fetch", "--prune", "--no-tags", "--no-recurse-submodules", "--", source, "+refs/heads/*:refs/heads/*", "+refs/tags/*:refs/tags/*"); err != nil {
+		return err
+	}
+	switch {
+	case head.Symref != "":
+		if _, exit, err := c.git.runCommand(ctx, c.store, "--git-dir=.", "rev-parse", "--verify", "--quiet", "--end-of-options", head.Symref+"^{commit}"); err == nil {
+			_, err = c.git.run(ctx, c.store, "--git-dir=.", "symbolic-ref", "HEAD", head.Symref)
+			return err
+		} else if exit != 1 || domain.SafeError(err).Cause != "git_exit" {
+			return err
+		}
+	case head.Advertised:
+		// A detached upstream HEAD has no branch to follow. Mirror it as a
+		// detached store HEAD so the session records no default branch either.
+		if _, err := c.git.run(ctx, c.store, "--git-dir=.", "fetch", "--no-tags", "--no-recurse-submodules", "--", source, "HEAD"); err != nil {
+			return err
+		}
+		_, err := c.git.run(ctx, c.store, "--git-dir=.", "update-ref", "--no-deref", "HEAD", "FETCH_HEAD")
+		return err
+	}
+	// The upstream HEAD is unborn or names a branch that does not exist.
+	_, err = c.git.run(ctx, c.store, "--git-dir=.", "symbolic-ref", "HEAD", repositoryCacheUnbornHead)
+	return err
 }
 
 // markUnverified records that a copy from the store failed, so the next user

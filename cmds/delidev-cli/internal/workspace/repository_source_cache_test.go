@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -838,5 +839,197 @@ func TestRepositorySourceCacheIgnoresLocalGeneralChatAndLegacyCheckoutPreparatio
 	entries, err := os.ReadDir(filepath.Join(e.m.Root, repositoryCacheDirectory))
 	if err != nil || len(entries) != 0 {
 		t.Fatal("non-remote preparation created cache entries", entries, err)
+	}
+}
+
+// gitMaybe runs Git and reports whether it succeeded, for commands whose
+// failure is an expected answer (for example symbolic-ref on a detached HEAD).
+func gitMaybe(root string, args ...string) (string, bool) {
+	command := exec.Command("git", append([]string{"-C", root}, args...)...)
+	command.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0")
+	out, err := command.Output()
+	return strings.TrimSpace(string(out)), err == nil
+}
+
+// seedUpstream gives the upstream branches and tags that the transition cells
+// can later delete, move or replace.
+func (e *cacheEnv) seedUpstream() {
+	e.t.Helper()
+	for _, branch := range []string{"keep", "gone"} {
+		gitTest(e.t, e.source, "branch", branch)
+	}
+	for _, tag := range []string{"v1", "v2"} {
+		gitTest(e.t, e.source, "tag", tag)
+	}
+}
+
+func (e *cacheEnv) refInventory(root string) string {
+	e.t.Helper()
+	return gitTest(e.t, root, "for-each-ref", "--format=%(refname) %(objectname)", "refs/heads", "refs/tags")
+}
+
+// assertMirrorsUpstream checks the cache against the upstream it was refreshed
+// from: the same branches and tags, and the same default branch, detached HEAD
+// or unborn HEAD that a fresh clone of the upstream would see.
+func (e *cacheEnv) assertMirrorsUpstream() {
+	e.t.Helper()
+	store := e.store(cacheFixtureURL)
+	if got, want := e.refInventory(store), e.refInventory(e.source); got != want {
+		e.t.Fatalf("cache refs differ from upstream\ncache:\n%s\nupstream:\n%s", got, want)
+	}
+	cacheSymref, cacheSymbolic := gitMaybe(store, "symbolic-ref", "-q", "HEAD")
+	upstreamSymref, upstreamSymbolic := gitMaybe(e.source, "symbolic-ref", "-q", "HEAD")
+	_, upstreamResolves := gitMaybe(e.source, "rev-parse", "--verify", "-q", "HEAD^{commit}")
+	switch {
+	case !upstreamSymbolic:
+		// Detached upstream HEAD.
+		if cacheSymbolic {
+			e.t.Fatalf("cache HEAD follows %s while the upstream HEAD is detached", cacheSymref)
+		}
+		if got, want := gitTest(e.t, store, "rev-parse", "HEAD"), gitTest(e.t, e.source, "rev-parse", "HEAD"); got != want {
+			e.t.Fatalf("cache detached HEAD = %s, want %s", got, want)
+		}
+	case !upstreamResolves:
+		if cacheSymref != repositoryCacheUnbornHead {
+			e.t.Fatalf("cache HEAD = %s for an unborn upstream HEAD", cacheSymref)
+		}
+	default:
+		if !cacheSymbolic || cacheSymref != upstreamSymref {
+			e.t.Fatalf("cache HEAD = %q, want %q", cacheSymref, upstreamSymref)
+		}
+	}
+	if e.readJournal(cacheFixtureURL).State != repositoryCachePublished {
+		e.t.Fatal("refreshed entry is not published")
+	}
+}
+
+func (e *cacheEnv) sessionRemoteBranches(repo PreparedRepository) string {
+	e.t.Helper()
+	return gitTest(e.t, repo.Path, "for-each-ref", "--format=%(refname:strip=3)", "refs/remotes/origin")
+}
+
+// TestRepositorySourceCacheRemoteTransitionTable is the table of upstream ref
+// transitions an existing entry can meet when an automatic-fetch preparation
+// refreshes it with no explicit starting reference. Each cell names the
+// transition in the workspace contract and checks that the cache and the new
+// session end up as a fresh clone of the upstream would.
+func TestRepositorySourceCacheRemoteTransitionTable(t *testing.T) {
+	type cell struct {
+		name    string
+		arrange func(t *testing.T, e *cacheEnv)
+		// wantCode is the expected closed failure code; empty expects success.
+		wantCode domain.Code
+		check    func(t *testing.T, e *cacheEnv, repo PreparedRepository)
+		clones   int
+	}
+	switchDefault := func(branch string) func(t *testing.T, e *cacheEnv) {
+		return func(t *testing.T, e *cacheEnv) { gitTest(t, e.source, "symbolic-ref", "HEAD", "refs/heads/"+branch) }
+	}
+	startsAt := func(branch string) func(t *testing.T, e *cacheEnv, repo PreparedRepository) {
+		return func(t *testing.T, e *cacheEnv, repo PreparedRepository) {
+			if repo.Starting.Type != domain.RemoteBranch || repo.Starting.Name != branch {
+				t.Fatalf("session starts at %+v, want origin/%s", repo.Starting, branch)
+			}
+			if repo.StartingCommit != gitTest(t, e.source, "rev-parse", "refs/heads/"+branch) {
+				t.Fatal("session did not start from the upstream tip", repo.StartingCommit)
+			}
+		}
+	}
+	cells := []cell{
+		{name: "R1 default branch changed to another existing branch", arrange: switchDefault("keep"), check: startsAt("keep"), clones: 1},
+		{name: "R2 default branch renamed", arrange: func(t *testing.T, e *cacheEnv) { gitTest(t, e.source, "branch", "-m", "main", "trunk") }, check: func(t *testing.T, e *cacheEnv, repo PreparedRepository) {
+			startsAt("trunk")(t, e, repo)
+			if _, present := gitMaybe(e.store(cacheFixtureURL), "rev-parse", "--verify", "-q", "refs/heads/main"); present {
+				t.Fatal("renamed default branch stayed in the cache")
+			}
+		}, clones: 1},
+		{name: "R3 old default branch deleted while another becomes default", arrange: func(t *testing.T, e *cacheEnv) {
+			gitTest(t, e.source, "symbolic-ref", "HEAD", "refs/heads/keep")
+			gitTest(t, e.source, "branch", "-D", "main")
+		}, check: startsAt("keep"), clones: 1},
+		{name: "R4 default branch force-pushed", arrange: func(t *testing.T, e *cacheEnv) {
+			gitTest(t, e.source, "commit", "--amend", "--allow-empty", "-m", "rewritten")
+		}, check: startsAt("main"), clones: 1},
+		{name: "R5 non-default branch deleted", arrange: func(t *testing.T, e *cacheEnv) { gitTest(t, e.source, "branch", "-D", "gone") }, check: func(t *testing.T, e *cacheEnv, repo PreparedRepository) {
+			if strings.Contains(e.sessionRemoteBranches(repo), "gone") {
+				t.Fatal("session received a branch that the upstream deleted")
+			}
+		}, clones: 1},
+		{name: "R6 branch created", arrange: func(t *testing.T, e *cacheEnv) { gitTest(t, e.source, "branch", "fresh") }, check: func(t *testing.T, e *cacheEnv, repo PreparedRepository) {
+			if !strings.Contains(e.sessionRemoteBranches(repo), "fresh") {
+				t.Fatal("session lacks a branch the upstream created")
+			}
+		}, clones: 1},
+		{name: "R7 branch replaced by a branch below its name", arrange: func(t *testing.T, e *cacheEnv) {
+			gitTest(t, e.source, "branch", "-D", "gone")
+			gitTest(t, e.source, "branch", "gone/inner")
+		}, clones: 1},
+		{name: "R8 tags created, moved and deleted", arrange: func(t *testing.T, e *cacheEnv) {
+			gitTest(t, e.source, "commit", "--allow-empty", "-m", "tagged")
+			gitTest(t, e.source, "tag", "-f", "v1")
+			gitTest(t, e.source, "tag", "-d", "v2")
+			gitTest(t, e.source, "tag", "v3")
+		}, check: func(t *testing.T, e *cacheEnv, repo PreparedRepository) {
+			if gitTest(t, repo.Path, "tag", "--list") != "v1\nv3" || gitTest(t, repo.Path, "rev-parse", "v1") != gitTest(t, e.source, "rev-parse", "v1") {
+				t.Fatal("session tags differ from the upstream tags")
+			}
+		}, clones: 1},
+		{name: "R9 upstream HEAD detached", arrange: func(t *testing.T, e *cacheEnv) {
+			gitTest(t, e.source, "commit", "--allow-empty", "-m", "detached only")
+			gitTest(t, e.source, "checkout", "--detach")
+			gitTest(t, e.source, "commit", "--allow-empty", "-m", "unreachable from branches")
+		}, wantCode: domain.MissingInput, clones: 1},
+		{name: "R10 upstream HEAD detached, then a branch again", arrange: func(t *testing.T, e *cacheEnv) {
+			// Git guesses a branch for a detached HEAD that equals a branch tip, in
+			// a direct clone as well, so the detached commit must be unique.
+			gitTest(t, e.source, "checkout", "--detach")
+			gitTest(t, e.source, "commit", "--allow-empty", "-m", "unreachable from branches")
+			if _, err := e.prepare(e.request(cacheFixtureURL, true)); domain.SafeError(err).Code != domain.MissingInput {
+				t.Fatal("detached upstream HEAD did not leave the default branch undefined", err)
+			}
+			e.assertMirrorsUpstream()
+			gitTest(t, e.source, "checkout", "keep")
+		}, check: startsAt("keep"), clones: 1},
+		{name: "R11 upstream HEAD unborn", arrange: switchDefault("never-created"), wantCode: domain.MissingInput, clones: 1},
+		{name: "R12 upstream HEAD unborn, then a branch again", arrange: func(t *testing.T, e *cacheEnv) {
+			switchDefault("never-created")(t, e)
+			if _, err := e.prepare(e.request(cacheFixtureURL, true)); domain.SafeError(err).Code != domain.MissingInput {
+				t.Fatal("unborn upstream HEAD did not leave the default branch undefined", err)
+			}
+			e.assertMirrorsUpstream()
+			switchDefault("keep")(t, e)
+		}, check: startsAt("keep"), clones: 1},
+		{name: "R13 shallow store", arrange: func(t *testing.T, e *cacheEnv) {
+			store := e.store(cacheFixtureURL)
+			if err := os.WriteFile(filepath.Join(store, "shallow"), []byte(gitTest(t, store, "rev-parse", "HEAD")+"\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}, clones: 2},
+		{name: "R14 partial store", arrange: func(t *testing.T, e *cacheEnv) {
+			gitTest(t, e.store(cacheFixtureURL), "config", "remote.origin.promisor", "true")
+		}, clones: 2},
+	}
+	for _, c := range cells {
+		t.Run(c.name, func(t *testing.T) {
+			e := newCacheEnv(t)
+			e.seedUpstream()
+			e.mustPrepare(e.request(cacheFixtureURL, true))
+			c.arrange(t, e)
+			manifest, err := e.prepare(e.request(cacheFixtureURL, true))
+			if c.wantCode != "" {
+				if domain.SafeError(err).Code != c.wantCode {
+					t.Fatalf("code = %v, want %s", err, c.wantCode)
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			}
+			e.assertMirrorsUpstream()
+			if c.check != nil && err == nil {
+				c.check(t, e, manifest.Repositories[0])
+			}
+			if e.clones() != c.clones {
+				t.Fatalf("remote clones = %d, want %d", e.clones(), c.clones)
+			}
+		})
 	}
 }
