@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
@@ -19,6 +18,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/opencode"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativetest"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
@@ -37,10 +37,7 @@ func TestManualNativeOpenCodeForegroundChildStopJoinsOwnedCleanup(t *testing.T) 
 
 func nativeForegroundChildPublication(t *testing.T, stopChild bool) {
 	t.Helper()
-	binary := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
-	if binary == "" {
-		t.Skip("explicit pinned native child with temporary SQLite and scripted provider")
-	}
+	binary, version := nativetest.NativeOpenCodeExecutable(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 	var calls atomic.Int32
@@ -123,7 +120,7 @@ func nativeForegroundChildPublication(t *testing.T, stopChild bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	config := opencode.APIExecutionConfig{Probe: opencode.ProbeConfig{Process: process.Config{Directory: filepath.Join(root, "processes"), OwnerID: f.job, Executable: binary, Cwd: runtimeRoot, Env: env, Logger: pc.Logger}, Version: opencode.SupportedVersion, Home: filepath.Join(runtimeRoot, "opencode")}, Workspace: workspace, Root: nativeRoot, ServerOrigin: f.http.URL, Token: f.token, Settings: opencode.SessionSettings{Title: "Original child fixture", Agent: opencode.BuildAgent, Provider: "delidev", Model: f.input.Configuration.NativeModel, Permission: []opencode.PermissionRule{}}, Rejection: opencode.StopOnInteractionRejection, Claim: binding.Claim}
+	config := opencode.APIExecutionConfig{Probe: opencode.ProbeConfig{Process: process.Config{Directory: filepath.Join(root, "processes"), OwnerID: f.job, Executable: binary, Cwd: runtimeRoot, Env: env, Logger: pc.Logger}, Version: version, Home: filepath.Join(runtimeRoot, "opencode")}, Workspace: workspace, Root: nativeRoot, ServerOrigin: f.http.URL, Token: f.token, Settings: opencode.SessionSettings{Title: "Original child fixture", Agent: opencode.BuildAgent, Provider: "delidev", Model: f.input.Configuration.NativeModel, Permission: []opencode.PermissionRule{}}, Rejection: opencode.StopOnInteractionRejection, Claim: binding.Claim}
 	api, err := opencode.OpenOwnedAPI(ctx, config)
 	if err != nil {
 		t.Fatal(err)

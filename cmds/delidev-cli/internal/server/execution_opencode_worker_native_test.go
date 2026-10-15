@@ -18,6 +18,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/opencode"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativetest"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
@@ -58,13 +59,7 @@ func TestManualNativeOpenCodeWorkerExecutesOriginalAssignment(t *testing.T) {
 }
 
 func nativeOpenCodeWorker(t *testing.T, scenario openCodeWorkerScenario) {
-	binary := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
-	if binary == "" {
-		t.Skip("explicit installed OpenCode and generated private loopback fixture only")
-	}
-	if !filepath.IsAbs(binary) {
-		t.Fatal("native executable must be explicitly absolute")
-	}
+	binary, observedVersion := nativetest.NativeOpenCodeExecutable(t)
 	binary, err := filepath.EvalSymlinks(binary)
 	if err != nil {
 		t.Fatal(err)
@@ -179,7 +174,7 @@ func nativeOpenCodeWorker(t *testing.T, scenario openCodeWorkerScenario) {
 		}
 		input.Preparation, _ = json.Marshal(preparation)
 		input.Manifest, _ = json.Marshal(manifest)
-		input.Installation.ResolvedPath = binary
+		input.Installation.ResolvedPath, input.Installation.Version = binary, observedVersion
 		permissionPath = filepath.Join(manifest.PrimaryPath, ".env.private-worker")
 		if permission {
 			if err := os.WriteFile(permissionPath, []byte("private-worker-file\n"), 0600); err != nil {

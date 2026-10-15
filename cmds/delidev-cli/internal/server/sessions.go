@@ -296,7 +296,7 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[pb.Cre
 				return nil, localOriginRequired()
 			}
 		}
-		if err := checkImageRoute(tx, input.AgentID, input.MachineID, input.Attachments); err != nil {
+		if err := checkImageRoute(tx, input.AgentID, input.MachineID, input.Prompt, input.Attachments); err != nil {
 			return nil, err
 		}
 		if err := validateSessionSelection(tx, input); err != nil {
@@ -308,10 +308,14 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[pb.Cre
 		if err != nil {
 			return nil, err
 		}
+		firstInput := domain.SessionInput{Prompt: input.Prompt, Mode: input.Mode, Skills: input.Skills, Attachments: input.Attachments}
+		if err := requireExecutionJobBudget(tx, value, preparation, firstInput); err != nil {
+			return nil, err
+		}
 		if err := queueSessionWorkspace(tx, id, &value, preparation); err != nil {
 			return nil, err
 		}
-		itemID, err := appendSessionInput(tx, id, &value, domain.SessionInput{Prompt: input.Prompt, Mode: input.Mode, Skills: input.Skills, Attachments: input.Attachments}, preparedSkillNames)
+		itemID, err := appendSessionInput(tx, id, &value, firstInput, preparedSkillNames)
 		if err != nil {
 			return nil, err
 		}
@@ -429,7 +433,7 @@ func (s *Service) EnqueueInput(ctx context.Context, req *connect.Request[pb.Enqu
 		if value.IsSidechat() && len(input.Attachments) > 0 {
 			return nil, domain.UnsupportedImageInput()
 		}
-		if err := checkSessionImageRoute(tx, value, input.Attachments); err != nil {
+		if err := checkSessionImageRoute(tx, value, input.Prompt, input.Attachments); err != nil {
 			return nil, err
 		}
 		itemID, err := appendSessionInput(tx, r.ID, &value, input, preparedSkillNames)
@@ -636,6 +640,13 @@ func (s *Service) changeQueuedInput(ctx context.Context, meta *pb.Mutation, sess
 		if !remove && (domain.SessionInput{Prompt: prompt, Mode: value.Mode, Attachments: value.Attachments}).Validate() != nil {
 			return nil, domain.InvalidImageInput()
 		}
+		// An edit changes the text that travels with the immutable references, so
+		// it must satisfy the same frozen-session route rules as enqueue.
+		if !remove {
+			if err := checkQueuedImageEdit(tx, session, prompt, value.Attachments); err != nil {
+				return nil, err
+			}
+		}
 		value.Prompt = prompt
 		value.ContentRevision++
 		if remove {
@@ -770,7 +781,9 @@ func (s *Service) ControlSession(ctx context.Context, req *connect.Request[pb.Co
 			if value.StartupRejection != nil {
 				return nil, domain.Fail(domain.Conflict, "This input was rejected before native startup and cannot be resumed.", "Preserve this attempt and create a fresh authorized PR fix after resolving its rejection.")
 			}
-			if ir, err := tx.OldestQueuedInput(r.ID); err == nil {
+			if ir, err := tx.OldestQueuedInput(r.ID); err != nil && domain.SafeError(err).Code != domain.MissingInput {
+				return nil, err
+			} else if err == nil {
 				_, fix, found, err := tx.PRRemediationForInput(ir.ID)
 				if err != nil {
 					return nil, err

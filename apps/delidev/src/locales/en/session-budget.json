@@ -23,10 +23,10 @@
   "session-budget.responsesWithCompleteTokenPriceCategories_cc7aef": "<s0/> responses with complete token-price categories · <s1/> partial · <s2/> unavailable. <s3/> unpriced responses and <s4/> responses in other currencies are outside this subtotal. Missing native telemetry is unavailable, not zero.",
   "session-budget.nativeUnitsWithCompleteCategoriesPartial_8d9ff0": "<s0/> native units with complete categories · <s1/> partial · <s2/> unavailable. <s3/> unpriced native units and <s4/> native units in other currencies are outside this subtotal.",
   "session-budget.nativeBudgetEvidenceIsUnavailableFrom_a6710d": "Native budget evidence is unavailable from this server version. Update the server to view it.",
-  "session-budget.noEstimatedCostBudgetIsConfigured_e4cbfc": "No estimated-cost budget is configured.",
   "session-budget.loadingBudget_ff9d54": "Loading budget…",
   "session-budget.theServerAcknowledgedTheBudgetWithout_6e9839": "The server acknowledged the budget without a readable result. Refresh the current session before making another change.",
   "session-budget.editSessionBudget_ee0f8a": "Edit session budget",
   "session-budget.extra.96afe54d0f2e": "Review the budget fields.",
-  "session-budget.budgetReadFailed": "Budget evidence could not be read. Refresh the budget here; keep the original execution and budget draft."
+  "session-budget.budgetReadFailed": "Budget evidence could not be read. Refresh the budget here; keep the original execution and budget draft.",
+  "session-budget.budgetNotSet": "Not set"
 }

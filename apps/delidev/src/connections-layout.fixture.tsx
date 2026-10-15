@@ -75,24 +75,6 @@ function Fixture() {
           </div>
         </div>
         <ConnectionsPage local onSlots={setSlots} />
-        <PersistentConnectionView target={slots?.current} hidden>
-          <header className="connections-local-heading">
-            <div>
-              <h3>{copy("settings.connections.thisComputer")}</h3>
-              <p>{copy("local-server.localServer_caf011")}</p>
-              <p>{copy("settings.connections.connected")}</p>
-            </div>
-            <button onClick={count}>
-              {copy("local-server.stopLocalServer_c1eeb5")}
-            </button>
-          </header>
-          <p className="connections-address">
-            {copy("settings.connections.address")}: http://127.0.0.1:46300
-          </p>
-          <p>
-            {copy("local-server.stoppingTheServerDisconnectsAllClients_c28c49")}
-          </p>
-        </PersistentConnectionView>
         <SavedConnections
           target={slots?.saved}
           advancedTarget={slots?.advanced}

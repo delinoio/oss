@@ -279,11 +279,6 @@ export function LanguageProvider({
       }}
     >
       {children}
-      {!operation && snapshot.problem ? (
-        <p className="language-notice" role="alert">
-          {copy("language.title")}: {copy(problemMessages[snapshot.problem])}
-        </p>
-      ) : null}
     </LanguageContext.Provider>
   );
 }

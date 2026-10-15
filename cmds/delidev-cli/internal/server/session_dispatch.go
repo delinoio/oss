@@ -203,8 +203,16 @@ func checkedExecutionConfiguration(tx *store.Tx, session domain.Session, machine
 		if input.Fork != nil && !slices.Contains(machine.WorkerCapabilities, domain.OpenCodeGeneralChatForkV1) {
 			return empty, domain.Fail(domain.Unsupported, "The original Runner Device lacks OpenCode Fork support.", "Update and reconnect the original Unix Runner Device; the child stays paused.")
 		}
+		// The retained session profile, not only the one-shot fork input, binds
+		// every continuation of a profile v2 child to both capability pairs.
+		if domain.OpenCodeForkReasoningRequired(session, input) && !domain.OpenCodeForkReasoningSupported(machine.WorkerCapabilities) {
+			return empty, domain.Fail(domain.Unsupported, "The original Runner Device lacks OpenCode Fork reasoning support.", "Update and reconnect the original Unix Runner Device; the child stays paused.")
+		}
 		if !slices.Contains(machine.WorkerCapabilities, domain.OpenCodeForegroundSubagentsV1) {
 			return empty, domain.Fail(domain.Unsupported, "The original Runner Device lacks foreground child observation support.", "Update and reconnect that Runner Device before OpenCode execution.")
+		}
+		if err := requireOpenCodeImageWorker(c, machine.WorkerCapabilities); err != nil {
+			return empty, err
 		}
 		if _, err := c.OpenCodePrimaryForInput(input.Input.Mode); err != nil {
 			return empty, err
@@ -318,6 +326,28 @@ func checkedExecutionConfiguration(tx *store.Tx, session domain.Session, machine
 
 func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Session, machine domain.Machine, input domain.ExecutionJobInput) (domain.ExecutionJobInput, error) {
 	var empty domain.ExecutionJobInput
+	input, err := checkedExecutionAssignmentUnsized(tx, sr, session, machine, input)
+	if err != nil {
+		return empty, err
+	}
+	// Recheck the real serialized bytes before any caller publishes the job.
+	// The limit is shared with admission and is never raised.
+	raw, err := json.Marshal(input)
+	if err != nil {
+		return empty, err
+	}
+	if err := domain.RequireExecutionJobInput(raw, nil); err != nil {
+		return empty, err
+	}
+	return input, nil
+}
+
+// checkedExecutionAssignmentUnsized performs every assignment check except the
+// serialized Job size limit. A caller that replaces the input after this check
+// (queued continuation) must measure the document it actually publishes; the
+// candidate still carries the predecessor's input, which may predate the limit.
+func checkedExecutionAssignmentUnsized(tx *store.Tx, sr store.Record, session domain.Session, machine domain.Machine, input domain.ExecutionJobInput) (domain.ExecutionJobInput, error) {
+	var empty domain.ExecutionJobInput
 	installation, err := checkedExecutionSelection(tx, session, machine, input)
 	if err != nil {
 		return empty, err
@@ -343,7 +373,10 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 	if err := requireNamedPreparation(machine, input.Preparation); err != nil {
 		return empty, err
 	}
-	return input, input.Validate()
+	if err := input.Validate(); err != nil {
+		return empty, err
+	}
+	return input, nil
 }
 
 // Source operations recheck current policy and workspace ownership without
@@ -613,4 +646,15 @@ func (s *Service) runExecutionDispatchTicks(parent context.Context, ticks <-chan
 			after = ""
 		}
 	}
+}
+
+// requireOpenCodeImageWorker keeps an OpenCode assignment that declares image
+// input away from a Worker that predates the OpenCode image profile. Such a
+// Worker rejects the frozen declaration even for a text-only input, so the
+// server refuses it before dispatch instead of leaving the job to fail there.
+func requireOpenCodeImageWorker(c domain.ExecutionConfiguration, capabilities []domain.WorkerCapability) error {
+	if c.Harness == domain.OpenCode && c.ImageInputDeclared && !slices.Contains(capabilities, domain.OpenCodeImageInputsV1) {
+		return domain.Fail(domain.Unsupported, "The original Runner Device lacks OpenCode image support.", "Update and reconnect that Runner Device; the saved input stays queued and no image is dropped.")
+	}
+	return nil
 }

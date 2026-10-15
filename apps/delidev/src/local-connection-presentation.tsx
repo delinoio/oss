@@ -15,20 +15,29 @@ import { copy, useLocale } from "./localization";
 interface PresentationOwner {
   target?: HTMLElement;
   inline: boolean;
+  pageOpen: boolean;
   helpTarget?: HTMLElement;
   requestInline?: (target: HTMLElement) => void;
   release?: (target: HTMLElement) => void;
 }
-const Presentation = createContext<PresentationOwner>({ inline: true });
+const Presentation = createContext<PresentationOwner>({
+  inline: true,
+  pageOpen: false,
+});
 export function LocalConnectionPresentationProvider({
   target,
   inline,
+  pageOpen = false,
   children,
   onRequest,
 }: {
   onRequest?: (target: HTMLElement | undefined) => void;
   target?: HTMLElement;
   inline: boolean;
+  // True while the Connections page is mounted. That page never hosts the local
+  // controls, so the inline fallback stays hidden instead of surfacing them
+  // beneath Settings. An explicit target (diagnostics modal) still wins.
+  pageOpen?: boolean;
   children: ReactNode;
 }) {
   const [helpTarget, setHelpTarget] = useState<HTMLElement>();
@@ -49,7 +58,7 @@ export function LocalConnectionPresentationProvider({
   }, []);
   return (
     <Presentation.Provider
-      value={{ target, inline, helpTarget, requestInline, release }}
+      value={{ target, inline, pageOpen, helpTarget, requestInline, release }}
     >
       {children}
     </Presentation.Provider>
@@ -66,12 +75,12 @@ export function LocalConnectionPresentation({
   diagnosticsOnly?: boolean;
   destination?: HTMLElement;
 }) {
-  const { target, inline, helpTarget } = useContext(Presentation);
+  const { target, inline, pageOpen, helpTarget } = useContext(Presentation);
   const [host] = useState(() => document.createElement("div"));
   const fallback = useRef<HTMLDivElement>(null);
   const destination =
     explicitDestination ?? (diagnosticsOnly ? target : (helpTarget ?? target));
-  const hidden = !inline || diagnosticsOnly;
+  const hidden = !inline || diagnosticsOnly || pageOpen;
   useLayoutEffect(() => {
     const ownedFocus = host.contains(document.activeElement)
       ? (document.activeElement as HTMLElement)

@@ -1543,13 +1543,6 @@ fn scan_patches(ctx: &mut Ctx) -> Patches {
     patches
 }
 
-/// Node.js core modules. Importing one runs only the host's own code, which
-/// does not replace language built-ins.
-const NODE_CORE_MODULES: [&str; 12] = [
-    "assert", "buffer", "crypto", "events", "fs", "os", "path", "process", "stream", "url", "util",
-    "zlib",
-];
-
 /// How an application module reaches the module a specifier names.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ImportTarget {
@@ -1562,13 +1555,113 @@ enum ImportTarget {
     Unknown,
 }
 
+/// Bare names in Node 24's `module.builtinModules` inventory. Keep this list
+/// explicit so a prefix-only `node:` module never becomes a bare host import.
+/// The inventory test compares every entry with the active Node 24 runtime.
+const BARE_NODE_CORE_MODULES: &[&str] = &[
+    "_http_agent",
+    "_http_client",
+    "_http_common",
+    "_http_incoming",
+    "_http_outgoing",
+    "_http_server",
+    "_stream_duplex",
+    "_stream_passthrough",
+    "_stream_readable",
+    "_stream_transform",
+    "_stream_wrap",
+    "_stream_writable",
+    "_tls_common",
+    "_tls_wrap",
+    "assert",
+    "assert/strict",
+    "async_hooks",
+    "buffer",
+    "child_process",
+    "cluster",
+    "console",
+    "constants",
+    "crypto",
+    "dgram",
+    "diagnostics_channel",
+    "dns",
+    "dns/promises",
+    "domain",
+    "events",
+    "fs",
+    "fs/promises",
+    "http",
+    "http2",
+    "https",
+    "inspector",
+    "inspector/promises",
+    "module",
+    "net",
+    "os",
+    "path",
+    "path/posix",
+    "path/win32",
+    "perf_hooks",
+    "process",
+    "punycode",
+    "querystring",
+    "readline",
+    "readline/promises",
+    "repl",
+    "stream",
+    "stream/consumers",
+    "stream/promises",
+    "stream/web",
+    "string_decoder",
+    "sys",
+    "timers",
+    "timers/promises",
+    "tls",
+    "trace_events",
+    "tty",
+    "url",
+    "util",
+    "util/types",
+    "v8",
+    "vm",
+    "wasi",
+    "worker_threads",
+    "zlib",
+];
+
+fn is_bare_node_core_module(name: &str) -> bool {
+    BARE_NODE_CORE_MODULES.binary_search(&name).is_ok()
+}
+
+/// JavaScript `require` literals have no checker symbol. An ambient module
+/// declaration supplies their host identity, unless a loaded userland package
+/// with the same root could be selected by an alternate resolver.
+fn ambient_bare_node_core_module(ctx: &Ctx, name: &str) -> bool {
+    if !is_bare_node_core_module(name) {
+        return false;
+    }
+    let root = name.split('/').next().unwrap_or(name);
+    let package_segment = format!("/node_modules/{root}/");
+    if ctx
+        .externals
+        .iter()
+        .any(|&file| source_file_info(file).file_name.contains(&package_segment))
+    {
+        return false;
+    }
+    ctx.externals.iter().any(|&file| {
+        file.statements().iter().any(|declaration| {
+            declaration.kind() == SyntaxKind::ModuleDeclaration && declaration.name().text() == name
+        })
+    })
+}
+
 /// Classifies a literal module specifier without loading the module.
 fn import_target(ctx: &mut Ctx, importer: &str, specifier: Node) -> ImportTarget {
     let text = specifier.text();
-    if text.starts_with("node:")
-        || NODE_CORE_MODULES.contains(&text)
-        || text.split('?').next().is_some_and(|p| p.ends_with(".json"))
-    {
+    // The explicit scheme identifies a host module. A bare builtin is inert
+    // only if resolution has not identified a concrete userland module.
+    if text.starts_with("node:") {
         return ImportTarget::Inert;
     }
     let symbol = ctx.checker.get_symbol_at_location(specifier);
@@ -1578,19 +1671,25 @@ fn import_target(ctx: &mut Ctx, importer: &str, specifier: Node) -> ImportTarget
         // the application files by path.
         return if relative_application_file(ctx, importer, text) {
             ImportTarget::Application
+        } else if ambient_bare_node_core_module(ctx, text) {
+            ImportTarget::Inert
         } else {
             ImportTarget::Unknown
         };
     }
     let declarations = ctx.checker.sym(symbol).declarations.to_vec();
-    // An ambient `declare module "x"` inside the application still names
-    // runtime code the compiler cannot see.
+    // An ambient declaration cannot redirect a Node 24 bare builtin at
+    // runtime. Other ambient names still designate unknown runtime code.
     let Some(file) = declarations
         .first()
         .copied()
         .filter(|d| d.kind() == SyntaxKind::SourceFile)
     else {
-        return ImportTarget::Unknown;
+        return if !declarations.is_empty() && ambient_bare_node_core_module(ctx, text) {
+            ImportTarget::Inert
+        } else {
+            ImportTarget::Unknown
+        };
     };
     let name = source_file_info(file).file_name.clone();
     if name.ends_with(".json") {
@@ -1637,12 +1736,272 @@ fn relative_application_file(ctx: &Ctx, importer: &str, specifier: &str) -> bool
         .any(|candidate| ctx.file_of(candidate).is_some())
 }
 
+/// Local names of loaders returned by `createRequire` from the host module.
+/// This intentionally recognizes a bounded set of direct aliases. Unknown
+/// loader calls are not used as evidence that an intrinsic is intact.
+fn is_host_module_expression(expression: Node, host_modules: &HashSet<String>) -> bool {
+    let expression = skip_outer(expression);
+    if expression.kind() == SyntaxKind::AwaitExpression {
+        return is_host_module_expression(expression.expression(), host_modules);
+    }
+    if expression.kind() == SyntaxKind::Identifier {
+        return host_modules.contains(expression.text());
+    }
+    if expression.kind() != SyntaxKind::CallExpression {
+        return false;
+    }
+    let Some(argument) = expression.arguments().first() else {
+        return false;
+    };
+    if !matches!(
+        argument.kind(),
+        SyntaxKind::StringLiteral | SyntaxKind::NoSubstitutionTemplateLiteral
+    ) || !matches!(argument.text(), "node:module" | "module")
+    {
+        return false;
+    }
+    let callee = skip_outer(expression.expression());
+    match callee.kind() {
+        SyntaxKind::ImportKeyword => true,
+        SyntaxKind::Identifier => callee.text() == "require",
+        _ => false,
+    }
+}
+
+/// Whether a module namespace accesses the `createRequire` factory.
+fn is_create_require_access(callee: Node) -> bool {
+    match callee.kind() {
+        SyntaxKind::PropertyAccessExpression => callee.name().text() == "createRequire",
+        SyntaxKind::ElementAccessExpression => {
+            let key = skip_outer(callee.argument_expression());
+            matches!(
+                key.kind(),
+                SyntaxKind::StringLiteral | SyntaxKind::NoSubstitutionTemplateLiteral
+            ) && key.text() == "createRequire"
+        }
+        _ => false,
+    }
+}
+
+fn created_require_loaders(nodes: &[Node]) -> HashSet<String> {
+    let mut factories = HashSet::new();
+    let mut host_modules = HashSet::new();
+    for &node in nodes {
+        match node.kind() {
+            SyntaxKind::ImportDeclaration
+                if matches!(node.module_specifier().text(), "node:module" | "module") =>
+            {
+                let clause = node.import_clause();
+                if clause.is_nil() || clause.is_type_only() {
+                    continue;
+                }
+                if clause.name().is_some() {
+                    host_modules.insert(clause.name().text().to_owned());
+                }
+                let bindings = clause.named_bindings();
+                match bindings.kind() {
+                    SyntaxKind::NamespaceImport => {
+                        host_modules.insert(bindings.name().text().to_owned());
+                    }
+                    SyntaxKind::NamedImports => {
+                        for specifier in bindings.elements().iter() {
+                            let imported = if specifier.property_name().is_some() {
+                                specifier.property_name()
+                            } else {
+                                specifier.name()
+                            };
+                            if imported.text() == "createRequire" && !specifier.is_type_only() {
+                                factories.insert(specifier.name().text().to_owned());
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            SyntaxKind::VariableDeclaration if node.name().kind() == SyntaxKind::Identifier => {
+                let init = skip_outer(node.initializer());
+                if is_host_module_expression(init, &host_modules) {
+                    host_modules.insert(node.name().text().to_owned());
+                }
+            }
+            SyntaxKind::VariableDeclaration
+                if node.name().kind() == SyntaxKind::ObjectBindingPattern =>
+            {
+                let init = skip_outer(node.initializer());
+                if !is_host_module_expression(init, &host_modules) {
+                    continue;
+                }
+                for binding in node.name().elements().iter() {
+                    let imported = if binding.property_name().is_some() {
+                        binding.property_name()
+                    } else {
+                        binding.name()
+                    };
+                    if imported.text() == "createRequire"
+                        && binding.name().kind() == SyntaxKind::Identifier
+                    {
+                        factories.insert(binding.name().text().to_owned());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut loaders = HashSet::new();
+    // A direct default export has no VariableDeclaration to seed below.
+    for &node in nodes {
+        if node.kind() != SyntaxKind::ExportAssignment {
+            continue;
+        }
+        let init = skip_outer(node.expression());
+        if init.kind() != SyntaxKind::CallExpression {
+            continue;
+        }
+        let callee = skip_outer(init.expression());
+        let from_factory = (callee.kind() == SyntaxKind::Identifier
+            && factories.contains(callee.text()))
+            || (is_create_require_access(callee)
+                && is_host_module_expression(callee.expression(), &host_modules));
+        if from_factory {
+            loaders.insert("default".to_owned());
+        }
+    }
+    // A direct initializer and a local alias both retain the loader identity.
+    for _ in 0..nodes.len() {
+        let mut changed = false;
+        for &node in nodes {
+            if node.kind() != SyntaxKind::VariableDeclaration
+                || node.name().kind() != SyntaxKind::Identifier
+            {
+                continue;
+            }
+            let init = skip_outer(node.initializer());
+            let from_factory = if init.kind() != SyntaxKind::CallExpression {
+                false
+            } else {
+                let callee = skip_outer(init.expression());
+                (callee.kind() == SyntaxKind::Identifier && factories.contains(callee.text()))
+                    || (is_create_require_access(callee)
+                        && is_host_module_expression(callee.expression(), &host_modules))
+            };
+            let from_loader =
+                init.kind() == SyntaxKind::Identifier && loaders.contains(init.text());
+            if (from_factory || from_loader) && loaders.insert(node.name().text().to_owned()) {
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    loaders
+}
+
+fn module_require_call(ctx: &Ctx, callee: Node, loaders: &HashSet<String>) -> bool {
+    let callee = skip_outer(callee);
+    if callee.kind() == SyntaxKind::Identifier {
+        return loaders.contains(callee.text());
+    }
+    let is_require_member = match callee.kind() {
+        SyntaxKind::PropertyAccessExpression => callee.name().text() == "require",
+        SyntaxKind::ElementAccessExpression => {
+            literal_member(ctx, callee.argument_expression()) == Member::Named("require".to_owned())
+        }
+        _ => false,
+    };
+    is_require_member
+        && skip_outer(callee.expression()).kind() == SyntaxKind::Identifier
+        && skip_outer(callee.expression()).text() == "module"
+}
+
+fn element_access_symbol(ctx: &mut Ctx, access: Node) -> SymbolId {
+    let key = skip_outer(access.argument_expression());
+    let Some(name) = string_value(ctx, key) else {
+        return SymbolId::NIL;
+    };
+    let ty = ctx.checker.get_type_at_location(access.expression());
+    ctx.checker
+        .get_properties_of_type(ty)
+        .into_iter()
+        .find(|&symbol| ctx.checker.sym(symbol).name == name)
+        .map_or(SymbolId::NIL, |symbol| ctx.skip_alias(symbol))
+}
+
 /// Whether any application module has a runtime import, re-export, dynamic
 /// import or `require` of code outside the application. Type-only imports
 /// and re-exports are erased and exempt. The scan reads syntax and resolves
 /// specifiers through the checker; it never executes or reads dependencies.
 fn imports_external_runtime(ctx: &mut Ctx) -> bool {
+    let local_loaders: Vec<HashSet<String>> = ctx
+        .files
+        .iter()
+        .map(|file| created_require_loaders(&file.nodes))
+        .collect();
+    let mut loader_symbols = HashSet::new();
     for index in 0..ctx.files.len() {
+        let nodes = ctx.files[index].nodes.clone();
+        if local_loaders[index].contains("default") {
+            let module = ctx.files[index].node.symbol();
+            if !module.is_nil() {
+                let module = ctx.checker.get_merged_symbol_exported(module);
+                let default_export = ctx
+                    .checker
+                    .symbols
+                    .get(ctx.checker.sym(module).exports, "default");
+                if !default_export.is_nil() {
+                    loader_symbols.insert(default_export);
+                    let target = ctx.skip_alias(default_export);
+                    if !target.is_nil() {
+                        loader_symbols.insert(target);
+                    }
+                }
+            }
+        }
+        for node in nodes {
+            if node.kind() != SyntaxKind::VariableDeclaration
+                || node.name().kind() != SyntaxKind::Identifier
+                || !local_loaders[index].contains(node.name().text())
+            {
+                continue;
+            }
+            let symbol = ctx.resolve(node.name());
+            if !symbol.is_nil() {
+                loader_symbols.insert(symbol);
+            }
+        }
+    }
+    // Preserve loader identity through application aliases. `resolve` skips
+    // import/export aliases, while this loop also covers local forwarding
+    // bindings such as `const exported = importedLoader`.
+    loop {
+        let mut changed = false;
+        for index in 0..ctx.files.len() {
+            let nodes = ctx.files[index].nodes.clone();
+            for node in nodes {
+                if node.kind() != SyntaxKind::VariableDeclaration
+                    || node.name().kind() != SyntaxKind::Identifier
+                {
+                    continue;
+                }
+                let init = skip_outer(node.initializer());
+                let from_loader = init.kind() == SyntaxKind::Identifier
+                    && loader_symbols.contains(&ctx.resolve(init));
+                if !local_loaders[index].contains(node.name().text()) && !from_loader {
+                    continue;
+                }
+                let symbol = ctx.resolve(node.name());
+                if !symbol.is_nil() && loader_symbols.insert(symbol) {
+                    changed = true;
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+
+    for index in 0..ctx.files.len() {
+        let loaders = &local_loaders[index];
         for position in 0..ctx.files[index].nodes.len() {
             let node = ctx.files[index].nodes[position];
             let specifier = match node.kind() {
@@ -1665,7 +2024,29 @@ fn imports_external_runtime(ctx: &mut Ctx) -> bool {
                     let require = callee.kind() == SyntaxKind::Identifier
                         && callee.text() == "require"
                         && ctx.files[index].js;
-                    if !dynamic && !require {
+                    let created_loader = match callee.kind() {
+                        SyntaxKind::Identifier => {
+                            loaders.contains(callee.text())
+                                || loader_symbols.contains(&ctx.resolve(callee))
+                        }
+                        SyntaxKind::PropertyAccessExpression => {
+                            loader_symbols.contains(&ctx.resolve(callee.name()))
+                        }
+                        SyntaxKind::ElementAccessExpression => {
+                            let key = skip_outer(callee.argument_expression());
+                            matches!(
+                                key.kind(),
+                                SyntaxKind::StringLiteral
+                                    | SyntaxKind::NoSubstitutionTemplateLiteral
+                            ) && loader_symbols.contains(&element_access_symbol(ctx, callee))
+                        }
+                        _ => false,
+                    };
+                    if !dynamic
+                        && !require
+                        && !created_loader
+                        && !(ctx.files[index].js && module_require_call(ctx, callee, loaders))
+                    {
                         continue;
                     }
                     match node.arguments().first() {
@@ -1676,6 +2057,17 @@ fn imports_external_runtime(ctx: &mut Ctx) -> bool {
                                     | SyntaxKind::NoSubstitutionTemplateLiteral
                             ) =>
                         {
+                            if created_loader
+                                && (argument.text().starts_with("./")
+                                    || argument.text().starts_with("../"))
+                            {
+                                tracing::debug!(
+                                    file = %ctx.files[index].name,
+                                    specifier = argument.text(),
+                                    "createdRequire loader may resolve relative code outside the importer"
+                                );
+                                return true;
+                            }
                             argument
                         }
                         // A computed specifier may load any package.
@@ -2642,6 +3034,33 @@ fn to_int32(value: f64) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bare_node_core_inventory_matches_node_24() {
+        let output = std::process::Command::new("node")
+            .args([
+                "-e",
+                r#"const { builtinModules, isBuiltin } = require('node:module');
+if (process.versions.node.split('.')[0] !== '24') throw new Error('Node 24 required');
+if (isBuiltin('test') || !isBuiltin('node:test')) throw new Error('prefix-only boundary');
+console.log(JSON.stringify(builtinModules.filter(name => !name.startsWith('node:')).sort()));"#,
+            ])
+            .output()
+            .expect("Node 24 is required for the bare builtin inventory check");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let host_modules: Vec<String> = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(
+            BARE_NODE_CORE_MODULES,
+            host_modules.iter().map(String::as_str).collect::<Vec<_>>()
+        );
+        for name in ["test", "sea", "sqlite", "test/reporters", "http-polyfill"] {
+            assert!(!is_bare_node_core_module(name), "{name}");
+        }
+    }
 
     #[test]
     fn numbers_round_trip() {

@@ -12,7 +12,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -21,6 +20,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativetest"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
@@ -36,10 +36,7 @@ func TestManualNativeOpenCodeOverflowCompactionFreshRestoration(t *testing.T) {
 }
 
 func nativeOpenCodeCompactionFixture(t *testing.T, lost, overflow bool) {
-	binary := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
-	if binary == "" {
-		t.Skip("explicit isolated pinned OpenCode compaction fixture")
-	}
+	binary, version := nativetest.NativeOpenCodeExecutable(t)
 	requireNoManagedOpenCodeConfig(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -47,6 +44,7 @@ func nativeOpenCodeCompactionFixture(t *testing.T, lost, overflow bool) {
 	var logs bytes.Buffer
 	config := fixtureOwnedAPIConfig(t)
 	config.Probe.Process.Executable = binary
+	config.Probe.Version = version
 	config.Probe.Process.Logger = slog.New(slog.NewJSONHandler(&logs, nil))
 	config.Settings.Permission = []PermissionRule{{Permission: "bash", Pattern: "*", Action: PermissionAllow}}
 	config.Settings.Agent = BuildAgent
@@ -162,6 +160,7 @@ func nativeOpenCodeCompactionFixture(t *testing.T, lost, overflow bool) {
 	for actionNumber := 0; actionNumber < 2; actionNumber++ {
 		manual := fixtureOwnedAPIConfig(t)
 		manual.Probe.Process.Executable = binary
+		manual.Probe.Version = version
 		manual.Probe.Process.Logger = config.Probe.Process.Logger
 		manual.Workspace, manual.NativeRoot, manual.Settings, manual.ServerOrigin = config.Workspace, config.NativeRoot, config.Settings, provider.URL
 		manual.Token = apiproxy.TokenPrefix + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{byte(8 + actionNumber)}, 32))
@@ -242,6 +241,7 @@ func nativeOpenCodeCompactionFixture(t *testing.T, lost, overflow bool) {
 	}
 	replacement := fixtureOwnedAPIConfig(t)
 	replacement.Probe.Process.Executable = binary
+	replacement.Probe.Version = version
 	replacement.Probe.Process.Logger = config.Probe.Process.Logger
 	replacement.Workspace, replacement.NativeRoot, replacement.Settings, replacement.ServerOrigin = config.Workspace, config.NativeRoot, config.Settings, provider.URL
 	replacement.Token = apiproxy.TokenPrefix + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32))

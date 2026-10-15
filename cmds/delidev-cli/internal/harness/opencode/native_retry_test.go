@@ -5,11 +5,11 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"sync/atomic"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativetest"
 )
 
 type nativeRetryMode string
@@ -21,9 +21,7 @@ const (
 )
 
 func TestManualNativeOpenCodeOriginalRetry(t *testing.T) {
-	if os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE") == "" {
-		t.Skip("explicit private pinned native OpenCode retry fixture")
-	}
+	_, _ = nativetest.NativeOpenCodeExecutable(t)
 	for _, mode := range []nativeRetryMode{nativeRetryContinue, nativeRetryStop, nativeRetryLostStop} {
 		t.Run(string(mode), func(t *testing.T) { nativeRetryFixture(t, mode) })
 	}

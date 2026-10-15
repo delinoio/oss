@@ -192,6 +192,58 @@ pub struct AnalyzeOutcome {
     pub error: Option<BwError>,
 }
 
+#[derive(Debug)]
+struct CompletionTiming {
+    total_ms: u32,
+    saving_ms: u64,
+}
+
+fn elapsed_ms(started: Instant) -> u32 {
+    u32::try_from(started.elapsed().as_millis()).unwrap_or(u32::MAX)
+}
+
+fn persist_final_result(
+    run_dir: &Path,
+    result_bundle: &mut ResultBundle,
+    started: Instant,
+    saving_started: Instant,
+    save_bundle: impl FnOnce(&Path, &ResultBundle) -> BwResult<()>,
+) -> BwResult<CompletionTiming> {
+    bundle::fit_within_limit(result_bundle)?;
+    // Keep these fields as the compatibility fallback for older readers. The
+    // completion record below replaces them when this run is reopened.
+    result_bundle.analysis.finished_at = now();
+    result_bundle.analysis.duration_ms = elapsed_ms(started);
+    save_bundle(run_dir, result_bundle)?;
+
+    // The measured boundary follows the complete main bundle and summary
+    // writes. The small completion record cannot include its own write time.
+    let saved_at = Instant::now();
+    let timing = CompletionTiming {
+        total_ms: u32::try_from(saved_at.duration_since(started).as_millis()).unwrap_or(u32::MAX),
+        saving_ms: saved_at.duration_since(saving_started).as_millis() as u64,
+    };
+    let finished_at = now();
+    bundle::save_completion(
+        run_dir,
+        &result_bundle.analysis.run_id,
+        timing.total_ms,
+        &finished_at,
+    )?;
+    if result_bundle.analysis.status == RunStatus::Complete {
+        std::fs::remove_file(run_dir.join(INCOMPLETE_MARKER)).map_err(|error| {
+            BwError::new(
+                ErrorCode::OutputDirInvalid,
+                format!("Could not finalize {}: {error}", run_dir.display()),
+                "Check that the output directory is writable.",
+            )
+        })?;
+    }
+    result_bundle.analysis.finished_at = finished_at;
+    result_bundle.analysis.duration_ms = timing.total_ms;
+    Ok(timing)
+}
+
 pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
     let selection = detect::select(&SelectionRequest {
         project: options.project.clone(),
@@ -218,10 +270,17 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
     let started_at = now();
     let started = Instant::now();
     let log = Arc::new(RunLog::create(&run_dir, &run_id));
-    let _ = std::fs::write(
+    std::fs::write(
         run_dir.join(INCOMPLETE_MARKER),
         "This run has not finished. Results are incomplete.\n",
-    );
+    )
+    .map_err(|error| {
+        BwError::new(
+            ErrorCode::OutputDirInvalid,
+            format!("Could not mark {} incomplete: {error}", run_dir.display()),
+            "Check that the output directory is writable.",
+        )
+    })?;
     tracing::info!(run_id = %run_id, project = %selection.project_root.display(), bundler = selection.bundler.as_str(), "run started");
     log.event(
         "run-started",
@@ -520,23 +579,19 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
 
     set_stage(RunStage::Saving, "Saving results");
     let saving_started = Instant::now();
-    // Size fitting serializes the result and is part of saving; the stored
-    // duration covers it. The final write cannot be inside the file it
-    // writes, so the run log and progress report the total after it.
-    bundle::fit_within_limit(&mut result_bundle)?;
-    result_bundle.analysis.finished_at = now();
-    result_bundle.analysis.duration_ms =
-        u32::try_from(started.elapsed().as_millis()).unwrap_or(u32::MAX);
-    bundle::save(&run_dir, &result_bundle)?;
+    let timing = persist_final_result(
+        &run_dir,
+        &mut result_bundle,
+        started,
+        saving_started,
+        bundle::save,
+    )?;
     log.event(
         "stage",
-        json!({ "stage": "saving", "durationMs": saving_started.elapsed().as_millis() as u64 }),
+        json!({ "stage": "saving", "durationMs": timing.saving_ms }),
     );
-    let total_ms = u32::try_from(started.elapsed().as_millis()).unwrap_or(u32::MAX);
+    let total_ms = timing.total_ms;
     let status = result_bundle.analysis.status;
-    if matches!(status, RunStatus::Complete) {
-        let _ = std::fs::remove_file(run_dir.join(INCOMPLETE_MARKER));
-    }
     log.event(
         "run-finished",
         json!({
@@ -834,6 +889,136 @@ pub fn export_report(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn result_for_timing(status: RunStatus) -> ResultBundle {
+        ResultBundle {
+            schema_version: SCHEMA_VERSION,
+            analysis: Analysis {
+                schema_version: SCHEMA_VERSION,
+                run_id: uuid::Uuid::now_v7().to_string(),
+                status,
+                ..Analysis::default()
+            },
+            ..ResultBundle::default()
+        }
+    }
+
+    #[test]
+    fn completed_at_includes_delayed_bundle_write_in_live_saved_and_exported_results() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(INCOMPLETE_MARKER), "incomplete").unwrap();
+        let mut result = result_for_timing(RunStatus::Complete);
+        let started = Instant::now();
+        let saving_started = Instant::now();
+        let timing = persist_final_result(
+            dir.path(),
+            &mut result,
+            started,
+            saving_started,
+            |path, bundle| {
+                std::thread::sleep(std::time::Duration::from_millis(40));
+                bundle::save(path, bundle)
+            },
+        )
+        .unwrap();
+        assert!(timing.saving_ms >= 40);
+        assert!(timing.total_ms >= 40);
+        assert_eq!(result.analysis.duration_ms, timing.total_ms);
+        assert!(!dir.path().join(INCOMPLETE_MARKER).exists());
+
+        let loaded = bundle::load(dir.path()).unwrap();
+        assert_eq!(loaded.analysis.status, RunStatus::Complete);
+        assert_eq!(loaded.analysis.duration_ms, timing.total_ms);
+        assert_eq!(loaded.analysis.finished_at, result.analysis.finished_at);
+        let state = ServerState::new(
+            Served {
+                progress: RunProgress::default(),
+                analysis: None,
+                sources: Vec::new(),
+                run_dir: dir.path().to_path_buf(),
+                out_dir: dir.path().to_path_buf(),
+                started,
+            },
+            Arc::new(CancelSignal::default()),
+        );
+        let progress = server::serve_bundle(&state, loaded.clone(), dir.path().to_path_buf());
+        assert_eq!(progress.elapsed_ms, timing.total_ms);
+        let html = export::render(
+            "<html><head><!--bundlewhy:report--></head><body></body></html>",
+            &loaded.analysis,
+            &loaded.sources,
+            true,
+        );
+        let marker = "id=\"bundlewhy-report\">";
+        let start = html.find(marker).unwrap() + marker.len();
+        let end = start + html[start..].find("</script>").unwrap();
+        let exported: serde_json::Value = serde_json::from_str(&html[start..end]).unwrap();
+        assert_eq!(exported["analysis"]["durationMs"], timing.total_ms);
+    }
+
+    #[test]
+    fn completed_at_failed_timing_write_keeps_a_saved_run_incomplete() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(INCOMPLETE_MARKER), "incomplete").unwrap();
+        let mut initial = result_for_timing(RunStatus::Running);
+        bundle::save(dir.path(), &initial).unwrap();
+        std::fs::create_dir(dir.path().join(format!("{}.tmp", bundle::COMPLETION_FILE))).unwrap();
+        initial.analysis.status = RunStatus::Complete;
+        let error = persist_final_result(
+            dir.path(),
+            &mut initial,
+            Instant::now(),
+            Instant::now(),
+            bundle::save,
+        )
+        .unwrap_err();
+        assert_eq!(error.code, ErrorCode::OutputDirInvalid);
+        assert!(dir.path().join(INCOMPLETE_MARKER).exists());
+        assert!(!dir.path().join(bundle::COMPLETION_FILE).exists());
+        assert_eq!(
+            bundle::load(dir.path()).unwrap().analysis.status,
+            RunStatus::Partial
+        );
+    }
+
+    #[test]
+    fn completed_at_interrupted_after_bundle_write_is_not_complete() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(INCOMPLETE_MARKER), "incomplete").unwrap();
+        let result = result_for_timing(RunStatus::Complete);
+        bundle::save(dir.path(), &result).unwrap();
+        // Simulate termination after the main write and before the timing
+        // record and incomplete-marker removal.
+        let loaded = bundle::load(dir.path()).unwrap();
+        assert_eq!(loaded.analysis.status, RunStatus::Partial);
+        assert!(!dir.path().join(bundle::COMPLETION_FILE).exists());
+    }
+
+    #[test]
+    fn completed_at_failed_bundle_write_preserves_running_result() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(INCOMPLETE_MARKER), "incomplete").unwrap();
+        let mut result = result_for_timing(RunStatus::Running);
+        bundle::save(dir.path(), &result).unwrap();
+        std::fs::create_dir(dir.path().join(format!("{}.tmp", bundle::BUNDLE_FILE))).unwrap();
+        result.analysis.status = RunStatus::Complete;
+        assert!(
+            persist_final_result(
+                dir.path(),
+                &mut result,
+                Instant::now(),
+                Instant::now(),
+                bundle::save,
+            )
+            .is_err()
+        );
+        assert!(dir.path().join(INCOMPLETE_MARKER).exists());
+        assert!(!dir.path().join(bundle::COMPLETION_FILE).exists());
+        assert_eq!(
+            bundle::load(dir.path()).unwrap().analysis.status,
+            RunStatus::Failed
+        );
+    }
 
     #[test]
     fn source_excluded_runs_do_not_save_build_error_excerpts() {

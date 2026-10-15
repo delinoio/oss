@@ -143,3 +143,7 @@ save configuration, create mutation receipts, update timers, create occurrences,
 inspect execution accounts/Workers or execute native work. Saving and resuming
 retain their independent current-boundary computation; unchanged-calendar edits
 retain their published due instant. No start-date property is added.
+
+## Execution Job document budget
+
+Occurrence selection runs the shared execution Job document budget (see `docs/cmds-delidev-workspace-contract.md`) before any session or workspace job exists. An occurrence whose workspace, prompt and applied instructions cannot fit one execution Job document is recorded as a failed occurrence with a `resource_exhausted` problem instead of being retried; the saved schedule definition is unchanged.

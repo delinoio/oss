@@ -315,7 +315,7 @@ function HelpActions({
       id: ShortcutId.NewSession,
       scope: ShortcutScope.Global,
       label: "shortcuts.newSession",
-      bindings: [{ key: "n", primary: true, shift: true }],
+      bindings: [{ key: "n", primary: true }],
       input: ShortcutInput.Allow,
       run,
     },
@@ -410,7 +410,6 @@ it.each(["MacIntel", "Win32", "Linux x86_64"])(
       screen.getByRole("button", { name: "Close keyboard shortcuts" }),
       {
         key: "n",
-        shiftKey: true,
         metaKey: platform === "MacIntel",
         ctrlKey: platform !== "MacIntel",
       },
@@ -420,7 +419,6 @@ it.each(["MacIntel", "Win32", "Linux x86_64"])(
     view.unmount();
     fireEvent.keyDown(document.body, {
       key: "n",
-      shiftKey: true,
       ctrlKey: true,
     });
     expect(run).toHaveBeenCalledTimes(1);
@@ -512,12 +510,13 @@ it("lists native window bindings as read-only help without adding dispatch actio
   expect(
     Array.from(
       within(dialog)
-        .getByText("New Window")
+        .getByText("Minimize (native menu)")
         .closest("div")!
         .querySelectorAll("kbd"),
       (node) => node.textContent,
     ),
-  ).toEqual(["Ctrl", "N"]);
+  ).toEqual(["Ctrl", "M"]);
+  expect(within(dialog).queryByText("New Window")).toBeNull();
   expect(within(dialog).queryByText("Close Window")).toBeNull();
   expect(within(dialog).queryByText("Close tab")).toBeNull();
   expect(run).not.toHaveBeenCalled();

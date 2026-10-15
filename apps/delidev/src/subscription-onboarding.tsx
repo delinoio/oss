@@ -15,7 +15,9 @@ import {
   FailureCode,
   isEntityId,
   type CodexDiagnostic,
+  type GrokDiagnostic,
 } from "@delinoio/delidev-api-client";
+import { GrokDiagnosticNotice } from "./grok-diagnostic";
 import "./subscription-onboarding.css";
 import { InlineRemediation } from "./ui";
 
@@ -39,6 +41,8 @@ export interface SubscriptionOnboardingProps {
   busy: boolean;
   problem?: string;
   diagnostic?: CodexDiagnostic;
+  /** Safe Grok Build failure metadata of a refused or failed Grok operation. */
+  grokDiagnostic?: GrokDiagnostic;
   inspect?: () => void;
   canReopen: boolean;
   canCancel: boolean;
@@ -181,6 +185,23 @@ export function SubscriptionOnboarding(props: SubscriptionOnboardingProps) {
         {naming ? <span aria-hidden="true">✓</span> : null}
         {status}
       </p>
+      {props.grokDiagnostic && serviceName === "Grok" ? (
+        <GrokDiagnosticNotice
+          diagnostic={props.grokDiagnostic}
+          actions={
+            props.inspect ? (
+              <SettingsActionButton
+                icon={SettingsActionIcon.Retry}
+                type="button"
+                disabled={!active || busy}
+                onClick={props.inspect}
+              >
+                {copy("subscription-onboarding.inline.inspect")}
+              </SettingsActionButton>
+            ) : undefined
+          }
+        />
+      ) : null}
       {failed ? (
         <InlineRemediation
           summary={

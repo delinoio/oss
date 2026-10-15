@@ -133,6 +133,16 @@ type Manager struct {
 	Logger                        *slog.Logger
 }
 
+// requireAdmissibleRoot applies ManifestWorkerRootReserveBytes to new workspace
+// preparation only. initialize deliberately does not enforce it: a Worker
+// upgraded with a previously valid longer data root must still delete, recover
+// and retry cleanup of workspaces it already retains.
+func (m *Manager) requireAdmissibleRoot() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return ValidateWorkerRoot(m.Root)
+}
+
 func (m *Manager) initialize() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -181,7 +191,7 @@ func (r PrepareRequest) validateStructure() error {
 	if r.ForkProfile == CodexSidechatReferenceV1 || r.SidechatSource != nil {
 		return validateSidechatPreparation(r)
 	}
-	if r.ForkProfile != "" && (r.ForkProfile != OpenCodeGeneralChatForkV1 || r.Type != domain.GeneralChat || r.ForkSourceID == "" || r.ForkSourcePath == "" || len(r.Repositories) != 0) {
+	if r.ForkProfile != "" && (!r.ForkProfile.OpenCodeGeneralChat() || r.Type != domain.GeneralChat || r.ForkSourceID == "" || r.ForkSourcePath == "" || len(r.Repositories) != 0) {
 		return ResultUncertain()
 	}
 	if r.ForkSourceID != "" && (r.ForkSourceID.Validate() != nil || r.ForkSourceID == r.SessionID) {
@@ -301,8 +311,16 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 		logger.Warn("workspace_preparation_uncertain", "session_id", request.SessionID, "machine_id", request.MachineID, "code", domain.SafeError(cause).Code)
 		return Manifest{}, ResultUncertain()
 	}
+	// The configured root is checked before initialize creates anything under it;
+	// the canonical root that initialize installs is the one manifests record.
+	if err := m.requireAdmissibleRoot(); err != nil {
+		return Manifest{}, err
+	}
 	if err := m.initialize(); err != nil {
 		return uncertain(err)
+	}
+	if err := m.requireAdmissibleRoot(); err != nil {
+		return Manifest{}, err
 	}
 	lock, err := security.TryLock(filepath.Join(m.Root, "locks", string(request.SessionID)+".lock"))
 	if err != nil {
@@ -450,6 +468,9 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 			startupProgress(repositoryCtx, domain.StartupWorkspaceInspect, domain.StartupProgressRunning)
 			inspection, err := git.Inspect(ctx, spec.Checkout)
 			if err != nil {
+				return failed(err)
+			}
+			if err := ValidateCheckoutRoot(spec.Checkout, inspection.Root); err != nil {
 				return failed(err)
 			}
 			if request.Type == domain.Local && spec.RemoteURL != "" {

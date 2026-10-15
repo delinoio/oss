@@ -19,9 +19,61 @@ import (
 
 const MaxFrame = 1 << 20
 const maxPending = 128
-const maxEvents = 128
 const maxEventBytes = 8 << 20
 const maxRequests = 4096
+
+// Profile names one fixed transport profile. Each profile owns its frame, queued
+// byte and queued event-count bounds; none of them is configurable by callers.
+type Profile string
+
+const (
+	// ProfileCodex is the ordinary omitted-version Codex profile.
+	ProfileCodex Profile = "codex"
+	// ProfileImage is the Codex profile that admits bounded image observations.
+	ProfileImage Profile = "image"
+	// ProfileJSONRPC is the explicit JSON-RPC 2.0 profile used by Grok.
+	ProfileJSONRPC Profile = "jsonrpc"
+)
+
+// Queued event-count bounds. Codex streams fragment one response into many small
+// notifications while the Worker publishes each event durably before reading the
+// next, so its profiles tolerate a larger burst than the JSON-RPC profile.
+// Each slot reserves one Event descriptor (144 bytes on 64-bit targets), so the
+// Codex queue reserves at most 4,096 * sizeof(Event) bytes of descriptors in
+// addition to the separately bounded queued payload bytes.
+const (
+	maxCodexEvents   = 4096
+	maxJSONRPCEvents = 128
+)
+
+// LimitKind is the closed classification of a transport bound that failed a
+// connection with ResourceExhausted.
+type LimitKind string
+
+const (
+	LimitEventCount LimitKind = "event_count"
+	LimitEventBytes LimitKind = "event_bytes"
+	LimitFrameBytes LimitKind = "frame_bytes"
+)
+
+// profileLimits holds the bounds selected by one profile.
+type profileLimits struct {
+	jsonrpc    string
+	frameBytes int
+	queueBytes int
+	eventCount int
+}
+
+func limitsFor(profile Profile) profileLimits {
+	switch profile {
+	case ProfileJSONRPC:
+		return profileLimits{jsonrpc: "2.0", frameBytes: MaxFrame, queueBytes: maxEventBytes, eventCount: maxJSONRPCEvents}
+	case ProfileImage:
+		return profileLimits{frameBytes: 16 << 20, queueBytes: 32 << 20, eventCount: maxCodexEvents}
+	default:
+		return profileLimits{frameBytes: MaxFrame, queueBytes: maxEventBytes, eventCount: maxCodexEvents}
+	}
+}
 
 type EventKind string
 
@@ -71,6 +123,7 @@ type incoming struct {
 }
 
 type Connection struct {
+	profile         Profile
 	inputFrameLimit int
 	eventByteLimit  int
 	protected       security.ProtectedJSON
@@ -103,32 +156,35 @@ func uncertain() *domain.Error {
 // Start crosses the durable native start barrier, but sends no harness request.
 // The adapter must complete its handshake before exposing product operations.
 func Start(ctx context.Context, config process.Config) (*Connection, error) {
-	return start(ctx, config, "")
+	return startBounded(ctx, config, ProfileCodex)
 }
 
 // StartJSONRPC requires explicit JSON-RPC 2.0 envelopes in both directions.
 // Codex's existing omitted-version profile remains independent.
 func StartJSONRPC(ctx context.Context, config process.Config) (*Connection, error) {
-	return start(ctx, config, "2.0")
+	return startBounded(ctx, config, ProfileJSONRPC)
 }
 
 // StartImageObservations admits bounded native base64 image notifications only
 // for the explicitly selected original image adapter. Ordinary profiles retain
 // their one-MiB frame and eight-MiB aggregate queue bounds.
 func StartImageObservations(ctx context.Context, config process.Config) (*Connection, error) {
-	return startBounded(ctx, config, "", 16<<20, 32<<20)
+	return startBounded(ctx, config, ProfileImage)
 }
-func start(ctx context.Context, config process.Config, version string) (*Connection, error) {
-	return startBounded(ctx, config, version, MaxFrame, maxEventBytes)
-}
-func startBounded(ctx context.Context, config process.Config, version string, frameLimit, queueLimit int) (*Connection, error) {
-	life, cancel := context.WithCancel(ctx)
-	c := &Connection{inputFrameLimit: frameLimit, eventByteLimit: queueLimit, jsonrpc: version, cancel: cancel, done: make(chan struct{}), writeGate: make(chan struct{}, 1), events: make(chan Event, maxEvents), pending: map[string]*pending{}, seen: map[domain.ID]bool{}, incoming: map[string]incoming{}}
-	c.logger = config.Logger
-	if c.logger == nil {
-		c.logger = slog.Default()
+
+// newConnection builds an unstarted connection whose channel capacity and
+// admission checks share one per-profile event-count value.
+func newConnection(profile Profile, cancel context.CancelFunc, logger *slog.Logger, protectedValues []string) *Connection {
+	limits := limitsFor(profile)
+	if logger == nil {
+		logger = slog.Default()
 	}
-	c.protected = security.NewProtectedJSON(config.ProtectedValues)
+	return &Connection{profile: profile, inputFrameLimit: limits.frameBytes, eventByteLimit: limits.queueBytes, jsonrpc: limits.jsonrpc, cancel: cancel, done: make(chan struct{}), writeGate: make(chan struct{}, 1), events: make(chan Event, limits.eventCount), pending: map[string]*pending{}, seen: map[domain.ID]bool{}, incoming: map[string]incoming{}, logger: logger, protected: security.NewProtectedJSON(protectedValues)}
+}
+func startBounded(ctx context.Context, config process.Config, profile Profile) (*Connection, error) {
+	life, cancel := context.WithCancel(ctx)
+	c := newConnection(profile, cancel, config.Logger, config.ProtectedValues)
+	version := c.jsonrpc
 	config.Stdout = &frameWriter{connection: c}
 	config.Stderr = io.Discard
 	if version != "" {
@@ -257,13 +313,32 @@ func (c *Connection) Next(ctx context.Context) (Event, error) {
 		}
 	}
 }
+
+// queueLocked admits one event without ever blocking the sole stdout reader:
+// the count check against the channel capacity guarantees a free slot because
+// this is the only sender. The count bound is checked before
+// the byte bound, so an event exceeding both is classified as event_count.
 func (c *Connection) queueLocked(event Event) error {
-	if len(c.events) >= maxEvents || c.eventBytes+event.size > c.eventLimit() {
-		return domain.Fail(domain.ResourceExhausted, "Native event buffering reached its bound.", "Reconcile the native session before reconnecting; reduce consumer lag.")
+	if len(c.events) >= c.countLimit() {
+		c.logLimit(LimitEventCount, len(c.events)+1, c.countLimit())
+		return queueExhausted()
+	}
+	if c.eventBytes+event.size > c.eventLimit() {
+		c.logLimit(LimitEventBytes, c.eventBytes+event.size, c.eventLimit())
+		return queueExhausted()
 	}
 	c.eventBytes += event.size
 	c.events <- event
 	return nil
+}
+func queueExhausted() *domain.Error {
+	return domain.Fail(domain.ResourceExhausted, "Native event buffering reached its bound.", "Reconcile the native session before reconnecting; reduce consumer lag.")
+}
+
+// logLimit records one structured record per exhausted bound. It carries only a
+// closed classification and counters, never frame bodies, prompts or native text.
+func (c *Connection) logLimit(kind LimitKind, observed, maximum int) {
+	c.logger.Warn("native_limit_exceeded", "limit_kind", kind, "profile", c.profile, "observed", observed, "maximum", maximum)
 }
 
 // Call never retries. The caller allocates and persists the operation identity
@@ -673,6 +748,8 @@ func (w *frameWriter) Write(data []byte) (int, error) {
 		}
 		if len(w.buffer)+size > w.connection.frameLimit() {
 			w.stopped = true
+			// Report the first byte past the bound, independent of how the pipe chunked the data.
+			w.connection.logLimit(LimitFrameBytes, w.connection.frameLimit()+1, w.connection.frameLimit())
 			w.buffer = nil
 			w.connection.fail(domain.Fail(domain.ResourceExhausted, "A native protocol frame exceeds its bound.", "Use a supported harness output size and reconcile the interrupted session."))
 			break
@@ -703,6 +780,10 @@ func (c *Connection) frameLimit() int {
 	}
 	return c.inputFrameLimit
 }
+
+// countLimit is the channel capacity itself, so allocation and admission can
+// never disagree about the per-connection event-count bound.
+func (c *Connection) countLimit() int { return cap(c.events) }
 func (c *Connection) eventLimit() int {
 	if c.eventByteLimit == 0 {
 		return maxEventBytes

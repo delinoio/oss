@@ -41,6 +41,19 @@ expose the new enum. No public RPC, System capability, message field or SQLite
 migration is added. The [command contract](cmds-delidev-contract.md#parallel-session-dispatch)
 owns dispatch behavior.
 
+## Worker attach request identity
+
+The server binds `AttachWorkerRequest.request_id` to the exact request content,
+including the ordered `capabilities` list and the network fields. A negotiated
+attach therefore derives its request ID from the complete request, not from a
+hand-maintained profile of selected capabilities. The Worker keeps the same ID
+only while the whole request is identical across reconnects and rotates it when
+any capability is added, removed, reordered or duplicated, or when any other
+field changes. A server upgrade or rollback that changes the echoed capability
+support must never replay an earlier ID with different content, which the server
+rejects as a conflict. The `attachRequestIdentity` table and per-capability
+reconnect tests in `cmds/delidev-cli/internal/worker` own this rule.
+
 ## Branch prefix exact-quote negotiation
 
 Worker `BRANCH_PREFIX_EXACT_QUOTE_V1 = 65` is allocated and activated with
@@ -222,8 +235,10 @@ These declarations now exist in `system.proto` (`SYSTEM_CAPABILITY_GROK_SUBSCRIP
 `GrokDiagnosticPhase`) with regenerated Go and TypeScript bindings. They are
 declared but unadvertised: GetStatus and AttachWorker never list 39, 40 or 21,
 the Worker does not report 21 (the server keeps rejecting it as an unknown
-capability), and GetSubscriptionProgress never populates `grok_diagnostic`.
-The owning feature change advertises and activates them. Codex field 7, native
+capability). GetSubscriptionProgress populates `grok_diagnostic` only for a Grok
+account's original operation with safe, locally reconstructed metadata, and reports
+`generation` (field 6) for a succeeded Grok login or refresh; the owning
+feature change advertises and activates the capabilities. Codex field 7, native
 field 9 and existing System 30/35/36/37 and Worker 19 ownership remain
 unchanged. Reservations activate nothing and add no migration.
 
@@ -619,7 +634,7 @@ Record implementation status and validation results in pull requests, issues and
 
 - Failed subscription cleanup follows `cmds-delidev-subscription-contract.md#failed-subscription-cleanup-reservations` after main reservation the originating change (System 41). Preserve server-owned complete batches, original actor/login/revision, shared vault/reference deletion checks, atomic result/tombstone receipts, joined shutdown and restore quarantine. Terminal failures require a new explicit batch; status/restart never relaunches login or callbacks. No database migration or Rust/native change.
 
-- DeliDev Grok Build subscription support follows `cmds-delidev-grok-subscription-contract.md`. System 39/40, Worker 21, progress field 10 and the Grok diagnostic messages are declared in the protos but unadvertised until the owning feature activates them. Reservations grant no login, native execution or migration. Preserve existing capability ownership, server-owned OAuth/protected credentials, original account leases and same-account/Worker history; verify the subscription profile at or above `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) by native validation before activation.
+- DeliDev Grok Build subscription support follows `cmds-delidev-grok-subscription-contract.md`. System 39/40, Worker 21, progress field 10 and the Grok diagnostic messages are declared in the protos but unadvertised until the owning feature activates them. Progress field 10 is populated for Grok operations only with the closed phase, stable code, versions and correlation ID. Reservations grant no login, native execution or migration. Preserve existing capability ownership, server-owned OAuth/protected credentials, original account leases and same-account/Worker history; verify the subscription profile at or above `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) by native validation before activation.
 
 - Known subscription model suggestions follow `cmds-delidev-catalog-contract.md#known-subscription-model-suggestions`. The originating change established System capability 35 and the advisory declarations on main before activation. Keep bounded read-only owner/client metadata, explicit server outbound routing, joined cache refresh and review-only daily PRs separate from account/native/execution authority. Preserve atomic native-ID Worker saves and saved revision/history checks; no database migration.
 
@@ -1309,6 +1324,21 @@ explicit original provenance without input/accounting authority; absent native
 agent/model remains private until the first real input independently proves
 selection. No migration is allocated.
 
+System capability 104 and Worker capability 69
+(`OPENCODE_GENERAL_CHAT_FORK_REASONING_V1`) are an
+independent pair that adds Fork profile `opencode-general-chat-v2`: completed plain
+timed reasoning history is cloned with its messages. They refine capability
+26/15, which every v2 peer must also hold, and never change what 26/15 mean. The
+server selects v2 only when both capabilities are present and the source contains
+reasoning; a Worker without capability 69 is rejected before any job or native
+session exists. A Worker attachment that reports 69 without 15 is invalid peer
+state: AttachWorker rejects it as `InvalidArgument` before persistence and Worker
+machine validation never accepts it. The Worker advertises 69 only on a
+non-Windows host after the original server echoed it. The profile is an omitted-when-v1 JSON enum on the
+Fork job requests, the child Fork origin and the first execution Fork boundary, so
+v1 bytes are unchanged. No protobuf message field or migration is added; the generated
+Go and TypeScript enums are regenerated together.
+
 Worker-only permanent-deletion ownership JSON retains its closed version-1 shape
 with an optional original unpublished Sidechat child ID on Fork copies. Keep the
 4,096-copy bound, strict 4 MiB envelope/page limit and 20-envelope pagination bound;
@@ -1382,6 +1412,18 @@ The allocation ledger retains the complete enum/message field closure and the Sk
 ## Image input declarations
 
 The feature owns `AttachmentService`, its closed image/transfer/upload declarations, System 45, Worker 25 and typed creation/enqueue/queued-edit attachment field 5. Follow the [image input contract](cmds-delidev-image-input-contract.md). The owner permits these declarations and complete activation in the same feature PR. Byte chunks remain bounded at 256 KiB outside generic resource and assignment JSON; old peers retain text-only behavior. No migration is added.
+
+System capability 105 and Worker capability 70 (`OPENCODE_IMAGE_INPUTS_V1`) are an
+independent pair that enables image attachments for OpenCode. They refine capability
+45/25, which every peer holding them must also hold, and never change what 45/25 mean.
+The server freezes the OpenCode image declaration and admits or dispatches OpenCode
+attachments only for a Runner Device that reports 70; a Worker that predates the pair
+keeps receiving text-only OpenCode assignments with no declaration. A Worker attachment
+that reports 70 without 25 is invalid peer state: AttachWorker rejects it as
+`InvalidArgument` before persistence and Machine validation never accepts it. The
+Worker advertises 70 only after the original server echoed it. No protobuf message
+field or migration is added; the generated Go and TypeScript enums are regenerated
+together.
 
 The image input allocation ledger includes every AttachmentService method with its exact request, response and streaming profile. Queued edits preserve original accepted references; explicit typed references must match the complete ordered original selection. Omission retains old-client text edits.
 

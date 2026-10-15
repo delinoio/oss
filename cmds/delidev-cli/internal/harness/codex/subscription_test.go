@@ -57,7 +57,11 @@ func managedFixtureHandle(mode string, id json.RawMessage, method string, params
 				tamperHelperFixtureAlias()
 			}
 		}
-		write(id, map[string]any{"config": map[string]any{"cli_auth_credentials_store": store, "model_provider": "openai", "forced_login_method": "chatgpt", "model_providers": providers, "features": features}, "origins": nil, "layers": nil})
+		config := map[string]any{"cli_auth_credentials_store": store, "model_provider": "openai", "forced_login_method": "chatgpt", "model_providers": providers, "features": features}
+		if mode == "thread-managed-mcp-inventory" && input.Cwd == os.Getenv("DELIDEV_CODEX_MANAGED_WORKSPACE") {
+			config["mcp_servers"] = map[string]any{"project-server": map[string]any{"command": "private-project-command"}, "disabled-server": map[string]any{"command": "private-command", "enabled": false}}
+		}
+		write(id, map[string]any{"config": config, "origins": nil, "layers": nil})
 	case "account/login/start":
 		if sentinel := os.Getenv("DELIDEV_CODEX_LOGIN_SENTINEL"); sentinel != "" {
 			if os.WriteFile(sentinel, []byte("sent"), 0600) != nil {
@@ -164,7 +168,7 @@ func managedFixtureAccountRead(id json.RawMessage, account any, write func(json.
 
 func TestManagedCodexThreadRechecksWorkspaceProviderAuthority(t *testing.T) {
 	for _, resume := range []bool{false, true} {
-		for _, mode := range []string{"thread-managed-ready", "thread-managed-workspace-override"} {
+		for _, mode := range []string{"thread-managed-ready", "thread-managed-workspace-override", "thread-managed-mcp-inventory"} {
 			operation := "start"
 			if resume {
 				operation = "resume"
@@ -183,12 +187,21 @@ func TestManagedCodexThreadRechecksWorkspaceProviderAuthority(t *testing.T) {
 					t.Fatal(err)
 				}
 				defer client.Close()
+				if len(client.mcpStartupServers) != 0 {
+					t.Fatal("bootstrap config acquired project MCP startup authority")
+				}
+				if mode == "thread-managed-workspace-override" {
+					client.mcpStartupServers = map[string]struct{}{"stale-workspace-server": {}}
+				}
 				if resume {
 					_, err = client.ResumeThread(ctx, domain.NewID(), domain.NewID(), settings)
 				} else {
 					_, err = client.StartThread(ctx, domain.NewID(), settings)
 				}
 				if mode == "thread-managed-workspace-override" {
+					if len(client.mcpStartupServers) != 0 {
+						t.Fatal("failed configuration retained stale MCP startup authority")
+					}
 					if domain.SafeError(err).Code != domain.Unsupported {
 						t.Fatal("workspace provider override was accepted", err)
 					}
@@ -197,6 +210,11 @@ func TestManagedCodexThreadRechecksWorkspaceProviderAuthority(t *testing.T) {
 					}
 				} else if err != nil {
 					t.Fatal("official managed provider was rejected", err)
+				}
+				if mode == "thread-managed-mcp-inventory" {
+					if _, present := client.mcpStartupServers["project-server"]; !present || len(client.mcpStartupServers) != 1 {
+						t.Fatal("thread configuration did not retain its enabled MCP inventory")
+					}
 				}
 			})
 		}

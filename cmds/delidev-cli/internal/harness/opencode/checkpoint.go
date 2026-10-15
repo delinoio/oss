@@ -140,7 +140,8 @@ func (a *OwnedAPI) RetainCheckpoint(ctx context.Context) (raw []byte, reference 
 	}
 	requiresResume := stop != nil || s.observer.progress.StoppedOnRejection || last.value.Assistant.Error != nil
 	s.observer.mu.Unlock()
-	ref := CheckpointReference{OwnerID: s.owner, CreationRequestID: c.request, InputRequestID: i.receipt.RequestID, SessionID: history.SessionID, InputID: history.InputID, PartID: i.receipt.PartID, InputSHA256: hex.EncodeToString(i.digest[:]), HistorySHA256: history.Digest, RequiresResume: requiresResume}
+	identity := i.inputIdentity()
+	ref := CheckpointReference{OwnerID: s.owner, CreationRequestID: c.request, InputRequestID: i.receipt.RequestID, SessionID: history.SessionID, InputID: history.InputID, PartID: i.receipt.PartID, InputSHA256: hex.EncodeToString(identity[:]), HistorySHA256: history.Digest, RequiresResume: requiresResume}
 	value := nativeCheckpoint{Version: 1, NativeVersion: s.nativeVersion, Reference: ref, RuntimeHome: s.runtimeHome, Workspace: s.cwd, NativeRoot: s.runtimeRoot, Project: c.identity.project, Slug: c.identity.slug, Created: c.identity.created, SettingsSHA256: settings, CredentialSHA256: mutationDigest([]byte(s.apiProfile.Token)), History: history, Stop: stop, Files: files}
 	if scope := s.apiProfile.WorkspaceRoot; scope != nil && scope.windowsGlobal() {
 		if scope.native != s.runtimeRoot || scope.directory != s.cwd || c.identity.project != "global" {
@@ -249,6 +250,13 @@ func InspectCheckpoint(ctx context.Context, home string, raw []byte, ref Checkpo
 	return nil
 }
 
+// InspectCheckpointMetadata is InspectCheckpoint without the file comparison,
+// for a checkpoint that a later run of the same persistent profile superseded.
+func InspectCheckpointMetadata(raw []byte, ref CheckpointReference, home string) error {
+	_, err := decodeCheckpoint(raw, ref, home)
+	return err
+}
+
 func decodeCheckpoint(raw []byte, ref CheckpointReference, home string) (nativeCheckpoint, error) {
 	var value nativeCheckpoint
 	if len(raw) == 0 || len(raw) > maxCheckpointBytes || !checkpointDigest(ref.SHA256) || mutationDigest(raw) != ref.SHA256 || domain.UniqueIDs([]domain.ID{ref.OwnerID, ref.CreationRequestID, ref.InputRequestID}) != nil || !nativeID(ref.SessionID, "ses") || !nativeID(ref.InputID, "msg") || !nativeID(ref.PartID, "prt") || !checkpointDigest(ref.InputSHA256) || !checkpointDigest(ref.HistorySHA256) || domain.DecodeWithLimit(raw, &value, maxCheckpointBytes) != nil {
@@ -260,7 +268,7 @@ func decodeCheckpoint(raw []byte, ref CheckpointReference, home string) (nativeC
 		return nativeCheckpoint{}, sessionUncertain()
 	}
 	input := value.History.Messages[0]
-	if len(input.Parts) != 1 || input.Parts[0].ID != ref.PartID || input.Parts[0].Kind != TextPartKind || !validCheckpointLineage(value) || !validCheckpointSnapshot(value) || !validCheckpointProjectAdoption(value) || !validCheckpointReferences(value) {
+	if !validCheckpointInputParts(input.Parts, ref.PartID) || !validCheckpointLineage(value) || !validCheckpointSnapshot(value) || !validCheckpointProjectAdoption(value) || !validCheckpointReferences(value) {
 		return nativeCheckpoint{}, sessionUncertain()
 	}
 	if stop := value.Stop; stop != nil {

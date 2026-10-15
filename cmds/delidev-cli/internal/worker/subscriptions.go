@@ -46,6 +46,9 @@ type managedSubscriptionLease struct {
 	finishID    domain.ID
 	journalPath string
 	journal     managedSubscriptionJournal
+	// grokHome is the Grok home bound at materialization; Grok Finish retires the
+	// credential only in that directory.
+	grokHome subscription.GrokHome
 }
 
 type managedJournalState string

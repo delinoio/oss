@@ -8,7 +8,10 @@ pub fn process(op: &Operation) -> forge_tree_doc::Result<(Vec<u8>, String, Strin
         return Err(forge_scene::invalid("document_id"));
     }
     let prepared = forge_scene::prepare(&scene, &op.assets)?;
-    let bytes = if matches!(op.kind, OperationKind::Inspect) {
+    let bytes = if matches!(
+        op.kind,
+        OperationKind::Inspect | OperationKind::Analyze | OperationKind::AnalyzeQuality
+    ) {
         vec![]
     } else {
         match op.format {
@@ -17,9 +20,19 @@ pub fn process(op: &Operation) -> forge_tree_doc::Result<(Vec<u8>, String, Strin
             _ => unreachable!(),
         }
     };
-    let bounds =
-        serde_json::to_string(&prepared.bounds).map_err(|_| forge_scene::invalid("bounds"))?;
-    Ok((bytes, String::new(), bounds))
+    let geometry = if matches!(
+        op.kind,
+        OperationKind::Analyze | OperationKind::AnalyzeQuality
+    ) {
+        serde_json::to_string(&forge_scene::analyze(
+            &prepared,
+            matches!(op.kind, OperationKind::AnalyzeQuality),
+        )?)
+        .map_err(|_| forge_scene::invalid("scene"))?
+    } else {
+        serde_json::to_string(&prepared.bounds).map_err(|_| forge_scene::invalid("bounds"))?
+    };
+    Ok((bytes, String::new(), geometry))
 }
 pub struct SceneAssetOperation {
     kind: String,

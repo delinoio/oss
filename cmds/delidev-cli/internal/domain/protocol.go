@@ -23,8 +23,8 @@ const (
 )
 
 // GrokSubscriptionBaselineVersion is the minimum Grok Build SemVer for the
-// planned subscription profile. It is a declared baseline only; newer releases
-// are validated natively and never rejected by number alone.
+// subscription profile. Newer releases are validated natively and never rejected
+// by number alone.
 const GrokSubscriptionBaselineVersion = "1.0.46"
 
 // CodexVersionAllowed permits an actual native attempt, not inferred protocol
@@ -46,9 +46,10 @@ func VersionAtLeast(version, baseline string) bool {
 }
 
 // GrokSubscriptionVersionAllowed reports whether version is a valid SemVer at
-// or above GrokSubscriptionBaselineVersion. It is intentionally not wired into
-// any capability, discovery or execution path; the subscription flow adopts it
-// only together with native validation of the actual account profile.
+// or above GrokSubscriptionBaselineVersion. It gates only protected Take
+// admission of a Grok lease and is intentionally not wired into any capability,
+// discovery or execution path; the remaining subscription flow adopts it only
+// together with native validation of the actual account profile.
 func GrokSubscriptionVersionAllowed(version string) bool {
 	return VersionAtLeast(version, GrokSubscriptionBaselineVersion)
 }
@@ -84,6 +85,9 @@ type ProtocolObservation struct {
 	State      ProtocolState    `json:"state"`
 	Problem    *Error           `json:"problem,omitempty"`
 	Diagnostic *CodexDiagnostic `json:"diagnostic,omitempty"`
+	// GrokDiagnostic is retained only for a Grok Build installation whose native
+	// validation did not succeed. Codex keeps Diagnostic.
+	GrokDiagnostic *GrokDiagnostic `json:"grok_diagnostic,omitempty"`
 }
 
 func ProtocolFor(harness Harness) NativeProtocol {
@@ -123,7 +127,7 @@ func (i *Installation) validateProtocol(requested bool) error {
 	switch i.Protocol.State {
 	case ProtocolVerified:
 		supported := ValidNativeVersionMetadata(i.Version) && ProtocolFor(i.Harness) != ""
-		if !supported || !i.ProtocolVerified || i.Protocol.Problem != nil || i.Protocol.Diagnostic != nil {
+		if !supported || !i.ProtocolVerified || i.Protocol.Problem != nil || i.Protocol.Diagnostic != nil || i.Protocol.GrokDiagnostic != nil {
 			return Fail(InvalidArgument, "The reported native profile is not validated.", "Use a supported protocol profile; version detection alone cannot grant capabilities.")
 		}
 	case ProtocolFailed, ProtocolUnsupported:
@@ -135,6 +139,11 @@ func (i *Installation) validateProtocol(requested bool) error {
 	}
 	if d := i.Protocol.Diagnostic; d != nil {
 		if i.Harness != Codex || d.Validate() != nil || d.DetectedVersion != i.Version || i.Protocol.State == ProtocolVerified {
+			return Fail(InvalidArgument, "Invalid native failure attribution.", "Refresh discovery without raw error metadata.")
+		}
+	}
+	if d := i.Protocol.GrokDiagnostic; d != nil {
+		if i.Harness != GrokBuild || d.Validate() != nil || d.DetectedVersion != i.Version || i.Protocol.State == ProtocolVerified {
 			return Fail(InvalidArgument, "Invalid native failure attribution.", "Refresh discovery without raw error metadata.")
 		}
 	}

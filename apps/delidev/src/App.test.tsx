@@ -1,4 +1,9 @@
-import { SidebarProvider, memorySidebarBridge } from "./sidebar-preference";
+import {
+  SidebarPreference,
+  SidebarProblem,
+  SidebarProvider,
+  memorySidebarBridge,
+} from "./sidebar-preference";
 import { sessionInputReceipt } from "./test-session-input";
 import {
   chooseScrollOption,
@@ -50,9 +55,8 @@ it(
     const value = fixture([], [], [], false, true);
     render(<App transport={value.transport} />);
     fireEvent.keyDown(document.body, {
-      key: "N",
+      key: "n",
       ctrlKey: true,
-      shiftKey: true,
     });
     const firstMessage = await screen.findByRole("textbox", {
       name: "First message",
@@ -314,7 +318,7 @@ it("help shortcuts reuse existing navigation and screen focus without sending ba
   fireEvent.click(screen.getByRole("button", { name: "Keyboard shortcuts" }));
   fireEvent.keyDown(
     screen.getByRole("button", { name: "Close keyboard shortcuts" }),
-    { key: "n", ctrlKey: true, shiftKey: true },
+    { key: "n", ctrlKey: true },
   );
   expect(
     screen.queryByRole("dialog", { name: "Keyboard shortcuts" }),
@@ -3951,6 +3955,59 @@ it("rechecks the original welcome status failure without creating or controlling
   expect(value.controls).not.toHaveBeenCalled();
 });
 
+it.each([
+  [
+    "en",
+    "Your sessions, in one place",
+    "Select a retained session or start a new conversation.",
+  ],
+  [
+    "ko",
+    "내 세션을 한곳에서",
+    "유지된 세션을 선택하거나 새 대화를 시작하세요.",
+  ],
+])(
+  "renders only the %s welcome heading when no session is selected",
+  async (locale, heading, removedSubtitle) => {
+    const value = fixture();
+    try {
+      await act(() => i18n.changeLanguage(locale));
+      render(<App transport={value.transport} />);
+      const title = await screen.findByRole("heading", { name: heading });
+      const welcome = title.closest("section.welcome")!;
+      expect(welcome.children).toHaveLength(1);
+      expect(welcome.querySelector("p")).toBeNull();
+      expect(screen.queryByText(removedSubtitle)).toBeNull();
+      expect(screen.queryByRole("button", { name: /retry/i })).toBeNull();
+    } finally {
+      await act(() => i18n.changeLanguage("en"));
+    }
+  },
+);
+
+it("keeps the welcome status failure and its retry action without a subtitle", async () => {
+  const value = fixture();
+  value.status.mockRejectedValueOnce(
+    new ConnectError("Fixture status failure", Code.PermissionDenied),
+  );
+  render(<App transport={value.transport} />);
+  const retry = await screen.findByRole("button", {
+    name: "Retry current read",
+  });
+  const welcome = retry.closest<HTMLElement>("section.welcome")!;
+  expect(
+    within(welcome).getByRole("heading", {
+      name: "Your sessions, in one place",
+    }),
+  ).toBeTruthy();
+  expect(welcome.querySelector(":scope > p")).toBeNull();
+  expect(
+    screen.queryByText(
+      "Select a retained session or start a new conversation.",
+    ),
+  ).toBeNull();
+});
+
 it(
   "exposes the wide sidebar shortcut on the persistent main landmark",
   async () => {
@@ -4543,12 +4600,200 @@ it("autofocuses visible Search after a wide sidebar preference read failure", as
       <App transport={value.transport} />
     </SidebarProvider>,
   );
-  await screen.findByRole("alert");
+  await waitFor(() => expect(bridge.read).toHaveBeenCalled());
+  await act(async () => {});
   fireEvent.click(headerAction("Search"));
   const input = screen.getByRole("textbox", { name: "Search conversations" });
   flushFrames();
   expect(document.activeElement).toBe(input);
   expectNoNavigationWrites(value);
+});
+
+it.each(Object.values(SidebarProblem))(
+  "renders no sidebar preference notice or Reload action for a %s problem",
+  async (problem) => {
+    viewport();
+    const value = fixture();
+    const bridge = memorySidebarBridge();
+    vi.spyOn(bridge, "read").mockResolvedValue({
+      revision: 1,
+      sidebar_preference: SidebarPreference.Expanded,
+      problem,
+    });
+    const view = render(
+      <SidebarProvider bridge={bridge}>
+        <App transport={value.transport} />
+      </SidebarProvider>,
+    );
+    await waitFor(() => expect(bridge.read).toHaveBeenCalled());
+    await act(async () => {});
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /Reload sidebar preference/ }),
+    ).toBeNull();
+    expect(
+      view.container.querySelector(".sidebar-preference-notice"),
+    ).toBeNull();
+    expect(view.container.textContent).not.toMatch(/sidebar preference/i);
+  },
+);
+
+// Without a window notice the toggle shortcut is the recovery action: while a
+// problem fences saves, a press inspects once and never saves or queues the
+// requested change.
+it.each(Object.values(SidebarProblem))(
+  "recovers from a %s sidebar problem through the toggle shortcut without replaying a save",
+  async (problem) => {
+    viewport();
+    const value = fixture();
+    const bridge = memorySidebarBridge();
+    const fenced = {
+      revision: 1,
+      sidebar_preference: SidebarPreference.Expanded,
+      problem,
+    };
+    let release!: () => void;
+    const read = vi
+      .spyOn(bridge, "read")
+      .mockResolvedValueOnce(fenced)
+      // A failed inspection keeps the fence and changes nothing.
+      .mockRejectedValueOnce(new Error("private storage detail"))
+      // A still-problematic inspection keeps the fence as well.
+      .mockResolvedValueOnce(fenced)
+      // A pending inspection ignores later presses instead of queueing them.
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            release = () =>
+              resolve({
+                revision: 1,
+                sidebar_preference: SidebarPreference.Expanded,
+                problem: null,
+              });
+          }),
+      );
+    const update = vi.spyOn(bridge, "update");
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    render(
+      <SidebarProvider bridge={bridge}>
+        <App transport={value.transport} />
+      </SidebarProvider>,
+    );
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+    await act(async () => {});
+    const press = async () => {
+      fireEvent.keyDown(document.body, { key: "b", ctrlKey: true });
+      await act(async () => {});
+    };
+    const collapsed = () => document.querySelector(".app.sidebar-collapsed");
+    await press();
+    expect(read).toHaveBeenCalledTimes(2);
+    await press();
+    expect(read).toHaveBeenCalledTimes(3);
+    await press();
+    expect(read).toHaveBeenCalledTimes(4);
+    await press();
+    expect(read).toHaveBeenCalledTimes(4);
+    expect(update).not.toHaveBeenCalled();
+    expect(collapsed()).toBeNull();
+    await act(async () => release());
+    // The recovering press never saves; only the next press does.
+    expect(update).not.toHaveBeenCalled();
+    expect(collapsed()).toBeNull();
+    await press();
+    await waitFor(() => expect(collapsed()).toBeTruthy());
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(update).toHaveBeenCalledWith(SidebarPreference.Collapsed, 1);
+    expect(read).toHaveBeenCalledTimes(4);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
+    // Logs carry only stable problem classifications.
+    const logged = JSON.stringify([...info.mock.calls, ...warn.mock.calls]);
+    expect(logged).not.toContain("private storage detail");
+    expect(info).toHaveBeenCalledWith(
+      "delidev.sidebar_preference.recovery_requested",
+      { problem: expect.any(String) },
+    );
+    info.mockRestore();
+    warn.mockRestore();
+  },
+);
+
+it.each([
+  SidebarProblem.OutcomeUnknown,
+  SidebarProblem.WriteFailed,
+  SidebarProblem.Changed,
+] as const)(
+  "recovers from a rejected %s sidebar save through the toggle shortcut and never replays that save",
+  async (problem) => {
+    viewport();
+    const value = fixture();
+    const bridge = memorySidebarBridge();
+    const save = bridge.update;
+    const update = vi
+      .spyOn(bridge, "update")
+      .mockImplementationOnce(async (_preference, revision) => {
+        if (problem === SidebarProblem.OutcomeUnknown)
+          throw new Error("private storage detail");
+        return {
+          revision,
+          sidebar_preference: SidebarPreference.Expanded,
+          problem,
+        };
+      })
+      .mockImplementation(save);
+    const read = vi.spyOn(bridge, "read");
+    render(
+      <SidebarProvider bridge={bridge}>
+        <App transport={value.transport} />
+      </SidebarProvider>,
+    );
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+    await act(async () => {});
+    const press = async () => {
+      fireEvent.keyDown(document.body, { key: "b", ctrlKey: true });
+      await act(async () => {});
+    };
+    const collapsed = () => document.querySelector(".app.sidebar-collapsed");
+    await press();
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(collapsed()).toBeNull();
+    // The fenced press inspects instead of saving again.
+    await press();
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(collapsed()).toBeNull();
+    await press();
+    await waitFor(() => expect(collapsed()).toBeTruthy());
+    expect(update).toHaveBeenCalledTimes(2);
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("alert")).toBeNull();
+  },
+);
+
+it("leaves a fenced sidebar preference untouched by the toggle shortcut in the compact layout", async () => {
+  viewport(true);
+  const value = fixture();
+  const bridge = memorySidebarBridge();
+  const read = vi.spyOn(bridge, "read").mockResolvedValue({
+    revision: 1,
+    sidebar_preference: SidebarPreference.Expanded,
+    problem: SidebarProblem.ReadFailed,
+  });
+  const update = vi.spyOn(bridge, "update");
+  render(
+    <SidebarProvider bridge={bridge}>
+      <App transport={value.transport} />
+    </SidebarProvider>,
+  );
+  await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+  await act(async () => {});
+  fireEvent.keyDown(document.body, { key: "b", ctrlKey: true });
+  await act(async () => {});
+  expect(read).toHaveBeenCalledTimes(1);
+  expect(update).not.toHaveBeenCalled();
 });
 
 // Search results carry only the child ID, so routing reads retained metadata.

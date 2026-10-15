@@ -1,5 +1,4 @@
-import { copy, useLocale } from "./localization";
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -10,6 +9,10 @@ import {
   UsageQuery,
   isEntityId,
 } from "@delinoio/delidev-api-client";
+import {
+  PresentationFailureLog,
+  PresentationPhase,
+} from "./presentation-diagnostics";
 import {
   TrayDestination,
   TrayPublisher,
@@ -23,7 +26,6 @@ export function TrayPresentation({
 }: {
   navigate: (destination: TrayDestination, inboxId?: string) => void;
 }) {
-  useLocale();
   const enabled = isTauri();
   const overview = useQuery(
     SystemQuery.getOverview,
@@ -66,20 +68,20 @@ export function TrayPresentation({
   const latest = useRef<TraySummary>(summary);
   latest.current = summary;
   const publisher = useRef<TrayPublisher>(undefined);
-  const [failed, setFailed] = useState(false);
   const onNavigate = useEffectEvent(navigate);
   useEffect(() => {
     if (!enabled) return;
     let canceled = false;
+    // The window renders no status for tray failures, so these warnings are the
+    // only renderer-side evidence. One log belongs to one tray lifetime.
+    const failures = new PresentationFailureLog();
     const value = new TrayPublisher(
       {
         begin: () => invoke("begin_tray"),
         publish: (scope, revision, summary) =>
           invoke("publish_tray", { scope, revision, summary }),
       },
-      (failed) => {
-        if (!canceled) setFailed(failed);
-      },
+      (failed, phase) => failures.report(phase, failed),
     );
     publisher.current = value;
     value.update(latest.current);
@@ -120,9 +122,10 @@ export function TrayPresentation({
             await invoke("acknowledge_tray_action", { id: action.id });
           }
           retries = 0;
+          failures.recovered(PresentationPhase.TrayActionRead);
         } catch {
           if (!canceled) {
-            setFailed(true);
+            failures.failed(PresentationPhase.TrayActionRead);
             // A concurrent native label publication can briefly return Busy.
             // Retry only this retained read/idempotent acknowledgment, never a
             // product mutation or a new notification display.
@@ -151,10 +154,13 @@ export function TrayPresentation({
         }
       })
       .catch(() => {
-        if (!canceled) setFailed(true);
+        // Without the activation listener the tray still publishes.
+        if (!canceled)
+          failures.failed(PresentationPhase.TrayActivationListener);
       });
     return () => {
       canceled = true;
+      failures.dispose();
       if (retryTimer) clearTimeout(retryTimer);
       unlisten?.();
       value.close();
@@ -164,9 +170,5 @@ export function TrayPresentation({
   useEffect(() => {
     publisher.current?.update(summary);
   }, [summary]);
-  return failed ? (
-    <p role="status">
-      {copy("tray-presentation.trayStatusIsUnavailableSessionsAnd_7fdf0e")}
-    </p>
-  ) : null;
+  return null;
 }

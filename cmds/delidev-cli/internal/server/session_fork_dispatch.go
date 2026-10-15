@@ -30,13 +30,18 @@ func queueForkInitialExecution(tx *store.Tx, sr store.Record, session domain.Ses
 	if f.Snapshot.Configuration.Harness == domain.OpenCode && !machineCapabilityContains(machine.WorkerCapabilities, domain.OpenCodeGeneralChatForkV1) {
 		return store.Record{}, forkConflict()
 	}
+	// A profile v2 child retains cloned reasoning history only a reasoning-aware
+	// Worker can verify.
+	if f.OpenCodeProfile.Reasoning() && !domain.OpenCodeForkReasoningSupported(machine.WorkerCapabilities) {
+		return store.Record{}, forkConflict()
+	}
 	instance, seen, err := tx.WorkerInstance(session.MachineID)
 	if err != nil || instance.Validate() != nil || time.Since(seen) > domain.WorkerConnectionTimeout || seen.After(time.Now().UTC().Add(time.Second)) {
 		return store.Record{}, forkConflict()
 	}
 	// Check current account/project/installation eligibility even when explicit
 	// Resume has no queued input. Neither empty Resume nor fork advances routing.
-	input := domain.ExecutionJobInput{Version: 3, SessionID: sr.ID, MachineID: session.MachineID, ExecutionID: domain.NewID(), InputID: domain.NewID(), ThreadRequestID: domain.NewID(), TurnRequestID: domain.NewID(), Configuration: f.Snapshot.Configuration, ConfigurationDigest: f.Snapshot.ConfigurationDigest, AccountID: f.Snapshot.InitialAccountID, ConnectionID: f.Snapshot.ConnectionID, Fork: &domain.ForkExecution{JobID: f.JobID, RuntimeID: f.RuntimeID, NativeThreadID: f.NativeThreadID, NativeTurnID: f.ChildTurn(), CheckpointDigest: f.CheckpointDigest, HistoryRequestID: domain.NewID()}, Input: domain.SessionInput{Prompt: "Fork eligibility check", Mode: domain.ExecuteMode}}
+	input := domain.ExecutionJobInput{Version: 3, SessionID: sr.ID, MachineID: session.MachineID, ExecutionID: domain.NewID(), InputID: domain.NewID(), ThreadRequestID: domain.NewID(), TurnRequestID: domain.NewID(), Configuration: f.Snapshot.Configuration, ConfigurationDigest: f.Snapshot.ConfigurationDigest, AccountID: f.Snapshot.InitialAccountID, ConnectionID: f.Snapshot.ConnectionID, Fork: &domain.ForkExecution{JobID: f.JobID, RuntimeID: f.RuntimeID, NativeThreadID: f.NativeThreadID, NativeTurnID: f.ChildTurn(), CheckpointDigest: f.CheckpointDigest, HistoryRequestID: domain.NewID(), OpenCodeProfile: f.OpenCodeProfile}, Input: domain.SessionInput{Prompt: "Fork eligibility check", Mode: domain.ExecuteMode}}
 	// The child retains the original v4 selection before publication. Parent
 	// deletion may purge the creation job, so it cannot be an execution dependency.
 	input.Startup = f.Startup

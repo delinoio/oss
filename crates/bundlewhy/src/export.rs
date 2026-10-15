@@ -227,6 +227,61 @@ mod tests {
         assert!(with_sources.contains("snippetSecret"));
     }
 
+    #[test]
+    fn export_keeps_export_usage_paths_with_or_without_sources() {
+        use crate::model::{
+            ExportReference, ExportScope, ExportUsage, ExportUsageEdge, ExportUsagePath,
+            ExportUsagePathEnd, ExportUsageState, ExportUsageTruncation,
+        };
+
+        let usage = ExportUsage {
+            state: ExportUsageState::Available,
+            note: String::new(),
+            paths: vec![ExportUsagePath {
+                edges: vec![ExportUsageEdge {
+                    consumer: ExportReference {
+                        module: "src/main.js".to_owned(),
+                        export_path: Vec::new(),
+                        scope: ExportScope::Module,
+                    },
+                    provider: ExportReference {
+                        module: "src/lib.js".to_owned(),
+                        export_path: vec!["foo".to_owned()],
+                        scope: ExportScope::Named,
+                    },
+                    dependency_id: "9".to_owned(),
+                    location: "2:1-5".to_owned(),
+                }],
+                end: ExportUsagePathEnd::Root,
+            }],
+            truncation: ExportUsageTruncation::None,
+        };
+        let analysis = Analysis {
+            schema_version: 1,
+            status: RunStatus::Complete,
+            diagnostics: vec![Diagnostic {
+                id: "d-0123456789ab".to_owned(),
+                export_usage: Some(usage.clone()),
+                ..Diagnostic::default()
+            }],
+            ..Analysis::default()
+        };
+        for include_sources in [true, false] {
+            let html = render(
+                "<html><head></head></html>",
+                &analysis,
+                &[],
+                include_sources,
+            );
+            let payload = embedded_payload(&html);
+            let embedded: crate::model::ExportUsage = serde_json::from_value(
+                payload["analysis"]["diagnostics"][0]["exportUsage"].clone(),
+            )
+            .unwrap();
+            assert_eq!(embedded, usage, "include_sources={include_sources}");
+        }
+    }
+
     fn embedded_payload(html: &str) -> serde_json::Value {
         let marker = "id=\"bundlewhy-report\">";
         let start = html.find(marker).unwrap() + marker.len();

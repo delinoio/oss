@@ -219,9 +219,25 @@ private error and `reauthenticationRequired` failure reason; discard descriptors
 and diagnostics without changing account health, configuration or input/tool
 authority. [Official native connector registration](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2641a6b67c94faeff5/codex-rs/core/src/mcp.rs)
 and [event mapping](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2641a6b67c94faeff5/codex-rs/app-server/src/bespoke_event_handling.rs)
-keep this status separate from tool execution and authentication. Other server
-names, API profiles, unscoped/foreign observations, OAuth completions, MCP event
+keep this status separate from tool execution and authentication. API profiles,
+unscoped/foreign observations, OAuth completions, MCP event
 streams and tool calls retain their existing private adapter boundaries.
+Ordinary managed ChatGPT project executions also consume root-bound passive
+startup status for project-configured MCP servers using the same closed schema.
+Before binding Start or Resume, the workspace's successful native `config/read`
+retains only enabled names from `mcp_servers` (at most 1,024 entries, bounded
+nonempty names and object descriptors). Disabled and absent entries grant no
+startup-status authority. Malformed or duplicate configuration fails validation;
+a failed fresh read discards any earlier inventory. Each external startup name
+must match that original member's verified workspace inventory exactly. Unknown
+names retain the private unsupported boundary; another member's inventory cannot
+authorize them.
+The adapter discards server names and diagnostics and logs only the closed status,
+owner identity and error presence. These observations do not publish product
+events, complete a turn, change account health or grant tool authority. API,
+isolated title, Sidechat and model-observation profiles retain their separate
+boundaries, as do unscoped and foreign-thread observations. External MCP tool
+calls, OAuth completion and event streams still require their own typed adapters.
 The original execution process's notification-only `skills/changed` accepts
 exactly a required empty object as discarded process metadata. Its native cache
 invalidation signal never causes `skills/list`, package enumeration, catalog
@@ -345,7 +361,38 @@ Protected ChatGPT titles run the original startup-proven executable with `Manage
 
 The internal `nativewire` connection consumes newline-delimited JSON-RPC on distinct native stdout and stdin streams and discards raw stderr. It validates UTF-8, unique JSON keys, required envelope discrimination, request identity type and protocol version, and preserves byte-fragmented Unicode. Codex's optional bounded `emittedAtMs` notification field is retained as provenance, not an ordering or deduplication identity. Unknown envelope shapes fail instead of being silently interpreted.
 
-Each frame/request/response is capped at 1 MiB. Pending outgoing requests and incoming interactions are each capped at 128; buffered events are capped at 128 and 8 MiB. A connection remembers at most 4,096 sent request identities, then requires explicit draining/reconciliation and a new connection. Slow consumers, oversized frames or invalid protocol input stop the owned connection with a typed diagnostic. Cleanup must still prove descendant termination before private runtimes are removed.
+Each frame/request/response is capped at 1 MiB, except for the image-observation profile. Pending outgoing requests and incoming interactions are each capped at 128; buffered events are capped per profile by count and by queued bytes, as defined in [Native event queue limits](#native-event-queue-limits). A connection remembers at most 4,096 sent request identities, then requires explicit draining/reconciliation and a new connection. Slow consumers, oversized frames or invalid protocol input stop the owned connection with a typed diagnostic. Cleanup must still prove descendant termination before private runtimes are removed.
+
+#### Native event queue limits
+
+Every `nativewire` connection selects one fixed profile when it starts. The profile alone decides the frame, queued-byte and queued-event-count bounds; callers cannot override them and no public RPC, protocol or proto field exposes them. Codex fragments one response into many small notifications while the Worker publishes each event durably before it reads the next, so the Codex profiles queue up to 4,096 undelivered events. The explicit JSON-RPC profile used by Grok keeps 128.
+
+| Profile   | Starter                  | Max frame | Max queued bytes | Max queued events |
+| --------- | ------------------------ | --------- | ---------------- | ----------------- |
+| `codex`   | `Start`                  | 1 MiB     | 8 MiB            | 4,096             |
+| `image`   | `StartImageObservations` | 16 MiB    | 32 MiB           | 4,096             |
+| `jsonrpc` | `StartJSONRPC`           | 1 MiB     | 8 MiB            | 128               |
+
+The channel capacity is the event-count bound, so allocation and admission cannot disagree. The pending-request bound (128), the incoming-interaction bound (128) and the remembered-request-identity bound (4,096) are not profile specific and are unchanged. The stdout reader is the only sender and never blocks: a full queue fails the connection instead of waiting, so native replies share that reader without stalling behind a slow consumer.
+
+Admission is evaluated per frame, in this order, and each row is covered by a test for every profile. `N`, `B` and `F` below are the profile's event, queued-byte and frame bounds.
+
+| Condition when the frame arrives                                                             | Result                                                                                                                               | Limit classification logged                                                                              |
+| -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| Frame is at most `F` bytes                                                                   | Parsed; admission continues below                                                                                                    | none                                                                                                     |
+| Frame accumulates `F + 1` bytes (including across fragmented writes)                         | Connection fails with `ResourceExhausted` ("A native protocol frame exceeds its bound."); frame is not parsed                        | `frame_bytes`, observed `F + 1` (the first byte past the bound, whatever the read chunking), maximum `F` |
+| Queue holds at most `N - 1` events                                                           | Count check passes                                                                                                                   | none                                                                                                     |
+| Queue holds `N` events (the `N + 1`th undelivered event)                                     | Connection fails with `ResourceExhausted` ("Native event buffering reached its bound."); no event is dropped, truncated or coalesced | `event_count`, observed `N + 1`, maximum `N`                                                             |
+| Queued bytes plus this frame are at most `B` (including exactly `B`)                         | Event is admitted                                                                                                                    | none                                                                                                     |
+| Queued bytes plus this frame are `B + 1` or more while the queue holds fewer than `N` events | Connection fails with the same `ResourceExhausted` error                                                                             | `event_bytes`, observed queued bytes plus frame size, maximum `B`                                        |
+| Both the count and byte bounds would be exceeded                                             | Connection fails with the same `ResourceExhausted` error                                                                             | `event_count` (the count check runs first)                                                               |
+| Consumer takes one event                                                                     | One slot and the event's bytes are released and admission resumes                                                                    | none                                                                                                     |
+
+Server requests and late responses use the same queue and the same rows, so near capacity they keep their original request identity, arrival token and late-response payload, and bounded cancellation of an unanswered request still works after exhaustion. Exhaustion calls the connection failure path, which cancels, terminates and joins the owned process scope; an acknowledged input is never replayed automatically, and the public error code, message and recovery guidance are unchanged for all three classifications.
+
+Exhaustion writes exactly one structured `native_limit_exceeded` warning with the fields `limit_kind` (`event_count`, `event_bytes` or `frame_bytes`), `profile`, `observed` and `maximum`. The record never contains frame bodies, prompts, credentials or native text, and the diagnostic stderr overflow keeps its separate error without this record.
+
+Memory bound: a connection retains at most `N * sizeof(Event)` bytes of event descriptors plus at most `B` bytes of queued payload, because the queued-byte bound limits the sum of all frame sizes regardless of event count. `sizeof(Event)` is 144 bytes on 64-bit targets such as darwin/arm64 (verify per architecture rather than assuming it; a test logs the measured value and caps the descriptor reservation at 1 MiB on 64-bit targets). The Codex profiles therefore reserve about 576 KiB of descriptors (18 KiB for the 128-event profile) in addition to their unchanged 8 MiB (`codex`) or 32 MiB (`image`) payload budget. A larger count is still a finite allowance: it does not promise acceptance of arbitrarily fragmented streams, and the queued-byte and frame bounds still apply independently below the count ceiling. The shared-account fan-out queues of the Codex shared runtime keep their own smaller per-member bounds.
 
 Callers allocate and durably record UUID-v7 operation identities before side-effecting sends. The transport never retries and rejects reuse of a sent identity. Cancellation before a write does not consume the identity. A missing acknowledgment after transmission is recoverable uncertainty; late definitive responses retain their original request identity for reconciliation. Response delivery serialized with timeout wins when already observed. Blocked writes terminate the owned scope instead of leaving an unbounded writer or authorizing another send. Raw native error messages/data never escape the adapter transport; only their numeric classification is retained.
 
@@ -399,7 +446,7 @@ Control requests use caller-owned UUID-v7 identities, and inputs preserve both t
 
 Native callbacks retain their original string request identity and a separate private arrival UUID-v7. Only one reply can claim that arrival. Foreign, reused, replaced or canceled arrivals cannot authorize a response; cancellation after a claimed reply remains evidence of closure, never acceptance. With replay enabled, Claude also echoes delivered callback replies using their native request identity. The transport matches one echo to the exact claimed arrival and canonical reply digest, preserving number precision and array order while normalizing object order/whitespace. An echo is separate private evidence and cannot establish tool success. Unknown/repeated cancellations, altered/unclaimed/duplicate echoes and duplicate/foreign control responses fail the stream. Incoming callbacks cannot collide with outgoing operation identities. Raw callbacks, message families, echoes and late results are private and JSON-excluded until their typed adapters validate them.
 
-Frames and outgoing messages are capped at 1 MiB; pending controls and active callbacks at 128 each; buffered events at 128 and 8 MiB. Outgoing operation identities and all retained callback identities are independently capped at 4,096, including resolved callbacks, to prevent unlimited churn. Strict UTF-8, unique JSON keys and discriminated control envelopes are required. Split Unicode survives byte framing, while partial terminal frames, ambiguity and bound exhaustion stop the owned scope. A canceled reader leaves queued evidence intact, but a failed stream cannot publish retained events. Closure joins the active input writer and owned descendants; terminal output alone cannot release native resources. Structured diagnostics contain ownership and stable error codes, never protocol/error bodies or prompts.
+Frames and outgoing messages are capped at 1 MiB; pending controls and active callbacks at 128 each; buffered events at 128 and 8 MiB (this Claude transport has its own queue and is independent of the `nativewire` profiles). Outgoing operation identities and all retained callback identities are independently capped at 4,096, including resolved callbacks, to prevent unlimited churn. Strict UTF-8, unique JSON keys and discriminated control envelopes are required. Split Unicode survives byte framing, while partial terminal frames, ambiguity and bound exhaustion stop the owned scope. A canceled reader leaves queued evidence intact, but a failed stream cannot publish retained events. Closure joins the active input writer and owned descendants; terminal output alone cannot release native resources. Structured diagnostics contain ownership and stable error codes, never protocol/error bodies or prompts.
 
 An opt-in installed macOS arm64 Claude Code `2.1.236` test sends two prompts through this transport and a scripted loopback Messages provider, restarting the owned process between inputs with the same private native session. It verifies queued/started `command_uuid`, replayed user UUID/content, `result.user_message_uuid`, exact output, effective version/model/permission/cwd, requested effort, additive base instructions and actual native history in the second provider request. The optional native health request receives a local 404 without forwarding. Each process is reconciled before reuse, and no user login, upstream key or external inference is involved. This is native transport/history evidence only: public dispatch, scoped API credentials, typed lifecycle/interaction/usage events, native history checkpoints, subscription login and other-platform Claude acceptance remain required.
 
@@ -639,13 +686,13 @@ Grok Build at or above the `domain.GrokProtocolVersion` baseline (`1.0.41`) has 
 
 The adapter requires a fresh canonical owner-only runtime and reconstructs HOME, GROK_HOME, XDG and temporary paths. Only absolute executable lookup and Windows system lookup context survives. Provider keys, auth/config overlays, project agents, proxy settings, shell/loader options and log destinations are not inherited. Both the native update flag and `GROK_DISABLE_AUTOUPDATER` disable updates. Documented Claude/Cursor skill, rule, agent, MCP and hook scanners are disabled. Model/catalog endpoints point to loopback without credentials. These are discovery settings, not substitutions for a user's eventual native execution configuration.
 
-A private HOME cannot by itself exclude machine-managed settings. The owned read-only `inspect --json` command must first prove the selected version/cwd, no project root or instructions, empty native configuration layers, permissions, hooks, skills, plugins, marketplaces, MCP/LSP servers and no loaded remote settings. Only the three built-in agents and the exact disabled compatibility scanners are accepted. Managed policy or unrecognized configuration fails before ACP starts; the adapter neither bypasses nor edits that policy. Session-import advertisements remain separate and are never invoked against these empty homes. Inspection output and stderr are independently bounded to 64 KiB and never logged.
+A private HOME cannot by itself exclude machine-managed settings. The owned read-only `inspect --json` command must first prove the selected version/cwd, no project root or instructions, empty native configuration layers, permissions, hooks, skills, plugins, marketplaces, MCP/LSP servers and no loaded remote settings. Grok Build 1.0.52 adds an `experiments` inventory: the key is optional, so releases that omit it are unchanged, and when present it must be exactly an empty array. A populated array, `null`, an object or any other non-array value is unsupported, and no other unknown top-level key is tolerated. Only the three built-in agents and the exact disabled compatibility scanners are accepted. Managed policy or unrecognized configuration fails before ACP starts; the adapter neither bypasses nor edits that policy. Session-import advertisements remain separate and are never invoked against these empty homes. Inspection output and stderr are independently bounded to 64 KiB and never logged.
 
 The owned `agent stdio` process receives exactly one ACP JSON-RPC 2.0 `initialize` request with protocol version 1, an original UUID-v7 request identity, DeliDev client information and empty client capabilities. It sends no authentication, session creation/load, prompt, tool reply or model query. The response must correlate exactly and retain this profile's native version, private cwd, canonical native agent/instance identities, unauthenticated default, empty model/MCP observations and bounded typed capability/auth/command advertisements. Native filesystem, terminal, MCP, hook and session advertisements grant no DeliDev execution capability.
 
 The actual pinned binary additionally emits one `_x.ai/mcp/servers_updated` notification after initialize. Discovery requires this exact empty inventory before success, rejects an early/nonempty/duplicate inventory, and consumes no other event. Strict nested keys, required non-null scalars, UTF-8 and duplicate-key checks reject aliases, unknown extensions, foreign requests, mixed errors and trailing/partial output. Native hostname, agent identities, paths, model names, commands and error bodies are discarded after validation.
 
-Inspection and initialization share a ten-second deadline; ACP stdout frames are capped at 1 MiB with an independent 64 KiB stderr bound. Cancellation joins the writer, both drains and owned process cleanup. Cleanup uncertainty takes precedence and preserves the runtime. Generation-bound `machine discover --protocol` publishes only the protocol outcome, with capabilities still empty. Authentication, API/subscription session execution, typed events/interactions/usage, continuation and durable Worker publication remain required separate adapters. Ordinary tests use synthetic executables. Explicit `DELIDEV_NATIVE_GROK_EXECUTABLE=/absolute/native/grok` tests exercise only isolated non-inference inspection/initialization and cleanup; native OS/account evidence remains separately recorded.
+Inspection and initialization share a ten-second deadline; ACP stdout frames are capped at 1 MiB with an independent 64 KiB stderr bound. Cancellation joins the writer, both drains and owned process cleanup. Cleanup uncertainty takes precedence and preserves the runtime: the transport error becomes `recovery_required` and discovery aborts, while the typed Grok diagnostic keeps the first probe failure. Generation-bound `machine discover --protocol` publishes only the protocol outcome, with capabilities still empty. Authentication, API/subscription session execution, typed events/interactions/usage, continuation and durable Worker publication remain required separate adapters. Probe and discovery failures carry a typed `domain.GrokDiagnostic` (phase, stable code, installed and supported versions, no native text) as defined in the [Grok subscription contract](cmds-delidev-grok-subscription-contract.md#grok-diagnostics); discovery persists it on the failed `Installation.Protocol` observation. Ordinary tests use synthetic executables. Explicit `DELIDEV_NATIVE_GROK_EXECUTABLE=/absolute/native/grok` tests exercise only isolated non-inference inspection/initialization and cleanup; native OS/account evidence remains separately recorded.
 
 ### Grok Build private API initialization and original session creation
 
@@ -653,7 +700,7 @@ The separate private API profile uses the same installed binary (at or above `do
 
 Startup reconstructs the private discovery environment and leaves native xAI/catalog defaults on uncredentialed closed loopback endpoints. It inspects the empty runtime before creating a new owner-only configuration file without replacement. Subsequent owned inspection must report exactly that one user layer and no managed policy, extensions or project configuration in either the runtime or the separate canonical non-Git workspace. A workspace cannot contain or be contained by private runtime state. Native environment-file loading is disabled. Only the scoped credential is added for the ACP process; no key or token enters TOML, claims, argv or logs. The original configuration is compared before initialization and after authentication. Native Grok Build at the `domain.GrokProtocolVersion` baseline (`1.0.41`) adds `marketplace.default_skills_installs_purged = true` during initialization; the sole accepted rewrite is that exact marker with the complete original TOML semantics otherwise unchanged. It cannot enable another marketplace, alter a model or import settings.
 
-The shared owned stdio transport now has an explicit JSON-RPC 2.0 profile for Grok. Requests, notifications and replies carry the version; inbound envelopes require exact keys/version and exclude Codex's separate timestamp extension. Native error bodies remain redacted, with the original numeric code only. The existing 1 MiB frame, bounded event/request tracking, original callback arrival, uncertain-delivery and joined process cleanup rules remain in force. Grok's stderr is independently discarded under a 64 KiB bound. The existing omitted-version Codex transport profile retains its behavior.
+The shared owned stdio transport now has an explicit JSON-RPC 2.0 profile for Grok. Requests, notifications and replies carry the version; inbound envelopes require exact keys/version and exclude Codex's separate timestamp extension. Native error bodies remain redacted, with the original numeric code only. The existing 1 MiB frame and 8 MiB queued-byte bounds, the 128-event queue (unchanged by the larger Codex count; see [Native event queue limits](#native-event-queue-limits)), bounded request tracking, original callback arrival, uncertain-delivery and joined process cleanup rules remain in force. Grok's stderr is independently discarded under a 64 KiB bound. The existing omitted-version Codex transport profile retains its behavior.
 
 Initialization must expose the exact selected model and context, the environment-backed `xai.api_key` default plus the separate subscription advertisement, and this profile's unchanged native capabilities. Only explicit headless API authentication is invoked, with an exact empty result. A subscription advertisement is never selected or used as fallback. The initialization regression test performs no provider call. This is native private authentication configuration, not proof that an external account is usable or a public session is dispatchable.
 
@@ -1014,6 +1061,16 @@ Read native history through fixed one-message pages under the original session. 
 The comparison retains the original observer's 4,096-message/16,384-part limits, a 32 MiB aggregate HTTP body bound and 1 MiB per page. It requires empty native permission/question/status inventories before and after pagination and rechecks the original session and stream. Returned evidence contains only original identities, ordered kinds/roles and complete-payload digests, independently copied from mutable observation state. A native payload contradiction latches observer recovery; transient read loss returns no partial proof and does not authorize mutation replay.
 
 This is a live comparison point, not a persistent checkpoint or a continuous storage lock. No new native process, input, approval, side effect, cumulative usage charge or cleanup receipt is produced. Native cleanup, metadata persistence, later-event reconciliation and replacement-process restoration must compose their own boundaries before public Resume; process adoption and reconstruction outside the bounded same-process reconciliation profile remain required work.
+
+### OpenCode image input
+
+Non-Sidechat Build and Plan inputs whose frozen configuration declares `image_input_declared` may carry up to eight PNG, JPEG or WebP attachments, at most 384 KiB combined (`domain.MaxOpenCodeInputImagesBytes`), plus a nonempty text part. Follow the [image input contract](cmds-delidev-image-input-contract.md#closed-adapter-profiles) for admission, capability reuse and the native probe evidence. The Worker resolves the validated private files in attachment order through `imageinput.Manager.Resolve` and calls `OwnedAPI.StartInput` with the assignment's attachment-aware input digest (`SessionInput.InputDigest`); `StartText` remains the text-only wrapper with an unchanged body and digest. The adapter retains that digest as the checkpoint input identity, so an image-bearing checkpoint reference differs from the SHA-256 of the text, while a text-only input keeps the historical text digest. `StartInput` rejects a text-only call whose identity is not the text digest and an image-bearing call whose identity equals it or is zero, before any claim. OpenCode image inputs require the independent Worker capability described in the image input contract.
+
+The adapter encodes the original text part followed by one `file` part per attachment (`mime`, opaque `image-N.ext` filename, `file://` URL of the private Worker file) with deterministic part identifiers derived from the text part identifier. The once-claimed mutation digest hashes the same body with each URL replaced by `sha256:<attachment digest>`, so claims, journals and diagnostics never contain Worker paths, and the Worker recomputes the digest from the assignment (`InputClaimDigest`). The complete body plus the base64 data URLs that native storage will hold must fit the 1 MiB adapter bound before any claim or send.
+
+Stored-input, live-observer and history verification use one closed classifier. An input is stored only when the original text part, one synthetic text part and one file part per image all exist; the synthetic part must equal the complete pinned payload `Called the Read tool with the following input: {"filePath":"<private Worker path>"}` of the image at the same ordinal (never a prefix match; the in-memory expected text embeds the private path and is never logged, digested or checkpointed); the file part must carry the deterministic identifier, the attachment media type, no other filename than the opaque one, no native `source` annotation and a `data:` URL whose decoded length and SHA-256 equal the attachment. Stored order follows native part identifiers, so history comparison matches this single message by part identity while every other message keeps positional comparison. Prefixes of the expansion are unconfirmed, and any extra, missing, repeated, reordered, swapped or altered part fails closed without resending. The Worker publisher additionally bounds each hidden expansion kind (synthetic text, file) by the attachment count. The observer reports `InputPartSeen` only after the whole expansion arrived, so input acceptance never publishes a partial row.
+
+The text publisher attaches the original ordered attachment references to the user message, as the server binds accepted input to its image digest, and records the expansion parts without publishing them as transcript text. The checkpoint of the original execution accepts the closed kind pattern and its digests; resume, Fork, Sidechat and compaction profiles keep rejecting file parts with their existing unsupported errors. Diagnostics contain only attachment counts, media types and SHA-256 digests.
 
 ### OpenCode private native event subscription
 
@@ -2438,7 +2495,11 @@ checkpoint roots and version-1 compatibility. Opt-in installed Windows tests use
 loopback providers for Build/Plan, FIFO, Stop/Resume and first/resumed lost-report
 recovery. A separately supplied canonical writable
 `DELIDEV_NATIVE_OPENCODE_WINDOWS_WORKSPACE_PARENT` on another local drive enables
-the native cross-drive Plan fixture. Neither deterministic tests nor
+the native cross-drive Plan fixture. All native OpenCode tests obtain the binary
+and its observed version through `nativetest.NativeOpenCodeExecutable`, which
+skips below `domain.OpenCodeProtocolVersion`; see the
+[native OpenCode testing runbook](cmds-delidev-opencode-native-testing.md).
+Neither deterministic tests nor
 cross-compilation establish installed Windows/account acceptance. See the
 independent issue evidence at the historical path `evidence/delidev/issue-1205/windows-root-validation.md` (the file is absent from this checkout).
 
@@ -2903,7 +2964,7 @@ not change a key or path. The closed purposes are:
 | Scope                | Purposes                                                                      | Required key fields            |
 | -------------------- | ----------------------------------------------------------------------------- | ------------------------------ |
 | system (accountless) | `discovery`, `model_observation`, `title_probe`                               | harness                        |
-| account              | `auth`, `quota`, `credit`, `subscription_probe`                               | harness, account               |
+| account              | `auth`, `quota`, `credit`, `subscription_probe`, `shared_owner`               | harness, account               |
 | conversation         | `conversation`, `fork`, `compaction`, `revert`, `sidechat`, `title`, `review` | harness, account, conversation |
 
 Layout below `<root>/native-profiles/`: `registry.json` (versioned registry,
@@ -2928,6 +2989,213 @@ unchanged. Adapters verify and reuse owned state: probe and execution
 environments no longer require empty directories, only canonical private paths.
 Every launch revalidates its model, instructions, account generation and route;
 a previous run's settings are never inherited.
+
+### Shared Codex owner account home
+
+The managed shared Codex owner (see the
+[shared account owner model](cmds-delidev-subscription-contract.md#shared-account-owner-and-execution-members))
+keeps one account-wide history home at `runtimes/accounts/<account-id>/codex`.
+That directory predates the registry and is a checkpoint-bound history path
+(version 2 `AccountHome`), so it is registered in place under the typed
+account-scoped `shared_owner` key (harness `codex`, account) as a legacy
+profile: nothing is moved, merged or rewritten, the first resolution of a new
+account only creates the fixed private directory, and registration is
+idempotent across owner restarts. The Worker resolves it through the registry
+for every shared execution and for a version 1 history import, and
+checkpoint readers reject a registered path that differs from the derived
+account home. The Worker validates an existing registration before it creates
+anything: a key registered for another path blocks with the closed
+`key_conflict` cause, and a registered home that is no longer a real private
+directory blocks with a recovery-required failure; both create no directory,
+change no registry entry and are never repaired or recreated. An unregistered
+account creates its fixed private directory exactly as the home was created
+before the registry existed, then registers it where it is. A directory that is
+not a real private directory, or whose parent is not a directory, blocks with a
+recovery-required failure.
+
+`shared_owner` is a registered-only purpose that is defined for the `codex`
+harness alone: a key for any other harness is invalid, including in a restored
+registry. Only in-place registration creates its entry. Acquiring an unregistered
+`shared_owner` key is rejected with the closed `legacy_unverified` cause and
+creates no managed profile directory or registry entry, while acquiring an entry
+that was already registered in place locks it normally.
+
+A registered-only entry exists only as a legacy directory registered in place and
+never holds a conversation history. Registration and every registry load enforce
+both facts, so a restored registry cannot hold a managed `shared_owner` entry,
+even with an intact managed directory and owner record, or one with histories.
+Such a registry is invalid as a whole (`registry_invalid`), is never rewritten,
+and fails every entry point before any lock is taken:
+
+| Entry shape in the registry                  | `Lookup`, `Peek`, `Acquire`, `RegisterLegacy` |
+| -------------------------------------------- | --------------------------------------------- |
+| legacy origin, no histories                  | valid                                         |
+| managed origin (directory and owner intact)  | `registry_invalid`                            |
+| legacy origin holding a conversation history | `registry_invalid`                            |
+
+`RegisterLegacy` or `RecordHistory` of a registered-only key with a history is
+rejected as an invalid key before anything is written, so no write can produce a
+registry that the next load rejects.
+
+Checkpoint readers verify the home through a read-only registry lookup that
+takes no lock and creates no file or directory, so it also works on a
+read-only Worker root:
+
+| Registry state                           | Registered path | Verification                           |
+| ---------------------------------------- | --------------- | -------------------------------------- |
+| `native-profiles/` or the file is absent | none            | passes; nothing is created             |
+| registry present, key unregistered       | none            | passes; the legacy home is allowed     |
+| registry present, key registered         | the derived one | passes                                 |
+| registry present, key registered         | another path    | recovery required                      |
+| registry directory not private or a link | n/a             | recovery required (`registry_invalid`) |
+| registry file unreadable or invalid      | n/a             | recovery required (`registry_invalid`) |
+
+The registry never creates or removes the account home. Registration is the
+only registry write, so a failed publication leaves the directory exactly as it
+was before the attempt, and the next attempt registers it in place. Nothing is
+removed, so history is never deleted by a failed registration.
+
+| Starting state                                   | Registry publication | Directory afterwards | Entry afterwards | Result                                          |
+| ------------------------------------------------ | -------------------- | -------------------- | ---------------- | ----------------------------------------------- |
+| home absent, key unregistered                    | succeeds             | created              | registered       | success                                         |
+| home absent, key unregistered                    | fails                | kept (empty)         | absent           | error; retry registers the same empty directory |
+| home present, key unregistered                   | succeeds             | untouched            | registered       | success                                         |
+| home present, key unregistered                   | fails                | untouched            | absent           | error; history is never removed                 |
+| home absent, key already registered at that path | none attempted       | not created          | registered       | recovery required; never recreated              |
+| home absent, key registered elsewhere            | none attempted       | not created          | unchanged        | `key_conflict`                                  |
+| home absent, derived path registered for a key   | rejected             | kept (empty)         | unchanged        | `key_conflict` (corrupt registry only)          |
+| home absent, a parent is not a directory         | none attempted       | not created          | absent           | recovery required                               |
+| home is a link or not private                    | none attempted       | untouched            | absent           | recovery required                               |
+
+The founding owner takes the profile lock when it is founded and releases only
+the lock when the owner retires; joined members rely on that lock and take none.
+An exclusive continuation of a version 2 account history takes the same lock, so
+a shared owner and an exclusive run can never write the home at once; a held lock
+blocks with `profile_busy`. The server frees the account lease when it commits
+the owner Finish (or the exclusive run's Finish), which admits a continuation
+that is already retrying its Take. The Worker therefore releases the lock and
+verifies that it can be taken again before it publishes that Finish, including
+every retry of an uncertain Finish, so the admitted continuation never meets
+`profile_busy`. Member Finishes that are not the last leave the lock with the
+owner. A release that cannot be verified never skips the Finish, because the
+account lease must not stay held for a lock that is already closed.
+
+A release is verified when the lock was closed and a probe could take it and
+close it again, or when another holder took the lock after a clean close. The
+second case is a handoff: an exclusive continuation that was already retrying
+acquired the lock between the close and the probe. The probe meets `profile_busy`
+then, which after a clean close proves that the lock was released and passed on,
+so it is not a failure and nothing is parked. A holder met after a failed close
+is not proven to be a handoff, because it cannot be told apart from a lock that
+was never released, so that release stays unverified.
+
+The hold keeps the lease whose close is not confirmed. A lease whose close failed
+is never dropped while the lock may still be held through it: the next call
+closes that same lease again before it probes, so a failed close cannot leave a
+lock that nothing can release and that every later probe meets as `profile_busy`.
+A probe that took the lock proves the held lease released it, so a probe lease
+whose own close failed replaces the held lease as the kept one. A holder met by
+the call that follows is a handoff only when that retried close succeeded.
+
+A retried close is real: a profile lease is final only after its lock close
+succeeded. A failed close leaves the lease open, and every later close runs the
+lock close again and reports its result, so a later `nil` is never inferred from
+an earlier failure. A lock handle that already failed or was closed reports an
+error again, which leaves the release unverified until a probe takes the lock.
+
+| Lease state       | Close call                      | Result  | Lease afterwards |
+| ----------------- | ------------------------------- | ------- | ---------------- |
+| open              | lock close succeeds             | success | closed           |
+| open              | lock close fails                | failure | open             |
+| open after a fail | lock close runs again, fails    | failure | open             |
+| open after a fail | lock close runs again, succeeds | success | closed           |
+| closed            | any                             | success | closed           |
+
+| Close of the held or kept lease | Probe                   | Probe close | Release                                    | Kept lease for the next call |
+| ------------------------------- | ----------------------- | ----------- | ------------------------------------------ | ---------------------------- |
+| clean                           | takes the lock          | clean       | verified                                   | none                         |
+| clean                           | meets another holder    | n/a         | verified (handoff)                         | none                         |
+| clean                           | takes the lock          | fails       | not verified                               | the probe lease              |
+| clean                           | fails for another cause | n/a         | not verified                               | none                         |
+| fails                           | takes the lock          | clean       | verified; the close error is reported once | none                         |
+| fails                           | takes the lock          | fails       | not verified                               | the probe lease              |
+| fails                           | meets another holder    | n/a         | not verified (not a handoff)               | the lease whose close failed |
+| fails                           | fails for another cause | n/a         | not verified                               | the lease whose close failed |
+
+The release and the Finish settle as follows. The owner path is the founding
+owner retiring through its last member; the exclusive path is a version 2
+continuation that holds the lock itself. A verified handoff behaves like any
+other verified release in every row.
+
+| Release      | Finish    | Returned through the member outcome                 | Local owner or hold                                                           | Lock                                      |
+| ------------ | --------- | --------------------------------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------- |
+| verified     | succeeds  | success                                             | owner cleared                                                                 | free                                      |
+| verified     | fails     | the Finish error                                    | owner retained; the same Finish is retried                                    | free                                      |
+| verified     | ambiguous | the Finish error                                    | owner retained with the pending request, retried unchanged                    | free                                      |
+| not verified | succeeds  | owner path: the release failure (recovery required) | owner cleared; the unverified hold moves to the account gate                  | closed, verified again by the next holder |
+| not verified | succeeds  | exclusive path: the cleanup failure                 | hold moves to the account gate                                                | closed, verified again by the next holder |
+| not verified | fails     | the Finish error                                    | owner or hold retained; the retry verifies the release again                  | closed, unverified                        |
+| not verified | ambiguous | the Finish error                                    | owner retained with the pending request; the retry verifies the release again | closed, unverified                        |
+
+The exclusive path retries the release once more in its deferred cleanup, after
+the managed Finish settled, and the owner and joined-member paths run later
+cleanup (the workspace lease, the profile and the pull-request tool) in the
+same position. A later cleanup failure is recorded but never replaces an
+unconfirmed Finish: only that outcome keeps the job journal unfinished until the
+Finish is reconciled, so the server-side Finish and the account lease are not
+reported as settled. A cleanup failure that follows an ordinary outcome is the
+recovery-required cleanup failure.
+
+| First release | Finish    | Deferred release retry | Returned outcome                        | Parked hold |
+| ------------- | --------- | ---------------------- | --------------------------------------- | ----------- |
+| verified      | succeeds  | nothing to retry       | success                                 | none        |
+| verified      | fails     | nothing to retry       | the unconfirmed Finish                  | none        |
+| verified      | ambiguous | nothing to retry       | the unconfirmed Finish                  | none        |
+| not verified  | succeeds  | fails                  | the cleanup failure (recovery required) | kept        |
+| not verified  | succeeds  | verifies               | the cleanup failure (recovery required) | kept        |
+| not verified  | fails     | fails                  | the unconfirmed Finish                  | kept        |
+| not verified  | fails     | verifies               | the unconfirmed Finish                  | kept        |
+| not verified  | ambiguous | fails                  | the unconfirmed Finish                  | kept        |
+| not verified  | ambiguous | verifies               | the unconfirmed Finish                  | kept        |
+
+Rows with a successful Finish assume a conclusive execution result; a successful
+Finish without one is reported as an unconfirmed Finish in every row. The owner and joined-member paths have no deferred release retry,
+because the owner's unverified release moves to the account gate when its Finish
+settles.
+
+The release failure of a published owner Finish is returned like the exclusive
+path's cleanup failure: the member outcome is an unconfirmed cleanup that
+requires recovery, never a silent success, while the local owner is still
+cleared because nothing remains to publish. Because no local owner is left to
+retry the release, the unverified hold stays on the account gate. Before any
+founder or exclusive continuation of that account locks the home, it verifies
+that release again: a repaired home clears the retained release, and a home that
+still cannot be verified blocks the holder with the same recovery-required
+failure instead of letting it meet `profile_busy` with nothing left to retry.
+Retained rollouts, caches and helper links never
+block a later owner. An unremoved `auth.json` still blocks the next founder
+through the credential check. The profile has no conversation or history
+identifier, so session deletion never removes it; no automatic age-based pruning
+applies.
+
+A shared continuation of a version 1 checkpoint copies the retained rollout of
+that one thread into the account home. That copy writes the account-wide home, so
+it happens only after the request is admitted and is protected by the lock: the
+founding owner copies after it took the lock, and a joined member copies under
+the running owner's lock. The copy itself refuses to write unless the caller
+passes a hold that currently locks that home; nothing is written, not even a
+directory, otherwise. A request that is not admitted, or whose founder meets
+`profile_busy`, never copies.
+
+| Request                                    | Home lock when the copy would run     | Copy                                                 |
+| ------------------------------------------ | ------------------------------------- | ---------------------------------------------------- |
+| before the account lease is taken          | none                                  | never; only the retained checkpoint is read          |
+| founding owner, lock taken                 | held by this owner                    | copies, then verifies the thread in the account home |
+| founding owner, lock held by another run   | held by an exclusive continuation     | `profile_busy`; nothing is written                   |
+| founding owner, unverified earlier release | blocked until the release is verified | recovery required; nothing is written                |
+| joined member                              | held by the running owner             | copies under the owner's hold                        |
+| exclusive version 2 continuation           | held by this run                      | no copy; the account home already holds the history  |
+| exclusive version 1 continuation           | not used                              | no copy; the history stays in its original runtime   |
 
 ### Operation journals stay per operation
 
@@ -3061,21 +3329,67 @@ Profile events use the structured fields `profile_id`, `owner`, `harness`,
 `referenced`, `deleted`, `delete_blocked`, `create_rolled_back`, `migration_verified`,
 `migration_settled`). Logs never contain secrets, native contents or paths.
 
-### OpenCode execution-family status
+### OpenCode execution family
 
 OpenCode discovery and protocol probes use the persistent accountless
-`discovery` profile. OpenCode execution, continuation, compaction and Fork still
-keep their immutable per-execution runtimes (`runtimes/<id>`), because their
-native checkpoints digest the complete runtime tree and copy the database
-forward into an empty, different runtime. Moving them to persistent profiles
-requires an in-place resume profile and a retained-configuration inspection
-verified against the pinned native; neither is part of the migrated paths. These
-runtimes remain legacy evidence: they are never auto-pruned, and session
-deletion still removes them with the session.
+`discovery` profile. OpenCode execution, continuation, compaction and Fork use
+persistent conversation profiles too: a first execution acquires the session's
+`conversation` profile, a continuation or compaction resumes the profile that
+retains the newest checkpoint, and a Fork child owns a `fork` profile. Every
+execution, action and Fork-runtime identifier of the history is bound to its
+profile, and the original history identifier of a continuation is bound as well.
+The per-operation `runtimes/<id>` directory is only the fresh operation journal.
+The profile root is the native runtime root (`<profile>/opencode`), so native
+state never mixes with the owner record.
+
+**In-place resume.** A native checkpoint digests the complete runtime tree, and
+resuming it no longer copies the database into a different runtime. When the
+runtime that retains the checkpoint is the runtime that runs next
+(`OpenResumedAPI` with the profile root as both), the harness runs this order:
+
+1. verify the retained files against the checkpoint (`InspectCheckpoint`) and the
+   effective settings against the checkpoint digest;
+2. durably record the once-only resume claim;
+3. rebuild the native snapshot repository from the verified self-contained
+   archive when the checkpoint carries snapshot evidence (the repository depends
+   on workspace objects that may have changed);
+4. retire only DeliDev's per-run files: `instructions.txt`,
+   `opencode/opencode.json`, the exported `snapshot-checkpoint` archive and the
+   `tmp` scratch contents. Native history, caches, logs and helper files stay;
+   links are refused, never followed;
+5. write the new instructions and workspace references and launch.
+
+A new native history in a persistent profile retires the same per-run files but
+never adopts retained history: a profile that still holds a native database
+refuses a new session. An unsent first-execution retry is the only exception:
+its abandoned session carries no history, so `ResetUnsentHistory` clears the
+`data/opencode` history directory (and the per-run files) before the retry.
+
+**Latest checkpoint only.** A run advances its profile, so only the newest
+checkpoint of a profile still matches its files; an older one stays readable as
+metadata evidence (`InspectCheckpointMetadata`, `InspectReplacementMetadata`,
+`InspectCompactionCheckpointInPlace`) but is no longer a resume or Fork source
+and fails closed when launch-time verification runs. A compaction action advances
+the profile, so the ordinary checkpoint it compacted is read as metadata. A
+failure after the in-place claim but before the native input is accepted leaves a
+profile that no longer matches its checkpoint; later continuations of that
+conversation fail closed with `recovery_required` and the user starts a new
+session. This is a known limitation of the in-place model; the old copy-forward
+model survived such failures at the cost of one runtime copy per turn.
+
+A Fork reads its source profile without changing it (the source checkpoint is
+verified again afterwards) and copies the history into the child's own profile.
+Legacy histories register in place: an execution or action identifier from before
+persistent profiles resolves to its verified `runtimes/<id>` directory, and a
+legacy Fork child resolves its `native` subdirectory. Continuations resolve the
+profile by the identifier that owns the newest checkpoint (the last compaction
+action when one ran, otherwise the checkpoint's execution), because legacy
+histories kept one runtime per turn. Legacy runtimes are never auto-pruned, and
+session deletion removes the session's profiles and journals with the session.
 
 ## Native version admission baselines
 
-Claude Code `2.1.236`, OpenCode `1.18.32` and Grok Build `1.0.41` (`domain.GrokProtocolVersion`, the API and history baseline) are minimum SemVer baselines, not exact versions. Newer releases are never rejected by number alone; they are validated natively, and the known Grok Build 1.0.52 inspection failure is a separate limitation and does not change these baselines. The separate subscription baseline `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) with `domain.GrokSubscriptionVersionAllowed` follows the same at-or-above rule, is not referenced by any capability, discovery or execution path, and is owned by `cmds-delidev-grok-subscription-contract.md`. `domain.HarnessVersionAllowed` (built on `domain.VersionAtLeast`) admits a version only when it is a valid bounded SemVer whose precedence is at or above the harness baseline. Prerelease versions follow standard SemVer precedence (`2.1.237-rc.1` is admitted and `2.1.236-rc.1` is not) and build metadata is ignored. Malformed and lower versions return `unsupported` from the explicit discovery probes before any native launch. Codex keeps `CodexVersionAllowed`.
+Claude Code `2.1.236`, OpenCode `1.18.32` and Grok Build `1.0.41` (`domain.GrokProtocolVersion`, the API and history baseline) are minimum SemVer baselines, not exact versions. Newer releases are never rejected by number alone; they are validated natively, and Grok Build 1.0.52 inspection is accepted when its optional `experiments` inventory is an empty array, which does not change these baselines. The separate subscription baseline `domain.GrokSubscriptionBaselineVersion` (`1.0.46`) with `domain.GrokSubscriptionVersionAllowed` follows the same at-or-above rule, is not referenced by any capability, discovery or execution path, and is owned by `cmds-delidev-grok-subscription-contract.md`. `domain.HarnessVersionAllowed` (built on `domain.VersionAtLeast`) admits a version only when it is a valid bounded SemVer whose precedence is at or above the harness baseline. Prerelease versions follow standard SemVer precedence (`2.1.237-rc.1` is admitted and `2.1.236-rc.1` is not) and build metadata is ignored. Malformed and lower versions return `unsupported` from the explicit discovery probes before any native launch. Codex keeps `CodexVersionAllowed`.
 
 Admission never establishes protocol, account or execution readiness. An admitted installation still passes the harness's existing bounded native protocol, effective-settings, account, ownership and cleanup checks on the actual executable, and a changed method, field or setting fails with a typed native-validation error before any input or credential delivery with verified cleanup. Probe logs record the observed `installed_version` and the `baseline_version`. Direct version-4 execution keeps its version-independent admission and gains no numeric gate. Legacy execution, continuation and claim paths (versions 1 to 3) use the same `HarnessVersionAllowed` rule instead of exact equality. The pinned fixtures and installed-macOS evidence described in this contract remain evidence for the baseline only.
 

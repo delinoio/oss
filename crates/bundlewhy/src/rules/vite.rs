@@ -171,6 +171,7 @@ fn side_effect_retained(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
             direction: declaration.direction().to_owned(),
             safety: declaration.safety().to_owned(),
             dependency: context.is_dependency(module),
+            export_usage: None,
         });
     }
 }
@@ -424,6 +425,49 @@ impl SideEffectDeclaration {
     }
 }
 
+/// Id of the module Vite synthesizes as an empty browser stand-in. Vite emits
+/// it as `__vite-browser-external` (optionally behind the virtual-module NUL
+/// prefix). It is produced for a Node built-in imported by browser-targeted
+/// code and also for a dependency file that its `browser` field maps to
+/// `false`. Vite appends `:<specifier>` only for built-ins.
+const BROWSER_EXTERNAL_ID: &str = "__vite-browser-external";
+
+/// What the collected id of a Vite browser-external placeholder reveals about
+/// the module it stands in for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum BrowserExternalKind {
+    /// The id retains a built-in suffix (for example `:fs`), so the original
+    /// specifier is a Node built-in.
+    NodeBuiltin,
+    /// The bare id. It does not reveal the original specifier: it can stand in
+    /// for a Node built-in or for a file the dependency maps to `false` in its
+    /// `browser` field.
+    Unspecified,
+}
+
+/// Classifies a Vite-generated browser-external placeholder module: collected
+/// as virtual (no file path) with the browser-external id. Returns `None` for
+/// every other module.
+fn vite_browser_external_kind(
+    module: &crate::collect::CollectedModule,
+) -> Option<BrowserExternalKind> {
+    if !module.is_virtual || module.path.is_some() {
+        return None;
+    }
+    let rest = module
+        .id
+        .strip_prefix('\0')
+        .unwrap_or(&module.id)
+        .strip_prefix(BROWSER_EXTERNAL_ID)?;
+    if rest.is_empty() {
+        Some(BrowserExternalKind::Unspecified)
+    } else if rest.strip_prefix(':').is_some_and(|name| !name.is_empty()) {
+        Some(BrowserExternalKind::NodeBuiltin)
+    } else {
+        None
+    }
+}
+
 fn commonjs_wrapped(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
     let collection = context.collection;
     let helper = collection
@@ -455,15 +499,72 @@ fn commonjs_wrapped(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>
             EvidenceStatus::Confirmed,
             format!("The runtime helper {helper} is rendered in the bundle."),
         ));
+        let generated = vite_browser_external_kind(module);
+        if let Some(kind) = &generated {
+            let detail = match kind {
+                BrowserExternalKind::NodeBuiltin => {
+                    "The module is virtual (no file path) and its id is Vite's browser-external \
+                     placeholder with a built-in suffix, which Vite generates for a Node built-in \
+                     imported by browser-targeted code."
+                }
+                BrowserExternalKind::Unspecified => {
+                    "The module is virtual (no file path) and its id is Vite's bare \
+                     browser-external placeholder, which Vite generates as an empty browser \
+                     stand-in. The id does not show whether the original specifier was a Node \
+                     built-in or a file that a dependency maps to false in its browser field."
+                }
+            };
+            evidence.push(Evidence::new(
+                MODULE_INFO,
+                EvidenceStatus::Confirmed,
+                detail,
+            ));
+        }
+        let (summary, direction, safety) = match generated {
+            Some(BrowserExternalKind::NodeBuiltin) => (
+                "Rolldown wraps CommonJS modules in a runtime closure instead of hoisting them \
+                 into the chunk scope. This module is a placeholder that Vite generates for a \
+                 Node built-in imported by browser-targeted code; it has no source file, must not \
+                 be edited, and has no ECMAScript module build to import.",
+                "Follow the dependency path to the importer that pulls the Node built-in into the \
+                 browser bundle, then decide for browser compatibility: remove or replace that \
+                 usage, alias or polyfill the built-in for the browser, or keep the import \
+                 server-only.",
+                "Do not edit or convert the generated placeholder. Confirm that the importer does \
+                 not need the built-in's behavior in the browser before removing or replacing the \
+                 usage; the placeholder exposes no real implementation.",
+            ),
+            Some(BrowserExternalKind::Unspecified) => (
+                "Rolldown wraps CommonJS modules in a runtime closure instead of hoisting them \
+                 into the chunk scope. This module is a placeholder that Vite generates as an \
+                 empty browser stand-in for a module that is not available in the browser; it has \
+                 no source file, must not be edited, and has no ECMAScript module build to import.",
+                "Follow the dependency path to the importer that pulls the externalized module \
+                 into the browser bundle, then identify the original specifier from that \
+                 importer: a Node built-in or a file that the dependency maps to false in its \
+                 browser field. Decide for browser compatibility whether to remove or replace \
+                 that usage, provide a browser-compatible replacement, or keep the import \
+                 server-only.",
+                "Do not edit or convert the generated placeholder. Confirm that the importer does \
+                 not need the original module's behavior in the browser before removing or \
+                 replacing the usage; the placeholder exposes no real implementation.",
+            ),
+            None => (
+                "Rolldown wraps CommonJS modules in a runtime closure instead of hoisting them \
+                 into the chunk scope. The wrapper, its interop helpers and exports that cannot \
+                 be analyzed statically stay in the bundle.",
+                "Import an ECMAScript module build of this code (check the package's \"exports\" \
+                 or \"module\" field) or convert the module to ESM syntax.",
+                "Confirm that the ESM build exposes the same API and evaluation order; CommonJS \
+                 modules evaluate lazily on first require.",
+            ),
+        };
         let status = EvidenceStatus::Confirmed;
         drafts.push(DiagnosticDraft {
             rule: RuleId::ViteCommonjsWrapped,
             status,
             title: format!("{display} is wrapped as CommonJS"),
-            summary: "Rolldown wraps CommonJS modules in a runtime closure instead of hoisting \
-                      them into the chunk scope. The wrapper, its interop helpers and exports \
-                      that cannot be analyzed statically stay in the bundle."
-                .to_owned(),
+            summary: summary.to_owned(),
             conditions: vec![
                 Condition::new(
                     "The module is an ECMAScript module",
@@ -480,13 +581,10 @@ fn commonjs_wrapped(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>
             module: display,
             dependency_paths: context.dependency_paths(&module.id),
             evidence,
-            direction: "Import an ECMAScript module build of this code (check the package's \
-                        \"exports\" or \"module\" field) or convert the module to ESM syntax."
-                .to_owned(),
-            safety: "Confirm that the ESM build exposes the same API and evaluation order; \
-                     CommonJS modules evaluate lazily on first require."
-                .to_owned(),
+            direction: direction.to_owned(),
+            safety: safety.to_owned(),
             dependency: context.is_dependency(module),
+            export_usage: None,
         });
     }
 }
@@ -575,6 +673,7 @@ fn ineffective_dynamic_import(context: &mut Context<'_>, drafts: &mut Vec<Diagno
                      asynchronously; callers must await it and handle loading failures."
                 .to_owned(),
             dependency: context.is_dependency(module),
+            export_usage: None,
         });
     }
 }
@@ -620,6 +719,7 @@ fn tree_shaking_disabled_finding(context: &mut Context<'_>, drafts: &mut Vec<Dia
                  those imports or declare the side effects."
             .to_owned(),
         dependency: false,
+        export_usage: None,
     });
 }
 

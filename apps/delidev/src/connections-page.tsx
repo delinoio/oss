@@ -6,7 +6,9 @@ import { copy, useLocale } from "./localization";
 import "./connections-page.css";
 
 export interface ConnectionPageSlots {
-  current: HTMLElement;
+  // Only the saved-server window presents a current-connection slot. The local
+  // main window has no such section.
+  current?: HTMLElement;
   saved?: HTMLElement;
   advanced: HTMLElement;
 }
@@ -60,9 +62,9 @@ export function ConnectionsPage({
     advanced = useRef<HTMLDivElement>(null);
   const [attention, setAttention] = useState(false);
   useLayoutEffect(() => {
-    if (!current.current || !advanced.current) return;
+    if (!advanced.current || (!local && !current.current)) return;
     onSlots({
-      current: current.current,
+      ...(current.current ? { current: current.current } : {}),
       saved: saved.current ?? undefined,
       advanced: advanced.current,
     });
@@ -86,16 +88,15 @@ export function ConnectionsPage({
       observer.disconnect();
       onSlots(undefined);
     };
-  }, [onSlots]);
+  }, [onSlots, local]);
   return (
     <div className="connections-page">
-      <section
-        data-settings-search-target="current-connection"
-        aria-label={copy("settings.connections.current")}
-      >
-        <h2>{copy("settings.connections.current")}</h2>
-        <div className="connections-current" ref={current} />
-      </section>
+      {local ? null : (
+        <section aria-label={copy("settings.connections.current")}>
+          <h2>{copy("settings.connections.current")}</h2>
+          <div className="connections-current" ref={current} />
+        </section>
+      )}
       {local ? <div ref={saved} /> : null}
       {attention ? (
         <p className="connections-attention" role="status">

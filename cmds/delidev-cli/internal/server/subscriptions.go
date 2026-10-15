@@ -90,10 +90,57 @@ func subscriptionActorValid(tx *store.Tx, actor domain.Principal) error {
 	return nil
 }
 
+// cancelServerOperation settles a queued operation's server record as canceled
+// just before the cancellation removes the pending operation. A canceled record
+// never keeps a failure diagnostic, such as the provisional Grok record of an
+// earlier refused Take.
+//
+// A Grok operation is Worker-owned and has no server record until it settles, so
+// canceling one that was never claimed would otherwise leave progress with
+// neither a pending operation nor a record, and the original actor's poll would
+// be denied instead of reporting `canceled`. For a Grok account a canceled
+// record is therefore created from the pending operation when none exists, and
+// an earlier refused Take's record is replaced. A settled record of the same
+// operation is final and is kept.
+func cancelServerOperation(account *domain.Account, epoch domain.ID, now time.Time) {
+	state := account.Subscription
+	if state == nil || state.Pending == nil {
+		return
+	}
+	if account.SubscriptionService == domain.SubscriptionGrok {
+		p := state.Pending
+		settleGrokOperation(state, grokSettlement{Operation: p.ID, Action: p.Action, Actor: p.Actor, Epoch: epoch, State: domain.SubscriptionCanceled}, now)
+		return
+	}
+	if o := state.ServerOperation; o != nil && o.ID == state.Pending.ID {
+		o.State, o.GrokDiagnostic = domain.SubscriptionCanceled, nil
+	}
+}
+
+// cancelPendingLogin applies a login cancellation to the account's pending
+// operation. A queued login holds no lease, so it is removed and its server
+// record is settled as canceled; a claimed login keeps its pending operation
+// with the cancellation flag until its Worker reports Finish.
+func cancelPendingLogin(a *domain.Account, epoch domain.ID, now time.Time) error {
+	if a.Subscription == nil || a.Subscription.Pending == nil {
+		return domain.Fail(domain.Conflict, "No subscription operation is pending.", "Read current account status; cancellation never starts another operation.")
+	}
+	if a.Subscription.Pending.Action != domain.SubscriptionLogin {
+		return domain.Fail(domain.Unsupported, "Only an active login can be canceled.", "Let refresh or logout finish under exclusive ownership.")
+	}
+	if a.Subscription.Pending.Phase == domain.SubscriptionQueued {
+		cancelServerOperation(a, epoch, now)
+		a.Subscription.Pending = nil
+	} else {
+		a.Subscription.Pending.Canceled = true
+	}
+	return nil
+}
+
 // Queued lifecycle requests have not granted native authority. Settle them in
 // the same transaction as client revocation, without releasing independent or
 // claimed leases and without undoing logout's accepted execution revocation.
-func cancelQueuedSubscriptionInitiator(tx *store.Tx, device domain.ID) error {
+func cancelQueuedSubscriptionInitiator(tx *store.Tx, device, epoch domain.ID) error {
 	accounts, err := all(tx, domain.AccountKind)
 	if err != nil {
 		return err
@@ -107,9 +154,7 @@ func cancelQueuedSubscriptionInitiator(tx *store.Tx, device domain.ID) error {
 		if state == nil || state.Pending == nil || state.Pending.Actor.DeviceID != device || state.Pending.Phase != domain.SubscriptionQueued {
 			continue
 		}
-		if o := state.ServerOperation; o != nil && o.ID == state.Pending.ID {
-			o.State = domain.SubscriptionCanceled
-		}
+		cancelServerOperation(&account, epoch, time.Now().UTC())
 		if o := state.NativeOperation; o != nil && o.ID == state.Pending.ID {
 			o.State = domain.SubscriptionCanceled
 			if state.Pending.Action == domain.SubscriptionLogin && state.Lease == nil && state.Generation == "" {
@@ -285,19 +330,8 @@ func (s *Service) CancelSubscription(ctx context.Context, req *connect.Request[p
 		if err != nil {
 			return nil, err
 		}
-		if a.Subscription == nil || a.Subscription.Pending == nil {
-			return nil, domain.Fail(domain.Conflict, "No subscription operation is pending.", "Read current account status; cancellation never starts another operation.")
-		}
-		if a.Subscription.Pending.Action != domain.SubscriptionLogin {
-			return nil, domain.Fail(domain.Unsupported, "Only an active login can be canceled.", "Let refresh or logout finish under exclusive ownership.")
-		}
-		if a.Subscription.Pending.Phase == domain.SubscriptionQueued {
-			if o := a.Subscription.ServerOperation; o != nil && o.ID == a.Subscription.Pending.ID {
-				o.State = domain.SubscriptionCanceled
-			}
-			a.Subscription.Pending = nil
-		} else {
-			a.Subscription.Pending.Canceled = true
+		if err := cancelPendingLogin(&a, s.subscriptionServerEpoch(), time.Now().UTC()); err != nil {
+			return nil, err
 		}
 		if _, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
 			return nil, err
@@ -325,6 +359,11 @@ func (s *Service) GetSubscriptionProgress(ctx context.Context, req *connect.Requ
 			return s.managedClaudeProgress(ctx, req)
 		}
 		return s.getClaudeSubscriptionProgress(ctx, req)
+	}
+	if matched, err := s.isGrokSubscription(ctx, req.Msg.AccountId); err != nil {
+		return nil, rpc.Error(err, c)
+	} else if matched {
+		return s.grokSubscriptionProgress(ctx, req)
 	}
 	unlock, err := s.lockAccounts(ctx)
 	if err != nil {
@@ -417,6 +456,11 @@ func (s *Service) WatchSubscription(ctx context.Context, req *connect.Request[pb
 					if len(records) == 4 {
 						break
 					}
+					continue
+				}
+				// Grok lifecycle work is not pushed to any Worker until the managed Grok
+				// Worker capability is declared and negotiated.
+				if a.SubscriptionService == domain.SubscriptionGrok {
 					continue
 				}
 				if a.SubscriptionService == domain.SubscriptionClaude && !slices.Contains(machine.WorkerCapabilities, domain.NativeClaudeSubscriptionsV1) || a.SubscriptionService == domain.SubscriptionChatGPT && !slices.Contains(machine.WorkerCapabilities, domain.ManagedCodexSubscriptionsV1) {
@@ -548,6 +592,13 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 			return s.takeManagedClaude(ctx, req)
 		}
 		return s.takeClaudeSubscription(ctx, req)
+	}
+	// Grok accounts never enter the Codex lifecycle below; they use the sealed
+	// Grok bundle lifecycle, and the Codex account guard still refuses them.
+	if matched, err := s.isGrokSubscription(ctx, m.Id); err != nil {
+		return nil, rpc.Error(err, c)
+	} else if matched {
+		return s.takeGrokSubscription(ctx, req)
 	}
 	if err := workerActor(ctx, req.Msg.MachineId, req.Msg.InstanceId); err != nil {
 		return nil, rpc.Error(err, c)
@@ -1064,6 +1115,11 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 			return s.finishManagedClaudeExecution(ctx, req)
 		}
 		return s.finishClaudeSubscription(ctx, req)
+	}
+	if matched, err := s.isGrokSubscription(ctx, m.Id); err != nil {
+		return nil, rpc.Error(err, c)
+	} else if matched {
+		return s.finishGrokSubscription(ctx, req)
 	}
 	if err := workerActor(ctx, req.Msg.MachineId, req.Msg.InstanceId); err != nil {
 		return nil, rpc.Error(err, c)
