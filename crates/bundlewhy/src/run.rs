@@ -81,6 +81,9 @@ fn protected_files_with_root(
         files.extend(LOCKFILES.iter().map(|name| root.join(name)));
         files.extend(ancestor_lockfiles(root));
         files.push(root.join("package.json"));
+        if let Some((manifest, _)) = nearest_package(root) {
+            files.push(manifest);
+        }
     }
     if let Some(config) = &selection.config_file {
         files.push(config.clone());
@@ -98,10 +101,11 @@ fn protected_files(selection: &Selection) -> BTreeMap<PathBuf, Option<String>> {
     protected_files_with_root(selection, None)
 }
 
-fn project_name_at(root: &Path, fallback: &str) -> String {
+fn nearest_package(root: &Path) -> Option<(PathBuf, String)> {
     let mut directory = Some(root);
     while let Some(current) = directory {
-        let name = std::fs::read(current.join("package.json"))
+        let manifest = current.join("package.json");
+        let name = std::fs::read(&manifest)
             .ok()
             .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
             .and_then(|manifest| {
@@ -112,10 +116,17 @@ fn project_name_at(root: &Path, fallback: &str) -> String {
                     .map(str::to_owned)
             });
         if let Some(name) = name {
-            return name;
+            return Some((manifest, name));
         }
         let parent = current.parent();
         directory = parent.filter(|parent| *parent != current);
+    }
+    None
+}
+
+fn project_name_at(root: &Path, fallback: &str) -> String {
+    if let Some((_, name)) = nearest_package(root) {
+        return name;
     }
     fallback.to_owned()
 }
@@ -973,5 +984,29 @@ mod tests {
         .unwrap();
 
         assert_eq!(project_name_at(&root, "fallback"), "web-app");
+    }
+
+    #[test]
+    fn nearest_external_package_manifest_is_protected() {
+        let dir = tempfile::tempdir().unwrap();
+        let repository = dir.path().join("repo");
+        let project = repository.join("packages/app");
+        let external = repository.join("apps/web/src");
+        std::fs::create_dir_all(project.join(".git")).unwrap();
+        std::fs::create_dir_all(&external).unwrap();
+        let manifest = repository.join("apps/web/package.json");
+        std::fs::write(&manifest, r#"{"name":"web-app","sideEffects":false}"#).unwrap();
+        let selection = Selection {
+            project_root: project,
+            project_name: "app".to_owned(),
+            bundler: BundlerChoice::Vite,
+            config_file: None,
+        };
+
+        let before = protected_files_with_root(&selection, Some(&external));
+        std::fs::write(&manifest, r#"{"name":"web-app","sideEffects":true}"#).unwrap();
+        let after = protected_files_with_root(&selection, Some(&external));
+
+        assert_ne!(before, after);
     }
 }
