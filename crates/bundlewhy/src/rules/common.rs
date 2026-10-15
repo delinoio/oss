@@ -2895,6 +2895,74 @@ y=/process.env.F/.test(z),process.env.G"#;
     }
 
     #[test]
+    fn comments_between_eval_and_its_arguments_keep_the_direct_call() {
+        for source in [
+            "eval/*!license*/(code);",
+            "eval /* note */ (code);",
+            "eval /* a */ /* b */ (code);",
+            "eval // note\n(code);",
+            "eval // note\n  // more\n  (code);",
+            "eval\n/* multi\nline */\n(code);",
+            "/* before */ eval /* c */ (x);",
+            "const run = (c) => eval /* c */ (c);",
+        ] {
+            let start = source.find("eval").unwrap();
+            assert_eq!(direct_eval_offsets(source), vec![start], "{source}");
+        }
+        // A comment before the callee keeps the location on the `eval` token.
+        assert_eq!(
+            direct_eval_line("const a = 1;\n/* c */ eval /* c */ (x);"),
+            Some((1, 8))
+        );
+        // Member access, shadowing and method declarations still apply.
+        for source in [
+            "obj.eval /* c */ (x);",
+            "obj. /* c */ eval(x);",
+            "obj // c\n  .eval(x);",
+            "function f(eval) { eval /* c */ (x); }",
+            "class C { eval /* c */ (x) { return x; } }",
+            "const o = { eval // c\n (x) { return x; } };",
+        ] {
+            assert!(direct_eval_offsets(source).is_empty(), "{source}");
+        }
+        // Text in comments, strings and a longer identifier are not calls.
+        for source in [
+            "/* eval (x) */ run();",
+            "// eval (x)\nrun();",
+            "const t = 'eval /* c */ (x)';",
+            "evaluate /* c */ (x);",
+            "eval /* c */ ;",
+            "eval /* c */ ? (x) : y;",
+        ] {
+            assert!(direct_eval_offsets(source).is_empty(), "{source}");
+        }
+    }
+
+    #[test]
+    fn emitted_eval_with_comment_before_arguments_reports() {
+        let emitted =
+            EmittedChunk::plain("const longLocalName = 1;\nexport const r = (c) => eval/*!x*/(c);");
+        for engine_reports_eval in [true, false] {
+            let drafts = eval_rule_drafts_for_chunk(
+                DEAD_EVAL_SOURCE,
+                engine_reports_eval,
+                ManglingSetting::Enabled,
+                &emitted,
+            );
+            assert_eq!(drafts.len(), 1, "engine report: {engine_reports_eval}");
+        }
+        let commented_source =
+            "const longLocalName = 1;\nexport const r = (c) => eval /* c */ (c);";
+        let drafts = eval_rule_drafts_for_chunk(
+            commented_source,
+            false,
+            ManglingSetting::Enabled,
+            &EmittedChunk::plain("const longLocalName = 1;\neval // c\n(code);"),
+        );
+        assert_eq!(drafts.len(), 1);
+    }
+
+    #[test]
     fn direct_eval_offsets_lists_every_unshadowed_call() {
         let source = "eval(a); function f(eval) { eval(b); } o.eval(c); eval(d);";
         let offsets = direct_eval_offsets(source);
