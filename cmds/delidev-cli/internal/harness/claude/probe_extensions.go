@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -131,6 +132,136 @@ func exactNativeShape(raw []byte, shape reflect.Type) bool {
 		}
 	}
 	return true
+}
+
+// initializeDescriptorLists names the only initialize-result members whose
+// elements are descriptive handshake metadata. Their element objects are the
+// sole extension points of the initialization profile; every other object keeps
+// the closed exact-key rule.
+var initializeDescriptorLists = map[string]reflect.Type{
+	"commands": reflect.TypeOf(nativeCommand{}),
+	"agents":   reflect.TypeOf(probeAgent{}),
+	"models":   reflect.TypeOf(probeModel{}),
+}
+
+// projectInitializeDescriptors is the one shared policy for the unauthenticated
+// probe, API/subscription and managed-token initializers. It first validates the
+// whole result with the global strict decoder (UTF-8, frame bound, one document,
+// unique keys and at most 64 nesting levels at every depth, including inside
+// members that are later discarded). It then drops every undeclared member of
+// each commands, agents and models element object and returns the projected
+// bytes, which the unchanged exact-key check and typed decode consume. An
+// undeclared key that differs from a declared key only by case is refused, so a
+// discarded alias can never shadow a declared field. Nothing outside those
+// element objects is relaxed, and dropped names and values are never logged or
+// retained.
+func projectInitializeDescriptors(raw []byte) ([]byte, error) {
+	var document json.RawMessage
+	if domain.Decode(raw, &document) != nil {
+		return nil, incompatible()
+	}
+	var result map[string]json.RawMessage
+	if json.Unmarshal(raw, &result) != nil || result == nil {
+		// Not an object: the typed decode rejects the shape.
+		return raw, nil
+	}
+	for name, shape := range initializeDescriptorLists {
+		list, declared := result[name]
+		if !declared {
+			continue
+		}
+		var items []json.RawMessage
+		if json.Unmarshal(list, &items) != nil || items == nil {
+			continue
+		}
+		for i, item := range items {
+			projected, err := projectDescriptor(item, shape)
+			if err != nil {
+				return nil, err
+			}
+			items[i] = projected
+		}
+		result[name] = encodeRawArray(items)
+	}
+	projected, err := encodeRawObject(result)
+	if err != nil || len(projected) > len(raw) {
+		// The projection only removes bytes, so it can never exceed the
+		// validated frame; growth means a key needed re-escaping.
+		return nil, incompatible()
+	}
+	return projected, nil
+}
+
+// encodeRawObject joins members in sorted key order and keeps every value's
+// original bytes. Re-encoding values through json.Marshal would escape the
+// HTML characters and U+2028/U+2029 and could grow a frame that already passed
+// the 1 MiB bound past it, so values are never re-encoded.
+func encodeRawObject(members map[string]json.RawMessage) ([]byte, error) {
+	names := make([]string, 0, len(members))
+	for name := range members {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	var out bytes.Buffer
+	out.WriteByte('{')
+	for i, name := range names {
+		if i > 0 {
+			out.WriteByte(',')
+		}
+		var key bytes.Buffer
+		encoder := json.NewEncoder(&key)
+		encoder.SetEscapeHTML(false)
+		if err := encoder.Encode(name); err != nil {
+			return nil, err
+		}
+		out.Write(bytes.TrimSuffix(key.Bytes(), []byte("\n")))
+		out.WriteByte(':')
+		out.Write(members[name])
+	}
+	out.WriteByte('}')
+	return out.Bytes(), nil
+}
+
+// encodeRawArray joins array elements without re-encoding them.
+func encodeRawArray(items []json.RawMessage) json.RawMessage {
+	var out bytes.Buffer
+	out.WriteByte('[')
+	for i, item := range items {
+		if i > 0 {
+			out.WriteByte(',')
+		}
+		out.Write(item)
+	}
+	out.WriteByte(']')
+	return out.Bytes()
+}
+
+func projectDescriptor(raw json.RawMessage, shape reflect.Type) (json.RawMessage, error) {
+	var members map[string]json.RawMessage
+	if json.Unmarshal(raw, &members) != nil || members == nil {
+		return raw, nil
+	}
+	declared := make(map[string]bool, shape.NumField())
+	for i := 0; i < shape.NumField(); i++ {
+		name, _, _ := strings.Cut(shape.Field(i).Tag.Get("json"), ",")
+		declared[name] = true
+	}
+	for name := range members {
+		if declared[name] {
+			continue
+		}
+		for known := range declared {
+			if strings.EqualFold(name, known) {
+				return nil, incompatible()
+			}
+		}
+		delete(members, name)
+	}
+	projected, err := encodeRawObject(members)
+	if err != nil {
+		return nil, incompatible()
+	}
+	return projected, nil
 }
 
 // probeFrameIsPrelude reports whether a frame claims the startup event

@@ -126,10 +126,35 @@ pub fn source_id(display: &str) -> String {
     format!("src-{}", &sha256_hex(display.as_bytes())[..16])
 }
 
+/// Which bundler-specific rule decides that a text file without a build
+/// snapshot is a non-executable asset module instead of executable source.
+///
+/// Vite imports `.svg` files and `?raw`, `?url`, `?inline` and `?no-inline`
+/// queries as URL or string modules. Other engines load the same paths through
+/// user-configured loaders (for example an SVG-to-component loader) that
+/// produce executable code, so the Vite rule must not apply to them.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum AssetExemption {
+    /// No path-based exemption: every readable text module without a build
+    /// snapshot is a coverage gap unless the bundler reported it as an asset
+    /// module (see `SourceStore::asset_modules`).
+    #[default]
+    None,
+    /// Vite URL and string asset semantics for known asset paths.
+    ViteUrlModules,
+}
+
 /// Collects source files referenced by the analysis, keyed by display path.
 #[derive(Debug, Default)]
 pub struct SourceStore {
     pub include_content: bool,
+    /// Path-based asset rule for modules without a build snapshot. Defaults to
+    /// the stricter [`AssetExemption::None`].
+    pub asset_exemption: AssetExemption,
+    /// Resolved paths of modules the bundler itself classified as asset
+    /// modules (for example Rspack `asset/resource`). Their output is a URL or
+    /// string, never executable source text.
+    pub asset_modules: HashSet<PathBuf>,
     files: BTreeMap<String, SourceFile>,
     pub project_relative: BTreeMap<String, String>,
     /// Source ID to project-relative path for sources whose content cannot be
@@ -437,6 +462,20 @@ impl SourceStore {
         }
     }
 
+    /// Sets the path-based asset rule applied to modules without a snapshot.
+    pub fn with_asset_exemption(mut self, asset_exemption: AssetExemption) -> Self {
+        self.asset_exemption = asset_exemption;
+        self
+    }
+
+    /// True when a readable text module without a build snapshot is known to
+    /// be a non-executable asset module for the selected engine.
+    fn is_exempt_asset(&self, display: &str, path: &Path) -> bool {
+        self.asset_modules.contains(&normalize(path))
+            || (self.asset_exemption == AssetExemption::ViteUrlModules
+                && is_known_asset_path(display))
+    }
+
     /// Adds a source and returns its ID and verified build text, if available.
     ///
     /// The text is `None` for a non-text source (an imported image or a
@@ -544,7 +583,7 @@ impl SourceStore {
                 derived,
             ),
             (None, LiveRead::Bytes(bytes)) => match as_text(&bytes) {
-                Some(_) if is_known_asset_path(&classified.display) => {
+                Some(_) if self.is_exempt_asset(&classified.display, path) => {
                     tracing::debug!(path = %classified.display, "asset source has no build snapshot; retaining existence only");
                     (None, String::new(), false, true)
                 }
@@ -883,11 +922,18 @@ mod tests {
     #[test]
     fn text_assets_without_snapshots_do_not_create_detector_coverage_gaps() {
         let dir = tempfile::tempdir().unwrap();
-        for name in ["logo.svg", "source.js?raw", "source.js?url"] {
+        for name in [
+            "logo.svg",
+            "source.js?raw",
+            "source.js?url",
+            "source.js?inline",
+            "source.js?no-inline",
+        ] {
             let file = dir.path().join(name);
             let backing = filesystem_path(&file);
             std::fs::write(&backing, "eval('not executable as imported')").unwrap();
-            let mut store = SourceStore::new(true);
+            let mut store =
+                SourceStore::new(true).with_asset_exemption(AssetExemption::ViteUrlModules);
             let (id, content) = store.add_file(dir.path(), &file).unwrap();
             assert!(content.is_none(), "{name}");
             assert!(store.unverified.is_empty(), "{name}");
@@ -896,6 +942,69 @@ mod tests {
             assert!(store.readable_without_snapshot.is_empty(), "{name}");
             assert!(store.existence_relative.contains_key(&id), "{name}");
         }
+    }
+
+    #[test]
+    fn engines_without_the_vite_exemption_keep_text_assets_as_coverage_gaps() {
+        // Rspack and other engines load `.svg` and query imports through
+        // user-configured loaders that can emit executable code, so the Vite
+        // URL-module rule must not hide their coverage gap.
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["icon.svg", "source.js?raw", "source.js?url", "plain.js"] {
+            let file = dir.path().join(name);
+            let backing = filesystem_path(&file);
+            std::fs::write(&backing, "eval('executable loader output')").unwrap();
+            let mut store = SourceStore::new(true);
+            assert_eq!(store.asset_exemption, AssetExemption::None);
+            let (id, content) = store.add_file(dir.path(), &file).unwrap();
+            assert!(content.is_none(), "{name}");
+            assert_eq!(store.unverified.len(), 1, "{name}");
+            assert!(store.readable_without_snapshot.contains(name), "{name}");
+            assert!(store.existence_relative.contains_key(&id), "{name}");
+            // A later visit keeps the single gap.
+            store.add_file(dir.path(), &file).unwrap();
+            assert_eq!(store.unverified.len(), 1, "{name}");
+        }
+    }
+
+    #[test]
+    fn vite_exemption_does_not_cover_plain_scripts() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("plain.js");
+        std::fs::write(&file, "eval('code')").unwrap();
+        let mut store = SourceStore::new(true).with_asset_exemption(AssetExemption::ViteUrlModules);
+        assert!(store.add_file(dir.path(), &file).unwrap().1.is_none());
+        assert_eq!(store.unverified, vec!["plain.js".to_owned()]);
+    }
+
+    #[test]
+    fn build_snapshots_win_over_the_asset_exemption_setting() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("icon.svg");
+        std::fs::write(&file, "eval('x')").unwrap();
+        for exemption in [AssetExemption::None, AssetExemption::ViteUrlModules] {
+            let mut store = SourceStore::new(true).with_asset_exemption(exemption);
+            store
+                .snapshots
+                .insert(normalize(&file), "eval('x')".to_owned());
+            let (_, content) = store.add_file(dir.path(), &file).unwrap();
+            assert_eq!(content.as_deref(), Some("eval('x')"), "{exemption:?}");
+            assert!(store.unverified.is_empty(), "{exemption:?}");
+        }
+    }
+
+    #[test]
+    fn bundler_reported_asset_modules_keep_existence_only_evidence() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("icon.svg");
+        std::fs::write(&file, "<svg/>").unwrap();
+        let mut store = SourceStore::new(true);
+        store.asset_modules.insert(normalize(&file));
+        let (id, content) = store.add_file(dir.path(), &file).unwrap();
+        assert!(content.is_none());
+        assert!(store.unverified.is_empty());
+        assert!(store.readable_without_snapshot.is_empty());
+        assert!(store.existence_relative.contains_key(&id));
     }
 
     #[cfg(unix)]
@@ -1521,7 +1630,8 @@ mod tests {
         std::fs::write(&file, "export const a = 1;").unwrap();
         for name in ["src/a.js?raw", "src/a.js?v=1#x", "src/a.js#frag"] {
             let path = dir.path().join(name);
-            let mut store = SourceStore::new(true);
+            let mut store =
+                SourceStore::new(true).with_asset_exemption(AssetExemption::ViteUrlModules);
             // No source map snapshot: a live read verifies the path, but not
             // the revision used by the build.
             let (id, text) = store

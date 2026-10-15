@@ -9,7 +9,7 @@ investigations, separate root clibox watch failure and full-acceptance review.
 Keep those limits visible; this exception does not establish a fix or passing
 skipped checks. Require `pnportReleaseReady: true` and exact
 `pnportReleaseVersion: "0.1.0"`, preserve signing/integrity and immutable retries,
-and keep and the complete Windows 0.2.0 requirements open. This amendment
+and keep the complete Windows 0.2.0 requirements open. This amendment
 takes precedence over earlier full-acceptance prerequisites for exactly 0.1.0.
 
 Stable 0.1.0 is published for all four macOS/glibc Linux targets. The retained
@@ -34,7 +34,48 @@ the complete Windows 0.2.0 requirements.
 
 ## Runtime and Language
 
-Rust on the root nightly-2026-01-01 toolchain; explicit Cargo workspace membership, publish = false. Native interception must not upgrade the toolchain or alter protected dependencies. Retain upstream fspy attribution for adapted code.
+### Windows 0.2.0 implementation boundary
+
+Windows uses native MSVC x64/arm64 images and a pnport-only Detours adapter in
+`pnport-preload`. The shared core owns PE admission and UTF-16 native path and
+private-storage helpers. The supervisor must establish a non-inherited,
+kill-on-close job before resuming a suspended root; descendants retain the same
+job and injected snapshot across environment replacement. Unmediated process
+creation and unsafe handle transfers fail closed. No implicit shell, mixed
+architecture helper, elevation or unvirtualized fallback is permitted.
+
+Create private cache leaves with a user-only inheritable DACL atomically; verify
+existing ownership and access grants instead of tightening unrelated user data.
+Reject reparse state leaves and multiply linked state files using opened native
+handles. Execution snapshots inherit the private cache boundary, never a shared
+temporary-directory ACL. Windows capability additions preserve doctor JSON v1.
+
+The Windows adapter covers direct and handle-relative reads, metadata, logical
+final names, same-process handle duplication, merged synchronous enumeration,
+read-only mutation controls, native read mappings, ZIP DLL/package-bin loading,
+source watches and hidden tool-cache creation. Native input identities include
+the volume/file index and change time so restored mtime does not hide rewrites.
+Cross-volume locator lookup avoids the pinned resolver's drive-relative panic;
+registered aliases and fallback bindings retain the admitted graph context.
+Windows fixtures compile a no-entrypoint DLL with the native MSVC compiler;
+cross-built local fixtures may supply the same-architecture DLL explicitly.
+Exact native control endpoints used by the DLL loader, console, Node crypto
+provider and Winsock retain their operating-system semantics. This does not
+admit raw disk-device paths past package classification.
+
+Merged enumeration with APC/completion-port callbacks and inherited managed
+handles across processes are not yet supported. Reject these operations before
+dispatch/child birth instead of losing completion semantics or peer provenance.
+Unclassified disk-device namespaces and lossily encoded Detours DLL paths also
+fail explicitly. These limits remain part of complete Windows acceptance.
+
+The implementation is distinct from acceptance: both architectures require
+actual filesystem, lifecycle, installed-package, TypeScript, watch and loader
+conformance, plus separate Windows 10 22H2 minimum-OS evidence. Keep the
+PowerShell installation and published-support gates closed until that evidence
+exists. Existing 0.1.x publication exceptions do not authorize Windows or 0.2.0.
+
+Rust on the root nightly-2026-09-28 toolchain; explicit Cargo workspace membership, publish = false. Native interception must not upgrade the toolchain or alter protected dependencies. Retain upstream fspy attribution for adapted code.
 
 ## Users and Operators
 
@@ -382,7 +423,7 @@ On macOS build `cargo build -p pnport -p fspy_preload_unix --features fspy_prelo
 
 The macOS `fcntl` conformance fixture compiles separate direct executables and `dlopen` constructor libraries for the current Rust target slice. Across inline/split root-only data graphs, its 16 native/pnport rows check kqueue CLOEXEC, `F_GETPATH`, duplication minimums 64/96, and integer/pointer/no-argument invalid-FD `EBADF` with untouched pointer buffers. The readlink fixture covers both admitted duplication commands on peer-specific directories, plus negative and closed-FD controls. Isolated preload unit scenarios hold the runtime mutex during rejected forwarding, force TLS-not-ready in a separate process, retain repeated outer-guard ownership, and compare descriptor state before/after admitted failures. Run the matching release preload build, `cargo test --locked --release -p fspy_preload_unix --features pnport`, and `cargo test --locked --release -p pnport --test core --test recursive_links`. Native macOS arm64 execution verifies this adapter correction. The x64 release build also passes the two focused macOS core fixtures and four preload unit tests under Rosetta on the arm64 host; this is translated execution, and native macOS x64 acceptance remains required. Cross-compilation and translated execution are supplementary evidence only. These fixtures do not establish full Next.js/Turbopack, minimum-OS, or four-host release acceptance.
 
-Windows Detours and private ACL ownership are deferred to 0.2.0 without dropping their requirements. Remaining 0.1.0 work includes complete macOS fork/exec/posix_spawnp propagation, terminal job control outside the Linux traced path, complete detached-tree and abrupt-supervisor recovery across targets, complete mutation and handle interception, canonicalization through filesystem symlinks, complete native library/package-bin execution and watch conformance, peer-variant native TypeScript fixtures, and reproducible benchmark results. Distribution scripts, release workflows, and public guides are configured, but the complete four-target 0.1.0 execution/installation acceptance remains open; Complete native Linux x64 acceptance remains a release requirement. Clippy checks the private crates for Linux x64 GNU and Windows x64 MSVC using the pinned toolchain; these are compile-only checks, not native execution evidence. The macOS and Linux Docker fixtures are not sufficient evidence to publish 0.1.0. The 2026-09-23 source-fork integration passed the root locked Cargo test suite on macOS arm64 after one existing clibox concurrency-test retry, focused pnport C fixtures, Cargo format and Clippy, macOS npm/Yarn package and archive installation smoke, and inline/split official native TypeScript conformance. Linux x64 GNU and Windows x64 MSVC pnport/preload cross-target `cargo check` passed; these are compile checks only. The current supervisors poll snapshot and active-archive identity, acknowledge initial injection, and shut down owned processes on observed failure, but do not yet satisfy the complete tree-ownership contract. Publication remains gated behind actual four-host 0.1.0 validation; a version commit or tag alone does not authorize it. The experimental next preview is published separately; it does not open stable readiness or complete the full four-target scope.
+Windows Detours and private ACL ownership were deferred from the original 0.1.0 stage to 0.2.0. The development adapter and private-storage helpers are now implemented under the Windows boundary above; complete Windows acceptance remains outstanding. Remaining 0.1.0 work includes complete macOS fork/exec/posix_spawnp propagation, terminal job control outside the Linux traced path, complete detached-tree and abrupt-supervisor recovery across targets, complete mutation and handle interception, canonicalization through filesystem symlinks, complete native library/package-bin execution and watch conformance, peer-variant native TypeScript fixtures, and reproducible benchmark results. Distribution scripts, release workflows, and public guides are configured, but the complete four-target 0.1.0 execution/installation acceptance remains open; Complete native Linux x64 acceptance remains a release requirement. Clippy checks the private crates for Linux x64 GNU and Windows x64 MSVC using the pinned toolchain; these are compile-only checks, not native execution evidence. The macOS and Linux Docker fixtures are not sufficient evidence to publish 0.1.0. The 2026-09-23 source-fork integration passed the root locked Cargo test suite on macOS arm64 after one existing clibox concurrency-test retry, focused pnport C fixtures, Cargo format and Clippy, macOS npm/Yarn package and archive installation smoke, and inline/split official native TypeScript conformance. Linux x64 GNU and Windows x64 MSVC pnport/preload cross-target `cargo check` passed; these are compile checks only. The current supervisors poll snapshot and active-archive identity, acknowledge initial injection, and shut down owned processes on observed failure, but do not yet satisfy the complete tree-ownership contract. Publication remains gated behind actual four-host 0.1.0 validation; a version commit or tag alone does not authorize it. The experimental next preview is published separately; it does not open stable readiness or complete the full four-target scope.
 
 The constructor-lease unit control runs alone in a fresh helper process while its parent suite remains parallel. A deliberate pre-exec child proves that fork-inherited open descriptions keep an abandoned parent lease contended until CLOEXEC closes them; unrelated concurrent test spawns must not invalidate an immediate abandonment assertion.
 The new-group terminal fixture changes its group after the first input, verifies actual native foreground placement, and then receives explicit Ctrl+Z. Relying on incidental initial background-read SIGTTIN made that fixture schedule-dependent: placement could win before the read and leave the shell waiting for a stop never requested. Keep the separate background-read SIGTTIN control and do not treat this fixture correction as an explanation of missing constructor entry.
@@ -394,7 +435,7 @@ Root `cargo test` on this host needs a canonical `TMPDIR` because existing binpm
 
 On 2026-09-23, baseline source revision `d55f0db425d369c63744ec41be5318833a81c53a` was reviewed in an isolated Docker container before the Linux implementation below. This historical review did not enable Linux execution or satisfy a release gate.
 
-The environment was Ubuntu 22.04.5 arm64, glibc 2.35, Docker Desktop's `7.0.12-linuxkit` kernel, Rust `nightly-2026-01-01` (`1.94.0-nightly`, `8d670b93d`), and Node 24.21.0. The Ubuntu base image was `ubuntu@sha256:b8b6ee6aa931ecd9d0d952abc34dc0e5f7c6a30c6bb71b079fe399fde0329c02`; Node came from `node@sha256:6dac556d980b7f0e5498d08f08cee0ca67798b4ad6c23964a9214920e67758d0`. The repository was copied with `git archive`; the source, platform gate, toolchain pin, and compiler bytes were unchanged. Preparation used the committed Yarn 4.18.0 lockfile and `typescript@7.1.0-dev.20260812.1`. Docker's bridge network was disconnected before the execution probes.
+The environment was Ubuntu 22.04.5 arm64, glibc 2.35, Docker Desktop's `7.0.12-linuxkit` kernel, Rust `nightly-2026-09-28` (`1.94.0-nightly`, `8d670b93d`), and Node 24.21.0. The Ubuntu base image was `ubuntu@sha256:b8b6ee6aa931ecd9d0d952abc34dc0e5f7c6a30c6bb71b079fe399fde0329c02`; Node came from `node@sha256:6dac556d980b7f0e5498d08f08cee0ca67798b4ad6c23964a9214920e67758d0`. The repository was copied with `git archive`; the source, platform gate, toolchain pin, and compiler bytes were unchanged. Preparation used the committed Yarn 4.18.0 lockfile and `typescript@7.1.0-dev.20260812.1`. Docker's bridge network was disconnected before the execution probes.
 
 - `cargo build --locked -p pnport -p pnport-preload` succeeded and produced the CLI and matching `.so`.
 - `cargo test --locked -p pnport` passed 13 tests (two library, two CLI-module, and nine integration tests). The macOS-only native execution tests were excluded by their existing target guards. The four package-owned Node tests also passed.

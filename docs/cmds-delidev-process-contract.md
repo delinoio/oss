@@ -43,6 +43,14 @@ Linux uses a dedicated re-executed subreaper per process scope; its kernel child
 
 A Unix stdout/stderr pipe setup failure after the start barrier but before command launch persists completed ownership before supervisor exit. Failure to persist that proof retains recovery uncertainty; native-started failures still require descendant reconciliation.
 
+On macOS, ordinary Codex and Claude execution request the typed current-user-GUI
+option. When that login domain exists, the independent supervisor uses session
+type `Aqua`. Other execution retains the user-domain `Background` profile. This
+preserves login-keychain access for ordinary tools without changing auxiliary
+process contexts.
+The journal retains the selected original domain for exact cleanup; coalition,
+process-birth, start-barrier and descendant-join requirements remain unchanged.
+
 Unix reconciliation atomically persists completion when the current boot identity
 differs from the valid original journal. Preserve the original owner, process birth,
 boot identity and kernel metadata; a failed publication remains a recovery error.

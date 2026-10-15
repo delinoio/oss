@@ -126,7 +126,7 @@ function fixture() {
     fireEvent.click(
       await currentSession().findByRole("option", { name: /retained/ }),
     );
-    expect(input).toHaveProperty("value", "$retained");
+    expect(input).toHaveProperty("value", "$retained ");
     return input;
   };
   const returnToOriginal = async () => {
@@ -156,7 +156,7 @@ it("retains exact skill invocation across retained App session tab switches", as
   const before = await f.select();
   const after = await f.returnToOriginal();
   expect(after).toBe(before);
-  expect(after).toHaveProperty("value", "$retained");
+  expect(after).toHaveProperty("value", "$retained ");
   fireEvent.click(
     currentSession().getByRole("button", { name: "Queue message" }),
   );
@@ -240,7 +240,7 @@ it("accepts a skill before fixed Enter sends the original General Chat draft onc
   fireEvent.change(input, { target: { value: "$ret", selectionStart: 4 } });
   await currentSession().findByRole("option", { name: /retained/ });
   fireEvent.keyDown(input, { key: "Enter" });
-  expect(input).toHaveProperty("value", "$retained");
+  expect(input).toHaveProperty("value", "$retained ");
   expect(f.enqueue).not.toHaveBeenCalled();
   fireEvent.keyDown(input, { key: "Enter" });
   await waitFor(() => expect(f.enqueue).toHaveBeenCalledOnce());
@@ -248,7 +248,7 @@ it("accepts a skill before fixed Enter sends the original General Chat draft onc
   expect(request.skills?.selections).toEqual([f.selection]);
   expect(
     JSON.parse(new TextDecoder().decode(request.documentJson)).prompt,
-  ).toBe("$retained");
+  ).toBe("$retained ");
   fireEvent.keyDown(input, { key: "Enter", repeat: true });
   expect(f.enqueue).toHaveBeenCalledOnce();
 }, 10_000);
