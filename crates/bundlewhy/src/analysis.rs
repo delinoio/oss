@@ -106,7 +106,7 @@ pub fn context_root(collection: &Collection, selected_root: &Path) -> PathBuf {
 
 pub fn engine_identity(bundler: BundlerChoice, collection: &Collection) -> EngineIdentity {
     let spec = bundler.spec();
-    let support = if collection.bundler_version == spec.version {
+    let support = if spec.is_matrix_version(&collection.bundler_version) {
         EngineSupport::Supported
     } else {
         EngineSupport::UnsupportedSelected
@@ -481,15 +481,18 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
             unreadable_sources,
             unverified_sources,
             vite_env_source_gaps,
-            (collection.bundler_version != input.bundler.spec().version)
-                .then(|| {
-                    format!(
-                        "{} {}",
-                        input.bundler.spec().package,
-                        input.bundler.spec().version
-                    )
-                })
-                .as_deref(),
+            (!input
+                .bundler
+                .spec()
+                .is_matrix_version(&collection.bundler_version))
+            .then(|| {
+                format!(
+                    "{} {}",
+                    input.bundler.spec().package,
+                    input.bundler.spec().version
+                )
+            })
+            .as_deref(),
         ),
         chunks: chunk_sizes,
         problems,
@@ -1357,14 +1360,12 @@ mod tests {
         // Rolldown reports no retention reason, so the cause is inferred.
         assert_eq!(register.status, EvidenceStatus::Inferred);
         assert!(!register.summary.contains("must run"));
-        assert!(
-            register
-                .corrective_action
-                .as_ref()
-                .unwrap()
-                .direction
-                .contains("\"sideEffects\"")
-        );
+        // The fixture module declares an export and the collection holds no
+        // importer binding data, so the direction asks to check importers and
+        // does not advise changing side-effect declarations.
+        let register_direction = &register.corrective_action.as_ref().unwrap().direction;
+        assert!(register_direction.contains("Check which importers"));
+        assert!(!register_direction.contains("\"sideEffects\""));
         assert!(
             !register
                 .corrective_action
@@ -1956,6 +1957,9 @@ mod tests {
                     .as_str()
                     .is_some_and(|id| id.ends_with("src/effects/register.js"))
                 {
+                    // An effect-only module declares no export, so the
+                    // finding can state that nothing uses one.
+                    module["exports"] = serde_json::json!([]);
                     module["moduleSideEffects"] = serde_json::json!(module_side_effects);
                     module["treeshakeSideEffects"] = serde_json::json!(treeshake_side_effects);
                     module["packageSideEffects"] = serde_json::json!(package_side_effects);
@@ -2170,6 +2174,269 @@ mod tests {
                     .is_empty()
             );
         }
+    }
+
+    /// Runs the Vite fixture with `src/effects/register.js` declaring
+    /// `exports` and the given hook value, and returns its finding.
+    fn retained_with_exports(exports: &[&str], module_side_effects: &str) -> Diagnostic {
+        retained_with_declaration(exports, module_side_effects, None)
+    }
+
+    /// Like `retained_with_exports`, also setting the collected
+    /// `treeshake.moduleSideEffects` verdict when one is given.
+    fn retained_with_declaration(
+        exports: &[&str],
+        module_side_effects: &str,
+        treeshake_side_effects: Option<&str>,
+    ) -> Diagnostic {
+        let exports: Vec<String> = exports.iter().map(|name| (*name).to_owned()).collect();
+        let module_side_effects = module_side_effects.to_owned();
+        let treeshake_side_effects = treeshake_side_effects.map(str::to_owned);
+        let fixture = run_fixture(BundlerChoice::Vite, |value| {
+            for module in value["modules"].as_array_mut().unwrap() {
+                if module["id"]
+                    .as_str()
+                    .is_some_and(|id| id.ends_with("src/effects/register.js"))
+                {
+                    module["exports"] = serde_json::json!(exports);
+                    module["usedExports"] = serde_json::json!([]);
+                    module["moduleSideEffects"] = serde_json::json!(module_side_effects);
+                    if let Some(option) = &treeshake_side_effects {
+                        module["treeshakeSideEffects"] = serde_json::json!(option);
+                    }
+                }
+            }
+        });
+        find(
+            &fixture.output.analysis.diagnostics,
+            "vite/side-effect-retained",
+            "src/effects/register.js",
+        )
+        .expect("register.js stays reported")
+        .clone()
+    }
+
+    fn export_use_outcome(diagnostic: &Diagnostic) -> ConditionOutcome {
+        diagnostic
+            .conditions
+            .iter()
+            .find(|condition| condition.description == "No export of the module is used")
+            .expect("export use condition")
+            .outcome
+    }
+
+    #[test]
+    fn vite_side_effect_retained_does_not_assert_unused_exports_without_importer_data() {
+        // Re-export facades, default re-exports and directly exported
+        // components that a same-chunk importer reads have an empty
+        // `renderedExports` list. That list does not show that no importer
+        // uses the export.
+        for (exports, hook) in [
+            (
+                vec!["EmbeddedActionsParser", "Lexer", "createToken"],
+                "null",
+            ),
+            (vec!["default"], "null"),
+            (vec!["unstable_batchedUpdates"], "null"),
+            (vec!["FontAwesomeIcon"], "no-treeshake"),
+            (vec!["FontAwesomeIcon"], "false"),
+            (vec!["FontAwesomeIcon"], "true"),
+        ] {
+            let case = format!("{exports:?} / {hook}");
+            let finding = retained_with_exports(&exports, hook);
+            assert_eq!(
+                export_use_outcome(&finding),
+                ConditionOutcome::Unknown,
+                "{case}"
+            );
+            // Even an effect declaration does not make the finding
+            // Confirmed: an importer, not the declaration, can be the reason.
+            assert_eq!(finding.status, EvidenceStatus::Inferred, "{case}");
+            for text in [&finding.title, &finding.summary] {
+                assert!(
+                    !text.contains("none of its exports is used"),
+                    "{case}: {text}"
+                );
+            }
+            assert!(finding.summary.contains("unknown"), "{}", finding.summary);
+            assert!(
+                finding.summary.contains("chunk-level bindings"),
+                "{}",
+                finding.summary
+            );
+            let direction = direction(&finding);
+            assert!(direction.contains("Check which importers"), "{direction}");
+            for declaration_advice in [
+                "sideEffects",
+                "moduleSideEffects",
+                "side-effect free with",
+                "narrow",
+            ] {
+                assert!(
+                    !direction.contains(declaration_advice),
+                    "{case}: {direction}"
+                );
+            }
+            let safety = &finding.corrective_action.as_ref().unwrap().safety;
+            assert!(safety.contains("Do not remove"), "{safety}");
+            assert!(
+                finding
+                    .evidence
+                    .iter()
+                    .any(|evidence| evidence.status == EvidenceStatus::Inferred
+                        && evidence.detail.contains("not established")),
+                "{:?}",
+                finding.evidence
+            );
+        }
+    }
+
+    #[test]
+    fn vite_side_effect_retained_keeps_effect_only_modules_confirmed() {
+        // A module that declares no export has nothing for an importer to
+        // read, so the rendered code is the only reason it is kept.
+        let finding = retained_with_exports(&[], "no-treeshake");
+        assert_eq!(export_use_outcome(&finding), ConditionOutcome::Met);
+        assert_eq!(finding.status, EvidenceStatus::Confirmed);
+        assert!(!finding.summary.contains("unknown"), "{}", finding.summary);
+        assert!(direction(&finding).contains("Move top-level side effects"));
+        let analyzed = retained_with_exports(&[], "null");
+        assert_eq!(export_use_outcome(&analyzed), ConditionOutcome::Met);
+        assert_eq!(analyzed.status, EvidenceStatus::Inferred);
+        assert!(has_inferred_effect_evidence(&analyzed));
+    }
+
+    #[test]
+    fn vite_side_effect_retained_confirms_only_modules_without_exports() {
+        // (hook value, configured option verdict, whether the effective
+        // declaration keeps the module). Only a module that declares no export
+        // can be Confirmed; a module that declares exports stays Inferred with
+        // an Unknown export-use condition under every declaration.
+        for (hook, option, keeps) in [
+            ("no-treeshake", None, true),
+            ("null", Some("true"), true),
+            ("false", None, false),
+            ("true", None, false),
+            ("null", Some("false"), false),
+            ("null", Some("null"), false),
+        ] {
+            let case = format!("{hook} / {option:?}");
+            let without_exports = retained_with_declaration(&[], hook, option);
+            assert_eq!(
+                export_use_outcome(&without_exports),
+                ConditionOutcome::Met,
+                "{case}"
+            );
+            let expected = if keeps {
+                EvidenceStatus::Confirmed
+            } else {
+                EvidenceStatus::Inferred
+            };
+            assert_eq!(without_exports.status, expected, "{case}");
+            let with_exports = retained_with_declaration(&["default"], hook, option);
+            assert_eq!(
+                export_use_outcome(&with_exports),
+                ConditionOutcome::Unknown,
+                "{case}"
+            );
+            assert_eq!(with_exports.status, EvidenceStatus::Inferred, "{case}");
+        }
+    }
+
+    #[test]
+    fn vite_side_effect_retained_fixture_effect_only_import_is_still_reported() {
+        // The unmodified fixture module is imported without bindings and its
+        // code remains rendered. It is still reported, as unknown export use.
+        let baseline = run_fixture(BundlerChoice::Vite, |_| {});
+        let finding = find(
+            &baseline.output.analysis.diagnostics,
+            "vite/side-effect-retained",
+            "src/effects/register.js",
+        )
+        .expect("register.js stays reported");
+        assert_eq!(export_use_outcome(finding), ConditionOutcome::Unknown);
+        assert!(!finding.title.contains("none of its exports is used"));
+    }
+
+    #[test]
+    fn vite_side_effect_retained_id_ignores_the_export_use_state() {
+        let with_exports = retained_with_exports(&["FontAwesomeIcon"], "null");
+        let without_exports = retained_with_exports(&[], "null");
+        assert_eq!(with_exports.id, without_exports.id);
+        assert_eq!(with_exports.title, without_exports.title);
+    }
+
+    /// Runs the Vite fixture after adding one emitted chunk whose facade is
+    /// `src/effects/register.js`, an export-less module.
+    fn register_with_chunk(is_dynamic_entry: bool, is_entry: bool) -> Fixture {
+        run_fixture(BundlerChoice::Vite, |value| {
+            let register_id = value["modules"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|module| module["id"].as_str())
+                .find(|id| id.ends_with("src/effects/register.js"))
+                .expect("fixture has register.js")
+                .to_owned();
+            let chunks = value["chunks"].as_array_mut().unwrap();
+            let mut chunk = chunks
+                .iter()
+                .find(|chunk| chunk["isDynamicEntry"] == true)
+                .expect("fixture has a dynamic entry chunk")
+                .clone();
+            chunk["facadeModuleId"] = serde_json::json!(register_id);
+            chunk["isDynamicEntry"] = serde_json::json!(is_dynamic_entry);
+            chunk["isEntry"] = serde_json::json!(is_entry);
+            chunks.push(chunk);
+        })
+    }
+
+    #[test]
+    fn vite_side_effect_retained_skips_dynamic_entry_facades() {
+        let fixture = register_with_chunk(true, false);
+        let analysis = &fixture.output.analysis;
+        assert_eq!(
+            analysis.status,
+            RunStatus::Complete,
+            "{:?}",
+            analysis.problems
+        );
+        assert_absent(
+            &analysis.diagnostics,
+            "vite/side-effect-retained",
+            "src/effects/register.js",
+        );
+    }
+
+    #[test]
+    fn vite_side_effect_retained_keeps_static_import_modules_with_non_dynamic_facade_chunks() {
+        // A chunk facade that is not a dynamic entry does not exempt the
+        // module.
+        let fixture = register_with_chunk(false, false);
+        assert!(
+            find(
+                &fixture.output.analysis.diagnostics,
+                "vite/side-effect-retained",
+                "src/effects/register.js"
+            )
+            .is_some()
+        );
+        // The unmodified fixture keeps the finding for the static import.
+        let baseline = run_fixture(BundlerChoice::Vite, |_| {});
+        assert!(
+            find(
+                &baseline.output.analysis.diagnostics,
+                "vite/side-effect-retained",
+                "src/effects/register.js"
+            )
+            .is_some()
+        );
+        // Other dynamic entry facades stay unaffected and unreported.
+        assert_absent(
+            &baseline.output.analysis.diagnostics,
+            "vite/side-effect-retained",
+            "src/lazy/a.js",
+        );
     }
 
     #[test]
@@ -2768,5 +3035,33 @@ mod tests {
         let engine = fixture.output.analysis.engine.unwrap();
         assert_eq!(engine.support, EngineSupport::UnsupportedSelected);
         assert_eq!(engine.supported_versions, "vite 8.3.4");
+    }
+
+    #[test]
+    fn collected_engine_support_uses_the_exact_matrix_version() {
+        for bundler in [BundlerChoice::Vite, BundlerChoice::Rspack] {
+            let spec = bundler.spec();
+            for (version, expected) in [
+                (spec.version.to_owned(), EngineSupport::Supported),
+                (
+                    format!(" {}", spec.version),
+                    EngineSupport::UnsupportedSelected,
+                ),
+                (
+                    format!("{} ", spec.version),
+                    EngineSupport::UnsupportedSelected,
+                ),
+                ("0.0.0".to_owned(), EngineSupport::UnsupportedSelected),
+            ] {
+                let collection = Collection {
+                    bundler_package: spec.package.to_owned(),
+                    bundler_version: version.clone(),
+                    ..Collection::default()
+                };
+                let identity = engine_identity(bundler, &collection);
+                assert_eq!(identity.support, expected, "{version:?}");
+                assert_eq!(identity.bundler_version, version);
+            }
+        }
     }
 }

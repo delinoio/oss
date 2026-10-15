@@ -26,6 +26,20 @@ import {
 import { App } from "./App";
 import { encode, resourceName } from "./documents";
 import { i18n, SupportedLanguage } from "./localization";
+import { primaryClick } from "./destination-window-test-support";
+import { Surface } from "./surface";
+
+// The real controller and click classifier run; only the native request is
+// observed, and availability stays off unless a test enables it.
+const destinationWindow = vi.hoisted(() => ({
+  available: false,
+  open: vi.fn<(route: unknown) => Promise<void>>(),
+}));
+vi.mock("./navigation-disposition", async (original) => ({
+  ...(await original<typeof import("./navigation-disposition")>()),
+  destinationWindowAvailable: () => destinationWindow.available,
+  openDestinationWindow: (route: unknown) => destinationWindow.open(route),
+}));
 
 // jsdom does not implement the native top layer. Browser fixtures cover geometry
 // separately; this seam proves original row identity and event ownership only.
@@ -86,6 +100,7 @@ beforeEach(() => {
   } as DOMRectList);
 });
 afterEach(() => {
+  destinationWindow.available = false;
   for (const [name, descriptor] of [
     ["showPopover", originalShow],
     ["hidePopover", originalHide],
@@ -1880,4 +1895,27 @@ it("reports accepted progress in the header, guidance while another page exists 
   expect(
     screen.queryByText("Scroll to load more GitHub query results."),
   ).toBeNull();
+});
+
+it("opens a repository in a new window on a primary modified click and keeps this window's selection", async () => {
+  destinationWindow.available = true;
+  destinationWindow.open.mockReset();
+  destinationWindow.open.mockResolvedValue(undefined);
+  const value = fixture();
+  render(<App transport={value.transport} />);
+  const pane = await open();
+  const row = await pane.findByRole("button", { name: "Example repository" });
+  fireEvent.click(row, primaryClick);
+  await waitFor(() =>
+    expect(destinationWindow.open).toHaveBeenCalledExactlyOnceWith({
+      surface: Surface.PullRequests,
+      item: repositoryId,
+    }),
+  );
+  expect(row.getAttribute("aria-pressed")).toBe("false");
+  expect(value.query).not.toHaveBeenCalled();
+  // A plain click still selects the repository in this window.
+  fireEvent.click(row, { detail: 1 });
+  await waitFor(() => expect(row.getAttribute("aria-pressed")).toBe("true"));
+  expect(destinationWindow.open).toHaveBeenCalledTimes(1);
 });

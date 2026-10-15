@@ -2,6 +2,7 @@ import { productDiagnostic } from "./product-identity-labels";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { copy, useLocale, type MessageKey } from "./localization";
+import { useDestinationSurface } from "./destination-window";
 import {
   settleEnclosingEntrances,
   useEntranceActivation,
@@ -178,6 +179,9 @@ export function Modal({
     headingEntrance && visible,
   );
   const id = useId();
+  // A modal makes the rest of the document inert, so a destination window
+  // failure from a control inside it is presented inside it.
+  const destinationSurface = useDestinationSurface(visible);
   const ref = useRef<HTMLDialogElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   useLayoutEffect(() => {
@@ -208,6 +212,7 @@ export function Modal({
           {copy("ui.close_7d9eb7")}
         </SettingsActionButton>
       </header>
+      {destinationSurface.notice}
       {children}
     </>
   );
@@ -216,6 +221,7 @@ export function Modal({
       ref={ref}
       className={className}
       aria-labelledby={id}
+      {...destinationSurface.props}
       onCancel={(event) => {
         event.preventDefault();
         close();
