@@ -369,6 +369,10 @@ func TestManagedThreadIsolationRejectsUnselectedInventoryBeforeAnyInput(t *testi
 		{"thread-managed-mcp-nonempty", isolationInventoryNonEmpty},
 		{"thread-managed-mcp-malformed", isolationInventoryUnreadable},
 		{"thread-managed-mcp-error", isolationInventoryUnreadable},
+		{"thread-managed-plugins-enabled", isolationPluginsEnabled},
+		{"thread-managed-plugins-absent", isolationPluginsEnabled},
+		{"thread-managed-plugins-null", isolationPluginsEnabled},
+		{"thread-managed-plugins-malformed-features", isolationInventoryUnreadable},
 	}
 	for _, row := range rows {
 		for _, resume := range []bool{false, true} {

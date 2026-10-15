@@ -24,10 +24,9 @@ import (
 // would otherwise launch the repository's MCP servers. The adapter therefore
 // keeps every thread project (and workspace root) marked untrusted in the
 // private CODEX_HOME before the thread starts, pins the native defaults that
-// the untrusted marker would otherwise change, removes every MCP definition the
-// private configuration could contribute (top level and every profile), and
-// verifies the effective MCP inventory after the thread exists and before any
-// input.
+// the untrusted marker would otherwise change, removes every MCP definition and
+// plugin source the private configuration could contribute, and verifies the
+// effective MCP inventory after the thread exists and before any input.
 
 // isolationStage names the closed stage of a rejected isolation step.
 type isolationStage string
@@ -45,6 +44,7 @@ type isolationReason string
 
 const (
 	isolationInventoryNonEmpty   isolationReason = "inventory-nonempty"
+	isolationPluginsEnabled      isolationReason = "plugins-enabled"
 	isolationInventoryUnreadable isolationReason = "inventory-unreadable"
 	isolationTrustUnwritable     isolationReason = "trust-unwritable"
 )
@@ -123,6 +123,8 @@ func isolationFailure(reason isolationReason) *domain.Error {
 	switch reason {
 	case isolationTrustUnwritable:
 		e = domain.Fail(domain.Unsupported, "Codex native project isolation could not be prepared.", "Check that the private native runtime is writable and its configuration is valid TOML; no thread or input was started.")
+	case isolationPluginsEnabled:
+		e = domain.Fail(domain.Unsupported, "Codex native plugins are enabled, and a plugin can contribute an MCP server that this execution did not select.", "Disable native plugins in the managed policy; no input was sent.")
 	default:
 		e = domain.Fail(domain.Unsupported, "Codex native configuration contains an MCP server that this execution did not select.", "Remove the MCP server from the native configuration or the managed policy; no input was sent.")
 	}
@@ -179,15 +181,25 @@ func (c *Client) verifyMCPInventory(ctx context.Context, cwd string) error {
 		return c.rejectIsolation(ctx, isolationStageMCPInventory, isolationInventoryUnreadable)
 	}
 	raw := result.Config["mcp_servers"]
-	if len(raw) == 0 || string(raw) == "null" {
-		return nil
+	if len(raw) != 0 && string(raw) != "null" {
+		var entries map[string]json.RawMessage
+		if json.Unmarshal(raw, &entries) != nil || entries == nil {
+			return c.rejectIsolation(ctx, isolationStageMCPInventory, isolationInventoryUnreadable)
+		}
+		if len(entries) != 0 {
+			return c.rejectIsolation(ctx, isolationStageMCPInventory, isolationInventoryNonEmpty)
+		}
 	}
-	var entries map[string]json.RawMessage
-	if json.Unmarshal(raw, &entries) != nil || entries == nil {
+	// A plugin contributes MCP servers through its own .mcp.json, which
+	// config/read never lists. The private configuration disables the plugin
+	// feature before the thread starts, so the effective value must still be
+	// the explicit false; anything else lets a plugin server launch.
+	var features map[string]json.RawMessage
+	if raw := result.Config["features"]; len(raw) != 0 && string(raw) != "null" && json.Unmarshal(raw, &features) != nil {
 		return c.rejectIsolation(ctx, isolationStageMCPInventory, isolationInventoryUnreadable)
 	}
-	if len(entries) != 0 {
-		return c.rejectIsolation(ctx, isolationStageMCPInventory, isolationInventoryNonEmpty)
+	if string(features[pluginsFeature]) != "false" {
+		return c.rejectIsolation(ctx, isolationStageMCPInventory, isolationPluginsEnabled)
 	}
 	return nil
 }
@@ -259,12 +271,17 @@ func linkedWorktreeMain(root string) string {
 
 var projectConfigLocks sync.Map
 
+const pluginsFeature = "plugins"
+
 // isolateHomeDocument applies the private-home isolation cells to a decoded
 // config.toml and reports whether it changed:
 //
 //   - the top-level mcp_servers table is removed;
 //   - every profile table (selected or not) loses its mcp_servers table, because
 //     the selected profile merges over the top-level configuration;
+//   - every profile loses a plugins feature override and features.plugins is
+//     false, which disables plugin loading and with it every MCP server a plugin
+//     contributes through its own .mcp.json;
 //   - every requested project key is untrusted.
 //
 // Any other shape of a table this function must edit is invalid and rejected.
@@ -288,7 +305,29 @@ func isolateHomeDocument(document map[string]any, keys []string) (bool, error) {
 				delete(profile, "mcp_servers")
 				changed = true
 			}
+			if raw, present := profile["features"]; present {
+				features, ok := raw.(map[string]any)
+				if !ok {
+					return false, fmt.Errorf("invalid native profile features table")
+				}
+				if _, present := features[pluginsFeature]; present {
+					delete(features, pluginsFeature)
+					changed = true
+				}
+			}
 		}
+	}
+	features, _ := document["features"].(map[string]any)
+	if document["features"] != nil && features == nil {
+		return false, fmt.Errorf("invalid native features table")
+	}
+	if features == nil {
+		features = map[string]any{}
+	}
+	if features[pluginsFeature] != false {
+		features[pluginsFeature] = false
+		document["features"] = features
+		changed = true
 	}
 	projects, _ := document["projects"].(map[string]any)
 	if document["projects"] != nil && projects == nil {

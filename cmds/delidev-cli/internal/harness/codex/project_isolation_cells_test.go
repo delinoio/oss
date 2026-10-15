@@ -50,6 +50,14 @@ func noMCPAnywhere(t *testing.T, document map[string]any) {
 		if _, present := profile["mcp_servers"]; present {
 			t.Fatalf("profile %q retained an MCP table", name)
 		}
+		if features, _ := profile["features"].(map[string]any); features != nil {
+			if _, present := features["plugins"]; present {
+				t.Fatalf("profile %q retained a plugin feature override", name)
+			}
+		}
+	}
+	if tableAt(t, document, "features")["plugins"] != false {
+		t.Fatal("plugin loading is not disabled")
 	}
 }
 
@@ -71,6 +79,28 @@ func isolationCells() []isolationCell {
 		{name: "profile-mcp-scalar", input: "[profiles.a]\nmcp_servers = 1\n", keys: []string{"/p"}, check: func(t *testing.T, d map[string]any) { noMCPAnywhere(t, d) }},
 		{name: "profiles-scalar", input: "profiles = 3\n", keys: []string{"/p"}, invalid: true},
 		{name: "profile-entry-scalar", input: "[profiles]\na = 3\n", keys: []string{"/p"}, invalid: true},
+		// Plugin source.
+		{name: "profile-features-scalar", input: "[profiles.a]\nfeatures = 3\n", keys: []string{"/p"}, invalid: true},
+		{name: "plugin-feature-absent", input: "model = \"m\"\n", keys: []string{"/p"}, check: func(t *testing.T, d map[string]any) { noMCPAnywhere(t, d) }},
+		{name: "plugin-feature-enabled-top-level", input: "[features]\nplugins = true\nother = true\n", keys: []string{"/p"}, check: func(t *testing.T, d map[string]any) {
+			noMCPAnywhere(t, d)
+			if tableAt(t, d, "features")["other"] != true {
+				t.Fatal("unrelated feature lost")
+			}
+		}},
+		{name: "plugin-feature-enabled-in-selected-profile", input: "profile = \"a\"\n[profiles.a.features]\nplugins = true\nother = true\n", keys: []string{"/p"}, check: func(t *testing.T, d map[string]any) {
+			noMCPAnywhere(t, d)
+			if tableAt(t, d, "profiles", "a", "features")["other"] != true {
+				t.Fatal("unrelated profile feature lost")
+			}
+		}},
+		{name: "enabled-plugin-entry-is-inert-with-feature-off", input: "[plugins.\"x@y\"]\nenabled = true\n", keys: []string{"/p"}, check: func(t *testing.T, d map[string]any) {
+			noMCPAnywhere(t, d)
+			if tableAt(t, d, "plugins", "x@y")["enabled"] != true {
+				t.Fatal("plugin entry was rewritten instead of disabled through the feature")
+			}
+		}},
+		{name: "features-scalar", input: "features = 3\n", keys: []string{"/p"}, invalid: true},
 	}
 }
 

@@ -42,9 +42,12 @@ func managedFixtureHandle(mode string, id json.RawMessage, method string, params
 		if mode == "thread-managed-workspace-override" && input.Cwd == os.Getenv("DELIDEV_CODEX_MANAGED_WORKSPACE") {
 			providers["openai"] = map[string]any{"requires_openai_auth": true, "base_url": "https://foreign.invalid"}
 		}
-		features := map[string]any{}
+		// Project isolation disables plugin loading in the private home, so the
+		// effective configuration reports the explicit false.
+		features := map[string]any{"plugins": false}
+		var featuresValue any = features
 		mcp := any(nil)
-		if capture := os.Getenv("DELIDEV_CODEX_CAPTURE"); strings.HasPrefix(mode, "thread-managed-mcp-") && capture != "" {
+		if capture := os.Getenv("DELIDEV_CODEX_CAPTURE"); (strings.HasPrefix(mode, "thread-managed-mcp-") || strings.HasPrefix(mode, "thread-managed-plugins-")) && capture != "" {
 			if _, err := os.Stat(capture); err == nil {
 				// A thread exists: record this effective-inventory read in order.
 				out, openErr := os.OpenFile(capture, os.O_APPEND|os.O_WRONLY, 0o600)
@@ -63,6 +66,14 @@ func managedFixtureHandle(mode string, id json.RawMessage, method string, params
 					mcp = map[string]any{}
 				case "thread-managed-mcp-malformed":
 					mcp = "not-a-table"
+				case "thread-managed-plugins-enabled":
+					features["plugins"] = true
+				case "thread-managed-plugins-absent":
+					delete(features, "plugins")
+				case "thread-managed-plugins-null":
+					features["plugins"] = nil
+				case "thread-managed-plugins-malformed-features":
+					featuresValue = "not-a-table"
 				}
 			}
 		}
@@ -80,7 +91,7 @@ func managedFixtureHandle(mode string, id json.RawMessage, method string, params
 				tamperHelperFixtureAlias()
 			}
 		}
-		config := map[string]any{"cli_auth_credentials_store": store, "model_provider": "openai", "forced_login_method": "chatgpt", "model_providers": providers, "features": features, "mcp_servers": mcp}
+		config := map[string]any{"cli_auth_credentials_store": store, "model_provider": "openai", "forced_login_method": "chatgpt", "model_providers": providers, "features": featuresValue, "mcp_servers": mcp}
 		// Only the read before the thread exists reports the workspace servers: project
 		// isolation settles the project untrusted first, so the repository layer is
 		// inactive for the post-bind inventory verification.

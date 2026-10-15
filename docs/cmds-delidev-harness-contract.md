@@ -1241,7 +1241,10 @@ independent Fork `thread/fork`).
    It removes the top-level `mcp_servers` table and the `mcp_servers` table of
    every profile table, selected or not, because the selected profile merges over
    the top-level configuration (DeliDev never authors an MCP or profile selection
-   there, so an entry is foreign).
+   there, so an entry is foreign). It also sets `features.plugins = false` and
+   removes a profile's `plugins` feature override: a plugin contributes MCP
+   servers through its own `.mcp.json`, which `config/read` never lists, and a
+   disabled plugin feature loads none.
    Other settings are preserved semantically; **comments and key order of this
    private file are not preserved**. An unchanged file is not rewritten; a
    changed file is replaced atomically (owner-only temporary file attributed to
@@ -1267,13 +1270,16 @@ independent Fork `thread/fork`).
 
 After the thread exists and before the connection can send any input or
 `turn/start`, `config/read` with the thread directory must report an absent,
-null or empty `mcp_servers`.
-A non-empty or unparseable inventory, a native error or a failed read fails with
-`unsupported` in the profile phase, latches
+null or empty `mcp_servers` and an explicit `features.plugins = false`. An
+absent, null or enabled plugin feature (for example a managed policy that
+re-enables plugins) fails with `reason=plugins-enabled`, because a plugin-backed
+server would then be missing from the reported inventory.
+A non-empty or unparseable inventory, a malformed `features` table, a native
+error or a failed read fails with `unsupported` in the profile phase, latches
 the connection (no input or second thread), logs
 `codex_native_isolation_rejected` with only `owner_id`,
 `stage=mcp-inventory-verification` and a closed `reason`
-(`inventory-nonempty` or `inventory-unreadable`), and never
+(`inventory-nonempty`, `inventory-unreadable` or `plugins-enabled`), and never
 exposes server names, commands or native error text. The Worker closes its owned
 native process through the normal cleanup path, so the failure is reported
 before input acknowledgment and the queued input remains retryable under the
@@ -1303,14 +1309,20 @@ has a test (`project_isolation_cells_test.go` runs each row through the pure
 document function and through the file). A rejected shape leaves the file
 unchanged and fails with `reason=trust-unwritable`.
 
-| Dimension                | State                                                        | Result                                                 |
-| ------------------------ | ------------------------------------------------------------ | ------------------------------------------------------ |
-| Config shape and profile | No file or empty file                                        | Created with the untrusted keys                        |
-| Config shape and profile | Top-level `mcp_servers` (table or scalar)                    | Removed                                                |
-| Config shape and profile | Selected profile defines `mcp_servers`                       | Removed from that profile; its other settings are kept |
-| Config shape and profile | Unselected profile or several profiles define `mcp_servers`  | Removed from every profile                             |
-| Config shape and profile | `profile` names a profile that is not defined                | Every defined profile is still stripped                |
-| Config shape and profile | `profiles` is not a table, or a profile entry is not a table | Rejected; file unchanged                               |
+| Dimension                | State                                                                  | Result                                                                               |
+| ------------------------ | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Config shape and profile | No file or empty file                                                  | Created with the untrusted keys                                                      |
+| Config shape and profile | Top-level `mcp_servers` (table or scalar)                              | Removed                                                                              |
+| Config shape and profile | Selected profile defines `mcp_servers`                                 | Removed from that profile; its other settings are kept                               |
+| Config shape and profile | Unselected profile or several profiles define `mcp_servers`            | Removed from every profile                                                           |
+| Config shape and profile | `profile` names a profile that is not defined                          | Every defined profile is still stripped                                              |
+| Config shape and profile | `profiles` is not a table, or a profile entry is not a table           | Rejected; file unchanged                                                             |
+| Plugin source            | `features.plugins` absent or `true` at the top level                   | Set to `false`; other features are kept                                              |
+| Plugin source            | `features.plugins = true` in a profile                                 | Override removed; other profile features are kept                                    |
+| Plugin source            | Enabled `[plugins.*]` entry in the private home                        | Entry kept and inert while the feature is `false`                                    |
+| Plugin source            | `features` or a profile's `features` is not a table                    | Rejected; file unchanged                                                             |
+| Plugin source            | Effective `features.plugins` is absent, `null` or `true` after binding | Rejected with `plugins-enabled` before any input (a managed policy can re-enable it) |
+| Plugin source            | Effective `features` is malformed                                      | Rejected with `inventory-unreadable` before any input                                |
 
 Tests: `project_isolation_test.go` (table, profile derivation, pinned defaults,
 trust keys including linked worktrees, atomic idempotent replacement, invalid
@@ -1319,8 +1331,8 @@ logs), `project_isolation_cells_test.go` (the state table above),
 the shared-owner binding test, and the explicit installed-native
 `TestManualNativeOrdinaryExecutionNeverLaunchesUnselectedMCP` and
 `TestManualNativeForkNeverLaunchesUnselectedMCP` suites, which run the
-repository-layer, private-home-layer, retained-trusted-home, resume and
-selected-profile cases
+repository-layer, private-home-layer, retained-trusted-home, resume,
+selected-profile and enabled-plugin cases
 against Codex 0.159.2 with a scripted loopback provider and no real account.
 Real-account acceptance is not performed.
 

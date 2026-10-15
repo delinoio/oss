@@ -37,6 +37,7 @@ func TestManualNativeOrdinaryExecutionNeverLaunchesUnselectedMCP(t *testing.T) {
 		t.Skip("Git is required for repository trust resolution")
 	}
 	scenarios := []string{"repository-layer", "private-home-layer", "retained-trusted-home", "resume", "selected-profile"}
+	scenarios = append(scenarios, "plugin")
 	for _, scenario := range scenarios {
 		t.Run(scenario, func(t *testing.T) {
 			var requests atomic.Int64
@@ -70,6 +71,8 @@ func TestManualNativeOrdinaryExecutionNeverLaunchesUnselectedMCP(t *testing.T) {
 				appendNativeConfig(t, filepath.Join(cfg.Home, "config.toml"), "\n"+server)
 			case "selected-profile":
 				appendNativeConfig(t, filepath.Join(cfg.Home, "config.toml"), "\nprofile = \"review\"\n"+strings.Replace(server, "[mcp_servers.marker]", "[profiles.review.mcp_servers.marker]", 1))
+			case "plugin":
+				writeNativeMarkerPlugin(t, cfg.Home, marker)
 			case "retained-trusted-home":
 				// An earlier thread of the retained home recorded trust.
 				appendNativeConfig(t, filepath.Join(cfg.Home, "config.toml"), fmt.Sprintf("\n[projects.%q]\ntrust_level = \"trusted\"\n", workspace))
@@ -271,4 +274,22 @@ func TestManualNativeForkNeverLaunchesUnselectedMCP(t *testing.T) {
 	if _, err := os.Lstat(marker); !os.IsNotExist(err) {
 		t.Fatal("the unselected MCP server command ran")
 	}
+}
+
+// writeNativeMarkerPlugin installs an enabled plugin whose own .mcp.json
+// defines a server that runs the marker command.
+func writeNativeMarkerPlugin(t *testing.T, home, marker string) {
+	t.Helper()
+	root := filepath.Join(home, "plugins", "cache", "fixture-market", "marker-plugin", "1.0.0")
+	if err := os.MkdirAll(filepath.Join(root, ".codex-plugin"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `{"name":"marker-plugin","version":"1.0.0","description":"fixture"}`
+	servers := fmt.Sprintf(`{"mcpServers":{"plugin-marker":{"command":"/usr/bin/touch","args":[%q]}}}`, marker)
+	for name, content := range map[string]string{filepath.Join(".codex-plugin", "plugin.json"): manifest, ".mcp.json": servers} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	appendNativeConfig(t, filepath.Join(home, "config.toml"), "\n[plugins.\"marker-plugin@fixture-market\"]\nenabled = true\n")
 }
