@@ -434,57 +434,105 @@ type grokTokenBody struct {
 // top-level members are unique and that is followed by nothing but whitespace.
 // Member names are compared case-insensitively when fold is set (as
 // encoding/json matches struct fields) and exactly otherwise (a claim set).
-// encoding/json keeps the last of duplicate members, and implementations
-// disagree about duplicates, so a body that repeats a member is ambiguous and is
-// never trusted.
 func grokStrictObject(raw []byte, fold bool) bool {
+	_, ok := grokObjectMembers(raw, fold)
+	return ok
+}
+
+// grokObjectMembers is grokStrictObject that also returns the set of top-level
+// member names (lower-cased when fold is set), so a classifier can see which
+// members a body carries even when their values are empty.
+func grokObjectMembers(raw []byte, fold bool) (map[string]bool, bool) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	if open, err := decoder.Token(); err != nil || open != json.Delim('{') {
-		return false
+		return nil, false
 	}
 	seen := map[string]bool{}
 	for decoder.More() {
 		key, err := decoder.Token()
 		name, isString := key.(string)
 		if err != nil || !isString {
-			return false
+			return nil, false
 		}
 		if fold {
 			name = strings.ToLower(name)
 		}
 		if seen[name] {
-			return false
+			return nil, false
 		}
 		seen[name] = true
 		var value json.RawMessage
 		if decoder.Decode(&value) != nil {
-			return false
+			return nil, false
 		}
 	}
 	if closing, err := decoder.Token(); err != nil || closing != json.Delim('}') {
-		return false
+		return nil, false
 	}
-	_, err := decoder.Token()
-	return err == io.EOF
+	if _, err := decoder.Token(); err != io.EOF {
+		return nil, false
+	}
+	return seen, true
 }
 
-// parseGrokTokenBody decodes a token endpoint body. It reports true only when
-// the body is exactly one JSON object with unique members: another JSON value,
-// any other trailing byte or a repeated member makes the whole response
-// unparsed, whatever its status. A claimed grant must treat such a body as
-// uncertain, never as a published success and never as a definitive rejection
-// that would release the claim.
-func parseGrokTokenBody(raw []byte) (grokTokenBody, bool) {
-	if !grokStrictObject(raw, true) {
-		return grokTokenBody{}, false
-	}
+// grokTokenOutcome is the single classification of a token endpoint response.
+// ExchangeCode and Refresh both call classifyGrokTokenResponse, so the two
+// grants (which are claimed before the request) cannot disagree.
+type grokTokenOutcome string
+
+const (
+	// grokTokenOutcomeSuccess: status 200 and exactly one JSON object; the
+	// caller still validates the token members.
+	grokTokenOutcomeSuccess grokTokenOutcome = "success"
+	// grokTokenOutcomeMalformed: status 200 whose body is not one valid object.
+	grokTokenOutcomeMalformed grokTokenOutcome = "malformed"
+	// grokTokenOutcomeRejected: the only outcome that proves nothing rotated.
+	grokTokenOutcomeRejected grokTokenOutcome = "rejected"
+	// grokTokenOutcomeUncertain: anything else; the provider may have rotated.
+	grokTokenOutcomeUncertain grokTokenOutcome = "uncertain"
+)
+
+// grokTokenSuccessMembers are the members of a success response. A rejection
+// body that carries any of them (even empty or null) is a contradiction, so it
+// cannot prove that nothing rotated.
+var grokTokenSuccessMembers = []string{"access_token", "refresh_token", "id_token", "token_type", "expires_in"}
+
+// classifyGrokTokenResponse is the one table of the token endpoint response:
+//
+//	status   | body                                                        | outcome
+//	200      | one object, unique members, only trailing whitespace        | success
+//	200      | anything else                                               | malformed
+//	400, 401 | one object, unique members, non-empty error, no success one | rejected
+//	400, 401 | trailing data, repeated member, no error, or an error that
+//	         | also has any success member                                 | uncertain
+//	other    | any body                                                    | uncertain
+//
+// The returned body is meaningful for success and rejected only.
+func classifyGrokTokenResponse(status int, raw []byte) (grokTokenBody, grokTokenOutcome) {
+	members, ok := grokObjectMembers(raw, true)
 	var body grokTokenBody
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.UseNumber()
-	if decoder.Decode(&body) != nil {
-		return grokTokenBody{}, false
+	if ok {
+		decoder := json.NewDecoder(bytes.NewReader(raw))
+		decoder.UseNumber()
+		if decoder.Decode(&body) != nil {
+			ok = false
+			body = grokTokenBody{}
+		}
 	}
-	return body, true
+	switch {
+	case status == http.StatusOK && ok:
+		return body, grokTokenOutcomeSuccess
+	case status == http.StatusOK:
+		return grokTokenBody{}, grokTokenOutcomeMalformed
+	case !ok || status != http.StatusBadRequest && status != http.StatusUnauthorized || body.Error == "":
+		return grokTokenBody{}, grokTokenOutcomeUncertain
+	}
+	for _, name := range grokTokenSuccessMembers {
+		if members[name] {
+			return grokTokenBody{}, grokTokenOutcomeUncertain
+		}
+	}
+	return body, grokTokenOutcomeRejected
 }
 
 // ExchangeCode redeems one authorization code at the token endpoint as a
@@ -513,15 +561,17 @@ func (c GrokOAuthClient) ExchangeCode(ctx context.Context, endpoints GrokEndpoin
 // response. Both grants share it so a browser and a device login that receive
 // the same token response produce the same tokens or the same failure.
 func grokTokenResult(status int, raw []byte) (GrokTokens, error) {
-	body, parsed := parseGrokTokenBody(raw)
-	if status != http.StatusOK {
-		if parsed && (status == http.StatusBadRequest || status == http.StatusUnauthorized) && body.Error != "" {
-			return GrokTokens{}, grokFailure(GrokReasonTokenRejected)
-		}
+	body, outcome := classifyGrokTokenResponse(status, raw)
+	switch outcome {
+	case grokTokenOutcomeRejected:
+		return GrokTokens{}, grokFailure(GrokReasonTokenRejected)
+	case grokTokenOutcomeMalformed:
+		return GrokTokens{}, grokFailure(GrokReasonTokenResponse)
+	case grokTokenOutcomeUncertain:
 		return GrokTokens{}, grokFailure(GrokReasonTokenUncertain)
 	}
 	seconds, numErr := body.ExpiresIn.Int64()
-	if !parsed || numErr != nil || seconds <= 0 || seconds > 86400*365 || !strings.EqualFold(body.TokenType, "bearer") ||
+	if numErr != nil || seconds <= 0 || seconds > 86400*365 || !strings.EqualFold(body.TokenType, "bearer") ||
 		!grokSecret(body.AccessToken) || !grokSecret(body.RefreshToken) || !grokSecret(body.IDToken) {
 		return GrokTokens{}, grokFailure(GrokReasonTokenResponse)
 	}
