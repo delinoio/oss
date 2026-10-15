@@ -3056,7 +3056,9 @@ for (const compact of [false, true]) {
       );
       expect(mark.classList.contains("sidebar-harness-mark")).toBe(true);
       expect(mark.getAttribute("aria-hidden")).toBe("true");
-      expect(rowFor(entry.id).querySelector("svg.sidebar-workspace-icon")).toBeNull();
+      expect(
+        rowFor(entry.id).querySelector("svg.sidebar-workspace-icon"),
+      ).toBeNull();
     }
     for (const entry of [plain, forked]) {
       expect(rowFor(entry.id).querySelector(".worker-harness-mark")).toBeNull();

@@ -621,10 +621,7 @@ function SessionRow({
         }
       >
         {rowHarness ? (
-          <HarnessMark
-            harness={rowHarness}
-            className="sidebar-harness-mark"
-          />
+          <HarnessMark harness={rowHarness} className="sidebar-harness-mark" />
         ) : (
           <Icon
             name={
