@@ -15,7 +15,6 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/opencode"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
@@ -200,7 +199,7 @@ func forkOpenCodeSession(ctx context.Context, config Config, owner domain.ID, jo
 	// Outer Worker claims/envelope stay outside the native snapshot's complete
 	// file inventory in the operation journal. The child's native history lives
 	// in its own persistent profile.
-	childProfile, err := conversationProfile(ctx, config, job.MachineID, nativeprofile.Key{Harness: domain.OpenCode, Purpose: nativeprofile.PurposeFork, Account: a.AccountID, Conversation: i.RuntimeID}, i.RuntimeID)
+	childProfile, err := forkChildProfile(ctx, config, job.MachineID, domain.OpenCode, a.AccountID, i.RuntimeID)
 	if err != nil {
 		return nil, executionCheckpointUncertain()
 	}

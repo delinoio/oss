@@ -142,3 +142,62 @@ func TestAccessOnlyProfileRefusesManagedAuthentication(t *testing.T) {
 		t.Fatal("a scope without a registry fell back to a temporary home")
 	}
 }
+
+// Every harness and account operation (login, quota, credit and subscription
+// probe) resolves the same permanent profile when invoked twice with different
+// request identifiers and again after the server restarts. Retained history,
+// caches and helper links neither move nor block the next operation.
+func TestEveryAccountProfileIsStableAcrossRequestsAndServerRestart(t *testing.T) {
+	ctx := context.Background()
+	for _, h := range []domain.Harness{domain.Codex, domain.ClaudeCode, domain.OpenCode, domain.GrokBuild} {
+		for _, purpose := range []nativeprofile.Purpose{nativeprofile.PurposeAuth, nativeprofile.PurposeQuota, nativeprofile.PurposeCredit, nativeprofile.PurposeSubscriptionProbe} {
+			h, purpose := h, purpose
+			t.Run(string(h)+"/"+string(purpose), func(t *testing.T) {
+				root := t.TempDir()
+				serverID := domain.NewID()
+				registry, err := serverNativeProfiles(root, serverID, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				scope := nativeScope{Root: root, Account: domain.NewID(), Profiles: registry}
+				first, err := acquireAccountProfile(ctx, scope, h, purpose)
+				if err != nil {
+					t.Fatal(err)
+				}
+				marker := filepath.Join(first.Root, "retained-history")
+				if err := os.WriteFile(marker, []byte("retained"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(marker, filepath.Join(first.Root, "helper-link")); err != nil {
+					t.Skip("symlinks unavailable")
+				}
+				id, path := first.ID, first.Root
+				_ = first.Close()
+				for attempt := 0; attempt < 2; attempt++ {
+					if attempt == 1 {
+						reopened, err := nativeprofile.Open(nativeprofile.Config{Root: root, Owner: nativeprofile.OwnerServer, Server: serverID})
+						if err != nil {
+							t.Fatal(err)
+						}
+						scope.Profiles = reopened
+					}
+					next, err := acquireAccountProfile(ctx, scope, h, purpose)
+					if err != nil {
+						t.Fatalf("attempt %d was blocked by retained state: %v", attempt, err)
+					}
+					if next.ID != id || next.Root != path || next.Created {
+						t.Fatalf("attempt %d allocated a new native home", attempt)
+					}
+					if raw, err := os.ReadFile(marker); err != nil || string(raw) != "retained" {
+						t.Fatalf("attempt %d lost retained history", attempt)
+					}
+					_ = next.Close()
+				}
+				entries, err := os.ReadDir(filepath.Join(root, "native-profiles", "p"))
+				if err != nil || len(entries) != 1 {
+					t.Fatalf("a per-attempt profile directory was allocated: %v %v", entries, err)
+				}
+			})
+		}
+	}
+}

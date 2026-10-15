@@ -204,7 +204,7 @@ func ReadCodexExecutionCheckpoint(root string, ref ExecutionCheckpointRef) (Code
 		}
 	} else {
 		expected, err := codexAccountHistoryHome(root, ref.AccountID)
-		if err != nil || checkpoint.AccountHome != expected || security.CheckPrivateDir(expected) != nil || codex.VerifyThreadHistory(context.Background(), expected, *checkpoint.ThreadHistory) != nil {
+		if err != nil || checkpoint.AccountHome != expected || security.CheckPrivateDir(expected) != nil || verifySharedCodexHome(root, ref.MachineID, ref.AccountID, expected) != nil || codex.VerifyThreadHistory(context.Background(), expected, *checkpoint.ThreadHistory) != nil {
 			return CodexExecutionCheckpoint{}, executionCheckpointUncertain()
 		}
 	}
