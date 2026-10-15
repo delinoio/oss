@@ -1802,6 +1802,21 @@ it("R39 canceled composition: typing on either side stays separate undo steps", 
   expect(probe.canonical).toBe("ab");
 });
 
+it("R40 tab-indented definition with a malformed title: its destination stays plain text", () => {
+  for (const indent of ["\t", " \t", "\t\t "]) {
+    const draft = `${indent}[docs]: ${DOCS} "unterminated`;
+    const { input, view } = mount(draft);
+    expect(scanMarkdown(draft).links).toHaveLength(0);
+    // Typing a delimiter right after the destination converts nothing.
+    typeSpaceAfter(input, DOCS);
+    expect(probe.canonical).toBe(draft.replace(DOCS, `${DOCS} `));
+    expect(probe.canonical).not.toContain("](");
+    undo(input);
+    expect(probe.canonical).toBe(draft);
+    view.unmount();
+  }
+});
+
 // Seeded random walk over the whole state machine. After every operation the
 // field must show exactly the projection of the canonical text for the
 // canonical selection, selection maps must agree, and undoing every edit must

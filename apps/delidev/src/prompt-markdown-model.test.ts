@@ -51,6 +51,10 @@ describe("precedence table", () => {
       '[a]: <x> "[b](https://b.test)"',
       "[a]: /x[b](https://b.test)",
       "[a]: /x\n  '[b](https://b.test) t'",
+      // A rejected definition keeps its destination protected when indented
+      // by tabs, as it does when indented by spaces.
+      '\t[a]: https://a.test "unterminated',
+      ' \t[a]: https://a.test "unterminated',
     ]) {
       expect(urls(text)).toEqual([]);
       expect(convert(text)).toBe(text);
@@ -293,7 +297,7 @@ function modelDefinition(t: string, lineStart: number) {
   if (t[b] !== "[" || b - lineStart > 3) return null;
   const strict = modelStrictDefinition(t, b);
   if (strict) return strict;
-  const loose = /^ {0,3}\[([^\]\n]+)\]:[ \t]*\S+/u.exec(
+  const loose = /^[ \t]{0,3}\[([^\]\n]+)\]:[ \t]*\S+/u.exec(
     t.slice(
       lineStart,
       t.indexOf("\n", lineStart) < 0 ? undefined : t.indexOf("\n", lineStart),
@@ -602,6 +606,8 @@ const PHRASES = [
   "[x][a]",
   "[x][]",
   "[a]: /u\n",
+  '\t[a]: https://e.test "unterminated\n',
+  " \t[a]: /u\n",
   '[a]: <x> "t"\n',
   "[a]:\n  /u\n  'T'\n",
   "`code`",
@@ -630,6 +636,12 @@ function maskOf(text: string, ranges: { start: number; end: number }[]) {
   return mask;
 }
 
+// A large run for a one-off audit: DELIDEV_MARKDOWN_MODEL_SEEDS=300000.
+const MODEL_SEEDS = Math.max(
+  6000,
+  Number(process.env.DELIDEV_MARKDOWN_MODEL_SEEDS) || 0,
+);
+
 describe("differential test against the reference model", () => {
   it("agrees on hand-picked precedence interactions", () => {
     for (const text of [
@@ -639,6 +651,8 @@ describe("differential test against the reference model", () => {
       "```\n[a]: /u\n```\n\n[b https://a.test x][a]",
       '[a]: <x> "[b](https://b.test)"',
       '[a](https://a.test "' + "t ".repeat(600) + '")',
+      '\t[docs]: https://example.test "unterminated',
+      ' \t[docs]: https://example.test "unterminated\nhttps://b.test',
     ]) {
       const model = referenceModel(text),
         scan = scanMarkdown(text);
@@ -668,7 +682,7 @@ describe("differential test against the reference model", () => {
           l.url,
         ]),
       );
-    for (let seed = 1; seed <= 6000; seed++) {
+    for (let seed = 1; seed <= MODEL_SEEDS; seed++) {
       const next = generator(seed);
       const count = 1 + Math.floor(next() * 16);
       let text = "";

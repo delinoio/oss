@@ -256,8 +256,10 @@ function parseDefinition(
 }
 
 // A definition the strict parser rejects keeps single-line protection of its
-// first destination token (and still defines its label).
-const LOOSE_DEFINITION = /[ ]{0,3}\[([^\]\n]+)\]:[ \t]*\S+/uy;
+// first destination token (and still defines its label). It is indented by up
+// to three characters, each a space or a tab, exactly as the strict parser
+// counts the indentation before the opening bracket.
+const LOOSE_DEFINITION = /[ \t]{0,3}\[([^\]\n]+)\]:[ \t]*\S+/uy;
 
 // --- Stage 2: code spans, autolinks and raw HTML ------------------------------
 
