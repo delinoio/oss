@@ -1,10 +1,11 @@
 {
-  "description": "Shared Grok URL validation cases. The renderer (grok-subscription-login.tsx) and the native host (src-tauri/src/oauth.rs) must agree on every row; deviceVerification rows list each side's expected result because the renderer additionally pins the URL to the displayed user code.",
+  "description": "Shared Grok URL validation cases. The Go server (GrokVerificationURL), the renderer (grok-subscription-login.tsx) and the native host (src-tauri/src/oauth.rs) run these rows and must agree on every one. deviceVerification rows list each side's expected result: the renderer and the server additionally pin the address to the displayed user code, which the native host does not receive.",
   "deviceVerification": [
     {
       "name": "valid with code",
       "url": "https://accounts.x.ai/oauth2/device?user_code=ABCD-1234",
       "userCode": "ABCD-1234",
+      "server": true,
       "native": true,
       "renderer": true
     },
@@ -12,6 +13,7 @@
       "name": "valid without code",
       "url": "https://accounts.x.ai/oauth2/device",
       "userCode": "ABCD-1234",
+      "server": true,
       "native": true,
       "renderer": true
     },
@@ -19,6 +21,7 @@
       "name": "empty query",
       "url": "https://accounts.x.ai/oauth2/device?",
       "userCode": "ABCD-1234",
+      "server": false,
       "native": false,
       "renderer": false
     },
@@ -26,6 +29,7 @@
       "name": "empty user_code value",
       "url": "https://accounts.x.ai/oauth2/device?user_code=",
       "userCode": "ABCD-1234",
+      "server": false,
       "native": false,
       "renderer": false
     },
@@ -33,6 +37,7 @@
       "name": "empty fragment",
       "url": "https://accounts.x.ai/oauth2/device#",
       "userCode": "ABCD-1234",
+      "server": false,
       "native": false,
       "renderer": false
     },
@@ -40,6 +45,7 @@
       "name": "fragment",
       "url": "https://accounts.x.ai/oauth2/device?user_code=ABCD-1234#x",
       "userCode": "ABCD-1234",
+      "server": false,
       "native": false,
       "renderer": false
     },
@@ -47,20 +53,23 @@
       "name": "extra parameter",
       "url": "https://accounts.x.ai/oauth2/device?user_code=ABCD-1234&next=1",
       "userCode": "ABCD-1234",
-      "native": false,
-      "renderer": false
+      "server": true,
+      "native": true,
+      "renderer": true
     },
     {
       "name": "foreign parameter only",
       "url": "https://accounts.x.ai/oauth2/device?x=1",
       "userCode": "ABCD-1234",
-      "native": false,
-      "renderer": false
+      "server": true,
+      "native": true,
+      "renderer": true
     },
     {
       "name": "duplicate user_code",
       "url": "https://accounts.x.ai/oauth2/device?user_code=ABCD-1234&user_code=ABCD-1234",
       "userCode": "ABCD-1234",
+      "server": false,
       "native": false,
       "renderer": false
     },
@@ -68,6 +77,7 @@
       "name": "userinfo",
       "url": "https://user@accounts.x.ai/oauth2/device",
       "userCode": "ABCD-1234",
+      "server": false,
       "native": false,
       "renderer": false
     },
@@ -75,6 +85,7 @@
       "name": "userinfo with password",
       "url": "https://user:secret@accounts.x.ai/oauth2/device",
       "userCode": "ABCD-1234",
+      "server": false,
       "native": false,
       "renderer": false
     },
@@ -82,6 +93,7 @@
       "name": "other host",
       "url": "https://auth.x.ai/oauth2/device",
       "userCode": "ABCD-1234",
+      "server": false,
       "native": false,
       "renderer": false
     },
@@ -89,6 +101,7 @@
       "name": "lookalike host",
       "url": "https://accounts.x.ai.evil.test/oauth2/device",
       "userCode": "ABCD-1234",
+      "server": false,
       "native": false,
       "renderer": false
     },
@@ -96,6 +109,7 @@
       "name": "port",
       "url": "https://accounts.x.ai:8443/oauth2/device",
       "userCode": "ABCD-1234",
+      "server": false,
       "native": false,
       "renderer": false
     },
@@ -103,6 +117,7 @@
       "name": "explicit default port",
       "url": "https://accounts.x.ai:443/oauth2/device",
       "userCode": "ABCD-1234",
+      "server": false,
       "native": false,
       "renderer": false
     },
@@ -110,27 +125,31 @@
       "name": "http scheme",
       "url": "http://accounts.x.ai/oauth2/device",
       "userCode": "ABCD-1234",
+      "server": false,
       "native": false,
       "renderer": false
     },
     {
-      "name": "other path",
+      "name": "other absolute path",
       "url": "https://accounts.x.ai/oauth2/token",
       "userCode": "ABCD-1234",
-      "native": false,
-      "renderer": false
+      "server": true,
+      "native": true,
+      "renderer": true
     },
     {
       "name": "trailing slash",
       "url": "https://accounts.x.ai/oauth2/device/",
       "userCode": "ABCD-1234",
-      "native": false,
-      "renderer": false
+      "server": true,
+      "native": true,
+      "renderer": true
     },
     {
       "name": "backslash path",
       "url": "https://accounts.x.ai\\oauth2\\device",
       "userCode": "ABCD-1234",
+      "server": false,
       "native": false,
       "renderer": false
     },
@@ -138,6 +157,7 @@
       "name": "lowercase code in url",
       "url": "https://accounts.x.ai/oauth2/device?user_code=abcd-1234",
       "userCode": "abcd-1234",
+      "server": false,
       "native": false,
       "renderer": false
     },
@@ -145,6 +165,7 @@
       "name": "short code in url",
       "url": "https://accounts.x.ai/oauth2/device?user_code=AB",
       "userCode": "AB",
+      "server": false,
       "native": false,
       "renderer": false
     },
@@ -152,6 +173,7 @@
       "name": "long code in url",
       "url": "https://accounts.x.ai/oauth2/device?user_code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
       "userCode": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "server": false,
       "native": false,
       "renderer": false
     },
@@ -159,6 +181,7 @@
       "name": "trailing space",
       "url": "https://accounts.x.ai/oauth2/device ",
       "userCode": "ABCD-1234",
+      "server": false,
       "native": false,
       "renderer": false
     },
@@ -166,6 +189,7 @@
       "name": "not a url",
       "url": "not a url",
       "userCode": "ABCD-1234",
+      "server": false,
       "native": false,
       "renderer": false
     },
@@ -173,6 +197,7 @@
       "name": "empty url",
       "url": "",
       "userCode": "ABCD-1234",
+      "server": false,
       "native": false,
       "renderer": false
     },
@@ -180,6 +205,7 @@
       "name": "url code differs from displayed code",
       "url": "https://accounts.x.ai/oauth2/device?user_code=ABCD-1234",
       "userCode": "WXYZ-9876",
+      "server": false,
       "native": true,
       "renderer": false
     },
@@ -187,6 +213,7 @@
       "name": "lowercase displayed code",
       "url": "https://accounts.x.ai/oauth2/device",
       "userCode": "abcd-1234",
+      "server": false,
       "native": true,
       "renderer": false
     },
@@ -194,6 +221,7 @@
       "name": "short displayed code",
       "url": "https://accounts.x.ai/oauth2/device",
       "userCode": "AB",
+      "server": false,
       "native": true,
       "renderer": false
     },
@@ -201,7 +229,312 @@
       "name": "empty displayed code",
       "url": "https://accounts.x.ai/oauth2/device",
       "userCode": "",
+      "server": false,
       "native": true,
+      "renderer": false
+    },
+    {
+      "name": "safe parameter before the code",
+      "url": "https://accounts.x.ai/oauth2/device?source=cli&user_code=ABCD-1234",
+      "userCode": "ABCD-1234",
+      "server": true,
+      "native": true,
+      "renderer": true
+    },
+    {
+      "name": "several safe parameters",
+      "url": "https://accounts.x.ai/oauth2/device?user_code=ABCD-1234&source=cli&utm_campaign=grok-build&lang=en-US",
+      "userCode": "ABCD-1234",
+      "server": true,
+      "native": true,
+      "renderer": true
+    },
+    {
+      "name": "deeper absolute path",
+      "url": "https://accounts.x.ai/a/b/c-d_e.f~g?user_code=ABCD-1234",
+      "userCode": "ABCD-1234",
+      "server": true,
+      "native": true,
+      "renderer": true
+    },
+    {
+      "name": "parameters without the code",
+      "url": "https://accounts.x.ai/oauth2/device?other=1&lang=en",
+      "userCode": "ABCD-1234",
+      "server": true,
+      "native": true,
+      "renderer": true
+    },
+    {
+      "name": "empty extra value",
+      "url": "https://accounts.x.ai/oauth2/device?user_code=ABCD-1234&a=",
+      "userCode": "ABCD-1234",
+      "server": true,
+      "native": true,
+      "renderer": true
+    },
+    {
+      "name": "percent-encoded extra value",
+      "url": "https://accounts.x.ai/oauth2/device?next=https%3A%2F%2Faccounts.x.ai%2Fx&user_code=ABCD-1234",
+      "userCode": "ABCD-1234",
+      "server": true,
+      "native": true,
+      "renderer": true
+    },
+    {
+      "name": "lowercase percent escape",
+      "url": "https://accounts.x.ai/oauth2/device?next=a%2fb&user_code=ABCD-1234",
+      "userCode": "ABCD-1234",
+      "server": true,
+      "native": true,
+      "renderer": true
+    },
+    {
+      "name": "escaped space",
+      "url": "https://accounts.x.ai/oauth2/device?msg=a%20b&user_code=ABCD-1234",
+      "userCode": "ABCD-1234",
+      "server": true,
+      "native": true,
+      "renderer": true
+    },
+    {
+      "name": "truncated percent escape",
+      "url": "https://accounts.x.ai/oauth2/device?a=%2",
+      "userCode": "ABCD-1234",
+      "server": false,
+      "native": false,
+      "renderer": false
+    },
+    {
+      "name": "malformed percent escape",
+      "url": "https://accounts.x.ai/oauth2/device?a=%zz",
+      "userCode": "ABCD-1234",
+      "server": false,
+      "native": false,
+      "renderer": false
+    },
+    {
+      "name": "escaped control character",
+      "url": "https://accounts.x.ai/oauth2/device?user_code=ABCD-1234&a=%0A",
+      "userCode": "ABCD-1234",
+      "server": false,
+      "native": false,
+      "renderer": false
+    },
+    {
+      "name": "escaped non-ASCII byte",
+      "url": "https://accounts.x.ai/oauth2/device?user_code=ABCD-1234&a=%C3%A9",
+      "userCode": "ABCD-1234",
+      "server": false,
+      "native": false,
+      "renderer": false
+    },
+    {
+      "name": "unescaped slash and colon in a value",
+      "url": "https://accounts.x.ai/oauth2/device?next=https://evil.test",
+      "userCode": "ABCD-1234",
+      "server": false,
+      "native": false,
+      "renderer": false
+    },
+    {
+      "name": "non-ASCII value",
+      "url": "https://accounts.x.ai/oauth2/device?user_code=ABCD-1234&name=é",
+      "userCode": "ABCD-1234",
+      "server": false,
+      "native": false,
+      "renderer": false
+    },
+    {
+      "name": "space in the query",
+      "url": "https://accounts.x.ai/oauth2/device?user_code=ABCD-1234&a=b c",
+      "userCode": "ABCD-1234",
+      "server": false,
+      "native": false,
+      "renderer": false
+    },
+    {
+      "name": "parameter without a value",
+      "url": "https://accounts.x.ai/oauth2/device?user_code=ABCD-1234&flag",
+      "userCode": "ABCD-1234",
+      "server": false,
+      "native": false,
+      "renderer": false
+    },
+    {
+      "name": "empty pair",
+      "url": "https://accounts.x.ai/oauth2/device?user_code=ABCD-1234&&a=1",
+      "userCode": "ABCD-1234",
+      "server": false,
+      "native": false,
+      "renderer": false
+    },
+    {
+      "name": "trailing ampersand",
+      "url": "https://accounts.x.ai/oauth2/device?user_code=ABCD-1234&",
+      "userCode": "ABCD-1234",
+      "server": false,
+      "native": false,
+      "renderer": false
+    },
+    {
+      "name": "repeated extra parameter",
+      "url": "https://accounts.x.ai/oauth2/device?user_code=ABCD-1234&a=1&a=2",
+      "userCode": "ABCD-1234",
+      "server": false,
+      "native": false,
+      "renderer": false
+    },
+    {
+      "name": "unsafe parameter name",
+      "url": "https://accounts.x.ai/oauth2/device?user_code=ABCD-1234&a[]=1",
+      "userCode": "ABCD-1234",
+      "server": false,
+      "native": false,
+      "renderer": false
+    },
+    {
+      "name": "escaped parameter name",
+      "url": "https://accounts.x.ai/oauth2/device?user_code=ABCD-1234&a%20b=1",
+      "userCode": "ABCD-1234",
+      "server": false,
+      "native": false,
+      "renderer": false
+    },
+    {
+      "name": "parameter name of 64 characters",
+      "url": "https://accounts.x.ai/oauth2/device?kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk=1&user_code=ABCD-1234",
+      "userCode": "ABCD-1234",
+      "server": true,
+      "native": true,
+      "renderer": true
+    },
+    {
+      "name": "parameter name of 65 characters",
+      "url": "https://accounts.x.ai/oauth2/device?kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk=1&user_code=ABCD-1234",
+      "userCode": "ABCD-1234",
+      "server": false,
+      "native": false,
+      "renderer": false
+    },
+    {
+      "name": "parameter value of 256 characters",
+      "url": "https://accounts.x.ai/oauth2/device?v=vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv&user_code=ABCD-1234",
+      "userCode": "ABCD-1234",
+      "server": true,
+      "native": true,
+      "renderer": true
+    },
+    {
+      "name": "parameter value of 257 characters",
+      "url": "https://accounts.x.ai/oauth2/device?v=vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv&user_code=ABCD-1234",
+      "userCode": "ABCD-1234",
+      "server": false,
+      "native": false,
+      "renderer": false
+    },
+    {
+      "name": "address of 2048 characters",
+      "url": "https://accounts.x.ai/pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp",
+      "userCode": "ABCD-1234",
+      "server": true,
+      "native": true,
+      "renderer": true
+    },
+    {
+      "name": "address of 2049 characters",
+      "url": "https://accounts.x.ai/ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp",
+      "userCode": "ABCD-1234",
+      "server": false,
+      "native": false,
+      "renderer": false
+    },
+    {
+      "name": "dot segment",
+      "url": "https://accounts.x.ai/oauth2/../device",
+      "userCode": "ABCD-1234",
+      "server": false,
+      "native": false,
+      "renderer": false
+    },
+    {
+      "name": "single dot segment",
+      "url": "https://accounts.x.ai/oauth2/./device",
+      "userCode": "ABCD-1234",
+      "server": false,
+      "native": false,
+      "renderer": false
+    },
+    {
+      "name": "empty segment",
+      "url": "https://accounts.x.ai//oauth2/device",
+      "userCode": "ABCD-1234",
+      "server": false,
+      "native": false,
+      "renderer": false
+    },
+    {
+      "name": "escaped slash in the path",
+      "url": "https://accounts.x.ai/oauth2%2Fdevice",
+      "userCode": "ABCD-1234",
+      "server": false,
+      "native": false,
+      "renderer": false
+    },
+    {
+      "name": "root path only",
+      "url": "https://accounts.x.ai/",
+      "userCode": "ABCD-1234",
+      "server": false,
+      "native": false,
+      "renderer": false
+    },
+    {
+      "name": "no path",
+      "url": "https://accounts.x.ai",
+      "userCode": "ABCD-1234",
+      "server": false,
+      "native": false,
+      "renderer": false
+    },
+    {
+      "name": "query without a path",
+      "url": "https://accounts.x.ai?user_code=ABCD-1234",
+      "userCode": "ABCD-1234",
+      "server": false,
+      "native": false,
+      "renderer": false
+    },
+    {
+      "name": "upper-case host",
+      "url": "https://ACCOUNTS.X.AI/oauth2/device",
+      "userCode": "ABCD-1234",
+      "server": false,
+      "native": false,
+      "renderer": false
+    },
+    {
+      "name": "trailing dot host",
+      "url": "https://accounts.x.ai./oauth2/device",
+      "userCode": "ABCD-1234",
+      "server": false,
+      "native": false,
+      "renderer": false
+    },
+    {
+      "name": "user code with a percent escape",
+      "url": "https://accounts.x.ai/oauth2/device?user_code=ABCD%2D1234",
+      "userCode": "ABCD-1234",
+      "server": false,
+      "native": false,
+      "renderer": false
+    },
+    {
+      "name": "control character",
+      "url": "https://accounts.x.ai/oauth2/device?user_code=ABCD-1234&a=\u0001",
+      "userCode": "ABCD-1234",
+      "server": false,
+      "native": false,
       "renderer": false
     }
   ],

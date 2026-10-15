@@ -65,8 +65,9 @@ func validServerLoginProgress(service domain.SubscriptionService, authorization,
 		if code == "" {
 			return false
 		}
-		u, err := url.Parse(authorization)
-		return err == nil && len(authorization) <= 8192 && u.Scheme == "https" && u.Host == subscription.GrokVerificationHost && u.User == nil && u.Fragment == "" && subscriptionUserCode.MatchString(code)
+		// The one verification address rule shared with the desktop consumers.
+		_, valid := subscription.GrokVerificationURL(authorization, code)
+		return valid && subscription.GrokUserCodeValid(code)
 	}
 	if code != "" {
 		u, err := url.Parse(authorization)

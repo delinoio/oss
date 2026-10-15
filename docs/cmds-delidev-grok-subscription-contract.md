@@ -85,15 +85,16 @@ native receiver plus authenticated Connect forwarding. Device authorization
 honors RFC 8628 pending, slow-down, denial and expiry; see
 [Server-owned device login](#server-owned-device-login). The desktop opens the
 device verification page only through the closed native
-`grok-device-authorization-open` action (fixed `https://accounts.x.ai/oauth2/device`
-with at most one `user_code` query value), which uses the system default browser
-and never the General/Local link destinations. Without a `user_code` the URL has
-no query at all: an empty `?` or `#` delimiter is rejected. The renderer
-predicates (`grokLoginURL`, `grokDeviceVerification`) and the native validators
-(`validate_grok_subscription_authorization`, `validate_grok_device_authorization`)
-run the shared case table `apps/delidev/src/grok-url-validation-fixtures.json`
-in both TypeScript and Rust tests, so the two layers cannot disagree; the
-renderer additionally requires the URL's `user_code` to equal the displayed code.
+`grok-device-authorization-open` action, which uses the system default browser
+and never the General/Local link destinations. The destination is closed by
+[the verification address rule](#verification-address-rule): the server, the
+renderer predicate (`grokDeviceVerification`) and the native validator
+(`validate_grok_device_authorization`) accept exactly the same addresses, so an
+address the server publishes is always one the desktop can open. The browser
+authorization predicate (`grokLoginURL`) and its native validator
+(`validate_grok_subscription_authorization`) run their own shared table. Both
+tables live in `apps/delidev/src/grok-url-validation-fixtures.json` and run in
+the Go, TypeScript and Rust tests, so the layers cannot disagree.
 
 ### Capability advertisement table
 
@@ -236,13 +237,14 @@ id with the other method is a conflict.
   such as `\/`, `\"`, `\\` or `\u0041` is accepted, kept as owned bytes and sent
   percent-encoded), a
   `user_code` matching `[A-Z0-9-]{4,32}` (for example `XXXX-XXXX`), a
-  `verification_uri_complete` and/or `verification_uri` (https, host exactly
-  `accounts.x.ai`, an absolute path, no credentials or fragment; a query may carry
-  the provider's own routing or tracking parameters, each key a short token used
-  once and each value short printable text, and the complete URI must carry a
-  `user_code` equal to the user code, which is preserved with the safe
-  parameters), a positive `expires_in` (at most 24 hours) and an optional
-  `interval` of 1 to 60 seconds (default 5). The complete URL is preferred. Any
+  `verification_uri_complete` and/or `verification_uri` (each held to the
+  [verification address rule](#verification-address-rule); the complete URI must
+  carry a `user_code` equal to the user code, and its safe parameters are
+  preserved), a positive `expires_in` (at most 24 hours) and an optional
+  `interval` of 1 to 60 seconds (default 5). Member names are case-sensitive: a
+  name that equals one of these members only when case is ignored is an alias
+  and refuses the whole response, as in the
+  [token endpoint response table](#token-endpoint-response-table). The complete URL is preferred. Any
   other response ends the login as failed (`Unavailable`) before anything is
   claimed. The real provider's scopes, `interval`, `expires_in` and error bodies
   were never captured: these values are RFC 8628 defaults and the browser
@@ -250,8 +252,9 @@ id with the other method is a conflict.
 - **Presentation.** The verification URL and user code are returned only through
   the transient `GetSubscriptionProgress` `url` and `user_code` fields while the
   operation is waiting. `validServerLoginProgress` is service-aware: for Grok it
-  accepts only an https `accounts.x.ai` URL without credentials or fragment plus
-  a user code of the existing `[A-Z0-9-]{4,32}` shape. The URL, user code and
+  accepts only an address that satisfies the
+  [verification address rule](#verification-address-rule) plus a user code of
+  the existing `[A-Z0-9-]{4,32}` shape. The URL, user code and
   device code never reach logs, documents, events or `grok_diagnostic`; the
   account document records only the closed login method (`LoginMethod` device
   code), the exchange claim and the outcome. Settled operations return neither
@@ -298,6 +301,61 @@ id with the other method is a conflict.
   to compare), reads userinfo and maps the bundle with `BuildGrokBundle`, so both
   methods yield identical bundles for the same token response. Sealing,
   duplicate-identity handling and publication are unchanged.
+
+#### Verification address rule
+
+The device verification address (`verification_uri_complete`, else
+`verification_uri`) is validated as a plain string, not as a parsed URL, so no
+normalization can make the layers disagree. The Go server
+(`subscription.GrokVerificationURL`, which also guards the transient progress
+response), the renderer (`grokDeviceVerification`) and the native host
+(`validate_grok_device_authorization`) implement the same rule:
+
+| Part        | Rule                                                                                                                                                                                                          |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Length      | At most 2048 bytes, all printable ASCII (0x21 to 0x7e)                                                                                                                                                        |
+| Origin      | Exactly the prefix `https://accounts.x.ai`: no port, credentials, host case difference, trailing dot or backslash                                                                                             |
+| Path        | One or more non-empty segments of `[A-Za-z0-9._~-]`, each introduced by a slash, none of them `.` or `..`, with an optional trailing slash; the page itself is the provider's choice and no escape is allowed |
+| Fragment    | Never                                                                                                                                                                                                         |
+| Query       | Optional and never empty: `key=value` pairs joined by `&`, each key `[A-Za-z0-9_.-]{1,64}` used once, each value at most 256 bytes of `[A-Za-z0-9._~-]` and well-formed percent escapes of printable ASCII    |
+| `user_code` | When present, `[A-Z0-9-]{4,32}`; the server and the renderer also require it to equal the displayed code, and a complete verification URI must carry it                                                       |
+
+The server publishes an address unchanged, only after it passes the rule, so the
+renderer pins the first valid pair for the whole login. The native host does not
+receive the displayed code, so it checks only the closed destination.
+`TestGrokVerificationURLMatchesTheSharedDesktopTable` (Go), the shared-table
+tests in `grok-subscription-login.test.tsx` and
+`device_validator_matches_the_shared_url_table` (Rust) run every row of the
+`deviceVerification` table, which states each layer's expected result.
+
+#### Durable operation reads
+
+Both login methods watch the durable operation while they wait, and the device
+login rereads it immediately before every poll after the claim. The read has
+three results, and only a successful read can prove a cancellation: the
+operation was canceled, fenced, removed or replaced, or its actor vanished
+(`stopped`). A read that fails for any other reason (the store cannot answer) is
+`unreadable` and proves nothing. A step that ends because of an unreadable state
+sends no further request. Which outcome it settles as depends only on whether
+the exchange was already claimed (`grokInterruptedOutcome` is the one
+classification):
+
+| Durable read or cause of the end              | Exchange claimed | Settles as                                                                        | Test                                                                           |
+| --------------------------------------------- | ---------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| readable, operation continues                 | any              | the step continues                                                                | the device and browser completion tests                                        |
+| readable, confirmed stop                      | no               | `CANCELED`, nothing claimed or sent                                               | `TestGrokDeviceLoginCancelAtEachPhaseHasADistinctOutcome`                      |
+| readable, confirmed stop                      | yes              | `CANCELED` with the claim kept; settlement rereads the durable operation          | `TestGrokDeviceLoginCancelCommittedJustBeforeAPollSendsNoFurtherPoll`          |
+| unreadable, seen by the pre-poll check        | yes              | `RECOVERY_REQUIRED`, no further poll, the claim is kept and the code never resent | `TestGrokLoginUnreadableDurableStateIsNeverACancellation`                      |
+| unreadable, seen by the watcher while waiting | yes              | `RECOVERY_REQUIRED`, no further poll                                              | `TestGrokLoginUnreadableDurableStateIsNeverACancellation`                      |
+| unreadable, seen by the watcher while waiting | no               | `CANCELED`, nothing claimed or sent, no fence                                     | `TestGrokLoginUnreadableDurableStateIsNeverACancellation`                      |
+| server shutdown (device login)                | yes              | `RECOVERY_REQUIRED`                                                               | `TestGrokDeviceLoginShutdownBetweenPollsKeepsAClaimInRecovery`                 |
+| server shutdown                               | no               | `CANCELED`                                                                        | `TestGrokDeviceLoginShutdownBetweenPollsKeepsAClaimInRecovery`                 |
+| operation window over, server alive           | any              | `EXPIRED`                                                                         | `TestGrokDeviceLoginLocalDeadlineIsTheMinimumOfExpiresInAndTheOperationWindow` |
+| request in flight when the context ends       | yes              | `RECOVERY_REQUIRED` (the request may have redeemed the credential)                | `TestGrokDeviceLoginCancelAtEachPhaseHasADistinctOutcome`                      |
+
+A refresh sends its single request right after its claim and rereads nothing in
+between, so it has no pre-send read; an interruption of that request is
+uncertain (`RECOVERY_REQUIRED`).
 
 The trusted native receiver (`apps/delidev/src-tauri/src/oauth.rs`) exposes
 `grok-subscription-open` and `grok-subscription-reopen` for the server-returned
@@ -1460,14 +1518,26 @@ pending native-started operation.
 ### Token endpoint response table
 
 The authorization-code exchange and the refresh grant share one response classifier (`classifyGrokTokenResponse`). A body is parsed only when it is exactly one JSON object
-whose top-level members are unique (compared case-insensitively, as the decoder
-matches fields): another JSON value, a stray comma, any other non-whitespace byte
+whose top-level member names are unique: another JSON value, a stray comma, any other non-whitespace byte
 after the first object or a repeated member (the decoder would silently keep the
 last one, and implementations disagree) makes the response unparsed, whatever its
 status. Both grants are claimed
 before the request, so an unparsed response is never a published success and never
-a definitive rejection that would release the claim. The table is pinned by
-`TestGrokTokenResponseTable`, which runs every row against both grants.
+a definitive rejection that would release the claim.
+
+Member names are case-sensitive, as OAuth and JSON define them. The classifier
+reads exactly the canonical spellings (`access_token`, `refresh_token`,
+`id_token`, `token_type`, `expires_in`, `error`, `error_description`,
+`error_uri`) from the decoded top-level members; it never relies on the decoder's
+case-insensitive struct matching and never folds case. A name that equals a
+canonical name only when case is ignored (for example `ERROR` or `Access_Token`)
+is an alias: it is never read as the member, and its presence makes the body
+untrustworthy. The same exact-name rule applies to the discovery metadata and to
+every other provider document the Grok flows read; repeated names are compared
+exactly, so two spellings that differ in case are two distinct names, and the
+alias rule is what refuses them. The table is pinned by
+`TestGrokTokenResponseTable`, which runs every row against both grants, and the
+discovery rule by `TestGrokDiscoveryRequiresExactMemberNames`.
 
 The device authorization response and the device poll answers follow it too: a
 repeated member (for example a repeated `error`, which could turn a rejection into
@@ -1485,18 +1555,20 @@ or a userinfo response that repeats a claim name is refused (exact comparison, a
 claim names are case-sensitive), because the decoder would keep the last
 occurrence (`TestGrokIdentityEvidenceRejectsRepeatedClaims`).
 
-| Status                                                     | Body                                                                                                                                                | Reason                     | Settlement after the claim         |
-| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ---------------------------------- |
-| 200                                                        | one valid token object (trailing whitespace allowed)                                                                                                | success                    | publish                            |
-| 200                                                        | a token object that also carries any of `error`, `error_description`, `error_uri` (even empty or null, any case)                                    | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
-| 200                                                        | token object followed by another JSON value or any other byte, or a repeated member                                                                 | `GrokReasonTokenResponse`  | `RECOVERY_REQUIRED`                |
-| 200                                                        | missing or invalid member, not JSON                                                                                                                 | `GrokReasonTokenResponse`  | `RECOVERY_REQUIRED`                |
-| 400, 401                                                   | exactly one object with a non-empty `error` and none of the token members                                                                           | `GrokReasonTokenRejected`  | `FAILED`, the token did not rotate |
-| 400, 401                                                   | an `error` object followed by any other byte or JSON value, or with a repeated member                                                               | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
-| 400, 401                                                   | a non-empty `error` that also carries any of `access_token`, `refresh_token`, `id_token`, `token_type`, `expires_in` (even empty or null, any case) | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
-| 400, 401                                                   | no `error` member, an empty `error`, or not JSON                                                                                                    | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
-| other 4xx, 5xx, redirect                                   | any body                                                                                                                                            | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
-| transport error, cancellation, truncated or oversized body | none                                                                                                                                                | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
+| Status                                                     | Body                                                                                                                                      | Reason                     | Settlement after the claim         |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ---------------------------------- |
+| 200                                                        | one valid token object (trailing whitespace allowed)                                                                                      | success                    | publish                            |
+| 200                                                        | a token object that also carries any of `error`, `error_description`, `error_uri` (even empty or null) or an alias of one of them         | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
+| 200                                                        | a token object that carries an alias of a token member (a name that differs from it only in case), or only aliases                        | `GrokReasonTokenResponse`  | `RECOVERY_REQUIRED`                |
+| 200                                                        | token object followed by another JSON value or any other byte, or a repeated member                                                       | `GrokReasonTokenResponse`  | `RECOVERY_REQUIRED`                |
+| 200                                                        | missing or invalid member, not JSON                                                                                                       | `GrokReasonTokenResponse`  | `RECOVERY_REQUIRED`                |
+| 400, 401                                                   | exactly one object with a non-empty `error`, none of the token members and no alias                                                       | `GrokReasonTokenRejected`  | `FAILED`, the token did not rotate |
+| 400, 401                                                   | an `error` object followed by any other byte or JSON value, or with a repeated member                                                     | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
+| 400, 401                                                   | a non-empty `error` that also carries any of `access_token`, `refresh_token`, `id_token`, `token_type`, `expires_in` (even empty or null) | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
+| 400, 401                                                   | an `error` object that also carries an alias of any token or error member (for example `Error_Description`, `Access_Token`)               | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
+| 400, 401                                                   | no canonical `error` member (including only an alias such as `ERROR`), an empty `error`, a non-string `error`, or not JSON                | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
+| other 4xx, 5xx, redirect                                   | any body                                                                                                                                  | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
+| transport error, cancellation, truncated or oversized body | none                                                                                                                                      | `GrokReasonTokenUncertain` | `RECOVERY_REQUIRED`                |
 
 The revocation request of a logout is parsed more strictly than a grant, because
 it settles only by status: RFC 7009 answers HTTP 200 both for a revoked token and

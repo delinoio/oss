@@ -107,7 +107,9 @@ type IdP struct {
 	UserInfoSubject  string
 	DiscoveryIssuer  string
 	DiscoveryHost    string
-	NoRefreshToken   bool
+	// DiscoveryBody, when set, is returned verbatim as the discovery document.
+	DiscoveryBody  string
+	NoRefreshToken bool
 
 	// Device knobs. DeviceScript lists the OAuth error answered to each
 	// successive device_code poll in order ("authorization_pending", "slow_down",
@@ -303,6 +305,10 @@ func (i *IdP) discovery(w http.ResponseWriter, _ *http.Request) {
 	issuer := subscription.GrokIssuer
 	if i.DiscoveryIssuer != "" {
 		issuer = i.DiscoveryIssuer
+	}
+	if i.DiscoveryBody != "" {
+		_, _ = w.Write([]byte(i.DiscoveryBody))
+		return
 	}
 	base := "https://" + i.host()
 	doc := map[string]any{
