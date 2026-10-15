@@ -575,6 +575,33 @@ fn asi_terminates(bytes: &[u8], start: usize, ignored: &[(usize, usize)]) -> boo
     }
 }
 
+/// Remembers the ASI decision for the trivia run between two tokens. Every
+/// line break in one run sees the same previous and next token, so the decision
+/// is computed once per run instead of once per line break.
+#[derive(Default)]
+struct AsiMemo {
+    /// End of the trivia run and the decision for it.
+    run: Option<(usize, bool)>,
+}
+
+impl AsiMemo {
+    /// Same as [`asi_terminates`] for the line break at `start`. Line breaks
+    /// must be queried in increasing order.
+    fn terminates(&mut self, bytes: &[u8], start: usize, ignored: &[(usize, usize)]) -> bool {
+        if let Some((run_end, decision)) = self.run
+            && start < run_end
+        {
+            return decision;
+        }
+        let run_end = skip_trivia(bytes, start, ignored)
+            .next
+            .unwrap_or(bytes.len());
+        let decision = asi_terminates(bytes, start, ignored);
+        self.run = Some((run_end, decision));
+        decision
+    }
+}
+
 #[derive(Clone, Copy)]
 enum EnvGuard {
     ShortCircuitAnd,
@@ -675,6 +702,7 @@ fn env_guards(
     let mut next_start = 0;
     let mut next_end = 0;
     let mut ignored_index = 0;
+    let mut asi = AsiMemo::default();
 
     for index in 0..bytes.len() {
         while next_start < reads.len() && reads[next_start].0 == index {
@@ -697,7 +725,7 @@ fn env_guards(
             let (start, end) = ignored[ignored_index];
             if index == start
                 && comment_has_line_terminator(bytes, start, end)
-                && asi_terminates(bytes, start, ignored)
+                && asi.terminates(bytes, start, ignored)
             {
                 block_pending_reads(&mut scopes[current_scope], &guards, &mut blocked);
             }
@@ -720,7 +748,7 @@ fn env_guards(
             current_scope = parent;
         }
 
-        if line_terminator_at(bytes, index).is_some() && asi_terminates(bytes, index, ignored) {
+        if line_terminator_at(bytes, index).is_some() && asi.terminates(bytes, index, ignored) {
             block_pending_reads(&mut scopes[current_scope], &guards, &mut blocked);
         }
 
@@ -2767,6 +2795,93 @@ y=/process.env.F/.test(z),process.env.G"#;
                 let code = format!("process.env.FLAG + {prefix}{keyword}\nsuffix&&run()");
                 assert_eq!(flag_guard(&code), None, "{code:?}");
             }
+        }
+    }
+
+    /// Boundary kinds that the env-condition scan treats as line breaks.
+    const BOUNDARIES: [&str; 8] = [
+        "\n",
+        "\r",
+        "\r\n",
+        "\u{2028}",
+        "\u{2029}",
+        "/*\n*/",
+        "/*\r*/",
+        "/*\u{2028}*/",
+    ];
+
+    #[test]
+    fn asi_memo_matches_the_per_line_break_decision() {
+        let followers = [
+            "&&run()",
+            "+suffix&&run()",
+            "++suffix&&run()",
+            "in x&&run()",
+            "suffix&&run()",
+            "",
+        ];
+        for boundary in BOUNDARIES {
+            for follower in followers {
+                for previous in [
+                    "process.env.FLAG",
+                    "process.env.FLAG +",
+                    "process.env.FLAG ++",
+                ] {
+                    for count in [1, 2, 5] {
+                        let code = format!(
+                            "{previous} {}{follower}",
+                            format!("{boundary} // c\u{2028} ").repeat(count)
+                        );
+                        let bytes = code.as_bytes();
+                        let ignored = non_code_ranges(&code);
+                        let mut memo = AsiMemo::default();
+                        let mut index = 0;
+                        while index < bytes.len() {
+                            let in_comment = comment_range(bytes, index, &ignored);
+                            let is_break = match in_comment {
+                                Some((start, end)) => {
+                                    index == start && comment_has_line_terminator(bytes, start, end)
+                                }
+                                None => line_terminator_at(bytes, index).is_some(),
+                            };
+                            if is_break {
+                                assert_eq!(
+                                    memo.terminates(bytes, index, &ignored),
+                                    asi_terminates(bytes, index, &ignored),
+                                    "{code:?} at {index}"
+                                );
+                            }
+                            index += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn env_guard_line_breaks_are_decided_once_per_trivia_run() {
+        // Thousands of consecutive line breaks between two tokens must not
+        // rescan the remaining trivia at every one of them.
+        const COUNT: usize = 40_000;
+        for boundary in BOUNDARIES {
+            for (follower, expected) in [("&&run()", AND_GUARD), ("+suffix&&run()", AND_GUARD)] {
+                let code = format!("process.env.FLAG{}{follower}", boundary.repeat(COUNT));
+                let started = std::time::Instant::now();
+                let guard = flag_guard(&code);
+                assert!(
+                    started.elapsed() < std::time::Duration::from_secs(5),
+                    "{boundary:?} took {:?}",
+                    started.elapsed()
+                );
+                assert_eq!(guard, expected, "{boundary:?} {follower:?}");
+            }
+            // A read that is already blocked by the first boundary drains
+            // once; the remaining boundaries find nothing pending.
+            let code = format!("process.env.FLAG{}x&&run()", boundary.repeat(COUNT));
+            let started = std::time::Instant::now();
+            assert_eq!(flag_guard(&code), None, "{boundary:?}");
+            assert!(started.elapsed() < std::time::Duration::from_secs(5));
         }
     }
 
