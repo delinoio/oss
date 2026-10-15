@@ -389,6 +389,187 @@ function mergeRanges(ranges: MarkdownRange[]): MarkdownRange[] {
   return merged;
 }
 
+// --- Reference definitions ---------------------------------------------------
+
+/** Longest label a reference (or definition) may carry. */
+const MAX_REFERENCE_LABEL = 999;
+
+/** CommonMark label matching: case-folded with collapsed whitespace. */
+function normalizeReferenceLabel(label: string): string {
+  return label.trim().replace(/\s+/gu, " ").toLowerCase().toUpperCase();
+}
+
+const isSpaceOrTab = (char: string | undefined) =>
+  char === " " || char === "\t";
+
+function skipSpacesAndTabs(text: string, from: number): number {
+  let cursor = from;
+  while (isSpaceOrTab(text[cursor])) cursor++;
+  return cursor;
+}
+
+/** True when the line starting at `from` is empty or only spaces and tabs. */
+function blankLineAt(text: string, from: number): boolean {
+  const cursor = skipSpacesAndTabs(text, from);
+  return cursor >= text.length || text[cursor] === "\n";
+}
+
+/** End of a quoted or parenthesized title opening at `open`, or undefined. */
+function parseDefinitionTitle(
+  text: string,
+  open: number,
+  budget: Budget,
+): number | undefined {
+  const opener = text[open];
+  if (opener !== '"' && opener !== "'" && opener !== "(") return undefined;
+  const closer = opener === "(" ? ")" : opener,
+    limit = Math.min(text.length, open + MAX_PROTECTED_SPAN);
+  for (let cursor = open + 1; cursor < limit; cursor++) {
+    if (!budget.spend()) return undefined;
+    const char = text[cursor]!;
+    if (char === "\\") cursor++;
+    else if (char === closer) return cursor + 1;
+    else if (opener === "(" && char === "(") return undefined;
+    // A title never spans a blank line.
+    else if (char === "\n" && blankLineAt(text, cursor + 1)) return undefined;
+  }
+  return undefined;
+}
+
+/**
+ * Parses one complete link reference definition whose `[` is at `bracket` on
+ * a line that starts at `lineStart`. The destination and the title may sit on
+ * the lines that follow; only blank lines end the definition early. Returns the
+ * exclusive end of the definition (its destination, or its title when a valid
+ * one follows) and its label.
+ */
+function parseDefinition(
+  text: string,
+  bracket: number,
+  budget: Budget,
+): { end: number; label: string } | undefined {
+  let cursor = bracket + 1,
+    meaningful = false;
+  const labelLimit = Math.min(text.length, bracket + 2 + MAX_REFERENCE_LABEL);
+  for (; cursor < labelLimit; cursor++) {
+    if (!budget.spend()) return undefined;
+    const char = text[cursor]!;
+    if (char === "\\") {
+      meaningful = true;
+      cursor++;
+    } else if (char === "[") return undefined;
+    else if (char === "]") break;
+    else if (char === "\n") {
+      if (blankLineAt(text, cursor + 1)) return undefined;
+    } else if (!/\s/u.test(char)) meaningful = true;
+  }
+  if (text[cursor] !== "]" || !meaningful || text[cursor + 1] !== ":")
+    return undefined;
+  const label = text.slice(bracket + 1, cursor);
+  if (label.length > MAX_REFERENCE_LABEL) return undefined;
+  // At most one line ending separates the colon from the destination.
+  cursor = skipSpacesAndTabs(text, cursor + 2);
+  if (text[cursor] === "\n") {
+    cursor = skipSpacesAndTabs(text, cursor + 1);
+    if (cursor >= text.length || text[cursor] === "\n") return undefined;
+  }
+  let destEnd: number;
+  const limit = Math.min(text.length, cursor + MAX_PROTECTED_SPAN);
+  if (text[cursor] === "<") {
+    let scan = cursor + 1;
+    for (; scan < limit; scan++) {
+      if (!budget.spend()) return undefined;
+      const char = text[scan]!;
+      if (char === "\\") {
+        if (text[scan + 1] === "\n") return undefined;
+        scan++;
+      } else if (char === ">" || char === "\n" || char === "<") break;
+    }
+    if (text[scan] !== ">") return undefined;
+    destEnd = scan + 1;
+  } else {
+    let scan = cursor,
+      depth = 0;
+    for (; scan < limit; scan++) {
+      if (!budget.spend()) return undefined;
+      const char = text[scan]!;
+      if (char === "\\" && !/\s/u.test(text[scan + 1] ?? " ")) scan++;
+      else if (/[\s\u0000-\u001f\u007f]/u.test(char)) break;
+      else if (char === "(") depth++;
+      else if (char === ")") {
+        if (depth === 0) break;
+        depth--;
+      }
+    }
+    if (scan === cursor || depth !== 0 || scan - cursor >= MAX_PROTECTED_SPAN)
+      return undefined;
+    destEnd = scan;
+  }
+  // A title follows after whitespace: on the same line, or on the next line.
+  // The definition must otherwise end at the end of a line.
+  const afterDestination = skipSpacesAndTabs(text, destEnd);
+  const destinationEndsLine =
+    afterDestination >= text.length || text[afterDestination] === "\n";
+  let titleOpen: number | undefined;
+  if (destinationEndsLine) {
+    if (afterDestination < text.length) {
+      const next = skipSpacesAndTabs(text, afterDestination + 1);
+      if (next < text.length && text[next] !== "\n") titleOpen = next;
+    }
+  } else if (afterDestination > destEnd) titleOpen = afterDestination;
+  else return undefined;
+  if (titleOpen !== undefined) {
+    const titleEnd = parseDefinitionTitle(text, titleOpen, budget);
+    if (titleEnd !== undefined && blankLineAt(text, titleEnd))
+      return { end: titleEnd, label };
+  }
+  // A malformed title on the destination's line voids the definition; one on a
+  // later line is a separate paragraph and leaves the destination complete.
+  return destinationEndsLine ? { end: destEnd, label } : undefined;
+}
+
+/**
+ * Protects every complete reference definition and returns the normalized
+ * labels it defines. Definitions the strict parser rejects keep the previous
+ * single-line protection of their destination run.
+ */
+function scanDefinitions(
+  text: string,
+  budget: Budget,
+  into: MarkdownRange[],
+): Set<string> {
+  const labels = new Set<string>();
+  const loose = /^ {0,3}\[([^\]\n]+)\]:[ \t]*\S+/gmu;
+  for (const match of text.matchAll(loose)) {
+    if (!budget.spend(4)) break;
+    into.push({
+      start: match.index!,
+      end: match.index! + match[0].length,
+    });
+    labels.add(normalizeReferenceLabel(match[1]!));
+  }
+  let lineStart = 0;
+  while (lineStart <= text.length) {
+    if (!budget.spend(2)) break;
+    const bracket = skipSpacesAndTabs(text, lineStart),
+      lineEnd = text.indexOf("\n", lineStart);
+    let next = lineEnd < 0 ? text.length + 1 : lineEnd + 1;
+    if (text[bracket] === "[" && bracket - lineStart <= 3) {
+      const parsed = parseDefinition(text, bracket, budget);
+      if (budget.exhausted) break;
+      if (parsed) {
+        into.push({ start: lineStart, end: parsed.end });
+        labels.add(normalizeReferenceLabel(parsed.label));
+        // Resume at the line after the definition's last line.
+        const endOfLine = text.indexOf("\n", parsed.end);
+        next = endOfLine < 0 ? text.length + 1 : endOfLine + 1;
+      }
+    }
+    lineStart = next;
+  }
+  return labels;
+}
+
 /**
  * Finds valid inline HTTP(S) links plus every range where bare URLs must stay
  * untouched (any inline link or image, code spans, fenced code, autolinks and
@@ -467,14 +648,7 @@ function scanNormalized(text: string): MarkdownScan {
       index = close;
     }
   }
-  const definition = /^ {0,3}\[[^\]\n]+\]:[ \t]*\S+/gmu;
-  for (const match of text.matchAll(definition)) {
-    if (!budget.spend(4)) break;
-    protectedRanges.push({
-      start: match.index!,
-      end: match.index! + match[0].length,
-    });
-  }
+  scanDefinitions(text, budget, protectedRanges);
   let consumed = 0;
   for (const open of opens) {
     if (open < consumed) continue;

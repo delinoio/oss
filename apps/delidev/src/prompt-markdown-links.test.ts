@@ -432,6 +432,8 @@ const FUZZ_PIECES = [
   "https://a.test/p?q=[1]&r=(2)",
   "https://a.test/x.",
   "```\n",
+  "[ref]:\n  ",
+  "[ref]: /u\n  'T https://t.test'\n",
   "![i](https://e.com/i.png)",
   "$skill",
   "한https://a.test/g ",
@@ -779,4 +781,103 @@ describe("line-ending equivalence", () => {
       }
     });
   }
+});
+
+describe("reference definitions", () => {
+  const URL = "https://example.test";
+  it("protects a destination on the line after the label", () => {
+    for (const text of [
+      `[docs]:\n  ${URL}`,
+      `[docs]:\n${URL}`,
+      `[docs]:\t\n\t${URL}\n`,
+      `   [docs]:\n   ${URL}`,
+      `[docs]:\n  <${URL}/a b>`,
+      `[docs]:\n  ${URL}/a(b)c`,
+      `[docs]:   \n  ${URL} \n`,
+    ])
+      expect(convert(text)).toBe(text);
+    // The first line alone is the definition when nothing follows it.
+    expect(convert(`[docs]: ${URL}`)).toBe(`[docs]: ${URL}`);
+  });
+  it("protects a label that spans lines", () => {
+    for (const text of [
+      `[my\ndocs]:\n  ${URL}`,
+      `[my\n docs]: ${URL}`,
+      `[a\n\\]b]:\n  ${URL}`,
+    ])
+      expect(convert(text)).toBe(text);
+  });
+  it("protects titles on the destination line and on following lines", () => {
+    for (const text of [
+      `[docs]: /u "see ${URL}"`,
+      `[docs]: /u 'see ${URL}'`,
+      `[docs]: /u (see ${URL})`,
+      `[docs]: /u\n  "see ${URL}"`,
+      `[docs]:\n  /u\n  'see ${URL}'`,
+      `[docs]:\n  /u\n  (see ${URL})`,
+      `[docs]: /u "line one\nsee ${URL} two"`,
+      `[docs]:\n  /u\n  "a\n  b ${URL}\n  c"\n`,
+      `[docs]: <u v> "see ${URL}"`,
+      `[docs]: /u "esc \\" ${URL}"`,
+    ])
+      expect(convert(text)).toBe(text);
+  });
+  it("ends the definition at a blank line, a stray token or a bad title", () => {
+    const converted = (url: string) => `[${url}](${url})`;
+    // No destination before a blank line: the URL after it is ordinary text.
+    expect(convert(`[docs]:\n\n${URL}`)).toBe(`[docs]:\n\n${converted(URL)}`);
+    // A title never spans a blank line.
+    expect(convert(`[docs]: /u\n  "a\n\n  ${URL}"`)).toBe(
+      `[docs]: /u\n  "a\n\n  ${converted(URL)}"`,
+    );
+    // A next-line title with trailing junk is a paragraph of its own.
+    expect(convert(`[docs]: /u\n"t" junk ${URL}`)).toBe(
+      `[docs]: /u\n"t" junk ${converted(URL)}`,
+    );
+    // The line after a complete definition is ordinary text.
+    expect(convert(`[docs]: /u\n${URL}`)).toBe(`[docs]: /u\n${converted(URL)}`);
+    expect(convert(`[docs]:\n  /u "t"\n${URL}`)).toBe(
+      `[docs]:\n  /u "t"\n${converted(URL)}`,
+    );
+  });
+  it("converts a URL pasted on the line after a bare label", () => {
+    const before = "[docs]:\n  ",
+      text = `${before}${URL}`;
+    expect(convertBareUrls(text, before.length, text.length).changed).toBe(
+      false,
+    );
+    const typed = convertTerminatedUrl(`${text}\n`, text.length);
+    expect(typed.changed).toBe(false);
+    // The destination line may be indented freely; the label line may not
+    // start with four spaces.
+    expect(convertBareUrls(`[docs]:\n      ${URL}`, 0, 100).changed).toBe(
+      false,
+    );
+    expect(convert(`    [docs]:\n  ${URL}`)).toBe(
+      `    [docs]:\n  [${URL}](${URL})`,
+    );
+  });
+  it("keeps scanning links after a multiline definition", () => {
+    const text = `[a]:\n  /u\n  "t"\n\nsee [b](https://b.test) ${URL}`;
+    const scan = scanMarkdown(text);
+    expect(scan.links.map((link) => link.url)).toEqual(["https://b.test"]);
+    expect(convert(text)).toBe(
+      `[a]:\n  /u\n  "t"\n\nsee [b](https://b.test) [${URL}](${URL})`,
+    );
+  });
+  it("scans adversarial definition candidates within the budget", () => {
+    for (const text of [
+      "[a]:\n".repeat(50_000),
+      "[\n".repeat(50_000),
+      `[a]: /u "${"x\n".repeat(40_000)}`,
+      `[${"a ".repeat(40_000)}`,
+      "[a]: <".repeat(40_000),
+    ]) {
+      const started = Date.now();
+      const scan = scanMarkdown(text);
+      expect(Date.now() - started).toBeLessThan(5000);
+      if (scan.complete) continue;
+      expect(convertBareUrls(text, 0, text.length, scan).changed).toBe(false);
+    }
+  });
 });

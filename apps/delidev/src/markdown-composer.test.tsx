@@ -1344,6 +1344,38 @@ it("R27 line endings: owner replacement and recall select exact offsets in CRLF 
   expect(probe.api.readCanonical()).toMatchObject({ start: 3, end: 6 });
 });
 
+// --- Multiline reference definitions (R28) ----------------------------------
+
+it("R28 multiline definition: a URL on a continuation line stays source text however it is entered", () => {
+  const URL = "https://example.test";
+  for (const ending of ["\n", "\r\n", "\r"]) {
+    const head = `[docs]:${ending}  `;
+    // Pasted after the label: the destination of the definition.
+    const { input, view } = mount(head);
+    select(input, input.value.length);
+    paste(input, URL);
+    expect(probe.canonical).toBe(`${head}${URL}`);
+    // A typed delimiter after it converts nothing either.
+    nativeEdit(input, `${input.value} `, input.value.length + 1);
+    expect(probe.canonical).toBe(`${head}${URL} `);
+    nativeEdit(input, `${input.value}\n`, input.value.length + 1);
+    expect(normalized(probe.canonical)).toBe(normalized(`${head}${URL} \n`));
+    expect(probe.canonical).not.toContain("](");
+    view.unmount();
+    // A title on the following lines is protected too.
+    const titled = mount(`[docs]: /u${ending}  "see `);
+    select(titled.input, titled.input.value.length);
+    paste(titled.input, `${URL}" `);
+    expect(probe.canonical).toBe(`[docs]: /u${ending}  "see ${URL}" `);
+    titled.view.unmount();
+  }
+  // Without a definition around it the same paste converts.
+  const plain = mount("[docs]:\n\n");
+  select(plain.input, plain.input.value.length);
+  paste(plain.input, URL);
+  expect(probe.canonical).toBe(`[docs]:\n\n[${URL}](${URL})`);
+});
+
 // Seeded random walk over the whole state machine. After every operation the
 // field must show exactly the projection of the canonical text for the
 // canonical selection, selection maps must agree, and undoing every edit must
@@ -1356,6 +1388,8 @@ function walker(seed: number) {
   };
 }
 const WALK_PASTES = [
+  "[docs]:\n  https://d.test\n  'T https://t.test'\n",
+  "[docs]:\n  ",
   "https://a.test/p?q=[1]",
   "text 한글 😀",
   "[Docs](https://e.com/d)",
