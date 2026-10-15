@@ -275,6 +275,28 @@ it("rejects foreign, malformed and non-first original evidence", () => {
   expect(f.store.registerOriginal(f.sessionId, undefined)).toBe(false);
   expect(f.store.snapshot()).toHaveLength(0);
 });
+it("evicts a settled native mapping before the retained-record bound rejects an original", () => {
+  // Fill a store to the bound with one settled native mapping among live rows.
+  const g = original();
+  expect(g.store.registerOriginal(g.sessionId, g.input(1n), g.inputId)).toBe(
+    true,
+  );
+  g.store.observe(g.sessionId, [g.native]);
+  for (let index = 0; index < 999; index++)
+    g.store.freeze(newRequestId(), g.sessionId, "x", Mode.Execute, 0);
+  expect(g.store.snapshot()).toHaveLength(1000);
+  const next = original();
+  expect(
+    g.store.registerOriginal(next.sessionId, next.input(1n), next.inputId),
+  ).toBe(true);
+  expect(g.store.snapshot()).toHaveLength(1000);
+  expect(g.store.snapshot().some((row) => row.native)).toBe(false);
+  // Without a settled mapping the bound still rejects.
+  const last = original();
+  expect(
+    g.store.registerOriginal(last.sessionId, last.input(1n), last.inputId),
+  ).toBe(false);
+});
 it("does not dedupe equal text under a different input identity", () => {
   const f = original("Same text");
   f.store.registerOriginal(f.sessionId, f.input(1n));

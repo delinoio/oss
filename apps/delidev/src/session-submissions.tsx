@@ -191,6 +191,12 @@ export class SessionSubmissions {
     this.value = [...this.records.values()];
     for (const listener of this.listeners) listener();
   }
+  /** Retires one settled native mapping when the retained-record bound is full. */
+  private evictSettled() {
+    if (this.records.size < maximumCount) return;
+    const settled = [...this.records.values()].find((row) => row.native);
+    if (settled) this.records.delete(settled.requestId);
+  }
   freeze(
     requestId: string,
     sessionId: string,
@@ -206,10 +212,8 @@ export class SessionSubmissions {
     );
     // Settled native projections retain no content; retire their mappings only
     // when the existing retained-input bound needs room for a fresh submission.
-    if (!previous && this.records.size >= maximumCount) {
-      const settled = [...this.records.values()].find((row) => row.native);
-      if (settled) this.records.delete(settled.requestId);
-    }
+    // registerOriginal applies the same eviction before its count bound.
+    if (!previous) this.evictSettled();
     if (
       bytes(prompt) > 256 << 10 ||
       used + bytes(prompt) > maximumBytes ||
@@ -266,6 +270,7 @@ export class SessionSubmissions {
       return true;
     }
     if (this.nativeInputs.get(queue.id) === sessionId) return false;
+    this.evictSettled();
     const used = [...this.records.values()].reduce(
       (sum, row) => sum + bytes(row.prompt),
       0,
