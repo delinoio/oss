@@ -2011,16 +2011,21 @@ fn is_case_label(prefix: &str) -> bool {
 /// calls, and member accesses, private names, declarations and bodyless
 /// signatures named `eval` are not calls.
 fn direct_eval_offsets(source: &str) -> Vec<usize> {
+    direct_eval_offsets_outside(source, &non_code_ranges(source))
+}
+
+/// Like [`direct_eval_offsets`], with the `ignored` ranges of `source`
+/// (strings, templates, comments and regular expressions) already computed.
+fn direct_eval_offsets_outside(source: &str, ignored: &[(usize, usize)]) -> Vec<usize> {
     // `eval(` inside strings, templates, comments or regular expressions is
     // not a call.
-    let ignored = non_code_ranges(source);
     // A binding named `eval` makes calls inside its scope ordinary calls that
     // cannot observe the surrounding scope; shadowing is decided per call.
-    let shadows = eval_shadow_scopes(source, &ignored);
+    let shadows = eval_shadow_scopes(source, ignored);
     // One forward pass over the tokens decides which `eval(` tokens call the
     // global function. Comments are token separators, so `eval /* note */
     // (code)` is a call.
-    eval_sites::classify_eval_sites(source, &ignored)
+    eval_sites::classify_eval_sites(source, ignored)
         .into_iter()
         .filter(|site| site.kind == eval_sites::EvalSiteKind::DirectCall)
         .map(|site| site.start)
@@ -2067,8 +2072,13 @@ struct ChunkEvalCall {
 pub struct ChunkEvalIndex {
     /// Unshadowed direct `eval(...)` calls in source order.
     calls: Vec<ChunkEvalCall>,
-    /// Maximal runs of identifier characters in the chunk text; built on first
-    /// use, because only a chunk that holds an attributable call needs them.
+    /// Byte ranges of strings, template text, comments and regular expression
+    /// literals in the chunk text. Names that appear only there are not
+    /// retained bindings.
+    ignored: Vec<(usize, usize)>,
+    /// Maximal runs of identifier characters in the chunk's code; built on
+    /// first use, because only a chunk that holds an attributable call needs
+    /// them.
     words: std::cell::OnceCell<HashSet<String>>,
 }
 
@@ -2082,7 +2092,8 @@ impl ChunkEvalIndex {
     fn build(chunk: &crate::chunks::Chunk) -> Self {
         #[cfg(test)]
         CHUNK_SCANS.with(|scans| scans.set((scans.get().0 + 1, scans.get().1)));
-        let calls: Vec<ChunkEvalCall> = direct_eval_offsets(&chunk.code)
+        let ignored = non_code_ranges(&chunk.code);
+        let calls: Vec<ChunkEvalCall> = direct_eval_offsets_outside(&chunk.code, &ignored)
             .into_iter()
             .map(|offset| {
                 let source = chunk.map.as_ref().and_then(|_| {
@@ -2103,12 +2114,14 @@ impl ChunkEvalIndex {
         );
         Self {
             calls,
+            ignored,
             words: std::cell::OnceCell::new(),
         }
     }
 
-    /// Reports whether `name` appears in the chunk text as a whole identifier
-    /// (not as part of a longer one).
+    /// Reports whether `name` appears in the chunk's code as a whole identifier
+    /// (not as part of a longer one, and not inside a string, template text,
+    /// comment or regular expression literal).
     fn contains_word(&self, chunk: &crate::chunks::Chunk, name: &str) -> bool {
         static WORD: std::sync::LazyLock<Regex> =
             std::sync::LazyLock::new(|| Regex::new(r"[\w$]+").expect("static regex"));
@@ -2118,13 +2131,14 @@ impl ChunkEvalIndex {
             // Not an identifier: fall back to a bounded text search.
             let pattern = Regex::new(&format!(r"(^|[^\w$]){}([^\w$]|$)", regex::escape(name)))
                 .expect("escaped regex");
-            return pattern.is_match(&chunk.code);
+            return pattern.is_match(&mask_ignored(&chunk.code, &self.ignored));
         }
         self.words
             .get_or_init(|| {
                 #[cfg(test)]
                 CHUNK_SCANS.with(|scans| scans.set((scans.get().0, scans.get().1 + 1)));
                 WORD.find_iter(&chunk.code)
+                    .filter(|found| !in_ranges(&self.ignored, found.start()))
                     .map(|found| found.as_str().to_owned())
                     .collect()
             })
@@ -3520,6 +3534,19 @@ y=/process.env.F/.test(z),process.env.G"#;
             ("const longLocalName$ = 1;\neval(c);", false),
             ("const longLocalName_ = 1;\neval(c);", false),
             ("const a = 1;\neval(c);", false),
+            // Text in a string, template, comment or regular expression is not
+            // a retained binding.
+            ("log(\"longLocalName\");\neval(c);", false),
+            ("log('longLocalName');\neval(c);", false),
+            ("log(`longLocalName`);\neval(c);", false),
+            ("log(`x ${a} longLocalName`);\neval(c);", false),
+            ("/* longLocalName */\neval(c);", false),
+            ("// longLocalName\neval(c);", false),
+            ("/*! @license longLocalName */\neval(c);", false),
+            ("x = /longLocalName/.test(s);\neval(c);", false),
+            ("log(\"longLocalName\", longLocalName);\neval(c);", true),
+            ("log(`${longLocalName}`);\neval(c);", true),
+            ("log('a');\nlongLocalName();\neval(c);", true),
         ] {
             let drafts = eval_rule_drafts_for_chunk(
                 DEAD_EVAL_SOURCE,
