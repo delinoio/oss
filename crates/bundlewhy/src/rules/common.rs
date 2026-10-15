@@ -8,7 +8,7 @@ use std::{
 
 use regex::Regex;
 
-use super::{Context, DiagnosticDraft, RuleId};
+use super::{Context, DiagnosticDraft, RuleId, await_context::await_operator_offsets};
 use crate::{
     collect::CollectedModule,
     model::{Condition, ConditionOutcome, Evidence, EvidenceStatus},
@@ -128,7 +128,7 @@ fn reads_process_env(text: &str, name: &str) -> bool {
 }
 
 /// True for the four ECMAScript line terminators: LF, CR, U+2028 and U+2029.
-fn is_line_terminator(character: char) -> bool {
+pub(super) fn is_line_terminator(character: char) -> bool {
     matches!(character, '\n' | '\r' | '\u{2028}' | '\u{2029}')
 }
 
@@ -617,6 +617,8 @@ fn env_guards(
         return Vec::new();
     }
     let bytes = code.as_bytes();
+    // Classified once per chunk; every `await(` operand looks its answer up.
+    let await_operators = await_operator_offsets(code, ignored);
     let mut guards = vec![None; reads.len()];
     let mut blocked = vec![false; reads.len()];
     let mut contexts = vec![ScopeContext::Neutral; reads.len()];
@@ -696,6 +698,7 @@ fn env_guards(
                     scopes[current_scope].context,
                     scopes[current_scope].members,
                     ignored,
+                    &await_operators,
                 );
                 scopes.push(ScanScope {
                     parent: current_scope,
@@ -918,7 +921,7 @@ const UNARY_KEYWORDS: [&str; 4] = ["typeof", "await", "void", "delete"];
 ///
 /// Every scan that must tell a keyword from a longer name uses this one
 /// definition. Identifier escapes (`\u0069f`) are not decoded.
-fn is_identifier_part(character: char) -> bool {
+pub(super) fn is_identifier_part(character: char) -> bool {
     if character.is_ascii() {
         return character.is_ascii_alphanumeric() || matches!(character, '_' | '$');
     }
@@ -994,7 +997,7 @@ fn trailing_word(text: &str) -> &str {
 ///
 /// This is a lexical guess, not a parse. A brace that cannot be classified is
 /// treated as holding members, which keeps its keyword-named calls unguarded.
-fn brace_holds_members(code: &str, open: usize, ignored: &[(usize, usize)]) -> bool {
+pub(super) fn brace_holds_members(code: &str, open: usize, ignored: &[(usize, usize)]) -> bool {
     let prefix = strip_comments_for_prefix(code, open, ignored);
     if prefix.ends_with("=>") {
         return false;
@@ -1019,7 +1022,7 @@ fn brace_holds_members(code: &str, open: usize, ignored: &[(usize, usize)]) -> b
 /// Whether the statement head that ends at `end` contains the `class` keyword
 /// outside nested parentheses or brackets. The scan walks backwards and stops
 /// at the previous `;`, `{` or `}`, or at an unbalanced opener.
-fn class_heading_precedes(code: &str, end: usize, ignored: &[(usize, usize)]) -> bool {
+pub(super) fn class_heading_precedes(code: &str, end: usize, ignored: &[(usize, usize)]) -> bool {
     let mut depth = 0usize;
     // End offset of the identifier-like word being read backwards.
     let mut word_end: Option<usize> = None;
@@ -1054,181 +1057,6 @@ fn class_heading_precedes(code: &str, end: usize, ignored: &[(usize, usize)]) ->
     word_end.is_some_and(|finish| depth == 0 && is_class(0, finish))
 }
 
-/// Returns the start of the ignored range (string, template text, comment or
-/// regular expression) that contains `index`.
-fn ignored_range_start(ignored: &[(usize, usize)], index: usize) -> Option<usize> {
-    let position = ignored.partition_point(|(start, _)| *start <= index);
-    let (start, stop) = ignored[position.checked_sub(1)?];
-    (index < stop).then_some(start)
-}
-
-/// Returns the position of the bracket that opens the group closed at `close`,
-/// skipping ignored ranges.
-fn matching_opener(code: &str, close: usize, ignored: &[(usize, usize)]) -> Option<usize> {
-    let bytes = code.as_bytes();
-    let mut depth = 0usize;
-    let mut index = close;
-    while index > 0 {
-        index -= 1;
-        if let Some(start) = ignored_range_start(ignored, index) {
-            index = start;
-            continue;
-        }
-        match bytes[index] {
-            b')' | b']' | b'}' => depth += 1,
-            b'(' | b'[' | b'{' if depth == 0 => return Some(index),
-            b'(' | b'[' | b'{' => depth -= 1,
-            _ => {}
-        }
-    }
-    None
-}
-
-/// Returns the code before the identifier or keyword that ends `prefix`, with
-/// whitespace and comments removed, plus that trailing word.
-fn split_trailing_word<'a>(
-    code: &'a str,
-    prefix: &'a str,
-    ignored: &[(usize, usize)],
-) -> (&'a str, &'a str) {
-    let word_start = prefix
-        .char_indices()
-        .rev()
-        .take_while(|(_, character)| is_identifier_part(*character))
-        .last()
-        .map_or(prefix.len(), |(offset, _)| offset);
-    (
-        strip_comments_for_prefix(code, word_start, ignored),
-        &prefix[word_start..],
-    )
-}
-
-/// True when the arrow function whose `=>` starts at `arrow` is `async`.
-fn arrow_is_async(code: &str, arrow: usize, ignored: &[(usize, usize)]) -> bool {
-    let parameters = strip_comments_for_prefix(code, arrow, ignored);
-    let head = if parameters.ends_with(')') {
-        match matching_opener(code, parameters.len() - 1, ignored) {
-            Some(open) => strip_comments_for_prefix(code, open, ignored),
-            None => return false,
-        }
-    } else {
-        split_trailing_word(code, parameters, ignored).0
-    };
-    ends_with_control_keyword(code, head, "async", false, ignored)
-}
-
-/// Classifies the `{` at `brace` as a function body. Returns `Some(true)` for
-/// an async function, async arrow or async method body, `Some(false)` for any
-/// other function or method body, and `None` for a block, object literal or
-/// class body.
-fn function_body_is_async(code: &str, brace: usize, ignored: &[(usize, usize)]) -> Option<bool> {
-    let header = strip_comments_for_prefix(code, brace, ignored);
-    if let Some(arrow) = header.strip_suffix("=>") {
-        return Some(arrow_is_async(code, arrow.len(), ignored));
-    }
-    if !header.ends_with(')') {
-        return None;
-    }
-    let open = matching_opener(code, header.len() - 1, ignored)?;
-    let mut head = strip_comments_for_prefix(code, open, ignored);
-    if head.ends_with(']') {
-        // A computed method name: `async [name]() { ... }`.
-        let name_open = matching_opener(code, head.len() - 1, ignored)?;
-        head = strip_comments_for_prefix(code, name_open, ignored);
-    } else {
-        let (before, word) = split_trailing_word(code, head, ignored);
-        // A statement with a parenthesized head is a block, not a function.
-        if matches!(
-            word,
-            "" | "if" | "for" | "while" | "switch" | "catch" | "with" | "await"
-        ) {
-            return None;
-        }
-        // `function (...)`, `function name(...)`, `name(...)` (a method or an
-        // accessor) or `*name(...)`: continue before the name.
-        head = before;
-        if let Some(star) = head.strip_suffix('*') {
-            head = strip_comments_for_prefix(code, star.len(), ignored);
-        }
-        if ends_with_control_keyword(code, head, "function", false, ignored) {
-            head = strip_comments_for_prefix(code, head.len() - "function".len(), ignored);
-        }
-    }
-    Some(ends_with_control_keyword(
-        code, head, "async", false, ignored,
-    ))
-}
-
-/// True when the chunk contains module-only syntax: an `import` or `export`
-/// declaration, or `import.meta`. In a module, `await` is reserved everywhere.
-fn is_module_code(code: &str, ignored: &[(usize, usize)]) -> bool {
-    static MODULE_SYNTAX: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(concat!(
-            r#"(?:^|[;{}\n])\s*(import(?:\s+[\w$*{"']|\s*[*{"'])|export(?:\s+[\w$*{]|\s*[*{]))"#,
-            r"|(\bimport\s*\.\s*meta\b)"
-        ))
-        .expect("static regex")
-    });
-    MODULE_SYNTAX.captures_iter(code).any(|captures| {
-        captures
-            .get(1)
-            .or_else(|| captures.get(2))
-            .is_some_and(|keyword| ignored_range_start(ignored, keyword.start()).is_none())
-    })
-}
-
-/// True when `await` at `start` is the unary operator instead of an ordinary
-/// identifier.
-///
-/// `await` is reserved in a module and inside an `async` function body, and an
-/// ordinary identifier in classic script code (`function f(await) { await(x) }`
-/// calls `await`). The detector only treats it as the operator where the code
-/// proves that context: the chunk contains module syntax, or the nearest
-/// enclosing function (`async function`, `async` arrow or `async` method) is
-/// async. Anything else, including a plain function nested in an async
-/// function, is an ordinary call.
-fn await_is_keyword(code: &str, start: usize, ignored: &[(usize, usize)]) -> bool {
-    if is_module_code(code, ignored) {
-        return true;
-    }
-    let bytes = code.as_bytes();
-    let mut depth = 0usize;
-    // An expression-bodied arrow ends at a `,` or `;` of its own nesting level.
-    let mut arrow_body_open = true;
-    let mut index = start;
-    while index > 0 {
-        index -= 1;
-        if let Some(range_start) = ignored_range_start(ignored, index) {
-            index = range_start;
-            continue;
-        }
-        match bytes[index] {
-            b')' | b']' | b'}' => depth += 1,
-            b'(' | b'[' if depth == 0 => arrow_body_open = true,
-            b'(' | b'[' => depth -= 1,
-            b'{' if depth > 0 => depth -= 1,
-            b'{' => {
-                if let Some(is_async) = function_body_is_async(code, index, ignored) {
-                    return is_async;
-                }
-                arrow_body_open = true;
-            }
-            b',' | b';' if depth == 0 => arrow_body_open = false,
-            b'>' if depth == 0
-                && arrow_body_open
-                && index > 0
-                && bytes[index - 1] == b'='
-                && next_code_byte(bytes, index + 1, ignored).map(|(_, next)| next)
-                    != Some(b'{') =>
-            {
-                return arrow_is_async(code, index - 1, ignored);
-            }
-            _ => {}
-        }
-    }
-    false
-}
-
 fn scope_context(
     code: &str,
     index: usize,
@@ -1236,6 +1064,7 @@ fn scope_context(
     parent: ScopeContext,
     members: bool,
     ignored: &[(usize, usize)],
+    await_operators: &[usize],
 ) -> ScopeContext {
     let prefix = strip_comments_for_prefix(code, index, ignored);
     let last = prefix.chars().next_back();
@@ -1272,12 +1101,15 @@ fn scope_context(
     // surrounding context. A property or longer identifier ending in the same
     // letters (`obj.typeof(x)`, `mytypeof(x)`) is an ordinary call.
     //
-    // `await` is an operator only where the code proves a module or an async
-    // function; in classic script code `await(x)` is an ordinary call.
+    // `await` is an operator only where the token classifier proves a module
+    // or an async function; in classic script code `await(x)` is an ordinary
+    // call. The classifier ran once for the whole chunk.
     if UNARY_KEYWORDS.iter().any(|keyword| {
         ends_with_control_keyword(code, prefix, keyword, members, ignored)
             && (*keyword != "await"
-                || await_is_keyword(code, prefix.len() - keyword.len(), ignored))
+                || await_operators
+                    .binary_search(&(prefix.len() - keyword.len()))
+                    .is_ok())
     }) {
         return parent;
     }
@@ -4133,6 +3965,295 @@ y=/process.env.F/.test(z),process.env.G"#;
             // guard above comes from `await` being an identifier.
             let operator_code = code.replace("await(", "typeof(");
             assert_eq!(guard(&operator_code, read), condition, "{operator_code:?}");
+        }
+    }
+
+    const AWAIT_READ: &str = "process.env.FLAG";
+    const AWAIT_CONDITION: &str = "the retained read is in an if condition";
+
+    fn await_guard(code: &str) -> Option<&'static str> {
+        let start = code.find(AWAIT_READ).unwrap();
+        env_guard(
+            code,
+            start,
+            start + AWAIT_READ.len(),
+            &non_code_ranges(code),
+        )
+        .map(EnvGuard::evidence)
+    }
+
+    /// `await(` is an ordinary call in `code`. The same layout with `typeof`
+    /// keeps its guard, so the missing guard comes from the classification.
+    fn assert_await_is_a_call(code: &str) {
+        assert_eq!(await_guard(code), None, "{code:?}");
+        let operator_code = code.replace("await(", "typeof(");
+        assert_eq!(
+            await_guard(&operator_code),
+            Some(AWAIT_CONDITION),
+            "{operator_code:?}"
+        );
+    }
+
+    fn assert_await_is_an_operator(code: &str) {
+        assert_eq!(await_guard(code), Some(AWAIT_CONDITION), "{code:?}");
+    }
+
+    fn await_gate() -> String {
+        format!("if (await({AWAIT_READ})) run()")
+    }
+
+    #[test]
+    fn module_words_after_a_member_access_do_not_make_a_module() {
+        let gate = await_gate();
+        for prelude in [
+            "const u = obj.import.meta;",
+            "const u = obj?.import.meta;",
+            "const u = obj\n  .import\n  .meta;",
+            "const u = obj. /* c */ import /* d */ . meta;",
+            "const u = obj?. /* c */ import . meta;",
+            "const o = { import: 1, export: 2 };",
+            "class A { import() {} export() {} }",
+            "const p = import('a');",
+            "const e = obj.export;",
+        ] {
+            assert_await_is_a_call(&format!("{prelude}\n{gate}"));
+            assert_await_is_a_call(&format!("{prelude}\nfunction f() {{ {gate} }}"));
+        }
+    }
+
+    #[test]
+    fn comments_between_module_keywords_keep_the_module_context() {
+        let gate = await_gate();
+        for module_syntax in [
+            "export {};",
+            "export /* c */ {};",
+            "export // c\n{};",
+            "export\n{};",
+            "export /* c */ * from 'a';",
+            "export/**/*/**/from 'a';",
+            "export /* c */ default 1;",
+            "export /* c */ const x = 1;",
+            "export /* c */ function g() {}",
+            "import a from 'a';",
+            "import /* c */ a from 'a';",
+            "import /* c */ { a } from 'a';",
+            "import/**/{ a } from 'a';",
+            "import // c\n{ a } from 'a';",
+            "import /* c */ * as a from 'a';",
+            "import /* c */ 'a';",
+            "const u = import.meta.url;",
+            "const u = import . meta . url;",
+            "const u = import /* c */ . /* d */ meta;",
+            "const u = import\n.meta;",
+        ] {
+            assert_await_is_an_operator(&format!("{module_syntax}\n{gate}"));
+            assert_await_is_an_operator(&format!("{module_syntax}\nfunction f() {{ {gate} }}"));
+            // A statement or assignment after the guard would end its scan, so
+            // only declarations without either follow it.
+            let trailing = module_syntax.trim_end_matches(';');
+            if !trailing.contains('=') {
+                assert_await_is_an_operator(&format!("function f() {{ {gate} }} {trailing}"));
+            }
+        }
+    }
+
+    #[test]
+    fn async_followed_by_a_line_break_is_not_an_async_modifier() {
+        let gate = await_gate();
+        for code in [
+            format!("var async; async\nfunction f(await) {{ {gate} }}"),
+            format!("var async; async\nfunction* f() {{ {gate} }}"),
+            format!("var async; async\nx => {{ {gate} }}"),
+            format!("var async; async /*\n*/ function f(await) {{ {gate} }}"),
+            format!("var async; async // c\nfunction f(await) {{ {gate} }}"),
+            format!("class A {{ async\nm() {{ {gate} }} }}"),
+            format!("class A {{ async\n*g() {{ {gate} }} }}"),
+            format!("class A {{ static async\nm() {{ {gate} }} }}"),
+        ] {
+            assert_await_is_a_call(&code);
+        }
+        for code in [
+            format!("async /* c */ function f() {{ {gate} }}"),
+            format!("async\tfunction f() {{ {gate} }}"),
+            format!("async /* c */ x => {{ {gate} }}"),
+            format!("async /* c */ (x) => {{ {gate} }}"),
+            format!("class A {{ async /* c */ m() {{ {gate} }} }}"),
+        ] {
+            assert_await_is_an_operator(&code);
+        }
+    }
+
+    #[test]
+    fn string_and_private_method_names_keep_the_async_modifier() {
+        let gate = await_gate();
+        for code in [
+            format!("const o = {{ async \"load\"() {{ {gate} }} }}"),
+            format!("const o = {{ async 'load'() {{ {gate} }} }}"),
+            format!("const o = {{ async 42() {{ {gate} }} }}"),
+            format!("const o = {{ async *\"gen\"() {{ {gate} }} }}"),
+            format!("class C {{ async #load() {{ {gate} }} }}"),
+            format!("class C {{ static async #load() {{ {gate} }} }}"),
+            format!("class C {{ async \"load\"() {{ {gate} }} }}"),
+            format!("class C {{ static async 'a b'() {{ {gate} }} }}"),
+            format!("class C {{ async *#gen() {{ {gate} }} }}"),
+            format!("class C {{ async *\"gen\"() {{ {gate} }} }}"),
+            format!("class C {{ async get() {{ {gate} }} }}"),
+            format!("class C {{ async static() {{ {gate} }} }}"),
+            format!("class C {{ async [key]() {{ {gate} }} }}"),
+            format!("class C extends mix(B) {{ async #load() {{ {gate} }} }}"),
+        ] {
+            assert_await_is_an_operator(&code);
+        }
+        for code in [
+            format!("const o = {{ \"load\"() {{ {gate} }} }}"),
+            format!("const o = {{ 42() {{ {gate} }} }}"),
+            format!("class C {{ #load() {{ {gate} }} }}"),
+            format!("class C {{ static \"load\"() {{ {gate} }} }}"),
+            format!("class C {{ async; #load() {{ {gate} }} }}"),
+            format!("class C {{ async() {{ {gate} }} }}"),
+            format!("class C {{ static async() {{ {gate} }} }}"),
+            format!("class C {{ async = 1; \"load\"() {{ {gate} }} }}"),
+            format!("class C {{ get #p() {{ {gate} }} }}"),
+            format!("class C extends mix(B) {{ #load() {{ {gate} }} }}"),
+        ] {
+            assert_await_is_a_call(&code);
+        }
+    }
+
+    #[test]
+    fn a_concise_arrow_body_ends_at_a_line_break_that_starts_a_statement() {
+        let gate = await_gate();
+        for prelude in [
+            "const g = async () => 1",
+            "const g = async x => x",
+            "const g = async (a, b) => a + b",
+            "const g = async () => f(1)",
+            "const g = async () => [1, 2]",
+            "const g = async () => c ? 1 : 2",
+            "const g = async () => ({})",
+            "const g = async () => 'x'",
+            "const g = async () => `x`",
+            "const g = async x => y => 1",
+            "const g = async () => 1 // note",
+            "const g = async () => 1 /* note */",
+            "const g = async () => x++",
+            "const h = c ? async () => 1 : 2",
+            "const o = { a: async () => 1, b: 2 }",
+            "foo(async () => 1)",
+            "foo(async () => 1, async () => 2)",
+            "const g = async () => 1\nconst h = async () => 2",
+        ] {
+            assert_await_is_a_call(&format!("{prelude}\n{gate}"));
+            assert_await_is_a_call(&format!("{prelude};\n{gate}"));
+            assert_await_is_a_call(&format!("{prelude}\nfunction f() {{ {gate} }}"));
+        }
+    }
+
+    /// Offsets of the `await(` operators that the classifier finds in `code`.
+    fn await_operators_in(code: &str) -> Vec<usize> {
+        await_operator_offsets(code, &non_code_ranges(code))
+    }
+
+    #[test]
+    fn a_concise_async_arrow_body_continues_across_line_breaks() {
+        for code in [
+            "const g = async () => await(x) && run()",
+            "const g = async () =>\n  await(x) && run()",
+            "const g = async () => 1 +\n  (await(x) && run())",
+            "const g = async () => f\n  (await(x) && run())",
+            "const g = async () => c\n  ? 1\n  : (await(x) && run())",
+            "const g = async () => a.b\n  .c(await(x))",
+            "foo(async () => 1, async () => await(x) && run())",
+            "const g = c ? async () => 1 : async () => await(x) && run()",
+            "const g = async () => c ? 1 : a ? 2 : await(x) && run()",
+            "const g = async () => `a${await(x)}`",
+            "const g = async () => 1 // note\n  + await(x)",
+            "const g = async () => {} \n; foo(async () => await(x))",
+        ] {
+            assert_eq!(await_operators_in(code).len(), 1, "{code:?}");
+        }
+        for code in [
+            "const g = () => await(x) && run()",
+            "const g = async x => y => await(x) && run()",
+            "const g = async () => () => await(x)",
+            "const g = async () => 1\nawait(x) && run()",
+            "const g = async () => c ? 1 : 2\nawait(x) && run()",
+            "const g = async () => 1;\nawait(x) && run()",
+            "const g = async () => 1\n+await(x)",
+            "const g = async () => 1\nfoo(async () => 2)\nawait(x)",
+            "const g = async () => c ? 1 : 2, h = await(x)",
+            "foo(async () => 1, await(x))",
+            "const o = { a: async () => 1, b: await(x) }",
+            "const g = c ? async () => 1 : await(x)",
+            "const g = async () => `a${1}`\nawait(x)",
+        ] {
+            // `+await(x)` after a line break continues the expression, so the
+            // arrow body is still open there.
+            let expected = usize::from(code.contains("1\n+await"));
+            assert_eq!(await_operators_in(code).len(), expected, "{code:?}");
+        }
+    }
+
+    #[test]
+    fn every_await_operand_reuses_one_classification_per_chunk() {
+        let mut code = String::new();
+        for index in 0..1500 {
+            code.push_str(&format!(
+                "function s{index}() {{ if (await(process.env.FLAG_{index})) run() }} async \
+                 function a{index}() {{ if (await(process.env.FLAG_{index})) run() }} "
+            ));
+        }
+        let ignored = non_code_ranges(&code);
+        let operators = await_operator_offsets(&code, &ignored);
+        assert_eq!(operators.len(), 1500);
+        assert!(operators.windows(2).all(|pair| pair[0] < pair[1]));
+        let reads: Vec<(usize, usize)> = Regex::new(r"process\.env\.FLAG_\d+")
+            .unwrap()
+            .find_iter(&code)
+            .map(|found| (found.start(), found.end()))
+            .collect();
+        assert_eq!(env_guards(&code, &reads, &ignored).len(), 3000);
+        // Module syntax at the end of the chunk makes every operand an
+        // operator.
+        code.push_str("export {}");
+        let ignored = non_code_ranges(&code);
+        assert_eq!(await_operator_offsets(&code, &ignored).len(), 3000);
+    }
+
+    #[test]
+    fn keyword_named_methods_and_unparsed_headers_keep_await_a_call() {
+        let gate = await_gate();
+        // A method named like a statement keyword is not a statement block, so
+        // it does not inherit the surrounding `async` function.
+        for code in [
+            format!("async function outer() {{ const o = {{ if(a) {{ {gate} }} }}; }}"),
+            format!("async function outer() {{ class C {{ while(a) {{ {gate} }} }} }}"),
+            format!("async function outer() {{ class C {{ static for(a) {{ {gate} }} }} }}"),
+            // Known limit: a labeled block looks like an object literal.
+            format!("async function outer() {{ out: {{ if (a) {{ {gate} }} }} }}"),
+            // Known limit: identifier escapes are not decoded.
+            format!("async function f() {{ if (aw\\u0061it({AWAIT_READ})) run() }}"),
+            format!("\\u0061sync function f() {{ {gate} }}"),
+            format!("const f = \\u0061sync () => {{ {gate} }}"),
+            // Known limit: a return type annotation hides the function header.
+            format!("async function f(): Promise<void> {{ {gate} }}"),
+        ] {
+            assert_eq!(await_guard(&code), None, "{code:?}");
+        }
+        for code in [
+            format!("async function outer() {{ if (a) {{ {gate} }} }}"),
+            format!("async function outer() {{ while (a) {{ {gate} }} }}"),
+            format!("async function outer() {{ for (;;) {{ {gate} }} }}"),
+            format!("async function outer() {{ switch (a) {{ default: {gate} }} }}"),
+            format!("async function outer() {{ try {{ x() }} catch (e) {{ {gate} }} }}"),
+            format!(
+                "async function outer() {{ class C {{ m() {{ if (a) {{ run() }} }} }} {gate} }}"
+            ),
+            format!("class C {{ async if(a) {{ {gate} }} }}"),
+            format!("class C {{ static async for(a) {{ {gate} }} }}"),
+            format!("class C {{ async *while(a) {{ {gate} }} }}"),
+        ] {
+            assert_await_is_an_operator(&code);
         }
     }
 

@@ -5,6 +5,7 @@
 //! reported or that its output shows; everything derived by bundlewhy is
 //! `Inferred` and says which evidence supports it.
 
+mod await_context;
 pub mod common;
 pub mod export_usage;
 pub mod rspack;
