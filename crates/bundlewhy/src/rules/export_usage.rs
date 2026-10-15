@@ -9,7 +9,10 @@
 //! Every note shown for an unavailable state comes from a fixed set: the
 //! constants and `reason_note` below. No adapter or engine text is displayed.
 
-use std::collections::{HashMap, VecDeque};
+use std::{
+    collections::{HashMap, VecDeque},
+    path::Path,
+};
 
 use super::Context;
 use crate::{
@@ -18,6 +21,7 @@ use crate::{
         ExportReference, ExportScope, ExportUsage, ExportUsageEdge, ExportUsagePath,
         ExportUsagePathEnd, ExportUsageState, ExportUsageTruncation,
     },
+    sources::sha256_hex,
 };
 
 /// Most chains kept for one diagnostic.
@@ -262,7 +266,7 @@ pub fn build(context: &Context<'_>, module_id: &str) -> ExportUsage {
         .get_or_init(|| ExportUsageIndex::new(usage));
     let (result, stats) = traverse_with_stats(context, index, module_id, Limits::DEFAULT);
     tracing::debug!(
-        module = module_id,
+        module = %log_label(context, module_id),
         state = ?result.state,
         paths = result.paths.len(),
         incomplete_paths = result
@@ -279,6 +283,23 @@ pub fn build(context: &Context<'_>, module_id: &str) -> ExportUsage {
         "export usage paths derived"
     );
     result
+}
+
+/// Label of a module for logs. A bundler module identifier can carry inline
+/// loader options or resource queries, which can hold credentials or values
+/// of the local environment, so the raw identifier is never logged. A
+/// collected module is named by its display path (the resource path without
+/// query or loader options); any other identifier is named by a prefix of its
+/// SHA-256 digest, which identifies it within one log without revealing it.
+fn log_label(context: &Context<'_>, module_id: &str) -> String {
+    match context
+        .modules
+        .get(module_id)
+        .and_then(|module| module.path.as_deref())
+    {
+        Some(path) => context.display_path(Path::new(path)),
+        None => format!("module-{}", &sha256_hex(module_id.as_bytes())[..16]),
+    }
 }
 
 /// Records the first limit that cut the traversal short; later limits do not
@@ -499,12 +520,15 @@ fn display_edge(context: &Context<'_>, edge: &CollectedExportEdge) -> ExportUsag
 mod tests {
     use std::{
         path::PathBuf,
-        sync::atomic::{AtomicUsize, Ordering},
+        sync::{
+            Arc, Mutex,
+            atomic::{AtomicUsize, Ordering},
+        },
     };
 
     use super::*;
     use crate::{
-        collect::{CollectedSkippedProvider, Collection},
+        collect::{CollectedModule, CollectedSkippedProvider, Collection},
         sources::SourceStore,
     };
 
@@ -1667,5 +1691,75 @@ mod tests {
         let (_, stats) = run_cancellable(&collection(edges), "leaf", Some(3));
         assert!(stats.cancelled);
         assert_eq!(stats.expansions, 3);
+    }
+
+    #[derive(Clone)]
+    struct LogWriter(Arc<Mutex<Vec<u8>>>);
+
+    impl std::io::Write for LogWriter {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    /// The debug log written while deriving paths for `module_id`.
+    fn log_for(modules: Vec<CollectedModule>, module_id: &str) -> String {
+        let logs = Arc::new(Mutex::new(Vec::new()));
+        let writer = logs.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .with_ansi(false)
+            .with_max_level(tracing::Level::DEBUG)
+            .with_writer(move || LogWriter(writer.clone()))
+            .finish();
+        let _guard = tracing::subscriber::set_default(subscriber);
+        let mut data = collection(vec![edge(("a", Some(A)), (module_id, Some(B)), "1")]);
+        data.modules = modules;
+        build_for(&data, module_id);
+        let bytes = logs.lock().unwrap().clone();
+        String::from_utf8(bytes).unwrap()
+    }
+
+    /// What the debug log names for a module. Mirrors the logging table in
+    /// the contract: never the raw identifier.
+    #[test]
+    fn the_log_never_names_the_raw_module_identifier() {
+        let secret = "/project/src/app.js?token=hunter2";
+        let loader =
+            "/project/node_modules/loader.js??ruleSet[1].rules[0].use[0]!/project/src/app.js";
+        let collected = |id: &str, path: Option<&str>| CollectedModule {
+            id: id.to_owned(),
+            path: path.map(str::to_owned),
+            ..CollectedModule::default()
+        };
+        // A collected module with a path is named by its display path.
+        let log = log_for(vec![collected(secret, Some("/project/src/app.js"))], secret);
+        assert!(log.contains("module=src/app.js"), "{log}");
+        assert!(!log.contains("hunter2"), "{log}");
+        // A collected module without a path and a module that was not
+        // collected are named by a digest prefix.
+        for modules in [vec![collected(loader, None)], Vec::new()] {
+            let log = log_for(modules, loader);
+            assert!(log.contains("module=module-"), "{log}");
+            assert!(!log.contains("ruleSet"), "{log}");
+            assert!(!log.contains("loader.js"), "{log}");
+        }
+        // The digest is stable for one identifier and differs between two.
+        let empty = Collection::default();
+        let context = Context::new(
+            &empty,
+            PathBuf::from("/project"),
+            "project".to_owned(),
+            Vec::new(),
+            SourceStore::new(false),
+        );
+        let first = log_label(&context, secret);
+        assert_eq!(first, log_label(&context, secret));
+        assert_ne!(first, log_label(&context, loader));
+        assert_eq!(first.len(), "module-".len() + 16);
     }
 }
