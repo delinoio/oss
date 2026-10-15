@@ -514,7 +514,6 @@
   }
 }
 @container (width < 640px) {
-  .settings-content[aria-label] .account-provider-choices,
   .settings-content[aria-label] .agent-core-columns {
     grid-template-columns: minmax(0, 1fr);
   }

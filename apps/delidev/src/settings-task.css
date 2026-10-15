@@ -234,11 +234,7 @@ dialog.settings-task-dialog {
 }
 @container settings-body (width < 640px) {
   .settings-task-body
-    :is(
-      .account-provider-choices,
-      .agent-core-columns,
-      .integration-form-grid
-    ) {
+    :is(.agent-core-columns, .integration-form-grid) {
     grid-template-columns: minmax(0, 1fr);
   }
 }

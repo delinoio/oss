@@ -3387,22 +3387,35 @@ dialog nav {
 .account-wizard > p {
   color: var(--muted);
 }
-.account-provider-choices {
+/* The picker is always one full-width column. Scroll continuation wraps each
+   reached page in a data-payload-page element, so those wrappers use the same
+   single-column stack and gap as the list itself. */
+.account-provider-choices,
+.account-provider-choices > [data-payload-page] {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 12px;
+  gap: 10px;
+}
+.account-provider-choices {
+  width: 100%;
+  max-width: 720px;
   margin-block: 16px;
+}
+.account-provider-choices > [data-payload-page] {
+  min-width: 0;
 }
 .account-provider-action {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  box-sizing: border-box;
+  width: 100%;
   min-width: 0;
-  min-height: 88px;
-  padding: 16px;
+  min-height: 64px;
+  padding: 12px;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: 8px;
   background: var(--surface);
   color: var(--text);
   text-align: left;
@@ -3417,8 +3430,9 @@ dialog nav {
 }
 .account-provider-method {
   display: block;
-  margin-top: 6px;
+  margin-top: 4px;
   color: var(--muted);
+  font-size: 12px;
 }
 .account-provider-chevron {
   flex: 0 0 auto;
@@ -3433,11 +3447,6 @@ dialog nav {
 .account-wizard h4:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 3px;
-}
-@container (min-width: 560px) {
-  .account-provider-choices {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 .subscription-account-create {
   margin-top: 22px;
