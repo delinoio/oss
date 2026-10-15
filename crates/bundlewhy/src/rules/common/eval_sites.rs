@@ -9,13 +9,18 @@
 //!
 //! Every keyword decision (`class`, `function`, `interface`, `type`, the
 //! operator keywords and the modifiers) is made on a `Word` token, which is
-//! not a member name after `.` or `?.` (a `Property` token) and not a string,
-//! a template, a comment or a regular expression (a `Value` token).
+//! neither a member name after `.` or `?.` (a `Property` token) nor part of
+//! JSX text, a JSX tag, a string, a template, a comment or a regular
+//! expression. Strings, templates, comments and regular expressions arrive as
+//! `Value` tokens; the scanner tracks JSX tags and JSX text with dedicated
+//! frames and reads no keyword inside them.
 //!
 //! The pass is a lexical scan, not a parser. When a construct needs a real
 //! parser to decide, the token is reported as a direct call so that a possible
 //! direct `eval` is never hidden. The documented known limits are pinned by
 //! tests at the end of this file.
+
+use std::collections::HashMap;
 
 /// What an `eval` identifier followed by `(` is.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -50,6 +55,7 @@ pub(super) fn classify_eval_sites(source: &str, ignored: &[(usize, usize)]) -> V
         tokens: &tokens,
         stack: vec![Frame::new(FrameKind::Block, TypeMode::None, false)],
         sites: Vec::new(),
+        closing_tags: closing_tags(&tokens),
     };
     for index in 0..tokens.len() {
         scanner.step(index);
@@ -319,6 +325,25 @@ const MEMBER_MODIFIERS: &[&str] = &[
     "accessor",
 ];
 
+/// Words after which a `<` starts a JSX element instead of a comparison, a
+/// type argument list or a shift.
+const JSX_START_KEYWORDS: &[&str] = &[
+    "return",
+    "default",
+    "case",
+    "yield",
+    "await",
+    "typeof",
+    "void",
+    "delete",
+    "throw",
+    "in",
+    "of",
+    "else",
+    "do",
+    "instanceof",
+];
+
 /// Words that can precede a declaration at statement start.
 const STATEMENT_MODIFIERS: &[&str] = &["export", "declare", "abstract", "default"];
 
@@ -423,6 +448,13 @@ enum FrameKind {
     Bracket,
     /// A template literal substitution.
     Template,
+    /// The inside of a JSX tag, from its `<` to its `>`.
+    JsxTag,
+    /// The children of a JSX element. Everything here is JSX text except `{`
+    /// and `<`.
+    JsxChildren,
+    /// The `{ ... }` container of a JSX attribute value, spread or child.
+    JsxExpr,
 }
 
 impl FrameKind {
@@ -491,6 +523,12 @@ struct Frame<'a> {
     closes_statement: bool,
     /// Index of the last `function` word that was read as the keyword.
     function_at: Option<usize>,
+    /// A JSX tag frame is a closing tag (`</name>`).
+    jsx_closing: bool,
+    /// Unmatched `<` inside a JSX tag, such as type arguments.
+    jsx_angle: usize,
+    /// The first word of a JSX tag name; empty for a fragment.
+    jsx_name: &'a str,
 }
 
 impl<'a> Frame<'a> {
@@ -509,6 +547,9 @@ impl<'a> Frame<'a> {
             statement_first: None,
             closes_statement,
             function_at: None,
+            jsx_closing: false,
+            jsx_angle: 0,
+            jsx_name: "",
         }
     }
 
@@ -533,6 +574,28 @@ struct Scanner<'a> {
     tokens: &'a [Token<'a>],
     stack: Vec<Frame<'a>>,
     sites: Vec<EvalSite>,
+    /// Token index of every `</name` by the first word of its name; a closing
+    /// fragment `</>` is listed under the empty name.
+    closing_tags: HashMap<&'a str, Vec<usize>>,
+}
+
+/// The longest JSX tag, in tokens, whose end is searched for.
+const MAX_JSX_TAG_TOKENS: usize = 4096;
+
+fn closing_tags<'a>(tokens: &[Token<'a>]) -> HashMap<&'a str, Vec<usize>> {
+    let mut closing: HashMap<&'a str, Vec<usize>> = HashMap::new();
+    for (index, token) in tokens.iter().enumerate() {
+        if !token.is_punct("<") || !tokens.get(index + 1).is_some_and(|next| next.is_punct("/")) {
+            continue;
+        }
+        let name = match tokens.get(index + 2) {
+            Some(name) if name.kind == TokenKind::Word => name.text,
+            Some(name) if name.is_punct(">") => "",
+            _ => continue,
+        };
+        closing.entry(name).or_default().push(index);
+    }
+    closing
 }
 
 impl<'a> Scanner<'a> {
@@ -562,10 +625,14 @@ impl<'a> Scanner<'a> {
         self.apply_line_break(index);
         let before = self.count_token(token);
         self.record_site(index);
-        match token.kind {
-            TokenKind::Word | TokenKind::Property => self.word(index),
-            TokenKind::Private | TokenKind::Value => self.operand(),
-            TokenKind::Punct => self.punct(index, before),
+        match self.top().kind {
+            FrameKind::JsxChildren => self.jsx_text(index),
+            FrameKind::JsxTag => self.jsx_tag(index),
+            _ => match token.kind {
+                TokenKind::Word | TokenKind::Property => self.word(index),
+                TokenKind::Private | TokenKind::Value => self.operand(),
+                TokenKind::Punct => self.punct(index, before),
+            },
         }
         if matches!(token.template, TemplateEdge::Open | TemplateEdge::Middle) {
             self.stack
@@ -717,27 +784,13 @@ impl<'a> Scanner<'a> {
 
     // -- Words -------------------------------------------------------------
 
-    /// Reports whether the `class` word at `index` starts a class header
-    /// instead of being a JSX tag or attribute name (`<class-list>`,
-    /// `<div class="a">`).
+    /// Reports whether the `class` word at `index` starts a class header.
     ///
-    /// A class header is `class`, an optional name, and then `{`, a type
-    /// parameter list, `extends` or `implements`. A tag name is also rejected
-    /// by its position after `<` or `</`. A boolean attribute followed by a
-    /// spread (`<div class {...props}>`) has the shape of an anonymous class;
-    /// the spread then closes as an empty body and the next brace is a block,
-    /// so a direct call stays visible.
+    /// The caller passes only a `Word` token read in code, so JSX tag names,
+    /// attribute names, JSX text and member names never get here. A class
+    /// header is `class`, an optional name, and then `{`, a type parameter
+    /// list, `extends` or `implements`.
     fn class_header_follows(&self, index: usize) -> bool {
-        let opens_tag = match self.previous(index) {
-            Some(previous) if previous.is_punct("<") => true,
-            Some(previous) if previous.is_punct("/") => index
-                .checked_sub(2)
-                .is_some_and(|before| self.tokens[before].is_punct("<")),
-            _ => false,
-        };
-        if opens_tag {
-            return false;
-        }
         let mut next = index + 1;
         if self.tokens.get(next).is_some_and(|name| {
             name.kind == TokenKind::Word && !matches!(name.text, "extends" | "implements")
@@ -856,6 +909,14 @@ impl<'a> Scanner<'a> {
                 }
             }
             "=" => self.assignment(),
+            "<" if self.starts_jsx_tag(index) => {
+                self.open_jsx_tag(index);
+                if let Some(parent) = self.stack.iter_mut().rev().nth(1)
+                    && parent.kind.has_members()
+                {
+                    parent.member_start = false;
+                }
+            }
             "=>" => {
                 let top = self.top_mut();
                 if top.kind == FrameKind::Block && top.type_mode == TypeMode::Annotation {
@@ -914,6 +975,174 @@ impl<'a> Scanner<'a> {
                     top.member_start = false;
                 }
             }
+        }
+    }
+
+    // -- JSX ---------------------------------------------------------------
+
+    /// Reports whether the `<` at `index`, read in code, opens a JSX tag
+    /// instead of being a comparison, a shift, a type argument list or a
+    /// TypeScript generic arrow function.
+    fn starts_jsx_tag(&self, index: usize) -> bool {
+        if self.top().in_type() {
+            return false;
+        }
+        let after_value = match self.previous(index) {
+            None => false,
+            Some(previous) => match previous.kind {
+                TokenKind::Punct => {
+                    matches!(previous.text, ")" | "]" | "}" | "++" | "--" | ">" | "<")
+                }
+                TokenKind::Word => !JSX_START_KEYWORDS.contains(&previous.text),
+                TokenKind::Value | TokenKind::Private | TokenKind::Property => true,
+            },
+        };
+        if after_value {
+            return false;
+        }
+        let name = match self.tokens.get(index + 1) {
+            Some(next) if next.is_punct(">") => "",
+            Some(next) if next.kind == TokenKind::Word => {
+                // `<T,>(x) => x`, `<T extends U>(x) => x` and `<T = U>(x) => x`
+                // are generic arrow functions.
+                if self.tokens.get(index + 2).is_some_and(|after| {
+                    after.is_punct(",") || after.is_punct("=") || after.is_word("extends")
+                }) {
+                    return false;
+                }
+                next.text
+            }
+            _ => return false,
+        };
+        // A TypeScript type assertion (`<T>value`) or generic arrow function
+        // (`<T>(value) => value`) has the shape of an opening tag. An element
+        // is real when its tag is self-closing or a closing tag with the same
+        // name follows it.
+        let Some(end) = self.jsx_tag_end(index) else {
+            return true;
+        };
+        self.tokens[end - 1].is_punct("/")
+            || self
+                .closing_tags
+                .get(name)
+                .is_some_and(|closing| closing.last().is_some_and(|last| *last > end))
+    }
+
+    /// The index of the `>` that ends the tag opened by the `<` at `index`,
+    /// skipping attribute containers and type arguments.
+    fn jsx_tag_end(&self, index: usize) -> Option<usize> {
+        let mut braces = 0usize;
+        let mut angles = 0usize;
+        for (offset, token) in self
+            .tokens
+            .iter()
+            .enumerate()
+            .skip(index + 1)
+            .take(MAX_JSX_TAG_TOKENS)
+        {
+            if token.kind != TokenKind::Punct {
+                continue;
+            }
+            match token.text {
+                "{" => braces += 1,
+                "}" => braces = braces.checked_sub(1)?,
+                "<" if braces == 0 => angles += 1,
+                ">" if braces == 0 => match angles.checked_sub(1) {
+                    Some(rest) => angles = rest,
+                    None => return Some(offset),
+                },
+                _ => {}
+            }
+        }
+        None
+    }
+
+    /// Pushes the frame of the JSX tag that starts at the `<` at `index`.
+    fn open_jsx_tag(&mut self, index: usize) {
+        let closing = self
+            .tokens
+            .get(index + 1)
+            .is_some_and(|next| next.is_punct("/"));
+        let name_index = index + if closing { 2 } else { 1 };
+        let mut frame = Frame::new(FrameKind::JsxTag, TypeMode::None, false);
+        frame.jsx_closing = closing;
+        frame.jsx_name = self
+            .tokens
+            .get(name_index)
+            .filter(|name| name.kind == TokenKind::Word)
+            .map_or("", |name| name.text);
+        self.stack.push(frame);
+    }
+
+    /// Reads a token inside JSX text: only `{` and `<` are code. A `}` ends the
+    /// text of an element that was opened by mistake.
+    fn jsx_text(&mut self, index: usize) {
+        let token = self.token(index);
+        if token.kind != TokenKind::Punct {
+            return;
+        }
+        match token.text {
+            "{" => self.push_jsx_expr(),
+            "<" => self.open_jsx_tag(index),
+            "}" => self.close_delimiter("}"),
+            _ => {}
+        }
+    }
+
+    /// Reads a token inside a JSX tag: only `{` and the closing `>` matter.
+    fn jsx_tag(&mut self, index: usize) {
+        let token = self.token(index);
+        if token.kind != TokenKind::Punct {
+            return;
+        }
+        match token.text {
+            "{" => self.push_jsx_expr(),
+            "<" => self.top_mut().jsx_angle += 1,
+            ">" if self.top().jsx_angle > 0 => self.top_mut().jsx_angle -= 1,
+            ">" => self.close_jsx_tag(index),
+            _ => {}
+        }
+    }
+
+    fn push_jsx_expr(&mut self) {
+        self.stack
+            .push(Frame::new(FrameKind::JsxExpr, TypeMode::None, false));
+    }
+
+    /// Ends the tag at the top of the stack. An opening tag starts the text of
+    /// its element, a self-closing tag ends with it, and a closing tag ends
+    /// the text of the nearest open element with the same name.
+    fn close_jsx_tag(&mut self, index: usize) {
+        let Some(tag) = self.stack.pop() else {
+            return;
+        };
+        let self_closing = !tag.jsx_closing
+            && self
+                .previous(index)
+                .is_some_and(|previous| previous.is_punct("/"));
+        if self_closing {
+            return;
+        }
+        if !tag.jsx_closing {
+            let mut children = Frame::new(FrameKind::JsxChildren, TypeMode::None, false);
+            children.jsx_name = tag.jsx_name;
+            self.stack.push(children);
+            return;
+        }
+        let mut found = None;
+        for (position, frame) in self.stack.iter().enumerate().rev() {
+            match frame.kind {
+                FrameKind::JsxChildren if frame.jsx_name == tag.jsx_name => {
+                    found = Some(position);
+                    break;
+                }
+                // Elements opened by mistake sit above the one that closes.
+                FrameKind::JsxChildren | FrameKind::JsxTag => {}
+                _ => break,
+            }
+        }
+        if let Some(position) = found {
+            self.stack.truncate(position);
         }
     }
 
@@ -981,7 +1210,7 @@ impl<'a> Scanner<'a> {
         let matches_kind = |kind: FrameKind| match text {
             ")" => kind == FrameKind::Paren,
             "]" => kind == FrameKind::Bracket,
-            _ => kind.is_brace(),
+            _ => kind.is_brace() || kind == FrameKind::JsxExpr,
         };
         // Search down to, but not into, the root frame and a template frame;
         // an unbalanced closer is ignored.
@@ -1037,7 +1266,10 @@ impl<'a> Scanner<'a> {
             }
             FrameKind::Paren | FrameKind::Bracket => top.type_mode = TypeMode::None,
             FrameKind::ObjectLiteral | FrameKind::TypeBody => top.member_start = false,
-            FrameKind::Template => {}
+            FrameKind::Template
+            | FrameKind::JsxTag
+            | FrameKind::JsxChildren
+            | FrameKind::JsxExpr => {}
         }
     }
 
@@ -1073,7 +1305,11 @@ impl<'a> Scanner<'a> {
             }
             FrameKind::Paren => top.type_mode = TypeMode::Annotation,
             FrameKind::ObjectLiteral | FrameKind::TypeBody => top.member_start = false,
-            FrameKind::Bracket | FrameKind::Template => {}
+            FrameKind::Bracket
+            | FrameKind::Template
+            | FrameKind::JsxTag
+            | FrameKind::JsxChildren
+            | FrameKind::JsxExpr => {}
         }
     }
 }
@@ -1299,6 +1535,179 @@ mod tests {
             (
                 "const C = class implements I { eval(v) {} };",
                 &[DECLARATION],
+            ),
+        ]);
+    }
+
+    #[test]
+    fn jsx_text_is_never_read_as_code() {
+        assert_table(&[
+            // Class-shaped text is not a class header, so the `{` of the next
+            // expression container does not open a class body.
+            (
+                "const view = <div>class C <span>{eval(code)}</span></div>;",
+                &[CALL],
+            ),
+            (
+                "const view = <div>class C<T> <span>{eval(code)}</span></div>;",
+                &[CALL],
+            ),
+            (
+                "const view = <div>class C extends B <span>{eval(code)}</span></div>;",
+                &[CALL],
+            ),
+            (
+                "const view = <div>class C implements I {{eval(code)}}</div>;",
+                &[CALL],
+            ),
+            ("const view = <div>class {{eval(code)}}</div>;", &[CALL]),
+            ("const view = <p>class Foo {</p>;\neval(code);", &[CALL]),
+            (
+                "const view = <p>class Foo extends Bar {</p>;\neval(code);",
+                &[CALL],
+            ),
+            (
+                "const view = <p title=\"class Foo {\">{eval(code)}</p>;",
+                &[CALL],
+            ),
+            (
+                "const view = <p title='class Foo extends B {'>{eval(code)}</p>;",
+                &[CALL],
+            ),
+            ("const view = <>class C <b>{eval(code)}</b></>;", &[CALL]),
+            (
+                "const view = <a><b>class C</b>class D extends E</a>;\neval(code);",
+                &[CALL],
+            ),
+            ("const view = <a>class C <b /> {eval(code)}</a>;", &[CALL]),
+            (
+                "const view = <a>class C <b.c d=\"1\" /> {eval(code)}</a>;",
+                &[CALL],
+            ),
+            (
+                "const view = <A<string> value=\"x\">class C <b>{eval(code)}</b></A>;",
+                &[CALL],
+            ),
+            (
+                "const view = <a onClick={() => { eval(code) }}>class C extends D</a>;",
+                &[CALL],
+            ),
+            (
+                "const view = <a>{ok ? <b>class C </b> : <i>{eval(code)}</i>}</a>;",
+                &[CALL],
+            ),
+            (
+                "function view() { return <a>class C <b>{eval(code)}</b></a>; }",
+                &[CALL],
+            ),
+            (
+                "const view = cond && <a>class C <b>{eval(code)}</b></a>;",
+                &[CALL],
+            ),
+            (
+                "const view = list.map((item) => <a>class C <b>{eval(item)}</b></a>);",
+                &[CALL],
+            ),
+            // Text that mentions `function eval` is text; an `eval(` token in
+            // it is still reported as a possible call.
+            ("const view = <p>function eval(code) {</p>;", &[CALL]),
+            // Real code inside an expression container is still code.
+            (
+                "const view = <a>{class { eval(v) {} }}</a>;",
+                &[DECLARATION],
+            ),
+            ("const view = <a>{{ eval(v) {} }}</a>;", &[DECLARATION]),
+            (
+                "const view = <a title={{ eval(v) {} }.eval} />;",
+                &[DECLARATION],
+            ),
+            // The text of an element ends with its closing tag.
+            (
+                "const view = <p>class C {</p>;\nclass D { eval(v) {} }",
+                &[DECLARATION],
+            ),
+            (
+                "const view = <p>class C <b>x</b> extends D</p>;\nclass D { eval(v) {} }",
+                &[DECLARATION],
+            ),
+            (
+                "const view = <a><b>text</b></a>;\nclass D { eval(v) {} }",
+                &[DECLARATION],
+            ),
+            (
+                "const view = <br />;\nclass D { eval(v) {} }",
+                &[DECLARATION],
+            ),
+            (
+                "const view = <A<B> />;\nclass D { eval(v) {} }",
+                &[DECLARATION],
+            ),
+            (
+                "const view = <a>{x}</a>;\nconst o = { eval(v) {} };",
+                &[DECLARATION],
+            ),
+            // A `<` that is not a JSX tag keeps the code reading.
+            (
+                "if (a < b) { run(); }\nclass C { eval(v) {} }",
+                &[DECLARATION],
+            ),
+            ("const n = a << b;\nclass C { eval(v) {} }", &[DECLARATION]),
+            (
+                "const n = a <= b, m = c < d;\nclass C { eval(v) {} }",
+                &[DECLARATION],
+            ),
+            (
+                "const list: Array<string> = [];\nclass C { eval(v) {} }",
+                &[DECLARATION],
+            ),
+            (
+                "const f = <T,>(value: T) => value;\nclass C { eval(v) {} }",
+                &[DECLARATION],
+            ),
+            (
+                "const f = <T extends U>(value: T) => value;\nclass C { eval(v) {} }",
+                &[DECLARATION],
+            ),
+            (
+                "const f = <T = U>(value: T) => value;\nclass C { eval(v) {} }",
+                &[DECLARATION],
+            ),
+            (
+                "const f = async <T,>(value: T) => value;\nclass C { eval(v) {} }",
+                &[DECLARATION],
+            ),
+            ("const C = class<T> { eval(v) {} };", &[DECLARATION]),
+        ]);
+    }
+
+    #[test]
+    fn type_assertions_and_generic_arrows_are_not_jsx_elements() {
+        assert_table(&[
+            (
+                "const el = <HTMLElement>node;\nclass C { eval(v) {} }",
+                &[DECLARATION],
+            ),
+            (
+                "const f = <T>(value: T) => value;\nclass C { eval(v) {} }",
+                &[DECLARATION],
+            ),
+            ("const f = <T>(value: T) => eval(value);", &[CALL]),
+            (
+                "const el = <A>b; const o = { eval(v) {} }; eval(code)",
+                &[DECLARATION, CALL],
+            ),
+            // An element with a closing tag or a self-closing tag is JSX.
+            (
+                "const a = <T>x; const b = <a>class C <b>{eval(code)}</b></a>;",
+                &[CALL],
+            ),
+            (
+                "const a = <T>x;\nclass C { eval(v) {} }\nconst b = <a />;",
+                &[DECLARATION],
+            ),
+            (
+                "const v = <Foo.Bar a={1}>class C <b>{eval(code)}</b></Foo.Bar>;",
+                &[CALL],
             ),
         ]);
     }
@@ -1733,6 +2142,11 @@ mod tests {
             // A generic default `=` is read as the start of a field
             // initializer, which hides the member boundary after the method.
             ("class C { m<T = string>() {} eval(v) {} }", &[CALL]),
+            // JSX text is not code, but an `eval(` token in it is reported as
+            // a possible call, and a `{` in text opens an expression
+            // container, as in JSX itself.
+            ("const view = <p>eval(code)</p>;", &[CALL]),
+            ("const view = <p>class C {</p>;\neval(code);", &[CALL]),
         ]);
     }
 }

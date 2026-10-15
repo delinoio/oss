@@ -2633,6 +2633,24 @@ y=/process.env.F/.test(z),process.env.G"#;
     }
 
     #[test]
+    fn jsx_text_does_not_hide_a_direct_eval() {
+        // Class-shaped JSX text does not open a class body, so the call in
+        // the next expression container is reported.
+        for (source, expected) in [
+            (
+                "const view = <div>class C <span>{eval(code)}</span></div>;",
+                Some((0, 33)),
+            ),
+            (
+                "const view = <p>class Foo extends Bar</p>;\nconst x = <i>{eval(code)}</i>;",
+                Some((1, 14)),
+            ),
+        ] {
+            assert_eq!(direct_eval_line(source), expected, "{source}");
+        }
+    }
+
+    #[test]
     fn function_bodies_skip_typescript_return_annotations() {
         let source = "function run(): void { var eval = helper; } eval(code);";
         assert!(direct_eval_line(source).is_some());
