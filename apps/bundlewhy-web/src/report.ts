@@ -4,6 +4,7 @@ import {
   ReportMode,
   RunStatus,
   SourceFileSchema,
+  SourceRevisionEvidence,
   type Analysis,
   type SourceFile,
 } from "./gen/bundlewhy/v1/bundlewhy_pb";
@@ -107,6 +108,18 @@ export function parseEmbeddedReport(text: string): ParseResult {
   }
   if (analysis.schemaVersion !== SUPPORTED_SCHEMA_VERSION)
     return unsupported(analysis.schemaVersion);
+
+  const sourcesById = new Map(sources.map((source) => [source.id, source]));
+  for (const summary of analysis.sources) {
+    const source = sourcesById.get(summary.id);
+    if (
+      summary.revisionEvidence === SourceRevisionEvidence.BUILD_SNAPSHOT &&
+      (!source ||
+        summary.path !== source.path ||
+        source.revisionEvidence !== SourceRevisionEvidence.BUILD_SNAPSHOT)
+    )
+      return invalid("The embedded report has inconsistent source records.");
+  }
 
   analysis.mode = ReportMode.EXPORTED;
   // An exported report is a finished snapshot; never present it as running.

@@ -733,8 +733,23 @@ fn unresolved_env_conditions(context: &mut Context<'_>, drafts: &mut Vec<Diagnos
             let Some(guard) = guard else {
                 continue;
             };
+            let mapped_source = if vite {
+                let chunk = &context.chunks[index];
+                let (line, column) = chunk.position(offset);
+                chunk
+                    .original(line, column)
+                    .map(|(path, _, _)| context.display_path(&path))
+            } else {
+                None
+            };
             let located = context.chunk_location(index, offset);
             let mapped = located.generated.is_some();
+            if vite
+                && !mapped
+                && let Some(source) = mapped_source
+            {
+                context.vite_env_source_gaps.insert(source);
+            }
             tracing::debug!(
                 chunk = %context.chunks[index].file,
                 offset,
@@ -861,7 +876,7 @@ pub fn configuration_disabled(
 ) {
     let config_file = context.collection.config_file.clone();
     let located = match &config_file {
-        Some(file) => context.original_location(Path::new(file), 0, 0),
+        Some(file) => context.original_location_without_coverage_gap(Path::new(file), 0, 0),
         None => super::Located {
             location: None,
             generated: None,
@@ -915,7 +930,7 @@ fn minification_disabled(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticD
         .unwrap_or_else(|| "false".to_owned());
     let config_file = context.collection.config_file.clone();
     let located = match &config_file {
-        Some(file) => context.original_location(Path::new(file), 0, 0),
+        Some(file) => context.original_location_without_coverage_gap(Path::new(file), 0, 0),
         None => super::Located {
             location: None,
             generated: None,
@@ -1812,12 +1827,19 @@ mod tests {
             ..crate::collect::Collection::default()
         };
         let chunk = crate::chunks::Chunk::load(&build_dir, "main.js", None, true, root).unwrap();
+        // `module_source` reads build-backed text, so model the source-map
+        // snapshot used by a collected build instead of relying on an
+        // unverified live file.
+        let mut sources = crate::sources::SourceStore::new(true);
+        sources
+            .snapshots
+            .insert(crate::sources::normalize(&source_path), source.to_owned());
         let mut context = Context::new(
             &collection,
             root.to_path_buf(),
             "app".to_owned(),
             vec![chunk],
-            crate::sources::SourceStore::new(true),
+            sources,
         );
         let mut drafts = Vec::new();
         direct_eval_mangling(&mut context, &mut drafts);
@@ -2364,5 +2386,45 @@ y=/process.env.F/.test(z),process.env.G"#;
             .map(str::to_owned)
             .to_vec()
         );
+    }
+
+    #[test]
+    fn configuration_only_locations_do_not_reduce_coverage() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join("rspack.config.js");
+        std::fs::write(&config, "module.exports = {};").unwrap();
+        let collection = crate::collect::Collection {
+            bundler: "rspack".to_owned(),
+            config_file: Some(config.to_string_lossy().into_owned()),
+            minify_enabled: false,
+            config_summary: BTreeMap::from([(
+                "optimization.minimize".to_owned(),
+                "false".to_owned(),
+            )]),
+            ..crate::collect::Collection::default()
+        };
+        let mut context = Context::new(
+            &collection,
+            dir.path().to_path_buf(),
+            "app".to_owned(),
+            Vec::new(),
+            crate::sources::SourceStore::new(true),
+        );
+        let mut drafts = Vec::new();
+        configuration_disabled(
+            &mut context,
+            &mut drafts,
+            &DisabledOptimization {
+                rule: RuleId::RspackSideEffectsDisabled,
+                title: "Side effects are disabled",
+                option: "optimization.sideEffects",
+                summary: "The option is disabled.",
+                direction: "Enable the option.",
+                safety: "Verify side effects before changing it.",
+            },
+        );
+        minification_disabled(&mut context, &mut drafts);
+        assert_eq!(drafts.len(), 2);
+        assert!(context.sources.unverified.is_empty());
     }
 }

@@ -681,7 +681,9 @@ fn ineffective_dynamic_import(context: &mut Context<'_>, drafts: &mut Vec<Diagno
 fn tree_shaking_disabled_finding(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
     let config_file = context.collection.config_file.clone();
     let located = match &config_file {
-        Some(file) => context.original_location(std::path::Path::new(file), 0, 0),
+        Some(file) => {
+            context.original_location_without_coverage_gap(std::path::Path::new(file), 0, 0)
+        }
         None => super::Located {
             location: None,
             generated: None,
