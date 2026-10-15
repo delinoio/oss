@@ -483,7 +483,12 @@ test("pnport native checks include Cargo and Node configuration on affected main
     const matrix = matricesForEvent(event).pnportMatrix.include;
     assert.deepEqual(
       matrix.map(({ suffix }) => suffix),
-      ["linux-x64-gnu", "linux-arm64-gnu"],
+      [
+        "linux-x64-gnu",
+        "linux-arm64-gnu",
+        "win32-x64-msvc",
+        "win32-arm64-msvc",
+      ],
       event,
     );
     for (const path of [".cargo/config.toml", ".nvmrc"]) {

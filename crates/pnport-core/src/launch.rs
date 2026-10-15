@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Private native launch tokens shared by the supervisor and injected images.
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use std::{
     fs, io,
     path::{Path, PathBuf},
 };
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use fs2::FileExt;
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub struct Entry {
     _lease: fs::File,
     pending: PathBuf,
     entered: PathBuf,
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 impl Entry {
     pub fn begin(session: &Path, token: &str) -> io::Result<Self> {
         if !valid_token(token) {
@@ -46,6 +46,40 @@ impl Entry {
     }
 }
 
+#[cfg(windows)]
+pub fn windows_entry_state(pending: &Path, entered: &Path) -> io::Result<EntryState> {
+    use std::os::windows::io::AsRawHandle;
+
+    use windows_sys::Win32::Storage::FileSystem::{
+        GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
+    };
+    let entry = match fs::File::open(entered) {
+        Ok(file) => file,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(EntryState::Missing),
+        Err(error) => return Err(error),
+    };
+    let pending = fs::File::open(pending)?;
+    let identity = |file: &fs::File| -> io::Result<_> {
+        let mut info = BY_HANDLE_FILE_INFORMATION::default();
+        if unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut info) } == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok((
+            info.dwVolumeSerialNumber,
+            info.nFileIndexHigh,
+            info.nFileIndexLow,
+        ))
+    };
+    if identity(&entry)? != identity(&pending)? {
+        return Ok(EntryState::Missing);
+    }
+    match entry.try_lock_exclusive() {
+        Ok(()) => Ok(EntryState::Abandoned),
+        Err(error) if crate::cache::lock_contended(&error) => Ok(EntryState::Initializing),
+        Err(error) => Err(error),
+    }
+}
+
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum EntryState {
     Missing,
@@ -67,7 +101,7 @@ pub fn entry_state(path: &Path, pending: &fs::Metadata) -> io::Result<EntryState
     }
     match file.try_lock_exclusive() {
         Ok(()) => Ok(EntryState::Abandoned),
-        Err(error) if error.kind() == io::ErrorKind::WouldBlock => Ok(EntryState::Initializing),
+        Err(error) if crate::cache::lock_contended(&error) => Ok(EntryState::Initializing),
         Err(error) => Err(error),
     }
 }

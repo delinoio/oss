@@ -1,7 +1,7 @@
 import { createRequire } from "node:module";
 import { publicationChannel } from "./version.mjs";
 const require = createRequire(import.meta.url);
-const { targets } = require("../src/platforms.cjs");
+const { targetsForVersion } = require("../src/platforms.cjs");
 
 function identity(version, revision) {
   publicationChannel(version);
@@ -25,13 +25,15 @@ export function launcherManifest(version, revision) {
     bin: { pnport: "bin/pnport.cjs" },
     files: ["bin", "src", "README.md", "LICENSE"],
     optionalDependencies: Object.fromEntries(
-      targets.map((target) => [target.name, version]),
+      targetsForVersion(version).map((target) => [target.name, version]),
     ),
   };
 }
 
 export function nativeManifest(suffix, version, revision) {
-  const target = targets.find((target) => target.suffix === suffix);
+  const target = targetsForVersion(version).find(
+    (target) => target.suffix === suffix,
+  );
   if (!target) throw new Error("Unsupported pnport target");
   return {
     ...identity(version, revision),

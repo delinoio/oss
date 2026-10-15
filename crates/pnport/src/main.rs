@@ -28,6 +28,10 @@ mod macos_registry;
 #[cfg(target_os = "macos")]
 mod macos_replica;
 mod supervisor;
+#[cfg(windows)]
+mod windows;
+#[cfg(windows)]
+mod windows_launch;
 
 #[derive(Parser)]
 #[command(
@@ -269,10 +273,21 @@ fn execute(cli: &Cli) -> Result<i32> {
             run_stage(RunStage::CompanionValidated);
             let cache = Cache::open(cache_path(cli, &cwd)?)?;
             run_stage(RunStage::CacheOpened);
-            let session = tempfile::Builder::new()
-                .prefix(&format!("pnport-{}-", uuid::Uuid::now_v7()))
-                .tempdir()
-                .map_err(|_| cache_error())?;
+            let mut session_builder = tempfile::Builder::new();
+            let prefix = format!("pnport-{}-", uuid::Uuid::now_v7());
+            session_builder.prefix(&prefix);
+            #[cfg(not(windows))]
+            let session = session_builder.tempdir().map_err(|_| cache_error())?;
+            #[cfg(windows)]
+            let session = {
+                // Inherit the already verified user-only ACL at creation;
+                // never expose a snapshot in the ordinary temporary directory.
+                let sessions = cache.root.join("sessions");
+                cache::private_dir(&sessions)?;
+                session_builder
+                    .tempdir_in(sessions)
+                    .map_err(|_| cache_error())?
+            };
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
