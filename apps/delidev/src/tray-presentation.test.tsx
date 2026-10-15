@@ -31,6 +31,7 @@ const native = vi.hoisted(() => ({
   } | null,
   calls: [] as string[],
   failing: new Set<string>(),
+  hanging: new Set<string>(),
   listenFails: false,
 }));
 vi.mock("@tauri-apps/api/core", () => ({
@@ -38,6 +39,7 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: async (name: string, args?: { id: string }) => {
     native.calls.push(name);
     if (native.failing.has(name)) throw new Error(`${name} failed`);
+    if (native.hanging.has(name)) return new Promise(() => {});
     if (name === "read_sidebar_preference")
       return { revision: 1, sidebar_preference: "expanded", problem: null };
     if (name === "read_navigation_preference")
@@ -251,8 +253,12 @@ it.each([
   "renders no global status after a tray %s failure",
   async (failure, _label) => {
     native.failing.clear();
+    native.hanging.clear();
     native.listenFails = failure === "listen";
     if (failure !== "listen") native.failing.add(failure);
+    // A successful publication would otherwise hide a later listener or action
+    // failure again, so only the publication case lets it run.
+    if (failure !== "publish_tray") native.hanging.add("publish_tray");
     native.calls.length = 0;
     const transport = createRouterTransport((router) => {
       router.service(SystemService, {
@@ -282,19 +288,36 @@ it.each([
       router.service(UsageService, { getUsageSummary: () => ({}) });
     });
     try {
+      // A transient status counts: later healthy work must not hide a regression.
+      let everShown = false;
+      const observer = new MutationObserver(() => {
+        if (/Tray status is unavailable/.test(document.body.textContent ?? ""))
+          everShown = true;
+      });
+      observer.observe(document.body, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      });
       const view = render(<App transport={transport} />);
       await waitFor(() => expect(native.calls).toContain("begin_tray"));
       if (failure === "publish_tray")
         await waitFor(() => expect(native.calls).toContain("publish_tray"));
       if (failure === "read_tray_action")
         await waitFor(() => expect(native.calls).toContain("read_tray_action"));
-      await act(async () => {});
+      // Let the rejected native call and its state updates settle.
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+      observer.disconnect();
+      expect(everShown).toBe(false);
       expect(screen.queryByText(/Tray status is unavailable/)).toBeNull();
       expect(screen.queryByRole("status")).toBeNull();
       expect(view.container.querySelector("main [role='alert']")).toBeNull();
       view.unmount();
     } finally {
       native.failing.clear();
+      native.hanging.clear();
       native.listenFails = false;
     }
   },

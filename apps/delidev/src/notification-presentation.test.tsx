@@ -502,7 +502,9 @@ it.each([
         expect(native.invoke).toHaveBeenCalledWith("begin_notifications"),
       );
     else await waitFor(() => expect(report).toHaveBeenCalledTimes(1));
-    await act(async () => {});
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
     expect(screen.queryByRole("status")).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
     expect(view.container.textContent).toBe("");
