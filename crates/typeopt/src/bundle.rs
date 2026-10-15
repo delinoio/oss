@@ -1510,9 +1510,10 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
                 let MemberProp::Ident(name) = &member.prop else {
                     return false;
                 };
-                name.sym == "workbox"
+                (name.sym == "workbox"
                     && matches!(&*member.obj, Expr::Ident(root)
-                        if matches!(root.sym.as_ref(), "self" | "globalThis" | "window"))
+                        if matches!(root.sym.as_ref(), "self" | "globalThis" | "window")))
+                    || (name.sym == "precaching" && is_workbox_receiver(&member.obj))
             }
             _ => false,
         }

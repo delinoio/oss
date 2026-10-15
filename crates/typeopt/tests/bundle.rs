@@ -3151,6 +3151,21 @@ fn refreshes_classic_script_precache_entries() {
 }
 
 #[test]
+fn refreshes_namespaced_workbox_precache_entries() {
+    let sw = r#"self.workbox.precaching.precacheAndRoute([{url:"assets/index-AAAAAAAA.js",revision:"old"}]);"#;
+    let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
+    chunks.push(("sw.js", sw));
+    let temp = bundle(&chunks);
+    optimize(temp.path(), &[]);
+    let published = out(temp.path(), "sw.js");
+    assert!(!published.contains("revision:\"old\""), "{published}");
+    assert!(
+        published.contains("self.workbox.precaching.precacheAndRoute"),
+        "{published}"
+    );
+}
+
+#[test]
 fn ignores_ambiguous_precache_calls_with_empty_revisions() {
     let sw = r#"function precache(){};precache([{url:"index.html",revision:""}]);function precacheAndRoute(){};precacheAndRoute([{url:"index.html",revision:""}]);const api={precacheAndRoute(){}};api.precacheAndRoute([{url:"index.html",revision:""}]);"#;
     let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
