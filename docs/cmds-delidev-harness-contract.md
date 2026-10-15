@@ -1199,6 +1199,88 @@ Codex API provider fields `model_catalog_url` and `gateway_oauth` follow the sam
 
 Opt-in native tests verify one exact authenticated request to a scripted local proxy despite a competing private user config, and inspect the closed runtime for persisted execution tokens. A separate server composition test registers a digest through authenticated Connect, then runs installed Codex through the actual server relay into a scripted loopback provider with server-only key injection. It verifies exact model/input/output identity and owned closure. The accepted execution-readiness records in that test are simulated; the actual Worker loop now executes accepted first assignments, with the separately validated public first dispatcher now supplying that assignment; complete event normalization remains pending. The server composition additionally verifies the Worker durable core-event outbox and retained server transcript. No user account or external inference service is involved.
 
+### Codex project and MCP isolation
+
+Ordinary Codex execution selects no DeliDev MCP server. A `workspace-write` or
+`danger-full-access` `thread/start` makes the installed Codex record the project
+as `trusted` in the private `CODEX_HOME/config.toml`; that activates the
+repository's own `.codex/config.toml` layer, and MCP tables merge across layers,
+so a repository-defined server would launch and its startup status would fail
+the execution after input acceptance. CLI overrides (`mcp_servers={}`, a
+`projects.<root>.trust_level` override or `project_root_markers`) were verified
+ineffective on Codex 0.159.2, so the adapter isolates the thread in two steps
+inside the shared thread binding (`thread/start`, `thread/resume` and the
+independent Fork `thread/fork`).
+
+1. **Project isolation before the native call.** Under the in-process per-home
+   lock, the adapter reads the private `config.toml` (bounded, owner-only,
+   strict TOML), records `trust_level = "untrusted"` for the thread directory,
+   its nearest Git repository root, the main repository root of a linked
+   worktree and every workspace root, replaces any retained `trusted` value of
+   those keys, and removes the private file's own `mcp_servers` table (DeliDev
+   never authors an MCP selection there, so an entry is foreign). Other settings
+   are preserved semantically; **comments and key order of this private file are
+   not preserved**. An unchanged file is not rewritten; a changed file is
+   replaced atomically (owner-only temporary file attributed to its target, then
+   rename). The profile lease already serializes processes on a registered
+   profile home, including a legacy home registered in place and a shared owner
+   home, and the adapter creates no lock file or registry state of its own; the
+   per-home lock only serializes concurrent shared-owner members in this process.
+   An unreadable, invalid or unwritable file fails before any thread exists with
+   `unsupported` in the profile phase and a structured warning naming only
+   `stage=project-trust-isolation` and `reason=trust-unwritable`.
+2. **Pinned defaults.** An untrusted project changes two native defaults when the
+   selection is empty: approval becomes `untrusted` and the sandbox becomes
+   `workspace-write` (a never-recorded project yields `on-request` and
+   `read-only`). To keep the effective settings unchanged, the adapter sends
+   `approvalPolicy: on-request` when the selection has no approval policy and
+   `sandbox: read-only` when the permission is `default`. Explicit approval
+   policies and sandboxes are sent exactly as selected, so a `workspace-write`
+   request stays `workspace-write`. Model, effort, service tier, reviewer and
+   subagent options are untouched, and the existing effective-settings
+   comparison still applies.
+
+After the thread exists and before the connection can send any input or
+`turn/start`, `config/read` with the thread directory must report an absent,
+null or empty `mcp_servers`. A non-empty or unparseable inventory, a native
+error or a failed read fails with `unsupported` in the profile phase, latches
+the connection (no input or second thread), logs
+`codex_native_isolation_rejected` with only `owner_id`,
+`stage=mcp-inventory-verification` and a closed `reason`
+(`inventory-nonempty` or `inventory-unreadable`), and never exposes server names,
+commands or native error text. The Worker closes its owned native process through
+the normal cleanup path, so the failure is reported before input acknowledgment
+and the queued input remains retryable under the existing safe-retry rules; an
+acknowledged input is never replayed. An MCP definition outside the private home
+and repository (system or managed policy) cannot be isolated this way and takes
+this failure path. Selected-MCP support is separate future work. The passive
+managed `codex_apps` startup status and unrelated foreign MCP events keep their
+existing handling in the observation boundary.
+
+The isolation table is a single source (`policyFor`) and every row has a test:
+
+| Profile kind | Operation | Requested sandbox / approval | Effective sandbox / approval | Seeding | Inventory check |
+| --- | --- | --- | --- | --- | --- |
+| API ordinary | start, resume (including compaction restore and Revert), Fork | explicit | as requested | yes | yes |
+| API ordinary | start, resume, Fork | permission `default` / empty approval | `read-only` / `on-request` | yes | yes |
+| ChatGPT-managed ordinary, including subscription and shared owner members | start, resume (including compaction restore and Revert), Fork | explicit | as requested | yes | yes |
+| ChatGPT-managed ordinary, including shared owner home | start, resume | permission `default` / empty approval | `read-only` / `on-request` | yes | yes |
+| Shared account owner connection | none (members bind threads) | not applicable | not applicable | no | no |
+| Sidechat (API or managed) | start, Fork, resume | read-only, `never` | `read-only` / `never` | no | existing Sidechat configuration check |
+| Automatic title (API or managed) | start | read-only, `never`, private empty workspace | `read-only` / `never` | no | managed title: existing title check; API title: none |
+| Native review | start | named read-only profile | as requested | no | existing review configuration check |
+| Probe, discovery, quota, credit, subscription, model observation | none | not applicable | not applicable | no | no |
+
+Tests: `project_isolation_test.go` (table, profile derivation, pinned defaults,
+trust keys including linked worktrees, atomic idempotent replacement, invalid
+files, concurrent members, start and resume rows, inventory rejection rows and
+logs), the shared-owner binding test, and the explicit installed-native
+`TestManualNativeOrdinaryExecutionNeverLaunchesUnselectedMCP` and
+`TestManualNativeForkNeverLaunchesUnselectedMCP` suites, which run the
+repository-layer, private-home-layer, retained-trusted-home and resume cases
+against Codex 0.159.2 with a scripted loopback provider and no real account.
+Real-account acceptance is not performed.
+
 ### Codex native turns and core events
 
 The internal adapter implements `turn/start`, expected-turn `turn/steer` and `turn/interrupt`. The caller supplies durably accepted request and input identities. A new turn requires a bound direct-input root thread, no unresolved send or pause, retained completion of any prior turn, and a fresh idle native metadata read. Root controls and event-state transitions serialize. Codex implements start-or-steer internally; DeliDev's private single-owner connection and these preconditions prevent intentionally using that fallback for an ordinary queued input. The response must identify a new running turn. Native turn and input maps are bounded to 4,096 entries, in addition to the transport's sent-request bound; exhausting a bound requires explicit draining, persistence and connection replacement.

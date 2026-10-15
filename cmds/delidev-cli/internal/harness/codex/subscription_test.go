@@ -43,6 +43,29 @@ func managedFixtureHandle(mode string, id json.RawMessage, method string, params
 			providers["openai"] = map[string]any{"requires_openai_auth": true, "base_url": "https://foreign.invalid"}
 		}
 		features := map[string]any{}
+		mcp := any(nil)
+		if capture := os.Getenv("DELIDEV_CODEX_CAPTURE"); strings.HasPrefix(mode, "thread-managed-mcp-") && capture != "" {
+			if _, err := os.Stat(capture); err == nil {
+				// A thread exists: record this effective-inventory read in order.
+				out, openErr := os.OpenFile(capture, os.O_APPEND|os.O_WRONLY, 0o600)
+				if openErr != nil {
+					os.Exit(47)
+				}
+				_ = json.NewEncoder(out).Encode(map[string]any{"method": method, "params": map[string]any{"cwd": input.Cwd}})
+				_ = out.Close()
+				switch mode {
+				case "thread-managed-mcp-error":
+					_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"id": id, "error": map[string]any{"code": -32603, "message": "fixture-protected-diagnostic"}})
+					return true
+				case "thread-managed-mcp-nonempty":
+					mcp = map[string]any{"inherited": map[string]any{"command": "/usr/bin/true"}}
+				case "thread-managed-mcp-empty":
+					mcp = map[string]any{}
+				case "thread-managed-mcp-malformed":
+					mcp = "not-a-table"
+				}
+			}
+		}
 		if mode == "thread-managed-image-enabled" {
 			features["image_generation"] = true
 		}
@@ -57,7 +80,7 @@ func managedFixtureHandle(mode string, id json.RawMessage, method string, params
 				tamperHelperFixtureAlias()
 			}
 		}
-		write(id, map[string]any{"config": map[string]any{"cli_auth_credentials_store": store, "model_provider": "openai", "forced_login_method": "chatgpt", "model_providers": providers, "features": features}, "origins": nil, "layers": nil})
+		write(id, map[string]any{"config": map[string]any{"cli_auth_credentials_store": store, "model_provider": "openai", "forced_login_method": "chatgpt", "model_providers": providers, "features": features, "mcp_servers": mcp}, "origins": nil, "layers": nil})
 	case "account/login/start":
 		if sentinel := os.Getenv("DELIDEV_CODEX_LOGIN_SENTINEL"); sentinel != "" {
 			if os.WriteFile(sentinel, []byte("sent"), 0600) != nil {
