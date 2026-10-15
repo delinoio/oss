@@ -3886,6 +3886,31 @@ export { reflected };"#,
 }
 
 #[test]
+fn observable_function_source_computed_pattern_key() {
+    check_observable_function_source(
+        r#"import{describeSettings as describe,makeSettings as make,reflected}from"./settings.js";
+const {["toString"]:readSource}=reflected;
+console.log(describe(make(3)),describe(make(7)));
+console.log(readSource.call(reflected).includes("reflection-marker"));"#,
+        r#"function reflected(value) { /* reflection-marker */ return value + 1; }
+export { reflected };"#,
+    );
+}
+
+#[test]
+fn observable_function_source_dynamic_pattern_key() {
+    check_observable_function_source(
+        r#"import{describeSettings as describe,makeSettings as make,reflected}from"./settings.js";
+const key=["to","String"].join("");
+const {[key]:readSource}=reflected;
+console.log(describe(make(3)),describe(make(7)));
+console.log(readSource.call(reflected).includes("reflection-marker"));"#,
+        r#"function reflected(value) { /* reflection-marker */ return value + 1; }
+export { reflected };"#,
+    );
+}
+
+#[test]
 fn observable_function_source_string_coercion() {
     check_observable_function_source(
         r#"import{describeSettings as describe,makeSettings as make,reflected}from"./settings.js";
@@ -3971,6 +3996,88 @@ export { reflected };"#;
         report["size"]["minified"].is_null(),
         "{report:#}; plain={plain:#}"
     );
+}
+
+/// `settings.js` keeps its object local, so renaming its properties stays a
+/// real edit even when every chunk is a public entry.
+const LOCAL_PROPERTIES: [(&str, &str); 2] = [
+    (
+        "index.js",
+        r#"import{describeSettings as describe}from"./settings.js";
+console.log(describe(3), describe(7));
+"#,
+    ),
+    (
+        "settings.js",
+        r#"function describeSettings(count) {
+  const local = { verticalSpacing: count, horizontalSpacing: count * 2, highlightColour: count > 4 ? "red" : "blue" };
+  const description = local.verticalSpacing + ":" + local.horizontalSpacing + ":" + local.highlightColour;
+  return description;
+}
+export { describeSettings };
+"#,
+    ),
+];
+
+/// Builds a bundle whose `settings.js` has a real optimization edit and whose
+/// `index.html` is `html`.
+fn html_attribute_bundle(html: &str) -> tempfile::TempDir {
+    bundle(&[
+        ("index.html", html),
+        LOCAL_PROPERTIES[0],
+        LOCAL_PROPERTIES[1],
+    ])
+}
+
+/// An executable attribute with a character reference the parser cannot decode
+/// may read callable source, so `--minify` must publish the unminified edit.
+#[test]
+fn observable_function_source_undecodable_executable_attribute() {
+    for attributes in [
+        r#"onclick="import&Tab;('./settings.js')""#,
+        r#"onclick="Function.prototype&lbrack;'toString'&rbrack;.call(Object)""#,
+        r#"onclick="import&Tab;('./settings.js')" title="plain""#,
+        r#"href="javascript:import&Tab;('./settings.js')""#,
+    ] {
+        let html = if attributes.starts_with("href") {
+            format!("<a {attributes}></a>")
+        } else {
+            format!("<button {attributes}></button>")
+        };
+        let temp = html_attribute_bundle(&html);
+        let plain = optimize(temp.path(), &[]);
+        same_behavior(temp.path());
+        assert!(
+            plain["renamed_properties"].as_u64().unwrap() > 0,
+            "{html}: {plain:#}"
+        );
+        let plain_settings = out(temp.path(), "settings.js");
+        assert_ne!(plain_settings, LOCAL_PROPERTIES[1].1, "{html}");
+        fs::remove_dir_all(temp.path().join("out")).unwrap();
+        let report = optimize(temp.path(), &["--minify"]);
+        same_behavior(temp.path());
+        assert_eq!(out(temp.path(), "settings.js"), plain_settings, "{html}");
+        assert!(report["size"]["minified"].is_null(), "{html}: {report:#}");
+    }
+}
+
+/// The same unknown reference in an attribute that cannot run code leaves the
+/// edited chunk eligible for minification.
+#[test]
+fn observable_function_source_undecodable_non_executable_attribute_still_minifies() {
+    for attributes in [
+        r#"title="&Tab;&lbrack;'toString'&rbrack;""#,
+        r#"data-x="import&Tab;('./settings.js')""#,
+    ] {
+        let html = format!("<p {attributes}></p>");
+        let temp = html_attribute_bundle(&html);
+        let report = optimize(temp.path(), &["--minify"]);
+        same_behavior(temp.path());
+        assert!(
+            report["size"]["minified"].as_u64().unwrap() > 0,
+            "{attributes}: {report:#}"
+        );
+    }
 }
 
 #[test]
