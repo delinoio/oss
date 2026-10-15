@@ -1334,6 +1334,7 @@ fn rehash(
 fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
     struct WorkboxBindings {
         direct: BTreeSet<String>,
+        namespace: BTreeSet<String>,
         ambiguous: BTreeSet<String>,
         declared: BTreeSet<String>,
     }
@@ -1354,6 +1355,14 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
         fn visit_import_decl(&mut self, declaration: &ImportDecl) {
             let workbox = declaration.src.value == "workbox-precaching";
             for specifier in &declaration.specifiers {
+                if let ImportSpecifier::Namespace(namespace) = specifier {
+                    if workbox {
+                        self.namespace.insert(namespace.local.sym.to_string());
+                    } else {
+                        self.mark_declared(namespace.local.sym.as_ref());
+                    }
+                    continue;
+                }
                 let ImportSpecifier::Named(named) = specifier else {
                     self.mark_declared(named_local_name(specifier));
                     continue;
@@ -1416,6 +1425,7 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
         text: &'a str,
         base: u32,
         direct_workbox_bindings: BTreeSet<String>,
+        namespace_workbox_bindings: BTreeSet<String>,
         ambiguous_bindings: BTreeSet<String>,
         values: Vec<(String, usize, usize, bool)>,
     }
@@ -1484,9 +1494,10 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
                                 && !self.ambiguous_bindings.contains(name.sym.as_ref())),
                     ),
                     Expr::Member(member) => match &member.prop {
-                        MemberProp::Ident(name) => {
-                            (Some(name.sym.as_ref()), is_workbox_receiver(&member.obj))
-                        }
+                        MemberProp::Ident(name) => (
+                            Some(name.sym.as_ref()),
+                            is_workbox_receiver(&member.obj, &self.namespace_workbox_bindings),
+                        ),
                         _ => (None, false),
                     },
                     _ => (None, false),
@@ -1512,9 +1523,11 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
         }
     }
 
-    fn is_workbox_receiver(receiver: &Expr) -> bool {
+    fn is_workbox_receiver(receiver: &Expr, namespace_workbox_bindings: &BTreeSet<String>) -> bool {
         match receiver {
-            Expr::Ident(name) => name.sym == "workbox",
+            Expr::Ident(name) => {
+                name.sym == "workbox" || namespace_workbox_bindings.contains(name.sym.as_ref())
+            }
             Expr::Member(member) => {
                 let MemberProp::Ident(name) = &member.prop else {
                     return false;
@@ -1522,7 +1535,8 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
                 (name.sym == "workbox"
                     && matches!(&*member.obj, Expr::Ident(root)
                         if matches!(root.sym.as_ref(), "self" | "globalThis" | "window")))
-                    || (name.sym == "precaching" && is_workbox_receiver(&member.obj))
+                    || (name.sym == "precaching"
+                        && is_workbox_receiver(&member.obj, namespace_workbox_bindings))
             }
             _ => false,
         }
@@ -1546,6 +1560,7 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
         }
         let mut bindings = WorkboxBindings {
             direct: BTreeSet::new(),
+            namespace: BTreeSet::new(),
             ambiguous: BTreeSet::new(),
             declared: BTreeSet::new(),
         };
@@ -1554,6 +1569,7 @@ fn precache_entries(text: &str) -> Vec<(String, usize, usize, bool)> {
             text,
             base: file.start_pos.0,
             direct_workbox_bindings: bindings.direct,
+            namespace_workbox_bindings: bindings.namespace,
             ambiguous_bindings: bindings.ambiguous,
             values: Vec::new(),
         };
