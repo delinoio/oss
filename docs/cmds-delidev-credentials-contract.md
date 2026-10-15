@@ -291,7 +291,7 @@ independent cleanup and joined shutdown keep their existing ownership.
 
 - Install managed execution credential cleanup at the auth-file write boundary, before publisher/registration failure paths, including predecessor runtimes. Remove and synchronize only owned authentication after confirmed native closure or before any native ownership; unconfirmed startup/closure retains its recovery lease.
 
-- Retained managed native history must pass the bounded cleanup scan for both raw tokens and padded/unpadded standard/URL Base64 copies before confirming credential removal. Retain original history and uncertain ownership when that scan fails.
+- Retained managed native history must pass the complete streaming cleanup scan for both raw tokens and padded/unpadded standard/URL Base64 copies before confirming credential removal. The scan uses bounded memory and has no file-count, file-size or aggregate-size limit, so ordinary accumulated history never blocks cleanup. Retain original history and uncertain ownership when that scan fails (pending entries, special files, remnants, changed home identity or cancellation).
 
 ## cmds/delidev-cli/internal/workernetwork constraints
 

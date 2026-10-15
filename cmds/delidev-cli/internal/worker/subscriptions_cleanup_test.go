@@ -3,6 +3,7 @@ package worker
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"errors"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -55,76 +56,23 @@ func TestManagedExecutionCleanupRejectsEncodedAuthentication(t *testing.T) {
 	}
 }
 
-func TestManagedExecutionCleanupRetainsInventoryFencesAndSafeLogs(t *testing.T) {
-	for _, mode := range []string{"pending", "file-limit", "byte-limit", "file-size-limit"} {
-		t.Run(mode, func(t *testing.T) {
-			home := filepath.Join(t.TempDir(), "codex")
-			if err := security.PrivateDir(home); err != nil {
-				t.Fatal(err)
-			}
-			bundle := workerSubscriptionBundle("first")
-			defer clear(bundle)
-			if err := security.WriteAtomic(filepath.Join(home, "auth.json"), bundle); err != nil {
-				t.Fatal(err)
-			}
-			writeSparse := func(name string, size int64) {
-				t.Helper()
-				file, err := os.Create(filepath.Join(home, name))
-				if err != nil {
-					t.Fatal(err)
-				}
-				if err := file.Truncate(size); err != nil {
-					file.Close()
-					t.Fatal(err)
-				}
-				if err := file.Close(); err != nil {
-					t.Fatal(err)
-				}
-			}
-			switch mode {
-			case "pending":
-				writeSparse(".pending-native-auth", 0)
-			case "file-limit":
-				for i := 0; i < 2049; i++ {
-					writeSparse("history-"+strconv.Itoa(i), 0)
-				}
-			case "byte-limit":
-				for i := 0; i < 4; i++ {
-					writeSparse("history-"+strconv.Itoa(i), 16<<20)
-				}
-				writeSparse("history-4", 1)
-			case "file-size-limit":
-				writeSparse("history", (16<<20)+1)
-			}
-			err := cleanupExecutionAuthentication(home, bundle, bundle)
-			var failure *executionAuthenticationFailure
-			if !errors.As(err, &failure) || failure.stage != executionAuthScan {
-				t.Fatal("inventory failure lost independent scan fence", err)
-			}
-			expected := executionAuthLimit
-			if mode == "pending" {
-				expected = executionAuthPending
-			}
-			if failure.reason != expected {
-				t.Fatal("scan reason changed", failure.reason)
-			}
-			var logs bytes.Buffer
-			logExecutionAuthenticationCleanup(slog.New(slog.NewJSONHandler(&logs, nil)), domain.NewID(), err)
-			for _, private := range []string{home, string(bundle), "synthetic-worker-access-first", "synthetic-worker-refresh-first"} {
-				if strings.Contains(logs.String(), private) {
-					t.Fatal("cleanup log contains private data")
-				}
-			}
-			if _, err := os.Lstat(filepath.Join(home, "auth.json")); !os.IsNotExist(err) {
-				t.Fatal("scan failure skipped original auth removal", err)
-			}
-		})
+func writeSparseHistory(t *testing.T, home, name string, size int64) {
+	t.Helper()
+	file, err := os.Create(filepath.Join(home, name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Truncate(size); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
 	}
 }
 
-func TestSharedCodexCleanupStreamsAccumulatedHistory(t *testing.T) {
-	bundle := workerSubscriptionBundle("first")
-	defer clear(bundle)
+func cleanupFixtureHome(t *testing.T, bundle []byte) string {
+	t.Helper()
 	home := filepath.Join(t.TempDir(), "codex")
 	if err := security.PrivateDir(home); err != nil {
 		t.Fatal(err)
@@ -132,27 +80,113 @@ func TestSharedCodexCleanupStreamsAccumulatedHistory(t *testing.T) {
 	if err := security.WriteAtomic(filepath.Join(home, "auth.json"), bundle); err != nil {
 		t.Fatal(err)
 	}
-	large, err := os.Create(filepath.Join(home, "rollout-large.jsonl"))
+	return home
+}
+
+func TestManagedExecutionCleanupRetainsPendingFenceAndSafeLogs(t *testing.T) {
+	bundle := workerSubscriptionBundle("first")
+	defer clear(bundle)
+	home := cleanupFixtureHome(t, bundle)
+	writeSparseHistory(t, home, ".pending-native-auth", 0)
+	err := cleanupExecutionAuthentication(home, bundle, bundle)
+	var failure *executionAuthenticationFailure
+	if !errors.As(err, &failure) || failure.stage != executionAuthScan || failure.reason != executionAuthPending {
+		t.Fatal("pending entry lost its independent scan fence", err)
+	}
+	var logs bytes.Buffer
+	logExecutionAuthenticationCleanup(slog.New(slog.NewJSONHandler(&logs, nil)), domain.NewID(), err)
+	for _, private := range []string{home, string(bundle), "synthetic-worker-access-first", "synthetic-worker-refresh-first"} {
+		if strings.Contains(logs.String(), private) {
+			t.Fatal("cleanup log contains private data")
+		}
+	}
+	if _, err := os.Lstat(filepath.Join(home, "auth.json")); !os.IsNotExist(err) {
+		t.Fatal("scan failure skipped original auth removal", err)
+	}
+}
+
+// Ordinary accumulated history must never fail cleanup: the scan streams every
+// regular file with bounded memory and keeps all of it.
+func TestManagedExecutionCleanupStreamsLargeHistoryWithoutDeletingIt(t *testing.T) {
+	for _, mode := range []string{"file-count", "aggregate", "single-file"} {
+		t.Run(mode, func(t *testing.T) {
+			bundle := workerSubscriptionBundle("first")
+			defer clear(bundle)
+			home := cleanupFixtureHome(t, bundle)
+			var kept []string
+			switch mode {
+			case "file-count":
+				for i := 0; i < 2049; i++ {
+					name := "history-" + strconv.Itoa(i)
+					writeSparseHistory(t, home, name, 0)
+					kept = append(kept, name)
+				}
+			case "aggregate":
+				for i := 0; i < 5; i++ {
+					name := "history-" + strconv.Itoa(i)
+					writeSparseHistory(t, home, name, 16<<20)
+					kept = append(kept, name)
+				}
+			case "single-file":
+				writeSparseHistory(t, home, "history", (16<<20)+1)
+				kept = append(kept, "history")
+			}
+			if err := cleanupExecutionAuthentication(home, bundle, bundle); err != nil {
+				t.Fatal("ordinary history growth blocked authentication cleanup", err)
+			}
+			if _, err := os.Lstat(filepath.Join(home, "auth.json")); !os.IsNotExist(err) {
+				t.Fatal("transient authentication remained", err)
+			}
+			for _, name := range kept {
+				if _, err := os.Lstat(filepath.Join(home, name)); err != nil {
+					t.Fatal("cleanup deleted retained history", name, err)
+				}
+			}
+		})
+	}
+}
+
+func TestManagedExecutionCleanupFindsTokenAfterLargeHistoryAndSpecialFiles(t *testing.T) {
+	bundle := workerSubscriptionBundle("first")
+	defer clear(bundle)
+	parsed, _, err := subscription.Parse(bundle)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := large.Truncate(65<<20 + 1); err != nil {
-		_ = large.Close()
+	home := cleanupFixtureHome(t, bundle)
+	writeSparseHistory(t, home, "history-large", 17<<20)
+	encoded := base64.RawURLEncoding.EncodeToString([]byte(parsed.Tokens.Refresh))
+	content := append(bytes.Repeat([]byte("y"), (64<<10)-5), []byte(encoded)...)
+	if err := os.WriteFile(filepath.Join(home, "rollout.jsonl"), content, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := large.Close(); err != nil {
+	err = cleanupExecutionAuthentication(home, bundle, bundle)
+	var failure *executionAuthenticationFailure
+	if !errors.As(err, &failure) || failure.reason != executionAuthRemnant {
+		t.Fatal("split encoded token was not detected", err)
+	}
+	if _, statErr := os.Lstat(filepath.Join(home, "history-large")); statErr != nil {
+		t.Fatal("failed scan deleted history", statErr)
+	}
+}
+
+func TestManagedExecutionScanHonorsCancellationAndRootIdentity(t *testing.T) {
+	bundle := workerSubscriptionBundle("first")
+	defer clear(bundle)
+	home := cleanupFixtureHome(t, bundle)
+	if err := os.Remove(filepath.Join(home, "auth.json")); err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < 2049; i++ {
-		if err := os.WriteFile(filepath.Join(home, "rollout-"+strconv.Itoa(i)), nil, 0600); err != nil {
-			t.Fatal(err)
-		}
+	writeSparseHistory(t, home, "history", 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := scanExecutionAuthenticationContext(ctx, home, bundle, bundle)
+	var failure *executionAuthenticationFailure
+	if !errors.As(err, &failure) || failure.reason != executionAuthCanceled {
+		t.Fatal("canceled scan did not fail closed", err)
 	}
-	if err := cleanupSharedExecutionAuthentication(home, bundle, bundle); err != nil {
-		t.Fatal("normal shared history growth blocked authentication cleanup", err)
-	}
-	if _, err := os.Lstat(filepath.Join(home, "auth.json")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatal("transient authentication remained", err)
+	if _, statErr := os.Lstat(filepath.Join(home, "history")); statErr != nil {
+		t.Fatal("canceled scan deleted history", statErr)
 	}
 }
 
@@ -174,7 +208,7 @@ func TestSharedCodexCleanupFindsTokenAcrossStreamChunks(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(home, "rollout.jsonl"), content, 0600); err != nil {
 		t.Fatal(err)
 	}
-	err = cleanupSharedExecutionAuthentication(home, bundle, bundle)
+	err = cleanupExecutionAuthentication(home, bundle, bundle)
 	var failure *executionAuthenticationFailure
 	if !errors.As(err, &failure) || failure.reason != executionAuthRemnant {
 		t.Fatal("split token was not detected", err)

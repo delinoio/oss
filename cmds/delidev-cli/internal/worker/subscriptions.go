@@ -602,7 +602,7 @@ const (
 	executionAuthIdentity   executionAuthenticationReason = "identity-changed"
 	executionAuthPending    executionAuthenticationReason = "pending-file"
 	executionAuthSpecial    executionAuthenticationReason = "non-regular-file"
-	executionAuthLimit      executionAuthenticationReason = "inventory-limit"
+	executionAuthCanceled   executionAuthenticationReason = "canceled"
 	executionAuthRemnant    executionAuthenticationReason = "credential-remnant"
 )
 
@@ -631,20 +631,19 @@ func logExecutionAuthenticationCleanup(logger *slog.Logger, owner domain.ID, err
 	if errors.As(err, &observed) {
 		failure = observed
 	}
-	logger.Warn("execution_authentication_cleanup", "owner_id", owner, "stage", failure.stage, "reason", failure.reason, "file_count", failure.count, "observed_bytes", failure.bytes, "file_limit", 2048, "byte_limit", 64<<20)
+	logger.Warn("execution_authentication_cleanup", "owner_id", owner, "stage", failure.stage, "reason", failure.reason, "file_count", failure.count, "observed_bytes", failure.bytes)
 }
 
+// cleanupExecutionAuthentication removes the transient auth.json after it was
+// compared with the latest validated bundle and then scans the retained native
+// history completely. The scan streams every file with bounded memory, so
+// ordinary history growth (file count, file size or aggregate size) never blocks
+// cleanup, and it never deletes or skips history.
 func cleanupExecutionAuthentication(home string, latest, original []byte) error {
-	return cleanupExecutionAuthenticationMode(home, latest, original, false)
+	return cleanupExecutionAuthenticationContext(context.Background(), home, latest, original)
 }
 
-// Shared account history accumulates across owner lifetimes. Scan it with
-// bounded memory, without treating ordinary history growth as failed cleanup.
-func cleanupSharedExecutionAuthentication(home string, latest, original []byte) error {
-	return cleanupExecutionAuthenticationMode(home, latest, original, true)
-}
-
-func cleanupExecutionAuthenticationMode(home string, latest, original []byte, shared bool) error {
+func cleanupExecutionAuthenticationContext(ctx context.Context, home string, latest, original []byte) error {
 	if err := security.CheckPrivateDir(home); err != nil {
 		return &executionAuthenticationFailure{stage: executionAuthFile, reason: executionAuthFilesystem}
 	}
@@ -664,30 +663,24 @@ func cleanupExecutionAuthenticationMode(home string, latest, original []byte, sh
 	if err := security.SyncParent(filepath.Join(home, "auth.json")); err != nil {
 		return &executionAuthenticationFailure{stage: executionAuthFile, reason: executionAuthFilesystem}
 	}
-	return scanExecutionAuthenticationMode(home, latest, original, shared)
+	return scanExecutionAuthenticationContext(ctx, home, latest, original)
 }
 
 func scanExecutionAuthentication(home string, latest, original []byte) error {
-	return scanExecutionAuthenticationMode(home, latest, original, false)
+	return scanExecutionAuthenticationContext(context.Background(), home, latest, original)
 }
 
-func scanExecutionAuthenticationMode(home string, latest, original []byte, shared bool) error {
-	count, total := 0, int64(0)
-	fail := func(reason executionAuthenticationReason) error {
-		return &executionAuthenticationFailure{stage: executionAuthScan, reason: reason, count: count, bytes: total}
-	}
-	// Native history is retained for resume. Check the bounded original tree
-	// rather than claiming credential cleanup merely from auth.json absence.
+// authenticationNeedles returns the raw and Base64 forms of every token of the
+// given bundles. The caller clears the result.
+func authenticationNeedles(bundles ...[]byte) ([][]byte, error) {
 	var needles [][]byte
-	defer func() {
-		for _, n := range needles {
-			clear(n)
-		}
-	}()
-	for _, raw := range [][]byte{original, latest} {
+	for _, raw := range bundles {
 		b, _, err := subscription.Parse(raw)
 		if err != nil {
-			return fail(executionAuthBundle)
+			for _, n := range needles {
+				clear(n)
+			}
+			return nil, err
 		}
 		for _, v := range []string{b.Tokens.ID, b.Tokens.Access, b.Tokens.Refresh} {
 			plain := []byte(v)
@@ -701,6 +694,25 @@ func scanExecutionAuthenticationMode(home string, latest, original []byte, share
 			}
 		}
 	}
+	return needles, nil
+}
+
+func scanExecutionAuthenticationContext(ctx context.Context, home string, latest, original []byte) error {
+	count, total := 0, int64(0)
+	fail := func(reason executionAuthenticationReason) error {
+		return &executionAuthenticationFailure{stage: executionAuthScan, reason: reason, count: count, bytes: total}
+	}
+	// Native history is retained for resume. Check the original tree rather than
+	// claiming credential cleanup merely from auth.json absence.
+	needles, err := authenticationNeedles(original, latest)
+	defer func() {
+		for _, n := range needles {
+			clear(n)
+		}
+	}()
+	if err != nil {
+		return fail(executionAuthBundle)
+	}
 	root, err := os.OpenRoot(home)
 	if err != nil {
 		return fail(executionAuthFilesystem)
@@ -711,6 +723,9 @@ func scanExecutionAuthenticationMode(home string, latest, original []byte, share
 		return fail(executionAuthFilesystem)
 	}
 	err = fs.WalkDir(root.FS(), ".", func(path string, entry fs.DirEntry, err error) error {
+		if ctx.Err() != nil {
+			return fail(executionAuthCanceled)
+		}
 		if err != nil {
 			return fail(executionAuthFilesystem)
 		}
@@ -737,39 +752,21 @@ func scanExecutionAuthenticationMode(home string, latest, original []byte, share
 		if !info.Mode().IsRegular() {
 			return fail(executionAuthSpecial)
 		}
-		if !shared && (count > 2048 || info.Size() > 16<<20) {
-			return fail(executionAuthLimit)
-		}
 		total += info.Size()
-		if !shared && total > 64<<20 {
-			return fail(executionAuthLimit)
-		}
 		file, err := root.Open(path)
 		if err != nil {
 			return fail(executionAuthFilesystem)
 		}
-		if shared {
-			found, scanErr := scanAuthenticationStream(file, needles)
-			closeErr := file.Close()
-			if scanErr != nil || closeErr != nil {
-				return fail(executionAuthFilesystem)
-			}
-			if found {
-				return fail(executionAuthRemnant)
-			}
-		} else {
-			raw, readErr := io.ReadAll(io.LimitReader(file, (16<<20)+1))
-			closeErr := file.Close()
-			if readErr != nil || closeErr != nil || len(raw) > 16<<20 {
-				clear(raw)
-				return fail(executionAuthFilesystem)
-			}
-			defer clear(raw)
-			for _, needle := range needles {
-				if bytes.Contains(raw, needle) {
-					return fail(executionAuthRemnant)
-				}
-			}
+		found, scanErr := scanAuthenticationStream(ctx, file, needles)
+		closeErr := file.Close()
+		if ctx.Err() != nil {
+			return fail(executionAuthCanceled)
+		}
+		if scanErr != nil || closeErr != nil {
+			return fail(executionAuthFilesystem)
+		}
+		if found {
+			return fail(executionAuthRemnant)
 		}
 		return nil
 	})
@@ -783,7 +780,10 @@ func scanExecutionAuthenticationMode(home string, latest, original []byte, share
 	return nil
 }
 
-func scanAuthenticationStream(file *os.File, needles [][]byte) (bool, error) {
+// scanAuthenticationStream searches one file for any needle with a fixed-size
+// buffer. The overlap between chunks is one byte shorter than the longest
+// needle, so a token split across a chunk boundary is still found.
+func scanAuthenticationStream(ctx context.Context, file *os.File, needles [][]byte) (bool, error) {
 	maxNeedle := 0
 	for _, needle := range needles {
 		maxNeedle = max(maxNeedle, len(needle))
@@ -793,6 +793,9 @@ func scanAuthenticationStream(file *os.File, needles [][]byte) (bool, error) {
 	defer clear(buffer)
 	overlap := 0
 	for {
+		if err := ctx.Err(); err != nil {
+			return false, err
+		}
 		n, err := file.Read(buffer[overlap : overlap+chunkSize])
 		window := buffer[:overlap+n]
 		for _, needle := range needles {
