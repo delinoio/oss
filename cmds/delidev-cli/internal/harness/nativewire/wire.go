@@ -39,10 +39,10 @@ const (
 // notifications while the Worker publishes each event durably before reading the
 // next, so its profiles tolerate a larger burst than the JSON-RPC profile.
 // Each slot reserves one Event descriptor (144 bytes on 64-bit targets), so the
-// Codex queue reserves at most 4,096 * sizeof(Event) bytes of descriptors in
+// Codex queue reserves at most 65,536 * sizeof(Event) bytes of descriptors in
 // addition to the separately bounded queued payload bytes.
 const (
-	maxCodexEvents   = 4096
+	maxCodexEvents   = 65536
 	maxJSONRPCEvents = 128
 )
 
@@ -69,9 +69,9 @@ func limitsFor(profile Profile) profileLimits {
 	case ProfileJSONRPC:
 		return profileLimits{jsonrpc: "2.0", frameBytes: MaxFrame, queueBytes: maxEventBytes, eventCount: maxJSONRPCEvents}
 	case ProfileImage:
-		return profileLimits{frameBytes: 16 << 20, queueBytes: 32 << 20, eventCount: maxCodexEvents}
+		return profileLimits{frameBytes: 16 << 20, queueBytes: 64 << 20, eventCount: maxCodexEvents}
 	default:
-		return profileLimits{frameBytes: MaxFrame, queueBytes: maxEventBytes, eventCount: maxCodexEvents}
+		return profileLimits{frameBytes: MaxFrame, queueBytes: 32 << 20, eventCount: maxCodexEvents}
 	}
 }
 

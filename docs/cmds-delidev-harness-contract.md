@@ -366,12 +366,12 @@ Each frame/request/response is capped at 1 MiB, except for the image-observation
 
 #### Native event queue limits
 
-Every `nativewire` connection selects one fixed profile when it starts. The profile alone decides the frame, queued-byte and queued-event-count bounds; callers cannot override them and no public RPC, protocol or proto field exposes them. Codex fragments one response into many small notifications while the Worker publishes each event durably before it reads the next, so the Codex profiles queue up to 4,096 undelivered events. The explicit JSON-RPC profile used by Grok keeps 128.
+Every `nativewire` connection selects one fixed profile when it starts. The profile alone decides the frame, queued-byte and queued-event-count bounds; callers cannot override them and no public RPC, protocol or proto field exposes them. Codex fragments one response into many small notifications while the Worker publishes each event durably before it reads the next, so the Codex profiles queue up to 65,536 undelivered events during parallel child activity and durable publication. The explicit JSON-RPC profile used by Grok keeps 128.
 
 | Profile   | Starter                  | Max frame | Max queued bytes | Max queued events |
 | --------- | ------------------------ | --------- | ---------------- | ----------------- |
-| `codex`   | `Start`                  | 1 MiB     | 8 MiB            | 4,096             |
-| `image`   | `StartImageObservations` | 16 MiB    | 32 MiB           | 4,096             |
+| `codex`   | `Start`                  | 1 MiB     | 32 MiB           | 65,536            |
+| `image`   | `StartImageObservations` | 16 MiB    | 64 MiB           | 65,536            |
 | `jsonrpc` | `StartJSONRPC`           | 1 MiB     | 8 MiB            | 128               |
 
 The channel capacity is the event-count bound, so allocation and admission cannot disagree. The pending-request bound (128), the incoming-interaction bound (128) and the remembered-request-identity bound (4,096) are not profile specific and are unchanged. The stdout reader is the only sender and never blocks: a full queue fails the connection instead of waiting, so native replies share that reader without stalling behind a slow consumer.
