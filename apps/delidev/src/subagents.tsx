@@ -19,6 +19,7 @@ import {
   SessionHoverCard,
   SessionHoverPlacement,
   SessionHoverProvider,
+  scrollHoverCardFromKey,
   useSessionHover,
 } from "./session-hover-card";
 
@@ -345,6 +346,10 @@ function ChildName({ row, labels }: ChildView) {
         onPointerLeave={hover.onPointerLeave}
         onFocus={hover.onFocus}
         onBlur={hover.onBlur}
+        onKeyDown={(event) => {
+          if (!hover.visible) return;
+          scrollHoverCardFromKey(document.getElementById(cardId), event);
+        }}
       >
         {row.name ?? ordinalLabel({ row, labels })}
       </span>

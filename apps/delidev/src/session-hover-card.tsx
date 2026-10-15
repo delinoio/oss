@@ -217,6 +217,59 @@ export function useSessionHover(anchor: RefObject<HTMLElement | null>) {
   };
 }
 
+/**
+ * Keys that scroll an overflowed hover card while its focused anchor keeps
+ * focus. Without this, those keys would scroll the enclosing page and the
+ * provider's scroll listener would dismiss the card.
+ */
+const CARD_SCROLL_KEYS = new Set([
+  "ArrowUp",
+  "ArrowDown",
+  "PageUp",
+  "PageDown",
+  "Home",
+  "End",
+]);
+
+const CARD_LINE_SCROLL_PIXELS = 36;
+
+/**
+ * Scrolls an overflowed card from a navigation key pressed on its focused
+ * anchor. Returns whether the key was consumed. A card that fits, a modified
+ * key and any other key are left to the browser.
+ */
+export function scrollHoverCardFromKey(
+  card: HTMLElement | null,
+  event: Pick<
+    KeyboardEvent,
+    "key" | "altKey" | "ctrlKey" | "metaKey" | "shiftKey" | "preventDefault"
+  >,
+): boolean {
+  if (
+    !card ||
+    !CARD_SCROLL_KEYS.has(event.key) ||
+    event.altKey ||
+    event.ctrlKey ||
+    event.metaKey ||
+    event.shiftKey ||
+    card.scrollHeight <= card.clientHeight
+  )
+    return false;
+  const page = Math.max(CARD_LINE_SCROLL_PIXELS, card.clientHeight * 0.9);
+  const bottom = card.scrollHeight - card.clientHeight;
+  const next = {
+    ArrowUp: card.scrollTop - CARD_LINE_SCROLL_PIXELS,
+    ArrowDown: card.scrollTop + CARD_LINE_SCROLL_PIXELS,
+    PageUp: card.scrollTop - page,
+    PageDown: card.scrollTop + page,
+    Home: 0,
+    End: bottom,
+  }[event.key as "ArrowUp"];
+  event.preventDefault();
+  card.scrollTop = Math.max(0, Math.min(bottom, next));
+  return true;
+}
+
 /** Preferred side of the anchor. Cards flip when that side lacks room. */
 export enum SessionHoverPlacement {
   /** Right of the anchor, as used by the sidebar. */

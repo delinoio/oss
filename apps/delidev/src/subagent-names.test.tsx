@@ -166,6 +166,65 @@ test("keyboard focus opens immediately, Escape dismisses until re-entry and outs
   expect(screen.queryByRole("tooltip")).toBeNull();
 });
 
+function overflow(card: HTMLElement, scrollTop: number) {
+  Object.defineProperty(card, "scrollHeight", {
+    configurable: true,
+    value: 1000,
+  });
+  Object.defineProperty(card, "clientHeight", {
+    configurable: true,
+    value: 200,
+  });
+  card.scrollTop = scrollTop;
+}
+
+test.each([
+  ["ArrowDown", 100, 136],
+  ["ArrowUp", 100, 64],
+  ["ArrowUp", 10, 0],
+  ["PageDown", 100, 280],
+  ["PageUp", 100, 0],
+  ["Home", 300, 0],
+  ["End", 300, 800],
+  ["ArrowDown", 790, 800],
+])(
+  "%s from the focused name scrolls an overflowed card from %i to %i without dismissing it",
+  (key, from, to) => {
+    const session = newRequestId();
+    const view = mount(session, named(session, ["Atlas"]));
+    const trigger = within(view.container).getByText("Atlas");
+    act(() => trigger.focus());
+    const card = screen.getByRole("tooltip");
+    overflow(card, from);
+    const notCanceled = fireEvent.keyDown(trigger, { key });
+    expect(notCanceled).toBe(false);
+    expect(card.scrollTop).toBe(to);
+    fireEvent.scroll(card);
+    expect(screen.getByRole("tooltip")).toBe(card);
+    // The card stays noninteractive: focus never leaves the name.
+    expect(globalThis.document.activeElement).toBe(trigger);
+    expect(card.querySelectorAll("button, a, input, [tabindex]")).toHaveLength(
+      0,
+    );
+  },
+);
+
+test.each([
+  ["a fitting card", "ArrowDown", {}, false],
+  ["an unrelated key", "Tab", {}, true],
+  ["a modified key", "ArrowDown", { ctrlKey: true }, true],
+  ["a shifted key", "End", { shiftKey: true }, true],
+])("%s leaves the key to the browser", (_name, key, modifiers, overflowed) => {
+  const session = newRequestId();
+  const view = mount(session, named(session, ["Atlas"]));
+  const trigger = within(view.container).getByText("Atlas");
+  act(() => trigger.focus());
+  const card = screen.getByRole("tooltip");
+  if (overflowed) overflow(card, 100);
+  expect(fireEvent.keyDown(trigger, { key, ...modifiers })).toBe(true);
+  expect(card.scrollTop).toBe(overflowed ? 100 : 0);
+});
+
 test.each(["scroll", "resize"])("external %s dismisses the card", (kind) => {
   const session = newRequestId();
   const view = mount(session, named(session, ["Atlas"]));
