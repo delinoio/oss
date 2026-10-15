@@ -226,8 +226,8 @@ fn coverage(
                 {
                     (
                         CoverageState::NotApplicable,
-                        "Name mangling is disabled by build.rolldownOptions.output.minify.mangle, \
-                         so names stay readable regardless of the source."
+                        "Name mangling is disabled in the build's final Rolldown output minify \
+                         options, so names stay readable regardless of the source."
                             .to_owned(),
                     )
                 }
@@ -2800,7 +2800,7 @@ mod tests {
             .find(|entry| entry.category == OptimizationCategory::NameMangling)
             .unwrap();
         assert_eq!(entry.state, CoverageState::NotApplicable);
-        assert!(entry.note.contains("mangle"), "{}", entry.note);
+        assert!(entry.note.contains("final"), "{}", entry.note);
         // Dead-code elimination is unaffected by the mangling setting.
         let dce = analysis
             .coverage

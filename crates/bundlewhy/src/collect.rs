@@ -17,8 +17,9 @@ pub struct Collection {
     pub minifier_version: String,
     pub default_minifier: bool,
     pub minify_enabled: bool,
-    /// Effective output name-mangling setting. Collections written before the
-    /// field existed, and engines that do not report it, assume mangling.
+    /// Effective output name-mangling setting, read from the finalized output
+    /// options after plugin hooks ran. Collections written before the field
+    /// existed, and engines that do not report it (Rspack), assume mangling.
     pub mangle: ManglingSetting,
     pub adapter_id: String,
     pub adapter_version: String,
@@ -47,8 +48,8 @@ pub enum ManglingSetting {
     /// Mangling runs, or the collection does not say otherwise.
     #[default]
     Enabled,
-    /// The configuration disables mangling, so names stay readable regardless
-    /// of the source.
+    /// The build's final output options disable mangling, so names stay
+    /// readable regardless of the source.
     Disabled,
 }
 

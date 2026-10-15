@@ -11,6 +11,8 @@ import { fileURLToPath } from "node:url";
 import {
   MangleSetting,
   normalizeCollectionRoot,
+  resolveEffectiveMangle,
+  resolveFinalizedMangleSetting,
   resolveMangleSetting,
 } from "../../../crates/bundlewhy/adapters/vite.mjs";
 
@@ -59,6 +61,84 @@ test("output minify options decide the effective mangle setting", () => {
     Disabled,
   );
   assert.equal(resolveMangleSetting([]), Enabled);
+});
+
+test("finalized output options decide the mangle setting after plugin hooks", () => {
+  const { Enabled, Disabled } = MangleSetting;
+  // Rolldown normalizes `minify` before generateBundle: defaults are filled in
+  // and a disabled step is removed from the options object.
+  const normalized = (minify) => ({ minify });
+  assert.equal(resolveFinalizedMangleSetting(undefined), undefined);
+  assert.equal(resolveFinalizedMangleSetting(null), undefined);
+  assert.equal(resolveFinalizedMangleSetting({}), undefined);
+  assert.equal(resolveFinalizedMangleSetting(normalized(false)), Disabled);
+  assert.equal(resolveFinalizedMangleSetting(normalized("dce-only")), Disabled);
+  assert.equal(
+    resolveFinalizedMangleSetting(normalized({ compress: {} })),
+    Disabled,
+  );
+  assert.equal(
+    resolveFinalizedMangleSetting(normalized({ compress: {}, mangle: null })),
+    Disabled,
+  );
+  assert.equal(
+    resolveFinalizedMangleSetting(normalized({ mangle: false })),
+    Disabled,
+  );
+  assert.equal(
+    resolveFinalizedMangleSetting(
+      normalized({ compress: {}, mangle: { toplevel: true } }),
+    ),
+    Enabled,
+  );
+  assert.equal(resolveFinalizedMangleSetting(normalized(true)), Enabled);
+
+  // The finalized value wins over the configured estimate for the Oxc minifier
+  // in both directions.
+  for (const buildMinify of [undefined, true, "oxc"]) {
+    assert.equal(
+      resolveEffectiveMangle({
+        buildMinify,
+        configured: Enabled,
+        finalized: Disabled,
+      }),
+      Disabled,
+    );
+    assert.equal(
+      resolveEffectiveMangle({
+        buildMinify,
+        configured: Disabled,
+        finalized: Enabled,
+      }),
+      Enabled,
+    );
+    assert.equal(
+      resolveEffectiveMangle({ buildMinify, configured: Disabled }),
+      Disabled,
+    );
+    assert.equal(resolveEffectiveMangle({ buildMinify }), Enabled);
+  }
+  // Disabled minification never mangles.
+  assert.equal(
+    resolveEffectiveMangle({
+      buildMinify: false,
+      configured: Enabled,
+      finalized: Enabled,
+    }),
+    Disabled,
+  );
+  // Terser and esbuild leave Rolldown's own minifier off, so the finalized
+  // `minify: false` says nothing about their mangling.
+  for (const buildMinify of ["terser", "esbuild"]) {
+    assert.equal(
+      resolveEffectiveMangle({
+        buildMinify,
+        configured: Disabled,
+        finalized: Disabled,
+      }),
+      Enabled,
+    );
+  }
 });
 
 function makeProject(t) {
@@ -497,5 +577,59 @@ test("Vite diagnostic records the effective output mangle setting", (t) => {
     );
     assert.equal(collection.minifyEnabled, true, name);
     assert.equal(collection.defaultMinifier, true, name);
+  }
+});
+
+test("Vite diagnostic reads the mangle setting from the finalized output options", (t) => {
+  const pluginSource = (minify) => `{
+    name: "test:output-options",
+    outputOptions(options) {
+      return { ...options, minify: ${minify} };
+    },
+  }`;
+  const cases = [
+    {
+      name: "plugin-disables-mangle",
+      config: `build: { minify: "oxc" }, plugins: [${pluginSource("{ compress: true, mangle: false }")}]`,
+      expected: "disabled",
+    },
+    {
+      name: "plugin-disables-minify",
+      config: `build: { minify: "oxc" }, plugins: [${pluginSource("false")}]`,
+      expected: "disabled",
+    },
+    {
+      name: "plugin-reenables-mangle",
+      config: `build: { minify: "oxc", rolldownOptions: { output: { minify: { mangle: false } } } }, plugins: [${pluginSource("true")}]`,
+      expected: "enabled",
+    },
+    {
+      name: "plugin-keeps-configured-disabled",
+      config: `build: { minify: "oxc", rolldownOptions: { output: { minify: { mangle: false } } } }, plugins: [{ name: "test:noop", outputOptions() {} }]`,
+      expected: "disabled",
+    },
+    {
+      name: "build-minify-false",
+      config: `build: { minify: false }`,
+      expected: "disabled",
+    },
+    {
+      name: "output-array-entry",
+      config: `build: { minify: "oxc", rolldownOptions: { output: [{ minify: { mangle: false } }] } }`,
+      expected: "disabled",
+    },
+  ];
+  for (const { name, config, expected } of cases) {
+    const { work, projectRoot } = makeProject(t);
+    writeEntry(projectRoot, "finalized-entry");
+    const configFile = path.join(projectRoot, "vite.config.js");
+    fs.writeFileSync(configFile, `export default { ${config} };\n`);
+    const { collection } = runDiagnostic(work, projectRoot, configFile);
+    assert.equal(collection.mangle, expected, name);
+    assert.equal(
+      collection.configSummary["build.rolldownOptions.output.minify.mangle"],
+      expected,
+      name,
+    );
   }
 });

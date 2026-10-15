@@ -107,7 +107,8 @@ export const MangleSetting = Object.freeze({
 });
 
 /**
- * Resolves whether the Oxc minifier mangles names for one Rolldown output.
+ * Resolves whether the Oxc minifier mangles names from the output options a
+ * project configured, before any plugin hook can replace them.
  *
  * Rolldown's `output.minify` is `boolean | "dce-only" | MinifyOptions`.
  * `false` and `"dce-only"` never mangle, and an options object mangles unless
@@ -116,6 +117,9 @@ export const MangleSetting = Object.freeze({
  * output array is read as that entry; several outputs are rejected after the
  * build, so the first entry is enough for the diagnostic message. Only the
  * explicit output option is read, never the source text.
+ *
+ * This is only the fallback estimate: a plugin `outputOptions` hook can still
+ * change the option, so `resolveEffectiveMangle` prefers the finalized value.
  */
 export function resolveMangleSetting(output) {
   const entry = Array.isArray(output) ? output[0] : output;
@@ -126,6 +130,49 @@ export function resolveMangleSetting(output) {
     return MangleSetting.Disabled;
   }
   return MangleSetting.Enabled;
+}
+
+/**
+ * Resolves the mangle setting from the normalized output options that
+ * Rolldown passes to `generateBundle`, after every plugin `outputOptions`
+ * hook ran.
+ *
+ * Normalization fills the minifier defaults in and drops a disabled step, so
+ * an options object mangles only while its `mangle` is still present. Returns
+ * `undefined` when the engine does not report a `minify` value.
+ */
+export function resolveFinalizedMangleSetting(normalizedOptions) {
+  if (normalizedOptions === null || typeof normalizedOptions !== "object") {
+    return undefined;
+  }
+  const minify = normalizedOptions.minify;
+  if (minify === undefined) return undefined;
+  if (minify === false || minify === "dce-only") return MangleSetting.Disabled;
+  if (minify !== null && typeof minify === "object") {
+    return minify.mangle === undefined ||
+      minify.mangle === null ||
+      minify.mangle === false
+      ? MangleSetting.Disabled
+      : MangleSetting.Enabled;
+  }
+  return MangleSetting.Enabled;
+}
+
+/**
+ * Picks the mangle setting recorded in the collection.
+ *
+ * Vite only maps `build.minify` onto the Rolldown output option for its
+ * default Oxc minifier: `false` becomes `"dce-only"`, while `"terser"` and
+ * `"esbuild"` leave Rolldown's own minifier off and mangle in their own
+ * plugin. The finalized output value is therefore authoritative only for the
+ * Oxc minifier. Without a finalized value the configured estimate applies.
+ */
+export function resolveEffectiveMangle({ buildMinify, configured, finalized }) {
+  if (buildMinify === false) return MangleSetting.Disabled;
+  if (typeof buildMinify === "string" && buildMinify !== "oxc") {
+    return MangleSetting.Enabled;
+  }
+  return finalized ?? configured ?? MangleSetting.Enabled;
 }
 
 /**
@@ -262,12 +309,16 @@ function collectorPlugin(state) {
         column: log.loc?.column ?? null,
       });
     },
-    generateBundle(_options, bundle) {
+    generateBundle(options, bundle) {
       // generateBundle runs once per output. bundlewhy analyzes one output;
       // several outputs are rejected after the build instead of silently
       // keeping only the last one.
       state.outputs += 1;
       if (state.outputs > 1) return;
+      // These are the normalized options of the analyzed output, so they
+      // include every change that plugin `outputOptions` hooks made after
+      // configResolved.
+      state.finalizedMangle = resolveFinalizedMangleSetting(options);
       const modules = new Map();
       const recordModule = (id) => {
         if (modules.has(id)) return modules.get(id);
@@ -381,6 +432,7 @@ await runAdapter(async (request) => {
     root: null,
     resolved: null,
     moduleSideEffectsOption: undefined,
+    finalizedMangle: undefined,
     collection: null,
     outputs: 0,
     warnings: [],
@@ -530,6 +582,11 @@ await runAdapter(async (request) => {
 
   const resolved = state.resolved ?? {};
   const minify = resolved.minify;
+  const mangle = resolveEffectiveMangle({
+    buildMinify: minify,
+    configured: resolved.mangle,
+    finalized: state.finalizedMangle,
+  });
   const minifyEnabled = minify !== false;
   // Vite documents `build.minify` default as 'oxc' for client builds; `true`
   // selects the same default minifier.
@@ -539,8 +596,7 @@ await runAdapter(async (request) => {
     "build.minify": summarizeValue(minify),
     "build.target": resolved.target ?? "unknown",
     "build.rolldownOptions.treeshake": resolved.treeshake ?? "undefined",
-    "build.rolldownOptions.output.minify.mangle":
-      resolved.mangle ?? MangleSetting.Enabled,
+    "build.rolldownOptions.output.minify.mangle": mangle,
     "build.lib": String(Boolean(resolved.lib)),
     "build.ssr": String(Boolean(resolved.ssr)),
     "original build.sourcemap": summarizeValue(resolved.sourcemap),
@@ -559,7 +615,7 @@ await runAdapter(async (request) => {
     minifierVersion: minifierName === "oxc" ? vite.rolldownVersion : "unknown",
     defaultMinifier: minifierName === "oxc",
     minifyEnabled,
-    mangle: resolved.mangle ?? MangleSetting.Enabled,
+    mangle,
     adapterId: ADAPTER_ID,
     adapterVersion: ADAPTER_VERSION,
     engineDetails: { rolldownVersion: vite.rolldownVersion },

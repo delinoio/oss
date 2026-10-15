@@ -106,6 +106,23 @@ for (const [bundler, project, config] of [
     );
   });
 
+  test(`${bundler} adapter reports its adapter version and mangle setting`, () => {
+    const { status, events, collection } = runAdapter(bundler, project, config);
+    assert.equal(status, 0, JSON.stringify(events));
+    assert.equal(collection.adapterVersion, "2");
+    // Only the Vite adapter reports the setting. A collection without it is
+    // read as mangling enabled.
+    if (bundler === "vite") {
+      assert.equal(collection.mangle, "enabled");
+      assert.equal(
+        collection.configSummary["build.rolldownOptions.output.minify.mangle"],
+        "enabled",
+      );
+    } else {
+      assert.equal("mangle" in collection, false);
+    }
+  });
+
   test(`${bundler} adapter refuses an engine outside the matrix`, () => {
     const { status, events, collection } = runAdapter(
       bundler,
