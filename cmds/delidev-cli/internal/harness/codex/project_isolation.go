@@ -24,8 +24,10 @@ import (
 // would otherwise launch the repository's MCP servers. The adapter therefore
 // keeps every thread project (and workspace root) marked untrusted in the
 // private CODEX_HOME before the thread starts, pins the native defaults that
-// the untrusted marker would otherwise change, and verifies the effective MCP
-// inventory after the thread exists and before any input.
+// the untrusted marker would otherwise change, removes every MCP definition the
+// private configuration could contribute (top level and every profile), and
+// verifies the effective MCP inventory after the thread exists and before any
+// input.
 
 // isolationStage names the closed stage of a rejected isolation step.
 type isolationStage string
@@ -257,14 +259,87 @@ func linkedWorktreeMain(root string) string {
 
 var projectConfigLocks sync.Map
 
-// isolateHomeConfig records trust_level = "untrusted" for every key in the
-// private home's config.toml and removes its mcp_servers table: the private
-// home belongs to DeliDev, which never authors an MCP selection there, so an
-// entry in it is foreign and would otherwise load for every project. The
-// profile lease already serializes processes on the home; the in-process lock
-// serializes shared-owner members. Other content is preserved semantically
-// (comments are not), an unchanged file is not rewritten and a changed file is
-// replaced atomically with owner-only permissions.
+// isolateHomeDocument applies the private-home isolation cells to a decoded
+// config.toml and reports whether it changed:
+//
+//   - the top-level mcp_servers table is removed;
+//   - every profile table (selected or not) loses its mcp_servers table, because
+//     the selected profile merges over the top-level configuration;
+//   - every requested project key is untrusted.
+//
+// Any other shape of a table this function must edit is invalid and rejected.
+func isolateHomeDocument(document map[string]any, keys []string) (bool, error) {
+	changed := false
+	if _, present := document["mcp_servers"]; present {
+		delete(document, "mcp_servers")
+		changed = true
+	}
+	if raw, present := document["profiles"]; present {
+		profiles, ok := raw.(map[string]any)
+		if !ok {
+			return false, fmt.Errorf("invalid native profiles table")
+		}
+		for _, name := range sortedKeys(profiles) {
+			profile, ok := profiles[name].(map[string]any)
+			if !ok {
+				return false, fmt.Errorf("invalid native profile entry")
+			}
+			if _, present := profile["mcp_servers"]; present {
+				delete(profile, "mcp_servers")
+				changed = true
+			}
+		}
+	}
+	projects, _ := document["projects"].(map[string]any)
+	if document["projects"] != nil && projects == nil {
+		return false, fmt.Errorf("invalid native projects table")
+	}
+	if projects == nil {
+		projects = map[string]any{}
+	}
+	untrust := func(key string) error {
+		entry, _ := projects[key].(map[string]any)
+		if projects[key] != nil && entry == nil {
+			return fmt.Errorf("invalid native project entry")
+		}
+		if entry == nil {
+			entry = map[string]any{}
+		}
+		if entry["trust_level"] != projectTrustUntrusted {
+			entry["trust_level"] = projectTrustUntrusted
+			projects[key] = entry
+			changed = true
+		}
+		return nil
+	}
+	for _, key := range keys {
+		if err := untrust(key); err != nil {
+			return false, err
+		}
+	}
+	if changed {
+		document["projects"] = projects
+	}
+	return changed, nil
+}
+
+func sortedKeys(table map[string]any) []string {
+	keys := make([]string, 0, len(table))
+	for key := range table {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	return keys
+}
+
+// isolateHomeConfig applies isolateHomeDocument to the private home's
+// config.toml. The private home belongs to DeliDev, which never authors an MCP,
+// profile or plugin selection there, so such an entry is foreign and would
+// otherwise load for every project. The profile lease already serializes
+// processes on the home; the in-process lock serializes shared-owner members.
+// Other content is preserved semantically (comments are not), an unchanged file
+// is not rewritten and a changed file is replaced atomically with owner-only
+// permissions.
 func isolateHomeConfig(home string, keys []string) error {
 	if len(keys) == 0 || !filepath.IsAbs(home) {
 		return fmt.Errorf("invalid project isolation request")
@@ -286,36 +361,10 @@ func isolateHomeConfig(home string, keys []string) error {
 	} else if !os.IsNotExist(err) {
 		return err
 	}
-	projects, _ := document["projects"].(map[string]any)
-	if document["projects"] != nil && projects == nil {
-		return fmt.Errorf("invalid native projects table")
+	changed, err := isolateHomeDocument(document, keys)
+	if err != nil || !changed {
+		return err
 	}
-	if projects == nil {
-		projects = map[string]any{}
-	}
-	changed := false
-	if _, present := document["mcp_servers"]; present {
-		delete(document, "mcp_servers")
-		changed = true
-	}
-	for _, key := range keys {
-		entry, _ := projects[key].(map[string]any)
-		if projects[key] != nil && entry == nil {
-			return fmt.Errorf("invalid native project entry")
-		}
-		if entry == nil {
-			entry = map[string]any{}
-		}
-		if entry["trust_level"] != projectTrustUntrusted {
-			entry["trust_level"] = projectTrustUntrusted
-			projects[key] = entry
-			changed = true
-		}
-	}
-	if !changed {
-		return nil
-	}
-	document["projects"] = projects
 	var encoded bytes.Buffer
 	if err := toml.NewEncoder(&encoded).Encode(document); err != nil {
 		return err

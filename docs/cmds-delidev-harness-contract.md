@@ -1234,21 +1234,26 @@ independent Fork `thread/fork`).
 
 1. **Project isolation before the native call.** Under the in-process per-home
    lock, the adapter reads the private `config.toml` (bounded, owner-only,
-   strict TOML), records `trust_level = "untrusted"` for the thread directory,
-   its nearest Git repository root, the main repository root of a linked
-   worktree and every workspace root, replaces any retained `trusted` value of
-   those keys, and removes the private file's own `mcp_servers` table (DeliDev
-   never authors an MCP selection there, so an entry is foreign). Other settings
-   are preserved semantically; **comments and key order of this private file are
-   not preserved**. An unchanged file is not rewritten; a changed file is
-   replaced atomically (owner-only temporary file attributed to its target, then
-   rename). The profile lease already serializes processes on a registered
-   profile home, including a legacy home registered in place and a shared owner
-   home, and the adapter creates no lock file or registry state of its own; the
-   per-home lock only serializes concurrent shared-owner members in this process.
-   An unreadable, invalid or unwritable file fails before any thread exists with
+   strict TOML) and applies the state table below. It records
+   `trust_level = "untrusted"` for the thread directory, its nearest Git
+   repository root, the main repository root of a linked worktree and every
+   workspace root, and replaces any retained `trusted` value of those keys.
+   It removes the top-level `mcp_servers` table and the `mcp_servers` table of
+   every profile table, selected or not, because the selected profile merges over
+   the top-level configuration (DeliDev never authors an MCP or profile selection
+   there, so an entry is foreign).
+   Other settings are preserved semantically; **comments and key order of this
+   private file are not preserved**. An unchanged file is not rewritten; a
+   changed file is replaced atomically (owner-only temporary file attributed to
+   its target, then rename). The profile lease already serializes processes on a
+   registered profile home, including a legacy home registered in place and a
+   shared owner home, and the adapter creates no lock file or registry state of
+   its own; the per-home lock only serializes concurrent shared-owner members in
+   this process. An unreadable, invalid or unwritable file, or a table of an
+   unexpected shape (see the state table), fails before any thread exists with
    `unsupported` in the profile phase and a structured warning naming only
-   `stage=project-trust-isolation` and `reason=trust-unwritable`.
+   `stage=project-trust-isolation` and `reason=trust-unwritable`; the file is
+   left unchanged.
 2. **Pinned defaults.** An untrusted project changes two native defaults when the
    selection is empty: approval becomes `untrusted` and the sandbox becomes
    `workspace-write` (a never-recorded project yields `on-request` and
@@ -1262,20 +1267,22 @@ independent Fork `thread/fork`).
 
 After the thread exists and before the connection can send any input or
 `turn/start`, `config/read` with the thread directory must report an absent,
-null or empty `mcp_servers`. A non-empty or unparseable inventory, a native
-error or a failed read fails with `unsupported` in the profile phase, latches
+null or empty `mcp_servers`.
+A non-empty or unparseable inventory, a native error or a failed read fails with
+`unsupported` in the profile phase, latches
 the connection (no input or second thread), logs
 `codex_native_isolation_rejected` with only `owner_id`,
 `stage=mcp-inventory-verification` and a closed `reason`
-(`inventory-nonempty` or `inventory-unreadable`), and never exposes server names,
-commands or native error text. The Worker closes its owned native process through
-the normal cleanup path, so the failure is reported before input acknowledgment
-and the queued input remains retryable under the existing safe-retry rules; an
-acknowledged input is never replayed. An MCP definition outside the private home
-and repository (system or managed policy) cannot be isolated this way and takes
-this failure path. Selected-MCP support is separate future work. The passive
-managed `codex_apps` startup status and unrelated foreign MCP events keep their
-existing handling in the observation boundary.
+(`inventory-nonempty` or `inventory-unreadable`), and never
+exposes server names, commands or native error text. The Worker closes its owned
+native process through the normal cleanup path, so the failure is reported
+before input acknowledgment and the queued input remains retryable under the
+existing safe-retry rules; an acknowledged input is never replayed. An MCP
+definition outside the private home and repository (system or managed policy)
+cannot be isolated this way and takes this failure path. Selected-MCP support is
+separate future work. The passive managed `codex_apps` startup status and
+unrelated foreign MCP events keep their existing handling in the observation
+boundary.
 
 The isolation table is a single source (`policyFor`) and every row has a test:
 
@@ -1291,13 +1298,29 @@ The isolation table is a single source (`policyFor`) and every row has a test:
 | Native review                                                             | start                                                         | named read-only profile                     | as requested                 | no      | existing review configuration check                  |
 | Probe, discovery, quota, credit, subscription, model observation          | none                                                          | not applicable                              | not applicable               | no      | no                                                   |
 
+Every dimension of the private-home isolation has a state table, and every row
+has a test (`project_isolation_cells_test.go` runs each row through the pure
+document function and through the file). A rejected shape leaves the file
+unchanged and fails with `reason=trust-unwritable`.
+
+| Dimension                | State                                                        | Result                                                 |
+| ------------------------ | ------------------------------------------------------------ | ------------------------------------------------------ |
+| Config shape and profile | No file or empty file                                        | Created with the untrusted keys                        |
+| Config shape and profile | Top-level `mcp_servers` (table or scalar)                    | Removed                                                |
+| Config shape and profile | Selected profile defines `mcp_servers`                       | Removed from that profile; its other settings are kept |
+| Config shape and profile | Unselected profile or several profiles define `mcp_servers`  | Removed from every profile                             |
+| Config shape and profile | `profile` names a profile that is not defined                | Every defined profile is still stripped                |
+| Config shape and profile | `profiles` is not a table, or a profile entry is not a table | Rejected; file unchanged                               |
+
 Tests: `project_isolation_test.go` (table, profile derivation, pinned defaults,
 trust keys including linked worktrees, atomic idempotent replacement, invalid
 files, concurrent members, start and resume rows, inventory rejection rows and
-logs), the shared-owner binding test, and the explicit installed-native
+logs), `project_isolation_cells_test.go` (the state table above),
+the shared-owner binding test, and the explicit installed-native
 `TestManualNativeOrdinaryExecutionNeverLaunchesUnselectedMCP` and
 `TestManualNativeForkNeverLaunchesUnselectedMCP` suites, which run the
-repository-layer, private-home-layer, retained-trusted-home and resume cases
+repository-layer, private-home-layer, retained-trusted-home, resume and
+selected-profile cases
 against Codex 0.159.2 with a scripted loopback provider and no real account.
 Real-account acceptance is not performed.
 

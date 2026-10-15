@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -35,7 +36,8 @@ func TestManualNativeOrdinaryExecutionNeverLaunchesUnselectedMCP(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("Git is required for repository trust resolution")
 	}
-	for _, scenario := range []string{"repository-layer", "private-home-layer", "retained-trusted-home", "resume"} {
+	scenarios := []string{"repository-layer", "private-home-layer", "retained-trusted-home", "resume", "selected-profile"}
+	for _, scenario := range scenarios {
 		t.Run(scenario, func(t *testing.T) {
 			var requests atomic.Int64
 			provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -66,6 +68,8 @@ func TestManualNativeOrdinaryExecutionNeverLaunchesUnselectedMCP(t *testing.T) {
 			switch scenario {
 			case "private-home-layer":
 				appendNativeConfig(t, filepath.Join(cfg.Home, "config.toml"), "\n"+server)
+			case "selected-profile":
+				appendNativeConfig(t, filepath.Join(cfg.Home, "config.toml"), "\nprofile = \"review\"\n"+strings.Replace(server, "[mcp_servers.marker]", "[profiles.review.mcp_servers.marker]", 1))
 			case "retained-trusted-home":
 				// An earlier thread of the retained home recorded trust.
 				appendNativeConfig(t, filepath.Join(cfg.Home, "config.toml"), fmt.Sprintf("\n[projects.%q]\ntrust_level = \"trusted\"\n", workspace))
