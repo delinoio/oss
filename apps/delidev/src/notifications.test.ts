@@ -241,6 +241,52 @@ it("reports a native scope initialization failure by phase and recovers on the n
   value.pump.close();
 });
 
+// Disposal and replacement cells of the pump rows in the diagnostics table of
+// the desktop contract: a begin rejection that settles after the connection
+// closed reports nothing, whether the pump was only prepared or already drained.
+it.each([
+  ["prepared", false],
+  ["draining", true],
+] as const)(
+  "reports no scope failure that settles after a %s pump closed",
+  async (_name, draining) => {
+    const value = fixture();
+    let reject!: (error: Error) => void;
+    value.bridge.begin.mockReturnValueOnce(
+      new Promise<string>((_, fail) => {
+        reject = fail;
+      }),
+    );
+    if (draining) value.pump.update([value.candidate]);
+    else value.pump.prepare();
+    await vi.waitFor(() => expect(value.bridge.begin).toHaveBeenCalledTimes(1));
+    value.pump.close();
+    reject(new Error("private native detail"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(value.problem).not.toHaveBeenCalled();
+    expect(value.claim).not.toHaveBeenCalled();
+  },
+);
+
+it("reports a scope failure that settles while the pump is still open", async () => {
+  const value = fixture();
+  let reject!: (error: Error) => void;
+  value.bridge.begin.mockReturnValueOnce(
+    new Promise<string>((_, fail) => {
+      reject = fail;
+    }),
+  );
+  value.pump.prepare();
+  reject(new Error("private native detail"));
+  await vi.waitFor(() =>
+    expect(value.problem).toHaveBeenCalledWith(
+      true,
+      PresentationPhase.NotificationScopeBegin,
+    ),
+  );
+  value.pump.close();
+});
+
 it("rejects oversized pages before native initialization and separates Linux service availability from permission", () => {
   const value = fixture();
   value.pump.update(Array.from({ length: 51 }, () => value.candidate));

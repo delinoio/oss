@@ -1715,7 +1715,11 @@ adds its own record, and a healthy snapshot recovers both sidebar phases.
 
 Every phase leaves the product UI empty. The tray publisher and the
 notification pump report only the phase and whether its operation failed; the
-presentation component owns the log and decides what is recorded.
+presentation component owns the log and decides what is recorded. A closed
+tray publisher or notification pump reports nothing, so an operation that
+settles after unmount, Strict Mode cleanup or connection replacement (for
+example a pending `begin_notifications` that later rejects) adds no record to
+the new lifetime.
 
 #### Notifications settings presentation
 

@@ -129,10 +129,15 @@ export class NotificationPump {
     if (this.closed) return;
     this.scope ??= this.bridge.begin().catch((error: unknown) => {
       this.scope = undefined;
-      this.problem(true, PresentationPhase.NotificationScopeBegin);
+      // A rejection that settles after close belongs to a disposed connection.
+      this.note(PresentationPhase.NotificationScopeBegin, true);
       throw error;
     });
     void this.scope.catch(() => {});
+  }
+  // Every record passes here, so a closed pump reports nothing late.
+  private note(phase: PresentationPhase, failed: boolean) {
+    if (!this.closed) this.problem(failed, phase);
   }
   update(values: readonly NotificationCandidate[]) {
     if (this.closed) return;
@@ -145,7 +150,7 @@ export class NotificationPump {
           !nativeKinds[v.kind],
       )
     ) {
-      this.problem(true, PresentationPhase.NotificationCandidateInvalid);
+      this.note(PresentationPhase.NotificationCandidateInvalid, true);
       return;
     }
     this.pending = values.map((v) => ({ ...v }));
@@ -240,14 +245,14 @@ export class NotificationPump {
           if (failed) break;
         }
         if (!this.closed) {
-          this.problem(failed, PresentationPhase.NotificationPresent);
+          this.note(PresentationPhase.NotificationPresent, failed);
           if (accepted && !failed) this.changed();
         }
       }
     } catch {
       if (!this.closed) {
         this.pending = undefined;
-        this.problem(true, phase);
+        this.note(phase, true);
       }
     } finally {
       this.running = false;
