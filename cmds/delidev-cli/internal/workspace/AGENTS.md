@@ -16,3 +16,8 @@
 - [DeliDev native read-only Sidechat](../../../../docs/cmds-delidev-sidechat-contract.md)
 - [DeliDev storage operations](../../../../docs/cmds-delidev-storage-contract.md)
 - [DeliDev Worker workspace contract](../../../../docs/cmds-delidev-workspace-contract.md)
+
+## Repository source cache
+
+- The Worker-private repository source cache lives outside `workspaces/<session>`. Session cleanup, recovery, snapshot and deletion code must never address its paths, and cache code must never address session paths.
+- Change cache behavior only together with the entry state table in the workspace contract, and add a test for every table cell you add or alter.
