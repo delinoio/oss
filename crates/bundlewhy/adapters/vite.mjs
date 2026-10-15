@@ -19,6 +19,7 @@ import {
   runAdapter,
   stripAnsi,
   summarizeValue,
+  waitForProtectionAck,
   writeCollection,
 } from "./common.mjs";
 
@@ -93,7 +94,7 @@ function collectorPlugin(state) {
     name: "bundlewhy:collector",
     enforce: "post",
     apply: "build",
-    configResolved(config) {
+    async configResolved(config) {
       state.root = normalizeCollectionRoot(
         config.root,
         config.resolve?.preserveSymlinks === true,
@@ -123,6 +124,7 @@ function collectorPlugin(state) {
       // after those hooks so the Rust side can add its protected files while
       // retaining the pre-adapter snapshot for paths it already knows.
       emit({ event: "protection", root: state.root });
+      await waitForProtectionAck();
     },
     onLog(level, log) {
       // Rolldown reports optimization-relevant warnings (for example EVAL and
@@ -254,6 +256,13 @@ await runAdapter(async (request) => {
     "build.watch=null",
   ];
 
+  // Capture the selected project before loading the user's configuration.
+  // Configuration factories and plugins can mutate files while they are
+  // evaluated, so the Rust side must acknowledge this baseline first.
+  state.root = normalizeCollectionRoot(request.projectRoot);
+  emit({ event: "protection", root: state.root });
+  await waitForProtectionAck();
+
   // Load the configuration once on its own so that evaluation errors and
   // rejecting configuration factories are reported as configuration
   // problems, not build failures. The loaded config is then built inline.
@@ -281,9 +290,8 @@ await runAdapter(async (request) => {
     }
   }
 
-  // Capture protected project inputs before Vite invokes user plugin hooks.
-  // configResolved runs in parallel with user hooks, so announcing the root
-  // from that hook can snapshot files after a plugin has changed them.
+  // Capture the configured root after loading the user's configuration. This
+  // adds external roots to the protection set before the build starts.
   const configuredRoot =
     typeof userConfig.root === "string" ? userConfig.root : request.projectRoot;
   const root = path.isAbsolute(configuredRoot)
@@ -294,6 +302,7 @@ await runAdapter(async (request) => {
     userConfig.resolve?.preserveSymlinks === true,
   );
   emit({ event: "protection", root: state.root });
+  await waitForProtectionAck();
 
   progress("building", `Running vite build with Vite ${vite.version}`);
   try {

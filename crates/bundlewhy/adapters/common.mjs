@@ -52,6 +52,41 @@ export function emit(event) {
   );
 }
 
+/**
+ * Wait until the Rust supervisor has captured the files named by a protection
+ * event before allowing the adapter to invoke user configuration hooks.
+ */
+export function waitForProtectionAck() {
+  const expected = `BUNDLEWHY-PROTECTION-ACK ${protocolToken}`;
+  return new Promise((resolve, reject) => {
+    let buffer = "";
+    const onData = (chunk) => {
+      buffer += chunk;
+      const newline = buffer.indexOf("\n");
+      if (newline < 0) return;
+      const line = buffer.slice(0, newline).replace(/\r$/, "");
+      process.stdin.off("data", onData);
+      process.stdin.off("end", onEnd);
+      process.stdin.pause();
+      if (line === expected) {
+        resolve();
+      } else {
+        reject(
+          new Error("The protection snapshot acknowledgement was invalid"),
+        );
+      }
+    };
+    const onEnd = () => {
+      process.stdin.off("data", onData);
+      reject(new Error("The protection snapshot acknowledgement was closed"));
+    };
+    process.stdin.setEncoding("utf8");
+    process.stdin.on("data", onData);
+    process.stdin.once("end", onEnd);
+    process.stdin.resume();
+  });
+}
+
 export function progress(stage, message) {
   emit({ event: "progress", stage, message });
 }
