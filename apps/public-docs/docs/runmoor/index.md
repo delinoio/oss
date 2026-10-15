@@ -1,5 +1,7 @@
 # Runmoor
 
+> **Unreleased Windows support:** Windows 11 x64 support adds native Windows runners, Docker Windows container runners and login-triggered background execution. Windows Server, ARM64, Linux containers on Windows and Windows DinD are excluded. The released platform boundary described below remains unchanged until a containing release is verified. See [Host](./host), [Docker](./docker), [Installation](./install) and [Operations](./operations) for Windows instructions. Windows container execution and live GitHub jobs require separate acceptance; builds and fixtures do not establish that compatibility.
+
 Runmoor is a local manager for disposable GitHub Actions runners. One host can manage multiple repository and organization pools with GitHub App or PAT authentication. Each runner executes at most one job.
 
 Linux jobs use an operator-installed local Docker engine. macOS jobs use operator-installed Tart virtual machines or explicitly selected host processes. Host execution is unreleased; see the [host guide](./host) for its setup and trust limits. Supported hosts are **macOS 14+ on Apple Silicon** and **Ubuntu 22.04+ on amd64/arm64**. Jobs must match the host CPU architecture. Windows, Intel Macs, emulation, GHES and remote Docker engines are unsupported.

@@ -218,3 +218,7 @@ Tart and Guest Agent are required only for Tart execution. Update overview,
 configuration, commands, operations, install and CLI README together. State that
 host is unreleased and actual host execution, unsigned Xcode builds and live
 GitHub jobs are unvalidated; preserve existing package/Docker/Tart evidence limits.
+
+## Windows 11 x64
+
+Windows guidance remains marked unreleased and preserves existing route names. Overview, installation, configuration, commands, Docker, host, operations and the CLI README explain Windows 11 x64 native runners, Hyper-V Windows containers and current-user login tasks. Include verified ZIP/Sigstore installation, TOML literal Windows paths, current-user credential permissions, routing labels, logout limits, manual executable replacement and interrupted reload recovery. Explain trusted same-account execution and Linux-only GitHub container actions. Exclude Windows Server, ARM64, Windows Linux containers and Windows DinD. Keep native filesystem, process, IPC and recovery implementation details in the [command foundation](cmds-runmoor-foundation.md#windows-11-x64); public guides distinguish fixtures/builds from platform and live GitHub acceptance.

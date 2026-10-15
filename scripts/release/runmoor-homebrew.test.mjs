@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
@@ -20,6 +21,7 @@ import {
 } from "./runmoor-homebrew.mjs";
 
 const root = new URL("../../", import.meta.url);
+import { windowsArchive } from "./runmoor-zip.mjs";
 const revision = "a".repeat(40);
 const plan = homebrewPlan({ version: "0.1.3", revision });
 function temporary(t) {
@@ -32,9 +34,9 @@ function fixture(t) {
   for (const name of archiveNames)
     writeFileSync(
       path.join(directory, name),
-      archive([
+      (name.endsWith(".zip") ? windowsArchive : archive)([
         {
-          name: "runmoor",
+          name: name.endsWith(".zip") ? "runmoor.exe" : "runmoor",
           data: Buffer.from("executable fixture"),
           mode: 0o755,
         },
@@ -124,6 +126,29 @@ test("Homebrew verifies all public assets and signatures before rendering a macO
   assert.match(formula, /\(prefix\/"LICENSE"\)\.read/u);
   assert.match(formula, /runmoor version/u);
   assert.doesNotMatch(formula, /on_linux|darwin-amd64|service do|__VERSION__/u);
+});
+
+test("Homebrew retains historical three-platform signed releases", async (t) => {
+  const f = fixture(t);
+  f.release.assets = f.release.assets.filter(
+    (asset) => !asset.name.includes("windows-amd64"),
+  );
+  const checksum = readFileSync(path.join(f.directory, "SHA256SUMS"), "utf8")
+    .split("\n")
+    .filter((line) => !line.includes("windows-amd64"))
+    .join("\n");
+  writeFileSync(path.join(f.directory, "SHA256SUMS"), checksum);
+  const asset = f.release.assets.find((asset) => asset.name === "SHA256SUMS");
+  const bytes = Buffer.from(checksum);
+  asset.size = bytes.length;
+  asset.digest = "sha256:" + createHash("sha256").update(bytes).digest("hex");
+  const verified = [];
+  const formula = await prepareHomebrew(plan, temporary(t), {
+    ...f,
+    verifyBlob: (file) => verified.push(path.basename(file)),
+  });
+  assert.equal(verified.length, 4);
+  assert.match(formula, /depends_on arch: :arm64/u);
 });
 
 test("Homebrew rejects wrong tags, revisions, source versions, drafts and incomplete metadata", async (t) => {

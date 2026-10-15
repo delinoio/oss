@@ -1,5 +1,23 @@
 # Runmoor
 
+## Windows 11 x64 (unreleased)
+
+Windows support adds native single-job runners (`host`), Docker Windows container runners (`docker`) and current-user login-triggered background execution. Windows Server, ARM64, Windows DinD and Linux containers on Windows are excluded. The released platform description below remains applicable until a containing release is verified.
+
+```powershell
+runmoor init --backend host --target https://github.com/OWNER/REPOSITORY --credential-env RUNMOOR_PAT
+runmoor config validate
+runmoor run
+```
+
+Use `--backend docker` for Windows containers. That backend requires Windows 11 Pro/Enterprise, Hyper-V, Containers, Docker Desktop in Windows containers mode and Server Core LTSC 2022 x64 images. It uses plain mode and Hyper-V isolation. Manual images require PowerShell, ContainerUser and an exact official runner; automatic pools prepare immutable runner images without changing their source. Runmoor does not install dependencies, switch Docker modes or expose the host engine pipe to jobs. Workflow container jobs, service containers and Docker container actions remain Linux-only.
+
+Native jobs use the current account and require trusted workflows. Install toolchains yourself. New routing labels are `runmoor-windows-host` or `runmoor-windows`, `Windows` and `x64`. Existing labels are preserved. Private configuration, state and data default to separate folders under `%LOCALAPPDATA%\Runmoor`; use TOML literal strings for Windows paths and current-user-only ACLs for credential files.
+
+Service commands manage a least-privilege current-user Task Scheduler task, with login-triggered startup and no password storage. Continued operation after logout is unsupported. Keep the installed absolute `--config` path. External task conflicts block management without overwriting edits. Reload after installing a newer executable at a separate persistent location preserves independently supervised jobs and pause/stop state. Retry interrupted replacement with the same candidate CLI and configuration; preserve recovery files.
+
+The future `runmoor-windows-amd64.zip` contains `runmoor.exe`, this README and LICENSE, with checksums and Sigstore bundles. Follow the [Windows installation and exact-tag verification guide](https://oss.delino.io/runmoor/install#windows-archive-installation-unreleased). See the [host guide](https://oss.delino.io/runmoor/host), [Docker guide](https://oss.delino.io/runmoor/docker) and [operations guide](https://oss.delino.io/runmoor/operations). Windows container execution and live GitHub acceptance remain separate from fixture and build evidence.
+
 Runmoor is a local manager for disposable GitHub Actions runners. One host can manage multiple repository and organization pools with GitHub App or PAT authentication. Each runner executes at most one job.
 
 Linux jobs use an operator-installed local Docker engine. macOS jobs use operator-installed Tart virtual machines or explicitly selected host processes. Host execution is unreleased; see the [host guide](https://oss.delino.io/runmoor/host) for its setup and trust limits. Supported hosts are **macOS 14+ on Apple Silicon** and **Ubuntu 22.04+ on amd64/arm64**. Jobs must match the host CPU architecture. Windows, Intel Macs, emulation, GHES and remote Docker engines are unsupported.

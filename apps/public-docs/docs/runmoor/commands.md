@@ -1,5 +1,20 @@
 # Runmoor Commands and Routing
 
+## Windows routing (unreleased)
+
+Native pools created by init use `[runmoor-windows-host, Windows, x64]`; Windows container pools use `[runmoor-windows, Windows, x64]`. Existing custom labels are preserved.
+
+```yaml
+jobs:
+  build:
+    runs-on: [runmoor-windows-host, Windows, x64]
+    steps:
+      - run: Write-Output 'Running on Windows'
+        shell: powershell
+```
+
+The same status, doctor, pause, resume, drain and stop commands apply. Service commands manage the current user's login task on Windows. See [Operations](./operations).
+
 > **Version note:** Runmoor 0.2.0 introduced automatic setup and managed runner updates. Guided Mac VM creation during `init` and `image create --ipsw latest` are in the next release. Version 0.1.3 uses the explicit pinned configuration and manual image preparation also documented below. Check `runmoor version` before using release-specific commands.
 
 ```yaml

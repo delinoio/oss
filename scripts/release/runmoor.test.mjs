@@ -24,6 +24,16 @@ import {
   verify,
 } from "./runmoor.mjs";
 
+import { windowsArchive } from "./runmoor-zip.mjs";
+const fixtureArchive = (name) =>
+  name.endsWith(".zip")
+    ? windowsArchive(
+        entries.map((entry, index) => ({
+          ...entry,
+          name: index === 0 ? "runmoor.exe" : entry.name,
+        })),
+      )
+    : archive(entries);
 const sourceVersion = readVersion(Project.Runmoor);
 const nextVersion = bumpVersion(sourceVersion, Bump.Patch);
 const sourceTag = `runmoor@v${sourceVersion}`;
@@ -46,7 +56,7 @@ test("Runmoor publication binds source version, revision, ref and stable release
   assert.equal(plan.mode, "dry-run");
   assert.equal(plan.prerelease, false);
   assert.equal(plan.tag, sourceTag);
-  assert.equal(plan.signatures.length, 4);
+  assert.equal(plan.signatures.length, archiveNames.length + 1);
   for (const fields of [
     { version: `v${sourceVersion}` },
     { version: nextVersion },
@@ -84,10 +94,11 @@ test("Runmoor archives are deterministic with exact files, permissions and check
   assert.throws(() => inspectArchive(archive(entries.slice(1))));
   const dir = mkdtempSync(path.join(tmpdir(), "runmoor-release-test-"));
   try {
-    for (const name of archiveNames) writeFileSync(path.join(dir, name), bytes);
+    for (const name of archiveNames)
+      writeFileSync(path.join(dir, name), fixtureArchive(name));
     const sums = checksums(dir);
     verify(dir);
-    assert.equal(sums.split("\n").filter(Boolean).length, 3);
+    assert.equal(sums.split("\n").filter(Boolean).length, archiveNames.length);
     assert.deepEqual(
       readdirSync(dir).sort(),
       [...archiveNames, "SHA256SUMS"].sort(),
@@ -101,6 +112,20 @@ test("Runmoor archives are deterministic with exact files, permissions and check
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("Windows archives bind fixed executable inventory and reject altered bytes", () => {
+  const bytes = fixtureArchive("runmoor-windows-amd64.zip");
+  assert.deepEqual(bytes, fixtureArchive("runmoor-windows-amd64.zip"));
+  assert.deepEqual(inspectArchive(bytes), [
+    "runmoor.exe",
+    "README.md",
+    "LICENSE",
+  ]);
+  const altered = Buffer.from(bytes);
+  altered[45] ^= 1;
+  assert.throws(() => inspectArchive(altered));
+  assert.throws(() => windowsArchive(entries));
+});
 test("Signed verification invokes an injected verifier with exact artifact and identity binding", () => {
   const directory = mkdtempSync(
     path.join(tmpdir(), "runmoor-signature-fixture-"),
@@ -108,7 +133,7 @@ test("Signed verification invokes an injected verifier with exact artifact and i
   const identity = `https://github.com/delinoio/oss/.github/workflows/release-runmoor.yml@refs/tags/${sourceTag}`;
   try {
     for (const name of archiveNames)
-      writeFileSync(path.join(directory, name), archive(entries));
+      writeFileSync(path.join(directory, name), fixtureArchive(name));
     checksums(directory);
     // Deliberately non-cryptographic fixtures remain in this temporary test directory only.
     for (const name of [...archiveNames, "SHA256SUMS"]) {
@@ -169,7 +194,7 @@ test("Release asset manifests bind exact names, sizes and digests", () => {
   try {
     const bytes = archive(entries);
     for (const name of archiveNames)
-      writeFileSync(path.join(directory, name), bytes);
+      writeFileSync(path.join(directory, name), fixtureArchive(name));
     writeFileSync(path.join(directory, "SHA256SUMS"), "checksums\n");
     const manifest = assetManifest(directory);
     assert.deepEqual(

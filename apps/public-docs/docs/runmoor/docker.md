@@ -1,5 +1,19 @@
 # Runmoor Docker Execution
 
+## Windows containers (unreleased)
+
+Use Windows 11 Pro/Enterprise x64 with Hyper-V and Containers enabled, Docker Desktop in Windows containers mode, and a Server Core LTSC 2022 x64 base. Runmoor uses Hyper-V isolation and plain mode. Windows Server, ARM64, Windows DinD and Linux containers on Windows are unsupported. Operators install and license dependencies themselves; Runmoor does not enable OS features or switch Docker modes. The Linux instructions below remain supported on their existing hosts.
+
+```powershell
+runmoor init --backend docker --target https://github.com/OWNER/REPOSITORY --credential-env RUNMOOR_PAT
+runmoor doctor
+runmoor run
+```
+
+New pools use `runmoor-windows`, `Windows` and `x64` labels. Manual images must contain PowerShell, ContainerUser and the exact official Windows x64 runner in a dedicated directory such as `C:\actions-runner`. Pull manual pins first. Automatic pools prepare an immutable runner image from Server Core LTSC 2022 or your compatible pinned base without changing the source image. Jobs receive disposable work volumes, with no host directory or Docker engine pipe mounted.
+
+GitHub workflow `container:` jobs, service containers and Docker container actions require Linux. Running the runner inside a Windows container does not enable those features. Actual Windows container execution and live GitHub jobs require separate acceptance and must not be inferred from builds or fixtures.
+
 > **Version note:** Runmoor 0.2.0 introduced automatic setup and managed runner updates. Version 0.1.3 uses the explicit pinned configuration and manual image preparation also documented below. Check `runmoor version` before using 0.2.0 commands.
 
 The official `ghcr.io/actions/actions-runner` image is intentionally minimal. With automatic management, omit `image` and `runner_version`: Runmoor downloads the official native-architecture image, verifies its runner version and records its immutable digest. Compatible custom images need a non-root `runner` user with UID/GID 1001, a POSIX shell and standard utilities, and the Docker CLI for DinD. Automatic custom-image preparation requires no declared image volumes and a dedicated `runner_path`; that directory is replaced only inside a disposable candidate. The source image remains unchanged.

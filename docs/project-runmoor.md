@@ -78,46 +78,4 @@ Follow `docs/repository-linux-packages-contract.md` for APT/DNF release publicat
 
 ## Windows 11 x64
 
-Windows support is unreleased. It includes native Windows host runners and local
-Docker Windows container runners, plus login-triggered background operation.
-Windows Server, ARM64, Linux containers on Windows and Windows DinD are excluded.
-Docker requires Windows 11 Pro/Enterprise, Hyper-V and Containers enabled, Docker
-Desktop in Windows containers mode, and Server Core LTSC 2022 x64 images. Windows
-container executions use Hyper-V isolation. Operators install and license Docker,
-Windows images and build tools themselves; Runmoor does not enable OS features or
-switch Docker modes.
-
-Windows uses the existing host/docker backends and plain mode. Generated labels
-are runmoor-windows-host or runmoor-windows, Windows and x64, in addition to the
-scale-set name. Existing labels remain unchanged. Defaults are separate config,
-state and data directories under the current user's local application-data
-Runmoor directory. Explicit absolute paths remain supported. TOML uses literal
-strings for Windows paths. The Docker selector accepts local named pipes only;
-remote engines and Unix sockets are rejected on Windows.
-
-Private storage uses current-user SID ACLs, nonblocking native file locks and
-handle-derived volume/file identities. Reparse points are rejected; ambiguous
-ownership retains reservations and recovery records. Control uses a local
-current-user named pipe with server process identity verification. No TCP control
-endpoint is added. Native workers belong to a kill-on-close Job Object held by an
-independent supervisor. Manager replacement retains supervisors, worker lifetimes,
-job deadlines and pause/stop decisions. Official win-x64 ZIPs are hash-verified and
-normalized into bounded archives; traversal, alternate streams, links, reserved
-Windows names and case-colliding entries are rejected.
-
-Service commands manage a least-privilege InteractiveToken scheduled task for the
-current user. Login starts it; logout is not supported as a continued-execution
-boundary. No password is stored and no SCM service is installed. Task principal,
-trigger, invocation and critical settings are verified before management. Reload
-journals task replacement, verifies the old process generation, preserves committed
-configuration and independent jobs, then validates candidate configuration. External
-conflicts fail closed. Task Scheduler has no conditional compare-and-replace API;
-checks immediately precede updates but cannot make external writers atomic.
-
-New archives include runmoor-windows-amd64.zip with runmoor.exe, README.md and
-LICENSE, SHA256SUMS and Sigstore bundles. Preserve historical three-platform
-Homebrew releases without requiring retroactive Windows assets. New Windows
-support is not a claim about previously published releases. Fixture, build,
-packaging, native Windows, Docker Windows and live GitHub evidence must be recorded
-separately. GitHub container jobs, service containers and Docker container actions
-remain Linux-only even when the runner itself runs inside a Windows container.
+Unreleased Windows support includes native host runners, Hyper-V-isolated Windows Docker runners and current-user login tasks. Windows Server, ARM64, Windows Linux containers and Windows DinD are excluded. The [command foundation](cmds-runmoor-foundation.md#windows-11-x64) owns Windows runtime, storage, process, service and compatibility contracts. New release builds add the signed windows-amd64 ZIP; existing published releases retain their original platforms.

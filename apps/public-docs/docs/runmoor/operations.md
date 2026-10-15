@@ -1,5 +1,13 @@
 # Runmoor Operations
 
+## Windows login task (unreleased)
+
+Install `runmoor.exe` at a persistent location, then use `service install`, `service start`, `service stop` and `service uninstall` with the same absolute `--config` path. On Windows these manage a least-privilege scheduled task for the current user. Login starts the manager; continued execution after logout is unsupported. No account password is stored. Installation of the executable does not register a task or start runners.
+
+Use Task Scheduler to inspect the Runmoor task's user, login trigger, executable and configuration argument. Conflicting external task edits are preserved and must be reconciled before management continues. Prefer a private credential file for durable authentication: a running task does not automatically receive later changes to a terminal's environment. Docker Desktop must already be available in Windows containers mode for Docker pools.
+
+After installing a newer executable in a separate persistent directory, `reload` can replace an older task manager while preserving independent jobs and pause/stop decisions. It does not download releases, downgrade or start a stopped manager. An interrupted replacement may have updated the task before candidate configuration was accepted. Inspect status and the task, then retry reload with the same candidate CLI and configuration. Preserve state and recovery files. Updating an executable that Windows is currently using can fail, so keep both executable locations until replacement completes.
+
 > **Version note:** Runmoor 0.2.0 introduced automatic setup and managed runner updates. Version 0.1.3 uses the explicit pinned configuration and manual image preparation also documented below. Check `runmoor version` before using 0.2.0 commands.
 
 ```sh

@@ -1,5 +1,35 @@
 # Install and Verify Runmoor
 
+## Windows archive installation (unreleased)
+
+Windows 11 x64 support requires a future verified release containing `runmoor-windows-amd64.zip`. Previously published archives do not provide this support. Docker Windows additionally requires Pro/Enterprise. Install cosign separately and choose an exact published tag containing the Windows asset. Verify both signatures and the archive checksum before extraction:
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$tag = 'runmoor@vX.Y.Z'
+$archive = 'runmoor-windows-amd64.zip'
+$identity = "https://github.com/delinoio/oss/.github/workflows/release-runmoor.yml@refs/tags/$tag"
+$download = Join-Path $env:TEMP ([guid]::NewGuid().ToString())
+New-Item -ItemType Directory -Path $download | Out-Null
+Push-Location $download
+try {
+  foreach ($file in @($archive, "$archive.sigstore.json", 'SHA256SUMS', 'SHA256SUMS.sigstore.json')) {
+    Invoke-WebRequest "https://github.com/delinoio/oss/releases/download/$tag/$file" -OutFile $file
+  }
+  foreach ($file in @($archive, 'SHA256SUMS')) {
+    cosign verify-blob --bundle "$file.sigstore.json" --certificate-identity $identity --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' $file
+    if ($LASTEXITCODE -ne 0) { throw 'Signature verification failed' }
+  }
+  $lines = @(Get-Content 'SHA256SUMS' | Where-Object { $_ -match ('^[a-f0-9]{64}  ' + [regex]::Escape($archive) + '$') })
+  if ($lines.Count -ne 1) { throw 'Archive checksum entry missing or duplicated' }
+  if ((Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant() -ne $lines[0].Substring(0,64)) { throw 'Checksum mismatch' }
+  Expand-Archive -LiteralPath $archive -DestinationPath (Join-Path $env:LOCALAPPDATA 'Programs\Runmoor')
+} finally { Pop-Location }
+& (Join-Path $env:LOCALAPPDATA 'Programs\Runmoor\runmoor.exe') version
+```
+
+Add the installation directory to your user PATH. Installation preserves configuration and data and does not register a background task. Continue with the [host guide](./host), [Docker guide](./docker) and [operations guide](./operations).
+
 On Ubuntu 22.04 or newer, use the [APT installation steps below](#linux-apt-and-dnf). Runmoor is distributed through the Delino repository, which you must register before installing with APT. The signed archive method is also available for Linux and Apple Silicon Macs.
 
 ## Homebrew on Apple Silicon Mac

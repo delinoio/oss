@@ -1,5 +1,20 @@
 # Runmoor Configuration
 
+## Windows configuration (unreleased)
+
+On Windows 11 x64 choose `host` for native jobs or `docker` for Windows containers. New Windows configurations default to host execution. Defaults use separate `config`, `state` and `data` directories under `%LOCALAPPDATA%\Runmoor`. Explicit absolute paths remain supported. Use private local folders; credential files must grant access only to your Windows account. Keep credential values outside TOML.
+
+Use TOML literal strings for Windows paths, for example:
+
+```toml
+docker_socket = 'npipe:////./pipe/docker_engine'
+[storage]
+state = 'C:\Runmoor\state'
+data = 'C:\Runmoor\data'
+```
+
+Windows Docker pools require plain mode, native x64 images and a dedicated runner path such as `C:\actions-runner`. The local named pipe is used by the manager only. TCP, SSH, remote pipes and Unix sockets are unsupported on Windows. A Linux-mode engine produces a diagnostic; Runmoor does not change Docker modes. Existing authored labels remain unchanged. See [Windows host execution](./host) and [Windows containers](./docker).
+
 > **Version note:** Runmoor 0.2.0 introduced automatic setup and managed runner updates. Guided creation of a new Mac VM during `init` is in the next release. Version 0.1.3 uses the explicit pinned configuration and manual image preparation also documented below. Check `runmoor version` before using release-specific commands.
 
 ```sh

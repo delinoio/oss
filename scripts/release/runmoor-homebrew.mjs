@@ -19,6 +19,9 @@ const assetNames = [
   ...unsignedNames,
   ...unsignedNames.map((name) => `${name}.sigstore.json`),
 ].sort();
+const legacyAssetNames = assetNames.filter(
+  (name) => !name.includes("windows-amd64"),
+);
 const digest = (bytes) =>
   `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 function ensure(condition, code) {
@@ -104,7 +107,11 @@ export async function publishedRelease(plan, request) {
   ensure(
     Array.isArray(release.assets) &&
       JSON.stringify(release.assets.map((asset) => asset.name).sort()) ===
-        JSON.stringify(assetNames),
+        JSON.stringify(
+          release.assets.some((asset) => asset.name.includes("windows-amd64"))
+            ? assetNames
+            : legacyAssetNames,
+        ),
     "RELEASE_ASSET_INVENTORY",
   );
   ensure(
@@ -208,8 +215,12 @@ export async function prepareHomebrew(
     );
     writeFileSync(path.join(directory, asset.name), bytes, { flag: "wx" });
   }
-  assetManifest(directory, true);
+  const legacy = !release.assets.some((asset) =>
+    asset.name.includes("windows-amd64"),
+  );
+  if (!legacy) assetManifest(directory, true);
   verify(directory, true, {
+    legacy,
     identity: `https://github.com/delinoio/oss/.github/workflows/release-runmoor.yml@refs/tags/${plan.tag}`,
     verifyBlob: (file, bundle) => verifyBlob(file, bundle, plan),
   });

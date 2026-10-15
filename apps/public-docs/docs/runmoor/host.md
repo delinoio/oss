@@ -1,5 +1,17 @@
 # Runmoor macOS Host Runners
 
+## Windows native runners (unreleased)
+
+Windows 11 x64 can also run disposable native runners. Use a dedicated trusted CI account and install the required SDKs, compilers and tools under that account. No Docker, Tart or Guest Agent is required. Windows Server and ARM64 are unsupported. The macOS instructions below continue to apply to Mac hosts.
+
+```powershell
+runmoor init --backend host --target https://github.com/OWNER/REPOSITORY --credential-env RUNMOOR_PAT
+runmoor config validate
+runmoor run
+```
+
+New pools use `runmoor-windows-host`, `Windows` and `x64` routing labels. Existing labels are preserved. Each runner receives disposable runner and working directories and handles at most one job. Jobs run with the Windows account's permissions and can access its other files and tools: use trusted workflows only. Manager-only restart preserves independently supervised jobs and their time limits. Stop retains unresolved executions until termination and cleanup are confirmed. See [Operations](./operations) for login-triggered background execution.
+
 **Availability:** host execution is unreleased. Check your installed version and
 release notes before using `runmoor init --backend host`.
 

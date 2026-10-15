@@ -14,10 +14,18 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync, gunzipSync } from "node:zlib";
 
+import { windowsArchive, inspectWindowsArchive } from "./runmoor-zip.mjs";
+
 const root = fileURLToPath(new URL("../..", import.meta.url));
-export const platforms = ["darwin-arm64", "linux-amd64", "linux-arm64"];
+export const platforms = [
+  "darwin-arm64",
+  "linux-amd64",
+  "linux-arm64",
+  "windows-amd64",
+];
 export const archiveNames = platforms.map(
-  (platform) => `runmoor-${platform}.tar.gz`,
+  (platform) =>
+    `runmoor-${platform}${platform.startsWith("windows-") ? ".zip" : ".tar.gz"}`,
 );
 const versionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
 const releaseAssetNames = [...archiveNames, "SHA256SUMS"];
@@ -397,6 +405,7 @@ export function archive(entries) {
 }
 
 export function inspectArchive(bytes) {
+  if (bytes.readUInt32LE(0) === 0x04034b50) return inspectWindowsArchive(bytes);
   const body = gunzipSync(bytes);
   const names = [];
   let offset = 0;
@@ -459,8 +468,13 @@ export function buildRelease(plan, output, selected = platforms) {
           env: { ...process.env, GOOS, GOARCH, CGO_ENABLED: "0" },
         },
       );
-      const bytes = archive([
-        { name: "runmoor", data: readFileSync(binary), mode: 0o755 },
+      const windows = GOOS === "windows";
+      const bytes = (windows ? windowsArchive : archive)([
+        {
+          name: windows ? "runmoor.exe" : "runmoor",
+          data: readFileSync(binary),
+          mode: 0o755,
+        },
         {
           name: "README.md",
           data: readFileSync(path.join(root, "cmds/runmoor/README.md")),
@@ -473,11 +487,20 @@ export function buildRelease(plan, output, selected = platforms) {
         },
       ]);
       inspectArchive(bytes);
-      writeFileSync(path.join(output, `runmoor-${platform}.tar.gz`), bytes);
+      writeFileSync(
+        path.join(output, `runmoor-${platform}${windows ? ".zip" : ".tar.gz"}`),
+        bytes,
+      );
     }
   } finally {
     rmSync(temp, { recursive: true, force: true });
   }
+}
+function inspectNamedArchive(bytes, name) {
+  if (name.endsWith(".zip")) return inspectWindowsArchive(bytes);
+  if (bytes.readUInt32LE(0) === 0x04034b50)
+    throw new Error("Unexpected archive format");
+  return inspectArchive(bytes);
 }
 export function checksums(directory) {
   const files = readdirSync(directory).sort();
@@ -485,7 +508,7 @@ export function checksums(directory) {
     throw new Error("Unexpected files in unsigned artifact directory");
   const lines = [...archiveNames].sort().map((name) => {
     const bytes = readFileSync(path.join(directory, name));
-    inspectArchive(bytes);
+    inspectNamedArchive(bytes, name);
     return `${createHash("sha256").update(bytes).digest("hex")}  ${name}`;
   });
   const content = `${lines.join("\n")}\n`;
@@ -495,9 +518,12 @@ export function checksums(directory) {
 export function verify(
   directory,
   signed = false,
-  { identity, verifyBlob = verifyWithCosign } = {},
+  { identity, verifyBlob = verifyWithCosign, legacy = false } = {},
 ) {
-  const names = [...archiveNames, "SHA256SUMS"];
+  const selectedArchives = legacy
+    ? archiveNames.filter((name) => !name.endsWith(".zip"))
+    : archiveNames;
+  const names = [...selectedArchives, "SHA256SUMS"];
   const expected = signed
     ? [...names, ...names.map((name) => `${name}.sigstore.json`)]
     : names;
@@ -507,11 +533,11 @@ export function verify(
   )
     throw new Error("Artifact inventory does not match release contract");
   const expectedChecksums =
-    [...archiveNames]
+    [...selectedArchives]
       .sort()
       .map((name) => {
         const bytes = readFileSync(path.join(directory, name));
-        inspectArchive(bytes);
+        inspectNamedArchive(bytes, name);
         return `${createHash("sha256").update(bytes).digest("hex")}  ${name}`;
       })
       .join("\n") + "\n";

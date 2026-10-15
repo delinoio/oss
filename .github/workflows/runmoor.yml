@@ -83,3 +83,24 @@ jobs:
           name: turbo-runmoor-${{ github.run_attempt }}
           path: .turbo/runs/*.json
           if-no-files-found: ignore
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: ./.github/actions/setup-ci-go
+      - uses: ./.github/actions/setup-ci-node
+      - name: Install locked validation tools
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Windows unit and native ownership fixtures
+        run: node scripts/ci/run-affected.mjs @delinoio/ci ci:runmoor:unit
+        env:
+          FORCE_RUN: "true"
+      - name: Preserve Turbo run summaries
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: turbo-runmoor-windows-${{ github.run_attempt }}
+          path: .turbo/runs/*.json
+          if-no-files-found: ignore

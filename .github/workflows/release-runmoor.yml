@@ -61,7 +61,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [darwin-arm64, linux-amd64, linux-arm64]
+        platform: [darwin-arm64, linux-amd64, linux-arm64, windows-amd64]
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -83,7 +83,9 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: runmoor-archive-${{ matrix.platform }}
-          path: dist/*.tar.gz
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
 
   package:
     needs: [plan, build]
@@ -192,7 +194,7 @@ jobs:
         if: env.RUNMOOR_REUSE_DRAFT != 'true'
         run: |
           node scripts/release/runmoor.mjs verify --output dist
-          for artifact in dist/*.tar.gz dist/SHA256SUMS; do
+          for artifact in dist/*.tar.gz dist/*.zip dist/SHA256SUMS; do
             cosign sign-blob --yes --bundle "${artifact}.sigstore.json" "$artifact"
           done
           node scripts/release/runmoor.mjs verify --output dist --signed true --identity "https://github.com/${GITHUB_WORKFLOW_REF}"
