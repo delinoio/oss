@@ -1300,6 +1300,25 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
         })
         .collect();
     let mut bodies: Vec<(usize, usize)> = function_bodies.iter().map(|(_, body)| *body).collect();
+    // TypeScript `namespace N {}` and `module N {}` bodies own their `var`
+    // declarations just like function bodies. String-named ambient modules
+    // and member accesses such as `module.exports` do not match this shape.
+    let namespace =
+        Regex::new(r"\b(?:namespace|module)\s+[A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*\s*\{")
+            .expect("static regex");
+    for found in namespace.find_iter(&code) {
+        let preceding = code[..found.start()]
+            .bytes()
+            .next_back()
+            .filter(|byte| *byte == b'.' || *byte == b'$');
+        if preceding.is_some() {
+            continue;
+        }
+        let open = found.end() - 1;
+        if let Some(body) = blocks.iter().find(|(start, _)| *start == open) {
+            bodies.push(*body);
+        }
+    }
     let mut scopes = Vec::new();
     // Parameter lists followed by a body: `(...) {` or `(...) =>`.
     let parameters = Regex::new(r"\(([^()]*)\)\s*(?:=>|\{)").expect("static regex");
@@ -2296,6 +2315,91 @@ y=/process.env.F/.test(z),process.env.G"#;
             direct_eval_line("function outer() { return\nfunction eval() {}; } eval(code);")
                 .is_some()
         );
+    }
+
+    #[test]
+    fn namespace_local_var_eval_does_not_shadow_outside_calls() {
+        for keyword in ["namespace", "module"] {
+            assert_eq!(
+                direct_eval_line(&format!(
+                    "{keyword} N {{ var eval = helper; }}\neval(code);"
+                )),
+                Some((1, 0))
+            );
+            assert_eq!(
+                direct_eval_line(&format!("{keyword} N {{ var eval = helper; eval(code); }}")),
+                None
+            );
+            assert_eq!(
+                direct_eval_line(&format!(
+                    "{keyword} N {{ var eval = helper; eval(code); }}\neval(code);"
+                )),
+                Some((1, 0))
+            );
+        }
+        // Nested and dotted namespaces.
+        assert_eq!(
+            direct_eval_line(
+                "namespace A { namespace B { var eval = helper; eval(code); } }\neval(code);"
+            ),
+            Some((1, 0))
+        );
+        assert_eq!(
+            direct_eval_line("namespace A.B { var eval = helper; eval(code); }"),
+            None
+        );
+        assert_eq!(
+            direct_eval_line("export namespace A.B { var eval = helper; }\neval(code);"),
+            Some((1, 0))
+        );
+        assert_eq!(
+            direct_eval_line("declare namespace N { var eval: any; }\neval(code);"),
+            Some((1, 0))
+        );
+        // A `var` in a nested block belongs to the enclosing namespace.
+        assert_eq!(
+            direct_eval_line(
+                "namespace N { if (x) { var eval = helper; } eval(code); }\neval(code);"
+            ),
+            Some((1, 0))
+        );
+        // A function keeps its own `var` boundary inside a namespace.
+        assert_eq!(
+            direct_eval_line("namespace N { function f() { var eval = helper; } eval(code); }"),
+            Some((0, 50))
+        );
+        // Lexical declarations keep the block path.
+        assert_eq!(
+            direct_eval_line("namespace N { let eval = helper; eval(code); }\neval(code);"),
+            Some((1, 0))
+        );
+        // Plain blocks still shadow the surrounding source scope.
+        assert_eq!(direct_eval_line("{ var eval = helper; } eval(code);"), None);
+        // Identifiers that merely resemble the keywords stay ordinary blocks.
+        assert_eq!(
+            direct_eval_line("module.exports = { run() { var eval = helper; } }; eval(code);"),
+            Some((0, 51))
+        );
+        assert_eq!(
+            direct_eval_line("{ var namespace = 1; } { var eval = helper; } eval(code);"),
+            None
+        );
+    }
+
+    #[test]
+    fn namespace_local_var_eval_reaches_the_mangling_rule() {
+        let prefix = "const longLocalName = 1;\n";
+        for keyword in ["namespace", "module"] {
+            let outside = format!("{prefix}{keyword} N {{ var eval = helper; }}\neval(code);");
+            let drafts = eval_rule_drafts(&outside, false);
+            assert_eq!(drafts.len(), 1);
+            assert_eq!(drafts[0].rule, RuleId::DirectEvalBlocksMangling);
+            assert_eq!(drafts[0].status, EvidenceStatus::Inferred);
+            let shadowed = format!("{prefix}{keyword} N {{ var eval = helper; eval(code); }}");
+            assert!(eval_rule_drafts(&shadowed, false).is_empty());
+            // Engine-reported evals are unaffected by the source scan.
+            assert_eq!(eval_rule_drafts(&shadowed, true).len(), 1);
+        }
     }
 
     #[test]
