@@ -305,6 +305,10 @@ pub struct TraversalStats {
     pub expansions: usize,
     /// Most chains that waited in the queue at one time.
     pub peak_queued: usize,
+    /// True when the run was cancelled and the traversal stopped early. The
+    /// result is partial and the caller discards it with the rest of the
+    /// cancelled analysis.
+    pub cancelled: bool,
 }
 
 pub fn traverse(
@@ -353,6 +357,12 @@ pub fn traverse_with_stats(
     // Each chain is stored outermost consumer last while it grows.
     let mut finished: Vec<(EdgePath<'_>, ExportUsagePathEnd)> = Vec::new();
     while let Some(candidate) = queue.pop_front() {
+        // Polled once per chain taken from the queue; the work between two
+        // polls is bounded by the queue bound and the chain depth limit.
+        if context.is_cancelled() {
+            stats.cancelled = true;
+            break;
+        }
         if finished.len() >= limits.max_paths {
             note_limit(&mut truncation, ExportUsageTruncation::PathCount);
             break;
@@ -487,7 +497,10 @@ fn display_edge(context: &Context<'_>, edge: &CollectedExportEdge) -> ExportUsag
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::{
+        path::PathBuf,
+        sync::atomic::{AtomicUsize, Ordering},
+    };
 
     use super::*;
     use crate::{
@@ -1574,5 +1587,85 @@ mod tests {
             forward,
             run(&collection(reversed), "shared", Limits::DEFAULT)
         );
+    }
+
+    /// Traversal with a cancellation signal that turns true at its
+    /// `cancel_at`-th poll (zero-based); `None` never cancels.
+    fn run_cancellable(
+        collection: &Collection,
+        module: &str,
+        cancel_at: Option<usize>,
+    ) -> (ExportUsage, TraversalStats) {
+        let polls = AtomicUsize::new(0);
+        let cancelled = || cancel_at.is_some_and(|at| polls.fetch_add(1, Ordering::SeqCst) >= at);
+        let mut context = Context::new(
+            collection,
+            PathBuf::from("/project"),
+            "project".to_owned(),
+            Vec::new(),
+            SourceStore::new(false),
+        );
+        context.cancelled = Some(&cancelled);
+        let usage = collection.export_usage.as_ref().unwrap();
+        traverse_with_stats(
+            &context,
+            &ExportUsageIndex::new(usage),
+            module,
+            Limits::DEFAULT,
+        )
+    }
+
+    /// Cancellation of the traversal. Mirrors the cancellation table in the
+    /// contract: the signal is polled before each chain is taken from the
+    /// queue, and a set signal stops the traversal without further work.
+    #[test]
+    fn traversal_stops_when_the_run_is_cancelled() {
+        let names = ["m0", "m1", "m2", "m3", "m4"];
+        let edges: Vec<CollectedExportEdge> = names
+            .windows(2)
+            .map(|pair| edge((pair[0], Some(A)), (pair[1], Some(A)), "1"))
+            .collect();
+        let data = collection(edges);
+        // Never cancelled: every chain is extended to its start.
+        let (usage, stats) = run_cancellable(&data, "m4", None);
+        assert!(!stats.cancelled);
+        assert_eq!(stats.expansions, 4);
+        assert_eq!(usage.paths[0].end, ExportUsagePathEnd::Root);
+        // Cancelled before the first chain is taken: no extension happens.
+        let (usage, stats) = run_cancellable(&data, "m4", Some(0));
+        assert!(stats.cancelled);
+        assert_eq!(stats.expansions, 0);
+        assert!(usage.paths.is_empty());
+        // Cancelled later: the extensions done so far are all that happens.
+        for at in 1..4 {
+            let (_, stats) = run_cancellable(&data, "m4", Some(at));
+            assert!(stats.cancelled, "cancel at {at}");
+            assert_eq!(stats.expansions, at, "cancel at {at}");
+        }
+        // A signal that turns true after the last chain changes nothing.
+        let (usage, stats) = run_cancellable(&data, "m4", Some(5));
+        assert!(!stats.cancelled);
+        assert_eq!(usage.paths[0].end, ExportUsagePathEnd::Root);
+    }
+
+    #[test]
+    fn a_dense_graph_stops_at_the_first_poll_after_cancellation() {
+        // Every consumer has the same many consumers: uncancelled, the
+        // traversal would run to its limits.
+        let mut edges = fan(
+            40,
+            |index| (format!("mid{index}"), Some(A)),
+            ("leaf", Some(A)),
+        );
+        for index in 0..40 {
+            edges.extend(fan(
+                40,
+                |outer| (format!("outer{index}-{outer}"), Some(A)),
+                (&format!("mid{index}"), Some(A)),
+            ));
+        }
+        let (_, stats) = run_cancellable(&collection(edges), "leaf", Some(3));
+        assert!(stats.cancelled);
+        assert_eq!(stats.expansions, 3);
     }
 }

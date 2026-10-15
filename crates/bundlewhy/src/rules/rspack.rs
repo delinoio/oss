@@ -136,6 +136,9 @@ fn side_effect_retained(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
         .unwrap_or_else(|| "undefined".to_owned());
     let modules: Vec<_> = context.collection.modules.iter().collect();
     for module in modules.into_iter().filter(|module| is_javascript(module)) {
+        if context.is_cancelled() {
+            return;
+        }
         let no_used_exports = module.used_exports.as_ref().is_some_and(Vec::is_empty);
         // Export-less modules (for example `import "./polyfill"`) qualify too:
         // Rspack's side-effect bailout is the evidence, not the export list.
@@ -272,6 +275,9 @@ fn concatenation_bailouts(context: &mut Context<'_>, drafts: &mut Vec<Diagnostic
         .unwrap_or_else(|| "undefined".to_owned());
     let modules: Vec<_> = context.collection.modules.iter().collect();
     for module in modules.into_iter().filter(|module| is_javascript(module)) {
+        if context.is_cancelled() {
+            return;
+        }
         if !module.included || module.concatenated_into.is_some() || module.chunks.is_empty() {
             continue;
         }
@@ -351,6 +357,9 @@ fn multiple_chunks(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>)
         .unwrap_or_else(|| "undefined".to_owned());
     let modules: Vec<_> = context.collection.modules.iter().collect();
     for module in modules.into_iter().filter(|module| is_javascript(module)) {
+        if context.is_cancelled() {
+            return;
+        }
         if !module.included || module.chunks.len() < 2 {
             continue;
         }
@@ -401,7 +410,62 @@ fn multiple_chunks(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>)
 
 #[cfg(test)]
 mod tests {
-    use super::parse_statement_location;
+    use std::{
+        path::PathBuf,
+        sync::atomic::{AtomicUsize, Ordering},
+    };
+
+    use super::{super::Context, *};
+    use crate::{collect::Collection, sources::SourceStore};
+
+    fn fixture_collection() -> Collection {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/rspack/collect.json"
+        );
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+    }
+
+    /// Rules drafted when the cancellation signal turns true at its
+    /// `cancel_at`-th poll (zero-based); `None` never cancels.
+    fn drafted_rules(cancel_at: Option<usize>) -> Vec<RuleId> {
+        let collection = fixture_collection();
+        let polls = AtomicUsize::new(0);
+        let cancelled = || cancel_at.is_some_and(|at| polls.fetch_add(1, Ordering::SeqCst) >= at);
+        let mut context = Context::new(
+            &collection,
+            PathBuf::from("/__bundlewhy_project__"),
+            "project".to_owned(),
+            Vec::new(),
+            SourceStore::new(false),
+        );
+        context.cancelled = Some(&cancelled);
+        let mut drafts = Vec::new();
+        run(&mut context, &mut drafts);
+        drafts.into_iter().map(|draft| draft.rule).collect()
+    }
+
+    /// Cancellation of the module loops. Mirrors the cancellation table in
+    /// the contract: a detector loop checks the signal before each module
+    /// and stops the whole rule set once it is set.
+    #[test]
+    fn module_loops_stop_when_the_run_is_cancelled() {
+        let all = drafted_rules(None);
+        for rule in [
+            RuleId::RspackSideEffectRetained,
+            RuleId::RspackModuleConcatenationBailout,
+            RuleId::RspackModuleInMultipleChunks,
+        ] {
+            assert!(all.contains(&rule), "control run lacks {rule:?}");
+        }
+        // Cancelled before the first module: no detector drafts anything.
+        assert!(drafted_rules(Some(0)).is_empty());
+        // Cancelled during the first detector: the later detectors do not
+        // start their work.
+        let early = drafted_rules(Some(1));
+        assert!(!early.contains(&RuleId::RspackModuleConcatenationBailout));
+        assert!(!early.contains(&RuleId::RspackModuleInMultipleChunks));
+    }
 
     #[test]
     fn parses_statement_locations() {
