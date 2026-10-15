@@ -514,6 +514,30 @@ func TestGrokLoginCancelDuringExchangeRequiresRecovery(t *testing.T) {
 	g.requireNoLeak(t, run, grant.Code)
 }
 
+// A cancellation committed right after the exchange claim, before the watcher
+// stopped the login context, must not let the one code exchange go out.
+func TestGrokLoginCancelCommittedJustAfterTheClaimSendsNoExchange(t *testing.T) {
+	g := newGrokLoginFixture(t)
+	g.service.grokFaultHook = func(p grokFaultPoint) error {
+		if p == grokFaultAfterExchangeClaim {
+			g.cancelLogin(t)
+		}
+		return nil
+	}
+	run := g.begin(t)
+	grant := g.idp.Approve(t, run.url)
+	if status, err := callback(run.port, http.MethodGet, run.good(grant.Code), ""); err == nil && status != http.StatusOK {
+		t.Fatalf("callback: %d %v", status, err)
+	}
+	g.awaitDone(t, run)
+	g.service.grokFaultHook = nil
+	_, a := g.record()
+	if p := g.progress(run); p.State != pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_CANCELED || !a.Subscription.ServerOperation.CodeConsumed || a.Subscription.RecoveryRequired || a.Connection != nil || g.idp.TokenRequests() != 0 || g.refs(t) != 0 {
+		t.Fatalf("the exchange was sent or the claim mishandled after a cancellation behind the claim: %v tokens=%d", p.State, g.idp.TokenRequests())
+	}
+	g.requireNoLeak(t, run, grant.Code)
+}
+
 func TestGrokLoginExpiryClosesTheListener(t *testing.T) {
 	g := newGrokLoginFixture(t)
 	op := g.serverStart(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)

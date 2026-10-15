@@ -129,24 +129,7 @@ func (s *Service) grokDeviceLoginSteps(ctx, parent context.Context, guard *grokL
 		if err := clock.Wait(ctx, interval); err != nil {
 			return interrupted(grokStepPoll)
 		}
-		if outcome.claimed {
-			// The store watcher polls on a timer, so a cancellation committed since
-			// the last poll may not have stopped this loop yet. Every poll can redeem
-			// the device code: re-read the durable operation immediately before
-			// sending, so a cancellation that precedes a poll never lets it go out.
-			// (The first poll is gated by the claim transaction itself.)
-			switch s.grokLoginDurable(ctx, id, original) {
-			case grokDurableStopped:
-				s.logGrok(ctx, slog.LevelInfo, "grok_device_poll_skipped", original, grokStepPoll, "reason", "operation_stopped", "polls", polls)
-				return interrupted(grokStepPoll)
-			case grokDurableUnreadable:
-				// The claim is durable but its state cannot be confirmed: no further
-				// poll is sent and the claimed login stays in recovery.
-				guard.unconfirmed.Store(true)
-				s.logGrok(ctx, slog.LevelWarn, "grok_device_poll_skipped", original, grokStepPoll, "reason", "state_unreadable", "polls", polls)
-				return interrupted(grokStepPoll)
-			}
-		} else {
+		if !outcome.claimed {
 			if err := s.claimGrokExchange(ctx, id, original, domain.SubscriptionDeviceCode); err != nil {
 				if ctx.Err() != nil {
 					return interrupted(grokStepExchange)
@@ -156,6 +139,17 @@ func (s *Service) grokDeviceLoginSteps(ctx, parent context.Context, guard *grokL
 			}
 			outcome.claimed = true
 			s.logGrok(ctx, slog.LevelInfo, "grok_login_exchange_claimed", original, grokStepExchange)
+			_ = s.grokFault(grokFaultAfterExchangeClaim)
+		}
+		// The store watcher polls on a timer, so a cancellation committed since the
+		// last tick (or since the claim transaction, for the first poll) may not have
+		// stopped this loop yet. Every poll can redeem the device code: re-read the
+		// durable operation immediately before sending, on every iteration including
+		// the one that just claimed, so a cancellation that precedes a poll never
+		// lets it go out. An unreadable state is not a cancellation: the claim is
+		// durable, no further poll is sent and the claimed login stays in recovery.
+		if s.grokSendGate(ctx, guard, id, original, grokStepPoll, "grok_device_poll_skipped", "polls", polls) {
+			return interrupted(grokStepPoll)
 		}
 		polls++
 		// The poll may not outlive the device-code deadline: a token response that
