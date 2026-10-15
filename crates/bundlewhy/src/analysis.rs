@@ -136,6 +136,7 @@ pub fn engine_identity(bundler: BundlerChoice, collection: &Collection) -> Engin
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn coverage(
     collection: &Collection,
     missing_maps: usize,
@@ -143,6 +144,7 @@ fn coverage(
     unreadable_sources: usize,
     unverified_sources: usize,
     vite_env_source_gaps: usize,
+    vite_env_unmapped_candidates: usize,
     unsupported_engine: Option<&str>,
 ) -> Vec<CategoryCoverage> {
     let rules = rules::rules_by_category(&collection.bundler);
@@ -227,15 +229,24 @@ fn coverage(
                 // Vite's generated env expression needs confirmation from the
                 // build's original source; Rspack's detector does not.
                 OptimizationCategory::DeadCodeElimination
-                    if collection.bundler == "vite" && vite_env_source_gaps > 0 =>
+                    if collection.bundler == "vite"
+                        && (vite_env_source_gaps > 0 || vite_env_unmapped_candidates > 0) =>
                 {
-                    (
-                        CoverageState::Partial,
-                        format!(
+                    let mut notes: Vec<String> = Vec::new();
+                    if vite_env_source_gaps > 0 {
+                        notes.push(format!(
                             "{vite_env_source_gaps} source file(s) lack verifiable build text; \
                              Vite environment-variable findings in them may be missing."
-                        ),
-                    )
+                        ));
+                    }
+                    if vite_env_unmapped_candidates > 0 {
+                        notes.push(format!(
+                            "{vite_env_unmapped_candidates} guarded environment candidate(s) have \
+                             no source mapping; Vite environment-variable findings for them may \
+                             be missing."
+                        ));
+                    }
+                    (CoverageState::Partial, notes.join(" "))
                 }
                 // The direct-eval detector also reads original source text.
                 OptimizationCategory::NameMangling if source_gaps > 0 => (
@@ -467,6 +478,7 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
     let unreadable_sources = context.sources.unreadable.len();
     let unverified_sources = context.sources.unverified.len();
     let vite_env_source_gaps = context.vite_env_source_gaps.len();
+    let vite_env_unmapped_candidates = context.vite_env_unmapped_candidates.len();
     if !context.sources.changed_since_build.is_empty() {
         problems.push(problem(
             ErrorCode::SourceStale,
@@ -546,6 +558,7 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
             unreadable_sources,
             unverified_sources,
             vite_env_source_gaps,
+            vite_env_unmapped_candidates,
             (!input
                 .bundler
                 .spec()
@@ -579,6 +592,8 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
 
 #[cfg(test)]
 mod tests {
+    use sourcemap::SourceMap;
+
     use super::*;
     use crate::model::{ConditionOutcome, Diagnostic, EvidenceStatus, SourceRevisionEvidence};
 
@@ -789,7 +804,7 @@ mod tests {
         )
         .unwrap();
         let collection: Collection = serde_json::from_value(value).unwrap();
-        let rspack = coverage(&collection, 0, 0, 1, 0, 0, None);
+        let rspack = coverage(&collection, 0, 0, 1, 0, 0, 0, None);
         assert_eq!(
             rspack
                 .iter()
@@ -807,7 +822,7 @@ mod tests {
         )
         .unwrap();
         let collection: Collection = serde_json::from_value(value).unwrap();
-        let unrelated = coverage(&collection, 0, 0, 0, 1, 0, None);
+        let unrelated = coverage(&collection, 0, 0, 0, 1, 0, 0, None);
         assert_eq!(
             unrelated
                 .iter()
@@ -816,7 +831,7 @@ mod tests {
                 .state,
             CoverageState::Covered
         );
-        let relevant = coverage(&collection, 0, 0, 0, 1, 1, None);
+        let relevant = coverage(&collection, 0, 0, 0, 1, 1, 0, None);
         assert_eq!(
             relevant
                 .iter()
@@ -824,6 +839,256 @@ mod tests {
                 .unwrap()
                 .state,
             CoverageState::Partial
+        );
+    }
+
+    const VITE_INDEX_CHUNK: &str = "assets/index-BHjrzQLH.js";
+    const GUARDED_FLAG_READ: &str =
+        "({}).BUNDLEWHY_FIXTURE_FLAG===`on`&&console.log(`flag branch`)";
+    const VALUE_ONLY_FLAG_READ: &str = "console.log(({}).BUNDLEWHY_FIXTURE_FLAG)";
+
+    /// Where a generated-only segment replaces the source-bearing mapping.
+    #[derive(Clone, Copy)]
+    enum UnmappedAt {
+        /// The `{}` replacement of the flag read.
+        FlagRead,
+        /// Fifty columns before the flag read, leaving its own segment intact.
+        BeforeFlagRead,
+        /// No segment starts on the flag's generated line at or before the
+        /// flag read, while an earlier generated line ends in a source-bearing
+        /// segment.
+        AfterEarlierLineMapping,
+    }
+
+    /// Rewrites the Vite index chunk map so one position lies in a segment
+    /// with no source while every other segment keeps its mapping. The
+    /// optional text edit replaces the guarded flag read in the chunk first.
+    fn unmap_flag_segment(build: &Path, replacement: Option<&str>, at: UnmappedAt) {
+        let chunk_path = build.join(VITE_INDEX_CHUNK);
+        let mut code = std::fs::read_to_string(&chunk_path).unwrap();
+        if let Some(replacement) = replacement {
+            assert!(code.contains(GUARDED_FLAG_READ));
+            code = code.replace(GUARDED_FLAG_READ, replacement);
+            std::fs::write(&chunk_path, &code).unwrap();
+        }
+        let flag_offset = code.find("({}).BUNDLEWHY_FIXTURE_FLAG").unwrap();
+        // The opening parenthesis belongs to the previous segment.
+        let replacement_offset = flag_offset + 1;
+        let line = u32::try_from(code[..replacement_offset].matches('\n').count()).unwrap();
+        let line_start = code[..replacement_offset].rfind('\n').map_or(0, |i| i + 1);
+        let column = u32::try_from(replacement_offset - line_start).unwrap();
+        let (gap_column, drop_existing) = match at {
+            UnmappedAt::FlagRead => (column, true),
+            UnmappedAt::BeforeFlagRead => (column - 50, false),
+            UnmappedAt::AfterEarlierLineMapping => (column, true),
+        };
+        let earlier_line = matches!(at, UnmappedAt::AfterEarlierLineMapping);
+        assert!(
+            !earlier_line || line > 0,
+            "an earlier generated line must exist"
+        );
+
+        let map_path = build.join(format!("{VITE_INDEX_CHUNK}.map"));
+        let map = SourceMap::from_slice(&std::fs::read(&map_path).unwrap()).unwrap();
+        let mut builder = sourcemap::SourceMapBuilder::new(map.get_file());
+        for id in 0..map.get_source_count() {
+            let source = builder.add_source(map.get_source(id).unwrap());
+            builder.set_source_contents(source, map.get_source_contents(id));
+        }
+        for id in 0..map.get_name_count() {
+            builder.add_name(map.get_name(id).unwrap());
+        }
+        let mut inserted = false;
+        if earlier_line {
+            builder.add_raw(0, 0, 0, 0, Some(0), None, false);
+            inserted = true;
+        }
+        for token in map.tokens() {
+            let position = (token.get_dst_line(), token.get_dst_col());
+            if earlier_line && position.0 == line && position.1 <= gap_column {
+                continue;
+            }
+            if !inserted && position >= (line, gap_column) {
+                builder.add_raw(line, gap_column, 0, 0, None, None, false);
+                inserted = true;
+            }
+            if drop_existing && position == (line, gap_column) {
+                continue;
+            }
+            builder.add_raw(
+                position.0,
+                position.1,
+                token.get_src_line(),
+                token.get_src_col(),
+                token.has_source().then(|| token.get_src_id()),
+                token.get_name().map(|_| token.get_raw_token().name_id),
+                token.is_range(),
+            );
+        }
+        assert!(inserted, "the generated-only segment must be placed");
+        let mut bytes = Vec::new();
+        builder.into_sourcemap().to_writer(&mut bytes).unwrap();
+        std::fs::write(&map_path, bytes).unwrap();
+    }
+
+    fn vite_with_unmapped_flag(
+        replacement: Option<&'static str>,
+        at: UnmappedAt,
+        edit: impl Fn(&mut serde_json::Value),
+    ) -> Fixture {
+        run_fixture_patched(BundlerChoice::Vite, true, edit, move |build, _| {
+            unmap_flag_segment(build, replacement, at);
+        })
+    }
+
+    fn has_unresolved_env_diagnostic(analysis: &Analysis) -> bool {
+        analysis
+            .diagnostics
+            .iter()
+            .any(|entry| entry.rule == "minifier/unresolved-env-condition")
+    }
+
+    #[test]
+    fn vite_unmapped_guarded_candidate_keeps_coverage_partial() {
+        let control = run_fixture(BundlerChoice::Vite, |_| {});
+        assert!(has_unresolved_env_diagnostic(&control.output.analysis));
+        assert_eq!(
+            dead_code_coverage(&control.output.analysis).state,
+            CoverageState::Covered
+        );
+
+        let fixture = vite_with_unmapped_flag(None, UnmappedAt::FlagRead, |_| {});
+        let analysis = &fixture.output.analysis;
+        assert!(!has_unresolved_env_diagnostic(analysis));
+        let coverage = dead_code_coverage(analysis);
+        assert_eq!(coverage.state, CoverageState::Partial);
+        assert!(coverage.note.contains("1 guarded environment candidate(s)"));
+        assert!(coverage.note.contains("no source mapping"));
+        assert!(!coverage.note.contains("lack verifiable build text"));
+        // The map stays usable and every readable source keeps its snapshot,
+        // so the gap is not reported as a source or map problem.
+        assert!(
+            !analysis
+                .problems
+                .iter()
+                .any(|entry| entry.code == "BW_SOURCE_UNREADABLE"
+                    || entry.code == "BW_SOURCE_UNVERIFIED"
+                    || entry.code == "BW_SOURCE_MAP_MISSING")
+        );
+    }
+
+    #[test]
+    fn vite_candidate_is_not_covered_by_a_segment_from_an_earlier_line() {
+        let fixture = vite_with_unmapped_flag(None, UnmappedAt::AfterEarlierLineMapping, |_| {});
+        let analysis = &fixture.output.analysis;
+        // The earlier line's source-bearing segment must not attribute the
+        // candidate to that line's source.
+        assert!(!has_unresolved_env_diagnostic(analysis));
+        let coverage = dead_code_coverage(analysis);
+        assert_eq!(coverage.state, CoverageState::Partial);
+        assert!(coverage.note.contains("1 guarded environment candidate(s)"));
+        assert!(coverage.note.contains("no source mapping"));
+    }
+
+    #[test]
+    fn vite_unrelated_unmapped_text_is_not_a_coverage_gap() {
+        let fixture = vite_with_unmapped_flag(None, UnmappedAt::BeforeFlagRead, |_| {});
+        let analysis = &fixture.output.analysis;
+        assert!(has_unresolved_env_diagnostic(analysis));
+        let coverage = dead_code_coverage(analysis);
+        assert_eq!(coverage.state, CoverageState::Covered);
+        assert!(coverage.note.is_empty());
+    }
+
+    #[test]
+    fn vite_unmapped_value_only_read_is_not_a_coverage_gap() {
+        let fixture =
+            vite_with_unmapped_flag(Some(VALUE_ONLY_FLAG_READ), UnmappedAt::FlagRead, |_| {});
+        let analysis = &fixture.output.analysis;
+        assert!(!has_unresolved_env_diagnostic(analysis));
+        let coverage = dead_code_coverage(analysis);
+        assert_eq!(coverage.state, CoverageState::Covered);
+        assert!(coverage.note.is_empty());
+    }
+
+    #[test]
+    fn vite_unmapped_candidate_keeps_minifier_precedence() {
+        for (edit, expected) in [
+            (false, CoverageState::NotApplicable),
+            (true, CoverageState::Unavailable),
+        ] {
+            let fixture = vite_with_unmapped_flag(None, UnmappedAt::FlagRead, |value| {
+                if edit {
+                    value["defaultMinifier"] = false.into();
+                } else {
+                    value["minifyEnabled"] = false.into();
+                }
+            });
+            assert_eq!(dead_code_coverage(&fixture.output.analysis).state, expected);
+        }
+    }
+
+    #[test]
+    fn vite_missing_map_uses_the_missing_map_note_not_the_mapping_gap_note() {
+        let fixture = run_fixture_patched(
+            BundlerChoice::Vite,
+            true,
+            |_| {},
+            |build, _| {
+                std::fs::remove_file(build.join(format!("{VITE_INDEX_CHUNK}.map"))).unwrap();
+            },
+        );
+        let coverage = dead_code_coverage(&fixture.output.analysis);
+        assert_eq!(coverage.state, CoverageState::Partial);
+        assert!(coverage.note.contains("no usable source map"));
+        assert!(!coverage.note.contains("no source mapping"));
+    }
+
+    #[test]
+    fn vite_coverage_reports_unmapped_candidates_and_source_gaps_together() {
+        let value: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(manifest_dir().join("tests/fixtures/vite/collect.json")).unwrap(),
+        )
+        .unwrap();
+        let collection: Collection = serde_json::from_value(value).unwrap();
+        let find_dead_code = |coverage: Vec<CategoryCoverage>| {
+            coverage
+                .into_iter()
+                .find(|entry| entry.category == OptimizationCategory::DeadCodeElimination)
+                .unwrap()
+        };
+        let both = find_dead_code(coverage(&collection, 0, 0, 0, 1, 1, 2, None));
+        assert_eq!(both.state, CoverageState::Partial);
+        assert!(
+            both.note
+                .contains("1 source file(s) lack verifiable build text")
+        );
+        assert!(both.note.contains("2 guarded environment candidate(s)"));
+        let only_source = find_dead_code(coverage(&collection, 0, 0, 0, 1, 1, 0, None));
+        assert!(!only_source.note.contains("no source mapping"));
+        // Name mangling does not depend on the Vite environment detector.
+        let mangling = coverage(&collection, 0, 0, 0, 0, 0, 2, None)
+            .into_iter()
+            .find(|entry| entry.category == OptimizationCategory::NameMangling)
+            .unwrap();
+        assert_eq!(mangling.state, CoverageState::Covered);
+    }
+
+    #[test]
+    fn rspack_dead_code_coverage_ignores_unmapped_candidates() {
+        let value: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(manifest_dir().join("tests/fixtures/rspack/collect.json")).unwrap(),
+        )
+        .unwrap();
+        let collection: Collection = serde_json::from_value(value).unwrap();
+        let rspack = coverage(&collection, 0, 0, 0, 0, 0, 3, None);
+        assert_eq!(
+            rspack
+                .iter()
+                .find(|entry| entry.category == OptimizationCategory::DeadCodeElimination)
+                .unwrap()
+                .state,
+            CoverageState::Covered
         );
     }
 
