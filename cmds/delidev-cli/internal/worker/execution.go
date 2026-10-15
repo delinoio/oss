@@ -277,9 +277,8 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			}
 			accountHold = hold
 			defer func() {
-				if err := accountHold.release(); err != nil {
-					config.codexOwners.parkUnverifiedRelease(input.AccountID, accountHold)
-					output, returned = nil, config.startup.cleanupFailure(returned, err)
+				if changed, settled := retryHeldRelease(config, input.AccountID, accountHold, returned); changed {
+					output, returned = nil, settled
 				}
 			}()
 		}
@@ -394,20 +393,10 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			// shared home lock is released and verified before that request: a
 			// continuation already retrying its Take would otherwise be admitted
 			// and meet profile_busy.
-			releaseErr, err := publishAfterRelease(accountHold, func() error {
+			if changed, settled := settleExclusiveFinish(config, input.AccountID, accountHold, returned, conclusive, func() error {
 				return managed.finish(managedLatest, managedCleanup, false, managedSuccess)
-			})
-			if releaseErr != nil {
-				config.codexOwners.parkUnverifiedRelease(input.AccountID, accountHold)
-				output, returned = nil, config.startup.cleanupFailure(returned, releaseErr)
-			}
-			if err != nil {
-				output, returned = nil, &managedExecutionUncertain{err}
-			} else if !conclusive {
-				if returned == nil {
-					returned = subscription.Invalid()
-				}
-				output, returned = nil, &managedExecutionUncertain{returned}
+			}); changed {
+				output, returned = nil, settled
 			}
 			clear(managed.response.Bundle)
 		}

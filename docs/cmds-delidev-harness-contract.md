@@ -3090,6 +3090,32 @@ other verified release in every row.
 | not verified | fails     | the Finish error                                    | owner or hold retained; the retry verifies the release again                  | closed, unverified                        |
 | not verified | ambiguous | the Finish error                                    | owner retained with the pending request; the retry verifies the release again | closed, unverified                        |
 
+The exclusive path retries the release once more in its deferred cleanup, after
+the managed Finish settled, and the owner and joined-member paths run later
+cleanup (the workspace lease, the profile and the pull-request tool) in the
+same position. A later cleanup failure is recorded but never replaces an
+unconfirmed Finish: only that outcome keeps the job journal unfinished until the
+Finish is reconciled, so the server-side Finish and the account lease are not
+reported as settled. A cleanup failure that follows an ordinary outcome is the
+recovery-required cleanup failure.
+
+| First release | Finish    | Deferred release retry | Returned outcome                        | Parked hold |
+| ------------- | --------- | ---------------------- | --------------------------------------- | ----------- |
+| verified      | succeeds  | nothing to retry       | success                                 | none        |
+| verified      | fails     | nothing to retry       | the unconfirmed Finish                  | none        |
+| verified      | ambiguous | nothing to retry       | the unconfirmed Finish                  | none        |
+| not verified  | succeeds  | fails                  | the cleanup failure (recovery required) | kept        |
+| not verified  | succeeds  | verifies               | the cleanup failure (recovery required) | kept        |
+| not verified  | fails     | fails                  | the unconfirmed Finish                  | kept        |
+| not verified  | fails     | verifies               | the unconfirmed Finish                  | kept        |
+| not verified  | ambiguous | fails                  | the unconfirmed Finish                  | kept        |
+| not verified  | ambiguous | verifies               | the unconfirmed Finish                  | kept        |
+
+Rows with a successful Finish assume a conclusive execution result; a successful
+Finish without one is reported as an unconfirmed Finish in every row. The owner and joined-member paths have no deferred release retry,
+because the owner's unverified release moves to the account gate when its Finish
+settles.
+
 The release failure of a published owner Finish is returned like the exclusive
 path's cleanup failure: the member outcome is an unconfirmed cleanup that
 requires recovery, never a silent success, while the local owner is still

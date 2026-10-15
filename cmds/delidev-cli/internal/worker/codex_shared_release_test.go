@@ -538,3 +538,138 @@ func TestSharedHomeReleaseVerificationTimeline(t *testing.T) {
 		}
 	})
 }
+
+// Exclusive continuation timeline. Rows are {first release verifies or not} x
+// {Finish succeeds, fails or is ambiguous} x {deferred release retry verifies,
+// still fails or has nothing to retry}. The managed Finish settles first and
+// the continuation's deferred cleanup retries the release afterwards; an
+// unconfirmed Finish must stay the reported outcome through that retry.
+func TestExclusiveContinuationReleaseFinishTimeline(t *testing.T) {
+	type outcome int
+	const (
+		succeeded outcome = iota
+		cleanupFailed
+		finishUncertain
+	)
+	type retryState int
+	const (
+		retryNothing  retryState = iota // the first release was verified
+		retryFails                      // the home is still replaced
+		retryVerifies                   // the home was repaired before the retry
+	)
+	rows := []struct {
+		name       string
+		release    releaseStart
+		finish     finishOutcome
+		conclusive bool
+		retry      retryState
+		want       outcome
+		parked     bool
+	}{
+		{"verified, succeeds", releaseVerifies, finishSucceeds, true, retryNothing, succeeded, false},
+		{"verified, fails", releaseVerifies, finishFails, true, retryNothing, finishUncertain, false},
+		{"verified, ambiguous", releaseVerifies, finishAmbiguous, true, retryNothing, finishUncertain, false},
+		{"verified, succeeds, inconclusive", releaseVerifies, finishSucceeds, false, retryNothing, finishUncertain, false},
+		{"unverified, succeeds, retry fails", releaseUnverifiable, finishSucceeds, true, retryFails, cleanupFailed, true},
+		{"unverified, succeeds, retry verifies", releaseUnverifiable, finishSucceeds, true, retryVerifies, cleanupFailed, true},
+		{"unverified, fails, retry fails", releaseUnverifiable, finishFails, true, retryFails, finishUncertain, true},
+		{"unverified, fails, retry verifies", releaseUnverifiable, finishFails, true, retryVerifies, finishUncertain, true},
+		{"unverified, ambiguous, retry fails", releaseUnverifiable, finishAmbiguous, true, retryFails, finishUncertain, true},
+		{"unverified, ambiguous, retry verifies", releaseUnverifiable, finishAmbiguous, true, retryVerifies, finishUncertain, true},
+		{"unverified, succeeds, inconclusive, retry fails", releaseUnverifiable, finishSucceeds, false, retryFails, finishUncertain, true},
+	}
+	for _, row := range rows {
+		row := row
+		t.Run(row.name, func(t *testing.T) {
+			f := newOwnerFixture(t, row.release)
+			// The continuation holds the lock itself, so no shared owner is
+			// tracked; the fixture's hold stands for the continuation's.
+			f.gate.mu.Lock()
+			f.gate.owner = nil
+			f.gate.mu.Unlock()
+			hold := f.owner.profile
+			published := 0
+			config := f.config
+			changed, returned := settleExclusiveFinish(config, f.account, hold, nil, row.conclusive, func() error { published++; return f.publish(row.finish)() })
+			if published != 1 {
+				t.Fatalf("Finish was published %d times", published)
+			}
+			if row.retry == retryVerifies {
+				f.repair(t)
+			}
+			retried, settled := retryHeldRelease(config, f.account, hold, returned)
+			if retried && row.retry == retryNothing {
+				t.Fatalf("a verified release was retried into a failure: %v", settled)
+			}
+			if row.retry == retryFails && !retried {
+				t.Fatal("the failing retry was not reported")
+			}
+			if row.retry == retryVerifies && retried {
+				t.Fatalf("the repaired retry failed: %v", settled)
+			}
+			if retried {
+				changed = true
+			}
+			var uncertain *managedExecutionUncertain
+			isUncertain := errors.As(settled, &uncertain)
+			switch row.want {
+			case succeeded:
+				if settled != nil || changed {
+					t.Fatalf("outcome = %v changed=%v, want success", settled, changed)
+				}
+			case cleanupFailed:
+				if isUncertain || domain.SafeError(settled).Code != domain.RecoveryRequired || !changed {
+					t.Fatalf("outcome = %v (uncertain=%v), want the cleanup failure", settled, isUncertain)
+				}
+			case finishUncertain:
+				if !isUncertain || !changed {
+					t.Fatalf("outcome = %v (uncertain=%v), want the unconfirmed Finish", settled, isUncertain)
+				}
+			}
+			if row.want == finishUncertain && row.finish != finishSucceeds && domain.SafeError(settled).Message != domain.SafeError(returned).Message {
+				t.Fatalf("the deferred retry replaced the Finish outcome: %v", settled)
+			}
+			f.gate.mu.Lock()
+			parked := f.gate.unverified != nil
+			f.gate.mu.Unlock()
+			if parked != row.parked {
+				t.Fatalf("parked = %v, want %v", parked, row.parked)
+			}
+			if row.release == releaseUnverifiable {
+				if row.retry == retryFails {
+					f.repair(t)
+				}
+				// The next holder verifies the parked release before it locks.
+				if err := f.config.codexOwners.settleUnverifiedRelease(f.account); err != nil {
+					t.Fatalf("the repaired release was not verified: %v", err)
+				}
+			}
+			if !f.lockIsFree(t) {
+				t.Fatal("the lock stayed held after the release was verified")
+			}
+		})
+	}
+}
+
+// A cleanup failure after the managed Finish settled never replaces an
+// unconfirmed Finish, for the exclusive, owner and joined-member paths alike,
+// whether or not a startup attempt records it.
+func TestCleanupFailureKeepsTheUnconfirmedFinish(t *testing.T) {
+	finish := &managedExecutionUncertain{errors.New("finish outcome unknown")}
+	cleanup := errors.New("close failed")
+	for _, startup := range []*executionStartupAttempt{nil, {}} {
+		if got := startup.cleanupFailure(finish, cleanup); got != error(finish) {
+			t.Fatalf("startup %v: the Finish outcome was replaced by %v", startup, got)
+		}
+		if startup != nil && !startup.cleanupUncertain {
+			t.Fatal("the cleanup failure was not recorded")
+		}
+		var uncertain *managedExecutionUncertain
+		if got := startup.cleanupFailure(domain.Fail(domain.Unavailable, "original", "retry"), cleanup); errors.As(got, &uncertain) {
+			t.Fatalf("an ordinary failure became an unconfirmed Finish: %v", got)
+		}
+		if got := startup.cleanupFailure(nil, cleanup); got == nil {
+			t.Fatal("a cleanup failure was dropped")
+		}
+	}
+}

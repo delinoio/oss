@@ -11,6 +11,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
 )
 
 type profileRegistryKey struct {
@@ -478,6 +479,47 @@ func (h *sharedHomeHold) log(event string, err error) {
 func publishAfterRelease(hold *sharedHomeHold, publish func() error) (releaseErr, publishErr error) {
 	releaseErr = hold.release()
 	return releaseErr, publish()
+}
+
+// failHeldRelease reports a release of the held shared account home that could
+// not be verified. The hold is parked for the next holder; an unconfirmed
+// managed Finish already in returned stays the reported outcome.
+func failHeldRelease(config Config, account domain.ID, hold *sharedHomeHold, returned, releaseErr error) error {
+	config.codexOwners.parkUnverifiedRelease(account, hold)
+	return config.startup.cleanupFailure(returned, releaseErr)
+}
+
+// retryHeldRelease is the deferred release of a held shared account home that
+// runs after the managed Finish settled. A verified release leaves the outcome
+// unchanged.
+func retryHeldRelease(config Config, account domain.ID, hold *sharedHomeHold, returned error) (bool, error) {
+	if err := hold.release(); err != nil {
+		return true, failHeldRelease(config, account, hold, returned, err)
+	}
+	return false, returned
+}
+
+// settleExclusiveFinish releases the held shared account home of an exclusive
+// continuation and publishes its managed Finish. It reports whether the outcome
+// changed. A failed or ambiguous Finish is an unconfirmed managed Finish and
+// outranks an unverified release; a later retry of that release by the
+// continuation's deferred cleanup must not replace it either.
+func settleExclusiveFinish(config Config, account domain.ID, hold *sharedHomeHold, returned error, conclusive bool, finish func() error) (bool, error) {
+	changed := false
+	releaseErr, finishErr := publishAfterRelease(hold, finish)
+	if releaseErr != nil {
+		returned, changed = failHeldRelease(config, account, hold, returned, releaseErr), true
+	}
+	if finishErr != nil {
+		return true, &managedExecutionUncertain{finishErr}
+	}
+	if !conclusive {
+		if returned == nil {
+			returned = subscription.Invalid()
+		}
+		return true, &managedExecutionUncertain{returned}
+	}
+	return changed, returned
 }
 
 // verifySharedCodexHome checks a checkpoint-bound shared home against the
