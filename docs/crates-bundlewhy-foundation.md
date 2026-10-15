@@ -326,10 +326,10 @@ When a source map lacks `sourcesContent`, a safe live read may establish that a 
 
 `tracing` writes human-readable, ANSI-colored stderr logs by default (`--no-color` or `NO_COLOR` disables color, `--verbose` adds debug detail). The loopback listener logs accept failures with the bound address and error, then waits 250 ms before retrying; a later successful accept resumes normal connection handling. Each run writes `bundlewhy.log` JSON lines with timestamp, run ID, stage, duration, engine versions and error codes. Logs never include source content, environment variable values, credentials or access tokens. A bundler module identifier can carry inline loader options or resource queries, so logs never name a module by its raw identifier:
 
-| Module in a log line                                                      | Logged as                                                               |
-| ------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| Collected module with a resource path                                     | Its display path (project-relative or dependency display path)          |
-| Collected module without a resource path, or module that is not collected | `module-` plus the first 16 hex digits of the SHA-256 of its identifier |
+| Module in a log line                                                                               | Logged as                                                                   |
+| -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Collected module with a resource path                                                              | Its display path (project-relative or dependency display path)              |
+| Collected module without a resource path, or module that is not collected                          | `module-` plus the first 16 hex digits of the SHA-256 of its identifier     |
 | Backing-file candidate path (absolute, possibly with a query or fragment) that has no display path | `module-` plus the first 16 hex digits of the SHA-256 of the candidate text |
 
 ## Build and Test
