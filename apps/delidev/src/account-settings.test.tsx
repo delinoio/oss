@@ -1184,7 +1184,10 @@ it("renders ordered native provider actions, enters once without writes, and ret
 it("renders providers from every scroll continuation page as ordered direct buttons inside the single list", () => {
   const value = fixture();
   const pages = [
-    ["OpenAI", "A provider with an exceptionally long display name that must wrap"],
+    [
+      "OpenAI",
+      "A provider with an exceptionally long display name that must wrap",
+    ],
     ["Anthropic", "Local gateway"],
     ["xAI"],
   ];
@@ -1242,9 +1245,9 @@ it("renders providers from every scroll continuation page as ordered direct butt
   const buttons = Array.from(
     choices.querySelectorAll<HTMLButtonElement>("button"),
   );
-  expect(buttons.map((button) => button.querySelector("strong")?.textContent)).toEqual(
-    pages.flat(),
-  );
+  expect(
+    buttons.map((button) => button.querySelector("strong")?.textContent),
+  ).toEqual(pages.flat());
   for (const button of buttons) {
     expect(button.getAttribute("type")).toBe("button");
     expect(button.classList.contains("account-provider-action")).toBe(true);
@@ -1255,7 +1258,9 @@ it("renders providers from every scroll continuation page as ordered direct butt
     expect(button.querySelectorAll(".account-provider-method")).toHaveLength(1);
   }
   expect(
-    buttons.map((button) => button.querySelector(".account-provider-method")?.textContent),
+    buttons.map(
+      (button) => button.querySelector(".account-provider-method")?.textContent,
+    ),
   ).toEqual(["API key", "API key", "API key", "Local endpoint", "API key"]);
   expect(
     screen.getByRole("button", { name: "Load more Provider pages" }),

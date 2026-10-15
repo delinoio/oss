@@ -74,7 +74,11 @@ describe("API provider picker stylesheet", () => {
     const rules = rulesFor("account-provider-choices");
     expect(rules.length).toBeGreaterThan(0);
     for (const rule of rules) {
-      for (const property of ["grid-template-columns", "columns", "column-count"]) {
+      for (const property of [
+        "grid-template-columns",
+        "columns",
+        "column-count",
+      ]) {
         const value = rule.declarations.get(property);
         if (value !== undefined && property === "grid-template-columns")
           expect(value).toBe(SINGLE_COLUMN);
