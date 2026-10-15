@@ -53,6 +53,11 @@ import {
 import { Harness, TextField } from "./configuration-fields";
 import { ObservedJob, useJobObservation } from "./jobs";
 import { useRetainedMutation } from "./mutation";
+import {
+  GrokDiagnosticNotice,
+  grokDiagnosticFromDocument,
+  safeGrokDiagnostic,
+} from "./grok-diagnostic";
 import { InlineRemediation, Problem } from "./ui";
 import { Updates } from "./updates";
 import { NetworkSettings } from "./network-settings";
@@ -493,6 +498,15 @@ export function MachineSettingsView({
                     installation,
                     installationVersionAllowed(harness),
                   );
+            // A failed Grok Build validation keeps the same safe phase, versions
+            // and guidance that Settings presents for the original operation.
+            const reported =
+              harness === Harness.Grok && known && !duplicate
+                ? grokDiagnosticFromDocument(
+                    object(installation.protocol).grok_diagnostic,
+                  )
+                : undefined;
+            const grok = safeGrokDiagnostic(reported) ? reported : undefined;
             return (
               <article className="result" key={index}>
                 <h4>
@@ -525,7 +539,9 @@ export function MachineSettingsView({
                     })}
                   </p>
                 ) : null}
-                {observation.cause ? (
+                {observation.cause && grok ? (
+                  <GrokDiagnosticNotice diagnostic={grok} />
+                ) : observation.cause ? (
                   <InlineRemediation
                     summary={copy(
                       installationCauseCopyKey(

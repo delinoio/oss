@@ -475,11 +475,15 @@ func TestGrokRefreshIsAvailableOnlyToAConnectedGrokAccount(t *testing.T) {
 	}
 }
 
-func TestGrokRefreshDiagnosticsUseFixedSafeText(t *testing.T) {
+func TestGrokRefreshDiagnosticsUseSharedReconstructedText(t *testing.T) {
 	op := domain.NewID()
 	for _, code := range []domain.Code{domain.RecoveryRequired, domain.Unauthenticated, domain.Unavailable, domain.Conflict, domain.Internal} {
-		message := grokDiagnosticMessage(&domain.GrokDiagnostic{Phase: domain.GrokDiagnosticRefresh, Code: code, CorrelationID: op})
-		if message == nil || message.Phase != pb.GrokDiagnosticPhase_GROK_DIAGNOSTIC_PHASE_REFRESH || message.Message == "" || message.Guidance == "" || strings.Contains(message.Message, "sign-in did not complete") && code != domain.Internal {
+		d := grokOperationDiagnostic(op, domain.GrokRefresh, code)
+		if d == nil || d.Validate() != nil || d.CorrelationID != string(op) || d.DetectedVersion != "" {
+			t.Fatalf("refresh diagnostic for %s is invalid: %+v", code, d)
+		}
+		message := grokDiagnosticMessage(d)
+		if message == nil || message.Phase != pb.GrokDiagnosticPhase_GROK_DIAGNOSTIC_PHASE_REFRESH || message.Code != string(code) || message.Message == "" || message.Guidance == "" || !strings.Contains(message.Message, "credential refresh") {
 			t.Fatalf("refresh diagnostic for %s is wrong: %+v", code, message)
 		}
 	}

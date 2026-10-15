@@ -485,8 +485,8 @@ func grokObjectMembers(raw []byte, fold bool) (map[string]bool, bool) {
 type grokTokenOutcome string
 
 const (
-	// grokTokenOutcomeSuccess: status 200 and exactly one JSON object; the
-	// caller still validates the token members.
+	// grokTokenOutcomeSuccess: status 200 and exactly one JSON object without an
+	// error member; the caller still validates the token members.
 	grokTokenOutcomeSuccess grokTokenOutcome = "success"
 	// grokTokenOutcomeMalformed: status 200 whose body is not one valid object.
 	grokTokenOutcomeMalformed grokTokenOutcome = "malformed"
@@ -501,10 +501,16 @@ const (
 // cannot prove that nothing rotated.
 var grokTokenSuccessMembers = []string{"access_token", "refresh_token", "id_token", "token_type", "expires_in"}
 
+// grokTokenErrorMembers are the members of an OAuth error response. A success
+// body that carries any of them (even empty or null) contradicts itself, so it
+// is neither a published success nor proof that nothing rotated.
+var grokTokenErrorMembers = []string{"error", "error_description", "error_uri"}
+
 // classifyGrokTokenResponse is the one table of the token endpoint response:
 //
 //	status   | body                                                        | outcome
 //	200      | one object, unique members, only trailing whitespace        | success
+//	200      | one such object that also has any error member              | uncertain
 //	200      | anything else                                               | malformed
 //	400, 401 | one object, unique members, non-empty error, no success one | rejected
 //	400, 401 | trailing data, repeated member, no error, or an error that
@@ -521,6 +527,13 @@ func classifyGrokTokenResponse(status int, raw []byte) (grokTokenBody, grokToken
 		if decoder.Decode(&body) != nil {
 			ok = false
 			body = grokTokenBody{}
+		}
+	}
+	if status == http.StatusOK && ok {
+		for _, name := range grokTokenErrorMembers {
+			if members[name] {
+				return grokTokenBody{}, grokTokenOutcomeUncertain
+			}
 		}
 	}
 	switch {

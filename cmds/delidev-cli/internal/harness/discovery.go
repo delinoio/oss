@@ -254,6 +254,11 @@ func discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessD
 					i.Protocol.Diagnostic = domain.CodexErrorDiagnostic(err)
 					codexDiagnostic = i.Protocol.Diagnostic
 				}
+				if i.Harness == domain.GrokBuild {
+					// Probe reports the original phase; a recovery-required cleanup
+					// aborts discovery below and is never stored on the observation.
+					i.Protocol.GrokDiagnostic = domain.GrokErrorDiagnostic(err)
+				}
 				if err != nil && domain.SafeError(err).Code == domain.RecoveryRequired {
 					return domain.HarnessDiscoveryOutput{}, err
 				}

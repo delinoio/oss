@@ -144,8 +144,11 @@ func grokSubscriptionInstallation(tx *store.Tx, machine domain.ID) (domain.Insta
 			found = &m.Installations[i]
 		}
 	}
-	if found == nil || !domain.GrokSubscriptionVersionAllowed(found.Version) || found.State != domain.InstallationDetected || !found.ProtocolVerified || found.Protocol == nil || found.Protocol.Protocol != domain.ProtocolFor(domain.GrokBuild) || found.Protocol.State != domain.ProtocolVerified || found.Protocol.Problem != nil || found.Problem != nil || found.ResolvedPath == "" || found.ObservedAt == nil || found.ObservedAt.IsZero() || found.ObservedAt.After(time.Now().UTC().Add(time.Second)) {
-		return domain.Installation{}, domain.Fail(domain.Unsupported, "Grok subscription authentication requires a verified, supported Grok Build installation.", "Discover the installed Grok Build on the selected Runner Device and install the pinned supported release yourself.")
+	now := time.Now().UTC()
+	if found == nil || !grokDiscoveryObserved(found, now) || !domain.GrokSubscriptionVersionAllowed(found.Version) || !found.ProtocolVerified || found.Protocol == nil || found.Protocol.Protocol != domain.ProtocolFor(domain.GrokBuild) || found.Protocol.State != domain.ProtocolVerified || found.Protocol.Problem != nil || found.Problem != nil {
+		// The refusal carries the original phase, installed version and supported
+		// baseline as a closed diagnostic; it never exposes native text or paths.
+		return domain.Installation{}, grokAdmissionFailure(found, now)
 	}
 	return *found, nil
 }
@@ -264,6 +267,50 @@ func (s *Service) grokExecuteRecoveryView(ctx context.Context, tx *store.Tx, id,
 	return r, a, nil
 }
 
+// grokOriginalTake reports whether a Take addresses exactly the account's
+// pending operation: the same operation ID, lifecycle action and Runner Device,
+// still queued. Cancellation is classified separately by the caller.
+func grokOriginalTake(op *domain.SubscriptionOperation, operation, machine domain.ID, action domain.SubscriptionAction) bool {
+	return op != nil && op.ID == operation && op.Action == action && op.MachineID == machine && op.Phase == domain.SubscriptionQueued
+}
+
+// grokLifecycleShape reports whether the account can start the action: login
+// starts from no credential, refresh and logout require the connected account's
+// current generation.
+func grokLifecycleShape(a *domain.Account, action domain.SubscriptionAction) bool {
+	st := a.Subscription
+	if action == domain.SubscriptionLogin {
+		return a.Connection == nil && st.Generation == ""
+	}
+	return a.Connection != nil && st.Generation != ""
+}
+
+// grokTakeRefusalTarget returns the pending operation that a refused Take may
+// annotate with its admission diagnostic: only the account's own queued,
+// uncanceled operation, addressed by the Take's exact operation ID, lifecycle
+// action and Runner Device, on an account that is not leased or fenced and
+// whose lifecycle shape and initiating actor would otherwise admit the claim.
+// Every other Take is refused without leaving a trace on any operation.
+func grokTakeRefusalTarget(tx *store.Tx, a domain.Account, operation, machine domain.ID, action domain.SubscriptionAction) *domain.SubscriptionOperation {
+	st := a.Subscription
+	if st == nil || st.RecoveryRequired || st.Lease != nil || !grokOriginalTake(st.Pending, operation, machine, action) || st.Pending.Canceled {
+		return nil
+	}
+	if !grokLifecycleShape(&a, action) || subscriptionActorValid(tx, st.Pending.Actor) != nil {
+		return nil
+	}
+	return st.Pending
+}
+
+// grokSettledEvent is the settlement that one Finish transaction wrote.
+type grokSettledEvent struct {
+	Account            domain.ID
+	Operation          domain.ID
+	Action             domain.SubscriptionAction
+	State              domain.SubscriptionLoginState
+	DiagnosticAttached bool
+}
+
 func (s *Service) takeGrokSubscription(ctx context.Context, req *connect.Request[pb.TakeSubscriptionRequest]) (response *connect.Response[pb.TakeSubscriptionResponse], returned error) {
 	c := req.Header().Get(rpc.CorrelationHeader)
 	m := req.Msg.Mutation
@@ -296,6 +343,9 @@ func (s *Service) takeGrokSubscription(ctx context.Context, req *connect.Request
 	// admitted is the installation verified in the claiming transaction. It is
 	// the only installation observation this lease ever uses.
 	var admitted domain.Installation
+	// refusal is the original diagnostic of an installation refusal, persisted for
+	// progress after the refused transaction rolls back.
+	var refusal *domain.GrokDiagnostic
 	defer func() {
 		if returned != nil && owned {
 			if err := s.markSubscriptionRecovery(input.Account); err != nil {
@@ -346,6 +396,20 @@ func (s *Service) takeGrokSubscription(ctx context.Context, req *connect.Request
 		}
 		installation, err := grokSubscriptionInstallation(tx, input.Machine)
 		if err != nil {
+			if d := domain.GrokErrorDiagnostic(err); d != nil {
+				// The installation refusal is returned for every Take, but only a
+				// Take that addresses the account's own queued operation exactly
+				// may annotate it; any other Take would otherwise attach a false
+				// terminal failure to an operation it does not own.
+				recordable := grokTakeRefusalTarget(tx, a, input.Operation, input.Machine, action) != nil
+				if recordable {
+					refusal = d
+				}
+				// This transaction rolls back, so nothing is persisted here: the
+				// field only says that recording is allowed. The outcome is logged
+				// by recordGrokTakeRefusal once its own transaction has finished.
+				s.logger.WarnContext(ctx, "grok_subscription_take_installation_refused", "account_id", input.Account, "operation_id", input.Operation, "action", action, "refusal_recordable", recordable, "phase", d.Phase, "code", d.Code, "installed_version", d.DetectedVersion, "supported_version", d.SupportedVersion)
+			}
 			return nil, err
 		}
 		if err := tx.WorkerUpdateAdmission(input.Machine); err != nil {
@@ -357,7 +421,7 @@ func (s *Service) takeGrokSubscription(ctx context.Context, req *connect.Request
 		if op == nil || op.ID != input.Operation {
 			return nil, subscriptionTakeNotAdmitted()
 		}
-		original := op.Action == action && op.MachineID == input.Machine && op.Phase == domain.SubscriptionQueued
+		original := grokOriginalTake(op, input.Operation, input.Machine, action)
 		if original && op.Canceled {
 			return nil, subscriptionTakeNotAdmitted()
 		}
@@ -367,9 +431,7 @@ func (s *Service) takeGrokSubscription(ctx context.Context, req *connect.Request
 		if !original {
 			return nil, subscriptionDenied()
 		}
-		// Lifecycle shape: login starts from no credential, refresh and logout
-		// require the connected account's current generation.
-		if action == domain.SubscriptionLogin && (a.Connection != nil || st.Generation != "") || action != domain.SubscriptionLogin && (a.Connection == nil || st.Generation == "") {
+		if !grokLifecycleShape(&a, action) {
 			return nil, subscriptionDenied()
 		}
 		if err := subscriptionActorValid(tx, op.Actor); err != nil {
@@ -381,12 +443,19 @@ func (s *Service) takeGrokSubscription(ctx context.Context, req *connect.Request
 			return nil, subscriptionDenied()
 		}
 		op.Phase = domain.SubscriptionClaimed
+		// A claim supersedes the provisional record of an earlier refused Take.
+		if o := st.ServerOperation; o != nil && o.ID == op.ID && o.State == domain.SubscriptionUnsupported {
+			st.ServerOperation = nil
+		}
 		st.Lease = &domain.SubscriptionLease{ID: input.Lease, OperationID: input.Operation, Revision: r.Revision + 1, Action: action, MachineID: input.Machine, InstanceID: input.Instance, DeviceID: actor.DeviceID, Epoch: s.subscriptionServerEpoch(), Generation: st.Generation, StartedAt: time.Now().UTC()}
 		admitted = installation
 		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
 		return accountReceipt{ID: r.ID}, err
 	})
 	if err != nil {
+		if refusal != nil {
+			s.recordGrokTakeRefusal(ctx, input.Account, input.Operation, input.Machine, action, refusal)
+		}
 		return nil, rpc.Error(err, c)
 	}
 	// A receipt never redistributes a secret; an uncertain first delivery keeps
@@ -713,7 +782,15 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 		// failed or retried publication never points at a deleted generation.
 		// committed is the one generation the account references after the commit.
 		var committed domain.ID
+		// settledVersion is the installed Grok Build version observed while the
+		// outcome was settled; it only labels a later cleanup diagnostic.
+		var settledVersion string
+		// settled describes the outcome the committed transaction wrote. It is
+		// logged only after the commit, because the transaction can still fail
+		// after the in-memory record changed.
+		var settled *grokSettledEvent
 		result, err = s.Store.Mutate(ctx, domain.ID(m.RequestId), "grok.subscription.finish", input, func(tx *store.Tx) (any, error) {
+			settled = nil
 			if err := tx.Authorize(); err != nil {
 				return nil, err
 			}
@@ -735,13 +812,29 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 			if lease.Action == domain.SubscriptionLogout && (state.RevokedGeneration == "" || state.RevokedGeneration != lease.Generation) {
 				usable = false
 			}
+			// The original operation is captured before a login failure or a
+			// settled outcome clears it, so its actor survives for progress. Only the
+			// operation this lease carries is consulted: a logout queued behind an
+			// execute lease is a different pending operation.
+			var settling *domain.SubscriptionOperation
+			canceled := false
 			if state.Pending != nil && state.Pending.ID == lease.OperationID {
-				if err := subscriptionActorValid(tx, state.Pending.Actor); err != nil {
-					return nil, err
+				// A logout lease completes a decision that is already irreversible: the
+				// provider revoked the token and the Worker home is clean, and the
+				// vault removal above ran before this transaction. The initiating
+				// device being revoked meanwhile must not reject the settlement, or
+				// the account would keep a referenced generation that no longer
+				// exists and no retry could ever succeed.
+				if lease.Action != domain.SubscriptionLogout {
+					if err := subscriptionActorValid(tx, state.Pending.Actor); err != nil {
+						return nil, err
+					}
 				}
 				if state.Pending.Canceled {
-					usable = false
+					usable, canceled = false, true
 				}
+				captured := *state.Pending
+				settling = &captured
 			}
 			if usable && lease.Action == domain.SubscriptionLogin {
 				if err := uniqueSubscriptionIdentity(tx, r.ID, identityCommitment); err != nil {
@@ -805,6 +898,33 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 					state.IdentityCommitment = ""
 				}
 			}
+			if settling != nil {
+				settledVersion = grokInstalledVersion(tx, lease.MachineID)
+				settlement := grokSettlement{Operation: settling.ID, Action: lease.Action, Actor: settling.Actor, Epoch: s.subscriptionServerEpoch()}
+				// The first failure stays authoritative: a native failure the Worker
+				// reported is never replaced by its unconfirmed cleanup, which only
+				// fences the account above. An unconfirmed cleanup is the diagnostic
+				// only when the operation itself succeeded or was canceled.
+				nativeFailed := !input.Success || lease.Action == domain.SubscriptionRefresh && !input.Refresh
+				switch {
+				case canceled && input.Cleanup:
+					settlement.State = domain.SubscriptionCanceled
+				case canceled:
+					settlement.State, settlement.Diagnostic = domain.SubscriptionFailed, grokLocalDiagnostic(settledVersion, domain.GrokCleanup, domain.RecoveryRequired)
+				case nativeFailed:
+					settlement.State, settlement.Diagnostic = domain.SubscriptionFailed, grokLocalDiagnostic(settledVersion, grokActionPhase(lease.Action), domain.Unavailable)
+				case !input.Cleanup:
+					settlement.State, settlement.Diagnostic = domain.SubscriptionFailed, grokLocalDiagnostic(settledVersion, domain.GrokCleanup, domain.RecoveryRequired)
+				default:
+					settlement.State = domain.SubscriptionSucceeded
+					if lease.Action != domain.SubscriptionLogout {
+						settlement.Generation = newGeneration
+					}
+				}
+				if settleGrokOperation(state, settlement, time.Now().UTC()) {
+					settled = &grokSettledEvent{Account: r.ID, Operation: settling.ID, Action: lease.Action, State: settlement.State, DiagnosticAttached: state.ServerOperation.GrokDiagnostic != nil}
+				}
+			}
 			if _, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
 				return nil, err
 			}
@@ -813,6 +933,9 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 		})
 		if err != nil {
 			return nil, rpc.Error(err, c)
+		}
+		if settled != nil {
+			s.logger.InfoContext(ctx, "grok_subscription_operation_settled", "account_id", settled.Account, "operation_id", settled.Operation, "action", settled.Action, "state", settled.State, "diagnostic_attached", settled.DiagnosticAttached)
 		}
 		if original.Subscription.Pending != nil {
 			delete(s.subscriptionProgress, original.Subscription.Pending.ID)
@@ -831,6 +954,7 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 			err := cleanupSubscriptionReferences(cleanupCtx, vault, input.Account, committed, protectedGenerations(original.Subscription)...)
 			cancelCleanup()
 			if err != nil {
+				s.recordGrokCleanupFailure(ctx, input.Account, lease.OperationID, settledVersion, err)
 				return nil, rpc.Error(err, c)
 			}
 		}

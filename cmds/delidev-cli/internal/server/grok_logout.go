@@ -268,7 +268,7 @@ func grokLogoutDiagnostic(o domain.ServerSubscriptionOperation, state domain.Sub
 	if state != domain.SubscriptionFailed && state != domain.SubscriptionRecovery {
 		return nil
 	}
-	return &domain.GrokDiagnostic{Phase: domain.GrokDiagnosticLogout, Code: code, CorrelationID: o.ID}
+	return grokOperationDiagnostic(o.ID, domain.GrokLogout, code)
 }
 
 // finishGrokLogout writes the settled outcome. Only a proven revocation proceeds
@@ -501,7 +501,7 @@ func (s *Service) recoverGrokLogout(ctx context.Context, id, operation domain.ID
 		o := st.ServerOperation
 		o.State = domain.SubscriptionFailed
 		o.NativeStarted = false
-		o.GrokDiagnostic = &domain.GrokDiagnostic{Phase: domain.GrokDiagnosticLogout, Code: domain.Unavailable, CorrelationID: o.ID}
+		o.GrokDiagnostic = grokOperationDiagnostic(o.ID, domain.GrokLogout, domain.Unavailable)
 		st.Pending = nil
 		// The restart fenced the account before anything was sent. The credential
 		// is intact and the accepted logout keeps readiness revoked until a new

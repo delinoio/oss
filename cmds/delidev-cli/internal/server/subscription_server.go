@@ -214,7 +214,7 @@ func (s *Service) initializeServerSubscriptions(ctx context.Context) error {
 			if a.SubscriptionService == domain.SubscriptionGrok && a.ProviderID == "" && o.GrokDiagnostic == nil && (o.CodeConsumed || o.RefreshClaimed || o.GrokRevocation != "") {
 				// A claimed operation fenced by the restart is never recovered
 				// automatically, so its recovery diagnostic is recorded here or nowhere.
-				o.GrokDiagnostic = &domain.GrokDiagnostic{Phase: grokDiagnosticPhaseOf(o.Action), Code: domain.RecoveryRequired, CorrelationID: o.ID}
+				o.GrokDiagnostic = grokOperationDiagnostic(o.ID, grokDiagnosticPhaseOf(o.Action), domain.RecoveryRequired)
 			}
 			if _, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
 				return nil, err
@@ -247,6 +247,7 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 			logout             bool
 			refresh            bool
 			queuedFence        bool
+			orphan             bool
 		}
 		var candidates []candidate
 		eligible := map[domain.ID]bool{}
@@ -276,6 +277,11 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 					eligible[a.Subscription.ServerOperation.ID] = true
 					if retries[a.Subscription.ServerOperation.ID].due(now) {
 						candidates = append(candidates, candidate{account: r.ID, operation: a.Subscription.ServerOperation.ID, cleanup: true, grok: true, queuedFence: true})
+					}
+				} else if grokOrphanedOperation(a, s.subscriptionServerEpoch()) {
+					eligible[a.Subscription.ServerOperation.ID] = true
+					if retries[a.Subscription.ServerOperation.ID].due(now) {
+						candidates = append(candidates, candidate{account: r.ID, operation: a.Subscription.ServerOperation.ID, cleanup: true, grok: true, orphan: true})
 					}
 				} else if grokLogoutRecoveryKind(a) != grokLogoutNone {
 					eligible[a.Subscription.ServerOperation.ID] = true
@@ -328,6 +334,11 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 						}
 					} else {
 						s.runManagedClaude(child, next.account)
+					}
+				} else if next.orphan {
+					if err := s.fenceOrphanedGrokOperation(child, next.account, next.operation); err != nil && child.Err() == nil {
+						result.failed = true
+						s.logger.WarnContext(child, "grok_orphaned_operation_fence_pending", "phase", grokLogPhaseCleanup, "operation_id", next.operation, "code", domain.SafeError(err).Code)
 					}
 				} else if next.queuedFence {
 					if err := s.reconcileGrokQueuedFence(child, next.account, next.operation); err != nil && child.Err() == nil {
