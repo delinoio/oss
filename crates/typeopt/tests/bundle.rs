@@ -4751,7 +4751,7 @@ fn keeps_members_when_the_keep_names_helper_is_in_a_boundary_chunk() {
 #[test]
 fn logs_keep_names_static_block_decisions() {
     let code = format!(
-        r#"{KEEP_NAMES_HELPER}class A{{constructor(){{this.firstField=1}}static{{t(this,`A`)}}}}class B{{constructor(){{this.secondField=1}}static{{t(this,`B`)}}static{{this.count=0}}}}console.log(A.name,B.name,new A().firstField,new B().secondField);export{{}};"#
+        r#"{KEEP_NAMES_HELPER}class SecretAlpha{{constructor(){{this.firstField=1}}static{{t(this,`SecretNameAlpha`)}}}}class SecretBeta{{constructor(){{this.secondField=1}}static{{t(this,`SecretNameBeta`)}}static{{this.count=0}}}}console.log(SecretAlpha.name,SecretBeta.name,new SecretAlpha().firstField,new SecretBeta().secondField);export{{}};"#
     );
     let temp = bundle(&[("index.js", &code)]);
     let output = run_typeopt(temp.path(), &[]);
@@ -4764,6 +4764,15 @@ fn logs_keep_names_static_block_decisions() {
     );
     assert!(log.contains("reason=NotSingleCall"), "{log}");
     assert!(log.contains("name_blocks=2"), "{log}");
+    // Source identifiers and string literals never reach the log.
+    for secret in [
+        "SecretAlpha",
+        "SecretBeta",
+        "SecretNameAlpha",
+        "SecretNameBeta",
+    ] {
+        assert!(!log.contains(secret), "{secret} logged:\n{log}");
+    }
 }
 
 /// Call inlining can replace the helper call with its body before the

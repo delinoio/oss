@@ -172,12 +172,6 @@ enum NameBlockMismatch {
     ShadowedObject,
 }
 
-/// An accepted `keepNames` static block.
-struct NameBlock {
-    helper: &'static str,
-    name: &'static str,
-}
-
 fn contains_receiver(node: Node) -> bool {
     let mut nodes = Vec::new();
     collect_nodes(node, &mut nodes);
@@ -388,7 +382,7 @@ impl Builder<'_, '_> {
         &self,
         callee: Node,
         arguments: NodeSlice,
-    ) -> Result<NameBlock, NameBlockMismatch> {
+    ) -> Result<(), NameBlockMismatch> {
         if skip_outer(arguments.get(0)).kind() != SyntaxKind::ThisKeyword {
             return Err(NameBlockMismatch::ReceiverArgument);
         }
@@ -397,24 +391,11 @@ impl Builder<'_, '_> {
             return Err(NameBlockMismatch::NonLiteralName);
         }
         let descriptor = skip_outer(arguments.get(2));
-        let mut name = None;
-        if key.text() != "name"
-            || !name_descriptor(descriptor, |value| {
-                name = is_string_literal(value).then(|| value.text());
-                name.is_some()
-            })
-        {
+        if key.text() != "name" || !name_descriptor(descriptor, is_string_literal) {
             return Err(NameBlockMismatch::HelperShape);
         }
         self.define_property_callee(callee)?;
-        Ok(NameBlock {
-            helper: if callee.kind() == SyntaxKind::Identifier {
-                callee.text()
-            } else {
-                "Object.defineProperty"
-            },
-            name: name.unwrap_or_default(),
-        })
+        Ok(())
     }
 
     /// `static{H(this,"Name")}` where `H` is the `keepNames` helper. Such a
@@ -430,7 +411,7 @@ impl Builder<'_, '_> {
     ///   optional `return`);
     /// - `D` is `Object.defineProperty` or a single-declaration unwritten alias
     ///   of it, and `Object` is the library global.
-    fn name_helper_block(&self, member: Node) -> Result<NameBlock, NameBlockMismatch> {
+    fn name_helper_block(&self, member: Node) -> Result<(), NameBlockMismatch> {
         let body = member.static_block_body();
         let statements = body.statements().to_vec();
         let [statement] = statements.as_slice() else {
@@ -544,10 +525,7 @@ impl Builder<'_, '_> {
             return Err(NameBlockMismatch::HelperShape);
         }
         self.define_property_callee(define.expression())?;
-        Ok(NameBlock {
-            helper: callee.text(),
-            name: name.text(),
-        })
+        Ok(())
     }
 
     fn class_candidate(
@@ -636,20 +614,16 @@ impl Builder<'_, '_> {
                     return Err("static-receiver");
                 }
                 match self.name_helper_block(member) {
-                    Ok(block) => {
+                    Ok(()) => {
                         *name_blocks += 1;
                         tracing::debug!(
                             file = %source_file_info(get_source_file_of_node(node)).file_name,
-                            class = binding.text(),
-                            helper = block.helper,
-                            name = block.name,
                             "keepNames static block accepted"
                         );
                     }
                     Err(mismatch) => {
                         tracing::debug!(
                             file = %source_file_info(get_source_file_of_node(node)).file_name,
-                            class = binding.text(),
                             reason = ?mismatch,
                             "keepNames-shaped static block rejected"
                         );
