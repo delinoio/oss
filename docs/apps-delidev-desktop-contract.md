@@ -5899,6 +5899,59 @@ Up/Down, Enter/Tab and Escape operate the accessible listbox without creating or
 sending input. IME composition never accepts a candidate or submits. Only the
 active token is replaced, with surrounding Unicode, newlines and caret preserved.
 
+Completion acceptance is one atomic text-and-binding transaction owned by
+`skillCompletionEdit` and `skillCompletionSeparator` in `skill-completion.tsx`.
+Mouse click, Enter and plain Tab run the same function. The token range is the
+whole whitespace-delimited `$` token around the caret (a caret inside a partial
+token replaces the full token, including characters after the caret). The result
+is `prefix + "$name" + separator + suffix`, where the prefix and suffix are the
+exact bytes before and after the token range and the separator is a single
+ASCII space unless the suffix begins with whitespace (`/^\s/u`: space, tab,
+newline or any other Unicode whitespace code unit), in which case the separator is
+empty and that existing whitespace serves as the boundary. Offsets are UTF-16
+code units, matching the textarea selection API. With `end = token.start +
+length("$name")`:
+
+| Draft before (caret `\|`) | Draft after | Binding range | Caret after |
+| --- | --- | --- | --- |
+| `$add-iss\|` | `$add-issue ` | `[0, 10)` | `11` |
+| `한글\n$add-iss\|` | `한글\n$add-issue ` | `[3, 13)` | `14` |
+| `$add-iss\| tail` | `$add-issue tail` | `[0, 10)` | `11` |
+| `$add-iss\|  tail` (two spaces) | `$add-issue  tail` | `[0, 10)` | `11` |
+| `$add-iss\|<TAB>tail` | `$add-issue<TAB>tail` | `[0, 10)` | `11` |
+| `$add-iss\|<LF>tail` | `$add-issue<LF>tail` | `[0, 10)` | `11` |
+| `$add-iss\|$other` | `$add-issue $other` | `[0, 10)` | `11` |
+| `x $add-\|zzz tail` | `x $add-issue tail` | `[2, 12)` | `13` |
+| `before $add-z\|zz` | `before $add-issue ` | `[7, 17)` | `18` |
+| Another selected token after the edited range | text as above; that binding keeps its identity | shifted by the length change of the edit | unchanged |
+
+The caret is always `end + 1`: just after the inserted space, or just past
+only the first character of existing whitespace (never past a second whitespace
+character, and past only the `\r` of a `\r\n` pair). The table is identical for click,
+Enter and plain Tab. The new selection is collapsed (`selectionStart` equals
+`selectionEnd`), the textarea keeps or regains focus without scrolling ancestors,
+the panel is dismissed and nothing is sent. Because the caret leaves the token, the
+panel does not reopen until the user edits or moves into a `$` token again.
+
+The binding covers only the literal `$name` bytes `[token.start, end)`; the
+separator is never part of the binding and the exact four-field selection (Worker
+device, inventory, skill and content revision) is retained. Typing after
+acceptance (for example `please`) therefore extends the plain text after the
+separator, keeps the binding and still reaches the send path with the same four
+fields. Deleting the separator re-attaches the token to following text and removes
+the binding by the existing token-edit rule.
+
+The owner's `change(next, bindings)` call still decides admission. When it returns
+`false` (the 256 KiB prompt limit applies to the completed text including the
+separator), acceptance changes no text, binding, selection, focus or panel state.
+Acceptance is a programmatic controlled-value replacement, as before: it adds no
+separate undo transaction and does not rewrite native undo history. IME
+composition, `repeat`, modifier and AltGraph keys, unavailable rows,
+disabled/inert/hidden owners, pending or uncertain locks and stale inventory or
+scope still refuse acceptance before any of the above runs. Project creation,
+General Chat creation, session follow-up and queue editing all use this one
+transaction; prompt-history replacement keeps its separate unbound semantics.
+
 Selected bindings are separate from visible text and exact uncertain mutations
 retain them. The authenticated connection owns each session draft as one bounded
 text-and-binding value across session navigation, Settings and same-identity

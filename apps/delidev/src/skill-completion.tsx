@@ -224,6 +224,45 @@ export function editedBindings(
       : [];
   });
 }
+export interface SkillCompletionEdit {
+  // Complete draft after the completion, including any inserted separator.
+  next: string;
+  // Literal `$name` bytes that the selected binding covers.
+  replacement: string;
+  // Exclusive end of `replacement`; the separator is never part of the binding.
+  end: number;
+  // Collapsed caret offset: past the separator, never inside the token.
+  caret: number;
+}
+// A completion adds one ASCII space unless the preserved suffix already starts
+// with whitespace. Existing whitespace of any kind (space, tab, newline) is
+// reused byte for byte, so the suffix is never rewritten.
+export function skillCompletionSeparator(suffix: string): string {
+  return /^\s/u.test(suffix) ? "" : " ";
+}
+// Pure text transaction for one accepted completion. It replaces the full
+// token range (caret-inside partial tokens included), preserves the prefix and
+// suffix exactly, and leaves the caret one UTF-16 unit past the token: on the
+// inserted space, or on the first character after the existing whitespace.
+export function skillCompletionEdit(
+  value: string,
+  token: SkillToken,
+  name: string,
+): SkillCompletionEdit {
+  const replacement = `$${name}`,
+    suffix = value.slice(token.end),
+    end = token.start + replacement.length;
+  return {
+    next:
+      value.slice(0, token.start) +
+      replacement +
+      skillCompletionSeparator(suffix) +
+      suffix,
+    replacement,
+    end,
+    caret: end + 1,
+  };
+}
 export function useSkillCompletion({
   value,
   change,
@@ -518,9 +557,11 @@ export function useSkillCompletion({
       !inventory.some((current) => current.selection === entry.selection)
     )
       return;
-    const replacement = `$${entry.name}`,
-      next = value.slice(0, token.start) + replacement + value.slice(token.end),
-      end = token.start + replacement.length;
+    const { next, replacement, end, caret: nextCaret } = skillCompletionEdit(
+      value,
+      token,
+      entry.name,
+    );
     const nextBindings = [
       ...editedBindings(value, next, bindings).filter(
         (binding) => binding.start !== token.start,
@@ -536,12 +577,12 @@ export function useSkillCompletion({
     ];
     if (change(next, nextBindings) === false) return;
     setBindings(nextBindings);
-    setCaret(end);
+    setCaret(nextCaret);
     setDismissed(true);
     queueMicrotask(() => {
       if (!canEdit()) return;
       textarea.current?.focus({ preventScroll: true });
-      textarea.current?.setSelectionRange(end, end);
+      textarea.current?.setSelectionRange(nextCaret, nextCaret);
     });
   };
   const onChange = (next: string, position: number) => {

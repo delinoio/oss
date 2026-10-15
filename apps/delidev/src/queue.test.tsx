@@ -465,6 +465,34 @@ it("edits skill-bound input with explicit retained selections and clears them de
     },
   });
 });
+it("completes a skill in the queue editor with a trailing separator and binds only the name", async () => {
+  const f = fixture();
+  f.session.documentJson = encode({
+    ...readDocument(f.session),
+    machine_id: newRequestId(),
+    agent_id: newRequestId(),
+  });
+  const view = render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Edit input" }));
+  const editor = screen.getByRole("textbox", {
+    name: "Edited input",
+  }) as HTMLTextAreaElement;
+  editor.focus();
+  fireEvent.change(editor, { target: { value: "$avail", selectionStart: 6 } });
+  fireEvent.click(await screen.findByRole("option", { name: /available/ }));
+  expect(editor.value).toBe("$available ");
+  await waitFor(() => expect(editor.selectionStart).toBe(11));
+  expect(editor.selectionEnd).toBe(11);
+  expect(document.activeElement).toBe(editor);
+  const span = view.container.querySelector(".skill-token-selected")!;
+  expect(span.textContent).toBe("$available");
+  expect(span.getAttribute("data-skill-start")).toBe("0");
+  fireEvent.click(screen.getByRole("button", { name: "Save input" }));
+  await waitFor(() => expect(f.edit).toHaveBeenCalledTimes(1));
+  expect(f.edit.mock.calls[0]![0]).toMatchObject({
+    skills: { selections: [expect.objectContaining({})] },
+  });
+});
 it("explicitly clears selected bindings without altering visible text", async () => {
   const f = fixture(),
     skillId = newRequestId();
