@@ -2169,6 +2169,18 @@ retains the dark 14px monospace palette, selection, cursor, geometry, shared
 focus and scrollbar tokens in all application themes. Preserve colored underline
 and strike styling without injecting HTML style attributes or stylesheets.
 
+The production rsbuild `output.assetPrefix` is `auto`, never `./`: with `./`,
+emitted CSS in `static/css/` resolved raster harness marks (Codex, Claude Code)
+to nonexistent `static/css/static/image/*`. With `auto`, CSS URLs resolve
+relative to the stylesheet, so the output works at the root, under a nested base
+path and at the bundled desktop origin, and JS chunks, CSS, fonts and WASM keep
+loading. `scripts/asset-prefix.test.mjs` builds the real config, resolves every
+file-backed CSS `url()` against its stylesheet at the root and a nested path,
+compares served bytes with the `public/harness-marks` source digests and fails
+under a `./` negative control. The Agent Worker layout fixture reads the
+production prefix instead of overriding it. OpenCode and Grok marks stay inlined
+SVG data URLs.
+
 Bundle the exported Ghostty WASM as a hashed same-origin asset, pass its emitted
 URL explicitly and serve it as application/wasm. Production adds only
 script-src wasm-unsafe-eval and connect-src self to its existing restrictive
