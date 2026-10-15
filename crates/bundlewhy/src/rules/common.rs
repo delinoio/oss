@@ -129,6 +129,52 @@ fn reads_process_env(text: &str, name: &str) -> bool {
     .is_ok_and(|pattern| pattern.is_match(text))
 }
 
+/// One row per word that precedes an expression. `regex_follows` is whether a
+/// `/` after the word starts a regular expression literal.
+struct ExpressionKeyword {
+    word: &'static str,
+    regex_follows: bool,
+}
+
+const fn keyword(word: &'static str, regex_follows: bool) -> ExpressionKeyword {
+    ExpressionKeyword {
+        word,
+        regex_follows,
+    }
+}
+
+const EXPRESSION_KEYWORDS: &[ExpressionKeyword] = &[
+    keyword("return", true),
+    keyword("throw", true),
+    keyword("void", true),
+    keyword("typeof", true),
+    keyword("delete", true),
+    keyword("case", true),
+    keyword("default", true),
+    keyword("extends", true),
+    keyword("else", true),
+    keyword("do", true),
+    keyword("in", true),
+    keyword("instanceof", false),
+    keyword("new", true),
+    keyword("of", true),
+    keyword("yield", true),
+    keyword("await", false),
+];
+
+/// Whether `byte` can be part of an identifier. Non-ASCII bytes count so that a
+/// keyword is never matched inside a longer identifier.
+fn is_identifier_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'$') || !byte.is_ascii()
+}
+
+/// Looks up the keyword row for a whole identifier-like `word`.
+fn expression_keyword(word: &[u8]) -> Option<&'static ExpressionKeyword> {
+    EXPRESSION_KEYWORDS
+        .iter()
+        .find(|entry| entry.word.as_bytes() == word)
+}
+
 /// Byte ranges of string literals, template literal text, comments and regular
 /// expression literals in JavaScript. Text there is never a property read.
 ///
@@ -147,19 +193,12 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
             None => true,
             Some(byte) if b"(,=:[!&|?{};+-*%<>~^".contains(&byte) => true,
             Some(byte) if byte.is_ascii_alphabetic() => {
-                let head = &code[..start];
-                let trimmed = head.trim_end();
-                [
-                    "return", "typeof", "case", "do", "else", "in", "of", "void", "yield",
-                    "delete", "throw", "new",
-                ]
-                .iter()
-                .any(|keyword| {
-                    trimmed.ends_with(keyword)
-                        && !trimmed[..trimmed.len() - keyword.len()].ends_with(|character: char| {
-                            character.is_alphanumeric() || character == '_' || character == '$'
-                        })
-                })
+                let head = code[..start].trim_end().as_bytes();
+                let mut word_start = head.len();
+                while word_start > 0 && is_identifier_byte(head[word_start - 1]) {
+                    word_start -= 1;
+                }
+                expression_keyword(&head[word_start..]).is_some_and(|entry| entry.regex_follows)
             }
             _ => false,
         }
@@ -1764,6 +1803,19 @@ y=/process.env.F/.test(z),process.env.G"#;
             &non_code_ranges(division),
             division.find("process").unwrap()
         ));
+    }
+
+    #[test]
+    fn regex_after_keyword_follows_the_keyword_table() {
+        for entry in EXPRESSION_KEYWORDS {
+            let code = format!("{} /process.env.FLAG/.test(x)", entry.word);
+            let start = code.find("process.env.FLAG").unwrap();
+            let ranges = non_code_ranges(&code);
+            assert_eq!(in_ranges(&ranges, start), entry.regex_follows, "{code}");
+        }
+        let code = "xreturn /process.env.FLAG/.test(x)";
+        let start = code.find("process.env.FLAG").unwrap();
+        assert!(!in_ranges(&non_code_ranges(code), start), "{code}");
     }
 
     #[test]
