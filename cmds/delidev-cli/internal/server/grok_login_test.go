@@ -425,7 +425,10 @@ func TestGrokLoginFailuresSettleWithoutASecondTokenRequest(t *testing.T) {
 
 func TestGrokLoginUncertainExchangeRequiresRecoveryAndIsNeverResent(t *testing.T) {
 	for name, setup := range map[string]func(*grokidp.IdP){
-		"server error":      func(i *grokidp.IdP) { i.TokenStatus, i.TokenBody = 503, "unavailable" },
+		"server error": func(i *grokidp.IdP) { i.TokenStatus, i.TokenBody = 503, "unavailable" },
+		"rejection that carries a token": func(i *grokidp.IdP) {
+			i.TokenStatus, i.TokenBody = 400, `{"error":"invalid_grant","refresh_token":"rotated"}`
+		},
 		"malformed success": func(i *grokidp.IdP) { i.TokenBody = `{"access_token":"x"}` },
 	} {
 		t.Run(name, func(t *testing.T) {
