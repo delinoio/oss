@@ -77,7 +77,7 @@ fn side_effect_retained(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
         let declaration = SideEffectDeclaration::from_collected(&values);
         let export_use = ExportUse::of(module);
         tracing::debug!(
-            module = %module.id,
+            module = %context.module_log_label(&module.id),
             export_use = ?export_use,
             declaration = ?declaration,
             rendered_length = module.rendered_length,
@@ -1024,5 +1024,86 @@ mod tests {
         assert!(plugin.contains("stop the plugin"), "{plugin}");
         assert!(!plugin.contains("narrowing"), "{plugin}");
         assert!(!plugin.contains("will not help"), "{plugin}");
+    }
+
+    #[derive(Clone)]
+    struct LogWriter(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+    impl std::io::Write for LogWriter {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    /// The debug log written by the rule for one retained module, plus the
+    /// number of drafts the rule produced.
+    fn retained_log(id: &str, path: Option<&str>, exports: &[&str]) -> (String, usize) {
+        let module = crate::collect::CollectedModule {
+            id: id.to_owned(),
+            path: path.map(str::to_owned),
+            included: true,
+            input_format: Some("es".to_owned()),
+            used_exports: Some(Vec::new()),
+            exports: Some(exports.iter().map(|name| (*name).to_owned()).collect()),
+            rendered_length: 42,
+            ..crate::collect::CollectedModule::default()
+        };
+        let collection = crate::collect::Collection {
+            modules: vec![module],
+            ..crate::collect::Collection::default()
+        };
+        let mut context = Context::new(
+            &collection,
+            std::path::PathBuf::from("/project"),
+            "project".to_owned(),
+            Vec::new(),
+            crate::sources::SourceStore::new(false),
+        );
+        let logs = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let writer = logs.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .with_ansi(false)
+            .with_max_level(tracing::Level::DEBUG)
+            .with_writer(move || LogWriter(writer.clone()))
+            .finish();
+        let mut drafts = Vec::new();
+        {
+            let _guard = tracing::subscriber::set_default(subscriber);
+            side_effect_retained(&mut context, &mut drafts);
+        }
+        let bytes = logs.lock().unwrap().clone();
+        (String::from_utf8(bytes).unwrap(), drafts.len())
+    }
+
+    /// Mirrors the logging table in the contract: a module is never named by
+    /// its raw identifier, whether or not it declares exports.
+    #[test]
+    fn the_candidate_log_never_names_the_raw_module_identifier() {
+        let secret = "/project/src/app.js?token=hunter2";
+        let loader =
+            "/project/node_modules/loader.js??ruleSet[1].rules[0].use[0]!/project/src/app.js";
+        for exports in [&[][..], &["default"][..]] {
+            // A collected module with a path is named by its display path.
+            let (log, drafts) = retained_log(secret, Some("/project/src/app.js"), exports);
+            assert_eq!(drafts, 1, "{exports:?}");
+            assert!(
+                log.contains("vite side-effect-retained candidate"),
+                "{exports:?}: {log}"
+            );
+            assert!(log.contains("module=src/app.js"), "{exports:?}: {log}");
+            assert!(!log.contains("hunter2"), "{exports:?}: {log}");
+            assert!(!log.contains("token="), "{exports:?}: {log}");
+            // A collected module without a path is named by a digest prefix.
+            let (log, drafts) = retained_log(loader, None, exports);
+            assert_eq!(drafts, 1, "{exports:?}");
+            assert!(log.contains("module=module-"), "{exports:?}: {log}");
+            assert!(!log.contains("ruleSet"), "{exports:?}: {log}");
+            assert!(!log.contains("loader.js"), "{exports:?}: {log}");
+        }
     }
 }
