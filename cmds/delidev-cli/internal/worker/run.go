@@ -51,6 +51,9 @@ type Config struct {
 	// account owners.
 	claudeMembers bool
 	claudeOwners  *claudeOwnerRegistry
+	// openCodeForkReasoning is the negotiated OpenCode Fork profile v2
+	// capability of the current attach.
+	openCodeForkReasoning bool
 	// codexMembers is negotiated only after the server echoes the shared owner
 	// capability and the account's managed native installation is verified.
 	codexMembers bool
@@ -355,6 +358,8 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 		}
 		if err == nil {
 			openCodeForkExpected := runtime.GOOS != "windows" && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1)
+			// Reasoning history is an independent refinement of the base profile.
+			openCodeForkReasoningExpected := openCodeForkExpected && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_REASONING_V1)
 			openCodeCompactionExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1) && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1)
 			revertExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_REVERT_V1)
 			// The extended target envelope is only meaningful with Revert itself.
@@ -510,6 +515,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if openCodeForkExpected {
 				profile += "\x00opencode-general-chat-fork-v1"
 			}
+			if openCodeForkReasoningExpected {
+				profile += "\x00opencode-general-chat-fork-reasoning-v1"
+			}
 			if openCodeCompactionExpected {
 				profile += "\x00opencode-compaction-v1"
 			}
@@ -564,6 +572,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 			if openCodeForkExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1)
+			}
+			if openCodeForkReasoningExpected {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_REASONING_V1)
 			}
 			if compactionExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1)
@@ -700,6 +711,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 			config.updatesEnabled = machineCapability(attached.Msg.Machine, domain.SignedWorkerUpdatesV1)
 			config.claudeMembers = claudeCapabilityExpected && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CLAUDE_DEVICE_OWNED_MEMBERS_V1) && machineCapability(attached.Msg.Machine, domain.ClaudeDeviceOwnedMembersV1)
+			config.openCodeForkReasoning = runtime.GOOS != "windows" && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1) && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_REASONING_V1) && machineCapability(attached.Msg.Machine, domain.OpenCodeGeneralChatForkV1) && machineCapability(attached.Msg.Machine, domain.OpenCodeGeneralChatForkReasoningV1)
 			config.parallelSessions = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_PARALLEL_SESSIONS_V1) && machineCapability(attached.Msg.Machine, domain.ParallelSessionsV1)
 			config.codexMembers = managedCapabilityExpected && config.parallelSessions && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SHARED_SUBSCRIPTION_OWNER_V1) && machineCapability(attached.Msg.Machine, domain.SharedSubscriptionOwnerV1)
 			config.startupProgress = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1) && machineCapability(attached.Msg.Machine, domain.SessionStartupProgressV1)

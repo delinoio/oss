@@ -8,13 +8,13 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativetest"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
@@ -22,10 +22,7 @@ import (
 // Opt-in installed-native evidence. Only the original native event connection
 // is severed; its original process, input and scripted provider request survive.
 func TestManualNativeOpenCodeEventReconciliation(t *testing.T) {
-	executable := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
-	if executable == "" {
-		t.Skip("explicit pinned native OpenCode executable required")
-	}
+	executable, version := nativetest.NativeOpenCodeExecutable(t)
 	requireNoManagedOpenCodeConfig(t)
 	config := fixtureOwnedAPIConfig(t)
 	var logs bytes.Buffer
@@ -36,6 +33,7 @@ func TestManualNativeOpenCodeEventReconciliation(t *testing.T) {
 		}
 	}()
 	config.Probe.Process.Executable = executable
+	config.Probe.Version = version
 	release := make(chan struct{})
 	defer func() {
 		select {

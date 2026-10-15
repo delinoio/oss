@@ -19,6 +19,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativetest"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
@@ -29,15 +30,13 @@ func TestManualNativeOpenCodeGeneralChatFork(t *testing.T) {
 }
 
 func runNativeGeneralChatFork(t *testing.T, lost bool) {
-	binary := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
-	if binary == "" {
-		t.Skip("explicit isolated pinned native General Chat fork")
-	}
+	binary, version := nativetest.NativeOpenCodeExecutable(t)
 	requireNoManagedOpenCodeConfig(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	initial := fixtureOwnedAPIConfig(t)
 	initial.Probe.Process.Executable = binary
+	initial.Probe.Version = version
 	initial.Settings.Agent, initial.Settings.Permission = BuildAgent, []PermissionRule{}
 	initial.ContextLimit = 1_000_000
 	initial.Instructions = "Private immutable fork instructions"
@@ -168,7 +167,7 @@ func runNativeGeneralChatFork(t *testing.T, lost bool) {
 		claimed[c.Kind] = true
 		return nil
 	}
-	requests := ForkRequests{domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID()}
+	requests := ForkRequests{domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), false}
 	var raw []byte
 	var ref CheckpointReference
 	if lost {
