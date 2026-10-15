@@ -8,6 +8,7 @@
 // Protocol: `node <adapter>.mjs <request.json>`. Progress and errors are JSON
 // lines on stdout. The collection is written to `request.collectPath`.
 
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -44,6 +45,9 @@ export class AdapterError extends Error {
  * adapter events.
  */
 export function emit(event) {
+  // A repeat process reports only its failure: the parent adapter process has
+  // already reported the engine, the progress stages and the end of the run.
+  if (isRepeatProcess() && event.event !== "error") return;
   process.stdout.write(
     `${FRAME_PREFIX} ${protocolToken} ${JSON.stringify(event)}\n`,
   );
@@ -102,30 +106,9 @@ export function checkEngineVersion(request, packageName, version) {
   );
 }
 
-let freshImports = 0;
-
-/**
- * Imports a module file. With `fresh`, the file is evaluated again instead of
- * returning the cached module, so objects that it creates at load time (for
- * example plugin instances) are new. Only the file itself is evaluated again;
- * the modules that it imports stay cached.
- */
-export async function importFile(file, { fresh = false } = {}) {
-  const url = pathToFileURL(file);
-  if (fresh) {
-    // A CommonJS file is cached by path, an ES module by URL: clear the first
-    // and give the second a URL that has not been imported yet.
-    const cache = createRequire(import.meta.url).cache;
-    delete cache[file];
-    try {
-      delete cache[fs.realpathSync(file)];
-    } catch {
-      // The import below reports a file that cannot be read.
-    }
-    freshImports += 1;
-    url.searchParams.set("bundlewhy-fresh", String(freshImports));
-  }
-  return import(url.href);
+/** Imports a module file by path. */
+export function importFile(file) {
+  return import(pathToFileURL(file).href);
 }
 
 const packageCache = new Map();
@@ -214,6 +197,11 @@ export async function runAdapter(main) {
     await main(request);
     emit({ event: "done", durationMs: Date.now() - started });
   } catch (error) {
+    // The repeat process already reported this failure in its own frame.
+    if (error instanceof ReportedFailure) {
+      process.exitCode = 1;
+      return;
+    }
     // Also report on stderr: before the request is read no token is known and
     // the frame below cannot be authenticated.
     process.stderr.write(
@@ -231,8 +219,132 @@ export async function runAdapter(main) {
       message: String(error?.message ?? error).slice(0, 4000),
       recovery,
     });
-    process.exitCode = 1;
+    process.exitCode = isRepeatProcess() ? REPORTED_FAILURE_EXIT_CODE : 1;
   }
+}
+
+/**
+ * Repeat process. A compiler can use up state that the project's
+ * configuration created, and imported modules stay cached for the lifetime of
+ * a Node.js process, so a failed build is never repeated in the same process.
+ * The adapter starts itself again with `REPEAT_ARGUMENT` instead: the repeat
+ * loads the configuration and everything it imports from scratch, builds once
+ * without the export usage observer, writes the collection and exits.
+ *
+ * Protocol between the two processes:
+ * - the parent writes one JSON line to the repeat's stdin and keeps the pipe
+ *   open; the repeat ends when the pipe closes, so a parent that is killed
+ *   (on every platform) never leaves the repeat behind;
+ * - the repeat shares stdout and stderr with the parent, so project output
+ *   and frames reach the same reader; it frames only an `error` event;
+ * - the exit status says what happened: 0 for a written collection,
+ *   `REPORTED_FAILURE_EXIT_CODE` for a failure already framed, anything else
+ *   (a crash, a signal, no process at all) for a failure that nobody framed.
+ */
+export const REPEAT_ARGUMENT = "--repeat-without-observer";
+
+/** Exit status of a repeat process that framed its own failure. */
+export const REPORTED_FAILURE_EXIT_CODE = 64;
+
+/** How the repeat process ended, as the parent sees it. */
+export const RepeatOutcome = Object.freeze({
+  Completed: "completed",
+  Reported: "reported",
+  Lost: "lost",
+});
+
+/** Thrown by the parent when the repeat process already framed the failure. */
+export class ReportedFailure extends Error {}
+
+export function isRepeatProcess() {
+  return process.argv[3] === REPEAT_ARGUMENT;
+}
+
+/**
+ * Runs the adapter again in a new process. `payload` is JSON-serializable and
+ * reaches the repeat through `readRepeatPayload`.
+ *
+ * @param {string} adapterFile path of the adapter module to start
+ * @param {unknown} payload
+ * @returns {Promise<string>} one of `RepeatOutcome`
+ */
+export function runRepeatProcess(adapterFile, payload) {
+  return new Promise((resolve) => {
+    let child;
+    try {
+      child = spawn(
+        process.execPath,
+        [...process.execArgv, adapterFile, process.argv[2], REPEAT_ARGUMENT],
+        {
+          stdio: ["pipe", "inherit", "inherit"],
+          cwd: process.cwd(),
+          env: process.env,
+          windowsHide: true,
+        },
+      );
+    } catch {
+      resolve(RepeatOutcome.Lost);
+      return;
+    }
+    child.on("error", () => resolve(RepeatOutcome.Lost));
+    child.on("close", (code) =>
+      resolve(
+        code === 0
+          ? RepeatOutcome.Completed
+          : code === REPORTED_FAILURE_EXIT_CODE
+            ? RepeatOutcome.Reported
+            : RepeatOutcome.Lost,
+      ),
+    );
+    // A child that exits before it reads its input is reported by its status.
+    child.stdin.on("error", () => {});
+    child.stdin.write(`${JSON.stringify(payload)}\n`);
+  });
+}
+
+/**
+ * Reads the parent's payload in a repeat process, then keeps watching stdin:
+ * when the parent goes away the repeat process ends too.
+ */
+export function readRepeatPayload() {
+  return new Promise((resolve, reject) => {
+    const stdin = process.stdin;
+    let buffered = "";
+    let received = false;
+    stdin.setEncoding("utf8");
+    stdin.on("data", (chunk) => {
+      if (received) return;
+      buffered += chunk;
+      const end = buffered.indexOf("\n");
+      if (end < 0) return;
+      received = true;
+      // Watching must not keep the process alive once the work is done.
+      stdin.unref?.();
+      try {
+        resolve(JSON.parse(buffered.slice(0, end)));
+      } catch {
+        reject(
+          new AdapterError(
+            AdapterErrorCode.CollectionFailed,
+            "The repeat build process got an unreadable request from its parent",
+            "Start a new run with `bundlewhy analyze`.",
+          ),
+        );
+      }
+    });
+    const parentGone = () => {
+      if (received) process.exit(1);
+      reject(
+        new AdapterError(
+          AdapterErrorCode.CollectionFailed,
+          "The repeat build process got no request from its parent",
+          "Start a new run with `bundlewhy analyze`.",
+        ),
+      );
+    };
+    stdin.on("end", parentGone);
+    stdin.on("error", parentGone);
+  });
 }
 
 /** Largest export usage edge list an adapter stores in one collection. */

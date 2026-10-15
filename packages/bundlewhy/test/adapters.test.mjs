@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
@@ -1296,6 +1296,323 @@ export default { mode: "production", context: import.meta.dirname, entry: "./src
     "BW_CONFIG_LOAD_FAILED",
   );
 });
+
+// The repeat build runs in a new process, so nothing the first attempt left in
+// memory can reach it: not the configuration file, not the modules it imports
+// and not the objects they create. Mirrors the "Repeat build" table in the
+// contract.
+const transitiveShapes = [
+  {
+    name: "ES module imported by the configuration",
+    config: "rspack.config.mjs",
+    files: {
+      "rspack.config.mjs": `import { plugin } from "./shared.mjs";
+export default {
+  mode: "production",
+  context: import.meta.dirname,
+  entry: "./src/main.js",
+  plugins: [plugin],
+};
+`,
+      "shared.mjs": `import fs from "node:fs";
+fs.appendFileSync(import.meta.dirname + "/shared-loads.txt", "x");
+${singleUseBody}export const plugin = new SingleUsePlugin();
+`,
+    },
+  },
+  {
+    name: "configuration re-exported from another ES module",
+    config: "rspack.config.mjs",
+    files: {
+      "rspack.config.mjs": `export { default } from "./real.config.mjs";\n`,
+      "real.config.mjs": `import fs from "node:fs";
+fs.appendFileSync(import.meta.dirname + "/shared-loads.txt", "x");
+${singleUseBody}export default {
+  mode: "production",
+  context: import.meta.dirname,
+  entry: "./src/main.js",
+  plugins: [new SingleUsePlugin()],
+};
+`,
+    },
+  },
+  {
+    name: "CommonJS module required by the configuration",
+    config: "rspack.config.cjs",
+    files: {
+      "rspack.config.cjs": `const { plugin } = require("./shared.cjs");
+module.exports = {
+  mode: "production",
+  context: __dirname,
+  entry: "./src/main.js",
+  plugins: [plugin],
+};
+`,
+      "shared.cjs": `require("node:fs").appendFileSync(__dirname + "/shared-loads.txt", "x");
+${singleUseBody}exports.plugin = new SingleUsePlugin();
+`,
+    },
+  },
+  {
+    name: "ES module imported inside a configuration function",
+    config: "rspack.config.mjs",
+    files: {
+      "rspack.config.mjs": `export default async () => {
+  const { plugin } = await import("./shared.mjs");
+  return {
+    mode: "production",
+    context: import.meta.dirname,
+    entry: "./src/main.js",
+    plugins: [plugin],
+  };
+};
+`,
+      "shared.mjs": `import fs from "node:fs";
+fs.appendFileSync(import.meta.dirname + "/shared-loads.txt", "x");
+${singleUseBody}export const plugin = new SingleUsePlugin();
+`,
+    },
+  },
+];
+
+for (const shape of transitiveShapes) {
+  test(`the repeat build reloads imported modules (${shape.name})`, () => {
+    const dir = wrappedProject();
+    for (const [name, source] of Object.entries(shape.files)) {
+      fs.writeFileSync(path.join(dir, name), source);
+    }
+    const { status, events, collection, calls } = runWrapped(
+      dir,
+      "compilation-hook-throws",
+      { configFile: path.join(dir, shape.config) },
+    );
+    const loads = loadCount(dir, "shared-loads.txt");
+    fs.rmSync(dir, { recursive: true, force: true });
+    // The imported plugin instance rejects a second compiler: the repeat
+    // succeeds only because it got a new instance from a new module load.
+    assert.equal(status, 0, JSON.stringify(events));
+    assert.equal(
+      collection.exportUsage.reason,
+      ExportUsageReason.BuildFailedWithObserver,
+    );
+    assert.deepEqual(calls, [
+      ["SingleUsePlugin", ...OBSERVER],
+      ["SingleUsePlugin"],
+    ]);
+    assert.equal(loads, 2);
+  });
+}
+
+// The protocol a reader sees is the same with or without a repeat: one engine
+// event, stages that never go back, one end.
+const stageOrder = ["detecting", "building", "collecting"];
+
+test("a repeat build adds no engine, stage or end event of its own", () => {
+  const dir = wrappedProject();
+  const { status, events } = runWrapped(dir, "compilation-hook-throws");
+  fs.rmSync(dir, { recursive: true, force: true });
+  assert.equal(status, 0, JSON.stringify(events));
+  assert.equal(events.filter((event) => event.event === "engine").length, 1);
+  assert.equal(events.filter((event) => event.event === "done").length, 1);
+  assert.equal(events.filter((event) => event.event === "error").length, 0);
+  assert.equal(events.at(-1).event, "done");
+  const stages = events
+    .filter((event) => event.event === "progress")
+    .map((event) => stageOrder.indexOf(event.stage));
+  assert.ok(!stages.includes(-1), JSON.stringify(events));
+  assert.deepEqual(
+    stages,
+    [...stages].sort((left, right) => left - right),
+  );
+});
+
+test("a failure of the repeat build is framed once", () => {
+  const dir = wrappedProject();
+  fs.writeFileSync(path.join(dir, "src/main.js"), "import { from ;\n");
+  const { status, events } = runWrapped(dir, "intact");
+  fs.rmSync(dir, { recursive: true, force: true });
+  assert.notEqual(status, 0);
+  assert.equal(events.filter((event) => event.event === "error").length, 1);
+  assert.equal(events.filter((event) => event.event === "done").length, 0);
+});
+
+test("a repeat process that ends without a result is a build failure", () => {
+  const dir = wrappedProject();
+  fs.writeFileSync(
+    path.join(dir, "rspack.config.mjs"),
+    `import fs from "node:fs";
+const marker = ${JSON.stringify(path.join(dir, "loaded.txt"))};
+if (fs.existsSync(marker)) process.exit(3);
+fs.writeFileSync(marker, "x");
+export default { mode: "production", context: import.meta.dirname, entry: "./src/main.js" };
+`,
+  );
+  const { status, events, collection } = runWrapped(
+    dir,
+    "compilation-hook-throws",
+  );
+  fs.rmSync(dir, { recursive: true, force: true });
+  assert.notEqual(status, 0);
+  assert.equal(collection, null);
+  const errors = events.filter((event) => event.event === "error");
+  assert.equal(errors.length, 1);
+  assert.equal(errors[0].code, "BW_BUILD_FAILED");
+  assert.match(
+    errors[0].message,
+    /repeat build process ended without a result/,
+  );
+});
+
+// An entry function is called once in the first attempt. Its result reaches
+// the repeat process as JSON when it survives a JSON round trip; otherwise the
+// repeat process calls the function itself.
+const entryShapes = [
+  { name: "a string", body: `"./src/main.js"`, calls: 1, handed: true },
+  { name: "a list", body: `["./src/main.js"]`, calls: 1, handed: true },
+  {
+    name: "an object of lists",
+    body: `{ main: { import: ["./src/main.js"] } }`,
+    calls: 1,
+    handed: true,
+  },
+  {
+    name: "an object with a function member",
+    body: `{ main: { import: "./src/main.js", filename: () => "main.js" } }`,
+    calls: 2,
+    handed: false,
+  },
+  {
+    name: "an object with a non-plain prototype",
+    body: `Object.assign(new (class Entries {})(), { main: "./src/main.js" })`,
+    calls: 2,
+    handed: false,
+  },
+];
+
+for (const shape of entryShapes) {
+  test(`an entry function that returns ${shape.name} reaches the repeat build as documented`, () => {
+    const dir = wrappedProject();
+    fs.writeFileSync(
+      path.join(dir, "rspack.config.mjs"),
+      `import fs from "node:fs";
+export default {
+  mode: "production",
+  context: import.meta.dirname,
+  entry: () => {
+    fs.appendFileSync(${JSON.stringify(path.join(dir, "entry-calls.txt"))}, "x");
+    return ${shape.body};
+  },
+};
+`,
+    );
+    const { status, events, collection } = runWrapped(
+      dir,
+      "compilation-hook-throws",
+    );
+    const calls = loadCount(dir, "entry-calls.txt");
+    fs.rmSync(dir, { recursive: true, force: true });
+    assert.equal(status, 0, JSON.stringify(events));
+    assert.equal(calls, shape.calls);
+    assert.equal(
+      collection.overrides.includes(
+        "entry function resolved once by bundlewhy",
+      ),
+      shape.handed,
+    );
+    assert.equal(
+      collection.overrides.some((entry) =>
+        entry.startsWith("entry function called again"),
+      ),
+      !shape.handed,
+    );
+  });
+}
+
+// The repeat process must not outlive a parent that is gone (cancellation
+// kills only the parent on some platforms).
+test(
+  "a repeat process ends when its parent is killed",
+  { skip: process.platform === "win32" },
+  async () => {
+    const dir = wrappedProject();
+    const pidFile = path.join(dir, "repeat.pid");
+    fs.writeFileSync(
+      path.join(dir, "rspack.config.mjs"),
+      `import fs from "node:fs";
+const marker = ${JSON.stringify(path.join(dir, "loaded.txt"))};
+if (fs.existsSync(marker)) {
+  fs.writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
+  await new Promise(() => setInterval(() => {}, 1000));
+}
+fs.writeFileSync(marker, "x");
+export default { mode: "production", context: import.meta.dirname, entry: "./src/main.js" };
+`,
+    );
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), "bundlewhy-orphan-"));
+    const requestPath = path.join(work, "request.json");
+    fs.writeFileSync(
+      requestPath,
+      JSON.stringify({
+        projectRoot: dir,
+        configFile: path.join(dir, "rspack.config.mjs"),
+        configName: null,
+        buildDir: path.join(work, "build"),
+        collectPath: path.join(work, "collect.json"),
+        supportedVersion: null,
+        allowUnsupportedEngine: false,
+        protocolToken: "test-token",
+      }),
+    );
+    const parent = spawn(
+      process.execPath,
+      [
+        path.join(root, "../../crates/bundlewhy/adapters/rspack.mjs"),
+        requestPath,
+      ],
+      {
+        cwd: dir,
+        stdio: "ignore",
+        env: {
+          ...process.env,
+          BUNDLEWHY_TEST_EXPORT_USAGE_MODE: "compilation-hook-throws",
+        },
+      },
+    );
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const alive = (pid) => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    let repeatPid = 0;
+    try {
+      for (let waited = 0; waited < 30_000 && !repeatPid; waited += 50) {
+        if (fs.existsSync(pidFile)) {
+          repeatPid = Number(fs.readFileSync(pidFile, "utf8"));
+        } else {
+          await sleep(50);
+        }
+      }
+      assert.ok(repeatPid > 0, "the repeat process did not start");
+      assert.ok(alive(repeatPid));
+      parent.kill("SIGKILL");
+      let ended = false;
+      for (let waited = 0; waited < 10_000 && !ended; waited += 50) {
+        ended = !alive(repeatPid);
+        if (!ended) await sleep(50);
+      }
+      assert.ok(ended, "the repeat process outlived its parent");
+    } finally {
+      parent.kill("SIGKILL");
+      if (repeatPid && alive(repeatPid)) process.kill(repeatPid, "SIGKILL");
+      fs.rmSync(work, { recursive: true, force: true });
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
 
 test("rspack adapter does not add a second RsdoctorPlugin to the project", () => {
   const dir = wrappedProject({

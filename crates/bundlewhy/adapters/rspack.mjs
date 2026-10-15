@@ -5,6 +5,7 @@
 // stats (reasons, used/provided exports, optimization bailouts and chunks).
 
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   AdapterError,
@@ -13,11 +14,16 @@ import {
   decodeExportUsageEdges,
   ExportUsageReason,
   importFile,
+  isRepeatProcess,
   moduleFilePath,
   nearestPackage,
   progress,
+  readRepeatPayload,
+  RepeatOutcome,
+  ReportedFailure,
   resolveProjectPackage,
   runAdapter,
+  runRepeatProcess,
   stripAnsi,
   summarizeValue,
   unavailableExportUsage,
@@ -48,7 +54,7 @@ const STATS_OPTIONS = Object.freeze({
   cachedModules: true,
 });
 
-async function loadConfig(request, rspack, { fresh = false } = {}) {
+async function loadConfig(request, rspack) {
   if (!request.configFile) {
     throw new AdapterError(
       AdapterErrorCode.ConfigLoadFailed,
@@ -59,7 +65,7 @@ async function loadConfig(request, rspack, { fresh = false } = {}) {
   let loaded;
   try {
     // .ts configurations rely on Node.js type stripping (erasable syntax only).
-    loaded = (await importFile(request.configFile, { fresh })).default;
+    loaded = (await importFile(request.configFile)).default;
   } catch (error) {
     throw new AdapterError(
       AdapterErrorCode.ConfigLoadFailed,
@@ -431,6 +437,44 @@ function collectExportUsage(state, normalized) {
   );
 }
 
+/**
+ * True when a value survives a JSON round trip unchanged: only strings,
+ * finite numbers, booleans, null, lists and plain objects.
+ */
+function plainJson(value, depth = 0) {
+  if (depth > 32) return false;
+  if (value === null) return true;
+  switch (typeof value) {
+    case "string":
+    case "boolean":
+      return true;
+    case "number":
+      return Number.isFinite(value);
+    case "object": {
+      if (Array.isArray(value)) {
+        return value.every((entry) => plainJson(entry, depth + 1));
+      }
+      const prototype = Object.getPrototypeOf(value);
+      return (
+        (prototype === Object.prototype || prototype === null) &&
+        Object.values(value).every((entry) => plainJson(entry, depth + 1))
+      );
+    }
+    default:
+      return false;
+  }
+}
+
+/**
+ * What the repeat process receives: the result of the entry function when the
+ * first attempt called one and the result can be passed on as JSON.
+ */
+function repeatPayloadFor(resolvedEntry) {
+  return resolvedEntry && plainJson(resolvedEntry.value)
+    ? { entry: resolvedEntry.value }
+    : {};
+}
+
 function runCompiler(rspack, config) {
   return new Promise((resolve, reject) => {
     let compiler;
@@ -463,11 +507,20 @@ await runAdapter(async (request) => {
   const rspack = rspackModule.rspack ?? rspackModule;
   const version = rspackModule.rspackVersion ?? rspackPackage.version;
 
-  // The configuration is loaded again for the repeat build (see below), so
-  // every step that turns it into the diagnostic build's configuration lives
-  // in one function.
-  const prepareBuild = async ({ fresh, resolvedEntry }) => {
-    const config = await loadConfig(request, rspackModule, { fresh });
+  // A failed observer build is repeated in a new process (see
+  // `runRepeatProcess`). That process runs this same code with
+  // `repeatProcess` set: it builds once, without the observer.
+  const repeatProcess = isRepeatProcess();
+  const repeatPayload = repeatProcess ? await readRepeatPayload() : null;
+  const handedEntry =
+    repeatPayload !== null &&
+    typeof repeatPayload === "object" &&
+    Object.hasOwn(repeatPayload, "entry");
+
+  // Everything that turns the loaded configuration into the diagnostic
+  // build's configuration lives in one function.
+  const prepareBuild = async () => {
+    const config = await loadConfig(request, rspackModule);
     const overrides = [
       "mode=production",
       `output.path=${path.basename(request.buildDir)} (bundlewhy run directory)`,
@@ -476,11 +529,15 @@ await runAdapter(async (request) => {
       "watch=false",
     ];
     // Resolve an entry function once and build with its result, so the
-    // library check sees exactly what the compiler builds. The repeat build
-    // keeps the first result instead of calling the function again.
-    if (resolvedEntry) {
-      config.entry = resolvedEntry.value;
+    // library check sees exactly what the compiler builds. The repeat
+    // process receives the first result instead of calling the function
+    // again; when that result cannot be passed on (see `plainJson`), the
+    // repeat process calls the function itself.
+    let resolvedEntry = null;
+    if (handedEntry) {
+      config.entry = repeatPayload.entry;
       overrides.push("entry function resolved once by bundlewhy");
+      resolvedEntry = { value: config.entry };
     } else if (typeof config.entry === "function") {
       try {
         config.entry = await config.entry();
@@ -491,7 +548,11 @@ await runAdapter(async (request) => {
           "Fix the error thrown by the entry function, then start a new run.",
         );
       }
-      overrides.push("entry function resolved once by bundlewhy");
+      overrides.push(
+        repeatProcess
+          ? "entry function called again by the repeat build (its first result could not be passed on)"
+          : "entry function resolved once by bundlewhy",
+      );
       resolvedEntry = { value: config.entry };
     }
     const diagnosticConfig = {
@@ -506,8 +567,8 @@ await runAdapter(async (request) => {
   };
 
   // Everything that describes the configuration the collected build ran with
-  // is derived here, so a repeat build with a freshly loaded configuration
-  // reports its own values and never the first attempt's.
+  // is derived from that configuration, so a repeat build reports its own
+  // values and never the first attempt's.
   const describeConfig = (config) => {
     const rawTarget = config.target ?? "web";
     // Inspect every raw target entry; the summary below is for display only.
@@ -527,13 +588,21 @@ await runAdapter(async (request) => {
     };
   };
 
-  let prepared = await prepareBuild({ fresh: false, resolvedEntry: null });
-  let { config, overrides, diagnosticConfig } = prepared;
-  let { minimizer, nodeTarget, target } = describeConfig(config);
+  const prepared = await prepareBuild();
+  const { config, overrides, diagnosticConfig } = prepared;
+  const { minimizer, nodeTarget, target } = describeConfig(config);
   // The value that the build receives for `plugins`, read once so that a
   // getter cannot answer differently later.
   const projectPlugins = diagnosticConfig.plugins;
-  const exportUsage = prepareExportUsage(rspackModule, projectPlugins);
+  const exportUsage = repeatProcess
+    ? {
+        state: {
+          graph: null,
+          unavailable: ExportUsageReason.BuildFailedWithObserver,
+        },
+        plugins: projectPlugins,
+      }
+    : prepareExportUsage(rspackModule, projectPlugins);
   const observerAttached = exportUsage.state.unavailable === null;
   if (observerAttached) {
     diagnosticConfig.plugins = exportUsage.plugins;
@@ -542,12 +611,12 @@ await runAdapter(async (request) => {
   progress("building", `Running the Rspack ${version} production build`);
   let stats;
   let platform = {};
-  let observed = false;
   if (observerAttached) {
     // The observer is an internal API that can drift between Rspack
     // releases. Any failure of this build might come from it, so the build
     // is repeated once without it; export usage is then unavailable and
     // the project's own build failure, if any, is reported by the repeat.
+    let observed = false;
     try {
       ({ stats, platform } = await runCompiler(rspack, diagnosticConfig));
       observed = !stats.hasErrors();
@@ -555,26 +624,32 @@ await runAdapter(async (request) => {
       observed = false;
     }
     if (!observed) {
-      exportUsage.state.unavailable ??=
-        ExportUsageReason.BuildFailedWithObserver;
       progress(
         "building",
         "Repeating the production build without the export usage observer",
       );
       // The failed build may have used up single-use project state (a plugin
-      // instance that rejects a second compiler, for example). The repeat
-      // therefore starts from a freshly loaded configuration, and its own
-      // failure, including a configuration that cannot be loaded again, is
-      // the project's result.
-      prepared = await prepareBuild({
-        fresh: true,
-        resolvedEntry: prepared.resolvedEntry,
-      });
-      ({ config, overrides, diagnosticConfig } = prepared);
-      ({ minimizer, nodeTarget, target } = describeConfig(config));
+      // instance that rejects a second compiler, for example), and modules
+      // that the configuration imports stay cached in this process. The
+      // repeat therefore runs in a new process that loads the configuration
+      // from scratch; its result, including a configuration that cannot be
+      // loaded again or a build that fails, is the project's result.
+      const outcome = await runRepeatProcess(
+        fileURLToPath(import.meta.url),
+        repeatPayloadFor(prepared.resolvedEntry),
+      );
+      if (outcome === RepeatOutcome.Completed) return;
+      if (outcome === RepeatOutcome.Reported) throw new ReportedFailure();
+      throw new AdapterError(
+        AdapterErrorCode.BuildFailed,
+        "The repeat build process ended without a result",
+        "Confirm the Rspack build succeeds in the project, then start a new run.",
+      );
     }
-  }
-  if (!observed) {
+    overrides.push(
+      "plugins += RsdoctorPlugin (observation-only export usage graph; the project's plugins are unchanged)",
+    );
+  } else {
     try {
       ({ stats, platform } = await runCompiler(rspack, diagnosticConfig));
     } catch (error) {
@@ -584,11 +659,6 @@ await runAdapter(async (request) => {
         "Fix the build error, confirm the Rspack build succeeds in the project, then start a new run.",
       );
     }
-  }
-  if (observed) {
-    overrides.push(
-      "plugins += RsdoctorPlugin (observation-only export usage graph; the project's plugins are unchanged)",
-    );
   }
 
   progress("collecting", "Normalizing Rspack stats");
