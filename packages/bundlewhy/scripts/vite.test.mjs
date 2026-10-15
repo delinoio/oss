@@ -288,3 +288,151 @@ test("Vite diagnostic keeps build-failure reporting for an empty configured root
     "BW_BUILD_FAILED",
   );
 });
+
+test("Vite diagnostic gives plugins the real config file and applies the config once", (t) => {
+  const { work, projectRoot } = makeProject(t);
+  writeEntry(projectRoot, "project-entry");
+  const configFile = path.join(projectRoot, "vite.config.js");
+  const probe = path.join(work, "plugin-probe.json");
+  fs.writeFileSync(
+    configFile,
+    `import fs from "node:fs";
+export default {
+  plugins: [{
+    name: "require-config-file",
+    configResolved(config) {
+      fs.writeFileSync(${JSON.stringify(probe)}, JSON.stringify({
+        configFile: config.configFile,
+        plugins: config.plugins.map((plugin) => plugin.name),
+        mode: config.mode,
+        outDir: config.build.outDir,
+        emptyOutDir: config.build.emptyOutDir,
+        sourcemap: config.build.sourcemap,
+        write: config.build.write,
+        watch: config.build.watch,
+      }));
+    },
+  }],
+};
+`,
+  );
+
+  const { buildDir, collection } = runDiagnostic(work, projectRoot, configFile);
+  const seen = JSON.parse(fs.readFileSync(probe, "utf8"));
+  assert.equal(fs.realpathSync(seen.configFile), fs.realpathSync(configFile));
+  assert.equal(
+    seen.plugins.filter((name) => name === "require-config-file").length,
+    1,
+  );
+  assert.equal(
+    seen.plugins.filter((name) => name === "bundlewhy:collector").length,
+    1,
+  );
+  assert.equal(seen.mode, "production");
+  assert.equal(path.resolve(projectRoot, seen.outDir), buildDir);
+  assert.equal(seen.emptyOutDir, true);
+  assert.equal(seen.sourcemap, true);
+  assert.equal(seen.write, true);
+  assert.equal(seen.watch, null);
+  assert.ok(collection.configSummary.plugins.includes("require-config-file"));
+  assert.ok(!collection.configSummary.plugins.includes("bundlewhy:collector"));
+  assert.ok(
+    !collection.configSummary.plugins.includes("bundlewhy:config-file"),
+  );
+});
+
+test("Vite diagnostic keeps configFile disabled without a configuration file", (t) => {
+  const { work, projectRoot } = makeProject(t);
+  writeEntry(projectRoot, "project-entry");
+  // A discoverable config file must not be loaded when none was selected.
+  fs.writeFileSync(
+    path.join(projectRoot, "vite.config.js"),
+    'throw new Error("config file must not be loaded");\n',
+  );
+
+  const { collection } = runDiagnostic(work, projectRoot, null);
+  assert.equal(collection.configFile, null);
+  assert.ok(collection.chunks.length > 0);
+});
+
+test("Vite diagnostic reports a throwing config factory as a configuration error", (t) => {
+  const { work, projectRoot } = makeProject(t);
+  writeEntry(projectRoot, "project-entry");
+  const configFile = path.join(projectRoot, "vite.config.js");
+  fs.writeFileSync(
+    configFile,
+    'export default () => { throw new Error("factory broke"); };\n',
+  );
+
+  const { events } = runDiagnostic(work, projectRoot, configFile, 1);
+  const error = events.find((event) => event.event === "error");
+  assert.equal(error?.code, "BW_CONFIG_LOAD_FAILED");
+  assert.match(error.message, /factory broke/);
+});
+
+test("Vite diagnostic does not blame the native build for a plugin hook error", (t) => {
+  const { work, projectRoot } = makeProject(t);
+  writeEntry(projectRoot, "project-entry");
+  const configFile = path.join(projectRoot, "vite.config.js");
+  fs.writeFileSync(
+    configFile,
+    `export default {
+  plugins: [{
+    name: "throwing-hook",
+    buildStart() {
+      throw new Error("plugin hook broke");
+    },
+  }],
+};
+`,
+  );
+
+  const { events } = runDiagnostic(work, projectRoot, configFile, 1);
+  const error = events.find((event) => event.event === "error");
+  assert.equal(error?.code, "BW_BUILD_FAILED");
+  assert.match(error.message, /plugin hook broke/);
+  assert.match(error.recovery, /diagnostic build/);
+  assert.doesNotMatch(error.recovery, /^Fix the build error/);
+});
+
+test("Vite diagnostic evaluates a stateful config factory exactly once", (t) => {
+  const { work, projectRoot } = makeProject(t);
+  writeEntry(projectRoot, "project-entry");
+  const configFile = path.join(projectRoot, "vite.config.js");
+  const counter = path.join(work, "factory-calls.log");
+  const probe = path.join(work, "factory-probe.json");
+  // The factory records every call outside the project and rejects a second
+  // call, like a configuration that claims a one-shot process-level resource.
+  fs.writeFileSync(
+    configFile,
+    `import fs from "node:fs";
+export default () => {
+  fs.appendFileSync(${JSON.stringify(counter)}, "call\\n");
+  const calls = fs.readFileSync(${JSON.stringify(counter)}, "utf8").trim().split("\\n").length;
+  if (calls > 1) throw new Error("factory evaluated " + calls + " times");
+  return {
+    plugins: [{
+      name: "read-config-file",
+      configResolved(config) {
+        fs.writeFileSync(${JSON.stringify(probe)}, JSON.stringify({
+          configFile: config.configFile,
+          dependencies: config.configFileDependencies,
+        }));
+      },
+    }],
+  };
+};
+`,
+  );
+
+  const { collection } = runDiagnostic(work, projectRoot, configFile);
+  assert.equal(
+    fs.readFileSync(counter, "utf8").trim().split("\n").length,
+    1,
+    "the config factory must run once for the whole diagnostic run",
+  );
+  const seen = JSON.parse(fs.readFileSync(probe, "utf8"));
+  assert.equal(fs.realpathSync(seen.configFile), fs.realpathSync(configFile));
+  assert.ok(Array.isArray(seen.dependencies));
+  assert.ok(collection.chunks.length > 0);
+});

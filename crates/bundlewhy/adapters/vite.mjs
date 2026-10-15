@@ -26,6 +26,12 @@ import {
 export const ADAPTER_ID = "bundlewhy-collector-vite";
 export const ADAPTER_VERSION = "1";
 
+/** Plugins that the adapter adds; they are not part of the project's config. */
+const BUNDLEWHY_PLUGIN_NAMES = new Set([
+  "bundlewhy:collector",
+  "bundlewhy:config-file",
+]);
+
 /** Vite API functions that the adapter calls on the project's installation. */
 export const REQUIRED_VITE_API = Object.freeze([
   "loadConfigFromFile",
@@ -139,6 +145,32 @@ export function configuredModuleSideEffects(option, id) {
     if (test) return String(rule.sideEffects);
   }
   return "null";
+}
+
+/**
+ * Gives plugins the real `resolvedConfig.configFile` without evaluating the
+ * configuration file a second time.
+ *
+ * The adapter loads the configuration file once itself and builds with that
+ * loaded object and `configFile: false`, so Vite never evaluates a stateful
+ * configuration factory (process-level side effects, one-shot resources) twice.
+ * With `configFile: false` Vite leaves `resolvedConfig.configFile` undefined,
+ * yet plugins such as React Router's Vite plugin require it. This plugin runs
+ * first among the `pre` plugins, so its synchronous `configResolved` handler
+ * sets the value before any project plugin reads it.
+ */
+export function configFileIdentityPlugin(configFile, dependencies = []) {
+  const normalize = (file) => path.resolve(file).replaceAll("\\", "/");
+  return {
+    name: "bundlewhy:config-file",
+    enforce: "pre",
+    apply: "build",
+    configResolved(config) {
+      if (config.configFile !== undefined) return;
+      config.configFile = normalize(configFile);
+      config.configFileDependencies = dependencies.map(normalize);
+    },
+  };
 }
 
 function collectorPlugin(state) {
@@ -340,8 +372,11 @@ await runAdapter(async (request) => {
 
   // Load the configuration once on its own so that evaluation errors and
   // rejecting configuration factories are reported as configuration
-  // problems, not build failures. The loaded config is then built inline.
+  // problems, not build failures. The loaded config is then built inline, so
+  // the configuration is evaluated only once.
   let userConfig = {};
+  let loadedConfigFile = null;
+  let loadedDependencies = [];
   if (request.configFile) {
     try {
       const loaded = await vite.loadConfigFromFile(
@@ -356,6 +391,10 @@ await runAdapter(async (request) => {
         "silent",
       );
       userConfig = loaded?.config ?? {};
+      loadedConfigFile = loaded?.path ?? request.configFile;
+      loadedDependencies = Array.isArray(loaded?.dependencies)
+        ? loaded.dependencies
+        : [];
     } catch (error) {
       throw new AdapterError(
         AdapterErrorCode.ConfigLoadFailed,
@@ -380,39 +419,64 @@ await runAdapter(async (request) => {
   await waitForProtectionAck();
 
   progress("building", `Running vite build with Vite ${vite.version}`);
+  const customLogger = {
+    ...vite.createLogger("warn"),
+    warn(message) {
+      state.warnings.push(stripAnsi(String(message)).slice(0, 2000));
+    },
+    warnOnce(message) {
+      state.warnings.push(stripAnsi(String(message)).slice(0, 2000));
+    },
+  };
+  const collectionOverrides = {
+    mode: "production",
+    logLevel: "warn",
+    clearScreen: false,
+    customLogger,
+    build: {
+      outDir,
+      emptyOutDir: true,
+      sourcemap: true,
+      write: true,
+      watch: null,
+    },
+  };
+  // The user's configuration is evaluated exactly once: the preliminary load
+  // above produced `userConfig`, and the build receives that object with
+  // `configFile: false`. Passing `configFile` to Vite would make it evaluate a
+  // stateful configuration factory a second time. When a configuration file
+  // was loaded, a leading `pre` plugin restores the real
+  // `resolvedConfig.configFile` that plugins such as React Router's Vite plugin
+  // require. The collector is merged after the project's plugins and stays last.
+  const mergedConfig = vite.mergeConfig(userConfig, {
+    ...collectionOverrides,
+    root,
+    configFile: false,
+    plugins: [collectorPlugin(state)],
+  });
+  const buildConfig =
+    loadedConfigFile === null
+      ? mergedConfig
+      : vite.mergeConfig(
+          {
+            plugins: [
+              configFileIdentityPlugin(loadedConfigFile, loadedDependencies),
+            ],
+          },
+          mergedConfig,
+        );
   try {
-    await vite.build(
-      vite.mergeConfig(userConfig, {
-        root: userConfig.root ?? request.projectRoot,
-        configFile: false,
-        mode: "production",
-        logLevel: "warn",
-        clearScreen: false,
-        customLogger: {
-          ...vite.createLogger("warn"),
-          warn(message) {
-            state.warnings.push(stripAnsi(String(message)).slice(0, 2000));
-          },
-          warnOnce(message) {
-            state.warnings.push(stripAnsi(String(message)).slice(0, 2000));
-          },
-        },
-        build: {
-          outDir,
-          emptyOutDir: true,
-          sourcemap: true,
-          write: true,
-          watch: null,
-        },
-        plugins: [collectorPlugin(state)],
-      }),
-    );
+    await vite.build(buildConfig);
   } catch (error) {
     if (error instanceof AdapterError) throw error;
+    // Configuration evaluation errors were classified before the build. An
+    // error here comes from the build itself or from a plugin hook, and the
+    // diagnostic build differs from the native one, so do not claim that the
+    // project's own build is broken.
     throw new AdapterError(
       AdapterErrorCode.BuildFailed,
       `vite build failed: ${error?.message ?? error}`,
-      "Fix the build error, confirm `vite build` succeeds in the project, then start a new run.",
+      "Read the error above. If `vite build` also fails in the project, fix that error. If it succeeds, a plugin or option is incompatible with bundlewhy's diagnostic build, which forces the output directory, source maps and a post collector plugin. Then start a new run.",
     );
   }
 
@@ -449,7 +513,7 @@ await runAdapter(async (request) => {
     mode: resolved.mode ?? "production",
     "define keys": (resolved.defineKeys ?? []).join(", ") || "(none)",
     plugins: (resolved.plugins ?? [])
-      .filter((name) => name !== "bundlewhy:collector")
+      .filter((name) => !BUNDLEWHY_PLUGIN_NAMES.has(name))
       .join(", "),
   };
 
