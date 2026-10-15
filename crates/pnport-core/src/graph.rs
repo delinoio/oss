@@ -19,6 +19,13 @@ pub fn digest(bytes: &[u8]) -> String {
 }
 
 pub fn normalize(path: &Path) -> PathBuf {
+    #[cfg(windows)]
+    let native = crate::windows::dos_path(&{
+        use std::os::windows::ffi::OsStrExt;
+        path.as_os_str().encode_wide().collect::<Vec<_>>()
+    });
+    #[cfg(windows)]
+    let path = native.as_path();
     let mut result = PathBuf::new();
     for part in path.components() {
         match part {
@@ -144,7 +151,7 @@ pub struct Graph {
 
 impl Graph {
     pub fn load(path: &Path) -> Result<Self> {
-        let path = fs::canonicalize(path).map_err(|_| manifest_error())?;
+        let path = normalize(&fs::canonicalize(path).map_err(|_| manifest_error())?);
         let bytes = read_manifest(&path)?;
         let source = std::str::from_utf8(&bytes).map_err(|_| manifest_error())?;
         let mut inputs = vec![Input {
@@ -201,6 +208,14 @@ impl Graph {
             serde_json::from_value(snapshot.data.clone()).map_err(|_| manifest_error())?;
         validate_references(&manifest)?;
         pnp::init_pnp_manifest(&mut manifest, &snapshot.manifest_path);
+        if manifest
+            .package_registry_data
+            .values()
+            .flat_map(|references| references.values())
+            .any(|package| !package.package_location.is_absolute())
+        {
+            return Err(manifest_error());
+        }
         // pnp does not retain linkType. Index it once instead of rescanning the
         // JSON registry for every source-file syscall under the preload mutex.
         let mut managed_locators = HashSet::new();
@@ -253,6 +268,28 @@ impl Graph {
     }
 
     pub fn resolve(&self, name: &str, issuer: &Path) -> Result<PathBuf> {
+        if !issuer.is_absolute() {
+            return Err(manifest_error());
+        }
+        #[cfg(windows)]
+        let name = self
+            .package(issuer)
+            .and_then(|package| {
+                package
+                    .package_dependencies
+                    .keys()
+                    .find(|candidate| candidate.eq_ignore_ascii_case(name))
+            })
+            .map_or(name, String::as_str);
+        #[cfg(windows)]
+        if issuer.components().next() != self.manifest.manifest_dir.components().next() {
+            return self.cross_volume_dependency(name, issuer).ok_or_else(|| {
+                Error::new(
+                    Code::PnportResolutionFailed,
+                    "The selected PnP graph does not provide this dependency for the issuer.",
+                )
+            });
+        }
         match pnp::resolve_to_unqualified_via_manifest(&self.manifest, name, issuer) {
             Ok(Resolution::Resolved(path, sub)) => {
                 Ok(sub.map_or(path.clone(), |sub| path.join(sub)))
@@ -265,7 +302,10 @@ impl Graph {
     }
 
     pub fn package(&self, issuer: &Path) -> Option<&PackageInformation> {
-        let locator = pnp::find_locator(&self.manifest, issuer)?;
+        if !issuer.is_absolute() {
+            return None;
+        }
+        let locator = self.locator(issuer)?;
         self.manifest
             .package_registry_data
             .get(&locator.name)?
@@ -273,10 +313,88 @@ impl Graph {
     }
 
     pub fn managed(&self, path: &Path) -> bool {
-        let Some(locator) = pnp::find_locator(&self.manifest, path) else {
+        let Some(locator) = self.locator(path) else {
             return false;
         };
         self.managed_locators.contains(locator)
+    }
+
+    fn locator(&self, path: &Path) -> Option<&PackageLocator> {
+        if !path.is_absolute() {
+            return None;
+        }
+        #[cfg(windows)]
+        if path.components().next() != self.manifest.manifest_dir.components().next() {
+            // pnp 0.12.12 panics when pathdiff cannot make a drive-relative
+            // issuer. Its locator trie already contains absolute registered
+            // locations. Use it directly across volumes, preserving the
+            // absolute-issuer ignore check. Remove this branch when the pinned
+            // resolver handles cross-volume paths without panicking.
+            let spelling = path.to_string_lossy();
+            let normalized = if let Some(unc) = spelling.strip_prefix(r"\\") {
+                format!(r"\\{}", unc.replace('\\', "/"))
+            } else {
+                spelling.replace('\\', "/")
+            };
+            if self
+                .manifest
+                .ignore_pattern_data
+                .as_ref()
+                .is_some_and(|pattern| pattern.0.find(&normalized).is_some())
+            {
+                return None;
+            }
+            return self.manifest.location_trie.get_ancestor_value(&path);
+        }
+        pnp::find_locator(&self.manifest, path)
+    }
+
+    #[cfg(windows)]
+    fn cross_volume_dependency(&self, name: &str, issuer: &Path) -> Option<PathBuf> {
+        if !name_valid(name) {
+            return None;
+        }
+        let locator = self.locator(issuer)?;
+        let package = self
+            .manifest
+            .package_registry_data
+            .get(&locator.name)?
+            .get(&locator.reference)?;
+        let mut binding = package
+            .package_dependencies
+            .get(name)
+            .and_then(Option::as_ref);
+        if binding.is_none()
+            && !locator.name.is_empty()
+            && self.manifest.enable_top_level_fallback
+            && !pnp::is_excluded_from_fallback(&self.manifest, locator)
+        {
+            binding = self
+                .manifest
+                .package_registry_data
+                .get("")
+                .and_then(|refs| refs.get(""))
+                .and_then(|package| package.package_dependencies.get(name))
+                .and_then(Option::as_ref)
+                .or_else(|| {
+                    self.manifest
+                        .fallback_pool
+                        .get(name)
+                        .and_then(Option::as_ref)
+                });
+        }
+        let (name, reference) = match binding? {
+            PackageDependency::Reference(reference) => (name, reference.as_str()),
+            PackageDependency::Alias(name, reference) => (name.as_str(), reference.as_str()),
+        };
+        Some(
+            self.manifest
+                .package_registry_data
+                .get(name)?
+                .get(reference)?
+                .package_location
+                .clone(),
+        )
     }
 
     pub fn is_location_ancestor(&self, path: &Path) -> bool {
@@ -321,6 +439,10 @@ impl Graph {
         self.cache_container(issuer)
             && name.as_encoded_bytes().starts_with(b".")
             && !matches!(name.as_encoded_bytes(), b"." | b".." | b".bin")
+            && !(cfg!(windows)
+                && name
+                    .to_str()
+                    .is_some_and(|name| name.eq_ignore_ascii_case(".bin")))
             && !self.package(issuer).is_some_and(|package| {
                 package
                     .package_dependencies
@@ -352,6 +474,13 @@ impl Graph {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
             Err(_) => return Err(filesystem_conflict()),
         };
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt;
+            if metadata.file_attributes() & 0x400 != 0 {
+                return Err(filesystem_conflict());
+            }
+        }
         if !metadata.is_dir() {
             return Err(filesystem_conflict());
         }

@@ -1,10 +1,13 @@
 //! Turns an adapter collection into an `Analysis` plus stored source files.
 
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
 
 use crate::{
     chunks::{Chunk, measure},
-    collect::Collection,
+    collect::{CollectedModule, Collection},
     engine::BundlerChoice,
     error::{ErrorCode, problem},
     model::{
@@ -13,7 +16,7 @@ use crate::{
         SourceFile,
     },
     rules::{self, Context},
-    sources::{SourceStore, classify},
+    sources::{AssetExemption, SourceStore, classify, freshness_unverified_problem},
 };
 
 pub struct AnalysisInput<'a> {
@@ -300,6 +303,43 @@ fn coverage(
         .collect()
 }
 
+/// Backing paths whose every collected module the bundler classified as an
+/// asset module (for example Rspack `asset/resource`).
+///
+/// Adapters strip loader prefixes and queries from module identifiers, so
+/// distinct modules (an `asset/*` rule and an executable loader or query
+/// variant of the same resource) can share one backing path. Source evidence is
+/// recorded per path, so a path is exempt only when no collected module with
+/// that path can emit executable code; one non-asset module keeps the gap.
+fn bundler_asset_paths(modules: &[CollectedModule]) -> HashSet<PathBuf> {
+    let mut asset_paths = HashSet::new();
+    let mut executable_paths = HashSet::new();
+    for module in modules {
+        let Some(path) = module.path.as_deref() else {
+            continue;
+        };
+        let path = crate::sources::normalize(Path::new(path));
+        let is_asset = module
+            .module_type
+            .as_deref()
+            .is_some_and(|module_type| module_type == "asset" || module_type.starts_with("asset/"));
+        if is_asset {
+            asset_paths.insert(path);
+        } else {
+            executable_paths.insert(path);
+        }
+    }
+    asset_paths.retain(|path| !executable_paths.contains(path));
+    if !asset_paths.is_empty() {
+        tracing::debug!(
+            asset_paths = asset_paths.len(),
+            shared_with_executable = executable_paths.len(),
+            "classified bundler asset module paths"
+        );
+    }
+    asset_paths
+}
+
 pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
     let collection = input.collection;
     let ownership_root = effective_root(collection, &input.project_root);
@@ -373,7 +413,17 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
         ));
     }
 
-    let mut store = SourceStore::new(input.include_sources);
+    // The Vite URL-module rule for `.svg` and query imports is engine
+    // specific: other engines run such files through loaders that can emit
+    // executable code, so they only get positive evidence from the engine.
+    let mut store = SourceStore::new(input.include_sources).with_asset_exemption(
+        if collection.bundler == "vite" {
+            AssetExemption::ViteUrlModules
+        } else {
+            AssetExemption::None
+        },
+    );
+    store.asset_modules = bundler_asset_paths(&collection.modules);
     store.allowed = collection
         .modules
         .iter()
@@ -441,6 +491,12 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
              the current code.",
         ));
     }
+    // Freshness-unverified sources keep a usable build snapshot, so this
+    // warning is informational and never makes the run partial.
+    problems.extend(freshness_unverified_problem(
+        context.sources.freshness_unverified.len(),
+        context.sources.existence_unverified.len(),
+    ));
     if !context.sources.unreadable.is_empty() {
         problems.push(problem(
             ErrorCode::SourceUnreadable,
@@ -1419,6 +1475,84 @@ mod tests {
                 .diagnostics
                 .iter()
                 .all(|diagnostic| diagnostic.export_usage.is_none())
+        );
+    }
+
+    /// A snapshot-backed source whose live read fails with an error other than
+    /// "not found" must not be reported as changed: the run keeps the snapshot
+    /// text, stays complete and carries the freshness-unverified warning.
+    #[cfg(unix)]
+    #[test]
+    fn vite_snapshot_source_with_a_failed_live_read_is_unverified_not_stale() {
+        // A path below a regular file fails with a not-a-directory error.
+        const BLOCKED_SOURCE: &str = "package.json/blocked.ts";
+        let snapshot = "export const blocked = 1;";
+        let fixture = run_fixture_patched(
+            BundlerChoice::Vite,
+            true,
+            |value| {
+                let modules = value["modules"].as_array_mut().unwrap();
+                let mut blocked = modules
+                    .iter()
+                    .find(|module| {
+                        module["path"]
+                            .as_str()
+                            .is_some_and(|path| path.contains("/src/effects/"))
+                    })
+                    .unwrap()
+                    .clone();
+                let project = blocked["packageDir"].as_str().unwrap().to_owned();
+                let path = format!("{project}/{BLOCKED_SOURCE}");
+                blocked["id"] = path.clone().into();
+                blocked["path"] = path.into();
+                blocked["isEntry"] = false.into();
+                modules.push(blocked);
+            },
+            |build, project| {
+                let map_path = build.join("assets/index-BHjrzQLH.js.map");
+                let mut map: serde_json::Value =
+                    serde_json::from_str(&std::fs::read_to_string(&map_path).unwrap()).unwrap();
+                map["sources"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(format!("{project}/{BLOCKED_SOURCE}").into());
+                map["sourcesContent"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(snapshot.into());
+                std::fs::write(&map_path, serde_json::to_string(&map).unwrap()).unwrap();
+            },
+        );
+        let analysis = &fixture.output.analysis;
+        let codes: Vec<&str> = analysis
+            .problems
+            .iter()
+            .map(|entry| entry.code.as_str())
+            .collect();
+        assert!(!codes.contains(&"BW_SOURCE_STALE"), "{codes:?}");
+        assert!(!codes.contains(&"BW_SOURCE_UNREADABLE"), "{codes:?}");
+        assert_eq!(
+            codes
+                .iter()
+                .filter(|code| **code == "BW_SOURCE_FRESHNESS_UNVERIFIED")
+                .count(),
+            1,
+            "{codes:?}"
+        );
+        // The warning is informational: it never makes the run partial.
+        assert_eq!(analysis.status, RunStatus::Complete, "{codes:?}");
+        let blocked = fixture
+            .output
+            .sources
+            .iter()
+            .find(|source| source.path.ends_with(BLOCKED_SOURCE))
+            .unwrap();
+        assert!(!blocked.stale);
+        assert!(blocked.content_included);
+        assert_eq!(blocked.content, snapshot);
+        assert_eq!(
+            blocked.revision_evidence,
+            SourceRevisionEvidence::BuildSnapshot
         );
     }
 
@@ -2940,6 +3074,114 @@ mod tests {
     }
 
     #[test]
+    fn env_reads_inside_invalid_containers_do_not_produce_a_branch_diagnostic() {
+        let guard = "\"on\"===process.env.BUNDLEWHY_FIXTURE_FLAG&&console.log(\"flag branch\")";
+        let read = "process.env.BUNDLEWHY_FIXTURE_FLAG";
+        let diagnostic_count = |replacement: String| {
+            let fixture = run_fixture_patched(
+                BundlerChoice::Rspack,
+                true,
+                |_| {},
+                |build, _| {
+                    let path = build.join("main.js");
+                    let code = std::fs::read_to_string(&path).unwrap();
+                    assert!(code.contains(guard));
+                    std::fs::write(&path, code.replace(guard, &replacement)).unwrap();
+                },
+            );
+            fixture
+                .output
+                .analysis
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.rule == "minifier/unresolved-env-condition")
+                .count()
+        };
+        // The generated read only supplies a value inside an array literal,
+        // nested array or function object; the following operator does not
+        // depend on it.
+        for container in [
+            format!("[{read}]"),
+            format!("[[{read}]]"),
+            format!("(function(){{ return {read} }})"),
+            format!("(function(){{ return {read}; }})"),
+            format!("(()=>{read})"),
+        ] {
+            for suffix in [
+                "&&console.log(\"flag branch\")",
+                "||console.log(\"flag branch\")",
+                "??console.log(\"flag branch\")",
+                "?console.log(\"flag branch\"):0",
+            ] {
+                assert_eq!(
+                    diagnostic_count(format!("{container}{suffix}")),
+                    0,
+                    "{container}{suffix}"
+                );
+            }
+        }
+        // A real branch inside the container remains detected.
+        assert_eq!(
+            diagnostic_count(format!("[{read}&&console.log(\"flag branch\")]")),
+            1
+        );
+        assert_eq!(
+            diagnostic_count(format!(
+                "function run(){{{read}&&console.log(\"flag branch\")}}run()"
+            )),
+            1
+        );
+    }
+
+    #[test]
+    fn env_reads_keep_their_container_classification_after_keywords_regexes_and_members() {
+        let guard = "\"on\"===process.env.BUNDLEWHY_FIXTURE_FLAG&&console.log(\"flag branch\")";
+        let read = "process.env.BUNDLEWHY_FIXTURE_FLAG";
+        let diagnostic_count = |replacement: String| {
+            let fixture = run_fixture_patched(
+                BundlerChoice::Rspack,
+                true,
+                |_| {},
+                |build, _| {
+                    let path = build.join("main.js");
+                    let code = std::fs::read_to_string(&path).unwrap();
+                    assert!(code.contains(guard));
+                    std::fs::write(&path, code.replace(guard, &replacement)).unwrap();
+                },
+            );
+            fixture
+                .output
+                .analysis
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.rule == "minifier/unresolved-env-condition")
+                .count()
+        };
+        let suffix = "&&console.log(\"flag branch\")";
+        // An array literal after `return` is a value, not a computed member.
+        assert_eq!(
+            diagnostic_count(format!("function run(){{return[{read}]{suffix}}}run()")),
+            0
+        );
+        // Parentheses after `return` and `await` only group their operand.
+        assert_eq!(
+            diagnostic_count(format!("function run(){{return({read}){suffix}}}run()")),
+            1
+        );
+        assert_eq!(
+            diagnostic_count(format!(
+                "async function run(){{await({read}){suffix}}}run()"
+            )),
+            1
+        );
+        // A bracket after a regular expression literal is a computed member.
+        assert_eq!(diagnostic_count(format!("/x/[{read}]{suffix}")), 1);
+        // An array literal that is indexed yields the environment value.
+        assert_eq!(diagnostic_count(format!("[{read}][0]{suffix}")), 1);
+        assert_eq!(diagnostic_count(format!("[{read}]{suffix}")), 0);
+    }
+
+    #[test]
     fn disabled_minification_suppresses_env_condition_findings() {
         let fixture = run_fixture(BundlerChoice::Rspack, |value| {
             value["minifyEnabled"] = serde_json::json!(false);
@@ -2974,6 +3216,247 @@ mod tests {
                 .iter()
                 .any(|entry| entry.code == "BW_MINIFIER_NON_DEFAULT")
         );
+    }
+
+    /// Rspack fixture whose `evaluate.js` module is replaced by an included
+    /// `icon.svg` module: a readable backing file that holds the eval source,
+    /// no source-map `sourcesContent` and the engine's eval bailout. The
+    /// closure can further edit the collection.
+    fn rspack_svg_eval_fixture(
+        edit: impl Fn(&mut serde_json::Value, &mut serde_json::Value),
+    ) -> Fixture {
+        let svg_dir = tempfile::tempdir().unwrap();
+        let svg = svg_dir.path().join("icon.svg");
+        let evaluate = manifest_dir()
+            .join("../../packages/bundlewhy/fixtures/rspack-app/src/dynamic/evaluate.js");
+        std::fs::write(&svg, std::fs::read(evaluate).unwrap()).unwrap();
+        let svg_text = svg.to_string_lossy().replace('\\', "/");
+        let fixture = run_fixture(BundlerChoice::Rspack, |value| {
+            let mut module = serde_json::Value::Null;
+            for entry in value["modules"].as_array_mut().unwrap() {
+                if entry["name"] == "./src/dynamic/evaluate.js" {
+                    entry["path"] = svg_text.clone().into();
+                    module = entry.clone();
+                }
+            }
+            edit(value, &mut module);
+            for entry in value["modules"].as_array_mut().unwrap() {
+                if entry["name"] == "./src/dynamic/evaluate.js" {
+                    *entry = module.clone();
+                }
+            }
+        });
+        drop(svg_dir);
+        fixture
+    }
+
+    #[test]
+    fn rspack_svg_module_without_snapshot_is_an_unverified_coverage_gap() {
+        let fixture = rspack_svg_eval_fixture(|_, _| {});
+        let analysis = &fixture.output.analysis;
+        assert_eq!(analysis.status, RunStatus::Partial);
+        assert_eq!(
+            analysis
+                .problems
+                .iter()
+                .filter(|entry| entry.code == "BW_SOURCE_UNVERIFIED")
+                .count(),
+            1
+        );
+        assert_absent(
+            &analysis.diagnostics,
+            "minifier/direct-eval-blocks-mangling",
+            "icon.svg",
+        );
+        let mangling = analysis
+            .coverage
+            .iter()
+            .find(|entry| entry.category == OptimizationCategory::NameMangling)
+            .unwrap();
+        assert_eq!(mangling.state, CoverageState::Partial);
+        assert!(mangling.note.contains("direct-eval"));
+        // The gap is recorded without storing unverified text.
+        let icon = fixture
+            .output
+            .sources
+            .iter()
+            .find(|source| source.path.ends_with("icon.svg"))
+            .unwrap();
+        assert_eq!(icon.revision_evidence, SourceRevisionEvidence::Unavailable);
+        assert!(icon.content.is_empty());
+    }
+
+    #[test]
+    fn vite_svg_module_without_snapshot_keeps_existence_only_evidence() {
+        let svg_dir = tempfile::tempdir().unwrap();
+        let svg = svg_dir.path().join("icon.svg");
+        std::fs::write(&svg, "eval('not executable as imported')").unwrap();
+        let svg_text = svg.to_string_lossy().replace('\\', "/");
+        let fixture = run_fixture(BundlerChoice::Vite, |value| {
+            for entry in value["modules"].as_array_mut().unwrap() {
+                if entry["path"]
+                    .as_str()
+                    .is_some_and(|path| path.ends_with("/src/dynamic/evaluate.js"))
+                {
+                    entry["path"] = svg_text.clone().into();
+                }
+            }
+        });
+        let analysis = &fixture.output.analysis;
+        assert!(
+            !analysis
+                .problems
+                .iter()
+                .any(|entry| entry.code == "BW_SOURCE_UNVERIFIED")
+        );
+        assert_ne!(
+            analysis
+                .coverage
+                .iter()
+                .find(|entry| entry.category == OptimizationCategory::NameMangling)
+                .unwrap()
+                .state,
+            CoverageState::Partial
+        );
+        assert_absent(
+            &analysis.diagnostics,
+            "minifier/direct-eval-blocks-mangling",
+            "icon.svg",
+        );
+        let icon = fixture
+            .output
+            .sources
+            .iter()
+            .find(|source| source.path.ends_with("icon.svg"));
+        assert!(icon.is_none_or(|source| source.content.is_empty()));
+    }
+
+    #[test]
+    fn rspack_asset_module_type_is_positive_asset_evidence() {
+        for module_type in ["asset/resource", "asset/inline", "asset/source", "asset"] {
+            let fixture = rspack_svg_eval_fixture(|_, module| {
+                module["moduleType"] = module_type.into();
+            });
+            let analysis = &fixture.output.analysis;
+            assert!(
+                !analysis
+                    .problems
+                    .iter()
+                    .any(|entry| entry.code == "BW_SOURCE_UNVERIFIED"),
+                "{module_type}"
+            );
+            let mangling = analysis
+                .coverage
+                .iter()
+                .find(|entry| entry.category == OptimizationCategory::NameMangling)
+                .unwrap();
+            assert_ne!(mangling.state, CoverageState::Partial, "{module_type}");
+        }
+    }
+
+    /// Adds a second collected module with the same backing path as the
+    /// `icon.svg` fixture module, as an Rspack executable loader or query
+    /// variant of one resource does after the adapter strips its identifier.
+    fn add_same_path_variant(
+        value: &mut serde_json::Value,
+        module: &serde_json::Value,
+        module_type: &str,
+    ) {
+        let mut variant = module.clone();
+        variant["id"] = "svg-loader!/project/src/icon.svg?component".into();
+        variant["name"] = "./src/icon.svg?component".into();
+        variant["moduleType"] = module_type.into();
+        value["modules"].as_array_mut().unwrap().push(variant);
+    }
+
+    #[test]
+    fn rspack_asset_evidence_does_not_exempt_an_executable_variant_of_the_path() {
+        for variant_type in ["javascript/auto", "javascript/esm", "css/auto"] {
+            let fixture = rspack_svg_eval_fixture(|value, module| {
+                module["moduleType"] = "asset/resource".into();
+                add_same_path_variant(value, module, variant_type);
+            });
+            let analysis = &fixture.output.analysis;
+            assert_eq!(analysis.status, RunStatus::Partial, "{variant_type}");
+            assert_eq!(
+                analysis
+                    .problems
+                    .iter()
+                    .filter(|entry| entry.code == "BW_SOURCE_UNVERIFIED")
+                    .count(),
+                1,
+                "{variant_type}"
+            );
+            let mangling = analysis
+                .coverage
+                .iter()
+                .find(|entry| entry.category == OptimizationCategory::NameMangling)
+                .unwrap();
+            assert_eq!(mangling.state, CoverageState::Partial, "{variant_type}");
+        }
+    }
+
+    #[test]
+    fn rspack_asset_variants_of_the_same_path_stay_exempt() {
+        let fixture = rspack_svg_eval_fixture(|value, module| {
+            module["moduleType"] = "asset/resource".into();
+            add_same_path_variant(value, module, "asset/inline");
+        });
+        let analysis = &fixture.output.analysis;
+        assert!(
+            !analysis
+                .problems
+                .iter()
+                .any(|entry| entry.code == "BW_SOURCE_UNVERIFIED")
+        );
+    }
+
+    #[test]
+    fn bundler_asset_paths_ignore_module_order_and_virtual_modules() {
+        let module = |path: Option<&str>, module_type: Option<&str>| CollectedModule {
+            path: path.map(str::to_owned),
+            module_type: module_type.map(str::to_owned),
+            ..CollectedModule::default()
+        };
+        let asset = module(Some("/p/a/../icon.svg"), Some("asset/resource"));
+        let executable = module(Some("/p/icon.svg"), Some("javascript/auto"));
+        let other = module(Some("/p/logo.svg"), Some("asset"));
+        let virtual_module = module(None, Some("javascript/auto"));
+        let untyped = module(Some("/p/untyped.svg"), None);
+        let forward = bundler_asset_paths(&[
+            asset.clone(),
+            executable.clone(),
+            other.clone(),
+            virtual_module.clone(),
+            untyped.clone(),
+        ]);
+        let reverse = bundler_asset_paths(&[untyped, virtual_module, other, executable, asset]);
+        assert_eq!(forward, reverse);
+        assert_eq!(forward, HashSet::from([PathBuf::from("/p/logo.svg")]));
+    }
+
+    #[test]
+    fn rspack_svg_gap_keeps_minifier_precedence() {
+        for (disabled, expected) in [
+            (true, CoverageState::NotApplicable),
+            (false, CoverageState::Unavailable),
+        ] {
+            let fixture = rspack_svg_eval_fixture(|value, _| {
+                if disabled {
+                    value["minifyEnabled"] = false.into();
+                } else {
+                    value["defaultMinifier"] = false.into();
+                }
+            });
+            let mangling = fixture
+                .output
+                .analysis
+                .coverage
+                .iter()
+                .find(|entry| entry.category == OptimizationCategory::NameMangling)
+                .unwrap();
+            assert_eq!(mangling.state, expected, "disabled={disabled}");
+        }
     }
 
     #[test]

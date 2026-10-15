@@ -7,6 +7,8 @@ import {
   Workspace,
   type Document,
 } from "./documents";
+import type { Harness } from "./configuration-fields";
+import { retainedSessionHarness } from "./session-harness";
 import { sessionTitlePresentation } from "./session-title";
 
 // Home deliberately retains only navigation metadata. Full Resource documents
@@ -77,12 +79,20 @@ export interface NavigationRow {
   awaitingUserResponse?: boolean;
   title?: ReturnType<typeof sessionTitlePresentation>;
   conversationKind: ConversationKind;
+  // Closed presentation hint from the retained initial execution identity.
+  // Only WorkSession and GeneralChat rows carry it; never an authority.
+  harness?: Harness;
   parentId?: string;
   sidechatParent?: string;
 }
 export function navigationRow(row: Resource): NavigationRow {
   const data = document(row);
   const provenance = conversationProvenance(row, data);
+  const harness =
+    provenance.conversationKind === ConversationKind.WorkSession ||
+    provenance.conversationKind === ConversationKind.GeneralChat
+      ? retainedSessionHarness(row)
+      : undefined;
   return {
     id: row.id,
     projectId: row.projectId,
@@ -95,6 +105,7 @@ export function navigationRow(row: Resource): NavigationRow {
       row.kind === EntityKind.SESSION && data.awaiting_user_response === true,
     title: sessionTitlePresentation(data),
     ...provenance,
+    ...(harness ? { harness } : {}),
   };
 }
 export { ReadStage } from "./scroll-pagination";

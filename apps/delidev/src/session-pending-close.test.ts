@@ -462,6 +462,183 @@ describe("pending Close ownership across product windows", () => {
       expect(synced).toBe(true);
     });
 
+    const lockSet = () => {
+      const held = new Set<string>();
+      const locks: PendingCloseLocks = {
+        request: (name, _options, callback) => {
+          held.add(name);
+          return callback().finally(() => held.delete(name));
+        },
+        query: async () => ({ held: [...held].map((name) => ({ name })) }),
+      };
+      return { held, locks };
+    };
+
+    describe("liveness query that does not settle", () => {
+      const neverSettles = () => new Promise<never>(() => undefined);
+
+      /** Registers a silent peer "b" that introduced itself and never answers. */
+      const silentPeer = (
+        locks: PendingCloseLocks,
+        local?: PendingCloseLocks,
+      ) => {
+        const bus = new QueuedBus();
+        const sent: { kind?: string; ack?: boolean }[] = [];
+        const endpoint = bus.endpoint();
+        const post = endpoint.postMessage.bind(endpoint);
+        endpoint.postMessage = (message: unknown) => {
+          sent.push(message as { kind?: string; ack?: boolean });
+          post(message);
+        };
+        const first = new PendingCloseRegistry({
+          channel: endpoint,
+          locks: local ?? locks,
+          window: "a",
+        });
+        new PendingCloseRegistry({
+          channel: bus.endpoint(true),
+          locks: null,
+          window: "b",
+        });
+        bus.flush();
+        return { bus, first, sent };
+      };
+
+      it("treats a query that never settles as inconclusive and gives up after the bounded rechecks", async () => {
+        const locks: PendingCloseLocks = {
+          request: () => new Promise(() => undefined),
+          query: neverSettles,
+        };
+        const { first, sent } = silentPeer(locks);
+        let synced = 0;
+        void first.hold("k", {}).then(() => (synced += 1));
+        // Five inconclusive rechecks (one deadline plus one interval each).
+        await vi.advanceTimersByTimeAsync(11_000);
+        expect(synced).toBe(0);
+        await vi.advanceTimersByTimeAsync(1_200);
+        expect(synced).toBe(1);
+        // Exactly one original announcement; nothing is sent after the barrier.
+        // (Heartbeat holds carry no acknowledgement request.)
+        const announced = () =>
+          sent.filter((m) => m.kind === "hold" && m.ack).length;
+        expect(announced()).toBe(1);
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(synced).toBe(1);
+        expect(announced()).toBe(1);
+        expect(vi.getTimerCount()).toBe(1); // only the heartbeat of the live hold
+      });
+
+      it("keeps awaiting a silent window that a later query proves alive", async () => {
+        const { held, locks: backing } = lockSet();
+        let calls = 0;
+        const locks: PendingCloseLocks = {
+          request: backing.request,
+          // The first reads never settle; later reads prove "b" alive.
+          query: () => (++calls <= 2 ? neverSettles() : backing.query()),
+        };
+        const bus = new QueuedBus();
+        const first = new PendingCloseRegistry({
+          channel: bus.endpoint(),
+          locks,
+          window: "a",
+        });
+        new PendingCloseRegistry({
+          channel: bus.endpoint(),
+          locks: backing,
+          window: "b",
+        });
+        bus.flush();
+        expect(held.has("delidev.browser.pending-close:b")).toBe(true);
+        let synced = false;
+        void first.hold("k", {}).then(() => (synced = true));
+        // Far beyond the fallback budget of an unknown liveness.
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(synced).toBe(false);
+        held.delete("delidev.browser.pending-close:b");
+        await vi.advanceTimersByTimeAsync(2_100);
+        expect(synced).toBe(true);
+      });
+
+      it("ignores a timed-out query that resolves after the barrier was released", async () => {
+        let resolveQuery: ((state: object) => void) | undefined;
+        const locks: PendingCloseLocks = {
+          request: () => new Promise(() => undefined),
+          query: () =>
+            new Promise((resolve) => {
+              resolveQuery = resolve;
+            }),
+        };
+        const { first, sent } = silentPeer(locks);
+        const owner = {};
+        let synced = 0;
+        void first.hold("k", owner).then(() => (synced += 1));
+        await vi.advanceTimersByTimeAsync(1_500);
+        first.release("k", owner);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(synced).toBe(1);
+        const before = sent.length;
+        resolveQuery?.({ held: [{ name: "delidev.browser.pending-close:b" }] });
+        await vi.advanceTimersByTimeAsync(10_000);
+        expect(sent.length).toBe(before);
+        expect(vi.getTimerCount()).toBe(0);
+      });
+
+      it("swallows a timed-out query that rejects after disposal", async () => {
+        const unhandled = vi.fn();
+        process.on("unhandledRejection", unhandled);
+        try {
+          let rejectQuery: ((error: Error) => void) | undefined;
+          const locks: PendingCloseLocks = {
+            request: () => new Promise(() => undefined),
+            query: () =>
+              new Promise((_resolve, reject) => {
+                rejectQuery = reject;
+              }),
+          };
+          const { first, sent } = silentPeer(locks);
+          let synced = 0;
+          void first.hold("k", {}).then(() => (synced += 1));
+          await vi.advanceTimersByTimeAsync(1_500);
+          first.dispose();
+          await vi.advanceTimersByTimeAsync(0);
+          expect(synced).toBe(1);
+          const before = sent.length;
+          rejectQuery?.(new Error("late failure"));
+          await vi.advanceTimersByTimeAsync(10_000);
+          expect(sent.length).toBe(before);
+          expect(vi.getTimerCount()).toBe(0);
+          expect(unhandled).not.toHaveBeenCalled();
+        } finally {
+          process.off("unhandledRejection", unhandled);
+        }
+      });
+
+      it("swallows a rejection that arrives after the deadline already fired", async () => {
+        const unhandled = vi.fn();
+        process.on("unhandledRejection", unhandled);
+        try {
+          const rejects: ((error: Error) => void)[] = [];
+          const locks: PendingCloseLocks = {
+            request: () => new Promise(() => undefined),
+            query: () =>
+              new Promise((_resolve, reject) => {
+                rejects.push(reject);
+              }),
+          };
+          const { first } = silentPeer(locks);
+          let synced = 0;
+          void first.hold("k", {}).then(() => (synced += 1));
+          await vi.advanceTimersByTimeAsync(1_500);
+          for (const reject of rejects) reject(new Error("late failure"));
+          await vi.advanceTimersByTimeAsync(20_000);
+          expect(synced).toBe(1);
+          expect(unhandled).not.toHaveBeenCalled();
+        } finally {
+          process.off("unhandledRejection", unhandled);
+        }
+      });
+    });
+
     it("waits out discovery for an unintroduced window without Web Locks", async () => {
       const bus = new QueuedBus();
       const first = new PendingCloseRegistry({
@@ -512,18 +689,6 @@ describe("pending Close ownership across product windows", () => {
       await vi.advanceTimersByTimeAsync(101);
       expect(again).toBe(true);
     });
-
-    const lockSet = () => {
-      const held = new Set<string>();
-      const locks: PendingCloseLocks = {
-        request: (name, _options, callback) => {
-          held.add(name);
-          return callback().finally(() => held.delete(name));
-        },
-        query: async () => ({ held: [...held].map((name) => ({ name })) }),
-      };
-      return { held, locks };
-    };
 
     it("keeps waiting for a suspended sibling that still holds its lock", async () => {
       const { held, locks } = lockSet();

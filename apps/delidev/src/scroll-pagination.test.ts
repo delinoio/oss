@@ -3,9 +3,13 @@ import { expect, it, vi } from "vitest";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { FailureCode } from "@delinoio/delidev-api-client";
 import {
+  DEFAULT_RESIDENT_PAGES,
+  MIN_RESIDENT_PAGES,
   PaginationChain,
   pagesResident,
   ReadStage,
+  ResidentPageRejection,
+  resolveResidentPages,
   type PaginationReader,
 } from "./scroll-pagination";
 
@@ -862,4 +866,226 @@ it("keeps the failed-read latch through a Reload and clears it with the chain", 
   expect(chain.getSnapshot().unrecovered).toBe(true);
   chain.reset();
   expect(chain.getSnapshot().unrecovered).toBeUndefined();
+});
+
+// A chain with 25 single-resource pages; tokens are "", "1" .. "24".
+const wideReader = vi.fn<PaginationReader<Row, Payload>>(async (token) => {
+  const index = Number(token || 0);
+  return {
+    rows: [{ id: String(index), revision: 1n, title: `Page ${index}` }],
+    nextPageToken: index < 24 ? String(index + 1) : "",
+    payload: [{ id: String(index), privateContents: `Full ${index}` }],
+  };
+});
+const residentTokens = (chain: PaginationChain<Row, Payload>) =>
+  chain.getSnapshot().payloadPages.map((page) => page.token);
+
+it("resolves resident-page bounds with a typed rejection per invalid cell", () => {
+  expect(MIN_RESIDENT_PAGES).toBe(2);
+  const rejected: [number | undefined, ResidentPageRejection][] = [
+    [undefined, ResidentPageRejection.Unset],
+    [Number.NaN, ResidentPageRejection.NotFinite],
+    [Number.POSITIVE_INFINITY, ResidentPageRejection.NotFinite],
+    [Number.NEGATIVE_INFINITY, ResidentPageRejection.NotFinite],
+    [-1, ResidentPageRejection.BelowMinimum],
+    [0, ResidentPageRejection.BelowMinimum],
+    [0.5, ResidentPageRejection.BelowMinimum],
+    [1, ResidentPageRejection.BelowMinimum],
+    [1.9, ResidentPageRejection.BelowMinimum],
+  ];
+  for (const [bound, rejection] of rejected)
+    expect(resolveResidentPages(bound)).toEqual({
+      pages: DEFAULT_RESIDENT_PAGES,
+      rejection,
+    });
+  for (const [bound, pages] of [
+    [2, 2],
+    [2.9, 2],
+    [3, 3],
+    [20, 20],
+  ])
+    expect(resolveResidentPages(bound)).toEqual({ pages });
+});
+
+it("never keeps more payload pages than a one-page bound can honor under focus protection", async () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  for (const bound of [1, 1.9]) {
+    const chain = new PaginationChain<Row, Payload>(bound);
+    chain.activate();
+    await chain.refresh(wideReader);
+    chain.protect("");
+    for (let index = 0; index < 4; index++) await chain.append(wideReader);
+    // The rejected bound falls back to the default, which the protected page
+    // and the newest pages fit inside.
+    expect(chain.getSnapshot().payloadPages.length).toBeLessThanOrEqual(
+      DEFAULT_RESIDENT_PAGES,
+    );
+    expect(residentTokens(chain)).toContain("");
+  }
+  expect(warn).toHaveBeenCalledWith(
+    "delidev.pagination.resident_pages_rejected",
+    expect.objectContaining({ reason: ResidentPageRejection.BelowMinimum }),
+  );
+  warn.mockRestore();
+});
+
+it("honors the minimum two-page bound while a different resident page is protected", async () => {
+  for (const bound of [2, 2.9]) {
+    const chain = new PaginationChain<Row, Payload>(bound);
+    chain.activate();
+    await chain.refresh(wideReader);
+    chain.protect("");
+    for (let index = 0; index < 5; index++) {
+      await chain.append(wideReader);
+      expect(chain.getSnapshot().payloadPages).toHaveLength(2);
+    }
+    expect(residentTokens(chain)).toEqual(["", "5"]);
+    // A restore of another page while protection is active stays inside the bound.
+    chain.protect("5");
+    await chain.restore("2", wideReader);
+    expect(chain.getSnapshot().payloadPages).toHaveLength(2);
+    expect(residentTokens(chain)).toContain("5");
+    expect(residentTokens(chain)).toContain("2");
+  }
+});
+
+it("keeps the default three-page bound and ignores invalid configured bounds", async () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  for (const bound of [undefined, 0, -1, Number.NaN, 1, 1.5]) {
+    const chain = new PaginationChain<Row, Payload>(bound);
+    chain.activate();
+    await chain.refresh(wideReader);
+    for (let index = 0; index < 6; index++) await chain.append(wideReader);
+    expect(residentTokens(chain)).toEqual(["4", "5", "6"]);
+  }
+  warn.mockRestore();
+});
+
+it("keeps twenty payload pages and evicts only enough pages at the twenty-first", async () => {
+  const chain = new PaginationChain<Row, Payload>(20);
+  chain.activate();
+  await chain.refresh(wideReader);
+  for (let index = 0; index < 19; index++) {
+    chain.measure(index === 0 ? "" : String(index), 100 + index);
+    await chain.append(wideReader);
+  }
+  expect(chain.getSnapshot().pages).toHaveLength(20);
+  expect(chain.getSnapshot().payloadPages).toHaveLength(20);
+  expect(pagesResident(chain.getSnapshot())).toBe(true);
+  await chain.append(wideReader);
+  expect(chain.getSnapshot().pages).toHaveLength(21);
+  expect(chain.getSnapshot().payloadPages).toHaveLength(20);
+  // The farthest page from the newest read is evicted; its metadata remains.
+  expect(residentTokens(chain)).not.toContain("");
+  expect(residentTokens(chain)).toContain("20");
+  expect(chain.getSnapshot().pages[0].height).toBe(100);
+  expect(chain.getSnapshot().rows).toHaveLength(21);
+  // Exact-token restore keeps the bound at twenty.
+  const restore = vi.fn<PaginationReader<Row, Payload>>((token, signal) =>
+    wideReader(token, signal),
+  );
+  await chain.restore("", restore);
+  expect(restore.mock.calls.map(([token]) => token)).toEqual([""]);
+  expect(chain.getSnapshot().payloadPages).toHaveLength(20);
+  expect(residentTokens(chain)).toContain("");
+});
+
+it("protects a focused page at capacity within the configured bound", async () => {
+  const chain = new PaginationChain<Row, Payload>(20);
+  chain.activate();
+  await chain.refresh(wideReader);
+  for (let index = 0; index < 19; index++) await chain.append(wideReader);
+  chain.protect("");
+  await chain.append(wideReader);
+  expect(chain.getSnapshot().payloadPages).toHaveLength(20);
+  expect(residentTokens(chain)).toContain("");
+  expect(residentTokens(chain)).not.toContain("1");
+  // Restoring another page while focus holds keeps the protected page too.
+  await chain.restore("1", wideReader);
+  expect(chain.getSnapshot().payloadPages).toHaveLength(20);
+  expect(residentTokens(chain)).toContain("");
+  expect(residentTokens(chain)).toContain("1");
+  chain.protect(undefined);
+  await chain.append(wideReader);
+  expect(chain.getSnapshot().payloadPages).toHaveLength(20);
+  expect(residentTokens(chain)).not.toContain("");
+});
+
+it("rehydrates after suspension within the configured bound without payload retention", async () => {
+  const chain = new PaginationChain<Row, Payload>(5);
+  chain.activate();
+  await chain.refresh(wideReader);
+  for (let index = 0; index < 7; index++) await chain.append(wideReader);
+  expect(residentTokens(chain)).toEqual(["3", "4", "5", "6", "7"]);
+  chain.suspend();
+  expect(chain.getSnapshot().payloadPages).toEqual([]);
+  chain.activate();
+  await chain.refresh(wideReader);
+  expect(chain.getSnapshot().pages).toHaveLength(8);
+  expect(residentTokens(chain)).toEqual(["3", "4", "5", "6", "7"]);
+});
+
+it("keeps twenty retained bodies visible through a pending and a failed return refresh and recovers atomically", async () => {
+  const chain = new PaginationChain<Row, Payload>(20);
+  chain.activate();
+  await chain.refresh(wideReader);
+  for (let index = 0; index < 3; index++) await chain.append(wideReader);
+  const resident = chain.getSnapshot().payloadPages;
+  chain.suspend(true);
+  expect(chain.getSnapshot().payloadPages).toBe(resident);
+  // Inactive owners issue no reads.
+  const inactive = vi.fn<PaginationReader<Row, Payload>>(wideReader);
+  inactive.mockClear();
+  await chain.refresh(inactive);
+  await chain.append(inactive);
+  expect(inactive).not.toHaveBeenCalled();
+  chain.activate();
+  let reject!: (error: unknown) => void;
+  const pending = chain.refresh(
+    () =>
+      new Promise((_resolve, fail) => {
+        reject = fail;
+      }),
+  );
+  expect(chain.getSnapshot().loading).toBe(ReadStage.Refresh);
+  expect(chain.getSnapshot().payloadPages).toEqual(resident);
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  reject(new ConnectError("expired", Code.FailedPrecondition));
+  await pending;
+  warn.mockRestore();
+  expect(chain.getSnapshot().error).toBeDefined();
+  expect(chain.getSnapshot().payloadPages).toEqual(resident);
+  expect(chain.getSnapshot().unrecovered).toBe(true);
+  // Explicit Reload replaces the retained chain atomically on success.
+  await chain.reload(wideReader);
+  expect(chain.getSnapshot().error).toBeUndefined();
+  expect(chain.getSnapshot().unrecovered).toBeUndefined();
+  expect(chain.getSnapshot().pages).toHaveLength(1);
+});
+
+it("drops retained twenty-page payloads on reset and rejects late publication", async () => {
+  const chain = new PaginationChain<Row, Payload>(20);
+  chain.activate();
+  await chain.refresh(wideReader);
+  for (let index = 0; index < 4; index++) await chain.append(wideReader);
+  let finish!: (batch: Awaited<ReturnType<typeof wideReader>>) => void;
+  const pending = chain.append(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  chain.suspend(true);
+  expect(chain.getSnapshot().payloadPages).toHaveLength(5);
+  chain.reset();
+  expect(chain.getSnapshot().payloadPages).toEqual([]);
+  chain.activate();
+  finish({
+    rows: [{ id: "late", revision: 1n, title: "Late" }],
+    payload: [{ id: "late", privateContents: "Ignored" }],
+    nextPageToken: "",
+  });
+  await pending;
+  expect(chain.getSnapshot().payloadPages).toEqual([]);
+  expect(chain.getSnapshot().rows).toEqual([]);
 });

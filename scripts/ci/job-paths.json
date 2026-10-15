@@ -217,6 +217,7 @@
   },
   "node-pnport-test": {
     "paths": [
+      "scripts/ci/pnport-windows.ps1",
       ".npmrc",
       ".nvmrc",
       "Cargo.lock",
@@ -257,6 +258,7 @@
   },
   "pnport-native": {
     "paths": [
+      "scripts/ci/pnport-windows.ps1",
       ".cargo/**",
       ".nvmrc",
       "Cargo.lock",

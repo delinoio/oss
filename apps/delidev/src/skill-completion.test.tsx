@@ -22,6 +22,8 @@ import {
   analyzeSkillTokens,
   MAX_PAINTED_SKILL_RANGES,
   skillToken,
+  skillCompletionEdit,
+  skillCompletionSeparator,
   skillRanges,
   editedBindings,
   useSkillCompletion,
@@ -57,15 +59,26 @@ function Composer({
   locked = false,
   enabled = true,
   retainTransportContext = false,
+  limit,
   send,
 }: {
   runner?: string;
   locked?: boolean;
   enabled?: boolean;
   retainTransportContext?: boolean;
+  // Mirrors the owner's atomic admission: growth beyond the byte limit is refused.
+  limit?: number;
   send: (value: unknown) => void;
 }) {
-  const [value, change] = useState("");
+  const [value, setValue] = useState("");
+  const change = (next: string) => {
+    if (
+      limit !== undefined &&
+      new TextEncoder().encode(next).byteLength > limit
+    )
+      return false;
+    setValue(next);
+  };
   const textarea = useRef<HTMLTextAreaElement>(null);
   const skills = useSkillCompletion({
     value,
@@ -119,10 +132,10 @@ function fixture() {
     router.service(SkillService, { listSkills: read }),
   );
   const client = new QueryClient();
-  const view = (runner = machine, locked = false) => (
+  const view = (runner = machine, locked = false, limit?: number) => (
     <TransportProvider transport={transport}>
       <QueryClientProvider client={client}>
-        <Composer runner={runner} locked={locked} send={send} />
+        <Composer runner={runner} locked={locked} limit={limit} send={send} />
       </QueryClientProvider>
     </TransportProvider>
   );
@@ -145,7 +158,7 @@ it("binds keyboard selection separately, replaces only the token and does not se
   });
   await screen.findByRole("option");
   fireEvent.keyDown(input, { key: "Enter" });
-  expect((input as HTMLTextAreaElement).value).toBe("한글\n$add-issue");
+  expect((input as HTMLTextAreaElement).value).toBe("한글\n$add-issue ");
   expect(f.send).not.toHaveBeenCalled();
   fireEvent.click(screen.getByText("Send"));
   expect(f.send.mock.calls[0]![0]).toMatchObject({
@@ -883,7 +896,7 @@ it("retains only displayed missing rows, skips disabled rows, and discards them 
   fireEvent.keyDown(input, { key: "ArrowDown" });
   expect(input.getAttribute("aria-activedescendant")).not.toBe(removed.id);
   fireEvent.keyDown(input, { key: "Tab" });
-  expect(input).toHaveProperty("value", "$add-note");
+  expect(input).toHaveProperty("value", "$add-note ");
   expect(send).not.toHaveBeenCalled();
   fireEvent.change(input, { target: { value: "$add", selectionStart: 4 } });
   await screen.findByRole("option", { name: /add-note/ });
@@ -983,7 +996,7 @@ it("disabled-only retained rows never accept mouse, Enter or Tab; restored entri
   fireEvent.keyDown(input, { key: "Enter" });
   fireEvent.click(screen.getByText("Send"));
   expect(send).toHaveBeenLastCalledWith({
-    value: "$add-issue",
+    value: "$add-issue ",
     skills: [fresh.selection],
   });
 });
@@ -1092,7 +1105,7 @@ it("still accepts the selected enabled row once with plain Tab and ignores modif
   expect(fireEvent.keyDown(input, { key: "Tab", metaKey: true })).toBe(true);
   expect(input).toHaveProperty("value", "$add");
   expect(fireEvent.keyDown(input, { key: "Tab" })).toBe(false);
-  expect(input).toHaveProperty("value", "$add-issue");
+  expect(input).toHaveProperty("value", "$add-issue ");
   expect(screen.queryByRole("listbox")).toBeNull();
   // The panel is dismissed after acceptance, so a second Tab is not intercepted.
   expect(fireEvent.keyDown(input, { key: "Tab" })).toBe(true);
@@ -1107,7 +1120,7 @@ it("keeps intercepting plain Tab for mixed rows and accepts only the enabled one
   await f.refresh([f.state.current[1]!]);
   await screen.findByRole("option", { name: /add-issue.*Unavailable/ });
   expect(fireEvent.keyDown(input, { key: "Tab" })).toBe(false);
-  expect(input).toHaveProperty("value", "$add-note");
+  expect(input).toHaveProperty("value", "$add-note ");
 });
 it("does not leave one unavailable duplicate per refresh of unchanged skills", async () => {
   const f = mutableFixture(generation(entries));
@@ -1129,7 +1142,7 @@ it("does not leave one unavailable duplicate per refresh of unchanged skills", a
   fireEvent.keyDown(input, { key: "Enter" });
   fireEvent.click(screen.getByText("Send"));
   expect(f.state.send).toHaveBeenLastCalledWith({
-    value: "$add-issue",
+    value: "$add-issue ",
     skills: [latest[0]!.selection],
   });
 });
@@ -1154,7 +1167,7 @@ it("keeps a changed-content row unavailable beside its available replacement unt
   fireEvent.click(fresh!);
   fireEvent.click(screen.getByText("Send"));
   expect(f.state.send).toHaveBeenLastCalledWith({
-    value: "$add-issue",
+    value: "$add-issue ",
     skills: [next[0]!.selection],
   });
   // Dismissal discards the old-content row; reopening shows only the live row.
@@ -1326,6 +1339,45 @@ it("leaves unsupported inventory unknown without reads and fences replacement tr
     view.container.querySelector(".skill-token-unavailable")?.textContent,
   ).toBe("$missing");
   expect(status.firstChild).toBe(announcement);
+});
+
+it("does not restore a previous transport's binding as valid through equal-text undo history", async () => {
+  const send = vi.fn(),
+    client = new QueryClient();
+  const makeTransport = () =>
+    createRouterTransport((router) =>
+      router.service(SkillService, {
+        listSkills: async () => ({ skills: entries }),
+      }),
+    );
+  const oldTransport = makeTransport(),
+    freshTransport = makeTransport();
+  const tree = (transport: typeof oldTransport) => (
+    <TransportProvider transport={transport}>
+      <QueryClientProvider client={client}>
+        <Composer send={send} />
+      </QueryClientProvider>
+    </TransportProvider>
+  );
+  const view = render(tree(oldTransport));
+  const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+  fireEvent.change(input, { target: { value: "$add-iss", selectionStart: 8 } });
+  await screen.findByRole("option");
+  fireEvent.keyDown(input, { key: "Tab" });
+  expect(input.value).toBe("$add-issue ");
+  view.rerender(tree(freshTransport));
+  await screen.findByText(
+    "The selected skills need reselection before sending.",
+  );
+  expect((screen.getByText("Send") as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.change(input, {
+    target: { value: "$add-issue x", selectionStart: 12 },
+  });
+  fireEvent.keyDown(input, { key: "z", ctrlKey: true });
+  // Undo restores the text but must never revive the old transport's binding.
+  expect(input.value).toBe("$add-issue ");
+  expect((screen.getByText("Send") as HTMLButtonElement).disabled).toBe(true);
+  expect(send).not.toHaveBeenCalled();
 });
 
 function RecalledSkillComposer() {
@@ -1668,11 +1720,11 @@ it.each(["mouse", "Enter", "Tab"])(
       fireEvent.mouseDown(option);
       fireEvent.click(option);
     } else fireEvent.keyDown(input, { key: method });
-    await waitFor(() => expect(input.selectionStart).toBe(13));
+    await waitFor(() => expect(input.selectionStart).toBe(14));
     const painted = view.container.querySelector(".skill-token-selected")!;
     expect(painted.textContent).toBe("$add-issue");
     expect(painted.getAttribute("data-skill-start")).toBe("3");
-    expect(input.value).toBe("한글\n$add-issue");
+    expect(input.value).toBe("한글\n$add-issue ");
     expect(document.activeElement).toBe(input);
     expect(view.container.querySelectorAll(".skill-text-overlay")).toHaveLength(
       1,
@@ -1683,11 +1735,11 @@ it.each(["mouse", "Enter", "Tab"])(
     expect(f.send).not.toHaveBeenCalled();
     fireEvent.click(screen.getByText("Send"));
     expect(f.send).toHaveBeenLastCalledWith({
-      value: "한글\n$add-issue",
+      value: "한글\n$add-issue ",
       skills: [entries[0]!.selection],
     });
     fireEvent.change(input, {
-      target: { value: "Before 한글\n$add-issue", selectionStart: 20 },
+      target: { value: "Before 한글\n$add-issue ", selectionStart: 21 },
     });
     expect(
       view.container
@@ -1722,7 +1774,7 @@ it("keeps manually typed matching tokens plain and removes selected decoration o
     "The selected skills need reselection before sending.",
   );
   expect(view.container.querySelector(".skill-token-selected")).toBeNull();
-  expect(input).toHaveProperty("value", "$add-issue");
+  expect(input).toHaveProperty("value", "$add-issue ");
 });
 
 it("retains selected decoration through locks and unknown inventory, but confirmed absence wins and IME suppresses it", async () => {
@@ -1748,7 +1800,7 @@ it("retains selected decoration through locks and unknown inventory, but confirm
   fireEvent.change(input, {
     target: { value: "locked replacement", selectionStart: 18 },
   });
-  expect(input).toHaveProperty("value", "$add-issue");
+  expect(input).toHaveProperty("value", "$add-issue ");
   expect(screen.queryByRole("option")).toBeNull();
   view.rerender(f.view());
   await waitFor(() => expect(f.client.isFetching()).toBe(0));
@@ -1787,7 +1839,7 @@ it("retains selected decoration through locks and unknown inventory, but confirm
   await waitFor(() =>
     expect(view.container.querySelector(".skill-text-overlay")).not.toBeNull(),
   );
-  expect(input).toHaveProperty("value", "$add-issue");
+  expect(input).toHaveProperty("value", "$add-issue ");
   expect(f.send).not.toHaveBeenCalled();
 });
 
@@ -1889,7 +1941,7 @@ it.each([
     ).toEqual(["$gone"]);
     await act(async () => {});
     expect(document.activeElement).toBe(input);
-    expect(input.selectionStart).toBe(10);
+    expect(input.selectionStart).toBe(11);
     fireEvent.click(screen.getByText("Send"));
     expect(f.send).toHaveBeenLastCalledWith({
       value: "$add-issue $gone",
@@ -1942,7 +1994,7 @@ it("keeps a bound token confirmed unavailable when its display name changes and 
       view.container.querySelectorAll(".skill-token-unavailable"),
     ).toHaveLength(1),
   );
-  expect(input.value).toBe("$add-issue");
+  expect(input.value).toBe("$add-issue ");
 });
 function BoundDecorationComposer({
   prompt,
@@ -2136,4 +2188,238 @@ it("realigns mirror typography when the composer appearance changes, including n
     delete document.documentElement.dataset.composerSize;
     delete document.documentElement.dataset.theme;
   }
+});
+
+enum AcceptTrigger {
+  Click = "click",
+  Enter = "Enter",
+  Tab = "Tab",
+}
+const triggers = [AcceptTrigger.Click, AcceptTrigger.Enter, AcceptTrigger.Tab];
+function accept(
+  trigger: AcceptTrigger,
+  input: HTMLElement,
+  option: HTMLElement,
+) {
+  if (trigger === AcceptTrigger.Click) fireEvent.click(option);
+  else fireEvent.keyDown(input, { key: trigger });
+}
+// Every row of the accept() contract: the draft before, the caret that opens the
+// completion, then the draft, collapsed caret and binding range after acceptance.
+const acceptRows = [
+  {
+    name: "end of draft",
+    before: "$add-iss",
+    caret: 8,
+    after: "$add-issue ",
+    next: 11,
+    bound: [0, 10],
+  },
+  {
+    name: "Unicode and newline prefix",
+    before: "한글\n$add-iss",
+    caret: 11,
+    after: "한글\n$add-issue ",
+    next: 14,
+    bound: [3, 13],
+  },
+  {
+    name: "single-space suffix",
+    before: "$add-iss tail",
+    caret: 8,
+    after: "$add-issue tail",
+    next: 11,
+    bound: [0, 10],
+  },
+  {
+    name: "two-space suffix",
+    before: "$add-iss  tail",
+    caret: 8,
+    after: "$add-issue  tail",
+    next: 11,
+    bound: [0, 10],
+  },
+  {
+    name: "tab suffix",
+    before: "$add-iss\ttail",
+    caret: 8,
+    after: "$add-issue\ttail",
+    next: 11,
+    bound: [0, 10],
+  },
+  {
+    name: "newline suffix",
+    before: "$add-iss\ntail",
+    caret: 8,
+    after: "$add-issue\ntail",
+    next: 11,
+    bound: [0, 10],
+  },
+  {
+    name: "caret inside a partial token replaces the full token",
+    before: "x $add-zzz tail",
+    caret: 7,
+    after: "x $add-issue tail",
+    next: 13,
+    bound: [2, 12],
+  },
+  {
+    name: "caret inside a token at end of draft",
+    before: "before $add-zzz",
+    caret: 12,
+    after: "before $add-issue ",
+    next: 18,
+    bound: [7, 17],
+  },
+  {
+    name: "token followed by another dollar token",
+    before: "$add-iss$other",
+    caret: 8,
+    after: "$add-issue $other",
+    next: 11,
+    bound: [0, 10],
+  },
+] as const;
+const acceptCases = acceptRows.flatMap((row) =>
+  triggers.map((trigger) => ({ ...row, trigger })),
+);
+it("builds every completion edit as an exact text, caret and binding transaction", () => {
+  for (const row of acceptRows) {
+    const token = skillToken(row.before, row.caret)!;
+    const edit = skillCompletionEdit(row.before, token, "add-issue");
+    expect(edit.next).toBe(row.after);
+    expect(edit.caret).toBe(row.next);
+    expect([token.start, edit.end]).toEqual([...row.bound]);
+    expect(edit.replacement).toBe("$add-issue");
+    expect(edit.next.slice(edit.end)).toBe(row.after.slice(row.bound[1]));
+    // The separator is never inside the binding and the suffix is untouched.
+    expect(edit.next.slice(edit.end)).toBe(
+      skillCompletionSeparator(row.before.slice(token.end)) +
+        row.before.slice(token.end),
+    );
+  }
+  expect(skillCompletionSeparator("")).toBe(" ");
+  for (const suffix of [" x", "  x", "\tx", "\nx", "\r\nx", "　x"])
+    expect(skillCompletionSeparator(suffix)).toBe("");
+  for (const suffix of ["$x", "x"])
+    expect(skillCompletionSeparator(suffix)).toBe(" ");
+});
+it.each(acceptCases)(
+  "accepts $trigger for $name with exact text, caret, focus, dismissal and binding",
+  async ({ before, caret, after, next, bound, trigger }) => {
+    const f = fixture(),
+      view = render(f.view());
+    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    input.focus();
+    fireEvent.change(input, {
+      target: { value: before, selectionStart: caret },
+    });
+    const option = await screen.findByRole("option", { name: /add-issue/ });
+    accept(trigger, input, option);
+    expect(input.value).toBe(after);
+    await waitFor(() => {
+      expect(input.selectionStart).toBe(next);
+      expect(input.selectionEnd).toBe(next);
+    });
+    expect(document.activeElement).toBe(input);
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(f.send).not.toHaveBeenCalled();
+    const span = view.container.querySelector(".skill-token-selected")!;
+    expect(span.textContent).toBe("$add-issue");
+    expect(span.getAttribute("data-skill-start")).toBe(String(bound[0]));
+    expect(input.value.slice(bound[0], bound[1])).toBe("$add-issue");
+    fireEvent.click(screen.getByText("Send"));
+    expect(f.send.mock.calls[0]![0]).toEqual({
+      value: after,
+      skills: [entries[0]!.selection],
+    });
+  },
+);
+it("keeps the binding on the name when text is typed after acceptance", async () => {
+  const f = fixture(),
+    view = render(f.view());
+  const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+  fireEvent.change(input, { target: { value: "$add-iss", selectionStart: 8 } });
+  fireEvent.click(await screen.findByRole("option", { name: /add-issue/ }));
+  await waitFor(() => expect(input.selectionStart).toBe(11));
+  fireEvent.change(input, {
+    target: { value: "$add-issue please", selectionStart: 17 },
+  });
+  const span = view.container.querySelector(".skill-token-selected")!;
+  expect(span.textContent).toBe("$add-issue");
+  expect(span.getAttribute("data-skill-start")).toBe("0");
+  fireEvent.click(screen.getByText("Send"));
+  expect(f.send.mock.calls[0]![0]).toEqual({
+    value: "$add-issue please",
+    skills: [entries[0]!.selection],
+  });
+});
+it("shifts a second selected token by the inserted separator and keeps its identity", async () => {
+  const f = fixture(),
+    view = render(f.view());
+  const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+  fireEvent.change(input, { target: { value: "$add-no", selectionStart: 7 } });
+  fireEvent.click(await screen.findByRole("option", { name: /add-note/ }));
+  await waitFor(() => expect(input.value).toBe("$add-note "));
+  fireEvent.change(input, {
+    target: { value: "! $add-iss $add-note ", selectionStart: 10 },
+  });
+  fireEvent.click(await screen.findByRole("option", { name: /add-issue/ }));
+  expect(input.value).toBe("! $add-issue $add-note ");
+  const spans = [...view.container.querySelectorAll(".skill-token-selected")];
+  expect(spans.map((span) => span.textContent)).toEqual([
+    "$add-issue",
+    "$add-note",
+  ]);
+  expect(spans.map((span) => span.getAttribute("data-skill-start"))).toEqual([
+    "2",
+    "13",
+  ]);
+  fireEvent.click(screen.getByText("Send"));
+  const sent = f.send.mock.calls[0]![0].skills;
+  expect(sent).toHaveLength(2);
+  expect(sent).toEqual(
+    expect.arrayContaining([entries[0]!.selection, entries[1]!.selection]),
+  );
+});
+it.each(triggers)(
+  "refuses %s acceptance atomically when the draft limit rejects the separator",
+  async (trigger) => {
+    // "$add-iss" is 8 bytes and "$add-issue" is 10, so only the separator
+    // pushes the completed draft over a 10 byte limit.
+    const f = fixture(),
+      view = render(f.view(machine, false, 10));
+    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    input.focus();
+    fireEvent.change(input, {
+      target: { value: "$add-iss", selectionStart: 8 },
+    });
+    const option = await screen.findByRole("option", { name: /add-issue/ });
+    input.setSelectionRange(3, 5);
+    accept(trigger, input, option);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(input.value).toBe("$add-iss");
+    expect([input.selectionStart, input.selectionEnd]).toEqual([3, 5]);
+    expect(document.activeElement).toBe(input);
+    expect(view.container.querySelector(".skill-token-selected")).toBeNull();
+    expect(screen.queryByRole("listbox")).not.toBeNull();
+    fireEvent.click(screen.getByText("Send"));
+    expect(f.send.mock.calls[0]![0]).toEqual({ value: "$add-iss", skills: [] });
+  },
+);
+it("does not complete during composition and completes once composition ends", async () => {
+  const f = fixture();
+  render(f.view());
+  const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+  fireEvent.change(input, { target: { value: "$add-iss", selectionStart: 8 } });
+  const option = await screen.findByRole("option", { name: /add-issue/ });
+  fireEvent.compositionStart(input);
+  fireEvent.click(option);
+  fireEvent.keyDown(input, { key: "Tab" });
+  expect(input.value).toBe("$add-iss");
+  fireEvent.compositionEnd(input);
+  fireEvent.keyDown(input, { key: "Tab" });
+  expect(input.value).toBe("$add-issue ");
 });

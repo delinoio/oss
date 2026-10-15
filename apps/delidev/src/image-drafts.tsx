@@ -521,7 +521,7 @@ export function useImageRoute(
     openCodeSystemSupported && openCodeMachineSupported;
   const agentDocument = document(agentRow);
   const harnessSupported = originalHarness
-    ? originalHarness === ImageHarness.Codex ||
+    ? (originalHarness === ImageHarness.Codex && originalImageDeclared) ||
       (originalHarness === ImageHarness.Claude &&
         originalImageDeclared &&
         claudePairSupported) ||
@@ -532,7 +532,8 @@ export function useImageRoute(
       agentRow.kind === EntityKind.AGENT &&
       agentRow.revision > 0n &&
       supportsResourceSchema(agentRow) &&
-      (text(agentDocument.harness) === ImageHarness.Codex ||
+      ((text(agentDocument.harness) === ImageHarness.Codex &&
+        agentDeclaresImageInput(agentDocument)) ||
         (text(agentDocument.harness) === ImageHarness.Claude &&
           agentDeclaresImageInput(agentDocument) &&
           claudePairSupported) ||
