@@ -103,7 +103,7 @@ try {
     await input.press("Enter");
     const selected = root.locator(".skill-token-selected");
     await selected.waitFor();
-    assert.equal(await input.inputValue(), "한글\n$add-issue");
+    assert.equal(await input.inputValue(), "한글\n$add-issue ");
     assert.equal(await selected.getAttribute("data-skill-start"), "3");
     assert.equal(await root.locator(".skill-text-overlay").count(), 1);
     assert.equal(await root.locator(".skill-token-unavailable").count(), 0);
@@ -689,10 +689,10 @@ try {
           );
           await open("$a");
           await input.press("Enter");
-          assert.equal(await input.inputValue(), "$add-issue");
+          assert.equal(await input.inputValue(), "$add-issue ");
           await open("$a");
           await root.locator(".skill-completion").getByRole("option").click();
-          assert.equal(await input.inputValue(), "$add-issue");
+          assert.equal(await input.inputValue(), "$add-issue ");
           assert(
             await input.evaluate((node) => node === document.activeElement),
           );
@@ -776,7 +776,7 @@ try {
               .evaluate((node) => node.scrollWidth <= node.clientWidth + 1),
           );
           await input.press("Enter");
-          assert.equal(await input.inputValue(), "$add-issue");
+          assert.equal(await input.inputValue(), "$add-issue ");
           assert(
             await input.evaluate((node) => node === document.activeElement),
           );
