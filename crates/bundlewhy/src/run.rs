@@ -425,6 +425,13 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
         });
     };
     let is_cancelled = || cancel.is_cancelled();
+    let failed_engine = || {
+        failed_run_engine_identity(
+            selection.bundler,
+            detected_engine.as_ref(),
+            options.allow_unsupported_engine,
+        )
+    };
 
     let (mut result_bundle, mut error) = match result {
         // Detectors are verified for client builds only; reject other builds
@@ -435,8 +442,7 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
             &started_at,
             &log,
             options.exclude_sources,
-            detected_engine.as_ref(),
-            options.allow_unsupported_engine,
+            failed_engine(),
             BwError::new(
                 ErrorCode::UnsupportedBuild,
                 "The selected configuration is a library, SSR or Node-target build",
@@ -524,8 +530,7 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
             &started_at,
             &log,
             options.exclude_sources,
-            detected_engine.as_ref(),
-            options.allow_unsupported_engine,
+            failed_engine(),
             error,
         ),
     };
@@ -543,8 +548,7 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
             &started_at,
             &log,
             options.exclude_sources,
-            detected_engine.as_ref(),
-            options.allow_unsupported_engine,
+            failed_engine(),
             adapter::cancelled_error(),
         );
     }
@@ -706,8 +710,7 @@ fn incomplete_bundle(
     started_at: &str,
     log: &RunLog,
     exclude_sources: bool,
-    detected_engine: Option<&DetectedEngine>,
-    allow_unsupported_engine: bool,
+    engine: crate::model::EngineIdentity,
     error: BwError,
 ) -> (ResultBundle, Option<BwError>) {
     let status = if error.code == ErrorCode::RunCancelled {
@@ -733,11 +736,7 @@ fn incomplete_bundle(
         tool_version: env!("CARGO_PKG_VERSION").to_owned(),
         ..Analysis::default()
     };
-    analysis.engine = Some(failed_run_engine_identity(
-        selection.bundler,
-        detected_engine,
-        allow_unsupported_engine,
-    ));
+    analysis.engine = Some(engine);
     analysis.coverage = crate::model::OptimizationCategory::ALL
         .into_iter()
         .map(|category| crate::model::CategoryCoverage {
@@ -1361,8 +1360,7 @@ mod tests {
             "2026-01-01T00:00:00Z",
             &log,
             false,
-            engine,
-            allow_unsupported_engine,
+            failed_run_engine_identity(bundler, engine, allow_unsupported_engine),
             error,
         )
     }
