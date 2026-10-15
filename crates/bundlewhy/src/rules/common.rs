@@ -139,28 +139,10 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
     let mut templates: Vec<usize> = Vec::new();
     let mut previous_significant: Option<u8> = None;
     let mut index = 0usize;
-    let regex_allowed = |previous: Option<u8>, start: usize| -> bool {
-        match previous {
-            None => true,
-            Some(byte) if b"(,=:[!&|?{};+-*%<>~^".contains(&byte) => true,
-            Some(byte) if byte.is_ascii_alphabetic() => {
-                let head = &code[..start];
-                let trimmed = head.trim_end();
-                [
-                    "return", "typeof", "case", "do", "else", "in", "of", "void", "yield",
-                    "delete", "throw", "new",
-                ]
-                .iter()
-                .any(|keyword| {
-                    trimmed.ends_with(keyword)
-                        && !trimmed[..trimmed.len() - keyword.len()].ends_with(|character: char| {
-                            character.is_alphanumeric() || character == '_' || character == '$'
-                        })
-                })
-            }
-            _ => false,
-        }
-    };
+    // Whether the previous token was the `}` that closed a statement block.
+    let mut after_block = false;
+    // Open `{` blocks; each entry says whether the block is a statement block.
+    let mut blocks: Vec<bool> = Vec::new();
     // Scans a quoted string or template text starting after the opener.
     let scan_until = |mut position: usize, terminator: u8, template: bool| -> (usize, bool) {
         while position < bytes.len() {
@@ -190,6 +172,7 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
                 ranges.push((index, end));
                 index = end;
                 previous_significant = Some(b'"');
+                after_block = false;
             }
             b'`' => {
                 let (end, opened) = scan_until(index + 1, b'`', true);
@@ -199,6 +182,7 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
                 }
                 index = end;
                 previous_significant = Some(b'"');
+                after_block = false;
             }
             b'}' if templates.last() == Some(&0) => {
                 templates.pop();
@@ -209,6 +193,7 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
                 }
                 index = end;
                 previous_significant = Some(b'"');
+                after_block = false;
             }
             b'/' if bytes.get(index + 1) == Some(&b'/') => {
                 let end = code[index..]
@@ -224,7 +209,7 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
                 ranges.push((index, end));
                 index = end;
             }
-            b'/' if regex_allowed(previous_significant, index) => {
+            b'/' if regex_allowed(bytes, index, previous_significant, after_block, &ranges) => {
                 let mut position = index + 1;
                 let mut in_class = false;
                 let mut closed = false;
@@ -254,6 +239,7 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
                 ranges.push((index, end));
                 index = end;
                 previous_significant = Some(b'"');
+                after_block = false;
             }
             _ => {
                 if let Some(depth) = templates.last_mut() {
@@ -269,12 +255,44 @@ fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
                     index += character.len_utf8();
                     continue;
                 }
+                after_block = false;
+                match byte {
+                    b'{' => blocks.push(opens_statement_block(bytes, index, &ranges)),
+                    b'}' => after_block = blocks.pop().unwrap_or(false),
+                    _ => {}
+                }
                 previous_significant = Some(byte);
                 index += 1;
             }
         }
     }
     ranges
+}
+
+/// Whether a `/` after the previous token starts a regular expression literal.
+/// `previous` is the last significant byte; a word is checked as a token, so
+/// trivia between the keyword and the slash never matters. A `}` that closed a
+/// statement block ends a statement, so a slash after it starts a new one.
+fn regex_allowed(
+    bytes: &[u8],
+    start: usize,
+    previous: Option<u8>,
+    after_block: bool,
+    ranges: &[(usize, usize)],
+) -> bool {
+    match previous {
+        None => true,
+        Some(b'}') => after_block,
+        Some(byte) if b"(,=:[!&|?{};+-*%<>~^".contains(&byte) => true,
+        Some(byte) if byte.is_ascii_alphabetic() => previous_token_end(bytes, start, ranges)
+            .is_some_and(|end| {
+                matches!(
+                    token_ending_at(bytes, end, ranges),
+                    TokenBefore::Keyword(word) if REGEX_KEYWORDS.contains(&word)
+                )
+            }),
+        _ => false,
+    }
 }
 
 fn in_ranges(ranges: &[(usize, usize)], offset: usize) -> bool {
@@ -465,10 +483,30 @@ fn is_property_name(bytes: &[u8], start: usize, ignored: &[(usize, usize)]) -> b
     })
 }
 
-/// Keywords that need an operand after them, so a line terminator behind
-/// them cannot end the statement. `return`, `throw`, `break`, `continue` and
-/// `yield` are restricted productions and are deliberately absent.
-const OPERAND_KEYWORDS: [&str; 8] = [
+/// Keywords after which a `/` starts a regular expression literal.
+const REGEX_KEYWORDS: &[&str] = &[
+    "return",
+    "typeof",
+    "case",
+    "do",
+    "else",
+    "in",
+    "of",
+    "void",
+    "yield",
+    "delete",
+    "throw",
+    "new",
+    "instanceof",
+    "await",
+];
+
+/// Keywords whose grammar cannot finish at a line break: they need an operand
+/// (`typeof`, `in`, `case`), a body (`function`, `class`, `else`, `try`) or a
+/// parenthesized head (`if`, `for`, `while`). `return`, `throw`, `break`,
+/// `continue` and `yield` are restricted productions and are deliberately
+/// absent.
+const OPERAND_KEYWORDS: &[&str] = &[
     "typeof",
     "void",
     "delete",
@@ -477,27 +515,126 @@ const OPERAND_KEYWORDS: [&str; 8] = [
     "instanceof",
     "await",
     "case",
+    "function",
+    "class",
+    "extends",
+    "if",
+    "else",
+    "while",
+    "for",
+    "switch",
+    "with",
+    "catch",
+    "do",
+    "try",
+    "finally",
+    "var",
+    "const",
 ];
 
-/// True when the word that ends at `end` is an operand-requiring keyword in
-/// keyword position. The same word after a member-access `.` (whitespace and
-/// comments allowed) is an ordinary property name.
-fn operand_keyword_before(bytes: &[u8], end: usize, ignored: &[(usize, usize)]) -> bool {
-    let word = word_before(bytes, end);
-    OPERAND_KEYWORDS.contains(&word) && !is_property_name(bytes, end - word.len(), ignored)
+/// The token that ends at a given position, as seen by every lookup of the
+/// env-condition scan. Keeping the classification in one place means that
+/// regular expression detection, automatic semicolon insertion and scope
+/// detection agree on keywords, property names, private names and numbers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TokenBefore<'a> {
+    /// A word from [`REGEX_KEYWORDS`] or [`OPERAND_KEYWORDS`] in keyword
+    /// position.
+    Keyword(&'a str),
+    /// Any other identifier, a property name after `.` or `?.`, or a private
+    /// name such as `#typeof`.
+    Name,
+    /// A numeric literal, including one with a trailing decimal point (`1.`).
+    Number,
+    /// A string, template text, or regular expression literal.
+    Literal,
+    /// Template text that ends by opening a `${` substitution.
+    SubstitutionOpen,
+    /// A punctuator ending in this byte.
+    Punct(u8),
+}
+
+/// Classifies the token whose last byte is right before `end`. `end` must come
+/// from [`previous_token_end`], so no trivia sits at the end of the token.
+fn token_ending_at<'a>(bytes: &'a [u8], end: usize, ignored: &[(usize, usize)]) -> TokenBefore<'a> {
+    let last = bytes[end - 1];
+    if in_ranges(ignored, end - 1) {
+        return if ends_template_substitution(bytes, end - 1, ignored) {
+            TokenBefore::SubstitutionOpen
+        } else {
+            TokenBefore::Literal
+        };
+    }
+    if is_identifier_byte(last) {
+        let word = word_before(bytes, end);
+        let start = end - word.len();
+        return if word.is_empty() {
+            TokenBefore::Name
+        } else if start > 0 && bytes[start - 1] == b'#' && !in_ranges(ignored, start - 1) {
+            // A private name is never a keyword.
+            TokenBefore::Name
+        } else if word.as_bytes()[0].is_ascii_digit() {
+            TokenBefore::Number
+        } else if is_property_name(bytes, start, ignored) {
+            TokenBefore::Name
+        } else if REGEX_KEYWORDS.contains(&word) || OPERAND_KEYWORDS.contains(&word) {
+            TokenBefore::Keyword(word)
+        } else {
+            TokenBefore::Name
+        };
+    }
+    if last == b'.' && dot_is_decimal_point(bytes, end - 1) {
+        return TokenBefore::Number;
+    }
+    TokenBefore::Punct(last)
+}
+
+/// True when the `.` at `dot` is the decimal point of a numeric literal such
+/// as `1.`: the token before it is made of decimal digits only. A `.` after a
+/// name, a fraction (`1.5.`), an exponent, a prefix (`0x1.`) or a bigint
+/// suffix is member access.
+fn dot_is_decimal_point(bytes: &[u8], dot: usize) -> bool {
+    let mut start = dot;
+    while let Some(character) =
+        char_before(bytes, start).filter(|c| is_identifier_char(*c) || *c == '.')
+    {
+        start -= character.len_utf8();
+    }
+    let run = &bytes[start..dot];
+    run.first().is_some_and(u8::is_ascii_digit)
+        && run
+            .iter()
+            .all(|byte| byte.is_ascii_digit() || *byte == b'_')
 }
 
 /// True when the token that ends at `end` can end an operand (identifier,
 /// literal, closing bracket), so that a following `++` or `--` is postfix.
 fn token_ends_operand(bytes: &[u8], end: usize, ignored: &[(usize, usize)]) -> bool {
-    let last = bytes[end - 1];
-    if in_ranges(ignored, end - 1) {
-        return !ends_template_substitution(bytes, end - 1, ignored);
+    match token_ending_at(bytes, end, ignored) {
+        TokenBefore::Literal | TokenBefore::Name | TokenBefore::Number => true,
+        TokenBefore::Keyword(word) => !OPERAND_KEYWORDS.contains(&word),
+        TokenBefore::SubstitutionOpen => false,
+        TokenBefore::Punct(byte) => matches!(byte, b')' | b']' | b'}'),
     }
-    if is_identifier_byte(last) {
-        return !operand_keyword_before(bytes, end, ignored);
+}
+
+/// True when the `{` at `index` opens a block (statement block, function body
+/// or class body) rather than an object literal. A closing `}` of a block ends
+/// a statement, so the next token starts a new one whatever it is.
+///
+/// This is a lexical guess from the previous token. A function or class
+/// expression body (`x = function () {}`) is treated as a block as well.
+fn opens_statement_block(bytes: &[u8], index: usize, ignored: &[(usize, usize)]) -> bool {
+    let Some(end) = previous_token_end(bytes, index, ignored) else {
+        return true;
+    };
+    match token_ending_at(bytes, end, ignored) {
+        TokenBefore::Punct(b';' | b'{' | b'}' | b')') | TokenBefore::Name => true,
+        TokenBefore::Keyword(word) => {
+            matches!(word, "else" | "do" | "try" | "finally" | "catch" | "class")
+        }
+        _ => false,
     }
-    matches!(last, b')' | b']' | b'}')
 }
 
 /// True when the ignored range that holds `index` is template text that ends
@@ -516,12 +653,11 @@ fn expression_is_unfinished(bytes: &[u8], end: usize, ignored: &[(usize, usize)]
     let Some(token_end) = previous_token_end(bytes, end, ignored) else {
         return false;
     };
-    let last = bytes[token_end - 1];
-    if in_ranges(ignored, token_end - 1) {
-        return ends_template_substitution(bytes, token_end - 1, ignored);
-    }
-    match last {
-        sign @ (b'+' | b'-') => {
+    match token_ending_at(bytes, token_end, ignored) {
+        TokenBefore::SubstitutionOpen => true,
+        TokenBefore::Literal | TokenBefore::Name | TokenBefore::Number => false,
+        TokenBefore::Keyword(word) => OPERAND_KEYWORDS.contains(&word),
+        TokenBefore::Punct(sign @ (b'+' | b'-')) => {
             // Tokens are matched greedily, so a run of an odd length ends in
             // a single binary or unary sign.
             let mut run_start = token_end - 1;
@@ -539,23 +675,39 @@ fn expression_is_unfinished(bytes: &[u8], end: usize, ignored: &[(usize, usize)]
             !previous_token_end(bytes, run_start, ignored)
                 .is_some_and(|before| token_ends_operand(bytes, before, ignored))
         }
-        b'!' | b'%' | b'&' | b'(' | b'*' | b',' | b'.' | b'/' | b':' | b'<' | b'=' | b'>'
-        | b'?' | b'[' | b'^' | b'|' | b'~' => true,
-        byte if is_identifier_byte(byte) => operand_keyword_before(bytes, token_end, ignored),
-        _ => false,
+        TokenBefore::Punct(
+            b'!' | b'%' | b'&' | b'(' | b'*' | b',' | b'.' | b'/' | b':' | b'<' | b'=' | b'>'
+            | b'?' | b'[' | b'^' | b'|' | b'~',
+        ) => true,
+        TokenBefore::Punct(_) => false,
     }
 }
 
 /// Decides whether a line break ends the current statement. `start` is the
 /// first byte of the line break: a line terminator, or a block comment that
 /// contains one.
-fn asi_terminates(bytes: &[u8], start: usize, ignored: &[(usize, usize)]) -> bool {
+///
+/// `block_close` is the position of the most recent `}` that closed a
+/// statement block. A line break right after it always ends the statement,
+/// because a block statement needs no semicolon and the next token, even a
+/// `/`, `(`, `[` or template, starts a new statement.
+fn asi_terminates(
+    bytes: &[u8],
+    start: usize,
+    ignored: &[(usize, usize)],
+    block_close: Option<usize>,
+) -> bool {
     let trivia = skip_trivia(bytes, start, ignored);
     let Some(token) = trivia.next else {
         return true;
     };
     if !trivia.crossed_terminator {
         return false;
+    }
+    if let Some(close) = block_close
+        && previous_token_end(bytes, start, ignored) == Some(close + 1)
+    {
+        return true;
     }
     // No semicolon is inserted while the previous line leaves an expression
     // unfinished, whatever starts the next line.
@@ -587,7 +739,13 @@ struct AsiMemo {
 impl AsiMemo {
     /// Same as [`asi_terminates`] for the line break at `start`. Line breaks
     /// must be queried in increasing order.
-    fn terminates(&mut self, bytes: &[u8], start: usize, ignored: &[(usize, usize)]) -> bool {
+    fn terminates(
+        &mut self,
+        bytes: &[u8],
+        start: usize,
+        ignored: &[(usize, usize)],
+        block_close: Option<usize>,
+    ) -> bool {
         if let Some((run_end, decision)) = self.run
             && start < run_end
         {
@@ -596,7 +754,7 @@ impl AsiMemo {
         let run_end = skip_trivia(bytes, start, ignored)
             .next
             .unwrap_or(bytes.len());
-        let decision = asi_terminates(bytes, start, ignored);
+        let decision = asi_terminates(bytes, start, ignored, block_close);
         self.run = Some((run_end, decision));
         decision
     }
@@ -662,6 +820,9 @@ struct ScanScope {
     pending_reads: Vec<usize>,
     conditional_pending: Vec<usize>,
     arrow_expression: bool,
+    /// A `{` block (statement block, function body or class body): its
+    /// closing `}` ends a statement, so its reads never reach the parent.
+    statement_block: bool,
 }
 
 /// Marks the unguarded reads that are still pending in `scope` as blocked: a
@@ -697,12 +858,14 @@ fn env_guards(
         pending_reads: Vec::new(),
         conditional_pending: Vec::new(),
         arrow_expression: false,
+        statement_block: false,
     }];
     let mut current_scope = 0;
     let mut next_start = 0;
     let mut next_end = 0;
     let mut ignored_index = 0;
     let mut asi = AsiMemo::default();
+    let mut block_close: Option<usize> = None;
 
     for index in 0..bytes.len() {
         while next_start < reads.len() && reads[next_start].0 == index {
@@ -725,7 +888,7 @@ fn env_guards(
             let (start, end) = ignored[ignored_index];
             if index == start
                 && comment_has_line_terminator(bytes, start, end)
-                && asi.terminates(bytes, start, ignored)
+                && asi.terminates(bytes, start, ignored, block_close)
             {
                 block_pending_reads(&mut scopes[current_scope], &guards, &mut blocked);
             }
@@ -748,14 +911,16 @@ fn env_guards(
             current_scope = parent;
         }
 
-        if line_terminator_at(bytes, index).is_some() && asi.terminates(bytes, index, ignored) {
+        if line_terminator_at(bytes, index).is_some()
+            && asi.terminates(bytes, index, ignored, block_close)
+        {
             block_pending_reads(&mut scopes[current_scope], &guards, &mut blocked);
         }
 
         match bytes[index] {
             b'(' | b'[' | b'{' => {
                 let context = scope_context(
-                    code,
+                    bytes,
                     index,
                     bytes[index],
                     scopes[current_scope].context,
@@ -768,8 +933,15 @@ fn env_guards(
                     pending_reads: Vec::new(),
                     conditional_pending: Vec::new(),
                     arrow_expression: false,
+                    statement_block: bytes[index] == b'{'
+                        && opens_statement_block(bytes, index, ignored),
                 });
                 current_scope = scopes.len() - 1;
+            }
+            b'}' if current_scope != 0 && scopes[current_scope].statement_block => {
+                block_pending_reads(&mut scopes[current_scope], &guards, &mut blocked);
+                block_close = Some(index);
+                current_scope = scopes[current_scope].parent;
             }
             b')' | b']' | b'}' if current_scope != 0 => {
                 let parent = scopes[current_scope].parent;
@@ -856,6 +1028,7 @@ fn env_guards(
                         pending_reads: Vec::new(),
                         conditional_pending: Vec::new(),
                         arrow_expression: true,
+                        statement_block: false,
                     });
                     current_scope = scopes.len() - 1;
                 }
@@ -934,83 +1107,45 @@ fn env_guards(
         .collect()
 }
 
-fn scope_prefix<'a>(code: &'a str, index: usize, ignored: &[(usize, usize)]) -> &'a str {
-    let mut end = code[..index].trim_end().len();
-    loop {
-        let Some(comment_index) = ignored
-            .partition_point(|(_, stop)| *stop <= end)
-            .checked_sub(1)
-        else {
-            return &code[..end];
-        };
-        let (start, stop) = ignored[comment_index];
-        if stop != end || !code[start..stop].starts_with("/*") {
-            return &code[..end];
-        }
-        end = code[..start].trim_end().len();
-    }
-}
-
 fn scope_context(
-    code: &str,
+    bytes: &[u8],
     index: usize,
     opener: u8,
     parent: ScopeContext,
     ignored: &[(usize, usize)],
 ) -> ScopeContext {
-    let prefix = scope_prefix(code, index, ignored);
+    let before =
+        previous_token_end(bytes, index, ignored).map(|end| token_ending_at(bytes, end, ignored));
     if opener == b'[' {
         // A bracket after an expression is a computed member access and keeps
         // the surrounding condition. A bracket after an operator starts an
         // array literal, whose contents do not form a guard by themselves.
-        if prefix.as_bytes().last().is_some_and(|byte| {
-            byte.is_ascii_alphanumeric()
-                || matches!(
-                    *byte,
-                    b'_' | b'$' | b']' | b')' | b'}' | b'\'' | b'"' | b'`' | b'.'
-                )
-        }) {
-            return parent;
-        }
-        return ScopeContext::Invalid;
+        return match before {
+            Some(
+                TokenBefore::Name
+                | TokenBefore::Number
+                | TokenBefore::Keyword(_)
+                | TokenBefore::Literal
+                | TokenBefore::Punct(b']' | b')' | b'}' | b'.'),
+            ) => parent,
+            _ => ScopeContext::Invalid,
+        };
     }
     if opener != b'(' {
         return ScopeContext::Invalid;
     }
-    if prefix.ends_with("for")
-        && prefix
-            .as_bytes()
-            .get(..prefix.len() - "for".len())
-            .and_then(|prefix| prefix.last())
-            .is_none_or(|byte| {
-                !byte.is_ascii_alphanumeric() && *byte != b'_' && *byte != b'$' && *byte != b'.'
-            })
-    {
-        return ScopeContext::For(ForClause::Initializer);
-    }
-    for (keyword, guard) in [
-        ("if", EnvGuard::If),
-        ("while", EnvGuard::While),
-        ("switch", EnvGuard::Switch),
-    ] {
-        if prefix.ends_with(keyword)
-            && prefix
-                .as_bytes()
-                .get(..prefix.len() - keyword.len())
-                .and_then(|prefix| prefix.last())
-                .is_none_or(|byte| {
-                    !byte.is_ascii_alphanumeric() && *byte != b'_' && *byte != b'$' && *byte != b'.'
-                })
-        {
-            return ScopeContext::Guard(guard);
-        }
-    }
-    if prefix.as_bytes().last().is_some_and(|byte| {
-        byte.is_ascii_alphanumeric() || matches!(*byte, b'_' | b'$' | b']' | b')' | b'.')
-    }) {
-        ScopeContext::Invalid
-    } else {
-        parent
+    match before {
+        Some(TokenBefore::Keyword("for")) => ScopeContext::For(ForClause::Initializer),
+        Some(TokenBefore::Keyword("if")) => ScopeContext::Guard(EnvGuard::If),
+        Some(TokenBefore::Keyword("while")) => ScopeContext::Guard(EnvGuard::While),
+        Some(TokenBefore::Keyword("switch")) => ScopeContext::Guard(EnvGuard::Switch),
+        Some(
+            TokenBefore::Name
+            | TokenBefore::Number
+            | TokenBefore::Keyword(_)
+            | TokenBefore::Punct(b']' | b')' | b'.'),
+        ) => ScopeContext::Invalid,
+        _ => parent,
     }
 }
 
@@ -2798,6 +2933,294 @@ y=/process.env.F/.test(z),process.env.G"#;
         }
     }
 
+    /// Every separator the lookups must treat as trivia between two tokens.
+    fn all_separators() -> Vec<String> {
+        JS_WHITESPACE
+            .into_iter()
+            .chain(JS_WHITESPACE_TAIL)
+            .map(String::from)
+            .chain(LINE_TERMINATORS.map(String::from))
+            .chain(["/* c */", "/*\n*/", "// c\n", " /* c */ \u{feff}"].map(String::from))
+            .collect()
+    }
+
+    #[test]
+    fn token_before_classifies_every_lookup_through_one_helper() {
+        fn classify(code: &str) -> Option<TokenBefore<'_>> {
+            let ignored = non_code_ranges(code);
+            let end = previous_token_end(code.as_bytes(), code.len(), &ignored)?;
+            Some(token_ending_at(code.as_bytes(), end, &ignored))
+        }
+        for (code, expected) in [
+            ("a = typeof", TokenBefore::Keyword("typeof")),
+            ("a = x /* c */ in", TokenBefore::Keyword("in")),
+            ("a = obj.typeof", TokenBefore::Name),
+            ("a = obj?./* c */typeof", TokenBefore::Name),
+            ("a = obj.#typeof", TokenBefore::Name),
+            ("class A { #function }", TokenBefore::Punct(b'}')),
+            ("a = #in", TokenBefore::Name),
+            ("a = value", TokenBefore::Name),
+            ("a = 7", TokenBefore::Number),
+            ("a = 0x1f", TokenBefore::Number),
+            ("a = 1.", TokenBefore::Number),
+            ("a = 1_0.", TokenBefore::Number),
+            ("a = 1.5.", TokenBefore::Punct(b'.')),
+            ("a = 1e5.", TokenBefore::Punct(b'.')),
+            ("a = 0x1.", TokenBefore::Punct(b'.')),
+            ("a = 1n.", TokenBefore::Punct(b'.')),
+            ("a = 1..", TokenBefore::Punct(b'.')),
+            ("a = a1.", TokenBefore::Punct(b'.')),
+            ("a = $1.", TokenBefore::Punct(b'.')),
+            ("a = f().", TokenBefore::Punct(b'.')),
+            ("a = 'text'", TokenBefore::Literal),
+            ("a = /re/", TokenBefore::Literal),
+            ("a = `t${", TokenBefore::SubstitutionOpen),
+            ("a = b +", TokenBefore::Punct(b'+')),
+        ] {
+            assert_eq!(classify(code), Some(expected), "{code:?}");
+        }
+        assert_eq!(classify("  /* c */ // d"), None);
+    }
+
+    #[test]
+    fn regex_literals_follow_keywords_across_all_trivia() {
+        let read = |code: &str| in_ranges(&non_code_ranges(code), code.find("process").unwrap());
+        for keyword in REGEX_KEYWORDS {
+            for separator in all_separators() {
+                // A keyword in keyword position starts a regular expression
+                // whatever sits between it and the slash.
+                let code = format!("{keyword}{separator}/process.env.FLAG/.test(y)");
+                assert!(read(&code), "{code:?}");
+                // A property named like a keyword is an operand, so the slash
+                // divides.
+                for dot in [".", "?."] {
+                    let code = format!("obj{dot}{keyword}{separator}/process.env.FLAG/2");
+                    assert!(!read(&code), "{code:?}");
+                }
+            }
+            // A longer identifier is not the keyword.
+            for prefix in ["x", "$", "_", "\u{e9}"] {
+                let code = format!("{prefix}{keyword} /process.env.FLAG/2");
+                assert!(!read(&code), "{code:?}");
+            }
+        }
+        // The bug case: a regular expression after `return` and a BOM.
+        let code = "function f(){return\u{feff}/process.env.FLAG/.test(x)&&run()}";
+        assert!(read(code));
+    }
+
+    #[test]
+    fn private_names_are_never_keywords() {
+        for keyword in OPERAND_KEYWORDS {
+            for access in [".#", "?.#", " . #", ".\n#", "./* c */#"] {
+                // The completed member access ends the expression, so the next
+                // line starts a new statement.
+                let code = format!("process.env.FLAG + obj{access}{keyword}\nsuffix&&run()");
+                assert_eq!(flag_guard(&code), None, "{code:?}");
+                let code = format!("process.env.FLAG + obj{access}{keyword} ++\n++suffix&&run()");
+                assert_eq!(flag_guard(&code), None, "{code:?}");
+            }
+            // The same word in keyword position still continues.
+            let code = format!("process.env.FLAG + {keyword}\nsuffix&&run()");
+            assert_eq!(flag_guard(&code), AND_GUARD, "{code:?}");
+        }
+        // A private name that is not a keyword behaves the same.
+        assert_eq!(
+            flag_guard("process.env.FLAG + obj.#count\nsuffix&&run()"),
+            None
+        );
+    }
+
+    #[test]
+    fn statement_blocks_end_the_statement_at_their_closing_brace() {
+        let followers = [
+            "/abc/.test(x)&&run()",
+            "(a)&&run()",
+            "[a]&&run()",
+            "`t`&&run()",
+            "+a&&run()",
+            "-a&&run()",
+            "++a&&run()",
+            "*a&&run()",
+            "in a&&run()",
+            "&&run()",
+        ];
+        for head in [
+            "if(x){",
+            "while(x){",
+            "for(;;){",
+            "function f(){",
+            "class A{m(){",
+            "if(x){}else{",
+            "try{",
+            "{",
+        ] {
+            let tail = "}".repeat(head.matches('{').count());
+            for boundary in BOUNDARIES {
+                for follower in followers {
+                    let code = format!("{head}process.env.FLAG\n{tail}{boundary}{follower}");
+                    assert_eq!(flag_guard(&code), None, "{code:?}");
+                    let code = format!("{head}process.env.FLAG{tail}{boundary}{follower}");
+                    assert_eq!(flag_guard(&code), None, "{code:?}");
+                }
+            }
+            // On one line the pending read is already drained at the brace.
+            let code = format!("{head}process.env.FLAG{tail} (a)&&run()");
+            assert_eq!(flag_guard(&code), None, "{code:?}");
+        }
+        // An object literal is an operand: the expression continues past its
+        // closing brace on the next line.
+        for (code, expected) in [
+            ("process.env.FLAG + {a:1}\n(x)&&run()", AND_GUARD),
+            ("process.env.FLAG + {a:1}\n/abc/.test(x)&&run()", AND_GUARD),
+            ("process.env.FLAG + [{a:1}]\n(x)&&run()", AND_GUARD),
+            ("process.env.FLAG + f({a:1})\n(x)&&run()", AND_GUARD),
+            ("process.env.FLAG + x => {}\n(x)&&run()", AND_GUARD),
+        ] {
+            assert_eq!(flag_guard(code), expected, "{code:?}");
+        }
+        // A slash after a statement block starts a regular expression, after an
+        // object literal it divides.
+        let read = |code: &str| in_ranges(&non_code_ranges(code), code.find("process").unwrap());
+        assert!(read("if(x){}\n/process.env.FLAG/.test(y)"));
+        assert!(read("function f(){}\n/process.env.FLAG/.test(y)"));
+        assert!(read("{}\n/process.env.FLAG/.test(y)"));
+        assert!(read("if(a){if(b){}}/process.env.FLAG/.test(y)"));
+        assert!(!read("x={}\n/process.env.FLAG/2"));
+        assert!(!read("f({})/process.env.FLAG/2"));
+        assert!(!read("x=[{}]/process.env.FLAG/2"));
+        assert!(!read("a?{}:{}/process.env.FLAG/2"));
+    }
+
+    #[test]
+    fn known_limits_choose_the_conservative_direction() {
+        // A function or class expression body is read as a statement block, so
+        // a line break after it ends the statement. JavaScript would continue
+        // the expression, and the read is conservatively left unreported.
+        for code in [
+            "process.env.FLAG + function(){}\n(x)&&run()",
+            "process.env.FLAG + class{}\n+a&&run()",
+        ] {
+            assert_eq!(flag_guard(code), None, "{code:?}");
+        }
+        // The same reading makes a slash after such a body a regular
+        // expression, although JavaScript divides.
+        let code = "x=function(){}/process.env.FLAG/2";
+        assert!(in_ranges(
+            &non_code_ranges(code),
+            code.find("process").unwrap()
+        ));
+        // A `)` is always an operand end before a slash, so the body of
+        // `if (a) /re/.test(b)` is read as code, as is a call result.
+        for code in ["f(a)/process.env.FLAG/2", "if(a)/process.env.FLAG/.test(b)"] {
+            assert!(
+                !in_ranges(&non_code_ranges(code), code.find("process").unwrap()),
+                "{code:?}"
+            );
+        }
+        // A word that is a keyword only in some positions (`of`, `yield`,
+        // `await`) counts as one wherever it is not a property or private name.
+        let code = "const of=1;of/process.env.FLAG/.test(a)";
+        assert!(in_ranges(
+            &non_code_ranges(code),
+            code.find("process").unwrap()
+        ));
+    }
+
+    #[test]
+    fn expression_keywords_stay_pending_across_line_breaks() {
+        for (code, expected) in [
+            ("process.env.FLAG + function\nfoo(){} && run()", AND_GUARD),
+            (
+                "process.env.FLAG + function\u{a0}\n*gen(){} && run()",
+                AND_GUARD,
+            ),
+            (
+                "process.env.FLAG + async function\nfoo(){} && run()",
+                AND_GUARD,
+            ),
+            ("process.env.FLAG + class\nA{} && run()", AND_GUARD),
+            (
+                "process.env.FLAG + class A extends\nB{} && run()",
+                AND_GUARD,
+            ),
+            (
+                "process.env.FLAG + class A extends // c\nB{} && run()",
+                AND_GUARD,
+            ),
+            (
+                "process.env.FLAG + (class extends\nB{}) && run()",
+                AND_GUARD,
+            ),
+            ("process.env.FLAG + (function\nfoo(){}) && run()", AND_GUARD),
+            // A property with the same name leaves nothing unfinished.
+            ("process.env.FLAG + obj.function\nfoo && run()", None),
+            ("process.env.FLAG + obj.class\nfoo && run()", None),
+            ("process.env.FLAG + obj?.extends\nfoo && run()", None),
+            // A longer identifier is not the keyword.
+            ("process.env.FLAG + functions\nfoo && run()", None),
+            ("process.env.FLAG + classes\nfoo && run()", None),
+            ("process.env.FLAG + subclass\nfoo && run()", None),
+        ] {
+            assert_eq!(flag_guard(code), expected, "{code:?}");
+        }
+    }
+
+    #[test]
+    fn decimal_points_end_numeric_literals() {
+        // `1.` is a complete operand, so the prefix update on the next line
+        // starts a new statement.
+        for number in ["1.", "0.", "10.", "1_0.", "007."] {
+            for update in ["++", "--"] {
+                let code = format!("process.env.FLAG + {number}\n{update}x&&run()");
+                assert_eq!(flag_guard(&code), None, "{code:?}");
+                let code = format!("process.env.FLAG + {number} /* c */ \n{update}x&&run()");
+                assert_eq!(flag_guard(&code), None, "{code:?}");
+            }
+            let code = format!("process.env.FLAG + {number}\nx&&run()");
+            assert_eq!(flag_guard(&code), None, "{code:?}");
+        }
+        // Every other trailing dot is member access and leaves the expression
+        // unfinished.
+        for lhs in [
+            "a.", "a1.", "$1.", "1.5.", "1e5.", "0x1.", "1n.", "1..", "obj?.", "f().", "[1].",
+            "a.b.", "x_1.",
+        ] {
+            let code = format!("process.env.FLAG + {lhs}\n++x&&run()");
+            assert_eq!(flag_guard(&code), AND_GUARD, "{code:?}");
+            let code = format!("process.env.FLAG + {lhs}\nx&&run()");
+            assert_eq!(flag_guard(&code), AND_GUARD, "{code:?}");
+        }
+    }
+
+    #[test]
+    fn scope_heads_are_found_across_all_trivia() {
+        let guard = |code: &str| flag_guard(code);
+        for (keyword, evidence) in [
+            ("if", "the retained read is in an if condition"),
+            ("while", "the retained read is in a while condition"),
+            ("switch", "the retained read is in a switch condition"),
+        ] {
+            for separator in all_separators() {
+                let code = format!("{keyword}{separator}(process.env.FLAG) run()");
+                assert_eq!(guard(&code), Some(evidence), "{code:?}");
+                // A property call is not a statement head.
+                let code = format!("obj.{keyword}{separator}(process.env.FLAG) run()");
+                assert_eq!(guard(&code), None, "{code:?}");
+            }
+        }
+        for separator in all_separators() {
+            let code = format!("for{separator}(;process.env.FLAG;) run()");
+            assert_eq!(
+                guard(&code),
+                Some("the retained read is in a for condition"),
+                "{code:?}"
+            );
+            let code = format!("obj.for{separator}(;process.env.FLAG;) run()");
+            assert_eq!(guard(&code), None, "{code:?}");
+        }
+    }
+
     /// Boundary kinds that the env-condition scan treats as line breaks.
     const BOUNDARIES: [&str; 8] = [
         "\n",
@@ -2846,8 +3269,8 @@ y=/process.env.F/.test(z),process.env.G"#;
                             };
                             if is_break {
                                 assert_eq!(
-                                    memo.terminates(bytes, index, &ignored),
-                                    asi_terminates(bytes, index, &ignored),
+                                    memo.terminates(bytes, index, &ignored, None),
+                                    asi_terminates(bytes, index, &ignored, None),
                                     "{code:?} at {index}"
                                 );
                             }
