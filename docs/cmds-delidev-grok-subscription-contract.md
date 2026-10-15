@@ -474,13 +474,20 @@ Protected Take classifies a refusal in this order: a missing or undiscovered
 installation is `discovery` and keeps the code discovery recorded (`missing` is
 `not_found`, `permission-denied` is `permission_denied`, `failed` is
 `unavailable`, `incompatible` and an unreported or unchecked installation are
-`unsupported`; a recorded problem on a detected installation keeps its code), a version below the subscription baseline or invalid
+`unsupported`; a recorded problem on a detected installation keeps its code; a
+detected installation without a resolved path, without an observation time, or
+whose observation time is later than the admission time plus one second of clock
+skew, for example after the server clock moved backward, is `discovery` /
+`unsupported`), a version below the subscription baseline or invalid
 metadata is `version` (even when the probe stored a `profile` diagnostic for a
 release between the discovery baseline `1.0.41` and the subscription baseline),
-and only a discovered installation at or above the baseline restores its stored
+and only a discovered installation with a usable observation at or above the baseline restores its stored
 diagnostic unchanged or, without one, reports `profile` with the protocol state's
-code (`failed` is `unavailable`, otherwise `unsupported`); the refusal carries the
-diagnostic text and a structured warning log. Login, refresh,
+code (`failed` is `unavailable`, otherwise `unsupported`); the admission time is
+captured once and shared by the admission predicate and this classification
+(`grokDiscoveryObserved`), so a refusal and its diagnostic always agree on a
+future-dated observation. The refusal carries the diagnostic text and a
+structured warning log. Login, refresh,
 logout, models, execution and history producers wrap their failures with
 `WithGrokDiagnostic` and the matching phase when they land.
 

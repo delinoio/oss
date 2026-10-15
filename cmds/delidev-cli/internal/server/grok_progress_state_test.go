@@ -151,7 +151,7 @@ func (f *grokFixture) seedRefusal(t *testing.T, operation string) domain.Account
 	t.Helper()
 	r, a := f.record()
 	_ = r
-	d := domain.GrokErrorDiagnostic(grokAdmissionFailure(&domain.Installation{Harness: domain.GrokBuild, State: domain.InstallationDetected, Version: "1.0.45"}))
+	d := domain.GrokErrorDiagnostic(grokAdmissionFailure(&domain.Installation{Harness: domain.GrokBuild, State: domain.InstallationDetected, Version: "1.0.45"}, time.Now().UTC()))
 	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.grok.refusal", nil, func(tx *store.Tx) (any, error) {
 		rec, acct, err := accountFromTx(tx, f.input.AccountID, 0)
 		if err != nil {

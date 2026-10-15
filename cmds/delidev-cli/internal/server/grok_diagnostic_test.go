@@ -145,6 +145,12 @@ func TestGrokTakeRefusalCarriesPhaseAndVersions(t *testing.T) {
 		{"invalid version metadata", func(i *domain.Installation) { i.Version = "not-a-version" }, domain.GrokVersion, "", "version metadata is invalid", ""},
 		{"missing executable", func(i *domain.Installation) { i.State, i.ResolvedPath = domain.InstallationMissing, "" }, domain.GrokDiscovery, "1.0.52", "executable discovery", domain.NotFound},
 		{"never observed", func(i *domain.Installation) { i.ObservedAt = nil }, domain.GrokDiscovery, "1.0.52", "executable discovery", ""},
+		{"observed in the future", func(i *domain.Installation) { at := observed.Add(time.Hour); i.ObservedAt = &at }, domain.GrokDiscovery, "1.0.52", "executable discovery", ""},
+		{"stored profile failure on a future observation", func(i *domain.Installation) {
+			at := observed.Add(time.Hour)
+			i.ObservedAt, i.ProtocolVerified = &at, false
+			i.Protocol = &domain.ProtocolObservation{Protocol: domain.ProtocolFor(domain.GrokBuild), State: domain.ProtocolUnsupported, GrokDiagnostic: profileFailure}
+		}, domain.GrokDiscovery, "1.0.52", "executable discovery", ""},
 		{"profile unverified", func(i *domain.Installation) { i.ProtocolVerified = false }, domain.GrokProfile, "1.0.52", "profile validation", ""},
 		{"stored profile failure", func(i *domain.Installation) {
 			i.ProtocolVerified = false
@@ -193,13 +199,13 @@ func TestGrokTakeRefusalCarriesPhaseAndVersions(t *testing.T) {
 				found = m.Installations[0]
 				return err
 			})
-			d := domain.GrokErrorDiagnostic(grokAdmissionFailure(&found))
+			d := domain.GrokErrorDiagnostic(grokAdmissionFailure(&found, time.Now().UTC()))
 			if d == nil || d.Phase != test.phase || d.Code != want || d.DetectedVersion != test.version || d.SupportedVersion != domain.GrokSubscriptionBaselineVersion || d.Validate() != nil {
 				t.Fatalf("unexpected admission diagnostic: %#v", d)
 			}
 		})
 	}
-	if d := domain.GrokErrorDiagnostic(grokAdmissionFailure(nil)); d == nil || d.Phase != domain.GrokDiscovery || d.DetectedVersion != "" {
+	if d := domain.GrokErrorDiagnostic(grokAdmissionFailure(nil, time.Now().UTC())); d == nil || d.Phase != domain.GrokDiscovery || d.DetectedVersion != "" {
 		t.Fatalf("an absent installation was not a discovery failure: %#v", d)
 	}
 }
@@ -209,7 +215,18 @@ func TestGrokTakeRefusalCarriesPhaseAndVersions(t *testing.T) {
 // The table covers every discovery state and protocol state an installation can
 // persist.
 func TestGrokAdmissionFailurePreservesRecordedClassification(t *testing.T) {
-	observed := time.Now().UTC()
+	now := time.Now().UTC()
+	observed := now
+	future := func(offset time.Duration) func(*domain.Installation) {
+		return func(i *domain.Installation) {
+			at := now.Add(offset)
+			i.ObservedAt = &at
+		}
+	}
+	storedRuntime := func(i *domain.Installation) {
+		i.Protocol.State = domain.ProtocolFailed
+		i.Protocol.GrokDiagnostic = domain.GrokErrorDiagnostic(domain.WithGrokDiagnostic(i.Version, domain.GrokRuntime, domain.Fail(domain.PermissionDenied, "x", "y")))
+	}
 	detected := func(edit func(*domain.Installation)) *domain.Installation {
 		i := &domain.Installation{Harness: domain.GrokBuild, State: domain.InstallationDetected, Version: domain.GrokSubscriptionBaselineVersion, ResolvedPath: "/controlled/native/grok", ObservedAt: &observed, Protocol: &domain.ProtocolObservation{Protocol: domain.ProtocolFor(domain.GrokBuild), State: domain.ProtocolVerified}}
 		edit(i)
@@ -232,6 +249,16 @@ func TestGrokAdmissionFailurePreservesRecordedClassification(t *testing.T) {
 		{"failed", failed(domain.InstallationFailed), domain.GrokDiscovery, domain.Unavailable},
 		{"detected without a path", detected(func(i *domain.Installation) { i.ResolvedPath = "" }), domain.GrokDiscovery, domain.Unsupported},
 		{"detected without an observation", detected(func(i *domain.Installation) { i.ObservedAt = nil }), domain.GrokDiscovery, domain.Unsupported},
+		// An observation later than the admission time plus the tolerated skew is
+		// invalid discovery evidence, so it never restores a stored diagnostic or
+		// reports a profile failure. The boundary itself is admitted.
+		{"observation in the future", detected(future(time.Hour)), domain.GrokDiscovery, domain.Unsupported},
+		{"observation just beyond the skew", detected(future(grokObservationSkew + time.Millisecond)), domain.GrokDiscovery, domain.Unsupported},
+		{"observation exactly at the skew", detected(future(grokObservationSkew)), domain.GrokProfile, domain.Unsupported},
+		{"observation inside the skew", detected(future(time.Millisecond)), domain.GrokProfile, domain.Unsupported},
+		{"future observation below the baseline", detected(func(i *domain.Installation) { future(time.Hour)(i); i.Version = "1.0.45" }), domain.GrokDiscovery, domain.Unsupported},
+		{"future observation with a failed protocol", detected(func(i *domain.Installation) { future(time.Hour)(i); i.Protocol.State = domain.ProtocolFailed }), domain.GrokDiscovery, domain.Unsupported},
+		{"future observation with a stored diagnostic", detected(func(i *domain.Installation) { future(time.Hour)(i); storedRuntime(i) }), domain.GrokDiscovery, domain.Unsupported},
 		{"detected with a recorded problem", detected(func(i *domain.Installation) { i.Problem = domain.Fail(domain.Unavailable, "safe", "") }), domain.GrokDiscovery, domain.Unavailable},
 		{"below the baseline", detected(func(i *domain.Installation) { i.Version = "1.0.45" }), domain.GrokVersion, domain.Unsupported},
 		{"invalid version", detected(func(i *domain.Installation) { i.Version = "not-a-version" }), domain.GrokVersion, domain.Unsupported},
@@ -239,13 +266,10 @@ func TestGrokAdmissionFailurePreservesRecordedClassification(t *testing.T) {
 		{"protocol verified but not marked", detected(func(i *domain.Installation) {}), domain.GrokProfile, domain.Unsupported},
 		{"protocol unsupported", detected(func(i *domain.Installation) { i.Protocol.State = domain.ProtocolUnsupported }), domain.GrokProfile, domain.Unsupported},
 		{"protocol failed", detected(func(i *domain.Installation) { i.Protocol.State = domain.ProtocolFailed }), domain.GrokProfile, domain.Unavailable},
-		{"stored diagnostic wins over the protocol state", detected(func(i *domain.Installation) {
-			i.Protocol.State = domain.ProtocolFailed
-			i.Protocol.GrokDiagnostic = domain.GrokErrorDiagnostic(domain.WithGrokDiagnostic(i.Version, domain.GrokRuntime, domain.Fail(domain.PermissionDenied, "x", "y")))
-		}), domain.GrokRuntime, domain.PermissionDenied},
+		{"stored diagnostic wins over the protocol state", detected(storedRuntime), domain.GrokRuntime, domain.PermissionDenied},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			err := grokAdmissionFailure(test.found)
+			err := grokAdmissionFailure(test.found, now)
 			d := domain.GrokErrorDiagnostic(err)
 			if d == nil || d.Phase != test.phase || d.Code != test.code || d.Validate() != nil || d.SupportedVersion != domain.GrokSubscriptionBaselineVersion {
 				t.Fatalf("unexpected admission diagnostic: %#v", d)

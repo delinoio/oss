@@ -114,10 +114,11 @@ func grokSubscriptionInstallation(tx *store.Tx, machine domain.ID) (domain.Insta
 			found = &m.Installations[i]
 		}
 	}
-	if found == nil || !domain.GrokSubscriptionVersionAllowed(found.Version) || found.State != domain.InstallationDetected || !found.ProtocolVerified || found.Protocol == nil || found.Protocol.Protocol != domain.ProtocolFor(domain.GrokBuild) || found.Protocol.State != domain.ProtocolVerified || found.Protocol.Problem != nil || found.Problem != nil || found.ResolvedPath == "" || found.ObservedAt == nil || found.ObservedAt.IsZero() || found.ObservedAt.After(time.Now().UTC().Add(time.Second)) {
+	now := time.Now().UTC()
+	if found == nil || !grokDiscoveryObserved(found, now) || !domain.GrokSubscriptionVersionAllowed(found.Version) || !found.ProtocolVerified || found.Protocol == nil || found.Protocol.Protocol != domain.ProtocolFor(domain.GrokBuild) || found.Protocol.State != domain.ProtocolVerified || found.Protocol.Problem != nil || found.Problem != nil {
 		// The refusal carries the original phase, installed version and supported
 		// baseline as a closed diagnostic; it never exposes native text or paths.
-		return domain.Installation{}, grokAdmissionFailure(found)
+		return domain.Installation{}, grokAdmissionFailure(found, now)
 	}
 	return *found, nil
 }

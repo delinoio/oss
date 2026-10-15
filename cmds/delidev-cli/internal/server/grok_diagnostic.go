@@ -55,13 +55,20 @@ func grokDiagnosticMessage(d *domain.GrokDiagnostic) *pb.GrokDiagnostic {
 //	incompatible                          -> discovery / unsupported
 //	failed                                -> discovery / unavailable
 //	unchecked, or detected without a
-//	  resolved path or observation time   -> discovery / unsupported
+//	  resolved path, with no observation
+//	  time, or with an observation time
+//	  later than the admission time plus
+//	  grokObservationSkew                 -> discovery / unsupported
 //	detected with a recorded problem      -> discovery / the problem's code
 //	version below the baseline or invalid -> version / unsupported
 //	stored Grok diagnostic                -> the stored phase and code
 //	protocol failed                       -> profile / unavailable
 //	protocol unsupported or unverified    -> profile / unsupported
-func grokAdmissionFailure(found *domain.Installation) error {
+//
+// The admission time is captured once by the caller and shared with the
+// admission predicate (grokDiscoveryObserved), so the refusal and its
+// classification can never disagree about a future-dated observation.
+func grokAdmissionFailure(found *domain.Installation, now time.Time) error {
 	if found == nil {
 		return domain.WithGrokDiagnostic("", domain.GrokDiscovery, grokInstallationRequired())
 	}
@@ -69,7 +76,7 @@ func grokAdmissionFailure(found *domain.Installation) error {
 		return domain.WithGrokDiagnostic(found.Version, domain.GrokDiscovery, problem)
 	}
 	switch {
-	case found.State != domain.InstallationDetected || found.ResolvedPath == "" || found.ObservedAt == nil || found.ObservedAt.IsZero():
+	case !grokDiscoveryObserved(found, now):
 		return domain.WithGrokDiagnostic(found.Version, domain.GrokDiscovery, grokInstallationRequired())
 	case !domain.GrokSubscriptionVersionAllowed(found.Version):
 		return domain.GrokVersionFailure(found.Version)
@@ -83,6 +90,19 @@ func grokAdmissionFailure(found *domain.Installation) error {
 		}
 	}
 	return domain.WithGrokDiagnostic(found.Version, domain.GrokProfile, grokInstallationRequired())
+}
+
+// grokObservationSkew is the clock skew tolerated between the Runner Device
+// observation time and the server's admission time.
+const grokObservationSkew = time.Second
+
+// grokDiscoveryObserved reports whether discovery produced usable evidence for
+// the installation at the given admission time: it is detected, has a resolved
+// path and has a recorded observation time that is not in the future beyond
+// grokObservationSkew (for example after the server clock moved backward). It
+// is the single predicate shared by admission and its classification.
+func grokDiscoveryObserved(found *domain.Installation, now time.Time) bool {
+	return found.State == domain.InstallationDetected && found.ResolvedPath != "" && found.ObservedAt != nil && !found.ObservedAt.IsZero() && !found.ObservedAt.After(now.Add(grokObservationSkew))
 }
 
 // grokDiscoveryProblem returns the safe problem that discovery recorded for the

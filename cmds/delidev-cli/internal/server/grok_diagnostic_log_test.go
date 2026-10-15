@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
@@ -82,7 +83,7 @@ func (c *grokLogCapture) requireLogged(t *testing.T, event string, want int) []m
 // failed. A line never claims more than the commit established.
 func TestGrokTakeRefusalLogsOnlyWhatItPersisted(t *testing.T) {
 	login := pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN
-	d := domain.GrokErrorDiagnostic(grokAdmissionFailure(&domain.Installation{Harness: domain.GrokBuild, State: domain.InstallationDetected, Version: "1.0.45"}))
+	d := domain.GrokErrorDiagnostic(grokAdmissionFailure(&domain.Installation{Harness: domain.GrokBuild, State: domain.InstallationDetected, Version: "1.0.45"}, time.Now().UTC()))
 	const (
 		recorded    = "grok_subscription_take_refusal_recorded"
 		notRecorded = "grok_subscription_take_refusal_not_recorded"
