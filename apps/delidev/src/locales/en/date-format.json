@@ -18,5 +18,13 @@
   "timestamp.minute": "1 minute ago",
   "timestamp.minutes": "{{count}} minutes ago",
   "timestamp.hour": "1 hour ago",
-  "timestamp.hours": "{{count}} hours ago"
+  "timestamp.hours": "{{count}} hours ago",
+  "timestamp.day": "1 day ago",
+  "timestamp.days": "{{count}} days ago",
+  "timestamp.week": "1 week ago",
+  "timestamp.weeks": "{{count}} weeks ago",
+  "timestamp.month": "1 month ago",
+  "timestamp.months": "{{count}} months ago",
+  "timestamp.year": "1 year ago",
+  "timestamp.years": "{{count}} years ago"
 }

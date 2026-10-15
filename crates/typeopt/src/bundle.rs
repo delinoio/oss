@@ -682,6 +682,11 @@ fn chunk_map(root: &Path, chunk: &Path, text: &str) -> Option<MapRef> {
 /// comment (inline or referencing a file). Source maps are debugging
 /// metadata and never count as size, so composing, re-encoding or removing a
 /// map comment does not change the measured size.
+/// Where the trailing source map comment of a chunk starts, if it has one.
+pub(crate) fn map_comment_start(text: &str) -> Option<usize> {
+    map_reference(text).map(|comment| comment.start)
+}
+
 pub(crate) fn chunk_code_len(text: &str) -> usize {
     map_reference(text).map_or(text.len(), |comment| {
         text.len() - (comment.end - comment.start)
@@ -753,26 +758,33 @@ fn map_reference(text: &str) -> Option<MapComment<'_>> {
 /// Composes the source map of one edited chunk in place. Returns whether a
 /// map was composed (`Some(true)`), dropped because it could not be composed
 /// (`Some(false)`) or absent (`None`).
+/// Composes the source map of an edited chunk. `text` is the edited chunk
+/// that `chain` produced from `original`; `published` is the text written,
+/// which differs from `text` when minification replaced its code, and then
+/// `minified` maps `published` back to `text`.
+#[allow(clippy::too_many_arguments)]
 fn update_chunk_map(
     root: &Path,
     target: &Path,
     original: &str,
     text: &str,
+    published: &str,
+    minified: Option<&sourcemap::SourceMap>,
     chain: &[Vec<Edit>],
     original_maps: &mut BTreeMap<PathBuf, Vec<u8>>,
 ) -> Result<Option<bool>> {
-    let location = match chunk_map(root, target, text) {
+    let location = match chunk_map(root, target, published) {
         None => return Ok(None),
         Some(MapRef::Local(location)) => location,
         Some(MapRef::Uncomposable(url)) => {
             // Such a map describes the pre-optimization chunk and cannot be
             // composed here; a missing map is better than a wrong one.
             tracing::warn!("dropping an uncomposable source map reference of an edited chunk");
-            let comment = map_reference(text)
+            let comment = map_reference(published)
                 .filter(|comment| comment.url == url)
                 .context("cannot locate the source map comment of an edited chunk")?;
             let (start, end) = (comment.start, comment.end);
-            let updated = format!("{}{}", &text[..start], &text[end..]);
+            let updated = format!("{}{}", &published[..start], &published[end..]);
             std::fs::write(target, &updated).context("cannot write an edited chunk")?;
             return Ok(Some(false));
         }
@@ -789,7 +801,18 @@ fn update_chunk_map(
             .and_then(|bytes| sourcemap::decode_slice(&bytes).map_err(anyhow::Error::from)),
     };
     let composed = match decoded {
-        Ok(sourcemap::DecodedMap::Regular(map)) => compose_bundle_map(&map, original, text, chain),
+        Ok(sourcemap::DecodedMap::Regular(map)) => {
+            compose_bundle_map(&map, original, text, chain).map(|mut edited| {
+                // The composed map leads from the edited chunk to the
+                // sources; the minifier's map leads from the published code
+                // to the edited chunk. Adjusting the first by the second
+                // leads from the published code to the sources.
+                if let Some(minified) = minified {
+                    edited.adjust_mappings(minified);
+                }
+                edited
+            })
+        }
         Ok(_) => Err(anyhow::anyhow!(
             "indexed or Hermes chunk maps are unsupported"
         )),
@@ -803,12 +826,14 @@ fn update_chunk_map(
             Ok(Some(true))
         }
         (ChunkMap::Inline(url), Ok(map)) => {
-            let at = text.rfind(&url).context("inline source map disappeared")?;
+            let at = published
+                .rfind(&url)
+                .context("inline source map disappeared")?;
             let updated = format!(
                 "{}{}{}",
-                &text[..at],
+                &published[..at],
                 map.to_data_url()?,
-                &text[at + url.len()..]
+                &published[at + url.len()..]
             );
             std::fs::write(target, &updated).context("cannot write an edited chunk")?;
             Ok(Some(true))
@@ -819,20 +844,20 @@ fn update_chunk_map(
             std::fs::remove_file(path)?;
             // An explicit trailing directive would point at the deleted map;
             // a hidden adjacent map has no directive to remove.
-            if let Some(comment) = map_reference(text) {
+            if let Some(comment) = map_reference(published) {
                 let (start, end) = (comment.start, comment.end);
-                let updated = format!("{}{}", &text[..start], &text[end..]);
+                let updated = format!("{}{}", &published[..start], &published[end..]);
                 std::fs::write(target, &updated).context("cannot write an edited chunk")?;
             }
             Ok(Some(false))
         }
         (ChunkMap::Inline(url), Err(error)) => {
             tracing::warn!(%error, "dropping an unreadable inline chunk source map");
-            let comment = map_reference(text)
+            let comment = map_reference(published)
                 .filter(|comment| comment.url == url)
                 .context("cannot locate the unreadable inline source map comment")?;
             let (start, end) = (comment.start, comment.end);
-            let updated = format!("{}{}", &text[..start], &text[end..]);
+            let updated = format!("{}{}", &published[..start], &published[end..]);
             std::fs::write(target, &updated).context("cannot write an edited chunk")?;
             Ok(Some(false))
         }
@@ -1035,8 +1060,10 @@ fn rehash(
             .collect();
         referenced.insert(name.clone(), targets);
     }
-    // Boundary chunks stay byte-for-byte unchanged: never renamed or
-    // rewritten. They keep the original files they reference (below).
+    // Pinned chunks (excluded chunks and what they import) stay
+    // byte-for-byte unchanged: never renamed or rewritten. They keep the
+    // original files they reference (below). Other boundary chunks are
+    // rewritten and renamed like every text asset.
     let frozen_names: BTreeSet<String> = frozen.iter().map(|p| base(p)).collect();
     // The rename set: edited hashed chunks and, transitively, hashed files
     // that reference a renamed file.
@@ -1154,11 +1181,19 @@ fn rehash(
         counts
     };
     let mut retained = BTreeSet::<String>::new();
-    // Boundary chunks keep referencing the original names.
+    // Everything an excluded chunk can import is pinned with it, so a pinned
+    // chunk names a renamed chunk only through something that is not an
+    // import (a string, for example): it keeps referencing the original name.
     for path in frozen {
         if let Some(text) = texts.get(path) {
             for name in renamed.keys() {
                 if !references(text, name).is_empty() {
+                    tracing::warn!(
+                        boundary = %path.display(),
+                        chunk = name.as_str(),
+                        "an excluded chunk names a renamed chunk without importing it; the original \
+                         is kept"
+                    );
                     retained.insert(name.clone());
                 }
             }
@@ -1279,6 +1314,273 @@ fn rehash(
     })
 }
 
+/// String value of the property `key` at `at` (`key:"…"`, `"key":'…'`), with
+/// the byte span of the value inside its quotes.
+fn string_property(text: &str, at: usize, key: &str) -> Option<(String, usize, usize)> {
+    let bytes = text.as_bytes();
+    let mut index = at;
+    let quoted = matches!(bytes.get(index), Some(b'"' | b'\''));
+    if quoted {
+        index += 1;
+    }
+    if !text[index..].starts_with(key) {
+        return None;
+    }
+    index += key.len();
+    if quoted {
+        if bytes.get(index) != bytes.get(at) {
+            return None;
+        }
+        index += 1;
+    }
+    while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
+        index += 1;
+    }
+    if bytes.get(index) != Some(&b':') {
+        return None;
+    }
+    index += 1;
+    while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
+        index += 1;
+    }
+    let quote = *bytes.get(index).filter(|b| matches!(b, b'"' | b'\''))?;
+    let start = index + 1;
+    let end = start + text[start..].find(quote as char)?;
+    let value = &text[start..end];
+    // Escaped content is not a plain file name or digest.
+    (!value.contains('\\')).then(|| (value.to_owned(), start, end))
+}
+
+/// Byte spans of the array literals passed to Workbox `precacheAndRoute(…)`
+/// or `precache(…)` calls (as a method or a plain call), the only places
+/// where a `{url, revision}` object is a precache manifest entry rather than
+/// application data.
+fn precache_arrays(text: &str) -> Vec<(usize, usize)> {
+    let bytes = text.as_bytes();
+    let mut arrays = Vec::new();
+    let mut from = 0;
+    while let Some(offset) = text[from..].find("precache") {
+        let at = from + offset;
+        from = at + "precache".len();
+        let mut index = from;
+        if text[index..].starts_with("AndRoute") {
+            index += "AndRoute".len();
+        }
+        let joined = at > 0
+            && (bytes[at - 1].is_ascii_alphanumeric() || matches!(bytes[at - 1], b'_' | b'$'));
+        let skip = |mut i: usize| {
+            while bytes.get(i).is_some_and(u8::is_ascii_whitespace) {
+                i += 1;
+            }
+            i
+        };
+        index = skip(index);
+        if joined || bytes.get(index) != Some(&b'(') {
+            continue;
+        }
+        index = skip(index + 1);
+        if bytes.get(index) != Some(&b'[') {
+            continue;
+        }
+        // The matching bracket, skipping string literals.
+        let (start, mut depth, mut quote, mut escaped) = (index, 0usize, None, false);
+        let mut end = None;
+        for (i, &b) in bytes.iter().enumerate().skip(start) {
+            if let Some(q) = quote {
+                if escaped {
+                    escaped = false;
+                } else if b == b'\\' {
+                    escaped = true;
+                } else if b == q {
+                    quote = None;
+                }
+                continue;
+            }
+            match b {
+                b'"' | b'\'' | b'`' => quote = Some(b),
+                b'[' => depth += 1,
+                b']' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = Some(i);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        if let Some(end) = end {
+            arrays.push((start, end));
+            from = end;
+        }
+    }
+    arrays
+}
+
+/// Whether the property key at `at` starts an object member: it follows `{` or
+/// `,`, possibly after whitespace (formatted manifests put each key on its
+/// own line).
+fn follows_delimiter(bytes: &[u8], at: usize) -> bool {
+    bytes[..at]
+        .iter()
+        .rev()
+        .find(|b| !b.is_ascii_whitespace())
+        .is_some_and(|&b| matches!(b, b'{' | b','))
+}
+
+/// Precache entries `{url:"…",revision:"…"}` (either order) of a service
+/// worker manifest, as Workbox and vite-plugin-pwa emit them inside a
+/// `precacheAndRoute`/`precache` array: the URL and the byte span of the
+/// revision string.
+fn precache_entries(text: &str) -> Vec<(String, usize, usize)> {
+    let bytes = text.as_bytes();
+    let arrays = precache_arrays(text);
+    let mut entries = Vec::new();
+    let mut from = 0;
+    while let Some(offset) = text[from..].find("revision") {
+        let at = from + offset;
+        from = at + "revision".len();
+        if !arrays.iter().any(|&(start, end)| at > start && at < end) {
+            continue;
+        }
+        let key = if at > 0 && matches!(bytes[at - 1], b'"' | b'\'') {
+            at - 1
+        } else {
+            at
+        };
+        if !follows_delimiter(bytes, key) {
+            continue;
+        }
+        let Some((_, start, end)) = string_property(text, key, "revision") else {
+            continue;
+        };
+        // The enclosing object literal, which holds no nested objects.
+        let Some(open) = text[..key].rfind(['{', '}']).filter(|&i| bytes[i] == b'{') else {
+            continue;
+        };
+        let Some(close) = text[end..].find(['{', '}']).map(|i| end + i) else {
+            continue;
+        };
+        if bytes[close] != b'}' {
+            continue;
+        }
+        let object = &text[open..=close];
+        let url = object.char_indices().find_map(|(i, c)| {
+            (matches!(c, 'u' | '"' | '\'') && follows_delimiter(object.as_bytes(), i))
+                .then(|| string_property(text, open + i, "url"))
+                .flatten()
+        });
+        if let Some((url, _, _)) = url {
+            entries.push((url, start, end));
+        }
+    }
+    entries
+}
+
+/// Gives precache entries of files whose published content differs from the
+/// input a new revision. A service worker keeps a cached file while its
+/// revision string is unchanged, so an unchanged revision would keep serving
+/// stale HTML that names chunks the output no longer has. The new revision
+/// is derived from the new content and keeps the original length, so source
+/// maps of the manifest file stay valid. Content-hashed files are left alone:
+/// their names already cover their content. Returns how many revisions
+/// changed.
+fn refresh_precache_revisions(
+    source: &Path,
+    root: &Path,
+    pinned: &BTreeSet<PathBuf>,
+) -> Result<usize> {
+    let mut files = Vec::new();
+    files_under(root, &mut files)?;
+    files.sort();
+    let mut refreshed = 0;
+    for file in &files {
+        let name = file.file_name().unwrap().to_string_lossy();
+        let script = file
+            .extension()
+            .is_some_and(|e| e == "js" || e == "mjs" || e == "cjs");
+        if !script || pinned.contains(file) || hashed_name(&name).is_some() {
+            continue;
+        }
+        let Ok(mut text) = std::fs::read_to_string(file) else {
+            continue;
+        };
+        let directory = file.parent().unwrap_or(root);
+        let mut changed = false;
+        for (url, start, end) in precache_entries(&text.clone()) {
+            let path = url.split(['?', '#']).next().unwrap_or_default();
+            if path.is_empty() || path.contains("://") || path.starts_with("//") {
+                continue;
+            }
+            let joined = match path.strip_prefix('/') {
+                Some(absolute) => root.join(absolute),
+                None => directory.join(path),
+            };
+            // Only regular files of the staged bundle: `..` must not leave it,
+            // and a device or FIFO must not block publication.
+            let Some(staged) = normalize_within(root, &joined) else {
+                continue;
+            };
+            if !std::fs::symlink_metadata(&staged).is_ok_and(|m| m.is_file()) {
+                continue;
+            }
+            let Ok(published) = std::fs::read(&staged) else {
+                continue;
+            };
+            let relative = staged.strip_prefix(root).unwrap_or(&staged);
+            if std::fs::read(source.join(relative)).is_ok_and(|input| input == published) {
+                continue;
+            }
+            let digest = crate::compiler::sha256_hex(&published);
+            let revision: String = digest.chars().cycle().take(end - start).collect();
+            if text[start..end] != revision {
+                text.replace_range(start..end, &revision);
+                refreshed += 1;
+                changed = true;
+                tracing::debug!(
+                    manifest = %relative_display(root, file),
+                    entry = url.as_str(),
+                    "refreshed a precache revision of a changed file"
+                );
+            }
+        }
+        if changed {
+            std::fs::write(file, text).context("cannot refresh a precache revision")?;
+        }
+    }
+    Ok(refreshed)
+}
+
+/// `path` with `.` and `..` components resolved lexically, if it stays
+/// inside `root`.
+fn normalize_within(root: &Path, path: &Path) -> Option<PathBuf> {
+    use std::path::Component;
+    let relative = path.strip_prefix(root).ok()?;
+    let mut parts: Vec<&std::ffi::OsStr> = Vec::new();
+    for component in relative.components() {
+        match component {
+            Component::Normal(part) => parts.push(part),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                parts.pop()?;
+            }
+            Component::RootDir | Component::Prefix(_) => return None,
+        }
+    }
+    Some(
+        parts
+            .iter()
+            .fold(root.to_path_buf(), |path, part| path.join(part)),
+    )
+}
+
+fn relative_display(root: &Path, path: &Path) -> String {
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .into_owned()
+}
+
 /// Rejects bundles that bundle mode cannot publish faithfully, before
 /// analysis in check and output modes:
 /// - symbolic links: analysis would follow them to their targets while the
@@ -1367,6 +1669,8 @@ pub fn fingerprint(dir: &Path) -> Result<Fingerprint> {
 /// published only by [`Staged::commit`]; dropping it removes the staging
 /// directory, so a failure after staging never leaves a published result.
 pub struct Staged {
+    /// Code bytes that `--minify` removed from edited chunks.
+    pub minified_bytes: usize,
     _staging: tempfile::TempDir,
     root: PathBuf,
     destination: PathBuf,
@@ -1393,7 +1697,7 @@ pub fn stage(
     snapshot: &Snapshot,
     outcome: &Outcome,
     analyzed: &Fingerprint,
-    boundaries: &BTreeSet<String>,
+    pinned: &BTreeSet<String>,
 ) -> Result<Staged> {
     ensure!(
         std::fs::symlink_metadata(destination)
@@ -1435,6 +1739,18 @@ pub fn stage(
     // Original bytes of map files that composition changes or removes.
     let mut original_maps = BTreeMap::new();
     let (mut maps, mut dropped) = (0usize, 0usize);
+    let mut minified_bytes = 0usize;
+    // A read in any chunk may stringify a callable imported from an edited
+    // chunk. Keep the edited text when the bundle has no closed target proof.
+    let source_reflection = crate::app::minify()
+        && (crate::app::bundle_html_reflection()
+            || outcome
+                .texts
+                .values()
+                .any(|text| crate::minify::may_observe_function_source(text)));
+    if source_reflection {
+        tracing::info!("callable source reflection may be reachable; bundle minification skipped");
+    }
     for (name, text) in &outcome.texts {
         crate::app::check_cancelled()?;
         let original = &snapshot.sources[name];
@@ -1445,18 +1761,35 @@ pub fn stage(
             .strip_prefix(source)
             .context("edited chunk is outside the bundle directory")?;
         let target = root.join(relative);
-        std::fs::write(&target, text).context("cannot write an edited chunk")?;
+        let (published, minified) = if crate::app::minify() && !source_reflection {
+            minify_chunk(name, text)
+        } else {
+            (text.clone(), None)
+        };
+        if minified.is_some() {
+            minified_bytes += chunk_code_len(text) - chunk_code_len(&published);
+        }
+        std::fs::write(&target, &published).context("cannot write an edited chunk")?;
         edited.insert(target.clone());
         originals.insert(target.clone(), original.clone());
         let chain = outcome.chains.get(name).map_or(&[][..], Vec::as_slice);
-        match update_chunk_map(&root, &target, original, text, chain, &mut original_maps)? {
+        match update_chunk_map(
+            &root,
+            &target,
+            original,
+            text,
+            &published,
+            minified.as_ref(),
+            chain,
+            &mut original_maps,
+        )? {
             Some(true) => maps += 1,
             Some(false) => dropped += 1,
             None => {}
         }
     }
-    // Boundary chunks, as staged paths.
-    let frozen: BTreeSet<PathBuf> = boundaries
+    // Pinned chunks (excluded and what they import), as staged paths.
+    let frozen: BTreeSet<PathBuf> = pinned
         .iter()
         .filter_map(|path| Path::new(path).strip_prefix(source).ok())
         .map(|relative| root.join(relative))
@@ -1469,12 +1802,15 @@ pub fn stage(
     } else {
         rehash(&root, &edited, &originals, &original_maps, &frozen)?
     };
+    let revisions = refresh_precache_revisions(source, &root, &frozen)?;
     tracing::info!(
         edited = edited.len(),
         maps,
         dropped_maps = dropped,
         rehashed = rehashed.renamed,
+        precache_revisions = revisions,
         retained_bytes = rehashed.retained_bytes,
+        minified_bytes,
         "bundle chunks written"
     );
     Ok(Staged {
@@ -1482,7 +1818,55 @@ pub fn stage(
         root,
         destination: destination.to_path_buf(),
         retained_bytes: rehashed.retained_bytes,
+        minified_bytes,
     })
+}
+
+/// The published text of an edited chunk under `--minify`: its code minified
+/// with SWC when that compresses smaller, followed by its original source
+/// map comment, with the map from the published code to the edited chunk.
+/// Otherwise the edited chunk itself.
+fn minify_chunk(name: &str, text: &str) -> (String, Option<sourcemap::SourceMap>) {
+    let (code, comment) = match map_reference(text) {
+        Some(comment) => (
+            format!("{}{}", &text[..comment.start], &text[comment.end..]),
+            Some(text[comment.start..comment.end].to_owned()),
+        ),
+        None => (text.to_owned(), None),
+    };
+    let Some(minified) = crate::minify::minify_module(&code) else {
+        tracing::debug!(
+            chunk = name,
+            "SWC could not minify an edited chunk; kept as is"
+        );
+        return (text.to_owned(), None);
+    };
+    let before = crate::minify::compressed(&code);
+    let after = minified.compressed;
+    if !crate::minify::better(before, after) {
+        tracing::debug!(
+            chunk = name,
+            brotli_before = before.brotli,
+            brotli_after = after.brotli,
+            gzip_before = before.gzip,
+            gzip_after = after.gzip,
+            "minified chunk does not compress smaller; kept as is"
+        );
+        return (text.to_owned(), None);
+    }
+    tracing::debug!(
+        chunk = name,
+        bytes_before = code.len(),
+        bytes_after = minified.code.len(),
+        brotli_before = before.brotli,
+        brotli_after = after.brotli,
+        "edited chunk minified"
+    );
+    let published = match comment {
+        Some(comment) => format!("{}\n{comment}", minified.code),
+        None => minified.code,
+    };
+    (published, Some(minified.map))
 }
 
 #[cfg(test)]

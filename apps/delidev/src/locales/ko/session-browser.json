@@ -35,5 +35,10 @@
   "session-browser.operationUnknown": "페이지 작업을 확인하지 못했습니다. 상태를 확인하세요. 작업은 다시 실행되지 않습니다.",
   "session-browser.cleanupPending": "페이지를 제거했지만 네이티브 뷰 정리는 아직 확인되지 않았습니다.",
   "session-browser.busyOperation": "다른 브라우저 페이지 작업이 아직 진행 중입니다.",
-  "session-browser.accountRequired": "이 세션에 선택된 AI 계정이 있어야 브라우저 페이지를 열 수 있습니다."
+  "session-browser.accountRequired": "이 세션에 선택된 AI 계정이 있어야 브라우저 페이지를 열 수 있습니다.",
+  "session-browser.discoveryPending": "이 계정의 브라우저 프로필을 확인하는 중…",
+  "session-browser.discoveryFailed": "계정의 브라우저 프로필을 확인할 수 없습니다. 다시 시도하면 프로필만 다시 읽으며 아무것도 등록하거나 열지 않습니다.",
+  "session-browser.retryProfileRead": "프로필 읽기 재시도",
+  "session-browser.inventoryPending": "이 프로필의 열린 페이지를 읽는 중…",
+  "session-browser.retryInventoryRead": "페이지 목록 읽기 재시도"
 }

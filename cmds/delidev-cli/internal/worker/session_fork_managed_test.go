@@ -13,18 +13,43 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
+
+// nativeFixtureHelperAliasNames returns the temporary Unix aliases the pinned
+// Codex startup creates for goos: apply_patch, applypatch and
+// codex-execve-wrapper on every Unix, plus codex-linux-sandbox on Linux only.
+// Native fixtures must create the same set, because original startup capture
+// requires every alias of the platform profile to be present.
+func nativeFixtureHelperAliasNames(goos string) []string {
+	names := []string{"apply_patch", "applypatch", "codex-execve-wrapper"}
+	if goos == "linux" {
+		names = append(names, "codex-linux-sandbox")
+	}
+	return names
+}
+
+func TestNativeFixtureHelperAliasNamesMatchPlatformProfile(t *testing.T) {
+	unix := []string{"apply_patch", "applypatch", "codex-execve-wrapper"}
+	if got := nativeFixtureHelperAliasNames("darwin"); !slices.Equal(got, unix) {
+		t.Fatalf("darwin aliases = %v", got)
+	}
+	if got := nativeFixtureHelperAliasNames("linux"); !slices.Equal(got, append(unix, "codex-linux-sandbox")) {
+		t.Fatalf("linux aliases = %v", got)
+	}
+}
 
 type managedSidechatProcess struct {
 	Thread               map[string]any
@@ -36,9 +61,16 @@ type managedSidechatProcess struct {
 // The original test executable acts as a bounded native protocol process. Its
 // marker is confined to this fixture's private Worker scope, never a real account.
 func runManagedSidechatProcess(home string) bool {
-	root := filepath.Dir(filepath.Dir(filepath.Dir(home)))
-	raw, err := os.ReadFile(filepath.Join(root, "managed-sidechat-fixture.json"))
-	if err != nil {
+	// The fixture marker lives in the Worker root, an ancestor of the persistent
+	// or legacy native home.
+	var raw []byte
+	for candidate, depth := filepath.Dir(home), 0; depth < 8; candidate, depth = filepath.Dir(candidate), depth+1 {
+		if data, err := os.ReadFile(filepath.Join(candidate, "managed-sidechat-fixture.json")); err == nil {
+			raw = data
+			break
+		}
+	}
+	if raw == nil {
 		return false
 	}
 	var f managedSidechatProcess
@@ -81,7 +113,7 @@ func runManagedSidechatProcess(home string) bool {
 				if err != nil || os.MkdirAll(helperDirectory, 0700) != nil {
 					os.Exit(97)
 				}
-				for _, name := range []string{"apply_patch", "applypatch", "codex-execve-wrapper"} {
+				for _, name := range nativeFixtureHelperAliasNames(runtime.GOOS) {
 					if os.Symlink(executable, filepath.Join(helperDirectory, name)) != nil {
 						os.Exit(97)
 					}
@@ -288,7 +320,7 @@ func TestManagedSidechatWorkerOriginalForkAuthentication(t *testing.T) {
 			}
 			owner, instance := domain.NewID(), domain.NewID()
 			job := domain.Job{Type: domain.ForkSessionJob, State: domain.JobClaimed, MachineID: f.input.MachineID, InstanceID: instance, Input: mustForkJSON(input)}
-			auth := &managedSidechatRPC{generation: input.SubscriptionGeneration, home: filepath.Join(f.root, "runtimes", string(input.RuntimeID), "codex"), loss: fault == "finish-response-loss", t: t}
+			auth := &managedSidechatRPC{generation: input.SubscriptionGeneration, home: forkProfileNativeHome(t, f.root, f.input.MachineID, f.input.AccountID, input.RuntimeID), loss: fault == "finish-response-loss", t: t}
 			_, handler := delidevv1connect.NewSubscriptionServiceHandler(auth)
 			server := httptest.NewServer(handler)
 			defer server.Close()
@@ -429,7 +461,7 @@ func TestManagedIndependentForkWorkerOriginalAuthenticationAndTools(t *testing.T
 			}
 			owner, instance := domain.NewID(), domain.NewID()
 			job := domain.Job{Type: domain.ForkSessionJob, State: domain.JobClaimed, MachineID: f.input.MachineID, InstanceID: instance, Input: mustForkJSON(input)}
-			auth := &managedSidechatRPC{generation: input.SubscriptionGeneration, home: filepath.Join(f.root, "runtimes", string(input.RuntimeID), "codex"), loss: fault == "finish-response-loss", t: t}
+			auth := &managedSidechatRPC{generation: input.SubscriptionGeneration, home: forkProfileNativeHome(t, f.root, f.input.MachineID, f.input.AccountID, input.RuntimeID), loss: fault == "finish-response-loss", t: t}
 			_, handler := delidevv1connect.NewSubscriptionServiceHandler(auth)
 			server := httptest.NewServer(handler)
 			defer server.Close()
@@ -505,4 +537,16 @@ func TestForkFrameProfileIsExplicitForManagedIndependentForkOnly(t *testing.T) {
 			t.Fatal("unexpected Fork frame profile", test.name)
 		}
 	}
+}
+
+// forkProfileNativeHome resolves the persistent native home of a Fork child,
+// creating its profile when it does not exist yet.
+func forkProfileNativeHome(t *testing.T, root string, machine, account, runtime domain.ID) string {
+	t.Helper()
+	lease, err := conversationProfile(context.Background(), Config{Root: root}, machine, nativeprofile.Key{Harness: domain.Codex, Purpose: nativeprofile.PurposeFork, Account: account, Conversation: runtime}, runtime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lease.Close()
+	return filepath.Join(lease.Root, "codex")
 }

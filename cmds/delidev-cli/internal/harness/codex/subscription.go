@@ -94,10 +94,10 @@ func (c *Client) readManagedAccount(ctx context.Context, refresh bool) (managedA
 }
 
 func (c *Client) managedCall(ctx context.Context, method string, input any, output any) error {
-	if c.managedHome == "" && !(c.mode == QuotaProtocol && method == "config/read") {
+	if c.managedHome == "" && !(c.accessOnlyMode() && method == "config/read") {
 		return incompatible()
 	}
-	r, err := c.wire.Call(ctx, domain.NewID(), method, input)
+	r, err := c.call(ctx, domain.NewID(), method, input)
 	if err != nil {
 		return err
 	}
@@ -118,10 +118,10 @@ func (c *Client) verifyManagedConfig(ctx context.Context, cwd string) (returned 
 		return err
 	}
 	store := "file"
-	if c.mode == QuotaProtocol {
+	if c.accessOnlyMode() {
 		store = "ephemeral"
 	}
-	for key, want := range map[string]string{"cli_auth_credentials_store": store, "model_provider": "openai", "forced_login_method": "chatgpt"} {
+	for key, want := range map[string]string{"cli_auth_credentials_store": store, "model_provider": c.managedProviderKey(), "forced_login_method": "chatgpt"} {
 		var value string
 		if json.Unmarshal(result.Config[key], &value) != nil || value != want {
 			return incompatible()
@@ -131,7 +131,16 @@ func (c *Client) verifyManagedConfig(ctx context.Context, cwd string) (returned 
 	if json.Unmarshal(result.Config["model_providers"], &providers) != nil {
 		return incompatible()
 	}
-	if provider := providers["openai"]; provider != nil {
+	if c.managedTitle {
+		// The alias must exist and reproduce the built-in authority exactly.
+		if providers[ManagedTitleProvider] == nil {
+			return managedTitleMismatch("provider-alias")
+		}
+		if err := validateManagedTitleProvider(providers[ManagedTitleProvider]); err != nil {
+			return err
+		}
+	}
+	if provider := providers[c.managedProviderKey()]; provider != nil {
 		// Built-in OpenAI must retain its official authority; inherited custom
 		// providers, command auth and literal bearer overrides are not supported.
 		for _, key := range []string{"base_url", "env_key", "experimental_bearer_token", "auth", "aws", "http_headers", "env_http_headers", "query_params"} {
@@ -322,3 +331,6 @@ func (c *Client) LogoutManaged(ctx context.Context) (returned error) {
 	}
 	return nil
 }
+
+// accessOnlyMode reports the in-memory external-authentication profiles.
+func (c *Client) accessOnlyMode() bool { return c.mode == QuotaProtocol || c.mode == CreditProtocol }

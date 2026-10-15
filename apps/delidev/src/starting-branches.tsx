@@ -23,6 +23,7 @@ import {
 } from "@delinoio/delidev-api-client";
 import { document, items, object, text } from "./documents";
 import { copy, useLocale } from "./localization";
+import { settleEnclosingEntrances } from "./entrance-motion";
 import "./starting-branches.css";
 import { Problem, ServiceProblem } from "./ui";
 
@@ -465,6 +466,10 @@ function StartingBranch({
   useLayoutEffect(() => {
     if (!open || !popup.current || !input.current) return;
     const panel = popup.current;
+    // The top-layer popup is a fixed positioning host: an in-flight page
+    // entrance above it settles first, and the anchor is measured again once
+    // the untransformed layout has committed. Focus never waits for the motion.
+    settleEnclosingEntrances(panel);
     panel.showPopover?.();
     const position = () => {
       const bounds = input.current!.getBoundingClientRect();
@@ -481,6 +486,10 @@ function StartingBranch({
       panel.style.top = `${Math.max(8, Math.min(desiredTop, window.innerHeight - panel.offsetHeight - 8))}px`;
     };
     position();
+    let disposed = false;
+    queueMicrotask(() => {
+      if (!disposed) position();
+    });
     const observer =
       typeof ResizeObserver === "undefined"
         ? undefined
@@ -497,6 +506,7 @@ function StartingBranch({
     window.addEventListener("resize", position);
     window.addEventListener("scroll", position, true);
     return () => {
+      disposed = true;
       observer?.disconnect();
       panel.hidePopover?.();
       window.document.removeEventListener("pointerdown", outside);

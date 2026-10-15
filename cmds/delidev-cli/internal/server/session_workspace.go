@@ -15,6 +15,14 @@ import (
 )
 
 func sessionWorkspaceRequest(tx *store.Tx, id domain.ID, session domain.Session) (workspace.PrepareRequest, error) {
+	return sessionWorkspaceRequestWithNames(tx, id, session, nil)
+}
+
+// frozenNames carries Worktree directory names accepted with a Wait
+// occurrence. When non-empty, a registered repository without a retained name
+// fails closed instead of deriving a new name from mutable registration.
+// Repositories removed from the project after acceptance are ignored.
+func sessionWorkspaceRequestWithNames(tx *store.Tx, id domain.ID, session domain.Session, frozenNames []domain.OccurrenceDirectoryName) (workspace.PrepareRequest, error) {
 	input := workspace.PrepareRequest{SessionID: id, MachineID: session.MachineID, Type: session.Workspace, Repositories: []workspace.RepositorySpec{}}
 	if err := validateLocalOrigin(tx, session); err != nil {
 		return input, err
@@ -63,9 +71,17 @@ func sessionWorkspaceRequest(tx *store.Tx, id domain.ID, session domain.Session)
 		spec := workspace.RepositorySpec{ID: r.ID, PreferredRemote: repo.PreferredRemote, Base: repo.Base, Starting: repo.Starting, AutoFetch: settings.AutomaticFetch && project.EffectiveFetch(settings.AutomaticFetch) && repo.AutoFetch}
 		if session.Workspace == domain.Worktree {
 			spec.SourceKind, spec.RemoteURL = workspace.RemoteCloneSource, repo.RemoteURL
-			spec.DirectoryName, err = workspace.PortableRepositoryDirectory(repo.Name)
-			if err != nil {
-				return input, err
+			if len(frozenNames) != 0 {
+				index := slices.IndexFunc(frozenNames, func(entry domain.OccurrenceDirectoryName) bool { return entry.RepositoryID == r.ID })
+				if index < 0 {
+					return input, domain.Fail(domain.InvalidArgument, "A project repository was added after this scheduled work was accepted.", "Create new scheduled work after the project repositories change; accepted directory names are never re-derived.")
+				}
+				spec.DirectoryName = frozenNames[index].Name
+			} else {
+				spec.DirectoryName, err = workspace.PortableRepositoryDirectory(repo.Name)
+				if err != nil {
+					return input, err
+				}
 			}
 		}
 		for _, checkout := range repo.Checkouts {
@@ -95,13 +111,24 @@ func sessionWorkspaceRequest(tx *store.Tx, id domain.ID, session domain.Session)
 	return input, nil
 }
 
-func queueSessionWorkspace(tx *store.Tx, id domain.ID, session *domain.Session, input workspace.PrepareRequest) error {
-	_, machine, err := activeMachine(tx, session.MachineID)
+// requireNamedDirectoryCapability loads the selected Machine and refuses a
+// preparation with named checkout directories when its Worker did not
+// negotiate NamedWorkspaceDirectoriesV1. Wait acceptance and queueing share it.
+func requireNamedDirectoryCapability(tx *store.Tx, machineID domain.ID, input workspace.PrepareRequest) (domain.Machine, error) {
+	_, machine, err := activeMachine(tx, machineID)
 	if err != nil {
-		return err
+		return machine, err
 	}
 	if input.RequiresNamedDirectories() && !slices.Contains(machine.WorkerCapabilities, domain.NamedWorkspaceDirectoriesV1) {
-		return workspace.NamedDirectoriesUnsupported()
+		return machine, workspace.NamedDirectoriesUnsupported()
+	}
+	return machine, nil
+}
+
+func queueSessionWorkspace(tx *store.Tx, id domain.ID, session *domain.Session, input workspace.PrepareRequest) error {
+	machine, err := requireNamedDirectoryCapability(tx, session.MachineID, input)
+	if err != nil {
+		return err
 	}
 	for _, repo := range input.Repositories {
 		if (repo.SourceKind == workspace.RemoteCloneSource || repo.SourceKind == workspace.IndependentForkSource) && !slices.Contains(machine.WorkerCapabilities, domain.RemoteWorkspaceCloneV1) {

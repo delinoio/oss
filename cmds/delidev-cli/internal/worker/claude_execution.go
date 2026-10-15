@@ -24,7 +24,7 @@ import (
 )
 
 func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, input domain.ExecutionJobInput, logger *slog.Logger) (output json.RawMessage, returned error) {
-	if input.Validate() != nil || (input.Version != 4 && input.Installation.Version != claude.SupportedVersion) {
+	if input.Validate() != nil || (input.Version != 4 && !domain.HarnessVersionAllowed(domain.ClaudeCode, input.Installation.Version)) {
 		return nil, domain.Fail(domain.Unsupported, "Claude execution requires its original verified input and history profile.", "Preserve original history; do not start a replacement input.")
 	}
 	permission, effort, err := claudeExecutionSettings(input.Configuration, input.Input.Mode)
@@ -63,15 +63,30 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
 	}()
+	// The per-execution directory is only the fresh operation journal; native
+	// state lives in the persistent conversation profile resolved below.
 	runtimeRoot := filepath.Join(manager.Root, "runtimes")
 	if err := security.PrivateDir(runtimeRoot); err != nil {
 		return nil, domain.SafeError(err)
 	}
-	home := filepath.Join(runtimeRoot, string(input.ExecutionID))
-	if _, err := os.Lstat(home); !errors.Is(err, os.ErrNotExist) {
+	journal := filepath.Join(runtimeRoot, string(input.ExecutionID))
+	if _, err := os.Lstat(journal); !errors.Is(err, os.ErrNotExist) {
+		return nil, publicationUncertain()
+	}
+	if err := security.CreatePrivateDirExclusive(journal); err != nil {
 		return nil, publicationUncertain()
 	}
 	ordinaryTools := ordinaryExecutionTools(config.Logger)
+	profile, err := executionProfile(ctx, config, domain.ClaudeCode, input)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := profile.Close(); err != nil {
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
+		}
+	}()
+	home := profile.Root
 	env, err := harness.PrivateRuntimeEnvironment(home)
 	if err != nil {
 		return nil, domain.SafeError(err)
@@ -98,12 +113,13 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 		}
 	}()
 	var nativeProfile *nativeClaudeProfile
+	var managedToken *managedClaudeToken
 	nativeJoined := true
 	expectedProxyPath := "/api-proxy/v1"
 	if input.Configuration.Subscription {
 		expectedProxyPath = ""
 		var finish func(bool) error
-		nativeProfile, finish, err = beginClaudeSubscriptionExecution(ctx, config, owner, input)
+		nativeProfile, managedToken, finish, err = beginClaudeSubscriptionExecution(ctx, config, owner, input)
 		if err != nil {
 			return nil, err
 		}
@@ -154,8 +170,34 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 		Version: input.Installation.Version, Home: filepath.Join(home, "claude"), Workspace: lease.WorkingDirectory(), WorkspaceRoots: nativeWorkspaceRoots(manifest), SessionID: input.SessionID, Model: input.Configuration.NativeModel,
 		Permission: permission, Effort: effort, Instructions: instructions, API: claude.APIConfig{ServerOrigin: connection.Credential.Endpoint, Token: token},
 	}
+	if managedToken != nil {
+		// The token is set only in the supervised Claude child's environment. The
+		// private runtime is fresh; no device profile or relay credential exists.
+		nativeConfig.ManagedToken = managedToken.token
+		if err := security.PrivateDir(filepath.Join(manager.Root, "processes", string(owner))); err != nil {
+			return nil, err
+		}
+		managedToken.lease.journal.ExecutionStarted = true
+		if err := writeJSON(managedToken.lease.journalPath, managedToken.lease.journal); err != nil {
+			return nil, publicationUncertain()
+		}
+	}
 	if nativeProfile != nil {
 		nativeConfig.Subscription = &claude.NativeSubscriptionProfile{ID: nativeProfile.owner.Profile, Home: nativeProfile.home}
+		if nativeProfile.historyVersion == claudeProfileV2 {
+			// Session-private configuration and history with the one canonical
+			// secure-storage namespace. A continuation re-binds the history to the
+			// previous private history profile before restoring its checkpoint.
+			history := nativeConfig.Home
+			if c := input.Continuation; c != nil {
+				historyRoot, err := historyNativeRoot(ctx, manager.Root, input.MachineID, domain.ClaudeCode, historyAccount(input), c.HistoryExecutionID)
+				if err != nil {
+					return nil, err
+				}
+				history = filepath.Join(historyRoot, "claude")
+			}
+			nativeConfig.Subscription = &claude.NativeSubscriptionProfile{ID: nativeProfile.owner.Profile, Home: history, SecureStorageHome: nativeProfile.home}
+		}
 		if err := security.PrivateDir(filepath.Join(manager.Root, "processes", string(owner))); err != nil {
 			return nil, err
 		}

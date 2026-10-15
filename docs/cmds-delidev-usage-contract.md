@@ -240,7 +240,7 @@ Interruption-coupled Claude denial additionally retains original result usage in
 
 ### Grok original response observation boundary
 
-Grok `1.0.41` now publishes its original `response_completed` counters in a distinct `grok_observation` Usage resource after original input acceptance. Preserve input/output/cache-read/cache-creation/reasoning as exact canonical uint64 decimal strings, including measured zero. The native notification supplies no total, cost, duration, prompt ID, response ID or model. Its bounded product ordinal is serial ordering within the independently bound input, not native response correlation. Account/connection/provider/model/harness/version/thread/prompt attribution comes from the immutable server-owned execution selection and existing original native binding.
+Grok at or above `domain.GrokProtocolVersion` (`1.0.41`) now publishes its original `response_completed` counters in a distinct `grok_observation` Usage resource after original input acceptance. Preserve input/output/cache-read/cache-creation/reasoning as exact canonical uint64 decimal strings, including measured zero. The native notification supplies no total, cost, duration, prompt ID, response ID or model. Its bounded product ordinal is serial ordering within the independently bound input, not native response correlation. Account/connection/provider/model/harness/version/thread/prompt attribution comes from the immutable server-owned execution selection and existing original native binding.
 
 The original outbox receipt deduplicates publication; equal counters on separately observed ordered responses remain separate observations. The server stores response usage, any text-span closure and next ordinal atomically, and refuses reused resource identities or ordinal regression without partial state. These resources do not enter normalized response totals, token-price estimates, actual charges, budgets or account-wide reporting. Context estimates, original input aggregates and auxiliary native calls are separate and must not be added or substituted. The desktop reads the exact original session/execution/harness/version/thread/prompt observation, preserves full integer precision and explicit missing total/cost, and displays unavailable on mixed or mismatched records. Authenticated CLI Resource reads expose the retained typed records; logs omit counts and content.
 
@@ -351,7 +351,18 @@ with no Provider UUID. Missing, foreign and mixed identities reject atomically
 with the source observation. The immutable model key must match that source.
 Session/account and model groups expose the same service identity, and service
 filters read it from the retained unit body without a migration or synthetic
-Provider. Historical price selection and validation compare the complete
+Provider. A service filter is applied in the native accounting query before the
+25,000-unit read bound and the 500-price bound, so valid excluded units and
+historical prices of other sources never consume limits meant for the selected
+inventory; an excluded-only history gives the normal empty selected summary.
+Only provably valid excluded units are filtered: an API unit with a Provider
+and no service, or a Go unit with the Go service and no Provider. A row whose
+JSON service or source discriminator is missing, empty, foreign or malformed
+stays in the validation path and fails closed with `recovery_required` instead
+of being dropped. Selected units are still fully validated (source, relational columns and
+historical estimate) and fail closed, an oversized or unfiltered selection still
+returns `RESOURCE_EXHAUSTED` with no partial aggregate, and the combined
+native-family limits remain enforced. Historical price selection and validation compare the complete
 model/Provider/service identity. Exact source receipts, conflicting-unit
 rejection, category counts and original account/connection ownership remain
 unchanged; current configuration or price edits cannot reattribute retained units.
@@ -422,12 +433,19 @@ use retained resources and never start native work, tokenization, inference or
 compaction. No RPC, allocation or migration is added. Claude/OpenCode and all
 original action, retry, account, history and cleanup boundaries remain unchanged.
 
-The existing Context presentation labels this as “Latest native-reported context
-tokens” in English and Korean and shows its observation time. It explains that
-this native snapshot may exclude later local context changes and may include a
-native context-limit estimate; it is not exact continuous occupancy or billing.
-Retained data after a failed/in-flight refresh or changed session revision is
-explicitly historical, with a visible read error on failure. Keep existing
+The Session Info Context presentation shows one prominent “Context used” metric
+in English and Korean: the exact native numerator and, only with validated
+matching capacity, `numerator / capacity`, a one-decimal derived percentage and a
+progress bar whose accessible values mirror them; the bar never replaces the
+numeric value. Unavailable or mismatched capacity shows only the reported
+numerator with the existing capacity-unavailable text and no bar or percentage,
+and a missing numerator reads “Not reported”, never zero. Default Info renders no
+latest/historical snapshot label, observation time, native-snapshot explanation
+or compaction explanation. The snapshot remains a native estimate, not exact
+continuous occupancy or billing, and the closed `latest`/`historical` status
+stays in the read contract only. A visible read error
+still reports a failed refresh, and the retained numerator is not confirmed by
+that read. Keep existing
 five-second polling and Refresh context separate from Compact context. Strict
 client decoding preserves exact decimal strings above JavaScript's safe integer
 range, source/status enums and original provenance; old absent-field replies
@@ -436,7 +454,7 @@ or platform acceptance.
 
 ## Codex reviewer attribution
 
-Raw native response-completion notifications lack a model field. With AI review selected, default their immutable event-time model attribution to `unknown-auto-review-model` instead of borrowing the parent model. Only the original same-account/connection response reference proved by the bounded API relay may establish root, child or the builtin canonical reviewer attribution `codex-reviewer-gpt-5.6-luna`. A canonical reviewer model also selected as root/child remains ambiguous. Managed native review and parent-model fallback without distinguishing evidence remain unknown.
+Raw native response-completion notifications lack a model field. With AI review selected, default their immutable event-time model attribution to `unknown-auto-review-model` instead of borrowing the parent model. Only the original same-account/connection response reference proved by the bounded API relay may establish root, child or the builtin canonical reviewer attribution `codex-reviewer-gpt-5.6-luna`. A canonical reviewer model also selected as root/child remains ambiguous. Because the proxy records no root/child response reference for that ambiguous request (see the [proxy contract](cmds-delidev-proxy-contract.md)), its response digest is not proved and keeps the unknown attribution. Managed native review and parent-model fallback without distinguishing evidence remain unknown.
 
 Retain observed counters and original session/execution/account ownership, separate unknown and builtin reviewer groups, and expose the canonical builtin name only when proved. Builtin/unknown rows have no catalog model detail authority, no inferred pricing or actual spend and explicit unpriced coverage. Existing JSON response records and summary projections carry the closed attribution type; existing relational tables retain independent private response references without a migration. Historical records and duplicate receipts keep their original attribution.
 
@@ -524,4 +542,6 @@ compact drawer and effective 200% browser checks are synthetic evidence only.
 
 Dedicated Codex review responses use the closed `native-code-review` auxiliary purpose. Each immutable typed metadata receipt binds its original job, action, session, account, model, context, native thread/turn and provider response digest. The owning Worker publishes observed responses before terminal completion, so unknown completion cannot erase measured usage. Sequence replay never changes the original receipt or charges it twice. Legacy conversation/session-title SQL CHECK values remain unchanged; no migration is added.
 
-Each receipt freezes its exact eligible pricing basis and estimate at observation time. A separate typed metadata lifetime aggregate contributes once to the original session budget, including unavailable counts and independent currencies. Restore preserves these current accounting claims without granting native execution or replay; original session deletion removes their receipts and totals. `GetNativeCodeReview` exposes independent `UsageTotals` and `EstimateTotals` for the exact review. Completion without an exact observed response remains unavailable, not zero. Ordinary conversation response counts and missing-response coverage do not absorb auxiliary reviews, and no estimate establishes actual spending.
+Each receipt freezes its exact eligible pricing basis and estimate at observation time. The owning Worker stamps the observation instant (`observed_at_unix_ms`, Worker clock) when it observes the response, before the exact request is journaled, so reconnect replay and the terminal result carry the same instant. The first durable server insert records that instant as the receipt time (never later than the insert) and prices it with the immutable version that was eligible then: the newest version activated at or before the instant, unless a clear of that version happened at or before the instant. Activation instants are the version creation times; clears keep a typed `pricing-cleared-v1:<pricing id>` metadata instant (no migration). A clear that predates this history has no instant and yields no eligible price rather than a guess. Before reactivation hides an absent active pointer, typed `pricing-unknown-clear-v1:<pricing id>` metadata retains the unmarked latest version's unknown eligibility across restart and subsequent activations; no clear instant is invented, and newer versions become eligible from their actual activation times. Historical selection uses retained versions only and never runs the automatic price resolver. A publication committed within one minute of its observation keeps the live selection only if no later activation or clear is present after automatic resolution; genuine first use with no retained price history retains the live fallback. Existing cleared history cannot borrow a price activated by that resolution after observation. A request without an instant (older Worker) uses commit time and the live selection. If no price was eligible, the receipt stays unavailable even when a price appears before replay. Replay after the receipt exists returns the original receipt id, estimate and budget contribution without repricing or a second charge and ignores any later observation instant. Worker and server clocks are compared directly, so clock skew can move the selected version across a price change that happened within the skew. A separate typed metadata lifetime aggregate contributes once to the original session budget, including unavailable counts and independent currencies. Restore preserves these current accounting claims without granting native execution or replay; original session deletion removes their receipts and totals. `GetNativeCodeReview` exposes independent `UsageTotals` and `EstimateTotals` for the exact review. Completion without an exact observed response remains unavailable, not zero. Ordinary conversation response counts and missing-response coverage do not absorb auxiliary reviews, and no estimate establishes actual spending.
+
+Native review response usage receipts are private. Settled native review job output keeps `usage_records` in the persisted job and the usage table, but the public Job resource projection (`GetNativeCodeReview`, `GetResource`, `ListResources`) omits that key, so account, connection, provider, model, native thread/turn identifiers and response digests are not exposed. Aggregate usage and estimates continue to come from the usage table projections.

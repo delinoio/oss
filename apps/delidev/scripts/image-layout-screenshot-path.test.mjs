@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import {
+  assertScreenshotsWritten,
   screenshotDirectory,
   validateScreenshotFiles,
 } from "./image-layout-screenshot-path.mjs";
@@ -149,4 +150,48 @@ test("layout guard runs before browser import, temporary output and build", asyn
     source,
     /await rm\(directory,\s*\{\s*recursive: true,\s*force: true\s*\}\)/,
   );
+});
+
+test("screenshot completeness assertion rejects missing, extra and duplicate captures", () => {
+  const expected = ["a-320.png", "b-320.png"];
+  assertScreenshotsWritten(expected, ["b-320.png", "a-320.png"]);
+  assert.throws(() => assertScreenshotsWritten(expected, []));
+  assert.throws(() => assertScreenshotsWritten(expected, ["a-320.png"]));
+  assert.throws(() =>
+    assertScreenshotsWritten(expected, ["a-320.png", "a-320.png"]),
+  );
+  assert.throws(() =>
+    assertScreenshotsWritten(expected, [...expected, "c-320.png"]),
+  );
+});
+
+test("session remediation layout selects its screenshot width from the viewport matrix", async () => {
+  const source = await readFile(
+    new URL("./test-session-remediation-layout.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /const screenshotWidth = 320;/u);
+  assert.match(source, /width === screenshotWidth/u);
+  assert.doesNotMatch(source, /width === 480/u);
+  assert.match(source, /await screenshotDirectory\(/u);
+  assert.match(source, /assertScreenshotsWritten\(/u);
+  const guard = source.indexOf("await screenshotDirectory(");
+  assert(guard > 0);
+  for (const operation of [/await import\(\s*playwright/u, /await mkdtemp\(/u])
+    assert(guard < source.search(operation));
+});
+
+test("transcript role layout keeps 560x480 in the default matrix and names screenshots by height", async () => {
+  const source = await readFile(
+    new URL("./test-transcript-role-layout.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /const shortHeight = \{ width: 560, height: 480 \};/u);
+  // The default branch of the sizes ternary must include the short-height case.
+  assert.match(
+    source,
+    /\? \[shortHeight\]\s*:\s*\[[^\]]*\{ width: 560, height: 640 \},\s*shortHeight,/u,
+  );
+  assert.doesNotMatch(source, /size\.width !== 480/u);
+  assert.match(source, /\$\{size\.width\}x\$\{size\.height\}/u);
 });

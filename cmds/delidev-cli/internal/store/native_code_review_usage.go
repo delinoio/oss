@@ -13,6 +13,12 @@ import (
 
 const nativeReviewUsagePrefix = "native-code-review-usage-v1:"
 
+// A publication this close to its observation still sees the live price state,
+// including the first-use automatic price resolution. The Worker bounds one
+// publication attempt to 30 seconds, so any older first commit was delayed by an
+// outage and must use retained history instead.
+const nativeReviewFreshObservation = time.Minute
+
 // NativeCodeReviewUsage preserves an independent auxiliary response and its
 // original price. The legacy response table's closed purpose set stays intact.
 type NativeCodeReviewUsage struct {
@@ -56,6 +62,8 @@ func (t *Tx) PutNativeCodeReviewUsage(job, id domain.ID, record domain.ResponseU
 		}
 		left, right := previous.Record, record
 		left.Sequence, right.Sequence = 0, 0
+		// The original receipt owns its observation instant; replay never moves it.
+		left.ObservedAt, right.ObservedAt = time.Time{}, time.Time{}
 		a, _ := json.Marshal(left)
 		b, _ := json.Marshal(right)
 		if !bytes.Equal(a, b) {
@@ -77,9 +85,19 @@ func (t *Tx) PutNativeCodeReviewUsage(job, id domain.ID, record domain.ResponseU
 	if err = t.tx.QueryRowContext(t.ctx, "SELECT count(*) FROM metadata WHERE key LIKE ? AND json_extract(value,'$.id')=?", nativeReviewUsagePrefix+"%", id).Scan(&existingID); err != nil || existingID != 0 {
 		return "", false, domain.NativeCodeReviewUnavailable()
 	}
-	value := NativeCodeReviewUsage{Version: 1, ID: id, JobID: job, CreatedAt: t.now, Record: record, Estimate: missingPriceEstimate()}
+	// A Worker-reported observation keeps its original instant, never later than
+	// this transaction. Older Workers report none and fall back to commit time.
+	observed, reported := t.now, !record.ObservedAt.IsZero()
+	if reported {
+		observed = record.ObservedAt.UTC().Truncate(time.Millisecond)
+		if observed.After(t.now) {
+			observed = t.now
+		}
+		record.ObservedAt = observed
+	}
+	value := NativeCodeReviewUsage{Version: 1, ID: id, JobID: job, CreatedAt: observed, Record: record, Estimate: missingPriceEstimate()}
 	if record.Attribution == "" {
-		basis, err := t.ActivePricing(record.ModelID)
+		basis, err := t.nativeReviewPricing(record.ModelID, observed, reported)
 		if err != nil {
 			return "", false, err
 		}
@@ -102,6 +120,46 @@ func (t *Tx) PutNativeCodeReviewUsage(job, id domain.ID, record domain.ResponseU
 		return "", false, err
 	}
 	return id, false, nil
+}
+
+// nativeReviewPricing selects the version eligible at the observation instant.
+// Without a reported instant, or for a fresh publication with no later price
+// change, the live selection (including first-use resolution) applies. Otherwise
+// only retained history is consulted; the resolver is never run for the past.
+func (t *Tx) nativeReviewPricing(model domain.ID, observed time.Time, reported bool) (*PricingVersion, error) {
+	if !reported {
+		return t.ActivePricing(model)
+	}
+	if t.now.Sub(observed) <= nativeReviewFreshObservation {
+		changed, err := t.pricingChangedAfter(model, observed)
+		if err != nil {
+			return nil, err
+		}
+		if !changed {
+			hadHistory, err := t.pricingHistoryExists(model)
+			if err != nil {
+				return nil, err
+			}
+			live, err := t.ActivePricing(model)
+			if err != nil {
+				return nil, err
+			}
+			// The resolver can replace or clear a price during this transaction.
+			// Only a genuine first price may use the live fallback after such
+			// a change; earlier retained history owns older observations.
+			if hadHistory {
+				changed, err = t.pricingChangedAfter(model, observed)
+				if err != nil {
+					return nil, err
+				}
+				if changed {
+					return t.PricingAt(model, observed)
+				}
+			}
+			return live, nil
+		}
+	}
+	return t.PricingAt(model, observed)
 }
 
 func (t *Tx) NativeCodeReviewUsage(job domain.ID) ([]NativeCodeReviewUsage, error) {

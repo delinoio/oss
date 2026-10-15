@@ -13,7 +13,14 @@ import {
   failureCause,
 } from "@delinoio/delidev-api-client";
 import { Disclosure, DisclosureSummary } from "./disclosure";
-import { copy, useLocale } from "./localization";
+import { settleEnclosingEntrances } from "./entrance-motion";
+import {
+  copy,
+  i18n,
+  SupportedLanguage,
+  useLocale,
+  type MessageKey,
+} from "./localization";
 
 export enum SessionIconKind {
   Diff = "diff",
@@ -21,7 +28,7 @@ export enum SessionIconKind {
   Terminals = "terminals",
   Browser = "browser",
   Sidechat = "sidechat",
-  Tools = "tools",
+  Plus = "plus",
   Diagnostics = "diagnostics",
   Conversation = "conversation",
   Warning = "warning",
@@ -29,9 +36,7 @@ export enum SessionIconKind {
 
 const paths: Record<SessionIconKind, ReactNode> = {
   [SessionIconKind.Sidechat]: <path d="M4 4h16v12H9l-5 4V4Z" />,
-  [SessionIconKind.Tools]: (
-    <path d="m14 6 4 4 3-3a6 6 0 0 1-8 8l-6 6a3 3 0 0 1-4-4l6-6a6 6 0 0 1 8-8z" />
-  ),
+  [SessionIconKind.Plus]: <path d="M12 5v14M5 12h14" />,
   [SessionIconKind.Diff]: (
     <>
       <path d="M5 3h8l4 4v14H5zM13 3v5h4M8 12h6M11 9v6M8 18h6" />
@@ -89,6 +94,51 @@ export enum SessionNoticeSeverity {
   Error = "error",
 }
 
+/** True when the text equals this catalog entry in any supported locale, independent of the active one. */
+function matchesCatalogCopy(value: string, key: MessageKey): boolean {
+  return Object.values(SupportedLanguage).some(
+    (lng) => i18n.t(key, { lng }) === value,
+  );
+}
+
+/**
+ * Localized recovery-card heading for a typed failure. Classification uses the
+ * closed code/cause values only, never message text. `fallbackTitle` applies to
+ * codes without a dedicated heading.
+ */
+function sessionProblemTitle(
+  code: unknown,
+  cause?: unknown,
+  fallbackTitle?: string,
+): string {
+  if (failureCause(code, cause) === FailureCause.QuotaExhausted)
+    return copy("session.quotaTitle");
+  switch (code) {
+    case FailureCode.Unauthenticated:
+      return copy("session.authenticationTitle");
+    case FailureCode.RecoveryRequired:
+      return copy("session.recoveryTitle");
+    case FailureCode.BudgetReached:
+      return copy("session.budgetTitle");
+    case FailureCode.ServerUnavailable:
+    case FailureCode.Unavailable:
+      return copy("session.connectionTitle");
+    default:
+      return fallbackTitle ?? copy("session.attentionRequired");
+  }
+}
+
+/**
+ * Localized heading for the live-stream failure card. Only the typed
+ * `unauthenticated` code has a dedicated heading; every other code, including
+ * recovery, budget and quota classifications, keeps the connection heading.
+ */
+export function sessionStreamFailureTitle(code: unknown): string {
+  return code === FailureCode.Unauthenticated
+    ? copy("session.authenticationTitle")
+    : copy("session.connectionTitle");
+}
+
 /** Presentation only: callers retain actions, confirmations and request identity. */
 export function SessionProblemNotice({
   code,
@@ -111,24 +161,31 @@ export function SessionProblemNotice({
 }) {
   useLocale();
   const quota = failureCause(code, cause) === FailureCause.QuotaExhausted;
-  const title = quota
-    ? copy("session.quotaTitle")
-    : code === FailureCode.Unauthenticated
-      ? copy("session.authenticationTitle")
-      : code === FailureCode.RecoveryRequired
-        ? copy("session.recoveryTitle")
-        : code === FailureCode.BudgetReached
-          ? copy("session.budgetTitle")
-          : code === FailureCode.ServerUnavailable ||
-              code === FailureCode.Unavailable
-            ? copy("session.connectionTitle")
-            : (fallbackTitle ?? copy("session.attentionRequired"));
+  const title = sessionProblemTitle(code, cause, fallbackTitle);
   return (
     <SessionNotice title={title} details={details}>
-      <p>{quota ? copy("session.quotaExplanation") : message}</p>
-      {quota || guidance ? (
-        <p>{quota ? copy("session.quotaGuidance") : guidance}</p>
-      ) : null}
+      {quota ? (
+        <>
+          <p>{copy("session.quotaExplanation")}</p>
+          <p>{copy("session.quotaGuidance")}</p>
+          {/* Original safe evidence stays exact and visible after the localized catalog copy.
+              Catalog-identical originals are skipped in every supported locale so the
+              paragraph count never depends on the active display language. */}
+          {message &&
+          !matchesCatalogCopy(message, "session.quotaExplanation") ? (
+            <p>{message}</p>
+          ) : null}
+          {guidance &&
+          !matchesCatalogCopy(guidance, "session.quotaGuidance") ? (
+            <p>{guidance}</p>
+          ) : null}
+        </>
+      ) : (
+        <>
+          <p>{message}</p>
+          {guidance ? <p>{guidance}</p> : null}
+        </>
+      )}
       {children}
       <Disclosure>
         <DisclosureSummary>{copy("ui.technicalDetails")}</DisclosureSummary>
@@ -196,10 +253,14 @@ export function SessionActions({ children }: { children: ReactNode }) {
   const trigger = useRef<HTMLButtonElement>(null);
   const body = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
-    if (open)
-      body.current
-        ?.querySelector<HTMLButtonElement>("button:not(:disabled)")
-        ?.focus();
+    if (!open) return;
+    // An animated ancestor is a stacking context that would cap this popup's
+    // z-index beneath later siblings, so the opening settles any in-flight
+    // entrance in the same commit. Focus never waits for the motion.
+    settleEnclosingEntrances(root.current);
+    body.current
+      ?.querySelector<HTMLButtonElement>("button:not(:disabled)")
+      ?.focus();
   }, [open]);
   useEffect(() => {
     if (!open) return;

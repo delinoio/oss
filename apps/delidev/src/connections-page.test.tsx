@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { TransportProvider } from "@connectrpc/connect-query";
@@ -67,7 +68,9 @@ function fixture() {
   });
   function Harness() {
     const [shown, show] = useState(true),
-      [slots, setSlots] = useState<ConnectionPageSlots>();
+      [slots, setSlots] = useState<ConnectionPageSlots>(),
+      [modal, setModal] = useState<HTMLDivElement | null>(null),
+      [diagnostics, setDiagnostics] = useState(false);
     return (
       <TransportProvider transport={transport}>
         <QueryClientProvider client={client}>
@@ -75,10 +78,15 @@ function fixture() {
             <button onClick={() => show((value) => !value)}>
               Toggle Settings
             </button>
+            <button onClick={() => setDiagnostics((value) => !value)}>
+              Toggle diagnostics
+            </button>
             {shown ? <ConnectionsPage local onSlots={setSlots} /> : null}
+            <div data-testid="modal-host" ref={setModal} />
             <LocalConnectionPresentationProvider
               inline={false}
-              target={slots?.current}
+              pageOpen={Boolean(slots)}
+              target={diagnostics ? (modal ?? undefined) : undefined}
             >
               <LocalServerControls
                 connected
@@ -109,12 +117,234 @@ function fixture() {
   }
   return { actions, stop, start, Harness, profile };
 }
-it("shows the current Local connection and stored profiles without probes or mutations", async () => {
+enum Placement {
+  Modal = "modal",
+  Page = "page",
+  Hidden = "hidden",
+  Inline = "inline",
+}
+function placementOf(node: Element): Placement {
+  if (node.closest('[data-testid="modal-host"]')) return Placement.Modal;
+  if (node.closest(".connections-page")) return Placement.Page;
+  if (node.closest("[hidden]")) return Placement.Hidden;
+  return Placement.Inline;
+}
+// The contract state table: where the local-server controls render for every
+// LocalServerState, Connections page and diagnostics modal combination.
+function expectedPlacement(
+  state: LocalServerState,
+  connectionsOpen: boolean,
+  modalOpen: boolean,
+): Placement {
+  if (modalOpen) return Placement.Modal;
+  if (connectionsOpen) return Placement.Hidden;
+  return state === LocalServerState.Ready ? Placement.Hidden : Placement.Inline;
+}
+function PlacementHarness({
+  state,
+  connectionsOpen,
+  modalOpen,
+  restart,
+  stop = async () => ({}),
+}: {
+  state: LocalServerState;
+  connectionsOpen: boolean;
+  modalOpen: boolean;
+  restart: () => void;
+  stop?: () => Promise<object>;
+}) {
+  const [slots, setSlots] = useState<ConnectionPageSlots>(),
+    [modal, setModal] = useState<HTMLDivElement | null>(null);
+  const [transport] = useState(() =>
+    createRouterTransport((router) =>
+      router.service(SystemService, { stopServer: stop }),
+    ),
+  );
+  const [client] = useState(() => new QueryClient());
+  return (
+    <TransportProvider transport={transport}>
+      <QueryClientProvider client={client}>
+        <MutationIntents>
+          {connectionsOpen ? (
+            <ConnectionsPage local onSlots={setSlots} />
+          ) : null}
+          <div data-testid="modal-host" ref={setModal} />
+          <LocalConnectionPresentationProvider
+            inline={state !== LocalServerState.Ready}
+            pageOpen={Boolean(slots)}
+            target={modalOpen ? (modal ?? undefined) : undefined}
+          >
+            <LocalServerControls
+              connected
+              endpoint="http://127.0.0.1:46300"
+              status={{ state, attempts: 2, retry_ms: 3000 }}
+              restart={restart}
+              busy={false}
+            />
+          </LocalConnectionPresentationProvider>
+        </MutationIntents>
+      </QueryClientProvider>
+    </TransportProvider>
+  );
+}
+const REMOVED_SECTION_TEXT = [
+  "Current connection",
+  "This computer",
+  "Local server",
+  "http://127.0.0.1:46300",
+  "Stopping the server disconnects all clients.",
+];
+it.each(
+  Object.values(LocalServerState).flatMap((state) =>
+    [false, true].flatMap((connectionsOpen) =>
+      [false, true].map((modalOpen) => ({ state, connectionsOpen, modalOpen })),
+    ),
+  ),
+)(
+  "places the local controls for $state with Connections open=$connectionsOpen and diagnostics open=$modalOpen",
+  async ({ state, connectionsOpen, modalOpen }) => {
+    const restart = vi.fn();
+    render(
+      <PlacementHarness
+        state={state}
+        connectionsOpen={connectionsOpen}
+        modalOpen={modalOpen}
+        restart={restart}
+      />,
+    );
+    // The diagnostics host attaches after its first render.
+    await waitFor(() =>
+      expect(placementOf(screen.getByText("This computer"))).toBe(
+        expectedPlacement(state, connectionsOpen, modalOpen),
+      ),
+    );
+    const placement = expectedPlacement(state, connectionsOpen, modalOpen);
+    // The page never contains the removed section, in any combination.
+    const page = document.querySelector(".connections-page");
+    if (connectionsOpen) {
+      expect(page).not.toBeNull();
+      for (const text of REMOVED_SECTION_TEXT)
+        expect(within(page as HTMLElement).queryByText(text)).toBeNull();
+      expect(
+        within(page as HTMLElement).queryByRole("heading", {
+          name: "Current connection",
+        }),
+      ).toBeNull();
+      expect(
+        within(page as HTMLElement).queryByRole("button", {
+          name: /local server|server stop/i,
+        }),
+      ).toBeNull();
+      expect(document.querySelector(".connections-current")).toBeNull();
+      expect(page?.querySelector(":scope > section")).toBeNull();
+    }
+    // The controls are operable only in the modal or the inline fallback.
+    const operable = screen.queryAllByRole("button", {
+      name: /start local server|stop local server/i,
+    });
+    if (placement === Placement.Hidden) expect(operable).toHaveLength(0);
+    if (placement === Placement.Inline || placement === Placement.Modal) {
+      const startable =
+        state === LocalServerState.Stopped ||
+        state === LocalServerState.Blocked ||
+        state === LocalServerState.Ready;
+      expect(operable.length > 0).toBe(startable);
+    }
+    expect(restart).not.toHaveBeenCalled();
+  },
+);
+it.each(
+  [
+    { phase: "accepted", rejects: false, marker: /Stop accepted/ },
+    {
+      phase: "uncertain",
+      rejects: true,
+      marker: /Retry the same server stop/,
+    },
+  ].flatMap((phase) =>
+    [false, true].flatMap((connectionsOpen) =>
+      [false, true].map((modalOpen) => ({
+        ...phase,
+        connectionsOpen,
+        modalOpen,
+      })),
+    ),
+  ),
+)(
+  "places the $phase stop state with Connections open=$connectionsOpen and diagnostics open=$modalOpen",
+  async ({ rejects, marker, connectionsOpen, modalOpen }) => {
+    const stop = vi.fn(async () => {
+      if (rejects) throw new ConnectError("Response lost", Code.Unavailable);
+      return {};
+    });
+    const props = { state: LocalServerState.Ready, restart: vi.fn(), stop };
+    const view = render(
+      <PlacementHarness {...props} connectionsOpen={false} modalOpen />,
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Stop local server" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Confirm server stop" }),
+    );
+    await screen.findByText(marker);
+    view.rerender(
+      <PlacementHarness
+        {...props}
+        connectionsOpen={connectionsOpen}
+        modalOpen={modalOpen}
+      />,
+    );
+    await waitFor(() =>
+      expect(placementOf(screen.getByText(marker))).toBe(
+        expectedPlacement(LocalServerState.Ready, connectionsOpen, modalOpen),
+      ),
+    );
+    const page = document.querySelector(".connections-page");
+    if (page)
+      expect(within(page as HTMLElement).queryByText(marker)).toBeNull();
+    expect(stop).toHaveBeenCalledTimes(1);
+  },
+);
+it("lists only Saved servers content and Advanced in the local Connections page", async () => {
   const value = fixture();
   render(<value.Harness />);
   await screen.findByRole("button", { name: "Open Studio server" });
-  expect(screen.getByText("Connected")).toBeTruthy();
-  expect(screen.getByText("http://127.0.0.1:46300")).toBeTruthy();
+  const page = document.querySelector(".connections-page") as HTMLElement;
+  expect(within(page).getByText("Advanced").closest("details")?.open).toBe(
+    false,
+  );
+  expect(
+    within(page).getByText("Advanced controls need attention."),
+  ).toBeTruthy();
+  expect(page.querySelectorAll(":scope > section")).toHaveLength(0);
+  expect(page.querySelector(".connections-current")).toBeNull();
+  // Neither a heading nor an empty host nor a stop or start target remains.
+  expect(
+    within(page).queryByRole("heading", { name: "Current connection" }),
+  ).toBeNull();
+  expect(within(page).queryByText("Connected")).toBeNull();
+  expect(placementOf(screen.getByText("This computer"))).toBe(Placement.Hidden);
+});
+it("renders the saved-server window Current connection slot and delivers it to the page slots", async () => {
+  let delivered: ConnectionPageSlots | undefined;
+  render(<ConnectionsPage onSlots={(slots) => (delivered = slots)} />);
+  expect(
+    screen.getByRole("heading", { name: "Current connection" }),
+  ).toBeTruthy();
+  expect(delivered?.current).toBeInstanceOf(HTMLElement);
+  expect(delivered?.saved).toBeUndefined();
+  expect(delivered?.advanced).toBeInstanceOf(HTMLElement);
+});
+it("shows stored profiles without probes or mutations", async () => {
+  const value = fixture();
+  render(<value.Harness />);
+  await screen.findByRole("button", { name: "Open Studio server" });
+  expect(
+    within(
+      document.querySelector(".connections-page") as HTMLElement,
+    ).queryByText("Connected"),
+  ).toBeNull();
   expect(screen.getAllByText("Saved")).toHaveLength(2);
   expect(screen.queryByRole("dialog", { name: "Saved servers" })).toBeNull();
   expect(value.stop).not.toHaveBeenCalled();
@@ -127,26 +357,68 @@ it("shows the current Local connection and stored profiles without probes or mut
   fireEvent.click(screen.getByText("Advanced"));
   expect(value.actions.removed).not.toHaveBeenCalled();
 });
-it("retains the original stop confirmation and exact uncertain request across page departure", async () => {
+it("retains the original stop confirmation and exact uncertain request across page departure and diagnostics moves", async () => {
   const value = fixture();
   value.stop.mockRejectedValueOnce(
     new ConnectError("Response lost", Code.Unavailable),
   );
   render(<value.Harness />);
   await screen.findByRole("button", { name: "Open Studio server" });
-  fireEvent.click(screen.getByRole("button", { name: "Stop local server" }));
-  fireEvent.click(screen.getByRole("button", { name: "Toggle Settings" }));
-  fireEvent.click(screen.getByRole("button", { name: "Toggle Settings" }));
-  fireEvent.click(screen.getByRole("button", { name: "Confirm server stop" }));
-  await screen.findByRole("button", { name: "Retry the same server stop" });
-  fireEvent.click(screen.getByRole("button", { name: "Toggle Settings" }));
-  fireEvent.click(screen.getByRole("button", { name: "Toggle Settings" }));
+  // Connections exposes no Stop target; the diagnostics modal still does.
+  expect(
+    screen.queryByRole("button", { name: "Stop local server" }),
+  ).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Toggle diagnostics" }));
   fireEvent.click(
-    screen.getByRole("button", { name: "Retry the same server stop" }),
+    await screen.findByRole("button", { name: "Stop local server" }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Toggle diagnostics" }));
+  fireEvent.click(screen.getByRole("button", { name: "Toggle Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Toggle Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Toggle diagnostics" }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Confirm server stop" }),
+  );
+  await screen.findByRole("button", { name: "Retry the same server stop" });
+  fireEvent.click(screen.getByRole("button", { name: "Toggle diagnostics" }));
+  expect(
+    screen.queryByRole("button", { name: "Retry the same server stop" }),
+  ).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Toggle Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Toggle Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Toggle diagnostics" }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Retry the same server stop" }),
   );
   await waitFor(() => expect(value.stop).toHaveBeenCalledTimes(2));
   expect(value.stop.mock.calls[0]?.[0]).toEqual(value.stop.mock.calls[1]?.[0]);
   expect(value.start).not.toHaveBeenCalled();
+});
+it("never shows the accepted-stop status or uncertain retry inside the Connections page", async () => {
+  const value = fixture();
+  value.stop.mockRejectedValueOnce(
+    new ConnectError("Response lost", Code.Unavailable),
+  );
+  render(<value.Harness />);
+  await screen.findByRole("button", { name: "Open Studio server" });
+  const page = document.querySelector(".connections-page") as HTMLElement;
+  fireEvent.click(screen.getByRole("button", { name: "Toggle diagnostics" }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Stop local server" }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Confirm server stop" }));
+  await screen.findByRole("button", { name: "Retry the same server stop" });
+  fireEvent.click(screen.getByRole("button", { name: "Toggle diagnostics" }));
+  expect(within(page).queryByText(/Retry the same server stop/)).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Toggle diagnostics" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Retry the same server stop" }),
+  );
+  await waitFor(() => expect(value.stop).toHaveBeenCalledTimes(2));
+  await screen.findByText(/Stop accepted/);
+  fireEvent.click(screen.getByRole("button", { name: "Toggle diagnostics" }));
+  expect(within(page).queryByText(/Stop accepted/)).toBeNull();
+  expect(placementOf(screen.getByText(/Stop accepted/))).toBe(Placement.Hidden);
 });
 it("retains saved rows after a failed inventory read and keeps pending private pairing bytes", async () => {
   const value = fixture();
@@ -432,4 +704,14 @@ it("presents a new Add task without remounting the retained form", async () => {
     }),
   ).toBeNull();
   expect(value.actions.pair).toHaveBeenCalledTimes(1);
+});
+
+it("publishes no Tailscale slot from the Connections page", () => {
+  const onSlots = vi.fn();
+  render(<ConnectionsPage local onSlots={onSlots} />);
+  const slots = onSlots.mock.calls.at(-1)?.[0] as ConnectionPageSlots;
+  expect(slots.saved).toBeInstanceOf(HTMLElement);
+  expect(slots.advanced).toBeInstanceOf(HTMLElement);
+  // The local window has no Current connection slot at all.
+  expect(Object.keys(slots).sort()).toEqual(["advanced", "saved"]);
 });

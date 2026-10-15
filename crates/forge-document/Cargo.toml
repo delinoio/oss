@@ -16,7 +16,9 @@ url = "2.5.8"
 parley = "=0.9.0"
 parley_data = "=0.9.0"
 unicode-segmentation = "=1.13.3"
-fontique = "=0.9.0"
+# Load Fontconfig at runtime on Linux so builds do not require its optional
+# development package or pkg-config metadata.
+fontique = { version = "=0.9.0", features = ["fontconfig-dlopen"] }
 # Keep legacy Macintosh font-name decoding independent of Parley's shaper.
 swash = "=0.2.10"
 ttf-parser = "=0.25.1"

@@ -344,7 +344,7 @@ func TestSessionDeletionRestoreAppliesHandleBudget(t *testing.T) {
 		}
 		return total, held
 	}
-	unlimited, err := prepareSessionCopyIdentities(context.Background(), c, root, w, true, true)
+	unlimited, err := prepareSessionCopyIdentities(context.Background(), c, root, w, &identityBudget{remaining: 1 << 20}, true, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -353,15 +353,172 @@ func TestSessionDeletionRestoreAppliesHandleBudget(t *testing.T) {
 	if total < 3 || held != total {
 		t.Fatal("fixture needs several present objects", total, held)
 	}
-	previous := maxHeldIdentityHandles
-	maxHeldIdentityHandles = 2
-	t.Cleanup(func() { maxHeldIdentityHandles = previous })
-	limited, err := prepareSessionCopyIdentities(context.Background(), c, root, w, true, true)
+	limited, err := prepareSessionCopyIdentities(context.Background(), c, root, w, &identityBudget{remaining: 2}, true, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer closeSessionCopyIdentities(limited)
 	if gotTotal, gotHeld := present(limited); gotTotal != total || gotHeld != 2 {
 		t.Fatal("restore ignored the handle budget", gotTotal, gotHeld)
+	}
+}
+
+func installAdoptionHook(t *testing.T, hook func(lockPath string)) {
+	t.Helper()
+	sessionDeletionBeforeAdoptionHook = hook
+	t.Cleanup(func() { sessionDeletionBeforeAdoptionHook = nil })
+}
+
+// maintenanceOwners lists the owner scopes whose reconciliation creates a
+// maintenance lock: a job owner (right after job validation) and the session
+// owner (inside workspace retirement). Each has a process index directory so the
+// reconciler runs and creates its lock.
+func maintenanceOwners(t *testing.T, c Config, w domain.SessionDeletionWork) map[string]string {
+	t.Helper()
+	owners := map[string]string{
+		"job":     filepath.Join(c.Root, "processes", string(w.Copies[0].JobID)+".recovery.lock"),
+		"session": filepath.Join(c.Root, "processes", string(w.SessionID)+".recovery.lock"),
+	}
+	for _, id := range []domain.ID{w.Copies[0].JobID, w.SessionID} {
+		if err := os.MkdirAll(filepath.Join(c.Root, "processes", string(id)), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return owners
+}
+
+// A lock the reconciler created and the Worker did not change is adopted on the
+// first attempt and removed with the rest of the owner's state.
+func TestSessionDeletionAdoptsUnchangedReconcilerMaintenanceLocks(t *testing.T) {
+	c, w, _, _ := deletionWorkerFixture(t, domain.GeneralChat)
+	owners := maintenanceOwners(t, c, w)
+	adopted := map[string]bool{}
+	installAdoptionHook(t, func(lockPath string) {
+		if info, err := os.Lstat(lockPath); err != nil || !info.Mode().IsRegular() || info.Size() != 0 {
+			t.Error("reconciler did not leave an empty regular lock", lockPath, err)
+		}
+		adopted[lockPath] = true
+	})
+	proof, err := deleteSessionCopies(context.Background(), c, w)
+	if err != nil || !proof.Complete {
+		t.Fatal("unchanged reconciler locks were not adopted and removed", proof, err)
+	}
+	for name, lock := range owners {
+		if !adopted[lock] {
+			t.Fatal("adoption was not attempted for the owner", name)
+		}
+		if _, err := os.Lstat(lock); !os.IsNotExist(err) {
+			t.Fatal("adopted maintenance lock survived", name, err)
+		}
+	}
+}
+
+// Whatever takes the lock's name between owner reconciliation and adoption is
+// not the object the reconciler locked: it is never adopted, the deletion stays
+// pending, and neither the replacement nor its contents are touched.
+func TestSessionDeletionDoesNotAdoptMaintenanceLockReplacedBeforeAdoption(t *testing.T) {
+	replacements := map[string]func(t *testing.T, lock string) (probe string, want string){
+		"directory with contents": func(t *testing.T, lock string) (string, string) {
+			mustWrite(t, filepath.Join(lock, "sentinel"), "foreign sentinel")
+			return filepath.Join(lock, "sentinel"), "foreign sentinel"
+		},
+		"empty directory": func(t *testing.T, lock string) (string, string) {
+			if err := os.Mkdir(lock, 0700); err != nil {
+				t.Fatal(err)
+			}
+			return lock, ""
+		},
+		"nonempty regular file": func(t *testing.T, lock string) (string, string) {
+			mustWrite(t, lock, "foreign contents")
+			return lock, "foreign contents"
+		},
+		"distinct empty private regular file": func(t *testing.T, lock string) (string, string) {
+			mustWrite(t, lock, "")
+			return lock, ""
+		},
+	}
+	for ownerName := range map[string]bool{"job": true, "session": true} {
+		for name, install := range replacements {
+			t.Run(ownerName+"/"+name, func(t *testing.T) {
+				c, w, _, _ := deletionWorkerFixture(t, domain.GeneralChat)
+				target := maintenanceOwners(t, c, w)[ownerName]
+				var probe, want string
+				swapped := false
+				installAdoptionHook(t, func(lockPath string) {
+					if lockPath != target || swapped {
+						return
+					}
+					swapped = true
+					if err := os.Rename(lockPath, lockPath+".moved"); err != nil {
+						t.Error(err)
+						return
+					}
+					probe, want = install(t, lockPath)
+				})
+				expectPendingDeletion(t, c, w)
+				if !swapped {
+					t.Fatal("the replacement was never installed")
+				}
+				info, err := os.Lstat(probe)
+				if err != nil {
+					t.Fatal("replacement was removed", err)
+				}
+				if info.Mode().IsRegular() {
+					if b, err := os.ReadFile(probe); err != nil || string(b) != want {
+						t.Fatal("replacement contents changed", err)
+					}
+				}
+				// Nothing was recorded: the replacement never became an authorized
+				// identity and removal never started.
+				if _, err := os.Lstat(sessionIdentityPath(c.Root, w)); !os.IsNotExist(err) {
+					t.Fatal("an identity inventory was persisted for a rejected adoption", err)
+				}
+				if saved := readDeletionProof(t, sessionDeletionObligationPath(c.Root, w, ".json")); saved.RemovalStarted {
+					t.Fatal("removal started despite a rejected adoption", saved)
+				}
+			})
+		}
+	}
+}
+
+// A retry never adopts: a job-owner lock that appears after the first attempt
+// persisted the inventory stays foreign.
+func TestSessionDeletionRetryDoesNotAdoptJobMaintenanceLock(t *testing.T) {
+	c, w, _ := pendThenPersist(t)
+	lock := filepath.Join(c.Root, "processes", string(w.Copies[0].JobID)+".recovery.lock")
+	if _, err := os.Lstat(lock); err == nil {
+		if err := os.Remove(lock); err != nil {
+			t.Fatal(err)
+		}
+	}
+	installAdoptionHook(t, func(string) { t.Error("a retry attempted adoption") })
+	mustWrite(t, lock, "")
+	expectPendingDeletion(t, c, w)
+	if _, err := os.Lstat(lock); err != nil {
+		t.Fatal("retry adopted and removed a foreign job lock", err)
+	}
+}
+
+// Adoption is limited to the owners whose reconciliation produced a binding. A
+// symlink at an unrelated owner lock name is outside the deletion inventory: the
+// deletion completes without following, adopting or removing it.
+func TestSessionDeletionAdoptionIgnoresNamesWithoutReconcilerBinding(t *testing.T) {
+	c, w, _, _ := deletionWorkerFixture(t, domain.GeneralChat)
+	target := filepath.Join(c.Root, "processes", string(domain.NewID())+".recovery.lock")
+	if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(c.Root, "jobs"), target); err != nil {
+		t.Skip("symlinks unavailable", err)
+	}
+	proof, err := deleteSessionCopies(context.Background(), c, w)
+	if err != nil || !proof.Complete {
+		t.Fatal(proof, err)
+	}
+	if info, err := os.Lstat(target); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatal("unrelated symlink was removed", err)
+	}
+	if _, err := os.Lstat(filepath.Join(c.Root, "jobs")); err != nil {
+		t.Fatal("symlink target was touched", err)
 	}
 }

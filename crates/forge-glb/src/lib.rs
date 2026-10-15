@@ -113,17 +113,31 @@ impl Writer<'_> {
             self.accessors.push(json!({"bufferView":view,"componentType":5123,"count":skin.joints.len(),"type":"VEC4"}));
             attr["WEIGHTS_0"] = self.floats(&skin.weights, "VEC4", false)?.into();
         }
-        let mut bytes = Vec::with_capacity(g.indices.len() * 4);
+        let mut maximum = 0;
+        for (i, &index) in g.indices.iter().enumerate() {
+            if i % 8192 == 0 {
+                checkpoint()?;
+            }
+            maximum = maximum.max(index);
+        }
+        // glTF reserves the maximum unsigned-short value for primitive indices.
+        let short_indices = maximum < u16::MAX as u32;
+        let mut bytes = Vec::with_capacity(g.indices.len() * if short_indices { 2 } else { 4 });
         for (i, index) in g.indices.iter().enumerate() {
             if i % 8192 == 0 {
                 checkpoint()?;
             }
-            bytes.extend_from_slice(&index.to_le_bytes());
+            if short_indices {
+                bytes.extend_from_slice(&(*index as u16).to_le_bytes());
+            } else {
+                bytes.extend_from_slice(&index.to_le_bytes());
+            }
         }
         let view = self.bytes(&bytes, Some(34963))?;
         let indices = self.accessors.len();
+        let component_type = if short_indices { 5123 } else { 5125 };
         self.accessors.push(
-            json!({"bufferView":view,"componentType":5125,"count":g.indices.len(),"type":"SCALAR"}),
+            json!({"bufferView":view,"componentType":component_type,"count":g.indices.len(),"type":"SCALAR"}),
         );
         self.geometry_ids.insert(id.into(), (attr.clone(), indices));
         Ok((attr, indices))
@@ -406,6 +420,9 @@ pub fn export(prepared: &Prepared<'_>) -> Result<Vec<u8>> {
         root["buffers"] = json!([{"byteLength":w.bin.len()}]);
     }
     if root.get("textures").is_some() {
+        // Preserve the existing repeat-wrapping contract. Texture-atlas
+        // callers that need edge isolation must inset their UVs instead of
+        // changing sampler behavior for every textured scene.
         root["samplers"] = json!([{"magFilter":9729,"minFilter":9987,"wrapS":10497,"wrapT":10497}]);
     }
     if !w.lights.is_empty() {

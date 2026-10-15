@@ -37,6 +37,8 @@ vi.mock("@tauri-apps/api/core", () => ({
     native.calls.push(name);
     if (name === "read_sidebar_preference")
       return { revision: 1, sidebar_preference: "expanded", problem: null };
+    if (name === "read_navigation_preference")
+      return { revision: 1, usage_pinned: false, problem: null };
     if (name === "notification_permission")
       return { permission: "unavailable", problem: "os-unavailable" };
     if (name === "begin_tray") return "scope";
@@ -180,6 +182,20 @@ it("opens the native-selected view without sending work or losing the session dr
   });
   expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
   expect((composer as HTMLTextAreaElement).value).toBe("Keep this unsent");
+  // Tray Usage navigation works while Usage is unpinned and never writes the
+  // device-local navigation preference.
+  native.pending = { id: newRequestId(), destination: "usage" };
+  await act(async () => {
+    for (const callback of native.callbacks) callback();
+  });
+  expect(
+    screen.getByRole("button", { name: "More" }).getAttribute("aria-current"),
+  ).toBe("page");
+  expect(native.calls).not.toContain("update_navigation_preference");
+  native.pending = { id: newRequestId(), destination: "sessions" };
+  await act(async () => {
+    for (const callback of native.callbacks) callback();
+  });
   native.pending = { id: newRequestId(), destination: "settings" };
   await act(async () => {
     for (const callback of native.callbacks) callback();

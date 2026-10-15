@@ -18,6 +18,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeforward"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
@@ -126,23 +127,25 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 	if err != nil || !filepath.IsAbs(executable) || resolved != executable {
 		return nil, domain.CompactionUncertain()
 	}
-	runtimeRoot := filepath.Join(config.Root, "runtimes")
-	if security.PrivateDir(runtimeRoot) != nil {
-		return nil, domain.CompactionUncertain()
+	// The per-action directory is only the operation journal (fresh per attempt);
+	// the compacted history stays in the conversation's persistent profile.
+	if _, err := createOperationJournal(config.Root, i.ActionID); err != nil {
+		return nil, err
 	}
-	home := filepath.Join(runtimeRoot, string(i.ActionID))
-	if _, err := os.Lstat(home); !errors.Is(err, os.ErrNotExist) {
-		return nil, domain.CompactionUncertain()
-	}
-	env, err := harness.PrivateRuntimeEnvironment(home)
-	if err != nil {
-		return nil, domain.SafeError(err)
-	}
-	nativeHome := filepath.Join(runtimeRoot, string(i.Restore.Continuation.HistoryExecutionID), "codex")
-	env, err = replaceCodexHome(env, nativeHome)
+	profile, err := continuationProfile(ctx, config, i.Assignment.MachineID, domain.Codex, historyAccount(i.Restore), i.Restore.Continuation.HistoryExecutionID, i.ActionID)
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		if err := profile.Close(); err != nil && returned == nil {
+			output, returned = nil, domain.CompactionUncertain()
+		}
+	}()
+	env, err := harness.PrivateRuntimeEnvironment(profile.Root)
+	if err != nil {
+		return nil, domain.SafeError(err)
+	}
+	nativeHome := filepath.Join(profile.Root, "codex")
 	phase = compactionRestore
 	source, err := codexCheckpointForContinuation(config.Root, i.Restore, manifest)
 	if err != nil {
@@ -220,7 +223,7 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 			return nil, err
 		}
 		managedPreNative = true
-		if err := security.WriteAtomic(filepath.Join(nativeHome, "auth.json"), managed.response.Bundle); err != nil {
+		if err := subscription.WriteCredentialFile(filepath.Join(nativeHome, "auth.json"), managed.response.Bundle); err != nil {
 			return nil, subscription.Invalid()
 		}
 	}
@@ -258,12 +261,15 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 		nativeConfig.Sidechat = codex.ReadOnlySidechatV1
 	}
 	var proxy *nativeproxy.Proxy
+	var forwarder *nativeforward.Forwarder
 	if managed != nil {
 		nativeConfig.API = nil
 		nativeConfig.ManagedAuthentication = true
+		nativeConfig.FrameProfile = retainedHistoryFrameProfile(i.Assignment)
 		nativeConfig.QuotaObserver = managed.publishRollingQuota
 	} else {
-		proxy, err = openCodexNativeProxy(nativeCtx, config, i.ActionID)
+		nativeRoute := captureNativeRoute(config)
+		proxy, err = openCodexNativeProxy(nativeCtx, config, i.ActionID, nativeRoute)
 		if err != nil {
 			return nil, err
 		}
@@ -279,6 +285,23 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 					proxyClosed = true
 				}
 			}()
+		} else {
+			forwarder, err = openCodexNativeForwarder(nativeCtx, config, i.ActionID, token, false, nativeRoute)
+			if err != nil {
+				return nil, err
+			}
+			if forwarder != nil {
+				proxyClosed = false
+				nativeConfig.API.ForwarderOrigin = forwarder.NativeOrigin()
+				defer func() {
+					if err := forwarder.Close(); err != nil {
+						cleanupFailed = true
+						output, returned = nil, err
+					} else {
+						proxyClosed = true
+					}
+				}()
+			}
 		}
 	}
 	phase = compactionLaunch
@@ -354,7 +377,14 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 	var retained codex.CompactedCheckpoint
 	usages := []domain.NativeResponseUsage{}
 	if i.Revert != nil {
-		target := codex.HistoricalInput{ID: i.Revert.InputID, PromptDigest: i.Revert.Prompt.InputDigest()}
+		// The expected selected-skill digest comes only from the original retained
+		// target proof. A missing proof for a skilled target is rejected here,
+		// before the native claim and before any wire send.
+		target, err := resolveRevertTarget(config.Root, source, i, logger)
+		if err != nil {
+			preSendFailure = err
+			return nil, err
+		}
 		retained, err = native.RevertThread(ctx, i.ActionID, source.Native, target, domain.ID(i.Revert.NativeTurnID), func(intent codex.RevertIntent) error {
 			// Callback entry is the uncertainty fence, even if durable writing
 			// fails. Never downgrade a partially persisted claim to no-send.
@@ -407,6 +437,12 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 	}
 	if proxy != nil {
 		if err := proxy.Close(); err != nil {
+			return nil, err
+		}
+		proxyClosed = true
+	}
+	if forwarder != nil {
+		if err := forwarder.Close(); err != nil {
 			return nil, err
 		}
 		proxyClosed = true
@@ -489,7 +525,7 @@ func readCodexSessionCompactionCheckpoint(ctx context.Context, root string, cred
 		expected := revertResult(p.JobID, p.Input, p.Native, ref.CheckpointDigest, ref.NativeDigest)
 		expectedRaw, _ := json.Marshal(expected)
 		actualRaw, _ := json.Marshal(result)
-		if !bytes.Equal(expectedRaw, actualRaw) || verifyRetainedRevertIntent(root, p) != nil {
+		if !bytes.Equal(expectedRaw, actualRaw) || verifyRetainedRevertIntent(root, source, p, slog.Default()) != nil {
 			return empty, domain.CompactionUncertain()
 		}
 		if p.Input.Revert == nil || result.Version != 4 || result.Revert == nil || result.Revert.HistoryDigest != p.Native.HistoryDigest || result.Revert.NativeThreadID != domain.NativeIdentity(source.Native.ThreadID) || p.Native.Revert.ActionID != ref.ActionID || result.Revert.Target.NativeTurnID != domain.NativeIdentity(p.Native.Revert.BeforeTurnID) {

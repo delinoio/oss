@@ -6,6 +6,7 @@ import {
   NativeQuestionResponse,
 } from "./native-interaction-response";
 import { object } from "./documents";
+import { HarnessId, harnessVersionAllowed } from "./harness-version";
 import type { InteractionDraftState } from "./inbox-drafts";
 
 const encoder = new TextEncoder();
@@ -278,7 +279,7 @@ export function validOpenCodeInteraction(
     approval = data.type === "native-approval";
   const valid =
     (question || approval) &&
-    r.version === "1.18.32" &&
+    harnessVersionAllowed(HarnessId.OpenCode, r.version) &&
     shape(data.opencode, [
       "version",
       "native_event_id",

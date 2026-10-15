@@ -595,6 +595,289 @@ fn view_reads_zip_scopes_aliases_and_preserves_project_writes() {
         Code::PnportFilesystemConflict
     );
 }
+
+#[test]
+fn native_zip_named_directories_stay_native_in_inline_and_split_views() {
+    for split in [false, true] {
+        let root = directory_fixture(split);
+        let root_path = fs::canonicalize(root.path()).unwrap();
+        let assets = root_path.join("assets.zip");
+        fs::create_dir(&assets).unwrap();
+        let file = assets.join("file.txt");
+        fs::write(&file, b"native").unwrap();
+
+        let graph = Graph::load(&root_path.join(".pnp.cjs")).unwrap();
+        let cache_root = tempfile::tempdir().unwrap();
+        let session = tempfile::tempdir().unwrap();
+        let mut view = View::new(
+            graph,
+            Cache::open(cache_root.path().join("cache")).unwrap(),
+            session.path().to_owned(),
+        );
+
+        let translated_dir = view.translate(&assets).unwrap();
+        assert_eq!(translated_dir.physical, assets, "split={split}");
+        assert!(!translated_dir.readonly, "split={split}");
+        assert!(fs::metadata(&translated_dir.physical).unwrap().is_dir());
+        let translated_file = view.translate(&file).unwrap();
+        assert_eq!(translated_file.physical, file, "split={split}");
+        assert!(!translated_file.readonly, "split={split}");
+        assert_eq!(fs::read(&translated_file.physical).unwrap(), b"native");
+        assert!(view.directory_entries(&assets, &assets).unwrap().is_empty());
+        let names: Vec<_> = fs::read_dir(&translated_dir.physical)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(names, vec!["file.txt"]);
+        assert!(!session.path().join("active").exists());
+        assert_eq!(fs::read_dir(view.cache.root.join("v1")).unwrap().count(), 1);
+
+        fs::write(&translated_file.physical, b"changed").unwrap();
+        let renamed = assets.join("renamed.txt");
+        fs::rename(&translated_file.physical, &renamed).unwrap();
+        assert_eq!(fs::read(&renamed).unwrap(), b"changed");
+        fs::remove_file(&renamed).unwrap();
+        assert!(!renamed.exists());
+        assert!(!session.path().join("active").exists());
+        assert_eq!(fs::read_dir(view.cache.root.join("v1")).unwrap().count(), 1);
+
+        let ordinary_zip = root_path.join("other.zip");
+        fs::write(&ordinary_zip, b"not an archive").unwrap();
+        let child = ordinary_zip.join("child.txt");
+        let untranslated = view.translate(&child).unwrap();
+        assert_eq!(untranslated.physical, child, "split={split}");
+        #[cfg(unix)]
+        assert_eq!(
+            fs::metadata(&untranslated.physical)
+                .unwrap_err()
+                .raw_os_error(),
+            Some(libc::ENOTDIR)
+        );
+        #[cfg(not(unix))]
+        assert!(fs::metadata(&untranslated.physical).is_err());
+        assert!(!session.path().join("active").exists());
+        assert_eq!(fs::read_dir(view.cache.root.join("v1")).unwrap().count(), 1);
+
+        let dependency = view
+            .translate(&root_path.join("node_modules/dep/file.txt"))
+            .unwrap();
+        assert_eq!(fs::read(&dependency.physical).unwrap(), b"package bytes");
+        assert!(dependency.readonly, "split={split}");
+        assert!(session.path().join("active").is_dir());
+        assert_eq!(fs::read_dir(view.cache.root.join("v1")).unwrap().count(), 2);
+    }
+}
+
+#[test]
+fn nested_zip_archive_beneath_native_zip_directory_in_inline_and_split_views() {
+    for split in [false, true] {
+        for unpacked in [false, true] {
+            let root = fixture();
+            let root_path = fs::canonicalize(root.path()).unwrap();
+            let assets = root_path.join("assets.zip");
+            fs::create_dir(&assets).unwrap();
+            let archive_path = assets.join("cache.zip");
+            fs::rename(root_path.join("cache.zip"), &archive_path).unwrap();
+            if unpacked {
+                fs::remove_file(&archive_path).unwrap();
+                fs::create_dir_all(archive_path.join("node_modules/dep")).unwrap();
+                fs::write(
+                    archive_path.join("node_modules/dep/file.txt"),
+                    b"unpacked bytes",
+                )
+                .unwrap();
+            }
+            let native_file = assets.join("native.txt");
+            fs::write(&native_file, b"native bytes").unwrap();
+
+            let mut graph_data = data();
+            graph_data["packageRegistryData"][2][1][0][1]["packageLocation"] =
+                json!("./assets.zip/cache.zip/node_modules/dep/");
+            graph_data["packageRegistryData"][3][1][0][1]["packageLocation"] =
+                json!("./assets.zip/cache.zip/node_modules/@scope/pkg/");
+            if split {
+                fs::write(
+                    root_path.join(".pnp.cjs"),
+                    "const pnpDataFilepath = path.resolve(__dirname, \".pnp.data.json\");\n",
+                )
+                .unwrap();
+                fs::write(
+                    root_path.join(".pnp.data.json"),
+                    serde_json::to_vec(&graph_data).unwrap(),
+                )
+                .unwrap();
+            } else {
+                inline(&root_path, &graph_data);
+            }
+
+            let cache_root = tempfile::tempdir().unwrap();
+            let session = tempfile::tempdir().unwrap();
+            let mut view = View::new(
+                Graph::load(&root_path.join(".pnp.cjs")).unwrap(),
+                Cache::open(cache_root.path().join("cache")).unwrap(),
+                session.path().to_owned(),
+            );
+            let expected = if unpacked {
+                b"unpacked bytes".as_slice()
+            } else {
+                b"package bytes".as_slice()
+            };
+            for logical in [
+                archive_path.join("node_modules/dep/file.txt"),
+                root_path.join("node_modules/dep/file.txt"),
+            ] {
+                let dependency = view.translate(&logical).unwrap();
+                assert_eq!(fs::read(&dependency.physical).unwrap(), expected);
+                assert!(dependency.readonly, "split={split}, unpacked={unpacked}");
+            }
+            assert_eq!(session.path().join("active").is_dir(), !unpacked);
+
+            let native = view.translate(&native_file).unwrap();
+            assert_eq!(native.physical, native_file);
+            assert!(!native.readonly, "split={split}, unpacked={unpacked}");
+            fs::write(&native.physical, b"changed").unwrap();
+            assert_eq!(fs::read(&native_file).unwrap(), b"changed");
+
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            if !unpacked {
+                use std::process::Command;
+
+                let source = root_path.join("nested-zip-probe.c");
+                fs::write(
+                    &source,
+                    r#"
+#include <errno.h>
+#include <fcntl.h>
+#include <string.h>
+#include <unistd.h>
+int main(void) {
+    const char *dependencies[] = {
+        "assets.zip/cache.zip/node_modules/dep/file.txt",
+        "node_modules/dep/file.txt"
+    };
+    for (int i = 0; i < 2; ++i) {
+        int fd = open(dependencies[i], O_RDONLY);
+        if (fd < 0) return 41;
+        char bytes[14] = {0};
+        if (read(fd, bytes, 13) != 13 || strcmp(bytes, "package bytes")) return 42;
+        close(fd);
+        errno = 0;
+        if (open(dependencies[i], O_WRONLY) != -1 || errno != EROFS) return 43;
+    }
+    int native = open("assets.zip/native.txt", O_WRONLY | O_TRUNC);
+    if (native < 0 || write(native, "runtime", 7) != 7) return 44;
+    close(native);
+    return 0;
+}
+"#,
+                )
+                .unwrap();
+                let executable = root_path.join("nested-zip-probe");
+                assert!(Command::new("cc")
+                    .arg(&source)
+                    .args(["-Wall", "-Wextra", "-Werror", "-o"])
+                    .arg(&executable)
+                    .status()
+                    .unwrap()
+                    .success());
+                let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+                    .current_dir(&root_path)
+                    .arg("--cache-dir")
+                    .arg(cache_root.path().join("runtime-cache"))
+                    .args(["run", "--"])
+                    .arg(&executable)
+                    .output()
+                    .unwrap();
+                assert_eq!(
+                    result.status.code(),
+                    Some(0),
+                    "split={split} stderr={}",
+                    String::from_utf8_lossy(&result.stderr)
+                );
+                assert_eq!(fs::read(&native_file).unwrap(), b"runtime");
+            }
+        }
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn unregistered_zip_file_child_keeps_native_enotdir() {
+    use pnport_core::native_path::resolved_lookup;
+
+    for split in [false, true] {
+        let root = directory_fixture(split);
+        let ordinary_zip = root.path().join("other.zip");
+        fs::write(&ordinary_zip, b"not an archive").unwrap();
+        let graph = Graph::load(&root.path().join(".pnp.cjs")).unwrap();
+        assert!(resolved_lookup(&ordinary_zip.join("child.txt"), true, &graph).is_none());
+    }
+}
+
+#[test]
+fn virtual_zip_directories_keep_physical_backing_in_inline_and_split_views() {
+    for split in [false, true] {
+        let root = directory_fixture(split);
+        let root_path = fs::canonicalize(root.path()).unwrap();
+        let archive = root_path.join("cache.zip");
+        fs::remove_file(&archive).unwrap();
+        fs::create_dir_all(archive.join("node_modules/dep")).unwrap();
+        fs::write(archive.join("node_modules/dep/file.txt"), b"unpacked bytes").unwrap();
+        fs::write(archive.join("native-entry.txt"), b"native bytes").unwrap();
+
+        let cache_root = tempfile::tempdir().unwrap();
+        let session = tempfile::tempdir().unwrap();
+        let mut view = View::new(
+            Graph::load(&root_path.join(".pnp.cjs")).unwrap(),
+            Cache::open(cache_root.path().join("cache")).unwrap(),
+            session.path().to_owned(),
+        );
+
+        let translated = view
+            .translate(&root_path.join("node_modules/one/file.txt"))
+            .unwrap();
+        assert_eq!(
+            translated.physical,
+            archive.join("node_modules/dep/file.txt"),
+            "split={split}"
+        );
+        assert!(translated.readonly, "split={split}");
+        assert_eq!(fs::read(&translated.physical).unwrap(), b"unpacked bytes");
+        assert!(!session.path().join("active").exists());
+
+        let native = view.translate(&archive.join("native-entry.txt")).unwrap();
+        assert_eq!(
+            native.physical,
+            archive.join("native-entry.txt"),
+            "split={split}"
+        );
+        assert!(!native.readonly, "split={split}");
+        assert_eq!(fs::read(&native.physical).unwrap(), b"native bytes");
+    }
+}
+
+#[test]
+fn virtual_zip_suffix_requires_matching_graph_archive() {
+    for split in [false, true] {
+        let root = directory_fixture(split);
+        let root_path = fs::canonicalize(root.path()).unwrap();
+        fs::write(root_path.join("ordinary.zip"), b"not an archive").unwrap();
+        let logical = root_path.join(".yarn/__virtual__/fake/1/ordinary.zip/child");
+        let cache_root = tempfile::tempdir().unwrap();
+        let session = tempfile::tempdir().unwrap();
+        let mut view = View::new(
+            Graph::load(&root_path.join(".pnp.cjs")).unwrap(),
+            Cache::open(cache_root.path().join("cache")).unwrap(),
+            session.path().to_owned(),
+        );
+
+        let translated = view.translate(&logical).unwrap();
+        assert_eq!(translated.physical, logical, "split={split}");
+        assert!(!translated.readonly, "split={split}");
+        assert!(!session.path().join("active").exists());
+    }
+}
+
 #[test]
 fn leases_survive_cleanup_and_cache_corruption_is_not_reused() {
     const SCENARIO: &str = "PNPORT_CACHE_LEASE_SCENARIO";

@@ -117,16 +117,24 @@ func queueAutomaticSessionTitle(tx *store.Tx, sr store.Record, session *domain.S
 		session.TitleState, session.TitleReason = domain.TitleFailed, domain.TitleReasonInvalidOutput
 		return nil
 	}
-	provider, available, err := titleProfileAvailable(tx, input)
+	managed := input.Configuration.Subscription
+	var provider domain.Provider
+	var available bool
+	var unavailableReason domain.SessionTitleReason
+	if managed {
+		available, unavailableReason, err = managedTitleProfileAvailable(tx, input)
+	} else {
+		provider, available, err = titleProfileAvailable(tx, input)
+		unavailableReason = domain.TitleReasonUnsupportedAgent
+		if input.Configuration.Harness == domain.Codex && domain.CodexVersionAllowed(input.Installation.Version) {
+			unavailableReason = domain.TitleReasonCapabilityAbsent
+		}
+	}
 	if err != nil {
 		return err
 	}
 	if !available {
-		session.TitleState = domain.TitleUnsupported
-		session.TitleReason = domain.TitleReasonUnsupportedAgent
-		if input.Configuration.Harness == domain.Codex && domain.CodexVersionAllowed(input.Installation.Version) {
-			session.TitleReason = domain.TitleReasonCapabilityAbsent
-		}
+		session.TitleState, session.TitleReason = domain.TitleUnsupported, unavailableReason
 		return nil
 	}
 	if err := tx.RequireSessionBudget(sr.ID, session.EstimatedCostBudget); err != nil {
@@ -142,6 +150,9 @@ func queueAutomaticSessionTitle(tx *store.Tx, sr store.Record, session *domain.S
 			session.TitleState, session.TitleReason = domain.TitleSkipped, domain.TitleReasonAuthorityLost
 			return nil
 		}
+	}
+	if managed {
+		return queueManagedSessionTitle(tx, sr, session, sourceRecord, sourceJob, input, firstInput)
 	}
 	_, account, err := executionAccountFromTx(tx, input.AccountID, input.ConnectionID)
 	if err != nil || !account.Enabled || account.Type != domain.APIAccount || account.Health != domain.AccountReady || account.Removal != nil || account.ConfirmedExhausted || account.Connection == nil || account.Connection.ID != input.ConnectionID || account.ProviderID != input.Configuration.ProviderID || account.Connection.Authentication != provider.Authentication {
@@ -301,18 +312,27 @@ func finishSessionTitle(tx *store.Tx, record store.Record, job domain.Job, expec
 	if session.TitleJobID != record.ID || session.TitleOperationID != input.OperationID {
 		return store.Record{}, domain.Fail(domain.RecoveryRequired, "The title operation no longer owns this session job.", "Retain the result for reconciliation without changing the current session name.")
 	}
-	if reported == nil {
-		if err := requireSessionTitleRelayProof(tx, record.ID); err != nil {
-			return store.Record{}, err
-		}
-	}
 	var result domain.AuxiliaryTitleResult
-	if reported == nil {
-		if result, err = validateSessionTitleOutput(output, input, session.ProjectID); err != nil {
-			reported = domain.SafeError(err)
+	if input.IsManaged() {
+		// Managed publication proves the protected Finish receipt instead of an
+		// HTTP relay claim. A missing or inconsistent receipt retains the original
+		// recovery fence rather than applying text.
+		result, reported = managedTitleResult(tx, record, job, input, output, reported)
+	} else {
+		if reported == nil {
+			if err := requireSessionTitleRelayProof(tx, record.ID); err != nil {
+				return store.Record{}, err
+			}
+		}
+		if reported == nil {
+			if result, err = validateSessionTitleOutput(output, input, session.ProjectID); err != nil {
+				reported = domain.SafeError(err)
+			}
 		}
 	}
-	if reported == nil && result.UsageRecord != nil {
+	// A managed result is populated only after its receipt and output validated,
+	// so its usage stays attributed even when publication is discarded.
+	if result.UsageRecord != nil && (reported == nil || input.IsManaged()) {
 		if _, _, err := tx.PutResponseUsage(domain.NewID(), *result.UsageRecord); err != nil {
 			return store.Record{}, err
 		}

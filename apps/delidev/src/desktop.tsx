@@ -17,6 +17,7 @@ import { createDeliDevTransport } from "@delinoio/delidev-api-client";
 import { Updates, type DesktopUpdateControls } from "./updates";
 import { App } from "./App";
 import { TailscaleConnections } from "./tailscale-connections";
+import type { RunnerTailscaleSlots } from "./runner-tailscale-slots";
 import {
   PersistentConnectionView,
   ConnectionsPage,
@@ -24,6 +25,11 @@ import {
 } from "./connections-page";
 import { LocalConnectionPresentation } from "./local-connection-presentation";
 import { Modal, Problem } from "./ui";
+import {
+  EntranceMotion,
+  useEntranceActivation,
+  type EntranceProps,
+} from "./entrance-motion";
 import {
   SavedConnections,
   SavedConnectionProblem,
@@ -53,6 +59,7 @@ import {
   type NativeConnection,
 } from "./local-registration";
 import { localStartupProblem } from "./local-startup-problem";
+import { ReloadShortcutOwner } from "./reload-shortcut";
 const nativeProblems: Record<string, string> = {
   get "service-managed"() {
     return copy("desktop.aNativeServiceOwnsThisConnection_413f9b");
@@ -94,7 +101,7 @@ const nativeProblems: Record<string, string> = {
     return copy("desktop.thePrivateDelidevConfigurationDirectoryIs_3958ae");
   },
 };
-function LocalDesktop() {
+function LocalDesktop({ entrance }: { entrance: EntranceProps }) {
   useLocale();
   const [showSaved, setShowSaved] = useState(false);
   const [inlineRecovery, setInlineRecovery] = useState(false);
@@ -102,6 +109,7 @@ function LocalDesktop() {
     useState<HTMLElement>();
   const [showConnection, setShowConnection] = useState(false);
   const [pageSlots, setPageSlots] = useState<ConnectionPageSlots>();
+  const [runnerSlots, setRunnerSlots] = useState<RunnerTailscaleSlots>();
   const [savedRefresh, setSavedRefresh] = useState(0);
   const [appInformationTarget, setAppInformationTarget] =
     useState<HTMLElement>();
@@ -384,8 +392,9 @@ function LocalDesktop() {
   const controls = (
     <>
       <TailscaleConnections
-        current={pageSlots?.current}
-        target={pageSlots?.tailscale}
+        current={runnerSlots?.access}
+        target={runnerSlots?.devices}
+        requests={runnerSlots?.requests}
         onPaired={() => setSavedRefresh((value) => value + 1)}
       />
       <LocalServerControls
@@ -456,21 +465,24 @@ function LocalDesktop() {
                 }
                 connectionEpoch={connectionEpoch}
                 connectionSettings={connectionSettings}
+                runnerTailscale={setRunnerSlots}
                 appInformationSettings={
                   <AppInformationSlot onTarget={setAppInformationTarget} />
                 }
+                // The Connections page never hosts the local controls. Only the
+                // diagnostics modal receives their view; otherwise it stays hidden
+                // while that page is open and uses the inline fallback elsewhere.
                 connectionTarget={
-                  showConnection
-                    ? (connectionTarget ?? undefined)
-                    : pageSlots?.current
+                  showConnection ? (connectionTarget ?? undefined) : undefined
                 }
+                connectionPageOpen={Boolean(pageSlots)}
                 localServer={controls}
               />
             </WorkerNetworkControlProvider>
           </OAuthNativeProvider>
         </CredentialAccessGate>
       ) : (
-        <main className="connect-page">
+        <main className="connect-page" {...entrance}>
           <h1>{copy("desktop.delidev_44fcad")}</h1>
           {isTauri() ? (
             <>
@@ -592,7 +604,13 @@ const savedActions: SavedConnectionActions = {
     }),
   open: (id) => invoke<void>("open_connection", { id }),
 };
-function SavedDesktop({ profile }: { profile: SavedConnection }) {
+function SavedDesktop({
+  profile,
+  entrance,
+}: {
+  profile: SavedConnection;
+  entrance: EntranceProps;
+}) {
   useLocale();
   const [showConnection, setShowConnection] = useState(false);
   const [pageSlots, setPageSlots] = useState<ConnectionPageSlots>();
@@ -797,7 +815,7 @@ function SavedDesktop({ profile }: { profile: SavedConnection }) {
           </OAuthNativeProvider>
         </CredentialAccessGate>
       ) : (
-        <main className="connect-page">
+        <main className="connect-page" {...entrance}>
           <h1>{copy("desktop.delidev_44fcad")}</h1>
           <p role="status">
             {busy
@@ -851,6 +869,16 @@ function DesktopContent() {
   useEffect(() => {
     if (isTauri()) void read();
   }, []);
+  // One window-lifetime owner of the Startup and connection entrance. The key
+  // stays constant once the window context is read, so the first pre-transport
+  // presentation plays once and later status, retry or reconnect changes never
+  // replay it. The identity-read page stays static; its "pending" key settles
+  // on its own and nothing waits for it.
+  const entrance = useEntranceActivation(
+    context.ready ? "startup" : "pending",
+    true,
+    EntranceMotion.Y2,
+  );
   useEffect(() => {
     if (!isTauri()) return;
     let canceled = false;
@@ -889,15 +917,16 @@ function DesktopContent() {
       </main>
     );
   return context.profile ? (
-    <SavedDesktop profile={context.profile} />
+    <SavedDesktop profile={context.profile} entrance={entrance} />
   ) : (
-    <LocalDesktop />
+    <LocalDesktop entrance={entrance} />
   );
 }
 
 export function Desktop() {
   return (
     <QuitConnectionProvider>
+      <ReloadShortcutOwner />
       <DesktopContent />
     </QuitConnectionProvider>
   );

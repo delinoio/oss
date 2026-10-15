@@ -37,7 +37,9 @@ The task selects the first supported text/paragraph/cell region. Use the library
 
 ## Static 3D product assets
 
-The [AURA audio studio](audio-studio-assets/README.md) creates headphones, a DAC/amplifier, a stand and the combined studio as GLB/FBX. Its original procedural geometry and seven deterministic PNG textures are included. The unreleased 3D API is also demonstrated by `scene-glb.tsx` and `scene-fbx.tsx`. The verification workflow reimports the actual files in Blender and a local GLB viewer; see the example provenance and reproduction commands.
+The [AURA audio studio](audio-studio-assets/README.md) creates headphones, a DAC/amplifier, a stand and the combined studio as GLB/FBX. Its original procedural geometry and seven deterministic PNG textures are included. The static scene API is also demonstrated by `scene-glb.tsx` and `scene-fbx.tsx`. `scene-compact-glb.tsx` shows the unreleased explicit geometry compaction API on a six-vertex fixture with two preserved faces. The verification workflow reimports the actual files in Blender and a local GLB viewer; see the example provenance and reproduction commands.
+
+`polygon-efficient.tsx` uses the released static scene API for 6-by-16 and 20-by-60 curved sheets, an opaque painted badge, and an RGBA sheet. `polygon-efficient-assets.ts` generates the small PNGs in memory and supplies the geometry. After the package build, run `pnpm --filter @delino/react-forge cli run examples/polygon-efficient.tsx --data '{"format":"glb","variant":"badge"}' --output /tmp/badge.glb` from the repository root. Select `fbx` and `.fbx` for the other format. The model output is untracked; no generated PNG is needed.
 
 ## Zombie-game gunshot
 

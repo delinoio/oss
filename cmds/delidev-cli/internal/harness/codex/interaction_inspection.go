@@ -108,7 +108,7 @@ func (c *Client) inspectRetainedTurnLocked(ctx context.Context, turnID domain.ID
 	if err := c.inspectRetainedThreadLocked(ctx); err != nil {
 		return trackedTurn{}, err
 	}
-	response, err := c.wire.Call(ctx, domain.NewID(), "thread/turns/list", struct {
+	response, err := c.call(ctx, domain.NewID(), "thread/turns/list", struct {
 		ThreadID      domain.ID `json:"threadId"`
 		Limit         int       `json:"limit"`
 		SortDirection string    `json:"sortDirection"`

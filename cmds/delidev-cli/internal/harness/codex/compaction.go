@@ -118,7 +118,7 @@ func (c *Client) StartCompaction(ctx context.Context, action domain.ID, source C
 			c.execution.paused = true
 		}
 	}()
-	response, err := c.wire.Call(ctx, action, "thread/compact/start", struct {
+	response, err := c.call(ctx, action, "thread/compact/start", struct {
 		ThreadID domain.ID `json:"threadId"`
 	}{c.thread})
 	var ack map[string]json.RawMessage
@@ -405,7 +405,7 @@ func (c *Client) contextTurnPagesLocked(ctx context.Context, direction string, c
 	seen := map[string]bool{}
 	size := 0
 	for {
-		reply, err := c.wire.Call(ctx, domain.NewID(), "thread/turns/list", struct {
+		reply, err := c.call(ctx, domain.NewID(), "thread/turns/list", struct {
 			Thread    domain.ID `json:"threadId"`
 			Limit     int       `json:"limit"`
 			Direction string    `json:"sortDirection"`
@@ -461,8 +461,7 @@ func (c *Client) contextTurnPagesLocked(ctx context.Context, direction string, c
 					return nil, compactionUncertain()
 				}
 			}
-			size += len(raw)
-			if len(turns) >= maxForkTurns || size > 4<<20 {
+			if len(turns) >= maxForkTurns {
 				return nil, compactionUncertain()
 			}
 			var value any
@@ -472,6 +471,12 @@ func (c *Client) contextTurnPagesLocked(ctx context.Context, direction string, c
 				return nil, compactionUncertain()
 			}
 			normal, _ := json.Marshal(value)
+			// Budget the normalized bytes: json.Marshal HTML-escapes <, > and &, so
+			// the retained form can be larger than the native encoding.
+			size += len(normal)
+			if size > c.historyAggregateLimit() {
+				return nil, compactionUncertain()
+			}
 			turns = append(turns, normal)
 		}
 		if page.Next == nil {

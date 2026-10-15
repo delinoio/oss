@@ -6,9 +6,10 @@ import { copy, useLocale } from "./localization";
 import "./connections-page.css";
 
 export interface ConnectionPageSlots {
-  current: HTMLElement;
+  // Only the saved-server window presents a current-connection slot. The local
+  // main window has no such section.
+  current?: HTMLElement;
   saved?: HTMLElement;
-  tailscale?: HTMLElement;
   advanced: HTMLElement;
 }
 // This host moves without changing portal identity. Controllers and their exact
@@ -58,15 +59,13 @@ export function ConnectionsPage({
   useLocale();
   const current = useRef<HTMLDivElement>(null),
     saved = useRef<HTMLDivElement>(null),
-    tailscale = useRef<HTMLDivElement>(null),
     advanced = useRef<HTMLDivElement>(null);
   const [attention, setAttention] = useState(false);
   useLayoutEffect(() => {
-    if (!current.current || !advanced.current) return;
+    if (!advanced.current || (!local && !current.current)) return;
     onSlots({
-      current: current.current,
+      ...(current.current ? { current: current.current } : {}),
       saved: saved.current ?? undefined,
-      tailscale: tailscale.current ?? undefined,
       advanced: advanced.current,
     });
     const observe = () =>
@@ -89,22 +88,16 @@ export function ConnectionsPage({
       observer.disconnect();
       onSlots(undefined);
     };
-  }, [onSlots]);
+  }, [onSlots, local]);
   return (
     <div className="connections-page">
-      <section
-        data-settings-search-target="current-connection"
-        aria-label={copy("settings.connections.current")}
-      >
-        <h2>{copy("settings.connections.current")}</h2>
-        <div className="connections-current" ref={current} />
-      </section>
-      {local ? (
-        <>
-          <div ref={tailscale} />
-          <div ref={saved} />
-        </>
-      ) : null}
+      {local ? null : (
+        <section aria-label={copy("settings.connections.current")}>
+          <h2>{copy("settings.connections.current")}</h2>
+          <div className="connections-current" ref={current} />
+        </section>
+      )}
+      {local ? <div ref={saved} /> : null}
       {attention ? (
         <p className="connections-attention" role="status">
           {copy("settings.connections.attention")}

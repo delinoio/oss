@@ -20,6 +20,8 @@ Rust GNU Linux binaries use the checksum-pinned AlmaLinux 9 image and the reposi
 
 Only releases whose source contains this package-distribution contract can enter the repository. Resolve the exact tag to its commit, validate source version and channel, and verify the checksum manifest and both Linux archive Sigstore bundles against the originating release workflow, exact certificate commit SHA, repository and GitHub Actions OIDC issuer. Do not backfill older releases, rebuild a published version, overwrite an existing package identity, or expose signing authority to unverified archives.
 
+The native decoder for binpm, cargo-mono, nodeup, with-watch and derun accepts only the executable and, for newly licensed archives, the complete root `LICENSE` and `NOTICE` as fixed regular members. The two text members must appear together and match the source checkout exactly. Authenticated historical executable-only archives remain readable for immutable recovery. Duplicate, link, traversal and unrelated entries remain invalid; extraction returns the unchanged executable bytes.
+
 ## Repository publication
 
 `delino-oss-packages` is the public R2 bucket. `delino-oss-packages-state` is private and stores immutable candidate records, packages, and publication journals. Recreate aptly databases from the recorded package inventory rather than depending on runner caches.
@@ -60,7 +62,7 @@ The release used the existing source-bound publisher and existing protected cred
 
 ## Implemented operations
 
-`packaging/linux/pins.json` pins nFPM 2.47.0, aptly 1.6.3, createrepo_c 1.2.4, the AlmaLinux build image and the Node-based tools image. `Tools.Dockerfile` verifies tool archives before installation. `scripts/ci/workflows.mjs` validates the one exact `queue: max` declaration before masking only that line for actionlint 1.7.12; remove the adapter when the pinned linter supports the field.
+`packaging/linux/pins.json` pins nFPM 2.47.0, aptly 1.6.3, createrepo_c 1.2.4, the AlmaLinux build image and the Node-based tools image. `Tools.Dockerfile` verifies tool archives before installation. `scripts/ci/workflows.mjs` validates the publisher's exact `queue: max` declaration (and, separately, the exact workflow-level `delidev-mobile-beta` declaration owned by `apps-delidev-mobile-contract.md`; every other queue declaration is rejected) before masking only that validated line for actionlint 1.7.12; remove the adapter when the pinned linter supports the field.
 
 The committed public key's primary fingerprint is `B08DE37A14DD10DDFD04E66E87CB82A1F70FBD30`. CI receives only the encrypted signing subkey export. The operator owns the offline primary certificate, revocation material and passphrase backup. The current signing subkey expires after two years; rotate the signing subkey and committed public certificate before expiry while preserving the primary fingerprint. A primary-key replacement requires an explicitly documented user trust migration.
 

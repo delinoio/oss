@@ -9,12 +9,22 @@ The 2026-09-25 follow-up adds static GLB/FBX generation, SceneSession, original 
 The explicit SFX follow-up adds offline procedural game effects exported as WAV, with zombie-game gunshot acceptance, under the [SFX contract](packages-react-forge-sfx-contract.md). It was included in the published `0.2.0` release.
 
 The 2026-09-26 animation follow-up adds object keyframes, explicit joints/skinning,
-position/normal morphs, callback baking and sampled bounds to both scene formats.
+position/normal morphs, callback baking and sampled bounds to both scene formats. An explicit unreleased geometry compaction operation preserves complete indexed vertex attributes and triangle multiplicity for both formats.
 It remains **unreleased** and does not change the static format's 0.2.0 history.
 Original `animated-character*.tsx` examples cover idle/walk/wave clips; local
 acceptance uses Khronos, Three.js, ufbx and Blender 4.5.14. No npm publication,
 scene import, automatic rigging, IK, retargeting, physics or playback runtime is
 part of this extension.
+
+An additive, unreleased scene analysis interface reports revision-pinned unique and instance topology through the library, CLI, and the existing MCP inspect tool. Its counting and lifecycle contract is [GLB/FBX scenes and animation](packages-react-forge-scene-contract.md).
+
+An unreleased explicit static-geometry simplification operation is owned by the scene contract. It derives an immutable GLB/FBX geometry asset with bounded native scratch and truthful counts/error while preserving normal registration and export behavior.
+
+The scene contract also defines an unreleased budgeted parametric surface helper
+for both formats. Callers choose explicit tessellation and a triangle ceiling;
+the helper adds no adaptive quality or hidden surface faces.
+
+An additive, unreleased caller-defined geometry budget policy warns or rejects on the export-pinned scene before GLB/FBX serialization. It shares the scene analysis counts and does not impose a default polygon ceiling. Its API and publication semantics are in [GLB/FBX scenes and animation](packages-react-forge-scene-contract.md).
 
 ## Project ID
 

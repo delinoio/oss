@@ -59,6 +59,21 @@ func validateDirectory(path string, info os.FileInfo) error {
 	return checkPrivate(path, info)
 }
 
+// CheckPrivateDirHandle verifies that an already-open directory is a real,
+// owner-only directory using the handle's own metadata and ACL. Unlike
+// CheckPrivateDir it cannot be redirected by a later path replacement, so a
+// caller that keeps the handle can make validation and use one anchored step.
+func CheckPrivateDirHandle(dir *os.File) error {
+	info, err := dir.Stat()
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return domain.Fail(domain.PermissionDenied, "The data scope is not a real directory.", "Choose a private directory without a symlink at its root.")
+	}
+	return checkPrivateHandle(dir, info)
+}
+
 func RegularPrivate(path string) error {
 	info, err := os.Lstat(path)
 	if err != nil {
@@ -78,7 +93,15 @@ func WriteAtomic(path string, contents []byte) error {
 // Storage cleanup must inventory these files even when their contents are partial.
 // Ordinary callers retain their existing temporary-file naming contract.
 func WriteAtomicOwned(path string, contents []byte) error {
-	return writeAtomic(path, contents, ".pending-"+filepath.Base(path)+"-")
+	return writeAtomic(path, contents, OwnedTemporaryPrefix(path))
+}
+
+// OwnedTemporaryPrefix is the name prefix of every temporary file that
+// WriteAtomicOwned and WriteAtomicOwnedMode create for path. A crash between
+// the temporary write and the rename leaves a file with this prefix, which
+// lets a cleaner attribute the remnant to its target.
+func OwnedTemporaryPrefix(path string) string {
+	return ".pending-" + filepath.Base(path) + "-"
 }
 
 // WriteAtomicOwnedMode retains only owner read/write and an optional owner execute bit.
@@ -87,7 +110,7 @@ func WriteAtomicOwnedMode(path string, contents []byte, executable bool) error {
 	if executable {
 		mode = 0700
 	}
-	return writeAtomicMode(path, contents, ".pending-"+filepath.Base(path)+"-", mode)
+	return writeAtomicMode(path, contents, OwnedTemporaryPrefix(path), mode)
 }
 
 func writeAtomic(path string, contents []byte, prefix string) error {

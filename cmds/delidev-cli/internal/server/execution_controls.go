@@ -230,3 +230,37 @@ func cancelAccountExecutions(tx *store.Tx, account domain.ID) error {
 		}
 	}
 }
+
+// retireAccountQueuedTitles settles queued protected ChatGPT titles when the
+// account's logout is accepted. A queued title has no lease or credential, so
+// its original Worker may be offline and never scan it again; the logout
+// transaction therefore retires it as skipped (authority lost) and leaves the
+// session placeholder untouched. Claimed titles are not touched here: they own
+// the frozen generation and settle through their own custody. Recovery fences
+// do not call this function because a fenced queued title stays reconcilable.
+func retireAccountQueuedTitles(tx *store.Tx, account domain.ID) error {
+	var after domain.ID
+	for {
+		records, err := tx.AccountQueuedManagedTitleJobs(account, after, store.MaxPage)
+		if err != nil {
+			return err
+		}
+		for _, r := range records {
+			job, err := store.Decode[domain.Job](r)
+			if err != nil {
+				return err
+			}
+			var input domain.AuxiliaryTitleInput
+			if domain.Decode(job.Input, &input) != nil || !input.IsManaged() || input.AccountID != account {
+				return domain.Fail(domain.RecoveryRequired, "The retained managed title does not match its account ownership.", "Preserve the session and inspect the original title operation before another logout.")
+			}
+			if _, err := retireQueuedTitle(tx, r, job, domain.JobCanceled, domain.TitleSkipped, domain.TitleReasonAuthorityLost, domain.Fail(domain.Unauthenticated, "The selected account was logged out before the automatic title was assigned.", "Keep the placeholder; no credential was delivered and no inference was sent.")); err != nil {
+				return err
+			}
+			after = r.ID
+		}
+		if len(records) < store.MaxPage {
+			return nil
+		}
+	}
+}

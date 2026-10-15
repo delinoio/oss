@@ -19,6 +19,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/grok"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/opencode"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
@@ -30,16 +31,49 @@ type DiscoveryConfig struct {
 	Root    string
 	OwnerID domain.ID
 	Logger  *slog.Logger
+	// Profiles resolves the persistent accountless system profile of each
+	// harness. It is required: discovery has no temporary-home fallback.
+	Profiles *nativeprofile.Registry
+}
+
+// profileWait bounds how long an accountless probe waits for an overlapping
+// probe of the same harness to release the shared persistent profile.
+const profileWait = 30 * time.Second
+
+func missingProfiles() error {
+	return domain.Fail(domain.Internal, "The persistent native profile registry is not configured.", "Start the owner with its native profile registry.")
+}
+
+// acquireSystemProfile resolves the persistent accountless profile for one
+// harness and purpose.
+func acquireSystemProfile(ctx context.Context, registry *nativeprofile.Registry, harness domain.Harness, purpose nativeprofile.Purpose) (*nativeprofile.Lease, error) {
+	if registry == nil {
+		return nil, missingProfiles()
+	}
+	return registry.AcquireWait(ctx, nativeprofile.Key{Harness: harness, Purpose: purpose}, profileWait)
 }
 
 func Discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessDiscoveryInput) (domain.HarnessDiscoveryOutput, error) {
-	return discover(ctx, config, input, false)
+	return discover(ctx, config, input, false, "")
+}
+
+// DiscoverClaude probes only the server's installed Claude Code adapter. It
+// never registers a Worker, probes another harness or opens existing login state.
+func DiscoverClaude(ctx context.Context, config DiscoveryConfig) (domain.Installation, error) {
+	result, err := discover(ctx, config, domain.HarnessDiscoveryInput{Revision: 1, VerifyProtocol: true, Selections: domain.ExecutableSelections{Executables: []domain.ExecutableSelection{}}}, false, domain.ClaudeCode)
+	if err != nil {
+		return domain.Installation{}, err
+	}
+	if len(result.Installations) != 1 || result.Installations[0].Harness != domain.ClaudeCode {
+		return domain.Installation{}, domain.Fail(domain.Unsupported, "The server's installed Claude login adapter is unavailable.", "Install the supported Claude Code version on the server.")
+	}
+	return result.Installations[0], nil
 }
 
 // DiscoverCodex probes the server's installed adapter without registering a
 // Worker, probing other harnesses or opening any existing user authentication.
 func DiscoverCodex(ctx context.Context, config DiscoveryConfig) (domain.Installation, error) {
-	result, err := discover(ctx, config, domain.HarnessDiscoveryInput{Revision: 1, VerifyProtocol: true, Selections: domain.ExecutableSelections{Executables: []domain.ExecutableSelection{}}}, true)
+	result, err := discover(ctx, config, domain.HarnessDiscoveryInput{Revision: 1, VerifyProtocol: true, Selections: domain.ExecutableSelections{Executables: []domain.ExecutableSelection{}}}, true, "")
 	if err != nil {
 		return domain.Installation{}, err
 	}
@@ -49,7 +83,7 @@ func DiscoverCodex(ctx context.Context, config DiscoveryConfig) (domain.Installa
 	return result.Installations[0], nil
 }
 
-func discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessDiscoveryInput, onlyCodex bool) (result domain.HarnessDiscoveryOutput, returned error) {
+func discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessDiscoveryInput, onlyCodex bool, only domain.Harness) (result domain.HarnessDiscoveryOutput, returned error) {
 	root, owner := config.Root, config.OwnerID
 	codexVersion := ""
 	var codexDiagnostic *domain.CodexDiagnostic
@@ -69,31 +103,37 @@ func discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessD
 		return result, err
 	}
 	processRoot := filepath.Join(root, "processes")
-	probeRoot := filepath.Join(root, "probes")
-	for _, directory := range []string{processRoot, filepath.Join(processRoot, string(owner)), probeRoot} {
+	for _, directory := range []string{processRoot, filepath.Join(processRoot, string(owner))} {
 		if err := security.PrivateDir(directory); err != nil {
 			return result, err
 		}
 	}
-	directory, err := os.MkdirTemp(probeRoot, string(owner)+"-")
-	if err != nil {
-		return result, err
+	if config.Profiles == nil {
+		return result, missingProfiles()
 	}
-	if err := security.PrivateDir(directory); err != nil {
-		return result, err
-	}
-	directory, err = filepath.EvalSymlinks(directory)
-	if err != nil {
-		return result, err
-	}
-	directory, err = filepath.Abs(directory)
-	if err != nil {
-		return result, err
+	// Each harness probes inside its own persistent system profile. Profiles are
+	// retained after the probe; only the per-operation process journal is joined.
+	leases := map[domain.Harness]*nativeprofile.Lease{}
+	profileHome := func(h domain.Harness) (string, error) {
+		if lease := leases[h]; lease != nil {
+			return lease.Root, nil
+		}
+		lease, err := acquireSystemProfile(ctx, config.Profiles, h, nativeprofile.PurposeDiscovery)
+		if err != nil {
+			return "", err
+		}
+		leases[h] = lease
+		return lease.Root, nil
 	}
 	defer func() {
-		// Even a failed probe may have spawned descendants. Preserve its private
-		// runtime if native ownership cannot prove that cleanup is safe.
-		if err := process.ReconcileOwner(processRoot, owner); err != nil {
+		// Even a failed probe may have spawned descendants. Report a process
+		// uncertainty distinctly from retained profile data.
+		reconcileErr := process.ReconcileOwner(processRoot, owner)
+		for _, lease := range leases {
+			_ = lease.Close()
+		}
+		if reconcileErr != nil {
+			err := reconcileErr
 			if onlyCodex {
 				original := returned
 				if original == nil && codexDiagnostic != nil {
@@ -102,23 +142,20 @@ func discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessD
 				err = domain.CodexRecoveryFailure(codexVersion, domain.CodexCleanup, original, err)
 			}
 			result, returned = domain.HarnessDiscoveryOutput{}, err
-			return
-		}
-		if err := os.RemoveAll(directory); err != nil && returned == nil {
-			failure := error(domain.Fail(domain.RecoveryRequired, "The private discovery runtime could not be removed.", "Inspect the Worker's retained probe directory before retrying."))
-			if onlyCodex {
-				var original error
-				if codexDiagnostic != nil {
-					original = domain.RestoreCodexDiagnostic(*codexDiagnostic)
-				}
-				failure = domain.CodexRecoveryFailure(codexVersion, domain.CodexCleanup, original, failure)
-			}
-			result, returned = domain.HarnessDiscoveryOutput{}, failure
 		}
 	}()
 	result.Installations = input.Selections.Installations()
 	if onlyCodex {
 		result.Installations = result.Installations[:1]
+	}
+	if only != "" {
+		filtered := result.Installations[:0]
+		for _, candidate := range result.Installations {
+			if candidate.Harness == only {
+				filtered = append(filtered, candidate)
+			}
+		}
+		result.Installations = filtered
 	}
 	for index := range result.Installations {
 		if err := ctx.Err(); err != nil {
@@ -137,7 +174,10 @@ func discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessD
 			}
 		}
 		if state == domain.InstallationUnchecked {
-			home := filepath.Join(directory, string(i.Harness))
+			home, err := profileHome(i.Harness)
+			if err != nil {
+				return domain.HarnessDiscoveryOutput{}, err
+			}
 			env, err := probeEnvironment(home)
 			if err != nil {
 				return domain.HarnessDiscoveryOutput{}, err
@@ -185,12 +225,9 @@ func discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessD
 		if input.VerifyProtocol && i.State == domain.InstallationDetected {
 			i.Protocol = &domain.ProtocolObservation{Protocol: domain.ProtocolFor(i.Harness), State: domain.ProtocolUnsupported}
 			if i.Harness == domain.Codex || i.Harness == domain.ClaudeCode || i.Harness == domain.GrokBuild || i.Harness == domain.OpenCode {
-				home := filepath.Join(directory, string(i.Harness))
-				if i.Harness == domain.OpenCode {
-					// The native --version command creates XDG runtime directories.
-					// Keep protocol initialization fresh rather than accepting any
-					// state a preceding installation probe happened to leave behind.
-					home = filepath.Join(directory, "opencode-protocol")
+				home, err := profileHome(i.Harness)
+				if err != nil {
+					return domain.HarnessDiscoveryOutput{}, err
 				}
 				env, err := probeEnvironment(home)
 				if err != nil {
@@ -216,6 +253,11 @@ func discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessD
 				if i.Harness == domain.Codex {
 					i.Protocol.Diagnostic = domain.CodexErrorDiagnostic(err)
 					codexDiagnostic = i.Protocol.Diagnostic
+				}
+				if i.Harness == domain.GrokBuild {
+					// Probe reports the original phase; a recovery-required cleanup
+					// aborts discovery below and is never stored on the observation.
+					i.Protocol.GrokDiagnostic = domain.GrokErrorDiagnostic(err)
 				}
 				if err != nil && domain.SafeError(err).Code == domain.RecoveryRequired {
 					return domain.HarnessDiscoveryOutput{}, err

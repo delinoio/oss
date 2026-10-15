@@ -181,7 +181,7 @@ func (r PrepareRequest) validateStructure() error {
 	if r.ForkProfile == CodexSidechatReferenceV1 || r.SidechatSource != nil {
 		return validateSidechatPreparation(r)
 	}
-	if r.ForkProfile != "" && (r.ForkProfile != OpenCodeGeneralChatForkV1 || r.Type != domain.GeneralChat || r.ForkSourceID == "" || r.ForkSourcePath == "" || len(r.Repositories) != 0) {
+	if r.ForkProfile != "" && (!r.ForkProfile.OpenCodeGeneralChat() || r.Type != domain.GeneralChat || r.ForkSourceID == "" || r.ForkSourcePath == "" || len(r.Repositories) != 0) {
 		return ResultUncertain()
 	}
 	if r.ForkSourceID != "" && (r.ForkSourceID.Validate() != nil || r.ForkSourceID == r.SessionID) {
@@ -211,7 +211,7 @@ func (r PrepareRequest) validateStructure() error {
 	if len(r.Repositories) == 0 || len(r.Repositories) > 100 {
 		return domain.Fail(domain.InvalidArgument, "Invalid project repository count.", "Configure 1 through 100 repositories.")
 	}
-	if err := validateRepositoryDirectories(r); err != nil {
+	if err := validateRepositoryDirectories(r, historicalDirectoryAdmission); err != nil {
 		return err
 	}
 	ids := []domain.ID{}

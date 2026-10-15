@@ -276,7 +276,7 @@ func (c *Client) StartTurn(ctx context.Context, requestID, inputID domain.ID, in
 	if err := c.verifySidechat(ctx, s.Cwd, c.thread); err != nil {
 		return result, err
 	}
-	if c.sidechat != "" && !sidechatEffective(s) {
+	if c.readOnlyProfile() && !sidechatEffective(s) {
 		return result, sidechatUnavailable()
 	}
 	mode := nativeExecute
@@ -359,7 +359,7 @@ func (c *Client) Steer(ctx context.Context, requestID, inputID, expectedTurnID d
 	if err := c.verifySidechat(ctx, state.settings.Cwd, c.thread); err != nil {
 		return result, err
 	}
-	if c.sidechat != "" && !sidechatEffective(state.settings) {
+	if c.readOnlyProfile() && !sidechatEffective(state.settings) {
 		return result, sidechatUnavailable()
 	}
 	params := struct {
@@ -465,7 +465,7 @@ func (c *Client) callTurnLocked(ctx context.Context, op turnOperation, params an
 			c.logger.InfoContext(ctx, "Codex native turn transport result", "owner_id", c.ownerID, "request_id", op.RequestID, "operation", op.Action, "code", code)
 		}
 	}()
-	response, err := c.wire.Call(ctx, op.RequestID, string(op.Action), params)
+	response, err := c.call(ctx, op.RequestID, string(op.Action), params)
 	if err == nil && response.ErrorCode != nil {
 		err = nativeTurnError(op.Action, *response.ErrorCode)
 	}

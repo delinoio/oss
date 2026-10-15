@@ -23,6 +23,8 @@ import {
   type ClientFailure,
 } from "@delinoio/delidev-api-client";
 import { copy, useLocale } from "./localization";
+import { useDocumentForeground } from "./document-foreground";
+import { subscriptionForegroundRefreshInterval } from "./subscription-quota-refresh";
 import { subscriptionCatalog } from "./subscription-catalog";
 import {
   useConnectPaginationReader,
@@ -61,6 +63,9 @@ export function SubscriptionRail({
     () => document.visibilityState !== "hidden",
   );
   const [now, setNow] = useState(Date.now);
+  // Visible-but-inactive documents keep the slower reread; app use rereads the
+  // accepted ranges every 30 seconds so completed native observations appear.
+  const appInUse = useDocumentForeground().foreground;
   const [authenticationLost, setAuthenticationLost] = useState(false);
   const status = useQuery(SystemQuery.getStatus, {}, { enabled });
   const capable =
@@ -171,16 +176,26 @@ export function SubscriptionRail({
       setNow(Date.now());
       query.refresh();
     };
-    const timer = window.setInterval(refresh, 60000);
-    // Staleness advances independently of requests; failed reads never keep a current badge.
-    const clock = window.setInterval(() => setNow(Date.now()), 1000);
+    const timer = window.setInterval(
+      refresh,
+      appInUse ? subscriptionForegroundRefreshInterval : 60000,
+    );
     window.addEventListener("focus", refresh);
     return () => {
       clearInterval(timer);
-      clearInterval(clock);
       window.removeEventListener("focus", refresh);
     };
-  }, [allowed, query.refresh]);
+  }, [allowed, query.refresh, appInUse]);
+  // Staleness advances independently of requests and of read admission, so
+  // retained evidence keeps aging while reads are paused (stopping server or
+  // hidden document) without admitting another read; failed reads never keep a
+  // current badge.
+  useEffect(() => {
+    if (!enabled) return;
+    setNow(Date.now());
+    const clock = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(clock);
+  }, [enabled]);
   useEffect(() => {
     if (selection && (!enabled || !account)) close();
   }, [enabled, account, selection, close]);
@@ -232,7 +247,10 @@ export function SubscriptionRail({
     enabled && !authenticationLost && capable && !status.error
       ? query.rows.filter((row) => row.connected)
       : [];
-  const unavailable = !allowed || Boolean(query.error) || unconfirmedRead;
+  // A real saved-read failure or an unconfirmed retry is distinct from a pause
+  // (stopping server or hidden document) that merely stops admitting new reads.
+  const readFailed = Boolean(query.error) || unconfirmedRead;
+  const unavailable = !allowed || readFailed;
   const limited = query.pages.length >= 200 && Boolean(query.nextPageToken);
   const brand = (value: RailAccount) =>
     subscriptionCatalog.find((item) => item.brand === value.service)!;
@@ -398,7 +416,7 @@ export function SubscriptionRail({
                               SystemCapability.SUBSCRIPTION_PAID_CREDITS_V1,
                             )
                           ? PaidCreditState.Unsupported
-                          : unavailable
+                          : readFailed
                             ? PaidCreditState.Failed
                             : account.paidCreditState
                     }

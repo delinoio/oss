@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { EntityKind, type Resource } from "@delinoio/delidev-api-client";
 import { object, type Document } from "./documents";
+import { harnessVersionAllowed } from "./harness-version";
 import { claudeToolReference } from "./native-claude-tool";
 import { validClaudeProviderUsage } from "./native-claude-usage";
 
@@ -449,8 +450,7 @@ function validate(
     child = object(value.observation),
     sources = value.sources as Document[];
   if (
-    value.native_version !==
-      (codex ? "0.151.0" : opencode ? "1.18.32" : "2.1.236") ||
+    !harnessVersionAllowed(value.harness, value.native_version) ||
     !(opencode ? openCodeNative("ses") : uuid)(value.root_id)
   )
     return undefined;

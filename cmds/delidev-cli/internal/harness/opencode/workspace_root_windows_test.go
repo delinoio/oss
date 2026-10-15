@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativetest"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
@@ -74,8 +75,9 @@ func TestWindowsGlobalRefusesUnsupportedRuntimeContextBeforeInitialization(t *te
 }
 
 func TestManualNativeWindowsOpenCodeDifferentDrivePlan(t *testing.T) {
-	if os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE") == "" || os.Getenv("DELIDEV_NATIVE_OPENCODE_WINDOWS_WORKSPACE_PARENT") == "" {
-		t.Skip("opt-in installed pinned binary and writable workspace parent on another local drive")
+	_, _ = nativetest.NativeOpenCodeExecutable(t)
+	if os.Getenv("DELIDEV_NATIVE_OPENCODE_WINDOWS_WORKSPACE_PARENT") == "" {
+		t.Skip("opt-in writable workspace parent on another local drive")
 	}
 	nativeOwnedAPISessionWithProfile(t, true, false, nativeServerRelay, func(c *apiSessionConfig) {
 		parent := os.Getenv("DELIDEV_NATIVE_OPENCODE_WINDOWS_WORKSPACE_PARENT")

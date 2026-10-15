@@ -162,10 +162,14 @@ function fixture() {
         ? job
         : resources.find((row) => row.id === request.id),
   }));
+  const listSchedules = vi.fn((_request: unknown) => ({
+    schedules: [schedule],
+  }));
+  const getSchedule = vi.fn((_request: unknown) => ({ schedule }));
   const transport = createRouterTransport((router) => {
     router.service(ScheduleService, {
-      listSchedules: () => ({ schedules: [schedule] }),
-      getSchedule: () => ({ schedule }),
+      listSchedules,
+      getSchedule,
       saveSchedule: save,
       runScheduleNow: run,
       controlSchedule: control,
@@ -197,6 +201,8 @@ function fixture() {
     control,
     remove,
     discovery,
+    listSchedules,
+    getSchedule,
     view,
     client,
     list,
@@ -266,6 +272,397 @@ it("retains a new schedule draft when navigating away and back", () => {
   expect(value.save).not.toHaveBeenCalled();
 });
 
+function notificationTarget(value: ReturnType<typeof fixture>) {
+  return {
+    id: value.occurrence.id,
+    scheduleId: value.schedule.id,
+    generation: "notification-1",
+  };
+}
+
+it("keeps the editing draft hidden and inert during notification review and restores it on return", async () => {
+  const value = fixture(),
+    clear = vi.fn();
+  const rendered = render(value.view(<Schedules active open={() => {}} />));
+  fireEvent.click(screen.getByRole("button", { name: "New schedule" }));
+  const prompt = screen.getByLabelText(
+    "Scheduled prompt",
+  ) as HTMLTextAreaElement;
+  fireEvent.change(prompt, { target: { value: "Draft kept during review" } });
+  rendered.rerender(
+    value.view(
+      <Schedules
+        active
+        open={() => {}}
+        notificationOccurrence={notificationTarget(value)}
+        clearNotificationOccurrence={clear}
+      />,
+    ),
+  );
+  await screen.findByText("Original occurrence prompt");
+  const workspace = prompt.closest(".schedule-workspace") as HTMLElement;
+  expect(workspace.hidden).toBe(true);
+  expect(workspace.hasAttribute("inert")).toBe(true);
+  expect(
+    screen.queryByRole("textbox", { name: "Scheduled prompt" }),
+  ).toBeNull();
+  expect(screen.queryByRole("button", { name: "Save schedule" })).toBeNull();
+  expect(
+    screen.getByRole("button", { name: "Back to schedules" }),
+  ).toBeTruthy();
+  rendered.rerender(value.view(<Schedules active open={() => {}} />));
+  const restored = screen.getByLabelText(
+    "Scheduled prompt",
+  ) as HTMLTextAreaElement;
+  expect(restored).toBe(prompt);
+  expect(restored.value).toBe("Draft kept during review");
+  expect(workspace.hidden).toBe(false);
+  expect(workspace.hasAttribute("inert")).toBe(false);
+  expect(value.save).not.toHaveBeenCalled();
+});
+
+it("restores focus to the retained workspace control after notification review", async () => {
+  const value = fixture(),
+    clear = vi.fn();
+  const rendered = render(value.view(<Schedules active open={() => {}} />));
+  fireEvent.click(screen.getByRole("button", { name: "New schedule" }));
+  const prompt = screen.getByLabelText(
+    "Scheduled prompt",
+  ) as HTMLTextAreaElement;
+  prompt.focus();
+  expect(globalThis.document.activeElement).toBe(prompt);
+  rendered.rerender(
+    value.view(
+      <Schedules
+        active
+        open={() => {}}
+        notificationOccurrence={notificationTarget(value)}
+        clearNotificationOccurrence={clear}
+      />,
+    ),
+  );
+  await screen.findByText("Original occurrence prompt");
+  // Browsers drop focus from a hidden inert subtree; the keyboard user then
+  // activates Back, which unmounts together with the review.
+  prompt.blur();
+  const back = screen.getByRole("button", { name: "Back to schedules" });
+  back.focus();
+  expect(globalThis.document.activeElement).toBe(back);
+  rendered.rerender(value.view(<Schedules active open={() => {}} />));
+  expect(globalThis.document.activeElement).toBe(prompt);
+});
+
+it("defers an accepted schedule save and list reads until notification review returns", async () => {
+  const value = fixture();
+  let release: () => void = () => {};
+  value.save.mockImplementationOnce(async () => {
+    await new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return { schedule: value.schedule };
+  });
+  const rendered = render(value.view(<Schedules active open={() => {}} />));
+  fireEvent.click(
+    await screen.findByRole("button", { name: /Weekday review/ }),
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "Edit schedule" }));
+  const prompt = screen.getByLabelText(
+    "Scheduled prompt",
+  ) as HTMLTextAreaElement;
+  fireEvent.change(prompt, { target: { value: "Saved during review" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save schedule" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+  rendered.rerender(
+    value.view(
+      <Schedules
+        active
+        open={() => {}}
+        notificationOccurrence={notificationTarget(value)}
+        clearNotificationOccurrence={() => {}}
+      />,
+    ),
+  );
+  await screen.findAllByText("Original occurrence prompt");
+  const reads = value.listSchedules.mock.calls.length;
+  await act(async () => {
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  });
+  // The accepted response keeps the hidden editor and issues no list read.
+  expect(prompt.isConnected).toBe(true);
+  expect((prompt.closest(".schedule-workspace") as HTMLElement).hidden).toBe(
+    true,
+  );
+  expect(value.listSchedules.mock.calls.length).toBe(reads);
+  rendered.rerender(value.view(<Schedules active open={() => {}} />));
+  await waitFor(() =>
+    expect(screen.queryByLabelText("Scheduled prompt")).toBeNull(),
+  );
+  expect(await screen.findByRole("button", { name: "Run now" })).toBeTruthy();
+  await waitFor(() =>
+    expect(value.listSchedules.mock.calls.length).toBeGreaterThan(reads),
+  );
+  expect(value.save).toHaveBeenCalledTimes(1);
+});
+
+it("moves focus to the resulting details when a deferred save unmounts the focused editor", async () => {
+  const value = fixture();
+  let release: () => void = () => {};
+  value.save.mockImplementationOnce(async () => {
+    await new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return { schedule: value.schedule };
+  });
+  const rendered = render(value.view(<Schedules active open={() => {}} />));
+  fireEvent.click(
+    await screen.findByRole("button", { name: /Weekday review/ }),
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "Edit schedule" }));
+  const prompt = screen.getByLabelText(
+    "Scheduled prompt",
+  ) as HTMLTextAreaElement;
+  fireEvent.change(prompt, { target: { value: "Saved during review" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save schedule" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+  prompt.focus();
+  rendered.rerender(
+    value.view(
+      <Schedules
+        active
+        open={() => {}}
+        notificationOccurrence={notificationTarget(value)}
+        clearNotificationOccurrence={() => {}}
+      />,
+    ),
+  );
+  await screen.findAllByText("Original occurrence prompt");
+  await act(async () => {
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  });
+  // Browsers drop focus from the hidden inert editor; Back then takes it.
+  prompt.blur();
+  screen.getByRole("button", { name: "Back to schedules" }).focus();
+  rendered.rerender(value.view(<Schedules active open={() => {}} />));
+  const runNow = await screen.findByRole("button", { name: "Run now" });
+  const workspace = runNow.closest(".schedule-workspace") as HTMLElement;
+  expect(prompt.isConnected).toBe(false);
+  await waitFor(() => {
+    const focused = globalThis.document.activeElement;
+    expect(focused).not.toBe(globalThis.document.body);
+    expect(workspace.contains(focused)).toBe(true);
+  });
+});
+
+it("defers the schedule detail refetch after an accepted control until the view is active", async () => {
+  const value = fixture();
+  let release: () => void = () => {};
+  value.control.mockImplementationOnce(async () => {
+    await new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return { schedule: value.schedule };
+  });
+  const view = (active: boolean) =>
+    value.view(
+      <ScheduleDetails
+        initial={value.schedule}
+        active={active}
+        open={() => {}}
+        close={() => {}}
+        edit={() => {}}
+      />,
+    );
+  const rendered = render(view(true));
+  await waitFor(() => expect(value.getSchedule).toHaveBeenCalled());
+  fireEvent.click(screen.getByRole("button", { name: "Resume future runs" }));
+  await waitFor(() => expect(value.control).toHaveBeenCalledTimes(1));
+  rendered.rerender(view(false));
+  const reads = value.getSchedule.mock.calls.length;
+  await act(async () => {
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  });
+  expect(value.getSchedule.mock.calls.length).toBe(reads);
+  rendered.rerender(view(true));
+  await waitFor(() =>
+    expect(value.getSchedule.mock.calls.length).toBeGreaterThan(reads),
+  );
+});
+
+it("defers accepted detail state updates with the refetch until the view is active", async () => {
+  const value = fixture();
+  let release: () => void = () => {};
+  value.remove.mockImplementationOnce(async () => {
+    await new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return {};
+  });
+  const view = (active: boolean) =>
+    value.view(
+      <ScheduleDetails
+        initial={value.schedule}
+        active={active}
+        open={() => {}}
+        close={() => {}}
+        edit={() => {}}
+      />,
+    );
+  const rendered = render(view(true));
+  await waitFor(() => expect(value.getSchedule).toHaveBeenCalled());
+  fireEvent.click(screen.getByRole("button", { name: "Delete schedule" }));
+  const confirm = screen.getByRole("button", {
+    name: "Confirm schedule deletion",
+  });
+  fireEvent.click(confirm);
+  await waitFor(() => expect(value.remove).toHaveBeenCalledTimes(1));
+  rendered.rerender(view(false));
+  const reads = value.getSchedule.mock.calls.length;
+  await act(async () => {
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  });
+  // The accepted delete keeps the retained controls mounted while inactive.
+  expect(confirm.isConnected).toBe(true);
+  expect(screen.queryByText(/Schedule configuration deleted/)).toBeNull();
+  expect(value.getSchedule.mock.calls.length).toBe(reads);
+  rendered.rerender(view(true));
+  await waitFor(() => expect(confirm.isConnected).toBe(false));
+  expect(screen.getByText(/Schedule configuration deleted/)).toBeTruthy();
+});
+
+it("keeps loaded occurrence history mounted during notification review", async () => {
+  const value = fixture();
+  const rendered = render(value.view(<Schedules active open={() => {}} />));
+  fireEvent.click(
+    await screen.findByRole("button", { name: /Weekday review/ }),
+  );
+  const heading = await screen.findByRole("button", { name: "Run now" });
+  const workspace = heading.closest(".schedule-workspace") as HTMLElement;
+  const history = await waitFor(() => {
+    const row = workspace.querySelector("article.result");
+    expect(row).not.toBeNull();
+    return row as HTMLElement;
+  });
+  rendered.rerender(
+    value.view(
+      <Schedules
+        active
+        open={() => {}}
+        notificationOccurrence={notificationTarget(value)}
+        clearNotificationOccurrence={() => {}}
+      />,
+    ),
+  );
+  await screen.findAllByText("Original occurrence prompt");
+  expect(history.isConnected).toBe(true);
+  expect(workspace.contains(history)).toBe(true);
+  rendered.rerender(value.view(<Schedules active open={() => {}} />));
+  expect(history.isConnected).toBe(true);
+  expect(workspace.querySelector("article.result")).toBe(history);
+});
+
+it("hides selected schedule details without writes during notification review and restores the same instance", async () => {
+  const value = fixture();
+  const rendered = render(value.view(<Schedules active open={() => {}} />));
+  fireEvent.click(
+    await screen.findByRole("button", { name: /Weekday review/ }),
+  );
+  const heading = await screen.findByRole("button", { name: "Run now" });
+  const workspace = heading.closest(".schedule-workspace") as HTMLElement;
+  rendered.rerender(
+    value.view(
+      <Schedules
+        active
+        open={() => {}}
+        notificationOccurrence={notificationTarget(value)}
+        clearNotificationOccurrence={() => {}}
+      />,
+    ),
+  );
+  await screen.findAllByText("Original occurrence prompt");
+  expect(workspace.hidden).toBe(true);
+  expect(workspace.hasAttribute("inert")).toBe(true);
+  expect(screen.queryByRole("button", { name: "Run now" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Delete schedule" })).toBeNull();
+  rendered.rerender(value.view(<Schedules active open={() => {}} />));
+  expect(screen.getByRole("button", { name: "Run now" })).toBe(heading);
+  expect(value.run).not.toHaveBeenCalled();
+  expect(value.control).not.toHaveBeenCalled();
+  expect(value.remove).not.toHaveBeenCalled();
+});
+
+it.each(["selected details", "empty workspace"])(
+  "locks the schedule sidebar and its list reads during notification review from %s",
+  async (origin) => {
+    const value = fixture(),
+      clear = vi.fn();
+    const rendered = render(value.view(<Schedules active open={() => {}} />));
+    const row = await screen.findByRole("button", { name: /Weekday review/ });
+    if (origin === "selected details") {
+      fireEvent.click(row);
+      await screen.findByRole("button", { name: "Run now" });
+    }
+    await waitFor(() => expect(value.listSchedules).toHaveBeenCalled());
+    rendered.rerender(
+      value.view(
+        <Schedules
+          active
+          open={() => {}}
+          notificationOccurrence={notificationTarget(value)}
+          clearNotificationOccurrence={clear}
+        />,
+      ),
+    );
+    await screen.findAllByText("Original occurrence prompt");
+    const reads = value.listSchedules.mock.calls.length;
+    for (const name of [
+      "New schedule",
+      "Refresh",
+      "All schedules",
+      "Enabled",
+      "Paused",
+    ]) {
+      expect(
+        (screen.getByRole("button", { name }) as HTMLButtonElement).disabled,
+      ).toBe(true);
+    }
+    fireEvent.click(screen.getByRole("button", { name: "New schedule" }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(value.listSchedules.mock.calls.length).toBe(reads);
+    rendered.rerender(value.view(<Schedules active open={() => {}} />));
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "New schedule",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false);
+  },
+);
+
+it("hides the empty workspace and keeps the unavailable status for a missing notification occurrence", async () => {
+  const value = fixture();
+  render(
+    value.view(
+      <Schedules
+        active
+        open={() => {}}
+        notificationOccurrence={{
+          ...notificationTarget(value),
+          id: newRequestId(),
+        }}
+        clearNotificationOccurrence={() => {}}
+      />,
+    ),
+  );
+  expect((await screen.findByRole("status")).textContent).toBeTruthy();
+  expect(screen.queryByText("Select a schedule from the sidebar.")).toBeNull();
+  expect(screen.queryByText("Original occurrence prompt")).toBeNull();
+});
+
 it("binds Run now retries to one occurrence without resuming the paused schedule", async () => {
   const value = fixture();
   value.run.mockRejectedValueOnce(
@@ -321,6 +718,63 @@ it("keeps original occurrence history after configuration deletion without delet
   expect(screen.getByText("Original occurrence prompt")).toBeTruthy();
   expect(value.run).not.toHaveBeenCalled();
   expect(value.control).not.toHaveBeenCalled();
+});
+
+it("labels occurrence history rows as scheduled runs with kind-scoped numbers", async () => {
+  const value = fixture();
+  const rendered = render(
+    value.view(
+      <ScheduleDetails
+        initial={value.schedule}
+        active
+        open={() => {}}
+        close={() => {}}
+        edit={() => {}}
+      />,
+    ),
+  );
+  await screen.findByText("Original occurrence prompt");
+  const labels = () => {
+    const rows = [...globalThis.document.querySelectorAll("small")].map(
+      (node) => node.textContent ?? "",
+    );
+    return {
+      occurrence: rows.filter((text) => text.startsWith("Scheduled run")),
+      schedule: rows.filter((text) => text.startsWith("Schedule unavailable")),
+    };
+  };
+  // The occurrence row never borrows the schedule noun, and the real schedule
+  // identity keeps its own kind with an independent number.
+  expect(labels()).toEqual({
+    occurrence: ["Scheduled run · 1"],
+    schedule: ["Schedule unavailable · 1"],
+  });
+  rendered.rerender(
+    value.view(
+      <ScheduleDetails
+        initial={value.schedule}
+        active
+        open={() => {}}
+        close={() => {}}
+        edit={() => {}}
+      />,
+    ),
+  );
+  await screen.findByText("Original occurrence prompt");
+  expect(labels()).toEqual({
+    occurrence: ["Scheduled run · 1"],
+    schedule: ["Schedule unavailable · 1"],
+  });
+  await act(() => i18n.changeLanguage("ko"));
+  try {
+    const rows = [...globalThis.document.querySelectorAll("small")].map(
+      (node) => node.textContent ?? "",
+    );
+    expect(rows).toContain("예약 실행 · 1");
+    expect(rows.filter((text) => text.startsWith("예약 실행"))).toHaveLength(1);
+  } finally {
+    await act(() => i18n.changeLanguage("en"));
+  }
 });
 
 it("retains the original authenticated Local machine without inventing another origin", async () => {
@@ -955,6 +1409,417 @@ it("retains creation UI state across inactivity without focus theft and Cancel r
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(screen.getByText(/Select a schedule from the sidebar/)).toBeTruthy();
   expect(value.save).not.toHaveBeenCalled();
+});
+
+function newScheduleOpener() {
+  return screen.getByRole("button", {
+    name: /^(New schedule|새 예약 작업)$/,
+  }) as HTMLButtonElement;
+}
+const pressEscape = (target: Element, init: KeyboardEventInit = {}) =>
+  fireEvent.keyDown(target, { key: "Escape", ...init });
+
+it("closes the idle Step 1 wizard with Escape, re-enables and focuses New schedule and issues no save", () => {
+  const value = fixture();
+  render(value.view(<Schedules active open={() => {}} />));
+  fireEvent.click(newScheduleOpener());
+  expect(newScheduleOpener().disabled).toBe(true);
+  const name = screen.getByLabelText("Schedule name");
+  expect(name).toBe(globalThis.document.activeElement);
+  pressEscape(name);
+  expect(screen.queryByLabelText("Schedule name")).toBeNull();
+  expect(screen.getByText(/Select a schedule from the sidebar/)).toBeTruthy();
+  expect(newScheduleOpener().disabled).toBe(false);
+  expect(globalThis.document.activeElement).toBe(newScheduleOpener());
+  expect(value.save).not.toHaveBeenCalled();
+});
+
+it("restores New schedule focus after the Cancel button as well", () => {
+  const value = fixture();
+  render(value.view(<Schedules active open={() => {}} />));
+  fireEvent.click(newScheduleOpener());
+  const cancel = screen.getByRole("button", { name: "Cancel" });
+  cancel.focus();
+  fireEvent.click(cancel);
+  expect(screen.queryByLabelText("Schedule name")).toBeNull();
+  expect(globalThis.document.activeElement).toBe(newScheduleOpener());
+  expect(value.save).not.toHaveBeenCalled();
+});
+
+it("keeps focus behavior unchanged when cancelling the edit of an existing schedule", async () => {
+  const value = fixture();
+  render(value.view(<Schedules active open={() => {}} />));
+  fireEvent.click(
+    await screen.findByRole("button", { name: /Weekday review/ }),
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "Edit schedule" }));
+  const cancel = screen.getByRole("button", { name: "Cancel schedule edit" });
+  cancel.focus();
+  expect(globalThis.document.activeElement).toBe(cancel);
+  fireEvent.click(cancel);
+  expect(screen.queryByLabelText("Scheduled prompt")).toBeNull();
+  // Only dismissing the creation wizard restores the New schedule opener.
+  expect(newScheduleOpener().disabled).toBe(false);
+  expect(globalThis.document.activeElement).not.toBe(newScheduleOpener());
+  expect(value.save).not.toHaveBeenCalled();
+});
+
+it.each([1, 2, 3])(
+  "closes the idle wizard with Escape from step index %s with the Cancel cleanup",
+  async (step) => {
+    const value = fixture();
+    render(value.view(<Schedules active open={() => {}} />));
+    fireEvent.click(newScheduleOpener());
+    await fillCreation(value);
+    goStep(step);
+    pressEscape(
+      globalThis.document.querySelector<HTMLElement>(
+        "[data-authoring-step]:not([hidden]), .schedule-creation-review",
+      ) ?? screen.getByRole("button", { name: "Cancel" }),
+    );
+    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+    expect(newScheduleOpener().disabled).toBe(false);
+    expect(globalThis.document.activeElement).toBe(newScheduleOpener());
+    expect(value.save).not.toHaveBeenCalled();
+  },
+);
+
+it("ignores Escape while a save is pending or uncertain, keeping the draft and recovery controls", async () => {
+  const value = fixture();
+  let settle!: (error: Error) => void;
+  value.save.mockImplementationOnce(
+    () =>
+      new Promise((_resolve, reject) => {
+        settle = reject;
+      }),
+  );
+  render(value.view(<Schedules active open={() => {}} />));
+  fireEvent.click(newScheduleOpener());
+  await fillCreation(value);
+  goStep(3);
+  fireEvent.click(screen.getByRole("button", { name: "Create schedule" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledOnce());
+  pressEscape(screen.getByLabelText("Schedule name"));
+  expect(screen.getByLabelText("Schedule name")).toBeTruthy();
+  expect(
+    (screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  await act(async () => {
+    settle(new ConnectError("ack lost", Code.Unavailable));
+  });
+  await screen.findByRole("button", { name: "Retry the same schedule" });
+  pressEscape(screen.getByLabelText("Schedule name"));
+  expect(screen.getByLabelText("Schedule name")).toBeTruthy();
+  expect(
+    (screen.getByLabelText("Scheduled prompt") as HTMLTextAreaElement).value,
+  ).toBe("Review project changes");
+  expect(newScheduleOpener().disabled).toBe(true);
+  expect(value.save).toHaveBeenCalledOnce();
+});
+
+it("ignores Escape while a fresh Local proof is pending", async () => {
+  const value = fixture();
+  let resolveProof!: (proof: { machineId: string; token: string }) => void;
+  const read = vi.fn(
+    () =>
+      new Promise<{ machineId: string; token: string }>((resolve) => {
+        resolveProof = resolve;
+      }),
+  );
+  render(
+    value.view(<Schedules active open={() => {}} readLocalWorker={read} />),
+  );
+  fireEvent.click(newScheduleOpener());
+  await fillCreation(value);
+  fireEvent.click(screen.getByRole("radio", { name: "Local computer" }));
+  pressEscape(screen.getByLabelText("Schedule name"));
+  expect(screen.getByLabelText("Schedule name")).toBeTruthy();
+  expect(
+    screen.getByLabelText("Scheduled prompt").closest("fieldset")!.disabled,
+  ).toBe(true);
+  await act(async () => {
+    resolveProof({ machineId: value.machine.id, token: "a".repeat(42) + "A" });
+  });
+  expect(value.save).not.toHaveBeenCalled();
+});
+
+it("closes only an open picker on the first Escape and the wizard on the second", async () => {
+  const value = fixture();
+  render(value.view(<Schedules active open={() => {}} />));
+  fireEvent.click(newScheduleOpener());
+  const project = screen.getByRole("combobox", { name: "Project" });
+  fireEvent.click(project);
+  await screen.findByRole("option", { name: "Selected project" });
+  pressEscape(project);
+  expect(screen.queryByRole("option", { name: "Selected project" })).toBeNull();
+  expect(screen.getByLabelText("Schedule name")).toBeTruthy();
+  pressEscape(project);
+  expect(screen.queryByLabelText("Schedule name")).toBeNull();
+  expect(globalThis.document.activeElement).toBe(newScheduleOpener());
+  expect(value.save).not.toHaveBeenCalled();
+});
+
+it.each([
+  ["Frequency", "Frequency"],
+  ["Weekday", "Weekday"],
+  ["overlap", /previous occurrence is still active/i],
+  ["Time", "Time"],
+])(
+  "leaves Escape from the native %s control to its platform picker and cancels from a non-picker control",
+  async (_name, label) => {
+    const value = fixture();
+    render(value.view(<Schedules active open={() => {}} />));
+    fireEvent.click(newScheduleOpener());
+    await fillCreation(value);
+    goStep(2);
+    // The weekday and time controls only exist for the weekly preset.
+    choose("Frequency", "weekly");
+    const control = screen.getByLabelText(label);
+    expect(
+      control instanceof HTMLSelectElement ||
+        (control instanceof HTMLInputElement && control.type === "time"),
+    ).toBe(true);
+    control.focus();
+    // Native picker Escape never sets defaultPrevented before bubbling.
+    const event = new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    });
+    control.dispatchEvent(event);
+    expect(screen.getByLabelText("Frequency")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeTruthy();
+    expect(newScheduleOpener().disabled).toBe(true);
+    pressEscape(control);
+    pressEscape(control);
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeTruthy();
+    // Escape from a non-picker control still cancels the wizard.
+    const next = screen.getByRole("button", { name: "Next" });
+    next.focus();
+    pressEscape(next);
+    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+    expect(newScheduleOpener().disabled).toBe(false);
+    expect(globalThis.document.activeElement).toBe(newScheduleOpener());
+    expect(value.save).not.toHaveBeenCalled();
+  },
+);
+
+it.each([
+  ["a defaultPrevented event", (event: Event) => event.preventDefault()],
+  ["an IME composition", undefined],
+  ["a repeated key", undefined],
+  ["a modified key", undefined],
+])("ignores Escape for %s", (kind, prevent) => {
+  const value = fixture();
+  render(value.view(<Schedules active open={() => {}} />));
+  fireEvent.click(newScheduleOpener());
+  const name = screen.getByLabelText("Schedule name");
+  if (prevent) {
+    name.addEventListener("keydown", prevent, { once: true });
+    pressEscape(name);
+  } else if (kind === "an IME composition") {
+    fireEvent.keyDown(name, { key: "Escape", keyCode: 229, isComposing: true });
+  } else if (kind === "a repeated key") {
+    pressEscape(name, { repeat: true });
+  } else {
+    for (const modifier of ["shiftKey", "ctrlKey", "altKey", "metaKey"])
+      pressEscape(name, { [modifier]: true });
+  }
+  expect(screen.getByLabelText("Schedule name")).toBeTruthy();
+  expect(value.save).not.toHaveBeenCalled();
+});
+
+it("falls back to a visible Schedules control when the New schedule opener is hidden", () => {
+  const value = fixture();
+  render(
+    <main>
+      <button type="button" className="sidebar-context-trigger">
+        Open Schedules
+      </button>
+      {value.view(<Schedules active open={() => {}} />)}
+    </main>,
+  );
+  fireEvent.click(newScheduleOpener());
+  // A closed compact drawer makes its whole sidebar surface inert.
+  newScheduleOpener().closest("section")!.setAttribute("inert", "");
+  pressEscape(screen.getByLabelText("Schedule name"));
+  expect(screen.queryByLabelText("Schedule name")).toBeNull();
+  expect(globalThis.document.activeElement).toBe(
+    screen.getByRole("button", { name: "Open Schedules" }),
+  );
+});
+
+// Mirrors the stylesheet contract: the compact opener is display:none outside
+// the compact breakpoint, so a collapsed wide sidebar must fall through to main.
+function dismissWithCollapsedSidebar(
+  shell: (children: React.ReactNode) => React.ReactNode,
+  css: string,
+  beforeDismiss?: () => void,
+) {
+  const value = fixture();
+  const style = globalThis.document.createElement("style");
+  style.textContent = css;
+  globalThis.document.head.append(style);
+  render(<>{shell(value.view(<Schedules active open={() => {}} />))}</>);
+  fireEvent.click(newScheduleOpener());
+  newScheduleOpener().closest("section")!.setAttribute("inert", "");
+  beforeDismiss?.();
+  pressEscape(screen.getByLabelText("Schedule name"));
+  expect(screen.queryByLabelText("Schedule name")).toBeNull();
+  return { value, style };
+}
+
+it("skips the CSS-hidden compact opener on a wide layout and focuses main", () => {
+  const { style } = dismissWithCollapsedSidebar(
+    (children) => (
+      <main id="main" tabIndex={-1}>
+        <button type="button" className="sidebar-context-trigger">
+          Open Schedules
+        </button>
+        {children}
+      </main>
+    ),
+    ".sidebar-context-trigger { display: none; }",
+  );
+  try {
+    expect(globalThis.document.activeElement).toBe(
+      globalThis.document.getElementById("main"),
+    );
+  } finally {
+    style.remove();
+  }
+});
+
+it("focuses the compact opener when its rule renders it in the compact layout", () => {
+  const { style } = dismissWithCollapsedSidebar(
+    (children) => (
+      <main id="main" tabIndex={-1}>
+        <button type="button" className="sidebar-context-trigger">
+          Open Schedules
+        </button>
+        {children}
+      </main>
+    ),
+    ".sidebar-context-trigger { display: block; }",
+  );
+  try {
+    expect(globalThis.document.activeElement).toBe(
+      screen.getByRole("button", { name: "Open Schedules" }),
+    );
+  } finally {
+    style.remove();
+  }
+});
+
+it.each([
+  ["a hidden ancestor", { hidden: true }],
+  ["an inert ancestor", { inert: true }],
+  ["a display:none ancestor", { style: "display: none" }],
+  ["a visibility:hidden opener", { buttonStyle: "visibility: hidden" }],
+])("falls through to main when the compact opener has %s", (_name, init) => {
+  const { style } = dismissWithCollapsedSidebar(
+    (children) => (
+      <main id="main" tabIndex={-1}>
+        <div
+          {...("hidden" in init ? { hidden: true } : {})}
+          inert={"inert" in init}
+          style={"style" in init ? { display: "none" } : undefined}
+        >
+          <button
+            type="button"
+            className="sidebar-context-trigger"
+            style={"buttonStyle" in init ? { visibility: "hidden" } : undefined}
+          >
+            Open Schedules
+          </button>
+        </div>
+        {children}
+      </main>
+    ),
+    "",
+  );
+  try {
+    expect(globalThis.document.activeElement).toBe(
+      globalThis.document.getElementById("main"),
+    );
+  } finally {
+    style.remove();
+  }
+});
+
+it("leaves focus untouched when no candidate is rendered", () => {
+  const { style } = dismissWithCollapsedSidebar(
+    (children) => (
+      <main id="main" tabIndex={-1}>
+        <button type="button" className="sidebar-context-trigger">
+          Open Schedules
+        </button>
+        {children}
+      </main>
+    ),
+    ".sidebar-context-trigger { display: none; }",
+    () => {
+      globalThis.document.getElementById("main")!.style.display = "none";
+    },
+  );
+  try {
+    expect(globalThis.document.activeElement).toBe(globalThis.document.body);
+  } finally {
+    style.remove();
+  }
+});
+
+it("does not take focus back after Escape when focus already moved elsewhere", () => {
+  const value = fixture();
+  render(
+    <>
+      <button type="button">Elsewhere</button>
+      {value.view(<Schedules active open={() => {}} />)}
+    </>,
+  );
+  fireEvent.click(newScheduleOpener());
+  const elsewhere = screen.getByRole("button", { name: "Elsewhere" });
+  elsewhere.focus();
+  pressEscape(screen.getByLabelText("Schedule name"));
+  expect(screen.queryByLabelText("Schedule name")).toBeNull();
+  expect(globalThis.document.activeElement).toBe(elsewhere);
+});
+
+it("renders and dismisses with Escape in Korean", async () => {
+  const value = fixture();
+  render(value.view(<Schedules active open={() => {}} />));
+  await act(() => i18n.changeLanguage("ko"));
+  try {
+    fireEvent.click(newScheduleOpener());
+    expect(newScheduleOpener().disabled).toBe(true);
+    const name = globalThis.document.activeElement as HTMLElement;
+    expect(name.tagName).toBe("INPUT");
+    pressEscape(name);
+    expect(globalThis.document.querySelector("form")).toBeNull();
+    expect(globalThis.document.activeElement).toBe(newScheduleOpener());
+    expect(value.save).not.toHaveBeenCalled();
+  } finally {
+    await act(() => i18n.changeLanguage("en"));
+  }
+});
+
+it("keeps Escape inert for editing an existing schedule", () => {
+  const value = fixture(),
+    cancel = vi.fn();
+  render(
+    value.view(
+      <ScheduleEditor
+        active
+        initial={value.schedule}
+        saved={() => {}}
+        cancel={cancel}
+      />,
+    ),
+  );
+  pressEscape(screen.getByLabelText("Schedule name"));
+  expect(cancel).not.toHaveBeenCalled();
+  expect(screen.getByLabelText("Schedule name")).toBeTruthy();
 });
 
 it.each(["a", "한"])(

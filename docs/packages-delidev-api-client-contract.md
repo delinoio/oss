@@ -8,7 +8,7 @@ Generated AccountQuery and AccountService expose StartAccountOAuth, CompleteAcco
 
 ## Request diagnostic client
 
-Generated `SessionQuery.listRequestDiagnostics` and `SystemCapability.REQUEST_DIAGNOSTICS_V1` expose the previous feature metadata read. Preserve native-input versus proxy-HTTP enum provenance, optional unavailable observations, exact bigint revisions/latency and original session/execution/page selection. The client performs no matching by time/model, usage ingestion, request reconstruction or receipt-driven HTTP retry. Follow the [diagnostics contract](cmds-delidev-diagnostics-contract.md); bindings remain tool-generated.
+Generated `SessionQuery.listRequestDiagnostics` and `SystemCapability.REQUEST_DIAGNOSTICS_V1` expose the previous feature metadata read. Preserve native-input versus proxy-HTTP enum provenance, the closed `RequestDiagnosticAttribution` (a builtin reviewer record has no catalog `model`), optional unavailable observations, exact bigint revisions/latency and original session/execution/page selection. The client performs no matching by time/model, usage ingestion, request reconstruction or receipt-driven HTTP retry. Follow the [diagnostics contract](cmds-delidev-diagnostics-contract.md); bindings remain tool-generated.
 
 Buf generates service-specific modules. The normal protocol generation command
 also runs `scripts/delidev/proto-compat.mjs` to remove retired historical aggregate
@@ -45,6 +45,7 @@ Generated `ListResourcesRequest` exposes optional account-only provider and acco
 - `ActivityQuery` remains a generated compatibility export under the [Activity retirement contract](cmds-delidev-activity-contract.md). Authorized owner and current paired-client requests receive typed `UNSUPPORTED` with Connect `Unimplemented`; missing, invalid or revoked credentials and Worker actors retain their authentication or permission refusal. Retain original protocol numbers and generated declarations without exposing live Activity or source inspection. `ActivityCapability.PR_HANDLING_V1` is a reserved/generated compatibility declaration only; retired `ListActivity` returns `Unimplemented` without a response and cannot advertise it. Active manual PR fixes negotiate `PullRequestFixProfile.CODEX_GIT_V1` through `GetPullRequestFixCapabilities`. Independent PR handling retains exact identity strings, bigint revisions, content-version references and separate dismissal, attempt and verified outcomes.
 - `UsageQuery` exports generated summary/current-price/historical-price descriptors and the explicit price mutation. Preserve nullable decimal rates, exact amount/counter strings, separate currencies and token-basis versus native coverage. The additive summary request supports explicit day granularity and IANA zone; optional daily/model analytics are server-owned results from the same snapshot as existing totals. Only the server computes historical estimates and Other-model totals; no client-side aggregation or inferred actual cost.
 - Automatic session creation uses generated `SessionQuery.createSession` with explicit `name_mode: "automatic"` and no `name`. `SystemQuery.getStatus` exposes the typed automatic-title server capability; UI gating must use that field rather than a version guess. Session title owner/state/reason remain server-owned `Resource.document_json` fields.
+- Generated `SystemCapability.MANAGED_CODEX_TITLES_V1` (59) and `WorkerCapability.MANAGED_CODEX_TITLES_V1` (32) describe protected ChatGPT title support. Consumers gate creation only on `AUTOMATIC_TITLES_V1`; managed support is server-decided, and the client never infers title state or reason from either capability. Regenerate bindings from the schema, never by hand.
 - `createDeliDevTransport` takes an explicit server origin and caller-owned fresh token supplier. It uses binary Connect POST, server streaming and no automatic mutation retries. `newRequestId` creates UUID-v7 mutation identities; callers retain the complete original request on uncertain retries.
 - `clientFailure` preserves versioned Go problem classifications, guidance and valid correlation IDs; untyped browser/proxy errors never disclose raw exception contents.
 - `synchronizeResources` is a read-only async iterator over one resource-kind/session/project scope. It atomically replaces the consumer's scope with a coherent complete server snapshot, then emits indexed current resources or removals. It never substitutes partial lists for snapshots. The existing server snapshot limit is 200 resources and its byte budget; larger histories require a separately paginated presentation and cannot be claimed complete by this helper.
@@ -67,7 +68,12 @@ Canceling a read cannot close or recreate the native terminal.
 
 - OAuth format selection activates only the main-established the originating change ProviderInventory capability 8 and Start/attempt fields 4/7. Follow `cmds-delidev-account-oauth-contract.md#oauth-api-format-selection-reservations`: bind the original explicit Bearer profile without changing the authentication adapter, retain omitted legacy receipt bytes and original recovery/cleanup authority, and keep unaccepted provider registrations disabled. Common manual/OAuth UI explicitly selects multiple formats or displays a sole profile; no migration or native change.
 
-- Key-preserving API format changes follow `cmds-delidev-accounts-contract.md#connected-api-format-changes` after main reservation the originating change. Capability 9 owns the atomic format/preferences RPC; preserve capability 7 and OAuth reservation 8, bounded server-owned generations sharing the original protected key, immutable original execution/continuation profiles, explicit current validation, all-generation cleanup and portable exclusions. Observation-only edits rebase protected fields/revision while retaining drafts; editable conflicts block saves. No migration, native change or format conversion.
+- Key-preserving API format changes follow `cmds-delidev-accounts-contract.md#connected-api-format-changes` after main reservation the originating change. Capability 9 owns the atomic format/preferences RPC and capability 10 gates its revision-bound provider check; preserve capability 7 and OAuth reservation 8, bounded server-owned generations sharing the original protected key, immutable original execution/continuation profiles, explicit current validation, all-generation cleanup and portable exclusions. Observation-only edits rebase protected fields/revision while retaining drafts; editable conflicts block saves. No migration, native change or format conversion.
+
+  The generated request exposes provider_revision as an exact bigint. Desktop
+  callers send the revision from the Provider resource used for format selection
+  and keep it unchanged on uncertain retries. An older client that omits it
+  receives a typed refusal from an updated server.
 
 - Per-key API formats follow the catalog/protocol contracts and the originating change allocations. Negotiate ProviderInventory capability 7, retain closed API format/authentication enums and schema-3 API family checks independently of ordered-source Agents, and preserve original request bytes. Portable v4 accepts existing v1–3 semantics; no Worker wire change or client-side format conversion is authorized.
 
@@ -175,7 +181,7 @@ Canceling a read cannot close or recreate the native terminal.
 
 - The feature remote starting branches uses System 51 / Worker 27 under the workspace, desktop and protocol contracts. Freeze configured source and project/repository/machine revisions; only the original authenticated selected Worker owns read-only native Git discovery. Retain complete 10,000-branch/8 MiB inventory bounds with feature-only job/journal/receipt/transport headroom, protected native Git credentials, safe logs and joined process cleanup. Discovery grants no checkout/preparation/execution authority or migration. Creation preserves saved/manual starting references, independent overrides, comparison base, Local proof and exact uncertain retries; older peers retain manual flows.
 
-- `decodeResourceDocument` in `configuration-identity.ts` owns shared document/schema reads: ordinary resources retain 1 MiB, with only schema-1 `compact-session` Jobs and `workspace-storage` Jobs whose input action is `recover` bounded to 4 MiB. Desktop/receipt and synchronization consumers share this rule without changing aggregate cache limits or original identity checks. Decoding grants no operation or native authority; follow the client, compaction and storage contracts.
+- `decodeResourceDocument` in `configuration-identity.ts` owns shared document/schema reads: ordinary resources retain 1 MiB, with only schema-1 `compact-session` Jobs and `workspace-storage` Jobs whose input action is `recover` bounded to 4 MiB. Desktop/receipt and synchronization consumers share this rule without changing aggregate cache limits or original identity checks. The server grants a scope containing such a Job over 1 MiB an 8 MiB complete `GetSnapshot` budget (see `protos-delidev-v1-contract.md`); `synchronizeResources` consumers that expect it, such as the desktop session, must pass `maxDocumentBytes` of 8 MiB because the helper's 4 MiB default would reject the snapshot. Decoding grants no operation or native authority; follow the client, compaction and storage contracts.
 
 - Project behavior settings follow `cmds-delidev-catalog-contract.md#project-behavior-settings-issue-1965`: System 52, schema-2 Project/Settings and portable v5 preserve continuous typed inheritance, explicit project context, source-route/Agent and repository precedence, all three fetch gates, immutable snapshots and first-publication durable plan response decisions. Previously pending plans stay manual; uncertainty never permits resend. Preserve v1–4 imports and reject destructive legacy writes. No SQLite migration or Worker capability is added.
 
@@ -367,7 +373,7 @@ its controller through navigation and separates acceptance from child publicatio
 
 Worker bootstrap export uses generated mutation results with bounded ciphertext and its separately displayed authenticated digest. Status retains exact desired/effective/native generation strings and closed route states; current control readiness cannot manufacture native route use or provider success. Ciphertext is not persistent query state, and private recipient keys/decrypted derivatives never cross the client boundary.
 
-OpenCode General Chat Fork uses existing generated `SessionQuery` ForkSession and GetSessionFork with independently negotiated System 26 / Worker 15. The Unix pinned profile retains exact source revision/native turn, paused independent child identity, and explicit inherited-message provenance with no input or accounting authority. Native agent/model absence remains preparation state until the first real child input; clients cannot infer selection or broaden the Go-owned plain-text eligibility boundary.
+OpenCode General Chat Fork uses existing generated `SessionQuery` ForkSession and GetSessionFork with independently negotiated System 26 / Worker 15. The Unix pinned profile retains exact source revision/native turn, paused independent child identity, and explicit inherited-message provenance with no input or accounting authority. Native agent/model absence remains preparation state until the first real child input; clients cannot infer selection or broaden the Go-owned plain-text eligibility boundary. The generated `SystemCapability.OPENCODE_GENERAL_CHAT_FORK_REASONING_V1 = 104` (Worker 69) independently reports profile v2, which also forks completed plain reasoning history; desktop clients offer such a source only when both the server and the original Runner Device report it.
 
 Independent server subscription login exports capability 30, the closed SubscriptionLoginState and ForwardSubscriptionCallback from reconciled schemas. Keep progress URLs, transient suggested names and write-only callback bytes outside shared query caches. Original operation/generation checks precede name entry; exact request retries cannot grant callback replay. Explicit-machine Worker methods, API accounts and quota ownership retain their contracts.
 
@@ -402,7 +408,7 @@ catalog results grant no execution readiness. Follow the desktop/catalog contrac
 
 ## Failed subscription cleanup client
 
-The existing cleanup RPC also includes fully disconnected subscription configurations across services. Individual failed initial ChatGPT deletion uses the existing configuration deletion RPC; generated request/response declarations and capability numbers remain unchanged.
+The existing cleanup RPC also includes fully disconnected subscription configurations across services. Individual failed initial ChatGPT deletion uses the existing configuration deletion RPC; generated request/response declarations remain unchanged. The generated `SystemCapability.SUBSCRIPTION_CLEANUP_RECOVERY_V1 = 64` gates the same deletion RPC for a terminal original server LOGOUT blocked on protected cleanup; clients without it send no expanded request.
 
 Generated SubscriptionQuery exports cleanupFailedSubscriptions and getFailedSubscriptionCleanup plus the closed batch state, outcome and reason enums. Capability 41 was reserved on main in the originating change; preserve Claude 38/Grok 39/40 and their independent support. Exact request UUIDs bind uncertain admission retries; accepted work is read by original job ID, with bigint revisions and fixed 50-result pages. Validate identity, monotonic counts/revision, closed state/outcome/reasons and complete page bounds before accepting status. Metadata-only status may use category-scoped Connect Query; neither generated bindings nor a read grant native/login/callback/deletion authority. See the subscription/Settings contracts.
 
@@ -497,6 +503,10 @@ the [Tailscale protocol contract](protos-delidev-v1-contract.md#tailscale-connec
 Closed bounded JSON projections retain public observation metadata only; private
 keys, decrypted grants and protected Worker inputs stay Go-owned.
 
+## Pull request paging capability
+
+The generated `SystemCapability` enum exposes `PULL_REQUEST_PAGING_50_V1 = 103`. Desktop clients read it from `SystemQuery.getStatus` and enable the 50 option of the Pull requests page-size select only when it is advertised; they never send a 50-item List/Search or 50-seed workspace request without it. Regenerate bindings with `pnpm proto:generate`; no hand-written client export is added.
+
 ## Pull request workspace client
 
 The generated IntegrationQuery client exposes independently negotiated workspace,
@@ -521,6 +531,21 @@ exhaustion. Existing versioned ErrorDetail, safe message/guidance and correlatio
 validation remain unchanged. No generated protocol field or compatibility
 allocation is added; older documents and clients keep their generic fallback.
 
+## Tailscale check failure causes
+
+`FailureCause` also contains `TailscaleConnectionRefused`
+(`tailscale_connection_refused`), `TailscaleTimeout` (`tailscale_timeout`),
+`TailscaleCertificateInvalid` (`tailscale_certificate_invalid`),
+`TailscaleUnexpectedHttp` (`tailscale_unexpected_http`) and
+`TailscaleInvalidIdentity` (`tailscale_invalid_identity`). The wire values are
+namespaced because the causes are Check-only: generic values such as `timeout`
+(emitted with `unavailable` by the Codex app-server handshake) must never decode as
+a Tailscale cause. `failureCause` uses one explicit closed code/cause allowlist:
+`unavailable` pairs with the first four and `unsupported` pairs only with
+`tailscale_invalid_identity`. Any other code, an unknown or unnamespaced cause
+and untyped transport text project to `undefined`. The causes carry no hostname,
+URL, status body, certificate or native error text, and no protocol field changes.
+
 ## Original Codex dynamic tools
 
 Generated System 102 and Worker 63 declarations retain existing service paths.
@@ -528,3 +553,11 @@ Typed event JSON keeps original item status, nullable success/duration, inert
 text/media commitments and independent reply/resolution metadata. Native wire
 request numbers remain decimal strings across JavaScript readers. These facts
 grant no dispatch, media retrieval, reply retry or continuation authority.
+
+## Server reset credits V2 negotiation
+
+The generated System enum includes `SERVER_SUBSCRIPTION_RESET_CREDITS_V2 = 101`. Clients require it before a new omitted-machine reset-credit consumption and never send a Runner selector with that request. Servers without it receive existing update guidance. Historical System 19 and 49 capabilities remain only for reconciling operations already accepted on those lanes. Regenerate both bindings from the reconciled schema; no new RPC or Worker capability exists.
+
+## Server-owned Claude token client
+
+The generated Go and TypeScript bindings expose `SystemCapability.CLAUDE_SERVER_LOGIN_V1`, `SystemCapability.CLAUDE_MANAGED_EXECUTION_V1` and `WorkerCapability.MANAGED_CLAUDE_EXECUTION_V1`. The desktop starts a Runner-free Claude sign-in only when the server status advertises the first; it omits `machineId` from the request, treats the account document field `subscription.claude_credential = "server-token"` as the managed mode and never receives the token in any response.

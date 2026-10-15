@@ -103,6 +103,20 @@ it("validates portable names and displays native Windows and Unix paths", () => 
     expect(repositoryCloneDirectory(value)).toBe(true);
   for (const value of ["..", "a/b", "CON", "nul.txt", "trailing.", "trailing "])
     expect(repositoryCloneDirectory(value)).toBe(false);
+  for (const value of [
+    "CONIN$",
+    "conout$.log",
+    "COM0",
+    "com9.txt",
+    "LPT0",
+    "COM\u00b9",
+    "lpt\u00b2.txt",
+    "COM\u00b3",
+    "CON .txt",
+  ])
+    expect(repositoryCloneDirectory(value)).toBe(false);
+  for (const value of ["CONSOLE", "COM10", "COM", "LPT10.txt", "CONIN", "xCON"])
+    expect(repositoryCloneDirectory(value)).toBe(true);
   expect(repositoryCloneParent("/parent")).toBe(true);
   expect(repositoryCloneParent("C:\\parent")).toBe(true);
   expect(repositoryCloneParent("relative")).toBe(false);

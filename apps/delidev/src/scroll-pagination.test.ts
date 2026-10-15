@@ -364,3 +364,502 @@ it("keeps a read accepted when its observer throws", async () => {
   expect(chain.getSnapshot().loaded).toBe(true);
   expect(chain.getSnapshot().error).toBeUndefined();
 });
+
+const counted =
+  (counts: Record<string, number>): PaginationReader<Row, Payload> =>
+  async (token, signal) => ({
+    ...(await reader(token, signal)),
+    rawCount: counts[token || "0"] ?? 0,
+  });
+const rawTotal = (chain: PaginationChain<Row, Payload>) =>
+  chain
+    .getSnapshot()
+    .pages.reduce((total, page) => total + (page.rawCount ?? 0), 0);
+
+it("retains the raw page scalar for every reached page after payload eviction", async () => {
+  const chain = new PaginationChain<Row, Payload>();
+  chain.activate();
+  const read = counted({ "0": 7 });
+  await chain.refresh(read);
+  for (let index = 0; index < 4; index++) await chain.append(read);
+  expect(chain.getSnapshot().pages).toHaveLength(5);
+  expect(chain.getSnapshot().payloadPages.map((page) => page.token)).toEqual([
+    "2",
+    "3",
+    "4",
+  ]);
+  expect(chain.getSnapshot().pages[0].rawCount).toBe(7);
+  expect(rawTotal(chain)).toBe(7);
+  chain.measure("", 90);
+  expect(chain.getSnapshot().pages[0].rawCount).toBe(7);
+});
+
+it("replaces raw page scalars when a refresh, reload or reset replaces the chain", async () => {
+  const chain = new PaginationChain<Row, Payload>();
+  chain.activate();
+  await chain.refresh(counted({ "0": 3 }));
+  for (let index = 0; index < 4; index++)
+    await chain.append(counted({ "0": 3 }));
+  expect(rawTotal(chain)).toBe(3);
+  await chain.refresh(counted({}));
+  expect(chain.getSnapshot().pages).toHaveLength(5);
+  expect(rawTotal(chain)).toBe(0);
+  await chain.reload(counted({ "0": 2, "1": 1 }));
+  expect(chain.getSnapshot().pages).toHaveLength(1);
+  expect(rawTotal(chain)).toBe(2);
+  chain.reset();
+  expect(chain.getSnapshot().pages).toEqual([]);
+  expect(rawTotal(chain)).toBe(0);
+});
+
+it("keeps the previous raw page scalars when a refresh fails", async () => {
+  const chain = new PaginationChain<Row, Payload>();
+  chain.activate();
+  await chain.refresh(counted({ "0": 4 }));
+  await chain.append(counted({ "0": 4 }));
+  const failing: PaginationReader<Row, Payload> = async () => {
+    throw new ConnectError("denied", Code.PermissionDenied);
+  };
+  await chain.refresh(failing);
+  expect(chain.getSnapshot().error).toBeDefined();
+  expect(rawTotal(chain)).toBe(4);
+});
+
+it("counts only settled successful reads so a suspended retry never looks settled", async () => {
+  const chain = new PaginationChain<Row, Payload>();
+  chain.activate();
+  await chain.refresh(reader);
+  const settled = chain.getSnapshot().settledReads;
+  expect(settled).toBe(1);
+  const failing = vi.fn<PaginationReader<Row, Payload>>(async () => {
+    throw new ConnectError("offline", Code.Unavailable);
+  });
+  await chain.reload(failing);
+  expect(chain.getSnapshot().error).toBeDefined();
+  expect(chain.getSnapshot().settledReads).toBe(settled);
+  let release!: (value: Awaited<ReturnType<typeof reader>>) => void;
+  const pending = chain.reload(
+    () =>
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+  );
+  expect(chain.getSnapshot().loading).toBe(ReadStage.Reload);
+  // Suspension cancels the pending read: loading and error are both clear, yet
+  // nothing settled.
+  chain.suspend();
+  release(await reader("", new AbortController().signal));
+  await pending;
+  expect(chain.getSnapshot().loading).toBeUndefined();
+  expect(chain.getSnapshot().error).toBeUndefined();
+  expect(chain.getSnapshot().settledReads).toBe(settled);
+  chain.activate();
+  await chain.refresh(reader);
+  expect(chain.getSnapshot().settledReads).toBe((settled ?? 0) + 1);
+});
+
+// A reader whose every call stays open until the test settles it.
+function deferredReader(label = "v", last = 2) {
+  const tokens: string[] = [];
+  const calls: {
+    token: string;
+    resolve: () => void;
+    reject: (error: unknown) => void;
+  }[] = [];
+  const read: PaginationReader<Row, Payload> = (token) =>
+    new Promise((resolve, reject) => {
+      tokens.push(token);
+      calls.push({
+        token,
+        reject,
+        resolve: () => {
+          const index = Number(token || 0);
+          resolve({
+            rows: [
+              { id: String(index), revision: 1n, title: `${label} ${index}` },
+            ],
+            nextPageToken: index < last ? String(index + 1) : "",
+            payload: [{ id: String(index), privateContents: `Full ${index}` }],
+          });
+        },
+      });
+    });
+  return { calls, read, tokens };
+}
+const flush = async () => {
+  for (let index = 0; index < 8; index++) await Promise.resolve();
+};
+const titles = (chain: PaginationChain<Row, Payload>) =>
+  chain.getSnapshot().rows.map((row) => row.title);
+async function loadedChain(pages = 2) {
+  const chain = new PaginationChain<Row, Payload>();
+  chain.activate();
+  await chain.refresh(reader);
+  for (let index = 1; index < pages; index++) await chain.append(reader);
+  return chain;
+}
+
+// Settles every deferred call of the given readers until `pending` resolves.
+async function settleAll(
+  pending: Promise<unknown>,
+  ...readers: ReturnType<typeof deferredReader>[]
+) {
+  let done = false;
+  void pending.then(() => {
+    done = true;
+  });
+  for (let guard = 0; !done && guard < 200; guard++) {
+    for (const deferred of readers) deferred.calls.shift()?.resolve();
+    await flush();
+  }
+  expect(done).toBe(true);
+}
+
+it.each([
+  ReadStage.Initial,
+  ReadStage.Additional,
+  ReadStage.Restore,
+  ReadStage.Refresh,
+  ReadStage.Reload,
+])(
+  "queues one reached-range refresh behind an active %s read",
+  async (stage) => {
+    const chain = await loadedChain(stage === ReadStage.Restore ? 5 : 2);
+    const last = stage === ReadStage.Restore ? 5 : 2;
+    const active = deferredReader("active", last);
+    const fresh = deferredReader("fresh", last);
+    let pending: Promise<void>;
+    if (stage === ReadStage.Initial) {
+      chain.reset();
+      chain.activate();
+      pending = chain.refresh(active.read);
+    } else if (stage === ReadStage.Additional) {
+      pending = chain.append(active.read);
+    } else if (stage === ReadStage.Restore) {
+      pending = chain.restore("", active.read);
+    } else if (stage === ReadStage.Refresh) {
+      pending = chain.refresh(active.read);
+    } else {
+      pending = chain.reload(active.read);
+    }
+    expect(chain.getSnapshot().loading).toBe(stage);
+    // Several invalidations while busy coalesce into one queued refresh.
+    await chain.refresh(fresh.read);
+    await chain.refresh(fresh.read);
+    await chain.refresh(fresh.read);
+    expect(fresh.calls).toHaveLength(0);
+    await settleAll(pending, active, fresh);
+    const snapshot = chain.getSnapshot();
+    expect(snapshot.loading).toBeUndefined();
+    expect(snapshot.error).toBeUndefined();
+    // Exactly one refresh pass ran: it read each accepted request token once and
+    // never discovered a new tail, so the reached range is unchanged.
+    const reached: Record<string, string[]> = {
+      [ReadStage.Initial]: [""],
+      [ReadStage.Additional]: ["", "1", "2"],
+      [ReadStage.Restore]: ["", "1", "2", "3", "4"],
+      [ReadStage.Refresh]: ["", "1"],
+      [ReadStage.Reload]: [""],
+    };
+    const expectedTokens = reached[stage];
+    expect(snapshot.pages.map((page) => page.token)).toEqual(expectedTokens);
+    expect(fresh.tokens).toEqual(expectedTokens);
+    expect(titles(chain)).toEqual(expectedTokens.map((_, i) => `fresh ${i}`));
+  },
+);
+
+it("keeps the queued refresh after a failed read and honors it after explicit retry", async () => {
+  const chain = await loadedChain(2);
+  const active = deferredReader("active");
+  const fresh = deferredReader("fresh");
+  const pending = chain.refresh(active.read);
+  await chain.refresh(fresh.read);
+  active.calls[0].reject(new ConnectError("offline", Code.Unavailable));
+  await pending;
+  expect(chain.getSnapshot().error?.stage).toBe(ReadStage.Refresh);
+  // No automatic retry loop and no refresh while the error is held.
+  await flush();
+  expect(active.calls).toHaveLength(1);
+  expect(fresh.calls).toHaveLength(0);
+  // An invalidation during the held error is retained too.
+  await chain.refresh(fresh.read);
+  expect(fresh.calls).toHaveLength(0);
+  const recovery = deferredReader("recovered");
+  const retrying = chain.retry(recovery.read);
+  for (let index = 0; index < 2; index++) {
+    while (!recovery.calls.length) await flush();
+    recovery.calls.shift()!.resolve();
+    await flush();
+  }
+  while (!fresh.calls.length) await flush();
+  expect(fresh.calls).toHaveLength(1);
+  for (let index = 0; index < 2; index++) {
+    while (!fresh.calls.length) await flush();
+    fresh.calls.shift()!.resolve();
+    await flush();
+  }
+  await retrying;
+  expect(chain.getSnapshot().error).toBeUndefined();
+  expect(titles(chain).every((title) => title.startsWith("fresh"))).toBe(true);
+});
+
+it("lets an explicit reload supersede a queued refresh recorded before it started", async () => {
+  const chain = await loadedChain(2);
+  const changed: PaginationReader<Row, Payload> = async () => ({
+    rows: [{ id: "x", revision: 1n, title: "changed" }],
+    nextPageToken: "",
+  });
+  await chain.refresh(changed);
+  expect(chain.getSnapshot().error?.failure.code).toBe(
+    FailureCode.CursorExpired,
+  );
+  const fresh = deferredReader("fresh");
+  await chain.refresh(fresh.read);
+  expect(fresh.calls).toHaveLength(0);
+  // Reload reads every page from the start token after the invalidation, so
+  // no second coalesced refresh follows it.
+  await chain.reload(reader);
+  await flush();
+  expect(chain.getSnapshot().error).toBeUndefined();
+  expect(fresh.calls).toHaveLength(0);
+  // An invalidation arriving while the reload runs still queues one refresh.
+  const reloading = deferredReader("reloading");
+  const pending = chain.reload(reloading.read);
+  await chain.refresh(fresh.read);
+  await settleAll(pending, reloading, fresh);
+  expect(fresh.tokens).toEqual([""]);
+  expect(chain.getSnapshot().error).toBeUndefined();
+});
+
+it("lets an explicit retry of a failed initial read supersede the queued refresh", async () => {
+  const chain = new PaginationChain<Row, Payload>();
+  chain.activate();
+  await chain.refresh(async () => {
+    throw new ConnectError("offline", Code.Unavailable);
+  });
+  expect(chain.getSnapshot().error?.stage).toBe(ReadStage.Initial);
+  const fresh = vi.fn<PaginationReader<Row, Payload>>((token, signal) =>
+    reader(token, signal),
+  );
+  await chain.refresh(fresh);
+  expect(fresh).not.toHaveBeenCalled();
+  const recovery = vi.fn<PaginationReader<Row, Payload>>((token, signal) =>
+    reader(token, signal),
+  );
+  await chain.retry(recovery);
+  await flush();
+  // The retry re-reads from the start token after the invalidation.
+  expect(recovery).toHaveBeenCalledTimes(1);
+  expect(fresh).not.toHaveBeenCalled();
+  expect(chain.getSnapshot().error).toBeUndefined();
+});
+
+it("clears a queued refresh when the owner suspends, resets or is replaced", async () => {
+  for (const clear of ["suspend", "reset"] as const) {
+    const chain = await loadedChain(2);
+    const active = deferredReader("active");
+    const fresh = deferredReader("fresh");
+    const pending = chain.refresh(active.read);
+    await chain.refresh(fresh.read);
+    if (clear === "suspend") chain.suspend();
+    else chain.reset();
+    chain.activate();
+    active.calls[0].resolve();
+    await pending;
+    await flush();
+    expect(fresh.calls).toHaveLength(0);
+    expect(chain.getSnapshot().loading).toBeUndefined();
+  }
+  // Inactive owners never record invalidations.
+  const idle = new PaginationChain<Row, Payload>();
+  const fresh = deferredReader("fresh");
+  await idle.refresh(fresh.read);
+  expect(fresh.calls).toHaveLength(0);
+  idle.activate();
+  const first = idle.refresh(fresh.read);
+  expect(fresh.calls).toHaveLength(1);
+  await settleAll(first, fresh);
+});
+
+it("runs the marker invalidation immediately when the chain is idle", async () => {
+  const chain = await loadedChain(2);
+  const read = vi.fn<PaginationReader<Row, Payload>>((token, signal) =>
+    reader(token, signal),
+  );
+  await chain.refresh(read);
+  expect(read.mock.calls.map((call) => call[0])).toEqual(["", "1"]);
+});
+
+it("keeps whole-chain observation evidence after the first payload page is evicted and clears it on suspend until a refresh completes", async () => {
+  const chain = new PaginationChain<Row, Payload>();
+  chain.activate();
+  expect(chain.getSnapshot().observed).toBe(false);
+  await chain.refresh(reader);
+  expect(chain.getSnapshot().observed).toBe(true);
+  for (let index = 0; index < 5; index++) await chain.append(reader);
+  const grown = chain.getSnapshot();
+  // The evictable first payload page is gone, yet the observation remains.
+  expect(grown.payloadPages.map((page) => page.token)).toEqual(["3", "4", "5"]);
+  expect(grown.observed).toBe(true);
+  // Additional pages inside the visit never changed the evidence; suspending
+  // ends the visit and revokes it.
+  chain.suspend();
+  expect(chain.getSnapshot().observed).toBe(false);
+  expect(chain.getSnapshot().loaded).toBe(true);
+  chain.activate();
+  const refreshed = vi.fn<PaginationReader<Row, Payload>>((token, signal) =>
+    reader(token, signal),
+  );
+  await chain.refresh(refreshed);
+  const snapshot = chain.getSnapshot();
+  expect(snapshot.observed).toBe(true);
+  expect(snapshot.payloadPages.length).toBeLessThanOrEqual(3);
+  expect(snapshot.payloadPages.some((page) => page.token === "")).toBe(false);
+  expect(snapshot.pages.map((page) => page.token)).toEqual([
+    "",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+  ]);
+  expect(snapshot.nextPageToken).toBe("");
+  // Suspending again revokes the evidence; a Restore read cannot grant it back
+  // before a whole-chain refresh succeeds.
+  chain.suspend();
+  chain.activate();
+  const afterSuspend = vi.fn<PaginationReader<Row, Payload>>((token, signal) =>
+    reader(token, signal),
+  );
+  await chain.restore("", afterSuspend);
+  expect(afterSuspend).toHaveBeenCalledTimes(1);
+  expect(chain.getSnapshot().observed).toBe(false);
+});
+
+it("never grants observation evidence to failed, in-flight, suspended or reset whole-chain reads", async () => {
+  const chain = new PaginationChain<Row, Payload>();
+  chain.activate();
+  const failing = vi.fn<PaginationReader<Row, Payload>>(async () => {
+    throw new ConnectError("unavailable", Code.Unavailable);
+  });
+  await chain.refresh(failing);
+  expect(chain.getSnapshot().observed).toBe(false);
+  expect(chain.getSnapshot().error).toBeDefined();
+  await chain.retry(reader);
+  expect(chain.getSnapshot().observed).toBe(true);
+  // A refresh that fails after a success drops the earlier evidence.
+  chain.suspend();
+  chain.activate();
+  await chain.refresh(failing);
+  expect(chain.getSnapshot().observed).toBe(false);
+  await chain.retry(reader);
+  expect(chain.getSnapshot().observed).toBe(true);
+  // An in-flight refresh revokes the evidence until it succeeds.
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  const pending = chain.refresh(async (token, signal) => {
+    await gate;
+    return reader(token, signal);
+  });
+  expect(chain.getSnapshot().loading).toBe(ReadStage.Refresh);
+  expect(chain.getSnapshot().observed).toBe(false);
+  // Suspension during the read leaves no admission after the stale read ends.
+  chain.suspend();
+  release();
+  await pending;
+  expect(chain.getSnapshot().observed).toBe(false);
+  chain.activate();
+  await chain.refresh(reader);
+  expect(chain.getSnapshot().observed).toBe(true);
+  chain.reset();
+  expect(chain.getSnapshot().observed).toBe(false);
+  expect(chain.getSnapshot().loaded).toBe(false);
+  chain.activate();
+  await chain.reload(reader);
+  expect(chain.getSnapshot().observed).toBe(true);
+});
+
+it("keeps observation evidence across a failed additional page inside the same visit", async () => {
+  const chain = new PaginationChain<Row, Payload>();
+  chain.activate();
+  await chain.refresh(reader);
+  await chain.append(async () => {
+    throw new ConnectError("unavailable", Code.Unavailable);
+  });
+  expect(chain.getSnapshot().error).toBeDefined();
+  expect(chain.getSnapshot().observed).toBe(true);
+  await chain.retry(reader);
+  expect(chain.getSnapshot().observed).toBe(true);
+});
+
+it("latches a failed read through retry and reload until a read settles successfully", async () => {
+  const chain = new PaginationChain<Row, Payload>();
+  chain.activate();
+  await chain.refresh(reader);
+  expect(chain.getSnapshot().unrecovered).toBeUndefined();
+  // A healthy background refresh never sets the latch.
+  await chain.refresh(reader);
+  expect(chain.getSnapshot().unrecovered).toBeUndefined();
+  const failed = vi.fn<PaginationReader<Row, Payload>>(async () => {
+    throw new ConnectError("offline", Code.Unavailable);
+  });
+  await chain.refresh(failed);
+  expect(chain.getSnapshot().error).toBeTruthy();
+  expect(chain.getSnapshot().loaded).toBe(true);
+  expect(chain.getSnapshot().unrecovered).toBe(true);
+  // Retry clears the error but keeps the stale snapshot latched while loading,
+  // and a retry that fails again keeps it.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  const stalled = vi.fn<PaginationReader<Row, Payload>>(async () => {
+    await held;
+    throw new ConnectError("still offline", Code.Unavailable);
+  });
+  const pending = chain.retry(stalled);
+  expect(chain.getSnapshot().loading).toBe(ReadStage.Refresh);
+  expect(chain.getSnapshot().error).toBeUndefined();
+  expect(chain.getSnapshot().unrecovered).toBe(true);
+  release();
+  await pending;
+  expect(chain.getSnapshot().error).toBeTruthy();
+  expect(chain.getSnapshot().unrecovered).toBe(true);
+  // The successful retry is the only thing that clears the latch.
+  let releaseRetry!: () => void;
+  const heldRetry = new Promise<void>((resolve) => (releaseRetry = resolve));
+  const recovering = chain.retry(async (token, signal) => {
+    await heldRetry;
+    return reader(token, signal);
+  });
+  expect(chain.getSnapshot().loading).toBe(ReadStage.Refresh);
+  expect(chain.getSnapshot().unrecovered).toBe(true);
+  releaseRetry();
+  await recovering;
+  expect(chain.getSnapshot().error).toBeUndefined();
+  expect(chain.getSnapshot().loading).toBeUndefined();
+  expect(chain.getSnapshot().unrecovered).toBeUndefined();
+});
+
+it("keeps the failed-read latch through a Reload and clears it with the chain", async () => {
+  const chain = new PaginationChain<Row, Payload>();
+  chain.activate();
+  await chain.refresh(reader);
+  const failed = vi.fn<PaginationReader<Row, Payload>>(async () => {
+    throw new ConnectError("offline", Code.Unavailable);
+  });
+  await chain.refresh(failed);
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  const reloading = chain.reload(async (token, signal) => {
+    await held;
+    return reader(token, signal);
+  });
+  expect(chain.getSnapshot().loading).toBe(ReadStage.Reload);
+  expect(chain.getSnapshot().unrecovered).toBe(true);
+  release();
+  await reloading;
+  expect(chain.getSnapshot().unrecovered).toBeUndefined();
+  await chain.refresh(failed);
+  expect(chain.getSnapshot().unrecovered).toBe(true);
+  chain.reset();
+  expect(chain.getSnapshot().unrecovered).toBeUndefined();
+});

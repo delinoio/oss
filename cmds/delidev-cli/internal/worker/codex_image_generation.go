@@ -48,3 +48,17 @@ func (c *CodexEventPublisher) publishImageGeneration(ctx context.Context, event 
 	c.artifacts[event.ItemID] = retained
 	return nil
 }
+
+// retainedHistoryFrameProfile reapplies the enlarged native frame of the original
+// execution to managed compaction, Revert and Revert recovery clients. The frozen
+// NativeImageGeneration flag of the original assignment is the persisted source:
+// such a session may retain one protected item above the default one-MiB frame,
+// and the history scans must admit what the original execution already admitted.
+// The profile never enables image generation, so the later clients stay
+// non-generating and recovery needs no credentials.
+func retainedHistoryFrameProfile(original domain.ExecutionJobInput) codex.FrameProfile {
+	if original.NativeImageGeneration && original.Configuration.Harness == domain.Codex && original.Configuration.Subscription && original.Configuration.SidechatPolicy == "" {
+		return codex.ImageHistoryFrameProfile
+	}
+	return codex.DefaultFrameProfile
+}

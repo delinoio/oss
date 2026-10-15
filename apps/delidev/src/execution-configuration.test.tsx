@@ -10,7 +10,9 @@ import { encode } from "./documents";
 import {
   ExecutionConfiguration as OriginalExecutionConfiguration,
   SavedExecutionChips,
+  savedExecutionSnapshot,
 } from "./execution-configuration";
+import { rawSourceModelKey, sourceModelKey } from "./source-model-key-fixture";
 import { useState, type ComponentProps } from "react";
 function ExecutionConfiguration(
   props: ComponentProps<typeof OriginalExecutionConfiguration>,
@@ -32,12 +34,16 @@ function fixture(harness = "codex") {
     "Original first template 지침.\n  Keep indentation. <script>privateScript()</script>";
   const second =
     "Original second template.\nDo not use the later edited template.";
+  const provider = newRequestId();
   const configuration = {
     agent_id: newRequestId(),
     agent_revision: 3,
-    model_id: newRequestId(),
+    model_key: sourceModelKey({
+      provider_id: provider,
+      native_id: "original-model",
+    }),
     model_revision: 7,
-    provider_id: newRequestId(),
+    provider_id: provider,
     harness,
     native_model: "original-model",
     effort: "high",
@@ -137,6 +143,434 @@ it("labels only immutable saved selections and omits unspecified effort", () => 
   ).toBeTruthy();
 });
 
+type Mutation = (
+  data: { initial_execution: { id: string } },
+  configuration: Record<string, unknown>,
+) => void;
+const invalidSnapshots: [string, Mutation][] = [
+  [
+    "a non-canonical execution id",
+    (data) => {
+      data.initial_execution.id = "not-a-uuid";
+    },
+  ],
+  [
+    "an uppercase execution id",
+    (data) => {
+      data.initial_execution.id = data.initial_execution.id.toUpperCase();
+    },
+  ],
+  [
+    "a non-canonical agent id",
+    (_, configuration) => {
+      configuration.agent_id = "agent-1";
+    },
+  ],
+  [
+    "a model key without the source prefix",
+    (_, configuration) => {
+      configuration.model_key = "model-1";
+    },
+  ],
+  [
+    "a resource UUID in place of the source model key",
+    (_, configuration) => {
+      configuration.model_key = newRequestId();
+    },
+  ],
+  [
+    "a source model key with a malformed payload",
+    (_, configuration) => {
+      configuration.model_key = "source:***";
+    },
+  ],
+  [
+    "a source model key whose payload is not JSON",
+    (_, configuration) => {
+      configuration.model_key = "source:bm90LWpzb24";
+    },
+  ],
+  [
+    "a source model key for a different native model",
+    (_, configuration) => {
+      configuration.model_key = sourceModelKey({
+        provider_id: configuration.provider_id as string,
+        native_id: "another-model",
+      });
+    },
+  ],
+  [
+    "a source model key for a different provider",
+    (_, configuration) => {
+      configuration.model_key = sourceModelKey({
+        provider_id: newRequestId(),
+        native_id: "original-model",
+      });
+    },
+  ],
+  [
+    "a source model key for a subscription service while a provider is saved",
+    (_, configuration) => {
+      configuration.model_key = sourceModelKey({
+        subscription_service: "chatgpt",
+        native_id: "original-model",
+      });
+    },
+  ],
+  [
+    "a subscription service whose harness differs from the saved harness",
+    (_, configuration) => {
+      delete configuration.provider_id;
+      configuration.harness = "claude-code";
+      configuration.subscription_service = "chatgpt";
+      configuration.model_key = sourceModelKey({
+        subscription_service: "chatgpt",
+        native_id: "original-model",
+      });
+    },
+  ],
+  [
+    "a source model key naming both a provider and a subscription service",
+    (_, configuration) => {
+      configuration.model_key = sourceModelKey({
+        provider_id: configuration.provider_id as string,
+        subscription_service: "chatgpt",
+        native_id: "original-model",
+      });
+    },
+  ],
+  [
+    "a source model key with an unsupported subscription service",
+    (_, configuration) => {
+      delete configuration.provider_id;
+      configuration.subscription_service = "unknown";
+      configuration.model_key = sourceModelKey({
+        subscription_service: "unknown",
+        native_id: "original-model",
+      });
+    },
+  ],
+  [
+    "a source model key with a non-canonical provider id",
+    (_, configuration) => {
+      configuration.provider_id = "provider-1";
+      configuration.model_key = sourceModelKey({
+        provider_id: "provider-1",
+        native_id: "original-model",
+      });
+    },
+  ],
+  [
+    "a source model key with reordered identity fields",
+    (_, configuration) => {
+      configuration.model_key = rawSourceModelKey(
+        `{"native_id":"original-model","provider_id":"${configuration.provider_id}"}`,
+      );
+    },
+  ],
+  [
+    "a source model key with whitespace in the identity JSON",
+    (_, configuration) => {
+      configuration.model_key = rawSourceModelKey(
+        `{"provider_id": "${configuration.provider_id}", "native_id": "original-model"}`,
+      );
+    },
+  ],
+  [
+    "a source model key with a duplicate identity field",
+    (_, configuration) => {
+      configuration.model_key = rawSourceModelKey(
+        `{"provider_id":"${newRequestId()}","provider_id":"${configuration.provider_id}","native_id":"original-model"}`,
+      );
+    },
+  ],
+  [
+    "a source model key with non-canonical base64 trailing bits",
+    (_, configuration) => {
+      const alphabet =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+      const canonical = configuration.model_key as string;
+      const payload = canonical.slice("source:".length);
+      // The canonical payload length leaves unused low bits in the last
+      // character; setting the lowest bit decodes to the same bytes.
+      expect(payload.length % 4).not.toBe(0);
+      const last = alphabet.indexOf(payload.slice(-1));
+      expect(last % 2).toBe(0);
+      configuration.model_key = canonical.slice(0, -1) + alphabet[last + 1];
+    },
+  ],
+  [
+    "an unsupported harness",
+    (_, configuration) => {
+      configuration.harness = "unknown-harness";
+    },
+  ],
+  [
+    "a missing harness",
+    (_, configuration) => {
+      delete configuration.harness;
+    },
+  ],
+  [
+    "an agent revision above the uint64 range",
+    (_, configuration) => {
+      configuration.agent_revision = 1e30;
+    },
+  ],
+  [
+    "a model revision above the uint64 range",
+    (_, configuration) => {
+      configuration.model_revision = 2 ** 64 * 2;
+    },
+  ],
+  [
+    "a missing agent revision",
+    (_, configuration) => {
+      delete configuration.agent_revision;
+    },
+  ],
+  [
+    "a missing model revision",
+    (_, configuration) => {
+      delete configuration.model_revision;
+    },
+  ],
+  [
+    "a missing native model",
+    (_, configuration) => {
+      delete configuration.native_model;
+    },
+  ],
+  [
+    "an empty native model",
+    (_, configuration) => {
+      configuration.native_model = "";
+    },
+  ],
+  [
+    "a whitespace-only native model",
+    (_, configuration) => {
+      const native = " \u3000\u0085\n";
+      configuration.native_model = native;
+      configuration.model_key = sourceModelKey({
+        provider_id: configuration.provider_id as string,
+        native_id: native,
+      });
+    },
+  ],
+  [
+    "a native model containing NUL",
+    (_, configuration) => {
+      const native = "original\u0000model";
+      configuration.native_model = native;
+      configuration.model_key = sourceModelKey({
+        provider_id: configuration.provider_id as string,
+        native_id: native,
+      });
+    },
+  ],
+  [
+    "a native model longer than 256 UTF-8 bytes",
+    (_, configuration) => {
+      const native = "모".repeat(86);
+      configuration.native_model = native;
+      configuration.model_key = sourceModelKey({
+        provider_id: configuration.provider_id as string,
+        native_id: native,
+      });
+    },
+  ],
+  [
+    "a native model that is not well-formed UTF-8",
+    (_, configuration) => {
+      const native = "original\ud800model";
+      configuration.native_model = native;
+      configuration.model_key = sourceModelKey({
+        provider_id: configuration.provider_id as string,
+        native_id: native,
+      });
+    },
+  ],
+  [
+    "a non-string effort",
+    (_, configuration) => {
+      configuration.effort = 5;
+    },
+  ],
+  [
+    "missing options",
+    (_, configuration) => {
+      delete configuration.options;
+    },
+  ],
+  [
+    "non-array accounts",
+    (_, configuration) => {
+      configuration.accounts = {};
+    },
+  ],
+  [
+    "unsupported routing",
+    (_, configuration) => {
+      configuration.routing = "random";
+    },
+  ],
+  [
+    "missing templates",
+    (_, configuration) => {
+      delete configuration.templates;
+    },
+  ],
+  [
+    "missing instructions",
+    (_, configuration) => {
+      delete configuration.instructions;
+    },
+  ],
+];
+
+it.each(invalidSnapshots)(
+  "rejects %s with unavailable chips and incomplete-snapshot guidance",
+  (_name, mutate) => {
+    const value = fixture();
+    const data = structuredClone(value.data);
+    mutate(
+      data,
+      data.initial_execution.configuration as Record<string, unknown>,
+    );
+    const resource = { ...value.resource, documentJson: encode(data) };
+    expect(savedExecutionSnapshot(resource).ready).toBe(false);
+    const view = render(
+      <>
+        <SavedExecutionChips resource={resource} />
+        <ExecutionConfiguration resource={resource} />
+      </>,
+    );
+    expect(
+      screen.getByRole("group", { name: "Saved model: Unavailable" }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("group", { name: /original-model/ })).toBeNull();
+    expect(
+      screen.queryByRole("group", { name: /Saved reasoning effort/ }),
+    ).toBeNull();
+    expect(
+      screen.getByText(/saved execution configuration is incomplete/i),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("region", { name: "Saved execution configuration" }),
+    ).toBeNull();
+    view.unmount();
+  },
+);
+
+it("keeps native observations and applied instructions when only strict saved-configuration fields are invalid", () => {
+  const value = fixture();
+  const data = structuredClone(value.data);
+  delete (data.initial_execution.configuration as Record<string, unknown>)
+    .templates;
+  const resource = { ...value.resource, documentJson: encode(data) };
+  expect(savedExecutionSnapshot(resource).ready).toBe(false);
+  render(<ExecutionConfiguration resource={resource} />);
+  expect(
+    screen.getByText(/saved execution configuration is incomplete/i),
+  ).toBeTruthy();
+  expect(
+    screen.queryByRole("region", { name: "Saved execution configuration" }),
+  ).toBeNull();
+  expect(
+    screen.getByRole("region", { name: "Native execution observations" }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole("region", { name: "Applied DeliDev instructions" }),
+  ).toBeTruthy();
+});
+
+it("accepts the source-scoped model key of API provider and subscription snapshots", () => {
+  const api = fixture();
+  expect((api.configuration as Record<string, unknown>).model_key).toMatch(
+    /^source:[A-Za-z0-9_-]+$/,
+  );
+  expect(savedExecutionSnapshot(api.resource).ready).toBe(true);
+  for (const [service, harness] of [
+    ["chatgpt", "codex"],
+    ["claude", "claude-code"],
+    ["grok", "grok-build"],
+    ["opencode_go", "opencode"],
+  ]) {
+    const value = fixture(harness);
+    const configuration = value.configuration as Record<string, unknown>;
+    delete configuration.provider_id;
+    configuration.subscription_service = service;
+    configuration.model_key = sourceModelKey({
+      subscription_service: service,
+      native_id: "original-model",
+    });
+    const resource = { ...value.resource, documentJson: encode(value.data) };
+    expect(savedExecutionSnapshot(resource)).toEqual({
+      ready: true,
+      nativeModel: "original-model",
+      effort: "high",
+    });
+  }
+});
+
+it("accepts a source model key whose native model ID is not ASCII", () => {
+  const value = fixture();
+  const configuration = value.configuration as Record<string, unknown>;
+  configuration.native_model = "모델/<preview>&v2";
+  configuration.model_key = sourceModelKey({
+    provider_id: configuration.provider_id as string,
+    native_id: "모델/<preview>&v2",
+  });
+  const resource = { ...value.resource, documentJson: encode(value.data) };
+  expect(savedExecutionSnapshot(resource)).toEqual({
+    ready: true,
+    nativeModel: "모델/<preview>&v2",
+    effort: "high",
+  });
+});
+
+it("accepts a native model ID of exactly 256 UTF-8 bytes", () => {
+  const value = fixture();
+  const configuration = value.configuration as Record<string, unknown>;
+  const native = `${"모".repeat(85)}x`;
+  expect(new TextEncoder().encode(native).length).toBe(256);
+  configuration.native_model = native;
+  configuration.model_key = sourceModelKey({
+    provider_id: configuration.provider_id as string,
+    native_id: native,
+  });
+  const resource = { ...value.resource, documentJson: encode(value.data) };
+  expect(savedExecutionSnapshot(resource)).toEqual({
+    ready: true,
+    nativeModel: native,
+    effort: "high",
+  });
+});
+
+it("accepts every supported harness and keeps unspecified effort omitted", () => {
+  for (const harness of ["codex", "claude-code", "opencode", "grok-build"]) {
+    const value = fixture(harness);
+    const snapshot = savedExecutionSnapshot(value.resource);
+    expect(snapshot).toEqual({
+      ready: true,
+      nativeModel: "original-model",
+      effort: "high",
+    });
+  }
+  const value = fixture();
+  delete (value.configuration as Record<string, unknown>).effort;
+  const resource = {
+    ...value.resource,
+    documentJson: encode(value.data),
+  };
+  expect(savedExecutionSnapshot(resource)).toEqual({
+    ready: true,
+    nativeModel: "original-model",
+    effort: "",
+  });
+});
+
 it("keeps selected Grok context provenance separate from native context observation", () => {
   const value = fixture("grok-build");
   const data = {
@@ -207,11 +641,41 @@ it("keeps selected Grok context provenance separate from native context observat
   }
 });
 
+it("shows None selected without routine explanatory prose when no additional instructions exist", () => {
+  const value = fixture();
+  const data = structuredClone(value.data);
+  const configuration = data.initial_execution.configuration as Record<
+    string,
+    unknown
+  >;
+  configuration.instructions = "";
+  configuration.templates = [];
+  render(
+    <ExecutionConfiguration
+      resource={{ ...value.resource, documentJson: encode(data) }}
+    />,
+  );
+  const region = screen.getByRole("region", {
+    name: "Applied DeliDev instructions",
+  });
+  expect(within(region).getByText("None selected")).toBeTruthy();
+  expect(
+    within(region).queryByLabelText("Combined applied instructions"),
+  ).toBeNull();
+  expect(screen.queryByText(/Read-only additional instructions/)).toBeNull();
+  expect(
+    screen.queryByText(/No additional DeliDev instructions were selected/),
+  ).toBeNull();
+  expect(region.querySelector("details, summary")).toBeNull();
+});
+
 it("shows the immutable ordered instructions as inert read-only text without native prompts", () => {
   const value = fixture();
   const { container } = render(
     <ExecutionConfiguration resource={value.resource} />,
   );
+  expect(screen.queryByText(/Read-only additional instructions/)).toBeNull();
+  expect(screen.queryByText("None selected")).toBeNull();
   expect(
     screen.queryByText("Execution configuration and instructions"),
   ).toBeNull();
@@ -373,6 +837,16 @@ it.each([
     expect(within(native).queryByText("Observed approval policy")).toBeNull();
   },
 );
+
+it("accepts the maximum uint64 revision that JSON decodes to 2^64", () => {
+  const value = fixture();
+  const configuration = value.configuration as Record<string, unknown>;
+  configuration.agent_revision = JSON.parse("18446744073709551615");
+  configuration.model_revision = JSON.parse("18446744073709551615");
+  expect(configuration.agent_revision).toBe(2 ** 64);
+  const resource = { ...value.resource, documentJson: encode(value.data) };
+  expect(savedExecutionSnapshot(resource).ready).toBe(true);
+});
 
 it("keeps unavailable snapshots, unknown options and imprecise revisions explicit", () => {
   const value = fixture();

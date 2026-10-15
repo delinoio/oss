@@ -128,7 +128,7 @@ func newOpenCodeBindingPublisher(p *ExecutionPublisher, journal *openCodeClaimJo
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	i, state := p.input, p.state
-	if p.closed || p.release == nil || state.Pending != nil || state.LastSequence != 0 || i.Validate() != nil || i.Configuration.Harness != domain.OpenCode || (i.Version != 4 && i.Installation.Version != opencode.SupportedVersion) {
+	if p.closed || p.release == nil || state.Pending != nil || state.LastSequence != 0 || i.Validate() != nil || i.Configuration.Harness != domain.OpenCode || (i.Version != 4 && !domain.HarnessVersionAllowed(domain.OpenCode, i.Installation.Version)) {
 		return nil, publicationUncertain()
 	}
 	requested, err := openCodeExecutionSettings(i.Configuration, i.Input.Mode, "Native publication selection")
@@ -179,7 +179,7 @@ func (c *OpenCodeBindingPublisher) readClaims() ([]opencode.SessionClaim, error)
 		return nil, openCodeClaimUncertain()
 	}
 	if len(claims) > 1 {
-		expected, err := opencode.TextInputClaimDigest(c.requested.Session, claims[1].MessageID, claims[1].PartID, c.publisher.input.Input.Prompt)
+		expected, err := opencode.InputClaimDigest(c.requested.Session, claims[1].MessageID, claims[1].PartID, c.publisher.input.Input.Prompt, openCodeClaimImages(c.publisher.input.Input.Attachments))
 		if err != nil || claims[1].BodyDigest != expected {
 			return nil, openCodeClaimUncertain()
 		}

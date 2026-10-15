@@ -34,7 +34,20 @@ pub struct Report {
     pub pass_summary: BTreeMap<PassId, PassSummary>,
     pub transformations: Vec<Transformation>,
     pub skipped: Vec<Skipped>,
+    /// Bundle mode: chunks that a boundary chunk can import. They are not
+    /// optimized or renamed.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub frozen_chunks: Vec<FrozenChunk>,
     pub measurements: Measurements,
+}
+
+/// A bundle chunk left unchanged because a boundary chunk can import it.
+#[derive(Serialize)]
+pub struct FrozenChunk {
+    pub file: String,
+    /// The boundary chunk that reaches the chunk.
+    pub boundary: String,
+    pub reason: Reason,
 }
 
 #[derive(Serialize)]
@@ -63,10 +76,21 @@ pub struct Size {
     pub after: usize,
     pub saved: isize,
     /// Stage 2: code bytes of original chunks published next to their renamed
-    /// optimized copies because encoded or boundary references still name
-    /// them. They are not part of `after`, which describes the optimized
-    /// chunk graph. Always 0 in stage 1.
+    /// optimized copies because encoded references or non-import mentions in
+    /// boundary chunks still name them. Chunks that a boundary chunk imports
+    /// are never renamed, so they add nothing here. They are not part of
+    /// `after`, which describes the optimized chunk graph. Always 0 in
+    /// stage 1.
     pub retained: usize,
+    /// Stage 2 with `--minify`: code bytes that SWC minification of edited
+    /// chunks removed. They are included in `after` and `saved`; omitted
+    /// when nothing was minified.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub minified: usize,
+}
+
+fn is_zero(value: &usize) -> bool {
+    *value == 0
 }
 
 #[derive(Serialize, Default)]
@@ -244,10 +268,18 @@ pub fn build(snapshot: &Snapshot, outcome: &Outcome, passes: &PassSet) -> Report
             after: outcome.size_after,
             saved: outcome.size_before as isize - outcome.size_after as isize,
             retained: 0,
+            minified: 0,
         },
         pass_summary: summary,
         transformations,
         skipped,
+        frozen_chunks: crate::app::bundle_frozen()
+            .map(|(file, boundary)| FrozenChunk {
+                file: file.clone(),
+                boundary: boundary.clone(),
+                reason: Reason::BoundaryReachable,
+            })
+            .collect(),
         measurements: Measurements::default(),
     }
 }

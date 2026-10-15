@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { createQueryOptions, useTransport } from "@connectrpc/connect-query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -102,9 +102,24 @@ export function SessionPRStatus({
   diagnosticsTarget?: HTMLElement | null;
 }) {
   useLocale();
-  const active = useSessionActive() && visible;
+  const sessionActive = useSessionActive();
+  const active = sessionActive && visible;
   const transport = useTransport();
   const client = useQueryClient();
+  // Viewport visibility only gates observation admission. Session activation is
+  // the separate refresh trigger: each hidden-to-active edge advances the epoch,
+  // which replaces the retained observation exactly once (derived during render
+  // so no stale-key render can issue an extra read).
+  const [activation, setActivation] = useState({
+    active: sessionActive,
+    epoch: 0,
+  });
+  if (activation.active !== sessionActive)
+    setActivation({
+      active: sessionActive,
+      epoch: activation.epoch + (sessionActive ? 1 : 0),
+    });
+  const activationEpoch = activation.epoch;
   const repositoryId = text(association.repository_id);
   const query = useMemo(
     () => ({
@@ -132,9 +147,10 @@ export function SessionPRStatus({
         sessionPR: row.id,
         revision: row.revision.toString(),
         sessionId: row.sessionId,
+        activationEpoch,
       },
     ],
-    [options, row.id, row.revision, row.sessionId],
+    [options, row.id, row.revision, row.sessionId, activationEpoch],
   );
   const result = useQuery({
     queryKey: key,
@@ -188,7 +204,11 @@ export function SessionPRStatus({
       }),
     enabled: active,
     retry: false,
-    staleTime: 0,
+    // A successful observation stays fresh for the mounted row lifetime so
+    // viewport re-entry reuses it. Association invalidation, reconnect, session
+    // activation and explicit Retry replace or refetch it through the key,
+    // invalidateQueries and refetch(). gcTime 0 drops it when the row unmounts.
+    staleTime: Infinity,
     gcTime: 0,
     refetchOnWindowFocus: false,
     refetchOnReconnect: "always",

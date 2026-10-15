@@ -31,6 +31,7 @@ import {
   ResourceSchema,
   ResourceService,
   SessionService,
+  SubscriptionService,
   SystemCapability,
   SystemService,
   newRequestId,
@@ -394,6 +395,18 @@ function fixture(
       change: { session },
     }),
   );
+  const forkJob = create(ResourceSchema, {
+    id: newRequestId(),
+    kind: EntityKind.JOB,
+    revision: 1n,
+    schemaVersion: 1,
+    documentJson: encode({
+      state: "claimed",
+      input: { source_session_id: session.id },
+    }),
+  });
+  const forks = vi.fn(async () => ({ job: forkJob }));
+  const forkReads = vi.fn(async () => ({ job: forkJob }));
   const agent = create(ResourceSchema, {
     id: newRequestId(),
     kind: EntityKind.AGENT,
@@ -473,6 +486,10 @@ function fixture(
   const inboxReads = vi.fn((_request: unknown) => ({ entries: [] }));
   const readStates = vi.fn(() => ({}));
   const responses = vi.fn(() => ({}));
+  const quotaBatches = vi.fn((request: { requestId: string }) => ({
+    requestId: request.requestId,
+    accounts: [],
+  }));
   const preferences = create(NotificationPreferencesSchema, {
     revision: 1n,
     interactions: true,
@@ -504,6 +521,8 @@ function fixture(
       enqueueInput: enqueues,
       controlSession: controls,
       createSession: creates,
+      forkSession: forks,
+      getSessionFork: forkReads,
     });
     router.service(ResourceService, {
       getResource: async (request, context) => {
@@ -577,6 +596,9 @@ function fixture(
       getNotificationPreferences: () => ({ preferences }),
       setNotificationPreferences: saveNotificationPreferences,
     });
+    router.service(SubscriptionService, {
+      refreshAllSubscriptionQuotas: quotaBatches,
+    });
     router.service(SearchService, { searchConversations: searches });
     router.service(InteractionService, {
       respondQuestion: responses,
@@ -594,6 +616,8 @@ function fixture(
     enqueues,
     controls,
     creates,
+    forks,
+    forkReads,
     status,
     githubQuery,
     saveConfiguration,
@@ -610,8 +634,41 @@ function fixture(
     inboxReads,
     readStates,
     responses,
+    quotaBatches,
   };
 }
+
+it("owns one automatic quota batch cadence above navigation while the connection is ready", async () => {
+  const value = fixture();
+  value.status.mockImplementation(async () => ({
+    version: "0.1.0",
+    protocolVersion: 2,
+    capabilities: [SystemCapability.SERVER_SUBSCRIPTION_QUOTA_V2],
+  }));
+  const focus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  const timers = vi.spyOn(window, "setTimeout");
+  const view = render(<App transport={value.transport} connectionReady />);
+  fireEvent.click(await screen.findByRole("button", { name: "New session" }));
+  await screen.findByRole("textbox", { name: "First message" });
+  const cadence = () =>
+    timers.mock.calls.filter((call) => call[1] === 30000).at(-1);
+  await waitFor(() => expect(cadence()).toBeTruthy());
+  expect(value.quotaBatches).not.toHaveBeenCalled();
+  await act(async () => (cadence()![0] as () => void)());
+  await waitFor(() => expect(value.quotaBatches).toHaveBeenCalledOnce());
+  expect(value.quotaBatches.mock.calls[0][0].requestId).toMatch(
+    /^[0-9a-f-]{36}$/,
+  );
+  // A disconnected connection schedules no later send.
+  view.rerender(<App transport={value.transport} connectionReady={false} />);
+  const pending = timers.mock.calls.length;
+  await act(async () => {});
+  expect(
+    timers.mock.calls.slice(pending).some((call) => call[1] === 30000),
+  ).toBe(false);
+  focus.mockRestore();
+  timers.mockRestore();
+});
 
 it("refreshes Home through the latest transport when accepted creation settles after same-identity reconnect", async () => {
   const original = fixture([], [], [], true, true),
@@ -2552,6 +2609,34 @@ it("refreshes reads after recovery without replacing the connection's session dr
   expect(value.enqueues).not.toHaveBeenCalled();
 });
 
+it("closes an open Open tool dialog when readiness is lost and keeps it closed after same-identity recovery", async () => {
+  const value = fixture();
+  const view = render(<App transport={value.transport} connectionReady />);
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: /General Chat Retained session/,
+    }),
+  );
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  fireEvent.change(composer, { target: { value: "Keep this draft" } });
+  const trigger = screen.getByRole("button", { name: "Open tool" });
+  fireEvent.click(trigger);
+  const dialog = () => document.querySelector("dialog.session-tool-dialog")!;
+  expect((dialog() as HTMLDialogElement).open).toBe(true);
+  view.rerender(<App transport={value.transport} connectionReady={false} />);
+  expect((dialog() as HTMLDialogElement).open).toBe(false);
+  fireEvent.click(trigger);
+  expect((dialog() as HTMLDialogElement).open).toBe(false);
+  view.rerender(
+    <App transport={value.transport} connectionReady connectionEpoch={1} />,
+  );
+  expect((dialog() as HTMLDialogElement).open).toBe(false);
+  expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
+  expect((composer as HTMLTextAreaElement).value).toBe("Keep this draft");
+  fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+  expect((dialog() as HTMLDialogElement).open).toBe(true);
+});
+
 it("retries the exact accepted message identity after uncertainty instead of sending a new message", async () => {
   const value = fixture();
   value.enqueues.mockRejectedValueOnce(
@@ -3696,7 +3781,7 @@ it.each([false, true])(
     fireEvent.keyDown(name, { key: "Escape" });
     expect(screen.getByRole("textbox", { name: "Name" })).toBe(name);
     expect(
-      rail.getByRole("button", { name: "Usage" }).hasAttribute("disabled"),
+      rail.getByRole("button", { name: "More" }).hasAttribute("disabled"),
     ).toBe(false);
     fireEvent.click(rail.getByRole("button", { name: "Settings" }));
     expect(screen.getByRole("textbox", { name: "Name" })).toBe(name);
@@ -3710,6 +3795,7 @@ it.each([false, true])(
     expect(
       (screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value,
     ).toBe("Visit draft");
+    fireEvent.click(rail.getByRole("button", { name: "More" }));
     fireEvent.click(rail.getByRole("button", { name: "Usage" }));
     expect(
       screen.queryByRole("region", { name: "Settings content" }),
@@ -3863,6 +3949,59 @@ it("rechecks the original welcome status failure without creating or controlling
   );
   expect(value.creates).not.toHaveBeenCalled();
   expect(value.controls).not.toHaveBeenCalled();
+});
+
+it.each([
+  [
+    "en",
+    "Your sessions, in one place",
+    "Select a retained session or start a new conversation.",
+  ],
+  [
+    "ko",
+    "내 세션을 한곳에서",
+    "유지된 세션을 선택하거나 새 대화를 시작하세요.",
+  ],
+])(
+  "renders only the %s welcome heading when no session is selected",
+  async (locale, heading, removedSubtitle) => {
+    const value = fixture();
+    try {
+      await act(() => i18n.changeLanguage(locale));
+      render(<App transport={value.transport} />);
+      const title = await screen.findByRole("heading", { name: heading });
+      const welcome = title.closest("section.welcome")!;
+      expect(welcome.children).toHaveLength(1);
+      expect(welcome.querySelector("p")).toBeNull();
+      expect(screen.queryByText(removedSubtitle)).toBeNull();
+      expect(screen.queryByRole("button", { name: /retry/i })).toBeNull();
+    } finally {
+      await act(() => i18n.changeLanguage("en"));
+    }
+  },
+);
+
+it("keeps the welcome status failure and its retry action without a subtitle", async () => {
+  const value = fixture();
+  value.status.mockRejectedValueOnce(
+    new ConnectError("Fixture status failure", Code.PermissionDenied),
+  );
+  render(<App transport={value.transport} />);
+  const retry = await screen.findByRole("button", {
+    name: "Retry current read",
+  });
+  const welcome = retry.closest<HTMLElement>("section.welcome")!;
+  expect(
+    within(welcome).getByRole("heading", {
+      name: "Your sessions, in one place",
+    }),
+  ).toBeTruthy();
+  expect(welcome.querySelector(":scope > p")).toBeNull();
+  expect(
+    screen.queryByText(
+      "Select a retained session or start a new conversation.",
+    ),
+  ).toBeNull();
 });
 
 it(
@@ -4031,6 +4170,141 @@ it(
     act(() => resize(false));
     expect(document.querySelector(".app.sidebar-collapsed")).toBeTruthy();
     expect(pane.hidden).toBe(true);
+    expectNoNavigationWrites(value);
+  },
+  fullShellTimeoutMs,
+);
+
+it.each([
+  { collapsed: false, label: "Expanded" },
+  { collapsed: true, label: "Collapsed" },
+])(
+  "moves focus from the closed compact opener to visible navigation when widening ($label)",
+  async ({ collapsed }) => {
+    const resize = viewport();
+    const value = fixture();
+    const { bridge, readStarted } = startingSidebarBridge();
+    const update = vi.spyOn(bridge, "update");
+    render(
+      <SidebarProvider bridge={bridge}>
+        <App transport={value.transport} />
+      </SidebarProvider>,
+    );
+    await waitForSidebarRead(readStarted);
+    const pane = document.querySelector<HTMLDialogElement>(
+      ".sidebar-pane-dialog",
+    )!;
+    if (collapsed) {
+      fireEvent.keyDown(document.body, { key: "b", ctrlKey: true });
+      await waitFor(() =>
+        expect(document.querySelector(".app.sidebar-collapsed")).toBeTruthy(),
+      );
+      await waitFor(() => expect(pane.hidden).toBe(true));
+    }
+    act(() => resize(true));
+    const opener = document.querySelector<HTMLButtonElement>(
+      ".sidebar-context-trigger",
+    )!;
+    opener.focus();
+    expect(document.activeElement).toBe(opener);
+    const writes = update.mock.calls.length;
+    act(() => resize(false));
+    const focused = document.activeElement as HTMLElement;
+    expect(focused).not.toBe(opener);
+    expect(focused).not.toBe(document.body);
+    expect(focused.getAttribute("aria-current")).toBe("page");
+    expect(focused.closest("[inert], [hidden]")).toBeNull();
+    if (collapsed)
+      expect(focused.classList.contains("sidebar-rail-button")).toBe(true);
+    expect(update.mock.calls.length).toBe(writes);
+    expect(document.querySelector(".app.sidebar-collapsed") !== null).toBe(
+      collapsed,
+    );
+    expectNoNavigationWrites(value);
+  },
+  fullShellTimeoutMs,
+);
+
+it(
+  "moves focus from the closed compact opener to the selected session row when widening",
+  async () => {
+    const resize = viewport();
+    const value = fixture();
+    render(<App transport={value.transport} />);
+    const row = await screen.findByRole("button", {
+      name: /General Chat Retained session/,
+    });
+    fireEvent.click(row);
+    await screen.findByRole("heading", { name: "Retained session" });
+    act(() => resize(true));
+    const opener = document.querySelector<HTMLButtonElement>(
+      ".sidebar-context-trigger",
+    )!;
+    opener.focus();
+    expect(document.activeElement).toBe(opener);
+    act(() => resize(false));
+    const focused = document.activeElement as HTMLElement;
+    expect(focused.classList.contains("sidebar-session-row")).toBe(true);
+    expect(focused.getAttribute("aria-current")).toBe("true");
+    expect(focused.closest("[inert], [hidden]")).toBeNull();
+    expectNoNavigationWrites(value);
+  },
+  fullShellTimeoutMs,
+);
+
+it(
+  "skips the hidden retained session row when widening from compact on Settings",
+  async () => {
+    const resize = viewport();
+    const value = fixture();
+    render(<App transport={value.transport} />);
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: /General Chat Retained session/,
+      }),
+    );
+    await screen.findByRole("heading", { name: "Retained session" });
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    const retained = document.querySelector<HTMLElement>(
+      ".sidebar-session-row[aria-current='true']",
+    );
+    expect(retained?.closest("[hidden]")).not.toBeNull();
+    act(() => resize(true));
+    const opener = document.querySelector<HTMLButtonElement>(
+      ".sidebar-context-trigger",
+    )!;
+    opener.focus();
+    expect(document.activeElement).toBe(opener);
+    act(() => resize(false));
+    const focused = document.activeElement as HTMLElement;
+    expect(focused).not.toBe(opener);
+    expect(focused).not.toBe(document.body);
+    expect(focused).not.toBe(retained);
+    expect(focused.closest("[inert], [hidden]")).toBeNull();
+    expect(focused.getAttribute("aria-current")).toBe("page");
+    expectNoNavigationWrites(value);
+  },
+  fullShellTimeoutMs,
+);
+
+it(
+  "keeps focus and selection on a composer input across both breakpoint directions",
+  async () => {
+    const resize = viewport();
+    const value = fixture();
+    render(<App transport={value.transport} />);
+    fireEvent.click(await screen.findByRole("button", { name: "New session" }));
+    const input = await screen.findByRole<HTMLInputElement>("textbox", {
+      name: "First message",
+    });
+    fireEvent.change(input, { target: { value: "draft message" } });
+    input.focus();
+    input.setSelectionRange(2, 7);
+    act(() => resize(true));
+    expect(document.activeElement).toBe(input);
+    act(() => resize(false));
+    expect(document.activeElement).toBe(input);
+    expect([input.selectionStart, input.selectionEnd]).toEqual([2, 7]);
     expectNoNavigationWrites(value);
   },
   fullShellTimeoutMs,
@@ -4241,6 +4515,76 @@ it("preserves first Search autofocus after a hidden wide activation", async () =
   expectNoNavigationWrites(value);
 });
 
+it("focuses retained Search once when a compact drawer opens after a hidden wide activation", async () => {
+  const resize = viewport();
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  const flushFrames = animationFrames();
+  const value = fixture();
+  render(
+    <SidebarProvider bridge={memorySidebarBridge()}>
+      <App transport={value.transport} />
+    </SidebarProvider>,
+  );
+  await act(async () => {});
+  fireEvent.keyDown(document.body, { key: "b", ctrlKey: true });
+  await waitFor(() =>
+    expect(document.querySelector(".app.sidebar-collapsed")).toBeTruthy(),
+  );
+  fireEvent.keyDown(document.body, { key: "k", ctrlKey: true });
+  const menu = await screen.findByRole("dialog", { name: "Command menu" });
+  fireEvent.click(within(menu).getByRole("option", { name: "Search" }));
+  const input = document.querySelector<HTMLInputElement>(
+    ".sidebar-pane-dialog input",
+  )!;
+  flushFrames();
+  expect(document.activeElement).not.toBe(input);
+
+  // Resize below the compact breakpoint without leaving Search.
+  act(() => resize(true));
+  flushFrames();
+  const opener = await screen.findByRole("button", {
+    name: "Open search filters",
+  });
+  // Closed compact content never receives focus.
+  expect(document.activeElement).not.toBe(input);
+  const focused = vi.fn();
+  input.addEventListener("focus", focused);
+
+  fireEvent.click(opener);
+  flushFrames();
+  expect(document.activeElement).toBe(input);
+  expect(focused).toHaveBeenCalledTimes(1);
+
+  // Reopening an already focused drawer must not replay initial autofocus.
+  fireEvent(
+    document.querySelector(".sidebar-pane-dialog")!,
+    new Event("cancel", { cancelable: true }),
+  );
+  opener.focus();
+  fireEvent.click(opener);
+  flushFrames();
+  expect(focused).toHaveBeenCalledTimes(1);
+
+  // The explicit SearchFocus shortcut still focuses the query input.
+  fireEvent(
+    document.querySelector(".sidebar-pane-dialog")!,
+    new Event("cancel", { cancelable: true }),
+  );
+  fireEvent.keyDown(document.body, { key: "i", ctrlKey: true });
+  await waitFor(() => {
+    flushFrames();
+    expect(document.activeElement).toBe(input);
+  });
+  expectNoNavigationWrites(value);
+});
+
 it("autofocuses visible Search after a wide sidebar preference read failure", async () => {
   viewport();
   const flushFrames = animationFrames();
@@ -4311,6 +4655,85 @@ async function searchRetained(view: ReturnType<typeof fixture>) {
 }
 const sidechatTabs = () =>
   screen.queryAllByRole("tab", { name: /Side question/ });
+
+it(
+  "keeps later Session focus after a retained Sidechat reopens and navigation returns to its parent",
+  async () => {
+    const value = fixture();
+    const settled = (name: string) =>
+      encode({
+        name,
+        machine_id: value.machine.id,
+        workspace: "general-chat",
+        archive: "active",
+        outcome: "succeeded",
+        dispatch: "paused",
+        recovery: "none",
+        initial_execution: { configuration: { harness: "codex" } },
+        execution: { native_turn_id: "original-turn", cleanup_verified: true },
+      });
+    value.session.documentJson = settled("Retained session");
+    value.other.documentJson = settled("Other session");
+    value.machine.documentJson = encode({
+      name: "Worker One",
+      worker_capabilities: ["codex-read-only-sidechat-v1"],
+    });
+    value.extraResources.push(value.session, value.other);
+    value.status.mockResolvedValue({
+      version: "0.1.0",
+      protocolVersion: 2,
+      capabilities: [SystemCapability.NATIVE_SIDECHAT_V1],
+    });
+    render(<App transport={value.transport} />);
+    const openSession = async (name: string) => {
+      fireEvent.click(
+        await screen.findByRole("button", {
+          name: new RegExp(`General Chat ${name}`),
+        }),
+      );
+      await screen.findByRole("heading", { name });
+    };
+    const openSidechat = async () => {
+      fireEvent.click(await screen.findByRole("button", { name: "Open tool" }));
+      fireEvent.click(
+        await screen.findByRole("menuitem", { name: "Open Sidechat" }),
+      );
+    };
+    await openSession("Retained session");
+    await openSidechat();
+    const composer = (await screen.findByRole("textbox", {
+      name: "Message",
+    })) as HTMLTextAreaElement;
+    const requestId = composer.dataset.sidechatRequest;
+    fireEvent.change(composer, { target: { value: "Retained question" } });
+    await waitFor(() => expect(value.forks).toHaveBeenCalledTimes(1));
+    await openSession("Other session");
+
+    const callbacks: FrameRequestCallback[] = [];
+    const frame = vi
+      .spyOn(globalThis, "requestAnimationFrame")
+      .mockImplementation((callback) => callbacks.push(callback));
+    await openSidechat();
+    frame.mockRestore();
+    expect(callbacks).toHaveLength(1);
+    await openSession("Other session");
+    await openSession("Retained session");
+    expect(composer.closest("[hidden], [inert]")).toBeNull();
+    const laterFocus = document.createElement("button");
+    document.body.append(laterFocus);
+    laterFocus.focus();
+    act(() => callbacks[0]!(0));
+    expect(document.activeElement).toBe(laterFocus);
+    expect(composer.value).toBe("Retained question");
+    expect(document.getElementById(composer.id)).toBe(composer);
+    expect(composer.dataset.sidechatRequest).toBe(requestId);
+    expect(value.forks).toHaveBeenCalledTimes(1);
+    expect(value.enqueues).not.toHaveBeenCalled();
+    expect(value.controls).not.toHaveBeenCalled();
+    laterFocus.remove();
+  },
+  fullShellTimeoutMs,
+);
 
 it("opens a never-visited Sidechat search result under its original parent without duplicates", async () => {
   const value = fixture([], [], [], false, true);

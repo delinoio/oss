@@ -399,12 +399,19 @@ use retained resources and never start native work, tokenization, inference or
 compaction. No RPC, allocation or migration is added. Claude/OpenCode and all
 original action, retry, account, history and cleanup boundaries remain unchanged.
 
-The existing Context presentation labels this as “Latest native-reported context
-tokens” in English and Korean and shows its observation time. It explains that
-this native snapshot may exclude later local context changes and may include a
-native context-limit estimate; it is not exact continuous occupancy or billing.
-Retained data after a failed/in-flight refresh or changed session revision is
-explicitly historical, with a visible read error on failure. Keep existing
+The Session Info Context presentation shows one prominent “Context used” metric
+in English and Korean: the exact native numerator and, only with validated
+matching capacity, `numerator / capacity`, a one-decimal derived percentage and a
+progress bar whose accessible values mirror them; the bar never replaces the
+numeric value. Unavailable or mismatched capacity shows only the reported
+numerator with the existing capacity-unavailable text and no bar or percentage,
+and a missing numerator reads “Not reported”, never zero. Default Info renders no
+latest/historical snapshot label, observation time, native-snapshot explanation
+or compaction explanation. The snapshot remains a native estimate, not exact
+continuous occupancy or billing, and the closed `latest`/`historical` status
+stays in the read contract only. A visible read error
+still reports a failed refresh, and the retained numerator is not confirmed by
+that read. Keep existing
 five-second polling and Refresh context separate from Compact context. Strict
 client decoding preserves exact decimal strings above JavaScript's safe integer
 range, source/status enums and original provenance; old absent-field replies
@@ -421,9 +428,12 @@ versions retain their original rules. No migration is required.
 
 The protected ChatGPT subscription lease (`TakeSubscription`) for a context job
 validates the Worker capability set of that job's own operation. A version-4
-Revert job requires only `CodexSessionRevertV1` (plus the original managed
+Revert job requires `CodexSessionRevertV1` (plus the original managed
 subscription and execution-startup prerequisites); it does not require
-`NativeSessionCompactionV1` or `CodexSessionCompactionV1`. A version-2 Codex
+`NativeSessionCompactionV1` or `CodexSessionCompactionV1`. A Revert whose target
+selected skills or carries the retained checkpoint reference additionally
+requires `CodexSessionRevertTargetProofV1`, as specified below; `CodexSessionRevertV1`
+alone suffices only for a text-only target. A version-2 Codex
 compaction job keeps both original compaction capabilities, and
 `CodexSessionRevertV1` alone never authorizes it. Neither capability set
 authorizes the other operation, and every other original lease check (machine,
@@ -437,6 +447,39 @@ removed context targets, active input/Steer, unsettled responses/tools/subagents
 queued inputs, pending Fork ownership or missing cleanup. Freeze one actor-bound
 mutation receipt. A replay cannot change its target, prompt or generation.
 
+The frozen target also carries the retained native checkpoint reference of the
+execution that accepted it (`execution_id` and `checkpoint_digest`) when, and
+only when, the target selected skills and an earlier execution than the source
+accepted it. Both are absent otherwise, including text-only targets, targets of
+the source execution and jobs accepted before the reference was carried, so the
+original text-only envelope stays decodable by an older Worker. Every skilled
+target, including one of the source execution whose proof the source checkpoint
+supplies, requires Worker capability `CODEX_SESSION_REVERT_TARGET_PROOF_V1`,
+because a Worker without it compares only the prompt digest and never
+authenticates the selected skills. The server refuses a skilled target with the
+safe unsupported failure before pausing the session unless the original Worker
+advertises that capability, and lease and dispatch authority require it again
+for any job whose target selected skills or carries the reference. The claim
+transaction also rechecks the current machine capabilities of a still-queued
+Revert job (`CodexSessionRevertV1`, plus the proof capability when required). A
+Worker that reconnected without them never claims the job: it fails with the
+safe unsupported failure and releases the unclaimed action with no native
+effect, instead of quarantining the session as uncertain.
+Selected skills are authenticated by a separate native skill digest that prompt
+digests do not cover. Before the native claim the Worker resolves
+that digest only from the immutable retained input proof for the exact target
+input id and prompt digest: the source checkpoint when the target belongs to the
+source execution, otherwise the target execution's own checkpoint read by its
+frozen digest and bound to the session, machine, native thread, turn and input.
+The latest source input and freshly observed history are never the expected
+proof. A prompt that selected skills with a missing, unreadable, unbound or zero
+proof fails before the claim and native send with the safe uncertain failure and
+settles only through the existing no-claim/no-send cleanup proof. Removed,
+changed or reordered observed skills reject through the harness comparison
+before the claim. A text-only prompt keeps the zero digest. Worker capability
+`CODEX_SESSION_REVERT_TARGET_PROOF_V1 = 64` is newly allocated for this proof;
+no database migration is required.
+
 The original resolved native process resumes the same private history with its
 original settings. The closed 0.162.0 response profile uses `thread/revert` with
 `beforeTurnId`, excluding that turn and later turns. `thread/rollback` is absent.
@@ -445,7 +488,39 @@ once. Require original non-ephemeral idle root metadata, required nullable
 backwards cursors, descending full-item pagination from the returned anchor, and
 an independent current ascending hydration. Both must equal the frozen prefix,
 including settled command/file changes. Bound cursors, distinct turns/items,
-128 turns and 4 MiB; empty history is valid only under the explicit Revert proof.
+128 turns and the profile-aware history budget below; empty history is valid only
+under the explicit Revert proof.
+
+The aggregate retained-history budget is `max(4 MiB, native frame limit)`: 16 MiB
+under the enlarged original native frame profile (image observations or
+`fork_history`) and 4 MiB under the default 1 MiB profile. It applies uniformly
+to context inspection, compaction history, context-bearing continuation and
+legacy/paginated Revert scans, so one protected `functionCallOutput` admitted by
+the enlarged frame (for example seven 700 KiB `input_image` parts) cannot be
+rejected by the aggregate while its original bytes stay unchanged. Exactly the
+budget passes and one more byte fails safely as `recovery-required`; the frame
+limit, 128 turns, 4,096 items, unique item/cursor identities and malformed-output
+rejection are unchanged. Fork keeps its separate 4 MiB bound.
+The profile is a property of the original execution, not of the compaction or
+Revert client. When the original assignment froze native image generation
+(managed OpenAI, no Sidechat), the worker opens the compaction client, the Revert
+client and the credential-free Revert recovery client with the explicit
+`image_history` frame profile. It selects the enlarged frame and the 16 MiB
+budget above without enabling image generation (the generation feature stays
+disabled for these clients) and without credentials, so a retained turn above
+4 MiB that the original execution admitted is admitted by manual compaction,
+Revert and post-crash reconciliation, and recovery computes the same budget as
+the claim. Every other session keeps the default 1 MiB frame and 4 MiB budget.
+The private Revert intent file (`native-revert-intent.json`) persists the
+complete expected prefix and has its own bound of 17 MiB plus 64 KiB (the 16 MiB
+largest history budget, a 1 MiB source continuation checkpoint and a 64 KiB intent
+envelope), above the 10 MiB compaction checkpoint ceiling. The 1 MiB source bound
+equals the persisted execution checkpoint ceiling, so every persisted source
+checkpoint is admissible; the harness refuses a larger encoded source checkpoint,
+and an encoded intent that would exceed the file bound, before the claim callback.
+Both refusals remain positive no-send failures. The package-level intent
+verifier cannot know the writing client's profile and accepts at most the 16 MiB
+ceiling; the writing client enforces its own profile budget first.
 Unknown, partial or changed evidence retains quarantine. Allocation and version
 metadata alone do not establish actual native support.
 
@@ -463,7 +538,11 @@ Item pages have required nullable continuation and backwards cursors. Original
 item IDs are unique across the thread, and every item belongs to an original
 retained turn in order. Reject missing, foreign, repeated, reordered, unsupported
 or unsettled item evidence, missing pages and cursor cycles. Retain the native
-frame bound, 128-turn and 4 MiB history limits, with at most 4,096 distinct items.
+frame bound, 128-turn and profile-aware history budget (16 MiB under the enlarged
+native frame profile, otherwise 4 MiB), with at most 4,096 distinct items.
+The paginated item scan counts the retained item bytes against that history
+budget, consistent with the joined history; the discarded page envelopes (turn
+IDs, timestamps, cursors and JSON structure) have a separate fixed 4 MiB bound.
 Canonical history preserves exact JSON numbers before digest comparison.
 Replacement continuation and explicit original-intent recovery use the same
 complete hydration; observation never sends Revert again. Existing original
@@ -506,7 +585,12 @@ ordinary late canceled reports remain quarantined. Receipt replay cannot advance
 the context again. It never sends Revert again, changes targets or retries native
 input. Missing
 intent, mismatched history, changed ownership or cleanup uncertainty remains
-quarantined. Ordinary context jobs keep their existing recovery restrictions.
+quarantined. For a target whose prompt selected skills, recovery and the
+retained-checkpoint read also compare the skill digest frozen in the original
+intent with the original retained proof resolved as above. A claim written
+before the proof was bound froze a zero digest, never verified the skills, and
+is quarantined the same way, as is any claim whose digest differs from that
+proof; text-only targets keep the zero digest. Ordinary context jobs keep their existing recovery restrictions.
 
 ## Project requirements
 
@@ -568,7 +652,7 @@ Native session compaction for the feature follows the planned shared boundary in
 
 - Manual Codex HTTP response accounting preserves a separate genuine source turn and absent action turn. Keep original action ownership, native response digest deduplication and immutable price snapshots; nullable splits remain unavailable. Separate missing-compaction coverage from ordinary missing-execution coverage without changing historical conversation SQL purposes or adding an empty migration. Follow `cmds-delidev-compaction-contract.md`.
 
-- Compaction retains immutable original execution and restore inputs through one strict 3 MiB input/4 MiB job decoder. Store reads, private backup-restore Job transformation, server scope/settlement, Worker dispatch and original cleanup use those same typed bounds. Restore validates both original and final quarantined Jobs through the owning closed decoder, including typed workspace recovery history. Required metadata must fit the unchanged outer bound, and aggregate accounting includes final retained bodies and unchanged rows; rejection leaves source and live databases intact. Worker Connect receive capacity covers the finite serialized job; ordinary jobs retain their 1 MiB contract. Follow `cmds-delidev-compaction-contract.md`.
+- Compaction retains immutable original execution and restore inputs through one strict 3 MiB input/4 MiB job decoder. Store reads, private backup-restore Job transformation, server scope/settlement, Worker dispatch and original cleanup use those same typed bounds. Restore validates both original and final quarantined Jobs through the owning closed decoder, including typed workspace recovery history. Restore dispatches on the Job type and widens beyond the ordinary 1 MiB document bound only through those owning closed decoders (and `DecodeNativeCodeReviewJob` for native code review history above 1 MiB); every other type, including `discover-repository-branches`, keeps the strict 1 MiB bound. Required metadata must fit the unchanged outer bound, and aggregate accounting includes final retained bodies and unchanged rows; rejection leaves source and live databases intact. Worker Connect receive capacity covers the finite serialized job; ordinary jobs retain their 1 MiB contract. Follow `cmds-delidev-compaction-contract.md`.
 
 - Compaction HTTP pricing uses the same source-aware nullable estimate for publication and historical verification. A configured price cannot reject an otherwise valid original sparse observation or fill absent token splits; replay/restart retains the original basis and estimate.
 

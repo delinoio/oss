@@ -84,10 +84,12 @@ active content region; Conversation/drafts remain mounted and inert while
 inactive. The former Browser split, compact overlay, Expand/Restore presentation
 and Browser picker are superseded.
 
-The workspace tab strip ends with an ordinary New browser page `+` button. It is
-not a tab or numeric-shortcut position and stays reachable beside the scrolling
-tabs. The `+` button and the Open tool Browser row open the same compact
-`Modal` (480px maximum, viewport-bounded, 40px controls, 8px corners, English and
+The workspace tab strip is followed by the single Open tool `+` button (the
+SessionToolMenu trigger, localized accessible name and title Open tool / 도구 열기).
+It is not a tab or numeric-shortcut position, stays reachable beside the
+scrolling tabs and never creates a page directly; the tab bar renders no direct
+New browser page button. The Open tool dialog's Browser row is the only entry to the
+compact `Modal` (480px maximum, viewport-bounded, 40px controls, 8px corners, English and
 Korean "New browser page / 새 브라우저 페이지"). It shows the existing
 account-sharing explanation, one labelled Address field (focused on opening, with
 focus trapped and the opener restored on dismissal), Cancel and Open page. Opening
@@ -97,6 +99,23 @@ characters), a supported capability read, no removal-pending profile and fewer
 than 16 pages. Capability loading, unsupported and removal-pending guidance, the
 original exact registration retry, and safe failure text never create a fallback
 page.
+
+Admission follows the read-only enumeration state. Open page stays disabled, and
+submission returns without sending anything, while the `ListBrowserProfiles`
+walk is loading, paginating (a next page token is outstanding), failed or
+invalid (a read error, more than one matching profile across the walk, a repeated token or a
+next page token returned by page 64). A matching profile is only a candidate while a
+next page token is outstanding: the walk continues, and the profile is admitted
+only after the terminal page confirms it is the sole match. A confirmed absence
+(a settled terminal page with no matching profile on any page) can also admit a
+new page; absence permits exactly one registration at explicit submission. A found
+profile additionally needs one successfully observed current-profile inventory,
+so an unread or unreadable inventory is never treated as empty. A later inventory read failure revokes that proof
+until a retry read succeeds. The dialog shows
+localized read-only guidance for pending states and, for a failed profile or
+inventory read, a retry that re-reads only that state (profiles from the first
+page with cached pages bypassed, or the inventory) and never repeats any accepted or uncertain mutation.
+A session that becomes active again while the walk has no profile restarts it the same way, from the first page with cached pages bypassed, so a partial refetch of the current page never combines with pages read before the session was inactive.
 
 Only explicit submission may change the inventory. It reuses the original
 capability/account/session/revision checks and exact registration recovery: an
@@ -143,6 +162,22 @@ has one of four actions:
   It never repeats metadata mutation; it retries only the directory fsync that
   followed a successful replacement and the idempotent native child
   reconciliation.
+  The original receipt is validated against the original operation (identity,
+  committed metadata, complete native cleanup, no failure) independently of the
+  current profile availability: a completed receipt observed while the profile is
+  removal-pending is still accepted. A Close proof requires the page to be
+  absent; a Create proof requires the page to be listed only while the profile is
+  available, because a removal-pending inventory is deliberately empty. Such a
+  Create settles without restoring a descriptor or sending a second Create. The
+  client treats a removal-pending reply as an empty inventory even when the host
+  returns the loaded tabs next to `removal_pending: true` (a committed Create can
+  race with removal): the raw listing only proves the original receipt, and
+  reconciliation and completion handling never see or open those pages.
+  A removal-pending reply whose Close or Create receipt fails any proof check
+  stays rejected: the operation remains unsettled and uncertain and the closing
+  page keeps its descriptor. The independently validated removal-pending state is
+  still reconciled as an empty inventory, so other Pages' descriptors are not left
+  stale while the bad receipt is retained.
 
 Every reply carries `{state, receipt}`. A receipt separates committed metadata
 from incomplete native cleanup (`phase` accepted, cleanup-pending, completed or
@@ -150,10 +185,67 @@ failed; `metadata_committed`; `native_cleanup_complete`; a closed failure code).
 After a mutation commits, live shared children are reconciled with the shared
 selection on the UI loop: a child already on the selected page is preserved, a
 superseded child is unmapped before any handle or generation changes, and a page
-nobody presents is never displayed. Failures before admission are returned as a
+nobody presents is never displayed. CloseBrowser is asynchronous, so a successful
+close request is not completed cleanup: the receipt records the exact (window,
+generation) of every original native child it superseded and stays
+`cleanup-pending` with `native_cleanup_complete` false until each of those
+children reports `on_before_close`. Replacement children carry a newer generation
+and unrelated children are never awaited, so neither delays nor satisfies the
+original cleanup; two windows presenting one page require both original
+callbacks. If profile removal begins after the metadata commit and before this
+reconciliation, the reconciliation does not replace children; instead the receipt
+awaits every original native child of that profile (within the receipt's
+generation boundary) until removal's own close requests report
+`on_before_close`, so it never reports completed cleanup early. A receipt that
+no longer tracks outstanding children, such as an idempotent Close of an already
+absent page whose awaited set is final and empty, registers nothing on this path
+and completes without waiting for removal's callbacks. Closing a
+page that no native child presents completes immediately.
+A page selection control from another window that supersedes children after the
+metadata commit but before this reconciliation registers those children on the
+profile's in-flight receipt as well, so the receipt never reports
+completed cleanup before their `on_before_close`. Registration starts while the
+mutation is in flight, before the receipt records `metadata_committed`, because
+a close can land after the staged replacement publishes and before that flag is
+set; a mutation that fails, or an idempotent Close of an already absent page that
+publishes nothing, discards the registrations and never attributes later child
+closes to its receipt, while a published one keeps them. The same registration applies when a lifecycle close (a superseding
+reservation, a hide, or a window close) removes a view that owns or is creating a native child after the metadata commit but before
+reconciliation, so reconciliation never finds nothing to await while that child's `CloseBrowser` is still pending. A hide or window close whose native unmap fails
+retains the view for retried cleanup but still requests `CloseBrowser`, so it
+registers the view's exact generation on the receipt as well. A lifecycle close
+registers only a child that the mutation would supersede, which is a child not
+showing the page the mutation leaves selected: the receipt records that page when
+the metadata commits and drops earlier in-flight registrations that show it, so
+closing an inactive page never waits on the callback of an unrelated child that
+displays another page. A child that a selection already superseded is awaited
+whichever page it showed. A hide that races a view whose native child is still being created marks the view closing and returns busy, and it registers that generation before returning, because the closing view is excluded from reconciliation and the creation callback closes the child only afterwards. Publishing an
+`open_browser` view that replaces one already published for the window (for
+example overlapping opens sharing a view ID) removes the old view through the
+same registration. The `on_before_close` callback that empties a reconciled receipt's set settles it
+immediately, so an owner that unmounts before its next Observe cannot leave a
+`cleanup-pending` receipt that exhausts the page operation limit. A receipt whose
+reconciliation failed stays `cleanup-pending` with a partial set after the
+profile's mutation slot is released, so every later registration above also
+applies to a committed receipt whose reconciliation has not succeeded, and a
+child removed before the retried Observe is still awaited. Only children that
+existed when the receipt's metadata committed are attributed to it: the receipt
+records the highest view generation at that commit, so a replacement child created
+after it (for example by a partially failed reconciliation) is never added to the
+awaited set when it is later hidden or closed. When a later
+operation's reconciliation supersedes a child that such an older unresolved receipt
+still owns as an original, the child is registered on that receipt as well, so
+observing the older receipt before the close callback cannot complete it early.
+Observing the
+receipt re-evaluates this set without a second metadata mutation or a duplicate
+close request. Failures before admission are returned as a
 typed `not-admitted` error and prove nothing changed; any later failure is
 retained on the receipt or surfaces as an uncertain reply that only observation of
-the original operation settles. `open_browser` takes a page ID instead of an
+the original operation settles. Admission includes an identical replay of a
+retained operation: once the replay is accepted, a failed observation of the
+original operation (including a host stop racing in before the read) is an
+`uncertain` reply, never `not-admitted`, and never repeats the mutation; observing
+the same operation ID settles it. `open_browser` takes a page ID instead of an
 address and moves the shared profile selection to that retained page;
 `control_browser` can no longer create or close a page.
 
@@ -173,11 +265,72 @@ another native page. This resource Close is the one browser-specific exception t
 the presentation-only dismissal other tools use, and it remains separate from the
 16-page gate and from profile/account removal.
 
+An acknowledged close is profile-scoped, so its cleanup is not limited to the
+initiating Session: when the original Close is observed complete, or an
+observation without an original receipt proves the page is gone, the exact
+profile/page descriptor is removed from every Session snapshot in the shared tab
+store, including inactive and retained Sessions that are not polling. Each
+affected Session applies the same selection rule only when its own selected
+descriptor was removed (left neighbor, then Conversation after the last page);
+unrelated selections, ordering, the same page id under another profile and other
+pages are untouched. Repeated acknowledgment is idempotent, and pending, failed
+or uncertain closes retain the descriptor in every Session. The cleanup is
+store-level only and issues no extra native close.
+
+When the initiating Session's Page tab control owns keyboard focus, a proven
+Close moves focus after the tab strip commits to that Session's selected
+surviving tab control with `preventScroll`. The target is resolved from the
+retained descriptor key after the shared close selection rule runs. The same
+handoff applies to an immediate receipt and a later observation of the original
+operation. Pending or rejected Close keeps its descriptor and focus. A response
+after Session deactivation or another navigation cannot move focus into the
+old Session; focus already moved to a surviving control remains with the user.
+
 Other windows and sessions of the same account observe the inventory read-only
 and align their descriptors (append newly listed pages in inventory order,
 refresh labels from observed URLs, and drop descriptors the inventory no longer
 lists) without selecting a page or taking ownership of another window's
-operation. Existing local `tabs.json` storage remains compatible; no business RPC,
+operation. A removal-pending (empty) inventory is authoritative: it drops this
+profile's Page descriptors the same way, without any native mutation, while a
+page owned by an unsettled original Close keeps its descriptor in every Session
+and every same-origin product window (the close is profile-scoped, so the shared
+tab store records the owner and a reconciling Session never drops that page)
+until the owner observes the proof or abandons the operation. Product windows
+have independent renderer memory, so the store announces each hold, a
+heartbeat refresh and its release over a same-origin `BroadcastChannel`
+(`delidev.browser.pending-close`). A newly opened window queries the current
+holds, and windows learn each other through that exchange. Before the native
+Close is sent, the initiating window announces the hold with a unique announcement
+id and waits until every sibling window has acknowledged that exact announcement
+(an Ack echoes the id, so a delayed Ack for an earlier Close of the same page is
+never credited to a replacement Close). Siblings are the windows already seen on
+the channel plus, when Web Locks is available, every window currently holding a
+liveness lock, so a window whose handshake has not arrived yet is still awaited;
+without Web Locks the Close also waits a 100 ms discovery period for unintroduced
+windows. A silent sibling that still holds its liveness lock (for example a
+suspended renderer) keeps being awaited, because it may resume and reconcile at
+any time; it stops being awaited only after it acknowledges, announces `bye`, or
+its lock is gone (rechecked every second). Without a liveness source a window
+that stays silent for one second is presumed gone. A released or settled hold
+ends its wait. A window that is discovered (or joins) after the first broadcast is sent an acknowledgement-requesting Hold again, and a Close whose hold was withdrawn while it waited (pagehide or disposal) is cancelled before the native call and reported as a failed action. This ensures a sibling's inventory read cannot find the page unowned after
+it disappears natively. A hold whose window stopped refreshing (for example after a crash)
+expires after 15 seconds, except that when the Web Locks API is available each
+window also holds a liveness lock named after its window identity and an expired
+hold is kept while that lock is still held, because renderer timers of a hidden
+or minimized window are throttled and are not proof of death. Without Web Locks the
+15-second expiry applies. A closing window releases its holds on `pagehide`, becomes inactive (it announces no further Hold, so a Close started after `pagehide` cannot resurrect it on siblings; a `pageshow` restored from the back/forward cache reactivates it), and cancels its liveness-lock request through an `AbortSignal` so a request that was never granted cannot hold the lock after disposal. Pending lock requests of siblings count as live windows.
+A window whose `Query` arrives while a barrier is open is added to that barrier's required set before its Ack is awaited. An inconclusive liveness result is never proof of death: a failed `locks.query()` keeps an expired remote hold (it is re-probed at the next expiry), and a barrier whose liveness query keeps failing keeps awaiting silent windows for at most five one-second rechecks (a documented best-effort bound, so a permanently failing query cannot hang a Close) before presuming them gone. The registry constructor connects by default, but `deferConnect` skips that; the React provider and the `useSessionTabsStore` fallback construct the registry with `deferConnect` and call `connect()` only from a committed effect, so render never opens the channel, page listeners or liveness lock.
+When the owning window observes the original Close proof, it broadcasts a
+`settled` message in place of a plain release: every sibling window drops the
+hold and removes the exact profile/page descriptor from all of its Sessions,
+including retained or inactive ones that run no inventory poll. A rejected or
+abandoned Close only releases the hold and never removes a descriptor. A removal-pending reply is normalized to an empty inventory for reconciliation, but the raw listing is kept to prove a Close: an observation with no receipt settles the Close only when the raw reply no longer lists the page, otherwise only this operation is released.
+A discarded tab store (for example when the connection identity remounts the
+provider) disposes its registry: it releases its holds, detaches the `pagehide`
+listener and closes the channel, and a replayed mount reconnects it.
+The channel carries only an opaque window identity and the profile/page key,
+never URLs or credentials; without `BroadcastChannel` the hold stays
+window-local. Existing local `tabs.json` storage remains compatible; no business RPC,
 protocol allocation, SQLite migration, dependency or browser-engine change is
 added.
 
@@ -190,8 +343,12 @@ changing identity: each observed URL refreshes only the label of the existing
 exact profile/page descriptor, never its order, selection or any foreign profile
 page. When a busy action settles, the native page is reconciled once to the
 current shared selection; a failed reconciliation is not retried until the
-selection or native state changes. Reconciliation also waits until a pending
-native open has published its view, then selects the current shared page once.
+selection or native state changes. Its failed-attempt suppression ends when the
+shared selection leaves that Page, including a move to a non-page tab; an
+explicit return may retry once after an eligible presentation opens. An
+unchanged selection and native state never start an automatic retry loop.
+Reconciliation also waits until a pending native open has published its view,
+then selects the current shared page once.
 Profile explanation uses the original
 accessible Modal and native visibility boundary.
 Numeric selection has only typed, original-owner fenced
@@ -249,6 +406,25 @@ profiles and pending-creation guards. Failed unmapping never permits directory p
 Removal unmaps and close requests run outside native state. Close requests after
 tab replacement also run outside native state; pending old creation callbacks
 remain generation-guarded.
+Raw child closure is child-only. The raw child's life-span handler owns
+`do_close` for non-popup children: on macOS and Windows it returns 1 and completes
+destruction of exactly that child's own native host on the UI loop (removing its
+`NSView` from its superview, or `DestroyWindow` on its `HWND`), so CEF never
+sends its default parent-window close (`performClose:` / `WM_CLOSE`) to the
+containing product window and `on_before_close` still fires once per child. On
+Linux `do_close` keeps CEF's default (0), and popups keep the default. The
+handler binds the exact Browser identifier at creation; destruction is claimed
+at most once and only for that identifier, so duplicate or late close callbacks
+cannot destroy a replacement child or product views, and `child_closed` keeps
+its generation filter. New Tab, selected-tab replacement, tab close and panel
+disposal therefore never hide, close or minimize the product window; explicit
+product-window close still hides to the tray through `CloseRequested`, and Quit
+still joins. Close diagnostics are structured `browser_view` tracing events
+(`close_requested`, `destroyed`, `destroy_failed`) carrying only the platform,
+popup flag, numeric browser identifier and outcome, never URLs, credentials or
+page content. Fixture and build results prove only the disposition, identity and
+idempotency rules; macOS, Windows and Linux native acceptance is recorded
+separately.
 Only successful native geometry updates become the panel's last applied bounds;
 a failed resize clears that cache so later callbacks retry identical geometry
 for the current presentation.
@@ -511,3 +687,7 @@ Instruction-file updates in this requirement apply only to changes in developmen
 ## Resident desktop runtime protection
 
 All protected Local and Saved browser profiles reject the desktop main process's current private loopback port and its loopback aliases, including WebSocket aliases. Adding this port preserves each profile's separate selected product origin and loopback-port exclusion. Legacy ordinary CLI and frontend development ports remain protected. Browser cleanup reads share the resident version-2 CLI; their bounded final discovery precedes host shutdown, and post-shutdown acknowledgments retain durable intents without spawning another CLI. See the [desktop lifetime boundary](apps-delidev-desktop-contract.md#app-owned-sidecar-shutdown).
+
+## External link browser destinations
+
+The protected account/session browser is unrelated to the user's installed browsers. Opening an ordinary external HTTP(S) link in an installed browser (message and terminal links, Provider guidance, App information and GitHub forms) is a separate device-local native preference with independent General and Local destinations. It never uses, reads or modifies protected-profile paths, CEF request contexts or per-account cleanup obligations, and the Browser settings category does not select the embedded protected browser. External webview navigation and popups remain denied; the renderer only asks the native host to open a validated URL. OAuth and subscription authorization links keep the system default browser. The owning contract is [Browser destinations for external links](apps-delidev-desktop-contract.md#browser-destinations-for-external-links); installed-browser discovery and launch acceptance on macOS, Windows and Linux is recorded separately from fixtures.

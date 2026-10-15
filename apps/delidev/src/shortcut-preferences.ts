@@ -148,6 +148,18 @@ export const readOnlyShortcutCatalog: readonly CatalogAction[] = [
     defaults: globalShortcutBindings[ShortcutId.CommandMenu],
   },
   {
+    // Window-level action: the reload owner above App dispatches it, so Help
+    // lists it through a native-execution definition and Settings through this
+    // catalog entry.
+    id: ShortcutId.ReloadPage,
+    label: "shortcuts.reloadPage",
+    group: ShortcutGroup.Common,
+    scopes: [ShortcutScope.Global],
+    priority: 0,
+    input: ShortcutInput.Allow,
+    defaults: globalShortcutBindings[ShortcutId.ReloadPage],
+  },
+  {
     id: ShortcutId.OpenTool,
     label: "session.openTool",
     group: ShortcutGroup.Session,
@@ -319,18 +331,43 @@ export function validShortcutChord(chord: unknown): chord is ShortcutChord {
  * Add one entry here to give another new default the same priority rule.
  */
 const readOnlyShortcutPolicies: Partial<
-  Record<ShortcutId, { key: string; reason: MessageKey }>
+  Record<
+    ShortcutId,
+    {
+      key: string;
+      reason: MessageKey;
+      // Fail closed: an unverified saved map keeps the default inactive.
+      unverifiedReason?: MessageKey;
+    }
+  >
 > = {
   [ShortcutId.OpenTool]: { key: "t", reason: "shortcuts.toolSuppressed" },
   [ShortcutId.OpenFiles]: { key: "e", reason: "shortcuts.filesSuppressed" },
+  [ShortcutId.ReloadPage]: {
+    key: "r",
+    reason: "shortcuts.reloadSuppressed",
+    unverifiedReason: "shortcuts.reloadUnverified",
+  },
 };
-/** Returns the localized reason when a committed override suppresses `id`. */
+/**
+ * Returns the localized reason when `id` must stay inactive. Until the initial
+ * preference read settles (`ready` false) the empty overrides are only startup
+ * placeholders, so every policy-listed ID is held back with a pending reason;
+ * afterwards a committed override suppresses it. Callers outside a preference
+ * provider keep the ready default. A policy with an `unverifiedReason` also
+ * stays inactive while the saved map is unverified (`verified` false, that is
+ * a preference problem other than Unavailable) until a successful reinspection.
+ */
 export function readOnlyShortcutSuppression(
   id: ShortcutId,
   overrides: ShortcutOverrides,
+  ready = true,
+  verified = true,
 ): MessageKey | undefined {
   const policy = readOnlyShortcutPolicies[id];
   if (!policy) return;
+  if (!ready) return "shortcuts.preferencesPending";
+  if (!verified && policy.unverifiedReason) return policy.unverifiedReason;
   // Disabled overrides and Shift variants never claim the unshifted chord.
   return editableShortcutCatalog.some((action) => {
     const override = overrides[action.id];
@@ -346,8 +383,10 @@ export function readOnlyShortcutSuppression(
 export function customizationBindings(
   id: ShortcutId,
   overrides: ShortcutOverrides,
+  ready = true,
+  verified = true,
 ): readonly ShortcutBinding[] {
-  if (readOnlyShortcutSuppression(id, overrides)) return [];
+  if (readOnlyShortcutSuppression(id, overrides, ready, verified)) return [];
   const override = overrides[id];
   return override?.state === ShortcutOverrideState.Disabled
     ? []
@@ -358,9 +397,16 @@ export function customizationBindings(
 export function effectiveShortcutDefinitions(
   definitions: readonly ShortcutDefinition[],
   overrides: ShortcutOverrides,
+  ready = true,
+  verified = true,
 ): ShortcutDefinition[] {
   return definitions.map((action) => {
-    const suppression = readOnlyShortcutSuppression(action.id, overrides);
+    const suppression = readOnlyShortcutSuppression(
+      action.id,
+      overrides,
+      ready,
+      verified,
+    );
     if (suppression)
       return {
         ...action,
@@ -376,7 +422,7 @@ export function effectiveShortcutDefinitions(
             ...action.bindings.filter(
               (binding) => !binding.primary && binding.key !== "?",
             ),
-            ...customizationBindings(action.id, overrides),
+            ...customizationBindings(action.id, overrides, ready, verified),
           ],
         };
   });

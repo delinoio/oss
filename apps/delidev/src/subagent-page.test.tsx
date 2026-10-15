@@ -124,7 +124,7 @@ test.each([
         const child = object(value.observation),
           source = object(items(value.sources)[0]);
         if (mode === "harness") value.harness = "unsupported";
-        if (mode === "version") value.native_version = "0.151.1";
+        if (mode === "version") value.native_version = "0.150.9";
         if (mode === "execution") value.execution_id = "foreign-execution";
         if (mode === "root") value.root_id = child.native_id;
         if (mode === "child-id") child.id = newRequestId();

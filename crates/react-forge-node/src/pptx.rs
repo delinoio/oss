@@ -8,6 +8,9 @@ use crate::{Operation, OperationKind};
 
 pub fn process(op: &Operation) -> forge_tree_doc::Result<(Vec<u8>, String, String)> {
     let (bytes, doc, mut fonts) = match op.kind {
+        OperationKind::Analyze | OperationKind::AnalyzeQuality => {
+            unreachable!("analysis is scene-only")
+        }
         OperationKind::Inspect => {
             let imported = forge_pptx::import(&op.source)?;
             let identity = SourceIdentity::capture(&imported, &op.source);

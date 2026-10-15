@@ -61,6 +61,7 @@ function fixture(
   supported = true,
   providerForm = false,
   keepsKey = false,
+  revisionBound = keepsKey,
 ) {
   const blocked = vi.fn();
   const transport = createRouterTransport((router) => {
@@ -71,6 +72,11 @@ function fixture(
               ProviderInventoryCapability.ACCOUNT_API_PROTOCOL_V1,
               ...(keepsKey
                 ? [ProviderInventoryCapability.ACCOUNT_API_FORMAT_CHANGE_V1]
+                : []),
+              ...(revisionBound
+                ? [
+                    ProviderInventoryCapability.ACCOUNT_API_FORMAT_CHANGE_REVISION_V1,
+                  ]
                 : []),
             ]
           : [],
@@ -295,6 +301,27 @@ it("locks retained provider profiles after a key-preserving format change", asyn
       .getByRole("checkbox", { name: "Anthropic Messages" })
       .matches(":disabled"),
   ).toBe(false);
+});
+
+it("locks retained provider profiles with capability nine alone", async () => {
+  const account = row(EntityKind.ACCOUNT, {
+    type: "api",
+    provider_id: provider.id,
+    api_protocol: "openai-chat",
+    retained_connections: [{ connection: { api_format: profiles[0] } }],
+  });
+  const value = fixture(provider, [account], true, true, true, false);
+  await waitFor(() => expect(value.blocked).toHaveBeenLastCalledWith(false));
+  expect(
+    screen
+      .getByRole("checkbox", { name: "OpenAI Responses" })
+      .matches(":disabled"),
+  ).toBe(true);
+  expect(
+    screen
+      .getByRole("checkbox", { name: "OpenAI Chat Completions" })
+      .matches(":disabled"),
+  ).toBe(true);
 });
 
 it("keeps provider saves blocked when retained reference metadata is malformed", async () => {

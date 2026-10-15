@@ -137,6 +137,13 @@ pub fn bundle_static_imports(code: &str) -> Vec<String> {
     let mut imports = Vec::new();
     let mut at = 0;
     while at < bytes.len() {
+        // Skip to the next byte that can start a keyword. The gate scans
+        // every candidate chunk, so a per-byte prefix comparison over a
+        // multi-megabyte chunk dominated bundle-mode run time.
+        match bytes[at..].iter().position(|&b| b == b'f' || b == b'i') {
+            Some(offset) => at += offset,
+            None => break,
+        }
         // Compare bytes: `at` can be inside a multi-byte character.
         let keyword = if bytes[at..].starts_with(b"from") {
             4
@@ -282,6 +289,19 @@ pub fn source_offset(mut offset: usize, chain: &[Vec<Edit>]) -> usize {
     offset
 }
 
+/// Offset `offset` of the original text in the text that `edits` (sorted,
+/// against the original) produce, for a position outside every edit.
+fn forward_offset(offset: usize, edits: &[Edit]) -> usize {
+    let mut shifted = offset as isize;
+    for edit in edits {
+        if edit.end > offset || edit.start >= offset {
+            break;
+        }
+        shifted += edit.replacement.len() as isize - (edit.end - edit.start) as isize;
+    }
+    shifted.max(0) as usize
+}
+
 /// Two edits conflict when their ranges intersect or they start at the same
 /// offset, where application order would be ambiguous.
 fn conflicts(a: &Edit, b: &Edit) -> bool {
@@ -295,6 +315,27 @@ struct Gate<'a, B: Backend> {
     enabled: &'a PassSet,
     accepted: BTreeMap<String, Vec<Edit>>,
     current: HashMap<String, Emitted>,
+    /// Bundle mode: each file's text with its accepted edits applied, and
+    /// where its trailing source map comment starts.
+    current_text: HashMap<String, (String, Option<usize>)>,
+}
+
+/// Whether text near `edit` (in `text`) or its replacement can start or end
+/// a static import, so the edit may change the import list.
+fn may_change_imports(text: &str, edit: &Edit) -> bool {
+    const NEAR: usize = 16;
+    let mut from = edit.start.saturating_sub(NEAR);
+    let mut to = (edit.end + NEAR).min(text.len());
+    while !text.is_char_boundary(from) {
+        from -= 1;
+    }
+    while !text.is_char_boundary(to) {
+        to += 1;
+    }
+    let near = &text[from..to];
+    ["import", "from"]
+        .iter()
+        .any(|keyword| near.contains(keyword) || edit.replacement.contains(keyword))
 }
 
 enum Decision {
@@ -314,6 +355,22 @@ impl<B: Backend> Gate<'_, B> {
         let emitted = self.backend.emit_module(file, &text)?;
         self.current.insert(file.to_owned(), emitted.clone());
         Ok(emitted)
+    }
+
+    /// Bundle mode: the file's text with its accepted edits applied, and the
+    /// start of its trailing source map comment.
+    fn current_text(&mut self, file: &str) -> Result<(&str, Option<usize>)> {
+        if !self.current_text.contains_key(file) {
+            let Some(text) = self.texts.get(file) else {
+                bail!("transformation targets a module outside the analyzed program");
+            };
+            let accepted = self.accepted.get(file).map_or(&[][..], Vec::as_slice);
+            let text = apply(text, accepted)?;
+            let comment = crate::bundle::map_comment_start(&text);
+            self.current_text.insert(file.to_owned(), (text, comment));
+        }
+        let (text, comment) = &self.current_text[file];
+        Ok((text, *comment))
     }
 
     /// Evaluates the complete bundle, including module-initialization
@@ -338,6 +395,7 @@ impl<B: Backend> Gate<'_, B> {
             let mut merged_files = Vec::new();
             let mut insertions = Vec::new();
             let mut uses_residual = false;
+            let bundle = crate::app::bundle_mode();
             for (file, mut edits) in by_file {
                 edits.sort();
                 for pair in edits.windows(2) {
@@ -350,15 +408,60 @@ impl<B: Backend> Gate<'_, B> {
                 let current = self.current(&file)?;
                 before += current.size;
                 let mut merged = self.accepted.get(&file).cloned().unwrap_or_default();
-                merged.extend(edits);
+                merged.extend(edits.iter().cloned());
                 merged.sort();
-                let text = apply(&self.texts[&file], &merged)?;
-                let emitted = self.backend.emit_module(&file, &text).map_err(|error| {
-                    anyhow::anyhow!(
-                        "{} produced output the compiler rejects in a module: {error}",
-                        candidate.pass
-                    )
-                })?;
+                // Bundle mode measures the chunk text itself: the size follows
+                // from the edit lengths, and the import list changes only when
+                // an edit touches import syntax, so no candidate copies the
+                // chunk.
+                let shifted: Vec<Edit> = if bundle {
+                    let accepted = self.accepted.get(&file).map_or(&[][..], Vec::as_slice);
+                    edits
+                        .iter()
+                        .map(|e| {
+                            let start = forward_offset(e.start, accepted);
+                            Edit {
+                                start,
+                                end: start + (e.end - e.start),
+                                replacement: e.replacement.clone(),
+                            }
+                        })
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+                let emitted = if bundle {
+                    let (text, comment) = self.current_text(&file)?;
+                    let delta: isize = shifted
+                        .iter()
+                        .map(|e| e.replacement.len() as isize - (e.end - e.start) as isize)
+                        .sum();
+                    // An edit at or after the trailing source map comment can
+                    // stop it from being trailing (an appended `export {}`),
+                    // which the measured size then includes.
+                    let at_comment =
+                        comment.is_some_and(|start| shifted.iter().any(|e| e.end >= start));
+                    if at_comment || shifted.iter().any(|e| may_change_imports(text, e)) {
+                        let edited = apply(text, &shifted)?;
+                        Emitted {
+                            size: crate::bundle::chunk_code_len(&edited),
+                            imports: bundle_static_imports(&edited),
+                        }
+                    } else {
+                        Emitted {
+                            size: (current.size as isize + delta) as usize,
+                            imports: current.imports.clone(),
+                        }
+                    }
+                } else {
+                    let text = apply(&self.texts[&file], &merged)?;
+                    self.backend.emit_module(&file, &text).map_err(|error| {
+                        anyhow::anyhow!(
+                            "{} produced output the compiler rejects in a module: {error}",
+                            candidate.pass
+                        )
+                    })?
+                };
                 let Some(removed) = removed_imports(&current.imports, &emitted.imports) else {
                     return Ok(Decision::Reject(Reason::ModuleInitialization));
                 };
@@ -412,6 +515,11 @@ impl<B: Backend> Gate<'_, B> {
                 candidate.uses.push(PassId::ResidualDependencyRemoval);
             }
             for (file, merged, emitted) in merged_files {
+                if self.current_text.contains_key(&file) {
+                    let text = apply(&self.texts[&file], &merged)?;
+                    let comment = crate::bundle::map_comment_start(&text);
+                    self.current_text.insert(file.clone(), (text, comment));
+                }
                 self.current.insert(file.clone(), emitted);
                 self.accepted.insert(file, merged);
             }
@@ -582,6 +690,7 @@ impl<B: Backend> Pipeline<'_, B> {
             enabled: self.enabled,
             accepted: BTreeMap::new(),
             current: HashMap::new(),
+            current_text: HashMap::new(),
         };
         let mut seen = BTreeSet::new();
         for candidate in candidates {
@@ -815,6 +924,27 @@ fn same_specifier(source: &str, emitted: &str) -> bool {
 mod tests {
     use super::*;
     use crate::plan::FileEdit;
+
+    #[test]
+    fn forward_offsets_skip_earlier_edits_only() {
+        let edits = [
+            Edit {
+                start: 2,
+                end: 4,
+                replacement: "xyz".into(),
+            },
+            Edit {
+                start: 10,
+                end: 10,
+                replacement: "ab".into(),
+            },
+        ];
+        // Before every edit, after the first, and at the insertion point.
+        assert_eq!(forward_offset(1, &edits), 1);
+        assert_eq!(forward_offset(6, &edits), 7);
+        assert_eq!(forward_offset(10, &edits), 11);
+        assert_eq!(forward_offset(12, &edits), 15);
+    }
 
     /// Test-only backend: candidates come from a fixed script, size is byte
     /// length and a module "fails" type checking when it contains `BAD`.

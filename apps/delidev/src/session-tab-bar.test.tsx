@@ -2,6 +2,9 @@
 import { useState } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
+import { act } from "react";
+import { i18n } from "./localization";
+import { Comparison } from "./session-diff-model";
 import { SessionTabBar } from "./session-tab-bar";
 import { SessionTabKind, SessionTabsProvider } from "./session-tabs";
 it("roves focus and selection without an absent-position alias and leaves pinned Conversation noncloseable", () => {
@@ -77,9 +80,8 @@ it("labels each direct terminal tab with a friendly number and no internal ID", 
   ).toBeTruthy();
 });
 
-it("renders the New browser page button after the tab items, outside the tablist and numeric positions", () => {
-  const newPage = vi.fn();
-  render(
+it("renders only the tablist: no direct New browser page button, and no Browser singleton tab", () => {
+  const { container } = render(
     <SessionTabBar
       id="original"
       tabs={[
@@ -95,23 +97,156 @@ it("renders the New browser page button after the tab items, outside the tablist
       selected={SessionTabKind.Conversation}
       select={() => {}}
       close={() => {}}
-      newPage={newPage}
     />,
   );
-  const add = screen.getByRole("button", { name: "New browser page" });
+  // The + entry is the Open tool trigger owned by SessionToolMenu, not the tab bar.
+  expect(screen.queryByRole("button", { name: "New browser page" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Open tool" })).toBeNull();
+  expect(container.querySelector(".session-new-page")).toBeNull();
   expect(screen.getAllByRole("tab")).toHaveLength(2);
-  expect(screen.getByRole("tablist").contains(add)).toBe(false);
-  expect(add.getAttribute("role")).toBeNull();
-  expect(add.hasAttribute("aria-keyshortcuts")).toBe(false);
-  expect(
-    screen.getByRole("tablist").compareDocumentPosition(add) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
-  fireEvent.click(add);
-  expect(newPage).toHaveBeenCalledWith(add);
+  expect(screen.getByRole("tablist")).toBeTruthy();
   // No Browser singleton tab exists; the page is a peer of Conversation.
   expect(screen.queryByRole("tab", { name: "Browser" })).toBeNull();
   expect(
     screen.getByRole("tab", { name: "https://example.test/" }),
   ).toBeTruthy();
 });
+
+it("renders each tab as a flat item with a label button and a separate sibling close button", () => {
+  const select = vi.fn(),
+    close = vi.fn();
+  const longPath = `${"nested/".repeat(20)}very-long-file-name.ts`;
+  render(
+    <SessionTabBar
+      id="original"
+      tabs={[
+        { kind: SessionTabKind.Conversation },
+        { kind: SessionTabKind.Files },
+        {
+          kind: SessionTabKind.File,
+          repository: "repository",
+          path: longPath,
+        },
+      ]}
+      selected={SessionTabKind.Conversation}
+      select={select}
+      close={close}
+    />,
+  );
+  const strip = screen.getByRole("tablist");
+  expect(strip.classList.contains("tab-strip")).toBe(true);
+  const tabs = screen.getAllByRole("tab");
+  const items = tabs.map((tab) => tab.parentElement!);
+  for (const item of items) {
+    expect(item.classList.contains("tab-item")).toBe(true);
+    expect(item.getAttribute("role")).toBe("presentation");
+  }
+  expect(items.map((item) => item.classList.contains("is-selected"))).toEqual([
+    true,
+    false,
+    false,
+  ]);
+  for (const tab of tabs)
+    expect(tab.classList.contains("tab-label")).toBe(true);
+  // Conversation stays first and noncloseable; the others own a sibling close.
+  expect(items[0].querySelectorAll(".tab-close")).toHaveLength(0);
+  for (const item of items.slice(1)) {
+    const buttons = item.querySelectorAll("button");
+    expect(buttons).toHaveLength(2);
+    expect(buttons[1].classList.contains("tab-close")).toBe(true);
+    expect(buttons[0].contains(buttons[1])).toBe(false);
+    expect(buttons[1].textContent).toBe("×");
+  }
+  // Dynamic labels truncate visually while the complete title and accessible
+  // name remain available.
+  expect(items[2].classList.contains("tab-item-dynamic")).toBe(true);
+  expect(tabs[2].getAttribute("title")).toBe(longPath);
+  expect(tabs[2].getAttribute("aria-label")).toContain(longPath);
+  expect(tabs[2].textContent).toBe(longPath);
+});
+
+it("closing an inactive tab never selects it", () => {
+  const select = vi.fn(),
+    close = vi.fn();
+  render(
+    <SessionTabBar
+      id="original"
+      tabs={[
+        { kind: SessionTabKind.Conversation },
+        { kind: SessionTabKind.Files },
+        { kind: SessionTabKind.Diagnostics },
+      ]}
+      selected={SessionTabKind.Diagnostics}
+      select={select}
+      close={close}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: /Close Files/ }));
+  expect(close).toHaveBeenCalledTimes(1);
+  expect(close).toHaveBeenCalledWith("files");
+  expect(select).not.toHaveBeenCalled();
+});
+
+const comparisonLabels = {
+  en: {
+    [Comparison.WorkingTree]: "Uncommitted changes",
+    [Comparison.Staged]: "Staged changes",
+    [Comparison.Creation]: "Since session creation",
+    [Comparison.Branch]: "Branch changes",
+  },
+  ko: {
+    [Comparison.WorkingTree]: "커밋되지 않은 변경 사항",
+    [Comparison.Staged]: "스테이징된 변경 사항",
+    [Comparison.Creation]: "세션 생성 이후",
+    [Comparison.Branch]: "브랜치 변경 사항",
+  },
+} as const;
+
+for (const language of ["en", "ko"] as const) {
+  it(`labels every Comparison mode distinctly in ${language} text, title, aria-label and Close name`, async () => {
+    await act(() => i18n.changeLanguage(language));
+    try {
+      const modes = Object.values(Comparison);
+      render(
+        <SessionTabsProvider>
+          <SessionTabBar
+            id="original"
+            tabs={[
+              { kind: SessionTabKind.Conversation },
+              ...modes.map((comparison) => ({
+                kind: SessionTabKind.Comparison as const,
+                repository: "repository",
+                path: ".",
+                comparison,
+              })),
+            ]}
+            selected={SessionTabKind.Conversation}
+            select={() => {}}
+            close={() => {}}
+          />
+        </SessionTabsProvider>,
+      );
+      const tabs = screen.getAllByRole("tab").slice(1);
+      const closes = [...document.querySelectorAll(".tab-close")];
+      expect(tabs).toHaveLength(modes.length);
+      const texts = tabs.map((tab) => tab.textContent);
+      modes.forEach((mode, index) => {
+        const label = comparisonLabels[language][mode];
+        const text = tabs[index]!.textContent!;
+        expect(text.endsWith(` · ${label}`)).toBe(true);
+        expect(tabs[index]!.getAttribute("title")).toBe(text);
+        expect(tabs[index]!.getAttribute("aria-label")).toContain(text);
+        expect(closes[index]!.getAttribute("aria-label")).toContain(text);
+      });
+      expect(new Set(texts).size).toBe(modes.length);
+      expect(
+        new Set(tabs.map((tab) => tab.getAttribute("aria-label"))).size,
+      ).toBe(modes.length);
+      expect(
+        new Set(closes.map((close) => close.getAttribute("aria-label"))).size,
+      ).toBe(modes.length);
+    } finally {
+      await act(() => i18n.changeLanguage("en"));
+    }
+  });
+}

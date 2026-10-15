@@ -70,6 +70,15 @@ func newFirstDispatchFixtureProfile(t *testing.T, harness domain.Harness, mode d
 
 func newFirstDispatchFixtureWorkspaceProfile(t *testing.T, harness domain.Harness, mode domain.SessionMode, executable, upstreamURL, nativeModel string, workspaceType domain.WorkspaceType, projects ...openCodeProjectFixtureKind) *firstDispatchFixture {
 	t.Helper()
+	return newFirstDispatchFixtureObserved(t, harness, mode, executable, "", upstreamURL, nativeModel, workspaceType, projects...)
+}
+
+// newFirstDispatchFixtureObserved reports observedVersion as the selected
+// executable's discovered version. Real-binary tests pass the version that
+// nativetest observed so the Worker probes the binary with its true version;
+// an empty value keeps the harness baseline used by fake executables.
+func newFirstDispatchFixtureObserved(t *testing.T, harness domain.Harness, mode domain.SessionMode, executable, observedVersion, upstreamURL, nativeModel string, workspaceType domain.WorkspaceType, projects ...openCodeProjectFixtureKind) *firstDispatchFixture {
+	t.Helper()
 	protocol, permission, version := domain.OpenAIResponses, domain.PermissionReadOnly, domain.CodexProtocolVersion
 	if harness == domain.OpenCode {
 		protocol, permission, version = domain.OpenAIChat, domain.PermissionDefault, domain.OpenCodeProtocolVersion
@@ -77,6 +86,9 @@ func newFirstDispatchFixtureWorkspaceProfile(t *testing.T, harness domain.Harnes
 		protocol, permission, version = domain.AnthropicMessages, domain.PermissionDefault, domain.ClaudeProtocolVersion
 	} else if harness == domain.GrokBuild {
 		protocol, permission, version = domain.OpenAIChat, domain.PermissionDefault, domain.GrokProtocolVersion
+	}
+	if observedVersion != "" {
+		version = observedVersion
 	}
 	db, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "state"))
 	if err != nil {

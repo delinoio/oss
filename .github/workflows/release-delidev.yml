@@ -2,7 +2,7 @@ name: Release DeliDev
 
 on:
   push:
-    tags: [delidev-v*]
+    tags: ["delidev@v*"]
 
 permissions:
   contents: read
@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   inspect:
-    if: github.repository == 'delinoio/oss' && startsWith(github.ref, 'refs/tags/delidev-v') && github.event_name == 'push'
+    if: github.repository == 'delinoio/oss' && startsWith(github.ref, 'refs/tags/delidev@v') && github.event_name == 'push'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     outputs:

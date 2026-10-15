@@ -17,31 +17,9 @@
   border-radius: 8px;
   margin-block: 16px;
 }
+/* Tab geometry, baseline, selection and focus come from tab-strip.css. */
 .usage-page .usage-tabs {
-  display: flex;
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  gap: 24px;
-  border-bottom: 1px solid var(--border);
   margin: 0 0 24px;
-}
-.usage-page .usage-tabs button {
-  flex: 0 0 auto;
-  min-height: 40px;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  background: transparent;
-  color: var(--muted);
-  padding: 8px 0;
-}
-.usage-page .usage-tabs button:focus-visible {
-  outline: 2px solid var(--selected-border);
-  outline-offset: -2px;
-}
-.usage-page .usage-tabs [aria-selected="true"] {
-  color: var(--selected-text);
-  border-bottom-color: var(--selected-border);
 }
 .usage-page .usage-summary {
   margin-block: 16px;
@@ -117,10 +95,6 @@
   padding-block: 8px;
   cursor: pointer;
   overflow-wrap: anywhere;
-}
-/* The token breakdown sits over inverse metric surfaces. */
-:root .usage-page .usage-summary-breakdown > .disclosure-header:focus-visible {
-  outline-color: var(--on-inverse);
 }
 .usage-page .usage-accounting-source > details {
   margin: 0;
@@ -522,6 +496,12 @@
   margin: 8px 0 0;
   overflow-wrap: anywhere;
   font-variant-numeric: tabular-nums;
+}
+.usage-price-rate-note {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-variant-numeric: normal;
 }
 @media (max-width: 759px) {
   .usage-price-rates {

@@ -30,6 +30,7 @@ tracing = "0.1"
 uuid = { version = "=1.23.0", features = ["serde", "v7"] }
 zeroize = "=1.8.2"
 url = "=2.5.8"
+plist = "=1.10.0"
 tauri = { git = "https://github.com/tauri-apps/tauri", rev = "c8c75b1f7f43e7cb1e7d773ed2f6f96fad2fe975", default-features = false, features = ["compression", "tray-icon", "unstable"], optional = true }
 tracing-subscriber = { version = "0.3", features = ["fmt", "json"], optional = true }
 tokio = { version = "=1.49.0", features = ["sync", "time", "rt", "macros"], optional = true }
@@ -41,7 +42,7 @@ objc2-foundation = { version = "=0.3.2", default-features = false, features = ["
 mac-usernotifications = { version = "=0.3.1", default-features = false, optional = true }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_Security", "Win32_System_Threading", "Win32_UI_Controls", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_JobObjects", "Win32_Security", "Win32_System_Threading", "Win32_UI_Controls", "Win32_UI_WindowsAndMessaging"] }
 windows = { version = "=0.62.2", features = ["Data_Xml_Dom", "UI_Notifications", "Foundation", "Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell", "Win32_System_Com"], optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]

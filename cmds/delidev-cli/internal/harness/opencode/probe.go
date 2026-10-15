@@ -40,8 +40,19 @@ const (
 	cleanupPhase  probePhase = "cleanup"
 )
 
+// incompatible reports a protocol or profile mismatch of an installation that
+// already passed the version admission: a changed health payload, global
+// configuration, startup output or OpenAPI schema. Updating may not help
+// because a newer release can be the cause, so it never prescribes an upgrade.
 func incompatible() *domain.Error {
-	return domain.Fail(domain.Unsupported, "The installed OpenCode does not match its native protocol profile.", "Select a validated native OpenCode version and refresh discovery; no execution was authorized.")
+	return domain.Fail(domain.Unsupported, "The installed OpenCode does not match its native protocol profile.", "Select a validated native OpenCode version or correct its configuration, then refresh discovery; no execution was authorized.")
+}
+
+// belowBaseline is returned only by the initial version admission check, before
+// any process starts. It is the one cause for which updating OpenCode is the
+// remedy. It never names the numeric baseline.
+func belowBaseline() *domain.Error {
+	return domain.Fail(domain.Unsupported, "The installed OpenCode version is not supported.", "Update OpenCode on this Worker (run opencode upgrade, or use the package manager that installed it), then refresh discovery; no execution was authorized.")
 }
 func unavailable() *domain.Error {
 	return domain.Fail(domain.Unavailable, "OpenCode native protocol initialization did not complete.", "Inspect the selected Worker installation and refresh protocol discovery.")
@@ -69,11 +80,11 @@ func Probe(ctx context.Context, config ProbeConfig) (returned error) {
 		if returned != nil {
 			config.Process.Logger.WarnContext(ctx, "OpenCode native handshake failed", "owner_id", config.Process.OwnerID, "phase", phase, "code", domain.SafeError(returned).Code)
 		} else {
-			config.Process.Logger.InfoContext(ctx, "OpenCode native handshake completed", "owner_id", config.Process.OwnerID, "profile_version", SupportedVersion)
+			config.Process.Logger.InfoContext(ctx, "OpenCode native handshake completed", "owner_id", config.Process.OwnerID, "installed_version", config.Version, "baseline_version", SupportedVersion)
 		}
 	}()
-	if config.Version != SupportedVersion {
-		return incompatible()
+	if !domain.HarnessVersionAllowed(domain.OpenCode, config.Version) {
+		return belowBaseline()
 	}
 	phase = runtimePhase
 	env, err := probeEnvironment(config)

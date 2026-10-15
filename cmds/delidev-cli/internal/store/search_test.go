@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -11,6 +12,11 @@ import (
 type searchFixture struct{ session, message, account, agent, project, execution domain.ID }
 
 func seedSearch(t *testing.T, s *Store, text string, archive domain.ArchiveState) searchFixture {
+	t.Helper()
+	return seedSearchMessage(t, s, domain.ExecutionMessage{Role: domain.AssistantMessage, Text: text, State: domain.MessageComplete}, archive)
+}
+
+func seedSearchMessage(t *testing.T, s *Store, message domain.ExecutionMessage, archive domain.ArchiveState) searchFixture {
 	t.Helper()
 	f := searchFixture{domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID()}
 	_, err := s.Mutate(context.Background(), domain.NewID(), "fixture.search", f, func(tx *Tx) (any, error) {
@@ -21,7 +27,8 @@ func seedSearch(t *testing.T, s *Store, text string, archive domain.ArchiveState
 		if _, err := tx.Put(domain.JobKind, domain.NewID(), 0, f.session, f.project, domain.Job{Type: domain.ExecuteSessionJob, Input: input}); err != nil {
 			return nil, err
 		}
-		return tx.Put(domain.MessageKind, f.message, 0, f.session, f.project, domain.ExecutionMessage{ExecutionID: f.execution, Role: domain.AssistantMessage, Text: text, State: domain.MessageComplete})
+		message.ExecutionID = f.execution
+		return tx.Put(domain.MessageKind, f.message, 0, f.session, f.project, message)
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -83,6 +90,31 @@ func TestSearchLiteralUnicodeAndHistoricalAccountFilters(t *testing.T) {
 	rows, _, _, err = searchPage(t, s, SearchFilter{Query: "résumé", SearchSelection: good})
 	if err != nil || len(rows) != 1 {
 		t.Fatal("current selection relabeled original account", err)
+	}
+}
+
+func TestSearchFindsImageViewLocationWithoutPrivateIdentity(t *testing.T) {
+	s, _ := openTest(t)
+	observation := domain.ImageViewObservation{ReferenceID: domain.NewID(), MachineID: domain.NewID(), ManifestDigest: strings.Repeat("a", 64), Location: "Images/Original.png"}
+	f := seedSearchMessage(t, s, domain.ExecutionMessage{Role: domain.ToolMessage, State: domain.MessageComplete, Tool: &domain.ExecutionTool{Started: domain.ToolSnapshot{Kind: domain.ImageViewTool, Status: domain.ToolRunning, ImageView: &observation}}}, domain.NotArchived)
+	seedSearch(t, s, "unrelated transcript", domain.NotArchived)
+	for _, query := range []string{"images/original.png", "IMAGES/ORIGINAL.PNG", "original.png"} {
+		rows, more, _, err := searchPage(t, s, SearchFilter{Query: query})
+		if err != nil || more || len(rows) != 1 || rows[0].ID != f.message {
+			t.Fatalf("image-view location %q: %v %v %v", query, rows, more, err)
+		}
+	}
+	good := domain.SearchSelection{SessionID: f.session, ProjectID: f.project, AgentID: f.agent, AccountID: f.account}
+	if rows, _, _, err := searchPage(t, s, SearchFilter{Query: "images/original.png", SearchSelection: good}); err != nil || len(rows) != 1 {
+		t.Fatal("selection lost image-view match", err)
+	}
+	if rows, _, _, err := searchPage(t, s, SearchFilter{Query: "images/original.png", SearchSelection: domain.SearchSelection{ProjectID: domain.NewID()}}); err != nil || len(rows) != 0 {
+		t.Fatal("selection ignored for image-view match", err)
+	}
+	for _, private := range []string{string(observation.ReferenceID), string(observation.MachineID), observation.ManifestDigest} {
+		if rows, _, _, err := searchPage(t, s, SearchFilter{Query: private}); err != nil || len(rows) != 0 {
+			t.Fatalf("indexed private image-view identity %q: %v", private, err)
+		}
 	}
 }
 

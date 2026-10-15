@@ -33,7 +33,7 @@ These independent enum spaces preserve the merged user-service system value 3.
 Desktop history reads, polling, manual refresh and selection wait for advertised
 system terminal support. Unknown or unsupported status shows its capability
 notice without terminal requests or cached terminal errors.
-The explicit Terminals toolbar/menu gesture resolves a complete authenticated bounded inventory after capability success. Reuse the remembered starting/running terminal without close intent, otherwise the first eligible terminal in retained inventory order. If none is reusable, create exactly one only when all retained ownership is independently cleanup-verified (including an empty inventory), using the gesture's original session/revision, the Worker account default shell and 24×80 dimensions. Coalesce pending activations; read failures, incomplete/malformed pages and unsettled ownership never authorize creation. Read Retry alone cannot repeat the gesture. The gesture keeps the current pane and shows opening, failure and uncertain-recovery status in a non-modal strip below the tab row until the verified terminal is selected as `Terminal N`; the desktop sends no shell override and offers no process Close control, while the RPC contract below is unchanged. Uncertain creation retains only explicit same-request recovery; confirmed rejection requires a fresh gesture. Departure cancels unsent intent while accepted/uncertain mutation ownership survives. + remains explicit additional creation. Mount, reconnect, polling, tab selection and exit remain read-only. Explicit
+The explicit Terminals toolbar/menu gesture resolves a complete authenticated bounded inventory after capability success. Reuse the remembered starting/running terminal without close intent, otherwise the first eligible terminal in retained inventory order. If none is reusable, create exactly one only when all retained ownership is independently cleanup-verified (including an empty inventory), using the gesture's original session/revision, the Worker account default shell and 24×80 dimensions. Coalesce pending activations; read failures, incomplete/malformed pages and unsettled ownership never authorize creation. Read Retry alone cannot repeat the gesture. The gesture keeps the current pane and shows opening, failure and uncertain-recovery status in a non-modal strip below the tab row until the verified terminal is selected as `Terminal N`; the desktop sends no shell override and offers no process Close control, while the RPC contract below is unchanged. Uncertain creation retains only explicit same-request recovery; confirmed rejection requires a fresh gesture. Departure cancels unsent intent while accepted/uncertain mutation ownership survives. + remains explicit additional creation: it selects and focuses the returned terminal only when no newer Session navigation happened after sending, otherwise the acknowledged terminal is retained and listed without changing the user's selection. The explicit inventory registers `Terminal N` numbers in authenticated encounter order before admission, and Read Retry from a non-terminal pane is one bounded attempt with no continuing interval reads. Mount, reconnect, polling, tab selection and exit remain read-only. Explicit
 creation/selection opens a full-pane tab by original terminal ID while retaining
 conversation authoring and original mutation controllers. Presentation Close or
 inactive selection releases only the client attachment; it never closes the shell
@@ -102,8 +102,60 @@ or the native system `cmd.exe` when that setting is absent. Failed discovery or
 an invalid configured/default/explicit executable never selects another shell.
 Explicit overrides must be absolute existing regular executable files, resolved
 on the Worker. Unix shells receive `-i`; Windows shells receive no synthetic
-Unix flags. The child receives bounded ordinary account/system context without
+Unix flags. General Chat shells may additionally receive the prompt
+integration arguments described below. The child receives bounded ordinary account/system context without
 the Worker's pairing or provider credentials.
+
+### General Chat prompt label
+
+A General Chat terminal (never a repository Worktree or Local terminal) shows
+the display label `chat` in place of the shell's directory segment while the
+shell's physical working directory is exactly the verified original General
+Chat `chat` directory, including after the user `cd`s away and returns. The
+actual directory, `pwd`, `PWD`, `result.Cwd`, workspace names and every
+authorization identity are unchanged; no workspace is renamed. The Worker
+detects the shell family from the validated executable name
+(`ShellKind`: `zsh`, `bash`, `fish`, `powershell`, `cmd`, `unknown`) and adds a
+process-local integration that loads only after the account's own shell
+initialization:
+
+- `zsh`: a per-terminal `ZDOTDIR` wrapper sources the account's `.zshenv` and
+  `.zshrc` (honoring an account-defined `ZDOTDIR`, explicit history file and an
+  intentionally unset `HISTFILE`), then
+  registers a `precmd` hook that rewrites the recognized zsh directory escapes
+  (`%~`, `%d`, `%/`, `%c`, `%C`, `%.`, with optional numeric argument) in
+  `PROMPT` and restores the native prompt away from the directory.
+- `bash`: `--rcfile` loads the account's `~/.bashrc`, then a `PROMPT_COMMAND`
+  hook rewrites the `\w` and `\W` escapes of `PS1`, preserving `$?`.
+- `fish`: `--init-command` runs after the account's configuration, reads the
+  verified physical directory from a private per-terminal file into an
+  unexported shell variable, and wraps `prompt_pwd`. The physical directory
+  never enters fish's launch environment or command arguments, including while
+  `config.fish` and `conf.d` hooks start children before the wrapper runs.
+- `powershell`: `-NoExit -Command` dot-sources a wrapper after the profile and
+  replaces the displayed current location in the `prompt` function's result.
+  PowerShell is reachable only through an explicit shell override on
+  Windows; it is also supported on Unix.
+- `cmd.exe` and unknown shells keep their native prompt: `cmd` has a static
+  `PROMPT` string with no conditional or hook facility, so a directory-only
+  label cannot be implemented safely.
+
+The integration never writes user dotfiles, never types a startup command into
+the terminal, never changes `PWD`, and never rewrites command output or the
+stored/streamed terminal bytes. Wrapper files live in a private per-terminal
+directory `terminal-integrations/<terminal-id>` under the Worker root and are
+removed when the shell is joined or closed, and by acknowledged retirement for
+crash leftovers. Zsh, bash and PowerShell receive the directory through
+`DELIDEV_TERMINAL_CHAT_DIRECTORY`, which they unset after copying it into a
+shell-local variable. Fish reads its private file only after account startup;
+failed handoff preparation keeps the native interactive prompt and exposes no
+physical directory in the launch environment. A prompt whose directory segment is
+not one of the recognized forms (for example a theme that computes its own
+cwd), an unsupported shell, or any failure to prepare the wrapper leaves the
+native prompt unchanged and the shell interactive. The integration is applied
+only at creation; reattach, output gaps and reconnect never start another
+shell or transform retained bytes. No RPC, schema, stored preference or
+feature flag is involved.
 
 The launch directory is fixed to the original ready manifest's primary
 repository, or its General Chat directory. The existing anchored continuation
@@ -387,7 +439,10 @@ Structured logs identify terminal/session/machine IDs, accepted action, replay,
 state, cleanup fact and stable error code. Interrupted auxiliary channels log
 the machine and safe code. Existing process-scope logs retain ownership IDs and
 safe lifecycle facts. Never log raw bytes, shell command text, paths, tokens,
-environment values or raw OS errors.
+environment values or raw OS errors. Each General Chat terminal start logs one
+`terminal_prompt_integration` event with only the terminal ID, `shell_kind` and
+`outcome` (`applied` or `unsupported`); it never logs the directory, prompt
+text, user configuration or output bytes.
 Worker-reported problems accept only the closed native terminal classifications:
 `invalid_argument`, `not_found`, `conflict`, `permission_denied`, `unavailable`,
 `missing_input`, `unsupported`, `recovery_required`, `resource_exhausted`,

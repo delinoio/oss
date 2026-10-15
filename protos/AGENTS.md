@@ -12,6 +12,7 @@
 
 ## Owning contracts
 
+- [bundlewhy v1 protocol contract](../docs/protos-bundlewhy-v1-contract.md)
 - [DeliDev protected account browser](../docs/cmds-delidev-browser-contract.md)
 - [DeliDev provider and model catalog](../docs/cmds-delidev-catalog-contract.md)
 - [async-commit-hook v1 protocol contract](../docs/protos-async-commit-hook-v1-contract.md)

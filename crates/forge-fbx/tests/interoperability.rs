@@ -41,6 +41,103 @@ fn independent_fbx_reader_accepts_geometry_material_and_units() {
         ufbx::CoordinateAxis::PositiveZ
     );
 }
+
+#[test]
+fn independent_fbx_topology_matches_shared_scene_analysis() {
+    fn envelope(positions: &[f32], indices: &[u32]) -> Vec<u8> {
+        let mut bytes = b"FSG1".to_vec();
+        for value in [0, (positions.len() / 3) as u32, indices.len() as u32] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        for value in positions {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        for _ in 0..positions.len() / 3 {
+            for value in [0f32, 0., 1.] {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        for value in indices {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes
+    }
+    let scene: Scene = serde_json::from_value(json!({
+        "document_id":"01956e48-8f55-7000-8000-000000000001",
+        "nodes":[{"id":"01956e48-8f55-7000-8000-000000000002","type":"group","children":[
+            {"id":"01956e48-8f55-7000-8000-000000000003","type":"mesh","geometry":"geometry:q","material":{}},
+            {"id":"01956e48-8f55-7000-8000-000000000004","type":"mesh","geometry":"geometry:q","material":{}},
+            {"id":"01956e48-8f55-7000-8000-000000000005","type":"mesh","geometry":"geometry:q","material":{}},
+            {"id":"01956e48-8f55-7000-8000-000000000006","type":"mesh","geometry":"geometry:t","material":{}}
+        ]}]
+    })).unwrap();
+    let q = envelope(
+        &[0., 0., 0., 1., 0., 0., 1., 1., 0., 0., 1., 0.],
+        &[0, 1, 2, 0, 2, 3],
+    );
+    let t = envelope(&[0., 0., 0., 1., 0., 0., 0., 1., 0.], &[0, 1, 2]);
+    let unused = envelope(
+        &[0., 0., 0., 2., 0., 0., 2., 1., 0., 0., 1., 0.],
+        &[0, 1, 2, 0, 2, 3],
+    );
+    let assets = Assets::from([
+        ("geometry:q".into(), q),
+        ("geometry:t".into(), t),
+        ("geometry:unused".into(), unused),
+    ]);
+    let prepared = forge_scene::prepare(&scene, &assets).unwrap();
+    let analysis = forge_scene::analyze(&prepared).unwrap();
+    assert_eq!(
+        (
+            analysis.mesh_count,
+            analysis.referenced_geometry_count,
+            analysis.unused_geometry_count
+        ),
+        (4, 2, 1)
+    );
+    assert_eq!(
+        (analysis.unique_vertex_count, analysis.unique_triangle_count),
+        (7, 3)
+    );
+    assert_eq!(
+        (
+            analysis.instance_vertex_count,
+            analysis.instance_triangle_count
+        ),
+        (15, 7)
+    );
+    assert_eq!(
+        (
+            analysis.registered_geometry_bytes,
+            analysis.referenced_geometry_bytes
+        ),
+        (372, 236)
+    );
+    let bytes = forge_fbx::export(&prepared).unwrap();
+    let imported = ufbx::load_memory(&bytes, Default::default()).unwrap();
+    assert_eq!(imported.meshes.len(), analysis.referenced_geometry_count);
+    assert_eq!(
+        imported
+            .meshes
+            .iter()
+            .map(|mesh| mesh.num_triangles)
+            .sum::<usize>(),
+        analysis.unique_triangle_count
+    );
+    let instances: Vec<_> = imported
+        .nodes
+        .iter()
+        .filter_map(|node| node.mesh.as_ref())
+        .collect();
+    assert_eq!(instances.len(), analysis.mesh_count);
+    assert_eq!(
+        instances
+            .iter()
+            .map(|mesh| mesh.num_triangles)
+            .sum::<usize>(),
+        analysis.instance_triangle_count
+    );
+}
 #[test]
 fn malformed_geometry_and_nonfinite_transforms_fail_before_export() {
     let (mut s, mut a) = fixture();

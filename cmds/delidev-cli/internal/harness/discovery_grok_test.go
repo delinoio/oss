@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 )
 
@@ -33,6 +35,15 @@ func init() {
 		var report map[string]any
 		_ = json.Unmarshal(grokInspection, &report)
 		report["cwd"] = os.Getenv("HOME")
+		// Tests add native inspection members through a wrapper script because
+		// discovery gives the fake a sanitized environment.
+		if extra := os.Getenv("DELIDEV_FAKE_GROK_INSPECT_EXTRA"); extra != "" {
+			var members map[string]any
+			_ = json.Unmarshal([]byte(extra), &members)
+			for key, value := range members {
+				report[key] = value
+			}
+		}
 		_ = json.NewEncoder(os.Stdout).Encode(report)
 		os.Exit(0)
 	}
@@ -65,13 +76,21 @@ func init() {
 
 func discoverGrok(t *testing.T, binary string) {
 	t.Helper()
+	i := discoverGrokInstallation(t, binary)
+	if i.Harness != domain.GrokBuild || i.Version != domain.GrokProtocolVersion || !i.ProtocolVerified || i.Protocol == nil || i.Protocol.State != domain.ProtocolVerified || i.Protocol.Problem != nil || len(i.Capabilities) != 0 {
+		t.Fatalf("Grok discovery did not verify the isolated profile: state=%s version=%s protocol=%+v", i.State, i.Version, i.Protocol)
+	}
+}
+
+func discoverGrokInstallation(t *testing.T, binary string) domain.Installation {
+	t.Helper()
 	input := allMissing(t)
 	input.VerifyProtocol = true
 	input.Selections.Executables[3].Path = binary
 	root, owner := discoveryRoot(t), domain.NewID()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	output, err := Discover(ctx, DiscoveryConfig{Root: root, OwnerID: owner}, input)
+	output, err := Discover(ctx, DiscoveryConfig{Root: root, Profiles: testProfiles(t, root), OwnerID: owner}, input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,16 +98,17 @@ func discoverGrok(t *testing.T, binary string) {
 		t.Fatal(err)
 	}
 	i := output.Installations[3]
-	if i.Harness != domain.GrokBuild || i.Version != domain.GrokProtocolVersion || !i.ProtocolVerified || i.Protocol == nil || i.Protocol.State != domain.ProtocolVerified || i.Protocol.Problem != nil || len(i.Capabilities) != 0 {
-		t.Fatalf("Grok discovery did not verify the isolated profile: state=%s version=%s protocol=%+v", i.State, i.Version, i.Protocol)
-	}
 	if err := process.ReconcileOwner(filepath.Join(root, "processes"), owner); err != nil {
 		t.Fatal(err)
 	}
-	entries, err := os.ReadDir(filepath.Join(root, "probes"))
-	if err != nil || len(entries) != 0 {
-		t.Fatal("completed Grok probe runtime retained")
+	// The accountless probe profile is persistent; no disposable probe directory is allocated.
+	if _, err := os.Stat(filepath.Join(root, "probes")); err == nil {
+		t.Fatal("a disposable Grok probe directory was allocated")
 	}
+	if _, ok, err := testProfiles(t, root).Lookup(context.Background(), nativeprofile.Key{Harness: domain.GrokBuild, Purpose: nativeprofile.PurposeDiscovery}); err != nil || !ok {
+		t.Fatal("persistent Grok probe profile was not retained")
+	}
+	return i
 }
 
 func TestDiscoveryVerifiesGrokWithoutExecution(t *testing.T) {
@@ -97,6 +117,56 @@ func TestDiscoveryVerifiesGrokWithoutExecution(t *testing.T) {
 		t.Fatal(err)
 	}
 	discoverGrok(t, binary)
+}
+
+// grokWithInspectionMembers wraps the fake native so its inspection output
+// carries extra top-level members, as a newer Grok Build release would.
+func grokWithInspectionMembers(t *testing.T, members string) string {
+	t.Helper()
+	binary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fixture(t, fmt.Sprintf("DELIDEV_FAKE_GROK_INSPECT_EXTRA='%s' exec '%s' \"$@\"\n", members, binary))
+}
+
+func TestDiscoveryGrokInspectionExperiments(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		members  string
+		verified bool
+	}{
+		{"empty experiments", `{"experiments":[]}`, true},
+		{"populated experiments", `{"experiments":["foreign"]}`, false},
+		{"unknown member", `{"futureThing":[]}`, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			i := discoverGrokInstallation(t, grokWithInspectionMembers(t, test.members))
+			if i.State != domain.InstallationDetected || i.Protocol == nil || i.ProtocolVerified != test.verified {
+				t.Fatalf("unexpected Grok discovery: state=%s protocol=%+v", i.State, i.Protocol)
+			}
+			want := domain.ProtocolUnsupported
+			if test.verified {
+				want = domain.ProtocolVerified
+			}
+			if i.Protocol.State != want {
+				t.Fatalf("unexpected protocol state: %+v", i.Protocol)
+			}
+			// A rejected inventory persists a Grok diagnostic on the installation
+			// observation; Codex and Claude fields stay unset.
+			d := i.Protocol.GrokDiagnostic
+			if test.verified {
+				if d != nil {
+					t.Fatalf("verified profile carried a diagnostic: %+v", d)
+				}
+			} else if d == nil || d.Phase != domain.GrokProfile || d.Code != domain.Unsupported || d.DetectedVersion != i.Version || d.SupportedVersion != domain.GrokSubscriptionBaselineVersion || d.Validate() != nil || strings.Contains(d.Message+d.Guidance, "foreign") {
+				t.Fatalf("rejected inventory lost its safe diagnostic: %+v", d)
+			}
+			if i.Protocol.Diagnostic != nil {
+				t.Fatal("Grok discovery populated the Codex diagnostic")
+			}
+		})
+	}
 }
 
 func TestManualNativeGrokDiscovery(t *testing.T) {

@@ -81,6 +81,9 @@ func serviceCommand(ctx context.Context, o *options, kind userservice.Kind, args
 			return nil, err
 		}
 	}
+	if !userservice.Action(args[0]).Valid() {
+		return nil, domain.Fail(domain.InvalidArgument, "A valid service action and request identity are required.", "Use install, start, stop or remove with a UUID-v7 request ID.")
+	}
 	ensureRequest(o)
 	result, err := manager.Control(ctx, userservice.Action(args[0]), o.requestID, *revision, "local-user")
 	if err == nil && args[0] == "stop" {

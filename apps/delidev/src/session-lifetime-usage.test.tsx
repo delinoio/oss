@@ -225,6 +225,11 @@ it("retains only the previous complete summary on failed invalidation and retrie
     </TransportProvider>,
   );
   await screen.findByText("9,007,199,254,740,993");
+  // The routine incomplete-coverage paragraph is not part of default Info.
+  expect(screen.queryByText(/Known input and output subtotals/)).toBeNull();
+  expect(screen.queryByText(/Known responses only/)).toBeNull();
+  expect(screen.getByText("In")).toBeTruthy();
+  expect(screen.getByText("Out")).toBeTruthy();
   read.mockRejectedValueOnce(new Error("fixture refresh unavailable"));
   await act(async () => {
     await client.invalidateQueries();
@@ -328,4 +333,265 @@ it("fences a delayed old-session result and pauses inactive readers", async () =
   expect(read).toHaveBeenCalledTimes(2);
   mounted.rerender(view(nextSession, true));
   await waitFor(() => expect(read).toHaveBeenCalledTimes(3));
+});
+
+// Retained multi-range evidence across response-usage generations.
+const multiRangeCreatedAt = "2024-10-01T00:00:00Z";
+const generationSession = (
+  id: string,
+  revision: bigint,
+  responseUsageId: string,
+  createdAt = multiRangeCreatedAt,
+) =>
+  create(ResourceSchema, {
+    id,
+    kind: EntityKind.SESSION,
+    schemaVersion: 1,
+    revision,
+    createdAt,
+    documentJson: new TextEncoder().encode(
+      JSON.stringify({
+        execution: { latest_response_usage_id: responseUsageId },
+      }),
+    ),
+  });
+// The first (unbounded) read reports the large input; each older bounded range
+// reports one more input token, so the exact collection total is large + extras.
+function multiRangeReply(
+  request: GetUsageSummaryRequest,
+  firstInput = "9007199254740993",
+) {
+  const bounded = request.untilUnixMs !== 0n;
+  return summary(
+    bounded
+      ? { fromUnixMs: request.fromUnixMs, untilUnixMs: request.untilUnixMs }
+      : undefined,
+    bounded ? "1" : firstInput,
+    "0",
+  );
+}
+const rangeEvidence = () => screen.queryAllByText(/^In .*compactions without/);
+
+it("keeps the exact prior multi-range totals and evidence when a newer generation read fails, then replaces them atomically on retry", async () => {
+  const id = newRequestId();
+  let failing = false;
+  let firstInput = "9007199254740993";
+  const read = vi.fn(async (request: GetUsageSummaryRequest) => {
+    if (failing) throw new Error("fixture generation read unavailable");
+    return multiRangeReply(request, firstInput);
+  });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const transport = createRouterTransport((router) =>
+    router.service(UsageService, { getUsageSummary: read }),
+  );
+  const target = document.createElement("div");
+  document.body.append(target);
+  const view = (resource: ReturnType<typeof generationSession>) => (
+    <TransportProvider transport={transport}>
+      <QueryClientProvider client={client}>
+        <SessionLifetimeUsage session={resource} diagnosticsTarget={target} />
+      </QueryClientProvider>
+    </TransportProvider>
+  );
+  const mounted = render(view(generationSession(id, 1n, "response-1")));
+  await waitFor(() => expect(rangeEvidence().length).toBeGreaterThan(1));
+  const ranges = rangeEvidence().map((node) => node.textContent);
+  const exactTotal = (9007199254740993n + BigInt(ranges.length - 1)).toString();
+  const formatted = BigInt(exactTotal).toLocaleString("en");
+  expect(screen.getByText(formatted)).toBeTruthy();
+  const calls = read.mock.calls.length;
+
+  failing = true;
+  mounted.rerender(view(generationSession(id, 2n, "response-2")));
+  await waitFor(() => expect(read.mock.calls.length).toBeGreaterThan(calls));
+  await screen.findByText(/Previous complete usage is stale/);
+  expect(screen.getByText(formatted)).toBeTruthy();
+  expect(screen.getByRole("status").textContent).toMatch(/stale/);
+  expect(screen.getByRole("button", { name: "Retry read" })).toBeTruthy();
+  expect(rangeEvidence().map((node) => node.textContent)).toEqual(ranges);
+
+  failing = false;
+  firstInput = "5";
+  fireEvent.click(screen.getByRole("button", { name: "Retry read" }));
+  const replaced = (5n + BigInt(ranges.length - 1)).toLocaleString("en");
+  await screen.findByText(replaced);
+  expect(screen.queryByText(formatted)).toBeNull();
+  expect(screen.queryByText(/Previous complete usage is stale/)).toBeNull();
+  expect(rangeEvidence()).toHaveLength(ranges.length);
+  target.remove();
+});
+
+it("does not let a delayed older generation replace newer generation evidence", async () => {
+  const id = newRequestId();
+  let release!: () => void;
+  const read = vi.fn(async (request: GetUsageSummaryRequest) => {
+    const first = request.untilUnixMs === 0n;
+    if (first && read.mock.calls.length === 1)
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    return multiRangeReply(
+      request,
+      read.mock.calls.length === 1 ? "111" : "222",
+    );
+  });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const transport = createRouterTransport((router) =>
+    router.service(UsageService, { getUsageSummary: read }),
+  );
+  const view = (resource: ReturnType<typeof generationSession>) => (
+    <TransportProvider transport={transport}>
+      <QueryClientProvider client={client}>
+        <SessionLifetimeUsage session={resource} diagnosticsTarget={null} />
+      </QueryClientProvider>
+    </TransportProvider>
+  );
+  const mounted = render(view(generationSession(id, 1n, "response-1")));
+  await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+  mounted.rerender(view(generationSession(id, 2n, "response-2")));
+  await waitFor(() =>
+    expect(screen.getAllByText(/^22\d$/).length).toBeGreaterThan(0),
+  );
+  const shown = document.body.textContent;
+  await act(async () => {
+    release();
+  });
+  expect(document.body.textContent).toBe(shown);
+  expect(screen.queryByText("111")).toBeNull();
+});
+
+it.each([
+  [
+    "session id",
+    (id: string) => generationSession(newRequestId(), 1n, "response-1"),
+  ],
+  [
+    "creation time",
+    (id: string) =>
+      generationSession(id, 1n, "response-1", "2024-09-01T00:00:00Z"),
+  ],
+])("clears retained totals when the %s changes", async (_name, replace) => {
+  const id = newRequestId();
+  let failing = false;
+  const read = vi.fn(async (request: GetUsageSummaryRequest) => {
+    if (failing) throw new Error("fixture owner read unavailable");
+    return multiRangeReply(request);
+  });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const transport = createRouterTransport((router) =>
+    router.service(UsageService, { getUsageSummary: read }),
+  );
+  const view = (resource: ReturnType<typeof generationSession>) => (
+    <TransportProvider transport={transport}>
+      <QueryClientProvider client={client}>
+        <SessionLifetimeUsage session={resource} diagnosticsTarget={null} />
+      </QueryClientProvider>
+    </TransportProvider>
+  );
+  const mounted = render(view(generationSession(id, 1n, "response-1")));
+  await waitFor(() => expect(rangeEvidence().length).toBe(0));
+  await screen.findByText(/^9,007,199,254,740,99\d$/);
+  failing = true;
+  mounted.rerender(view(replace(id)));
+  await screen.findByText(/could not be read completely/);
+  expect(screen.queryByText(/^9,007,199,254,740,99\d$/)).toBeNull();
+  expect(screen.queryByText(/Previous complete usage is stale/)).toBeNull();
+});
+
+it("clears retained totals when the authenticated transport owner changes", async () => {
+  const session = generationSession(newRequestId(), 1n, "response-1");
+  let failing = false;
+  const read = vi.fn(async (request: GetUsageSummaryRequest) => {
+    if (failing) throw new Error("fixture reconnect unavailable");
+    return multiRangeReply(request);
+  });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const make = () =>
+    createRouterTransport((router) =>
+      router.service(UsageService, { getUsageSummary: read }),
+    );
+  const view = (transport: ReturnType<typeof make>) => (
+    <TransportProvider transport={transport}>
+      <QueryClientProvider client={client}>
+        <SessionLifetimeUsage session={session} diagnosticsTarget={null} />
+      </QueryClientProvider>
+    </TransportProvider>
+  );
+  const mounted = render(view(make()));
+  await screen.findByText(/^9,007,199,254,740,99\d$/);
+  failing = true;
+  mounted.rerender(view(make()));
+  await screen.findByText(/could not be read completely/);
+  expect(screen.queryByText(/^9,007,199,254,740,99\d$/)).toBeNull();
+  expect(screen.queryByText(/Previous complete usage is stale/)).toBeNull();
+});
+
+it("clears retained totals when the creation time changes below millisecond precision", async () => {
+  const id = newRequestId();
+  let failing = false;
+  const read = vi.fn(async (request: GetUsageSummaryRequest) => {
+    if (failing) throw new Error("fixture changed creation unavailable");
+    return multiRangeReply(request);
+  });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const transport = createRouterTransport((router) =>
+    router.service(UsageService, { getUsageSummary: read }),
+  );
+  const view = (createdAt: string) => (
+    <TransportProvider transport={transport}>
+      <QueryClientProvider client={client}>
+        <SessionLifetimeUsage
+          session={generationSession(id, 1n, "response-1", createdAt)}
+          diagnosticsTarget={null}
+        />
+      </QueryClientProvider>
+    </TransportProvider>
+  );
+  const first = "2024-10-01T00:00:00.000000001Z";
+  const second = "2024-10-01T00:00:00.000000002Z";
+  expect(sessionCreatedAt(generationSession(id, 1n, "r", first))).toBe(
+    sessionCreatedAt(generationSession(id, 1n, "r", second)),
+  );
+  const mounted = render(view(first));
+  await screen.findByText(/^9,007,199,254,740,99\d$/);
+  failing = true;
+  mounted.rerender(view(second));
+  await screen.findByText(/could not be read completely/);
+  expect(screen.queryByText(/^9,007,199,254,740,99\d$/)).toBeNull();
+  expect(screen.queryByText(/Previous complete usage is stale/)).toBeNull();
+});
+
+it("shows unavailable totals and the read-failed text when the first read fails", async () => {
+  const read = vi.fn(async () => {
+    throw new Error("fixture first read unavailable");
+  });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const transport = createRouterTransport((router) =>
+    router.service(UsageService, { getUsageSummary: read }),
+  );
+  render(
+    <TransportProvider transport={transport}>
+      <QueryClientProvider client={client}>
+        <SessionLifetimeUsage
+          session={generationSession(newRequestId(), 1n, "response-1")}
+          diagnosticsTarget={null}
+        />
+      </QueryClientProvider>
+    </TransportProvider>,
+  );
+  await screen.findByText(/could not be read completely/);
+  expect(screen.getAllByText("Unavailable")).toHaveLength(2);
+  expect(screen.queryByText(/Previous complete usage is stale/)).toBeNull();
 });

@@ -6,6 +6,10 @@ import {
   type Resource,
 } from "@delinoio/delidev-api-client";
 import { document, items, object } from "./documents";
+import {
+  claudeVersionAllowed,
+  validInstallationVersion,
+} from "./harness-version";
 
 /** Closed presentation evidence only. It never grants execution authority. */
 export type RunnerExclusion =
@@ -24,6 +28,43 @@ export type RunnerExclusion =
 export interface RunnerObservation {
   cause?: RunnerExclusion;
   detectedVersion?: string;
+}
+/**
+ * Closed remedy taxonomy for an OpenCode installation problem. It is derived
+ * once from the installation observation and selects the localized guidance.
+ * Only `BelowBaseline` is fixed by updating OpenCode.
+ */
+export enum OpenCodeInstallationCause {
+  /** A detected version under the minimum; the observation carries it. */
+  BelowBaseline = "below-baseline",
+  /**
+   * Discovery reported `incompatible` without a detected version: a relative
+   * explicit path, a non-regular or unrunnable executable, a Windows shell
+   * wrapper or an unparseable version response. Updating cannot fix the path.
+   */
+  InvalidInstallation = "invalid-installation",
+  /** An admitted or newer version whose native protocol profile mismatched. */
+  ProtocolProfileMismatch = "protocol-profile-mismatch",
+  /** Every other exclusion keeps the shared guidance. */
+  Other = "other",
+}
+export function openCodeInstallationCause(
+  cause: RunnerExclusion,
+  detectedVersion: string | undefined,
+): OpenCodeInstallationCause {
+  switch (cause) {
+    case "version":
+      // `installationObservation` attaches `detectedVersion` to a version
+      // cause only when the version predicate rejected a detected version.
+      return detectedVersion === undefined
+        ? OpenCodeInstallationCause.InvalidInstallation
+        : OpenCodeInstallationCause.BelowBaseline;
+    case "protocolUnsupported":
+      // The version predicate runs first, so this is an admitted version.
+      return OpenCodeInstallationCause.ProtocolProfileMismatch;
+    default:
+      return OpenCodeInstallationCause.Other;
+  }
 }
 export function validRunnerObservation(
   resource?: Resource,
@@ -60,12 +101,7 @@ export function validRunnerObservation(
         ))),
   );
 }
-const version = (value: unknown): value is string =>
-  typeof value === "string" &&
-  value.length <= 256 &&
-  /^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]{1,64})?(?:\+[a-zA-Z0-9.-]{1,64})?$/.test(
-    value,
-  );
+const version = validInstallationVersion;
 export function claudeRunnerObservation(
   resource?: Resource,
 ): RunnerObservation {
@@ -85,11 +121,11 @@ export function claudeRunnerObservation(
     .filter((row) => row.harness === "claude-code");
   if (!installations.length) return { cause: "missing" };
   if (installations.length !== 1) return { cause: "duplicate" };
-  return installationObservation(installations[0], "2.1.236");
+  return installationObservation(installations[0], claudeVersionAllowed);
 }
 export function installationObservation(
   installation: Record<string, unknown>,
-  requiredVersion?: string,
+  versionAllowed?: (detectedVersion: string) => boolean,
 ): RunnerObservation {
   switch (installation.state) {
     case "missing":
@@ -109,7 +145,7 @@ export function installationObservation(
   }
   if (!version(installation.version)) return { cause: "unavailable" };
   const detectedVersion = installation.version;
-  if (requiredVersion && detectedVersion !== requiredVersion)
+  if (versionAllowed && !versionAllowed(detectedVersion))
     return { cause: "version", detectedVersion };
   if (installation.problem) return { cause: "unavailable", detectedVersion };
   const protocol = object(installation.protocol);

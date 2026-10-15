@@ -30,7 +30,8 @@ func (s *Service) isClaudeSubscription(ctx context.Context, id string) (bool, er
 }
 func claudeSubscriptionAccount(tx *store.Tx, id domain.ID, revision uint64) (store.Record, domain.Account, error) {
 	r, a, err := accountFromTx(tx, id, revision)
-	if err == nil && (a.Type != domain.SubscriptionAccount || a.SubscriptionService != domain.SubscriptionClaude || a.ProviderID != "") {
+	// Device-owned lifecycle never adopts a server-token account.
+	if err == nil && (a.Type != domain.SubscriptionAccount || a.SubscriptionService != domain.SubscriptionClaude || a.ProviderID != "" || a.Subscription != nil && a.Subscription.ManagedClaude()) {
 		err = subscriptionDenied()
 	}
 	return r, a, err
@@ -62,8 +63,8 @@ func claudeSubscriptionInstallation(tx *store.Tx, machine domain.ID) (domain.Ins
 			found = &m.Installations[i]
 		}
 	}
-	if found == nil || found.Version != domain.ClaudeProtocolVersion || found.State != domain.InstallationDetected || !found.ProtocolVerified || found.Protocol == nil || found.Protocol.Protocol != domain.ProtocolFor(domain.ClaudeCode) || found.Protocol.State != domain.ProtocolVerified || found.Protocol.Problem != nil || found.Problem != nil || found.ResolvedPath == "" || found.ObservedAt == nil || found.ObservedAt.IsZero() || found.ObservedAt.After(time.Now().UTC().Add(time.Second)) {
-		return domain.Installation{}, domain.Fail(domain.Unsupported, "Claude subscription authentication requires verified Claude Code 2.1.236.", "Discover the original installed CLI on the selected Runner Device.")
+	if found == nil || !domain.HarnessVersionAllowed(domain.ClaudeCode, found.Version) || found.State != domain.InstallationDetected || !found.ProtocolVerified || found.Protocol == nil || found.Protocol.Protocol != domain.ProtocolFor(domain.ClaudeCode) || found.Protocol.State != domain.ProtocolVerified || found.Protocol.Problem != nil || found.Problem != nil || found.ResolvedPath == "" || found.ObservedAt == nil || found.ObservedAt.IsZero() || found.ObservedAt.After(time.Now().UTC().Add(time.Second)) {
+		return domain.Installation{}, domain.Fail(domain.Unsupported, "Claude subscription authentication requires a verified, supported Claude Code installation.", "Discover the original installed CLI on the selected Runner Device and update it if the discovered version is below the supported baseline.")
 	}
 	return *found, nil
 }
@@ -84,61 +85,24 @@ func (s *Service) requestClaudeSubscription(ctx context.Context, req *connect.Re
 	action := subscriptionAction(req.Msg.Action)
 	machine := domain.ID(req.Msg.MachineId)
 	if machine.Validate() != nil || req.Msg.DeviceCode || action != domain.SubscriptionLogin && action != domain.SubscriptionRefresh && action != domain.SubscriptionLogout {
-		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "Select a Runner Device for Claude login, reauthentication or logout.", "Claude Console/API login and device authentication are not supported."), c)
+		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "Select the original Runner Device to log out a device-owned Claude account.", "Claude sign-in is server-owned. Claude Console/API login and device authentication are not supported."), c)
 	}
-	input := struct {
-		Account, Machine domain.ID
-		Revision         uint64
-		Action           domain.SubscriptionAction
-		Actor            domain.Principal
-	}{domain.ID(m.Id), machine, m.ExpectedRevision, action, actor}
+	input := claudeLifecycleInput{domain.ID(m.Id), machine, m.ExpectedRevision, action, actor}
 	unlock, err := s.lockAccounts(ctx)
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
 	defer unlock()
-	result, err := s.Store.Mutate(ctx, domain.ID(m.RequestId), "claude.subscription.request", input, func(tx *store.Tx) (any, error) {
-		r, a, err := claudeSubscriptionAccount(tx, input.Account, input.Revision)
-		if err != nil {
-			return nil, err
+	requestID := domain.ID(m.RequestId)
+	result, err := s.Store.Mutate(ctx, requestID, claudeLifecycleOperation, input, func(tx *store.Tx) (any, error) {
+		// Fresh machine-bound sign-in is retired. The rejection runs inside the
+		// Mutate closure, after the receipt check, so a request accepted before
+		// the retirement still replays through its original receipt.
+		if action == domain.SubscriptionLogin || action == domain.SubscriptionRefresh {
+			s.logger.WarnContext(ctx, "claude_runner_signin_rejected", "operation_id", m.RequestId, "account_id", m.Id, "machine_id", machine, "action", action, "code", domain.Unsupported)
+			return nil, claudeRunnerSignInRetired()
 		}
-		if err := subscriptionActorValid(tx, actor); err != nil {
-			return nil, err
-		}
-		if _, err := claudeSubscriptionInstallation(tx, machine); err != nil {
-			return nil, err
-		}
-		if a.Subscription == nil {
-			a.Subscription = &domain.SubscriptionState{}
-		}
-		st := a.Subscription
-		if st.OwnerMachineID != "" && st.OwnerMachineID != machine {
-			return nil, domain.Fail(domain.Unsupported, "This Claude account belongs to another Runner Device.", "Select its original Runner Device; authentication cannot move between devices.")
-		}
-		if st.Pending != nil || st.RecoveryRequired || a.Removal != nil || st.Lease != nil && action != domain.SubscriptionLogout {
-			return nil, subscriptionDenied()
-		}
-		if action == domain.SubscriptionLogin {
-			if a.Connection != nil || st.Generation != "" || st.NativeProfileID != "" {
-				return nil, subscriptionDenied()
-			}
-			st.NativeProfileID = domain.NewID()
-			st.OwnerMachineID = machine
-		} else if st.NativeProfileID == "" || st.Generation == "" || a.Connection == nil {
-			return nil, subscriptionDenied()
-		}
-		now := time.Now().UTC()
-		id := domain.ID(m.RequestId)
-		st.NativeOperation = &domain.NativeSubscriptionOperation{ID: id, Actor: actor, MachineID: machine, Epoch: s.subscriptionServerEpoch(), Action: action, State: domain.SubscriptionPreparing, StartedAt: now, ExpiresAt: now.Add(15 * time.Minute)}
-		st.Pending = &domain.SubscriptionOperation{ID: id, Action: action, MachineID: machine, Actor: actor, Phase: domain.SubscriptionQueued}
-		if action == domain.SubscriptionLogout {
-			a.Health = domain.AccountRevoked
-			if err := cancelAccountExecutions(tx, r.ID); err != nil {
-				return nil, err
-			}
-		}
-		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
-		return accountReceipt{ID: r.ID}, err
+		return s.admitClaudeLifecycle(tx, input, requestID)
 	})
 	if err != nil {
 		return nil, rpc.Error(err, c)
@@ -149,6 +113,113 @@ func (s *Service) requestClaudeSubscription(ctx context.Context, req *connect.Re
 	}
 	s.logger.InfoContext(ctx, "claude_subscription_operation_accepted", "operation_id", m.RequestId, "machine_id", machine, "action", action, "replayed", result.Replayed)
 	return connect.NewResponse(&pb.RequestSubscriptionResponse{Account: rpc.Resource(r), OperationId: m.RequestId, Replayed: result.Replayed}), nil
+}
+
+// claudeLifecycleOperation is the receipt operation name of a Claude lifecycle
+// request. Admission and replay share it so a retained receipt stays valid.
+const claudeLifecycleOperation = "claude.subscription.request"
+
+// claudeLifecycleInput is the receipt-bound input of a Claude lifecycle request.
+type claudeLifecycleInput struct {
+	Account, Machine domain.ID
+	Revision         uint64
+	Action           domain.SubscriptionAction
+	Actor            domain.Principal
+}
+
+// claudeRunnerSignInRetired is returned for fresh machine-bound Claude login and
+// reauthentication. Claude sign-in is server-owned; only logout of an existing
+// device-owned account still admits a Runner-bound request.
+func claudeRunnerSignInRetired() error {
+	return domain.Fail(domain.Unsupported, "Claude sign-in on a Runner Device is no longer supported.", "Connect a new Claude account from this server instead. Existing device-owned accounts can still run work and log out.")
+}
+
+// admitClaudeLifecycle applies one machine-bound Claude lifecycle admission
+// inside an open transaction. Production reaches it for logout only; LOGIN and
+// REFRESH admission is retained so tests can seed a state that an earlier
+// release accepted.
+func (s *Service) admitClaudeLifecycle(tx *store.Tx, input claudeLifecycleInput, requestID domain.ID) (any, error) {
+	r, a, err := claudeSubscriptionAccount(tx, input.Account, input.Revision)
+	if err != nil {
+		return nil, err
+	}
+	if err := subscriptionActorValid(tx, input.Actor); err != nil {
+		return nil, err
+	}
+	if _, err := claudeSubscriptionInstallation(tx, input.Machine); err != nil {
+		return nil, err
+	}
+	if a.Subscription == nil {
+		a.Subscription = &domain.SubscriptionState{}
+	}
+	st := a.Subscription
+	// An abandoned queued operation must never block a new request forever.
+	expireStaleQueuedClaudeOperation(st, time.Now().UTC())
+	if st.OwnerMachineID != "" && st.OwnerMachineID != input.Machine {
+		return nil, domain.Fail(domain.Unsupported, "This Claude account belongs to another Runner Device.", "Select its original Runner Device; authentication cannot move between devices.")
+	}
+	// A live shared Execute owner does not block a Refresh: the queued
+	// operation closes admission (the join branch of Take requires no Pending)
+	// and its lifecycle Take stays contended until the last runnable member
+	// retires the owner. Every other lease holder keeps the request exclusive.
+	refreshBehindSharedOwner := input.Action == domain.SubscriptionRefresh && st.SharedOwner() && st.Lease.Action == domain.SubscriptionExecute
+	if st.Pending != nil || st.RecoveryRequired || a.Removal != nil || st.Lease != nil && input.Action != domain.SubscriptionLogout && !refreshBehindSharedOwner {
+		return nil, subscriptionDenied()
+	}
+	if input.Action == domain.SubscriptionLogin {
+		if a.Connection != nil || st.Generation != "" || st.NativeProfileID != "" {
+			return nil, subscriptionDenied()
+		}
+		st.NativeProfileID = domain.NewID()
+		st.OwnerMachineID = input.Machine
+	} else if st.NativeProfileID == "" || st.Generation == "" || a.Connection == nil {
+		return nil, subscriptionDenied()
+	}
+	now := time.Now().UTC()
+	id := requestID
+	st.NativeOperation = &domain.NativeSubscriptionOperation{ID: id, Actor: input.Actor, MachineID: input.Machine, Epoch: s.subscriptionServerEpoch(), Action: input.Action, State: domain.SubscriptionPreparing, StartedAt: now, ExpiresAt: now.Add(claudeOperationWindow)}
+	st.Pending = &domain.SubscriptionOperation{ID: id, Action: input.Action, MachineID: input.Machine, Actor: input.Actor, Phase: domain.SubscriptionQueued, QueuedBehindLease: st.Lease != nil}
+	if input.Action == domain.SubscriptionLogout {
+		a.Health = domain.AccountRevoked
+		if err := cancelAccountExecutions(tx, r.ID); err != nil {
+			return nil, err
+		}
+	}
+	_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+	return accountReceipt{ID: r.ID}, err
+}
+
+// claudeOperationWindow is how long a claimed lifecycle operation may run.
+const claudeOperationWindow = 15 * time.Minute
+
+// claudeQueuedWindowDeferred reports whether the pending lifecycle operation is
+// still queued behind a lease (or is a logout, which must always run) and so has
+// not started its window. Such an operation never expires while it waits.
+func claudeQueuedWindowDeferred(st *domain.SubscriptionState) bool {
+	return st != nil && st.Pending != nil && st.Pending.Phase == domain.SubscriptionQueued && (st.Pending.QueuedBehindLease || st.Pending.Action == domain.SubscriptionLogout)
+}
+
+// expireStaleQueuedClaudeOperation retires a queued login or reauthentication
+// whose window elapsed before any Worker claimed it. A Take rejects an expired
+// operation, so leaving it pending would block every later admission until a
+// user canceled it. The retirement mirrors a queued cancellation. It reports
+// whether it changed the state; the caller persists it with its own write.
+func expireStaleQueuedClaudeOperation(st *domain.SubscriptionState, now time.Time) bool {
+	op, o := st.Pending, st.NativeOperation
+	if op == nil || o == nil || o.ID != op.ID || op.Phase != domain.SubscriptionQueued || claudeQueuedWindowDeferred(st) || o.ExpiresAt.After(now) {
+		return false
+	}
+	if op.Action != domain.SubscriptionLogin && op.Action != domain.SubscriptionRefresh {
+		return false
+	}
+	o.State = domain.SubscriptionExpired
+	st.Pending = nil
+	if st.Generation == "" {
+		st.NativeProfileID = ""
+		st.OwnerMachineID = ""
+		st.RecoveryRequired = false
+	}
+	return true
 }
 func (s *Service) cancelClaudeSubscription(ctx context.Context, req *connect.Request[pb.CancelSubscriptionRequest]) (*connect.Response[pb.CancelSubscriptionResponse], error) {
 	c := req.Header().Get(rpc.CorrelationHeader)
@@ -231,7 +302,7 @@ func (s *Service) getClaudeSubscriptionProgress(ctx context.Context, req *connec
 		if st.RecoveryRequired || o.Epoch != s.subscriptionServerEpoch() && (state == domain.SubscriptionPreparing || state == domain.SubscriptionWaiting) {
 			state = domain.SubscriptionRecovery
 		}
-		if !o.ExpiresAt.After(time.Now().UTC()) && (state == domain.SubscriptionPreparing || state == domain.SubscriptionWaiting) {
+		if !o.ExpiresAt.After(time.Now().UTC()) && (state == domain.SubscriptionPreparing || state == domain.SubscriptionWaiting) && !claudeQueuedWindowDeferred(st) {
 			state = domain.SubscriptionExpired
 		}
 		response.State = loginState(state)
@@ -264,27 +335,60 @@ func wireNativeSubscriptionDiagnostic(d *domain.NativeSubscriptionDiagnostic) *p
 	}
 	return &pb.NativeSubscriptionDiagnostic{DetectedVersion: d.DetectedVersion, RequiredVersion: d.RequiredVersion, Phase: pb.NativeSubscriptionDiagnosticPhase(d.Phase), Code: string(d.Code), CorrelationId: string(d.CorrelationID)}
 }
+
+// claudeLifecycleLeaseHeld proves that the stored lease is the claimed
+// lifecycle lease of the pending operation. A Refresh may now queue behind a
+// live shared Execute owner; that owner's identifier must never read, advance or
+// consume the queued operation's native progress or login code.
+func claudeLifecycleLeaseHeld(st *domain.SubscriptionState) bool {
+	return st.Lease != nil && st.Pending != nil && !st.Lease.Shared && st.Lease.OperationID == st.Pending.ID && st.Lease.Action == st.Pending.Action
+}
 func (s *Service) claudeSubscriptionLease(ctx context.Context, tx *store.Tx, id, lease, machine, instance domain.ID) (store.Record, domain.Account, error) {
+	r, a, _, _, err := s.claudeSubscriptionLeaseView(ctx, tx, id, lease, machine, instance, false)
+	if err == nil && a.Subscription.Lease.ID != lease {
+		return r, a, subscriptionDenied()
+	}
+	return r, a, err
+}
+
+// claudeSubscriptionLeaseView is the device-owned Claude counterpart of
+// subscriptionLeaseView: the owner bindings are checked against the stored
+// owner lease, and a member scope resolves exactly one execution member.
+func (s *Service) claudeSubscriptionLeaseView(ctx context.Context, tx *store.Tx, id, lease, machine, instance domain.ID, memberScope bool) (store.Record, domain.Account, domain.SubscriptionLease, *domain.SubscriptionMember, error) {
 	r, a, err := claudeSubscriptionAccount(tx, id, 0)
 	if err != nil {
-		return r, a, err
+		return r, a, domain.SubscriptionLease{}, nil, err
 	}
 	st := a.Subscription
 	actor, _ := domain.PrincipalFrom(ctx)
 	if st == nil || st.Lease == nil || st.NativeProfileID == "" || st.OwnerMachineID != machine {
-		return r, a, subscriptionDenied()
+		return r, a, domain.SubscriptionLease{}, nil, subscriptionDenied()
 	}
 	l := st.Lease
-	if actor.Type != domain.WorkerDevice || actor.DeviceID != l.DeviceID || actor.MachineID != machine || l.ID != lease || l.MachineID != machine || l.InstanceID != instance || l.Epoch != s.subscriptionServerEpoch() {
-		return r, a, subscriptionDenied()
+	if actor.Type != domain.WorkerDevice || actor.DeviceID != l.DeviceID || actor.MachineID != machine || l.MachineID != machine || l.InstanceID != instance || l.Epoch != s.subscriptionServerEpoch() {
+		return r, a, domain.SubscriptionLease{}, nil, subscriptionDenied()
+	}
+	var view domain.SubscriptionLease
+	var member *domain.SubscriptionMember
+	var ok bool
+	if memberScope {
+		view, member, ok = st.MemberLease(lease)
+	} else {
+		view, ok = st.OwnerLeaseFor(lease)
+		if m, found := st.Member(lease); found && l.Shared {
+			member = &m
+		}
+	}
+	if !ok {
+		return r, a, domain.SubscriptionLease{}, nil, subscriptionDenied()
 	}
 	if err := currentInstance(tx, machine, instance); err != nil {
-		return r, a, err
+		return r, a, view, member, err
 	}
 	if _, err := claudeSubscriptionInstallation(tx, machine); err != nil {
-		return r, a, err
+		return r, a, view, member, err
 	}
-	return r, a, nil
+	return r, a, view, member, nil
 }
 func (s *Service) takeClaudeSubscription(ctx context.Context, req *connect.Request[pb.TakeSubscriptionRequest]) (response *connect.Response[pb.TakeSubscriptionResponse], returned error) {
 	c := req.Header().Get(rpc.CorrelationHeader)
@@ -315,7 +419,12 @@ func (s *Service) takeClaudeSubscription(ctx context.Context, req *connect.Reque
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
+	// sharedOwner founds a device-owned Claude account owner and joinedOwner
+	// admits one more execution member. Both require the negotiated
+	// ClaudeDeviceOwnedMembersV1 capability; every other holder stays exclusive.
+	sharedOwner, joinedOwner := false, false
 	result, err := s.Store.Mutate(ctx, input.Lease, "claude.subscription.take", input, func(tx *store.Tx) (any, error) {
+		sharedOwner, joinedOwner = false, false
 		r, a, err := claudeSubscriptionAccount(tx, input.Account, 0)
 		if err != nil {
 			return nil, err
@@ -324,9 +433,30 @@ func (s *Service) takeClaudeSubscription(ctx context.Context, req *connect.Reque
 		if st == nil || st.RecoveryRequired {
 			return nil, subscriptionDenied()
 		}
+		if action == domain.SubscriptionExecute {
+			// A queued operation whose window elapsed can never be claimed. It must
+			// not keep blocking admission until a user cancels it.
+			expireStaleQueuedClaudeOperation(st, time.Now().UTC())
+		}
 
-		if st.Lease != nil {
-			return nil, domain.Fail(domain.ResourceExhausted, "This Claude account is exclusively owned by another operation.", "Wait for that original operation and cleanup on this Runner Device.")
+		accountBusy := func() error {
+			if st.Lease != nil {
+				return domain.Fail(domain.ResourceExhausted, "This Claude account is exclusively owned by another operation.", "Wait for that original operation and cleanup on this Runner Device.")
+			}
+			return nil
+		}
+		// Execution keeps contention first. A fresh lifecycle Take classifies its
+		// queued original after the Worker fences and before contention below.
+		sharedCapable := false
+		if action == domain.SubscriptionExecute {
+			if _, machine, machineErr := activeMachine(tx, input.Machine); machineErr == nil {
+				sharedCapable = slices.Contains(machine.WorkerCapabilities, domain.ClaudeDeviceOwnedMembersV1)
+			}
+			if !(sharedCapable && st.SharedOwner()) {
+				if err := accountBusy(); err != nil {
+					return nil, err
+				}
+			}
 		}
 		if err := currentInstance(tx, input.Machine, input.Instance); err != nil {
 			return nil, err
@@ -334,26 +464,43 @@ func (s *Service) takeClaudeSubscription(ctx context.Context, req *connect.Reque
 		if _, err := claudeSubscriptionInstallation(tx, input.Machine); err != nil {
 			return nil, err
 		}
-		if action != domain.SubscriptionExecute {
+		profileOwned := st.NativeProfileID != "" && st.OwnerMachineID == input.Machine
+		if action == domain.SubscriptionExecute {
+			if !profileOwned {
+				return nil, subscriptionDenied()
+			}
+		} else {
 			if err := tx.WorkerUpdateAdmission(input.Machine); err != nil {
 				return nil, err
 			}
 			op := st.Pending
-			if input.Revision > r.Revision || op != nil && (op.Phase != domain.SubscriptionQueued || op.Action != action) {
+			if input.Revision > r.Revision {
 				return nil, subscriptionDenied()
 			}
-			// A queued replacement owns its own profile and selected machine.
-			// Retire only this stale claim after the original Worker fences; never
-			// inspect or adopt the replacement's profile as this claim's authority.
+			// A queued replacement owns its own profile, selected machine, action and
+			// phase. Retire only this stale claim after the original Worker fences;
+			// never inspect or adopt the replacement as this claim's authority.
 			if op != nil && op.ID != input.Operation {
 				return nil, subscriptionTakeNotAdmitted()
 			}
-		}
-		if st.NativeProfileID == "" || st.OwnerMachineID != input.Machine {
 			// Queued initial login cancellation retires its unused profile owner.
 			// Only the retained original canceled operation proves no native grant.
 			o := st.NativeOperation
-			if action == domain.SubscriptionExecute || st.Pending != nil || o == nil || o.ID != input.Operation || o.Action != action || o.MachineID != input.Machine || o.State != domain.SubscriptionCanceled {
+			var original bool
+			if op == nil {
+				original = profileOwned || o != nil && o.ID == input.Operation && o.Action == action && o.MachineID == input.Machine && o.State == domain.SubscriptionCanceled
+			} else {
+				original = op.Phase == domain.SubscriptionQueued && op.Action == action && op.MachineID == input.Machine && profileOwned
+			}
+			if original && (op == nil || op.Canceled) {
+				return nil, subscriptionTakeNotAdmitted()
+			}
+			// A matching claim that fails its original fields keeps the existing
+			// contention-first outcome and never carries the no-grant proof.
+			if err := accountBusy(); err != nil {
+				return nil, err
+			}
+			if !original {
 				return nil, subscriptionDenied()
 			}
 		}
@@ -373,14 +520,23 @@ func (s *Service) takeClaudeSubscription(ctx context.Context, req *connect.Reque
 			if canceled, err := tx.JobCancellationRequested(jr.ID); err != nil || canceled {
 				return nil, subscriptionDenied()
 			}
+			if sharedCapable {
+				if st.Lease == nil {
+					sharedOwner = true
+				} else if err := s.sharedMemberAdmissible(st, input.Machine, input.Instance, actor.DeviceID, input.Operation); err != nil {
+					return nil, err
+				} else {
+					joinedOwner = true
+				}
+			}
 		} else {
 			op := st.Pending
 			o := st.NativeOperation
-			if op != nil && op.MachineID != input.Machine {
-				return nil, subscriptionDenied()
-			}
-			if op == nil || op.ID != input.Operation || op.Canceled {
-				return nil, subscriptionTakeNotAdmitted()
+			if o != nil && op != nil && o.ID == op.ID && op.ID == input.Operation && claudeQueuedWindowDeferred(st) && o.State == domain.SubscriptionPreparing {
+				// The operation waited behind a live lease. Its window starts at this
+				// claim, so the wait cannot have expired it.
+				claimed := time.Now().UTC()
+				o.StartedAt, o.ExpiresAt = claimed, claimed.Add(claudeOperationWindow)
 			}
 			if o == nil || o.Epoch != s.subscriptionServerEpoch() || !o.ExpiresAt.After(time.Now().UTC()) {
 				return nil, subscriptionDenied()
@@ -393,7 +549,15 @@ func (s *Service) takeClaudeSubscription(ctx context.Context, req *connect.Reque
 		if err := tx.WorkerUpdateAdmission(input.Machine); err != nil {
 			return nil, err
 		}
-		st.Lease = &domain.SubscriptionLease{ID: input.Lease, OperationID: input.Operation, Revision: r.Revision + 1, Action: action, MachineID: input.Machine, InstanceID: input.Instance, DeviceID: actor.DeviceID, Epoch: s.subscriptionServerEpoch(), Generation: st.Generation, StartedAt: time.Now().UTC()}
+		now := time.Now().UTC()
+		if joinedOwner {
+			st.AdmitMember(domain.SubscriptionMember{LeaseID: input.Lease, OperationID: input.Operation, Revision: r.Revision + 1, State: domain.SubscriptionMemberRunning, AdmittedAt: now})
+		} else {
+			st.Lease = &domain.SubscriptionLease{ID: input.Lease, OperationID: input.Operation, Revision: r.Revision + 1, Action: action, MachineID: input.Machine, InstanceID: input.Instance, DeviceID: actor.DeviceID, Epoch: s.subscriptionServerEpoch(), Generation: st.Generation, StartedAt: now, Shared: sharedOwner}
+			if sharedOwner {
+				st.Members = []domain.SubscriptionMember{{LeaseID: input.Lease, OperationID: input.Operation, Revision: r.Revision + 1, State: domain.SubscriptionMemberRunning, AdmittedAt: now}}
+			}
+		}
 		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
 		return accountReceipt{ID: r.ID}, err
 	})
@@ -407,22 +571,36 @@ func (s *Service) takeClaudeSubscription(ctx context.Context, req *connect.Reque
 	}
 	owned = true
 	var a domain.Account
+	var view domain.SubscriptionLease
 	var installation domain.Installation
 	err = s.Store.Read(ctx, func(tx *store.Tx) error {
-		_, a, err = s.claudeSubscriptionLease(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance)
+		_, a, view, _, err = s.claudeSubscriptionLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance, joinedOwner)
 		if err == nil {
 			installation, err = claudeSubscriptionInstallation(tx, input.Machine)
 		}
 		return err
 	})
+	if err != nil && joinedOwner {
+		// A joined member owns no native process yet, so a failed admission read
+		// releases only that member and never fences the owner or its siblings.
+		if releaseErr := s.releaseUndeliveredMember(ctx, s.claudeSubscriptionLeaseView, input.Account, input.Lease, input.Machine, input.Instance, "admission-read-failed"); releaseErr == nil {
+			owned = false
+			unlock()
+			return nil, rpc.Error(subscriptionMemberNotAdmitted(domain.Unavailable), c)
+		}
+	}
 	unlock()
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
 	raw, _ := json.Marshal(installation)
 	st := a.Subscription
-	s.logger.InfoContext(ctx, "claude_subscription_lease_granted", "operation_id", input.Operation, "lease_id", input.Lease, "action", action)
-	return connect.NewResponse(&pb.TakeSubscriptionResponse{LeaseId: string(input.Lease), GenerationId: string(st.Generation), LeaseRevision: st.Lease.Revision, InstallationJson: raw, NativeProfileId: string(st.NativeProfileID)}), nil
+	owner := domain.ID("")
+	if joinedOwner {
+		owner = st.Lease.ID
+	}
+	s.logger.InfoContext(ctx, "claude_subscription_lease_granted", "operation_id", input.Operation, "lease_id", input.Lease, "action", action, "shared_owner", sharedOwner, "joined_owner", joinedOwner, "owner_lease_id", owner)
+	return connect.NewResponse(&pb.TakeSubscriptionResponse{LeaseId: string(input.Lease), GenerationId: string(st.Generation), LeaseRevision: view.Revision, InstallationJson: raw, NativeProfileId: string(st.NativeProfileID), OwnerLeaseId: string(owner)}), nil
 }
 func (s *Service) publishClaudeSubscriptionProgress(ctx context.Context, req *connect.Request[pb.PublishSubscriptionProgressRequest]) (*connect.Response[pb.PublishSubscriptionProgressResponse], error) {
 	c := req.Header().Get(rpc.CorrelationHeader)
@@ -456,7 +634,7 @@ func (s *Service) publishClaudeSubscriptionProgress(ctx context.Context, req *co
 		st := a.Subscription
 		op := st.Pending
 		o := st.NativeOperation
-		if st.RecoveryRequired || op == nil || o == nil || op.Action == domain.SubscriptionLogout || !o.ExpiresAt.After(time.Now().UTC()) {
+		if st.RecoveryRequired || op == nil || o == nil || op.Action == domain.SubscriptionLogout || !o.ExpiresAt.After(time.Now().UTC()) || !claudeLifecycleLeaseHeld(st) {
 			return nil, subscriptionDenied()
 		}
 		operation = op.ID
@@ -539,6 +717,11 @@ func (s *Service) SubmitSubscriptionLoginCode(ctx context.Context, req *connect.
 	if err := validateAccountMutation(m); err != nil {
 		return nil, rpc.Error(err, c)
 	}
+	if _, managed, err := s.claudeAccountMode(ctx, m.Id); err != nil {
+		return nil, rpc.Error(err, c)
+	} else if managed {
+		return s.submitManagedClaudeCode(ctx, req)
+	}
 	actor, err := claudeActor(ctx)
 	if err != nil {
 		return nil, rpc.Error(err, c)
@@ -564,7 +747,7 @@ func (s *Service) SubmitSubscriptionLoginCode(ctx context.Context, req *connect.
 			return nil, err
 		}
 		st := a.Subscription
-		if st == nil || st.RecoveryRequired || st.Lease == nil || st.Lease.Epoch != s.subscriptionServerEpoch() || st.Pending == nil || st.Pending.Canceled || st.NativeOperation == nil {
+		if st == nil || st.RecoveryRequired || st.Lease == nil || st.Lease.Epoch != s.subscriptionServerEpoch() || st.Pending == nil || st.Pending.Canceled || st.NativeOperation == nil || !claudeLifecycleLeaseHeld(st) {
 			return nil, subscriptionDenied()
 		}
 		o := st.NativeOperation
@@ -608,7 +791,7 @@ func (s *Service) TakeSubscriptionLoginCode(ctx context.Context, req *connect.Re
 		}
 		st := a.Subscription
 		o := st.NativeOperation
-		if st.RecoveryRequired || st.Pending == nil || st.Pending.Canceled || o == nil || o.ID != operation || o.State != domain.SubscriptionWaiting || o.LoginMethod != domain.SubscriptionBrowserCode || !o.ExpiresAt.After(time.Now().UTC()) || subscriptionActorValid(tx, o.Actor) != nil {
+		if st.RecoveryRequired || st.Pending == nil || st.Pending.Canceled || o == nil || o.ID != operation || o.State != domain.SubscriptionWaiting || o.LoginMethod != domain.SubscriptionBrowserCode || !o.ExpiresAt.After(time.Now().UTC()) || subscriptionActorValid(tx, o.Actor) != nil || !claudeLifecycleLeaseHeld(st) {
 			return nil, subscriptionDenied()
 		}
 		if o.CodeConsumed {
@@ -657,6 +840,10 @@ func (s *Service) finishClaudeSubscription(ctx context.Context, req *connect.Req
 	if len(msg.Bundle) != 0 || msg.RefreshConfirmed {
 		return nil, rpc.Error(subscriptionDenied(), c)
 	}
+	scope, err := subscriptionFinishScope(msg.FinishScope)
+	if err != nil {
+		return nil, rpc.Error(err, c)
+	}
 	profile, identity := domain.ID(""), ""
 	if msg.NativeIdentity != nil {
 		profile = domain.ID(msg.NativeIdentity.ProfileId)
@@ -665,126 +852,29 @@ func (s *Service) finishClaudeSubscription(ctx context.Context, req *connect.Req
 			return nil, rpc.Error(subscriptionDenied(), c)
 		}
 	}
-	input := struct {
-		Account, Lease, Machine, Instance, Generation, Profile domain.ID
-		Identity                                               string
-		Revision                                               uint64
-		Cleanup, Success                                       bool
-	}{domain.ID(m.Id), domain.ID(msg.LeaseId), domain.ID(msg.MachineId), domain.ID(msg.InstanceId), domain.ID(msg.GenerationId), profile, identity, m.ExpectedRevision, msg.CleanupConfirmed, msg.Succeeded}
+	input := claudeFinishInput{domain.ID(m.Id), domain.ID(msg.LeaseId), domain.ID(msg.MachineId), domain.ID(msg.InstanceId), domain.ID(msg.GenerationId), profile, identity, m.ExpectedRevision, msg.CleanupConfirmed, msg.Succeeded, scope}
 	unlock, err := s.lockAccounts(ctx)
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
 	defer unlock()
 	var operation domain.ID
-	result, err := s.Store.Mutate(ctx, domain.ID(m.RequestId), "claude.subscription.finish", input, func(tx *store.Tx) (any, error) {
-		r, a, err := claudeSubscriptionAccount(tx, input.Account, 0)
-		recoveryCleanup := false
-		if err == nil && a.Subscription != nil && a.Subscription.RecoveryRequired && input.Cleanup && !input.Success && input.Profile == "" {
-			st := a.Subscription
-			l := st.Lease
-			actor, _ := domain.PrincipalFrom(ctx)
-			if l == nil || l.ID != input.Lease || l.MachineID != input.Machine || l.InstanceID != input.Instance || actor.DeviceID != l.DeviceID || st.OwnerMachineID != input.Machine || st.NativeProfileID == "" {
-				return nil, subscriptionDenied()
-			}
-			if _, err := claudeSubscriptionInstallation(tx, input.Machine); err != nil {
-				return nil, err
-			}
-			// Only original-device cleanup can cross a restart fence. This never
-			// accepts authentication, execution, code retransmission or a new login.
-			recoveryCleanup = true
-		} else if err == nil {
-			r, a, err = s.claudeSubscriptionLease(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance)
+	var result store.Result
+	if input.Scope == domain.SubscriptionFinishMember {
+		// A member Finish releases or retains exactly one execution member. It
+		// carries no identity, confirms no authentication and never reaches the
+		// owner settlement below.
+		if profile != "" || msg.RefreshConfirmed {
+			return nil, rpc.Error(subscriptionDenied(), c)
 		}
-		if err != nil {
-			return nil, err
-		}
-		st := a.Subscription
-		l := st.Lease
-		if st.RecoveryRequired && !recoveryCleanup || l.Generation != input.Generation || st.Generation != input.Generation || l.Revision != input.Revision {
-			return nil, subscriptionDenied()
-		}
-		operation = l.OperationID
-		if !input.Cleanup {
-			st.RecoveryRequired = true
-			a.Health = domain.AccountFailed
-			if st.NativeOperation != nil && st.NativeOperation.ID == operation {
-				st.NativeOperation.State = domain.SubscriptionRecovery
-			}
-			_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
-			return accountReceipt{ID: r.ID}, err
-		}
-		canceled := st.Pending != nil && st.Pending.ID == operation && st.Pending.Canceled
-		authenticated := profile != "" && profile == st.NativeProfileID && (st.IdentityCommitment == "" || st.IdentityCommitment == identity)
-		if profile != "" && !authenticated {
-			return nil, subscriptionDenied()
-		}
-		if input.Success && l.Action != domain.SubscriptionLogout && !authenticated || l.Action == domain.SubscriptionLogout && profile != "" {
-			return nil, subscriptionDenied()
-		}
-		if authenticated {
-			if err := uniqueSubscriptionIdentity(tx, input.Account, identity); err != nil {
-				return nil, err
-			}
-			if l.Action == domain.SubscriptionLogin || l.Action == domain.SubscriptionRefresh {
-				if canceled || st.NativeOperation == nil || !st.NativeOperation.ExpiresAt.After(time.Now().UTC()) || subscriptionActorValid(tx, st.NativeOperation.Actor) != nil {
-					return nil, subscriptionDenied()
-				}
-				st.Generation = domain.NewID()
-				st.IdentityCommitment = identity
-				if a.Connection == nil {
-					a.Connection = &domain.AccountConnection{ID: domain.ID(m.RequestId), Authentication: domain.SubscriptionAuth, ConnectedAt: time.Now().UTC()}
-				}
-			}
-			if st.Pending == nil || st.Pending.ID == operation {
-				if a.Health != domain.AccountRevoked {
-					a.Health = domain.AccountReady
-				}
-			}
-		} else if l.Action != domain.SubscriptionExecute || recoveryCleanup {
-			// Missing identity is positive joined logout/status evidence from this
-			// original Runner, never a server filesystem or credential-file read.
-			st.Generation = ""
-			st.IdentityCommitment = ""
-			st.NativeProfileID = ""
-			st.OwnerMachineID = ""
-			a.Connection = nil
-			a.Health = domain.AccountDisconnected
-		} else {
-			st.RecoveryRequired = true
-			a.Health = domain.AccountFailed
-			_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
-			return accountReceipt{ID: r.ID}, err
-		}
-		st.Lease = nil
-		st.RecoveryRequired = false
-		if recoveryCleanup && st.Pending != nil && st.Pending.ID != operation {
-			if st.NativeOperation != nil {
-				if st.Pending.Action == domain.SubscriptionLogout {
-					st.NativeOperation.State = domain.SubscriptionSucceeded
-				} else {
-					st.NativeOperation.State = domain.SubscriptionFailed
-				}
-			}
-			st.Pending = nil
-		}
-		if st.Pending != nil && st.Pending.ID == operation {
-			st.Pending = nil
-			if o := st.NativeOperation; o != nil {
-				if canceled {
-					o.State = domain.SubscriptionCanceled
-				} else if input.Success {
-					o.State = domain.SubscriptionSucceeded
-				} else if !o.ExpiresAt.After(time.Now().UTC()) {
-					o.State = domain.SubscriptionExpired
-				} else if o.State == domain.SubscriptionPreparing || o.State == domain.SubscriptionWaiting || o.State == domain.SubscriptionRecovery {
-					o.State = domain.SubscriptionFailed
-				}
-			}
-		}
-		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
-		return accountReceipt{ID: r.ID}, err
-	})
+		result, err = s.Store.Mutate(ctx, domain.ID(m.RequestId), "claude.subscription.finish", input, func(tx *store.Tx) (any, error) {
+			return s.settleSubscriptionMember(ctx, tx, s.claudeSubscriptionLeaseView, input.Account, input.Lease, input.Machine, input.Instance, input.Generation, input.Revision, input.Cleanup, input.Success)
+		})
+	} else {
+		result, err = s.Store.Mutate(ctx, domain.ID(m.RequestId), "claude.subscription.finish", input, func(tx *store.Tx) (any, error) {
+			return s.settleClaudeOwner(ctx, tx, input, domain.ID(m.RequestId), &operation)
+		})
+	}
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
@@ -793,6 +883,132 @@ func (s *Service) finishClaudeSubscription(ctx context.Context, req *connect.Req
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
-	s.logger.InfoContext(ctx, "claude_subscription_operation_finished", "lease_id", input.Lease, "cleanup_confirmed", input.Cleanup, "replayed", result.Replayed)
+	s.logger.InfoContext(ctx, "claude_subscription_operation_finished", "lease_id", input.Lease, "cleanup_confirmed", input.Cleanup, "replayed", result.Replayed, "finish_scope", input.Scope)
 	return connect.NewResponse(&pb.FinishSubscriptionResponse{Account: rpc.Resource(r), Replayed: result.Replayed}), nil
+}
+
+// settleClaudeOwner is the legacy singleton and shared-owner settlement of the
+// device-owned Claude lane. A shared owner arrives here only through the owner
+// scope after its last runnable member.
+func (s *Service) settleClaudeOwner(ctx context.Context, tx *store.Tx, input claudeFinishInput, requestID domain.ID, operationOut *domain.ID) (any, error) {
+	profile, identity := input.Profile, input.Identity
+	r, a, err := claudeSubscriptionAccount(tx, input.Account, 0)
+	recoveryCleanup := false
+	if err == nil && a.Subscription != nil && a.Subscription.RecoveryRequired && input.Cleanup && !input.Success && input.Profile == "" {
+		st := a.Subscription
+		l := st.Lease
+		actor, _ := domain.PrincipalFrom(ctx)
+		if l == nil || l.ID != input.Lease || l.MachineID != input.Machine || l.InstanceID != input.Instance || actor.DeviceID != l.DeviceID || st.OwnerMachineID != input.Machine || st.NativeProfileID == "" {
+			return nil, subscriptionDenied()
+		}
+		if _, err := claudeSubscriptionInstallation(tx, input.Machine); err != nil {
+			return nil, err
+		}
+		// Only original-device cleanup can cross a restart fence. This never
+		// accepts authentication, execution, code retransmission or a new login.
+		// A lost shared owner is cleaned only as one whole owner/member set.
+		if st.SharedOwner() != (input.Scope == domain.SubscriptionFinishOwner) {
+			return nil, subscriptionDenied()
+		}
+		recoveryCleanup = true
+	} else if err == nil {
+		var member *domain.SubscriptionMember
+		r, a, _, member, err = s.claudeSubscriptionLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance, false)
+		if err == nil {
+			if err = ownerFinishAllowed(a.Subscription, input.Scope, member); err != nil {
+				s.logger.WarnContext(ctx, "claude_subscription_owner_finish_refused", "account_id", input.Account, "lease_id", input.Lease, "finish_scope", input.Scope, "runnable_members", a.Subscription.RunnableMembers(), "code", domain.SafeError(err).Code)
+			}
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	st := a.Subscription
+	l := st.Lease
+	if st.RecoveryRequired && !recoveryCleanup || l.Generation != input.Generation || st.Generation != input.Generation || l.Revision != input.Revision {
+		return nil, subscriptionDenied()
+	}
+	operation := l.OperationID
+	*operationOut = operation
+	if !input.Cleanup {
+		st.RecoveryRequired = true
+		a.Health = domain.AccountFailed
+		if st.NativeOperation != nil && st.NativeOperation.ID == operation {
+			st.NativeOperation.State = domain.SubscriptionRecovery
+		}
+		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+		return accountReceipt{ID: r.ID}, err
+	}
+	canceled := st.Pending != nil && st.Pending.ID == operation && st.Pending.Canceled
+	authenticated := profile != "" && profile == st.NativeProfileID && (st.IdentityCommitment == "" || st.IdentityCommitment == identity)
+	if profile != "" && !authenticated {
+		return nil, subscriptionDenied()
+	}
+	if input.Success && l.Action != domain.SubscriptionLogout && !authenticated || l.Action == domain.SubscriptionLogout && profile != "" {
+		return nil, subscriptionDenied()
+	}
+	if authenticated {
+		if err := uniqueSubscriptionIdentity(tx, input.Account, identity); err != nil {
+			return nil, err
+		}
+		if l.Action == domain.SubscriptionLogin || l.Action == domain.SubscriptionRefresh {
+			if canceled || st.NativeOperation == nil || !st.NativeOperation.ExpiresAt.After(time.Now().UTC()) || subscriptionActorValid(tx, st.NativeOperation.Actor) != nil {
+				return nil, subscriptionDenied()
+			}
+			st.Generation = domain.NewID()
+			st.IdentityCommitment = identity
+			if a.Connection == nil {
+				a.Connection = &domain.AccountConnection{ID: requestID, Authentication: domain.SubscriptionAuth, ConnectedAt: time.Now().UTC()}
+			}
+		}
+		if st.Pending == nil || st.Pending.ID == operation {
+			if a.Health != domain.AccountRevoked {
+				a.Health = domain.AccountReady
+			}
+		}
+	} else if l.Action != domain.SubscriptionExecute || recoveryCleanup {
+		// Missing identity is positive joined logout/status evidence from this
+		// original Runner, never a server filesystem or credential-file read.
+		st.Generation = ""
+		st.IdentityCommitment = ""
+		st.NativeProfileID = ""
+		st.OwnerMachineID = ""
+		a.Connection = nil
+		a.Health = domain.AccountDisconnected
+	} else {
+		st.RecoveryRequired = true
+		a.Health = domain.AccountFailed
+		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+		return accountReceipt{ID: r.ID}, err
+	}
+	st.Lease = nil
+	// Owner retirement settles every retained member with the owner.
+	st.Members = nil
+	st.RecoveryRequired = false
+	if recoveryCleanup && st.Pending != nil && st.Pending.ID != operation {
+		if st.NativeOperation != nil {
+			if st.Pending.Action == domain.SubscriptionLogout {
+				st.NativeOperation.State = domain.SubscriptionSucceeded
+			} else {
+				st.NativeOperation.State = domain.SubscriptionFailed
+			}
+		}
+		st.Pending = nil
+	}
+	if st.Pending != nil && st.Pending.ID == operation {
+		st.Pending = nil
+		if o := st.NativeOperation; o != nil {
+			if canceled {
+				o.State = domain.SubscriptionCanceled
+			} else if input.Success {
+				o.State = domain.SubscriptionSucceeded
+			} else if !o.ExpiresAt.After(time.Now().UTC()) {
+				o.State = domain.SubscriptionExpired
+			} else if o.State == domain.SubscriptionPreparing || o.State == domain.SubscriptionWaiting || o.State == domain.SubscriptionRecovery {
+				o.State = domain.SubscriptionFailed
+			}
+		}
+	}
+	_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+	return accountReceipt{ID: r.ID}, err
 }

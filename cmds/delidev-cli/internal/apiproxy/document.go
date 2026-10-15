@@ -169,6 +169,13 @@ func validateRequest(ctx context.Context, raw []byte, lease *Lease, op Operation
 				}
 				var kind string
 				if json.Unmarshal(item["type"], &kind) == nil && kind == "item_reference" {
+					// A lease without item-reference authority (an ambiguous reviewer
+					// collision) must fail before forwarding, like a state reference.
+					if lease.AuthorizeItemReference != nil {
+						if err := lease.AuthorizeItemReference(ctx); err != nil {
+							return false, err
+						}
+					}
 					accountBound = true
 				}
 			}

@@ -1,3 +1,4 @@
+import { LinkedPre } from "./external-link-text";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { object, type Document } from "./documents";
@@ -199,7 +200,7 @@ export function NativeGrokUser({ data }: { data: Document }) {
           {copy("native-grok.verifiedFromClosedNativeHistory_2d5065")}
         </small>
       </header>
-      <pre>{data.text as string}</pre>
+      <LinkedPre text={data.text as string} complete />
       <Disclosure>
         <DisclosureSummary>
           {copy("native-grok.grokInputDetails_e34cc2")}
@@ -247,7 +248,10 @@ export function NativeGrokText({ data }: { data: Document }) {
           </small>
         </header>
       ) : null}
-      <pre>{data.text as string}</pre>
+      <LinkedPre
+        text={data.text as string}
+        complete={data.state === "complete" && v.interruption === undefined}
+      />
       <Disclosure>
         <DisclosureSummary>
           {copy("native-grok.grokTextDetails_97e9e2")}

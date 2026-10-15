@@ -5,12 +5,29 @@
 The originating change established the complete reservations on main before activation.
 The feature owns ProviderInventory capability
 `ACCOUNT_API_FORMAT_CHANGE_V1 = 9` separately from capability 7 and OAuth
-reservation 8. The owner/client `AccountService.ChangeAccountApiFormat` RPC
+reservation 8. Capability
+`ACCOUNT_API_FORMAT_CHANGE_REVISION_V1 = 10` is required for revision-bound
+format saves. The owner/client `AccountService.ChangeAccountApiFormat` RPC
 uses request fields mutation 1, api_protocol 2, alias 3, enabled 4,
 exclude_automatic 5 and recovery_notifications 6; its response uses account 1,
-request_id 2 and replayed 3. Reuse the existing `ApiProtocol` enum.
-Capability 9 now activates this dedicated operation. The reservation-only PR
-granted no format change, key access or execution authority.
+request_id 2 and replayed 3. Request field provider_revision 7 binds the exact
+inspected Provider resource revision to the selected protocol. Reuse the existing
+`ApiProtocol` enum.
+Capability 9 now activates the dedicated operation, while capability 10 gates
+the provider revision check for clients that send `provider_revision`. A client
+must not enable connected key-preserving format changes when capability 10 is
+absent. The reservation-only PR granted no format change, key access or
+execution authority.
+
+The active operation rejects omitted or zero Provider revisions. The mutation
+checks the Account revision, its Provider identity, and the inspected Provider
+revision in the same transaction before publishing preferences or a new
+connection generation. Any Provider edit after inspection, including an edit
+outside the selected profile, requires a fresh Provider read and explicit save.
+An exact accepted receipt replay retains its original actor, request fields and
+Provider revision even if the Provider changes later. Historical receipts
+without the revision remain stored but cannot be adopted as revised requests;
+their request IDs conflict and require a fresh explicit request.
 
 The approved extension permits changing a connected API account's format while
 keeping its protected key. Go owns atomic preference/profile publication and
@@ -23,7 +40,8 @@ exact actor/revision/request retries, and explicit Disconnect/deletion cleanup
 across all generations. Do not convert formats or change Provider identity or
 keyless credential ownership. No SQLite migration or native change is authorized.
 Capability 7 and its existing cleanup-required configuration operation remain
-unchanged; capability 9 owns the dedicated extension.
+unchanged; capability 9 owns the dedicated extension and capability 10 gates
+revision-bound provider checks.
 
 ## OAuth format selection extension
 
@@ -409,7 +427,7 @@ Provider-row account links use the list-only `provider_id` selector on `Resource
 
 ### Project requirements
 
-- Key-preserving API format changes follow `cmds-delidev-catalog-contract.md#key-preserving-api-format-change-reservations`: the originating change established ProviderInventory 9 and the complete ChangeAccountApiFormat RPC declarations on main before activation. Preserve capability 7, OAuth reservation 8, protected shared key references, original execution/continuation generations, new-format validation, immutable referenced profiles and all-generation explicit cleanup. No SQLite migration or native change. Reservation-only changes activate no support.
+- Key-preserving API format changes follow `cmds-delidev-catalog-contract.md#key-preserving-api-format-change-reservations`: the originating change established ProviderInventory 9 and the complete ChangeAccountApiFormat RPC declarations on main before activation; capability 10 gates revision-bound provider checks. Preserve capability 7, OAuth reservation 8, protected shared key references, original execution/continuation generations, new-format validation, immutable referenced profiles and all-generation explicit cleanup. No SQLite migration or native change. Reservation-only changes activate no support.
 
 - API account format selection follows `cmds-delidev-catalog-contract.md#api-account-format-selection` and the account/protocol contracts. The originating change established ProviderInventory capability 7, inventory profile field 10, account-list protocol field 5 and the complete closed declarations on main before activation. Preserve schema-3 API families, portable v4 with v1–3 imports, original defaults, capability-7 disconnect/confirmed cleanup and capability-9 key-preserving format changes, account-referenced profile immutability, immutable executions and keyless cleanup proofs. Resolve the selected account profile in every consuming flow; add no database migration or format conversion.
 
@@ -715,18 +733,33 @@ and desktop validators reject the same control/space/ref grammar. Values never
 enter shell commands or diagnostics.
 
 The accepted configuration transaction pins the selected prefix and original
-Settings/Project IDs and revisions in optional version-1 immutable execution
-metadata. Omitted declarations preserve historical bytes and digests. Current
+Settings/Project IDs and revisions in optional immutable execution
+metadata (version 2 for new selections on Workers with capability 65; retained version 1 remains valid).
+Omitted declarations preserve historical bytes and digests. Current
 settings never rewrite prior generations. Retain selection through Plan/Execute
 transitions, continuation, retry, recovery, compaction and Fork snapshots.
 The existing ordered template text remains exact. Compose one deterministic
 shared instruction after it in Execute only, including it in the aggregate
-256 KiB limit. Plan and read-only Sidechat receive no prefix instruction. Codex,
+256 KiB limit. The instruction quotes the prefix JSON-style (escaping quotes,
+backslashes and control characters). New selections use immutable version 2,
+which applies no HTML escaping, so `<`, `>` and `&` stay exact UTF-8 rather than
+becoming `\u003c`, `\u003e` or `\u0026`, and U+2028/U+2029 line separators are
+likewise kept literal. Retained version-1 selections keep the original
+`encoding/json` quoting byte for byte so Claude continuation instruction
+comparison and completed-recovery digests of already accepted Execute sessions
+stay valid; they are never rewritten to version 2. Plan and
+read-only Sidechat receive no prefix instruction. Codex,
 Claude Code, OpenCode and Grok Build use their existing instruction channels;
 Grok's unchanged empty-template Plan profile remains independently required.
 Worker capability 38 negotiates the complete declaration before native dispatch;
 unsupported Workers receive an explicit update requirement, with no native
-version gate. This preference never creates/renames branches, changes detached
+version gate. Worker capability 65 (`BRANCH_PREFIX_EXACT_QUOTE_V1`) separately
+negotiates acceptance of selection version 2. Initial execution preview pins
+version 2 only for a Runner Device that reported capability 65 and otherwise
+pins version 1, so a Worker that negotiated only capability 38 keeps receiving
+selections it validates. Dispatch of a retained version-2 selection to a Runner
+Device without capability 65 fails before native execution with an explicit
+update requirement; no selection is rewritten or downgraded. This preference never creates/renames branches, changes detached
 Worktree or Local preparation, grants Git workspace authority, or guarantees
 model compliance. General Chat gains no repository authority.
 

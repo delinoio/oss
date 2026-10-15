@@ -201,6 +201,13 @@ func Run(ctx context.Context, args []string, streams IO) int {
 				// The Worker observation owns a 15-second deadline. Leave
 				// room for its typed result instead of racing its response.
 				c.transport.ResponseHeaderTimeout = 20 * time.Second
+				if branchComparisonRequested(rest) {
+					// A branch comparison reads git-diff-options and then the
+					// final observation sequentially. Each owns a 15-second
+					// server bound; keep a further 15 seconds for transfer and
+					// validation. The caller deadline and cancellation still win.
+					limit = branchComparisonCommandBudget
+				}
 			case "review":
 				// Comment creation and grouped submission have server limits
 				// of 30 and 45 seconds. The default 15-second header timeout
@@ -233,10 +240,7 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		}
 
 	case "update":
-		if len(rest) > 0 && (rest[0] == "check" || rest[0] == "worker-request" || rest[0] == "cancel") {
-			ensureRequest(&o)
-		}
-		value, err := updateCommand(ctx, c, o, rest)
+		value, err := updateCommand(ctx, c, &o, rest)
 		return emit(value, err)
 	case "storage":
 		if code, handled := dispatchStorage(ctx, c, o, rest, streams); handled {
@@ -503,6 +507,10 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		return emit(nil, usage())
 	}
 }
+
+// branchComparisonCommandBudget is the total CLI budget for explicit branch
+// comparison reads: two sequential 15-second observations plus overhead.
+const branchComparisonCommandBudget = 45 * time.Second
 
 // Leave room for the original bounded server work and its typed settlement.
 // This changes only these unary commands; caller cancellation still wins.

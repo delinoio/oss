@@ -60,13 +60,25 @@ type APIStreamConfig struct {
 	Instructions   string                     `json:"-"`
 	API            APIConfig                  `json:"-"`
 	Subscription   *NativeSubscriptionProfile `json:"-"`
+	// ManagedToken is one server-owned setup token delivered by a protected
+	// lease. It excludes Subscription and the API relay; callers clear it after
+	// the joined child has terminated.
+	ManagedToken []byte `json:"-"`
 }
 
-// NativeSubscriptionProfile is a device-local reference under an exclusive
-// account lease. It contains no credential bytes or native identity.
+// NativeSubscriptionProfile is a device-local reference under an account lease.
+// It contains no credential bytes or native identity.
+//
+// Version 1 (SecureStorageHome empty) uses one canonical profile directory as
+// configuration, history and secure storage under an exclusive account lease.
+// Version 2 gives the session a private configuration and history directory
+// (Home, which must equal the stream's Home) and names the one canonical
+// secure-storage directory independently (SecureStorageHome). Only the native
+// CLI reads and renews authentication in that directory; DeliDev never opens it.
 type NativeSubscriptionProfile struct {
-	ID   domain.ID
-	Home string
+	ID                domain.ID
+	Home              string
+	SecureStorageHome string
 }
 
 // NativeHistoryHome exposes only the authenticated owned history root to the
@@ -79,6 +91,9 @@ func (config APIStreamConfig) ProtectedValues() []string {
 	values := slices.Clone(config.Process.ProtectedValues)
 	if config.Subscription == nil {
 		values = append(values, config.API.Token)
+	}
+	if len(config.ManagedToken) != 0 {
+		values = append(values, string(config.ManagedToken))
 	}
 	return values
 }
@@ -129,17 +144,36 @@ func prepareAPIStreamMode(config APIStreamConfig, resumed bool) (process.Config,
 	// Fresh launches use discovery's empty private directories. The private
 	// closed-session handoff rechecks their retained ownership before reuse;
 	// only PATH and Windows system lookup context survive caller environment.
-	env, err := nativeEnvironment(ProbeConfig{Process: config.Process, Version: config.Version, Home: config.Home}, !resumed)
+	env, err := nativeEnvironment(ProbeConfig{Process: config.Process, Version: config.Version, Home: config.Home})
 	if err != nil {
 		return process.Config{}, err
 	}
-	if config.Subscription != nil {
+	if len(config.ManagedToken) != 0 {
+		if config.Subscription != nil || !domain.ClaudeSetupTokenValid(config.ManagedToken) {
+			return process.Config{}, apiConfigurationError()
+		}
+		env = managedTokenEnvironment(env, config.Home, config.ManagedToken)
+	} else if config.Subscription != nil {
 		if config.Subscription.ID.Validate() != nil || security.CheckPrivateDir(config.Subscription.Home) != nil {
 			return process.Config{}, apiConfigurationError()
 		}
 		canonical, err := filepath.EvalSymlinks(config.Subscription.Home)
 		if err != nil || canonical != config.Subscription.Home || !filepath.IsAbs(canonical) || filepath.Base(canonical) != "claude" {
 			return process.Config{}, apiConfigurationError()
+		}
+		secure := canonical
+		if config.Subscription.SecureStorageHome != "" {
+			// Version 2: the session-private directory stays the native
+			// configuration and history directory; the canonical profile is only
+			// the secure-storage namespace. The two must be different directories
+			// and the history directory must be the stream's own private home.
+			if config.Subscription.Home != config.Home || security.CheckPrivateDir(config.Subscription.SecureStorageHome) != nil {
+				return process.Config{}, apiConfigurationError()
+			}
+			secure, err = filepath.EvalSymlinks(config.Subscription.SecureStorageHome)
+			if err != nil || secure != config.Subscription.SecureStorageHome || !filepath.IsAbs(secure) || filepath.Base(secure) != "claude" || secure == canonical {
+				return process.Config{}, apiConfigurationError()
+			}
 		}
 		filtered := env[:0]
 		for _, entry := range env {
@@ -151,7 +185,7 @@ func prepareAPIStreamMode(config APIStreamConfig, resumed bool) (process.Config,
 			}
 			filtered = append(filtered, entry)
 		}
-		env = append(filtered, "CLAUDE_SECURESTORAGE_CONFIG_DIR="+canonical)
+		env = append(filtered, "CLAUDE_SECURESTORAGE_CONFIG_DIR="+secure)
 	} else {
 		for i, entry := range env {
 			if strings.HasPrefix(entry, "ANTHROPIC_BASE_URL=") {
@@ -260,7 +294,12 @@ func openAPIStreamMode(ctx context.Context, config APIStreamConfig, resumed bool
 	// The process owner identity may be its OS supervisor, not the native PID.
 	// Ownership is proved by its private stdio scope and joined cleanup, never
 	// by equating a native self-reported PID with the supervisor's identity.
-	if err := validateInitializeMode(response.Result, string(config.Permission), "ANTHROPIC_API_KEY", config.Subscription != nil); err != nil {
+	if len(config.ManagedToken) != 0 {
+		err = validateInitializeManagedToken(response.Result, string(config.Permission))
+	} else {
+		err = validateInitializeMode(response.Result, string(config.Permission), "ANTHROPIC_API_KEY", config.Subscription != nil)
+	}
+	if err != nil {
 		return nil, err
 	}
 	process.ObserveStartup(config.Process, domain.StartupInitialize, domain.StartupProgressCompleted)

@@ -4,6 +4,7 @@ package server
 import (
 	"context"
 	"net/http"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -226,5 +227,175 @@ func TestSubscriptionAccountDeleteKeepsFailedCleanupFences(t *testing.T) {
 	fresh, err := f.deleteFailedLoginResponse(f.failedLoginDeletion())
 	if err != nil || fresh.Replayed {
 		t.Fatal("fresh confirmation did not newly complete deletion", fresh, err)
+	}
+}
+
+type failedLoginDeleteResult struct {
+	response *pb.DeleteConfigurationResponse
+	err      error
+}
+
+// pausedDeletionHooks makes each arrival at a hook announce its order and wait
+// for an explicit release, so tests choose which invocation proceeds first.
+type pausedDeletionHooks struct {
+	arrived chan int
+	release [3]chan struct{}
+	count   atomic.Int32
+}
+
+func newPausedDeletionHooks() *pausedDeletionHooks {
+	h := &pausedDeletionHooks{arrived: make(chan int, 2)}
+	for i := range h.release {
+		h.release[i] = make(chan struct{})
+	}
+	return h
+}
+
+func (h *pausedDeletionHooks) pause() {
+	n := int(h.count.Add(1))
+	h.arrived <- n
+	<-h.release[n]
+}
+
+func (h *pausedDeletionHooks) waitArrival(t *testing.T, want int) {
+	t.Helper()
+	select {
+	case got := <-h.arrived:
+		if got != want {
+			t.Fatal("unexpected hook arrival order", got, want)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("invocation never reached the hook", want)
+	}
+}
+
+func (f *subscriptionFixture) startFailedLoginDeletion(request *pb.DeleteConfigurationRequest) <-chan failedLoginDeleteResult {
+	done := make(chan failedLoginDeleteResult, 1)
+	go func() {
+		response, err := f.deleteFailedLoginResponse(request)
+		done <- failedLoginDeleteResult{response, err}
+	}()
+	return done
+}
+
+func awaitFailedLoginDeletion(t *testing.T, done <-chan failedLoginDeleteResult) *pb.DeleteConfigurationResponse {
+	t.Helper()
+	select {
+	case r := <-done:
+		if r.err != nil {
+			t.Fatal(r.err)
+		}
+		return r.response
+	case <-time.After(10 * time.Second):
+		t.Fatal("deletion invocation did not finish")
+	}
+	return nil
+}
+
+func (f *subscriptionFixture) recreateProtectedCredential() credentials.Ref {
+	f.t.Helper()
+	// Recreate protected state after the deletion committed. A second native or
+	// vault cleanup would remove it.
+	ref := credentials.Ref{Owner: f.input.AccountID, ID: domain.NewID(), Purpose: credentials.AccountLogin}
+	if _, err := f.secrets.Put(context.Background(), ref, []byte("synthetic-post-cleanup-token")); err != nil {
+		f.t.Fatal(err)
+	}
+	return ref
+}
+
+func (f *subscriptionFixture) requireDeletedOnce(request *pb.DeleteConfigurationRequest, completed, observed *pb.DeleteConfigurationResponse, ref credentials.Ref) {
+	f.t.Helper()
+	if completed.Replayed || !observed.Replayed {
+		f.t.Fatal("exactly the completing invocation must report Replayed=false", completed, observed)
+	}
+	for _, r := range []*pb.DeleteConfigurationResponse{completed, observed} {
+		if r.Id != request.Mutation.Id || r.RequestId != request.Mutation.RequestId {
+			f.t.Fatal("response identity changed", r)
+		}
+	}
+	if _, err := f.secrets.Get(context.Background(), ref); err != nil {
+		f.t.Fatal("observing invocation repeated native or vault cleanup", err)
+	}
+	if _, err := f.service.Store.Get(failedLoginContext(), domain.AccountKind, f.input.AccountID); domain.SafeError(err).Code != domain.NotFound {
+		f.t.Fatal("account remains", err)
+	}
+	if _, replayed, err := f.service.Store.Replay(failedLoginContext(), domain.ID(request.Mutation.RequestId), "configuration.delete", struct {
+		ID       string      `json:"id"`
+		Revision uint64      `json:"revision"`
+		Kind     domain.Kind `json:"kind"`
+	}{request.Mutation.Id, request.Mutation.ExpectedRevision, domain.AccountKind}); err != nil || !replayed {
+		f.t.Fatal("single deletion receipt missing", replayed, err)
+	}
+}
+
+// Both invocations observe the same pending child after the account gate is
+// released. The later invocation completes first, so the earlier admitting one
+// must report a replay.
+func TestSubscriptionAccountDeleteReportsOnlyCompletingInvocationAfterSharedPendingObservation(t *testing.T) {
+	f, _ := legacyFailedServerLogin(t, false)
+	request := f.failedLoginDeletion()
+	hooks := newPausedDeletionHooks()
+	f.service.afterFailedSubscriptionDeleteObserve = func(context.Context) { hooks.pause() }
+	first := f.startFailedLoginDeletion(request)
+	hooks.waitArrival(t, 1)
+	second := f.startFailedLoginDeletion(request)
+	hooks.waitArrival(t, 2)
+	close(hooks.release[2])
+	completed := awaitFailedLoginDeletion(t, second)
+	ref := f.recreateProtectedCredential()
+	close(hooks.release[1])
+	observed := awaitFailedLoginDeletion(t, first)
+	f.requireDeletedOnce(request, completed, observed, ref)
+}
+
+// The second invocation already waits at the per-account runner gate when the
+// first completes; its locked terminal check must report a replay.
+func TestSubscriptionAccountDeleteReportsLockedTerminalCheckAsReplayed(t *testing.T) {
+	f, _ := legacyFailedServerLogin(t, false)
+	request := f.failedLoginDeletion()
+	hooks := newPausedDeletionHooks()
+	f.service.beforeFailedCleanupAccountGate = func(context.Context, domain.ID) { hooks.pause() }
+	first := f.startFailedLoginDeletion(request)
+	hooks.waitArrival(t, 1)
+	second := f.startFailedLoginDeletion(request)
+	hooks.waitArrival(t, 2)
+	close(hooks.release[1])
+	completed := awaitFailedLoginDeletion(t, first)
+	ref := f.recreateProtectedCredential()
+	close(hooks.release[2])
+	observed := awaitFailedLoginDeletion(t, second)
+	f.requireDeletedOnce(request, completed, observed, ref)
+}
+
+// The background controller can finish the admitted child before the admitting
+// request runs its own cleanup. No foreground invocation completed the
+// deletion, so the admitting request reports a replay without repeating effects.
+func TestSubscriptionAccountDeleteReportsBackgroundCompletionAsReplayed(t *testing.T) {
+	f, _ := legacyFailedServerLogin(t, false)
+	request := f.failedLoginDeletion()
+	var ref credentials.Ref
+	var backgroundErr error
+	f.service.afterFailedSubscriptionDeleteObserve = func(ctx context.Context) {
+		f.service.afterFailedSubscriptionDeleteObserve = nil
+		parent, err := f.service.Store.Get(failedLoginContext(), domain.JobKind, domain.ID(request.Mutation.RequestId))
+		if err != nil {
+			backgroundErr = err
+			return
+		}
+		if completion, err := f.service.runFailedSubscriptionCleanup(failedLoginContext(), parent); err != nil || completion != failedSubscriptionCleanupCompletedHere {
+			backgroundErr = domain.Fail(domain.Internal, "Background cleanup did not complete the child.", "")
+			return
+		}
+		ref = f.recreateProtectedCredential()
+	}
+	response, err := f.deleteFailedLoginResponse(request)
+	if err != nil || backgroundErr != nil {
+		t.Fatal(err, backgroundErr)
+	}
+	if !response.Replayed || response.Id != request.Mutation.Id || response.RequestId != request.Mutation.RequestId {
+		t.Fatal("background completion was reported as a new completion", response)
+	}
+	if _, err := f.secrets.Get(context.Background(), ref); err != nil {
+		t.Fatal("admitting request repeated cleanup", err)
 	}
 }

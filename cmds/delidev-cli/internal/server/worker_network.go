@@ -473,7 +473,7 @@ func (s *Service) ReportWorkerNativeRoute(ctx context.Context, req *connect.Requ
 			}
 		case domain.GenerateSessionTitleJob:
 			var input domain.AuxiliaryTitleInput
-			if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.Harness != domain.Codex || !domain.CodexVersionAllowed(input.NativeVersion) || input.OriginalExecutionID != value.ExecutionID {
+			if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.IsManaged() || input.Harness != domain.Codex || !domain.CodexVersionAllowed(input.NativeVersion) || input.OriginalExecutionID != value.ExecutionID {
 				return nil, executionDenied()
 			}
 		default:
@@ -526,11 +526,25 @@ func (s *Service) ReportWorkerNativeRoute(ctx context.Context, req *connect.Requ
 		return struct{}{}, err
 	})
 	if err != nil {
-		s.logger.WarnContext(ctx, "worker_native_route_rejected", "job_id", value.JobID, "execution_id", value.ExecutionID, "code", domain.SafeError(err).Code)
+		s.logger.WarnContext(ctx, "worker_native_route_rejected", workerNativeRouteRejectionAttrs(value, domain.SafeError(err).Code)...)
 		return nil, rpc.Error(err, c)
 	}
 	s.logger.InfoContext(ctx, "worker_native_route_observed", "machine_id", value.MachineID, "job_id", value.JobID, "execution_id", value.ExecutionID, "route_id", value.RouteID, "generation", value.Generation, "state", value.State, "replayed", result.Replayed)
 	return connect.NewResponse(&pb.ReportWorkerNativeRouteResponse{Replayed: result.Replayed}), nil
+}
+
+// workerNativeRouteRejectionAttrs builds the rejection log attributes from an
+// allowlist. Request-derived identifiers are logged only when they are canonical
+// IDs; malformed values are omitted entirely so request text cannot reach logs.
+func workerNativeRouteRejectionAttrs(value store.WorkerNativeRoute, code domain.Code) []any {
+	attrs := make([]any, 0, 6)
+	if value.JobID.Validate() == nil {
+		attrs = append(attrs, "job_id", value.JobID)
+	}
+	if value.ExecutionID.Validate() == nil {
+		attrs = append(attrs, "execution_id", value.ExecutionID)
+	}
+	return append(attrs, "code", code)
 }
 
 func machineCapabilityContains(values []domain.WorkerCapability, expected domain.WorkerCapability) bool {

@@ -115,10 +115,30 @@ pub fn run_optimized(root: &Path) -> Output {
     if packages.is_dir() {
         copy_dir(&packages, &run.join("node_modules"));
     }
+    copy_json_assets(root, &run);
     Command::new("node")
         .arg(run.join("main.js"))
         .output()
         .unwrap()
+}
+
+/// JSON imports stay in the original project, so the Node fixture needs the
+/// same data files beside the emitted modules.
+fn copy_json_assets(from: &Path, to: &Path) {
+    for entry in fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let name = entry.file_name();
+        if entry.file_type().unwrap().is_dir() {
+            if !matches!(name.to_str(), Some("out" | "run" | "node_modules")) {
+                copy_json_assets(&entry.path(), &to.join(name));
+            }
+        } else if entry.path().extension().is_some_and(|ext| ext == "json")
+            && !matches!(name.to_str(), Some("package.json" | "tsconfig.json"))
+        {
+            fs::create_dir_all(to).unwrap();
+            fs::copy(entry.path(), to.join(name)).unwrap();
+        }
+    }
 }
 
 fn copy_dir(from: &Path, to: &Path) {

@@ -59,6 +59,22 @@ func subscriptionTakeNotAdmitted() *domain.Error {
 	return problem
 }
 
+// subscriptionTitleNotDelivered is the definite result of a managed title Take
+// whose exact lease was committed and then released without any credential
+// crossing the boundary. Unlike subscriptionDenied it carries no recovery
+// authority, so the Worker can report and terminate the title normally instead
+// of treating the outcome as uncertain. The code only classifies the report
+// (Canceled for a denied or revoked title, Unavailable for a vault failure).
+func subscriptionTitleNotDelivered(code domain.Code) *domain.Error {
+	problem := domain.Fail(code, "The managed automatic title received no credentials.", "No credential was delivered and no inference was sent; keep the current title and the ready account.")
+	problem.Cause = subscriptionTitleNotDeliveredCause
+	return problem
+}
+
+// subscriptionTitleNotDeliveredCause is the typed proof the Worker accepts for a
+// released, undelivered managed title lease.
+const subscriptionTitleNotDeliveredCause = "subscription_title_not_delivered"
+
 func subscriptionActorValid(tx *store.Tx, actor domain.Principal) error {
 	if actor.Type == domain.OwnerDevice {
 		return nil
@@ -74,10 +90,57 @@ func subscriptionActorValid(tx *store.Tx, actor domain.Principal) error {
 	return nil
 }
 
+// cancelServerOperation settles a queued operation's server record as canceled
+// just before the cancellation removes the pending operation. A canceled record
+// never keeps a failure diagnostic, such as the provisional Grok record of an
+// earlier refused Take.
+//
+// A Grok operation is Worker-owned and has no server record until it settles, so
+// canceling one that was never claimed would otherwise leave progress with
+// neither a pending operation nor a record, and the original actor's poll would
+// be denied instead of reporting `canceled`. For a Grok account a canceled
+// record is therefore created from the pending operation when none exists, and
+// an earlier refused Take's record is replaced. A settled record of the same
+// operation is final and is kept.
+func cancelServerOperation(account *domain.Account, epoch domain.ID, now time.Time) {
+	state := account.Subscription
+	if state == nil || state.Pending == nil {
+		return
+	}
+	if account.SubscriptionService == domain.SubscriptionGrok {
+		p := state.Pending
+		settleGrokOperation(state, grokSettlement{Operation: p.ID, Action: p.Action, Actor: p.Actor, Epoch: epoch, State: domain.SubscriptionCanceled}, now)
+		return
+	}
+	if o := state.ServerOperation; o != nil && o.ID == state.Pending.ID {
+		o.State, o.GrokDiagnostic = domain.SubscriptionCanceled, nil
+	}
+}
+
+// cancelPendingLogin applies a login cancellation to the account's pending
+// operation. A queued login holds no lease, so it is removed and its server
+// record is settled as canceled; a claimed login keeps its pending operation
+// with the cancellation flag until its Worker reports Finish.
+func cancelPendingLogin(a *domain.Account, epoch domain.ID, now time.Time) error {
+	if a.Subscription == nil || a.Subscription.Pending == nil {
+		return domain.Fail(domain.Conflict, "No subscription operation is pending.", "Read current account status; cancellation never starts another operation.")
+	}
+	if a.Subscription.Pending.Action != domain.SubscriptionLogin {
+		return domain.Fail(domain.Unsupported, "Only an active login can be canceled.", "Let refresh or logout finish under exclusive ownership.")
+	}
+	if a.Subscription.Pending.Phase == domain.SubscriptionQueued {
+		cancelServerOperation(a, epoch, now)
+		a.Subscription.Pending = nil
+	} else {
+		a.Subscription.Pending.Canceled = true
+	}
+	return nil
+}
+
 // Queued lifecycle requests have not granted native authority. Settle them in
 // the same transaction as client revocation, without releasing independent or
 // claimed leases and without undoing logout's accepted execution revocation.
-func cancelQueuedSubscriptionInitiator(tx *store.Tx, device domain.ID) error {
+func cancelQueuedSubscriptionInitiator(tx *store.Tx, device, epoch domain.ID) error {
 	accounts, err := all(tx, domain.AccountKind)
 	if err != nil {
 		return err
@@ -91,9 +154,7 @@ func cancelQueuedSubscriptionInitiator(tx *store.Tx, device domain.ID) error {
 		if state == nil || state.Pending == nil || state.Pending.Actor.DeviceID != device || state.Pending.Phase != domain.SubscriptionQueued {
 			continue
 		}
-		if o := state.ServerOperation; o != nil && o.ID == state.Pending.ID {
-			o.State = domain.SubscriptionCanceled
-		}
+		cancelServerOperation(&account, epoch, time.Now().UTC())
 		if o := state.NativeOperation; o != nil && o.ID == state.Pending.ID {
 			o.State = domain.SubscriptionCanceled
 			if state.Pending.Action == domain.SubscriptionLogin && state.Lease == nil && state.Generation == "" {
@@ -155,6 +216,11 @@ func (s *Service) RequestSubscription(ctx context.Context, req *connect.Request[
 	if matched, err := s.isClaudeSubscription(ctx, m.Id); err != nil {
 		return nil, rpc.Error(err, c)
 	} else if matched {
+		if managed, err := s.routesToManagedClaude(ctx, req.Msg); err != nil {
+			return nil, rpc.Error(err, c)
+		} else if managed {
+			return s.requestManagedClaude(ctx, req)
+		}
 		return s.requestClaudeSubscription(ctx, req)
 	}
 	if req.Msg.MachineId == "" {
@@ -196,6 +262,15 @@ func (s *Service) RequestSubscription(ctx context.Context, req *connect.Request[
 		if action != domain.SubscriptionLogin && (a.Connection == nil || state.Generation == "") {
 			return nil, subscriptionDenied()
 		}
+		if action == domain.SubscriptionRefresh {
+			// A refresh rotates the credential generation. A claimed managed title
+			// still owns the frozen generation, so the refresh waits for it.
+			if reserved, err := managedTitleReservation(tx, r.ID, ""); err != nil {
+				return nil, err
+			} else if reserved {
+				return nil, managedTitleAccountReserved()
+			}
+		}
 		if state.ServerOperation != nil && state.ServerOperation.CleanupPhase == domain.SubscriptionCredentialCleanupConfirmed {
 			// A fresh explicit Worker login supersedes the settled server attempt.
 			// Its cleanup checkpoint cannot describe the new pending/native owner.
@@ -212,6 +287,9 @@ func (s *Service) RequestSubscription(ctx context.Context, req *connect.Request[
 				state.Observation.ErrorCode = domain.Canceled
 			}
 			if err := cancelAccountExecutions(tx, r.ID); err != nil {
+				return nil, err
+			}
+			if err := retireAccountQueuedTitles(tx, r.ID); err != nil {
 				return nil, err
 			}
 		}
@@ -240,6 +318,11 @@ func (s *Service) CancelSubscription(ctx context.Context, req *connect.Request[p
 	if matched, err := s.isClaudeSubscription(ctx, m.Id); err != nil {
 		return nil, rpc.Error(err, c)
 	} else if matched {
+		if _, managed, err := s.claudeAccountMode(ctx, m.Id); err != nil {
+			return nil, rpc.Error(err, c)
+		} else if managed {
+			return s.cancelManagedClaude(ctx, req)
+		}
 		return s.cancelClaudeSubscription(ctx, req)
 	}
 	result, err := s.Store.Mutate(ctx, domain.ID(m.RequestId), "subscription.cancel", disconnectAccountInput{domain.ID(m.Id), m.ExpectedRevision}, func(tx *store.Tx) (any, error) {
@@ -247,19 +330,8 @@ func (s *Service) CancelSubscription(ctx context.Context, req *connect.Request[p
 		if err != nil {
 			return nil, err
 		}
-		if a.Subscription == nil || a.Subscription.Pending == nil {
-			return nil, domain.Fail(domain.Conflict, "No subscription operation is pending.", "Read current account status; cancellation never starts another operation.")
-		}
-		if a.Subscription.Pending.Action != domain.SubscriptionLogin {
-			return nil, domain.Fail(domain.Unsupported, "Only an active login can be canceled.", "Let refresh or logout finish under exclusive ownership.")
-		}
-		if a.Subscription.Pending.Phase == domain.SubscriptionQueued {
-			if o := a.Subscription.ServerOperation; o != nil && o.ID == a.Subscription.Pending.ID {
-				o.State = domain.SubscriptionCanceled
-			}
-			a.Subscription.Pending = nil
-		} else {
-			a.Subscription.Pending.Canceled = true
+		if err := cancelPendingLogin(&a, s.subscriptionServerEpoch(), time.Now().UTC()); err != nil {
+			return nil, err
 		}
 		if _, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
 			return nil, err
@@ -281,7 +353,17 @@ func (s *Service) GetSubscriptionProgress(ctx context.Context, req *connect.Requ
 	if matched, err := s.isClaudeSubscription(ctx, req.Msg.AccountId); err != nil {
 		return nil, rpc.Error(err, c)
 	} else if matched {
+		if _, managed, err := s.claudeAccountMode(ctx, req.Msg.AccountId); err != nil {
+			return nil, rpc.Error(err, c)
+		} else if managed {
+			return s.managedClaudeProgress(ctx, req)
+		}
 		return s.getClaudeSubscriptionProgress(ctx, req)
+	}
+	if matched, err := s.isGrokSubscription(ctx, req.Msg.AccountId); err != nil {
+		return nil, rpc.Error(err, c)
+	} else if matched {
+		return s.grokSubscriptionProgress(ctx, req)
 	}
 	unlock, err := s.lockAccounts(ctx)
 	if err != nil {
@@ -345,7 +427,7 @@ func (s *Service) WatchSubscription(ctx context.Context, req *connect.Request[pb
 			if err != nil {
 				return err
 			}
-			if !slices.Contains(machine.WorkerCapabilities, domain.ManagedCodexSubscriptionsV1) {
+			if !slices.Contains(machine.WorkerCapabilities, domain.ManagedCodexSubscriptionsV1) && !slices.Contains(machine.WorkerCapabilities, domain.ManagedClaudeExecutionV1) {
 				return subscriptionDenied()
 			}
 			// A current adapter may wait for explicitly accepted lifecycle work
@@ -363,6 +445,23 @@ func (s *Service) WatchSubscription(ctx context.Context, req *connect.Request[pb
 				a, err := store.Decode[domain.Account](r)
 				if err != nil {
 					return err
+				}
+				if a.ManagedClaudeAccount() {
+					// A server-token account is watched only for original-Worker execution
+					// cleanup; its login and logout run on the server.
+					if !slices.Contains(machine.WorkerCapabilities, domain.ManagedClaudeExecutionV1) || a.Subscription.Lease == nil || !a.Subscription.RecoveryRequired || a.Subscription.Lease.MachineID != domain.ID(req.Msg.MachineId) {
+						continue
+					}
+					records = append(records, r)
+					if len(records) == 4 {
+						break
+					}
+					continue
+				}
+				// Grok lifecycle work is not pushed to any Worker until the managed Grok
+				// Worker capability is declared and negotiated.
+				if a.SubscriptionService == domain.SubscriptionGrok {
+					continue
 				}
 				if a.SubscriptionService == domain.SubscriptionClaude && !slices.Contains(machine.WorkerCapabilities, domain.NativeClaudeSubscriptionsV1) || a.SubscriptionService == domain.SubscriptionChatGPT && !slices.Contains(machine.WorkerCapabilities, domain.ManagedCodexSubscriptionsV1) {
 					continue
@@ -410,29 +509,64 @@ func (s *Service) WatchSubscription(ctx context.Context, req *connect.Request[pb
 	}
 }
 
+// subscriptionLease resolves the stored owner-scoped lease: a historical
+// singleton lease or the shared account-owner lease by its own identifier. A
+// member identifier is not an owner identifier, so owner-scoped operations
+// (progress, observations, lifecycle) never accept one.
 func (s *Service) subscriptionLease(ctx context.Context, tx *store.Tx, id, lease, machine, instance domain.ID) (store.Record, domain.Account, error) {
+	r, a, _, _, err := s.subscriptionLeaseView(ctx, tx, id, lease, machine, instance, false)
+	if err == nil && a.Subscription.Lease.ID != lease {
+		return r, a, subscriptionDenied()
+	}
+	return r, a, err
+}
+
+// subscriptionLeaseView resolves a Worker-presented lease identifier against the
+// exact account owner. With memberScope the identifier must name one execution
+// member of a shared owner and the returned view carries that member's job and
+// revision. Without it the owner's identifier (shared with its founding member)
+// or, for a shared owner, another member's identifier resolves. Every owner
+// binding (Runner, device, instance, epoch, generation) is checked against the
+// stored owner lease in both scopes.
+func (s *Service) subscriptionLeaseView(ctx context.Context, tx *store.Tx, id, lease, machine, instance domain.ID, memberScope bool) (store.Record, domain.Account, domain.SubscriptionLease, *domain.SubscriptionMember, error) {
 	r, a, err := subscriptionAccount(tx, id, 0)
 	if err != nil {
-		return r, a, err
+		return r, a, domain.SubscriptionLease{}, nil, err
 	}
 	if a.Subscription == nil || a.Subscription.Lease == nil {
-		return r, a, subscriptionDenied()
+		return r, a, domain.SubscriptionLease{}, nil, subscriptionDenied()
 	}
 	l := a.Subscription.Lease
 	actor, _ := domain.PrincipalFrom(ctx)
 	if actor.Type != domain.WorkerDevice || actor.DeviceID != l.DeviceID {
-		return r, a, subscriptionDenied()
+		return r, a, domain.SubscriptionLease{}, nil, subscriptionDenied()
 	}
-	if l.ID != lease || l.MachineID != machine || l.InstanceID != instance || l.Epoch != s.subscriptionServerEpoch() {
-		return r, a, subscriptionDenied()
+	if l.MachineID != machine || l.InstanceID != instance || l.Epoch != s.subscriptionServerEpoch() {
+		return r, a, domain.SubscriptionLease{}, nil, subscriptionDenied()
+	}
+	var view domain.SubscriptionLease
+	var member *domain.SubscriptionMember
+	if memberScope {
+		var ok bool
+		if view, member, ok = a.Subscription.MemberLease(lease); !ok {
+			return r, a, domain.SubscriptionLease{}, nil, subscriptionDenied()
+		}
+	} else {
+		var ok bool
+		if view, ok = a.Subscription.OwnerLeaseFor(lease); !ok {
+			return r, a, domain.SubscriptionLease{}, nil, subscriptionDenied()
+		}
+		if m, found := a.Subscription.Member(lease); found && l.Shared {
+			member = &m
+		}
 	}
 	if err := currentInstance(tx, machine, instance); err != nil {
-		return r, a, err
+		return r, a, view, member, err
 	}
 	if _, _, err := activeMachine(tx, machine); err != nil {
-		return r, a, err
+		return r, a, view, member, err
 	}
-	return r, a, nil
+	return r, a, view, member, nil
 }
 
 func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.TakeSubscriptionRequest]) (response *connect.Response[pb.TakeSubscriptionResponse], returned error) {
@@ -452,7 +586,19 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 	if matched, err := s.isClaudeSubscription(ctx, m.Id); err != nil {
 		return nil, rpc.Error(err, c)
 	} else if matched {
+		if _, managed, err := s.claudeAccountMode(ctx, m.Id); err != nil {
+			return nil, rpc.Error(err, c)
+		} else if managed {
+			return s.takeManagedClaude(ctx, req)
+		}
 		return s.takeClaudeSubscription(ctx, req)
+	}
+	// Grok accounts never enter the Codex lifecycle below; they use the sealed
+	// Grok bundle lifecycle, and the Codex account guard still refuses them.
+	if matched, err := s.isGrokSubscription(ctx, m.Id); err != nil {
+		return nil, rpc.Error(err, c)
+	} else if matched {
+		return s.takeGrokSubscription(ctx, req)
 	}
 	if err := workerActor(ctx, req.Msg.MachineId, req.Msg.InstanceId); err != nil {
 		return nil, rpc.Error(err, c)
@@ -474,8 +620,13 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 	}
 	defer unlock()
 	directExecution := false
-	var forkRevision uint64
+	var forkRevision, titleRevision uint64
+	// sharedOwner founds a versioned account-owner lease; joinedOwner admits one
+	// more execution member to the live owner. Both require the negotiated
+	// SharedSubscriptionOwnerV1 capability and only an execute-session job.
+	sharedOwner, joinedOwner := false, false
 	result, err := s.Store.Mutate(ctx, input.Lease, "subscription.take", input, func(tx *store.Tx) (any, error) {
+		sharedOwner, joinedOwner = false, false
 		// Take retains the original observation while another lease or metadata
 		// update advances the account. Lifecycle authority is the exact still-queued
 		// operation below; execution authority is its independently checked job.
@@ -486,12 +637,76 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 		if action != domain.SubscriptionExecute && input.Revision > r.Revision {
 			return nil, domain.Fail(domain.Conflict, "The account revision has not been observed.", "Retain the original queued operation and its observed revision.")
 		}
+		// A denial before the managed title's inference claim commits rolls this
+		// transaction back: no lease, claim or credential exists. It is a definite
+		// no-delivery result (Stop, Archive, rename, logout, disablement, creator
+		// revocation, a recovery fence or a lost capability won first), so the
+		// Worker can report and settle the title instead of treating it as an
+		// uncertain execution. Once an earlier Take committed the claim, delivery
+		// is unknown and the conservative recovery denial remains. Every other job
+		// type keeps the recovery denial.
+		claimedHere := false
+		preLeaseDenied := func(job domain.Job, reason string) error {
+			if job.Type != domain.GenerateSessionTitleJob {
+				return subscriptionDenied()
+			}
+			if claimed, claimErr := tx.TitleInferenceClaimed(input.Operation); claimErr != nil || claimed && !claimedHere {
+				return subscriptionDenied()
+			}
+			s.logger.InfoContext(ctx, "subscription_title_take_denied_before_lease", "account_id", input.Account, "operation_id", input.Operation, "reason", reason)
+			return subscriptionTitleNotDelivered(domain.Canceled)
+		}
+		// accountGateDenied classifies a denial raised before the job is decoded.
+		// It reads the operation only to prove it is this Worker's own managed
+		// title; any other caller or job type keeps the generic denial.
+		accountGateDenied := func(reason string) error {
+			if action != domain.SubscriptionExecute {
+				return subscriptionDenied()
+			}
+			jobRecord, err := tx.Get(domain.JobKind, input.Operation)
+			if err != nil {
+				return subscriptionDenied()
+			}
+			job, err := store.Decode[domain.Job](jobRecord)
+			if err != nil || job.MachineID != input.Machine || job.InstanceID != input.Instance || job.AssignedDeviceID != actor.DeviceID {
+				return subscriptionDenied()
+			}
+			return preLeaseDenied(job, reason)
+		}
 		state := a.Subscription
-		if state == nil || state.RecoveryRequired {
+		if state == nil {
 			return nil, subscriptionDenied()
 		}
-		if state.ExclusiveServerObservationActive() || state.Lease != nil || state.ServerOperation != nil && state.ServerOperation.NativeStarted {
-			return nil, domain.Fail(domain.ResourceExhausted, "The selected account is exclusively leased.", "Wait for its original cleanup; never switch accounts automatically.")
+		if state.RecoveryRequired {
+			return nil, accountGateDenied("recovery-fence")
+		}
+		// Execution, quota and reset-credit Take keep contention first. A fresh
+		// lifecycle Take instead proves its queued original is still admissible
+		// after the Worker fences and before contention, so a definitely unadmitted
+		// claim is retired locally rather than retried behind an unrelated lease.
+		lifecycle := action != domain.SubscriptionExecute && action != domain.SubscriptionQuota && action != domain.SubscriptionResetCredit
+		accountBusy := func() error {
+			if state.ExclusiveServerObservationActive() || state.Lease != nil || state.ServerOperation != nil && state.ServerOperation.NativeStarted {
+				return domain.Fail(domain.ResourceExhausted, "The selected account is exclusively leased.", "Wait for its original cleanup; never switch accounts automatically.")
+			}
+			return nil
+		}
+		// A negotiated Worker may join the live shared owner of this account. The
+		// job type decides below; every other holder keeps contention first.
+		sharedCapable := false
+		if action == domain.SubscriptionExecute {
+			if _, machine, machineErr := activeMachine(tx, input.Machine); machineErr == nil {
+				sharedCapable = slices.Contains(machine.WorkerCapabilities, domain.SharedSubscriptionOwnerV1)
+			}
+		}
+		if !lifecycle {
+			if sharedCapable && state.SharedOwner() {
+				if state.ExclusiveServerObservationActive() || state.ServerOperation != nil && state.ServerOperation.NativeStarted {
+					return nil, domain.Fail(domain.ResourceExhausted, "The selected account is exclusively leased.", "Wait for its original cleanup; never switch accounts automatically.")
+				}
+			} else if err := accountBusy(); err != nil {
+				return nil, err
+			}
 		}
 		if err := currentInstance(tx, input.Machine, input.Instance); err != nil {
 			return nil, err
@@ -508,8 +723,11 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 			if state.Pending != nil && state.Pending.Action == domain.SubscriptionRefresh {
 				return nil, domain.Fail(domain.ResourceExhausted, "The selected account is refreshing under exclusive ownership.", "Wait on this account's original operation without failover.")
 			}
+			// An accepted logout, a login, disablement or removal that won before the
+			// title's Take leaves the claimed title untouched, so this gate must
+			// return the same typed result as the other pre-lease denials.
 			if state.Pending != nil || !a.Enabled || a.Health != domain.AccountReady || a.Removal != nil || a.Connection == nil || state.Generation == "" {
-				return nil, subscriptionDenied()
+				return nil, accountGateDenied("account-state")
 			}
 			jr, err := tx.Get(domain.JobKind, input.Operation)
 			if err != nil {
@@ -518,12 +736,42 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 			job, err := store.Decode[domain.Job](jr)
 			var execution domain.ExecutionJobInput
 			if err != nil || jr.Revision != input.Revision || job.State != domain.JobClaimed || job.MachineID != input.Machine || job.InstanceID != input.Instance || job.AssignedDeviceID != actor.DeviceID {
-				return nil, subscriptionDenied()
+				if err != nil {
+					return nil, subscriptionDenied()
+				}
+				return nil, preLeaseDenied(job, "claim-lost")
+			}
+			if job.Type != domain.GenerateSessionTitleJob {
+				// A claimed managed title has no lease until its own Take, yet it owns
+				// the account's frozen generation. Any other owner that took the account
+				// in that window would advance the generation on Finish and strand the
+				// running title, so eligible work waits for the title's original custody.
+				if reserved, err := managedTitleReservation(tx, r.ID, jr.ID); err != nil {
+					return nil, err
+				} else if reserved {
+					s.logger.DebugContext(ctx, "subscription_take_deferred_for_title", "account_id", r.ID, "operation_id", jr.ID, "job_type", job.Type)
+					return nil, managedTitleAccountReserved()
+				}
 			}
 			switch job.Type {
 			case domain.ExecuteSessionJob:
 				if domain.Decode(job.Input, &execution) != nil || execution.Validate() != nil {
 					return nil, subscriptionDenied()
+				}
+				if sharedCapable && !execution.SharedCodexOwnerEligible() {
+					sharedCapable = false
+					if err := accountBusy(); err != nil {
+						return nil, err
+					}
+				}
+				if sharedCapable {
+					if state.Lease == nil {
+						sharedOwner = true
+					} else if err := s.sharedMemberAdmissible(state, input.Machine, input.Instance, actor.DeviceID, input.Operation); err != nil {
+						return nil, err
+					} else {
+						joinedOwner = true
+					}
 				}
 
 			case domain.ForkSessionJob:
@@ -562,13 +810,46 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 					return nil, err
 				}
 				execution = compact.Assignment
+			case domain.GenerateSessionTitleJob:
+				// A managed title reuses the EXECUTE lease but is admitted only by its
+				// exact immutable assignment. The one-time inference claim commits in
+				// this transaction, so a lost response can never deliver credentials or
+				// send inference again. Pre-lease denials use preLeaseDenied above.
+				authority, err := s.validateManagedTitle(tx, jr, job, managedTitleTake)
+				if err != nil {
+					switch domain.SafeError(err).Code {
+					case domain.BudgetReached:
+						return nil, err
+					case domain.PermissionDenied, domain.Unsupported:
+						return nil, preLeaseDenied(job, "authority-lost")
+					}
+					return nil, subscriptionDenied()
+				}
+				if authority.Input.Managed.Generation != state.Generation {
+					return nil, preLeaseDenied(job, "generation-changed")
+				}
+				if claimed, err := tx.ClaimTitleInference(jr.ID); err != nil || !claimed {
+					return nil, subscriptionDenied()
+				}
+				// The claim exists only inside this transaction. Any denial below
+				// rolls it back with the rest, so it is still a no-delivery result.
+				claimedHere = true
+				execution = authority.Original
+				titleRevision = jr.Revision
 			default:
 				return nil, subscriptionDenied()
+			}
+			// Fork, compaction, review and title jobs keep exclusive custody of the
+			// account, so a live shared owner (or any lease) refuses them.
+			if !sharedOwner && !joinedOwner {
+				if err := accountBusy(); err != nil {
+					return nil, err
+				}
 			}
 			if execution.Version == 4 {
 				_, machine, err := activeMachine(tx, input.Machine)
 				if err != nil || !slices.Contains(machine.WorkerCapabilities, domain.ManagedCodexSubscriptionsV1) || !slices.Contains(machine.WorkerCapabilities, domain.ExecutionStartupV1) {
-					return nil, subscriptionDenied()
+					return nil, preLeaseDenied(job, "capability-lost")
 				}
 				directExecution = true
 			} else if _, err := subscriptionInstallation(tx, input.Machine); err != nil {
@@ -576,10 +857,13 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 			}
 
 			if execution.AccountID != r.ID || execution.ConnectionID != a.Connection.ID || !execution.Configuration.Subscription || execution.Configuration.SubscriptionService != domain.SubscriptionChatGPT || execution.Configuration.Harness != domain.Codex {
-				return nil, subscriptionDenied()
+				return nil, preLeaseDenied(job, "assignment-mismatch")
 			}
 			if canceled, err := tx.JobCancellationRequested(jr.ID); err != nil || canceled {
-				return nil, subscriptionDenied()
+				if err != nil {
+					return nil, subscriptionDenied()
+				}
+				return nil, preLeaseDenied(job, "cancellation-requested")
 			}
 		} else if action == domain.SubscriptionQuota || action == domain.SubscriptionResetCredit {
 			op := state.Observation
@@ -591,11 +875,22 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 			if err := tx.WorkerUpdateAdmission(input.Machine); err != nil {
 				return nil, err
 			}
-			if op != nil && (op.Action != action || op.MachineID != input.Machine || op.Phase != domain.SubscriptionQueued) {
-				return nil, subscriptionDenied()
-			}
-			if op == nil || op.ID != input.Operation || op.Canceled {
+			// A missing or replaced original is classified before any field of the
+			// current Pending operation, which belongs to someone else's claim.
+			if op == nil || op.ID != input.Operation {
 				return nil, subscriptionTakeNotAdmitted()
+			}
+			original := op.Action == action && op.MachineID == input.Machine && op.Phase == domain.SubscriptionQueued
+			if original && op.Canceled {
+				return nil, subscriptionTakeNotAdmitted()
+			}
+			// A matching claim that fails its original fields keeps the existing
+			// contention-first outcome and never carries the no-grant proof.
+			if err := accountBusy(); err != nil {
+				return nil, err
+			}
+			if !original {
+				return nil, subscriptionDenied()
 			}
 			if err := subscriptionActorValid(tx, op.Actor); err != nil {
 				return nil, err
@@ -605,7 +900,17 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 		if err := tx.WorkerUpdateAdmission(input.Machine); err != nil {
 			return nil, err
 		}
-		state.Lease = &domain.SubscriptionLease{ForkRevision: forkRevision, ID: input.Lease, OperationID: input.Operation, Revision: r.Revision + 1, Action: action, MachineID: input.Machine, InstanceID: input.Instance, DeviceID: actor.DeviceID, Epoch: s.subscriptionServerEpoch(), Generation: state.Generation, StartedAt: time.Now().UTC()}
+		now := time.Now().UTC()
+		if joinedOwner {
+			// A member never rotates or receives authentication; it only binds one
+			// exact job to the live owner.
+			state.AdmitMember(domain.SubscriptionMember{LeaseID: input.Lease, OperationID: input.Operation, Revision: r.Revision + 1, State: domain.SubscriptionMemberRunning, AdmittedAt: now})
+		} else {
+			state.Lease = &domain.SubscriptionLease{ForkRevision: forkRevision, TitleRevision: titleRevision, ID: input.Lease, OperationID: input.Operation, Revision: r.Revision + 1, Action: action, MachineID: input.Machine, InstanceID: input.Instance, DeviceID: actor.DeviceID, Epoch: s.subscriptionServerEpoch(), Generation: state.Generation, StartedAt: now, Shared: sharedOwner}
+			if sharedOwner {
+				state.Members = []domain.SubscriptionMember{{LeaseID: input.Lease, OperationID: input.Operation, Revision: r.Revision + 1, State: domain.SubscriptionMemberRunning, AdmittedAt: now}}
+			}
+		}
 		if _, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
 			return nil, err
 		}
@@ -623,11 +928,15 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 	var generation domain.ID
 	var leaseRevision uint64
 	var installation domain.Installation
+	var ownerLease domain.ID
 	err = s.Store.Read(ctx, func(tx *store.Tx) error {
-		_, a, err := s.subscriptionLease(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance)
+		_, a, view, _, err := s.subscriptionLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance, joinedOwner)
 		if err == nil {
 			generation = a.Subscription.Generation
-			leaseRevision = a.Subscription.Lease.Revision
+			leaseRevision = view.Revision
+			if joinedOwner {
+				ownerLease = a.Subscription.Lease.ID
+			}
 			// The v4 job already owns its immutable startup selection. Protected
 			// bundle delivery cannot reintroduce discovery or version admission.
 			if !directExecution {
@@ -639,19 +948,51 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
+	// Every error below returns before any bundle crosses the boundary. For a
+	// managed title that is a definite no-delivery outcome, so its exact lease is
+	// released instead of fencing the account for recovery, and the caller returns
+	// the typed no-delivery result instead of the original error (whose code, for
+	// example RecoveryRequired, the Worker must treat as uncertain). When the
+	// release is unconfirmed, or for every other lease, the original error is
+	// returned and the conservative recovery fence stays.
+	definiteNoDelivery := func(reason string, original error, code domain.Code) error {
+		if joinedOwner {
+			// A joined member holds no credential, so a failed admission releases
+			// only that member and never fences the owner or its siblings.
+			if releaseErr := s.releaseUndeliveredMember(ctx, s.subscriptionLeaseView, input.Account, input.Lease, input.Machine, input.Instance, reason); releaseErr != nil {
+				s.logger.WarnContext(ctx, "subscription_member_release_unconfirmed", "account_id", input.Account, "lease_id", input.Lease, "reason", reason, "code", domain.SafeError(releaseErr).Code)
+				return original
+			}
+			owned = false
+			return subscriptionMemberNotAdmitted(code)
+		}
+		if titleRevision == 0 {
+			return original
+		}
+		if releaseErr := s.releaseUndeliveredTitleLease(ctx, input.Account, input.Lease, input.Machine, input.Instance, leaseRevision); releaseErr != nil {
+			// The lease stays owned, so the deferred recovery fence still applies.
+			s.logger.WarnContext(ctx, "subscription_title_lease_release_unconfirmed", "account_id", input.Account, "lease_id", input.Lease, "reason", reason, "code", domain.SafeError(releaseErr).Code)
+			return original
+		}
+		owned = false
+		s.logger.InfoContext(ctx, "subscription_title_lease_released", "account_id", input.Account, "lease_id", input.Lease, "reason", reason, "result_code", code)
+		return subscriptionTitleNotDelivered(code)
+	}
 	var bundle []byte
-	if generation != "" {
+	// A joined member shares the live owner's native runtime. DeliDev never
+	// distributes a second copy of the authentication, so no bundle is read.
+	if generation != "" && !joinedOwner {
 		vault, err := s.secrets()
 		if err != nil {
-			return nil, rpc.Error(err, c)
+			return nil, rpc.Error(definiteNoDelivery("vault-unavailable", err, domain.Unavailable), c)
 		}
 		bundle, err = vault.Get(ctx, credentials.Ref{Owner: input.Account, ID: generation, Purpose: credentials.AccountLogin})
 		if err != nil {
-			return nil, rpc.Error(err, c)
+			return nil, rpc.Error(definiteNoDelivery("vault-read-failed", err, domain.Unavailable), c)
 		}
 		if _, _, err := subscription.Parse(bundle); err != nil {
 			clear(bundle)
-			return nil, rpc.Error(err, c)
+			return nil, rpc.Error(definiteNoDelivery("bundle-invalid", err, domain.Unavailable), c)
 		}
 	}
 	// Authorization after native I/O prevents revocation from winning during Get.
@@ -659,7 +1000,7 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 		if err := tx.Authorize(); err != nil {
 			return err
 		}
-		_, a, err := s.subscriptionLease(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance)
+		_, a, _, _, err := s.subscriptionLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance, joinedOwner)
 		if err != nil || a.Subscription.RecoveryRequired {
 			return subscriptionDenied()
 		}
@@ -669,6 +1010,11 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 			}
 			if canceled, err := tx.JobCancellationRequested(input.Operation); err != nil || canceled {
 				return subscriptionDenied()
+			}
+			if lease := a.Subscription.Lease; lease.TitleRevision != 0 {
+				if _, _, err := s.managedTitleLease(tx, *lease, managedTitleCustody); err != nil {
+					return subscriptionDenied()
+				}
 			}
 		} else if action == domain.SubscriptionQuota || action == domain.SubscriptionResetCredit {
 			op := a.Subscription.Observation
@@ -685,11 +1031,11 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 	})
 	if err != nil {
 		clear(bundle)
-		return nil, rpc.Error(err, c)
+		return nil, rpc.Error(definiteNoDelivery("denied-before-delivery", err, domain.Canceled), c)
 	}
-	s.logger.InfoContext(ctx, "subscription_lease_granted", "account_id", input.Account, "lease_id", input.Lease, "action", action)
+	s.logger.InfoContext(ctx, "subscription_lease_granted", "account_id", input.Account, "lease_id", input.Lease, "action", action, "shared_owner", sharedOwner, "joined_owner", joinedOwner, "owner_lease_id", ownerLease, "operation_id", input.Operation)
 	installationJSON, _ := json.Marshal(installation)
-	return connect.NewResponse(&pb.TakeSubscriptionResponse{LeaseId: string(input.Lease), GenerationId: string(generation), Bundle: bundle, LeaseRevision: leaseRevision, InstallationJson: installationJSON}), nil
+	return connect.NewResponse(&pb.TakeSubscriptionResponse{LeaseId: string(input.Lease), GenerationId: string(generation), Bundle: bundle, LeaseRevision: leaseRevision, InstallationJson: installationJSON, OwnerLeaseId: string(ownerLease)}), nil
 }
 
 var subscriptionUserCode = regexp.MustCompile(`^[A-Z0-9-]{4,32}$`)
@@ -755,10 +1101,25 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 	if err := validateAccountMutation(m); err != nil {
 		return nil, rpc.Error(err, c)
 	}
+	scope, err := subscriptionFinishScope(req.Msg.FinishScope)
+	if err != nil {
+		s.logger.Warn("subscription_finish_scope_rejected", "account_id", m.Id, "finish_scope", int32(req.Msg.FinishScope))
+		return nil, rpc.Error(err, c)
+	}
 	if matched, err := s.isClaudeSubscription(ctx, m.Id); err != nil {
 		return nil, rpc.Error(err, c)
 	} else if matched {
+		if _, managed, err := s.claudeAccountMode(ctx, m.Id); err != nil {
+			return nil, rpc.Error(err, c)
+		} else if managed {
+			return s.finishManagedClaudeExecution(ctx, req)
+		}
 		return s.finishClaudeSubscription(ctx, req)
+	}
+	if matched, err := s.isGrokSubscription(ctx, m.Id); err != nil {
+		return nil, rpc.Error(err, c)
+	} else if matched {
+		return s.finishGrokSubscription(ctx, req)
 	}
 	if err := workerActor(ctx, req.Msg.MachineId, req.Msg.InstanceId); err != nil {
 		return nil, rpc.Error(err, c)
@@ -766,12 +1127,7 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 	if len(req.Msg.Bundle) > subscription.MaxBundle {
 		return nil, rpc.Error(subscription.Invalid(), c)
 	}
-	input := struct {
-		Account, Lease, Machine, Instance, Generation domain.ID
-		Commitment                                    string
-		Revision                                      uint64
-		Cleanup, Refresh, Success                     bool
-	}{domain.ID(m.Id), domain.ID(req.Msg.LeaseId), domain.ID(req.Msg.MachineId), domain.ID(req.Msg.InstanceId), domain.ID(req.Msg.GenerationId), s.accountCommitment(domain.ID(m.RequestId), req.Msg.Bundle), m.ExpectedRevision, req.Msg.CleanupConfirmed, req.Msg.RefreshConfirmed, req.Msg.Succeeded}
+	input := subscriptionFinishInput{domain.ID(m.Id), domain.ID(req.Msg.LeaseId), domain.ID(req.Msg.MachineId), domain.ID(req.Msg.InstanceId), domain.ID(req.Msg.GenerationId), s.accountCommitment(domain.ID(m.RequestId), req.Msg.Bundle), m.ExpectedRevision, req.Msg.CleanupConfirmed, req.Msg.RefreshConfirmed, req.Msg.Succeeded, scope}
 	unlock, err := s.lockAccounts(ctx)
 	if err != nil {
 		return nil, rpc.Error(err, c)
@@ -782,14 +1138,31 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 		return nil, rpc.Error(err, c)
 	}
 	var original domain.Account
-	if !replayed {
+	if !replayed && input.Scope == domain.SubscriptionFinishMember {
+		// A member Finish releases one execution member and never reaches the
+		// credential path below.
+		if len(req.Msg.Bundle) != 0 || req.Msg.RefreshConfirmed {
+			return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "A member Finish carries no authentication.", "Only the owner Finish writes back the credential generation."), c)
+		}
+		result, err = s.Store.Mutate(ctx, domain.ID(m.RequestId), "subscription.finish", input, func(tx *store.Tx) (any, error) {
+			return s.settleSubscriptionMember(ctx, tx, s.subscriptionLeaseView, input.Account, input.Lease, input.Machine, input.Instance, input.Generation, input.Revision, input.Cleanup, input.Success)
+		})
+		if err != nil {
+			return nil, rpc.Error(err, c)
+		}
+	} else if !replayed {
+		var member *domain.SubscriptionMember
 		err = s.Store.Read(ctx, func(tx *store.Tx) error {
 			if err := tx.Authorize(); err != nil {
 				return err
 			}
-			_, original, err = s.subscriptionLease(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance)
-			if err == nil && original.Subscription.Lease.Action == domain.SubscriptionExecute {
-				_, err = managedSidechatLease(tx, *original.Subscription.Lease)
+			var view domain.SubscriptionLease
+			_, original, view, member, err = s.subscriptionLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance, false)
+			if err == nil && view.Action == domain.SubscriptionExecute {
+				_, err = managedSidechatLease(tx, view)
+				if err == nil && view.TitleRevision != 0 {
+					_, _, err = s.managedTitleLease(tx, view, managedTitleCustody)
+				}
 			}
 			return err
 		})
@@ -798,6 +1171,13 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 		}
 		state := original.Subscription
 		lease := state.Lease
+		// A shared owner is retired only by an explicit owner-scope Finish after
+		// its last runnable member, and a singleton lease only by the legacy scope.
+		// Neither crosses into the other representation.
+		if err := ownerFinishAllowed(state, input.Scope, member); err != nil {
+			s.logger.WarnContext(ctx, "subscription_owner_finish_refused", "account_id", input.Account, "lease_id", input.Lease, "finish_scope", input.Scope, "runnable_members", state.RunnableMembers(), "code", domain.SafeError(err).Code)
+			return nil, rpc.Error(err, c)
+		}
 		// Receipt replay above is read-only. A new finish cannot resolve an
 		// ownership loss or touch its vault generations through this channel.
 		if state.RecoveryRequired || state.Generation != input.Generation || lease.Generation != input.Generation || lease.Revision != input.Revision {
@@ -875,7 +1255,7 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 			} else if lease.Action == domain.SubscriptionLogout {
 				keep = ""
 			}
-			if err := cleanupSubscriptionReferences(ctx, vault, input.Account, keep, quotaProtectedGeneration(original.Subscription)); err != nil {
+			if err := cleanupSubscriptionReferences(ctx, vault, input.Account, keep, protectedGenerations(original.Subscription)...); err != nil {
 				return nil, rpc.Error(err, c)
 			}
 		}
@@ -883,14 +1263,23 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 			if err := tx.Authorize(); err != nil {
 				return nil, err
 			}
-			r, a, err := s.subscriptionLease(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance)
+			r, a, _, currentMember, err := s.subscriptionLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance, false)
 			if err != nil {
 				return nil, err
 			}
 			state := a.Subscription
+			if err := ownerFinishAllowed(state, input.Scope, currentMember); err != nil {
+				// A sibling was admitted between the check and the write.
+				return nil, err
+			}
 			if lease.Action == domain.SubscriptionExecute {
 				if _, err := managedSidechatLease(tx, *lease); err != nil {
 					return nil, err
+				}
+				if lease.TitleRevision != 0 {
+					if _, _, err := s.managedTitleLease(tx, *lease, managedTitleCustody); err != nil {
+						return nil, err
+					}
 				}
 			}
 			if state.RecoveryRequired || state.Generation != input.Generation {
@@ -916,10 +1305,21 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 				// a process timeout establishes safe refresh-token redistribution.
 			} else {
 				state.Lease = nil
+				// Owner retirement settles every retained member's cleanup ownership
+				// together with the owner's confirmed containment.
+				state.Members = nil
 				if state.Pending != nil && state.Pending.ID == lease.OperationID {
 					state.Pending = nil
 				}
 				if usable && lease.Action != domain.SubscriptionLogout {
+					// The original lease's first successful Finish is the only
+					// generation that can continue an already-frozen server-owned
+					// automatic claim. It is recorded only while the exact consent
+					// snapshot is still current, so a revoked or replaced consent
+					// and any later rotation cannot adopt the claim.
+					if episode := state.AutomaticCreditEpisode; lease.Action == domain.SubscriptionExecute && episode != nil && episode.ServerProof != nil && episode.ServerFinishGeneration == "" && episode.ServerProof.LeaseID == lease.ID && state.AutomaticCreditConsent != nil && *state.AutomaticCreditConsent == episode.ServerProof.Consent && state.Generation == episode.ServerProof.Consent.Generation {
+						episode.ServerFinishGeneration = domain.ID(m.RequestId)
+					}
 					state.AutomaticCreditConsent = nil
 					state.Generation = domain.ID(m.RequestId)
 					state.PaidCredits = nil
@@ -993,6 +1393,21 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 					receipt.ManagedSidechat = &domain.SubscriptionForkFinish{JobRevision: jr.Revision, Job: jr.ID, Account: r.ID, Machine: lease.MachineID, Instance: lease.InstanceID, Device: lease.DeviceID, Generation: input.Generation, Finish: domain.ID(m.RequestId)}
 				}
 			}
+			if usable && input.Cleanup && lease.Action == domain.SubscriptionExecute && lease.TitleRevision != 0 {
+				// Only a successful, independently cleaned managed title leaves the
+				// server-written receipt that publication requires.
+				// Account custody was validated above, before this transaction advanced
+				// the account generation; here only the exact job revision is bound.
+				jr, err := tx.Get(domain.JobKind, lease.OperationID)
+				if err != nil {
+					return nil, err
+				}
+				job, err := store.Decode[domain.Job](jr)
+				if err != nil || job.Type != domain.GenerateSessionTitleJob || job.State != domain.JobClaimed || jr.Revision != lease.TitleRevision || job.MachineID != lease.MachineID || job.InstanceID != lease.InstanceID || job.AssignedDeviceID != lease.DeviceID {
+					return nil, subscriptionDenied()
+				}
+				receipt.ManagedTitle = &domain.SubscriptionTitleFinish{JobRevision: jr.Revision, Job: jr.ID, Account: r.ID, Machine: lease.MachineID, Instance: lease.InstanceID, Device: lease.DeviceID, Generation: input.Generation, Finish: domain.ID(m.RequestId)}
+			}
 			return receipt, nil
 		})
 		if err != nil {
@@ -1008,7 +1423,7 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 			if lease.Action == domain.SubscriptionLogout {
 				keep = ""
 			}
-			if err := cleanupSubscriptionReferences(ctx, vault, input.Account, keep, quotaProtectedGeneration(original.Subscription)); err != nil {
+			if err := cleanupSubscriptionReferences(ctx, vault, input.Account, keep, protectedGenerations(original.Subscription)...); err != nil {
 				// The owned-error defer records recovery after releasing accountGate.
 				return nil, rpc.Error(err, c)
 			}
@@ -1024,7 +1439,7 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 	}
 	// Unreferenced staged/old generations stay vault-owned and are never granted.
 	// The explicit logout cleanup removes every owned reference before success.
-	s.logger.InfoContext(ctx, "subscription_operation_finished", "account_id", input.Account, "lease_id", input.Lease, "cleanup_confirmed", input.Cleanup, "replayed", replayed)
+	s.logger.InfoContext(ctx, "subscription_operation_finished", "account_id", input.Account, "lease_id", input.Lease, "cleanup_confirmed", input.Cleanup, "replayed", replayed, "finish_scope", input.Scope)
 	return connect.NewResponse(&pb.FinishSubscriptionResponse{Account: rpc.Resource(r), Replayed: result.Replayed}), nil
 }
 
@@ -1064,6 +1479,36 @@ func cleanupSubscriptionReferences(ctx context.Context, vault accountSecrets, ow
 		}
 	}
 	return nil
+}
+
+// releaseUndeliveredTitleLease releases the exact EXECUTE lease of a managed
+// title whose TakeSubscription is returning an error after the lease committed
+// but before any credential was returned: cancellation, account logout, disable
+// or removal, an invalid vault read or a lost custody lineage. No bundle crossed
+// the boundary and no generation changed, so the account stays ready (or keeps
+// its accepted logout runnable) instead of entering recovery. The one-time
+// inference claim stays consumed, so the title can never send. The release is a
+// bounded write detached from request cancellation, so a client disconnect
+// cannot turn a definite no-delivery outcome into a recovery fence. The caller
+// holds the accounts gate.
+func (s *Service) releaseUndeliveredTitleLease(ctx context.Context, account, lease, machine, instance domain.ID, revision uint64) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	_, err := s.Store.Mutate(ctx, domain.NewID(), "subscription.title-release", struct{ Account, Lease domain.ID }{account, lease}, func(tx *store.Tx) (any, error) {
+		r, a, err := s.subscriptionLease(ctx, tx, account, lease, machine, instance)
+		if err != nil {
+			return nil, err
+		}
+		state := a.Subscription
+		held := state.Lease
+		if state.RecoveryRequired || held.Action != domain.SubscriptionExecute || held.TitleRevision == 0 || held.Revision != revision {
+			return nil, subscriptionDenied()
+		}
+		state.Lease = nil
+		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+		return accountReceipt{ID: r.ID}, err
+	})
+	return err
 }
 
 func (s *Service) markSubscriptionRecovery(id domain.ID) error {
@@ -1150,6 +1595,11 @@ func (s *Service) retainLostSubscriptionLeases(machine, instance domain.ID, exec
 			if _, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
 				return nil, err
 			}
+			if lease.Shared {
+				// Loss of the shared owner fences every member at once. No member is
+				// adopted by another process and no input is replayed.
+				s.logger.WarnContext(ctx, "subscription_shared_owner_lost", "account_id", r.ID, "owner_lease_id", lease.ID, "members", len(state.Members), "runnable_members", state.RunnableMembers())
+			}
 			count++
 		}
 		return struct{ Count int }{count}, nil
@@ -1190,23 +1640,47 @@ func managedSidechatLease(tx *store.Tx, lease domain.SubscriptionLease) (*domain
 	return &fork, nil
 }
 
-// A quota reader owns its captured reference independently of the writer's
-// current generation. Rotation may retire it only after joined observer cleanup.
-func quotaProtectedGeneration(st *domain.SubscriptionState) domain.ID {
-	if st != nil && st.ServerQuota != nil && st.ServerQuota.Active() {
-		return st.ServerQuota.Generation
+// Access-only quota and credit readers own their captured references
+// independently of the writer's current generation. Rotation may retire them
+// only after joined observer cleanup and checked obsolete-reference retirement.
+func protectedGenerations(st *domain.SubscriptionState) []domain.ID {
+	var protected []domain.ID
+	if st != nil && st.ServerQuota != nil && (st.ServerQuota.Active() || st.ServerQuota.ReferenceRetirementPending) {
+		protected = append(protected, st.ServerQuota.Generation)
 	}
-	return ""
+	if st != nil && st.ServerCredit != nil && st.ServerCredit.AccessOnly && st.ServerCredit.Active() {
+		protected = append(protected, st.ServerCredit.Generation)
+	}
+	return protected
 }
 
 // compactionLeaseCapabilities reports whether a Worker advertises the exact
 // capability set for the validated compaction context-input kind. Revert
-// (version 4) is an independent operation gated only by CodexSessionRevertV1;
-// every other kind keeps the original native/Codex compaction pair. Neither
+// (version 4) is an independent operation gated by CodexSessionRevertV1, plus
+// CodexSessionRevertTargetProofV1 when the target selected skills or freezes a
+// retained checkpoint reference; every other kind keeps the original native/Codex compaction pair. Neither
 // set authorizes the other operation.
 func compactionLeaseCapabilities(capabilities []domain.WorkerCapability, compact domain.SessionCompactionInput) bool {
 	if compact.Revert != nil {
-		return compact.Version == 4 && machineCapabilityContains(capabilities, domain.CodexSessionRevertV1)
+		return compact.Version == 4 && machineCapabilityContains(capabilities, domain.CodexSessionRevertV1) && (!compact.Revert.RequiresProofCapability() || machineCapabilityContains(capabilities, domain.CodexSessionRevertTargetProofV1))
 	}
 	return machineCapabilityContains(capabilities, domain.NativeSessionCompactionV1) && machineCapabilityContains(capabilities, domain.CodexSessionCompactionV1)
+}
+
+// subscriptionFinishScope maps the wire scope to the domain scope. Only
+// UNSPECIFIED keeps the historical singleton meaning. Protobuf preserves unknown
+// numeric enum values, so any other value (a malformed request or a future
+// peer's scope) fails closed instead of inheriting the credential-writing
+// legacy Finish.
+func subscriptionFinishScope(value pb.SubscriptionFinishScope) (domain.SubscriptionFinishScope, error) {
+	switch value {
+	case pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_UNSPECIFIED:
+		return domain.SubscriptionFinishLegacy, nil
+	case pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_MEMBER:
+		return domain.SubscriptionFinishMember, nil
+	case pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_OWNER:
+		return domain.SubscriptionFinishOwner, nil
+	default:
+		return domain.SubscriptionFinishLegacy, domain.Fail(domain.InvalidArgument, "The subscription finish scope is not supported.", "Send an unspecified, member or owner finish scope that this server understands.")
+	}
 }

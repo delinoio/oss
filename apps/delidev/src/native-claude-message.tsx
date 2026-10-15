@@ -1,3 +1,4 @@
+import { LinkedPre } from "./external-link-text";
 import { claudeRetainedJSONBytes } from "./native-claude-json";
 import {
   ClaudeWebKind,
@@ -326,7 +327,13 @@ export function NativeClaudeMessage({
               </p>
             ) : (
               <>
-                <pre>{block.text}</pre>
+                <LinkedPre
+                  text={block.text}
+                  complete={
+                    block.state === BlockState.Completed ||
+                    block.state === BlockState.Stopped
+                  }
+                />
                 <small>{blockLabels[block.state]}</small>
               </>
             )}

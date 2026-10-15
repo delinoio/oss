@@ -120,14 +120,14 @@ func (c *OpenCodeEventPublisher) RetainCheckpoint(ctx context.Context) (string, 
 		return fail(err)
 	}
 	input := b.publisher.input
-	if input.Configuration.Harness != domain.OpenCode || (input.Version != 4 && input.Installation.Version != opencode.SupportedVersion) {
+	if input.Configuration.Harness != domain.OpenCode || (input.Version != 4 && !domain.HarnessVersionAllowed(domain.OpenCode, input.Installation.Version)) {
 		return fail(executionCheckpointUncertain())
 	}
 	claimBytes, err := json.Marshal(claims)
 	if err != nil {
 		return fail(executionCheckpointUncertain())
 	}
-	ref := openCodeCheckpointReference{Claim: b.reference, Completion: *c.completion, InputMode: input.Input.Mode, PromptSHA256: executionInputDigest([]byte(input.Input.Prompt)), ClaimsSHA256: executionInputDigest(claimBytes)}
+	ref := openCodeCheckpointReference{Claim: b.reference, Completion: *c.completion, InputMode: input.Input.Mode, PromptSHA256: openCodeInputDigest(input.Input), ClaimsSHA256: executionInputDigest(claimBytes)}
 	var assignment domain.Job
 	if domain.Decode(b.publisher.config.Assignment.DocumentJson, &assignment) != nil {
 		return fail(executionCheckpointUncertain())
@@ -157,7 +157,10 @@ func (c *OpenCodeEventPublisher) RetainCheckpoint(ctx context.Context) (string, 
 		return fail(executionCheckpointUncertain())
 	}
 	root := b.publisher.config.Root
-	home := filepath.Join(root, "runtimes", string(ref.Claim.ExecutionID))
+	home, err := openCodeHistoryRoot(ctx, root, ref.Claim.MachineID, ref.Claim.AccountID, ref.Claim.ExecutionID)
+	if err != nil {
+		return fail(executionCheckpointUncertain())
+	}
 	if opencode.InspectCheckpoint(ctx, home, native, nativeRef) != nil {
 		return fail(executionCheckpointUncertain())
 	}
@@ -181,7 +184,7 @@ func (c *OpenCodeEventPublisher) RetainCheckpoint(ctx context.Context) (string, 
 		return fail(executionCheckpointUncertain())
 	}
 	digest := executionInputDigest(raw)
-	if _, err := readOpenCodeExecutionCheckpoint(ctx, root, ref, digest); err != nil {
+	if _, err := readOpenCodeExecutionCheckpoint(ctx, root, ref, digest, true); err != nil {
 		return fail(err)
 	}
 	if _, err := check(); err != nil {
@@ -203,7 +206,11 @@ func (c *OpenCodeEventPublisher) RetainCheckpoint(ctx context.Context) (string, 
 // Read-only verification requires independent original journal metadata and
 // the exact retained digest. It never creates files, reconstructs claims or
 // grants a replacement process, new input or version-2 report.
-func readOpenCodeExecutionCheckpoint(ctx context.Context, root string, ref openCodeCheckpointReference, digest string) (openCodeExecutionCheckpoint, error) {
+//
+// inspectFiles compares the retained native files. It is set for the newest
+// checkpoint of a persistent profile only: a later run of the same profile
+// supersedes older checkpoints, which stay readable as metadata evidence.
+func readOpenCodeExecutionCheckpoint(ctx context.Context, root string, ref openCodeCheckpointReference, digest string, inspectFiles bool) (openCodeExecutionCheckpoint, error) {
 	if ctx.Err() != nil || ref.validate() != nil {
 		return openCodeExecutionCheckpoint{}, executionCheckpointUncertain()
 	}
@@ -223,8 +230,15 @@ func readOpenCodeExecutionCheckpoint(ctx context.Context, root string, ref openC
 	if err != nil || !bytes.Equal(canonical, raw) {
 		return openCodeExecutionCheckpoint{}, executionCheckpointUncertain()
 	}
-	home := filepath.Join(root, "runtimes", string(ref.Claim.ExecutionID))
-	if opencode.InspectCheckpoint(ctx, home, value.Native, value.NativeReference) != nil {
+	home, err := openCodeHistoryRoot(ctx, root, ref.Claim.MachineID, ref.Claim.AccountID, ref.Claim.ExecutionID)
+	if err != nil {
+		return openCodeExecutionCheckpoint{}, executionCheckpointUncertain()
+	}
+	if inspectFiles {
+		if opencode.InspectCheckpoint(ctx, home, value.Native, value.NativeReference) != nil {
+			return openCodeExecutionCheckpoint{}, executionCheckpointUncertain()
+		}
+	} else if opencode.InspectCheckpointMetadata(value.Native, value.NativeReference, home) != nil {
 		return openCodeExecutionCheckpoint{}, executionCheckpointUncertain()
 	}
 	return value, nil

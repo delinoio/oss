@@ -20,7 +20,6 @@ import (
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/claude"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
@@ -46,9 +45,22 @@ type Config struct {
 	remoteWorkspaceClone      bool
 	repositoryClone           bool
 	updatesEnabled            bool
-	terminals                 *terminalManager
-	Root                      string
-	StartupID                 domain.ID
+	parallelSessions          bool
+	// claudeMembers is the negotiated ClaudeDeviceOwnedMembersV1 capability of the
+	// current attach; claudeOwners holds this connection's device-owned Claude
+	// account owners.
+	claudeMembers bool
+	claudeOwners  *claudeOwnerRegistry
+	// openCodeForkReasoning is the negotiated OpenCode Fork profile v2
+	// capability of the current attach.
+	openCodeForkReasoning bool
+	// codexMembers is negotiated only after the server echoes the shared owner
+	// capability and the account's managed native installation is verified.
+	codexMembers bool
+	codexOwners  *codexOwnerRegistry
+	terminals    *terminalManager
+	Root         string
+	StartupID    domain.ID
 	// DesktopClientID enables proof only for authenticated ordinary desktop admission.
 	DesktopClientID domain.ID
 	Logger          *slog.Logger
@@ -93,6 +105,52 @@ type assignment struct {
 	steers      chan *pb.SteerInputControl
 	steerIDs    map[domain.ID]steerControlIdentity
 	native      bool
+}
+
+// maxAssignmentReceipts bounds the original assignment identities one stream
+// retains so late controls for completed jobs can be recognized without growing
+// with the lifetime of the connection.
+const maxAssignmentReceipts = 4096
+
+// assignmentReceipts retains the identities of assignments this stream received.
+// A control for a completed job is resolved against its original receipt, never
+// against whichever assignment happened to arrive last.
+type assignmentReceipts struct {
+	mu   sync.Mutex
+	seen map[string]struct{}
+	ring []string
+	next int
+}
+
+func newAssignmentReceipts() *assignmentReceipts {
+	return &assignmentReceipts{seen: map[string]struct{}{}, ring: make([]string, maxAssignmentReceipts)}
+}
+
+func (r *assignmentReceipts) record(id string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.seen[id]; ok {
+		return
+	}
+	if evicted := r.ring[r.next]; evicted != "" {
+		delete(r.seen, evicted)
+	}
+	r.ring[r.next] = id
+	r.seen[id] = struct{}{}
+	r.next = (r.next + 1) % len(r.ring)
+}
+
+func (r *assignmentReceipts) has(id string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	_, ok := r.seen[id]
+	return ok
+}
+
+// parallelAssignment reports whether the Worker may run this assignment on the
+// parallel session lane. Everything else stays on the serial main loop.
+func parallelAssignment(resource *pb.Resource, jobType domain.JobType) bool {
+	return resource.SessionId != "" && (jobType == domain.PrepareWorkspaceJob || jobType == domain.ExecuteSessionJob)
 }
 
 func authenticated[T any](credential Credential, message *T) *connect.Request[T] {
@@ -153,7 +211,7 @@ func workerOpenCodeCompactionInstallation(resource *pb.Resource) bool {
 		return false
 	}
 	for _, installation := range machine.Installations {
-		if installation.Harness == domain.OpenCode && installation.State == domain.InstallationDetected && installation.Version == domain.OpenCodeProtocolVersion && installation.ProtocolVerified && installation.Protocol != nil && installation.Protocol.Protocol == domain.OpenCodeHTTP && installation.Protocol.State == domain.ProtocolVerified && installation.Protocol.Problem == nil && filepath.IsAbs(installation.ResolvedPath) {
+		if installation.Harness == domain.OpenCode && installation.State == domain.InstallationDetected && domain.HarnessVersionAllowed(domain.OpenCode, installation.Version) && installation.ProtocolVerified && installation.Protocol != nil && installation.Protocol.Protocol == domain.OpenCodeHTTP && installation.Protocol.State == domain.ProtocolVerified && installation.Protocol.Problem == nil && filepath.IsAbs(installation.ResolvedPath) {
 			return true
 		}
 	}
@@ -169,6 +227,8 @@ func fatalTitleProfileProbeError(err error) error {
 
 func Run(ctx context.Context, config Config) (resultErr error) {
 	config.observations = &managedObservationRegistry{}
+	config.claudeOwners = newClaudeOwnerRegistry()
+	config.codexOwners = newCodexOwnerRegistry()
 	credential, err := LoadCredential(config.Root)
 	if err != nil {
 		return err
@@ -273,8 +333,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 	initialAttach := attachNetworkObservation(&pb.AttachWorkerRequest{RequestId: string(attachID), MachineId: string(credential.MachineID), InstanceId: string(instance), ProtocolVersion: rpc.ProtocolVersion, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}}, config)
 	config.terminals = newTerminalManager(ctx, config, client, credential, instance)
 	defer config.terminals.close()
-	var capabilityAttachID domain.ID
-	var capabilityProfile string
+	var capabilityAttach attachRequestIdentity
 	backoff := time.Second
 	ready := false
 	for ctx.Err() == nil {
@@ -288,6 +347,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 		config.quotaBlockSupported = false
 		config.functionOutputsSupported = false
 		claudeCapabilityExpected := false
+		managedClaudeExpected := false
 		metadataExpected := false
 		namedDirectoriesExpected := false
 		remoteCloneExpected := false
@@ -297,8 +357,12 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 		}
 		if err == nil {
 			openCodeForkExpected := runtime.GOOS != "windows" && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1)
+			// Reasoning history is an independent refinement of the base profile.
+			openCodeForkReasoningExpected := openCodeForkExpected && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_REASONING_V1)
 			openCodeCompactionExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1) && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1)
 			revertExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_REVERT_V1)
+			// The extended target envelope is only meaningful with Revert itself.
+			revertTargetProofExpected := revertExpected && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_REVERT_TARGET_PROOF_V1)
 			compactionExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1) && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1)
 			networkExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1)
 			subagentExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1)
@@ -338,16 +402,23 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				profile += "\x00subscription-paid-credits-v1"
 			}
 			config.nativeClaudeInstallation = nil
-			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1) {
+			supportsDeviceClaude := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1)
+			supportsManagedClaude := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CLAUDE_EXECUTION_V1)
+			if supportsDeviceClaude || supportsManagedClaude {
+				// One empty-profile probe backs both independently negotiated
+				// capabilities. It reads no personal login and creates no authority.
 				probeCtx, stop := context.WithTimeout(ctx, 30*time.Second)
-				claudeCapabilityExpected, err = verifyNativeClaudeSubscriptionProfile(probeCtx, config, attached.Msg.Machine)
+				var claudeProbe bool
+				claudeProbe, err = verifyNativeClaudeSubscriptionProfile(probeCtx, config, credential.MachineID, attached.Msg.Machine)
 				stop()
+				claudeCapabilityExpected = claudeProbe && supportsDeviceClaude
+				managedClaudeExpected = claudeProbe && supportsManagedClaude
 				if claudeCapabilityExpected {
 					var machine domain.Machine
 					if domain.Decode(attached.Msg.Machine.DocumentJson, &machine) == nil {
 						for index := range machine.Installations {
 							candidate := machine.Installations[index]
-							if candidate.Harness == domain.ClaudeCode && candidate.Version == claude.SupportedVersion && candidate.ProtocolVerified && candidate.State == domain.InstallationDetected && candidate.Problem == nil && candidate.Protocol != nil && candidate.Protocol.State == domain.ProtocolVerified && candidate.Protocol.Problem == nil {
+							if candidate.Harness == domain.ClaudeCode && domain.HarnessVersionAllowed(domain.ClaudeCode, candidate.Version) && candidate.ProtocolVerified && candidate.State == domain.InstallationDetected && candidate.Problem == nil && candidate.Protocol != nil && candidate.Protocol.State == domain.ProtocolVerified && candidate.Protocol.Problem == nil {
 								config.nativeClaudeInstallation = &candidate
 								break
 							}
@@ -368,11 +439,17 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if revertExpected {
 				profile += "\x00codex-session-revert-v1"
 			}
+			if revertTargetProofExpected {
+				profile += "\x00codex-session-revert-target-proof-v1"
+			}
 			if compactionExpected {
 				profile += "\x00codex-session-compaction-v1"
 			}
 			if managedCapabilityExpected && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1) {
 				profile += "\x00managed-codex-fork-v1"
+			}
+			if managedCapabilityExpected && verifiedTitleProfile && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_TITLES_V1) {
+				profile += "\x00managed-codex-titles-v1"
 			}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1) {
 				profile += "\x00codex-approval-review-v1"
@@ -394,6 +471,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 			if claudeCapabilityExpected {
 				profile += "\x00native-claude-subscriptions-v1"
+			}
+			if managedClaudeExpected {
+				profile += "\x00managed-claude-execution-v1"
 			}
 			if verifiedTitleProfile {
 				profile += "\x00verified"
@@ -434,14 +514,26 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if openCodeForkExpected {
 				profile += "\x00opencode-general-chat-fork-v1"
 			}
+			if openCodeForkReasoningExpected {
+				profile += "\x00opencode-general-chat-fork-reasoning-v1"
+			}
 			if openCodeCompactionExpected {
 				profile += "\x00opencode-compaction-v1"
 			}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1) {
 				profile += "\x00session-startup-progress-v1"
 			}
-			if capabilityAttachID == "" || capabilityProfile != profile {
-				capabilityAttachID, capabilityProfile = domain.NewID(), profile
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_EXACT_QUOTE_V1) {
+				profile += "\x00branch-prefix-exact-quote-v1"
+			}
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_PARALLEL_SESSIONS_V1) {
+				profile += "\x00parallel-sessions-v1"
+			}
+			if claudeCapabilityExpected && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CLAUDE_DEVICE_OWNED_MEMBERS_V1) {
+				profile += "\x00claude-device-owned-members-v1"
+			}
+			if managedCapabilityExpected && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SHARED_SUBSCRIPTION_OWNER_V1) && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_PARALLEL_SESSIONS_V1) {
+				profile += "\x00shared-subscription-owner-v1"
 			}
 			capabilities := []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1) {
@@ -454,6 +546,12 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			// Advertise generation only after the original server opts into it.
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1)
+			}
+			// OpenCode image attachments are an independent refinement of the base
+			// image capability. Older servers do not know the enum, so advertise it
+			// only after the original server opts into it.
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_IMAGE_INPUTS_V1) {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_IMAGE_INPUTS_V1)
 			}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_REVIEW_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_REVIEW_V1)
@@ -477,12 +575,18 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if openCodeForkExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1)
 			}
+			if openCodeForkReasoningExpected {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_REASONING_V1)
+			}
 			if compactionExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1)
 
 			}
 			if revertExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_REVERT_V1)
+			}
+			if revertTargetProofExpected {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_REVERT_TARGET_PROOF_V1)
 			}
 			if openCodeCompactionExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1)
@@ -495,6 +599,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 			if managedCapabilityExpected && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1)
+			}
+			if managedCapabilityExpected && verifiedTitleProfile && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_TITLES_V1) {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_TITLES_V1)
 			}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1)
@@ -520,6 +627,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if claudeCapabilityExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1)
 			}
+			if managedClaudeExpected {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CLAUDE_EXECUTION_V1)
+			}
 			if verifiedTitleProfile {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1)
 			}
@@ -539,13 +649,33 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1)
 			}
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_EXACT_QUOTE_V1) {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_EXACT_QUOTE_V1)
+			}
+			// Older servers reject unknown enums and keep singleton dispatch. Advertise
+			// only after the original server echoes support for parallel sessions.
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_PARALLEL_SESSIONS_V1) {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_PARALLEL_SESSIONS_V1)
+			}
+			// Device-owned Claude members are advertised only for a verified native
+			// Claude lane and only after the original server echoes support.
+			if claudeCapabilityExpected && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CLAUDE_DEVICE_OWNED_MEMBERS_V1) {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CLAUDE_DEVICE_OWNED_MEMBERS_V1)
+			}
+			if managedCapabilityExpected && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SHARED_SUBSCRIPTION_OWNER_V1) && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_PARALLEL_SESSIONS_V1) {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_SHARED_SUBSCRIPTION_OWNER_V1)
+			}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1) && openCodeChildExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1)
 			}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1)
 			}
-			negotiated, negotiateErr := client.AttachWorker(negotiate, authenticated(credential, attachNetworkObservation(&pb.AttachWorkerRequest{RequestId: string(capabilityAttachID), MachineId: string(credential.MachineID), InstanceId: string(instance), ProtocolVersion: rpc.ProtocolVersion, Version: rpc.Version, Capabilities: capabilities}, config)))
+			// The request ID is derived from the exact request, so any change to the
+			// advertised capability list rotates it across reconnects.
+			negotiation := attachNetworkObservation(&pb.AttachWorkerRequest{MachineId: string(credential.MachineID), InstanceId: string(instance), ProtocolVersion: rpc.ProtocolVersion, Version: rpc.Version, Capabilities: capabilities}, config)
+			capabilityAttach.assign(profile, negotiation)
+			negotiated, negotiateErr := client.AttachWorker(negotiate, authenticated(credential, negotiation))
 			stopNegotiation()
 			err = negotiateErr
 			if err == nil && negotiated.Msg.ServerId != string(credential.ServerID) {
@@ -586,6 +716,10 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				config.Logger.InfoContext(ctx, "worker auxiliary title capability not negotiated", "machine_id", credential.MachineID)
 			}
 			config.updatesEnabled = machineCapability(attached.Msg.Machine, domain.SignedWorkerUpdatesV1)
+			config.claudeMembers = claudeCapabilityExpected && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CLAUDE_DEVICE_OWNED_MEMBERS_V1) && machineCapability(attached.Msg.Machine, domain.ClaudeDeviceOwnedMembersV1)
+			config.openCodeForkReasoning = runtime.GOOS != "windows" && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1) && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_REASONING_V1) && machineCapability(attached.Msg.Machine, domain.OpenCodeGeneralChatForkV1) && machineCapability(attached.Msg.Machine, domain.OpenCodeGeneralChatForkReasoningV1)
+			config.parallelSessions = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_PARALLEL_SESSIONS_V1) && machineCapability(attached.Msg.Machine, domain.ParallelSessionsV1)
+			config.codexMembers = managedCapabilityExpected && config.parallelSessions && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SHARED_SUBSCRIPTION_OWNER_V1) && machineCapability(attached.Msg.Machine, domain.SharedSubscriptionOwnerV1)
 			config.startupProgress = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1) && machineCapability(attached.Msg.Machine, domain.SessionStartupProgressV1)
 			config.namedWorkspaceDirectories = namedDirectoriesExpected && machineCapability(attached.Msg.Machine, domain.NamedWorkspaceDirectoriesV1)
 			// The terminal owner was created before attachment and holds a Config copy.
@@ -594,7 +728,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			config.remoteWorkspaceClone = remoteCloneExpected && machineCapability(attached.Msg.Machine, domain.RemoteWorkspaceCloneV1)
 			config.repositoryClone = cloneExpected && machineCapability(attached.Msg.Machine, domain.RepositoryCloneV1)
 			config.inspectionMetadata = metadataExpected && machineCapability(attached.Msg.Machine, domain.RepositoryInspectionMetadataV1)
-			err = watchAttached(ctx, config, client, credential, instance, auxiliary, (managedCapabilityExpected || claudeCapabilityExpected) && managedSubscriptionCapability(attached.Msg.Machine))
+			err = watchAttached(ctx, config, client, credential, instance, auxiliary, (managedCapabilityExpected || claudeCapabilityExpected || managedClaudeExpected) && managedSubscriptionCapability(attached.Msg.Machine))
 			if time.Since(started) > 30*time.Second {
 				backoff = time.Second
 			}
@@ -685,6 +819,10 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 
 	jobs := make(chan assignment, 1)
 	var active sync.Map
+	receipts := newAssignmentReceipts()
+	// Parallel-lane assignments run in their own goroutines. The receiver is the
+	// only place that adds to the group, and teardown waits for it before joining.
+	var parallelJobs sync.WaitGroup
 	received := make(chan struct{})
 	// Receive independently of native execution. Revocation, stream replacement
 	// and server loss must cancel owned Git/harness work while it is running.
@@ -692,7 +830,6 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 	// protocol failure, never permission to buffer arbitrary future execution.
 	go func() {
 		defer close(received)
-		var lastAssigned string
 		for stream.Receive() {
 			deadline.Reset(heartbeatTimeout)
 			message := stream.Msg()
@@ -705,7 +842,7 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 				}
 				value, ok := active.Load(control.JobId)
 				if !ok {
-					if control.JobId == lastAssigned {
+					if receipts.has(control.JobId) {
 						continue
 					}
 					cancel(publicationUncertain())
@@ -753,7 +890,7 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 				if !ok {
 					// A control read before terminal publication may arrive after
 					// the local job finished. It cannot reopen that assignment.
-					if control.JobId == lastAssigned {
+					if receipts.has(control.JobId) {
 						continue
 					}
 					cancel(publicationUncertain())
@@ -805,7 +942,7 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 				if !ok {
 					// A control read before terminal publication may arrive after
 					// the local job finished. It cannot reopen that assignment.
-					if control.JobId == lastAssigned {
+					if receipts.has(control.JobId) {
 						continue
 					}
 					cancel(publicationUncertain())
@@ -889,7 +1026,17 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 			if message.CancelRequested {
 				stopJob()
 			}
-			lastAssigned = resource.Id
+			receipts.record(resource.Id)
+			if config.parallelSessions && parallelAssignment(resource, envelope.Type) {
+				parallelJobs.Add(1)
+				go func(work assignment) {
+					defer parallelJobs.Done()
+					if err := runAssignment(ctx, config, client, credential, instance, &active, work); err != nil {
+						cancel(err)
+					}
+				}(*work)
+				continue
+			}
 			select {
 			case jobs <- *work:
 			case <-ctx.Done():
@@ -933,6 +1080,10 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 		cancel(context.Canceled)
 		_ = stream.Close()
 		<-received
+		// Every owned parallel assignment observes the cancellation above and is
+		// joined before any shared Worker resource is released.
+		parallelJobs.Wait()
+		config.Logger.InfoContext(context.WithoutCancel(ctx), "worker_stream_joined", "machine_id", credential.MachineID, "instance_id", instance, "parallel_sessions", config.parallelSessions)
 		<-readsDone
 		<-imagesDone
 		<-forwardsDone
@@ -945,41 +1096,53 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 			return context.Cause(ctx)
 		case work = <-jobs:
 		}
-		resource := work.resource
-		if ctx.Err() != nil {
-			return context.Cause(ctx)
-		}
-		if resource.Kind != pb.EntityKind_ENTITY_KIND_JOB || resource.SchemaVersion != 1 || resource.Revision == 0 {
-			return domain.Fail(domain.RecoveryRequired, "The Worker received an invalid job envelope.", "Check server protocol compatibility.")
-		}
-		id := domain.ID(resource.Id)
-		if err := id.Validate(); err != nil {
-			return err
-		}
-		var job domain.Job
-		if err := decodeAssignedJob(resource.DocumentJson, &job); err != nil {
-			return err
-		}
-		if err := job.Validate(); err != nil {
-			return err
-		}
-		if job.MachineID != credential.MachineID || job.InstanceID != instance || job.State != domain.JobClaimed {
-			return domain.Fail(domain.PermissionDenied, "The received job belongs to another machine or process.", "Inspect the paired server and job ownership.")
-		}
-		err := runAndReportJob(ctx, config, client, credential, instance, work, resource, job)
-		active.Delete(resource.Id)
-		if err != nil {
-			// Deletion can fence native publication before cancellation arrives.
-			// Release the original assignment only after authenticated inspection
-			// proves its exact immutable retirement work. This is not completion
-			// or cleanup proof; the independent deletion lane still joins owners.
-			if ctx.Err() == nil && retiringAssignment(ctx, config, client, credential, instance, resource) {
-				config.Logger.InfoContext(ctx, "worker_assignment_retiring", "job_id", resource.Id, "session_id", resource.SessionId)
-				continue
-			}
+		if err := runAssignment(ctx, config, client, credential, instance, &active, work); err != nil {
 			return err
 		}
 	}
+}
+
+// runAssignment validates and runs one received assignment to its durable
+// report, then retires its live context. It is shared by the serial main loop
+// and the parallel lane, so both apply identical identity checks.
+func runAssignment(ctx context.Context, config Config, client delidevv1connect.WorkerServiceClient, credential Credential, instance domain.ID, active *sync.Map, work assignment) error {
+	resource := work.resource
+	if ctx.Err() != nil {
+		return context.Cause(ctx)
+	}
+	if resource.Kind != pb.EntityKind_ENTITY_KIND_JOB || resource.SchemaVersion != 1 || resource.Revision == 0 {
+		return domain.Fail(domain.RecoveryRequired, "The Worker received an invalid job envelope.", "Check server protocol compatibility.")
+	}
+	id := domain.ID(resource.Id)
+	if err := id.Validate(); err != nil {
+		return err
+	}
+	var job domain.Job
+	if err := decodeAssignedJob(resource.DocumentJson, &job); err != nil {
+		return err
+	}
+	if err := job.Validate(); err != nil {
+		return err
+	}
+	if job.MachineID != credential.MachineID || job.InstanceID != instance || job.State != domain.JobClaimed {
+		return domain.Fail(domain.PermissionDenied, "The received job belongs to another machine or process.", "Inspect the paired server and job ownership.")
+	}
+	config.Logger.InfoContext(ctx, "worker_assignment_started", "machine_id", credential.MachineID, "instance_id", instance, "job_id", resource.Id, "session_id", resource.SessionId, "type", job.Type, "parallel_lane", config.parallelSessions && parallelAssignment(resource, job.Type))
+	err := runAndReportJob(ctx, config, client, credential, instance, work, resource, job)
+	active.Delete(resource.Id)
+	if err != nil {
+		// Deletion can fence native publication before cancellation arrives.
+		// Release the original assignment only after authenticated inspection
+		// proves its exact immutable retirement work. This is not completion
+		// or cleanup proof; the independent deletion lane still joins owners.
+		if ctx.Err() == nil && retiringAssignment(ctx, config, client, credential, instance, resource) {
+			config.Logger.InfoContext(ctx, "worker_assignment_retiring", "job_id", resource.Id, "session_id", resource.SessionId)
+			return nil
+		}
+		config.Logger.WarnContext(ctx, "worker_assignment_failed", "machine_id", credential.MachineID, "instance_id", instance, "job_id", resource.Id, "session_id", resource.SessionId, "code", domain.SafeError(err).Code)
+		return err
+	}
+	return nil
 }
 
 // Native/workspace cleanup releases inner ownership before its final journal and
@@ -1023,6 +1186,20 @@ func runAndReportJob(ctx context.Context, config Config, client delidevv1connect
 				config.Logger.WarnContext(ctx, "native_review_publication_pending", "job_id", resource.Id, "code", domain.SafeError(err).Code)
 				return err
 			}
+		}
+	}
+	if job.Type == domain.ExecuteSessionJob {
+		// Settle the exact retained startup-failure report before the terminal
+		// report so confirmed no-send/cleanup proof is not lost to transport
+		// failure. A rejected or inconsistent report stays uncertain and the
+		// terminal report proceeds without fabricated proof.
+		outcome := reconcileExecutionStartupReport(ctx, jobConfig, jobConfig.execution, job, result.Problem != nil)
+		if outcome == startupReplayRetry {
+			config.Logger.WarnContext(ctx, "execution_startup_report_pending", "job_id", resource.Id)
+			if ctx.Err() != nil {
+				return context.Cause(ctx)
+			}
+			return publicationUncertain()
 		}
 	}
 	if err := prepareStorageRetirement(config, job, result); err != nil {
@@ -1136,6 +1313,10 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 	if job.Type == domain.DiscoverRepositoryBranchesJob {
 		journalLimit = domain.MaxRepositoryBranchesJobBytes
 		decodeLimit = domain.MaxRepositoryBranchesJobBytes
+	} else if job.Type == domain.NativeCodeReviewJob {
+		// A valid 1 MiB review output needs room for the finished journal
+		// envelope. Keep the existing finite private-file bound for this job.
+		decodeLimit = journalLimit
 	}
 	raw, err := security.ReadPrivate(path, int64(journalLimit))
 	if err == nil {
@@ -1149,12 +1330,25 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 			return journal{}, err
 		}
 		if result.State == journalFinished || result.State == journalReported {
+			if job.Type == domain.NativeCodeReviewJob {
+				var input domain.NativeCodeReviewInput
+				if domain.DecodeNativeCodeReviewInput(job.Input, &input) != nil || validateNativeReviewJournalOutcome(result, input, resource) != nil {
+					return journal{}, publicationUncertain()
+				}
+			}
 			return result, nil
 		}
 		if result.State != journalStarted {
 			return journal{}, domain.Fail(domain.RecoveryRequired, "A Worker journal has an unknown state.", "Preserve it for recovery.")
 		}
 		result.Problem = domain.Fail(domain.RecoveryRequired, "Execution began without a durable completion record.", "Reconcile the accepted operation before retrying.")
+		// A crash after the atomic review-result write but before the finished
+		// journal write leaves a verifiable completion record for native reviews.
+		if job.Type == domain.NativeCodeReviewJob {
+			if recovered, ok := recoverNativeReviewResult(ctx, config, resource, job); ok {
+				result.Output, result.Problem = recovered, nil
+			}
+		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return journal{}, err
 	} else {
@@ -1245,7 +1439,11 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 		if scope.MachineID != job.MachineID {
 			return nil, domain.NativeModelFailure()
 		}
-		result, err := harness.DiscoverNativeModels(ctx, harness.DiscoveryConfig{Root: root, OwnerID: owner, Logger: config.Logger}, scope)
+		discovery, err := discoveryConfig(config, root, owner, job.MachineID)
+		if err != nil {
+			return nil, err
+		}
+		result, err := harness.DiscoverNativeModels(ctx, discovery, scope)
 		if err != nil {
 			return nil, err
 		}
@@ -1373,7 +1571,11 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 		if err := domain.Decode(job.Input, &input); err != nil {
 			return nil, err
 		}
-		result, err := harness.Discover(ctx, harness.DiscoveryConfig{Root: root, OwnerID: owner, Logger: config.Logger}, input)
+		discovery, err := discoveryConfig(config, root, owner, job.MachineID)
+		if err != nil {
+			return nil, err
+		}
+		result, err := harness.Discover(ctx, discovery, input)
 		if err != nil {
 			return nil, err
 		}

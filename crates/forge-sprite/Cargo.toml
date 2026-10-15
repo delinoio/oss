@@ -16,4 +16,4 @@ png = "0.18.1"
 flate2 = { workspace = true }
 
 [dev-dependencies]
-zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+zip = { version = "=8.6.0", default-features = false, features = ["deflate"] }

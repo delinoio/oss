@@ -178,7 +178,7 @@ and original job records unchanged.
 
 ### cmds/delidev-cli/internal/workspace constraints
 
-- OpenCode General Chat Fork uses the closed `opencode-general-chat-v1` copy profile with an independent 8,192-entry/256 MiB bound. Preserve omitted legacy Codex profiles and their bounds; apply the chosen bound to initial inspection, actual copy and both final comparisons. Only independently owned sibling managed session roots may be relocated; no links, Git administration or special files may enter this copy.
+- OpenCode General Chat Fork uses the closed `opencode-general-chat-v1` copy profile, or its reasoning refinement `opencode-general-chat-v2`, with an independent 8,192-entry/256 MiB bound. Preserve omitted legacy Codex profiles and their bounds; apply the chosen bound to initial inspection, actual copy and both final comparisons. Only independently owned sibling managed session roots may be relocated; no links, Git administration or special files may enter this copy.
 
 - Remote Worktree sources follow the workspace contract: persist original clone ownership before Git, require native commitments and joined process cleanup, retain uncertain outcomes and legacy accepted requests, and keep independent Fork Git stores and metadata-only Sidechat lifetimes. Managed session clones are an explicit scratch-creation exception with session ownership; they grant no Local folder deletion authority.
 
@@ -388,12 +388,63 @@ The independent System 26 / Worker 15 profile uses pinned OpenCode `1.18.32`
 ForkSession/CLI/desktop job. Only existing Unix non-VCS General Chat Build/Execute
 sources qualify: latest successful accepted v2 completion, joined cleanup,
 original API account/Worker/model/configuration, and complete plain user/assistant
-text with step-start/finish. Reject Plan, reasoning, tools, snapshots, media,
+text with step-start/finish. Reject Plan, tools, snapshots, media,
 compaction, children, remembered permissions, native workspace routing and
-already-forked sources. Recheck current authority at acceptance, claim,
+already-forked sources. Reasoning is rejected by profile v1 and admitted only by
+the profile v2 refinement below. Recheck current authority at acceptance, claim,
 publication and child execution; reserve the source against dispatch, file
 writers, Stop, Archive and cleanup throughout capture. Original queued input
 remains on its source.
+
+### Profile v2: completed reasoning history
+
+The independent System 104 / Worker 69 pair `OPENCODE_GENERAL_CHAT_FORK_REASONING_V1`
+adds profile `opencode-general-chat-v2`. It refines, never replaces, profile
+`opencode-general-chat-v1` and System 26 / Worker 15. Every v2 peer must also hold
+capability 26/15; the existing capabilities keep their exact v1 meaning.
+
+- Selection is server-owned. The server inspects the retained canonical source
+  transcript during acceptance. Only a source that contains at least one completed
+  reasoning record selects v2, and only when the original Worker reported Worker
+  capability 69. A reasoning source on a Worker without it fails `Unsupported`
+  before any job, child or native session exists. A source without reasoning keeps
+  v1 even on a Worker that holds 69; its job, receipt and checkpoint bytes are
+  unchanged because the profile is an omitted-when-v1 enum (`OpenCodeForkProfile`)
+  on `OpenCodeForkRequests`, the child `ForkOrigin` and the first `ForkExecution`.
+- Canonical eligibility: a record with `value.Artifact` is accepted only when it is
+  one completed `ReasoningTextArtifact` (role `artifact`, state complete, started
+  and completed kind `reasoning-text`, no image, revision, summary or content), with
+  a native part ID, a parent assistant message that is not the turn, no input ID
+  and no tool, progress, phase, Claude, Grok, function-output, dynamic-tool or
+  attachment field. Publication re-parents it through the same
+  `inheritOpenCodeForkMessage` path as text, so the child keeps `Inherited`
+  provenance, and requires a mapped part ID and mapped parent message in the
+  Worker identity map. Every other artifact family stays rejected.
+- Native eligibility: the Worker clones a reasoning part only when its decoded form
+  has text, no `metadata`, no `synthetic`, no `ignored`, and a `time` with an end.
+  The Worker checks every source part before the first native mutation, so an
+  ineligible reasoning part never creates a native child. The same allow-list is
+  applied to the source checkpoint, the post-fork byte comparison (all non-identity
+  fields byte-identical, reasoning keeps its order and own part identity) and the
+  persisted child checkpoint. The checkpoint fork proof records
+  `reasoning: true` only for v2; a v1 checkpoint cannot contain reasoning.
+- Reasoning counts toward the 8,192-entry / 256 MiB copy bound, the 4,096-message
+  and 16,384-part history bounds and the result-capacity reservation. Nothing about
+  Plan, tools, snapshots, todo, compaction, children, media, remembered
+  permissions, Windows, VCS workspaces or already-forked sources changes.
+- The child preparation records `fork_profile` `opencode-general-chat-v2`; the server
+  rejects a result whose profile differs from the selected one. The Worker compares
+  the retained profile with its private checkpoint.
+- Capability pairing: a Worker attachment that reports capability 69 without 15 is
+  rejected `InvalidArgument` before any machine state is persisted, and machine
+  validation rejects the same set. A peer qualifies for profile v2 only when it holds
+  both 15 and 69.
+- Continuation binding: the retained child `ForkOrigin` profile, not the one-shot
+  first-turn fork input, decides the requirement. Every v2 child execution (first
+  turn, Resume, later queued continuation, retry, compaction and execution
+  authority) needs both 15 and 69 on the original Worker; a Worker that reconnects
+  with a downgraded profile cannot start or authorize any further turn and the child
+  stays paused.
 
 Copy all regular General Chat files, including hidden/ignored files and executable
 modes, into an exclusively created independent sibling. Bound this profile to
@@ -455,6 +506,12 @@ The desktop checks the complete retained OpenCode transcript before presenting
 Fork. Its cancellable authenticated Resource RPC read is keyed to the original
 session revision and native thread, spans at most 10,000 records/8 MiB and
 rejects repeated/incomplete pages, tool/artifact content and non-empty changes.
+A completed plain reasoning artifact record is eligible only when the server
+reports System 26 and 104 and the original Runner Device reports Worker 15 and 69;
+otherwise the existing unsupported-source copy applies and no new copy is shown.
+Each eligible text or reasoning record counts toward the two-record minimum exactly
+as the server counts retained canonical records, so a turn whose assistant has a
+completed reasoning part but no text part remains forkable.
 An original-revision read before and after pagination detects changed sources.
 Submit refreshes the profile and does not use stale success after read failure.
 Desktop preflight captures one immutable source/revision/turn and draft generation
@@ -562,3 +619,12 @@ items grant no reply, dispatch, adoption or media retrieval. The restricted
 read-only Sidechat history profile rejects dynamic items and never obtains an
 original request responder. Existing immutable account, checkpoint, workspace,
 accepted-input and independent cleanup boundaries apply unchanged.
+
+## Fork profiles
+
+Fork reads the source history through its registered profile and creates the
+child's retained history in a distinct `fork` profile keyed by the fork runtime
+identifier. `runtimes/<runtime-id>` remains the exclusive operation journal
+holding `fork-completion.json`; a rejected pre-native attempt removes only that
+journal, never the profile. See the
+[harness contract](cmds-delidev-harness-contract.md#persistent-native-profiles).

@@ -40,6 +40,10 @@ import {
 import { document, object, text } from "./documents";
 import { useRetainedMutation } from "./mutation";
 import { Failure, Problem } from "./ui";
+import {
+  NavigationIntentSource,
+  useNavigationIntent,
+} from "./navigation-intent";
 import { Interaction } from "./interactions";
 import { currentInboxSource, inboxResponseCurrent } from "./inbox-source";
 import {
@@ -52,6 +56,7 @@ import {
 } from "./inbox-drafts";
 import { ResourceChoice } from "./configuration-fields";
 import { SidebarSurface } from "./sidebar-context";
+import { EntranceMotion, useEntranceActivation } from "./entrance-motion";
 
 const inboxIdentity = (view: InboxView) => view.entry!.id;
 const inboxRevision = (view: InboxView) => view.entry!.revision;
@@ -191,14 +196,23 @@ export function Inbox({
   notificationId = "",
   notificationActivation = 0,
   openOperational,
+  restoreId = "",
+  restoreActivation = 0,
+  selectionChanged,
 }: {
   active: boolean;
   open: (sessionId: string) => void;
   notificationId?: string;
   notificationActivation?: number;
   openOperational?: (resource: Resource) => void;
+  /** Entry reopened by the product route after a reload; never redirects. */
+  restoreId?: string;
+  restoreActivation?: number;
+  /** Reports the selected entry ID ("" when none) for the product route. */
+  selectionChanged?: (id: string) => void;
 }) {
   const productLabel = useProductLabels();
+  const navigationIntent = useNavigationIntent();
   useLocale();
   const emptyFilters = {
     source: InboxSource.UNSPECIFIED,
@@ -220,6 +234,15 @@ export function Inbox({
   const pendingReadGeneration = useRef<number | undefined>(undefined);
   const lastNotificationActivation = useRef(0);
   const [selectedId, setSelectedId] = useState("");
+  // Counts explicit selections (row, keyboard, notification). Only a count
+  // change starts the 120ms X4 detail entrance; reads, polling, retries, draft
+  // edits and list refreshes never touch it.
+  const [detailEntrances, setDetailEntrances] = useState(0);
+  const detailEntrance = useEntranceActivation(
+    `inbox:${selectedId}:${detailEntrances}`,
+    Boolean(selectedId) && active,
+    EntranceMotion.X4,
+  );
   const [readTrigger, setReadTrigger] = useState(0);
   const [detailRead, setDetailRead] = useState<DetailRead>();
   const [draftCollection, setDraftCollection] = useState<DraftCollection>({
@@ -261,15 +284,34 @@ export function Inbox({
   };
   const selectItem = (id: string, keyboard = false) => {
     if (!id) return;
+    navigationIntent(NavigationIntentSource.InboxSelect);
     lastRowFocus.current = id;
     restoreRowFocus.current = false;
     keyboardSelection.current =
       keyboard ||
       (typeof window.matchMedia === "function" &&
         window.matchMedia("(max-width: 1119px)").matches);
+    // Choosing the row that is already open is not a new visit.
+    if (id !== selectedId) setDetailEntrances((value) => value + 1);
     setSelectedId(id);
     setReadTrigger((value) => value + 1);
   };
+
+  const lastRestoreActivation = useRef(0);
+  useEffect(() => {
+    if (!restoreId || restoreActivation === lastRestoreActivation.current)
+      return;
+    lastRestoreActivation.current = restoreActivation;
+    lastRowFocus.current = restoreId;
+    restoreRowFocus.current = false;
+    keyboardSelection.current = false;
+    setDetailEntrances((value) => value + 1);
+    setSelectedId(restoreId);
+    setReadTrigger((value) => value + 1);
+  }, [restoreId, restoreActivation]);
+  useEffect(() => {
+    selectionChanged?.(selectedId);
+  }, [selectedId, selectionChanged]);
 
   useEffect(() => {
     if (
@@ -283,6 +325,8 @@ export function Inbox({
     keyboardSelection.current =
       typeof window.matchMedia === "function" &&
       window.matchMedia("(max-width: 1119px)").matches;
+    // Every new notification activation is an explicit entry.
+    setDetailEntrances((value) => value + 1);
     setSelectedId(notificationId);
     setReadTrigger((value) => value + 1);
   }, [notificationId, notificationActivation]);
@@ -501,6 +545,7 @@ export function Inbox({
     });
 
   const closeDetail = () => {
+    navigationIntent(NavigationIntentSource.InboxClose);
     restoreRowFocus.current = true;
     setSelectedId("");
     setDetailRead(undefined);
@@ -776,7 +821,7 @@ export function Inbox({
                 <h3>{copy("inbox.selectAnItemToViewIts_e2e998")}</h3>
               </div>
             ) : (
-              <>
+              <div className="inbox-detail-entrance" {...detailEntrance}>
                 <div className="inbox-detail-top">
                   <button className="inbox-back" onClick={closeDetail}>
                     {copy("inbox.backToInbox_97555c")}
@@ -872,7 +917,7 @@ export function Inbox({
                     <span />
                   </div>
                 ) : null}
-              </>
+              </div>
             )}
           </section>
         </div>

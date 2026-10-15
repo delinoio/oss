@@ -38,6 +38,11 @@ import {
   useSidebarPresentation,
 } from "./sidebar-context";
 import { Surface } from "./surface";
+import {
+  EntranceMotion,
+  useActivationCount,
+  useEntranceActivation,
+} from "./entrance-motion";
 export { Surface } from "./surface";
 import { useShortcuts } from "./shortcut-provider";
 import { ShortcutExecution, ShortcutId, ShortcutInput } from "./shortcuts";
@@ -102,6 +107,29 @@ export function Search({
   const [query, setQuery] = useState<SearchFilters>();
   const content = useRef<HTMLElement>(null);
   const root = useScrollRoot(content);
+  // Destination activation (a rising edge of `active`) owns one 120ms Y4
+  // entrance on the results section. Typing, IME composition, debounce, result
+  // replacement, pagination and refresh never change the key, and the focus
+  // effects below never wait for the motion.
+  const destinationEntrance = useEntranceActivation(
+    `search:${useActivationCount(active)}`,
+    active,
+    EntranceMotion.Y4Short,
+  );
+  const attachEntrance = destinationEntrance.ref;
+  // One stable callback keeps the scroll-root ref and the entrance listeners on
+  // the same section without re-attaching on every render.
+  const pageRef = useCallback(
+    (node: HTMLElement | null) => {
+      content.current = node;
+      const detach = attachEntrance?.(node);
+      return () => {
+        if (typeof detach === "function") detach();
+        content.current = null;
+      };
+    },
+    [attachEntrance],
+  );
   const searchInput = useRef<HTMLInputElement>(null);
   const focusedOnce = useRef(false);
   const activatedWhileWidePaneHidden = useRef(false);
@@ -192,6 +220,10 @@ export function Search({
         activatedWhileWidePaneHidden.current = true;
       return;
     }
+    // The wide-only latch must not outlive the presentation it guards. Once the
+    // retained Search is explicitly shown in the compact drawer, that opening is
+    // a focusable first presentation. Ordinary wide expansion keeps the latch.
+    if (compact && drawerOpen) activatedWhileWidePaneHidden.current = false;
     if (
       !presentation.settled ||
       activatedWhileWidePaneHidden.current ||
@@ -374,7 +406,12 @@ export function Search({
           </button>
         </form>
       </SidebarSurface>
-      <section ref={content} hidden={!active} className="page">
+      <section
+        ref={pageRef}
+        hidden={!active}
+        className="page"
+        data-entrance={destinationEntrance["data-entrance"]}
+      >
         <h2>{copy("views.searchConversations_8abdf3")}</h2>
         {!query ? (
           <p>{copy("views.chooseASearchTermAndFilters_99f204")}</p>

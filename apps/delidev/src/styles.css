@@ -200,6 +200,90 @@ pre {
 .sidebar-rail-button:focus-visible .sidebar-rail-tooltip {
   opacity: 1;
 }
+.sidebar-more-trigger[aria-expanded="true"] {
+  background: var(--surface-selected);
+  color: var(--text);
+}
+.sidebar-more-trigger[aria-expanded="true"] .sidebar-rail-tooltip {
+  opacity: 0;
+}
+.sidebar-more-popover {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  width: 230px;
+  max-width: calc(100vw - 8px);
+  max-height: calc(100dvh - 8px);
+  overflow: auto;
+  overscroll-behavior: none;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  z-index: 40;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  box-shadow: 0 4px 20px var(--shadow-soft);
+}
+.sidebar-more-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.sidebar-more-item,
+.sidebar-more-pin {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  border-color: transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+}
+.sidebar-more-item {
+  flex: 1 1 auto;
+  min-width: 0;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 0 10px;
+  text-align: left;
+}
+.sidebar-more-pin {
+  flex: 0 0 auto;
+  justify-content: center;
+  width: 40px;
+  min-width: 40px;
+  padding: 0;
+  color: var(--text-secondary);
+}
+.sidebar-more-item:hover,
+.sidebar-more-pin:hover,
+.sidebar-more-item:focus-visible,
+.sidebar-more-pin:focus-visible {
+  background: var(--surface-hover);
+}
+.sidebar-more-item[data-current="true"] {
+  background: var(--selected-background);
+  color: var(--selected-text);
+}
+.sidebar-more-pin[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.sidebar-more-popover .navigation-preference-notice {
+  display: grid;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 8px 10px 4px;
+  border-top: 1px solid var(--border);
+}
+.sidebar-more-popover .navigation-preference-notice p {
+  margin: 0;
+}
+.sidebar-more-popover .navigation-preference-notice button {
+  min-height: 40px;
+}
 .sidebar-pane {
   display: flex;
   min-width: 0;
@@ -2929,6 +3013,10 @@ dialog nav {
   overflow-wrap: anywhere;
 }
 .sidebar-pull-requests .pr-state-choice > input:checked + span {
+  /* Only the selected segment background animates; themes.css suppresses it for
+     Animation Off and reduced motion. Unchecked segments, including their
+     hover surface, change instantly. */
+  transition: background-color 120ms ease-out;
   background: var(--surface);
   color: var(--selected-text);
   font-weight: 600;
@@ -3299,22 +3387,42 @@ dialog nav {
 .account-wizard > p {
   color: var(--muted);
 }
-.account-provider-choices {
+/* The picker is always one full-width column. Scroll continuation wraps each
+   reached page in a data-payload-page element, so those wrappers use the same
+   single-column stack and gap as the list itself. */
+.account-provider-choices,
+.account-provider-choices > [data-payload-page] {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 12px;
+  gap: 10px;
+}
+.account-provider-choices {
+  width: 100%;
+  max-width: 720px;
   margin-block: 16px;
+}
+.account-provider-choices > [data-payload-page] {
+  min-width: 0;
+}
+/* A measured placeholder applies its previous page height as min-height. Keep
+   its auto-sized rows at content height so Restore is never stretched to it. */
+.account-provider-choices
+  > [data-payload-page][data-payload-state="placeholder"] {
+  align-content: start;
+  align-items: start;
 }
 .account-provider-action {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  box-sizing: border-box;
+  width: 100%;
   min-width: 0;
-  min-height: 88px;
-  padding: 16px;
+  min-height: 64px;
+  padding: 12px;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: 8px;
   background: var(--surface);
   color: var(--text);
   text-align: left;
@@ -3329,8 +3437,9 @@ dialog nav {
 }
 .account-provider-method {
   display: block;
-  margin-top: 6px;
+  margin-top: 4px;
   color: var(--muted);
+  font-size: 12px;
 }
 .account-provider-chevron {
   flex: 0 0 auto;
@@ -3345,11 +3454,6 @@ dialog nav {
 .account-wizard h4:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 3px;
-}
-@container (min-width: 560px) {
-  .account-provider-choices {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 .subscription-account-create {
   margin-top: 22px;
@@ -4519,6 +4623,8 @@ dialog nav {
 .is-home .sidebar-session-row[aria-current="true"] {
   background: var(--selected-background);
   color: var(--selected-text);
+  /* Inset ring keeps the cue visible without changing row geometry. */
+  box-shadow: inset 0 0 0 1px var(--selected-border);
 }
 .is-home .sidebar-empty,
 .is-home .sidebar-query-state,

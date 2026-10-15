@@ -82,6 +82,29 @@ it("keeps four ordered panels mounted and preserves drafts and per-panel scroll"
   );
   expect(document.querySelectorAll("[role=tabpanel]")).toHaveLength(4);
 });
+it("applies the shared flat tab strip classes and tracks the selected item", () => {
+  render(fixture());
+  const tabs = screen.getAllByRole("tab");
+  expect(tabs[0].parentElement!.classList.contains("tab-strip")).toBe(true);
+  expect(tabs[0].parentElement!.getAttribute("role")).toBe("tablist");
+  for (const tab of tabs) {
+    expect(tab.classList.contains("tab-item")).toBe(true);
+    expect(tab.classList.contains("tab-label")).toBe(true);
+  }
+  expect(tabs.map((tab) => tab.classList.contains("is-selected"))).toEqual([
+    true,
+    false,
+    false,
+    false,
+  ]);
+  fireEvent.click(tabs[2]);
+  expect(tabs.map((tab) => tab.classList.contains("is-selected"))).toEqual([
+    false,
+    false,
+    true,
+    false,
+  ]);
+});
 it("moves tab focus without activating and keeps read-only navigation during locks", () => {
   render(fixture(true));
   const tabs = screen.getAllByRole("tab");

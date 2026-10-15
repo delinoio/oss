@@ -27,6 +27,7 @@ PPTX list, image, shape, chart and connector components are leaves. Nonempty Rea
 ### Project requirements
 
 - `react-forge` is the public npm Node.js 24 / React 19.2.8 cross-platform document project in the feature. Follow `project-react-forge.md` and its complete requirements. Keep JavaScript reconciliation outside native workers, format models independent, sessions in memory, exports revision-pinned and atomic, and imported opaque content preserved. All required formats and evidence are required before completion.
+- GLB/FBX `SceneSession` exposes explicit static geometry derivation under the scene contract. Reserve aggregate admission before native work, retain original registered assets, and publish only validated complete derived handles after cancellation checks.
 
 ### Application integration
 
@@ -112,7 +113,7 @@ The uncached `ci:host` task passes `CARGO_TARGET_DIR` through its task-local str
 
 Test-only LibreOffice/Poppler and pinned Python inspection dependencies produce created/edited Office renders plus independent native PDF renders. Original external Office fixtures are rendered alongside edits so original pagination, including deliberate blank pages, is distinguished from lost output. Structural XML, expected text, visible chart series, CJK text and PDF semantics are checked. Tool/font versions and checksums are recorded without redistributing system fonts. CI retains render and benchmark artifacts for seven days and removes generated package dist even on failure.
 
-`benchmark` runs representative authoring for all formats, preserving edits for three Office formats, and near-limit trees/slides in fresh Node processes. Reports include preparation/export duration, output size, peak RSS, event-loop p99/max delay and utilization, OS/CPU and dependency versions. They are observations without numerical guarantees. See [validation evidence](packages-react-forge-validation.md) for reproduction and limitations.
+`benchmark` runs representative authoring for all formats, preserving edits for three Office formats, and near-limit trees/slides in fresh Node processes. Reports include preparation/export duration, output size, peak RSS, event-loop p99/max delay and utilization, OS/CPU and dependency versions. The native builder records the selected development or release profile and SHA-256 of the copied host binding in private generated `dist/release/native-build.json`. Before collecting samples, the benchmark verifies that record against the binding and reports its recorded profile. Missing, invalid or mismatched provenance stops the benchmark. The record stays outside public package tarballs. These measurements are observations without numerical guarantees. See [validation evidence](packages-react-forge-validation.md) for reproduction and limitations.
 
 The private source workspace manifest omits `os`/`cpu` installation filters so unrelated cross-platform pnpm tools retain byte-clean stdout (including protoc plugins and clibox). Native build and loading independently enforce Node.js 24 and the six declared platform/architecture targets.
 
@@ -141,6 +142,10 @@ The private source workspace generates a public `@delino/react-forge` package pl
 ## Static 3D extension (Published in npm 0.2.0)
 
 The generation-only GLB/FBX extension follows [the scene contract](packages-react-forge-scene-contract.md). `SceneSession` shares local publication and MCP lifecycle, uses independent world-space bounds and native scene engines, and introduces no runtime conversion dependency.
+
+The unreleased `react-forge analyze <entry.tsx> [--data <json>] [--json]` command accepts only a GLB/FBX scene task, returns the pinned scene complexity report as JSON or prints totals and the ten largest mesh rows, and disposes the session. It uses the same trusted task loader and cancellation behavior as `run`, but does not automatically export or publish. Task code can still perform explicit caller-authored effects. See the [scene analysis contract](packages-react-forge-scene-contract.md).
+
+The unreleased GLB/FBX `geometryBudget` option is set in trusted task code. CLI `run` subscribes to typed scene warnings before export: text mode writes them to stderr, while JSON mode includes them in successful or failed results when emitted. A warning can precede a later failed export and does not establish publication. No CLI threshold flags are added. See the [scene contract](packages-react-forge-scene-contract.md).
 
 ## Sprite Extension (Published in npm 0.2.0)
 

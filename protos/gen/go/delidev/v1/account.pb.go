@@ -1250,8 +1250,10 @@ type ChangeAccountApiFormatRequest struct {
 	Enabled               bool                   `protobuf:"varint,4,opt,name=enabled,proto3" json:"enabled,omitempty"`
 	ExcludeAutomatic      bool                   `protobuf:"varint,5,opt,name=exclude_automatic,json=excludeAutomatic,proto3" json:"exclude_automatic,omitempty"`
 	RecoveryNotifications bool                   `protobuf:"varint,6,opt,name=recovery_notifications,json=recoveryNotifications,proto3" json:"recovery_notifications,omitempty"`
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	// Revision of the Provider resource inspected for the selected API profile.
+	ProviderRevision uint64 `protobuf:"varint,7,opt,name=provider_revision,json=providerRevision,proto3" json:"provider_revision,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *ChangeAccountApiFormatRequest) Reset() {
@@ -1324,6 +1326,13 @@ func (x *ChangeAccountApiFormatRequest) GetRecoveryNotifications() bool {
 		return x.RecoveryNotifications
 	}
 	return false
+}
+
+func (x *ChangeAccountApiFormatRequest) GetProviderRevision() uint64 {
+	if x != nil {
+		return x.ProviderRevision
+	}
+	return 0
 }
 
 type ChangeAccountApiFormatResponse struct {
@@ -1472,14 +1481,15 @@ const file_delidev_v1_account_proto_rawDesc = "" +
 	"\aaccount\x18\x02 \x01(\v2\x14.delidev.v1.ResourceR\aaccount\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x03 \x01(\tR\trequestId\x12\x1a\n" +
-	"\breplayed\x18\x04 \x01(\bR\breplayed\"\xa1\x02\n" +
+	"\breplayed\x18\x04 \x01(\bR\breplayed\"\xce\x02\n" +
 	"\x1dChangeAccountApiFormatRequest\x120\n" +
 	"\bmutation\x18\x01 \x01(\v2\x14.delidev.v1.MutationR\bmutation\x12:\n" +
 	"\fapi_protocol\x18\x02 \x01(\x0e2\x17.delidev.v1.ApiProtocolR\vapiProtocol\x12\x14\n" +
 	"\x05alias\x18\x03 \x01(\tR\x05alias\x12\x18\n" +
 	"\aenabled\x18\x04 \x01(\bR\aenabled\x12+\n" +
 	"\x11exclude_automatic\x18\x05 \x01(\bR\x10excludeAutomatic\x125\n" +
-	"\x16recovery_notifications\x18\x06 \x01(\bR\x15recoveryNotifications\"\x8b\x01\n" +
+	"\x16recovery_notifications\x18\x06 \x01(\bR\x15recoveryNotifications\x12+\n" +
+	"\x11provider_revision\x18\a \x01(\x04R\x10providerRevision\"\x8b\x01\n" +
 	"\x1eChangeAccountApiFormatResponse\x12.\n" +
 	"\aaccount\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\aaccount\x12\x1d\n" +
 	"\n" +

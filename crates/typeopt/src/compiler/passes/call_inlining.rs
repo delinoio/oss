@@ -2,19 +2,25 @@
 //! `call-inlining`: replaces direct calls of small resolved functions with
 //! their single returned expression.
 //!
-//! Supported targets are function declarations and `const` arrow or
-//! function expressions whose body is one `return <expr>;` (or an
+//! Supported targets are function declarations and `const`, `let` or `var`
+//! arrow or function expressions whose body is one `return <expr>;` (or an
 //! expression body). The planner proves, per target:
 //!
 //! - one declaration, no writes to the binding, no type parameters, no
 //!   rest/default/destructured/`this` parameters, not async or a generator, no
-//!   type-predicate return;
-//! - a `const` binding is never read in its temporal dead zone: it is a
-//!   top-level declaration of a module outside any static import cycle and no
-//!   earlier top-level statement or initializer runs code;
+//!   type-predicate return, no binding annotation;
+//! - the binding is never read before its initializer runs: it is a top-level
+//!   declaration of a module outside any static import cycle and no earlier
+//!   top-level statement or initializer runs code, or a function-local
+//!   declaration whose sites follow it in the same function. A function-scoped
+//!   `var` must sit directly in a function body or the module, so no site after
+//!   an enclosing block can run without the initializer;
 //! - the expression contains only supported operators (no nested functions or
 //!   classes, `this`, `super`, `arguments`, meta properties, `delete`,
-//!   assignments, `await`/`yield`, tagged templates or JSX) and no recursion.
+//!   `await`/`yield`, tagged templates or JSX) and no recursion. Assignments
+//!   and updates may write properties and free bindings, never parameters (that
+//!   would write the caller's argument) or destructuring patterns; their reads
+//!   and writes are effects in the evaluation order.
 //!
 //! Per call site it proves:
 //!
@@ -31,7 +37,9 @@
 //!   parameters);
 //! - types are unchanged: each argument has the parameter's type or is asserted
 //!   to the parameter's annotation, and the expression has the function's
-//!   return type or is asserted to its annotation.
+//!   return type or is asserted to its annotation. Bundle chunks are unchecked
+//!   JavaScript, where types never change what runs, so these checks do not
+//!   apply there and a missing argument becomes `void 0`.
 //!
 //! When every reference is an inlined call or an internal import
 //! specifier, the bundle also removes the declaration and those
@@ -53,6 +61,20 @@ use crate::{
 };
 
 const PASS: PassId = PassId::CallInlining;
+
+thread_local! {
+    /// Skip causes below the stable reason codes, logged at debug level after
+    /// each planning run. They show where the proofs fall short most often;
+    /// they are not part of the report.
+    static DETAILS: std::cell::RefCell<std::collections::BTreeMap<String, usize>> =
+        Default::default();
+}
+
+/// Records a detailed skip cause and returns its reason.
+fn detail(reason: Reason, cause: impl Into<String>) -> Reason {
+    DETAILS.with(|details| *details.borrow_mut().entry(cause.into()).or_default() += 1);
+    reason
+}
 
 pub(in crate::compiler) fn plan(ctx: &mut Ctx, enabled: &PassSet, out: &mut Plan) -> Result<()> {
     let mut facts = Facts::new();
@@ -100,6 +122,8 @@ pub(in crate::compiler) fn plan(ctx: &mut Ctx, enabled: &PassSet, out: &mut Plan
         candidates,
         "call inlining planned"
     );
+    let details = DETAILS.with(|details| std::mem::take(&mut *details.borrow_mut()));
+    tracing::debug!(pass = %PASS, ?details, "call inlining skip details");
     Ok(())
 }
 
@@ -213,6 +237,8 @@ struct Target {
     /// A function-local `const` whose temporal dead zone is checked per
     /// call site.
     local: bool,
+    /// Free bindings that the expression assigns or updates.
+    writes: Vec<SymbolId>,
 }
 
 type Rejection = (Reason, Node);
@@ -231,11 +257,14 @@ impl Target {
             || !function.type_parameters().is_empty()
             || !function.decorators().is_empty()
         {
-            return reject(Reason::UnsupportedSyntax);
+            return reject(detail(
+                Reason::UnsupportedSyntax,
+                "target:async-generator-generic-or-decorated",
+            ));
         }
         let return_annotation = function.type_();
         if return_annotation.is_some() && return_annotation.kind() == SyntaxKind::TypePredicate {
-            return reject(Reason::TypeConstraint);
+            return reject(detail(Reason::TypeConstraint, "target:type-predicate"));
         }
         let symbol = ctx.resolve(shape.name);
         if symbol.is_nil() {
@@ -245,20 +274,43 @@ impl Target {
             return reject(Reason::DeclarationMerging);
         }
         if ctx.refs(symbol).iter().any(|r| r.kind == RefKind::Write) {
-            return reject(Reason::Mutation);
+            return reject(detail(Reason::Mutation, "target:binding-written"));
         }
         let mut local = false;
         let statement = match shape.declaration.kind() {
             SyntaxKind::VariableDeclaration => {
                 let list = shape.declaration.parent();
-                if !list.flags().intersects(NodeFlags::Const)
-                    || list.flags().intersects(NodeFlags::Using)
-                    || shape.declaration.type_().is_some()
-                {
-                    return reject(Reason::Mutation);
+                if list.flags().intersects(NodeFlags::Using) {
+                    return reject(detail(Reason::UnsupportedSyntax, "target:using"));
+                }
+                if shape.declaration.type_().is_some() {
+                    return reject(detail(Reason::TypeConstraint, "target:annotated-binding"));
                 }
                 let statement = list.parent();
-                if !facts.initialized_early(ctx, symbol) {
+                // Removing a loop header's declaration would remove the
+                // condition and body along with the function binding.
+                if statement.kind() != SyntaxKind::VariableStatement {
+                    return reject(detail(
+                        Reason::UnsupportedSyntax,
+                        "target:non-standalone-binding",
+                    ));
+                }
+                // A `let` or `var` that nothing writes (checked above) holds
+                // the function from its initialization on, like a `const`.
+                // A `var` is function-scoped, so a site after an enclosing
+                // block could run without the initializer; only a `var`
+                // directly in a function body or the module qualifies.
+                let block_scoped = list.flags().intersects(NodeFlags::Const | NodeFlags::Let);
+                if !block_scoped {
+                    let container = statement.parent();
+                    let top_level = container.kind() == SyntaxKind::SourceFile
+                        || (container.kind() == SyntaxKind::Block
+                            && is_function_like(container.parent()));
+                    if !top_level {
+                        return reject(detail(Reason::Mutation, "target:var-in-nested-block"));
+                    }
+                }
+                if !facts.initialized_early_unwritten(ctx, symbol) {
                     // A function-local constant is safe at sites that the
                     // declaration's own function reaches after it.
                     if statement.parent().kind() == SyntaxKind::SourceFile
@@ -267,7 +319,7 @@ impl Target {
                             SyntaxKind::CaseClause | SyntaxKind::DefaultClause
                         )
                     {
-                        return reject(Reason::ModuleInitialization);
+                        return reject(detail(Reason::ModuleInitialization, "target:tdz"));
                     }
                     local = true;
                 }
@@ -289,7 +341,16 @@ impl Target {
                 || parameter.initializer().is_some()
                 || !parameter.modifiers().nodes().is_empty()
             {
-                return reject(Reason::UnsupportedSyntax);
+                let cause = if name.kind() != SyntaxKind::Identifier {
+                    "target:destructured-parameter"
+                } else if parameter.dot_dot_dot_token().is_some() {
+                    "target:rest-parameter"
+                } else if parameter.initializer().is_some() {
+                    "target:default-parameter"
+                } else {
+                    "target:this-or-modified-parameter"
+                };
+                return reject(detail(Reason::UnsupportedSyntax, cause));
             }
             let param_symbol = parameter.symbol();
             index.insert(param_symbol, params.len());
@@ -322,6 +383,7 @@ impl Target {
             free: Vec::new(),
             uses: Vec::new(),
             branching: false,
+            writes: Vec::new(),
         };
         walker.walk(shape.expression, false)?;
         let Walker {
@@ -329,6 +391,7 @@ impl Target {
             free,
             uses,
             branching,
+            writes,
             ..
         } = walker;
         for (param, value) in uses {
@@ -342,14 +405,22 @@ impl Target {
         // functions) was typed against the return annotation; without it
         // a call site could type it differently.
         let contextual = support::context_sensitive(shape.expression);
-        let retype = return_type != expression_type || (contextual && return_annotation.is_some());
+        // Bundle chunks are unchecked JavaScript: types never change what
+        // runs, so the inlined expression needs no type preservation there.
+        // A chunk that opts into checking is rechecked after each round.
+        let typed = !crate::app::bundle_mode();
+        let retype = typed
+            && (return_type != expression_type || (contextual && return_annotation.is_some()));
         let mut return_names = Vec::new();
-        if (contextual && return_annotation.is_nil())
+        if (typed && contextual && return_annotation.is_nil())
             || (retype
                 && (return_annotation.is_nil()
                     || !type_names(ctx, return_annotation, &mut return_names)))
         {
-            return Err((Reason::TypeConstraint, shape.expression));
+            return Err((
+                detail(Reason::TypeConstraint, "target:return-type"),
+                shape.expression,
+            ));
         }
         Ok(Target {
             file,
@@ -362,6 +433,7 @@ impl Target {
             branching,
             retype,
             return_names,
+            writes,
             statement,
             local,
         })
@@ -415,6 +487,7 @@ struct Walker<'a, 'b, 'c> {
     free: Vec<FreeName>,
     uses: Vec<(usize, Use)>,
     branching: bool,
+    writes: Vec<SymbolId>,
 }
 
 impl Walker<'_, '_, '_> {
@@ -480,8 +553,86 @@ impl Walker<'_, '_, '_> {
 
     fn types(&mut self, node: Node) -> Result<(), Rejection> {
         if !type_names(self.ctx, node, &mut self.free) {
-            return Err((Reason::UnsupportedSyntax, node));
+            return Err((
+                detail(Reason::UnsupportedSyntax, "expression:type-names"),
+                node,
+            ));
         }
+        Ok(())
+    }
+
+    /// The target of an assignment or update: a property or element of any
+    /// supported expression, or a free binding, which means the same binding
+    /// at every site (hygiene). Writing a parameter would write the caller's
+    /// argument instead, and destructuring patterns are unsupported.
+    /// Evaluates the reference's parts and, for compound forms, the read.
+    fn target(&mut self, target: Node, conditional: bool, reads: bool) -> Result<(), Rejection> {
+        let mut target = target;
+        while target.kind() == SyntaxKind::ParenthesizedExpression {
+            target = target.expression();
+        }
+        match target.kind() {
+            SyntaxKind::PropertyAccessExpression | SyntaxKind::ElementAccessExpression
+                if target.expression().kind() != SyntaxKind::SuperKeyword
+                    && !target.flags().intersects(NodeFlags::OptionalChain) =>
+            {
+                self.walk(target.expression(), conditional)?;
+                if target.kind() == SyntaxKind::ElementAccessExpression {
+                    self.walk(target.argument_expression(), conditional)?;
+                }
+            }
+            SyntaxKind::Identifier => {
+                let symbol = self.ctx.checker.get_symbol_at_location(target);
+                if self.params.contains_key(&symbol) {
+                    return Err((
+                        detail(Reason::UnsupportedSyntax, "expression:parameter-write"),
+                        target,
+                    ));
+                }
+                self.identifier(target, conditional, false)?;
+                if let Some(free) = self.free.last() {
+                    self.writes.push(free.symbol);
+                }
+            }
+            _ => {
+                return Err((
+                    detail(Reason::UnsupportedSyntax, "expression:assignment-pattern"),
+                    target,
+                ));
+            }
+        }
+        if reads {
+            // A compound form reads the reference (a getter may run).
+            self.events.push(Event::Effect);
+        }
+        Ok(())
+    }
+
+    fn assignment(&mut self, node: Node, conditional: bool) -> Result<(), Rejection> {
+        let operator = node.operator_token().kind();
+        let logical = matches!(
+            operator,
+            SyntaxKind::AmpersandAmpersandEqualsToken
+                | SyntaxKind::BarBarEqualsToken
+                | SyntaxKind::QuestionQuestionEqualsToken
+        );
+        if logical {
+            self.branching = true;
+        }
+        self.target(
+            node.left(),
+            conditional,
+            operator != SyntaxKind::EqualsToken,
+        )?;
+        // A logical assignment evaluates its value only when it writes.
+        self.walk(node.right(), conditional || logical)?;
+        self.events.push(Event::Effect);
+        Ok(())
+    }
+
+    fn update(&mut self, node: Node, conditional: bool) -> Result<(), Rejection> {
+        self.target(node.operand(), conditional, true)?;
+        self.events.push(Event::Effect);
         Ok(())
     }
 
@@ -553,7 +704,10 @@ impl Walker<'_, '_, '_> {
                     callee.kind(),
                     SyntaxKind::SuperKeyword | SyntaxKind::ImportKeyword
                 ) {
-                    return Err((Reason::UnsupportedSyntax, node));
+                    return Err((
+                        detail(Reason::UnsupportedSyntax, "expression:super-or-import-call"),
+                        node,
+                    ));
                 }
                 for argument in node.type_arguments().iter() {
                     self.types(argument)?;
@@ -585,7 +739,7 @@ impl Walker<'_, '_, '_> {
                         self.walk(node.left(), conditional)?;
                         self.walk(node.right(), conditional)
                     }
-                    _ if is_assignment_operator(operator) => Err((Reason::UnsupportedSyntax, node)),
+                    _ if is_assignment_operator(operator) => self.assignment(node, conditional),
                     _ => {
                         self.walk(node.left(), conditional)?;
                         self.walk(node.right(), conditional)?;
@@ -601,6 +755,15 @@ impl Walker<'_, '_, '_> {
                 self.walk(node.when_true(), true)?;
                 self.walk(node.when_false(), true)
             }
+            SyntaxKind::PostfixUnaryExpression => self.update(node, conditional),
+            SyntaxKind::PrefixUnaryExpression
+                if matches!(
+                    node.operator(),
+                    SyntaxKind::PlusPlusToken | SyntaxKind::MinusMinusToken
+                ) =>
+            {
+                self.update(node, conditional)
+            }
             SyntaxKind::PrefixUnaryExpression => match node.operator() {
                 SyntaxKind::ExclamationToken => self.walk(node.operand(), conditional),
                 SyntaxKind::MinusToken | SyntaxKind::PlusToken | SyntaxKind::TildeToken => {
@@ -608,7 +771,13 @@ impl Walker<'_, '_, '_> {
                     self.events.push(Event::Effect);
                     Ok(())
                 }
-                _ => Err((Reason::UnsupportedSyntax, node)),
+                operator => Err((
+                    detail(
+                        Reason::UnsupportedSyntax,
+                        format!("expression:prefix:{operator:?}"),
+                    ),
+                    node,
+                )),
             },
             SyntaxKind::TypeOfExpression | SyntaxKind::VoidExpression => {
                 self.walk(node.expression(), conditional)
@@ -641,7 +810,13 @@ impl Walker<'_, '_, '_> {
                         }
                         SyntaxKind::ShorthandPropertyAssignment => {
                             if property.object_assignment_initializer().is_some() {
-                                return Err((Reason::UnsupportedSyntax, property));
+                                return Err((
+                                    detail(
+                                        Reason::UnsupportedSyntax,
+                                        "expression:shorthand-initializer",
+                                    ),
+                                    property,
+                                ));
                             }
                             self.identifier(property.name(), conditional, true)?;
                         }
@@ -649,13 +824,23 @@ impl Walker<'_, '_, '_> {
                             self.walk(property.expression(), conditional)?;
                             self.events.push(Event::Effect);
                         }
-                        _ => return Err((Reason::UnsupportedSyntax, property)),
+                        kind => {
+                            return Err((
+                                detail(
+                                    Reason::UnsupportedSyntax,
+                                    format!("expression:property:{kind:?}"),
+                                ),
+                                property,
+                            ));
+                        }
                     }
                 }
                 Ok(())
             }
-            SyntaxKind::ThisKeyword => Err((Reason::UnsupportedSyntax, node)),
-            _ => Err((Reason::UnsupportedSyntax, node)),
+            kind => Err((
+                detail(Reason::UnsupportedSyntax, format!("expression:{kind:?}")),
+                node,
+            )),
         }
     }
 }
@@ -957,7 +1142,14 @@ fn site(
         || call.flags().intersects(NodeFlags::OptionalChain)
         || call.question_dot_token().is_some()
     {
-        return Err(Reason::UnsupportedSyntax);
+        return Err(detail(
+            Reason::UnsupportedSyntax,
+            if call.kind() == SyntaxKind::CallExpression {
+                "site:optional-call"
+            } else {
+                "site:not-a-call"
+            },
+        ));
     }
     let mut callee = call.expression();
     while callee.kind() == SyntaxKind::ParenthesizedExpression {
@@ -965,7 +1157,7 @@ fn site(
     }
     if callee != reference {
         // Type assertions on the callee change the call's type.
-        return Err(Reason::TypeConstraint);
+        return Err(detail(Reason::TypeConstraint, "site:asserted-callee"));
     }
     if target.local && !reached_after(target.shape.declaration, call) {
         return Err(Reason::ModuleInitialization);
@@ -994,14 +1186,26 @@ fn site(
         .iter()
         .any(|a| a.kind() == SyntaxKind::SpreadElement)
     {
-        return Err(Reason::UnsupportedSyntax);
+        return Err(detail(Reason::UnsupportedSyntax, "site:spread-argument"));
     }
-    if arguments.len() < target.params.len() {
-        return Err(Reason::UnsupportedSyntax);
+    // A missing argument is `undefined`. Bundle chunks substitute
+    // `void 0` for it; checked code would need the parameter's type.
+    let typed = !crate::app::bundle_mode();
+    if typed && arguments.len() < target.params.len() {
+        return Err(detail(Reason::UnsupportedSyntax, "site:missing-arguments"));
     }
-    for &extra in &arguments[target.params.len()..] {
+    for &extra in arguments.get(target.params.len()..).unwrap_or_default() {
         if !facts.movable(ctx, extra, false) {
-            return Err(Reason::SideEffects);
+            return Err(detail(Reason::SideEffects, "site:extra-argument-effect"));
+        }
+    }
+    // A written binding must be the site module's own: an import of it (an
+    // existing one, or one the hygiene step below would add) is read-only,
+    // so the assignment would throw where the function wrote its binding.
+    for &written in &target.writes {
+        let declaration = ctx.checker.sym(written).value_declaration;
+        if declaration.is_nil() || ctx.file_of_node(declaration) != Some(file) {
+            return Err(detail(Reason::Mutation, "site:write-to-imported-binding"));
         }
     }
     // Hygiene: every free name means the same binding here, or a module
@@ -1012,7 +1216,8 @@ fn site(
             || (free.meaning == SymbolFlags::Value
                 && support::type_only_alias_at(ctx, &free.name, call))
         {
-            let addition = import_for(ctx, facts, file, free).ok_or(Reason::UnsupportedSyntax)?;
+            let addition = import_for(ctx, facts, file, free)
+                .ok_or_else(|| detail(Reason::UnsupportedSyntax, "site:free-name-not-visible"))?;
             if !imports.contains(&addition) {
                 imports.push(addition);
             }
@@ -1022,14 +1227,17 @@ fn site(
     let mut read_only = vec![false; target.params.len()];
     let mut asserted = vec![false; target.params.len()];
     for (index, param) in target.params.iter().enumerate() {
-        let argument = arguments[index];
+        // `void 0` is a stable literal without effects.
+        let Some(&argument) = arguments.get(index) else {
+            continue;
+        };
         let uses = param.uses.len();
         let parameter_type = ctx.checker.get_type_of_symbol(param.symbol);
         let argument_type = ctx.checker.get_type_at_location(argument);
-        let same_type = parameter_type == argument_type;
-        let stable = facts.movable(ctx, argument, true);
         // Context-sensitive arguments were typed against the parameter.
-        let same_type = same_type && !support::context_sensitive(argument);
+        let same_type =
+            !typed || (parameter_type == argument_type && !support::context_sensitive(argument));
+        let stable = facts.movable(ctx, argument, true);
         // A side-effect-free read of a binding that may change later.
         read_only[index] = !stable
             && uses > 0
@@ -1040,7 +1248,7 @@ fn site(
         match uses {
             0 => {
                 if !facts.movable(ctx, argument, false) {
-                    return Err(Reason::SideEffects);
+                    return Err(detail(Reason::SideEffects, "site:unused-argument-effect"));
                 }
             }
             1 => {
@@ -1049,20 +1257,26 @@ fn site(
                 }
                 if !same_type {
                     if !assertable {
-                        return Err(Reason::TypeConstraint);
+                        return Err(detail(Reason::TypeConstraint, "site:argument-type"));
                     }
                     asserted[index] = true;
                 }
             }
             _ => {
                 if !stable && !read_only[index] {
-                    return Err(Reason::SideEffects);
+                    return Err(detail(
+                        Reason::SideEffects,
+                        "site:repeated-argument-unstable",
+                    ));
                 }
                 if !same_type {
                     // Separate assertions would break narrowing between
                     // the uses.
                     if target.branching || !assertable {
-                        return Err(Reason::TypeConstraint);
+                        return Err(detail(
+                            Reason::TypeConstraint,
+                            "site:repeated-argument-type",
+                        ));
                     }
                     asserted[index] = true;
                 }
@@ -1082,7 +1296,7 @@ fn site(
     // Reads of bindings that may change happen before anything that could
     // change them, and only when no argument has effects.
     if !effectful.is_empty() && read_only.iter().any(|&r| r) {
-        return Err(Reason::SideEffects);
+        return Err(detail(Reason::SideEffects, "site:effect-with-mutable-read"));
     }
     let mut next = 0;
     let mut effect_seen = false;
@@ -1090,11 +1304,23 @@ fn site(
         match *event {
             Event::Param(index, conditional) => {
                 if read_only[index] && effect_seen {
-                    return Err(Reason::SideEffects);
+                    return Err(detail(
+                        Reason::SideEffects,
+                        "site:mutable-read-after-effect",
+                    ));
                 }
                 if let Some(position) = effectful.iter().position(|&e| e == index) {
-                    if conditional || position != next {
-                        return Err(Reason::SideEffects);
+                    if conditional {
+                        return Err(detail(
+                            Reason::SideEffects,
+                            "site:conditional-effectful-argument",
+                        ));
+                    }
+                    if position != next {
+                        return Err(detail(
+                            Reason::SideEffects,
+                            "site:reordered-effectful-argument",
+                        ));
                     }
                     next += 1;
                 }
@@ -1102,13 +1328,13 @@ fn site(
             Event::Effect => {
                 effect_seen = true;
                 if next < effectful.len() {
-                    return Err(Reason::SideEffects);
+                    return Err(detail(Reason::SideEffects, "site:effect-before-argument"));
                 }
             }
         }
     }
     if target.retype && !names_resolve(ctx, &target.return_names, call) {
-        return Err(Reason::TypeConstraint);
+        return Err(detail(Reason::TypeConstraint, "site:return-names"));
     }
     // Build the replacement from the declaration's current text.
     let source = &ctx.files[target.file].text;
@@ -1116,7 +1342,20 @@ fn site(
     let end = target.shape.expression.end() as usize;
     let mut replacements: Vec<(usize, usize, String)> = Vec::new();
     for (index, param) in target.params.iter().enumerate() {
-        let argument = arguments[index];
+        let Some(&argument) = arguments.get(index) else {
+            for value in &param.uses {
+                const UNDEFINED: &str = "void 0";
+                let wrapped = if value.shorthand {
+                    format!("{}: {UNDEFINED}", value.node.text())
+                } else if support::accepts_assignment_expression(value.node, UNDEFINED) {
+                    UNDEFINED.to_owned()
+                } else {
+                    format!("({UNDEFINED})")
+                };
+                replacements.push((Ctx::start(value.node), value.node.end() as usize, wrapped));
+            }
+            continue;
+        };
         let text = ctx.text(file, argument).to_owned();
         for value in &param.uses {
             let mut wrapped = if asserted[index] {
@@ -1151,7 +1390,10 @@ fn site(
         .position(|p| p.uses.iter().any(|u| u.node == expression))
     {
         // The expression is a bare parameter: the argument decides.
-        !asserted[param] && support::primary(skip_outer(arguments[param]))
+        !asserted[param]
+            && arguments
+                .get(param)
+                .is_some_and(|&argument| support::primary(skip_outer(argument)))
     } else {
         support::primary(target.shape.expression)
     };
@@ -1172,7 +1414,7 @@ fn site(
         format!("({text})")
     };
     if support::asi_hazard(ctx, file, call, &text) {
-        return Err(Reason::UnsupportedSyntax);
+        return Err(detail(Reason::UnsupportedSyntax, "site:asi-hazard"));
     }
     Ok((text, imports))
 }

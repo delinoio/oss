@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -106,28 +105,27 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 	if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.MachineID != connection.Credential.MachineID || input.OriginalJobID != job.ParentID {
 		return nil, publicationUncertain()
 	}
-	runtimeRoot := filepath.Join(config.Root, "title-runtimes")
-	if err := security.PrivateDir(runtimeRoot); err != nil {
-		return nil, err
+	if input.IsManaged() {
+		return executeManagedSessionTitle(ctx, config, jobID, job, input)
 	}
-	home, err := os.MkdirTemp(runtimeRoot, string(jobID)+"-")
+	journal, err := createTitleJournal(config.Root, jobID)
 	if err != nil {
 		return nil, err
 	}
-	cleanup := newTitleFinalizer(home, jobID, config.Logger)
+	// The persistent per-conversation title profile outlives the operation and
+	// is released only after the native tree is joined by the finalizer below.
+	profile, err := titleProfile(ctx, config, input)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := profile.Close(); err != nil && returned == nil {
+			output, returned = nil, publicationUncertain()
+		}
+	}()
+	cleanup := newTitleFinalizer(journal, jobID, config.Logger)
 	defer cleanup.finish(&output, &returned)
-	if err := security.PrivateDir(home); err != nil {
-		return nil, err
-	}
-	home, err = filepath.EvalSymlinks(home)
-	if err != nil {
-		return nil, err
-	}
-	home, err = filepath.Abs(home)
-	if err != nil {
-		return nil, err
-	}
-	cleanup.home = home
+	home := profile.Root
 	processRoot := filepath.Join(config.Root, "processes")
 	workdir := filepath.Join(home, "work")
 	if err := security.PrivateDir(workdir); err != nil {
@@ -138,18 +136,9 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 		return nil, err
 	}
 	if input.Version == 2 {
-		raw, err := security.ReadPrivate(filepath.Join(config.Root, "jobs", string(input.OriginalJobID), "startup-executable.json"), 8192)
-		var original domain.Installation
-		if err != nil || domain.Decode(raw, &original) != nil || original.Harness != domain.Codex || original.ExecutableSHA256 != input.Startup.ExecutableSHA256 {
-			return nil, publicationUncertain()
-		}
-		selection := *input.Startup
-		selection.ExplicitPath = original.ResolvedPath
-		resolved, err := harness.ResolveExecution(ctx, selection)
-		if err != nil {
+		if err := resolveStartupTitleExecutable(ctx, config, &input); err != nil {
 			return nil, err
 		}
-		input.Executable = resolved.ResolvedPath
 	}
 	resolved, err := filepath.EvalSymlinks(input.Executable)
 	if err != nil || resolved != input.Executable || !filepath.IsAbs(input.Executable) {
@@ -163,7 +152,7 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 	digest := sha256.Sum256([]byte(token))
 	intent := titleIntent{Version: 1, JobID: jobID, OperationID: input.OperationID, RegistrationID: domain.NewID(), ThreadRequestID: domain.NewID(), InputID: domain.NewID(), TurnRequestID: domain.NewID(), TokenDigest: hex.EncodeToString(digest[:])}
 	intentBytes, err := json.Marshal(intent)
-	if err != nil || security.WriteAtomic(filepath.Join(home, "title-intent.json"), intentBytes) != nil {
+	if err != nil || security.WriteAtomic(filepath.Join(journal, "title-intent.json"), intentBytes) != nil {
 		return nil, publicationUncertain()
 	}
 	attempt, cancelRegistration := context.WithTimeout(ctx, 30*time.Second)
@@ -185,7 +174,8 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 		API:     &codex.APIConfig{ServerOrigin: connection.Credential.Endpoint, Token: token, TitleProfile: true},
 		Process: process.Config{Directory: processRoot, OwnerID: jobID, Executable: resolved, Cwd: workdir, Env: env, Logger: config.Logger},
 	}
-	proxy, err := openCodexNativeProxy(ctx, config, input.OriginalExecutionID)
+	nativeRoute := captureNativeRoute(config)
+	proxy, err := openCodexNativeProxy(ctx, config, input.OriginalExecutionID, nativeRoute)
 	if proxy != nil {
 		cleanup.closeProxy = proxy.Close
 	}
@@ -195,6 +185,19 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 	if proxy != nil {
 		nativeConfig.API.LoopbackProxyURL = proxy.NativeURL()
 		nativeConfig.Process.ProtectedValues = proxy.ProtectedValues()
+	} else {
+		// The title profile follows the same relocated Local runtime as the
+		// conversation; the forwarder and proxy are mutually exclusive.
+		forwarder, err := openCodexNativeForwarder(ctx, config, input.OriginalExecutionID, token, true, nativeRoute)
+		if forwarder != nil {
+			cleanup.closeProxy = forwarder.Close
+		}
+		if err != nil {
+			return nil, err
+		}
+		if forwarder != nil {
+			nativeConfig.API.ForwarderOrigin = forwarder.NativeOrigin()
+		}
 	}
 	client, err := codex.Open(ctx, nativeConfig)
 	if client != nil {
@@ -224,6 +227,49 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 	if turn.TurnID.Validate() != nil {
 		return nil, publicationUncertain()
 	}
+	response, err := readTitleResponse(inferenceCtx, ctx, config, client, jobID, input, intent, thread, turn)
+	if err != nil {
+		return nil, err
+	}
+	final, usage := response.Title, response.Usage
+	if err := cleanup.run(); err != nil {
+		return nil, err
+	}
+	var usageRecord *domain.ResponseUsageRecord
+	if usage != nil {
+		usageRecord = &domain.ResponseUsageRecord{
+			Purpose: domain.SessionTitleUsage, SessionID: input.SessionID, ProjectID: input.ProjectID,
+			ExecutionID: input.OriginalExecutionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID,
+			ProviderID: input.ProviderID, ModelID: input.ModelID, Harness: domain.Codex, Version: input.NativeVersion,
+			ThreadID: string(thread.Thread.ID), TurnID: string(turn.TurnID), Sequence: 1, Usage: *usage,
+		}
+	}
+	result := domain.AuxiliaryTitleResult{Version: 1, OperationID: input.OperationID, NameGeneration: input.NameGeneration, Title: final, CleanupVerified: true, UsageRecord: usageRecord}
+	if err := result.Validate(input); err != nil {
+		return nil, err
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		return nil, publicationUncertain()
+	}
+	if config.Logger != nil {
+		config.Logger.InfoContext(ctx, "automatic title inference completed", "job_id", jobID, "operation_id", input.OperationID, "session_id", input.SessionID, "usage_observed", usageRecord != nil)
+	}
+	return encoded, nil
+}
+
+// titleResponse is the validated outcome of one bounded native title turn.
+type titleResponse struct {
+	Title string
+	Usage *domain.NativeResponseUsage
+}
+
+// readTitleResponse consumes native events for exactly one title turn. It is
+// shared by the API relay and managed profiles: both accept only the fixed user
+// input, one bounded final assistant message and bounded reasoning, and fail
+// closed on any tool, interaction or unexpected event. It never repairs,
+// truncates or retries invalid output.
+func readTitleResponse(inferenceCtx, ctx context.Context, config Config, client *codex.Client, jobID domain.ID, input domain.AuxiliaryTitleInput, intent titleIntent, thread codex.ThreadResult, turn codex.TurnResult) (*titleResponse, error) {
 	var final string
 	var finalCount int
 	var titleDeltas strings.Builder
@@ -345,28 +391,24 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 	if completed == nil || finalCount != 1 || !sawUserInput || !sawTurnStart || len(final) > 256 || domain.Text(final, "automatic title", 256, true) != nil || strings.ContainsAny(final, "\r\n\x00") {
 		return nil, domain.Fail(domain.InvalidArgument, "The native title response is not one bounded single-line title.", "Keep the placeholder; do not repair, truncate or retry it.")
 	}
-	if err := cleanup.run(); err != nil {
-		return nil, err
+	return &titleResponse{Title: final, Usage: usage}, nil
+}
+
+// resolveStartupTitleExecutable recovers the original executable identity from
+// the immutable startup proof retained by the original execution. It never
+// substitutes another PATH executable.
+func resolveStartupTitleExecutable(ctx context.Context, config Config, input *domain.AuxiliaryTitleInput) error {
+	raw, err := security.ReadPrivate(filepath.Join(config.Root, "jobs", string(input.OriginalJobID), "startup-executable.json"), 8192)
+	var original domain.Installation
+	if err != nil || domain.Decode(raw, &original) != nil || original.Harness != domain.Codex || original.ExecutableSHA256 != input.Startup.ExecutableSHA256 {
+		return publicationUncertain()
 	}
-	var usageRecord *domain.ResponseUsageRecord
-	if usage != nil {
-		usageRecord = &domain.ResponseUsageRecord{
-			Purpose: domain.SessionTitleUsage, SessionID: input.SessionID, ProjectID: input.ProjectID,
-			ExecutionID: input.OriginalExecutionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID,
-			ProviderID: input.ProviderID, ModelID: input.ModelID, Harness: domain.Codex, Version: input.NativeVersion,
-			ThreadID: string(thread.Thread.ID), TurnID: string(turn.TurnID), Sequence: 1, Usage: *usage,
-		}
-	}
-	result := domain.AuxiliaryTitleResult{Version: 1, OperationID: input.OperationID, NameGeneration: input.NameGeneration, Title: final, CleanupVerified: true, UsageRecord: usageRecord}
-	if err := result.Validate(input); err != nil {
-		return nil, err
-	}
-	encoded, err := json.Marshal(result)
+	selection := *input.Startup
+	selection.ExplicitPath = original.ResolvedPath
+	resolved, err := harness.ResolveExecution(ctx, selection)
 	if err != nil {
-		return nil, publicationUncertain()
+		return err
 	}
-	if config.Logger != nil {
-		config.Logger.InfoContext(ctx, "automatic title inference completed", "job_id", jobID, "operation_id", input.OperationID, "session_id", input.SessionID, "usage_observed", usageRecord != nil)
-	}
-	return encoded, nil
+	input.Executable = resolved.ResolvedPath
+	return nil
 }

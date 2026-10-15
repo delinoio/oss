@@ -2,15 +2,48 @@
 // Host-supplied Chromium validates session recovery using synthetic Connect
 // observations. This does not establish native CEF, account or platform acceptance.
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRsbuild } from "@rsbuild/core";
 import { pluginReact } from "@rsbuild/plugin-react";
+import {
+  assertScreenshotsWritten,
+  screenshotDirectory,
+  validateScreenshotFiles,
+} from "./image-layout-screenshot-path.mjs";
 
 const app = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const languages = ["en", "ko"];
+const themes = ["light", "dark"];
+// The screenshot width is selected from the same matrix the loop iterates, so a
+// width edit cannot silently disable the optional screenshot capture.
+const viewports = [
+  [1440, 900],
+  [960, 640],
+  [640, 480],
+  [320, 240],
+];
+const screenshotWidth = 320;
+assert(
+  viewports.some(([width]) => width === screenshotWidth),
+  "Screenshot width must be part of the viewport matrix",
+);
+const screenshotName = (language, theme, width) =>
+  `session-remediation-${language}-${theme}-${width}.png`;
+const expectedScreenshots = languages.flatMap((language) =>
+  themes.map((theme) => screenshotName(language, theme, screenshotWidth)),
+);
+// The destination stays outside the checkout; no screenshot is emitted without it.
+const screenshots = await screenshotDirectory(
+  process.env.DELIDEV_LAYOUT_SCREENSHOT_DIR,
+  resolve(app, "../.."),
+);
+if (screenshots)
+  await validateScreenshotFiles(screenshots, expectedScreenshots);
+const writtenScreenshots = [];
 const playwright = process.env.DELIDEV_LAYOUT_PLAYWRIGHT_MODULE;
 const { chromium } = await import(
   playwright ? pathToFileURL(resolve(playwright)).href : "playwright"
@@ -90,8 +123,9 @@ try {
       failures.push("style CSP violation");
   });
   const origin = `http://127.0.0.1:${server.address().port}`;
-  for (const language of ["en", "ko"])
-    for (const theme of ["light", "dark"])
+  if (screenshots) await mkdir(screenshots, { recursive: true });
+  for (const language of languages)
+    for (const theme of themes)
       for (const state of [
         "quota",
         "authentication",
@@ -100,12 +134,7 @@ try {
         "budget",
         "recovery",
       ])
-        for (const [width, height] of [
-          [1440, 900],
-          [960, 640],
-          [640, 480],
-          [320, 240],
-        ]) {
+        for (const [width, height] of viewports) {
           await page.setViewportSize({ width, height });
           await page.goto(
             `${origin}/?language=${language}&theme=${theme}&state=${state}`,
@@ -213,13 +242,13 @@ try {
             "Failure and confirmation stay within the viewport",
           );
           assert.equal(await page.locator(".session-tools .notice").count(), 1);
-          if (process.env.DELIDEV_LAYOUT_SCREENSHOT_DIR && width === 480)
-            await page.screenshot({
-              path: join(
-                process.env.DELIDEV_LAYOUT_SCREENSHOT_DIR,
-                `session-remediation-${language}-${theme}-${width}.png`,
-              ),
-            });
+          if (screenshots && width === screenshotWidth) {
+            // Only the recovery state reaches this point, so each language/theme
+            // pair writes exactly one file.
+            const name = screenshotName(language, theme, width);
+            await page.screenshot({ path: join(screenshots, name) });
+            writtenScreenshots.push(name);
+          }
           // Recovery remains owned by the retained Info section, not a second disclosure.
           await page.locator(".session-tools .notice button").last().click();
           assert.equal(
@@ -230,9 +259,12 @@ try {
           checks++;
         }
   assert.deepEqual(failures, []);
+  if (screenshots)
+    assertScreenshotsWritten(expectedScreenshots, writtenScreenshots);
   console.log(
     JSON.stringify({
       checks,
+      screenshots: screenshots ? writtenScreenshots.length : "not-requested",
       evidence:
         "Synthetic Chromium inline session uncertainty, single recovery controller and bilingual narrow layout checks; no native CEF acceptance",
     }),

@@ -13,6 +13,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/imageinput"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/skills"
@@ -29,7 +30,12 @@ type sessionDeletionProof struct {
 	// IdentityInventory marks a proof whose removal start retained an identity
 	// inventory. A started proof without it was written by an earlier release.
 	IdentityInventory bool `json:"identity_inventory,omitempty"`
-	Complete          bool `json:"complete"`
+	// WorkspaceAbsenceAllowed records the absence policy that was derived from the
+	// validated job journals by the attempt that started removal. A retry skips
+	// journal validation, so it restores this value instead of re-deriving a
+	// permissive default. A started proof without it fails closed (strict).
+	WorkspaceAbsenceAllowed bool `json:"workspace_absence_allowed,omitempty"`
+	Complete                bool `json:"complete"`
 }
 
 // sessionDeletionPath is the session-level admission tombstone. Its existence
@@ -145,6 +151,9 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 		if w.Fork != nil {
 			paths = append(paths, workspace.SidechatForkClaimPath(root, w.Fork.JobID))
 		}
+		if remains, err := sessionNativeProfilesRemain(ctx, config, w); err != nil || remains {
+			return proof, domain.SessionDeletionPending()
+		}
 		for _, path := range paths {
 			if _, e := os.Lstat(path); !errors.Is(e, os.ErrNotExist) {
 				return proof, domain.SessionDeletionPending()
@@ -156,7 +165,11 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 	// owner must finish cancellation and release its handles before removal.
 	locks := []*security.Lock{}
 	jobLocks := []*security.Lock{}
+	// Maintenance locks the job-owner reconciliations created, bound to the
+	// reconciler's own object. Whatever adoption does not take is closed here.
+	var jobMaintenance []*maintenanceBinding
 	defer func() {
+		closeMaintenanceBindings(jobMaintenance)
 		for i := len(locks) - 1; i >= 0; i-- {
 			locks[i].Close()
 		}
@@ -169,7 +182,11 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 	// the path with this capture, so an object swapped in during or after
 	// validation is never adopted. A started attempt reuses the identities
 	// persisted before its first removal instead of capturing a fresh baseline.
-	validated, e := prepareSessionCopyIdentities(ctx, config, root, w, proof.RemovalStarted, proof.IdentityInventory)
+	budget, e := planSessionDescriptorBudget(ctx, config, root, w)
+	if e != nil {
+		return proof, domain.SessionDeletionPending()
+	}
+	validated, e := prepareSessionCopyIdentities(ctx, config, root, w, budget, proof.RemovalStarted, proof.IdentityInventory)
 	if e != nil {
 		config.Logger.WarnContext(ctx, "session_deletion_identity_capture_failed", "deletion_id", w.DeletionID, "code", domain.SafeError(e).Code)
 		return proof, domain.SessionDeletionPending()
@@ -177,6 +194,16 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 	defer closeSessionCopyIdentities(validated)
 	if sessionDeletionAfterCaptureHook != nil {
 		sessionDeletionAfterCaptureHook()
+	}
+	allowAbsentWorkspace := w.Fork == nil
+	if proof.RemovalStarted {
+		// A retry does not revalidate the job journals that justified an absent
+		// workspace. Only the policy persisted by the attempt that started removal
+		// may relax it; a proof from an earlier release is strict (fail closed).
+		allowAbsentWorkspace = allowAbsentWorkspace && proof.WorkspaceAbsenceAllowed
+		if !allowAbsentWorkspace {
+			config.Logger.InfoContext(ctx, "session_deletion_workspace_absence_strict", "deletion_id", w.DeletionID, "persisted_policy", proof.WorkspaceAbsenceAllowed)
+		}
 	}
 	startRemoval := func() error {
 		if proof.RemovalStarted {
@@ -187,9 +214,9 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 		}
 		proof.RemovalStarted = true
 		proof.IdentityInventory = true
+		proof.WorkspaceAbsenceAllowed = allowAbsentWorkspace
 		return writeJSON(path, proof)
 	}
-	allowAbsentWorkspace := w.Fork == nil
 	if w.Fork != nil && !proof.RemovalStarted {
 		if _, err := executionCheckpointPath(root, w.Fork.RuntimeID); err != nil {
 			return proof, domain.SessionDeletionPending()
@@ -257,9 +284,14 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 			}
 			ownerRoot := filepath.Join(root, "processes", string(copy.JobID))
 			if _, e := os.Lstat(ownerRoot); e == nil {
-				if e := process.ReconcileOwnerContext(ctx, filepath.Join(root, "processes"), copy.JobID); e != nil {
+				bound, e := process.ReconcileOwnerContextBound(ctx, filepath.Join(root, "processes"), copy.JobID)
+				if e != nil {
 					return proof, e
 				}
+				// A binding is one more identity handle: it counts against the same
+				// budget, and a released one still compares by its record.
+				budget.retain(&bound)
+				jobMaintenance = append(jobMaintenance, &maintenanceBinding{owner: copy.JobID, identity: bound})
 			} else if !errors.Is(e, os.ErrNotExist) {
 				return proof, domain.SessionDeletionPending()
 			} else if copy.Type != domain.WorkspaceStorageJob && (j.State == journalStarted || j.Problem != nil && j.Problem.Code == domain.RecoveryRequired) {
@@ -268,14 +300,11 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 		}
 	}
 	// Job owner maintenance locks were created by the reconciliation above. Only
-	// those exact names may be adopted, and only now: nothing later may grant a
-	// path that was absent at capture any deletion authority.
+	// the objects those reconciliations locked may be adopted, and only now:
+	// nothing later may grant a path that was absent at capture any deletion
+	// authority.
 	if !proof.RemovalStarted {
-		jobIDs := make([]domain.ID, 0, len(w.Copies))
-		for _, copy := range w.Copies {
-			jobIDs = append(jobIDs, copy.JobID)
-		}
-		if e := adoptMaintenanceLocks(root, validated, jobIDs); e != nil {
+		if e := adoptMaintenanceLocks(root, validated, jobMaintenance); e != nil {
 			config.Logger.WarnContext(ctx, "session_deletion_identity_adoption_failed", "deletion_id", w.DeletionID, "code", domain.SafeError(e).Code)
 			return proof, domain.SessionDeletionPending()
 		}
@@ -311,7 +340,7 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 		}
 	}
 	if len(w.Copies) != 0 || w.Fork != nil {
-		e = manager.DeleteOwnedWorkspace(ctx, w, allowAbsentWorkspace, func() error {
+		e = manager.DeleteOwnedWorkspaceWithOwner(ctx, w, allowAbsentWorkspace, func(sessionOwner *security.PathIdentity) error {
 			// Admission is tombstoned and every native/publisher owner was joined.
 			// Release handles before unlinking their lock files on Windows.
 			for _, lock := range locks {
@@ -321,12 +350,17 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 			}
 			locks = nil
 			// Workspace retirement just reconciled the session owner, which may
-			// have created its maintenance lock. It is the only name adopted, and
-			// only in the attempt that starts removal: a retry restores the
-			// retained inventory and has no legitimate new lock to acquire, so a
-			// lock that appeared since stays foreign.
-			if !proof.RemovalStarted {
-				if e := adoptMaintenanceLocks(root, validated, []domain.ID{w.SessionID}); e != nil {
+			// have created its maintenance lock. The object that reconciliation
+			// locked is the only one adopted, and only in the attempt that
+			// starts removal: a retry restores the retained inventory and has
+			// no legitimate new lock to acquire, so a lock that appeared since
+			// stays foreign.
+			if !proof.RemovalStarted && sessionOwner.Present() {
+				bound := sessionOwner.Take()
+				budget.retain(&bound)
+				sessionMaintenance := []*maintenanceBinding{{owner: w.SessionID, identity: bound}}
+				defer closeMaintenanceBindings(sessionMaintenance)
+				if e := adoptMaintenanceLocks(root, validated, sessionMaintenance); e != nil {
 					return e
 				}
 			}
@@ -390,6 +424,11 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 		}
 	}
 	if err := cleanupGeneratedCopies(root, w, false); err != nil {
+		return proof, err
+	}
+	// Persistent native profiles are deleted only here, by explicit session
+	// deletion; no operation completion or age-based pruning removes them.
+	if err := deleteSessionNativeProfiles(ctx, config, w); err != nil {
 		return proof, err
 	}
 	images := imageinput.Manager{Root: root}
@@ -497,17 +536,22 @@ func sessionDeletionUpgradable(proof sessionDeletionProof, w domain.SessionDelet
 
 // sessionDeletionAfterCaptureHook runs right after identity capture and before
 // ownership validation; sessionDeletionBeforeRemovalHook runs after validation,
-// immediately before managed copies are removed. Tests use them to install
-// replacements deterministically; both are nil in production.
+// immediately before managed copies are removed; sessionDeletionBeforeAdoptionHook
+// runs between owner reconciliation and the adoption decision for one
+// maintenance lock, receiving its pathname. Tests use them to install
+// replacements deterministically; all are nil in production.
 var (
-	sessionDeletionAfterCaptureHook  func()
-	sessionDeletionBeforeRemovalHook func()
+	sessionDeletionAfterCaptureHook   func()
+	sessionDeletionBeforeRemovalHook  func()
+	sessionDeletionBeforeAdoptionHook func(lockPath string)
 )
 
-// maxHeldIdentityHandles bounds the descriptors one attempt keeps open. Beyond it
-// an identity keeps only its record: removal still opens the path and compares
-// it, but inode reuse is then excluded only by the record (birth time, size and
-// modification time where reported), not by a held handle.
+// maxHeldIdentityHandles caps the optional identity handles one attempt keeps
+// open, whatever the process descriptor limit leaves after the mandatory locks
+// (see planSessionDescriptorBudget). Beyond the budget an identity keeps only its
+// record: removal still opens the path and compares it, but inode reuse is then
+// excluded only by the record (birth time, size and modification time where
+// reported), not by a held handle.
 var maxHeldIdentityHandles = 1024
 
 // maxSessionIdentityBytes bounds the retained identity file.
@@ -533,7 +577,7 @@ func sessionIdentityPath(root string, w domain.SessionDeletionWork) string {
 // inventory (inventoried) and has lost it fails closed. Only a started proof
 // written by an earlier release, which never recorded one, captures afresh with
 // the authority that release granted.
-func prepareSessionCopyIdentities(ctx context.Context, config Config, root string, w domain.SessionDeletionWork, started, inventoried bool) (map[string]security.PathIdentity, error) {
+func prepareSessionCopyIdentities(ctx context.Context, config Config, root string, w domain.SessionDeletionWork, budget *identityBudget, started, inventoried bool) (map[string]security.PathIdentity, error) {
 	identities := map[string]security.PathIdentity{}
 	if started {
 		raw, e := security.ReadPrivate(sessionIdentityPath(root, w), maxSessionIdentityBytes)
@@ -547,8 +591,11 @@ func prepareSessionCopyIdentities(ctx context.Context, config Config, root strin
 			if domain.DecodeBounded(raw, &file, maxSessionIdentityBytes) != nil || file.Version != 1 || file.Digest != w.Digest() {
 				return nil, domain.SessionDeletionPending()
 			}
-			restored := 0
 			for relative, record := range file.Paths {
+				if e := ctx.Err(); e != nil {
+					closeSessionCopyIdentities(identities)
+					return nil, domain.SafeError(e)
+				}
 				if !filepath.IsLocal(relative) {
 					closeSessionCopyIdentities(identities)
 					return nil, domain.SessionDeletionPending()
@@ -560,11 +607,7 @@ func prepareSessionCopyIdentities(ctx context.Context, config Config, root strin
 					return nil, e
 				}
 				// Restoring obeys the same descriptor budget as the first capture.
-				if identity.Held() {
-					if restored++; restored > maxHeldIdentityHandles {
-						identity.Release()
-					}
-				}
+				budget.retain(&identity)
 				identities[path] = identity
 			}
 			return identities, nil
@@ -578,7 +621,6 @@ func prepareSessionCopyIdentities(ctx context.Context, config Config, root strin
 	if e != nil {
 		return nil, e
 	}
-	held := 0
 	for _, path := range paths {
 		if e := ctx.Err(); e != nil {
 			closeSessionCopyIdentities(identities)
@@ -589,11 +631,7 @@ func prepareSessionCopyIdentities(ctx context.Context, config Config, root strin
 			closeSessionCopyIdentities(identities)
 			return nil, e
 		}
-		if identity.Held() {
-			if held++; held > maxHeldIdentityHandles {
-				identity.Release()
-			}
-		}
+		budget.retain(&identity)
 		identities[path] = identity
 	}
 	return identities, nil
@@ -630,30 +668,45 @@ func persistSessionCopyIdentities(root string, w domain.SessionDeletionWork, ide
 	return nil
 }
 
-// adoptMaintenanceLocks captures the Worker's own process-owner maintenance
-// locks (processes/<id>.recovery.lock) for exactly the listed owner IDs. Owner
-// reconciliation creates them after validation began, so they are the one
-// exception to proven absence. Each is adopted only when it is an empty private
-// regular file; any other object at the name, and every name outside the listed
-// owners, keeps the absence it was captured with.
-func adoptMaintenanceLocks(root string, identities map[string]security.PathIdentity, owners []domain.ID) error {
-	for _, owner := range owners {
-		path := filepath.Join(root, "processes", string(owner)+".recovery.lock")
+// maintenanceBinding is the process-owner maintenance lock object that one
+// owner reconciliation locked, held open from inside that reconciliation.
+type maintenanceBinding struct {
+	owner    domain.ID
+	identity security.PathIdentity
+}
+
+func closeMaintenanceBindings(bindings []*maintenanceBinding) {
+	for _, binding := range bindings {
+		binding.identity.Close()
+	}
+}
+
+// adoptMaintenanceLocks adds the Worker's own process-owner maintenance locks
+// (processes/<id>.recovery.lock) to the validated identities for exactly the
+// owners whose reconciliation produced a binding. Owner reconciliation creates
+// them after validation began, so they are the one exception to proven absence.
+// What is adopted is the object the reconciler itself locked, never whatever the
+// pathname resolves to now: a binding is accepted only when it is an empty
+// regular file and the name still holds that same object. A replacement of any
+// kind (file, directory, link) is rejected and left untouched, and every name
+// without a binding keeps the absence it was captured with.
+func adoptMaintenanceLocks(root string, identities map[string]security.PathIdentity, bindings []*maintenanceBinding) error {
+	for _, binding := range bindings {
+		path := filepath.Join(root, "processes", string(binding.owner)+".recovery.lock")
+		if sessionDeletionBeforeAdoptionHook != nil {
+			sessionDeletionBeforeAdoptionHook(path)
+		}
 		if identities[path].Present() {
 			continue
 		}
-		info, e := os.Lstat(path)
-		if errors.Is(e, os.ErrNotExist) {
-			continue
-		}
-		if e != nil || !info.Mode().IsRegular() || info.Size() != 0 || security.RegularPrivate(path) != nil {
+		record := binding.identity.Record()
+		if !binding.identity.Present() || record.Kind != security.ObjectRegular || record.Size != 0 {
 			return domain.SessionDeletionPending()
 		}
-		identity, e := security.CapturePathIdentity(path)
-		if e != nil {
+		if e := binding.identity.StillAt(path); e != nil {
 			return e
 		}
-		identities[path] = identity
+		identities[path] = binding.identity.Take()
 	}
 	return nil
 }
@@ -744,6 +797,8 @@ func sessionDeletionCopyPaths(ctx context.Context, root string, w domain.Session
 			paths = append(paths, filepath.Join(root, "runtimes", string(copy.ActionID)), filepath.Join(root, "compaction-checkpoints", string(copy.ActionID)+".json"))
 		}
 		if copy.Type == domain.GenerateSessionTitleJob {
+			// Current jobs own an exact journal; historical jobs own prefixed runtimes.
+			paths = append(paths, filepath.Join(root, "title-runtimes", string(copy.JobID)))
 			titlePrefixes[string(copy.JobID)+"-"] = true
 		}
 	}
@@ -815,4 +870,74 @@ func cleanupGeneratedCopies(root string, w domain.SessionDeletionWork, observe b
 		}
 	}
 	return nil
+}
+
+// sessionHistoryIDs lists every native history identifier a session's retained
+// copies may have bound to a persistent profile.
+func sessionHistoryIDs(w domain.SessionDeletionWork) []domain.ID {
+	var ids []domain.ID
+	add := func(id domain.ID) {
+		if id.Validate() == nil {
+			ids = append(ids, id)
+		}
+	}
+	if w.Fork != nil {
+		add(w.Fork.RuntimeID)
+	}
+	for _, f := range w.RetryForks {
+		add(f.RuntimeID)
+	}
+	for _, copy := range w.Copies {
+		add(copy.ExecutionID)
+		add(copy.ActionID)
+	}
+	return ids
+}
+
+// deleteSessionNativeProfiles removes the persistent native profiles bound to
+// one explicitly deleted session. A referenced or active profile is never
+// deleted: it keeps the deletion pending with its closed cause.
+func deleteSessionNativeProfiles(ctx context.Context, config Config, w domain.SessionDeletionWork) error {
+	registry, err := nativeProfiles(config, w.MachineID)
+	if err != nil {
+		return domain.SessionDeletionPending()
+	}
+	scopes := []nativeprofile.DeleteScope{{Conversation: w.SessionID}}
+	for _, id := range sessionHistoryIDs(w) {
+		scopes = append(scopes, nativeprofile.DeleteScope{History: id})
+	}
+	for _, scope := range scopes {
+		if _, err := registry.Delete(ctx, scope); err != nil {
+			config.Logger.WarnContext(ctx, "session_deletion_native_profile_pending", "deletion_id", w.DeletionID, "reason", nativeProfileReason(err))
+			return domain.SessionDeletionPending()
+		}
+	}
+	return nil
+}
+
+// sessionNativeProfilesRemain proves, for completed-deletion replay, that no
+// persistent profile of the deleted session was restored.
+func sessionNativeProfilesRemain(ctx context.Context, config Config, w domain.SessionDeletionWork) (bool, error) {
+	registry, err := nativeProfiles(config, w.MachineID)
+	if err != nil {
+		return true, err
+	}
+	scopes := []nativeprofile.DeleteScope{{Conversation: w.SessionID}}
+	for _, id := range sessionHistoryIDs(w) {
+		scopes = append(scopes, nativeprofile.DeleteScope{History: id})
+	}
+	for _, scope := range scopes {
+		found, err := registry.Exists(ctx, scope)
+		if err != nil || found {
+			return true, err
+		}
+	}
+	return false, nil
+}
+
+func nativeProfileReason(err error) nativeprofile.Reason {
+	if reason, ok := nativeprofile.Reasoned(err); ok {
+		return reason
+	}
+	return nativeprofile.ReasonDeleteBlocked
 }

@@ -56,7 +56,12 @@ func (o *inputObserver) part(raw []byte) (result *NativePart, repeated bool, pro
 			return nil, false, err
 		}
 	} else if message.value.User != nil {
-		if value.ID != o.input.receipt.PartID || value.Kind != TextPartKind || value.Text.Timing != nil || value.Text.Synthetic != nil || value.Text.Ignored != nil || value.Text.Metadata != nil || sha256.Sum256([]byte(value.Text.Text)) != o.input.digest || old != nil {
+		if len(o.input.images) > 0 {
+			phase = "image-input"
+			if err := o.imageInputPart(message, value, old); err != nil {
+				return nil, false, err
+			}
+		} else if value.ID != o.input.receipt.PartID || value.Kind != TextPartKind || value.Text.Timing != nil || value.Text.Synthetic != nil || value.Text.Ignored != nil || value.Text.Metadata != nil || sha256.Sum256([]byte(value.Text.Text)) != o.input.digest || old != nil {
 			return nil, false, observerProblem()
 		}
 	} else {
@@ -118,7 +123,9 @@ func (o *inputObserver) part(raw []byte) (result *NativePart, repeated bool, pro
 	if old == nil {
 		message.parts = append(message.parts, value.ID)
 	}
-	if message.value.User != nil && value.MessageID == o.input.receipt.MessageID {
+	// The complete native expansion of an image-bearing input is stored
+	// part by part; only its last expected part makes the input stored.
+	if message.value.User != nil && value.MessageID == o.input.receipt.MessageID && len(message.parts) == o.input.partTotal() {
 		o.progress.InputPartSeen = true
 	}
 	if value.Tool != nil {

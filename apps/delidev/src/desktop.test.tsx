@@ -1,5 +1,5 @@
 import { StrictMode } from "react";
-import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
+import { createRouterTransport } from "@connectrpc/connect";
 import {
   act,
   fireEvent,
@@ -132,6 +132,8 @@ function savedFixture(stopServer?: (_request: unknown) => Promise<object>) {
     if (command === "show_connection_manager") return;
     if (command === "read_sidebar_preference")
       return { revision: 1, sidebar_preference: "expanded", problem: null };
+    if (command === "read_navigation_preference")
+      return { revision: 1, usage_pinned: false, problem: null };
     if (command === "notification_permission")
       return { permission: "unavailable", problem: "os-unavailable" };
     if (command === "begin_tray" || command === "begin_notifications")
@@ -172,6 +174,7 @@ it("uses only the native-pinned saved authority and direct product RPCs without 
         "begin_notifications",
         "end_notifications",
         "read_sidebar_preference",
+        "read_navigation_preference",
         "begin_inbox_badge",
         "read_inbox_badge_selection",
         "publish_inbox_badge",
@@ -430,48 +433,70 @@ it("never turns a stopped launch observation into readiness or a restart", async
   ).toBe(false);
 });
 
-it("retains the original Stop and confirmation across diagnostics hiding and Settings disposal", async () => {
-  const stop = vi.fn(async (_request: unknown) => ({}));
-  stop.mockRejectedValueOnce(
-    new ConnectError("Receipt lost", Code.Unavailable),
-  );
-  localFixture(stop);
-  render(<Desktop />);
-  await screen.findByText("Your sessions, in one place");
-  const open = () => {
+it.each(Object.values(LocalServerState))(
+  "keeps the local server section out of Connections while the status is %s and restores the inline fallback outside it",
+  async (state) => {
+    localFixture();
+    const original = bridge.invoke.getMockImplementation()!;
+    bridge.invoke.mockImplementation(async (command: string, args?: unknown) =>
+      command === "local_server_status"
+        ? { state, attempts: 1, retry_ms: 2000 }
+        : original(command, args),
+    );
+    render(<Desktop />);
+    await screen.findByText("Your sessions, in one place");
+    const visible = (text: string | RegExp) =>
+      screen
+        .queryAllByText(text)
+        .filter((node) => !node.closest("[hidden], [inert]"));
+    const inline =
+      state === LocalServerState.Stopped || state === LocalServerState.Blocked;
+    // Outside Connections only the not-ready fallback presents the controls.
+    await waitFor(() =>
+      expect(visible("This computer").length > 0).toBe(
+        state !== LocalServerState.Ready,
+      ),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
     fireEvent.click(screen.getByRole("button", { name: "Connections" }));
-  };
-  const hide = () => {
+    expect(screen.getByRole("heading", { name: "Saved servers" })).toBeTruthy();
+    expect(screen.getByText("Advanced")).toBeTruthy();
+    const page = document.querySelector(".connections-page") as HTMLElement;
+    expect(page).not.toBeNull();
+    expect(page.querySelector(":scope > section")).toBeNull();
+    expect(page.querySelector(".connections-current")).toBeNull();
+    for (const text of [
+      "Current connection",
+      "This computer",
+      "Local server",
+      "Connected",
+      /Stopping the server disconnects/,
+    ])
+      expect(within(page).queryByText(text)).toBeNull();
+    // Nothing of the controller is presented anywhere while Connections is open.
+    expect(visible("This computer")).toHaveLength(0);
+    expect(
+      screen.queryByRole("button", {
+        name: /Start local server|Stop local server/,
+      }),
+    ).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
-  };
-  open();
-  fireEvent.click(screen.getByText("Local server"));
-  fireEvent.click(screen.getByRole("button", { name: "Stop local server" }));
-  hide();
-  open();
-  expect(
-    screen.getByRole("button", { name: "Confirm server stop" }),
-  ).toBeTruthy();
-  expect(stop).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Confirm server stop" }));
-  await screen.findByRole("button", { name: "Retry the same server stop" });
-  hide();
-  open();
-  fireEvent.click(
-    screen.getByRole("button", { name: "Retry the same server stop" }),
-  );
-  await waitFor(() => expect(stop).toHaveBeenCalledTimes(2));
-  expect(stop.mock.calls[1][0]).toEqual(stop.mock.calls[0][0]);
-  expect(
-    bridge.invoke.mock.calls.some(
-      ([command]) => command === "connect_local" || command === "retry_local",
-    ),
-  ).toBe(false);
-  // This case repeatedly mounts the complete Settings tree while retaining its
-  // sibling connection controller. Allow slow test hosts without relaxing RPC or
-  // native deadlines or the identical-request assertions above.
-}, 60_000);
+    await waitFor(() =>
+      expect(visible("This computer").length > 0).toBe(
+        state !== LocalServerState.Ready,
+      ),
+    );
+    expect(
+      screen.queryByRole("button", { name: "Start local server" }) !== null,
+    ).toBe(inline);
+    expect(
+      bridge.invoke.mock.calls.some(
+        ([command]) => command === "connect_local" || command === "retry_local",
+      ),
+    ).toBe(false);
+  },
+  30_000,
+);
 
 it("keeps same-server windows on independent Home and new-session drafts", async () => {
   savedFixture();
@@ -723,3 +748,137 @@ it("keeps original Quit checking and Cancel before native context resolves", asy
   );
   expect(bridge.createTransport).not.toHaveBeenCalled();
 });
+
+// Window-level CmdOrCtrl+R reload owner: every screen above and inside App.
+function stubProductReload() {
+  const original = window.location;
+  const reload = vi.fn();
+  Object.defineProperty(window, "location", {
+    configurable: true,
+    value: { ...original, reload },
+  });
+  return {
+    reload,
+    restore: () =>
+      Object.defineProperty(window, "location", {
+        configurable: true,
+        value: original,
+      }),
+  };
+}
+const pressReload = (target: Element = document.body) => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+  const event = new KeyboardEvent("keydown", {
+    key: "r",
+    code: "KeyR",
+    ctrlKey: true,
+    bubbles: true,
+    cancelable: true,
+  });
+  act(() => {
+    target.dispatchEvent(event);
+  });
+  return event;
+};
+it("reloads the product window from the identity-read and window-context recovery screens", async () => {
+  const stub = stubProductReload();
+  try {
+    let fail = true;
+    bridge.invoke.mockImplementation(async (command: string) => {
+      if (command === "connection_context" && fail) throw "unavailable";
+      if (command === "connection_context") return new Promise(() => {});
+      throw new Error("Unexpected native authority");
+    });
+    render(<Desktop />);
+    await screen.findByRole("button", { name: "Retry window context" });
+    expect(pressReload().defaultPrevented).toBe(true);
+    expect(stub.reload).toHaveBeenCalledTimes(1);
+    fail = false;
+    fireEvent.click(
+      screen.getByRole("button", { name: "Retry window context" }),
+    );
+    await screen.findByText(/Reading this window/);
+    pressReload();
+    expect(stub.reload).toHaveBeenCalledTimes(2);
+  } finally {
+    stub.restore();
+  }
+});
+it("reloads the product window from the local startup recovery screen without a terminal byte or submission", async () => {
+  const stub = stubProductReload();
+  try {
+    bridge.invoke.mockImplementation(async (command: string) => {
+      if (command === "connection_context") return null;
+      if (command === "local_server_status")
+        return {
+          state: LocalServerState.Blocked,
+          attempts: 1,
+          retry_ms: 60000,
+          failure: "permission-denied",
+        };
+      if (command === "launch_local" || command === "retry_local")
+        throw "permission-denied";
+      if (command === "read_quit_attempt") return null;
+      throw new Error("Unexpected native authority");
+    });
+    render(<Desktop />);
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    const click = vi.fn();
+    retry.addEventListener("click", click);
+    retry.focus();
+    pressReload(retry);
+    expect(stub.reload).toHaveBeenCalledTimes(1);
+    expect(click).not.toHaveBeenCalled();
+  } finally {
+    stub.restore();
+  }
+});
+it("reloads the product window from the disconnected saved-connection screen", async () => {
+  const stub = stubProductReload();
+  try {
+    const value = savedFixture();
+    value.connection.server_id = newRequestId();
+    render(<Desktop />);
+    await screen.findByText(/DeliDev could not verify this connection/);
+    pressReload();
+    expect(stub.reload).toHaveBeenCalledTimes(1);
+  } finally {
+    stub.restore();
+  }
+});
+it("reloads the product window once from the connected top-level screens", async () => {
+  const stub = stubProductReload();
+  try {
+    savedFixture();
+    render(<Desktop />);
+    await screen.findByText("Your sessions, in one place");
+    let expected = 0;
+    for (const name of [
+      "Search",
+      "Pull requests",
+      "Usage",
+      "Schedules",
+      "Settings",
+    ]) {
+      // Usage is unpinned by default, so it is reached through the More popover.
+      if (name === "Usage")
+        fireEvent.click(screen.getByRole("button", { name: "More" }));
+      const button =
+        name === "Usage"
+          ? within(screen.getByRole("dialog", { name: "More" })).queryByRole(
+              "button",
+              { name: "Usage" },
+            )
+          : screen.queryByRole("button", {
+              name: new RegExp(`^${name}`),
+            });
+      expect(button, name).toBeTruthy();
+      fireEvent.click(button!);
+      pressReload();
+      expected++;
+      expect(stub.reload).toHaveBeenCalledTimes(expected);
+    }
+  } finally {
+    stub.restore();
+  }
+}, 15_000);

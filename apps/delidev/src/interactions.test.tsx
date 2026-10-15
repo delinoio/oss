@@ -10,9 +10,15 @@ import {
   ResourceSchema,
   newRequestId,
 } from "@delinoio/delidev-api-client";
-import { Interaction, advancesInteraction } from "./interactions";
 import {
+  Interaction,
+  PendingInteractionReceipt,
+  advancesInteraction,
+} from "./interactions";
+import {
+  InteractionClosure,
   InteractionPresentationStore,
+  QuestionResponseState,
   interactionProjection,
   type InteractionProjection,
 } from "./interaction-presentation";
@@ -252,6 +258,48 @@ it("retains native deny descriptors when reducing a requested write to read", as
       },
     },
   });
+});
+
+it("offers the original decision for a newer admitted Codex approval version", async () => {
+  const value = fixture({
+    type: "native-approval",
+    closure: "open",
+    approval: {
+      harness: "codex",
+      version: "0.151.1",
+      codex: { kind: "file-change", file: {} },
+    },
+  });
+  render(value.view());
+  expect(
+    screen.queryByText(
+      "This native approval version is not supported. The original request is preserved.",
+    ),
+  ).toBeNull();
+  fireEvent.change(screen.getByRole("combobox", { name: "Decision" }), {
+    target: { value: "1" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Send decision" }));
+  await screen.findByText("Response: queued");
+  expect(value.approvals).toHaveBeenCalledTimes(1);
+});
+
+it("refuses a Codex approval version below the baseline", () => {
+  const value = fixture({
+    type: "native-approval",
+    closure: "open",
+    approval: {
+      harness: "codex",
+      version: "0.150.9",
+      codex: { kind: "file-change", file: {} },
+    },
+  });
+  render(value.view());
+  expect(
+    screen.getByText(
+      "This native approval version is not supported. The original request is preserved.",
+    ),
+  ).toBeTruthy();
 });
 
 it("refuses an unrecognized native approval version without inventing choices", () => {
@@ -516,4 +564,52 @@ it("keeps the Native approval heading for genuine approvals", () => {
   render(value.view());
   expect(screen.getByRole("heading", { name: "Native approval" })).toBeTruthy();
   expect(screen.queryByRole("heading", { name: "Agent question" })).toBeNull();
+});
+
+it("renders bounded closure and response state values in compact receipts", async () => {
+  const value = fixture(question, true);
+  const base = interactionProjection(value.resource);
+  const receipt = (patch: Partial<InteractionProjection>) => (
+    <TransportProvider transport={createRouterTransport(() => {})}>
+      <QueryClientProvider client={new QueryClient()}>
+        <MutationIntents>
+          <PendingInteractionReceipt
+            projection={{ ...base, ...patch }}
+            accepted={() => {}}
+          />
+        </MutationIntents>
+      </QueryClientProvider>
+    </TransportProvider>
+  );
+  const recognized = render(
+    receipt({
+      closure: InteractionClosure.TurnEnded,
+      responseState: QuestionResponseState.Queued,
+    }),
+  );
+  expect(screen.getByText("turn-ended")).toBeTruthy();
+  expect(screen.getByText("Response: queued")).toBeTruthy();
+  recognized.unmount();
+  const empty = render(
+    receipt({
+      closure: InteractionClosure.Open,
+      responseState: QuestionResponseState.None,
+    }),
+  );
+  expect(screen.getByText("open")).toBeTruthy();
+  expect(screen.queryByText("Response: none")).toBeNull();
+  empty.unmount();
+  await i18n.changeLanguage("ko");
+  try {
+    render(
+      receipt({
+        closure: InteractionClosure.Unknown,
+        responseState: QuestionResponseState.Unknown,
+      }),
+    );
+    expect(screen.getByText("응답: 알 수 없음")).toBeTruthy();
+    expect(screen.getAllByText("알 수 없음").length).toBeGreaterThan(0);
+  } finally {
+    await i18n.changeLanguage("en");
+  }
 });

@@ -349,7 +349,7 @@ Codex responses retain one immutable UUID, acceptance timestamp, `queued` state 
 
 Competing responses serialize through the interaction revision and only one is accepted. Acceptance does not send native input. Native or terminal closure changes an unsent queued response to `canceled`, retaining both the original questions and accepted answer content; replaying its reference-only receipt cannot requeue it. Send-intent journaling and delivery/uncertainty publication now have their separate Worker transitions below; native acceptance now uses the exact live output evidence below; lost-event/history reconciliation remains required.
 
-The outbound work stream now emits metadata-only question response controls for its active immutable job independently of the ordinary job queue. Controls are deduplicated and bounded to the execution's 4,096-interaction limit; later jobs remain queued, and cancellation/heartbeats stay live. The authenticated `ClaimQuestionResponse` Worker RPC transitions exactly one queued response to `claimed`, recording the original claim request/job/machine/instance/device and timestamp. It returns original non-secret answer content only after checking current execution authority both at mutation and read-back, including exact receipt replay; receipts contain the interaction reference only. A new claim cannot adopt an already claimed response. The production Worker consumes these controls through a bounded, lifecycle-joined response controller.
+The outbound work stream now emits metadata-only question response controls for its active immutable job independently of the ordinary job queue. Controls are deduplicated and bounded to the execution's 4,096-interaction limit; later jobs remain queued (a stream with negotiated parallel sessions keeps an independent control set, bound and sent-state per assigned job, so a response for one session never satisfies, cancels or exhausts another), and cancellation/heartbeats stay live. The authenticated `ClaimQuestionResponse` Worker RPC transitions exactly one queued response to `claimed`, recording the original claim request/job/machine/instance/device and timestamp. It returns original non-secret answer content only after checking current execution authority both at mutation and read-back, including exact receipt replay; receipts contain the interaction reference only. A new claim cannot adopt an already claimed response. The production Worker consumes these controls through a bounded, lifecycle-joined response controller.
 
 Native or terminal closure of a claimed response changes it to `uncertain`, retains both original question/answer and claim, and atomically pauses further sends with required recovery. This transition does not overwrite a separately observed terminal outcome. Lost Worker ownership likewise marks claimed responses uncertain and cancels still-queued responses, but cannot manufacture native request closure. No claim retry after closure, uncertainty, cancellation, stale heartbeat, revocation or replacement returns answer content or permits a resend.
 
@@ -702,7 +702,7 @@ Claude first dispatch, FIFO/Resume and original completed-report recovery suppor
 
 ### Grok original session and input binding
 
-The binding portion of the additive Grok `1.0.41` publication profile accepts `thread-bound` and `input-accepted` from an original first-assignment Worker through `PublishExecution`. Retain the exact native UUID-v7 session and UUID-v4 prompt, original observed model and typed `grok_mode` (`default` or `plan`). The initial mode must match the immutable queued input; default permissions do not imply a synthetic filesystem sandbox or approval policy. Unsupported effort, tier, Plan instructions/templates and child/review settings cannot be dropped; Execute templates retain their immutable order and exact additive native rules. Initial observations remain attached to their original execution, independently of later native mode changes.
+The binding portion of the additive Grok publication profile at or above `domain.GrokProtocolVersion` (`1.0.41`) accepts `thread-bound` and `input-accepted` from an original first-assignment Worker through `PublishExecution`. Retain the exact native UUID-v7 session and UUID-v4 prompt, original observed model and typed `grok_mode` (`default` or `plan`). The initial mode must match the immutable queued input; default permissions do not imply a synthetic filesystem sandbox or approval policy. Unsupported effort, tier, Plan instructions/templates and child/review settings cannot be dropped; Execute templates retain their immutable order and exact additive native rules. Initial observations remain attached to their original execution, independently of later native mode changes.
 
 The Worker synchronizes original creation and optional Plan claims before binding publication, blocks input until its original binding receipt is acknowledged, and requires the independently recorded native prompt before acceptance publication. The server validates the current job/instance/device/revision, complete immutable assignment, selected native profile and original session ownership before atomic sequence/queue accounting. Exact receipt replay is observation only; duplicate or foreign binding/acceptance and unknown event families leave state unchanged. Late original acceptance cannot clear Stop, pause, recovery or revoked relay authority. Native completion reporting and ordinary dispatch require their separate closed-text and workspace-runner adapters described below; binding alone does not authorize them.
 
@@ -985,6 +985,13 @@ to the exact historical predecessor and independently validated replacement
 history. Success, failure and Stop outcomes remain attributed to that predecessor.
 Manual Resume and one fresh input do not replay an old turn. Original Fork and
 Sidechat snapshots retain their own lifetimes and contexts.
+For a skilled target accepted by an earlier execution, the server freezes that
+execution's retained checkpoint reference (`execution_id`, `checkpoint_digest`)
+with the Revert target so the original Worker can bind the target's own
+selected-skill proof before the native claim. Every skilled target, including
+one of the source execution that carries no reference, requires the original
+Worker's `CODEX_SESSION_REVERT_TARGET_PROOF_V1` capability; text-only targets
+keep the original envelope.
 
 ## Accepted-turn elapsed observations
 
@@ -1063,3 +1070,14 @@ execution, queued input or routing state. The existing structured blocked event
 records the closed cause with the code; quota blocks are not storage failures.
 No messages, prompts, account content or native output enter logs.
 This optional metadata adds no RPC, allocation, schema, migration or backfill.
+
+## Native histories and persistent profiles
+
+A session's native history lives in persistent conversation profiles resolved by
+session, account and purpose, never by execution identifier. Continuation,
+compaction, Revert, Sidechat and native review reuse the retained history through
+registry-bound execution and action identifiers; per-operation journals under
+`runtimes/<id>` stay fresh and exclusive. Existing sessions keep their original
+history: legacy `runtimes/<id>` histories are registered in place, not moved or
+merged. Session deletion removes the session's profiles only after owners join.
+See the [harness contract](cmds-delidev-harness-contract.md#persistent-native-profiles).

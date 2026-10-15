@@ -68,6 +68,9 @@ GrokDiagnostic fields 1–7 and closed GrokDiagnosticPhase values 0–11. Record
 the complete closure in the owning feature PR. Codex field 7 and existing
 System 30/35/36/37 and Worker 19 ownership
 remain unchanged. Reservations activate nothing and add no migration.
+`grok_diagnostic` is populated from Grok operations and failed Grok installation
+observations as described in the Grok subscription contract; no proto field is
+added.
 
 ## Agent Worker source-route ownership
 
@@ -208,12 +211,15 @@ the [account OAuth contract](cmds-delidev-account-oauth-contract.md).
 
 ### Repository addition prerequisites
 
-The approved remote-first extension reserves System 37
-(`REMOTE_REPOSITORIES_V1`) and Worker 19 (`REMOTE_WORKSPACE_CLONE_V1`) in the
-owning feature PR. It follows the Add repository implementation
-in the originating change and preserves its immediate-clone/listing allocations. Reservations
-alone grant no URL registration or managed workspace clone and add no migration.
-The complete feature must compose repository saving, session/schedule admission,
+The approved remote-first extension allocates System 37
+(`REMOTE_REPOSITORIES_V1`) and Worker 19 (`REMOTE_WORKSPACE_CLONE_V1`) in
+`protos/delidev/allocations.json`. Ledger entries do not advertise support; the active
+schema and runtime capability advertisements establish activation. It follows the Add repository
+implementation in the originating change and preserves its immediate-clone/listing
+allocations (System 31/32 and Worker 18). URL-only registration requires no Worker
+admission, Worktree execution clones the configured source on the selected Worker,
+and explicit Local execution requires the original machine checkout. The allocations
+add no migration. The feature composes repository saving, session/schedule admission,
 Worker preparation, native ownership, recovery, snapshots, Fork, Sidechat and
 deletion; a URL-only form without remote Worker preparation is incomplete.
 
@@ -514,7 +520,7 @@ The feature records System 75 `WAITING_QUEUE_ORDER_V1`, complete owner/client mo
 
 - Trusted main DeliDev desktops automatically pair/start the fixed local Worker after authenticated local connection and own one joined native supervision task. Fresh launch or explicit Start may reopen ordinary stopped intent; ensure/retry preserve Stop, pending admission and updater ownership. Share current-user Worker service admission without manager writes. Retain original native child/control handles before readiness, recover only confirmed original exits (including fresh-launch durable generation/scope/desktop-client/PID/kernel-birth proof for newly recorded controllers), and stop only app-owned children on normal Quit under the existing 35-second grace. Preserve borrowed CLI/service Workers, saved connections, crash/EOF survival and all native execution uncertainty. Follow the desktop, CLI and user-service contracts; no protocol allocation or database migration.
 
-- DeliDev remote-first repositories record System capability 37 and Worker capability 19 in the owning feature PR. The current folder-first flow remains checkout-based. Future URL-only owner/client registration requires no Worker admission; the configured remote URL is the immutable Worktree source cloned on the selected Worker, and optional checkout connections authorize only explicit Local execution with its original machine authority. Configured source metadata does not permit exposing raw inspected URLs or credentials or deleting original Local checkouts. System 31/32 and Worker 18 retain separate immediate-clone/listing ownership. Reservations grant no URL registration or managed-clone capability and add no migration. Follow the project index and desktop, workspace, protocol and structure contracts.
+- DeliDev remote-first repositories use System capability 37 and Worker capability 19, allocated in the ledger and recorded in the owning feature PR. Ledger entries do not advertise support; the active schema and runtime capability advertisements establish activation. URL-only owner/client registration requires no Worker admission; the configured credential-free remote URL is the immutable Worktree source cloned on the selected Worker, and optional checkout connections authorize only explicit Local execution with its original machine authority. Existing checkout-backed registration and imports remain supported. Configured source metadata is distinct from inspected raw URLs: the configured URL is saved source metadata, while inspection never returns raw URLs or credentials, and no flow may expose them or delete original Local checkouts. System 31/32 and Worker 18 retain separate immediate-clone/listing ownership. The allocations grant no migration. Follow the project index and desktop, workspace, protocol and structure contracts.
 
 - DeliDev Agent Worker wizard follows the desktop/catalog/protocol contracts: remove standalone Models settings, use same-source multiple accounts and atomic model/Worker saving, and expose Token pricing through Usage. Preserve legacy APIs, historical attribution, recorded allocations and independent execution eligibility.
 
@@ -534,9 +540,9 @@ Instruction-file updates in this requirement apply only to changes in developmen
 
 - DeliDev pre-release compatibility reset follows `cmds-delidev-structure-contract.md#pre-release-compatibility-reset`. Record database baseline 32, protocol 2 and AttachWorkerRequest field 10 in the owning feature PR. The complete reset removes DeliDev historical compatibility and executable migrations 1–31; preserve allocation ownership, current external adapters, authorization, receipts and cleanup. Reject earlier DBs/backups without changing or deleting original files. This approved reset supersedes earlier compatibility/migration-retention instructions only on feature activation; reservations activate nothing.
 
-- Native Claude subscriptions use System 38 / Worker 20 after the originating change established their complete allocations on main. Follow the subscription, desktop, protocol, harness, storage and structure contracts. Original Claude Code 2.1.236 owns authentication on the explicitly selected Runner in a private account profile; only opaque ownership metadata and a keyed identity commitment reach the server. Preserve exclusive lifecycle/execution leases, once-only original code input, cancellation-before-success and cleanup-only original recovery. No personal login import, external/API tokens, cross-device authentication, quota/credits or migration; actual account/platform acceptance remains separate from fixtures/builds.
+- Native Claude subscriptions use System 38 / Worker 20 after the originating change established their complete allocations on main. Follow the subscription, desktop, protocol, harness, storage and structure contracts. Original Claude Code 2.1.236 owns authentication of existing device-owned accounts on their original Runner in a private account profile (new Claude sign-in is server-owned under System 67 and System 38 never gates it); only opaque ownership metadata and a keyed identity commitment reach the server. Preserve exclusive lifecycle/execution leases, once-only original code input, cancellation-before-success and cleanup-only original recovery. No personal login import, external/API tokens, cross-device authentication, quota/credits or migration; actual account/platform acceptance remains separate from fixtures/builds.
 
-- Native Claude subscriptions record System capability 38, Worker capability 20 and the login-code/progress/native-identity declarations in the owning feature PR. Follow the subscription, desktop, protocol and structure contracts. The planned original Claude Code profile remains on its explicitly selected Runner Device; only metadata crosses the server, never subscription tokens or credential files. Reservations grant no login, execution, browser or cleanup authority and add no migration.
+- Native Claude subscriptions record System capability 38, Worker capability 20 and the login-code/progress/native-identity declarations in the owning feature PR. Follow the subscription, desktop, protocol and structure contracts. The original Claude Code profile of an existing device-owned account remains on its original Runner Device (new sign-in is server-owned under System 67); only metadata crosses the server, never subscription tokens or credential files. Reservations grant no login, execution, browser or cleanup authority and add no migration.
 
 - The feature explicit native skills owns System 44, Worker 24 and selected-skill request field 4. The owner explicitly authorized declarations and activation in the same feature change for this issue. Current feature allocation delivery follows the shared allocation workflow. Follow the sessions, harness, desktop, storage and protocol contracts. Retain original actor, Worker instance, Agent revision, immutable complete package snapshots and exact native history proofs. Real-account, installed-native, remote and cross-platform acceptance belongs to the owner for this batch.
 
@@ -581,8 +587,12 @@ Record implementation status and validation results in pull requests, issues and
 `internal/tailscale` owns the installed-client adapter and original foreground
 Serve process. `internal/server/tailscale.go` owns the separate ingress, bounded
 private approval/outgoing journals and existing pairing integration.
-`apps/delidev/src/tailscale-connections.tsx` owns Local Connections presentation;
+`apps/delidev/src/tailscale-connections.tsx` owns the Local Tailscale access and devices presentation shown in the Settings Tailscale category through the slots of `apps/delidev/src/runner-tailscale-slots.tsx`;
 `protos/delidev/v1/tailscale.proto` owns the additive Connect surface and System 93.
 Follow the [connections contract](cmds-delidev-connections-contract.md#tailscale-connections).
 The existing SSH installer and detached outbound Worker controller retain their
 independent ownership. No empty migration or new native binding is required.
+
+### Server reset credits V2 allocation closure
+
+System 101 `SERVER_SUBSCRIPTION_RESET_CREDITS_V2` is recorded with its complete feature implementation under the [allocation workflow](#allocation-workflow). It adds no RPC, Worker capability or migration and preserves System 19/49/50 and Worker 52. Fixtures and builds never substitute for installed-native, real-account, remote-server or platform acceptance.

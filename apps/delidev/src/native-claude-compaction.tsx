@@ -126,24 +126,28 @@ export function NativeClaudeCompactionBoundary({ value }: { value: unknown }) {
             ? copy("native-claude-compaction.automatic_d461a4")
             : copy("native-claude-compaction.manual_b0b9fe")}
         </dd>
-        <dt>
+        <dt data-token-observation>
           {copy("native-claude-compaction.tokensBeforeCompaction_602d37")}
         </dt>
-        <dd>{v.pre_tokens as string}</dd>
-        <dt>{copy("native-claude-compaction.tokensAfterCompaction_047fdc")}</dt>
-        <dd>
+        <dd data-token-observation>{v.pre_tokens as string}</dd>
+        <dt data-token-observation>
+          {copy("native-claude-compaction.tokensAfterCompaction_047fdc")}
+        </dt>
+        <dd data-token-observation>
           {(v.post_tokens as string) ??
             copy("native-claude-compaction.notReported_adadfa")}
         </dd>
-        <dt>{copy("native-claude-compaction.durationMilliseconds_60d19b")}</dt>
-        <dd>
+        <dt data-time-observation>
+          {copy("native-claude-compaction.durationMilliseconds_60d19b")}
+        </dt>
+        <dd data-time-observation>
           {(v.duration_ms as string) ??
             copy("native-claude-compaction.notReported_adadfa")}
         </dd>
-        <dt>
+        <dt data-token-observation>
           {copy("native-claude-compaction.cumulativeDroppedTokens_b82734")}
         </dt>
-        <dd>
+        <dd data-token-observation>
           {(v.cumulative_dropped_tokens as string) ??
             copy("native-claude-compaction.notReported_adadfa")}
         </dd>

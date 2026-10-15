@@ -58,8 +58,7 @@ body {
   overflow-wrap: anywhere;
   color: var(--muted);
 }
-.tray-status button,
-.tray-status select {
+.tray-status button {
   font: inherit;
   color: var(--text);
   background: var(--surface);
@@ -77,7 +76,7 @@ body {
   cursor: default;
   opacity: 0.6;
 }
-.tray-status :is(button, select, summary):focus-visible {
+.tray-status :is(button, summary):focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
@@ -93,18 +92,28 @@ body {
   scrollbar-gutter: stable;
   padding: 2px;
 }
-.tray-window-selector {
-  display: grid;
-  gap: 4px;
+.tray-connection {
+  margin-top: 0;
 }
-.tray-window-selector select {
-  width: 100%;
+.tray-quota-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 16px 0 8px;
+}
+.tray-quota-heading h2 {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .tray-account {
   padding: 12px;
   margin-bottom: 8px;
   border: 1px solid var(--border);
   border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
 }
 .tray-quota + .tray-quota {
   border-top: 1px solid var(--border);
@@ -116,7 +125,7 @@ body {
   color: var(--muted);
 }
 .tray-quota-remaining {
-  font-size: 32px;
+  font-size: 24px;
   line-height: 1.2;
   display: block;
   overflow-wrap: anywhere;
@@ -137,6 +146,8 @@ body {
   margin-top: 16px;
 }
 .tray-metrics button {
+  font-size: 14px;
+  border-color: var(--border);
   display: flex;
   flex-direction: column;
   align-items: flex-start;

@@ -48,6 +48,11 @@ type Config struct {
 	API              *APIConfig
 	// ManagedAuthentication is available only to an exclusive server lease.
 	ManagedAuthentication bool
+	// ManagedTitle selects the private automatic-title profile for protected
+	// ChatGPT authentication: a retry-free provider alias of the built-in OpenAI
+	// authority, fixed instructions and no tools, MCP, plugins, hooks, skills or
+	// ambient instructions. It is valid only with ManagedAuthentication.
+	ManagedTitle bool `json:"-"`
 }
 type Client struct {
 	codeReviewModel      string
@@ -74,11 +79,15 @@ type Client struct {
 	modelObservation     string
 	home                 string
 	wire                 *nativewire.Connection
+	sharedEvents         *sharedEvents
+	sharedQueue          <-chan nativewire.Event
 	version              string
 	ownerID              domain.ID
 	logger               *slog.Logger
 	control              chan struct{}
 	thread               domain.ID
+	unsubscribing        bool
+	threadClosed         bool
 	problem              *domain.Error
 	remoteControlRefusal *remoteControlPolicyViolation
 	mode                 ProtocolMode
@@ -87,6 +96,7 @@ type Client struct {
 	pendingEvent         *nativewire.Event
 	api                  *apiBinding
 	managedHome          string
+	managedTitle         bool
 	executionHelpers     *executionHelpers
 	revertHistory        bool
 	imageGeneration      bool
@@ -100,6 +110,10 @@ const (
 	ThreadProtocol       ProtocolMode = "thread"
 	SubscriptionProtocol ProtocolMode = "subscription"
 	QuotaProtocol        ProtocolMode = "quota-access-only"
+	// CreditProtocol is the server access-only reset-credit profile. It shares
+	// the in-memory external authentication boundary but is a separate mode, so
+	// the read-only QuotaProtocol can never reach a consumption method.
+	CreditProtocol ProtocolMode = "credit-access-only"
 )
 
 type handshakePhase string
@@ -137,18 +151,23 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	if config.Mode == "" {
 		config.Mode = ProbeProtocol
 	}
-	if config.Mode != ProbeProtocol && config.Mode != ThreadProtocol && config.Mode != SubscriptionProtocol && config.Mode != QuotaProtocol {
+	if config.Mode != ProbeProtocol && config.Mode != ThreadProtocol && config.Mode != SubscriptionProtocol && config.Mode != QuotaProtocol && config.Mode != CreditProtocol {
+		return nil, incompatible()
+	}
+	if config.ManagedTitle && (config.Mode != ThreadProtocol || !config.ManagedAuthentication || config.API != nil || config.Sidechat != "" || config.ModelObservation || config.CodeReviewModel != "" || config.DynamicTools || config.ManagedForkHistory || config.EnableImageGeneration || config.RevertHistory || config.FrameProfile != DefaultFrameProfile) {
 		return nil, incompatible()
 	}
 	if config.ManagedForkHistory && (config.Mode != ThreadProtocol || !config.ManagedAuthentication || config.Sidechat != "") {
 		return nil, incompatible()
 	}
 	// The enlarged Fork history frame belongs only to the managed independent
-	// Fork route, for both the source inspection and the paused child.
-	if config.FrameProfile != DefaultFrameProfile && (config.FrameProfile != ForkHistoryFrameProfile || !config.ManagedForkHistory || config.API != nil) {
+	// Fork route, for both the source inspection and the paused child. The
+	// image-history frame belongs only to history inspection of an original
+	// execution that generated images.
+	if config.FrameProfile != DefaultFrameProfile && !(config.FrameProfile == ForkHistoryFrameProfile && config.ManagedForkHistory && config.API == nil) && !(config.FrameProfile == ImageHistoryFrameProfile && config.imageHistoryProfileAdmitted()) {
 		return nil, incompatible()
 	}
-	if (config.Mode == QuotaProtocol && (config.ManagedAuthentication || config.API != nil || config.Sidechat != "" || config.ModelObservation)) || (config.Mode == SubscriptionProtocol && !config.ManagedAuthentication) || (config.ManagedAuthentication && (config.Mode == ProbeProtocol || config.API != nil)) {
+	if ((config.Mode == QuotaProtocol || config.Mode == CreditProtocol) && (config.ManagedAuthentication || config.API != nil || config.Sidechat != "" || config.ModelObservation)) || (config.Mode == SubscriptionProtocol && !config.ManagedAuthentication) || (config.ManagedAuthentication && (config.Mode == ProbeProtocol || config.API != nil)) {
 		return nil, incompatible()
 	}
 	phase = runtimePhase
@@ -183,12 +202,16 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 		// keeps startup and account changes within the unchanged cleanup bounds.
 		config.Process.Args = append(config.Process.Args, "-c", "features.plugins=false")
 	}
-	if config.Mode == QuotaProtocol {
+	if config.Mode == QuotaProtocol || config.Mode == CreditProtocol {
 		config.Process.Args = append(config.Process.Args, "-c", `model_provider="openai"`, "-c", `forced_login_method="chatgpt"`)
 	}
 	if config.ManagedAuthentication {
 		config.Process.Args[1] = `cli_auth_credentials_store="file"`
-		config.Process.Args = append(config.Process.Args, "-c", `model_provider="openai"`, "-c", `forced_login_method="chatgpt"`)
+		if config.ManagedTitle {
+			config.Process.Args = append(config.Process.Args, "-c", `forced_login_method="chatgpt"`)
+		} else {
+			config.Process.Args = append(config.Process.Args, "-c", `model_provider="openai"`, "-c", `forced_login_method="chatgpt"`)
+		}
 	}
 	if err := configureImageGeneration(&config); err != nil {
 		return nil, err
@@ -207,10 +230,17 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	if err := configureSidechat(&config); err != nil {
 		return nil, err
 	}
+	if err := configureManagedTitle(&config); err != nil {
+		return nil, err
+	}
 	configureOrdinaryTools(&config)
 	config.Process.Args = append(config.Process.Args, "app-server")
 	var helpers *executionHelpers
-	if config.ManagedAuthentication && config.Mode == ThreadProtocol {
+	// Managed Thread execution and the access-only quota profile both launch an
+	// original native tree whose temporary helper aliases must be retired after
+	// a joined exit. CreditProtocol and SubscriptionProtocol keep their own
+	// lifecycles and never hold this proof.
+	if (config.ManagedAuthentication && config.Mode == ThreadProtocol) || (!config.ManagedAuthentication && config.Mode == QuotaProtocol) {
 		helpers, err = prepareExecutionHelpers(home, config.Process)
 		if err != nil {
 			return nil, err
@@ -244,7 +274,7 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	// Thread control pins legacy native history explicitly. In this exact
 	// installed version that selector requires the experimental capability;
 	// discovery probes retain the stable, non-mutating handshake.
-	response, err := wire.Call(ctx, domain.NewID(), "initialize", map[string]any{"clientInfo": map[string]string{"name": "delidev", "title": "DeliDev", "version": rpc.Version}, "capabilities": map[string]bool{"experimentalApi": config.Mode == ThreadProtocol || config.Mode == QuotaProtocol}})
+	response, err := wire.Call(ctx, domain.NewID(), "initialize", map[string]any{"clientInfo": map[string]string{"name": "delidev", "title": "DeliDev", "version": rpc.Version}, "capabilities": map[string]bool{"experimentalApi": config.Mode == ThreadProtocol || config.Mode == QuotaProtocol || config.Mode == CreditProtocol}})
 	if err != nil {
 		return nil, handshakeError(wire, err)
 	}
@@ -315,12 +345,12 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	if config.Process.Logger != nil {
 		config.Process.Logger.InfoContext(ctx, "Codex native handshake verified", "owner_id", config.Process.OwnerID, "version", config.Version, "image_observations", imageObservations, "frame_profile", config.FrameProfile)
 	}
-	client = &Client{codeReviewModel: config.CodeReviewModel, codeReviewRoot: config.Process.Cwd, reviewProtected: security.NewProtectedJSON(config.Process.ProtectedValues), dynamicToolsEnabled: config.DynamicTools, executionHelpers: helpers, imageObservations: imageObservations, imageGeneration: config.EnableImageGeneration, revertHistory: config.RevertHistory, managedForkHistory: config.ManagedForkHistory, home: home, skillsRoot: config.SkillsRoot, imageRoot: config.ImageRoot, imageMachine: config.ImageMachineID, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api, modelObservation: observation, sidechat: config.Sidechat}
+	client = &Client{codeReviewModel: config.CodeReviewModel, codeReviewRoot: config.Process.Cwd, reviewProtected: security.NewProtectedJSON(config.Process.ProtectedValues), dynamicToolsEnabled: config.DynamicTools, executionHelpers: helpers, imageObservations: imageObservations, imageGeneration: config.EnableImageGeneration, revertHistory: config.RevertHistory, managedForkHistory: config.ManagedForkHistory, home: home, skillsRoot: config.SkillsRoot, imageRoot: config.ImageRoot, imageMachine: config.ImageMachineID, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api, modelObservation: observation, sidechat: config.Sidechat, managedTitle: config.ManagedTitle}
 	phase = profilePhase
 	if err := client.verifyLifecyclePlugins(ctx); err != nil {
 		return nil, err
 	}
-	if config.Mode == QuotaProtocol {
+	if config.Mode == QuotaProtocol || config.Mode == CreditProtocol {
 		if err := client.verifyManagedConfig(ctx, config.Process.Cwd); err != nil {
 			return nil, err
 		}
@@ -403,6 +433,9 @@ func (c *Client) Close() error {
 // results. Authentication comparison and scanning must still run after a joined
 // original tree even when helper retirement fails.
 func (c *Client) CloseWithExecutionHelpers() (nativeErr, helperErr error) {
+	if c.sharedEvents != nil {
+		return sharedEventUncertain(), nil
+	}
 	nativeErr = domain.WithCodexDiagnostic(c.version, domain.CodexCleanup, c.wire.CloseGracefully(3*time.Second))
 	if nativeErr != nil {
 		if c.executionHelpers != nil {
@@ -416,8 +449,10 @@ func (c *Client) CloseWithExecutionHelpers() (nativeErr, helperErr error) {
 		}
 		return nativeErr, nil
 	}
-	if c.managedHome != "" && c.mode == ThreadProtocol {
-		helperErr = domain.WithCodexDiagnostic(c.version, domain.CodexCleanup, c.executionHelpers.retire(c.managedHome, c.ownerID, c.wire.Identity()))
+	// Only a client that captured original startup proof can retire helpers, and
+	// only here, after the original native tree was joined above.
+	if c.executionHelpers != nil {
+		helperErr = domain.WithCodexDiagnostic(c.version, domain.CodexCleanup, c.executionHelpers.retire(c.home, c.ownerID, c.wire.Identity()))
 	}
 	return nativeErr, helperErr
 }
@@ -439,7 +474,7 @@ func (c *Client) recordFailureAtStage(ctx context.Context, phase domain.CodexPha
 }
 
 func configureOrdinaryTools(config *Config) {
-	if config.Mode != ThreadProtocol || config.Sidechat != "" || config.ModelObservation || config.API != nil && config.API.TitleProfile {
+	if config.Mode != ThreadProtocol || config.Sidechat != "" || config.ManagedTitle || config.ModelObservation || config.API != nil && config.API.TitleProfile {
 		config.OrdinaryTools = executionenv.Ordinary{}
 	}
 	config.Process.Env = config.OrdinaryTools.Apply(config.Process.Env)

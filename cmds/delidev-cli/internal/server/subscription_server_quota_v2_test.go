@@ -14,6 +14,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeprofile"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
@@ -22,7 +23,7 @@ import (
 func installV2QuotaFixture(f *subscriptionFixture) *serverQuotaFixture {
 	remaining := .6
 	n := &serverQuotaFixture{observed: domain.SubscriptionQuotaObservation{ObservedAt: time.Now().UTC(), Windows: []domain.SubscriptionQuotaWindow{{ID: "codex:primary", Remaining: &remaining}}}}
-	f.service.quotaOpen = func(context.Context, string, domain.ID, codex.QuotaAuthentication, *slog.Logger) (serverQuotaNative, error) {
+	f.service.quotaOpen = func(context.Context, nativeScope, domain.ID, codex.QuotaAuthentication, *slog.Logger) (serverQuotaNative, error) {
 		return quotaNativeFixture{n}, nil
 	}
 	return n
@@ -197,8 +198,14 @@ func TestServerQuotaV2RestartReconcilesOnlyOriginalCleanup(t *testing.T) {
 				t.Fatal("restart confused cleanup with quota replay")
 			}
 			if evidence {
-				if _, err := os.Lstat(filepath.Join(f.service.Store.Root(), "subscription-runtime", "quota", string(op))); !os.IsNotExist(err) {
-					t.Fatal("original quota runtime remained")
+				// Completion is recorded separately from directory removal: the original
+				// historical runtime is retained untouched and settled through a receipt.
+				if _, err := os.Lstat(filepath.Join(f.service.Store.Root(), "subscription-runtime", "quota", string(op))); err != nil {
+					t.Fatal("original quota runtime was deleted by completion", err)
+				}
+				receipt, ok, err := f.service.nativeProfilesMust(t).ReadReceipt(ctx, nativeprofile.ReceiptLegacyQuota, op)
+				if err != nil || !ok || receipt.Step != nativeprofile.ReceiptSettled {
+					t.Fatal("legacy quota migration receipt was not settled", err)
 				}
 			} else if a.Subscription.ServerQuota.Phase != domain.SubscriptionObservationUncertain {
 				t.Fatal("missing owner proof released obligation")
@@ -250,7 +257,7 @@ func TestServerQuotaV2RetirementFailureAndRestart(t *testing.T) {
 		}
 	}
 	assertRefs(true)
-	if after.Subscription.ServerQuota.Phase != domain.SubscriptionObservationSending || !after.Subscription.ServerQuota.CleanupConfirmed || quotaProtectedGeneration(after.Subscription) != captured.ID || after.Subscription.RecoveryRequired || after.Health != domain.AccountReady || after.Subscription.Lease != nil {
+	if after.Subscription.ServerQuota.Phase != domain.SubscriptionObservationSending || !after.Subscription.ServerQuota.CleanupConfirmed || len(protectedGenerations(after.Subscription)) != 1 || protectedGenerations(after.Subscription)[0] != captured.ID || after.Subscription.RecoveryRequired || after.Health != domain.AccountReady || after.Subscription.Lease != nil {
 		t.Fatal("retirement failure lost independent ownership")
 	}
 	_, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.quota.retirement.restart", nil, func(tx *store.Tx) (any, error) {

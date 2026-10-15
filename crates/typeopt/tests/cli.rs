@@ -5,7 +5,7 @@ use std::{
     process::{Command, Output},
 };
 
-use serde_json::Value;
+use serde_json::{Value, json};
 
 fn fixture(code: &str) -> tempfile::TempDir {
     let temp = tempfile::tempdir().unwrap();
@@ -13,6 +13,50 @@ fn fixture(code: &str) -> tempfile::TempDir {
     fs::write(temp.path().join("main.ts"), code).unwrap();
     fs::write(temp.path().join("package.json"), r#"{"type":"module"}"#).unwrap();
     temp
+}
+
+fn nested_fixture(root_dir: Option<&str>, imports_outside: bool) -> tempfile::TempDir {
+    let temp = tempfile::tempdir().unwrap();
+    let mut config = json!({
+        "compilerOptions": {
+            "target": "ES2022",
+            "module": "ESNext",
+            "moduleResolution": "Bundler",
+            "strict": true
+        },
+        "include": ["src"]
+    });
+    if let Some(root_dir) = root_dir {
+        config["compilerOptions"]["rootDir"] = root_dir.into();
+    }
+    fs::write(temp.path().join("tsconfig.json"), config.to_string()).unwrap();
+    fs::create_dir(temp.path().join("src")).unwrap();
+    if imports_outside {
+        fs::create_dir(temp.path().join("lib")).unwrap();
+        fs::write(
+            temp.path().join("src/main.ts"),
+            "import { answer } from '../lib/util'; console.log(answer);",
+        )
+        .unwrap();
+        fs::write(temp.path().join("lib/util.ts"), "export const answer = 42;").unwrap();
+    } else {
+        fs::write(
+            temp.path().join("src/main.ts"),
+            "export const answer: number = 42; console.log(answer);",
+        )
+        .unwrap();
+    }
+    temp
+}
+
+fn run_nested(root: &Path, args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_typeopt"))
+        .current_dir(root)
+        .env("NO_COLOR", "1")
+        .args(["--project", "tsconfig.json", "--entry", "src/main.ts"])
+        .args(args)
+        .output()
+        .unwrap()
 }
 fn run(root: &Path, destination: &str) -> Output {
     Command::new(env!("CARGO_BIN_EXE_typeopt"))
@@ -224,6 +268,81 @@ fn check_analyzes_without_publishing_or_executing_input() {
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(report["schema_version"], 1);
     assert!(!temp.path().join("out").exists());
+}
+
+#[test]
+fn nested_entry_checks_and_publishes_numbered_output() {
+    let temp = nested_fixture(None, false);
+    let check = run_nested(temp.path(), &["--check", "--verbose"]);
+    assert!(
+        check.status.success(),
+        "{}",
+        String::from_utf8_lossy(&check.stderr)
+    );
+    let report: Value = serde_json::from_slice(&check.stdout).unwrap();
+    assert_eq!(report["schema_version"], 1);
+    assert!(String::from_utf8_lossy(&check.stderr).contains("root_dir=/"));
+    assert!(!temp.path().join("out").exists());
+
+    success(run_nested(temp.path(), &["--out-dir", "out"]));
+    for file in [
+        "0.js",
+        "0.js.map",
+        "modules.json",
+        "properties.json",
+        "report.json",
+    ] {
+        assert!(temp.path().join("out").join(file).is_file(), "{file}");
+    }
+    let manifest: Value =
+        serde_json::from_slice(&fs::read(temp.path().join("out/modules.json")).unwrap()).unwrap();
+    assert!(
+        manifest["modules"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|module| {
+                module["source"]
+                    .as_str()
+                    .is_some_and(|source| source.ends_with("/src/main.ts"))
+            })
+    );
+}
+
+#[test]
+fn narrow_root_dir_does_not_reject_an_import_outside_include() {
+    let temp = nested_fixture(Some("src"), true);
+    let check = run_nested(temp.path(), &["--check"]);
+    assert!(
+        check.status.success(),
+        "{}",
+        String::from_utf8_lossy(&check.stderr)
+    );
+    assert_eq!(
+        serde_json::from_slice::<Value>(&check.stdout).unwrap()["schema_version"],
+        1
+    );
+}
+
+#[test]
+fn configured_root_dir_does_not_change_emitted_bytes() {
+    let temp = nested_fixture(Some("."), true);
+    success(run_nested(temp.path(), &["--out-dir", "configured"]));
+    let mut config: Value =
+        serde_json::from_slice(&fs::read(temp.path().join("tsconfig.json")).unwrap()).unwrap();
+    config["compilerOptions"]
+        .as_object_mut()
+        .unwrap()
+        .remove("rootDir");
+    fs::write(temp.path().join("tsconfig.json"), config.to_string()).unwrap();
+    success(run_nested(temp.path(), &["--out-dir", "default"]));
+    for file in ["0.js", "1.js", "0.js.map", "1.js.map", "properties.json"] {
+        assert_eq!(
+            fs::read(temp.path().join("configured").join(file)).unwrap(),
+            fs::read(temp.path().join("default").join(file)).unwrap(),
+            "{file}"
+        );
+    }
 }
 
 #[test]
@@ -530,9 +649,16 @@ fn accessors_reflection_and_prototype_lookup_keep_names() {
 
 #[test]
 fn class_inheritance_overrides_and_super_keep_behavior() {
-    let cases = [
+    // Closed classes: every instance and receiver is known, so the field
+    // and the method are renamed together across the hierarchy.
+    let temp = fixture(
         "export {}; class Base {longProperty = 1; read() {return this.longProperty}} class Child \
          extends Base {longProperty = 2} console.log(new Base().read(), new Child().read());",
+    );
+    success(run(temp.path(), "out"));
+    compare(temp.path());
+    assert!(report(temp.path())["renamed_properties"].as_u64().unwrap() >= 2);
+    let cases = [
         "export {}; class Base {longProperty = 1; describe() {return `base \
          ${this.longProperty}`}} class Child extends Base {describe() {return `child \
          ${super.describe()}`}} const items: Base[] = [new Base(), new Child()]; \

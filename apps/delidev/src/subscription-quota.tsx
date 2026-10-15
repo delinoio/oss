@@ -33,7 +33,6 @@ import {
   SettingsTaskDialog,
   SettingsTaskActions,
   SettingsDialogFocus,
-  SettingsDialogSize,
 } from "./settings-task";
 
 interface CreditConfirmation {
@@ -63,28 +62,22 @@ const outcomeLabels: Record<string, string> = {
   },
 };
 
-export function quotaObservationMachine(
-  state: Record<string, unknown>,
-  preferred = "",
-): string {
+// The server admits quota and credit requests only when the account has no
+// native lease or an Execute lease; login, refresh and logout leases deny them.
+function serverLeaseAllows(state: Record<string, unknown>): boolean {
   const lease = object(state.lease);
-  return Object.keys(lease).length
-    ? text(lease.action) === "execute"
-      ? text(lease.machine_id)
-      : ""
-    : preferred || text(state.owner_machine_id);
+  return !Object.keys(lease).length || text(lease.action) === "execute";
 }
 
+// System 101 consumes with the sealed generation's access token on the server.
+// It needs no Runner and may coexist with an active Execute, so only the
+// negotiated capability, a settled generation and a permitted lease gate it.
 export function serverCreditAvailable(
   state: Record<string, unknown>,
   supported: boolean,
 ): boolean {
   return (
-    supported &&
-    !text(state.owner_machine_id) &&
-    !Object.keys(object(state.lease)).length &&
-    text(state.server_quota_generation) === text(state.generation) &&
-    isEntityId(text(state.generation))
+    supported && isEntityId(text(state.generation)) && serverLeaseAllows(state)
   );
 }
 
@@ -92,11 +85,8 @@ export function serverQuotaAvailable(
   state: Record<string, unknown>,
   supported: boolean,
 ): boolean {
-  const lease = object(state.lease);
   return (
-    supported &&
-    isEntityId(text(state.generation)) &&
-    (!Object.keys(lease).length || text(lease.action) === "execute")
+    supported && isEntityId(text(state.generation)) && serverLeaseAllows(state)
   );
 }
 
@@ -118,9 +108,43 @@ export function quotaAccountAvailable(data: Record<string, unknown>): boolean {
   );
 }
 
+/** Last successful quota observation and failed-refresh wording from saved
+ * evidence. Shared by the connected controls and the disconnected read-only
+ * view so both show the same timestamp and never invent one. */
+function LastQuotaObservation({ state }: { state: Record<string, unknown> }) {
+  useLocale();
+  return (
+    <p>
+      <LocalizedText
+        id="subscription-quota.lastSuccessfulObservation_836238"
+        components={{
+          s0: (
+            <>
+              <Timestamp
+                value={text(state.quota_observed_at)}
+                fallback={copy("subscription-quota.extra.ca1844969742")}
+              />
+            </>
+          ),
+          s1: (
+            <>
+              {state.quota_state === "failed"
+                ? copy(
+                    "subscription-quota.theLatestRefreshFailedTheLast_78f81e",
+                  )
+                : copy(
+                    "subscription-quota.quotaIsObservedByTheOriginal_16d486",
+                  )}
+            </>
+          ),
+        }}
+      />
+    </p>
+  );
+}
+
 export function SubscriptionQuotaControls({
   current,
-  machine,
   active,
   accepted,
   busyChanged,
@@ -128,7 +152,6 @@ export function SubscriptionQuotaControls({
   visible = true,
 }: {
   current: Resource;
-  machine: string;
   active: boolean;
   accepted: (resource: Resource) => void;
   busyChanged: (busy: boolean) => void;
@@ -150,18 +173,24 @@ export function SubscriptionQuotaControls({
     status.data?.capabilities.includes(
       SystemCapability.SUBSCRIPTION_RESET_CREDITS_V1,
     ) === true;
+  // New requests need System 101 and never select a Runner. Historical
+  // capabilities only keep reconciling an already accepted operation.
   const serverCreditsSupported =
+    status.data?.capabilities.includes(
+      SystemCapability.SERVER_SUBSCRIPTION_RESET_CREDITS_V2,
+    ) === true;
+  const historicalServerCreditsSupported =
+    serverCreditsSupported ||
     status.data?.capabilities.includes(
       SystemCapability.SERVER_SUBSCRIPTION_RESET_CREDITS_V1,
     ) === true;
-  const creditsSupported = workerCreditsSupported || serverCreditsSupported;
+  const creditsSupported = serverCreditsSupported;
   const data = document(current),
     state = object(data.subscription),
     connection = text(object(data.connection).id),
     generation = text(state.generation),
     observation = object(state.observation),
     inventory = object(state.reset_credits);
-  const ownerMachine = quotaObservationMachine(state, machine);
   const serverAvailable = serverQuotaAvailable(state, serverSupported);
   const serverObservation = object(state.server_quota),
     serverCredit = object(state.server_credit);
@@ -176,9 +205,12 @@ export function SubscriptionQuotaControls({
     state,
     serverCreditsSupported,
   );
-  const creditLaneAvailable = isEntityId(ownerMachine)
-    ? workerCreditsSupported
-    : serverCreditReady;
+  const creditLaneAvailable = serverCreditReady;
+  // The original operation keeps its lane: a server credit reconciles with the
+  // server capabilities, a Worker observation with the Worker capability.
+  const reconcileLaneSupported = reconcilingServer
+    ? historicalServerCreditsSupported
+    : workerCreditsSupported;
   const [confirmation, setConfirmation] = useState<CreditConfirmation>();
   const [expanded, setExpanded] = useState(false);
   const [consentConfirmation, setConsentConfirmation] = useState<Resource>();
@@ -287,6 +319,15 @@ export function SubscriptionQuotaControls({
     busyChanged(busy);
     return () => busyChanged(false);
   }, [busy, busyChanged]);
+  // A confirmation opened while connected must not outlive the connection: the
+  // disconnected presentation is read-only and the confirmation would otherwise
+  // reappear if the account reconnected. The owner keeps `visible` true while a
+  // request is in flight, so the actual account connection is checked too.
+  const accountConnected = connection !== "";
+  const confirmationAllowed = visible && accountConnected;
+  useEffect(() => {
+    if (!confirmationAllowed) setConsentConfirmation(undefined);
+  }, [confirmationAllowed]);
   const originalActive =
     ["queued", "sending", "uncertain"].includes(text(observation.phase)) ||
     ["queued", "sending", "uncertain"].includes(
@@ -320,9 +361,8 @@ export function SubscriptionQuotaControls({
           generationId: generation,
         })
     : undefined;
-  const creditReady =
+  const creditAccountReady =
     active &&
-    creditLaneAvailable &&
     serviceAccount(current) &&
     data.subscription_service === "chatgpt" &&
     data.health === "ready" &&
@@ -332,6 +372,7 @@ export function SubscriptionQuotaControls({
     !state.pending &&
     !data.removal &&
     !busy;
+  const creditReady = creditAccountReady && creditLaneAvailable;
   const count = text(inventory.available_count);
   const countValid =
     /^(?:0|[1-9][0-9]{0,18})$/.test(count) &&
@@ -373,7 +414,7 @@ export function SubscriptionQuotaControls({
     selectionOpener.current = opener;
     focusConfirmation.current = true;
     setConfirmation({
-      machine: serverCreditReady ? "" : ownerMachine,
+      machine: "",
       account: current,
       creditId,
       ordinal,
@@ -393,9 +434,11 @@ export function SubscriptionQuotaControls({
     : status.error
       ? copy("subscription-quota.creditReadFailed")
       : !creditsSupported
-        ? copy(
-            "subscription-quota.resetCreditConsumptionIsUnavailableOn_9c9ea3",
-          )
+        ? workerCreditsSupported || historicalServerCreditsSupported
+          ? copy("subscription-quota.serverCreditsUnavailable")
+          : copy(
+              "subscription-quota.resetCreditConsumptionIsUnavailableOn_9c9ea3",
+            )
         : originalActive || busy
           ? copy("subscription-quota.creditPending")
           : !creditLaneAvailable || !creditReady
@@ -440,7 +483,7 @@ export function SubscriptionQuotaControls({
     confirmation.connection === connection &&
     confirmation.generation === generation &&
     confirmation.inventoryId === inventory.observation_id &&
-    confirmation.machine === (serverCreditReady ? "" : ownerMachine);
+    confirmation.machine === "";
   const saveRecoveryNotifications = (enabled: boolean) => {
     let documentJson: Uint8Array;
     try {
@@ -517,11 +560,10 @@ export function SubscriptionQuotaControls({
     setConsentConfirmation(undefined);
     queueMicrotask(() => consentOpener.current?.focus());
   };
-  if (consentConfirmation)
+  if (consentConfirmation && confirmationAllowed)
     return (
       <SettingsTaskDialog
         title={copy("subscription-quota.automaticConfirmTitle")}
-        size={SettingsDialogSize.Form}
         focus={SettingsDialogFocus.Heading}
         close={closeConsent}
         onDismiss={() => setConsentConfirmation(undefined)}
@@ -588,7 +630,43 @@ export function SubscriptionQuotaControls({
         ) : null}
       </SettingsTaskDialog>
     );
-  if (!visible) return <>{footer?.()}</>;
+  if (!visible) {
+    // A disconnected account keeps only read-only retained evidence and the
+    // status footer. No interactive quota, credit or preference control is
+    // admitted here; the guards above stay the only source of eligibility.
+    // Independent retained operations keep independent failure evidence, so
+    // every present error is shown rather than the first one only. A local
+    // preference failure never reached a mutation, so it is retained separately.
+    // The shared status failure stays with its owner, which renders it once.
+    const retainedErrors = [
+      consent.error,
+      observe.error,
+      reconcile.error,
+      preferences.error,
+    ].filter(Boolean);
+    // Current capability only gates new requests; saved historical evidence
+    // stays visible even when the connected server lacks quota support.
+    const savedObservation =
+      text(state.quota_observed_at) !== "" || state.quota_state === "failed";
+    return (
+      <>
+        {savedObservation ? <LastQuotaObservation state={state} /> : null}
+        {retainedErrors.length > 0 || preferenceProblem ? (
+          <section
+            className="reset-credit-results"
+            aria-label={copy("subscription-quota.resultsTitle")}
+          >
+            <h4>{copy("subscription-quota.resultsTitle")}</h4>
+            {retainedErrors.map((error, index) => (
+              <Problem key={index} error={error} />
+            ))}
+            {preferenceProblem ? <p role="alert">{preferenceProblem}</p> : null}
+          </section>
+        ) : null}
+        {footer?.()}
+      </>
+    );
+  }
   return (
     <>
       <section
@@ -603,32 +681,7 @@ export function SubscriptionQuotaControls({
           </p>
         ) : (
           <>
-            <p>
-              <LocalizedText
-                id="subscription-quota.lastSuccessfulObservation_836238"
-                components={{
-                  s0: (
-                    <>
-                      <Timestamp
-                        value={text(state.quota_observed_at)}
-                        fallback={copy("subscription-quota.extra.ca1844969742")}
-                      />
-                    </>
-                  ),
-                  s1: (
-                    <>
-                      {state.quota_state === "failed"
-                        ? copy(
-                            "subscription-quota.theLatestRefreshFailedTheLast_78f81e",
-                          )
-                        : copy(
-                            "subscription-quota.quotaIsObservedByTheOriginal_16d486",
-                          )}
-                    </>
-                  ),
-                }}
-              />
-            </p>
+            <LastQuotaObservation state={state} />
           </>
         )}
         {quotaSupported && !serverSupported ? (
@@ -683,13 +736,6 @@ export function SubscriptionQuotaControls({
           {creditReason ? (
             <p role="status" className="reset-credit-secondary">
               {creditReason}
-            </p>
-          ) : null}
-          {creditsSupported &&
-          !isEntityId(ownerMachine) &&
-          !serverCreditsSupported ? (
-            <p role="status" className="reset-credit-secondary">
-              {copy("subscription-quota.serverCreditsUnavailable")}
             </p>
           ) : null}
           <div className="reset-credit-setting">
@@ -982,8 +1028,8 @@ export function SubscriptionQuotaControls({
                   icon={SettingsActionIcon.Retry}
                   type="button"
                   disabled={
-                    !creditReady ||
-                    !creditsSupported ||
+                    !creditAccountReady ||
+                    !reconcileLaneSupported ||
                     (reconcilingServer &&
                       serverCredit.cleanup_confirmed !== true)
                   }
@@ -996,7 +1042,11 @@ export function SubscriptionQuotaControls({
                       },
                       operationId: text(creditObservation.id),
                       connectionId: connection,
-                      generationId: generation,
+                      // A server credit follows its retained captured generation
+                      // across Execute rotations; it is never the live one.
+                      generationId: reconcilingServer
+                        ? text(serverCredit.generation) || generation
+                        : generation,
                     })
                   }
                 >

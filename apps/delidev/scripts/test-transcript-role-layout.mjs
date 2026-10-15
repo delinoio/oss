@@ -88,18 +88,29 @@ try {
   const page = await browser.newPage();
   page.on("pageerror", (error) => errors.push(error.message));
   const origin = `http://127.0.0.1:${server.address().port}`;
+  // The default matrix always includes the short 560x480 case. The optional flag
+  // narrows a manual run to that case but never replaces default coverage.
+  const shortHeight = { width: 560, height: 480 };
   const sizes = process.argv.includes("--short-height-baseline")
-    ? [{ width: 560, height: 480 }]
+    ? [shortHeight]
     : [
         { width: 1680, height: 1000 },
         { width: 980, height: 640 },
         { width: 979, height: 640 },
         { width: 560, height: 640 },
+        shortHeight,
         { width: 1120, height: 960, zoom: 2 },
       ];
+  const workspaces = ["general-chat", "worktree"];
+  let block = 0;
   for (const language of ["en", "ko"])
     for (const theme of ["light", "dark", "system"])
-      for (const size of sizes) {
+      for (const [sizeIndex, size] of sizes.entries()) {
+        // Rotate by language/theme block so each viewport covers both workspaces
+        // regardless of how many viewports the matrix contains.
+        const sizeWorkspace =
+          workspaces[(block + sizeIndex) % workspaces.length];
+        if (sizeIndex === sizes.length - 1) block++;
         await page.emulateMedia({ colorScheme: "dark" });
         process.stdout.write(
           JSON.stringify({
@@ -111,7 +122,7 @@ try {
         );
         await page.setViewportSize(size);
         await page.goto(
-          `${origin}/?language=${language}&theme=${theme}&zoom=${size.zoom ?? 1}&workspace=${cases % 2 ? "worktree" : "general-chat"}`,
+          `${origin}/?language=${language}&theme=${theme}&zoom=${size.zoom ?? 1}&workspace=${sizeWorkspace}`,
         );
         await page.locator(".message-user").first().waitFor();
         const transcript = page.locator(".transcript");
@@ -474,7 +485,7 @@ try {
         );
         await page.setViewportSize(size);
         await assertCard();
-        if (screenshots && size.width !== 480 && theme !== "system") {
+        if (screenshots && theme !== "system") {
           await mkdir(screenshots, { recursive: true });
           await transcript.evaluate((node) => {
             node.scrollTop = 0;
@@ -487,7 +498,11 @@ try {
               ),
           );
           await page.screenshot({
-            path: join(screenshots, `${language}-${theme}-${size.width}.png`),
+            // Height and zoom keep 560x640, 560x480 and zoomed cases distinct.
+            path: join(
+              screenshots,
+              `${language}-${theme}-${size.width}x${size.height}${size.zoom ? `-zoom${size.zoom}` : ""}.png`,
+            ),
           });
         }
         cases++;

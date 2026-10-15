@@ -42,7 +42,13 @@ import {
   type SessionTabsStore,
 } from "./session-tabs";
 import { SessionView } from "./session";
-import { ShortcutProvider } from "./shortcut-provider";
+import {
+  ShortcutProvider,
+  useShortcutHelp,
+  useShortcutSurface,
+} from "./shortcut-provider";
+import { Surface } from "./surface";
+import { sourceModelKey } from "./source-model-key-fixture";
 import {
   ShortcutPreferenceProvider,
   type ShortcutPreferenceBridge,
@@ -86,6 +92,8 @@ function fixture(
       archive: "active",
       dispatch: "blocked",
       recovery: "none",
+      // Terminal creation requires a ready workspace; callers override it.
+      ...(terminalMode ? { preparation: { state: "ready" } } : {}),
       ...extra,
       ...(problem
         ? {
@@ -122,6 +130,26 @@ function fixture(
     ]),
   );
   const releaseTerminal = (index = 0) => releases.get(terminals[index]!.id)?.();
+  // Inventory observations: verified exits and rows omitted from the chain.
+  const inventoryExited = new Set<number>(),
+    inventoryOmitted = new Set<number>();
+  const terminalInventory = () =>
+    terminals.flatMap((row, index) =>
+      inventoryOmitted.has(index)
+        ? []
+        : [
+            inventoryExited.has(index)
+              ? create(ResourceSchema, {
+                  ...row,
+                  revision: 5n,
+                  documentJson: encode({
+                    state: "exited",
+                    cleanup_verified: true,
+                  }),
+                })
+              : row,
+          ],
+    );
   const terminalControl = vi.fn(),
     terminalCreate = vi.fn(
       (request: {
@@ -272,7 +300,7 @@ function fixture(
       getResource,
       listResources: (request) =>
         terminalMode && request.filter?.kind === EntityKind.TERMINAL
-          ? { resources: terminals }
+          ? { resources: terminalInventory() }
           : list(request),
       async *watchEvents(_request, context) {
         while (!context.signal.aborted) {
@@ -344,6 +372,8 @@ function fixture(
     getResource,
     overview,
     releaseTerminal,
+    inventoryExited,
+    inventoryOmitted,
     terminalControl,
     terminalCreate,
     terminalWatches,
@@ -523,9 +553,20 @@ it("orders principal Info summaries and keeps technical snapshots out of healthy
       id: newRequestId(),
       configuration: {
         agent_id: newRequestId(),
+        agent_revision: 1,
+        model_key: sourceModelKey({
+          subscription_service: "chatgpt",
+          native_id: "saved-model",
+        }),
+        subscription_service: "chatgpt",
+        model_revision: 1,
         native_model: "saved-model",
         effort: "high",
         harness: "codex",
+        options: {},
+        accounts: [],
+        routing: "priority",
+        templates: [],
         instructions: "Original applied instructions",
       },
     },
@@ -785,6 +826,49 @@ it("keeps Info independent of all tabs with one active content region and retain
   expect(f.enqueue).not.toHaveBeenCalled();
   expect(f.rename).not.toHaveBeenCalled();
 });
+it("places one + Open tool trigger right after the tablist and no wrench or direct New browser page button", async () => {
+  const f = fixture();
+  render(f.view());
+  await screen.findByRole("heading", { name: "Original session" });
+  const triggers = screen.getAllByRole("button", { name: "Open tool" });
+  expect(triggers).toHaveLength(1);
+  const trigger = triggers[0]!;
+  expect(screen.queryByRole("button", { name: "New browser page" })).toBeNull();
+  const navigation = trigger.closest(".session-navigation")!;
+  expect(navigation).toBeTruthy();
+  const tablist = screen.getByRole("tablist");
+  expect(tablist.parentElement).toBe(navigation);
+  // The trigger popup is the tablist's next sibling, so + is immediately after the strip.
+  expect(tablist.nextElementSibling).toBe(trigger.parentElement);
+  expect(trigger.parentElement!.nextElementSibling).toBeNull();
+  expect(tablist.contains(trigger)).toBe(false);
+  expect(trigger.getAttribute("title")).toBe("Open tool");
+  expect(trigger.getAttribute("aria-haspopup")).toBe("dialog");
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(trigger.getAttribute("aria-controls")).toBeTruthy();
+  expect(trigger.textContent).toBe("");
+  expect(trigger.querySelectorAll("svg")).toHaveLength(1);
+  expect(trigger.querySelector("svg path")!.getAttribute("d")).toBe(
+    "M12 5v14M5 12h14",
+  );
+  const tabsBefore = screen.getAllByRole("tab").length;
+  fireEvent.click(trigger);
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  expect(screen.getByRole("dialog", { name: "Open tool" })).toBeTruthy();
+  expect(
+    screen
+      .getAllByRole("menuitem")
+      .slice(0, 5)
+      .map((row) => row.textContent?.replace(/Ctrl \+ E$/, "")),
+  ).toEqual(["Diff", "Files", "Terminals", "Browser", "Diagnostics"]);
+  // Opening creates no tool resource, browser page or tab.
+  expect(screen.getAllByRole("tab")).toHaveLength(tabsBefore);
+  expect(screen.queryByRole("dialog", { name: "New browser page" })).toBeNull();
+  fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(document.activeElement).toBe(trigger);
+  expect(screen.getAllByRole("tab")).toHaveLength(tabsBefore);
+});
 it("opens the New browser page dialog from Open tool without creating a Browser tab", async () => {
   const f = fixture();
   render(f.view());
@@ -792,7 +876,7 @@ it("opens the New browser page dialog from Open tool without creating a Browser 
   const tabsBefore = screen.getAllByRole("tab").length;
   fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
   fireEvent.click(screen.getByRole("menuitem", { name: "Browser" }));
-  // The same dialog as the workspace + button; opening it selects no tab.
+  // Opening the address dialog selects no tab and creates no page.
   const dialog = await screen.findByRole("dialog", {
     name: "New browser page",
   });
@@ -807,7 +891,10 @@ it("opens the New browser page dialog from Open tool without creating a Browser 
       screen.queryByRole("dialog", { name: "New browser page" }),
     ).toBeNull(),
   );
-  fireEvent.click(screen.getByRole("button", { name: "New browser page" }));
+  // The tab bar has no direct New browser page button; Open tool Browser is the only entry.
+  expect(screen.queryByRole("button", { name: "New browser page" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Browser" }));
   expect(
     await screen.findByRole("dialog", { name: "New browser page" }),
   ).toBeTruthy();
@@ -1817,43 +1904,360 @@ it.each([
   expect(info).toHaveProperty("hidden", false);
   expect(f.enqueue).not.toHaveBeenCalled();
 });
-it.each(["transcript", "queue", "interactions"] as const)(
-  "keeps startup Info visible while a %s refresh retains stale complete pages",
+const refreshReads = ["transcript", "queue", "interactions"] as const;
+type RefreshRead = (typeof refreshReads)[number];
+/** Holds the next read of one page kind; every started read is counted. */
+function holdRead(f: ReturnType<typeof fixture>, read: RefreshRead) {
+  const kind =
+    read === "transcript" ? EntityKind.MESSAGE : EntityKind.INTERACTION;
+  const held = deferred();
+  const started = { count: 0 };
+  const original = {
+    list: f.list.getMockImplementation()!,
+    queue: f.listQueue.getMockImplementation()!,
+  };
+  const outcome: { value: "ok" | "fail"; rows: unknown[] } = {
+    value: "ok",
+    rows: [],
+  };
+  if (read === "queue")
+    f.listQueue.mockImplementation((async (request: { pageToken: string }) => {
+      started.count += 1;
+      await held.gate;
+      if (outcome.value === "fail")
+        throw new ConnectError("Queue unavailable", Code.Unavailable);
+      return outcome.rows.length
+        ? { inputs: outcome.rows, nextPageToken: "" }
+        : original.queue(request);
+    }) as never);
+  else
+    f.list.mockImplementation((async (
+      request: Parameters<typeof original.list>[0],
+    ) => {
+      if (request.filter?.kind !== kind) return original.list(request);
+      started.count += 1;
+      await held.gate;
+      if (outcome.value === "fail")
+        throw new ConnectError("Read unavailable", Code.Unavailable);
+      return outcome.rows.length
+        ? { resources: outcome.rows, nextPageToken: "" }
+        : original.list(request);
+    }) as never);
+  return { held, started, outcome };
+}
+/** A compact startup with Worker presence, so the Startup details disclosure exists. */
+async function refreshSession(workspace: "general-chat" | "worktree") {
+  const startup = presenceStartup();
+  const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, {
+    ...startup.extra,
+    workspace,
+  });
+  installPresence(f, startup.resource);
+  const user = create(ResourceSchema, {
+    id: newRequestId(),
+    sessionId: f.session.id,
+    kind: EntityKind.MESSAGE,
+    revision: 1n,
+    schemaVersion: 1,
+    documentJson: encode({
+      execution_id: startup.extra.initial_execution.id,
+      input_id: startup.extra.initial_execution.input_id,
+      native_thread_id: "thread",
+      native_turn_id: "turn",
+      native_id: "native-user",
+      role: "user",
+      state: "complete",
+      text: "Published initial input",
+      first_sequence: 1,
+      last_sequence: 1,
+    }),
+  });
+  f.list.mockImplementation((async (request: {
+    filter?: { kind: EntityKind };
+  }) => ({
+    resources: request.filter?.kind === EntityKind.MESSAGE ? [user] : [],
+    nextPageToken: "",
+  })) as never);
+  const view = render(f.view("Retained startup draft"));
+  const progress = await waitFor(() => {
+    const node = view.container.querySelector<HTMLElement>(".session-progress");
+    expect(node).toBeTruthy();
+    return node!;
+  });
+  const info = view.container.querySelector<HTMLElement>(
+    ".session-information",
+  )!;
+  await waitFor(() => expect(info).toHaveProperty("hidden", true));
+  const composer = screen.getByRole("textbox", { name: "Message" });
+  composer.focus();
+  return { f, view, progress, info, composer, user };
+}
+const refreshAll = (f: ReturnType<typeof fixture>) =>
+  act(() => {
+    void f.client.invalidateQueries();
+  });
+it.each(
+  refreshReads.flatMap((read) =>
+    (["general-chat", "worktree"] as const).map((workspace) => ({
+      read,
+      workspace,
+    })),
+  ),
+)(
+  "keeps startup Info hidden during healthy $read refreshes in $workspace",
+  async ({ read, workspace }) => {
+    const { f, view, progress, info, composer } =
+      await refreshSession(workspace);
+    try {
+      const disclosure = view.container.querySelector<HTMLDetailsElement>(
+        ".session-startup-disclosure",
+      )!;
+      expect(disclosure).toBeTruthy();
+      disclosure.open = true;
+      for (let cycle = 0; cycle < 2; cycle += 1) {
+        const gate = holdRead(f, read);
+        refreshAll(f);
+        await waitFor(() => expect(gate.started.count).toBe(1));
+        // The read is pending: nothing about the startup presentation changes.
+        expect(info).toHaveProperty("hidden", true);
+        expect(view.container.querySelector(".session-progress")).toBe(
+          progress,
+        );
+        expect(
+          view.container.querySelector(".session-startup-disclosure"),
+        ).toBe(disclosure);
+        expect(disclosure.open).toBe(true);
+        expect(
+          within(progress).getAllByText("Waiting for response").length,
+        ).toBeGreaterThan(0);
+        expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
+        expect(document.activeElement).toBe(composer);
+        gate.held.release();
+        // Unchanged pages: still nothing flashes after the read settles.
+        await waitFor(() => expect(f.client.isFetching()).toBe(0));
+        expect(gate.started.count).toBe(1);
+        expect(info).toHaveProperty("hidden", true);
+        expect(view.container.querySelector(".session-progress")).toBe(
+          progress,
+        );
+        expect(disclosure.open).toBe(true);
+        expectStartupPreserved(f, composer);
+      }
+    } finally {
+      view.unmount();
+      f.client.clear();
+    }
+  },
+);
+it.each([
+  {
+    read: "transcript" as const,
+    name: "a new assistant response",
+    rows: (
+      f: ReturnType<typeof fixture>,
+      user: ReturnType<typeof create<typeof ResourceSchema>>,
+    ) => [
+      user,
+      create(ResourceSchema, {
+        id: newRequestId(),
+        sessionId: f.session.id,
+        kind: EntityKind.MESSAGE,
+        revision: 1n,
+        schemaVersion: 1,
+        documentJson: encode({
+          ...readDocument(user),
+          native_id: "native-assistant",
+          role: "assistant",
+          state: "streaming",
+          text: "First visible response",
+          first_sequence: 2,
+          last_sequence: 2,
+        }),
+      }),
+    ],
+    progressEnds: true,
+  },
+  {
+    read: "queue" as const,
+    name: "a later queued input",
+    rows: (f: ReturnType<typeof fixture>) => [
+      create(ResourceSchema, {
+        id: newRequestId(),
+        sessionId: f.session.id,
+        kind: EntityKind.QUEUE,
+        revision: 1n,
+        schemaVersion: 1,
+        documentJson: encode({
+          delivery: "queued",
+          prompt: "Later input",
+          mode: "execute",
+          sequence: 2,
+          content_revision: 1,
+        }),
+      }),
+    ],
+    progressEnds: false,
+  },
+  {
+    read: "interactions" as const,
+    name: "an open interaction",
+    rows: (f: ReturnType<typeof fixture>) => [
+      interactionRow(f.session.id, "open"),
+    ],
+    progressEnds: false,
+  },
+])(
+  "restores Info when the held $read refresh resolves with $name",
+  async ({ read, rows, progressEnds }) => {
+    const { f, view, info, composer, user } =
+      await refreshSession("general-chat");
+    try {
+      const gate = holdRead(f, read);
+      gate.outcome.rows = rows(f, user);
+      refreshAll(f);
+      await waitFor(() => expect(gate.started.count).toBe(1));
+      expect(info).toHaveProperty("hidden", true);
+      gate.held.release();
+      await waitFor(() => expect(info).toHaveProperty("hidden", false));
+      if (progressEnds)
+        await waitFor(() =>
+          expect(view.container.querySelector(".session-progress")).toBeNull(),
+        );
+      expect(document.activeElement).toBe(composer);
+      expect(f.enqueue).not.toHaveBeenCalled();
+      expect(f.control).not.toHaveBeenCalled();
+      expect(f.recover).not.toHaveBeenCalled();
+    } finally {
+      view.unmount();
+      f.client.clear();
+    }
+  },
+);
+it.each(refreshReads)(
+  "keeps startup Info visible when a held %s refresh fails",
   async (read) => {
-    const f = fixture(
-      BudgetState.ALLOW_INCOMPLETE,
-      false,
-      initialResponseWaiting(),
-    );
-    const held = deferred();
-    const kind =
-      read === "transcript" ? EntityKind.MESSAGE : EntityKind.INTERACTION;
-    const { container } = render(f.view("Retained startup draft"));
-    const info = await startupInfo(container);
-    await waitFor(() => expect(info).toHaveProperty("hidden", true));
-    const composer = screen.getByRole("textbox", { name: "Message" });
-    composer.focus();
-    if (read === "queue")
-      f.listQueue.mockImplementation((async () => {
-        await held.gate;
-        return { inputs: [], nextPageToken: "" };
-      }) as never);
-    else
-      f.list.mockImplementation(async (request) => {
-        if (request.filter?.kind === kind) await held.gate;
-        return { resources: [], nextPageToken: "" };
-      });
-    act(() => {
-      void f.client.invalidateQueries();
-    });
-    await waitFor(() => expect(info).toHaveProperty("hidden", false));
-    expect(info.hasAttribute("inert")).toBe(false);
-    // Retained presentation stays; only Info visibility follows the fence.
-    expect(screen.getByText("Waiting for response")).toBeTruthy();
-    expect(document.activeElement).toBe(composer);
-    held.release();
-    await waitFor(() => expect(info).toHaveProperty("hidden", true));
-    expectStartupPreserved(f, composer);
+    const { f, view, info } = await refreshSession("general-chat");
+    try {
+      const gate = holdRead(f, read);
+      gate.outcome.value = "fail";
+      refreshAll(f);
+      await waitFor(() => expect(gate.started.count).toBeGreaterThan(0));
+      expect(info).toHaveProperty("hidden", true);
+      gate.held.release();
+      await waitFor(() => expect(info).toHaveProperty("hidden", false));
+      expect(f.enqueue).not.toHaveBeenCalled();
+      expect(f.control).not.toHaveBeenCalled();
+      expect(f.recover).not.toHaveBeenCalled();
+    } finally {
+      view.unmount();
+      f.client.clear();
+    }
+  },
+);
+/** Scripted reads of one page kind: each read can be held and made to fail. */
+function scriptRead(f: ReturnType<typeof fixture>, read: RefreshRead) {
+  const kind =
+    read === "transcript" ? EntityKind.MESSAGE : EntityKind.INTERACTION;
+  const state = {
+    started: 0,
+    fail: false,
+    gate: undefined as ReturnType<typeof deferred> | undefined,
+  };
+  const original = {
+    list: f.list.getMockImplementation()!,
+    queue: f.listQueue.getMockImplementation()!,
+  };
+  const run = async () => {
+    state.started += 1;
+    await state.gate?.gate;
+    if (state.fail)
+      throw new ConnectError("Read unavailable", Code.Unavailable);
+  };
+  if (read === "queue")
+    f.listQueue.mockImplementation((async (request: { pageToken: string }) => {
+      await run();
+      return original.queue(request);
+    }) as never);
+  else
+    f.list.mockImplementation((async (
+      request: Parameters<typeof original.list>[0],
+    ) => {
+      if (request.filter?.kind !== kind) return original.list(request);
+      await run();
+      return original.list(request);
+    }) as never);
+  return {
+    state,
+    hold() {
+      state.gate = deferred();
+      return state.gate;
+    },
+  };
+}
+/** The agent request tray recovers only while its disclosure is expanded. */
+async function openRetry(container: HTMLElement, read: RefreshRead) {
+  if (read !== "interactions") return;
+  const requests =
+    container.querySelector<HTMLDetailsElement>("details.requests");
+  expect(requests).toBeTruthy();
+  fireEvent.click(requests!.querySelector("summary")!);
+  await waitFor(() => expect(requests!.open).toBe(true));
+}
+it.each(refreshReads)(
+  "keeps startup Info visible through Retry of a failed %s refresh until it settles",
+  async (read) => {
+    const { f, view, info, composer } = await refreshSession("general-chat");
+    try {
+      const script = scriptRead(f, read);
+      script.state.fail = true;
+      refreshAll(f);
+      await waitFor(() => expect(info).toHaveProperty("hidden", false));
+      await waitFor(() => expect(f.client.isFetching()).toBe(0));
+      // Retry clears the error while the retained complete pages stay in place;
+      // those pages are stale proof until the retry settles successfully.
+      script.state.fail = false;
+      const started = script.state.started;
+      const gate = script.hold();
+      await openRetry(view.container, read);
+      fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
+      await waitFor(() => expect(script.state.started).toBe(started + 1));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(info).toHaveProperty("hidden", false);
+      expect(document.activeElement).toBe(composer);
+      gate.release();
+      await waitFor(() => expect(info).toHaveProperty("hidden", true));
+      expect(script.state.started).toBe(started + 1);
+      expectStartupPreserved(f, composer);
+    } finally {
+      view.unmount();
+      f.client.clear();
+    }
+  },
+);
+it.each(refreshReads)(
+  "keeps startup Info visible while a retried %s read fails again",
+  async (read) => {
+    const { f, view, info } = await refreshSession("general-chat");
+    try {
+      const script = scriptRead(f, read);
+      script.state.fail = true;
+      refreshAll(f);
+      await waitFor(() => expect(info).toHaveProperty("hidden", false));
+      await waitFor(() => expect(f.client.isFetching()).toBe(0));
+      const started = script.state.started;
+      const gate = script.hold();
+      await openRetry(view.container, read);
+      fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
+      await waitFor(() => expect(script.state.started).toBe(started + 1));
+      expect(info).toHaveProperty("hidden", false);
+      gate.release();
+      await screen.findByRole("button", { name: "Retry" });
+      expect(info).toHaveProperty("hidden", false);
+      expect(f.enqueue).not.toHaveBeenCalled();
+    } finally {
+      view.unmount();
+      f.client.clear();
+    }
   },
 );
 /** Four single-row pages with a terminal last token leave three payload pages. */
@@ -2057,6 +2461,54 @@ it.each(["held", "rejected"] as const)(
       expect(f.enqueue).toHaveBeenCalledTimes(1);
     }
     expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
+  },
+);
+it.each(["queued", "claimed", "accepted"] as const)(
+  "keeps startup Info visible for a follow-up receipt in the %s phase while the stale original-only queue refreshes",
+  async (delivery) => {
+    const f = fixture(
+      BudgetState.ALLOW_INCOMPLETE,
+      false,
+      initialResponseWaiting(),
+    );
+    const { container } = render(f.view("Retained startup draft"));
+    const info = await startupInfo(container);
+    await waitFor(() => expect(info).toHaveProperty("hidden", true));
+    const composer = screen.getByRole("textbox", { name: "Message" });
+    composer.focus();
+    // The retained mutation publishes its receipt, then rereads the queue; the
+    // reread is held and (like the retained snapshot) lists only the original.
+    const script = scriptRead(f, "queue");
+    const gate = script.hold();
+    f.enqueue.mockImplementation((async (
+      request: Parameters<typeof sessionInputReceipt>[1],
+    ) => {
+      const receipt = sessionInputReceipt(f.session, request);
+      receipt.change.input = create(ResourceSchema, {
+        ...receipt.change.input,
+        documentJson: encode({
+          ...readDocument(receipt.change.input),
+          delivery,
+          sequence: 2,
+          content_revision: 1,
+        }),
+      });
+      return receipt;
+    }) as never);
+    fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
+    await waitFor(() => expect(f.enqueue).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(script.state.started).toBe(1));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(info).toHaveProperty("hidden", false);
+    expect(info.hasAttribute("inert")).toBe(false);
+    gate.release();
+    await waitFor(() => expect(f.client.isFetching()).toBe(0));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    // The settled queue may still list only the original input: the receipt
+    // remains local follow-up evidence, so Info never flashes hidden.
+    expect(info).toHaveProperty("hidden", false);
+    expect(f.enqueue).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(composer);
   },
 );
 it.each(["parent-snapshot", "embedded"] as const)(
@@ -2264,70 +2716,250 @@ it("verified terminal removal skips intervening Files and selects the original l
   }
 });
 
-it.each([false, true])(
-  "retains initial terminal toolbar intent until session load unless departed (%s)",
-  async (departed) => {
-    let release = () => {};
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+it("keeps Terminals unavailable before the Session loads and never opens it automatically afterwards", async () => {
+  let release = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const f = fixture(
+    BudgetState.ALLOW_INCOMPLETE,
+    false,
+    {},
+    () => [],
+    true,
+    gate,
+  );
+  const view = render(f.view());
+  try {
+    expect(
+      screen.queryByRole("heading", { name: "Original session" }),
+    ).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+    const terminals = screen.getByRole("menuitem", { name: "Terminals" });
+    expect(terminals.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(terminals);
+    await act(async () => release());
+    await screen.findByRole("heading", { name: "Original session" });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(f.terminalWatches).not.toHaveBeenCalled();
+    expect(f.terminalCreate).not.toHaveBeenCalled();
+    expect(screen.queryByRole("tab", { name: "Terminal 1" })).toBeNull();
+  } finally {
+    view.unmount();
+    release();
+    f.releaseTerminal();
+    f.client.clear();
+  }
+});
+
+// Selects the Sessions shortcut surface and exposes the Help opener that the
+// application shell normally owns.
+function SessionHelpHost({ children }: { children: ReactNode }) {
+  useShortcutSurface(Surface.Sessions);
+  const openHelp = useShortcutHelp();
+  return (
+    <>
+      <button onClick={openHelp}>Help opener</button>
+      {children}
+    </>
+  );
+}
+
+const preparationUpdate = (
+  f: ReturnType<typeof fixture>,
+  revision: bigint,
+  state: string,
+) =>
+  f.publish({
+    ...f.session,
+    revision,
+    documentJson: encode({
+      ...readDocument(f.session),
+      preparation: { state },
+    }),
+  });
+
+it.each(["missing", "pending", "failed", "canceled", "uncertain", "stale"])(
+  "disables Terminals with a hover-only reason while preparation is %s and re-enables it without opening",
+  async (state) => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
     const f = fixture(
       BudgetState.ALLOW_INCOMPLETE,
       false,
-      {},
+      { preparation: state === "missing" ? undefined : { state } },
       () => [],
       true,
-      gate,
     );
-    const view = render(f.view());
+    const view = render(
+      <ShortcutProvider>
+        <SessionHelpHost>{f.view()}</SessionHelpHost>
+      </ShortcutProvider>,
+    );
     try {
-      const openTerminal = () => {
-        fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
-        fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
-      };
+      const composer = await screen.findByRole("textbox", { name: "Message" });
+      fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+      const terminals = screen.getByRole("menuitem", { name: "Terminals" });
+      expect(terminals.hasAttribute("disabled")).toBe(true);
+      const tooltip = screen.getByRole("tooltip", { hidden: true });
+      expect(tooltip.textContent).toBe("Available when workspace is ready.");
+      expect(terminals.getAttribute("aria-describedby")).toBe(tooltip.id);
+      // The reason is hover-only and lives outside the keyboard order.
+      expect(tooltip.getAttribute("data-visible")).toBe("false");
+      expect(tooltip.closest("button")).toBeNull();
+      const wrapper = terminals.closest(".session-tool-hint")!;
+      expect(wrapper.querySelector("button")).toBe(terminals);
+      fireEvent.mouseEnter(wrapper);
+      expect(tooltip.getAttribute("data-visible")).toBe("true");
+      fireEvent.mouseLeave(wrapper);
+      expect(tooltip.getAttribute("data-visible")).toBe("false");
+      expect(document.activeElement).toBe(
+        screen.getByRole("menuitem", { name: "Diff" }),
+      );
+      fireEvent.click(terminals);
+      expect(screen.queryByRole("tab", { name: "Terminal 1" })).toBeNull();
+      fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+      // The shortcut creates no intent and Help reports the readiness reason.
+      composer.focus();
+      fireEvent.keyDown(composer, {
+        key: "`",
+        code: "Backquote",
+        ctrlKey: true,
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Help opener" }));
+      const help = await screen.findByRole("dialog", {
+        name: "Keyboard shortcuts",
+      });
       expect(
-        screen.queryByRole("heading", { name: "Original session" }),
-      ).toBeNull();
-      openTerminal();
-      openTerminal();
+        within(help).getByText("Available when workspace is ready."),
+      ).toBeTruthy();
+      fireEvent.keyDown(help, { key: "Escape" });
+      await new Promise((resolve) => setTimeout(resolve, 50));
       expect(f.terminalWatches).not.toHaveBeenCalled();
       expect(f.terminalCreate).not.toHaveBeenCalled();
-      // A later explicit pane selection departs from the unsent intent.
-      if (departed) {
-        fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
-        fireEvent.click(screen.getByRole("menuitem", { name: "Files" }));
-      }
-      await act(async () => release());
-      await screen.findByRole("heading", { name: "Original session" });
-      if (departed) {
-        expect(f.terminalWatches).not.toHaveBeenCalled();
+      // Readiness re-enables the row but opens nothing by itself.
+      act(() => preparationUpdate(f, 8n, "ready"));
+      fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+      await waitFor(() =>
         expect(
           screen
-            .getByRole("tab", { name: "Files" })
-            .getAttribute("aria-selected"),
-        ).toBe("true");
-        expect(screen.queryByRole("tab", { name: "Terminal 1" })).toBeNull();
-      } else {
-        await waitFor(() =>
-          expect(f.terminalWatches).toHaveBeenCalledWith(f.terminals[0]!.id),
-        );
-        expect(
-          screen
-            .getByRole("tab", { name: "Terminal 1" })
-            .getAttribute("aria-selected"),
-        ).toBe("true");
-        expect(f.terminalWatches).toHaveBeenCalledOnce();
-      }
-      expect(f.terminalCreate).toHaveBeenCalledTimes(departed ? 0 : 1);
-      expect(f.terminalControl).not.toHaveBeenCalled();
+            .getByRole("menuitem", { name: "Terminals" })
+            .hasAttribute("disabled"),
+        ).toBe(false),
+      );
+      expect(screen.queryByRole("tooltip", { hidden: true })).toBeNull();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(f.terminalCreate).not.toHaveBeenCalled();
+      expect(screen.queryByRole("tab", { name: "Terminal 1" })).toBeNull();
+      // A fresh gesture follows the original reuse-or-create flow once.
+      fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+      composer.focus();
+      fireEvent.keyDown(composer, {
+        key: "`",
+        code: "Backquote",
+        ctrlKey: true,
+      });
+      await waitFor(() => expect(f.terminalCreate).toHaveBeenCalledTimes(1));
     } finally {
       view.unmount();
-      release();
       f.releaseTerminal();
       f.client.clear();
     }
   },
 );
+
+it("localizes the Terminals readiness reason and keeps the Sidechat reason distinct", async () => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+  const f = fixture(
+    BudgetState.ALLOW_INCOMPLETE,
+    false,
+    { preparation: { state: "pending" } },
+    () => [],
+    true,
+  );
+  const view = render(
+    <ShortcutProvider>
+      <SessionHelpHost>{f.view()}</SessionHelpHost>
+    </ShortcutProvider>,
+  );
+  try {
+    await screen.findByRole("textbox", { name: "Message" });
+    await act(() => i18n.changeLanguage("ko"));
+    fireEvent.click(screen.getByRole("button", { name: "도구 열기" }));
+    expect(screen.getByRole("tooltip", { hidden: true }).textContent).toBe(
+      "작업공간 준비가 끝나면 터미널을 사용할 수 있습니다.",
+    );
+  } finally {
+    await act(() => i18n.changeLanguage("en"));
+    view.unmount();
+    f.releaseTerminal();
+    f.client.clear();
+  }
+  const sidechat = fixture(
+    BudgetState.ALLOW_INCOMPLETE,
+    false,
+    {
+      preparation: { state: "pending" },
+      fork: { sidechat_parent_snapshot: {} },
+    },
+    () => [],
+    true,
+  );
+  const second = render(
+    <ShortcutProvider>
+      <SessionHelpHost>{sidechat.view()}</SessionHelpHost>
+    </ShortcutProvider>,
+  );
+  try {
+    await screen.findByRole("textbox", { name: "Message" });
+    fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+    expect(
+      screen
+        .getByRole("menuitem", { name: "Terminals" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    expect(screen.queryByRole("tooltip", { hidden: true })).toBeNull();
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    fireEvent.click(screen.getByRole("button", { name: "Help opener" }));
+    const help = await screen.findByRole("dialog", {
+      name: "Keyboard shortcuts",
+    });
+    expect(
+      within(help).getByText(
+        "Terminals are unavailable in a read-only Sidechat.",
+      ),
+    ).toBeTruthy();
+    expect(
+      within(help).queryByText("Available when workspace is ready."),
+    ).toBeNull();
+  } finally {
+    second.unmount();
+    sidechat.releaseTerminal();
+    sidechat.client.clear();
+  }
+});
+
+it("blocks additional terminal creation and preserves existing tabs while preparation is not ready", async () => {
+  const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, {}, () => [], true);
+  const view = render(f.view());
+  try {
+    await screen.findByRole("heading", { name: "Original session" });
+    fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
+    await screen.findByRole("tab", { name: "Terminal 1" });
+    const plus = await screen.findByRole("button", { name: "Create terminal" });
+    await waitFor(() => expect(plus).toHaveProperty("disabled", false));
+    const created = f.terminalCreate.mock.calls.length;
+    act(() => preparationUpdate(f, 8n, "pending"));
+    await waitFor(() => expect(plus).toHaveProperty("disabled", true));
+    fireEvent.click(plus);
+    expect(f.terminalCreate).toHaveBeenCalledTimes(created);
+    expect(screen.getByRole("tab", { name: "Terminal 1" })).toBeTruthy();
+  } finally {
+    view.unmount();
+    f.releaseTerminal();
+    f.client.clear();
+  }
+});
 
 it("keeps the current pane with a non-modal opening strip, coalesces gestures and then selects the verified terminal", async () => {
   const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, {}, () => [], true);
@@ -2658,6 +3290,45 @@ it("returns selected shared File close to retained Files and preserves inactive 
   expect(diagnostics.getAttribute("aria-selected")).toBe("true");
   expect(document.activeElement).toBe(diagnostics);
 });
+
+it.each(["tab", "preview"])(
+  "restores retained Files after Files, File, Files, existing File tab and %s Close",
+  async (control) => {
+    const f = fixture(undefined, false, {}, undefined, false, undefined, true);
+    render(f.view());
+    await screen.findByRole("heading", { name: "Original session" });
+    fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Files" }));
+    const row = await screen.findByRole("treeitem", {
+      name: "note.txt 4 bytes",
+    });
+    row.focus();
+    fireEvent.keyDown(row, { key: "Enter" });
+    await screen.findByRole("heading", { name: "note.txt" });
+    const filesTab = screen.getByRole("tab", { name: "Files" });
+    fireEvent.click(filesTab);
+    await waitFor(() => expect(document.activeElement).toBe(row));
+    for (let round = 0; round < 2; round += 1) {
+      // Reselect the existing File tab, then move focus away from the tree.
+      fireEvent.click(screen.getByRole("tab", { name: /^note\.txt/ }));
+      await screen.findByRole("heading", { name: "note.txt" });
+      filesTab.focus();
+      if (control === "tab")
+        fireEvent.click(
+          screen.getByRole("button", { name: "Close note.txt tab" }),
+        );
+      else fireEvent.click(screen.getByRole("button", { name: "Close" }));
+      await waitFor(() => expect(document.activeElement).toBe(row));
+      expect(filesTab.getAttribute("aria-selected")).toBe("true");
+      expect(row.getAttribute("aria-selected")).toBe("true");
+      // Reopen the File for the next round.
+      fireEvent.click(row);
+      await screen.findByRole("heading", { name: "note.txt" });
+      fireEvent.click(filesTab);
+      await waitFor(() => expect(document.activeElement).toBe(row));
+    }
+  },
+);
 
 it("keeps quota and independent recovery above the composer without replacing draft or transcript", async () => {
   const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, {
@@ -3222,3 +3893,163 @@ it.each([SessionTabKind.Sidechat, SessionTabKind.PendingSidechat] as const)(
     expect(f.control).not.toHaveBeenCalled();
   },
 );
+
+// Opens Terminals, then (optionally) Files, and every listed terminal as a tab.
+async function openTerminalTabs(
+  f: ReturnType<typeof fixture>,
+  count: number,
+  filesAfterFirst = false,
+) {
+  await screen.findByRole("textbox", { name: "Message" });
+  fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
+  await screen.findByRole("tab", { name: "Terminal 1" });
+  if (filesAfterFirst) {
+    fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Files" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
+  }
+  for (let number = 2; number <= count; number++) {
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: new RegExp(`^Terminal ${number} ·`),
+      }),
+    );
+    await waitFor(() =>
+      expect(f.terminalWatches).toHaveBeenLastCalledWith(
+        f.terminals[number - 1]!.id,
+      ),
+    );
+  }
+}
+
+it("a verified exit keeps an opened terminal that is absent from the replacement inventory chain", async () => {
+  const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, {}, () => [], 2);
+  const view = render(f.view());
+  try {
+    await openTerminalTabs(f, 2);
+    // A (Terminal 1) stays opened while a Reload chain lists only B.
+    f.inventoryOmitted.add(0);
+    await waitFor(
+      () =>
+        expect(screen.queryByRole("button", { name: /^Terminal 1 ·/ })).toBe(
+          null,
+        ),
+      { timeout: 4000 },
+    );
+    await act(async () => f.releaseTerminal(1));
+    await waitFor(() =>
+      expect(screen.queryByRole("tab", { name: "Terminal 2" })).toBeNull(),
+    );
+    const retained = screen.getByRole("tab", { name: "Terminal 1" });
+    expect(retained.getAttribute("aria-selected")).toBe("true");
+    expect(
+      screen
+        .getByRole("tab", { name: "Conversation" })
+        .getAttribute("aria-selected"),
+    ).toBe("false");
+    expect(f.terminalControl).not.toHaveBeenCalled();
+    expect(f.terminalCreate).toHaveBeenCalledTimes(1);
+  } finally {
+    view.unmount();
+    for (let index = 0; index < 2; index++) f.releaseTerminal(index);
+    f.client.clear();
+  }
+});
+
+it("one refresh with exits of selected A and B selects the live C content tab", async () => {
+  const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, {}, () => [], 3);
+  const view = render(f.view());
+  try {
+    await screen.findByRole("textbox", { name: "Message" });
+    fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
+    await screen.findByRole("tab", { name: "Terminal 1" });
+    await screen.findByRole("button", { name: /^Terminal 3 ·/ });
+    f.inventoryExited.add(0);
+    f.inventoryExited.add(1);
+    await waitFor(
+      () =>
+        expect(screen.queryByRole("tab", { name: "Terminal 1" })).toBeNull(),
+      { timeout: 4000 },
+    );
+    const survivor = await screen.findByRole("tab", { name: "Terminal 3" });
+    expect(survivor.getAttribute("aria-selected")).toBe("true");
+    expect(screen.queryByRole("tab", { name: "Terminal 2" })).toBeNull();
+    expect(
+      screen
+        .getByRole("tab", { name: "Conversation" })
+        .getAttribute("aria-selected"),
+    ).toBe("false");
+    await waitFor(() =>
+      expect(f.terminalWatches).toHaveBeenLastCalledWith(f.terminals[2]!.id),
+    );
+    expect(f.terminalControl).not.toHaveBeenCalled();
+    expect(f.terminalCreate).toHaveBeenCalledTimes(1);
+  } finally {
+    view.unmount();
+    for (let index = 0; index < 3; index++) f.releaseTerminal(index);
+    f.client.clear();
+  }
+});
+
+async function finalDismissalWithQueuedFocus() {
+  const frames: FrameRequestCallback[] = [];
+  const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, {}, () => [], 2);
+  const view = render(f.view());
+  await openTerminalTabs(f, 2, true);
+  const request = vi
+    .spyOn(window, "requestAnimationFrame")
+    .mockImplementation((callback) => frames.push(callback));
+  f.inventoryExited.add(0);
+  f.inventoryExited.add(1);
+  await waitFor(
+    () =>
+      expect(screen.queryByRole("tab", { name: /^Terminal \d/ })).toBeNull(),
+    { timeout: 4000 },
+  );
+  return {
+    f,
+    frames,
+    files: () => screen.getByRole("tab", { name: "Files" }),
+    finish() {
+      request.mockRestore();
+      view.unmount();
+      for (let index = 0; index < 2; index++) f.releaseTerminal(index);
+      f.client.clear();
+    },
+  };
+}
+
+it("final automatic dismissal focuses the surviving selected tab by identity after the tab bar commits", async () => {
+  const test = await finalDismissalWithQueuedFocus();
+  try {
+    // Tabs were [Conversation, Terminal 1, Files, Terminal 2]; Files moved.
+    expect(test.files().getAttribute("aria-selected")).toBe("true");
+    expect(test.files().id).toBe(`session-tab-${test.f.session.id}-1`);
+    expect(document.activeElement).not.toBe(test.files());
+    await act(async () => {
+      for (const frame of test.frames.splice(0)) frame(0);
+    });
+    expect(document.activeElement).toBe(test.files());
+    expect(test.f.terminalControl).not.toHaveBeenCalled();
+    // Only the two explicit Terminals gestures created or reused; no replacement.
+    expect(test.f.terminalCreate).toHaveBeenCalledTimes(2);
+  } finally {
+    test.finish();
+  }
+});
+
+it("a selection change before the deferred final-dismissal focus suppresses it", async () => {
+  const test = await finalDismissalWithQueuedFocus();
+  try {
+    fireEvent.click(screen.getByRole("tab", { name: "Conversation" }));
+    await act(async () => {
+      for (const frame of test.frames.splice(0)) frame(0);
+    });
+    expect(document.activeElement).not.toBe(test.files());
+  } finally {
+    test.finish();
+  }
+});

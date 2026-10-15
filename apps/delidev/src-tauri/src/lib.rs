@@ -19,10 +19,14 @@ use zeroize::{Zeroize, Zeroizing};
 
 pub mod app_information;
 pub mod appearance;
+pub mod browser_discovery;
 mod browser_opener;
+pub mod browser_preferences;
 pub mod date_format;
+pub mod external_url;
 pub mod image_export;
 pub mod language;
+pub mod navigation_preference;
 pub mod oauth;
 pub mod provider_guidance;
 pub mod quota_countdown;
@@ -34,6 +38,7 @@ pub mod session_tab_shortcuts;
 pub mod shortcut_capture;
 pub mod shortcut_preferences;
 pub mod updater;
+pub mod updater_outcome;
 pub mod widget_writer;
 pub mod window_registry;
 
@@ -141,6 +146,9 @@ pub enum NativeFailure {
     InvalidInput,
     StorageUnavailable,
     Stopped,
+    BrowserUnavailable,
+    BrowserLaunchFailed,
+    BrowserDiscoveryFailed,
 }
 
 type Result<T> = std::result::Result<T, NativeFailure>;
@@ -323,42 +331,67 @@ impl Connector {
         Ok(original.server_id.clone())
     }
 
+    /// Opens a compiled or validated HTTP(S) destination through the browser
+    /// selected for its URL class. Unreadable preference storage fails closed.
+    fn open_selected(
+        &self,
+        operation: &'static str,
+        browsers: &browser_preferences::BrowserStore,
+        url: &str,
+    ) -> Result<()> {
+        let target = external_url::classify(url)?;
+        let choice = browsers.resolve(target.class())?;
+        browser_opener::open_external(target.as_str(), target.class(), &choice, &self.exiting)
+            .inspect_err(|code| {
+                tracing::warn!(operation, phase = "failed", url_class = ?target.class(), ?code)
+            })
+    }
+
     pub fn open_provider_guidance(
         &self,
+        browsers: &browser_preferences::BrowserStore,
         preset: &str,
         action: provider_guidance::GuidanceAction,
     ) -> Result<()> {
         let url = provider_guidance::destination(preset, action)?;
-        let result = browser_opener::dispatch(&url, &self.exiting);
-        match &result {
-            Ok(()) => tracing::info!(operation = "provider_guidance", phase = "dispatched"),
-            Err(code) => tracing::warn!(operation = "provider_guidance", phase = "failed", ?code),
+        let result = self.open_selected("provider_guidance", browsers, &url);
+        if result.is_ok() {
+            tracing::info!(operation = "provider_guidance", phase = "dispatched");
         }
         result
     }
 
     pub fn open_app_information_link(
         &self,
+        browsers: &browser_preferences::BrowserStore,
         action: app_information::AppInformationLink,
     ) -> Result<()> {
-        let result = browser_opener::dispatch(action.destination(), &self.exiting);
-        match &result {
-            Ok(()) => tracing::info!(
+        let result = self.open_selected("app_information_link", browsers, action.destination());
+        if result.is_ok() {
+            tracing::info!(
                 operation = "app_information_link",
                 phase = "dispatched",
                 ?action
-            ),
-            Err(code) => tracing::warn!(
-                operation = "app_information_link",
-                phase = "failed",
-                ?action,
-                ?code
-            ),
+            );
         }
         result
     }
 
-    pub fn open_github(&self, url: &str) -> Result<()> {
+    /// User-activated conversation or terminal link. The renderer's detection
+    /// is advisory; this method alone validates and classifies the URL.
+    pub fn open_external_url(
+        &self,
+        browsers: &browser_preferences::BrowserStore,
+        url: &str,
+    ) -> Result<()> {
+        self.open_selected("external_url", browsers, url)
+    }
+
+    pub fn open_github(
+        &self,
+        browsers: &browser_preferences::BrowserStore,
+        url: &str,
+    ) -> Result<()> {
         // Go applies the complete closed destination contract. Bound this
         // infrastructure argument before starting its credential-free sidecar.
         if url.len() > 2048
@@ -367,18 +400,34 @@ impl Connector {
         {
             return Err(NativeFailure::InvalidInput);
         }
+        let choice = browsers.resolve(external_url::UrlClass::General)?;
+        // The system default keeps the Go sidecar launcher unchanged. Any other
+        // choice still passes Go's validation first, then native code launches
+        // exactly the selected browser; the standalone CLI never reads this
+        // device preference.
+        let selected = matches!(choice, browser_preferences::BrowserChoice::Installed { .. });
         let value = self.short_request_with_input(
             &[
                 "presentation".into(),
-                "open-github".into(),
+                if selected {
+                    "validate-github"
+                } else {
+                    "open-github"
+                }
+                .into(),
                 "--url-stdin".into(),
             ],
             Some(Zeroizing::new(url.as_bytes().to_vec())),
         )?;
-        if value.as_object().is_none_or(|v| {
-            v.len() != 1 || v.get("dispatched") != Some(&serde_json::Value::Bool(true))
-        }) {
+        let flag = if selected { "validated" } else { "dispatched" };
+        if value
+            .as_object()
+            .is_none_or(|v| v.len() != 1 || v.get(flag) != Some(&serde_json::Value::Bool(true)))
+        {
             return Err(NativeFailure::InvalidEvidence);
+        }
+        if selected {
+            self.open_selected("github_open", browsers, url)?;
         }
         Ok(())
     }

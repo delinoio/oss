@@ -51,6 +51,25 @@ func PositiveDecimal(value string) bool {
 	n, err := strconv.ParseUint(value, 10, 64)
 	return err == nil && n > 0 && strconv.FormatUint(n, 10) == value
 }
+
+const (
+	// MaxRepositoryPageSize bounds Issue List/Search, Checks and Statuses pages.
+	MaxRepositoryPageSize = 20
+	// MaxPullRequestPageSize bounds Pull Request List/Search pages and the
+	// accepted workspace seed count. It is negotiated by the System capability
+	// PULL_REQUEST_PAGING_50_V1.
+	MaxPullRequestPageSize = 50
+)
+
+// MaxPullRequestListPageSize returns the List/Search page-size ceiling of a kind.
+// Only pull requests may use the larger negotiated ceiling.
+func MaxPullRequestListPageSize(kind RepositoryItemKind) uint32 {
+	if kind == RepositoryPullRequest {
+		return MaxPullRequestPageSize
+	}
+	return MaxRepositoryPageSize
+}
+
 func (q RepositoryQuery) Validate() error {
 	invalid := func() error {
 		return Fail(InvalidArgument, "The repository query is invalid.", "Select an issue or pull request, an explicit operation and bounded page or item number.")
@@ -71,7 +90,7 @@ func (q RepositoryQuery) Validate() error {
 			return invalid()
 		}
 	case RepositoryList, RepositorySearch:
-		if q.Number != "" || q.Page < 1 || q.Page > 10000 || q.PageSize < 1 || q.PageSize > 20 || (q.State != RepositoryItemOpen && q.State != RepositoryItemClosed && q.State != RepositoryItemsAll) {
+		if q.Number != "" || q.Page < 1 || q.Page > 10000 || q.PageSize < 1 || q.PageSize > MaxPullRequestListPageSize(q.Kind) || (q.State != RepositoryItemOpen && q.State != RepositoryItemClosed && q.State != RepositoryItemsAll) {
 			return invalid()
 		}
 		if q.Operation == RepositoryList && q.Search != "" {
@@ -175,6 +194,19 @@ func RepositoryItemURL(owner, name string, kind RepositoryItemKind, number strin
 		segment = "pull"
 	}
 	return "https://github.com/" + owner + "/" + name + "/" + segment + "/" + number
+}
+
+// ValidateWorkspaceNode validates a pull request workspace graph node. A node
+// carries every Detail field except the description: the full body is loaded
+// only by the selected pull request's own Detail read, so a node that carries a
+// body is rejected rather than spending the workspace response budget on it.
+func (r RepositoryItem) ValidateWorkspaceNode(repository RemoteRepository, query RepositoryQuery) error {
+	if r.Body != nil {
+		return Fail(RecoveryRequired, "The repository item is inconsistent.", "Refresh the selected repository; no partial or foreign item is accepted.")
+	}
+	empty := ""
+	r.Body = &empty
+	return r.Validate(repository, query)
 }
 func (r RepositoryItem) Validate(repository RemoteRepository, query RepositoryQuery) error {
 	invalid := func() error {

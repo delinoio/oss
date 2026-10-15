@@ -64,6 +64,7 @@ const legacyJobs = [
   "node-public-docs-test",
   "node-clibox-test",
   "node-pnport-test",
+  "node-bundlewhy-test",
   "pnport-native",
 ];
 const devhudJobs = [
@@ -261,7 +262,7 @@ test("native CI prepares tool state before Turbo and serializes shared Rust suit
 test("async-commit-hook retains runner, interface, protocol and unsigned archive validation", () => {
   const commands = jobCommands(workflow.jobs["async-commit-hook"]);
   for (const command of [
-    "async-commit-hook#build:embedded",
+    "async-commit-hook#ci:embedded",
     "go test -race ./cmds/async-commit-hook/...",
     "async-commit-hook#ci:check",
     "public-docs#ci:check",
@@ -275,6 +276,45 @@ test("async-commit-hook retains runner, interface, protocol and unsigned archive
     commands.match(/pnpm install --frozen-lockfile --ignore-scripts/gu)?.length,
     1,
   );
+});
+
+test("async-commit-hook CI waits for frontend readers before both rebuilds", () => {
+  const graph = jobTaskGraph(workflow.jobs["async-commit-hook"]);
+  const app = "async-commit-hook";
+  const ci = "@delinoio/ci";
+  const embedded = graph.get(`${app}#ci:embedded`);
+  const native = graph.get(`${ci}#ci:ach:native`);
+  const archive = graph.get(`${ci}#ci:ach:package`);
+  assert.equal(embedded.command, "pnpm build:embedded");
+  assert.equal(embedded.task.cache, false);
+  assert.deepEqual(embedded.task.dependsOn, ["ci:check"]);
+  assert.deepEqual(native.task.dependsOn, [`${app}#ci:embedded`]);
+  assert.deepEqual(archive.task.dependsOn, ["ci:ach:native"]);
+  for (const task of [native, archive]) assert.equal(task.task.cache, false);
+  assert.deepEqual(graph.get(`${app}#ci:check`).task.dependsOn, [
+    "typecheck",
+    "test:unit",
+    "build:frontend",
+    "ci:contracts",
+  ]);
+  assert.deepEqual(graph.get(`${app}#ci:contracts`).task.dependsOn, [
+    "build:frontend",
+  ]);
+  assert.ok(graph.has(`${app}#ci:contracts`));
+  assert.ok(graph.has(`${app}#build:frontend`));
+  assert.ok(graph.has(`${ci}#ci:ach:check`));
+
+  const direct = JSON.parse(
+    readFileSync(`${root}/apps/async-commit-hook/package.json`, "utf8"),
+  );
+  assert.equal(
+    direct.scripts["build:embedded"],
+    "node scripts/embed.mjs --clean && pnpm --filter @delinoio/async-commit-hook-api-client build && pnpm build && node scripts/embed.mjs",
+  );
+  const directGraph = JSON.parse(
+    readFileSync(`${root}/apps/async-commit-hook/turbo.json`, "utf8"),
+  );
+  assert.equal(directGraph.tasks["build:embedded"].cache, false);
 });
 
 test("every step reaching shared protocol breaking checks carries the event baseline", () => {
@@ -576,7 +616,7 @@ test("caches restore on PRs and save only after successful main validation", () 
         if (!setup) continue;
         const save = job.steps.find(
           ({ with: inputs, uses }) =>
-            uses === "actions/cache/save@v5" &&
+            uses?.startsWith("actions/cache/save@") &&
             inputs.key.includes(`ci-${kind}`),
         );
         assert.ok(save, `${id}: ${kind}`);
@@ -587,7 +627,9 @@ test("caches restore on PRs and save only after successful main validation", () 
         assert.ok(job.steps.indexOf(save) > job.steps.indexOf(setup));
       }
       for (const candidate of job.steps.filter(
-        ({ uses }) => uses === "Swatinem/rust-cache@v2",
+        ({ uses }) =>
+          uses ===
+          "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
       )) {
         assert.equal(
           candidate.with["save-if"],
@@ -599,7 +641,8 @@ test("caches restore on PRs and save only after successful main validation", () 
   }
   assert.ok(
     !workflow.jobs["rust-fmt"].steps.some(
-      ({ uses }) => uses === "Swatinem/rust-cache@v2",
+      ({ uses }) =>
+        uses === "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
     ),
   );
   for (const kind of ["node", "go"]) {
@@ -610,10 +653,14 @@ test("caches restore on PRs and save only after successful main validation", () 
       ),
     );
     assert.ok(
-      !action.runs.steps.some(({ uses }) => uses === "actions/cache/save@v5"),
+      !action.runs.steps.some(({ uses }) =>
+        uses?.startsWith("actions/cache/save@"),
+      ),
     );
     const cache = action.runs.steps.find(
-      ({ uses }) => uses === "actions/cache/restore@v5",
+      ({ uses }) =>
+        uses ===
+        "actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25",
     );
     for (const marker of [
       "runner.os",
@@ -638,7 +685,10 @@ test("DevHud desktop retries its locked Rust fetch before offline contract verif
   const fetch = namedStep(desktop, "Fetch locked Rust dependencies");
   const verify = namedStep(desktop, "Verify frontend and immutable pins");
 
-  assert.equal(cache.uses, "Swatinem/rust-cache@v2");
+  assert.equal(
+    cache.uses,
+    "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+  );
   assert.equal(cache.with["save-if"], "${{ github.ref == 'refs/heads/main' }}");
   assert.equal(cache.with["cache-on-failure"], false);
   assert.equal(cache.with["cache-targets"], false);
@@ -936,7 +986,7 @@ test("OCI validation is multi-architecture, non-root, migration-bearing, and loc
     "io.delino.devhud.administrator-assets",
     "spdx-json",
     "packages | length > 0",
-    "go test -tags=integration ./servers/devhud-api/internal/postgres",
+    "go test -count=1 -tags=integration ./servers/devhud-api/internal/postgres",
     "--load",
     "--platform linux/amd64",
     "docker:$image",
@@ -1761,10 +1811,10 @@ test("the separate Runmoor PR workflow retains full native validation through Tu
   assert.equal(job["timeout-minutes"], 20);
   assert.deepEqual(runmoor.permissions, { contents: "read" });
   const commands = jobCommands(job);
-  assert.ok(commands.includes("go test -race ./cmds/runmoor/..."));
+  assert.ok(commands.includes("go test -race -count=1 ./cmds/runmoor/..."));
   assert.ok(
     commands.includes(
-      "go test -run TestDockerIntegration -v -timeout 10m ./cmds/runmoor/internal/runmoor",
+      "go test -count=1 -run TestDockerIntegration -v -timeout 10m ./cmds/runmoor/internal/runmoor",
     ),
   );
   assert.equal(
@@ -1780,7 +1830,7 @@ test("the separate Runmoor PR workflow retains full native validation through Tu
   for (const candidate of job.steps) {
     if (candidate.run?.includes("ci:runmoor:"))
       assert.equal(candidate.env.FORCE_RUN, "true");
-    if (candidate.uses === "actions/cache/save@v5")
+    if (candidate.uses?.startsWith("actions/cache/save@"))
       assert.ok(
         candidate.if.includes("success() && github.ref == 'refs/heads/main'"),
       );
@@ -2008,4 +2058,19 @@ test("Rstack formatting uses the exact comparison and never caches results", () 
   assert.ok(leaf.task.passThroughEnv.includes("TURBO_SCM_BASE"));
   assert.ok(leaf.task.passThroughEnv.includes("TURBO_SCM_HEAD"));
   assert.equal(packages["package.json"].devDependencies.rstack, "0.8.3");
+});
+
+test("DeliDev mobile Turbo tasks hash the shared desktop identity module", () => {
+  const mobileTurbo = JSON.parse(
+    readFileSync(`${root}/apps/delidev-mobile/turbo.json`, "utf8"),
+  );
+  const sharedInput = "$TURBO_ROOT$/apps/delidev/src/product-identity.ts";
+  for (const name of ["build", "build:frontend", "typecheck"]) {
+    const inputs = mobileTurbo.tasks[name].inputs;
+    // Turbo replaces (not merges) inherited arrays, so root inputs must be repeated.
+    for (const input of turbo.tasks[name].inputs)
+      assert.ok(inputs.includes(input), `${name}: ${input}`);
+    assert.ok(inputs.includes(sharedInput), `${name}: ${sharedInput}`);
+  }
+  assert.equal(mobileTurbo.tasks.test.cache, false);
 });

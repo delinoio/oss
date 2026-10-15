@@ -72,7 +72,7 @@ made available by localization. A disclosure contains only original details alre
 admitted by the owning diagnostic contract. A translation never replaces original
 evidence or creates retry permission.
 
-The Appearance category retains all 19 categories, theme choices,
+The Appearance category retains all 20 categories, theme choices,
 colors, navigation and visit lifetime. A divider below Theme introduces Language.
 Use an editable search combobox at most 320 CSS pixels wide and at least 40 pixels
 tall, with 8-pixel corners and full available width below 640 pixels. Keep System
@@ -179,7 +179,7 @@ Run app-local `pnpm test`, root `cargo test`, native compilation, widget fixture
 `pnpm ci:contracts`, `pnpm ci:workflows` and changed-dependency security checks.
 Test System resolution, restart, new/multiple windows, delayed events, conflict,
 failed/uncertain writes, malformed-file preservation and retained drafts/focus/
-operations without added product RPCs. Inspect every screen and all 19 categories
+operations without added product RPCs. Inspect every screen and all 20 categories
 in both languages; verify widget sizes, selection, offline/stale/storage failures.
 `test-settings-layout.mjs` checks both catalogs across all existing categories,
 forms, themes and effective 200% viewports, then primary surfaces and an Appearance
@@ -234,6 +234,23 @@ authority through localization. UTC backup and exact standalone PR-card labels
 retain their explicit modes. Catalog interpolation uses inert React timestamp
 slots so locale and display-clock updates do not stringify or remount them.
 
+`TimestampMode.Relative` is an explicit elapsed-time mode used only by the PR
+detail Updated field and the standalone PR list rows (`pr-cards.updatedRelative`,
+"Updated {{time}}" / "{{time}} 업데이트"). List rows additionally show the exact
+UTC instant (`YYYY-MM-DD HH:mm:ss[.fraction] UTC`, not localized) in a tooltip.
+The list also adds `pr-cards.loadedThrough` ("Loaded through page {{page}}" /
+"{{page}}페이지까지 불러옴"), the opt-in `pagination.moreAvailable` and
+`pagination.exhausted` continuation texts and the page-size guidance
+`pull-requests.pageSizeUnsupported` / `pull-requests.pageSizeChecking` in both
+catalogs. The former `pr-cards.updated` ("Updated (UTC)") key is removed. For nonnegative ages it reuses the now/minute/hour labels and adds
+catalog day/week/month/year singular and plural forms (`timestamp.day` through
+`timestamp.years`; Korean 일/주/개월/년 전). Day is 24 hours, week 7 days, month
+30 days and year 365 days; the label changes exactly at 60 seconds, 60 minutes,
+24 hours, 7 days, 30 days and 365 days, and the shared scheduler returns the next
+such boundary for subscribed Relative labels. Future, invalid and missing values
+keep the absolute, raw and unavailable fallbacks. Ordinary, Absolute, Exact and
+QuotaCountdown behavior is unchanged.
+
 The feature adds complete localized quota-reset countdown sentences to the
 React and native source catalogs. The existing generator produces Rust keys and
 Swift catalogs. Days mean 24 elapsed hours. Floor day/hour, hour/minute or minute
@@ -250,8 +267,10 @@ Settings search indexes only bundled category/target label and static help keys 
 The feature uses the separate `tray-status` bundled entry and English/Korean
 catalog. Retained native snapshots project the committed resolved language,
 semantic theme and date format without mounting writable device controllers.
-Preference changes update the same panel and selection without a product read or
-scope reset. Localize state, unavailable/empty distinctions, quota fallback IDs,
+Preference changes update the same panel and its retained representative window
+without a product read or scope reset. The catalog has no product-window label,
+no-window option or additional-window guidance because the panel has no window
+selector. Localize state, unavailable/empty distinctions, quota fallback IDs,
 reset expiry, precision-preserving counts and existing navigation actions. Keep
 explicit service brands and exact safe quota IDs separate from translated copy.
 The auxiliary document has no preference-write or protected widget-store access.
@@ -310,5 +329,24 @@ quota-specific complete-exhaustion explanation and supported waiting/configurati
 guidance. Safe arbitrary server/provider evidence stays exact and visible in
 these cards. Only secondary codes, versions and opaque references are disclosed.
 The closed quota pair selects localized copy; translated or raw message text
-cannot establish the cause. Locale changes retain the original Session,
+cannot establish the cause. The quota card renders the localized explanation and
+guidance first, then the supplied safe message and guidance as exact inert text
+in that order, skipping an empty original or one identical to the catalog copy
+of any supported locale, independent of the active display language, so no empty
+or duplicate paragraph appears and the paragraph count never depends on the
+active locale. Locale changes retain the original Session,
 composer, Info and operation identities without replay or focus movement.
+
+## Tailscale check causes
+
+The `tailscale` catalog localizes the proved Check failure causes in English and Korean: `tailscale.cause.connectionRefused`, `timeout`, `certificateInvalid`, `unexpectedHttp` and `invalidIdentity` (each with `.heading` and `.body`, both using the `{{device}}` slot) and the `tailscale.couldNotConnect` row status. Switching language while a cause alert shows re-translates the visible heading, body and row status; the original safe message, guidance, code and correlation ID inside Technical details stay unchanged and no Check request is replayed.
+
+## Browser destination copy
+
+The `browser-settings` and `external-link` catalogs localize the Settings > Browser category and link-opening failures in English and Korean. The selector labels are `General URL destination` / `일반 URL 열기 대상` and `Local URL destination` / `로컬 URL 열기 대상`; the default option is `System default browser` / `시스템 기본 브라우저`. Native browser identities and display names come from the operating system and are shown unchanged; the unavailable-saved-browser suffix is localized. Selector option values are structural identities, never copy, and catalog text is never used to match or select a browser. Failure copy for a missing browser, a failed launch, unreadable browser settings, an unsupported address and unclassified failures points at Settings > Browser and is shared by message links, terminal links, Provider guidance, App information and GitHub opening. Success copy for those openers says the link was sent to the user's browser rather than the default browser. Locale changes re-render without replaying a pending launch.
+
+The `server-preferences` catalog also owns the unavailable Project defaults states in English and Korean: the region accessible name and the status sentence for an unsupported schema, unreadable or unsupported policy values, and an incomplete or multi-document read are complete catalog entries that take only the localized section label as a named slot, so Korean never shows an English sentence around a Korean label. The three distinctions, the Settings product-label rows (never raw IDs) and the closed, non-editable behavior are unchanged. Locale changes re-render the mounted state without refetching, replaying a mutation or admitting an editor.
+
+## Tailscale category copy
+
+The `tailscale` catalog localizes the Settings > Tailscale category in English and Korean, and the `settings` catalog owns its navigation label (`Tailscale` in both languages, a product name) and purpose line (`settings.tailscale`, `settings.tailscaleDescription`). The page uses the section headings **This computer** / **이 컴퓨터**, **Devices on your tailnet** / **테일넷의 기기** and **Connection requests** / **연결 요청**. The access intent reads **Enabled** / **활성화됨** or **Disabled** / **비활성화됨** and the status reads **Ready** / **준비됨**, **Off** / **꺼짐**, **Action needed** / **조치 필요** or **Setup or cleanup required** / **설정 또는 정리 필요**. Enabled intent with setup-required or cleanup-required access adds the guidance "Check Tailscale sign-in and HTTPS setup, then refresh devices." / "Tailscale 로그인과 HTTPS 설정을 확인한 다음 기기를 새로고침하세요." The Tailscale access and device copy is no longer part of Runner Devices or Connections. Switching language re-renders this copy in place and sends no Tailscale request.

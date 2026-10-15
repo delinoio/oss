@@ -13,3 +13,7 @@ Follow parent instructions and the harness/subscription contracts in `docs/`.
 - [DeliDev account lifecycle](../../../../../docs/cmds-delidev-accounts-contract.md)
 - [DeliDev native harness adapter contract](../../../../../docs/cmds-delidev-harness-contract.md)
 - [DeliDev native subscriptions](../../../../../docs/cmds-delidev-subscription-contract.md)
+
+## Setup-token and managed token execution
+
+`setup_token.go` and `managed_token.go` own the server-owned token profile. Keep the setup-token URL profile separate from auth-login, never log or retain the token or approval code, never pass `--bare`, and keep the contract in the harness and subscription docs aligned.

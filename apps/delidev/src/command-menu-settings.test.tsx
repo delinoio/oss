@@ -130,6 +130,39 @@ it("catalog selection creates fresh typed requests and routes Search and creatio
   expect(newGeneralChat).toHaveBeenCalledTimes(1);
   expect(newProject).toHaveBeenCalledTimes(1);
 });
+it("lists Tailscale commands only for a window that hosts Tailscale", () => {
+  const actions = {
+    navigate: vi.fn(),
+    navigateHeader: vi.fn(),
+    openSettings: vi.fn(),
+    newSession: vi.fn(),
+    newGeneralChat: vi.fn(),
+    newProject: vi.fn(),
+    help: vi.fn(),
+  };
+  const tailscale = (commands: ReturnType<typeof applicationCommands>) =>
+    commands
+      .filter((command) => command.value.startsWith("settings:tailscale:"))
+      .map((command) => command.value);
+  expect(tailscale(applicationCommands(actions, { tailscale: true }))).toEqual([
+    "settings:tailscale:category",
+    "settings:tailscale:tailscale-computer",
+    "settings:tailscale:tailscale-devices",
+    "settings:tailscale:tailscale-requests",
+  ]);
+  const saved = applicationCommands(actions, { tailscale: false });
+  expect(tailscale(saved)).toEqual([]);
+  expect(tailscale(applicationCommands(actions))).toEqual([]);
+  // Every other Settings command stays listed in a saved-server window.
+  expect(
+    saved.some((command) => command.value === "settings:appearance:language"),
+  ).toBe(true);
+  expect(
+    saved.some(
+      (command) => command.value === "settings:execution-workers:category",
+    ),
+  ).toBe(true);
+});
 it("retains an uncommitted Git policy draft and read identity through same-category static targets", async () => {
   const first = {
       category: SettingsCategory.GitWorkflow,
@@ -168,4 +201,27 @@ it("retains an uncommitted Git policy draft and read identity through same-categ
   ).toBe(checkbox);
   expect((checkbox as HTMLInputElement).checked).toBe(checked);
   expect(value.list).toHaveBeenCalledTimes(reads);
+});
+it("offers command navigation to the Browser category and each destination", () => {
+  const openSettings = vi.fn();
+  const commands = applicationCommands({
+    navigate: vi.fn(),
+    navigateHeader: vi.fn(),
+    openSettings,
+    newSession: vi.fn(),
+    newGeneralChat: vi.fn(),
+    newProject: vi.fn(),
+    help: vi.fn(),
+  });
+  const values = commands.map((command) => command.value);
+  expect(values).toContain("settings:browser:category");
+  for (const [value, target] of [
+    ["settings:browser:browser-general", SettingsSearchTarget.BrowserGeneral],
+    ["settings:browser:browser-local", SettingsSearchTarget.BrowserLocal],
+  ] as const) {
+    commands.find((command) => command.value === value)!.run();
+    expect(openSettings).toHaveBeenLastCalledWith(
+      expect.objectContaining({ category: SettingsCategory.Browser, target }),
+    );
+  }
 });

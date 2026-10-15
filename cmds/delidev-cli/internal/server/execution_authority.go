@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"log/slog"
 	"slices"
 	"sync"
 	"time"
@@ -113,6 +114,11 @@ func (a *executionAuthority) checkedScope(tx *store.Tx, grant store.ExecutionGra
 	if input.Configuration.Subscription && !input.Configuration.IsOpenCodeGo() && session.Fork != nil && !session.IsSidechat() && !domain.ManagedForkSupported(machine.WorkerCapabilities) {
 		return empty, executionDenied()
 	}
+	// A profile v2 child keeps this requirement for every continuation, after
+	// the one-shot fork input is gone.
+	if domain.OpenCodeForkReasoningRequired(session, input) && !domain.OpenCodeForkReasoningSupported(machine.WorkerCapabilities) {
+		return empty, executionDenied()
+	}
 	if requireSidechatParent(tx, session) != nil || input.Configuration.SidechatPolicy != "" && (!slices.Contains(machine.WorkerCapabilities, domain.CodexReadOnlySidechatWorkerV1) || input.Configuration.Subscription && !domain.ManagedSidechatSupported(machine.WorkerCapabilities)) {
 		return empty, executionDenied()
 	}
@@ -202,11 +208,15 @@ func (a *executionAuthority) checkedScope(tx *store.Tx, grant store.ExecutionGra
 		if state == nil || state.RecoveryRequired || state.Lease == nil {
 			return empty, executionDenied()
 		}
-		if input.Configuration.Harness == domain.ClaudeCode && (state.OwnerMachineID != grant.MachineID || state.NativeProfileID == "" || !slices.Contains(machine.WorkerCapabilities, domain.NativeClaudeSubscriptionsV1)) {
+		if input.Configuration.Harness == domain.ClaudeCode && state.ManagedClaude() {
+			if !slices.Contains(machine.WorkerCapabilities, domain.ManagedClaudeExecutionV1) {
+				return empty, executionDenied()
+			}
+		} else if input.Configuration.Harness == domain.ClaudeCode && (state.OwnerMachineID != grant.MachineID || state.NativeProfileID == "" || !slices.Contains(machine.WorkerCapabilities, domain.NativeClaudeSubscriptionsV1)) {
 			return empty, executionDenied()
 		}
-		lease := state.Lease
-		if lease.Action != domain.SubscriptionExecute || lease.OperationID != grant.JobID || lease.MachineID != grant.MachineID || lease.InstanceID != grant.InstanceID || lease.DeviceID != grant.DeviceID || lease.Epoch != a.service.subscriptionServerEpoch() || lease.Generation != state.Generation {
+		lease, owned := state.LeaseForOperation(grant.JobID)
+		if !owned || lease.Action != domain.SubscriptionExecute || lease.OperationID != grant.JobID || lease.MachineID != grant.MachineID || lease.InstanceID != grant.InstanceID || lease.DeviceID != grant.DeviceID || lease.Epoch != a.service.subscriptionServerEpoch() || lease.Generation != state.Generation {
 			return empty, executionDenied()
 		}
 	}
@@ -250,7 +260,7 @@ func executionAPIOperations(input domain.ExecutionJobInput, protocol domain.APIP
 			return []apiproxy.Operation{apiproxy.ResponseCreate, apiproxy.ResponseCompact}
 		}
 	case domain.ClaudeCode:
-		if input.Validate() != nil || (input.Version != 4 && input.Installation.Version != domain.ClaudeProtocolVersion) || protocol != domain.AnthropicMessages {
+		if input.Validate() != nil || (input.Version != 4 && !domain.HarnessVersionAllowed(domain.ClaudeCode, input.Installation.Version)) || protocol != domain.AnthropicMessages {
 			return nil
 		}
 		if _, err := input.Configuration.ClaudeAPIInputPermission(input.Input.Mode); err == nil {
@@ -259,7 +269,7 @@ func executionAPIOperations(input domain.ExecutionJobInput, protocol domain.APIP
 			return []apiproxy.Operation{apiproxy.MessageCreate}
 		}
 	case domain.GrokBuild:
-		if input.Validate() != nil || input.Continuation != nil || input.Fork != nil || (input.Version != 4 && input.Installation.Version != domain.GrokProtocolVersion) || protocol != domain.OpenAIChat {
+		if input.Validate() != nil || input.Continuation != nil || input.Fork != nil || (input.Version != 4 && !domain.HarnessVersionAllowed(domain.GrokBuild, input.Installation.Version)) || protocol != domain.OpenAIChat {
 			return nil
 		}
 		if _, err := input.Configuration.GrokModeForInput(input.Input.Mode); err == nil {
@@ -268,7 +278,7 @@ func executionAPIOperations(input domain.ExecutionJobInput, protocol domain.APIP
 	case domain.OpenCode:
 		o := input.Configuration.Options
 		validGeneration := input.Version == 4 && input.Validate() == nil || input.Version == 1 && input.Continuation == nil && input.Fork == nil || input.Version == 2 && input.Continuation != nil && input.Validate() == nil || input.Version == 3 && input.Fork != nil && input.Continuation == nil && input.Validate() == nil
-		if !validGeneration || (input.Version != 4 && input.Installation.Version != domain.OpenCodeProtocolVersion) || protocol != domain.OpenAIChat || o.SubagentModel != "" || o.SubagentEffort != "" || o.MaxConcurrency != 0 || o.ApprovalReviewModel != "" || o.ServiceTier != "" {
+		if !validGeneration || (input.Version != 4 && !domain.HarnessVersionAllowed(domain.OpenCode, input.Installation.Version)) || protocol != domain.OpenAIChat || o.SubagentModel != "" || o.SubagentEffort != "" || o.MaxConcurrency != 0 || o.ApprovalReviewModel != "" || o.ServiceTier != "" {
 			return nil
 		}
 		if _, err := o.OpenCodePrimaryForInput(input.Input.Mode); err == nil {
@@ -597,7 +607,13 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 	bindReferences(lease, scope.ModelID)
 	if scope.ChildModel != nil || scope.ReviewerNativeModel != "" {
 		lease.BindModel = func(ctx context.Context, model string, operation apiproxy.Operation) (*apiproxy.Lease, error) {
+			// With AI review enabled, a request for the canonical reviewer model that
+			// also names the root or child model has no distinguishing role evidence.
+			// It keeps its original lease but gains no response-reference authority.
 			if model == scope.NativeModel {
+				if scope.ReviewerNativeModel != "" && model == scope.ReviewerNativeModel {
+					return ambiguousReferenceLease(a.service.logger, lease, "root"), nil
+				}
 				return lease, nil
 			}
 			child := scope.ChildModel != nil && model == scope.ChildModel.NativeModel
@@ -620,6 +636,9 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 			}
 			request.Scope.ChildModel, request.BindModel = nil, nil
 			bindReferences(&request, request.Scope.ModelID)
+			if child && scope.ReviewerNativeModel != "" && model == scope.ReviewerNativeModel {
+				return ambiguousReferenceLease(a.service.logger, &request, "child"), nil
+			}
 			return &request, nil
 		}
 	}
@@ -630,6 +649,32 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 		return nil, err
 	}
 	return lease, nil
+}
+
+// ambiguousReferenceLease keeps the exact original scope, credential and
+// request gates of a root or child lease but removes response-reference
+// authority. A reviewer completion that shares the root or child native model
+// cannot be proved to belong to either role, so it must neither be recorded as
+// that role's history nor authorize a later native state reference. The usage
+// path keeps such a response under the unknown reviewer attribution.
+func ambiguousReferenceLease(logger *slog.Logger, source *apiproxy.Lease, role string) *apiproxy.Lease {
+	request := *source
+	request.BindModel = nil
+	// Keep a validation-only observer: the proxy validates the response identity
+	// only while a callback is present, but an ambiguous response must not be
+	// recorded as history.
+	request.ObserveReference = func(context.Context, apiproxy.ReferenceKind, string) error { return nil }
+	request.AuthorizeReference = func(ctx context.Context, kind apiproxy.ReferenceKind, _ string) error {
+		logger.InfoContext(ctx, "execution_reference_ambiguous_denied", "execution_id", source.Scope.ExecutionID, "session_id", source.Scope.SessionID, "ambiguous_role", role, "reference_kind", kind)
+		return domain.Fail(domain.PermissionDenied, "The native state reference is ambiguous with the automatic reviewer model.", "Use full native history; the "+role+" model name is shared with the canonical reviewer and cannot prove request ownership.")
+	}
+	// Responses item references are provider-owned history too; the proxy does
+	// not route them through AuthorizeReference, so fence them explicitly.
+	request.AuthorizeItemReference = func(ctx context.Context) error {
+		logger.InfoContext(ctx, "execution_reference_ambiguous_denied", "execution_id", source.Scope.ExecutionID, "session_id", source.Scope.SessionID, "ambiguous_role", role, "reference_kind", "item")
+		return domain.Fail(domain.PermissionDenied, "The native item reference is ambiguous with the automatic reviewer model.", "Use full native history; the "+role+" model name is shared with the canonical reviewer and cannot prove request ownership.")
+	}
+	return &request
 }
 
 // historyObservation returns a pending mode only after fresh durable authority
@@ -765,7 +810,9 @@ func (s *Service) RegisterExecution(ctx context.Context, req *connect.Request[pb
 			grant.ExecutionID = input.ActionID
 		} else if job.Type == domain.GenerateSessionTitleJob {
 			var input domain.AuxiliaryTitleInput
-			if domain.Decode(job.Input, &input) != nil || input.Validate() != nil {
+			// A managed title has no API relay registration; its one-time inference
+			// claim is committed only by TakeSubscription.
+			if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.IsManaged() {
 				return nil, executionDenied()
 			}
 			grant.ExecutionID = input.OriginalExecutionID

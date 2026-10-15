@@ -12,6 +12,7 @@ import { useState } from "react";
 import {
   InteractionPresentation,
   interactionProjection,
+  responseStateText,
   type InteractionProjection,
 } from "./interaction-presentation";
 import {
@@ -30,6 +31,7 @@ import {
 import { useRetainedMutation, useRetainedMutationIntents } from "./mutation";
 import { Problem } from "./ui";
 import { NativeInteraction } from "./native-interaction";
+import { HarnessId, harnessVersionAllowed } from "./harness-version";
 import { NativeClaudeInteraction } from "./native-claude-interaction";
 import {
   DraftAccess,
@@ -165,7 +167,9 @@ export function Interaction({
             ? copy("interactions.agentQuestion_1a6b3f")
             : copy("interactions.nativeApproval_c515b9")}
         </h3>
-        <small>{compact ? presentation.closure : text(data.closure)}</small>
+        <small>
+          {compact ? statusLabel(presentation.closure) : text(data.closure)}
+        </small>
       </header>
       <p>
         <LocalizedText
@@ -175,7 +179,7 @@ export function Interaction({
               <>
                 {statusLabel(
                   compact
-                    ? presentation.responseState ||
+                    ? responseStateText(presentation.responseState) ||
                         (retainedUncertain ? ResponseState.Uncertain : "")
                     : text(
                         object(data.response ?? data.approval_response).state,
@@ -258,7 +262,7 @@ export function PendingInteractionReceipt({
     <article className="interaction">
       <header>
         <h3>{copy("interactions.agentQuestion_1a6b3f")}</h3>
-        <small>{projection.closure}</small>
+        <small>{statusLabel(projection.closure)}</small>
       </header>
       <p>
         <LocalizedText
@@ -266,7 +270,7 @@ export function PendingInteractionReceipt({
           components={{
             s0: (
               <>
-                {statusLabel(projection.responseState) ||
+                {statusLabel(responseStateText(projection.responseState)) ||
                   copy("interactions.extra.d3289e625281")}
               </>
             ),
@@ -737,7 +741,7 @@ function Approval({
   );
   const compatible =
     approval.harness === "codex" &&
-    approval.version === "0.151.0" &&
+    harnessVersionAllowed(HarnessId.Codex, approval.version) &&
     ["command", "file-change", "permissions"].includes(text(native.kind));
   const closed =
     text(data.closure) !== "open" || Boolean(data.approval_response);

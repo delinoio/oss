@@ -2,6 +2,7 @@
 package server
 
 import (
+	"connectrpc.com/connect"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -16,7 +17,24 @@ import (
 	"time"
 )
 
-func publishedOpenCodeRecoveryFork(t *testing.T) (*continuationFixture, *pb.Resource, domain.ForkJobInput) {
+// openCodeForkFixtureOptions selects the canonical source transcript and the
+// Worker capabilities of one OpenCode General Chat Fork fixture.
+type openCodeForkFixtureOptions struct {
+	// reasoning adds one completed plain reasoning artifact to the source.
+	reasoning bool
+	// reasoningCapability grants the independent Worker reasoning capability.
+	reasoningCapability bool
+	// artifact optionally edits the reasoning record before it is stored.
+	artifact func(*domain.ExecutionMessage)
+}
+
+const (
+	openCodeForkFixtureReasoningPart      = "prt_01960dcbe1f9abcdefghijklmn"
+	openCodeForkFixtureReasoningChildPart = "prt_01960dcbe1f8abcdefghijklmn"
+	openCodeForkFixtureAssistantMessage   = "msg_01960dcbe1fcABCDEFGHIJKLMN"
+)
+
+func newOpenCodeForkSource(t *testing.T, opts openCodeForkFixtureOptions) *continuationFixture {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("OpenCode General Chat Fork is supported only on Linux and macOS")
@@ -33,17 +51,40 @@ func publishedOpenCodeRecoveryFork(t *testing.T) (*continuationFixture, *pb.Reso
 			return nil, err
 		}
 		machine.WorkerCapabilities = append(machine.WorkerCapabilities, domain.OpenCodeGeneralChatForkV1)
+		if opts.reasoningCapability {
+			machine.WorkerCapabilities = append(machine.WorkerCapabilities, domain.OpenCodeGeneralChatForkReasoningV1)
+		}
 		if _, err = tx.Put(row.Kind, row.ID, row.Revision, row.SessionID, row.ProjectID, machine); err != nil {
 			return nil, err
 		}
-		return tx.Put(domain.MessageKind, domain.NewID(), 0, f.input.SessionID, "", domain.ExecutionMessage{ExecutionID: f.input.ExecutionID, NativeThreadID: string(f.thread), NativeTurnID: string(f.turn), NativeID: "prt_01960dcbe1fcabcdefghijklmn", NativeParentID: "msg_01960dcbe1fcABCDEFGHIJKLMN", Role: domain.AssistantMessage, Text: "Original completed assistant.", State: domain.MessageComplete, FirstSequence: 5, LastSequence: 6})
+		if opts.reasoning {
+			record := domain.ExecutionMessage{ExecutionID: f.input.ExecutionID, NativeThreadID: string(f.thread), NativeTurnID: string(f.turn), NativeID: openCodeForkFixtureReasoningPart, NativeParentID: openCodeForkFixtureAssistantMessage, Role: domain.ArtifactMessage, State: domain.MessageComplete, FirstSequence: 5, LastSequence: 6, Artifact: &domain.ExecutionArtifact{Started: domain.ArtifactSnapshot{Kind: domain.ReasoningTextArtifact, Text: "Private reasoning."}, Completed: &domain.ArtifactSnapshot{Kind: domain.ReasoningTextArtifact, Text: "Private reasoning."}}}
+			if opts.artifact != nil {
+				opts.artifact(&record)
+			}
+			if _, err = tx.Put(domain.MessageKind, domain.NewID(), 0, f.input.SessionID, "", record); err != nil {
+				return nil, err
+			}
+		}
+		return tx.Put(domain.MessageKind, domain.NewID(), 0, f.input.SessionID, "", domain.ExecutionMessage{ExecutionID: f.input.ExecutionID, NativeThreadID: string(f.thread), NativeTurnID: string(f.turn), NativeID: "prt_01960dcbe1fcabcdefghijklmn", NativeParentID: openCodeForkFixtureAssistantMessage, Role: domain.AssistantMessage, Text: "Original completed assistant.", State: domain.MessageComplete, FirstSequence: 5, LastSequence: 6})
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	return f
+}
+
+func forkOpenCodeSource(t *testing.T, f *continuationFixture) (*connect.Response[pb.ForkSessionResponse], error) {
+	t.Helper()
 	row := f.refresh(t)
 	request := &pb.ForkSessionRequest{Mutation: acctMutation(resourceForTest(row), domain.NewID()), ExpectedTurnId: string(f.turn), Name: "Independent recovery child", Workspace: pb.ForkWorkspace_FORK_WORKSPACE_GENERAL_CHAT}
-	accepted, err := sessionClient(f.accountFixture).ForkSession(ctx, ownerRequest(f.identity, request))
+	return sessionClient(f.accountFixture).ForkSession(context.Background(), ownerRequest(f.identity, request))
+}
+
+func publishedOpenCodeRecoveryFork(t *testing.T) (*continuationFixture, *pb.Resource, domain.ForkJobInput) {
+	t.Helper()
+	f := newOpenCodeForkSource(t, openCodeForkFixtureOptions{})
+	accepted, err := forkOpenCodeSource(t, f)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,6 +96,13 @@ func publishedOpenCodeRecoveryFork(t *testing.T) (*continuationFixture, *pb.Reso
 // fixture for API and key-backed Go profiles with their original assignments.
 func publishOpenCodeForkResult(t *testing.T, f *continuationFixture, job *pb.Resource, input domain.ForkJobInput) *pb.Resource {
 	t.Helper()
+	return publishOpenCodeForkResultProfile(t, f, job, input, input.OpenCode.Profile.Reasoning(), true)
+}
+
+// publishOpenCodeForkResultProfile reports the Worker result for profile v1 or
+// v2. mapReasoning=false leaves the reasoning part out of the identity map.
+func publishOpenCodeForkResultProfile(t *testing.T, f *continuationFixture, job *pb.Resource, input domain.ForkJobInput, reasoning, mapReasoning bool) *pb.Resource {
+	t.Helper()
 	ctx := context.Background()
 	result := forkResultFixture(t, input)
 	result.Version = 2
@@ -64,11 +112,18 @@ func publishOpenCodeForkResult(t *testing.T, f *continuationFixture, job *pb.Res
 		{Source: input.Completion.NativeTurnID, Child: result.NativeTurnID, Parts: []domain.OpenCodeForkPartMapping{{Source: "prt_01960dcbe1fbabcdefghijklmn", Child: "prt_01960dcbe1fdabcdefghijklmn"}}},
 		{Source: "msg_01960dcbe1fcABCDEFGHIJKLMN", Child: "msg_01960dcbe1feABCDEFGHIJKLMN", Parts: []domain.OpenCodeForkPartMapping{{Source: "prt_01960dcbe1fcabcdefghijklmn", Child: "prt_01960dcbe1feabcdefghijklmn"}}},
 	}
+	if reasoning && mapReasoning {
+		parts := result.OpenCodeMappings[1].Parts
+		result.OpenCodeMappings[1].Parts = append([]domain.OpenCodeForkPartMapping{{Source: openCodeForkFixtureReasoningPart, Child: openCodeForkFixtureReasoningChildPart}}, parts...)
+	}
 	var preparation workspace.PrepareRequest
 	var manifest workspace.Manifest
 	_ = domain.Decode(result.Preparation, &preparation)
 	_ = domain.Decode(result.Manifest, &manifest)
 	preparation.ForkProfile = workspace.OpenCodeGeneralChatForkV1
+	if reasoning {
+		preparation.ForkProfile = workspace.OpenCodeGeneralChatForkV2
+	}
 	result.Preparation, _ = json.Marshal(preparation)
 	manifest.InputDigest = forkInputDigest(result.Preparation)
 	result.Manifest, _ = json.Marshal(manifest)
@@ -77,6 +132,9 @@ func publishOpenCodeForkResult(t *testing.T, f *continuationFixture, job *pb.Res
 		t.Fatal(err)
 	}
 	final, err := sessionClient(f.accountFixture).GetSessionFork(ctx, ownerRequest(f.identity, &pb.GetSessionForkRequest{JobId: job.Id}))
+	if err == nil && final.Msg.Session == nil && reasoning && !mapReasoning {
+		return nil
+	}
 	if err != nil || final.Msg.Session == nil {
 		t.Fatal("fork publication", err)
 	}
@@ -224,7 +282,7 @@ func TestOpenCodeForkChildLostReportKeepsIndependentCreation(t *testing.T) {
 }
 
 func TestOpenCodeForkLegacyCreationRequiresExactOriginalSeed(t *testing.T) {
-	for _, change := range []string{"valid", "missing-job", "digest", "runtime", "child", "selection", "device", "marker", "valid-foreign-marker", "checkpoint", "output", "startup-path", "startup-digest", "startup-harness", "startup-missing"} {
+	for _, change := range []string{"valid", "nil-child-valid", "missing-job", "digest", "runtime", "child", "selection", "device", "marker", "valid-foreign-marker", "checkpoint", "output", "startup-path", "startup-digest", "startup-harness", "startup-missing", "nil-child-startup-path", "nil-child-startup-digest", "nil-child-startup-harness", "nil-child-startup-missing", "nil-child-seed-missing", "nil-child-snapshot", "conflicting-child"} {
 		t.Run(change, func(t *testing.T) {
 			f, child, seed := publishedOpenCodeRecoveryFork(t)
 			f.change.Session = child
@@ -259,6 +317,28 @@ func TestOpenCodeForkLegacyCreationRequiresExactOriginalSeed(t *testing.T) {
 					return nil, err
 				}
 				switch change {
+				case "nil-child-valid", "nil-child-startup-path", "nil-child-startup-digest", "nil-child-startup-harness", "nil-child-startup-missing", "nil-child-seed-missing", "nil-child-snapshot":
+					session.Fork.Startup = nil
+					if change == "nil-child-startup-path" {
+						selection.ExplicitPath += "-replacement"
+					} else if change == "nil-child-startup-digest" {
+						selection.ExecutableSHA256 = strings.Repeat("ab", 32)
+					} else if change == "nil-child-startup-harness" {
+						selection.Harness = domain.Codex
+					} else if change == "nil-child-startup-missing" {
+						current.Startup = nil
+					} else if change == "nil-child-snapshot" {
+						session.Fork.Snapshot.InputID = domain.NewID()
+					} else if change == "nil-child-seed-missing" {
+						var old domain.ForkJobInput
+						_ = domain.Decode(job.Input, &old)
+						old.Startup = nil
+						job.Input, _ = json.Marshal(old)
+						session.Fork.JobInputDigest = forkInputDigest(job.Input)
+						if _, err = tx.Put(original.Kind, original.ID, original.Revision, original.SessionID, original.ProjectID, job); err != nil {
+							return nil, err
+						}
+					}
 				case "missing-job":
 					if err = tx.Delete(original.Kind, original.ID, original.Revision); err != nil {
 						return nil, err
@@ -299,9 +379,11 @@ func TestOpenCodeForkLegacyCreationRequiresExactOriginalSeed(t *testing.T) {
 					selection.Harness = domain.Codex
 				case "startup-missing":
 					current.Startup = nil
+				case "conflicting-child":
+					session.Fork.Startup.ExplicitPath += "-replacement"
 				}
 				creation, proofErr := openCodeForkRecoveryCreation(tx, row, session, current, seed.RuntimeID, f.workerDevice)
-				if change == "valid" {
+				if change == "valid" || change == "nil-child-valid" {
 					if proofErr != nil || creation != seed.OpenCode.Fork {
 						t.Fatal("exact legacy original seed not resolved", proofErr)
 					}

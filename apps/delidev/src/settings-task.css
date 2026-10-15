@@ -114,9 +114,11 @@ dialog.settings-task-dialog {
   max-width: 720px;
   margin-inline: 0;
 }
+/* Shared tab controls own their geometry (tab-strip.css), so the ordinary
+   control radius and minimum height exclude them. */
 .settings-task-body
   :is(
-    button,
+    button:where(:not(.tab-item, .tab-label, .tab-close)),
     input:not([type="checkbox"]):not([type="radio"]),
     textarea,
     select,
@@ -222,7 +224,7 @@ dialog.settings-task-dialog {
     input:not([type="checkbox"]):not([type="radio"]),
     select,
     textarea,
-    button
+    button:where(:not(.tab-item, .tab-label, .tab-close))
   ),
 .settings-task-footer button {
   border-color: var(--control-border);
@@ -231,12 +233,7 @@ dialog.settings-task-dialog {
   border-color: var(--accent);
 }
 @container settings-body (width < 640px) {
-  .settings-task-body
-    :is(
-      .account-provider-choices,
-      .agent-core-columns,
-      .integration-form-grid
-    ) {
+  .settings-task-body :is(.agent-core-columns, .integration-form-grid) {
     grid-template-columns: minmax(0, 1fr);
   }
 }

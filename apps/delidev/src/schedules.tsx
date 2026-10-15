@@ -26,7 +26,18 @@ import {
   copy,
   useLocale,
 } from "./localization";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import {
+  EntranceMotion,
+  useActivationCount,
+  useEntranceActivation,
+} from "./entrance-motion";
 import { useQuery } from "@connectrpc/connect-query";
 import {
   EntityKind,
@@ -67,6 +78,10 @@ import {
   type ScheduleCreationProps,
 } from "./schedule-creation";
 import { SidebarSurface, useCloseSidebarDrawer } from "./sidebar-context";
+import {
+  NavigationIntentSource,
+  useNavigationIntent,
+} from "./navigation-intent";
 
 enum Overlap {
   Overlap = "overlap",
@@ -96,10 +111,33 @@ const emptyDefinition = (): Document => ({
   overlap: Overlap.Overlap,
 });
 
+// A focus target is available only when it is connected, enabled, outside any
+// hidden or inert ancestor, and rendered: stylesheet rules such as the compact
+// opener's display:none outside the compact breakpoint leave the element
+// connected but unfocusable, so focus() on it would silently do nothing.
+function isFocusAvailable(
+  element: HTMLElement | null | undefined,
+): element is HTMLElement {
+  if (!element?.isConnected) return false;
+  if (element.matches(":disabled") || element.closest("[hidden], [inert]"))
+    return false;
+  const view = element.ownerDocument.defaultView;
+  if (!view) return false;
+  const visibility = view.getComputedStyle(element).visibility;
+  if (visibility === "hidden" || visibility === "collapse") return false;
+  for (let node: Element | null = element; node; node = node.parentElement)
+    if (view.getComputedStyle(node).display === "none") return false;
+  return true;
+}
+function hasDuplicateIds(rows: readonly { id: string }[]) {
+  return new Set(rows.map((row) => row.id)).size !== rows.length;
+}
+
 function schedulePage(response: ListSchedulesResponse) {
   if (
     response.schedules.length > 50 ||
-    response.schedules.some((row) => !isEntityId(row.id))
+    response.schedules.some((row) => !isEntityId(row.id)) ||
+    hasDuplicateIds(response.schedules)
   )
     throw new ConnectError("Invalid schedule page", Code.DataLoss);
   return {
@@ -114,7 +152,8 @@ function schedulePage(response: ListSchedulesResponse) {
 function occurrencePage(response: ListScheduleOccurrencesResponse) {
   if (
     response.occurrences.length > 50 ||
-    response.occurrences.some((row) => !isEntityId(row.id))
+    response.occurrences.some((row) => !isEntityId(row.id)) ||
+    hasDuplicateIds(response.occurrences)
   )
     throw new ConnectError("Invalid schedule occurrence page", Code.DataLoss);
   return {
@@ -845,7 +884,7 @@ function Occurrence({
           />
         </p>
         <pre>{text(selection.prompt)}</pre>
-        <small>{productLabel(PresentationKind.Schedule, resource.id)}</small>
+        <small>{productLabel(PresentationKind.Occurrence, resource.id)}</small>
       </Disclosure>
     </article>
   );
@@ -871,7 +910,10 @@ export function ScheduleHistory({
     request,
     occurrencePage,
   );
-  const result = usePaginationChain(id, active, reader);
+  // Inactive presentation (a blocked mutation, a notification review, a hidden
+  // Schedules destination) keeps the resident payload and its mounted
+  // Occurrence disclosures; reads stay suspended and activation refreshes.
+  const result = usePaginationChain(id, active, reader, true, true);
   usePaginationRefresh(
     ScheduleQuery.listScheduleOccurrences,
     request(""),
@@ -965,30 +1007,52 @@ export function ScheduleDetails({
   const data = document(current),
     definition = object(data.definition),
     problem = object(data.problem);
+  // A late accepted response must neither read nor change this view while it is
+  // inactive (for example during a notification review): the retained details
+  // stay exactly as they were hidden, and the whole response, including its
+  // refetch, is applied in order when the view is active again.
+  const activeNow = useRef(active);
+  activeNow.current = active;
+  const latestRefetch = useRef(result.refetch);
+  latestRefetch.current = result.refetch;
+  const deferredResponses = useRef<(() => void)[]>([]);
+  const applyWhenActive = (apply: () => void) => {
+    if (activeNow.current) apply();
+    else deferredResponses.current.push(apply);
+  };
+  useEffect(() => {
+    if (!active || deferredResponses.current.length === 0) return;
+    const queued = deferredResponses.current;
+    deferredResponses.current = [];
+    for (const apply of queued) apply();
+  }, [active]);
   const control = useRetainedMutation(
     `schedule-control:${initial.id}`,
     ScheduleQuery.controlSchedule,
-    (response) => {
-      setAcknowledged(response.schedule);
-      void result.refetch();
-    },
+    (response) =>
+      applyWhenActive(() => {
+        setAcknowledged(response.schedule);
+        void latestRefetch.current();
+      }),
   );
   const remove = useRetainedMutation(
     `schedule-delete:${initial.id}`,
     ScheduleQuery.deleteSchedule,
-    () => {
-      setDeleted(true);
-      setConfirm(undefined);
-    },
+    () =>
+      applyWhenActive(() => {
+        setDeleted(true);
+        setConfirm(undefined);
+      }),
   );
   const run = useRetainedMutation(
     `schedule-run:${initial.id}`,
     ScheduleQuery.runScheduleNow,
-    (response) => {
-      setOccurrence(response.occurrence);
-      setConfirm(undefined);
-      void result.refetch();
-    },
+    (response) =>
+      applyWhenActive(() => {
+        setOccurrence(response.occurrence);
+        setConfirm(undefined);
+        void latestRefetch.current();
+      }),
   );
   const operations = [control, remove, run],
     blocked = operations.some(
@@ -1171,9 +1235,15 @@ export function Schedules({
   readLocalWorker,
   notificationOccurrence,
   clearNotificationOccurrence,
+  restore,
+  selectionChanged,
 }: {
   active: boolean;
   open: (id: string) => void;
+  /** Schedule reopened by the product route from a fresh read after a reload. */
+  restore?: { resource: Resource; generation: string };
+  /** Reports the selected Schedule ID ("" when none) for the product route. */
+  selectionChanged?: (id: string) => void;
   readLocalWorker?: ReadLocalWorkerProof;
   notificationOccurrence?: {
     id: string;
@@ -1202,8 +1272,71 @@ export function Schedules({
     [editing, setEditing] = useState<{ initial?: Resource; key: string }>();
   const [projectId, setProjectId] = useState("");
   const [protectedWorkflow, setProtectedWorkflow] = useState(false);
+  const restored = useRef("");
+  useEffect(() => {
+    if (!restore || restored.current === restore.generation) return;
+    restored.current = restore.generation;
+    setSelected(restore.resource);
+  }, [restore]);
+  const selectedScheduleId = selected?.id ?? "";
+  useEffect(() => {
+    selectionChanged?.(selectedScheduleId);
+  }, [selectedScheduleId, selectionChanged]);
+  // One page-root entrance serves every explicit entry, so only one 4px
+  // transform is ever active. Destination activation, New schedule, selecting a
+  // schedule and opening an original notification occurrence each advance the
+  // key; recurrence edits, occurrence and job updates, saves, close, refetch and
+  // polling do not. Nothing waits for the motion and Run is never triggered by it.
+  const [entries, setEntries] = useState({ count: 0, generation: "" });
+  const occurrenceGeneration = notificationOccurrence?.generation ?? "";
+  if (occurrenceGeneration && occurrenceGeneration !== entries.generation)
+    setEntries({ count: entries.count + 1, generation: occurrenceGeneration });
+  const destinationActivations = useActivationCount(active);
+  const pageEntrance = useEntranceActivation(
+    `schedules:${destinationActivations}:${entries.count}`,
+    active,
+    EntranceMotion.Y4,
+  );
   const closeDrawer = useCloseSidebarDrawer();
-  const locked = protectedWorkflow || Boolean(editing);
+  const navigationIntent = useNavigationIntent();
+  const reviewingNotification = Boolean(notificationOccurrence);
+  // The notification occurrence destination is exclusive, so the sidebar
+  // interactions and list reads stop together with the hidden workspace.
+  const locked = protectedWorkflow || Boolean(editing) || reviewingNotification;
+  const workspaceActive = active && !reviewingNotification;
+  // Hiding the inert workspace blurs its focused control and the review's Back
+  // button unmounts on return, so remember the control and restore it then.
+  const workspace = useRef<HTMLDivElement>(null);
+  const deferredSave = useRef<{ row?: Resource } | undefined>(undefined);
+  const focusAfterDeferredSave = useRef(false);
+  const newScheduleButton = useRef<HTMLButtonElement>(null);
+  const focusOpenerAfterCancel = useRef(false);
+  const wasReviewing = useRef(false);
+  const focusBeforeReview = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    if (reviewingNotification === wasReviewing.current) return;
+    wasReviewing.current = reviewingNotification;
+    if (reviewingNotification) {
+      const focused = globalThis.document.activeElement;
+      focusBeforeReview.current =
+        focused instanceof HTMLElement && workspace.current?.contains(focused)
+          ? focused
+          : null;
+      return;
+    }
+    const target = focusBeforeReview.current;
+    focusBeforeReview.current = null;
+    // A save accepted during the review unmounts the retained editor right
+    // after this effect, so focusing it would be lost; the deferred save hands
+    // focus to the resulting view instead.
+    if (deferredSave.current) return;
+    const current = globalThis.document.activeElement;
+    if (
+      target?.isConnected &&
+      (!current || current === globalThis.document.body || !current.isConnected)
+    )
+      target.focus({ preventScroll: true });
+  }, [reviewingNotification]);
   const request = useCallback(
     (token: string) => ({
       projectId,
@@ -1233,13 +1366,77 @@ export function Schedules({
     navigationActive && !locked,
     result.refresh,
   );
+  // An accepted save that arrives during a notification review must not clear
+  // the retained editor or read the list; it applies when the review clears.
+  const reviewingNow = useRef(reviewingNotification);
+  reviewingNow.current = reviewingNotification;
+  const applySave = (row?: Resource) => {
+    setEditing(undefined);
+    setProtectedWorkflow(false);
+    if (row) setSelected(row);
+    result.refresh();
+  };
+  const latestApplySave = useRef(applySave);
+  latestApplySave.current = applySave;
+  useEffect(() => {
+    if (reviewingNotification || !deferredSave.current) return;
+    const { row } = deferredSave.current;
+    deferredSave.current = undefined;
+    focusAfterDeferredSave.current = true;
+    latestApplySave.current(row);
+  }, [reviewingNotification]);
+  // The applied save unmounts the focused retained editor, so move focus to the
+  // first enabled control of the resulting view unless focus already moved.
+  useLayoutEffect(() => {
+    if (!focusAfterDeferredSave.current || editing) return;
+    focusAfterDeferredSave.current = false;
+    const current = globalThis.document.activeElement;
+    if (current && current !== globalThis.document.body && current.isConnected)
+      return;
+    workspace.current
+      ?.querySelector<HTMLElement>("button:not(:disabled)")
+      ?.focus({ preventScroll: true });
+  }, [editing, selected]);
+  // Cancelling the creation wizard (button or Escape) unmounts the focused
+  // control and re-enables the New schedule opener in the same commit. Return
+  // focus to that opener, or to a visible Schedules control when the sidebar is
+  // a closed compact drawer, unless focus already moved somewhere else.
+  useLayoutEffect(() => {
+    if (!focusOpenerAfterCancel.current || editing) return;
+    focusOpenerAfterCancel.current = false;
+    const current = globalThis.document.activeElement;
+    if (
+      current &&
+      current !== globalThis.document.body &&
+      current !== globalThis.document.documentElement &&
+      current.isConnected
+    )
+      return;
+    const opener = newScheduleButton.current;
+    const main = workspace.current?.closest("main");
+    const compact = (main ?? globalThis.document).querySelector<HTMLElement>(
+      ".sidebar-context-trigger",
+    );
+    // Try each candidate in order; one that is unavailable, or that does not
+    // actually take focus, falls through to the next candidate.
+    for (const candidate of [opener, compact, main]) {
+      if (!isFocusAvailable(candidate)) continue;
+      candidate.focus({ preventScroll: true });
+      if (globalThis.document.activeElement === candidate) return;
+    }
+  }, [editing]);
   const selectSchedule = (row: Resource) => {
     if (locked) return;
+    navigationIntent(NavigationIntentSource.ScheduleSelect);
+    if (row.id !== selected?.id)
+      setEntries((current) => ({ ...current, count: current.count + 1 }));
     setSelected(row);
     closeDrawer();
   };
   const newSchedule = () => {
     if (locked) return;
+    navigationIntent(NavigationIntentSource.ScheduleNew);
+    setEntries((current) => ({ ...current, count: current.count + 1 }));
     setSelected(undefined);
     setEditing({ key: newRequestId() });
     closeDrawer();
@@ -1252,6 +1449,7 @@ export function Schedules({
         className="schedules-sidebar"
       >
         <button
+          ref={newScheduleButton}
           className="primary sidebar-action"
           disabled={locked}
           onClick={newSchedule}
@@ -1381,7 +1579,7 @@ export function Schedules({
           />
         </div>
       </SidebarSurface>
-      <div hidden={!active} className="page schedule-page">
+      <div hidden={!active} className="page schedule-page" {...pageEntrance}>
         {notificationOccurrence ? (
           <section
             key={notificationOccurrence.generation}
@@ -1406,47 +1604,66 @@ export function Schedules({
             )}
           </section>
         ) : null}
-        {editing ? (
-          <ScheduleEditor
-            readLocalWorker={readLocalWorker}
-            key={editing.key}
-            initial={editing.initial}
-            active={active}
-            saved={(row) => {
-              setEditing(undefined);
-              setProtectedWorkflow(false);
-              if (row) setSelected(row);
-              result.refresh();
-            }}
-            cancel={() => {
-              setEditing(undefined);
-              setProtectedWorkflow(false);
-            }}
-            protectedChange={setProtectedWorkflow}
-          />
-        ) : selected ? (
-          <ScheduleDetails
-            key={selected.id}
-            initial={selected}
-            active={active}
-            open={open}
-            close={() => {
-              setSelected(undefined);
-              setProtectedWorkflow(false);
-              result.refresh();
-            }}
-            edit={(initial) => {
-              setSelected(undefined);
-              setEditing({ initial, key: newRequestId() });
-            }}
-            protectedChange={setProtectedWorkflow}
-          />
-        ) : (
-          <section>
-            <h2>{copy("schedules.schedules_221ff1")}</h2>
-            <p>{copy("schedules.selectAScheduleFromTheSidebar_6800ae")}</p>
-          </section>
-        )}
+        {/* The notification occurrence destination is exclusive: the normal
+            workspace stays mounted (draft, focus and request identity) but is
+            hidden, inert and inactive until the user explicitly returns. */}
+        <div
+          ref={workspace}
+          hidden={Boolean(notificationOccurrence)}
+          inert={Boolean(notificationOccurrence)}
+          className="schedule-workspace"
+        >
+          {editing ? (
+            <ScheduleEditor
+              readLocalWorker={readLocalWorker}
+              key={editing.key}
+              initial={editing.initial}
+              active={workspaceActive}
+              saved={(row) => {
+                if (reviewingNow.current) deferredSave.current = { row };
+                else latestApplySave.current(row);
+              }}
+              cancel={() => {
+                // Only dismissing the creation wizard (no initial resource)
+                // returns focus to the opener; cancelling the edit of an
+                // existing schedule keeps its previous focus behavior.
+                const focused = globalThis.document.activeElement;
+                focusOpenerAfterCancel.current =
+                  editing.initial === undefined &&
+                  (!focused ||
+                    focused === globalThis.document.body ||
+                    Boolean(workspace.current?.contains(focused)));
+                setEditing(undefined);
+                setProtectedWorkflow(false);
+              }}
+              protectedChange={setProtectedWorkflow}
+            />
+          ) : selected ? (
+            <ScheduleDetails
+              key={selected.id}
+              initial={selected}
+              active={workspaceActive}
+              open={open}
+              close={() => {
+                navigationIntent(NavigationIntentSource.ScheduleClose);
+                setSelected(undefined);
+                setProtectedWorkflow(false);
+                result.refresh();
+              }}
+              edit={(initial) => {
+                navigationIntent(NavigationIntentSource.ScheduleEdit);
+                setSelected(undefined);
+                setEditing({ initial, key: newRequestId() });
+              }}
+              protectedChange={setProtectedWorkflow}
+            />
+          ) : (
+            <section>
+              <h2>{copy("schedules.schedules_221ff1")}</h2>
+              <p>{copy("schedules.selectAScheduleFromTheSidebar_6800ae")}</p>
+            </section>
+          )}
+        </div>
       </div>
     </>
   );

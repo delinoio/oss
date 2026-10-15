@@ -437,8 +437,15 @@ func (c *OpenCodeEventPublisher) completeHistory(history opencode.HistoryObserva
 			}
 			switch part.Kind {
 			case opencode.TextPartKind, opencode.ReasoningPartKind:
+				if t.inputExtras[part.ID] == part.Kind && owner.role == domain.UserMessage {
+					continue
+				}
 				p := t.parts[part.ID]
 				if p == nil || p.kind != part.Kind || p.message.NativeParentID != message.ID || !p.complete {
+					return false
+				}
+			case opencode.FilePartKind:
+				if t.inputExtras[part.ID] != opencode.FilePartKind || owner.role != domain.UserMessage {
 					return false
 				}
 			case opencode.ToolPartKind:
@@ -468,6 +475,22 @@ func (c *OpenCodeEventPublisher) completeHistory(history opencode.HistoryObserva
 		if !seen[id] {
 			return false
 		}
+	}
+	// An image-bearing input expands into exactly one synthetic Read text and one
+	// file part per attachment; fewer observed parts mean an incomplete expansion.
+	synthetic, files := 0, 0
+	for id, kind := range t.inputExtras {
+		if !seen[id] {
+			return false
+		}
+		if kind == opencode.FilePartKind {
+			files++
+		} else {
+			synthetic++
+		}
+	}
+	if attachments := len(t.binding.publisher.input.Input.Attachments); synthetic != attachments || files != attachments {
+		return false
 	}
 	for id := range t.revisions {
 		if !seen[id] {

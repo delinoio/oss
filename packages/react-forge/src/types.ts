@@ -45,7 +45,7 @@ export enum Stage {
 
 export interface Diagnostic {
   readonly source?: "javascript" | "native";
-  readonly operation?: "generate" | "inspect" | "update";
+  readonly operation?: "generate" | "inspect" | "analyze" | "update";
   readonly status?: "started" | "completed" | "failed";
   readonly stage: Stage;
   readonly format: Format;

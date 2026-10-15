@@ -62,10 +62,31 @@ const states: Record<TrayQuotaState, MessageKey> = {
   failed: "tray-status.failed",
   unsupported: "tray-status.unsupported",
 };
+enum InitialReadState {
+  Loading = "loading",
+  Resolved = "resolved",
+  Failed = "failed",
+}
 function count(value: string | null | undefined) {
   return value == null
     ? copy("tray-status.unavailable")
     : new Intl.NumberFormat(displayLocale()).format(BigInt(value));
+}
+// Choose the single ready-window snapshot that drives presentation and
+// navigation. A panel opening prefers the native recent window and then the
+// first ready row; during a visit the choice is retained until it disappears.
+// Snapshots are never merged, so multiple windows cannot duplicate accounts or
+// sum counts.
+function representativeWindow(
+  snapshot: TrayPanelSnapshot,
+  retained: string | undefined,
+  reopened: boolean,
+) {
+  const present = (id: string | null | undefined) =>
+    id != null && snapshot.windows.some((row) => row.target.instance === id);
+  if (!reopened && present(retained)) return retained;
+  if (present(snapshot.recent)) return snapshot.recent ?? undefined;
+  return snapshot.windows[0]?.target.instance;
 }
 function Quota({
   quota,
@@ -142,6 +163,7 @@ export function TrayStatus({
 }) {
   useLocale();
   const [snapshot, setSnapshot] = useState<TrayPanelSnapshot>();
+  const [initialRead, setInitialRead] = useState(InitialReadState.Loading);
   const [selected, setSelected] = useState<string>();
   const [problem, setProblem] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -169,9 +191,12 @@ export function TrayStatus({
     };
   }, [snapshot?.theme, snapshot?.colors]);
   const nativeReceived = useRef(performance.now());
-  const selection = useRef<HTMLSelectElement>(null);
+  const closeButton = useRef<HTMLButtonElement>(null);
   const reload = useRef<() => void>(() => {});
-  const lastFocus = useRef(false);
+  // A read may finish after a newer focus event. Only a read started for the
+  // current opening can choose its recent window and move focus to Close.
+  const openingGeneration = useRef(1);
+  const selectedOpeningGeneration = useRef(0);
   useEffect(() => {
     let disposed = false,
       running = false,
@@ -188,32 +213,38 @@ export function TrayStatus({
       running = true;
       do {
         requested = false;
+        const readGeneration = openingGeneration.current;
         try {
           const next = parseTrayPanel(await bridge.read(), instance);
           if (disposed) break;
           // Preference projection is read-only: no device controllers or writes.
           void i18n.changeLanguage(next.language);
           nativeReceived.current = performance.now();
+          const reopened =
+            readGeneration === openingGeneration.current &&
+            readGeneration > selectedOpeningGeneration.current;
           setSnapshot(next);
+          setInitialRead(InitialReadState.Resolved);
           setSelected((original) =>
-            next.windows.some((row) => row.target.instance === original)
-              ? original
-              : next.recent &&
-                  next.windows.some(
-                    (row) => row.target.instance === next.recent,
-                  )
-                ? next.recent
-                : next.windows[0]?.target.instance,
+            representativeWindow(next, original, reopened),
           );
           setProblem(!subscriptionReady);
-          if (!lastFocus.current) {
+          if (reopened) {
+            selectedOpeningGeneration.current = readGeneration;
             queueMicrotask(() => {
-              if (!disposed) selection.current?.focus();
+              if (!disposed && openingGeneration.current === readGeneration)
+                closeButton.current?.focus();
             });
-            lastFocus.current = true;
           }
         } catch {
-          if (!disposed) setProblem(true);
+          if (!disposed) {
+            setInitialRead((state) =>
+              state === InitialReadState.Loading && !requested
+                ? InitialReadState.Failed
+                : state,
+            );
+            setProblem(true);
+          }
         }
       } while (!disposed && requested);
       running = false;
@@ -250,7 +281,7 @@ export function TrayStatus({
     connect();
     const tick = setInterval(() => setNow(Date.now()), 1000);
     const focus = () => {
-      lastFocus.current = false;
+      openingGeneration.current += 1;
       void read();
     };
     window.addEventListener("focus", focus);
@@ -304,6 +335,7 @@ export function TrayStatus({
       <header>
         <h1>DeliDev</h1>
         <button
+          ref={closeButton}
           type="button"
           aria-label={copy("tray-status.close")}
           onClick={dismiss}
@@ -312,32 +344,15 @@ export function TrayStatus({
         </button>
       </header>
       <div className="tray-status-scroll">
-        <label className="tray-window-selector">
-          {copy("tray-status.window")}
-          <select
-            ref={selection}
-            value={selected ?? ""}
-            aria-disabled={!snapshot?.windows.length}
-            onChange={(event) => setSelected(event.target.value)}
-          >
-            {snapshot?.windows.length ? (
-              snapshot.windows.map((row) => (
-                <option key={row.target.instance} value={row.target.instance}>
-                  {row.name}
-                </option>
-              ))
-            ) : (
-              <option value="">{copy("tray-status.noWindows")}</option>
-            )}
-          </select>
-        </label>
         <p className="tray-connection" role="status">
           {copy(
-            !overview
-              ? "tray-status.unavailable"
-              : stale
-                ? "tray-status.connectionStale"
-                : "tray-status.connected",
+            initialRead === InitialReadState.Loading
+              ? "tray-status.loading"
+              : !overview
+                ? "tray-status.unavailable"
+                : stale
+                  ? "tray-status.connectionStale"
+                  : "tray-status.connected",
           )}
         </p>
         {overview ? (
@@ -358,8 +373,18 @@ export function TrayStatus({
             </button>
           </div>
         ) : null}
-        <h2>{copy("tray-status.accounts")}</h2>
-        {!summary?.accounts ? (
+        <div className="tray-quota-heading">
+          <h2>{copy("tray-status.accounts")}</h2>
+          <button
+            disabled={!current || busy || problem}
+            onClick={() => void action(TrayPanelAction.Settings)}
+          >
+            {copy("tray-status.manage")}
+          </button>
+        </div>
+        {initialRead === InitialReadState.Loading ? (
+          <p>{copy("tray-status.loading")}</p>
+        ) : !summary?.accounts ? (
           <p>{copy("tray-status.accountsUnavailable")}</p>
         ) : !summary.accounts.entries.length ? (
           <p>{copy("tray-status.accountsEmpty")}</p>
@@ -395,13 +420,6 @@ export function TrayStatus({
         {summary?.accounts?.more ? (
           <p>{copy("tray-status.moreAccounts")}</p>
         ) : null}
-        <button
-          disabled={!current || busy || problem}
-          onClick={() => void action(TrayPanelAction.Settings)}
-        >
-          {copy("tray-status.manage")}
-        </button>
-        {snapshot?.more ? <p>{copy("tray-status.moreWindows")}</p> : null}
         <section
           className="tray-metrics"
           aria-label={copy("tray-status.metrics")}

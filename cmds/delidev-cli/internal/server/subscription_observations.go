@@ -63,6 +63,11 @@ func acceptSubscriptionObservation(tx *store.Tx, r store.Record, a domain.Accoun
 	if op.ConnectionID != a.Connection.ID || op.Generation != a.Subscription.Generation || op.Validate() != nil {
 		return domain.Fail(domain.Conflict, "The confirmed account generation changed.", "Read the current account and confirm the original operation again before sending.")
 	}
+	if reserved, err := managedTitleReservation(tx, r.ID, ""); err != nil {
+		return err
+	} else if reserved {
+		return managedTitleAccountReserved()
+	}
 	if a.Subscription.Lease != nil && (a.Subscription.Lease.Action != domain.SubscriptionExecute || a.Subscription.Lease.MachineID != op.MachineID) {
 		return subscriptionDenied()
 	}
@@ -112,11 +117,10 @@ func (s *Service) RequestSubscriptionObservation(ctx context.Context, req *conne
 		}
 		op := input.Operation
 		op.RequestedAt = time.Now().UTC()
-		// An omitted server selector cannot create a second owner while an
-		// execution holds the credential. Observe that exact original Worker.
-		if action == domain.SubscriptionResetCredit && op.MachineID == "" && a.Subscription != nil && a.Subscription.Lease != nil && a.Subscription.Lease.Action == domain.SubscriptionExecute {
-			op.MachineID = a.Subscription.Lease.MachineID
-		}
+		// An omitted selector selects the System 101 server lane even while an
+		// Execute holds the credential: the access-only owner takes no writer, so it
+		// neither needs a Runner nor changes that lease. Only an explicit machine
+		// keeps the historical Worker lane.
 		if action == domain.SubscriptionResetCredit {
 			if !input.Confirmed || !quotaAccountReady(a) || a.Subscription.ResetCredits == nil {
 				return nil, domain.InvalidSubscriptionObservation()
@@ -176,6 +180,12 @@ func (s *Service) RequestSubscriptionObservation(ctx context.Context, req *conne
 	return connect.NewResponse(&pb.RequestSubscriptionObservationResponse{Account: rpc.Resource(r), OperationId: m.RequestId, Replayed: result.Replayed}), nil
 }
 
+// subscriptionQuotaMaintenanceInterval is the inactive-app maintenance cadence.
+// It is deliberately shorter than the five-minute client freshness limit so a
+// retained observation is renewed before it is displayed as stale. The freshness
+// limit itself (rail, paid-credit and domain routing) is unchanged.
+const subscriptionQuotaMaintenanceInterval = 4 * time.Minute
+
 type subscriptionQuotaBatchReceipt struct {
 	Accounts []domain.ID `json:"accounts"`
 }
@@ -198,10 +208,10 @@ func subscriptionQuotaCandidates(tx *store.Tx, now time.Time, dueOnly bool, epoc
 			continue
 		}
 		state := a.Subscription
-		if dueOnly && state.ServerQuota != nil && state.ServerQuota.Generation == state.Generation && now.Sub(state.ServerQuota.RequestedAt) < 5*time.Minute {
+		if dueOnly && state.ServerQuota != nil && state.ServerQuota.Generation == state.Generation && now.Sub(state.ServerQuota.RequestedAt) < subscriptionQuotaMaintenanceInterval {
 			continue
 		}
-		if dueOnly && state.Observation != nil && state.Observation.Generation == state.Generation && now.Sub(state.Observation.RequestedAt) < 5*time.Minute {
+		if dueOnly && state.Observation != nil && state.Observation.Generation == state.Generation && now.Sub(state.Observation.RequestedAt) < subscriptionQuotaMaintenanceInterval {
 			continue
 		}
 		if serverQuotaReady(a) {

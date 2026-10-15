@@ -9,11 +9,12 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
   type ReactNode,
 } from "react";
-import { create, type Message } from "@bufbuild/protobuf";
+import { create, fromJsonString, type Message } from "@bufbuild/protobuf";
 import { createClient } from "@connectrpc/connect";
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import {
@@ -54,6 +55,7 @@ import {
   uuid,
   documentBytes,
   documentOf,
+  type Pending,
   type State,
 } from "./state";
 import { Connection, Status } from "./connection";
@@ -247,6 +249,27 @@ function Modal({
     </dialog>
   );
 }
+enum DraftSettleOutcome {
+  Cleared = "cleared",
+  NewerEditKept = "newer-edit-kept",
+  NoDraft = "no-draft",
+}
+type SettleSend = (sessionId: string, submittedPrompt: string) => void;
+// Reads the session and prompt of a retained Send request without logging it.
+function pendingSendDraft(
+  pending?: Pending,
+): { sessionId: string; prompt: string } | undefined {
+  if (pending?.operation !== Operation.Send) return undefined;
+  try {
+    const request = fromJsonString(EnqueueInputRequestSchema, pending.request);
+    const prompt = documentOf(request.documentJson).prompt;
+    return typeof prompt === "string" && request.sessionId
+      ? { sessionId: request.sessionId, prompt }
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
 interface ConversationDraft {
   prompt: string;
   mode: string;
@@ -264,6 +287,26 @@ export function App({ state = owner }: { state?: ProtectedState }) {
     [active, setActive] = useState(document.visibilityState === "visible");
   // Composer drafts belong to the original profile/session, outside tab presentation.
   const drafts = useRef(new Map<string, Map<string, ConversationDraft>>());
+  // Clears a retained composer draft only after the original Send is confirmed.
+  // The draft is looked up by profile and session so completion that lands while
+  // the conversation is unmounted still reaches the application-owned draft, and
+  // text edited after capture is preserved. Prompt text is never logged.
+  const settleSend = (
+    profileId: string,
+    sessionId: string,
+    submittedPrompt: string,
+  ) => {
+    const draft = drafts.current.get(profileId)?.get(sessionId);
+    const cleared = !!draft && draft.prompt === submittedPrompt;
+    if (draft && cleared) draft.prompt = "";
+    console.info("mobile_composer_draft_settled", {
+      outcome: cleared
+        ? DraftSettleOutcome.Cleared
+        : draft
+          ? DraftSettleOutcome.NewerEditKept
+          : DraftSettleOutcome.NoDraft,
+    });
+  };
   const changed = () => {
     for (const id of drafts.current.keys())
       if (!state.state.profiles.some((profile) => profile.id === id))
@@ -376,6 +419,9 @@ export function App({ state = owner }: { state?: ProtectedState }) {
                     ? conversation.draft
                     : undefined
                 }
+                settleSend={(sessionId, submittedPrompt) =>
+                  settleSend(profile.id, sessionId, submittedPrompt)
+                }
                 changed={changed}
               />
             ) : (
@@ -419,6 +465,13 @@ function Settings({
     [name, setName] = useState(""),
     [origin, setOrigin] = useState(""),
     [grant, setGrant] = useState(""),
+    // Durable profile id from a successful preparePair whose pair() has not
+    // yet been verified. While set, submit retries only that original request.
+    [prepared, setPrepared] = useState<string>(),
+    // Bumped on every dismissal so a submission started by a dismissed modal
+    // cannot attach its result to a later one.
+    submission = useRef(0),
+    preparing = useRef(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [confirm, setConfirm] = useState<() => Promise<void>>(),
@@ -450,6 +503,34 @@ function Settings({
   };
   const settings = (change: (s: State) => void) =>
     void run(() => state.update(change));
+  const resetAddForm = () => {
+    setPrepared(undefined);
+    setGrant("");
+    setName("");
+    setOrigin("");
+  };
+  const preparedProfile = prepared
+    ? state.state.profiles.find((p) => p.id === prepared)
+    : undefined;
+  const preparedGone = !!prepared && !preparedProfile;
+  const preparedPaired = !!preparedProfile && !preparedProfile.pairing;
+  useEffect(() => {
+    // The prepared attempt ended elsewhere: forgotten, or paired through the
+    // profile-list retry. Release the frozen inputs.
+    if (preparedGone) setPrepared(undefined);
+    else if (preparedPaired) {
+      resetAddForm();
+      setAdding(false);
+    }
+  }, [preparedGone, preparedPaired]);
+  const closeAdd = () => {
+    // Dismissal keeps the protected profile; the list retry remains available.
+    // An in-flight submission becomes inert: it must neither freeze a later
+    // modal on the dismissed grant nor attempt pairing on its own.
+    submission.current += 1;
+    if (prepared || preparing.current) resetAddForm();
+    setAdding(false);
+  };
   return (
     <section>
       <h2>{c.settings}</h2>
@@ -578,18 +659,30 @@ function Settings({
       </details>
       {error ? <p role="alert">{error}</p> : null}
       {adding ? (
-        <Modal title={c.add} close={() => setAdding(false)}>
+        <Modal title={c.add} close={closeAdd}>
           <form
             onSubmit={(e) => {
               e.preventDefault();
+              const attempt = submission.current;
               void run(async () => {
-                const id = await state.preparePair(name, origin, grant);
-                changed();
+                let id = prepared;
+                if (!id || !state.state.profiles.some((p) => p.id === id)) {
+                  preparing.current = true;
+                  try {
+                    id = await state.preparePair(name, origin, grant);
+                  } finally {
+                    preparing.current = false;
+                  }
+                  // Dismissed while preparing: the durable profile stays in
+                  // the Settings list for its retry; do not pair from here.
+                  if (submission.current !== attempt) return;
+                  setPrepared(id);
+                  changed();
+                }
                 await state.pair(id);
+                if (submission.current !== attempt) return;
                 setAdding(false);
-                setGrant("");
-                setName("");
-                setOrigin("");
+                resetAddForm();
               });
             }}
           >
@@ -599,6 +692,7 @@ function Settings({
                 <input
                   required
                   maxLength={120}
+                  readOnly={!!prepared}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                 />
@@ -610,6 +704,7 @@ function Settings({
                   type="url"
                   autoCapitalize="none"
                   autoCorrect="off"
+                  readOnly={!!prepared}
                   value={origin}
                   onChange={(e) => setOrigin(e.target.value)}
                 />
@@ -621,12 +716,14 @@ function Settings({
                   autoCapitalize="none"
                   autoCorrect="off"
                   spellCheck={false}
+                  readOnly={!!prepared}
                   value={grant}
                   onChange={(e) => setGrant(e.target.value)}
                 />
               </label>
               <p>{c.pairingNote}</p>
-              <button>{c.pair}</button>
+              {prepared ? <p>{c.pendingPair}</p> : null}
+              <button>{prepared ? c.retryPair : c.pair}</button>
             </fieldset>
           </form>
         </Modal>
@@ -829,6 +926,7 @@ function Connected({
   open,
   back,
   draft,
+  settleSend,
   changed,
 }: {
   state: ProtectedState;
@@ -842,6 +940,7 @@ function Connected({
   open: (id: string) => void;
   back: () => void;
   draft?: ConversationDraft;
+  settleSend: SettleSend;
   changed: () => void;
 }) {
   const c = useCopy(),
@@ -896,6 +995,7 @@ function Connected({
         id,
         () => connection.active && connection.status === Status.Live,
         { notify },
+        connection,
       )
         .then(changed)
         .catch(changed);
@@ -905,6 +1005,7 @@ function Connected({
     if (!pending || !enabled) return;
     const originalEpoch = connection.observationEpoch;
     setBusy(true);
+    setError("");
     try {
       const kind =
         pending.operation === Operation.Question ||
@@ -915,7 +1016,103 @@ function Connected({
             : pending.operation === Operation.Revoke
               ? EntityKind.DEVICE
               : EntityKind.SESSION;
-      if (pending.operation === Operation.Create) {
+      if (pending.operation === Operation.Steer) {
+        // The request ID identifies the committed Steer receipt. Check it before
+        // the queue because acceptance itself advances the queue revision.
+        const request = fromJsonString(
+          SteerQueuedInputRequestSchema,
+          pending.request,
+        );
+        const original = request.mutation;
+        if (!original?.requestId || !original.id)
+          throw new Error("steer-request-invalid");
+        const resources = createClient(ResourceService, transport);
+        let receipt: Resource | undefined;
+        try {
+          receipt = (
+            await resources.getResource({
+              kind: EntityKind.STEER,
+              id: original.requestId,
+            })
+          ).resource;
+        } catch (error) {
+          const failure = clientFailure(error);
+          if (failure.code !== FailureCode.NotFound) {
+            console.warn("mobile_steer_inspect", {
+              operation: Operation.Steer,
+              outcome: "original_receipt_read_failed",
+              code: failure.code,
+            });
+            throw error;
+          }
+        }
+        if (receipt) {
+          const attempt = supportsResourceSchema(receipt)
+            ? documentOf(receipt.documentJson)
+            : undefined;
+          if (
+            receipt.kind !== EntityKind.STEER ||
+            receipt.id !== original.requestId ||
+            receipt.schemaVersion !== 1 ||
+            receipt.sessionId !== request.sessionId ||
+            attempt?.version !== 1 ||
+            attempt.input_id !== original.id ||
+            attempt.execution_id !== request.expectedExecutionId ||
+            attempt.native_turn_id !== request.expectedTurnId
+          ) {
+            console.warn("mobile_steer_inspect", {
+              operation: Operation.Steer,
+              outcome: "original_receipt_changed",
+            });
+            setInspected("");
+            setError(c.steerTargetChanged);
+            return;
+          }
+          console.info("mobile_steer_inspect", {
+            operation: Operation.Steer,
+            outcome: "original_receipt_matched",
+          });
+        } else {
+          // Without a receipt, only the unchanged original queue input permits
+          // retry. The retained target may be a legacy session ID.
+          let observed: Resource | undefined;
+          try {
+            observed = (
+              await resources.getResource({
+                kind: EntityKind.QUEUE,
+                id: original.id,
+              })
+            ).resource;
+          } catch (error) {
+            if (clientFailure(error).code === FailureCode.NotFound) {
+              console.warn("mobile_steer_inspect", {
+                operation: Operation.Steer,
+                outcome: "original_input_missing",
+              });
+              setInspected("");
+              setError(c.steerTargetMissing);
+              return;
+            }
+            throw error;
+          }
+          if (
+            !observed ||
+            !supportsResourceSchema(observed) ||
+            observed.kind !== EntityKind.QUEUE ||
+            observed.id !== original.id ||
+            observed.sessionId !== request.sessionId ||
+            observed.revision !== original.expectedRevision
+          ) {
+            console.warn("mobile_steer_inspect", {
+              operation: Operation.Steer,
+              outcome: "original_input_changed",
+            });
+            setInspected("");
+            setError(c.steerTargetChanged);
+            return;
+          }
+        }
+      } else if (pending.operation === Operation.Create) {
         await createClient(ResourceService, transport).listResources({
           filter: { kind: EntityKind.SESSION, pageSize: 50 },
         });
@@ -946,6 +1143,7 @@ function Connected({
       )
         setInspected(pending.request);
     } catch {
+      setInspected("");
       setError(c.error);
     } finally {
       setBusy(false);
@@ -1008,7 +1206,11 @@ function Connected({
                           return;
                         setBusy(true);
                         try {
+                          const sent = pendingSendDraft(
+                            state.profile(id).pending,
+                          );
                           await state.retry(id);
+                          if (sent) settleSend(sent.sessionId, sent.prompt);
                           changed();
                           await connection.cache.invalidateQueries();
                         } catch {
@@ -1038,6 +1240,7 @@ function Connected({
                   key={sessionId}
                   id={sessionId}
                   draft={draft}
+                  settleSend={settleSend}
                   enabled={enabled}
                   busy={busy || !!pending}
                   mutate={mutate}
@@ -1123,6 +1326,7 @@ type Mutate = (
   operation: Operation,
   request: Message,
   target: string,
+  accepted?: () => void,
 ) => Promise<void>;
 function Choices({
   kind,
@@ -1535,6 +1739,7 @@ function useResponseDrafts() {
 function Conversation({
   id,
   draft,
+  settleSend,
   enabled,
   busy,
   mutate,
@@ -1546,6 +1751,7 @@ function Conversation({
   mutate: Mutate;
   back: () => void;
   draft: ConversationDraft;
+  settleSend: SettleSend;
 }) {
   const productLabel = useMobileIdentity();
   const responseDraft = useResponseDrafts();
@@ -1553,11 +1759,12 @@ function Conversation({
   const c = useCopy(),
     [page, setPage] = useObservationState(""),
     [history, setHistory] = useObservationState<Resource[]>([]),
-    [prompt, setPrompt] = useState(draft.prompt),
-    [mode, setMode] = useState(draft.mode),
     [confirmation, setConfirmation] = useObservationState<
       SessionAction | undefined
-    >(undefined);
+    >(undefined),
+    // The shared draft owns the composer text so confirmed completion clears it.
+    [, redraw] = useReducer((n: number) => n + 1, 0);
+  const { prompt, mode } = draft;
   const session = useQuery(
     ResourceQuery.getResource,
     { kind: EntityKind.SESSION, id },
@@ -1712,14 +1919,16 @@ function Conversation({
             new TextEncoder().encode(prompt).length > 256 << 10
           )
             return;
+          const submitted = prompt;
           void mutate(
             Operation.Send,
             create(EnqueueInputRequestSchema, {
               requestId: uuid(),
               sessionId: id,
-              documentJson: documentBytes({ prompt, mode }),
+              documentJson: documentBytes({ prompt: submitted, mode }),
             }),
             id,
+            () => settleSend(id, submitted),
           );
         }}
       >
@@ -1730,7 +1939,7 @@ function Conversation({
               value={prompt}
               onChange={(e) => {
                 draft.prompt = e.target.value;
-                setPrompt(e.target.value);
+                redraw();
               }}
             />
           </label>
@@ -1740,7 +1949,7 @@ function Conversation({
               value={mode}
               onChange={(e) => {
                 draft.mode = e.target.value;
-                setMode(e.target.value);
+                redraw();
               }}
             >
               <option value="execute">{c.execute}</option>

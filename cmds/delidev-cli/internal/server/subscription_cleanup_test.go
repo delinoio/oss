@@ -84,7 +84,7 @@ func TestFailedServerLoginCleanupAllowsDeletion(t *testing.T) {
 				done = f.serverRun(n)
 			} else {
 				want = domain.SubscriptionCanceled
-				f.service.subscriptionOpen = func(context.Context, string, domain.ID, []byte, *slog.Logger) (serverSubscriptionNative, error) {
+				f.service.subscriptionOpen = func(context.Context, nativeScope, domain.ID, []byte, *slog.Logger) (serverSubscriptionNative, error) {
 					return n, nil
 				}
 				ctx, stop := context.WithCancel(failedLoginContext())
@@ -173,7 +173,10 @@ func prepareFailedLoginRuntime(t *testing.T, f *subscriptionFixture, owner domai
 	if err := security.PrivateDir(home); err != nil {
 		t.Fatal(err)
 	}
-	if err := security.WriteAtomic(filepath.Join(home, "auth.json"), []byte("synthetic-private-login-token")); err != nil {
+	if err := security.PrivateDir(filepath.Join(home, "codex")); err != nil {
+		t.Fatal(err)
+	}
+	if err := security.WriteAtomic(filepath.Join(home, "codex", "auth.json"), []byte("synthetic-private-login-token")); err != nil {
 		t.Fatal(err)
 	}
 	probe := filepath.Join(root, "subscription-runtime", "probes", string(owner)+"-12345")
@@ -214,8 +217,19 @@ func TestLegacyFailedServerLoginCleanupPreservesOtherOwnership(t *testing.T) {
 			if err := f.service.recoverFailedServerLogin(failedLoginContext(), f.input.AccountID, operation); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := os.Lstat(home); !os.IsNotExist(err) {
-				t.Fatal("private runtime retained")
+			// The historical per-operation runtime is retained as ordinary data; only
+			// its transient credential file is retired under the original ownership.
+			if removed {
+				if _, err := os.Lstat(home); !os.IsNotExist(err) {
+					t.Fatal("previously removed runtime reappeared")
+				}
+			} else {
+				if _, err := os.Stat(home); err != nil {
+					t.Fatal("recovery removed the retained runtime directory")
+				}
+				if _, err := os.Lstat(filepath.Join(home, "codex", "auth.json")); !os.IsNotExist(err) {
+					t.Fatal("transient credential file was retained")
+				}
 			}
 			if _, err := os.Stat(foreign); err != nil {
 				t.Fatal("unrelated probe was removed", err)
@@ -254,8 +268,8 @@ func TestFailedServerLoginCleanupCheckpointSurvivesRestart(t *testing.T) {
 	if a.Subscription.ServerOperation.CleanupPhase != domain.SubscriptionNativeCleanupConfirmed || !a.Subscription.RecoveryRequired || a.Subscription.Pending == nil || a.Health != domain.AccountFailed {
 		t.Fatal("native cleanup checkpoint or credential fence was lost")
 	}
-	if _, err := os.Lstat(home); !os.IsNotExist(err) {
-		t.Fatal("native runtime was not removed")
+	if _, err := os.Lstat(filepath.Join(home, "codex", "auth.json")); !os.IsNotExist(err) {
+		t.Fatal("transient native credential file was not retired")
 	}
 	if err := f.deleteFailedLogin(f.failedLoginDeletion()); err == nil {
 		t.Fatal("native cleanup alone permitted deletion")
@@ -486,7 +500,7 @@ func TestFailedServerLoginCleanupAllowsFreshWorkerLogin(t *testing.T) {
 	}
 }
 
-func TestFailedServerLoginMaintenanceDoesNotRepeatFailedCleanup(t *testing.T) {
+func TestFailedServerLoginMaintenanceBacksOffFailedCleanup(t *testing.T) {
 	f, _ := legacyFailedServerLogin(t, false)
 	f.secrets.referenceError = domain.Fail(domain.Unavailable, "Fixture vault unavailable.", "Retry after restart.")
 	ctx, stop := context.WithCancel(failedLoginContext())
@@ -505,13 +519,49 @@ func TestFailedServerLoginMaintenanceDoesNotRepeatFailedCleanup(t *testing.T) {
 			f.secrets.mu.Unlock()
 			_, a := f.record()
 			if attempts != 1 || !a.Subscription.RecoveryRequired || a.Subscription.Pending == nil {
-				t.Fatal("failed cleanup was repeated or released its fence")
+				t.Fatal("failed cleanup was retried before its backoff or released its fence")
 			}
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal("maintenance did not attempt original cleanup")
+}
+
+func TestFailedServerLoginMaintenanceRetriesCleanupAfterATransientFailure(t *testing.T) {
+	f, operation := legacyFailedServerLogin(t, false)
+	f.service.serverCleanupRetryBase = 20 * time.Millisecond
+	f.secrets.mu.Lock()
+	f.secrets.referenceError = domain.Fail(domain.Unavailable, "Fixture vault unavailable.", "Retry the cleanup.")
+	f.secrets.mu.Unlock()
+	ctx, stop := context.WithCancel(failedLoginContext())
+	done := make(chan struct{})
+	go func() { defer close(done); f.service.runServerSubscriptions(ctx) }()
+	defer func() { stop(); awaitServerFixture(t, done) }()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		f.secrets.mu.Lock()
+		attempts := f.secrets.enumerations
+		f.secrets.mu.Unlock()
+		if attempts >= 3 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("maintenance stopped retrying a failed cleanup")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	f.secrets.mu.Lock()
+	f.secrets.referenceError = nil
+	f.secrets.mu.Unlock()
+	for time.Now().Before(deadline) {
+		_, a := f.record()
+		if a.Subscription.ServerOperation.ID == operation && a.Subscription.ServerOperation.CleanupPhase == domain.SubscriptionCredentialCleanupConfirmed {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("a recovered vault did not complete the cleanup in the same server process")
 }
 
 func TestFailedServerLoginCleanupKeepsRetainedReferences(t *testing.T) {

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import { useLayoutEffect, useRef } from "react";
-import { copy, useLocale } from "./localization";
+import { copy, useLocale, type MessageKey } from "./localization";
 import { Comparison } from "./session-diff-model";
 import {
   SessionTabKind,
@@ -10,6 +10,18 @@ import {
   type SessionTab,
 } from "./session-tabs";
 import { bindingAria, shortcutPlatform } from "./shortcuts";
+import "./tab-strip.css";
+import { revealTabItem } from "./tab-strip";
+/**
+ * Presentation label per Comparison mode. Keyed by the enum so a new mode
+ * fails typecheck instead of silently reusing the working-tree label.
+ */
+const comparisonLabelKeys: Record<Comparison, MessageKey> = {
+  [Comparison.WorkingTree]: "session-diff.workingTreeAgainstCurrentHead_f0fac9",
+  [Comparison.Staged]: "session-diff.stagedChangesAgainstCurrentHead_9974f1",
+  [Comparison.Creation]: "session-diff.workingTreeAgainstCreationCommit_3102e8",
+  [Comparison.Branch]: "session-diff.branchChanges",
+};
 export function tabName(tab: SessionTab): string {
   switch (tab.kind) {
     case SessionTabKind.Conversation:
@@ -17,7 +29,7 @@ export function tabName(tab: SessionTab): string {
     case SessionTabKind.File:
       return tab.path;
     case SessionTabKind.Comparison:
-      return `${copy("session.diff_7ecf46")} · ${tab.path} · ${copy(tab.comparison === Comparison.Creation ? "session-diff.workingTreeAgainstCreationCommit_3102e8" : tab.comparison === Comparison.Staged ? "session-diff.stagedChangesAgainstCurrentHead_9974f1" : "session-diff.workingTreeAgainstCurrentHead_f0fac9")}`;
+      return `${copy("session.diff_7ecf46")} · ${tab.path} · ${copy(comparisonLabelKeys[tab.comparison])}`;
     case SessionTabKind.Terminal:
       // The tab bar labels terminals by their Session presentation number.
       return copy("product-identity.terminal");
@@ -41,11 +53,8 @@ export function SessionTabBar({
   close,
   id,
   closeAria,
-  newPage,
 }: {
   closeAria?: string;
-  /** Opens the New browser page dialog; an ordinary button, never a tab. */
-  newPage?: (opener: HTMLButtonElement) => void;
   tabs: readonly SessionTab[];
   selected: string;
   select: (key: string) => void;
@@ -57,14 +66,14 @@ export function SessionTabBar({
   const terminals = useSessionTabsStore().terminalPresentation(id);
   const root = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
-    root.current
-      ?.querySelector<HTMLElement>('[aria-selected="true"]')
-      ?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    revealTabItem(
+      root.current?.querySelector<HTMLElement>('[aria-selected="true"]'),
+    );
   }, [selected, tabs.length]);
   return (
     <>
       <div
-        className="session-tabs"
+        className="tab-strip session-tabs"
         ref={root}
         role="tablist"
         aria-label={copy("session-tabs.tabs")}
@@ -79,12 +88,13 @@ export function SessionTabBar({
                 : tabName(tab);
           return (
             <div
-              className={`session-tab${selected === key ? " is-selected" : ""}`}
+              className={`tab-item tab-item-dynamic session-tab${selected === key ? " is-selected" : ""}`}
               key={key}
               role="presentation"
             >
               <button
                 type="button"
+                className="tab-label"
                 id={`session-tab-${id}-${index}`}
                 role="tab"
                 aria-label={
@@ -110,6 +120,7 @@ export function SessionTabBar({
                 }
                 tabIndex={selected === key ? 0 : -1}
                 onClick={() => select(key)}
+                onFocus={(event) => revealTabItem(event.currentTarget)}
                 onKeyDown={(event) => {
                   if (event.nativeEvent.isComposing) return;
                   const next =
@@ -135,7 +146,7 @@ export function SessionTabBar({
               </button>
               {index > 0 ? (
                 <button
-                  className="session-tab-close"
+                  className="tab-close session-tab-close"
                   type="button"
                   aria-label={copy("session-tabs.close", { name })}
                   aria-keyshortcuts={
@@ -150,18 +161,6 @@ export function SessionTabBar({
           );
         })}
       </div>
-      {newPage ? (
-        <button
-          type="button"
-          className="session-new-page"
-          aria-label={copy("session-browser.newPage")}
-          title={copy("session-browser.newPage")}
-          aria-haspopup="dialog"
-          onClick={(event) => newPage(event.currentTarget)}
-        >
-          +
-        </button>
-      ) : null}
     </>
   );
 }

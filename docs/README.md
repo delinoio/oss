@@ -52,6 +52,14 @@ Record new implementation status, validation results and unresolved limits in pu
 
 ## Project Catalog
 
+### bundlewhy
+
+- [Project index](project-bundlewhy.md)
+- [Rust core, CLI and local server](crates-bundlewhy-foundation.md)
+- [Web UI](apps-bundlewhy-web-contract.md)
+- [Connect protocol v1](protos-bundlewhy-v1-contract.md)
+- [Engine adapters and distribution](packages-bundlewhy-distribution-contract.md)
+
 ### typeopt
 
 - [Project index](project-typeopt.md)
@@ -84,6 +92,7 @@ Record new implementation status, validation results and unresolved limits in pu
 - [Optional current-user services](cmds-delidev-user-services-contract.md)
 - [Native subagent observations](cmds-delidev-subagents-contract.md)
 - [Native harness adapter contract](cmds-delidev-harness-contract.md)
+- [Native OpenCode testing runbook](cmds-delidev-opencode-native-testing.md)
 - [Direct execution startup](cmds-delidev-execution-startup-contract.md)
 - [Protected credential storage](cmds-delidev-credentials-contract.md)
 - [Read-only diagnostics](cmds-delidev-diagnostics-contract.md)
@@ -94,7 +103,7 @@ Record new implementation status, validation results and unresolved limits in pu
 - [Account lifecycle](cmds-delidev-accounts-contract.md)
 - [Managed Codex subscriptions](cmds-delidev-subscription-contract.md)
 - [OpenCode Go subscriptions](cmds-delidev-opencode-go-subscription-contract.md)
-- [Grok Build subscriptions (planned)](cmds-delidev-grok-subscription-contract.md)
+- [Grok Build subscriptions (storage and lease layer implemented; login, execution and advertisement planned)](cmds-delidev-grok-subscription-contract.md)
 - [Provider inspection](cmds-delidev-providers-contract.md)
 - [Provider and model catalog](cmds-delidev-catalog-contract.md)
 - [Native Codex model observations (pending)](cmds-delidev-native-models-contract.md)
@@ -175,7 +184,7 @@ Record new implementation status, validation results and unresolved limits in pu
 ### public-docs
 
 - `docs/project-public-docs.md`
-- `docs/apps-public-docs-foundation.md` (single `oss.delino.io` publisher, seven project subpaths, site selector, and stable `/devhud` section)
+- `docs/apps-public-docs-foundation.md` (single `oss.delino.io` publisher, eight project subpaths including bundlewhy, site selector, and stable `/devhud` section)
 - `docs/packages-docs-site-switcher-contract.md` (shared accessible documentation site selector package and fixed site registry)
 
 ### serde-feather

@@ -159,12 +159,12 @@ func validateSidechatCommonConfig(config map[string]json.RawMessage) error {
 // additionally observes normalized effective flags, including thread-local
 // project requirements. Never accept requested flags as observed enforcement.
 func (c *Client) verifySidechat(ctx context.Context, cwd string, thread domain.ID) (returned error) {
-	if c.sidechat == "" {
+	if c.sidechat == "" && !c.managedTitle {
 		return nil
 	}
 	defer func() {
 		if returned != nil && c.logger != nil {
-			c.logger.WarnContext(ctx, "Codex Sidechat authority rejected", "owner_id", c.ownerID, "code", domain.SafeError(returned).Code)
+			c.logger.WarnContext(ctx, "Codex Sidechat authority rejected", "owner_id", c.ownerID, "managed_title", c.managedTitle, "code", domain.SafeError(returned).Code)
 		}
 	}()
 	if c.managedHome != "" {
@@ -172,7 +172,7 @@ func (c *Client) verifySidechat(ctx context.Context, cwd string, thread domain.I
 			return err
 		}
 	}
-	response, err := c.wire.Call(ctx, domain.NewID(), "config/read", struct {
+	response, err := c.call(ctx, domain.NewID(), "config/read", struct {
 		Cwd           string `json:"cwd"`
 		IncludeLayers bool   `json:"includeLayers"`
 	}{Cwd: cwd})
@@ -187,20 +187,26 @@ func (c *Client) verifySidechat(ctx context.Context, cwd string, thread domain.I
 	if response.ErrorCode != nil || domain.Decode(response.Result, &config) != nil {
 		return sidechatMismatch("config-shape")
 	}
-	if c.codeReviewModel != "" {
-		var model string
-		if json.Unmarshal(config.Config["review_model"], &model) != nil || model != c.codeReviewModel {
-			return domain.NativeCodeReviewUnavailable()
+	if c.managedTitle {
+		if err := validateManagedTitleConfig(config.Config); err != nil {
+			return err
+		}
+	} else {
+		if c.codeReviewModel != "" {
+			var model string
+			if json.Unmarshal(config.Config["review_model"], &model) != nil || model != c.codeReviewModel {
+				return domain.NativeCodeReviewUnavailable()
+			}
+		}
+		if c.codeReviewModel != "" {
+			if !nativePathEqual(cwd, c.codeReviewRoot) || validateNativeReviewPermissionProfile(config.Config) != nil {
+				return sidechatMismatch("restricted-review-filesystem")
+			}
+		} else if err := validateSidechatConfig(config.Config); err != nil {
+			return err
 		}
 	}
-	if c.codeReviewModel != "" {
-		if !nativePathEqual(cwd, c.codeReviewRoot) || validateNativeReviewPermissionProfile(config.Config) != nil {
-			return sidechatMismatch("restricted-review-filesystem")
-		}
-	} else if err := validateSidechatConfig(config.Config); err != nil {
-		return err
-	}
-	response, err = c.wire.Call(ctx, domain.NewID(), "experimentalFeature/list", struct {
+	response, err = c.call(ctx, domain.NewID(), "experimentalFeature/list", struct {
 		Thread domain.ID `json:"threadId,omitempty"`
 		Limit  int       `json:"limit"`
 	}{thread, 256})
@@ -221,6 +227,19 @@ func (c *Client) verifySidechat(ctx context.Context, cwd string, thread domain.I
 	}
 	if response.ErrorCode != nil || domain.Decode(response.Result, &observed) != nil || len(observed.Data) == 0 || len(observed.Data) > 256 || observed.Next != nil {
 		return sidechatUnavailable()
+	}
+	if c.managedTitle {
+		enabled := map[string]bool{}
+		for _, f := range observed.Data {
+			if domain.Text(f.Name, "native feature", 128, true) != nil || f.Enabled == nil || f.DefaultEnabled == nil || !slices.Contains([]string{"stable", "beta", "underDevelopment", "deprecated", "removed"}, f.Stage) {
+				return managedTitleUnavailable()
+			}
+			if _, duplicate := enabled[f.Name]; duplicate {
+				return managedTitleUnavailable()
+			}
+			enabled[f.Name] = *f.Enabled
+		}
+		return verifyManagedTitleFeatures(enabled)
 	}
 	seen := map[string]bool{}
 	for _, f := range observed.Data {

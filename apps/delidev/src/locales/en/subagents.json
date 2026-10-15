@@ -23,7 +23,7 @@
   "subagents.output_296ead": "Output: <s0/>",
   "subagents.observationOnlyExcludedFromAdditiveBilling_23cc58": "Observation only; excluded from additive billing totals.",
   "subagents.subagents_88296a": "Subagents",
-  "subagents.readOnlyNativeHierarchyParentCompletion_036e57": "Read-only native hierarchy. Parent completion does not complete running children. Codex 0.151.0, Claude 2.1.236 and OpenCode 1.18.32 API observations are supported; unavailable telemetry stays explicit.",
+  "subagents.readOnlyNativeHierarchyParentCompletion_036e57": "Read-only native hierarchy. Parent completion does not complete running children. Codex, Claude and OpenCode API observations are supported for installations at or above their baselines; unavailable telemetry stays explicit.",
   "subagents.thisServerDoesNotSupportChild_0baf88": "This server does not support child-agent observations.",
   "subagents.loadingChildObservations_0a8d53": "Loading child observations…",
   "subagents.noNativeChildObservationsAreAvailable_8c2be5": "No native child observations are available.",

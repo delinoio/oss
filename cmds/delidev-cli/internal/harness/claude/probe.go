@@ -63,7 +63,7 @@ func Probe(ctx context.Context, config ProbeConfig) (returned error) {
 			}
 		}
 	}()
-	if config.Version != SupportedVersion {
+	if !domain.HarnessVersionAllowed(domain.ClaudeCode, config.Version) {
 		return incompatible()
 	}
 	phase = runtimePhase
@@ -83,7 +83,7 @@ func Probe(ctx context.Context, config ProbeConfig) (returned error) {
 	config.Process.Stderr = &probeStderr{wire: wire}
 	phase = launchPhase
 	if config.Process.Logger != nil {
-		config.Process.Logger.InfoContext(ctx, "Claude Code native handshake started", "owner_id", config.Process.OwnerID, "profile_version", SupportedVersion)
+		config.Process.Logger.InfoContext(ctx, "Claude Code native handshake started", "owner_id", config.Process.OwnerID, "installed_version", config.Version, "baseline_version", SupportedVersion)
 	}
 	h, err := process.Start(bounded, config.Process)
 	if err != nil {
@@ -191,6 +191,7 @@ type probeWire struct {
 	ready   chan struct{}
 	cancel  context.CancelFunc
 	seen    bool
+	prelude bool
 	problem *domain.Error
 }
 
@@ -216,6 +217,22 @@ func (w *probeWire) fail(problem *domain.Error) {
 }
 
 func (w *probeWire) receive(raw []byte) {
+	if probeFrameIsPrelude(raw) {
+		// At most one schema-checked startup event may precede the response.
+		// It is discarded; a repeat, a late event or any other shape fails.
+		w.mu.Lock()
+		repeated := w.prelude || w.seen
+		w.prelude = true
+		w.mu.Unlock()
+		if repeated {
+			w.fail(incompatible())
+			return
+		}
+		if err := validateProbePrelude(raw); err != nil {
+			w.fail(domain.SafeError(err))
+		}
+		return
+	}
 	if err := validateInitialize(raw, w.id); err != nil {
 		w.fail(domain.SafeError(err))
 		return

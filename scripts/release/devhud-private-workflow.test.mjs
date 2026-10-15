@@ -30,6 +30,14 @@ const apiDockerfile = readFileSync(
   ),
   "utf8",
 );
+const apiScripts = JSON.parse(
+  readFileSync(
+    fileURLToPath(
+      new URL("../../servers/devhud-api/package.json", import.meta.url),
+    ),
+    "utf8",
+  ),
+).scripts;
 const windowsStep = yaml
   .load(workflow)
   .jobs.desktop.steps.find(
@@ -282,8 +290,9 @@ test("private workflow compiles the exact installed package kind for every deskt
 test("private workflow creates component SBOMs from package-aware scan targets", () => {
   const assemble = workflow.slice(workflow.indexOf("\n  assemble:"));
   assert.equal(
-    workflow.split("uses: anchore/sbom-action/download-syft@v0.21.0").length -
-      1,
+    workflow.split(
+      "uses: anchore/sbom-action/download-syft@a930d0ac434e3182448fe678398ba5713717112a",
+    ).length - 1,
     4,
   );
   for (const target of [
@@ -394,7 +403,11 @@ test("private workflow installs native prerequisites before desktop and mobile b
       simulators.indexOf("run-mobile.mjs ios build"),
   );
   assert.equal(mobile.split(appleTargets).length - 1, 1);
-  assert.ok(mobile.includes("uses: actions/setup-java@v5"));
+  assert.ok(
+    mobile.includes(
+      "uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961",
+    ),
+  );
   assert.ok(
     mobile.includes('distribution: temurin\n          java-version: "17"'),
   );
@@ -414,8 +427,9 @@ test("private workflow installs native prerequisites before desktop and mobile b
     );
   }
   assert.ok(
-    mobile.indexOf("uses: actions/setup-java@v5") <
-      mobile.indexOf("mobile:generate"),
+    mobile.indexOf(
+      "uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961",
+    ) < mobile.indexOf("mobile:generate"),
   );
   assert.ok(
     mobile.indexOf("Install Android Linux host prerequisites") <
@@ -466,7 +480,7 @@ test("private workflow runs PostgreSQL schema readiness before recording OCI evi
     workflow.indexOf("\n  assemble:"),
   );
   const integration =
-    "go test -tags=integration ./servers/devhud-api/internal/postgres";
+    "go test -count=1 -tags=integration ./servers/devhud-api/internal/postgres";
   const evidence =
     "node scripts/release/devhud-evidence.mjs record --id ${{ matrix.id }}";
   assert.ok(ociJob.includes("image: postgres:15-bookworm"));
@@ -476,6 +490,21 @@ test("private workflow runs PostgreSQL schema readiness before recording OCI evi
     ),
   );
   assert.ok(ociJob.indexOf(integration) < ociJob.indexOf(evidence));
+  const postgresStep = yaml
+    .load(workflow)
+    .jobs.oci.steps.find(
+      ({ name }) =>
+        name === "Validate PostgreSQL migrations and schema readiness",
+    );
+  assert.equal(postgresStep.run, integration);
+  assert.equal(
+    apiScripts["ci:integration"],
+    "go test -count=1 -tags=integration ./internal/postgres",
+  );
+  assert.equal(
+    apiScripts["ci:oci:integration"],
+    `node ../../scripts/ci/from-root.mjs ${integration}`,
+  );
 });
 
 test("private workflow binds provenance to its run attempt and actual timestamps", () => {

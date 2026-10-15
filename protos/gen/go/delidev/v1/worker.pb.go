@@ -24,7 +24,9 @@ const (
 type WorkerCapability int32
 
 const (
-	WorkerCapability_WORKER_CAPABILITY_UNSPECIFIED                    WorkerCapability = 0
+	WorkerCapability_WORKER_CAPABILITY_UNSPECIFIED WorkerCapability = 0
+	// Executes server-owned Claude setup-token accounts from a protected lease.
+	WorkerCapability_WORKER_CAPABILITY_MANAGED_CLAUDE_EXECUTION_V1    WorkerCapability = 41
 	WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_REVIEW_V1         WorkerCapability = 58
 	WorkerCapability_WORKER_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1      WorkerCapability = 54
 	WorkerCapability_WORKER_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1         WorkerCapability = 63
@@ -34,17 +36,44 @@ const (
 	WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1    WorkerCapability = 50
 	WorkerCapability_WORKER_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1   WorkerCapability = 51
 	WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1          WorkerCapability = 29
+	WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_TITLES_V1        WorkerCapability = 32
 	WorkerCapability_WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1       WorkerCapability = 30
 	WorkerCapability_WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1   WorkerCapability = 28
 	WorkerCapability_WORKER_CAPABILITY_SIDECHAT_QUESTION_RETRY_V1     WorkerCapability = 31
 	WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_REVERT_V1        WorkerCapability = 36
-	WorkerCapability_WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1 WorkerCapability = 27
-	WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1  WorkerCapability = 38
+	// Original Worker resolves the retained skill proof of an earlier Revert target.
+	WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_REVERT_TARGET_PROOF_V1 WorkerCapability = 64
+	WorkerCapability_WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1       WorkerCapability = 27
+	WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1        WorkerCapability = 38
+	// Worker accepts retained branch prefix selection version 2 (exact JSON-style quoting).
+	WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_EXACT_QUOTE_V1 WorkerCapability = 65
+	// Worker runs independent session preparation and execution jobs concurrently
+	// on one stream. The server echoes it in AttachWorkerResponse and the Worker
+	// advertises it only after observing that echo.
+	WorkerCapability_WORKER_CAPABILITY_PARALLEL_SESSIONS_V1 WorkerCapability = 66
+	// Reserved: the Worker holds one account-owner lease per managed Codex account
+	// and runs independent sessions as execution members of that owner. Allocated
+	// without active behavior until the owner/member change activates it.
+	WorkerCapability_WORKER_CAPABILITY_SHARED_SUBSCRIPTION_OWNER_V1 WorkerCapability = 67
+	// Reserved: the Worker runs managed Claude device-owned members with
+	// session-private history and one canonical native secure-storage owner.
+	// Allocated without active behavior until the Claude member change activates it.
+	WorkerCapability_WORKER_CAPABILITY_CLAUDE_DEVICE_OWNED_MEMBERS_V1 WorkerCapability = 68
+	// Independently negotiated OpenCode General Chat Fork profile v2: the Worker
+	// clones completed plain timed reasoning parts. Requires capability 15.
+	WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_REASONING_V1 WorkerCapability = 69
+	// Independently negotiated OpenCode image attachments: the Worker resolves
+	// validated private image files into native file parts and verifies the closed
+	// native expansion. Requires capability 25.
+	WorkerCapability_WORKER_CAPABILITY_OPENCODE_IMAGE_INPUTS_V1       WorkerCapability = 70
 	WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1      WorkerCapability = 26
 	WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1               WorkerCapability = 24
 	WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1                WorkerCapability = 25
 	WorkerCapability_WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1     WorkerCapability = 35
 	WorkerCapability_WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1 WorkerCapability = 20
+	// Declared managed Grok Build subscription identifier. It grants no authority
+	// and is neither advertised nor accepted until the owning feature activates it.
+	WorkerCapability_WORKER_CAPABILITY_MANAGED_GROK_SUBSCRIPTIONS_V1  WorkerCapability = 21
 	WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1           WorkerCapability = 23
 	WorkerCapability_WORKER_CAPABILITY_REPOSITORY_CLONE_V1            WorkerCapability = 18
 	WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1      WorkerCapability = 19
@@ -72,6 +101,7 @@ const (
 var (
 	WorkerCapability_name = map[int32]string{
 		0:  "WORKER_CAPABILITY_UNSPECIFIED",
+		41: "WORKER_CAPABILITY_MANAGED_CLAUDE_EXECUTION_V1",
 		58: "WORKER_CAPABILITY_NATIVE_CODEX_REVIEW_V1",
 		54: "WORKER_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1",
 		63: "WORKER_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1",
@@ -81,17 +111,26 @@ var (
 		50: "WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1",
 		51: "WORKER_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1",
 		29: "WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1",
+		32: "WORKER_CAPABILITY_MANAGED_CODEX_TITLES_V1",
 		30: "WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1",
 		28: "WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1",
 		31: "WORKER_CAPABILITY_SIDECHAT_QUESTION_RETRY_V1",
 		36: "WORKER_CAPABILITY_CODEX_SESSION_REVERT_V1",
+		64: "WORKER_CAPABILITY_CODEX_SESSION_REVERT_TARGET_PROOF_V1",
 		27: "WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1",
 		38: "WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1",
+		65: "WORKER_CAPABILITY_BRANCH_PREFIX_EXACT_QUOTE_V1",
+		66: "WORKER_CAPABILITY_PARALLEL_SESSIONS_V1",
+		67: "WORKER_CAPABILITY_SHARED_SUBSCRIPTION_OWNER_V1",
+		68: "WORKER_CAPABILITY_CLAUDE_DEVICE_OWNED_MEMBERS_V1",
+		69: "WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_REASONING_V1",
+		70: "WORKER_CAPABILITY_OPENCODE_IMAGE_INPUTS_V1",
 		26: "WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1",
 		24: "WORKER_CAPABILITY_NATIVE_SKILLS_V1",
 		25: "WORKER_CAPABILITY_IMAGE_INPUTS_V1",
 		35: "WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1",
 		20: "WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1",
+		21: "WORKER_CAPABILITY_MANAGED_GROK_SUBSCRIPTIONS_V1",
 		23: "WORKER_CAPABILITY_EXECUTION_STARTUP_V1",
 		18: "WORKER_CAPABILITY_REPOSITORY_CLONE_V1",
 		19: "WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1",
@@ -114,47 +153,57 @@ var (
 		12: "WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1",
 	}
 	WorkerCapability_value = map[string]int32{
-		"WORKER_CAPABILITY_UNSPECIFIED":                       0,
-		"WORKER_CAPABILITY_NATIVE_CODEX_REVIEW_V1":            58,
-		"WORKER_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1":         54,
-		"WORKER_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1":            63,
-		"WORKER_CAPABILITY_NAMED_WORKSPACE_DIRECTORIES_V1":    53,
-		"WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1":              52,
-		"WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1":         22,
-		"WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1":       50,
-		"WORKER_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1":      51,
-		"WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1":             29,
-		"WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1":          30,
-		"WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1":      28,
-		"WORKER_CAPABILITY_SIDECHAT_QUESTION_RETRY_V1":        31,
-		"WORKER_CAPABILITY_CODEX_SESSION_REVERT_V1":           36,
-		"WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1":    27,
-		"WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1":     38,
-		"WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1":         26,
-		"WORKER_CAPABILITY_NATIVE_SKILLS_V1":                  24,
-		"WORKER_CAPABILITY_IMAGE_INPUTS_V1":                   25,
-		"WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1":        35,
-		"WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1":    20,
-		"WORKER_CAPABILITY_EXECUTION_STARTUP_V1":              23,
-		"WORKER_CAPABILITY_REPOSITORY_CLONE_V1":               18,
-		"WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1":         19,
-		"WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1":          17,
-		"WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1":       16,
-		"WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1":      5,
-		"WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1":       13,
-		"WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1":    14,
-		"WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1":     15,
-		"WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1":         1,
-		"WORKER_CAPABILITY_SESSION_FORWARDING_V1":             2,
-		"WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1":    3,
-		"WORKER_CAPABILITY_SESSION_TERMINALS_V1":              4,
-		"WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1": 6,
-		"WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1":   7,
-		"WORKER_CAPABILITY_SUBSCRIPTION_OBSERVATIONS_V1":      8,
-		"WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1":              9,
-		"WORKER_CAPABILITY_CODEX_API_PROXY_V1":                10,
-		"WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1":   11,
-		"WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1":  12,
+		"WORKER_CAPABILITY_UNSPECIFIED":                             0,
+		"WORKER_CAPABILITY_MANAGED_CLAUDE_EXECUTION_V1":             41,
+		"WORKER_CAPABILITY_NATIVE_CODEX_REVIEW_V1":                  58,
+		"WORKER_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1":               54,
+		"WORKER_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1":                  63,
+		"WORKER_CAPABILITY_NAMED_WORKSPACE_DIRECTORIES_V1":          53,
+		"WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1":                    52,
+		"WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1":               22,
+		"WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1":             50,
+		"WORKER_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1":            51,
+		"WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1":                   29,
+		"WORKER_CAPABILITY_MANAGED_CODEX_TITLES_V1":                 32,
+		"WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1":                30,
+		"WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1":            28,
+		"WORKER_CAPABILITY_SIDECHAT_QUESTION_RETRY_V1":              31,
+		"WORKER_CAPABILITY_CODEX_SESSION_REVERT_V1":                 36,
+		"WORKER_CAPABILITY_CODEX_SESSION_REVERT_TARGET_PROOF_V1":    64,
+		"WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1":          27,
+		"WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1":           38,
+		"WORKER_CAPABILITY_BRANCH_PREFIX_EXACT_QUOTE_V1":            65,
+		"WORKER_CAPABILITY_PARALLEL_SESSIONS_V1":                    66,
+		"WORKER_CAPABILITY_SHARED_SUBSCRIPTION_OWNER_V1":            67,
+		"WORKER_CAPABILITY_CLAUDE_DEVICE_OWNED_MEMBERS_V1":          68,
+		"WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_REASONING_V1": 69,
+		"WORKER_CAPABILITY_OPENCODE_IMAGE_INPUTS_V1":                70,
+		"WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1":               26,
+		"WORKER_CAPABILITY_NATIVE_SKILLS_V1":                        24,
+		"WORKER_CAPABILITY_IMAGE_INPUTS_V1":                         25,
+		"WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1":              35,
+		"WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1":          20,
+		"WORKER_CAPABILITY_MANAGED_GROK_SUBSCRIPTIONS_V1":           21,
+		"WORKER_CAPABILITY_EXECUTION_STARTUP_V1":                    23,
+		"WORKER_CAPABILITY_REPOSITORY_CLONE_V1":                     18,
+		"WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1":               19,
+		"WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1":                17,
+		"WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1":             16,
+		"WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1":            5,
+		"WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1":             13,
+		"WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1":          14,
+		"WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1":           15,
+		"WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1":               1,
+		"WORKER_CAPABILITY_SESSION_FORWARDING_V1":                   2,
+		"WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1":          3,
+		"WORKER_CAPABILITY_SESSION_TERMINALS_V1":                    4,
+		"WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1":       6,
+		"WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1":         7,
+		"WORKER_CAPABILITY_SUBSCRIPTION_OBSERVATIONS_V1":            8,
+		"WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1":                    9,
+		"WORKER_CAPABILITY_CODEX_API_PROXY_V1":                      10,
+		"WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1":         11,
+		"WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1":        12,
 	}
 )
 
@@ -4226,8 +4275,13 @@ type NativeCodeReviewResponseUsage struct {
 	UnspecifiedNativeCost bool                   `protobuf:"varint,9,opt,name=unspecified_native_cost,json=unspecifiedNativeCost,proto3" json:"unspecified_native_cost,omitempty"`
 	Sequence              uint64                 `protobuf:"varint,10,opt,name=sequence,proto3" json:"sequence,omitempty"`
 	NativeVersion         string                 `protobuf:"bytes,11,opt,name=native_version,json=nativeVersion,proto3" json:"native_version,omitempty"`
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	// Worker clock instant (Unix milliseconds) at which the original response was
+	// observed. The server prices the receipt with the version eligible at this
+	// instant, so a delayed first publication cannot reprice it. Zero means an
+	// older Worker did not report it and the first-commit time applies.
+	ObservedAtUnixMs int64 `protobuf:"varint,12,opt,name=observed_at_unix_ms,json=observedAtUnixMs,proto3" json:"observed_at_unix_ms,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *NativeCodeReviewResponseUsage) Reset() {
@@ -4335,6 +4389,13 @@ func (x *NativeCodeReviewResponseUsage) GetNativeVersion() string {
 		return x.NativeVersion
 	}
 	return ""
+}
+
+func (x *NativeCodeReviewResponseUsage) GetObservedAtUnixMs() int64 {
+	if x != nil {
+		return x.ObservedAtUnixMs
+	}
+	return 0
 }
 
 var File_delidev_v1_worker_proto protoreflect.FileDescriptor
@@ -4678,7 +4739,7 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\aitem_id\x18\b \x01(\tR\x06itemId\x12?\n" +
 	"\x05usage\x18\x0e \x01(\v2).delidev.v1.NativeCodeReviewResponseUsageR\x05usage\"=\n" +
 	"\x1fPublishNativeCodeReviewResponse\x12\x1a\n" +
-	"\brevision\x18\x01 \x01(\x04R\brevision\"\xa5\x04\n" +
+	"\brevision\x18\x01 \x01(\x04R\brevision\"\xd4\x04\n" +
 	"\x1dNativeCodeReviewResponseUsage\x12'\n" +
 	"\x0fresponse_digest\x18\x01 \x01(\tR\x0eresponseDigest\x12\x19\n" +
 	"\x05input\x18\x02 \x01(\x03H\x00R\x05input\x88\x01\x01\x12&\n" +
@@ -4691,15 +4752,17 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\x17unspecified_native_cost\x18\t \x01(\bR\x15unspecifiedNativeCost\x12\x1a\n" +
 	"\bsequence\x18\n" +
 	" \x01(\x04R\bsequence\x12%\n" +
-	"\x0enative_version\x18\v \x01(\tR\rnativeVersionB\b\n" +
+	"\x0enative_version\x18\v \x01(\tR\rnativeVersion\x12-\n" +
+	"\x13observed_at_unix_ms\x18\f \x01(\x03R\x10observedAtUnixMsB\b\n" +
 	"\x06_inputB\x0f\n" +
 	"\r_cached_inputB\x14\n" +
 	"\x12_cache_write_inputB\t\n" +
 	"\a_outputB\x13\n" +
 	"\x11_reasoning_outputB\b\n" +
-	"\x06_total*\xe7\x0f\n" +
+	"\x06_total*\xf3\x13\n" +
 	"\x10WorkerCapability\x12!\n" +
-	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x12,\n" +
+	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x121\n" +
+	"-WORKER_CAPABILITY_MANAGED_CLAUDE_EXECUTION_V1\x10)\x12,\n" +
 	"(WORKER_CAPABILITY_NATIVE_CODEX_REVIEW_V1\x10:\x12/\n" +
 	"+WORKER_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1\x106\x12,\n" +
 	"(WORKER_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1\x10?\x124\n" +
@@ -4708,18 +4771,27 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"+WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1\x10\x16\x121\n" +
 	"-WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1\x102\x122\n" +
 	".WORKER_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1\x103\x12+\n" +
-	"'WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1\x10\x1d\x12.\n" +
+	"'WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1\x10\x1d\x12-\n" +
+	")WORKER_CAPABILITY_MANAGED_CODEX_TITLES_V1\x10 \x12.\n" +
 	"*WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1\x10\x1e\x122\n" +
 	".WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1\x10\x1c\x120\n" +
 	",WORKER_CAPABILITY_SIDECHAT_QUESTION_RETRY_V1\x10\x1f\x12-\n" +
-	")WORKER_CAPABILITY_CODEX_SESSION_REVERT_V1\x10$\x124\n" +
+	")WORKER_CAPABILITY_CODEX_SESSION_REVERT_V1\x10$\x12:\n" +
+	"6WORKER_CAPABILITY_CODEX_SESSION_REVERT_TARGET_PROOF_V1\x10@\x124\n" +
 	"0WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1\x10\x1b\x123\n" +
-	"/WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1\x10&\x12/\n" +
+	"/WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1\x10&\x122\n" +
+	".WORKER_CAPABILITY_BRANCH_PREFIX_EXACT_QUOTE_V1\x10A\x12*\n" +
+	"&WORKER_CAPABILITY_PARALLEL_SESSIONS_V1\x10B\x122\n" +
+	".WORKER_CAPABILITY_SHARED_SUBSCRIPTION_OWNER_V1\x10C\x124\n" +
+	"0WORKER_CAPABILITY_CLAUDE_DEVICE_OWNED_MEMBERS_V1\x10D\x12=\n" +
+	"9WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_REASONING_V1\x10E\x12.\n" +
+	"*WORKER_CAPABILITY_OPENCODE_IMAGE_INPUTS_V1\x10F\x12/\n" +
 	"+WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1\x10\x1a\x12&\n" +
 	"\"WORKER_CAPABILITY_NATIVE_SKILLS_V1\x10\x18\x12%\n" +
 	"!WORKER_CAPABILITY_IMAGE_INPUTS_V1\x10\x19\x120\n" +
 	",WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1\x10#\x124\n" +
-	"0WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1\x10\x14\x12*\n" +
+	"0WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1\x10\x14\x123\n" +
+	"/WORKER_CAPABILITY_MANAGED_GROK_SUBSCRIPTIONS_V1\x10\x15\x12*\n" +
 	"&WORKER_CAPABILITY_EXECUTION_STARTUP_V1\x10\x17\x12)\n" +
 	"%WORKER_CAPABILITY_REPOSITORY_CLONE_V1\x10\x12\x12/\n" +
 	"+WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1\x10\x13\x12.\n" +

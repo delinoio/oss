@@ -28,6 +28,13 @@ var nativeOAuthValue = regexp.MustCompile(`^[A-Za-z0-9_-]{16,512}$`)
 // It validates presentation; the original CLI alone creates PKCE and exchanges
 // the code. No URL is normalized, repaired or retained outside the operation.
 func ValidateLoginURL(raw string) error {
+	return validateAuthorizationURL(raw, false)
+}
+
+// validateAuthorizationURL applies the shared original-CLI URL grammar. The
+// setup-token profile is separate: it is inference-only, code-pasting and never
+// accepts a localhost callback that a remote server could not receive.
+func validateAuthorizationURL(raw string, setupToken bool) error {
 	invalid := func() error {
 		return domain.Fail(domain.Unsupported, "The original Claude login address is unsupported.", "Keep the original native operation; do not substitute another authentication flow.")
 	}
@@ -60,6 +67,9 @@ func ValidateLoginURL(raw string) error {
 		return invalid()
 	}
 	redirect := q.Get("redirect_uri")
+	if setupToken && (redirect != "https://platform.claude.com/oauth/code/callback" || q.Get("code") != "true") {
+		return invalid()
+	}
 	if redirect != "https://platform.claude.com/oauth/code/callback" {
 		callback, err := url.Parse(redirect)
 		if err != nil || callback.Scheme != "http" || callback.Hostname() != "localhost" || callback.Port() == "" || callback.User != nil || callback.Path != "/callback" || callback.RawPath != "" || callback.RawQuery != "" || callback.Fragment != "" || callback.ForceQuery {
@@ -71,6 +81,12 @@ func ValidateLoginURL(raw string) error {
 		}
 	}
 	scopes := strings.Fields(q.Get("scope"))
+	if setupToken {
+		if len(scopes) != 1 || scopes[0] != "user:inference" {
+			return invalid()
+		}
+		return nil
+	}
 	allowedScopes := []string{"org:create_api_key", "user:profile", "user:inference", "user:sessions:claude_code", "user:mcp_servers", "user:file_upload"}
 	if len(scopes) == 0 || !slices.Contains(scopes, "user:inference") || !slices.Contains(scopes, "user:profile") {
 		return invalid()
@@ -120,10 +136,10 @@ func authProblem() *domain.Error {
 	return domain.Fail(domain.Unauthenticated, "Claude subscription authentication could not be confirmed.", "Inspect the original Runner Device and login operation; do not resend the approval code.")
 }
 func authEnvironment(config AuthConfig) ([]string, error) {
-	if config.Version != SupportedVersion {
+	if !domain.HarnessVersionAllowed(domain.ClaudeCode, config.Version) {
 		return nil, incompatible()
 	}
-	env, err := nativeEnvironment(ProbeConfig{Process: config.Process, Version: config.Version, Home: config.Home}, false)
+	env, err := nativeEnvironment(ProbeConfig{Process: config.Process, Version: config.Version, Home: config.Home})
 	if err != nil {
 		return nil, err
 	}
@@ -184,7 +200,7 @@ func VerifyAuthVersion(ctx context.Context, config AuthConfig) error {
 	if err != nil {
 		return domain.SafeError(err)
 	}
-	if string(bytes.TrimSpace(raw)) != SupportedVersion+" (Claude Code)" {
+	if string(bytes.TrimSpace(raw)) != config.Version+" (Claude Code)" {
 		return incompatible()
 	}
 	return nil

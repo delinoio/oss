@@ -33,6 +33,10 @@ export class Connection {
   private controller?: AbortController;
   active = false;
   status = Status.Connecting;
+  /** Changes on every suspend and resume; identifies one connection generation. */
+  get epoch(): number {
+    return this.generation;
+  }
   constructor(
     readonly state: ProtectedState,
     readonly id: string,

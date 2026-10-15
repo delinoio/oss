@@ -56,6 +56,19 @@ const nativeBridge: ShortcutPreferenceBridge = {
         )
       : () => {},
 };
+/**
+ * True when the snapshot is a verified committed map or persistence is
+ * explicitly unavailable (default bindings apply). Every other problem leaves
+ * the saved map unverified until a successful reinspection clears it.
+ */
+export function shortcutSnapshotVerified(
+  snapshot: ShortcutPreferenceSnapshot,
+): boolean {
+  return (
+    snapshot.problem === null ||
+    snapshot.problem === ShortcutPreferenceProblem.Unavailable
+  );
+}
 export function parseShortcutSnapshot(
   raw: unknown,
 ): ShortcutPreferenceSnapshot {
@@ -81,12 +94,19 @@ export function parseShortcutSnapshot(
 }
 interface Controller {
   snapshot: ShortcutPreferenceSnapshot;
+  /**
+   * False only while the first read of the current bridge is unsettled. The
+   * empty startup overrides are not a committed map until it becomes true.
+   * Consumers outside a provider keep the ready default.
+   */
+  ready: boolean;
   operation?: ShortcutPreferenceOperation;
   save: (overrides: ShortcutOverrides, revision: number) => Promise<boolean>;
   reload: () => void;
 }
 const Context = createContext<Controller>({
   snapshot: defaults,
+  ready: true,
   save: async () => false,
   reload: () => {},
 });
@@ -103,6 +123,7 @@ export function ShortcutPreferenceProvider({
   const [operation, setOperation] = useState<
     ShortcutPreferenceOperation | undefined
   >(ShortcutPreferenceOperation.Reading);
+  const [ready, setReady] = useState(false);
   const running = useRef(false),
     generation = useRef(0),
     subscription = useRef<(() => void) | undefined>(undefined);
@@ -146,6 +167,7 @@ export function ShortcutPreferenceProvider({
   useEffect(() => {
     const owned = ++generation.current;
     running.current = true;
+    setReady(false);
     setOperation(ShortcutPreferenceOperation.Reading);
     void (async () => {
       try {
@@ -158,6 +180,7 @@ export function ShortcutPreferenceProvider({
       } finally {
         if (generation.current === owned) {
           running.current = false;
+          setReady(true);
           setOperation(undefined);
         }
       }
@@ -223,6 +246,7 @@ export function ShortcutPreferenceProvider({
     <Context.Provider
       value={{
         snapshot,
+        ready,
         operation,
         save: (overrides, revision) => run(overrides, revision),
         reload: () => {

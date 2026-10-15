@@ -5,12 +5,15 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
@@ -78,5 +81,39 @@ func TestNativeReviewRetainsExactObservationAcrossCancellationAndLostReceipt(t *
 				t.Fatal("foreign instance adopted original observation")
 			}
 		})
+	}
+}
+
+func TestNativeReviewReplayKeepsOriginalUsageObservationTime(t *testing.T) {
+	config := Config{Root: t.TempDir()}
+	c := &PublicationConfig{Credential: Credential{MachineID: domain.NewID(), ServerID: domain.NewID(), DeviceID: domain.NewID()}, Instance: domain.NewID(), Assignment: &pb.Resource{Id: string(domain.NewID()), Revision: 7, DocumentJson: []byte(`{"original":"assignment"}`)}}
+	root := filepath.Join(config.Root, "jobs", c.Assignment.Id)
+	if err := security.PrivateDir(root); err != nil {
+		t.Fatal(err)
+	}
+	observedAt := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Millisecond)
+	request := &pb.PublishNativeCodeReviewRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: c.Assignment.Id, ExpectedRevision: c.Assignment.Revision}, MachineId: string(c.Credential.MachineID), InstanceId: string(c.Instance), Usage: rpc.NativeReviewUsageWire(domain.NativeResponseUsage{ResponseDigest: strings.Repeat("a", 64), CostEvidence: domain.UsageCostMissing}, 1, domain.CodexProtocolVersion, observedAt)}
+	available := false
+	var delivered *pb.PublishNativeCodeReviewRequest
+	c.Client = nativeReviewReceiptClient{publish: func(_ context.Context, observed *pb.PublishNativeCodeReviewRequest) error {
+		if !available {
+			return connect.NewError(connect.CodeUnavailable, errors.New("server unavailable"))
+		}
+		delivered = observed
+		return nil
+	}}
+	if err := publishNativeReviewObservation(context.Background(), c, root, 1, request); err == nil {
+		t.Fatal("unavailable server reported success")
+	}
+	// The server returns after the outage; the replay must carry the journaled instant.
+	available = true
+	if err := replayNativeReviewObservations(context.Background(), config, c); err != nil {
+		t.Fatal(err)
+	}
+	if delivered == nil || delivered.Usage.ObservedAtUnixMs != observedAt.UnixMilli() || !proto.Equal(request, delivered) {
+		t.Fatal("replay lost the original observation time")
+	}
+	if parsed, err := rpc.NativeReviewUsageObservedAt(delivered.Usage); err != nil || !parsed.Equal(observedAt) {
+		t.Fatal("observation time did not round-trip", err)
 	}
 }

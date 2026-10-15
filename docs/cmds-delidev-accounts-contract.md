@@ -2,10 +2,20 @@
 
 ## Connected API format changes
 
-ProviderInventory capability 9 and `ChangeAccountApiFormat` were reserved on main
+ProviderInventory capabilities 9 and 10 and `ChangeAccountApiFormat` were reserved on main
 in the originating change. The owner/client operation receives an account ID, expected revision,
 request ID, closed API protocol and editable preferences. Its transaction publishes
 all preferences and the selected profile together with an actor-bound retry receipt.
+The request also carries the exact inspected Provider resource revision. The
+transaction checks that revision against the Account's Provider identity and
+current Provider record before any preference or generation publication. An
+intervening Provider edit rejects the save without key access or a new
+generation, including when the edit is outside the selected profile. A new
+explicit inspection and request ID are required after that rejection; omitted
+Provider revisions from older clients fail safely. Desktop clients enable the
+connected key-preserving operation only when capability 10 is advertised, so an
+older server that ignores the additive revision field cannot receive a
+revision-bound save.
 The server resolves and validates the authenticated owner/client principal before
 any receipt lookup, and that principal is part of the digested receipt input.
 An exact replay by the same actor returns current account metadata without another
@@ -65,7 +75,8 @@ API accounts may declare the closed `api_protocol` selection under the
 Explicit selections use resource schema 3; legacy accounts retain their original
 provider tuple. Connect stores the selected protocol/URL/authentication in the
 immutable connection generation. Validation, discovery and execution resolve
-that same tuple. Capability 9 changes a connected account for future sessions
+that same tuple. Capabilities 9 and 10 authorize the connected-account change
+and its revision-bound provider check for future sessions
 without key input under the amendment below. Capability 7 alone requires
 Disconnect, confirmed cleanup, explicit key input and validation. An account cannot change
 between keyless and key-required authentication. Referenced profiles, including
@@ -188,6 +199,10 @@ The feature uses the closed service-native account/model contract in [managed su
 
 The [subscription batch contract](cmds-delidev-subscription-contract.md#failed-subscription-cleanup-reservations) admits failed initial ChatGPT server logins and fully disconnected subscription configurations for all supported services. Disconnected configuration children carry no synthetic LOGIN identity; pending/recovery/native/Worker ownership and protected vault references still prevent deletion. Batch and public configuration deletion share `checkAccountDeletionLocked` and `deleteConfigurationTx`, retaining original vault intent checks, exact revision, complete configuration/history references, schedule updates, tombstones and browser obligations. Confirmed batch deletion records its per-account outcome and parent counts in the same deletion receipt transaction. Original actor revocation or account/login changes preserve the account; cleanup never substitutes server bookkeeping authority for the requester's deletion authority.
 
+## Terminal server LOGOUT deletion
+
+A terminal original server ChatGPT LOGOUT retained for failed protected-credential cleanup has no public disconnect operation (`DisconnectAccount` still rejects ChatGPT). With System `SUBSCRIPTION_CLEANUP_RECOVERY_V1 = 64`, the explicit deletion screen can request the server-owned cleanup and deletion of exactly that original LOGOUT through `DeleteConfiguration`. The account stays failed with its recovery fence until original native proof, protected `AccountLogin` reference removal and the matching metadata clear all succeed; then the usual reference checks and atomic receipt run. Denied, canceled or unresolved cleanup retains the account, and unrelated accounts and credentials are unchanged. See the [subscription contract](cmds-delidev-subscription-contract.md#terminal-original-server-logout-cleanup-recovery).
+
 ## Automatic API connection verification
 
 Enabled connected API accounts acquire non-inference current-connection validation through the joined server maintenance owner under the [provider verification contract](cmds-delidev-providers-contract.md#automatic-api-verification). Missing evidence is immediately due; subsequent checks use persisted completion plus max(15 minutes, Retry-After). Provider disablement, account disablement, removal and changed connection/profile/revision fence automatic publication. Existing explicit validation, actor-bound replay, quota/exhaustion and immutable execution generations retain their authority. A readable saved key or successful public model list alone cannot become verified authentication.
@@ -198,7 +213,7 @@ The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) ow
 
 ## cmds/delidev-cli constraints
 
-- Key-preserving API format changes follow `cmds-delidev-accounts-contract.md#connected-api-format-changes` after main reservation the originating change. Capability 9 owns the atomic format/preferences RPC; preserve capability 7 and OAuth reservation 8, bounded server-owned generations sharing the original protected key, immutable original execution/continuation profiles, explicit current validation, all-generation cleanup and portable exclusions. Observation-only edits rebase protected fields/revision while retaining drafts; editable conflicts block saves. No migration, native change or format conversion.
+- Key-preserving API format changes follow `cmds-delidev-accounts-contract.md#connected-api-format-changes` after main reservation the originating change. Capability 9 owns the atomic format/preferences RPC and capability 10 gates its revision-bound provider check; preserve capability 7 and OAuth reservation 8, bounded server-owned generations sharing the original protected key, immutable original execution/continuation profiles, explicit current validation, all-generation cleanup and portable exclusions. Observation-only edits rebase protected fields/revision while retaining drafts; editable conflicts block saves. No migration, native change or format conversion.
 
 ## cmds/delidev-cli/internal/cli constraints
 
@@ -275,3 +290,7 @@ The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) ow
 - An acknowledged protected Finish may retain a fenced account. Keep execution uncertain unless final bundle capture and independent cleanup both succeeded, or the separately verified pre-native cleanup returned the unused original bundle. RPC acknowledgment alone cannot authorize ordinary job reporting or overwrite the started claim journal.
 
 - Managed Codex built-in connector startup metadata is consumed only after the harness validates the exact original root and closed private profile. Discard it without public events, account-health changes, tool authority or input/completion claims. Other MCP families remain unsupported until their independent typed adapters exist.
+
+## Server-owned Claude accounts
+
+A new Claude account can be created from the server without a Runner Device when capability 67 is advertised. Its lifecycle is login and logout only: there is no reauthentication, no credential replacement and no reconnection of a disconnected account. Disconnect revokes readiness, cancels admitted work and waits for the original Worker cleanup before deleting the vault generation; deletion of a failed or disconnected account follows the ordinary path. Device-owned Claude accounts keep execution, machine-bound logout and deletion but can no longer sign in or reauthenticate: the server rejects machine-bound Claude LOGIN and REFRESH with unsupported guidance, and a disconnected device-owned account connects a new server-owned account instead of converting its credentials. ChatGPT and API accounts keep their existing contracts.

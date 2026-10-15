@@ -34,8 +34,14 @@ import {
 } from "./github-query-model";
 import { validPRSource } from "./github-pr-source";
 import { copy, useLocale } from "./localization";
-import { Timestamp, TimestampMode } from "./timestamp-display";
-import { OpenGitHub } from "./github-opening";
+import { Timestamp, TimestampMode, TimestampText } from "./timestamp-display";
+import { OpenGitHubNotices, useOpenGitHub } from "./github-opening";
+import {
+  SettingsActionButton,
+  SettingsActionIcon,
+  SettingsActionPresentation,
+  SettingsActionScope,
+} from "./settings-action";
 import { PRFeedback } from "./github-feedback";
 import { Problem } from "./ui";
 import { Disclosure, DisclosureSummary } from "./disclosure";
@@ -43,6 +49,7 @@ import {
   changeCounts,
   commitResult,
   sameReadScope,
+  sameSelectionScope,
   observationsConflict,
   orderWorkspace,
   workspaceResult,
@@ -58,6 +65,7 @@ import {
   paginationError,
   useGitHubScrollRoot,
 } from "./github-scroll";
+import { usePRRowTime } from "./pr-row-time";
 import "./pr-workspace.css";
 
 export type PRPage = { data: Document; query: GitHubQuery };
@@ -86,7 +94,9 @@ export function PRCounts({ value }: { value: unknown }) {
     <span aria-label={copy("pr-workspace.countsUnavailable")}>—</span>
   );
 }
-const AvatarContext = createContext<PRAvatarCache | undefined>(undefined);
+export const AvatarContext = createContext<PRAvatarCache | undefined>(
+  undefined,
+);
 function AvatarRead({
   selected,
   reference,
@@ -164,7 +174,9 @@ function validWorkspaceItem(item: Document, scope: Document) {
     typeof item.draft === "boolean" &&
     typeof item.merged === "boolean" &&
     (item.mergeable == null || typeof item.mergeable === "boolean") &&
-    bounded(item.body, 128 << 10, false) &&
+    // Graph nodes never carry the description; the selected PR's own Detail read
+    // supplies the bounded body.
+    item.body === undefined &&
     bounded(item.base_ref, 1024) &&
     bounded(item.head_ref, 1024) &&
     sha(item.base_sha) &&
@@ -247,6 +259,121 @@ function Enrichment({
     </>
   );
 }
+/** Decorative leading glyph; the textual title carries the accessible name. */
+function PullRequestGlyph() {
+  return (
+    <svg
+      className="pr-row-icon"
+      aria-hidden="true"
+      focusable="false"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="6" cy="6" r="2" />
+      <circle cx="18" cy="18" r="2" />
+      <path d="M6 8v10a4 4 0 0 0 4 4M18 16V8a4 4 0 0 0-4-4h-2" />
+      <path d="m12 2-2 2 2 2" />
+    </svg>
+  );
+}
+/** One compact row: title first, then textual evidence, then the relative
+ * update time. The exact UTC instant is a tooltip owned by this row. */
+function PRRow({
+  node,
+  depth,
+  stack,
+  selected,
+  enabled,
+  chosen,
+  context,
+  active,
+  choose,
+}: {
+  node: Document;
+  depth: number;
+  stack: boolean;
+  selected: Resource;
+  enabled: boolean;
+  chosen: boolean;
+  context: boolean;
+  active: boolean;
+  choose: (button: HTMLButtonElement) => void;
+}) {
+  useLocale();
+  const item = object(node.item),
+    author = object(item.author),
+    number = text(item.number),
+    time = usePRRowTime(text(item.updated_at));
+  return (
+    <article
+      className="pr-workspace-row"
+      data-stack={stack}
+      data-child={depth > 0}
+      data-selected={chosen}
+      style={{ marginInlineStart: `${depth * 12}px` }}
+    >
+      <button
+        type="button"
+        data-pr-number={number}
+        aria-pressed={chosen}
+        onClick={(event) => choose(event.currentTarget)}
+        {...time.buttonProps}
+      >
+        <span className="pr-row-title" role="heading" aria-level={3}>
+          <PullRequestGlyph />#{number} {text(item.title)}
+        </span>
+        <span className="pr-row-meta">
+          <span className="pr-list-state" data-state={text(item.state)}>
+            {copy(
+              item.state === "closed"
+                ? "pull-requests.closed_c21ead"
+                : "pull-requests.open_ed077f",
+            )}
+          </span>
+          {item.draft ? <span>{copy("pr-cards.draft")}</span> : null}
+          {stack ? (
+            <span className="pr-stack-badge">{copy("pr-workspace.stack")}</span>
+          ) : null}
+          {context ? <span>{copy("pr-workspace.context")}</span> : null}
+          <span className="pr-row-author">
+            <Avatar
+              selected={selected}
+              reference={text(node.avatar_reference)}
+              enabled={enabled}
+            />
+            <span>
+              {text(author.login) || copy("github-items.extra.a326f4758492")}
+              {author.kind === "unknown" ? (
+                <> · {copy("pr-cards.unverifiedAuthor")}</>
+              ) : null}
+            </span>
+          </span>
+          <PRCounts value={node.counts} />
+        </span>
+        <span className="pr-row-updated" ref={time.timeRef} {...time.timeProps}>
+          <TimestampText
+            id="pr-cards.updatedRelative"
+            values={{
+              time: (
+                <Timestamp
+                  value={text(item.updated_at)}
+                  mode={TimestampMode.Relative}
+                  active={active}
+                  nativeTitle={false}
+                />
+              ),
+            }}
+          />
+        </span>
+      </button>
+      {time.tooltip}
+    </article>
+  );
+}
 export function PRWorkspaceRows({
   pages,
   selected,
@@ -256,7 +383,9 @@ export function PRWorkspaceRows({
   observations,
   observe,
   allSeeds,
+  residentSeeds,
   previous,
+  active = true,
 }: {
   pages: PRPage[];
   selected: Resource;
@@ -266,7 +395,12 @@ export function PRWorkspaceRows({
   observations: Map<string, Document>;
   observe: (key: string, value?: Document) => void;
   allSeeds: string[];
+  /** Seeds on every page still inside the payload window; defaults to this
+   * instance's own pages. */
+  residentSeeds?: string[];
   previous?: boolean;
+  /** Surface activity: hidden surfaces stop subscribing to the presentation clock. */
+  active?: boolean;
 }) {
   useLocale();
   const seeds = pages.flatMap((page) =>
@@ -300,6 +434,7 @@ export function PRWorkspaceRows({
     edges,
     allSeeds,
     ambiguous,
+    new Set(residentSeeds ?? seeds),
   ).filter((row) => seeds.includes(row.owner));
   return (
     <section
@@ -379,84 +514,35 @@ export function PRWorkspaceRows({
       ) : null}
       {conflict ? <p role="status">{copy("pr-workspace.ambiguous")}</p> : null}
       {ordered.map(({ node, depth, stack }) => {
-        const item = object(node.item),
-          author = object(item.author),
-          number = text(item.number);
+        const number = text(object(node.item).number);
         return (
-          <article
+          <PRRow
             key={number}
-            className="pr-workspace-row"
-            data-stack={stack}
-            data-child={depth > 0}
-            data-selected={chosen === number}
-            style={{ marginInlineStart: `${depth * 12}px` }}
-          >
-            <button
-              type="button"
-              data-pr-number={number}
-              aria-pressed={chosen === number}
-              onClick={(event) =>
-                choose(
-                  {
-                    number,
-                    node,
-                    scope:
-                      scopes.get(number) ??
-                      pages.find((page) =>
-                        items(page.data.items).some(
-                          (raw) => object(raw).number === number,
-                        ),
-                      )?.data,
-                  },
-                  event.currentTarget,
-                )
-              }
-            >
-              <span className="pr-row-labels">
-                <span className="pr-list-state" data-state={text(item.state)}>
-                  {copy(
-                    item.state === "closed"
-                      ? "pull-requests.closed_c21ead"
-                      : "pull-requests.open_ed077f",
-                  )}
-                </span>
-                {item.draft ? <span>{copy("pr-cards.draft")}</span> : null}
-                {stack ? (
-                  <span className="pr-stack-badge">
-                    {copy("pr-workspace.stack")}
-                  </span>
-                ) : null}
-                {!matching.has(number) ? (
-                  <span>{copy("pr-workspace.context")}</span>
-                ) : null}
-              </span>
-              <span className="pr-row-title" role="heading" aria-level={3}>
-                #{number} {text(item.title)}
-              </span>
-              <span className="pr-row-author">
-                <Avatar
-                  selected={selected}
-                  reference={text(node.avatar_reference)}
-                  enabled={enabled}
-                />
-                <span>
-                  {text(author.login) ||
-                    copy("github-items.extra.a326f4758492")}
-                  {author.kind === "unknown" ? (
-                    <> · {copy("pr-cards.unverifiedAuthor")}</>
-                  ) : null}
-                </span>
-                <PRCounts value={node.counts} />
-              </span>
-              <span>
-                {copy("pr-cards.updated")}:{" "}
-                <Timestamp
-                  value={text(item.updated_at)}
-                  mode={TimestampMode.Exact}
-                />
-              </span>
-            </button>
-          </article>
+            node={node}
+            depth={depth}
+            stack={stack}
+            selected={selected}
+            enabled={enabled}
+            chosen={chosen === number}
+            context={!matching.has(number)}
+            active={active}
+            choose={(button) =>
+              choose(
+                {
+                  number,
+                  node,
+                  scope:
+                    scopes.get(number) ??
+                    pages.find((page) =>
+                      items(page.data.items).some(
+                        (raw) => object(raw).number === number,
+                      ),
+                    )?.data,
+                },
+                button,
+              )
+            }
+          />
         );
       })}
     </section>
@@ -810,6 +896,12 @@ function Detail({
         : undefined,
     item = object(items(value?.items)[0]),
     remote = object(value?.repository);
+  // The native opener keeps its original guards; it stays unavailable until a
+  // validated detail with a URL is present.
+  const opener = useOpenGitHub(
+    text(item.url),
+    detail.isFetching || Boolean(detail.error) || !value || !text(item.url),
+  );
   const diffQuery = { ...query, operation: QueryOperation.Diff },
     feedbackQuery = { ...query, operation: QueryOperation.Feedback };
   const diff = useQuery(
@@ -869,15 +961,45 @@ function Detail({
   };
   return (
     <section className="pr-workspace-detail">
-      <button className="pr-workspace-back" onClick={back}>
-        {copy("github-items.backToResults_c7ef0e")}
-      </button>
-      <button
-        disabled={detail.isFetching || diff.isFetching || reviews.isFetching}
-        onClick={reload}
-      >
-        {copy("github-items.refreshGithubResults_bd77c0")}
-      </button>
+      <SettingsActionScope>
+        <div className="pr-detail-toolbar">
+          <SettingsActionButton
+            className="pr-workspace-back"
+            type="button"
+            icon={SettingsActionIcon.Back}
+            presentation={SettingsActionPresentation.Icon}
+            aria-label={copy("github-items.backToResults_c7ef0e")}
+            onClick={back}
+          >
+            {copy("github-items.backToResults_c7ef0e")}
+          </SettingsActionButton>
+          <div className="pr-detail-toolbar-end">
+            <SettingsActionButton
+              type="button"
+              icon={SettingsActionIcon.Refresh}
+              presentation={SettingsActionPresentation.Icon}
+              aria-label={copy("github-items.refreshGithubResults_bd77c0")}
+              disabled={
+                detail.isFetching || diff.isFetching || reviews.isFetching
+              }
+              onClick={reload}
+            >
+              {copy("github-items.refreshGithubResults_bd77c0")}
+            </SettingsActionButton>
+            <SettingsActionButton
+              type="button"
+              icon={SettingsActionIcon.Open}
+              presentation={SettingsActionPresentation.Icon}
+              aria-label={copy("github-opening.extra.03f69885814b")}
+              disabled={opener.blocked}
+              onClick={opener.open}
+            >
+              {copy("github-opening.extra.03f69885814b")}
+            </SettingsActionButton>
+          </div>
+        </div>
+      </SettingsActionScope>
+      <OpenGitHubNotices status={opener.status} />
       <Problem error={detail.error} />
       {detail.isFetching ? (
         <p role="status">{copy("github-items.readingGithub_ebcef8")}</p>
@@ -889,19 +1011,24 @@ function Detail({
       ) : null}
       {value ? (
         <>
-          <header>
-            <p>
-              {copy(
-                item.state === "closed"
-                  ? "pull-requests.closed_c21ead"
-                  : "pull-requests.open_ed077f",
-              )}
-              {item.draft ? <> · {copy("pr-cards.draft")}</> : null}
+          <header className="pr-detail-header">
+            <p className="pr-detail-status">
+              <span className="pr-detail-state" data-state={text(item.state)}>
+                {copy(
+                  item.state === "closed"
+                    ? "pull-requests.closed_c21ead"
+                    : "pull-requests.open_ed077f",
+                )}
+              </span>
+              {item.draft ? (
+                <span className="pr-detail-draft">
+                  {copy("pr-cards.draft")}
+                </span>
+              ) : null}
+              <span className="pr-detail-number">#{text(item.number)}</span>
             </p>
-            <h3>
-              #{text(item.number)} {text(item.title)}
-            </h3>
-            <p className="pr-row-author">
+            <h3>{text(item.title)}</h3>
+            <p className="pr-detail-meta">
               <Avatar
                 selected={selected}
                 reference={
@@ -909,26 +1036,35 @@ function Detail({
                 }
                 enabled={supported}
               />
-              {text(object(item.author).login) ||
-                copy("github-items.extra.a326f4758492")}
-              {object(item.author).kind === "unknown" ? (
-                <> · {copy("pr-cards.unverifiedAuthor")}</>
-              ) : null}
+              <span>
+                {text(object(item.author).login) ||
+                  copy("github-items.extra.a326f4758492")}
+                {object(item.author).kind === "unknown" ? (
+                  <> · {copy("pr-cards.unverifiedAuthor")}</>
+                ) : null}
+              </span>
+              <span>
+                <TimestampText
+                  id="pr-cards.updatedRelative"
+                  values={{
+                    time: (
+                      <Timestamp
+                        value={text(item.updated_at)}
+                        mode={TimestampMode.Relative}
+                        active={active}
+                        fallback="—"
+                      />
+                    ),
+                  }}
+                />
+              </span>
             </p>
-            <p>
-              <Timestamp
-                value={text(item.updated_at)}
-                mode={TimestampMode.Exact}
-              />{" "}
-              · <PRCounts value={same ? selection.node?.counts : undefined} />
+            <p className="pr-detail-branches">
+              <code>
+                {text(item.head_ref)} → {text(item.base_ref)}
+              </code>
+              <PRCounts value={same ? selection.node?.counts : undefined} />
             </p>
-            <p>
-              {text(item.head_ref)} → {text(item.base_ref)}
-            </p>
-            <OpenGitHub
-              url={text(item.url)}
-              disabled={detail.isFetching || Boolean(detail.error)}
-            />
           </header>
           <div
             role="tablist"
@@ -1098,15 +1234,35 @@ export function PullRequestWorkspace({
     observer.observe(body.current);
     return () => observer.disconnect();
   }, []);
-  const enrich = useCallback((scope: Document) => {
-    setSelection((old) => {
-      if (!old || old.scope === scope) return old;
-      const node = items(scope.nodes)
-        .map(object)
-        .find((n) => object(n.item).number === old.number);
-      return node ? { ...old, node, scope } : old;
-    });
-  }, []);
+  // Mirrors the committed selection so enrichment can dispose it without
+  // running side effects inside a state updater.
+  const selectionScope = useRef<Document | undefined>(undefined);
+  useLayoutEffect(() => {
+    selectionScope.current = selection?.scope;
+  }, [selection]);
+  const enrich = useCallback(
+    (scope: Document) => {
+      const current = selectionScope.current;
+      // A selection and its avatar references are bound to the profile
+      // generation and numeric repository that produced them. Enrichment from
+      // another generation or repository identity disposes both instead of
+      // silently rebinding the selected PR.
+      if (current && current !== scope && !sameSelectionScope(current, scope)) {
+        selectionScope.current = undefined;
+        setSelection(undefined);
+        avatars.clear();
+        return;
+      }
+      setSelection((old) => {
+        if (!old || old.scope === scope) return old;
+        const node = items(scope.nodes)
+          .map(object)
+          .find((n) => object(n.item).number === old.number);
+        return node ? { ...old, node, scope } : old;
+      });
+    },
+    [avatars],
+  );
   const back = () => {
     const number = selection?.number;
     setSelection(undefined);

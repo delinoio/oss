@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"errors"
+	"sync/atomic"
 	"time"
 
 	"connectrpc.com/connect"
@@ -16,8 +18,19 @@ import (
 type integrationCheck struct {
 	background bool
 	cancel     context.CancelFunc
-	done       chan struct{}
+	// preempt cancels the read with errForegroundPreempted as its cause. Only
+	// scheduler displacement by a foreground read calls it; it is nil for checks
+	// that are never displaced.
+	preempt func()
+	// A failed foreground join permanently revokes this request's replay grant.
+	replayFailed *atomic.Bool
+	done         chan struct{}
 }
+
+// errForegroundPreempted is the typed cancellation cause set only when a
+// foreground read displaces a background read. Parent cancellation, shutdown,
+// profile cleanup and deadlines never carry it.
+var errForegroundPreempted = errors.New("integration read displaced by a foreground read")
 
 // Called under the gate. Completion closes before map cleanup takes the gate,
 // so cancellation can join HTTP and token clearing without a lock inversion.
@@ -25,19 +38,50 @@ func (s *Service) stopIntegrationCheck(ctx context.Context, id domain.ID) error 
 	return stopIntegrationRead(ctx, s.integrationChecks, id)
 }
 
+// displaceIntegrationCheck is stopIntegrationCheck for foreground scheduling:
+// the displaced read observes errForegroundPreempted as its cancellation cause.
+func (s *Service) displaceIntegrationCheck(ctx context.Context, id domain.ID) error {
+	err := cancelAndJoinIntegrationRead(ctx, s.integrationChecks, id, true)
+	if err != nil {
+		s.logger.Warn("repository_integration_displacement_failed", "profile_id", id, "error_code", domain.SafeError(err).Code)
+	}
+	return err
+}
+
 func stopIntegrationRead(ctx context.Context, checks map[domain.ID]*integrationCheck, id domain.ID) error {
+	return cancelAndJoinIntegrationRead(ctx, checks, id, false)
+}
+
+func cancelAndJoinIntegrationRead(ctx context.Context, checks map[domain.ID]*integrationCheck, id domain.ID, displace bool) error {
 	check := checks[id]
 	if check == nil {
 		return nil
 	}
-	check.cancel()
+	if displace && check.preempt != nil {
+		check.preempt()
+	} else {
+		check.cancel()
+	}
 	select {
 	case <-check.done:
+		if displace && ctx.Err() != nil {
+			if check.replayFailed != nil {
+				check.replayFailed.Store(true)
+			}
+			delete(checks, id)
+			return domain.SafeError(ctx.Err())
+		}
 		delete(checks, id)
 		return nil
 	case <-ctx.Done():
+		if displace && check.replayFailed != nil {
+			check.replayFailed.Store(true)
+		}
 		return domain.SafeError(ctx.Err())
 	case <-time.After(5 * time.Second):
+		if displace && check.replayFailed != nil {
+			check.replayFailed.Store(true)
+		}
 		return domain.Fail(domain.Unavailable, "The previous GitHub request is still stopping.", "Retry the original profile operation after its request completes.")
 	}
 }

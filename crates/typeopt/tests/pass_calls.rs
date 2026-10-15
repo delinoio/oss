@@ -566,7 +566,17 @@ console.log(words.peekTop()?.toUpperCase());
 #[test]
 fn method_devirtualization_never_runs_when_disabled() {
     let temp = project(ACCUMULATOR);
-    let report = optimize(temp.path(), &["--disable-pass", DEVIRT]);
+    // Property shortening would rename the closed class's method; keep the
+    // name so the call site shows that devirtualization did not run.
+    let report = optimize(
+        temp.path(),
+        &[
+            "--disable-pass",
+            DEVIRT,
+            "--disable-pass",
+            "property-shortening",
+        ],
+    );
     assert_eq!(applied_count(&report, DEVIRT), 0);
     let module = emitted(temp.path(), "accumulator.ts");
     assert!(module.contains("describeTotalValue("), "{module}");
@@ -874,4 +884,106 @@ fn shadowed_undefined_is_not_treated_as_inert() {
     )]);
     optimize(temp.path(), &[]);
     same_behavior(temp.path());
+}
+
+#[test]
+fn inlines_unwritten_let_and_var_functions() {
+    let temp = project(&[(
+        "main.ts",
+        r#"let increment = (n: number) => n + 1;
+var double = function (n: number) {
+  return n * 2;
+};
+console.log(increment(1), double(4), increment(double(2)));
+"#,
+    )]);
+    let report = optimize(temp.path(), &args(&only(&[INLINE, RESIDUAL])));
+    assert!(applied_count(&report, INLINE) >= 2, "{report:#}");
+    let main = emitted(temp.path(), "main.ts");
+    assert!(
+        !main.contains("increment(") && !main.contains("double("),
+        "{main}"
+    );
+    same_behavior(temp.path());
+}
+
+#[test]
+fn inlines_unwritten_function_local_var() {
+    let temp = project(&[(
+        "main.ts",
+        r#"function run() {
+  var computeLongName = (value: number) => value + 1;
+  console.log(computeLongName(0));
+}
+run();
+"#,
+    )]);
+    let report = optimize(temp.path(), &args(&only(&[INLINE, RESIDUAL])));
+    assert!(applied_count(&report, INLINE) > 0, "{report:#}");
+    let main = emitted(temp.path(), "main.ts");
+    assert!(!main.contains("computeLongName("), "{main}");
+    same_behavior(temp.path());
+}
+
+#[test]
+fn preserves_for_initializer_var_function_loop_effects() {
+    let cases = [
+        (
+            r#"function run() {
+  let n = 0;
+  for (var f = () => 1; n++ < 1;) {
+    console.log("body");
+  }
+  console.log(f(), n);
+}
+run();
+"#,
+            "body\n1 2\n",
+        ),
+        (
+            r#"function run() {
+  let n = 0;
+  for (var f = (value: number) => value + 1; (console.log("condition", n), n++ < 1);) {
+    console.log("body");
+  }
+  console.log(f(0), n);
+}
+run();
+"#,
+            "condition 0\nbody\ncondition 1\n1 2\n",
+        ),
+    ];
+    for (source, expected) in cases {
+        for extra in [Some(only(&[INLINE, RESIDUAL])), None] {
+            let temp = project(&[("main.ts", source)]);
+            let owned = extra.unwrap_or_default();
+            let report = optimize(temp.path(), &args(&owned));
+            let main = emitted(temp.path(), "main.ts");
+            assert!(main.contains("for (var f"), "{main}\n{report:#}");
+            assert!(main.contains("console.log(f("), "{main}\n{report:#}");
+            same_behavior(temp.path());
+            let output = run_optimized(temp.path());
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert_eq!(String::from_utf8_lossy(&output.stdout), expected);
+        }
+    }
+}
+
+#[test]
+fn preserves_written_let_functions() {
+    assert_not_inlined(
+        &[(
+            "main.ts",
+            r#"let pick = (n: number) => n + 1;
+console.log(pick(1));
+pick = (n: number) => n - 1;
+console.log(pick(1));
+"#,
+        )],
+        "pick(1)",
+    );
 }

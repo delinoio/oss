@@ -338,3 +338,78 @@ it("keeps a pointer target still until click while keyboard and independent focu
   pointer.focus();
   expect(scroller.scrollTop).toBe(148);
 });
+
+it("indexes the Browser destinations in English and Korean for search and command navigation", async () => {
+  const browser = [
+    {
+      category: SettingsCategory.Browser,
+      label: "Browser",
+      help: "Saved on this computer.",
+    },
+  ];
+  expect(
+    matchSettings("local url destination", browser).map((row) => row.target),
+  ).toEqual([SettingsSearchTarget.BrowserLocal]);
+  expect(
+    matchSettings("general destination", browser).map((row) => row.target),
+  ).toEqual([SettingsSearchTarget.BrowserGeneral]);
+  expect(matchSettings("loopback", browser).map((row) => row.target)).toEqual([
+    SettingsSearchTarget.BrowserLocal,
+  ]);
+  // Browser option values (names, executable paths) are never indexed.
+  expect(matchSettings("firefox", browser)).toEqual([]);
+  await i18n.changeLanguage("ko");
+  expect(
+    matchSettings("일반 URL", [
+      {
+        category: SettingsCategory.Browser,
+        label: "브라우저",
+        help: "이 컴퓨터에 저장됩니다.",
+      },
+    ]).map((row) => row.target),
+  ).toEqual([SettingsSearchTarget.BrowserGeneral]);
+});
+it("indexes the Tailscale destinations in English and Korean", async () => {
+  const tailscale = [
+    {
+      category: SettingsCategory.Tailscale,
+      label: "Tailscale",
+      help: "Check this computer's Tailscale access.",
+    },
+  ];
+  expect(
+    matchSettings("tailnet", tailscale).map((row) => row.target),
+  ).toContain(SettingsSearchTarget.TailscaleDevices);
+  expect(
+    matchSettings("computer", tailscale).map((row) => row.target),
+  ).toContain(SettingsSearchTarget.TailscaleComputer);
+  expect(
+    matchSettings("requests", tailscale).map((row) => row.target),
+  ).toContain(SettingsSearchTarget.TailscaleRequests);
+  await i18n.changeLanguage("ko");
+  expect(
+    matchSettings("테일넷", [{ ...tailscale[0], help: "Tailscale" }]).map(
+      (row) => row.target,
+    ),
+  ).toContain(SettingsSearchTarget.TailscaleDevices);
+});
+it("indexes Connections only as its category destination", async () => {
+  const connections = [
+    {
+      category: SettingsCategory.Diagnostics,
+      label: "Connections",
+      help: "Manage this computer and your saved servers.",
+    },
+  ];
+  expect(
+    matchSettings("connections", connections).map((row) => row.target),
+  ).toEqual([SettingsSearchTarget.Category]);
+  expect(matchSettings("current connection", connections)).toEqual([]);
+  expect(Object.values(SettingsSearchTarget)).not.toContain(
+    "current-connection",
+  );
+  await i18n.changeLanguage("ko");
+  expect(
+    matchSettings("현재 연결", [{ ...connections[0], label: "연결" }]),
+  ).toEqual([]);
+});

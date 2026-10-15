@@ -93,7 +93,7 @@ func openOpenCodeClaimsWithResume(p *ExecutionPublisher, resume *opencode.Sessio
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	i, publication := p.input, p.state
-	if p.closed || p.release == nil || i.Validate() != nil || i.Configuration.Harness != domain.OpenCode || (i.Version != 4 && i.Installation.Version != opencode.SupportedVersion) || (i.Continuation != nil || i.Fork != nil) != (resume != nil) || publication.Pending != nil || publication.LastSequence != 0 || publication.JobID != p.job || i.ExecutionID != p.execution || publication.InstanceID != p.config.Instance || publication.ServerID != p.config.Credential.ServerID || publication.DeviceID != p.config.Credential.DeviceID || i.MachineID != p.config.Credential.MachineID {
+	if p.closed || p.release == nil || i.Validate() != nil || i.Configuration.Harness != domain.OpenCode || (i.Version != 4 && !domain.HarnessVersionAllowed(domain.OpenCode, i.Installation.Version)) || (i.Continuation != nil || i.Fork != nil) != (resume != nil) || publication.Pending != nil || publication.LastSequence != 0 || publication.JobID != p.job || i.ExecutionID != p.execution || publication.InstanceID != p.config.Instance || publication.ServerID != p.config.Credential.ServerID || publication.DeviceID != p.config.Credential.DeviceID || i.MachineID != p.config.Credential.MachineID {
 		return nil, openCodeClaimUncertain()
 	}
 	ref := openCodeClaimReference{Version: 1, JobID: p.job, InstanceID: publication.InstanceID, ServerID: publication.ServerID, DeviceID: publication.DeviceID, MachineID: i.MachineID, ExecutionID: i.ExecutionID, SessionID: i.SessionID, InputID: i.InputID, AccountID: i.AccountID, ConnectionID: i.ConnectionID, ThreadRequestID: i.ThreadRequestID, InputRequestID: i.TurnRequestID, Revision: publication.Revision, AssignmentDigest: publication.AssignmentDigest, ConfigurationDigest: i.ConfigurationDigest}
@@ -141,7 +141,7 @@ func openOpenCodeClaimsWithResume(p *ExecutionPublisher, resume *opencode.Sessio
 		return nil, openCodeClaimUncertain()
 	}
 	return &openCodeClaimJournal{path: path, state: state, saved: raw, release: lock.Close, logger: p.config.Logger, inputDigest: func(c opencode.SessionClaim) (string, error) {
-		return opencode.TextInputClaimDigest(requested.Session, c.MessageID, c.PartID, i.Input.Prompt)
+		return opencode.InputClaimDigest(requested.Session, c.MessageID, c.PartID, i.Input.Prompt, openCodeClaimImages(i.Input.Attachments))
 	}}, nil
 }
 

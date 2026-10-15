@@ -3,6 +3,8 @@ package server
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
@@ -15,6 +17,121 @@ import (
 	"testing"
 	"time"
 )
+
+func TestNativeReviewPricingCacheAheadResolverKeepsObservationBasis(t *testing.T) {
+	f := newFirstDispatchFixture(t)
+	ctx := context.Background()
+	var account domain.Account
+	if domain.Decode(f.account.DocumentJson, &account) != nil {
+		t.Fatal("fixture account is invalid")
+	}
+	identity := domain.ModelIdentity{ProviderID: account.ProviderID, NativeID: "fixture-model"}
+	var preset domain.Provider
+	for _, candidate := range providers.Presets() {
+		if candidate.ID == domain.PresetGroq {
+			preset = candidate.Provider
+			break
+		}
+	}
+	if preset.PresetID == nil {
+		t.Fatal("Groq preset is unavailable")
+	}
+	input, cached, output := "1", "0", "5"
+	basis := domain.TokenPricing{Currency: "USD", Source: tokenprices.URL, AsOf: "2026-10-14", InputMode: domain.CachedInputPrice, InputPerMillion: &input, CachedInputPerMillion: &cached, OutputPerMillion: &output}
+	var original store.PricingVersion
+	_, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.review-price-before-cache", nil, func(tx *store.Tx) (any, error) {
+		providers, err := tx.List(store.Filter{Kind: domain.ProviderKind, Limit: 200})
+		if err != nil {
+			return nil, err
+		}
+		for _, candidate := range providers {
+			value, err := store.Decode[domain.Provider](candidate)
+			if err != nil {
+				return nil, err
+			}
+			if value.PresetID != nil && *value.PresetID == domain.PresetGroq {
+				if err := tx.Delete(domain.ProviderKind, candidate.ID, candidate.Revision); err != nil {
+					return nil, err
+				}
+				break
+			}
+		}
+		row, err := tx.Get(domain.ProviderKind, account.ProviderID)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := tx.Put(row.Kind, row.ID, row.Revision, "", "", preset); err != nil {
+			t.Log("provider update:", err)
+			return nil, fmt.Errorf("provider update: %w", err)
+		}
+		original, err = tx.PutAutomaticPricing(identity.Key(), 0, domain.NewID(), basis, domain.PriceProvenance{ProviderKey: "groq", ModelKey: identity.NativeID, SnapshotSHA256: strings.Repeat("a", 64), RetrievedAt: time.Now().UTC().Add(-time.Hour)})
+		if err != nil {
+			t.Log("initial automatic price:", err)
+			return nil, fmt.Errorf("initial automatic price: %w", err)
+		}
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(10 * time.Millisecond)
+	observed := time.Now().UTC().Truncate(time.Millisecond)
+
+	// A persisted cache can move ahead of SQLite if the process stops after its
+	// cache write and before publication. Loading a new manager recreates that
+	// startup state without inducing a process crash or network request.
+	raw := json.RawMessage(`{"groq":{"id":"groq","models":{"fixture-model":{"id":"fixture-model","cost":{"input":2,"output":5,"cache_read":0}}}}}`)
+	checked := time.Now().UTC().Add(-time.Minute)
+	cache, err := json.Marshal(struct {
+		Version     int             `json:"version"`
+		Checked     time.Time       `json:"checked"`
+		LastAttempt time.Time       `json:"last_attempt"`
+		Raw         json.RawMessage `json:"raw"`
+	}{Version: 1, Checked: checked, LastAttempt: checked, Raw: raw})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := security.WriteAtomic(filepath.Join(f.service.Store.Root(), "models-dev-token-prices.json"), cache); err != nil {
+		t.Fatal(err)
+	}
+	pricingService := &Service{Store: f.service.Store}
+	manager := pricingService.installAutomaticPricingResolver()
+	defer manager.Close()
+	if snapshot := manager.Snapshot(); snapshot.State != tokenprices.Current {
+		t.Fatal("cache-ahead fixture was not loaded", snapshot.State)
+	}
+	time.Sleep(10 * time.Millisecond)
+	inputCount, zero, outputCount, total := int64(65), int64(0), int64(35), int64(100)
+	job, receiptID := domain.NewID(), domain.NewID()
+	record := domain.ResponseUsageRecord{Purpose: domain.NativeCodeReviewUsage, SessionID: domain.ID(f.change.Session.Id), ExecutionID: domain.NewID(), AccountID: domain.ID(f.account.Id), ConnectionID: domain.NewID(), ProviderID: account.ProviderID, ModelID: identity.Key(), Harness: domain.Codex, Version: domain.CodexProtocolVersion, ThreadID: string(domain.NewID()), TurnID: string(domain.NewID()), Sequence: 1, ObservedAt: observed, Usage: domain.NativeResponseUsage{ResponseDigest: strings.Repeat("d", 64), Counts: &domain.NativeTokenCounts{Input: &inputCount, Cached: &zero, CacheWrite: &zero, Output: &outputCount, Reasoning: &zero, Total: &total}, CostEvidence: domain.UsageCostMissing}}
+	_, err = f.service.Store.Mutate(ctx, domain.NewID(), "fixture.review-cache-ahead-publication", nil, func(tx *store.Tx) (any, error) {
+		_, _, err := tx.PutNativeCodeReviewUsage(job, receiptID, record)
+		return nil, err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.service.Store.Read(ctx, func(tx *store.Tx) error {
+		values, err := tx.NativeCodeReviewUsage(job)
+		if err != nil {
+			return err
+		}
+		active, err := tx.RetainedActivePricing(identity.Key())
+		if err != nil {
+			return err
+		}
+		budget, err := tx.NativeCodeReviewEstimate(record.SessionID, "USD")
+		if err != nil {
+			return err
+		}
+		if len(values) != 1 || values[0].Pricing == nil || values[0].Pricing.ID != original.ID || values[0].Estimate.PricingID != original.ID || values[0].Estimate.KnownAmount != "0.00024" || active == nil || active.ID == original.ID || budget.CompleteResponses != 1 || budget.KnownAmount != "0.00024" {
+			t.Fatal("cache-ahead resolution changed the frozen observation or failed to activate the new price", values, active, budget)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestExactAutomaticPricingRetainsManualAndImmutableHistory(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "state")

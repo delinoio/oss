@@ -3,6 +3,7 @@ package rpc
 
 import (
 	"encoding/json"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
@@ -54,6 +55,34 @@ func NativeReviewResultWire(v domain.NativeCodeReviewResult) *pb.NativeCodeRevie
 	}
 	return p
 }
+
+// nativeReviewUsageRecordsKey is the NativeCodeReviewResult JSON field that
+// holds private response usage receipts.
+const nativeReviewUsageRecordsKey = "usage_records"
+
+// nativeReviewPublicOutput drops the private response usage receipts from a
+// settled review output. Those receipts carry account, connection, provider,
+// model and native thread/turn identifiers plus response digests. They stay in
+// the persisted job output and the usage table; the public projection exposes
+// only findings, selection and aggregate usage. Outputs without the key, such
+// as the no-send and stale proofs, are returned byte for byte. A malformed or
+// oversized output fails closed.
+func nativeReviewPublicOutput(raw []byte) ([]byte, bool) {
+	var output map[string]json.RawMessage
+	if domain.Decode(raw, &output) != nil {
+		return nil, false
+	}
+	if _, exists := output[nativeReviewUsageRecordsKey]; !exists {
+		return raw, true
+	}
+	delete(output, nativeReviewUsageRecordsKey)
+	redacted, err := json.Marshal(output)
+	if err != nil {
+		return nil, false
+	}
+	return redacted, true
+}
+
 func nativeReviewJobDocument(raw []byte) []byte {
 	var envelope struct {
 		Type domain.JobType `json:"type"`
@@ -76,6 +105,13 @@ func nativeReviewJobDocument(raw []byte) []byte {
 		ActionID domain.ID                     `json:"action_id"`
 		Target   domain.NativeCodeReviewTarget `json:"target"`
 	}{1, input.ActionID, input.Target})
+	if len(job.Output) > 0 {
+		output, ok := nativeReviewPublicOutput(job.Output)
+		if !ok {
+			return nil
+		}
+		job.Output = output
+	}
 	result, _ := json.Marshal(job)
 	return result
 }
@@ -96,8 +132,27 @@ func NativeReviewUsage(p *pb.NativeCodeReviewResponseUsage) (domain.NativeRespon
 	}
 	return value, value.Validate()
 }
-func NativeReviewUsageWire(value domain.NativeResponseUsage, sequence uint64, version string) *pb.NativeCodeReviewResponseUsage {
+
+// NativeReviewUsageObservedAt decodes the Worker observation instant. Zero means
+// an older Worker did not report one; negative or out-of-range values are invalid.
+func NativeReviewUsageObservedAt(p *pb.NativeCodeReviewResponseUsage) (time.Time, error) {
+	if p == nil || p.ObservedAtUnixMs == 0 {
+		return time.Time{}, nil
+	}
+	observed := time.UnixMilli(p.ObservedAtUnixMs).UTC()
+	if p.ObservedAtUnixMs < 0 || observed.Year() < 2000 || observed.Year() > 9999 {
+		return time.Time{}, domain.NativeCodeReviewUnavailable()
+	}
+	return observed, nil
+}
+
+// NativeReviewUsageWire carries the original observation instant so a delayed
+// or replayed publication cannot move the receipt's pricing selection.
+func NativeReviewUsageWire(value domain.NativeResponseUsage, sequence uint64, version string, observedAt time.Time) *pb.NativeCodeReviewResponseUsage {
 	p := &pb.NativeCodeReviewResponseUsage{ResponseDigest: value.ResponseDigest, Sequence: sequence, NativeVersion: version, UnspecifiedNativeCost: value.CostEvidence == domain.UsageCostUnspecified}
+	if !observedAt.IsZero() {
+		p.ObservedAtUnixMs = observedAt.UnixMilli()
+	}
 	if value.Counts != nil {
 		p.CountsAvailable = true
 		p.Input = value.Counts.Input

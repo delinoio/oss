@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useSidebarActionMenuOwner } from "./session-row-actions";
 import { useQuery } from "@connectrpc/connect-query";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   EntityKind,
   ResourceQuery,
@@ -16,6 +17,7 @@ import {
   SettingsDialogFocus,
 } from "./settings-task";
 import { copy, useLocale } from "./localization";
+import { settleEnclosingEntrances } from "./entrance-motion";
 import { Problem } from "./ui";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 
@@ -30,6 +32,7 @@ export function ProjectSettingsMenu({
   active: boolean;
 }) {
   useLocale();
+  const queryClient = useQueryClient();
   const owner = useSidebarActionMenuOwner(),
     visible = owner.open === `project:${projectId}`;
   const opener = useRef<HTMLButtonElement>(null),
@@ -64,6 +67,8 @@ export function ProjectSettingsMenu({
   useLayoutEffect(() => {
     if (!visible || !popup.current || !opener.current) return;
     const menu = popup.current;
+    // A native popover never sits beneath an animated ancestor.
+    settleEnclosingEntrances(menu);
     menu.showPopover?.();
     const position = () => {
       const bounds = opener.current?.getBoundingClientRect();
@@ -227,7 +232,13 @@ export function ProjectSettingsMenu({
               kind={EntityKind.PROJECT}
               initial={row}
               active={active}
-              saved={() => setOpen(false)}
+              saved={() => {
+                setOpen(false);
+                // Refresh the loaded Home navigation so the sidebar row shows
+                // the persisted name; cursors, archive selection and scroll
+                // are retained by the existing refresh observer.
+                void queryClient.invalidateQueries({ refetchType: "active" });
+              }}
               cancel={() => setOpen(false)}
             />
           ) : (

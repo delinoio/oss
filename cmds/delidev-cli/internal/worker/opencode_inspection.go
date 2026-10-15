@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
-	"path/filepath"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/opencode"
@@ -38,7 +37,7 @@ func inspectCompletedOpenCodeCheckpoint(ctx context.Context, root string, ref Co
 		ClaimsSHA256: executionInputDigest(raw), AssignmentInputSHA256: c.AssignmentInputDigest,
 		HistoryExecutionID: c.HistoryExecutionID, CreationRequestID: native.CreationRequestID,
 	}
-	saved, err := readOpenCodeExecutionCheckpoint(ctx, root, expected, completion.NativeCheckpointDigest)
+	saved, err := readOpenCodeExecutionCheckpoint(ctx, root, expected, completion.NativeCheckpointDigest, true)
 	if err != nil || saved.Version != 2 || claims[1].SessionID != saved.NativeReference.SessionID || claims[1].MessageID != saved.NativeReference.InputID || claims[1].PartID != saved.NativeReference.PartID || claims[1].RequestID != saved.NativeReference.InputRequestID {
 		return executionCheckpointUncertain()
 	}
@@ -46,6 +45,9 @@ func inspectCompletedOpenCodeCheckpoint(ctx context.Context, root string, ref Co
 	if err != nil {
 		return err
 	}
-	home := filepath.Join(root, "runtimes", string(completion.ExecutionID))
+	home, err := openCodeHistoryRoot(ctx, root, c.MachineID, c.AccountID, completion.ExecutionID)
+	if err != nil {
+		return err
+	}
 	return opencode.InspectReplacementRoot(ctx, home, saved.Native, saved.NativeReference, cwd, nativeRoot, openCodeWorkspaceReferences(ref.Manifest)...)
 }

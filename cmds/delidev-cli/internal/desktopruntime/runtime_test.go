@@ -99,13 +99,14 @@ func TestLocalRetirementCannotFallBackToPairingAddress(t *testing.T) {
 	defer server.Close()
 	target = fixtureTarget(server.URL)
 	target.Root = root
+	retained := retainPairing(t, root, target.ServerID, "http://127.0.0.1:40000")
 	if err := Publish(target); err != nil {
 		t.Fatal(err)
 	}
 	base := http.DefaultTransport.(*http.Transport).Clone()
 	base.Proxy = nil
 	defer base.CloseIdleConnections()
-	transport := &LocalTransport{Base: base, Root: worker, Owner: root, ServerID: target.ServerID}
+	transport := &LocalTransport{Base: base, Root: worker, Owner: root, ServerID: target.ServerID, Endpoint: retained.Endpoint, PairingID: retained.PairingID}
 	request, _ := http.NewRequest("POST", server.URL+"/rpc", nil)
 	request.Header.Set("Authorization", "Bearer retained")
 	response, err := transport.RoundTrip(request)
@@ -181,6 +182,8 @@ func TestLocalPairingNameMetadataPreservesOriginalRuntimeProof(t *testing.T) {
 			}
 			raw, _ := json.Marshal(original)
 			path := filepath.Join(root, "local-pairing.json")
+			writeRetainedEvidence(t, target.Root, root, original["request_id"].(domain.ID), target.ServerID, target.Endpoint)
+			// Keep the original journal bytes, including any optional name.
 			if err := security.WriteAtomic(path, raw); err != nil {
 				t.Fatal(err)
 			}
@@ -202,5 +205,43 @@ func TestLocalPairingNameMetadataPreservesOriginalRuntimeProof(t *testing.T) {
 				t.Fatal("name permitted changed endpoint")
 			}
 		})
+	}
+}
+
+func TestFollowingOnlyForRelocatedFixedLocalWorker(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "owner")
+	if err := security.PrivateDir(root); err != nil {
+		t.Fatal(err)
+	}
+	worker := filepath.Join(root, "worker")
+	if err := security.PrivateDir(worker); err != nil {
+		t.Fatal(err)
+	}
+	target := fixtureTarget("http://127.0.0.1:41000")
+	target.Root = root
+	retainPairing(t, root, target.ServerID, "http://127.0.0.1:40000")
+	// Unchanged Local address: no record and no marker keeps the pairing route.
+	if following, err := Following(worker, target.ServerID, "http://127.0.0.1:40000"); err != nil || following {
+		t.Fatalf("unchanged Local address reported %v %v", following, err)
+	}
+	if err := Publish(target); err != nil {
+		t.Fatal(err)
+	}
+	if following, err := Following(worker, target.ServerID, "http://127.0.0.1:40000"); err != nil || !following {
+		t.Fatalf("published runtime reported %v %v", following, err)
+	}
+	// After retirement the durable marker still requires the runtime route.
+	if err := Retire(target); err != nil {
+		t.Fatal(err)
+	}
+	if following, err := Following(worker, target.ServerID, "http://127.0.0.1:40000"); err != nil || !following {
+		t.Fatalf("retired runtime reported %v %v", following, err)
+	}
+	// A different pairing address or a non-worker root is never followed.
+	if _, err := Following(worker, target.ServerID, "http://127.0.0.1:49999"); err == nil {
+		t.Fatal("altered pairing endpoint was accepted")
+	}
+	if following, err := Following(root, target.ServerID, "http://127.0.0.1:40000"); err != nil || following {
+		t.Fatalf("non-worker root reported %v %v", following, err)
 	}
 }

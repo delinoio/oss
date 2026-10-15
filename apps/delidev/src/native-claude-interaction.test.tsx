@@ -153,6 +153,21 @@ for (const change of [
     expect(screen.queryByText("Original reason")).toBeNull();
   });
 
+for (const version of ["2.1.237", "3.0.0-rc.1", "2.1.236+build.5"])
+  test(`displays a newer admitted Claude request recorded at ${version}`, () => {
+    const data = claudeRequestFixture();
+    (data.claude as Document).version = version;
+    render(<NativeClaudeInteraction data={data} />);
+    expect(screen.queryByLabelText("Claude request unavailable")).toBeNull();
+    expect(screen.getByText("Original reason")).toBeTruthy();
+  });
+for (const version of ["2.1.235", "2.1.236-rc.1"])
+  test(`rejects a Claude request recorded below the baseline at ${version}`, () => {
+    const data = claudeRequestFixture();
+    (data.claude as Document).version = version;
+    render(<NativeClaudeInteraction data={data} />);
+    expect(screen.getByLabelText("Claude request unavailable")).toBeTruthy();
+  });
 test("retains an original transmitted response and echo without claiming acceptance", () => {
   const data = claudeRequestFixture(),
     r = data.claude as Document;

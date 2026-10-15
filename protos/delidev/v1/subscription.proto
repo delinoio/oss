@@ -145,6 +145,8 @@ message GetSubscriptionProgressResponse {
   CodexDiagnostic diagnostic = 7;
   SubscriptionLoginMethod login_method = 8;
   NativeSubscriptionDiagnostic native_diagnostic = 9;
+  // Safe metadata for the original Grok Build failure; absent on older servers.
+  GrokDiagnostic grok_diagnostic = 10;
 }
 message WatchSubscriptionRequest {
   string machine_id = 1;
@@ -169,6 +171,10 @@ message TakeSubscriptionResponse {
   bytes installation_json = 5;
   // Opaque original-Runner profile reference, never authentication bytes.
   string native_profile_id = 6;
+  // Reserved: the account-owner lease a negotiated execution member joined. It is
+  // empty for a founding or legacy singleton lease. A member response never
+  // carries authentication bytes.
+  string owner_lease_id = 7;
 }
 message PublishSubscriptionProgressRequest {
   string account_id = 1;
@@ -196,6 +202,17 @@ message FinishSubscriptionRequest {
   bool refresh_confirmed = 8;
   bool succeeded = 9;
   NativeSubscriptionIdentity native_identity = 10;
+  // Reserved: which ownership a negotiated Finish releases. Unspecified keeps the
+  // legacy singleton meaning.
+  SubscriptionFinishScope finish_scope = 11;
+}
+// Reserved: ownership released by one FinishSubscription request.
+enum SubscriptionFinishScope {
+  SUBSCRIPTION_FINISH_SCOPE_UNSPECIFIED = 0;
+  // Releases only the exact execution member and never touches credentials.
+  SUBSCRIPTION_FINISH_SCOPE_MEMBER = 1;
+  // Retires the account owner after its last runnable member and writes back.
+  SUBSCRIPTION_FINISH_SCOPE_OWNER = 2;
 }
 message FinishSubscriptionResponse {
   Resource account = 1;
@@ -346,6 +363,29 @@ message CodexDiagnostic {
   string message = 5;
   string guidance = 6;
   string correlation_id = 7;
+}
+message GrokDiagnostic {
+  string detected_version = 1;
+  string supported_version = 2;
+  GrokDiagnosticPhase phase = 3;
+  string code = 4;
+  string message = 5;
+  string guidance = 6;
+  string correlation_id = 7;
+}
+enum GrokDiagnosticPhase {
+  GROK_DIAGNOSTIC_PHASE_UNSPECIFIED = 0;
+  GROK_DIAGNOSTIC_PHASE_DISCOVERY = 1;
+  GROK_DIAGNOSTIC_PHASE_VERSION = 2;
+  GROK_DIAGNOSTIC_PHASE_PROFILE = 3;
+  GROK_DIAGNOSTIC_PHASE_RUNTIME = 4;
+  GROK_DIAGNOSTIC_PHASE_LOGIN = 5;
+  GROK_DIAGNOSTIC_PHASE_REFRESH = 6;
+  GROK_DIAGNOSTIC_PHASE_LOGOUT = 7;
+  GROK_DIAGNOSTIC_PHASE_MODELS = 8;
+  GROK_DIAGNOSTIC_PHASE_EXECUTION = 9;
+  GROK_DIAGNOSTIC_PHASE_HISTORY = 10;
+  GROK_DIAGNOSTIC_PHASE_CLEANUP = 11;
 }
 enum CodexDiagnosticPhase {
   CODEX_DIAGNOSTIC_PHASE_UNSPECIFIED = 0;

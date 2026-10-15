@@ -56,6 +56,13 @@ Device scope, status/cancellation, immutable pages and retained last-success
 selection. Use model selects the executable ID; only final atomic Worker saving
 resolves or creates its canonical model.
 
+`model native-discover` and `model native-cancel` allocate a generated mutation request
+ID only after their flags parse successfully, immediately before the mutation RPC, so
+unknown flags produce a usage error with no envelope `request_id` and no RPC. The same
+ID is sent and returned in the envelope on success and uncertain failure. `native-list`
+and `native-observation` are reads and allocate none; an explicit `--request-id` is
+preserved.
+
 The feature exposes authenticated owner/client acceptance,
 status, bounded observation pages and cancellation, with equivalent explicit CLI
 and desktop controls. Mutation receipts use original UUID-v7 request identities
@@ -226,3 +233,11 @@ Instruction-file updates in this requirement apply only to changes in developmen
 Native model observations remain an independent bounded read-only diagnostic. Remove registration and use-model actions; never feed native observations into API completion or a saved Model registry. Preserve original Account/Worker/native-job ownership and diagnostic acceptance limits.
 
 Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.
+
+## Persistent model-observation profile
+
+Native model observation runs in the Worker's persistent accountless
+`model_observation` profile. Only the transient executable copy and the
+per-operation process journal are cleaned; the profile and its history are
+retained. See the
+[harness contract](cmds-delidev-harness-contract.md#persistent-native-profiles).

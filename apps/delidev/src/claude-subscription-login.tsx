@@ -1,40 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-import {
-  useProductLabels,
-  productResourceName,
-} from "./product-identity-labels";
 import "./wizard-presentation.css";
-import { useRunnerRemediation } from "./runner-remediation";
-import {
-  claudeRunnerObservation,
-  validRunnerObservation,
-  type RunnerObservation,
-} from "./runner-observation";
-import { Failure, Problem, InlineRemediation } from "./ui";
-import {
-  RunnerWorkflow,
-  useRunnerPreference,
-} from "./runner-device-preferences";
-import {
-  SettingsActionButton,
-  SettingsActionIcon,
-  SettingsActionPresentation,
-} from "./settings-action";
-import {
-  useCallback,
-  useEffect,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import { Code, ConnectError, createClient } from "@connectrpc/connect";
-import { useQuery, useTransport } from "@connectrpc/connect-query";
+import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { createClient } from "@connectrpc/connect";
+import { useTransport } from "@connectrpc/connect-query";
 import {
   ConfigurationService,
   EntityKind,
   FailureCode,
-  ResourceQuery,
   ResourceService,
   SubscriptionAction,
   SubscriptionLoginMethod,
@@ -47,15 +20,9 @@ import {
   type NativeSubscriptionDiagnostic,
   type Resource,
 } from "@delinoio/delidev-api-client";
-import { ScrollPicker, type ScrollPickerOption } from "./scroll-picker";
-import {
-  useConnectPaginationReader,
-  usePaginationChain,
-  usePaginationRefresh,
-} from "./scroll-pagination-query";
-import { type ScrollContinuationQuery } from "./scroll-continuation";
 import { OAuthNativeAction, useOAuthNativeControl } from "./account-oauth";
-import { document, encode, items, object, text } from "./documents";
+import { document, encode, object, text } from "./documents";
+import { validInstallationVersion } from "./harness-version";
 import { copy, useLocale, type MessageKey } from "./localization";
 import { useSettingsOpening } from "./settings-lifetime";
 import {
@@ -70,14 +37,12 @@ import {
 import { subscriptionNameValid } from "./subscription-onboarding";
 import "./subscription-onboarding.css";
 enum Step {
-  Runner,
   Login,
   Name,
   Terminal,
 }
 interface View {
   step: Step;
-  machine: string;
   name: string;
   state: SubscriptionLoginState;
   method: SubscriptionLoginMethod;
@@ -89,9 +54,7 @@ interface View {
 }
 interface Pending {
   opening: string;
-  machine: string;
   account?: Resource;
-  fixedRunner: boolean;
   operation: string;
   url: string;
   generation: string;
@@ -104,7 +67,7 @@ interface Pending {
   start?: () => Promise<void>;
   retry?: () => Promise<void>;
 }
-export function claudeLoginURL(raw: string): boolean {
+function claudeAuthorizationURL(raw: string, setupToken: boolean): boolean {
   try {
     if (raw.length > 8192 || !/^[!-~]+$/.test(raw)) return false;
     const u = new URL(raw),
@@ -154,6 +117,14 @@ export function claudeLoginURL(raw: string): boolean {
     )
       return false;
     const redirect = q.get("redirect_uri");
+    // A server cannot receive a browser callback: setup-token sign-in is the
+    // inference-only, code-pasting profile and never a localhost callback.
+    if (
+      setupToken &&
+      (redirect !== "https://platform.claude.com/oauth/code/callback" ||
+        q.get("code") !== "true")
+    )
+      return false;
     if (redirect !== "https://platform.claude.com/oauth/code/callback") {
       const c = new URL(redirect ?? "");
       if (
@@ -170,15 +141,17 @@ export function claudeLoginURL(raw: string): boolean {
       )
         return false;
     }
-    const scopes = (q.get("scope") ?? "").split(/\s+/),
-      permitted = [
-        "org:create_api_key",
-        "user:profile",
-        "user:inference",
-        "user:sessions:claude_code",
-        "user:mcp_servers",
-        "user:file_upload",
-      ];
+    const scopes = (q.get("scope") ?? "").split(/\s+/);
+    if (setupToken)
+      return scopes.length === 1 && scopes[0] === "user:inference";
+    const permitted = [
+      "org:create_api_key",
+      "user:profile",
+      "user:inference",
+      "user:sessions:claude_code",
+      "user:mcp_servers",
+      "user:file_upload",
+    ];
     return (
       scopes.includes("user:profile") &&
       scopes.includes("user:inference") &&
@@ -189,33 +162,16 @@ export function claudeLoginURL(raw: string): boolean {
     return false;
   }
 }
-function eligibleRunner(r: Resource): boolean {
-  const d = document(r),
-    installations = items(d.installations).map(object);
-  return (
-    r.kind === EntityKind.MACHINE &&
-    isEntityId(r.id) &&
-    r.revision > 0n &&
-    d.disabled !== true &&
-    items(d.worker_capabilities).includes("native-claude-subscriptions-v1") &&
-    installations.filter((i) => i.harness === "claude-code").length === 1 &&
-    installations.some(
-      (i) =>
-        i.harness === "claude-code" &&
-        i.version === "2.1.236" &&
-        i.state === "detected" &&
-        i.protocol_verified === true &&
-        object(i.protocol).state === "verified" &&
-        !i.problem &&
-        !object(i.protocol).problem,
-    )
-  );
+export function claudeLoginURL(raw: string): boolean {
+  return claudeAuthorizationURL(raw, false);
+}
+export function claudeSetupTokenURL(raw: string): boolean {
+  return claudeAuthorizationURL(raw, true);
 }
 export function useClaudeSubscriptionLogin(
   active: boolean,
   changed: () => void,
 ) {
-  const productLabel = useProductLabels();
   useLocale();
   const transport = useTransport(),
     native = useOAuthNativeControl(),
@@ -233,31 +189,6 @@ export function useClaudeSubscriptionLogin(
     [hidden, setHidden] = useState(false),
     approvalInput = useRef<HTMLInputElement>(null);
 
-  const runner = useRunnerPreference(
-    RunnerWorkflow.ClaudeLogin,
-    active && Boolean(view && view.step === Step.Runner),
-    eligibleRunner,
-    false,
-    pending.current?.opening ?? "",
-  );
-  const runnerTouched = useRef(false);
-  useEffect(() => {
-    const p = pending.current;
-    if (
-      active &&
-      runner.resolved &&
-      !runnerTouched.current &&
-      p &&
-      !p.fixedRunner &&
-      !p.busy &&
-      !p.operation &&
-      !p.machine &&
-      runner.suggestion
-    ) {
-      p.machine = runner.suggestion.id;
-      setView((current) => current && { ...current, machine: p.machine });
-    }
-  }, [active, runner.resolved, runner.suggestion, view]);
   const live = (p: Pending) =>
     pending.current === p && !p.disposed && !opening?.disposed;
   const update = (p: Pending, v: Partial<View>) => {
@@ -307,95 +238,6 @@ export function useClaudeSubscriptionLogin(
       setHidden(false);
     }
   }, [active]);
-  const machineRequest = useCallback(
-    (token: string) => ({
-      filter: { kind: EntityKind.MACHINE, pageSize: 50, pageToken: token },
-    }),
-    [],
-  );
-  const machineProject = useCallback(
-    (response: { resources: Resource[]; nextPageToken: string }) => {
-      if (
-        response.resources.length > 50 ||
-        new Set(response.resources.map((row) => row.id)).size !==
-          response.resources.length ||
-        response.resources.some(
-          (row) =>
-            row.kind !== EntityKind.MACHINE ||
-            !isEntityId(row.id) ||
-            row.revision < 1n ||
-            row.documentJson.byteLength > 1 << 20,
-        )
-      )
-        throw new ConnectError(
-          "The Runner page is unavailable.",
-          Code.DataLoss,
-        );
-      return {
-        rows: response.resources.map((row) => ({
-          id: row.id,
-          revision: row.revision,
-          label: productResourceName(productLabel, row),
-          eligible: validRunnerObservation(row) && eligibleRunner(row),
-          observation: claudeRunnerObservation(row),
-        })),
-        payload: response.resources,
-        nextPageToken: response.nextPageToken,
-      };
-    },
-    [],
-  );
-  const machineReader = useConnectPaginationReader(
-    ResourceQuery.listResources,
-    machineRequest,
-    machineProject,
-  );
-  // Diagnostics on another retained surface still own pending/uncertain inspection gates.
-  const inspectRunner = useRunnerRemediation({
-    active: active && !hidden && view?.step === Step.Runner && !view.busy,
-  });
-  const machinesActive =
-    active && !hidden && view?.step === Step.Runner && !view.busy;
-  const machines = usePaginationChain(
-    `claude-runners:${pending.current?.opening ?? ""}`,
-    machinesActive,
-    machineReader,
-  );
-  usePaginationRefresh(
-    ResourceQuery.listResources,
-    machineRequest(""),
-    machinesActive,
-    machines.refresh,
-  );
-  // Scrolling retains bounded original page records for explicit inspection,
-  // plus closed eligibility/name projections. The selected machine's exact
-  // owner read remains separate; page evidence never substitutes for it.
-  const ownerRunner = useQuery(
-    ResourceQuery.getResource,
-    { kind: EntityKind.MACHINE, id: view?.machine ?? "" },
-    { enabled: active && Boolean(view?.machine), gcTime: 0 },
-  );
-  const ownerReadError =
-    ownerRunner.error ||
-    (ownerRunner.data &&
-    (!validRunnerObservation(ownerRunner.data.resource) ||
-      ownerRunner.data.resource.id !== view?.machine)
-      ? new ConnectError(
-          "Runner ownership could not be confirmed.",
-          Code.DataLoss,
-        )
-      : undefined);
-  const selectedRunner =
-    ownerRunner.data?.resource?.kind === EntityKind.MACHINE &&
-    ownerRunner.data.resource.id === view?.machine &&
-    ownerRunner.data.resource.revision > 0n
-      ? ownerRunner.data.resource
-      : undefined;
-  const runnerOptions = machines.rows.map(({ id, label, eligible }) => ({
-    id,
-    label,
-    disabled: !eligible,
-  }));
   const fresh = async (p: Pending) => {
     const result = await clients.resource.getResource({
       kind: EntityKind.ACCOUNT,
@@ -451,16 +293,11 @@ export function useClaudeSubscriptionLogin(
       update(p, { busy: false });
     }
   };
-  const begin = (initial?: Resource, reauth = false) => {
+  // Claude sign-in is server-owned: one setup-token operation, no Runner Device.
+  const begin = (initial?: Resource) => {
     if (!active || pending.current || opening?.disposed) return;
-    runnerTouched.current = false;
-    const machine = initial
-      ? text(object(document(initial).subscription).owner_machine_id)
-      : "";
     const p: Pending = {
       opening: newRequestId(),
-      machine,
-      fixedRunner: Boolean(machine),
       account: initial,
       operation: "",
       url: "",
@@ -474,8 +311,7 @@ export function useClaudeSubscriptionLogin(
     };
     pending.current = p;
     setView({
-      step: Step.Runner,
-      machine,
+      step: Step.Login,
       name: "Claude",
       state: SubscriptionLoginState.PREPARING,
       method: SubscriptionLoginMethod.UNSPECIFIED,
@@ -503,9 +339,7 @@ export function useClaudeSubscriptionLogin(
       | Parameters<typeof clients.subscription.requestSubscription>[0]
       | undefined;
     p.start = async () => {
-      if (!native || !isEntityId(p.machine))
-        throw new Error("Select original Runner");
-      update(p, { step: Step.Login });
+      if (!native) throw new Error("Native browser control unavailable");
       if (!p.account) {
         const result = await clients.configuration.saveConfiguration(create);
         if (!live(p)) return;
@@ -528,8 +362,7 @@ export function useClaudeSubscriptionLogin(
           expectedRevision: p.account.revision,
           requestId: newRequestId(),
         },
-        machineId: p.machine,
-        action: reauth ? SubscriptionAction.REFRESH : SubscriptionAction.LOGIN,
+        action: SubscriptionAction.LOGIN,
         deviceCode: false,
       };
       const result = await clients.subscription.requestSubscription(request);
@@ -546,11 +379,11 @@ export function useClaudeSubscriptionLogin(
         throw new Error("Invalid original operation");
       p.account = result.account;
       p.operation = result.operationId;
-      runner.remember(request.machineId ?? "");
       changed();
     };
-    if (reauth)
-      void run(p, p.start, "claude-subscription.requestUnconfirmed", true);
+    // One deliberate Add account click starts exactly one request. Its retained
+    // request ID makes every later click a replay.
+    void run(p, p.start, "claude-subscription.requestUnconfirmed", true);
   };
   useEffect(() => {
     if (!active || !view) return;
@@ -572,10 +405,11 @@ export function useClaudeSubscriptionLogin(
             s = object(d.subscription);
           if (!live(p)) return;
           if (
-            text(object(s.native_operation).id) !== p.operation ||
+            s.claude_credential !== "server-token" ||
+            text(object(s.server_operation).id) !== p.operation ||
+            Boolean(s.owner_machine_id) ||
+            Boolean(s.native_profile_id) ||
             s.generation !== result.generation ||
-            s.owner_machine_id !== p.machine ||
-            !isEntityId(text(s.native_profile_id)) ||
             s.recovery_required === true ||
             !isEntityId(text(object(d.connection).id))
           )
@@ -632,12 +466,9 @@ export function useClaudeSubscriptionLogin(
           return;
         if (
           result.userCode ||
-          !claudeLoginURL(result.url) ||
+          !claudeSetupTokenURL(result.url) ||
           (p.url && p.url !== result.url) ||
-          ![
-            SubscriptionLoginMethod.BROWSER_CALLBACK,
-            SubscriptionLoginMethod.BROWSER_CODE,
-          ].includes(result.loginMethod)
+          result.loginMethod !== SubscriptionLoginMethod.BROWSER_CODE
         )
           throw new Error("Invalid original native URL");
         p.url = result.url;
@@ -671,22 +502,6 @@ export function useClaudeSubscriptionLogin(
     const timer = setInterval(() => void poll(), 1000);
     return () => clearInterval(timer);
   }, [active, Boolean(view), clients, native]);
-  const start = () => {
-    const p = pending.current;
-    if (
-      p?.start &&
-      view?.step === Step.Runner &&
-      selectedRunner &&
-      eligibleRunner(selectedRunner) &&
-      !ownerReadError &&
-      !ownerRunner.isFetching &&
-      machines.loaded &&
-      !machines.loading &&
-      !machines.error &&
-      !inspectRunner?.pendingFor(view.machine)
-    )
-      void run(p, p.start, "claude-subscription.requestUnconfirmed", true);
-  };
   const cancel = () => {
     const p = pending.current;
     if (!p?.operation || p.terminal) return;
@@ -830,45 +645,13 @@ export function useClaudeSubscriptionLogin(
   const body =
     view && !hidden ? (
       <>
-        {view.step === Step.Runner ? runner.guidance : null}
         <ClaudeSubscriptionOnboarding
           view={view}
           setApprovalInput={(input) => {
             approvalInput.current = input;
           }}
-          runners={runnerOptions}
-          observations={machines.rows}
-          runnerReadError={ownerReadError}
-          selectedRunner={selectedRunner}
-          runnerQuery={machines}
-          canStart={Boolean(
-            selectedRunner &&
-            eligibleRunner(selectedRunner) &&
-            !ownerReadError &&
-            !ownerRunner.isFetching &&
-            machines.loaded &&
-            !machines.loading &&
-            !machines.error &&
-            !inspectRunner?.pendingFor(view.machine),
-          )}
-          loading={Boolean(machines.loading) || ownerRunner.isFetching}
-          readFailed={Boolean(machines.error || ownerReadError)}
-          refreshRunners={() => {
-            machines.refreshExplicit();
-            if (view?.machine) void ownerRunner.refetch();
-          }}
-          fixedRunner={Boolean(p?.fixedRunner)}
           active={active}
-          select={(machine) => {
-            if (p && !p.busy && !p.operation) {
-              runnerTouched.current = true;
-              runner.touch();
-              p.machine = machine;
-              update(p, { machine });
-            }
-          }}
           name={(name) => setView((v) => v && { ...v, name })}
-          start={start}
           cancel={cancel}
           reopen={reopen}
           submit={submit}
@@ -907,25 +690,8 @@ export function useClaudeSubscriptionLogin(
 interface OnboardingProps {
   view: View;
   setApprovalInput: (input: HTMLInputElement | null) => void;
-  runners: ScrollPickerOption[];
-  observations: {
-    id: string;
-    label: string;
-    eligible: boolean;
-    observation: RunnerObservation;
-  }[];
-  runnerReadError: unknown;
-  selectedRunner?: Resource;
-  runnerQuery: ScrollContinuationQuery;
-  canStart: boolean;
-  loading: boolean;
-  readFailed: boolean;
-  fixedRunner: boolean;
-  refreshRunners: () => void;
   active: boolean;
-  select: (id: string) => void;
   name: (name: string) => void;
-  start: () => void;
   cancel: () => void;
   reopen: () => void;
   submit: (code: string) => void;
@@ -935,7 +701,6 @@ interface OnboardingProps {
   retry?: () => void;
 }
 function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
-  const productLabel = useProductLabels();
   useLocale();
   const visible = useSettingsTaskVisible(),
     back = useCloseSettingsTask(p.hide),
@@ -949,26 +714,23 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
       name.current?.focus({ preventScroll: true });
     if (!visible && code.current) code.current.value = "";
   }, [visible, v.step]);
-  const step = v.step === Step.Runner ? 0 : v.step === Step.Name ? 2 : 1;
-  const status: Partial<Record<SubscriptionLoginState, MessageKey>> = {
-    [SubscriptionLoginState.PREPARING]: "claude-subscription.preparing",
-    [SubscriptionLoginState.WAITING]: "claude-subscription.waiting",
-    [SubscriptionLoginState.CANCELED]: "claude-subscription.canceled",
-    [SubscriptionLoginState.EXPIRED]: "claude-subscription.expired",
-    [SubscriptionLoginState.UNSUPPORTED]: "claude-subscription.unsupported",
-    [SubscriptionLoginState.RECOVERY_REQUIRED]: "claude-subscription.recovery",
-    [SubscriptionLoginState.FAILED]: "claude-subscription.failed",
+  const step = v.step === Step.Name ? 1 : 0;
+  const serverStatus: Partial<Record<SubscriptionLoginState, MessageKey>> = {
+    [SubscriptionLoginState.PREPARING]: "claude-subscription.server.preparing",
+    [SubscriptionLoginState.WAITING]: "claude-subscription.server.waiting",
+    [SubscriptionLoginState.CANCELED]: "claude-subscription.server.canceled",
+    [SubscriptionLoginState.EXPIRED]: "claude-subscription.server.expired",
+    [SubscriptionLoginState.UNSUPPORTED]:
+      "claude-subscription.server.unsupported",
+    [SubscriptionLoginState.RECOVERY_REQUIRED]:
+      "claude-subscription.server.recovery",
+    [SubscriptionLoginState.FAILED]: "claude-subscription.server.failed",
   };
-  const runner = p.selectedRunner,
-    runnerName = runner
-      ? productResourceName(productLabel, runner)
-      : (p.runners.find((row) => row.id === v.machine)?.label ??
-        copy("claude-subscription.originalRunner"));
+  const status = serverStatus;
   const d = v.diagnostic,
     safeDiagnostic =
       d &&
-      d.requiredVersion === "2.1.236" &&
-      (!d.detectedVersion || /^\d+\.\d+\.\d+$/.test(d.detectedVersion)) &&
+      (!d.detectedVersion || validInstallationVersion(d.detectedVersion)) &&
       d.phase >= 1 &&
       d.phase <= 9 &&
       Object.values(FailureCode).includes(d.code as FailureCode) &&
@@ -984,10 +746,9 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
       >
         {(
           [
-            "claude-subscription.runner",
             "claude-subscription.login",
             "claude-subscription.accountName",
-          ] as const
+          ] as readonly MessageKey[]
         ).map((key, index) => (
           <li
             key={key}
@@ -1001,282 +762,173 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
           </li>
         ))}
       </ol>
-      {v.step === Step.Runner ? (
-        <form
-          id={id}
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (!busy && v.machine) p.start();
-          }}
-        >
-          <ScrollPicker
-            label={copy("claude-subscription.runner")}
-            value={v.machine}
-            selectedLabel={v.machine ? runnerName : undefined}
-            placeholder={copy("claude-subscription.selectRunner")}
-            disabled={busy || p.fixedRunner}
-            active={p.active && visible && v.step === Step.Runner}
-            query={p.runnerQuery}
-            options={p.runners}
-            change={p.select}
-          />
-          <p>{copy("claude-subscription.runnerHelp")}</p>
-          {p.runnerQuery.error ? (
-            <Failure
-              failure={p.runnerQuery.error.failure}
-              summary={copy(
-                p.runnerQuery.loaded
-                  ? "claude-subscription.inventoryStale"
-                  : "claude-subscription.inventoryFailed",
-              )}
-            />
-          ) : null}
-          <Problem
-            error={p.runnerReadError}
-            summary={copy("claude-subscription.selectedReadFailed")}
-          />
-          {p.loading ? (
-            <p role="status">{copy("claude-subscription.inventoryLoading")}</p>
-          ) : null}
-          {!p.readFailed &&
-          !p.loading &&
-          p.runnerQuery.loaded &&
-          !p.runners.some((row) => !row.disabled) ? (
-            <InlineRemediation
-              summary={copy(
-                p.runnerQuery.nextPageToken
-                  ? "claude-subscription.inventoryPageEmpty"
-                  : p.runners.length
-                    ? "claude-subscription.inventoryNoEligible"
-                    : "claude-subscription.inventoryEmpty",
-              )}
-            />
-          ) : null}
-          {p.runnerQuery.nextPageToken && !p.runnerQuery.error ? (
-            <SettingsActionButton
-              icon={SettingsActionIcon.Inspect}
-              type="button"
-              disabled={busy || p.loading}
-              onClick={p.runnerQuery.append}
+      <>
+        <p>{copy("claude-subscription.server.subtitle")}</p>
+        {v.step === Step.Name ? (
+          <>
+            <p
+              role="status"
+              className="subscription-onboarding-status subscription-onboarding-success"
             >
-              {copy("pagination.loadMore")}
-            </SettingsActionButton>
-          ) : null}
-          <SettingsActionButton
-            icon={SettingsActionIcon.Refresh}
-            presentation={SettingsActionPresentation.Icon}
-            type="button"
-            disabled={busy || p.loading}
-            onClick={p.refreshRunners}
-          >
-            {copy("claude-subscription.refreshRunners")}
-          </SettingsActionButton>
-          {p.observations
-            .filter((row) => !row.eligible)
-            .map((row) => (
-              <article className="result" key={row.id}>
-                <h4>{row.label}</h4>
-                <InlineRemediation
-                  summary={
-                    <>
-                      <p>
-                        {copy(
-                          `claude-subscription.excluded.${row.observation.cause ?? "unavailable"}`,
-                        )}
-                      </p>
-                      {row.observation.detectedVersion ? (
-                        <p>
-                          {copy("claude-subscription.detectedVersion", {
-                            version: row.observation.detectedVersion,
-                          })}
-                        </p>
-                      ) : null}
-                    </>
-                  }
-                />
-              </article>
-            ))}
-          <SettingsTaskActions form={id}>
-            <SettingsActionButton
-              icon={SettingsActionIcon.Start}
-              className="primary"
-              disabled={busy || !p.canStart || p.readFailed}
+              <span aria-hidden="true">✓</span>
+              {copy("claude-subscription.success")}
+            </p>
+            <form
+              id={id}
+              onSubmit={(e) => {
+                e.preventDefault();
+                p.save();
+              }}
             >
-              {copy("claude-subscription.start")}
-            </SettingsActionButton>
-            <SettingsActionButton
-              icon={SettingsActionIcon.Back}
-              type="button"
-              onClick={back}
-            >
-              {copy("claude-subscription.back")}
-            </SettingsActionButton>
-          </SettingsTaskActions>
-        </form>
-      ) : (
-        <>
-          <p>
-            {copy("claude-subscription.runnerSummary", { runner: runnerName })}
-          </p>
-          {v.step === Step.Name ? (
-            <>
-              <p
-                role="status"
-                className="subscription-onboarding-status subscription-onboarding-success"
-              >
-                <span aria-hidden="true">✓</span>
-                {copy("claude-subscription.success")}
-              </p>
-              <form
-                id={id}
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  p.save();
-                }}
-              >
-                <label htmlFor={`${id}-name`}>
-                  {copy("claude-subscription.accountName")}
-                </label>
-                <input
-                  id={`${id}-name`}
-                  ref={name}
-                  autoComplete="off"
-                  value={v.name}
-                  disabled={busy}
-                  onChange={(e) => p.name(e.target.value)}
-                />
-                <p>{copy("claude-subscription.nameHelp")}</p>
-                <SettingsTaskActions form={id}>
-                  <SettingsActionButton
-                    icon={SettingsActionIcon.Save}
-                    className="primary"
-                    disabled={busy || !subscriptionNameValid(v.name)}
-                  >
-                    {copy("claude-subscription.saveName")}
-                  </SettingsActionButton>
-                  <SettingsActionButton
-                    icon={SettingsActionIcon.Cancel}
-                    type="button"
-                    onClick={p.leave}
-                  >
-                    {copy("claude-subscription.later")}
-                  </SettingsActionButton>
-                </SettingsTaskActions>
-              </form>
-            </>
-          ) : (
-            <>
-              <p role="status" className="subscription-onboarding-status">
-                {v.step === Step.Login ? (
-                  <span
-                    className="subscription-onboarding-spinner"
-                    aria-hidden="true"
-                  />
-                ) : null}
-                {copy(status[v.state] ?? "claude-subscription.failed")}
-              </p>
-              {v.step === Step.Login && v.browserReady ? (
+              <label htmlFor={`${id}-name`}>
+                {copy("claude-subscription.accountName")}
+              </label>
+              <input
+                id={`${id}-name`}
+                ref={name}
+                autoComplete="off"
+                value={v.name}
+                disabled={busy}
+                onChange={(e) => p.name(e.target.value)}
+              />
+              <p>{copy("claude-subscription.nameHelp")}</p>
+              <SettingsTaskActions form={id}>
                 <SettingsActionButton
-                  icon={SettingsActionIcon.Open}
-                  type="button"
-                  disabled={busy}
-                  onClick={p.reopen}
+                  icon={SettingsActionIcon.Save}
+                  className="primary"
+                  disabled={busy || !subscriptionNameValid(v.name)}
                 >
-                  {copy("claude-subscription.reopen")}
+                  {copy("claude-subscription.saveName")}
                 </SettingsActionButton>
-              ) : null}
-              {v.step === Step.Login &&
-              v.method === SubscriptionLoginMethod.BROWSER_CODE ? (
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    const value = code.current?.value ?? "";
-                    if (code.current) code.current.value = "";
-                    p.submit(value);
-                  }}
-                >
-                  <label htmlFor={`${id}-code`}>
-                    {copy("claude-subscription.approvalCode")}
-                  </label>
-                  <input
-                    id={`${id}-code`}
-                    ref={(input) => {
-                      code.current = input;
-                      p.setApprovalInput(input);
-                    }}
-                    type="password"
-                    autoComplete="off"
-                    spellCheck={false}
-                    maxLength={16384}
-                    placeholder={copy("claude-subscription.codePlaceholder")}
-                    disabled={busy || v.codeClaimed}
-                  />
-                  <p>
-                    {copy(
-                      v.codeClaimed
-                        ? "claude-subscription.codeClaimed"
-                        : "claude-subscription.codeHelp",
-                    )}
-                  </p>
-                  <SettingsActionButton
-                    icon={SettingsActionIcon.Confirm}
-                    className="primary"
-                    disabled={busy || v.codeClaimed}
-                  >
-                    {copy("claude-subscription.submitCode")}
-                  </SettingsActionButton>
-                </form>
-              ) : null}
-              {safeDiagnostic ? (
-                <dl className="subscription-onboarding-diagnostic">
-                  <div>
-                    <dt>{copy("claude-subscription.version")}</dt>
-                    <dd>
-                      {d.detectedVersion ||
-                        copy("claude-subscription.notDetected")}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>{copy("claude-subscription.requiredVersion")}</dt>
-                    <dd>{d.requiredVersion}</dd>
-                  </div>
-                  <div>
-                    <dt>{copy("claude-subscription.phase")}</dt>
-                    <dd>
-                      {copy(
-                        `claude-subscription.phase${d.phase}` as MessageKey,
-                      )}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>{copy("claude-subscription.failureCode")}</dt>
-                    <dd>{d.code}</dd>
-                  </div>
-                </dl>
-              ) : null}
-              <SettingsTaskActions>
-                {v.step === Step.Login ? (
-                  <SettingsActionButton
-                    icon={SettingsActionIcon.Cancel}
-                    type="button"
-                    disabled={busy}
-                    onClick={p.cancel}
-                  >
-                    {copy("claude-subscription.cancel")}
-                  </SettingsActionButton>
-                ) : null}
                 <SettingsActionButton
-                  icon={SettingsActionIcon.Back}
+                  icon={SettingsActionIcon.Cancel}
                   type="button"
-                  onClick={back}
+                  onClick={p.leave}
                 >
-                  {copy("claude-subscription.back")}
+                  {copy("claude-subscription.later")}
                 </SettingsActionButton>
               </SettingsTaskActions>
-            </>
-          )}
-        </>
-      )}
+            </form>
+          </>
+        ) : (
+          <>
+            {v.step === Step.Login ? (
+              <>
+                <h3>{copy("claude-subscription.server.heading")}</h3>
+                <p>{copy("claude-subscription.server.body")}</p>
+              </>
+            ) : null}
+            <p role="status" className="subscription-onboarding-status">
+              {v.step === Step.Login ? (
+                <span
+                  className="subscription-onboarding-spinner"
+                  aria-hidden="true"
+                />
+              ) : null}
+              {v.state === SubscriptionLoginState.UNSUPPORTED ? (
+                <>
+                  <strong>
+                    {copy("claude-subscription.validationHeading")}
+                  </strong>{" "}
+                </>
+              ) : null}
+              {copy(status[v.state] ?? "claude-subscription.failed")}
+            </p>
+            {v.step === Step.Login && v.browserReady ? (
+              <SettingsActionButton
+                icon={SettingsActionIcon.Open}
+                type="button"
+                disabled={busy}
+                onClick={p.reopen}
+              >
+                {copy("claude-subscription.reopen")}
+              </SettingsActionButton>
+            ) : null}
+            {v.step === Step.Login &&
+            v.method === SubscriptionLoginMethod.BROWSER_CODE ? (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const value = code.current?.value ?? "";
+                  if (code.current) code.current.value = "";
+                  p.submit(value);
+                }}
+              >
+                <label htmlFor={`${id}-code`}>
+                  {copy("claude-subscription.approvalCode")}
+                </label>
+                <input
+                  id={`${id}-code`}
+                  ref={(input) => {
+                    code.current = input;
+                    p.setApprovalInput(input);
+                  }}
+                  type="password"
+                  autoComplete="off"
+                  spellCheck={false}
+                  maxLength={16384}
+                  placeholder={copy("claude-subscription.codePlaceholder")}
+                  disabled={busy || v.codeClaimed}
+                />
+                <p>
+                  {copy(
+                    v.codeClaimed
+                      ? "claude-subscription.codeClaimed"
+                      : "claude-subscription.codeHelp",
+                  )}
+                </p>
+                <SettingsActionButton
+                  icon={SettingsActionIcon.Confirm}
+                  className="primary"
+                  disabled={busy || v.codeClaimed}
+                >
+                  {copy("claude-subscription.submitCode")}
+                </SettingsActionButton>
+              </form>
+            ) : null}
+            {safeDiagnostic ? (
+              <dl className="subscription-onboarding-diagnostic">
+                <div>
+                  <dt>{copy("claude-subscription.version")}</dt>
+                  <dd>
+                    {d.detectedVersion ||
+                      copy("claude-subscription.notDetected")}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{copy("claude-subscription.phase")}</dt>
+                  <dd>
+                    {copy(`claude-subscription.phase${d.phase}` as MessageKey)}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{copy("claude-subscription.failureCode")}</dt>
+                  <dd>{d.code}</dd>
+                </div>
+              </dl>
+            ) : null}
+            <SettingsTaskActions>
+              {v.step === Step.Login ? (
+                <SettingsActionButton
+                  icon={SettingsActionIcon.Cancel}
+                  type="button"
+                  disabled={busy}
+                  onClick={p.cancel}
+                >
+                  {copy("claude-subscription.cancel")}
+                </SettingsActionButton>
+              ) : null}
+              <SettingsActionButton
+                icon={SettingsActionIcon.Back}
+                type="button"
+                onClick={back}
+              >
+                {copy("claude-subscription.back")}
+              </SettingsActionButton>
+            </SettingsTaskActions>
+          </>
+        )}
+      </>
       {v.problem ? <p role="alert">{copy(v.problem)}</p> : null}
       {p.retry ? (
         <SettingsActionButton

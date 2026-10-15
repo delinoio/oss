@@ -9,6 +9,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import { readFileSync } from "node:fs";
 import { expect, it, vi } from "vitest";
 import {
   ConfigurationService,
@@ -24,6 +25,7 @@ import {
   ConfigurationTransfer,
   formatConfigurationReview,
 } from "./configuration-transfer";
+import { i18n } from "./localization";
 import { MutationIntents } from "./mutation";
 import { encode } from "./documents";
 
@@ -284,6 +286,94 @@ it("does not apply an old document after loading invalid replacement JSON", asyn
     screen.queryByRole("button", { name: "Apply reviewed configuration" }),
   ).toBeNull();
   expect(value.apply).not.toHaveBeenCalled();
+});
+
+const malformedJsonEnglish =
+  "The configuration document is not valid JSON. Correct the syntax or paste a current version 4 DeliDev configuration export.";
+const malformedJsonKorean =
+  "구성 문서가 올바른 JSON이 아닙니다. 구문을 수정하거나 현재 버전 4 DeliDev 구성 내보내기를 붙여넣으세요.";
+function expectGuardedLoadFailure(
+  value: ReturnType<typeof fixture>,
+  draft: string,
+  message: string,
+) {
+  const json = screen.getByRole("textbox", {
+    name: "Configuration JSON",
+  }) as HTMLTextAreaElement;
+  expect(screen.getByText(message)).toBeTruthy();
+  expect(json.value).toBe(draft);
+  expect(json.matches(":disabled")).toBe(false);
+  expect(json.readOnly).toBe(false);
+  const stages = screen.getByRole("list", {
+    name: "Configuration import stages",
+  });
+  expect(stages.querySelector('[aria-current="step"]')!.textContent).toContain(
+    "Load document",
+  );
+  expect(
+    screen.queryByRole("button", { name: "Preview configuration changes" }),
+  ).toBeNull();
+  expect(value.preview).not.toHaveBeenCalled();
+  expect(value.apply).not.toHaveBeenCalled();
+}
+
+it.each(["not-json", '{"version":4,"entries":['])(
+  "explains malformed JSON %j and keeps the draft editable at the load stage",
+  (draft) => {
+    const value = fixture();
+    render(value.view());
+    load(draft);
+    expectGuardedLoadFailure(value, draft, malformedJsonEnglish);
+    expect(
+      screen.queryByText("The configuration document could not be read."),
+    ).toBeNull();
+    load(JSON.stringify(value.bundle));
+    expect(
+      screen.getByRole("button", { name: "Preview configuration changes" }),
+    ).toBeTruthy();
+    expect(screen.queryByText(malformedJsonEnglish)).toBeNull();
+  },
+);
+
+it("shows localized malformed JSON guidance in Korean", async () => {
+  const value = fixture();
+  render(value.view());
+  await act(async () => {
+    await i18n.changeLanguage("ko");
+  });
+  try {
+    const draft = '{"version":4,';
+    fireEvent.change(screen.getByRole("textbox", { name: "설정 JSON" }), {
+      target: { value: draft },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "설정 문서 불러오기" }));
+    expect(screen.getByText(malformedJsonKorean)).toBeTruthy();
+    expect(
+      (
+        screen.getByRole("textbox", {
+          name: "설정 JSON",
+        }) as HTMLTextAreaElement
+      ).value,
+    ).toBe(draft);
+    expect(value.preview).not.toHaveBeenCalled();
+    expect(value.apply).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => {
+      await i18n.changeLanguage("en");
+    });
+  }
+});
+
+it("keeps version and shape guidance for valid JSON that is not a version 4 export", () => {
+  const value = fixture();
+  render(value.view());
+  load("{}");
+  expectGuardedLoadFailure(
+    value,
+    "{}",
+    "Use a current version 4 DeliDev configuration export. Older reset layouts cannot be imported.",
+  );
+  expect(screen.queryByText(malformedJsonEnglish)).toBeNull();
 });
 
 it("formats complete review values without changing integer or escaped string tokens", () => {
@@ -551,6 +641,38 @@ it("accepts current service-native v4 exports and preserves original preview byt
   ).toEqual(Array.from(preview));
 });
 
+it("shows product labels for internal preview identities while external reviewer IDs and apply bytes stay exact", async () => {
+  const value = fixture();
+  const sourceId = value.bundle.entries[0].id;
+  const targetId = newRequestId();
+  const template = newRequestId();
+  const reviewerId = "9007199254740993";
+  const bytes = new TextEncoder().encode(
+    `{"token":"server-preview","plan":{"version":4,"changes":[{"source_id":"${sourceId}","id":"${targetId}","kind":"agent","action":"create","expected_revision":0,"after":{"templates":["${template}"],"remediation":{"reviewer_selectors":[{"kind":"user","id":"${reviewerId}","node_id":"MDQ6VXNlcjE="}]},"big":18446744073709551615}}],"machines":[]}}`,
+  );
+  value.preview.mockResolvedValue({ previewJson: bytes });
+  render(value.view());
+  load(value.bundle);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Preview configuration changes" }),
+  );
+  const details = (await screen.findByRole("textbox", {
+    name: "Complete change details",
+  })) as HTMLTextAreaElement;
+  expect(details.value).toContain(`"id": "${reviewerId}"`);
+  expect(details.value).toContain("18446744073709551615");
+  for (const internal of [sourceId, targetId, template])
+    expect(details.value).not.toContain(internal);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Apply reviewed configuration" }),
+  );
+  await waitFor(() => expect(value.apply).toHaveBeenCalledTimes(1));
+  expect(
+    Array.from(
+      (value.apply.mock.calls[0][0] as { previewJson: Uint8Array }).previewJson,
+    ),
+  ).toEqual(Array.from(bytes));
+});
 it.each([1, 2, 3, 5, 6])(
   "refuses portable version %s before requesting an import preview",
   (version) => {
@@ -1098,4 +1220,48 @@ it("fences a late export failure after an import draft event without releasing t
     screen.getByRole("button", { name: "Preview configuration changes" }),
   ).toBeTruthy();
   expect(value.apply).not.toHaveBeenCalled();
+});
+
+it("marks the transfer-owned fieldsets that carry the blocked disabled attribute", async () => {
+  const value = fixture();
+  value.apply.mockResolvedValueOnce({
+    resultJson: new TextEncoder().encode("invalid"),
+  });
+  const { container } = render(value.view());
+  load(value.bundle);
+  const input = container.querySelector("fieldset.transfer-input-fieldset");
+  expect(input).not.toBeNull();
+  expect(input!.hasAttribute("disabled")).toBe(false);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Preview configuration changes" }),
+  );
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Apply reviewed configuration" }),
+  );
+  await screen.findByText(/The import outcome is unavailable/);
+  const mapping = container.querySelector("fieldset.transfer-mapping");
+  expect(input!.hasAttribute("disabled")).toBe(true);
+  expect(mapping).not.toBeNull();
+  expect(mapping!.hasAttribute("disabled")).toBe(true);
+  expect(input!.querySelector("textarea")!.matches(":disabled")).toBe(true);
+  // Inherited disablement leaves no own attribute on the control, which is why the styles anchor on the fieldset.
+  expect(input!.querySelector("textarea")!.hasAttribute("disabled")).toBe(
+    false,
+  );
+});
+
+it("styles controls under disabled transfer fieldsets without matching outer-only disablement", () => {
+  const css = readFileSync("src/configuration-transfer.css", "utf8");
+  const fieldsets =
+    ":is(fieldset.transfer-input-fieldset, fieldset.transfer-mapping)[disabled]";
+  const normalized = css.replace(/\s+/g, " ");
+  expect(normalized).toContain(
+    `.configuration-transfer ${fieldsets} :is(button, input, select, textarea), .configuration-transfer :is(button, input, select, textarea)[disabled] { opacity: 1; color: var(--muted); background: var(--surface-muted); border-color: var(--border); cursor: default; }`,
+  );
+  expect(normalized).toContain(
+    `.configuration-transfer ${fieldsets} input::file-selector-button, .configuration-transfer input[disabled]::file-selector-button { border-color: var(--border); background: var(--surface-muted); color: var(--muted); cursor: default; }`,
+  );
+  // The muted treatment must never key off :disabled, which outer fieldset disablement also matches.
+  expect(css).not.toMatch(/\.configuration-transfer[^{]*:disabled/);
+  expect(css).not.toContain(".settings-task-background");
 });

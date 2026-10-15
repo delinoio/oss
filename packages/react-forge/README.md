@@ -192,9 +192,20 @@ Test renderers are not runtime dependencies. Direct Microsoft Office validation 
 
 `createSession(Format.Glb | Format.Fbx)` returns `SceneSession`; `/glb` and `/fbx` expose Scene, Group, Mesh, perspective/orthographic cameras and directional/point/spot lights. Register copied typed-array geometry and PNG/JPEG textures with `registerGeometry` and `registerTexture`, then render and explicitly export. Coordinates use meters and right-handed Y-up. Basic PBR maps, opacity, UVs, tangents, nonuniform/negative scales and hierarchy are supported. The released static API excludes scene import/editing, animation, rigging, refraction and advanced coatings.
 
+The unreleased source API also has `SceneSession.compactGeometry(handle, { signal? })`. It returns an immutable derived handle and vertex/byte/triangle counts for GLB or FBX. It removes unused vertices and merges only complete bit-identical tuples, including skin and morph streams. Triangle count and face order do not change. The original handle remains valid; rendering with the compacted handle may shrink bounds that included unused positions.
+
 `inspect`, settled `snapshot`, revision-bound world-AABB `measure`, `exportBuffer`, atomic `exportFile`, `onDiagnostic` and `dispose` retain the local session lifecycle. GLB uses glTF 2.0; binary FBX 7.4 targets Blender 4.5 materials and embeds textures. Other FBX applications may shade differently. Registered assets and output each have a 256 MiB ceiling, individual geometry/textures 64 MiB, with existing image and React-tree limits. Generation has no Blender or viewer runtime dependency.
 
+GLB export can store triangle indices in a smaller lossless representation when their referenced values fit. Authoring still uses `Uint32Array`, and every vertex and triangle remains intact. Total file-size savings depend on the rest of the scene.
+
 See the [GLB guide](https://oss.delino.io/react-forge/formats/glb/), [FBX guide](https://oss.delino.io/react-forge/formats/fbx/), and original [AURA product example](examples/audio-studio-assets/README.md). The CLI/MCP exports `.glb`/`.fbx` in npm `0.2.0` and later.
+
+The unreleased source extension adds `SceneSession.analyze({ revision?, signal? })` for a settled, immutable report of unique geometry and per-mesh instance topology. The `react-forge analyze` command and MCP `inspect` view `scene_analysis` expose the same totals without automatic export. The [GLB analysis guide](https://oss.delino.io/react-forge/formats/glb/#scene-complexity-analysis-unreleased) describes the counts and availability.
+An optional `geometryQuality: true` pass reports exact-index unused, degenerate, duplicate and reverse-winding occurrences with bounded samples. CLI `analyze --geometry-quality` and MCP `scene_analysis` expose it. The pass does not modify geometry or exports and remains unreleased.
+
+For deliberate triangle counts and texture-carried artwork, see [polygon-efficient static authoring](https://oss.delino.io/react-forge/formats/glb/#polygon-efficient-static-authoring) and the [portable source example](examples/polygon-efficient.tsx). It compares 192 and 2,400 triangle curved sheets with opaque painted and transparent two-triangle quads. Its PNGs are generated in memory; copy both example source files for an installed CLI task.
+
+The unreleased source extension also accepts `geometryBudget` when creating a GLB/FBX session. `SceneBudgetAction.Warn` reports typed `onSceneWarning` events and file/CLI/MCP warnings while preserving output; `SceneBudgetAction.Error` rejects before generation with `resource_limit` and a `sceneBudget` context. The optional limits are scene triangles, triangles per Mesh, and Mesh count. No default polygon limit is imposed. See the [GLB budget guide](https://oss.delino.io/react-forge/formats/glb/#caller-geometry-budgets-unreleased) for semantics and availability.
 
 ## Sprite authoring (available in npm 0.2.0)
 

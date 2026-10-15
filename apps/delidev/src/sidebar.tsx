@@ -1,6 +1,12 @@
 import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import { useSessionNameEditor } from "./session-name-editor";
 import { SidebarPaneMotion, type SidebarPresentation } from "./sidebar-motion";
+import {
+  EntranceMotion,
+  settleEnclosingEntrances,
+  useActivationCount,
+  useEntranceActivation,
+} from "./entrance-motion";
 import { ProjectSettingsMenu } from "./project-settings-menu";
 import {
   DisclosureButton,
@@ -8,6 +14,11 @@ import {
   DisclosureDensity,
 } from "./disclosure";
 import { SubscriptionRail } from "./subscription-rail";
+import { SidebarMore } from "./sidebar-more";
+import {
+  NavigationPreferenceBoundary,
+  useNavigationPreference,
+} from "./navigation-preference";
 import {
   SessionRowActions,
   SessionRowActionsProvider,
@@ -22,6 +33,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ComponentProps,
   type RefObject,
   type MouseEvent,
   type ReactNode,
@@ -1017,7 +1029,18 @@ function ProjectGroup({
   );
 }
 
-export function Sidebar({
+export function Sidebar(props: SidebarProps) {
+  // App owns the device preference; isolated callers get the in-memory owner.
+  return (
+    <NavigationPreferenceBoundary>
+      <SidebarContent {...props} />
+    </NavigationPreferenceBoundary>
+  );
+}
+
+type SidebarProps = ComponentProps<typeof SidebarContent>;
+
+function SidebarContent({
   collapsed = false,
   motionReady = false,
   motionScope,
@@ -1067,6 +1090,7 @@ export function Sidebar({
   setDrawerOpen?: (open: boolean) => void;
 }) {
   const productLabel = useProductLabels();
+  const usagePinned = useNavigationPreference().snapshot.usage_pinned;
   const disclosureContentId3 = useId();
   useLocale();
   const [compact, setCompact] = useState(
@@ -1078,6 +1102,10 @@ export function Sidebar({
   const rail = useRef<HTMLElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const modalDrawer = useRef(false);
+  // Set when the compact opener owned focus at the moment the viewport widened.
+  // CSS hides the opener in the wide layout, so ownership is captured from the
+  // media-query event before the hidden element can lose focus implicitly.
+  const openerFocusAtWiden = useRef(false);
   const motion = useRef<SidebarPaneMotion | undefined>(undefined);
   const presentationVersion = useRef(0);
   const modalFocusFrame = useRef<number | undefined>(undefined);
@@ -1124,6 +1152,17 @@ export function Sidebar({
     surface === Surface.Sessions ||
     surface === Surface.NewSession ||
     surface === Surface.NewGeneralChat;
+  // Home activation (returning from another destination) owns one 160ms Y4
+  // entrance on the project-group wrapper. The count tracks the rising edge of
+  // Home navigation only, so session selection, Home to New session switches,
+  // list refreshes, paging, expansion, archive filtering and compact drawer
+  // open/close never replay it, and nothing waits for it.
+  const homeActivations = useActivationCount(sessionNavigation);
+  const homeEntrance = useEntranceActivation(
+    `home:${homeActivations}`,
+    sessionNavigation,
+    EntranceMotion.Y4,
+  );
   const selectedRowId =
     surface === Surface.NewSession || surface === Surface.NewGeneralChat
       ? ""
@@ -1177,11 +1216,18 @@ export function Sidebar({
   useEffect(() => {
     if (typeof window.matchMedia !== "function") return;
     const media = window.matchMedia("(max-width: 759px)");
-    const update = () => setCompact(media.matches);
+    const update = () => {
+      const opener = compactFocusRef?.current;
+      openerFocusAtWiden.current =
+        !media.matches &&
+        Boolean(opener) &&
+        window.document.activeElement === opener;
+      setCompact(media.matches);
+    };
     update();
     media.addEventListener("change", update);
     return () => media.removeEventListener("change", update);
-  }, []);
+  }, [compactFocusRef]);
   useEffect(() => {
     if (typeof window.matchMedia !== "function") return;
     const width = window.matchMedia("(max-width: 1100px)");
@@ -1268,6 +1314,8 @@ export function Sidebar({
       }
     } else {
       const wasModal = modalDrawer.current;
+      const openerOwnedFocus = openerFocusAtWiden.current;
+      openerFocusAtWiden.current = false;
       if (wasModal && element.open) element.close();
       modalDrawer.current = false;
       const app = element.closest<HTMLElement>(".app");
@@ -1317,6 +1365,47 @@ export function Sidebar({
         element.hidden = hidden;
         if (collapsed) element.removeAttribute("open");
         else element.setAttribute("open", "");
+      }
+      if (
+        openerOwnedFocus &&
+        !wasModal &&
+        !focusHandoffPending &&
+        priorPresentation.current?.compact
+      ) {
+        // The hidden compact opener held focus with the drawer closed. Move
+        // focus to a visible navigation control only when no other control has
+        // taken it, so composer focus and selection are never disturbed. This
+        // never writes the sidebar preference.
+        const active = document.activeElement;
+        const opener = compactFocusRef?.current;
+        if (!active || active === document.body || active === opener) {
+          (element.hidden || collapsed
+            ? railTarget()
+            : (Array.from(
+                element.querySelectorAll<HTMLElement>(
+                  // Pane rows use aria-current="true" while navigation buttons
+                  // use "page"; accept any valid current token.
+                  "[aria-current]:not([aria-current='false'])",
+                ),
+              ).find((candidate) => {
+                // The retained session tree stays mounted under a hidden
+                // wrapper on other surfaces; skip current items inside any
+                // hidden or inert ancestor so focus lands on a focusable row.
+                if (
+                  candidate instanceof HTMLButtonElement &&
+                  candidate.disabled
+                )
+                  return false;
+                for (
+                  let node: HTMLElement | null = candidate;
+                  node && node !== element;
+                  node = node.parentElement
+                )
+                  if (node.hidden || node.inert) return false;
+                return true;
+              }) ?? railTarget())
+          )?.focus({ preventScroll: true });
+        }
       }
       if (wasModal) {
         setDrawerOpen(false);
@@ -1430,6 +1519,10 @@ export function Sidebar({
     home,
   ]);
   const showNewProjectTooltip = () => {
+    // The tooltip is fixed and keeps this measurement, so settle the Home
+    // entrance first; the attribute clears synchronously and the anchor is
+    // measured without the in-flight transform.
+    settleEnclosingEntrances(newProjectButton.current);
     const rect = newProjectButton.current?.getBoundingClientRect();
     if (!rect) return;
     const width = Math.min(120, window.innerWidth - 16);
@@ -1530,17 +1623,24 @@ export function Sidebar({
               current={surface === Surface.PullRequests}
               onClick={() => navigate(Surface.PullRequests)}
             />
-            <SidebarButton
-              label={copy("sidebar.usage_8d5982")}
-              icon="usage"
-              current={surface === Surface.Usage}
-              onClick={() => navigate(Surface.Usage)}
-            />
+            {usagePinned ? (
+              <SidebarButton
+                label={copy("sidebar.usage_8d5982")}
+                icon="usage"
+                current={surface === Surface.Usage}
+                onClick={() => navigate(Surface.Usage)}
+              />
+            ) : null}
             <SidebarButton
               label={copy("sidebar.schedules_221ff1")}
               icon="schedules"
               current={surface === Surface.Schedules}
               onClick={() => navigate(Surface.Schedules)}
+            />
+            <SidebarMore
+              usageActive={surface === Surface.Usage}
+              openUsage={() => navigate(Surface.Usage)}
+              drawerOpen={compact && drawerOpen}
             />
             <span className="sidebar-rail-spacer" />
             <SubscriptionRail
@@ -1699,7 +1799,7 @@ export function Sidebar({
                     : copy("sidebar.menuNavigationAndFilters_b5a21d")
                 }
               >
-                <div hidden={!sessionNavigation}>
+                <div hidden={!sessionNavigation} {...homeEntrance}>
                   <header className="sidebar-projects-heading">
                     <h2>{copy("sidebar.projects_04e2a9")}</h2>
                     <button
@@ -1741,7 +1841,12 @@ export function Sidebar({
                       )}
                       aria-haspopup="dialog"
                       aria-expanded={optionsOpen}
-                      onClick={() => setOptionsOpen((current) => !current)}
+                      onClick={() => {
+                        // The dialog mounts inside the Home wrapper; settle its
+                        // entrance first so the popup is not animated with Home.
+                        settleEnclosingEntrances(optionsButton.current);
+                        setOptionsOpen((current) => !current);
+                      }}
                     >
                       <Icon name="options" />
                     </button>

@@ -24,18 +24,70 @@ const enabledControls = (root: ParentNode | null | undefined) => [
 ];
 
 /**
- * Compact tool dialog shared by the Open tool button and the OpenTool shortcut.
+ * Hover-only reason for a disabled tool row. The pointer target is a
+ * noninteractive wrapper because disabled buttons do not receive pointer
+ * events in every engine; the button receives the same reason through
+ * aria-describedby. The tooltip is positioned inside the row so the dialog's
+ * scrolling and narrow or zoomed viewports never clip it, and it is never
+ * shown from keyboard focus because the disabled button is not focusable.
+ */
+export function SessionToolHint({
+  reason,
+  children,
+}: {
+  reason: string;
+  children: (describedBy: string) => ReactNode;
+}) {
+  const id = useId();
+  const [hovered, setHovered] = useState(false);
+  return (
+    <div
+      role="presentation"
+      className="session-tool-hint"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      {children(id)}
+      <span
+        id={id}
+        role="tooltip"
+        className="session-tool-tooltip"
+        data-visible={hovered ? "true" : "false"}
+      >
+        {reason}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Compact tool dialog shared by the tab-bar + Open tool button and the OpenTool shortcut.
  * Rows keep their original callbacks; this dialog only owns presentation, focus
  * and the shortcut registration. Opening performs no tool action.
  */
 export function SessionToolMenu({
   children,
-  active,
+  active: surfaceActive,
+  ready = true,
+  recoveryFocus,
 }: {
   children: ReactNode;
+  /** Whether the Session is the selected, visible Sessions surface. */
   active: boolean;
+  /**
+   * Whether the connection is ready. Losing readiness retires the presentation
+   * like Session departure; regaining it never reopens the dialog.
+   */
+  ready?: boolean;
+  /**
+   * Safe recovery control that receives focus when readiness is lost while the
+   * Session stays selected. A modal close natively restores focus to the
+   * opener, which is unavailable during recovery.
+   */
+  recoveryFocus?: () => HTMLElement | null | undefined;
 }) {
   useLocale();
+  const active = surfaceActive && ready;
   const id = useId(),
     trigger = useRef<HTMLButtonElement>(null),
     dialog = useRef<HTMLDialogElement>(null),
@@ -79,7 +131,22 @@ export function SessionToolMenu({
     const node = dialog.current;
     if (!active || !open || !node) {
       node?.close();
-      if (!active && open) setOpen(false);
+      if (!active && open) {
+        setOpen(false);
+        // The previous cleanup's modal close made the browser restore focus to
+        // the opener, which is unavailable while readiness is lost. Hand focus
+        // to a recovery control; Session departure never refocuses hidden content.
+        if (surfaceActive && !ready) {
+          const target = recoveryFocus?.();
+          if (availableShortcutTarget(target ?? null))
+            target?.focus({ preventScroll: true });
+          else if (
+            document.activeElement === trigger.current ||
+            document.activeElement === opener.current
+          )
+            (document.activeElement as HTMLElement).blur();
+        }
+      }
       return;
     }
     node.showModal();
@@ -103,7 +170,7 @@ export function SessionToolMenu({
         aria-controls={id}
         onClick={() => openDialog(trigger.current)}
       >
-        <SessionIcon kind={SessionIconKind.Tools} />
+        <SessionIcon kind={SessionIconKind.Plus} />
       </button>
       {createPortal(
         <DialogSurface

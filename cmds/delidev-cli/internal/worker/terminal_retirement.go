@@ -8,6 +8,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/terminal"
 )
 
 // Called under the terminal manager mutex and the Worker's exclusive root
@@ -61,6 +62,10 @@ func (m *terminalManager) retireReported(j terminalOperationJournal) error {
 			return err
 		}
 		if err := removeTerminalMetadata(m.shutdownPath(j.TerminalID)); err != nil {
+			return err
+		}
+		// Prompt wrappers are regenerable; this also clears any left by a crash.
+		if err := terminal.RemovePromptIntegration(m.config.Root, j.TerminalID); err != nil {
 			return err
 		}
 	}

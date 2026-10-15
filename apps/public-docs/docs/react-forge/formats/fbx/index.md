@@ -4,6 +4,15 @@ Available in npm `0.2.0`. Create and export static scenes using `createSession(F
 
 Use the same components, registered geometry/textures, transforms, measurement, and lifecycle as the [GLB guide](/react-forge/formats/glb/). Change the format to `Format.Fbx`, import the components from `@delino/react-forge/fbx`, and export to a `.fbx` destination. The result is binary FBX 7.4 with embedded textures. Generation needs no Blender, Autodesk SDK, or conversion process.
 
+The unreleased [`SceneSession.analyze()` report](/react-forge/formats/glb/#scene-complexity-analysis-unreleased) also works for FBX. It reports unique registered geometry and authored mesh-instance topology before export, using the same revision and row ordering as GLB. The counts do not estimate rendering speed or GPU memory; check [release status](/react-forge/releases) before using this API from npm.
+
+The explicit [`compactGeometry` operation](/react-forge/formats/glb/#explicit-geometry-compaction-unreleased) is also available in source for FBX scenes and remains unreleased. It returns a separate geometry handle and vertex/byte counts while preserving every face. Its source handle remains usable; removing unused vertices can shrink bounds only after rendering with the returned handle.
+
+For worked grid counts, one-texture painted detail, and an RGBA sheet, follow [polygon-efficient static authoring](/react-forge/formats/glb/#polygon-efficient-static-authoring). The example accepts `"format":"fbx"` with the same `low`, `dense`, `badge`, and `alpha` variants. Inspect the actual FBX in your target application; the embedded texture and opacity connections follow the Blender 4.5 compatibility profile below.
+
+The unreleased [caller geometry budget policy](/react-forge/formats/glb/#caller-geometry-budgets-unreleased) also applies to FBX with the same thresholds, warning and error types, and pre-publication behavior. Set it in trusted task code when creating `Format.Fbx`; no separate CLI or MCP threshold flags are needed.
+Pass `geometryQuality: true` for the same unreleased exact-index base-geometry findings as GLB. Findings do not modify or reject the FBX export.
+
 ## Compatibility profile
 
 The supported material profile targets Blender 4.5 LTS. It carries base color, metallic, roughness, normal, emissive, and opacity through the importer's legacy material properties and texture connections. Color and scalar factors are baked into embedded texture copies where the importer replaces connected values. Original registered bytes stay unchanged. Assets use meters and right-handed Y-up; camera/light axes and UV orientation are converted by the exporter.
@@ -13,6 +22,10 @@ FBX applications do not agree on all material conventions. Check the actual expo
 The accompanying GLB is useful for comparison because glTF defines a standard metallic-roughness model. Local acceptance checks use Blender 4.5.14 LTS for both exported formats, and an independent web viewer for GLB. These checks do not establish validation on every operating system or every FBX application. See [release and validation status](/react-forge/releases).
 
 Blender 4.5 ignores FBX mesh culling flags and shades both sides. Use closed surfaces when matching GLB appearance; a single-sided open surface can look different from its GLB counterpart.
+
+## Static geometry simplification (unreleased)
+
+`SceneSession.simplifyGeometry()` is implemented in source for both scene formats but **not released on npm**. It derives a separate static geometry handle, reports actual vertex/triangle counts and whether the target was reached, and leaves the original mesh unchanged. The accumulated plane error is an estimate, not a visual-quality guarantee. See the [GLB simplification guide](/react-forge/formats/glb/#static-geometry-simplification-unreleased) for the call and constraints. FBX export itself never simplifies a mesh implicitly.
 
 ## Animation authoring (unreleased)
 

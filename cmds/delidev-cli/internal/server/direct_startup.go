@@ -93,6 +93,9 @@ func (s *Service) ReportExecutionStartup(ctx context.Context, req *connect.Reque
 			}
 			session.Startup.Ready = &o
 		} else {
+			if err := s.requireStartupFailureEpoch(ctx, tx, r, session, identity.Machine, identity.Instance, identity.Device, input.ExecutionID); err != nil {
+				return nil, err
+			}
 			if session.Startup.Failure != nil {
 				return nil, executionDenied()
 			}
@@ -110,8 +113,7 @@ func (s *Service) ReportExecutionStartup(ctx context.Context, req *connect.Reque
 					return nil, err
 				}
 				claimed, err := store.Decode[domain.QueuedInput](queue)
-				original := domain.SessionInput{Prompt: claimed.Prompt, Mode: claimed.Mode, Skills: claimed.Skills, Attachments: claimed.Attachments}
-				if err != nil || queue.SessionID != sr.ID || claimed.Delivery != domain.InputClaimed || claimed.ExecutionID != input.ExecutionID || claimed.NativeRequestID != input.TurnRequestID || original.InputDigest() != input.Input.InputDigest() {
+				if err != nil || queue.SessionID != sr.ID || claimed.Delivery != domain.InputClaimed || claimed.ExecutionID != input.ExecutionID || claimed.NativeRequestID != input.TurnRequestID || !queuedSessionInput(claimed).Equal(input.Input) {
 					return nil, executionDenied()
 				}
 			}
@@ -140,6 +142,40 @@ func (s *Service) ReportExecutionStartup(ctx context.Context, req *connect.Reque
 	return response, nil
 }
 
+// requireStartupFailureEpoch authenticates Failed and Uncertain startup
+// observations against the server generation that issued the original native
+// authority. Receipt identity includes the current epoch, so replay alone cannot
+// prove that a prior-generation Worker still owns its execution.
+//
+// Once a grant exists, its epoch and ownership must match the live claim exactly.
+// Failures that precede RegisterExecution have no grant; they are bound to the
+// epoch recorded by native startup progress when present and are otherwise
+// accepted, because no native authority was ever issued for the attempt.
+// The account scope is intentionally not re-validated: the account may have
+// changed while positive no-send/cleanup proof must remain publishable.
+func (s *Service) requireStartupFailureEpoch(ctx context.Context, tx *store.Tx, job store.Record, session domain.Session, machine, instance, device, execution domain.ID) error {
+	epoch := s.executionAuthority.epoch
+	grant, found, err := tx.FindExecutionGrantForJob(job.ID)
+	if err != nil {
+		return err
+	}
+	if found {
+		if grant.ServerEpoch != epoch || grant.ExecutionID != execution || grant.MachineID != machine || grant.InstanceID != instance || grant.DeviceID != device {
+			s.logger.WarnContext(ctx, "execution_startup_failure_denied", "job_id", job.ID, "machine_id", machine, "reason", "grant_ownership_changed", "epoch_changed", grant.ServerEpoch != epoch)
+			return executionDenied()
+		}
+		return nil
+	}
+	if progress := session.StartupProgress; progress != nil && progress.Native != nil && progress.Native.JobID == job.ID {
+		native := progress.Native
+		if native.ServerEpoch != epoch || native.ExecutionID != execution || native.MachineID != machine || native.InstanceID != instance || native.DeviceID != device || native.AssignmentRevision != job.Revision {
+			s.logger.WarnContext(ctx, "execution_startup_failure_denied", "job_id", job.ID, "machine_id", machine, "reason", "progress_ownership_changed", "epoch_changed", native.ServerEpoch != epoch)
+			return executionDenied()
+		}
+	}
+	return nil
+}
+
 func startupFailureProblem(o domain.ExecutionStartupObservation) *domain.Error {
 	if o.FailureKind == domain.StartupImageInputRejected && o.Validate() == nil {
 		return domain.UnsupportedImageInput()
@@ -152,8 +188,14 @@ func startupFailureProblem(o domain.ExecutionStartupObservation) *domain.Error {
 		message, guidance = "The agent could not access its executable or runtime.", "Check the selected Runner Device's permissions."
 	case domain.Unsupported:
 		message, guidance = "The agent's protocol or applied settings are incompatible.", "Check the selected harness and settings; details identify the failing stage."
+	case domain.InvalidArgument:
+		// Mirrors the desktop correction, which treats an invalid argument like unsupported settings.
+		message, guidance = "The agent rejected its applied settings or arguments.", "Check the selected harness and settings; details identify the failing stage."
 	case domain.Unavailable:
 		message, guidance = "The agent failed to start or timed out.", "Check the selected Runner Device and its original log reference."
+	case domain.Canceled, domain.Conflict, domain.RecoveryRequired, domain.ResourceExhausted, domain.ProviderDisabled:
+		// Remaining accepted startup causes share the desktop's device-check correction.
+		guidance = "Check the selected Runner Device and its original log reference."
 	}
 	if o.State == domain.StartupUncertain || o.InputDelivery != domain.StartupNotSent || o.Cleanup != domain.StartupCleanupConfirmed {
 		// Acknowledgement and original cleanup are independent observations,
@@ -169,11 +211,9 @@ func startupFailureProblem(o domain.ExecutionStartupObservation) *domain.Error {
 		if o.Cleanup == domain.StartupCleanupConfirmed {
 			cleanup = "Original cleanup was confirmed."
 		}
-		correction := ""
-		if o.InputDelivery == domain.StartupAcknowledged && o.Cleanup == domain.StartupCleanupConfirmed {
-			correction = guidance + " "
-		}
-		guidance = correction + delivery + " " + cleanup + " Recover the original execution before continuing. Do not send the original input again."
+		// The cause-specific correction is independent of delivery and cleanup
+		// facts and never grants resend authority, so it is always retained.
+		guidance = guidance + " " + delivery + " " + cleanup + " Recover the original execution before continuing. Do not send the original input again."
 	}
 	return domain.Fail(o.ProblemCode, message, guidance)
 }

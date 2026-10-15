@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"log/slog"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -104,7 +105,9 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 		"INSERT INTO entities SELECT * FROM current_state.entities WHERE kind='machine' AND id IN (SELECT json_extract(CAST(body AS TEXT),'$.machine_id') FROM current_state.entities WHERE kind='network_route')",
 		// Worker files are not restored. Their database association must be
 		// explicitly paired again after startup, never implicitly reattached.
-		"UPDATE entities SET body=json_set(body,'$.revoked',json('true')) WHERE kind='device' AND json_extract(body,'$.type')='worker'",
+		// json_set yields TEXT; entity bodies are BLOB like every other write, so
+		// later record scans (for example account deletion) keep working.
+		"UPDATE entities SET body=CAST(json_set(body,'$.revoked',json('true')) AS BLOB) WHERE kind='device' AND json_extract(body,'$.type')='worker'",
 		"DELETE FROM entities WHERE id IN (SELECT id FROM tombstones) OR session_id IN (SELECT id FROM tombstones WHERE kind='session')",
 		"DELETE FROM entities WHERE kind='project_prompt_history' AND project_id NOT IN (SELECT id FROM entities WHERE kind='project')",
 		// Preserve original backup-removal jobs exactly for the independent
@@ -418,19 +421,56 @@ func redactRestoredDeletedSessions(ctx context.Context, tx *sql.Tx, now time.Tim
 	return nil
 }
 
+const (
+	// Ordinary historical Job documents keep the generic 1 MiB bound.
+	restoreOrdinaryJobBytes = 1 << 20
+	// The envelope peek is bounded by the largest typed Job document so a
+	// larger body falls through to the strict generic rejection.
+	restoreJobEnvelopePeekBytes = domain.MaxRepositoryBranchesJobBytes
+)
+
 // Decode the original document before quarantine can replace invalid state or
-// hide a malformed input behind a canceled historical Job. Generic storage
-// decoding chooses outer limits; each exceptional profile owns its validation.
+// hide a malformed input behind a canceled historical Job. Restore never reuses
+// the generic storage decoder's type-selected outer limits: only the owning
+// closed decoders of compact-session and workspace storage recovery history may
+// exceed the ordinary 1 MiB document bound. Large native code review history
+// likewise needs its owning closed decoder, and every other Job type, including
+// discover-repository-branches, keeps the strict generic bound. Live branch Job
+// reads and writes keep their separate typed allowance outside restore.
 func decodeRestoreJob(raw []byte) (domain.Job, error) {
-	job, err := Decode[domain.Job](Record{Kind: domain.JobKind, Data: raw})
-	if err != nil {
-		return job, err
+	var job domain.Job
+	var envelope struct {
+		Type domain.JobType `json:"type"`
 	}
-	switch job.Type {
-	case domain.CompactSessionJob:
-		err = domain.DecodeCompactionJob(raw, &job)
-	case domain.WorkspaceStorageJob:
-		err = workspace.DecodeStorageJob(raw, &job)
+	// An envelope that cannot be peeked selects the strict generic path, which
+	// also reports the precise size/UTF-8/JSON failure.
+	if len(raw) <= restoreJobEnvelopePeekBytes && json.Unmarshal(raw, &envelope) == nil {
+		switch envelope.Type {
+		case domain.CompactSessionJob:
+			if err := domain.DecodeCompactionJob(raw, &job); err != nil {
+				slog.Warn("backup restore rejected historical job", "type", envelope.Type, "bytes", len(raw))
+				return job, err
+			}
+			return job, nil
+		case domain.WorkspaceStorageJob:
+			if err := workspace.DecodeStorageJob(raw, &job); err != nil {
+				slog.Warn("backup restore rejected historical job", "type", envelope.Type, "bytes", len(raw))
+				return job, err
+			}
+			return job, nil
+		case domain.NativeCodeReviewJob:
+			if len(raw) > restoreOrdinaryJobBytes {
+				if err := domain.DecodeNativeCodeReviewJob(raw, &job); err != nil {
+					slog.Warn("backup restore rejected historical job", "type", envelope.Type, "bytes", len(raw))
+					return job, err
+				}
+				return job, nil
+			}
+		}
+	}
+	err := domain.DecodeWithLimit(raw, &job, restoreOrdinaryJobBytes)
+	if err != nil {
+		slog.Warn("backup restore rejected historical job", "type", envelope.Type, "bytes", len(raw))
 	}
 	return job, err
 }

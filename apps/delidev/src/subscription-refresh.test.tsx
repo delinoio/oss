@@ -39,6 +39,10 @@ type Options = {
   data?: Record<string, unknown>;
   subscription?: Record<string, unknown>;
   list?: boolean;
+  // Legacy Runner-bound Claude capability 38; advertised unless disabled.
+  claudeLegacy?: boolean;
+  // Server-owned Claude sign-in capability 67; absent unless enabled.
+  claudeServer?: boolean;
 };
 function fixture(options: Options = {}) {
   const connection = newRequestId(),
@@ -103,7 +107,12 @@ function fixture(options: Options = {}) {
         capabilities: [
           SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,
           SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1,
-          SystemCapability.CLAUDE_SUBSCRIPTIONS_V1,
+          ...(options.claudeLegacy === false
+            ? []
+            : [SystemCapability.CLAUDE_SUBSCRIPTIONS_V1]),
+          ...(options.claudeServer === true
+            ? [SystemCapability.CLAUDE_SERVER_LOGIN_V1]
+            : []),
           ...(options.supported === false
             ? []
             : [SystemCapability.SERVER_SUBSCRIPTION_QUOTA_V2]),
@@ -341,21 +350,46 @@ it.each([
   {
     name: "disconnected sign-in",
     data: { connection: {}, health: "disconnected" },
+    options: {},
     label: "Sign in to ChatGPT",
     key: "subscription-accounts.signInTo_fa4edf",
   },
   {
-    name: "Claude reauthentication",
-    data: { subscription_service: "claude" },
-    label: "Sign in again",
-    key: "Sign in again",
+    name: "Claude sign-in",
+    data: {
+      subscription_service: "claude",
+      connection: {},
+      health: "disconnected",
+    },
+    options: {
+      claudeLegacy: false,
+      claudeServer: true,
+      subscription: { generation: "" },
+    },
+    label: "Sign in to Claude",
+    key: "subscription-accounts.signInTo_fa4edf",
+  },
+  {
+    name: "Claude connect new account",
+    data: {
+      subscription_service: "claude",
+      connection: {},
+      health: "disconnected",
+    },
+    options: {
+      claudeLegacy: false,
+      claudeServer: true,
+      subscription: { native_profile_id: "device-owned-profile" },
+    },
+    label: "Connect new account",
+    key: "Connect new account",
   },
 ])(
   "blocks $name through the explicit read owner, including direct callbacks",
-  async ({ data, label, key }) => {
+  async ({ data, options, label, key }) => {
     const begin = stubLogin();
     const action = captureActions();
-    const f = fixture({ supported: false, data });
+    const f = fixture({ supported: false, data, ...options });
     render(<f.Harness />);
     const button = await screen.findByRole("button", { name: label });
     await waitFor(() =>
@@ -738,6 +772,57 @@ it("uses one original server batch for unloaded account pages and one row quota 
   });
 });
 
+it("keeps the Claude server-update notice off unavailable ChatGPT row and Refresh all actions", async () => {
+  const f = fixture({ list: true, supported: false });
+  render(<f.Harness />);
+  await screen.findByRole("article", { name: "Original account" });
+  const claudeUpdate = /Claude sign-in needs a server update/;
+  // The Claude guidance stays in the Add-account notice and the Claude card.
+  expect((await screen.findAllByText(claudeUpdate)).length).toBe(1);
+  const refreshRow = screen.getByRole("button", {
+    name: /^Refresh Original account/,
+  });
+  const refreshAll = screen.getByRole("button", { name: "Refresh all" });
+  for (const button of [refreshRow, refreshAll]) {
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    expect(button.getAttribute("title")).toMatch(/does not support/);
+    expect(button.getAttribute("title")).not.toMatch(claudeUpdate);
+  }
+  const disconnect = screen.getByRole("button", {
+    name: /^Disconnect Original account/,
+  });
+  expect(disconnect.getAttribute("title") ?? "").not.toMatch(claudeUpdate);
+});
+
+it("rereads accepted account pages every thirty seconds in app use without unseen-page discovery", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  const focus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  try {
+    const f = fixture({ list: true });
+    render(<f.Harness />);
+    await screen.findByRole("article", { name: "Original account" });
+    const reads = () => f.list.mock.calls.length;
+    const initial = reads();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(29999);
+    });
+    expect(reads()).toBe(initial);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(reads()).toBeGreaterThan(initial);
+    // Rereads reuse the accepted range and never discover the unseen next page.
+    expect(
+      f.list.mock.calls.some(
+        ([r]) => r.filter?.pageToken === "unloaded-next-page",
+      ),
+    ).toBe(false);
+  } finally {
+    focus.mockRestore();
+    vi.useRealTimers();
+  }
+});
+
 it("localizes the combined semantic icon and tooltip in Korean without a second quota button", async () => {
   await i18n.changeLanguage("ko");
   const f = fixture();
@@ -755,4 +840,128 @@ it("localizes the combined semantic icon and tooltip in Korean without a second 
   fireEvent.click(button);
   await waitFor(() => expect(f.quota).toHaveBeenCalledOnce());
   expect(document.activeElement).toBe(button);
+});
+
+const requestFailed = "DeliDev could not complete this request.";
+const disconnected = { connection: {}, health: "disconnected" };
+const lastObservation = /Last successful observation/;
+function expectReadOnlyDisconnected(f: ReturnType<typeof fixture>) {
+  // Presentation adds no quota, credit, preference or consent admission.
+  expect(screen.queryByRole("button", { name: combined })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Use credit" })).toBeNull();
+  expect(screen.queryByRole("checkbox")).toBeNull();
+  expect(screen.getByRole("button", { name: statusRefresh })).toBeTruthy();
+  expect(f.quota).toHaveBeenCalledTimes(1);
+  expect(f.lifecycle).not.toHaveBeenCalled();
+  expect(f.preferences).not.toHaveBeenCalled();
+}
+
+it.each([
+  { name: "after the settled rejection", firstDisconnect: false },
+  { name: "when the account read completes first", firstDisconnect: true },
+])(
+  "keeps a definitive quota rejection visible once the account reads disconnected $name",
+  async ({ firstDisconnect }) => {
+    const f = fixture();
+    let reject!: () => void;
+    f.quota.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, rejectPromise) => {
+          reject = () =>
+            rejectPromise(
+              new ConnectError(
+                "private-rejection-fixture",
+                Code.InvalidArgument,
+              ),
+            );
+        }),
+    );
+    render(<f.Harness />);
+    fireEvent.click(await screen.findByRole("button", { name: combined }));
+    await waitFor(() => expect(f.quota).toHaveBeenCalledOnce());
+    const disconnect = async () => {
+      f.setAccount(disconnected);
+      await act(async () => {
+        await f.client.invalidateQueries({ refetchType: "active" });
+      });
+    };
+    if (firstDisconnect) await disconnect();
+    await act(async () => reject());
+    if (!firstDisconnect) await disconnect();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: statusRefresh })).toBeTruthy(),
+    );
+    await waitFor(() => expect(screen.getByText(requestFailed)).toBeTruthy());
+    expect(screen.getByText(lastObservation)).toBeTruthy();
+    expect(screen.queryByText(/private-rejection-fixture/)).toBeNull();
+    expectReadOnlyDisconnected(f);
+  },
+);
+
+it("shows saved failed-refresh evidence for a later disconnected account", async () => {
+  const f = fixture({
+    data: disconnected,
+    subscription: { quota_state: "failed" },
+  });
+  render(<f.Harness />);
+  await screen.findByRole("button", { name: statusRefresh });
+  const observation = screen.getByText(lastObservation);
+  expect(observation.textContent).toContain("The latest refresh failed");
+  expect(observation.querySelector("time")?.getAttribute("datetime")).toBe(
+    "2026-10-10T08:00:00Z",
+  );
+  expect(screen.queryByRole("button", { name: combined })).toBeNull();
+  expect(screen.queryByRole("checkbox")).toBeNull();
+  expect(f.quota).not.toHaveBeenCalled();
+});
+
+it("keeps the exact uncertain disconnected retry once across a locale change", async () => {
+  const f = fixture();
+  f.quota.mockImplementationOnce(async () => {
+    throw new ConnectError("private-uncertain-fixture", Code.Unavailable);
+  });
+  render(<f.Harness />);
+  fireEvent.click(await screen.findByRole("button", { name: combined }));
+  const retry = await screen.findByRole("button", {
+    name: "Retry original quota or credit request",
+  });
+  f.setAccount(disconnected);
+  await act(async () => {
+    await f.client.invalidateQueries({ refetchType: "active" });
+    await i18n.changeLanguage("ko");
+  });
+  await act(async () => {
+    await i18n.changeLanguage("en");
+  });
+  expect(f.quota).toHaveBeenCalledOnce();
+  const original = f.quota.mock.calls[0][0];
+  fireEvent.click(retry);
+  await waitFor(() => expect(f.quota).toHaveBeenCalledTimes(2));
+  expect(f.quota.mock.calls[1][0]).toEqual(original);
+  expect(f.lifecycle).not.toHaveBeenCalled();
+});
+
+it("shows no invented evidence for a disconnected account without saved evidence", async () => {
+  const f = fixture({
+    data: disconnected,
+    subscription: { quota_observed_at: "", quota_state: "" },
+  });
+  render(<f.Harness />);
+  await screen.findByRole("button", { name: statusRefresh });
+  expect(screen.queryByText(lastObservation)).toBeNull();
+  expect(screen.queryByText(requestFailed)).toBeNull();
+  expect(screen.queryByRole("time")).toBeNull();
+  expect(f.quota).not.toHaveBeenCalled();
+});
+
+it("keeps connected failure presentation unchanged", async () => {
+  const f = fixture();
+  f.quota.mockRejectedValueOnce(
+    new ConnectError("private-rejection-fixture", Code.InvalidArgument),
+  );
+  render(<f.Harness />);
+  fireEvent.click(await screen.findByRole("button", { name: combined }));
+  await screen.findByText(requestFailed);
+  expect(screen.getByText(lastObservation)).toBeTruthy();
+  expect(screen.getAllByRole("checkbox").length).toBeGreaterThan(0);
 });

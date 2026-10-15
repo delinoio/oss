@@ -19,12 +19,12 @@ const (
 	// The account is not a failed-subscription cleanup candidate; ordinary
 	// deletion owns it.
 	failedSubscriptionDeleteNotHandled failedSubscriptionDeleteOutcome = iota
-	// This invocation admitted the deletion request or resumed its pending
-	// cleanup, so it reports the original completion.
+	// This invocation's own cleanup run committed the child's DELETED outcome and
+	// the configuration.delete receipt, so it reports the original completion.
 	failedSubscriptionDeleteNewlyCompleted
-	// The deletion request was admitted by an earlier invocation, and its
-	// cleanup had already recorded the DELETED outcome (committing the original
-	// receipt) before this invocation read it.
+	// Another invocation (or the background controller) committed the DELETED
+	// outcome and receipt before or while this invocation ran. Terminal children
+	// never repeat native or vault cleanup.
 	failedSubscriptionDeleteObservedExisting
 )
 
@@ -57,9 +57,6 @@ func (s *Service) deleteFailedSubscription(ctx context.Context, request, id doma
 	}
 	var parent store.Record
 	var handled bool
-	// Set when the retained child already recorded DELETED at the first read,
-	// so the original receipt was committed before this invocation ran.
-	var alreadyDeleted bool
 	err = s.Store.Read(ctx, func(tx *store.Tx) error {
 		if err := tx.Authorize(); err != nil {
 			return err
@@ -77,11 +74,10 @@ func (s *Service) deleteFailedSubscription(ctx context.Context, request, id doma
 			if len(children) != 1 {
 				return failedCleanupUnavailable()
 			}
-			_, child, existing, err := decodeFailedCleanupAccount(children[0], request)
+			_, child, _, err := decodeFailedCleanupAccount(children[0], request)
 			if err != nil || child.AccountID != id || child.DeleteRequestID != request || child.DeleteRevision != revision {
 				return failedCleanupUnavailable()
 			}
-			alreadyDeleted = existing.Outcome == pb.FailedSubscriptionCleanupOutcome_FAILED_SUBSCRIPTION_CLEANUP_OUTCOME_DELETED
 			parent, handled = row, true
 			return nil
 		}
@@ -95,7 +91,7 @@ func (s *Service) deleteFailedSubscription(ctx context.Context, request, id doma
 		if err != nil {
 			return err
 		}
-		handled = failedCleanupCandidate(account) && failedServerLoginNeedsCleanup(account)
+		handled = failedCleanupCandidate(account) && failedServerLoginNeedsCleanup(account) || serverLogoutRecoveryCandidate(account)
 		if handled && r.Revision != revision {
 			return domain.Fail(domain.Conflict, "The account revision changed.", "Read current account status before confirming deletion again.")
 		}
@@ -121,11 +117,17 @@ func (s *Service) deleteFailedSubscription(ctx context.Context, request, id doma
 			if err != nil {
 				return nil, err
 			}
-			if !failedCleanupCandidate(account) || !failedServerLoginNeedsCleanup(account) {
+			now := time.Now().UTC()
+			var target failedCleanupAccount
+			switch {
+			case failedCleanupCandidate(account) && failedServerLoginNeedsCleanup(account):
+				target = failedCleanupAccount{Version: 2, AccountID: id, Revision: revision, DeleteRevision: revision, OperationID: account.Subscription.ServerOperation.ID, DeleteRequestID: request, Alias: account.Alias}
+			case serverLogoutRecoveryCandidate(account):
+				target = serverLogoutCleanupChild(account, id, revision, request)
+			default:
 				return nil, failedCleanupUnavailable()
 			}
-			now := time.Now().UTC()
-			child, _ := json.Marshal(failedCleanupAccount{Version: 2, AccountID: id, Revision: revision, DeleteRevision: revision, OperationID: account.Subscription.ServerOperation.ID, DeleteRequestID: request, Alias: account.Alias})
+			child, _ := json.Marshal(target)
 			out, _ := json.Marshal(failedCleanupCheckpoint{Revision: r.Revision, Outcome: pb.FailedSubscriptionCleanupOutcome_FAILED_SUBSCRIPTION_CLEANUP_OUTCOME_PENDING})
 			if _, err := tx.PutJob(domain.NewID(), 0, "", "", domain.Job{Type: domain.CleanupFailedSubscriptionJob, State: domain.JobQueued, ParentID: request, Input: child, Output: out, AcceptedAt: now}); err != nil {
 				return nil, err
@@ -146,11 +148,19 @@ func (s *Service) deleteFailedSubscription(ctx context.Context, request, id doma
 	if !handled {
 		return failedSubscriptionDeleteNotHandled, nil
 	}
-	outcome := failedSubscriptionDeleteNewlyCompleted
-	if alreadyDeleted {
-		outcome = failedSubscriptionDeleteObservedExisting
+	// The pending-child observation above was taken before the account gate was
+	// released, so it cannot decide who completes the deletion. Only the cleanup
+	// run whose configuration.delete mutation commits owns that transition.
+	if s.afterFailedSubscriptionDeleteObserve != nil {
+		s.afterFailedSubscriptionDeleteObserve(ctx)
 	}
-	if err := s.runFailedSubscriptionCleanup(ctx, parent); err != nil {
+	completion, err := s.runFailedSubscriptionCleanup(ctx, parent)
+	outcome := failedSubscriptionDeleteObservedExisting
+	if completion == failedSubscriptionCleanupCompletedHere {
+		outcome = failedSubscriptionDeleteNewlyCompleted
+	}
+	s.logger.InfoContext(ctx, "subscription_account_delete_completion", "job_id", parent.ID, "outcome", outcome.String(), "completion", completion.String())
+	if err != nil {
 		return outcome, err
 	}
 	// A terminal retained attempt never replays native or vault effects. A new
@@ -175,6 +185,11 @@ func (s *Service) deleteFailedSubscription(ctx context.Context, request, id doma
 		}
 		// A recorded terminal outcome is definite even when its original vault
 		// error was Unavailable. Do not present it as an uncertain mutation replay.
+		if out.ProblemCode == domain.ConfirmationRequired {
+			// The operating system did not authorize the original credential owner.
+			// The account and its denying tombstone remain; no prompt is replayed.
+			return domain.Fail(domain.ConfirmationRequired, "The account was retained because operating-system credential access was not confirmed.", "Authorize the original credential owner's operating-system store, then refresh the account and explicitly confirm cleanup again.")
+		}
 		code := domain.RecoveryRequired
 		if out.Reason == pb.FailedSubscriptionCleanupReason_FAILED_SUBSCRIPTION_CLEANUP_REASON_REFERENCED || out.Reason == pb.FailedSubscriptionCleanupReason_FAILED_SUBSCRIPTION_CLEANUP_REASON_CHANGED {
 			code = domain.Conflict

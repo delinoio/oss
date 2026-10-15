@@ -25,6 +25,34 @@ fn bundle(chunks: &[(&str, &str)]) -> tempfile::TempDir {
     temp
 }
 
+fn strip_ansi(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    let mut escape = false;
+    let mut csi = false;
+    for character in input.chars() {
+        if !escape {
+            if character == '\u{1b}' {
+                escape = true;
+            } else {
+                output.push(character);
+            }
+            continue;
+        }
+        if !csi {
+            csi = character == '[';
+            if !csi {
+                escape = false;
+            }
+            continue;
+        }
+        if ('@'..='~').contains(&character) {
+            escape = false;
+            csi = false;
+        }
+    }
+    output
+}
+
 fn run_typeopt(root: &Path, extra: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_typeopt"))
         .current_dir(root)
@@ -415,25 +443,41 @@ fn keeps_chunks_that_use_eval_or_import_scripts_as_values() {
     }
 }
 
-/// Debug logging names the rule that made each chunk a boundary.
+/// Debug logging names each chunk's own rule before boundary reach, while
+/// frozen-only chunks explain why they remain unchanged.
 #[test]
 fn logs_the_rule_that_makes_a_chunk_a_boundary() {
     let temp = bundle(&[
         (
             "index.js",
-            r#"import"./evaluating.js";import"./loading.js";console.log(1);"#,
+            r#"import"./vendor.js";import"./classic.js";import"./loading.js";console.log(1);"#,
+        ),
+        (
+            "vendor.js",
+            r#"import"./evaluating.js";import"./reached.js";console.log(2);"#,
         ),
         (
             "evaluating.js",
             r#"const e=eval;console.log(e("1"));export{};"#,
         ),
+        ("reached.js", r#"console.log(3);export{};"#),
+        ("classic.js", r#"console.log(4);"#),
         (
             "loading.js",
             r#"globalThis.__never&&self.importScripts("a.js");export{};"#,
         ),
     ]);
-    let output = run_typeopt(temp.path(), &[]);
-    assert!(output.status.success());
+    fs::write(
+        temp.path().join("dist/index.html"),
+        r#"<script src="classic.js"></script><script type="module" src="index.js"></script>"#,
+    )
+    .unwrap();
+    let output = run_typeopt(temp.path(), &["--bundle-exclude", "vendor.js"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let log = String::from_utf8_lossy(&output.stderr);
     let line = |chunk: &str| {
         log.lines()
@@ -442,7 +486,33 @@ fn logs_the_rule_that_makes_a_chunk_a_boundary() {
             .to_string()
     };
     assert!(line("evaluating.js").contains("eval-reference"), "{log}");
+    assert!(line("reached.js").contains("boundary-reachable"), "{log}");
+    assert!(
+        line("vendor.js").contains("excluded-or-classic-script"),
+        "{log}"
+    );
+    assert!(
+        line("classic.js").contains("excluded-or-classic-script"),
+        "{log}"
+    );
     assert!(line("loading.js").contains("import-scripts-call"), "{log}");
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let frozen = report["frozen_chunks"].as_array().unwrap();
+    assert_eq!(frozen.len(), 2, "{report:#}");
+    let reached = frozen
+        .iter()
+        .find(|chunk| chunk["file"].as_str().unwrap().ends_with("reached.js"))
+        .unwrap();
+    assert!(reached["boundary"].as_str().unwrap().ends_with("vendor.js"));
+    assert_eq!(reached["reason"], "boundary_reachable");
+    for name in ["vendor.js", "classic.js", "evaluating.js", "reached.js"] {
+        assert_eq!(
+            fs::read(temp.path().join("dist").join(name)).unwrap(),
+            fs::read(temp.path().join("out").join(name)).unwrap(),
+            "{name}"
+        );
+    }
+    same_behavior(temp.path());
 }
 
 /// A `with` statement keeps its chunk unchanged. Modules are strict code, so
@@ -1158,10 +1228,10 @@ fn retains_chunks_that_encoded_references_name() {
     );
 }
 
-/// Boundary chunks stay byte-for-byte unchanged: a classic chunk that
-/// references an edited chunk keeps the old name, whose original is kept.
+/// A classic chunk is never edited by a pass, but its references follow
+/// renamed chunks like those of any text asset, so no original is kept.
 #[test]
-fn keeps_boundary_chunks_and_their_original_dependencies() {
+fn rewrites_references_of_classic_boundary_chunks() {
     let legacy = r#"var settingsUrl="./settings-BBBBBBBB.js";var legacyState={counter:0};"#;
     let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
     chunks[0] = (
@@ -1170,7 +1240,47 @@ fn keeps_boundary_chunks_and_their_original_dependencies() {
     );
     chunks.push(("assets/legacy-EEEE1111.js", legacy));
     let temp = bundle(&chunks);
-    optimize(temp.path(), &[]);
+    let report = optimize(temp.path(), &[]);
+    assert_eq!(report["size"]["retained"], 0, "{report:#}");
+    let assets = listing(&temp.path().join("out/assets"));
+    assert!(!assets.iter().any(|a| a.contains("BBBBBBBB")), "{assets:?}");
+    let settings = assets
+        .iter()
+        .find(|a| a.starts_with("settings-"))
+        .unwrap()
+        .clone();
+    // The classic chunk keeps its code with the new name in its string, and
+    // gets a new hash itself; the page follows.
+    let renamed_legacy = assets
+        .iter()
+        .find(|a| a.starts_with("legacy-"))
+        .unwrap()
+        .clone();
+    assert_ne!(renamed_legacy, "legacy-EEEE1111.js");
+    assert_eq!(
+        out(temp.path(), &format!("assets/{renamed_legacy}")),
+        legacy.replace("settings-BBBBBBBB.js", &settings)
+    );
+    assert!(out(temp.path(), "index.html").contains(&renamed_legacy));
+}
+
+/// An excluded chunk stays byte-for-byte unchanged: a string reference to an
+/// edited chunk keeps the old name, whose original is kept.
+#[test]
+fn keeps_excluded_chunks_and_their_original_dependencies() {
+    let legacy = r#"var settingsUrl="./settings-BBBBBBBB.js";var legacyState={counter:0};"#;
+    let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
+    chunks[0] = (
+        "index.html",
+        r#"<script src="/assets/legacy-EEEE1111.js"></script><script type="module" src="/assets/index-AAAAAAAA.js"></script>"#,
+    );
+    chunks.push(("assets/legacy-EEEE1111.js", legacy));
+    let temp = bundle(&chunks);
+    let report = optimize(temp.path(), &["--bundle-exclude", "legacy-"]);
+    assert!(
+        report["size"]["retained"].as_u64().unwrap() > 0,
+        "{report:#}"
+    );
     let assets = listing(&temp.path().join("out/assets"));
     assert_eq!(out(temp.path(), "assets/legacy-EEEE1111.js"), legacy);
     assert_eq!(
@@ -1184,10 +1294,36 @@ fn keeps_boundary_chunks_and_their_original_dependencies() {
     );
 }
 
-/// A name that a frozen boundary chunk carries is never renamed, even for an
+/// A name that an excluded chunk carries is never renamed, even for an
 /// edited chunk elsewhere that shares it.
 #[test]
-fn keeps_names_shared_with_boundary_chunks() {
+fn keeps_names_shared_with_excluded_chunks() {
+    let legacy = r#"var legacyState={counter:0};"#;
+    let temp = bundle(&[
+        (
+            "index.html",
+            r#"<script src="/legacy/x-AAAAAAAA.js"></script><script type="module" src="/index.js"></script>"#,
+        ),
+        ("legacy/x-AAAAAAAA.js", legacy),
+        (
+            "modern/x-AAAAAAAA.js",
+            r#"function make(n){return{verticalSpacing:n,horizontalSpacing:n*2}}function m(n){const o=make(n);return o.verticalSpacing+o.horizontalSpacing}export{m};"#,
+        ),
+        (
+            "index.js",
+            r#"import{m}from"./modern/x-AAAAAAAA.js";console.log(m(2));"#,
+        ),
+    ]);
+    optimize(temp.path(), &["--bundle-exclude", "legacy/"]);
+    same_behavior(temp.path());
+    assert_eq!(out(temp.path(), "legacy/x-AAAAAAAA.js"), legacy);
+    assert_eq!(listing(&temp.path().join("out/modern")), ["x-AAAAAAAA.js"]);
+}
+
+/// Without exclusion, files that share a name with an edited chunk are
+/// renamed together with it, classic scripts included.
+#[test]
+fn renames_classic_chunks_that_share_an_edited_name() {
     let legacy = r#"var legacyState={counter:0};"#;
     let temp = bundle(&[
         (
@@ -1206,8 +1342,15 @@ fn keeps_names_shared_with_boundary_chunks() {
     ]);
     optimize(temp.path(), &[]);
     same_behavior(temp.path());
-    assert_eq!(out(temp.path(), "legacy/x-AAAAAAAA.js"), legacy);
-    assert_eq!(listing(&temp.path().join("out/modern")), ["x-AAAAAAAA.js"]);
+    let legacy_files = listing(&temp.path().join("out/legacy"));
+    let modern_files = listing(&temp.path().join("out/modern"));
+    assert_eq!(legacy_files, modern_files);
+    assert_ne!(legacy_files, ["x-AAAAAAAA.js"]);
+    assert_eq!(
+        out(temp.path(), &format!("legacy/{}", legacy_files[0])),
+        legacy
+    );
+    assert!(out(temp.path(), "index.html").contains(&format!("/legacy/{}", legacy_files[0])));
 }
 
 /// JavaScript escapes in a reference also keep the original, with its map.
@@ -1935,6 +2078,13 @@ fn rejects_imports_outside_the_bundle() {
     let output = run_typeopt(temp.path(), &[]);
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("outside the bundle directory"));
+    let protocol_relative = bundle(&[(
+        "index.js",
+        r#"if(false)import("//cdn.example.com/app.js");console.log(1);"#,
+    )]);
+    let output = run_typeopt(protocol_relative.path(), &[]);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("outside the bundle directory"));
     let package = bundle(&[("index.js", r#"import{x}from"pkg";console.log(x);"#)]);
     let module = package.path().join("node_modules/pkg");
     fs::create_dir_all(&module).unwrap();
@@ -1947,6 +2097,469 @@ fn rejects_imports_outside_the_bundle() {
     let output = run_typeopt(package.path(), &[]);
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("outside the bundle directory"));
+}
+
+#[test]
+fn rejects_static_commonjs_package_requires() {
+    let temp = bundle(&[("index.js", r#"require("pkg");console.log(1);"#)]);
+    let package = temp.path().join("node_modules/pkg");
+    fs::create_dir_all(&package).unwrap();
+    fs::write(
+        package.join("package.json"),
+        r#"{"name":"pkg","main":"index.js"}"#,
+    )
+    .unwrap();
+    fs::write(package.join("index.js"), "module.exports=1;").unwrap();
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("outside the bundle directory"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn ignores_shadowed_commonjs_package_requires() {
+    for source in [
+        r#"{const require=globalThis.require;require("pkg");}"#,
+        r#"function run(require){require("pkg")}run(globalThis.require);"#,
+    ] {
+        let temp = bundle(&[("index.js", source)]);
+        let output = run_typeopt(temp.path(), &[]);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+#[test]
+fn rejects_relative_imports_hidden_by_dynamic_package_boundary() {
+    let temp = bundle(&[(
+        "sub/index.js",
+        r#"import{x}from"../../node_modules/pkg/index";if(false)import("pkg");console.log(x);"#,
+    )]);
+    let package = temp.path().join("node_modules/pkg");
+    fs::create_dir_all(&package).unwrap();
+    fs::write(
+        package.join("package.json"),
+        r#"{"name":"pkg","type":"module","main":"index.js"}"#,
+    )
+    .unwrap();
+    fs::write(package.join("index.js"), "export const x=1;").unwrap();
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("outside the bundle directory"));
+}
+
+/// An explicit runtime extension must keep its runtime file linked even when
+/// TypeScript can resolve a sibling declaration file first.
+#[test]
+fn resolves_explicit_runtime_import_before_declaration_substitution() {
+    let temp = bundle(&[
+        (
+            "index.js",
+            r#"import{make}from"./dep.js";console.log(make(3).verticalSpacing);"#,
+        ),
+        (
+            "dep.js",
+            "export function make(n){return{verticalSpacing:n,horizontalSpacing:n*2}}",
+        ),
+        (
+            "dep.d.ts",
+            "export declare function make(n:number): {verticalSpacing:number};",
+        ),
+    ]);
+    let original = fs::read_to_string(temp.path().join("dist/dep.js")).unwrap();
+    let output = run_typeopt(temp.path(), &["--bundle-exclude", "index.js"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(out(temp.path(), "dep.js"), original);
+}
+
+/// An extensionless runtime import must prefer its chunk over a sibling
+/// declaration file when TypeScript resolves the declaration first.
+#[test]
+fn resolves_extensionless_runtime_import_before_declaration_substitution() {
+    let temp = bundle(&[
+        (
+            "index.js",
+            r#"import{make}from"./dep";console.log(make(3).verticalSpacing);"#,
+        ),
+        (
+            "dep.js",
+            "export function make(n){return{verticalSpacing:n,horizontalSpacing:n*2}}",
+        ),
+        (
+            "dep.d.ts",
+            "export declare function make(n:number): {verticalSpacing:number};",
+        ),
+    ]);
+    let original = fs::read_to_string(temp.path().join("dist/dep.js")).unwrap();
+    let output = run_typeopt(temp.path(), &["--bundle-exclude", "index.js"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(out(temp.path(), "dep.js"), original);
+}
+
+/// A syntax error in a file reached only through a dynamic package boundary
+/// must not block analysis of the closed application bundle.
+#[test]
+fn ignores_syntax_diagnostics_in_dynamic_only_package_files() {
+    let temp = bundle(&[
+        (
+            "index.js",
+            r#"import{value}from"./settings.js";import"./guarded.js";console.log(value(3).verticalSpacing);"#,
+        ),
+        (
+            "guarded.js",
+            r#"if(false)import("pkg");export const answer=1;"#,
+        ),
+        (
+            "settings.js",
+            r#"function value(n){return{verticalSpacing:n,horizontalSpacing:n*2}}export{value};"#,
+        ),
+    ]);
+    let package = temp.path().join("node_modules/pkg");
+    fs::create_dir_all(&package).unwrap();
+    fs::write(
+        package.join("package.json"),
+        r#"{"name":"pkg","type":"module","main":"index.js"}"#,
+    )
+    .unwrap();
+    fs::write(package.join("index.js"), "export const = 1;").unwrap();
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!out(temp.path(), "settings.js").contains("verticalSpacing"));
+}
+
+/// A dynamic package declaration cannot suppress diagnostics for an explicit
+/// bundle root that it references.
+#[test]
+fn checks_dynamic_package_references_to_bundle_roots() {
+    let temp = bundle(&[
+        ("index.js", r#"if(false)import("pkg");console.log(1);"#),
+        ("root.js", "export const = 1;"),
+    ]);
+    let package = temp.path().join("dist/node_modules/pkg");
+    fs::create_dir_all(&package).unwrap();
+    fs::write(
+        package.join("package.json"),
+        r#"{"name":"pkg","type":"module","main":"../../root.js"}"#,
+    )
+    .unwrap();
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(
+        !output.status.success(),
+        "malformed bundle root was published"
+    );
+    assert!(!temp.path().join("out").exists());
+}
+
+#[test]
+fn allows_transitive_dynamic_package_declarations() {
+    let temp = bundle(&[("index.js", r#"if(false)import("pkg");console.log(1);"#)]);
+    let package = temp.path().join("node_modules/pkg");
+    let dependency = temp.path().join("node_modules/dep");
+    fs::create_dir_all(&package).unwrap();
+    fs::create_dir_all(&dependency).unwrap();
+    fs::write(
+        package.join("package.json"),
+        r#"{"name":"pkg","type":"module","main":"index.js","types":"index.d.ts"}"#,
+    )
+    .unwrap();
+    fs::write(package.join("index.js"), "export const x=1;").unwrap();
+    fs::write(
+        package.join("index.d.ts"),
+        "/// <reference path=\"./shared.d.ts\" />\n/// <reference types=\"dep\" />\ntype Y = \
+         import(\"dep\").Y;\nimport Dep = require(\"dep\");\nexport type {Y};",
+    )
+    .unwrap();
+    fs::write(package.join("shared.d.ts"), "export type Shared = string;").unwrap();
+    fs::write(
+        dependency.join("package.json"),
+        r#"{"name":"dep","types":"index.d.ts"}"#,
+    )
+    .unwrap();
+    fs::write(
+        dependency.join("index.d.ts"),
+        "export declare const y:number;",
+    )
+    .unwrap();
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn allows_transitive_dynamic_package_commonjs_requires() {
+    let temp = bundle(&[("index.js", r#"if(false)import("pkg");console.log(1);"#)]);
+    let package = temp.path().join("node_modules/pkg");
+    fs::create_dir_all(&package).unwrap();
+    fs::write(
+        package.join("package.json"),
+        r#"{"name":"pkg","main":"index.js"}"#,
+    )
+    .unwrap();
+    fs::write(
+        package.join("index.js"),
+        r#"module.exports=require("./helper.js");"#,
+    )
+    .unwrap();
+    fs::write(package.join("helper.js"), "module.exports={value:1};").unwrap();
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A malformed import type in a declaration reached only through a dynamic
+/// package boundary must be skipped without panicking during dependency walk.
+#[test]
+fn ignores_malformed_dynamic_package_import_types() {
+    let temp = bundle(&[("index.js", r#"if(false)import("pkg");console.log(1);"#)]);
+    let package = temp.path().join("node_modules/pkg");
+    fs::create_dir_all(&package).unwrap();
+    fs::write(
+        package.join("package.json"),
+        r#"{"name":"pkg","type":"module","main":"index.js","types":"index.d.ts"}"#,
+    )
+    .unwrap();
+    fs::write(package.join("index.js"), "export const value=1;").unwrap();
+    fs::write(package.join("index.d.ts"), "export type T = import(Foo).T;").unwrap();
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A package loaded only by a guarded dynamic import is an unchanged
+/// boundary; an independent chunk can still be optimized.
+#[test]
+fn guarded_dynamic_package_import_is_a_boundary() {
+    let chunks = [
+        (
+            "index.js",
+            r#"import{value}from"./settings.js";globalThis.window={};const guarded=await import("./guarded.js");console.log(value(3).verticalSpacing,guarded.answer);"#,
+        ),
+        (
+            "guarded.js",
+            r#"import{answer}from"./shared.js";if(typeof window>"u"){await import("fs/promises");await import("pkg")}export{answer};"#,
+        ),
+        ("shared.js", r#"const answer=42;export{answer};"#),
+        (
+            "settings.js",
+            r#"function value(n){return{verticalSpacing:n,horizontalSpacing:n*2}}export{value};"#,
+        ),
+    ];
+    let temp = bundle(&chunks);
+    let package = temp.path().join("node_modules/pkg");
+    fs::create_dir_all(&package).unwrap();
+    fs::write(
+        package.join("package.json"),
+        r#"{"name":"pkg","type":"module","main":"index.js","types":"index.d.ts"}"#,
+    )
+    .unwrap();
+    fs::write(package.join("index.js"), "export const x=1;").unwrap();
+    fs::write(
+        package.join("index.d.ts"),
+        "export declare const x: number;",
+    )
+    .unwrap();
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = strip_ansi(&String::from_utf8_lossy(&output.stderr));
+    assert!(
+        stderr.contains("a dynamic package import keeps the bundle chunk unchanged")
+            && stderr.contains("guarded.js")
+            && stderr.contains("specifier=\"fs/promises\"")
+            && stderr.contains("specifier=\"pkg\""),
+        "{stderr}"
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(
+        report["frozen_chunks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|chunk| chunk["file"].as_str().unwrap().ends_with("shared.js")),
+        "{report:#}"
+    );
+    for name in ["guarded.js", "shared.js"] {
+        assert_eq!(
+            fs::read(temp.path().join("dist").join(name)).unwrap(),
+            fs::read(temp.path().join("out").join(name)).unwrap(),
+            "{name}"
+        );
+    }
+    assert!(saved(&report) > 0, "{report:#}");
+    assert_ne!(out(temp.path(), "settings.js"), chunks[3].1);
+    same_behavior(temp.path());
+
+    let check = Command::new(env!("CARGO_BIN_EXE_typeopt"))
+        .current_dir(temp.path())
+        .args(["--bundle", "dist", "--check", "--verbose"])
+        .output()
+        .unwrap();
+    assert!(
+        check.status.success(),
+        "{}",
+        String::from_utf8_lossy(&check.stderr)
+    );
+    let check_report: Value = serde_json::from_slice(&check.stdout).unwrap();
+    assert_eq!(check_report["size"], report["size"]);
+    assert_eq!(check_report["frozen_chunks"], report["frozen_chunks"]);
+}
+
+/// A dynamic package specifier that resembles a hashed chunk name keeps its
+/// original text when publication rehashes another chunk.
+#[test]
+fn preserves_hashed_dynamic_package_specifiers() {
+    let chunks = [
+        (
+            "index-AAAAAAAA.js",
+            r#"import{value}from"./settings-BBBBBBBB.js";import("./guarded-CCCCCCCC.js");console.log(value(3).verticalSpacing);"#,
+        ),
+        (
+            "guarded-CCCCCCCC.js",
+            r#"if(false)import("settings-BBBBBBBB.js");export const answer=1;"#,
+        ),
+        (
+            "settings-BBBBBBBB.js",
+            r#"function value(n){return{verticalSpacing:n,horizontalSpacing:n*2}}export{value};"#,
+        ),
+    ];
+    let temp = bundle(&chunks);
+    let package = temp.path().join("node_modules/settings-BBBBBBBB.js");
+    fs::create_dir_all(&package).unwrap();
+    fs::write(
+        package.join("package.json"),
+        r#"{"name":"settings-BBBBBBBB.js","type":"module","main":"index.js"}"#,
+    )
+    .unwrap();
+    fs::write(package.join("index.js"), "export const value=1;").unwrap();
+
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        out(temp.path(), "guarded-CCCCCCCC.js"),
+        chunks[1].1,
+        "dynamic package specifier was rewritten"
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(saved(&report) > 0, "{report:#}");
+}
+
+/// An excluded chunk keeps a dynamically importing dependency and its imports
+/// under their original names, so publication cannot split the module graph.
+#[test]
+fn excluded_chunks_freeze_dynamic_package_boundaries() {
+    let temp = bundle(&[
+        (
+            "assets/index-AAAAAAAA.js",
+            r#"import"./vendor-DDDDDDDD.js";import{value}from"./settings-BBBBBBBB.js";console.log(value(3).verticalSpacing);"#,
+        ),
+        (
+            "assets/vendor-DDDDDDDD.js",
+            r#"import"./dynamic-CCCCCCCC.js";export const vendor=1;"#,
+        ),
+        (
+            "assets/dynamic-CCCCCCCC.js",
+            r#"import{value}from"./settings-BBBBBBBB.js";if(false)import("pkg");export const dynamic=value(4);"#,
+        ),
+        (
+            "assets/settings-BBBBBBBB.js",
+            r#"function value(n){return{verticalSpacing:n,horizontalSpacing:n*2}}export{value};"#,
+        ),
+    ]);
+    let package = temp.path().join("node_modules/pkg");
+    fs::create_dir_all(&package).unwrap();
+    fs::write(
+        package.join("package.json"),
+        r#"{"name":"pkg","type":"module","main":"index.js"}"#,
+    )
+    .unwrap();
+    fs::write(package.join("index.js"), "export const value=1;").unwrap();
+
+    let report = optimize(temp.path(), &["--bundle-exclude", "vendor-"]);
+    for chunk in [
+        "vendor-DDDDDDDD.js",
+        "dynamic-CCCCCCCC.js",
+        "settings-BBBBBBBB.js",
+    ] {
+        assert_eq!(
+            fs::read(temp.path().join("out/assets").join(chunk)).unwrap(),
+            fs::read(temp.path().join("dist/assets").join(chunk)).unwrap(),
+            "{chunk}"
+        );
+    }
+    let frozen = report["frozen_chunks"].as_array().unwrap();
+    assert!(
+        frozen.iter().any(|chunk| chunk["file"]
+            .as_str()
+            .unwrap()
+            .ends_with("dynamic-CCCCCCCC.js")),
+        "{report:#}"
+    );
+    assert!(
+        frozen.iter().any(|chunk| chunk["file"]
+            .as_str()
+            .unwrap()
+            .ends_with("settings-BBBBBBBB.js")),
+        "{report:#}"
+    );
+}
+
+#[test]
+fn static_package_import_and_reexport_still_reject() {
+    for source in [
+        r#"import{x}from"fs/promises";console.log(x);"#,
+        r#"export{x}from"fs/promises";"#,
+    ] {
+        let temp = bundle(&[("index.js", source)]);
+        for output in [
+            run_typeopt(temp.path(), &[]),
+            Command::new(env!("CARGO_BIN_EXE_typeopt"))
+                .current_dir(temp.path())
+                .args(["--bundle", "dist", "--check"])
+                .output()
+                .unwrap(),
+        ] {
+            assert!(!output.status.success());
+            assert!(
+                String::from_utf8_lossy(&output.stderr).contains("outside the bundle directory"),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
 }
 
 #[test]
@@ -1967,5 +2580,1384 @@ fn bundle_output_is_deterministic() {
     optimize(two.path(), &[]);
     for chunk in ["index.js", "a.js"] {
         assert_eq!(out(one.path(), chunk), out(two.path(), chunk));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Boundary closure: chunks that a boundary chunk can import
+// ---------------------------------------------------------------------------
+
+/// The entry reaches the stateful `shared` chunk statically and through the
+/// lazily imported `vendor` chunk, which the operator excludes.
+const SHARED_STATE: [(&str, &str); 4] = [
+    (
+        "index.html",
+        r#"<script type="module" src="/assets/index-AAAAAAAA.js"></script>"#,
+    ),
+    (
+        "assets/index-AAAAAAAA.js",
+        r#"import{bump as b,count as c}from"./shared-BBBBBBBB.js";const o=b();console.log(o.verticalSpacing+o.horizontalSpacing,c());import("./vendor-DDDDDDDD.js").then(v=>console.log(v.read(),c()));"#,
+    ),
+    (
+        "assets/vendor-DDDDDDDD.js",
+        r#"import{bump as b,count as c}from"./shared-BBBBBBBB.js";function read(){b();return c()}export{read};"#,
+    ),
+    (
+        "assets/shared-BBBBBBBB.js",
+        r#"let n=0;function bump(){n++;return{verticalSpacing:n,horizontalSpacing:n*2}}function count(){return n}function unusedHelperThatIsNeverCalled(x){return x.toString(36).repeat(3)}export{bump,count,unusedHelperThatIsNeverCalled as u};"#,
+    ),
+];
+
+fn asset_file(dir: &Path, prefix: &str) -> String {
+    listing(&dir.join("assets"))
+        .into_iter()
+        .find(|a| a.starts_with(prefix) && a.ends_with(".js"))
+        .unwrap_or_else(|| panic!("no {prefix} chunk in {dir:?}"))
+}
+
+fn run_asset(dir: &Path, prefix: &str) -> std::process::Output {
+    let output = node(&dir.join("assets").join(asset_file(dir, prefix)));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    output
+}
+
+/// A chunk that a boundary chunk imports keeps its name and content, so the
+/// module has one instance: the excluded chunk and the entry share its state.
+#[test]
+fn keeps_chunks_that_excluded_chunks_import() {
+    let temp = bundle(&SHARED_STATE);
+    let output = run_typeopt(temp.path(), &["--bundle-exclude", "vendor-"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("chunks that a boundary chunk can import stay unchanged")
+            && stderr.contains("vendor-DDDDDDDD.js"),
+        "the causing boundary is logged: {stderr}"
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let (dist, out_dir) = (temp.path().join("dist"), temp.path().join("out"));
+    // The shared chunk and the excluded chunk are byte-for-byte unchanged and
+    // no second copy of the shared module exists.
+    for chunk in ["shared-BBBBBBBB.js", "vendor-DDDDDDDD.js"] {
+        assert_eq!(
+            fs::read(out_dir.join("assets").join(chunk)).unwrap(),
+            fs::read(dist.join("assets").join(chunk)).unwrap(),
+            "{chunk}"
+        );
+    }
+    let assets = listing(&out_dir.join("assets"));
+    assert_eq!(
+        assets.iter().filter(|a| a.starts_with("shared-")).count(),
+        1,
+        "{assets:?}"
+    );
+    assert_eq!(report["size"]["retained"], 0, "{report:#}");
+    let frozen = report["frozen_chunks"].as_array().unwrap();
+    assert_eq!(frozen.len(), 1, "{report:#}");
+    assert_eq!(frozen[0]["reason"], "boundary_reachable");
+    assert!(
+        frozen[0]["file"]
+            .as_str()
+            .unwrap()
+            .ends_with("shared-BBBBBBBB.js")
+    );
+    assert!(
+        frozen[0]["boundary"]
+            .as_str()
+            .unwrap()
+            .ends_with("vendor-DDDDDDDD.js")
+    );
+    // One state instance: the entry and the lazy chunk count the same state.
+    let before = node(&dist.join("assets/index-AAAAAAAA.js"));
+    let after = run_asset(&out_dir, "index-");
+    assert_eq!(before.stdout, after.stdout);
+    assert_eq!(String::from_utf8_lossy(&after.stdout), "3 1\n2 2\n");
+    // Deterministic: a second run publishes the same files.
+    let again = bundle(&SHARED_STATE);
+    optimize(again.path(), &["--bundle-exclude", "vendor-"]);
+    let names = listing(&out_dir.join("assets"));
+    assert_eq!(names, listing(&again.path().join("out/assets")));
+    for name in names {
+        assert_eq!(
+            fs::read(out_dir.join("assets").join(&name)).unwrap(),
+            fs::read(again.path().join("out/assets").join(&name)).unwrap()
+        );
+    }
+}
+
+/// Without the exclusion the same graph is optimized and renamed.
+#[test]
+fn renames_the_same_graph_without_exclusion() {
+    let temp = bundle(&SHARED_STATE);
+    let report = optimize(temp.path(), &[]);
+    let assets = listing(&temp.path().join("out/assets"));
+    assert!(!assets.iter().any(|a| a.contains("BBBBBBBB")), "{assets:?}");
+    assert_eq!(
+        assets.iter().filter(|a| a.starts_with("shared-")).count(),
+        1,
+        "{assets:?}"
+    );
+    assert!(saved(&report) > 0, "{report:#}");
+    assert_eq!(report["size"]["retained"], 0, "{report:#}");
+    assert!(report.get("frozen_chunks").is_none(), "{report:#}");
+    let before = node(&temp.path().join("dist/assets/index-AAAAAAAA.js"));
+    let after = run_asset(&temp.path().join("out"), "index-");
+    assert_eq!(before.stdout, after.stdout);
+}
+
+/// Everything a boundary chunk reaches transitively stays unchanged, while a
+/// chunk it does not reach is still optimized.
+#[test]
+fn freezes_chunks_transitively_and_optimizes_unreached_chunks() {
+    let temp = bundle(&[
+        (
+            "index.html",
+            r#"<script type="module" src="/assets/index-AAAAAAAA.js"></script>"#,
+        ),
+        (
+            "assets/index-AAAAAAAA.js",
+            r#"import"./vendor-DDDDDDDD.js";import{m}from"./settings-BBBBBBBB.js";console.log(m(2).verticalSpacing);"#,
+        ),
+        (
+            "assets/vendor-DDDDDDDD.js",
+            r#"import"./middle-EEEEEEEE.js";"#,
+        ),
+        (
+            "assets/middle-EEEEEEEE.js",
+            r#"import{p}from"./plain-CCCCCCCC.js";console.log(p());"#,
+        ),
+        (
+            "assets/plain-CCCCCCCC.js",
+            r#"function p(){return"plain"}function unusedPlainHelper(n){return n.toString(36).repeat(4)}export{p,unusedPlainHelper};"#,
+        ),
+        (
+            "assets/settings-BBBBBBBB.js",
+            r#"function m(n){return{verticalSpacing:n,horizontalSpacing:n*2}}export{m};"#,
+        ),
+    ]);
+    let report = optimize(temp.path(), &["--bundle-exclude", "vendor-"]);
+    let assets = listing(&temp.path().join("out/assets"));
+    for kept in [
+        "vendor-DDDDDDDD.js",
+        "middle-EEEEEEEE.js",
+        "plain-CCCCCCCC.js",
+    ] {
+        assert_eq!(
+            fs::read(temp.path().join("out/assets").join(kept)).unwrap(),
+            fs::read(temp.path().join("dist/assets").join(kept)).unwrap(),
+            "{kept}"
+        );
+    }
+    assert!(!assets.iter().any(|a| a.contains("BBBBBBBB")), "{assets:?}");
+    assert_eq!(report["frozen_chunks"].as_array().unwrap().len(), 2);
+    assert_eq!(report["size"]["retained"], 0);
+    let before = node(&temp.path().join("dist/assets/index-AAAAAAAA.js"));
+    let after = run_asset(&temp.path().join("out"), "index-");
+    assert_eq!(before.stdout, after.stdout);
+}
+
+/// A page whose entry chunk is a boundary and that preloads the chunks it
+/// imports.
+const FROZEN_ENTRY: [(&str, &str); 4] = [
+    (
+        "index.html",
+        r#"<link rel="modulepreload" href="/assets/settings-BBBBBBBB.js"><link rel="modulepreload" href="/assets/plain-CCCCCCCC.js"><script type="module" src="/assets/index-AAAAAAAA.js"></script>"#,
+    ),
+    HASHED[1],
+    HASHED[2],
+    HASHED[3],
+];
+
+/// Chunk file names that `entry` imports directly or through other chunks.
+fn executed_graph(assets: &Path, entry: &str) -> Vec<String> {
+    let mut seen = vec![entry.to_owned()];
+    let mut next = 0;
+    while next < seen.len() {
+        let text = fs::read_to_string(assets.join(&seen[next])).unwrap();
+        next += 1;
+        for part in text.split("\"./").skip(1) {
+            let name = part.split('"').next().unwrap().to_owned();
+            if !seen.contains(&name) {
+                seen.push(name);
+            }
+        }
+    }
+    seen
+}
+
+fn modulepreloads(dir: &Path) -> Vec<String> {
+    let html = fs::read_to_string(dir.join("index.html")).unwrap();
+    html.split("rel=\"modulepreload\" href=\"/assets/")
+        .skip(1)
+        .map(|part| part.split('"').next().unwrap().to_owned())
+        .collect()
+}
+
+#[test]
+fn keeps_preloads_consistent_with_a_frozen_entry() {
+    let temp = bundle(&FROZEN_ENTRY);
+    let output = run_typeopt(temp.path(), &["--bundle-exclude", "index-"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("HTML entry chunk imports chunks that therefore cannot be optimized"),
+        "{stderr}"
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let out_dir = temp.path().join("out");
+    // Every file is published as it was: no renamed chunk that no page loads.
+    assert_eq!(
+        listing(&out_dir.join("assets")),
+        listing(&temp.path().join("dist/assets"))
+    );
+    let graph = executed_graph(&out_dir.join("assets"), "index-AAAAAAAA.js");
+    let preloads = modulepreloads(&out_dir);
+    assert_eq!(preloads.len(), 2);
+    for preload in preloads {
+        assert!(
+            graph.contains(&preload),
+            "{preload} is not loaded: {graph:?}"
+        );
+    }
+    // The report counts no saving and discloses no retained originals.
+    assert_eq!(saved(&report), 0, "{report:#}");
+    assert_eq!(report["size"]["retained"], 0, "{report:#}");
+    let frozen: Vec<&str> = report["frozen_chunks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["file"].as_str().unwrap())
+        .collect();
+    assert_eq!(frozen.len(), 2, "{report:#}");
+    assert!(frozen.iter().any(|f| f.ends_with("settings-BBBBBBBB.js")));
+    assert!(frozen.iter().any(|f| f.ends_with("plain-CCCCCCCC.js")));
+    let before = node(&temp.path().join("dist/assets/index-AAAAAAAA.js"));
+    let after = run_asset(&out_dir, "index-");
+    assert_eq!(before.stdout, after.stdout);
+}
+
+/// The same page with an entry that is not a boundary: the imported chunks
+/// are optimized and the preloads follow the new names.
+#[test]
+fn renames_preloads_with_a_non_frozen_entry() {
+    let temp = bundle(&FROZEN_ENTRY);
+    let report = optimize(temp.path(), &[]);
+    let out_dir = temp.path().join("out");
+    assert!(saved(&report) > 0, "{report:#}");
+    assert_eq!(report["size"]["retained"], 0, "{report:#}");
+    assert!(report.get("frozen_chunks").is_none(), "{report:#}");
+    let entry = asset_file(&out_dir, "index-");
+    let graph = executed_graph(&out_dir.join("assets"), &entry);
+    let preloads = modulepreloads(&out_dir);
+    assert_eq!(preloads.len(), 2);
+    for preload in &preloads {
+        assert!(
+            graph.contains(preload),
+            "{preload} is not loaded: {graph:?}"
+        );
+    }
+    assert!(
+        !preloads.iter().any(|p| p.contains("BBBBBBBB")),
+        "{preloads:?}"
+    );
+    let before = node(&temp.path().join("dist/assets/index-AAAAAAAA.js"));
+    let after = run_asset(&out_dir, "index-");
+    assert_eq!(before.stdout, after.stdout);
+}
+
+/// An HTML entry that is a boundary imports another boundary, which imports
+/// an ordinary chunk. The entry is the first boundary in path order that
+/// reaches the chunk, so it is the one that gets the credit and the warning.
+#[test]
+fn credits_the_first_boundary_through_nested_boundaries() {
+    let temp = bundle(&[
+        (
+            "index.html",
+            r#"<script type="module" src="/assets/a-AAAAAAAA.js"></script>"#,
+        ),
+        (
+            "assets/a-AAAAAAAA.js",
+            r#"import"./b-BBBBBBBB.js";console.log("a");"#,
+        ),
+        (
+            "assets/b-BBBBBBBB.js",
+            r#"import{p}from"./plain-CCCCCCCC.js";console.log(p());"#,
+        ),
+        (
+            "assets/plain-CCCCCCCC.js",
+            r#"function p(){return"plain"}function unusedPlainHelper(n){return n.toString(36).repeat(4)}export{p,unusedPlainHelper};"#,
+        ),
+    ]);
+    let output = run_typeopt(
+        temp.path(),
+        &[
+            "--bundle-exclude",
+            "a-AAAAAAAA",
+            "--bundle-exclude",
+            "b-BBBBBBBB",
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("HTML entry chunk imports chunks that therefore cannot be optimized"),
+        "{stderr}"
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let frozen = report["frozen_chunks"].as_array().unwrap();
+    assert_eq!(frozen.len(), 1, "{report:#}");
+    assert!(
+        frozen[0]["file"]
+            .as_str()
+            .unwrap()
+            .ends_with("plain-CCCCCCCC.js")
+    );
+    assert!(
+        frozen[0]["boundary"]
+            .as_str()
+            .unwrap()
+            .ends_with("a-AAAAAAAA.js")
+    );
+    assert_eq!(
+        fs::read(temp.path().join("out/assets/plain-CCCCCCCC.js")).unwrap(),
+        fs::read(temp.path().join("dist/assets/plain-CCCCCCCC.js")).unwrap()
+    );
+}
+
+/// An excluded `<script src>` with a literal dynamic import is a pinned
+/// chunk that a page loads: the chunks it imports stay unchanged and the log
+/// warns.
+#[test]
+fn warns_when_an_excluded_html_script_freezes_chunks() {
+    let temp = bundle(&[
+        (
+            "index.html",
+            r#"<script src="/assets/app-AAAAAAAA.js"></script>"#,
+        ),
+        (
+            "assets/app-AAAAAAAA.js",
+            r#"import("./lazy-BBBBBBBB.js").then(m=>console.log(m.v()));"#,
+        ),
+        (
+            "assets/lazy-BBBBBBBB.js",
+            r#"function v(){return"lazy"}function unusedLazyHelper(n){return n.toString(36).repeat(4)}export{v,unusedLazyHelper};"#,
+        ),
+    ]);
+    let output = run_typeopt(temp.path(), &["--bundle-exclude", "app-"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("HTML entry chunk imports chunks that therefore cannot be optimized")
+            && stderr.contains("app-AAAAAAAA.js"),
+        "{stderr}"
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let frozen = report["frozen_chunks"].as_array().unwrap();
+    assert_eq!(frozen.len(), 1, "{report:#}");
+    assert!(
+        frozen[0]["file"]
+            .as_str()
+            .unwrap()
+            .ends_with("lazy-BBBBBBBB.js")
+    );
+    assert!(
+        frozen[0]["boundary"]
+            .as_str()
+            .unwrap()
+            .ends_with("app-AAAAAAAA.js")
+    );
+}
+
+/// A classic `<script src>` with a literal dynamic import freezes nothing:
+/// the lazy chunk is optimized and renamed, and the classic chunk imports
+/// the new name under a new hash of its own.
+#[test]
+fn optimizes_chunks_that_a_classic_html_script_imports() {
+    let temp = bundle(&[
+        (
+            "index.html",
+            r#"<script src="/assets/app-AAAAAAAA.js"></script>"#,
+        ),
+        (
+            "assets/app-AAAAAAAA.js",
+            r#"import("./lazy-BBBBBBBB.js").then(m=>console.log(m.v()));"#,
+        ),
+        (
+            "assets/lazy-BBBBBBBB.js",
+            r#"function shape(n){return{verticalSpacing:n,horizontalSpacing:n*2}}function v(){const o=shape(2);return"lazy"+(o.verticalSpacing+o.horizontalSpacing)}export{v};"#,
+        ),
+    ]);
+    let report = optimize(temp.path(), &[]);
+    assert!(report.get("frozen_chunks").is_none(), "{report:#}");
+    assert!(saved(&report) > 0, "{report:#}");
+    let out_dir = temp.path().join("out");
+    let assets = listing(&out_dir.join("assets"));
+    let app = assets.iter().find(|a| a.starts_with("app-")).unwrap();
+    let lazy = assets.iter().find(|a| a.starts_with("lazy-")).unwrap();
+    assert_ne!(app, "app-AAAAAAAA.js", "{assets:?}");
+    assert_ne!(lazy, "lazy-BBBBBBBB.js", "{assets:?}");
+    assert!(out(temp.path(), &format!("assets/{app}")).contains(lazy.as_str()));
+    assert!(out(temp.path(), "index.html").contains(app.as_str()));
+    let before = node(&temp.path().join("dist/assets/app-AAAAAAAA.js"));
+    let after = node(&out_dir.join("assets").join(app));
+    assert_eq!(before.stdout, after.stdout);
+}
+
+/// A lazy route chunk that uses `eval` and imports the shared chunk back no
+/// longer freezes it: the shared chunk is optimized and both get new names,
+/// with one module instance.
+#[test]
+fn optimizes_chunks_that_an_eval_chunk_imports() {
+    let route = r#"import{ready as r}from"./index-AAAAAAAA.js";function run(){var f=eval("(function(){return 1})");return r()+f()}export{run};"#;
+    let temp = bundle(&[
+        (
+            "index.html",
+            r#"<script type="module" src="/assets/index-AAAAAAAA.js"></script>"#,
+        ),
+        (
+            "assets/index-AAAAAAAA.js",
+            r#"import{bump as b,count as c}from"./shared-BBBBBBBB.js";export const ready=()=>c();b();import("./route-CCCCCCCC.js").then(m=>console.log("route",m.run()));"#,
+        ),
+        (
+            "assets/shared-BBBBBBBB.js",
+            r#"let n=0;function shape(k){return{verticalSpacing:k,horizontalSpacing:k*2}}function bump(){n++;const o=shape(n);return o.verticalSpacing+o.horizontalSpacing}function count(){return n}export{bump,count};"#,
+        ),
+        ("assets/route-CCCCCCCC.js", route),
+    ]);
+    let report = optimize(temp.path(), &[]);
+    assert!(report.get("frozen_chunks").is_none(), "{report:#}");
+    assert!(saved(&report) > 0, "{report:#}");
+    let out_dir = temp.path().join("out");
+    let assets = listing(&out_dir.join("assets"));
+    assert_eq!(assets.len(), 3, "{assets:?}");
+    let index = assets.iter().find(|a| a.starts_with("index-")).unwrap();
+    let route_file = assets.iter().find(|a| a.starts_with("route-")).unwrap();
+    assert_ne!(route_file, "route-CCCCCCCC.js");
+    // The eval chunk keeps its code; only the import specifier follows.
+    assert_eq!(
+        out(temp.path(), &format!("assets/{route_file}")),
+        route.replace("index-AAAAAAAA.js", index)
+    );
+    let before = node(&temp.path().join("dist/assets/index-AAAAAAAA.js"));
+    let after = node(&out_dir.join("assets").join(index));
+    assert!(before.status.success() && after.status.success());
+    assert_eq!(before.stdout, after.stdout);
+}
+
+/// A Workbox precache manifest lists renamed chunks under their new names
+/// and gives changed files a new revision of the same length.
+#[test]
+fn refreshes_service_worker_precache_entries() {
+    let sw = r#"importScripts("./workbox-1a2b3c4d.js");self.workbox.precacheAndRoute([{url:"assets/index-AAAAAAAA.js",revision:null},{url:"assets/settings-BBBBBBBB.js",revision:null},{url:"assets/plain-CCCCCCCC.js",revision:null},{url:"index.html",revision:"dca4ee13e6e90a3b14607a0c53990951"},{revision:"a9b855bc4fa588808a72c126fa9ade00",url:"robots.txt"}],{});"#;
+    let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
+    chunks.push(("sw.js", sw));
+    chunks.push((
+        "workbox-1a2b3c4d.js",
+        "self.workbox={precacheAndRoute(){}};",
+    ));
+    chunks.push(("robots.txt", "User-agent: *"));
+    let temp = bundle(&chunks);
+    let report = optimize(temp.path(), &[]);
+    assert_eq!(report["size"]["retained"], 0, "{report:#}");
+    let assets = listing(&temp.path().join("out/assets"));
+    let published = out(temp.path(), "sw.js");
+    for asset in &assets {
+        assert!(
+            published.contains(&format!("assets/{asset}")),
+            "{published}"
+        );
+    }
+    assert!(!published.contains("BBBBBBBB"), "{published}");
+    assert_eq!(published.len(), sw.len());
+    // index.html names the renamed chunks: its revision changes. robots.txt
+    // did not change: its revision stays.
+    assert!(
+        !published.contains("dca4ee13e6e90a3b14607a0c53990951"),
+        "{published}"
+    );
+    assert!(
+        published.contains(r#"{revision:"a9b855bc4fa588808a72c126fa9ade00",url:"robots.txt"}"#)
+    );
+}
+
+/// A chunk in another directory with the same content-hashed file name as a
+/// frozen chunk is frozen too: references name only the file name, so an
+/// edited copy could not be renamed and would be published under the old hash.
+#[test]
+fn freezes_same_named_chunks_in_other_directories() {
+    let shared = SHARED_STATE[3].1;
+    let temp = bundle(&[
+        (
+            "index.html",
+            r#"<script type="module" src="/assets/index-AAAAAAAA.js"></script>"#,
+        ),
+        (
+            "assets/index-AAAAAAAA.js",
+            r#"import{bump as b,count as c}from"./other/shared-BBBBBBBB.js";const o=b();console.log(o.verticalSpacing+o.horizontalSpacing,c());import("./vendor-DDDDDDDD.js").then(v=>console.log(v.read()));"#,
+        ),
+        SHARED_STATE[2],
+        ("assets/shared-BBBBBBBB.js", shared),
+        ("assets/other/shared-BBBBBBBB.js", shared),
+    ]);
+    let output = run_typeopt(temp.path(), &["--bundle-exclude", "vendor-"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let (dist, out_dir) = (temp.path().join("dist"), temp.path().join("out"));
+    // Neither copy is edited or renamed, so no cache can hold the old hash
+    // for new content.
+    for chunk in ["shared-BBBBBBBB.js", "other/shared-BBBBBBBB.js"] {
+        assert_eq!(
+            fs::read(out_dir.join("assets").join(chunk)).unwrap(),
+            fs::read(dist.join("assets").join(chunk)).unwrap(),
+            "{chunk}"
+        );
+    }
+    assert_eq!(
+        report["frozen_chunks"].as_array().unwrap().len(),
+        2,
+        "{report:#}"
+    );
+    let before = node(&dist.join("assets/index-AAAAAAAA.js"));
+    let after = run_asset(&out_dir, "index-");
+    assert_eq!(before.stdout, after.stdout);
+}
+
+// ---------------------------------------------------------------------------
+// call-inlining in bundle chunks
+// ---------------------------------------------------------------------------
+
+/// Unwritten `let` and `var` functions are inlined like `const` ones.
+#[test]
+fn inlines_unwritten_let_and_var_functions() {
+    let (temp, report) = run(&[
+        (
+            "index.js",
+            r#"import{run as r}from"./lib.js";console.log(r(2),r(5));"#,
+        ),
+        (
+            "lib.js",
+            r#"var twice=function(n){return n*2};let inc=n=>n+1;function run(x){return inc(twice(x))+inc(x)}export{run};"#,
+        ),
+    ]);
+    assert!(applied(&report, "call-inlining") >= 2, "{report:#}");
+    let lib = out(temp.path(), "lib.js");
+    assert!(!lib.contains("twice(") && !lib.contains("inc("), "{lib}");
+}
+
+/// A `var` in a nested block may be uninitialized at a site after the
+/// block, where the call throws.
+#[test]
+fn keeps_calls_of_var_functions_in_nested_blocks() {
+    let (temp, _) = run(&[
+        (
+            "index.js",
+            r#"import{run as r}from"./lib.js";try{console.log(r(true,1),r(false,1))}catch(e){console.log(e.constructor.name)}"#,
+        ),
+        (
+            "lib.js",
+            r#"function run(c,x){if(c){var f=function(n){return n+1}}return f(x)}export{run};"#,
+        ),
+    ]);
+    assert!(out(temp.path(), "lib.js").contains("f(x)"));
+}
+
+/// Unchecked chunks do not need matching inferred types, and missing
+/// arguments become `void 0`.
+#[test]
+fn inlines_calls_regardless_of_inferred_types_and_missing_arguments() {
+    let (temp, report) = run(&[
+        ("index.js", r#"import{show as s}from"./lib.js";s();"#),
+        (
+            "lib.js",
+            r#"function len(s){return s.length}function pick(a,b){return b===void 0?a:b}function show(){console.log(len([1,2]),len("abc"),pick(3),pick(3,4))}export{show};"#,
+        ),
+    ]);
+    // One bundle per target function covers all of its sites.
+    assert!(applied(&report, "call-inlining") >= 2, "{report:#}");
+    let lib = out(temp.path(), "lib.js");
+    assert!(!lib.contains("len(") && !lib.contains("pick("), "{lib}");
+}
+
+/// Assignments to properties and free bindings are inlined with their
+/// evaluation order; writes to parameters are not.
+#[test]
+fn inlines_assignments_but_not_parameter_writes() {
+    let (temp, report) = run(&[
+        ("index.js", r#"import{show as s}from"./lib.js";s();"#),
+        (
+            "lib.js",
+            r#"let count=0;function bump(o,v){return o.total+=v}function last(o,v){return o.last=v}function init(o){return o.v??=7}function tick(){return count++}function next(n){return n+=1}function show(){const s={total:1,last:0,v:null};console.log(bump(s,3),last(s,4),init(s),init(s),tick(),tick(),count);let a=1;console.log(next(a),a,s.total,s.last,s.v)}export{show};"#,
+        ),
+    ]);
+    assert!(applied(&report, "call-inlining") >= 4, "{report:#}");
+    let lib = out(temp.path(), "lib.js");
+    assert!(!lib.contains("bump(") && !lib.contains("tick("), "{lib}");
+    assert!(lib.contains("next(a)"), "{lib}");
+}
+
+/// An argument that reads a binding the body writes is read before the
+/// write; inlining would read it after.
+#[test]
+fn keeps_calls_whose_body_writes_an_argument_binding() {
+    let (temp, _) = run(&[
+        ("index.js", r#"import{show as s}from"./lib.js";s();"#),
+        (
+            "lib.js",
+            r#"let n=0;function reset(x){return n=1,x}function show(){console.log(reset(n),n)}export{show};"#,
+        ),
+    ]);
+    assert!(out(temp.path(), "lib.js").contains("reset(n)"));
+}
+
+/// A written binding imported at the site is read-only there, so a function
+/// that writes its own module binding is not inlined into an importer.
+#[test]
+fn keeps_calls_that_write_a_binding_imported_at_the_site() {
+    let (temp, _) = run(&[
+        (
+            "index.js",
+            r#"import{n,tick}from"./lib.js";console.log(tick(),tick(),n);"#,
+        ),
+        (
+            "lib.js",
+            r#"let n=0;function tick(){return n++}export{n,tick};"#,
+        ),
+    ]);
+    assert!(out(temp.path(), "index.js").contains("tick()"));
+}
+
+/// `{url, revision}` objects outside a Workbox precache call are application
+/// data and keep their values.
+#[test]
+fn keeps_revision_data_outside_precache_calls() {
+    let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
+    chunks[1] = (
+        "assets/index-AAAAAAAA.js",
+        r#"import{m as e}from"./settings-BBBBBBBB.js";import{p as t}from"./plain-CCCCCCCC.js";import{d}from"../config.js";console.log(e(2).verticalSpacing,t(),d[0].revision);"#,
+    );
+    chunks.push((
+        "config.js",
+        r#"export const d=[{url:"index.html",revision:"v1"}];"#,
+    ));
+    let temp = bundle(&chunks);
+    optimize(temp.path(), &[]);
+    assert_eq!(
+        out(temp.path(), "config.js"),
+        r#"export const d=[{url:"index.html",revision:"v1"}];"#
+    );
+}
+
+/// Formatted Workbox manifests put whitespace before keys; their entries are
+/// refreshed as well.
+#[test]
+fn refreshes_formatted_precache_entries() {
+    let sw = "self.workbox.precacheAndRoute([\n  {\n    url: \"index.html\",\n    revision: \
+              \"dca4ee13e6e90a3b14607a0c53990951\"\n  },\n  { revision: null, url: \
+              \"assets/settings-BBBBBBBB.js\" }\n]);\n";
+    let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
+    chunks.push(("sw.js", sw));
+    let temp = bundle(&chunks);
+    optimize(temp.path(), &[]);
+    let published = out(temp.path(), "sw.js");
+    assert!(
+        !published.contains("dca4ee13e6e90a3b14607a0c53990951"),
+        "{published}"
+    );
+    assert!(!published.contains("BBBBBBBB"), "{published}");
+    assert_eq!(published.len(), sw.len());
+}
+
+/// A precache URL that leaves the bundle directory is ignored: typeopt never
+/// reads outside the staged output for it.
+#[test]
+fn ignores_precache_entries_outside_the_bundle() {
+    let temp = bundle(&HASHED);
+    fs::write(temp.path().join("outside.txt"), "outside").unwrap();
+    let sw = r#"self.workbox.precacheAndRoute([{url:"../../outside.txt",revision:"00000000000000000000000000000000"},{url:"assets/../index.html",revision:"dca4ee13e6e90a3b14607a0c53990951"}]);"#;
+    fs::write(temp.path().join("dist/sw.js"), sw).unwrap();
+    optimize(temp.path(), &[]);
+    let published = out(temp.path(), "sw.js");
+    assert!(
+        published
+            .contains(r#"{url:"../../outside.txt",revision:"00000000000000000000000000000000"}"#),
+        "{published}"
+    );
+    // A `..` that stays inside the bundle still names index.html.
+    assert!(
+        !published.contains("dca4ee13e6e90a3b14607a0c53990951"),
+        "{published}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// --minify
+// ---------------------------------------------------------------------------
+
+/// A reflected callable can live in a different chunk from the read of its
+/// source. Both runs must publish the same optimized callable text.
+fn check_observable_function_source(index: &str, callable: &str) {
+    let settings = format!(
+        "{}\n{callable}\n//# sourceMappingURL=settings.js.map\n",
+        VERBOSE[1].1
+    );
+    let map = r#"{"version":3,"sources":["src/settings.ts"],"names":[],"mappings":"AAAA"}"#;
+    let temp = bundle(&[
+        ("index.js", index),
+        ("settings.js", &settings),
+        ("settings.js.map", map),
+    ]);
+    let plain = optimize(temp.path(), &[]);
+    same_behavior(temp.path());
+    assert!(
+        plain["renamed_properties"].as_u64().unwrap() > 0,
+        "{plain:#}"
+    );
+    let plain_settings = out(temp.path(), "settings.js");
+    assert_ne!(plain_settings, settings);
+    fs::remove_dir_all(temp.path().join("out")).unwrap();
+    let report = optimize(temp.path(), &["--minify"]);
+    same_behavior(temp.path());
+    assert_eq!(out(temp.path(), "settings.js"), plain_settings);
+    assert!(report["size"]["minified"].is_null(), "{report:#}");
+    let map = sourcemap::SourceMap::from_slice(out(temp.path(), "settings.js.map").as_bytes())
+        .expect("composed source map");
+    assert_eq!(map.get_source(0), Some("src/settings.ts"));
+}
+
+#[test]
+fn observable_function_source_direct_call() {
+    check_observable_function_source(
+        r#"import{describeSettings as describe,makeSettings as make,reflected}from"./settings.js";
+console.log(describe(make(3)),describe(make(7)));
+console.log(Function.prototype.toString.call(reflected).includes("reflection-marker"));"#,
+        r#"function reflected(value) { /* reflection-marker */ return value + 1; }
+export { reflected };"#,
+    );
+}
+
+#[test]
+fn observable_function_source_direct_method() {
+    check_observable_function_source(
+        r#"import{describeSettings as describe,makeSettings as make,reflected}from"./settings.js";
+console.log(describe(make(3)),describe(make(7)));
+console.log(reflected.toString().includes("reflection-marker"));"#,
+        r#"function reflected(value) { /* reflection-marker */ return value + 1; }
+export { reflected };"#,
+    );
+}
+
+#[test]
+fn observable_function_source_helper_alias() {
+    check_observable_function_source(
+        r#"import{describeSettings as describe,makeSettings as make,reflected}from"./settings.js";
+const readSource=Function.prototype.toString;
+function helper(value){return readSource.call(value)}
+console.log(describe(make(3)),describe(make(7)));
+console.log(helper(reflected).includes("reflection-marker"));"#,
+        r#"function reflected(value) { /* reflection-marker */ return value + 1; }
+export { reflected };"#,
+    );
+}
+
+#[test]
+fn observable_function_source_class_and_method() {
+    check_observable_function_source(
+        r#"import{describeSettings as describe,makeSettings as make,Reflected}from"./settings.js";
+console.log(describe(make(3)),describe(make(7)));
+console.log(Function.prototype.toString.call(Reflected).includes("reflection-marker"));"#,
+        r#"class Reflected { /* reflection-marker */ value() { return 1; } }
+export { Reflected };"#,
+    );
+}
+
+#[test]
+fn observable_function_source_computed_alias() {
+    check_observable_function_source(
+        r#"import{describeSettings as describe,makeSettings as make,reflected}from"./settings.js";
+const key="toString";
+const readSource=Function.prototype[key];
+console.log(describe(make(3)),describe(make(7)));
+console.log(readSource.call(reflected).includes("reflection-marker"));"#,
+        r#"function reflected(value) { /* reflection-marker */ return value + 1; }
+export { reflected };"#,
+    );
+}
+
+#[test]
+fn observable_function_source_dynamic_member() {
+    check_observable_function_source(
+        r#"import{describeSettings as describe,makeSettings as make,reflected}from"./settings.js";
+const key=["to","String"].join("");
+console.log(describe(make(3)),describe(make(7)));
+console.log(reflected[key]().includes("reflection-marker"));"#,
+        r#"function reflected(value) { /* reflection-marker */ return value + 1; }
+export { reflected };"#,
+    );
+}
+
+#[test]
+fn observable_function_source_escaped_member() {
+    check_observable_function_source(
+        r#"import{describeSettings as describe,makeSettings as make,reflected}from"./settings.js";
+console.log(describe(make(3)),describe(make(7)));
+console.log(reflected["to\u0053tring"]().includes("reflection-marker"));"#,
+        r#"function reflected(value) { /* reflection-marker */ return value + 1; }
+export { reflected };"#,
+    );
+}
+
+#[test]
+fn observable_function_source_destructured_alias() {
+    check_observable_function_source(
+        r#"import{describeSettings as describe,makeSettings as make,reflected}from"./settings.js";
+const FunctionAlias=Function;
+const {toString:readSource}=FunctionAlias.prototype;
+console.log(describe(make(3)),describe(make(7)));
+console.log(readSource.call(reflected).includes("reflection-marker"));"#,
+        r#"function reflected(value) { /* reflection-marker */ return value + 1; }
+export { reflected };"#,
+    );
+}
+
+#[test]
+fn observable_function_source_string_coercion() {
+    check_observable_function_source(
+        r#"import{describeSettings as describe,makeSettings as make,reflected}from"./settings.js";
+console.log(describe(make(3)),describe(make(7)));
+console.log(String(reflected).includes("reflection-marker"));"#,
+        r#"function reflected(value) { /* reflection-marker */ return value + 1; }
+export { reflected };"#,
+    );
+}
+
+#[test]
+fn observable_function_source_template_coercion() {
+    check_observable_function_source(
+        r#"import{describeSettings as describe,makeSettings as make,reflected}from"./settings.js";
+console.log(describe(make(3)),describe(make(7)));
+console.log(`${reflected}`.includes("reflection-marker"));"#,
+        r#"function reflected(value) { /* reflection-marker */ return value + 1; }
+export { reflected };"#,
+    );
+}
+
+#[test]
+fn observable_function_source_direct_eval() {
+    let index = r#"import{describeSettings as describe,makeSettings as make,reflected}from"./settings.js";
+console.log(describe(make(3)),describe(make(7)));
+console.log(eval("reflected.toString()").includes("reflection-marker"));"#;
+    let settings = format!(
+        "{}\n{}\n//# sourceMappingURL=settings.js.map\n",
+        VERBOSE[1].1,
+        r#"function reflected(value) { /* reflection-marker */ return value + 1; }
+export { reflected };"#,
+    );
+    let temp = bundle(&[
+        ("index.js", index),
+        ("settings.js", &settings),
+        (
+            "settings.js.map",
+            r#"{"version":3,"sources":["src/settings.ts"],"names":[],"mappings":"AAAA"}"#,
+        ),
+    ]);
+    let plain = optimize(temp.path(), &[]);
+    same_behavior(temp.path());
+    let plain_settings = out(temp.path(), "settings.js");
+    fs::remove_dir_all(temp.path().join("out")).unwrap();
+    let report = optimize(temp.path(), &["--minify"]);
+    same_behavior(temp.path());
+    assert_eq!(out(temp.path(), "settings.js"), plain_settings);
+    assert!(
+        report["size"]["minified"].is_null(),
+        "{report:#}; plain={plain:#}"
+    );
+}
+
+#[test]
+fn observable_function_source_inline_html_script() {
+    let settings = r#"function reflected(value) { /* reflection-marker */ return value + 1; }
+export { reflected };"#;
+    let temp = bundle(&[
+        (
+            "index.html",
+            r#"<script type="module">import{reflected}from"./settings.js";console.log(reflected.toString().includes("reflection-marker"));</script><script type="module" src="./index.js"></script>"#,
+        ),
+        ("settings.js", settings),
+        (
+            "index.js",
+            r#"import{makeSettings}from"./other.js";console.log(makeSettings(3).verticalSpacing);"#,
+        ),
+        (
+            "other.js",
+            r#"function makeSettings(count){return{verticalSpacing:count,horizontalSpacing:count*2}}export{makeSettings};"#,
+        ),
+    ]);
+    let plain = optimize(temp.path(), &[]);
+    let plain_other = out(temp.path(), "other.js");
+    assert_ne!(
+        plain_other,
+        r#"function makeSettings(count){return{verticalSpacing:count,horizontalSpacing:count*2}}export{makeSettings};"#
+    );
+    fs::remove_dir_all(temp.path().join("out")).unwrap();
+    let report = optimize(temp.path(), &["--minify"]);
+    assert_eq!(out(temp.path(), "other.js"), plain_other);
+    assert!(
+        report["size"]["minified"].is_null(),
+        "{report:#}; plain={plain:#}"
+    );
+}
+
+#[test]
+fn observable_function_source_safe_chunk_still_minifies() {
+    let index = format!(
+        "{}\nconsole.log('toString is only text', (13).toString(16));\n",
+        VERBOSE[0].1
+    );
+    let temp = bundle(&[("index.js", &index), VERBOSE[1]]);
+    let report = optimize(temp.path(), &["--minify"]);
+    same_behavior(temp.path());
+    assert!(
+        report["size"]["minified"].as_u64().unwrap() > 0,
+        "{report:#}"
+    );
+}
+
+const VERBOSE: [(&str, &str); 2] = [
+    (
+        "index.js",
+        r#"import{describeSettings as describe,makeSettings as make}from"./settings.js";
+const firstSettings = make(3);
+const secondSettings = make(7);
+console.log(describe(firstSettings), describe(secondSettings));
+"#,
+    ),
+    (
+        "settings.js",
+        r#"function makeSettings(count) {
+  const result = { verticalSpacing: count, horizontalSpacing: count * 2, highlightColour: count > 4 ? "red" : "blue" };
+  return result;
+}
+function describeSettings(settings) {
+  const description = settings.verticalSpacing + ":" + settings.horizontalSpacing + ":" + settings.highlightColour;
+  return description;
+}
+export { makeSettings, describeSettings };
+"#,
+    ),
+];
+
+/// `--minify` shrinks edited chunks further with SWC and reports it.
+#[test]
+fn minifies_edited_chunks() {
+    let temp = bundle(&VERBOSE);
+    let plain = optimize(temp.path(), &[]);
+    let plain_settings = out(temp.path(), "settings.js");
+    fs::remove_dir_all(temp.path().join("out")).unwrap();
+    let report = optimize(temp.path(), &["--minify"]);
+    same_behavior(temp.path());
+    let minified = report["size"]["minified"].as_u64().unwrap();
+    assert!(minified > 0, "{report:#}");
+    assert_eq!(
+        report["size"]["saved"].as_i64().unwrap(),
+        plain["size"]["saved"].as_i64().unwrap() + minified as i64,
+        "{report:#}"
+    );
+    let settings = out(temp.path(), "settings.js");
+    assert!(settings.len() < plain_settings.len(), "{settings}");
+    // Exports keep their names for importers.
+    assert!(settings.contains("makeSettings") && settings.contains("describeSettings"));
+}
+
+#[test]
+fn minifies_legal_notices_with_overlapping_comment_text() {
+    let settings = format!(
+        "function unused() {{ /** @license MIT */ return 42; }}\n/** @license MIT additional \
+         terms */\n{}",
+        VERBOSE[1].1
+    );
+    let temp = bundle(&[("index.js", VERBOSE[0].1), ("settings.js", &settings)]);
+    let report = optimize(
+        temp.path(),
+        &["--minify", "--disable-pass", "residual-dependency-removal"],
+    );
+    same_behavior(temp.path());
+    assert!(
+        report["size"]["minified"].as_u64().unwrap() > 0,
+        "{report:#}"
+    );
+    let published = out(temp.path(), "settings.js");
+    assert!(!published.contains("unused"), "{published}");
+    assert_eq!(
+        published.matches("/** @license MIT */").count(),
+        1,
+        "{published}"
+    );
+    assert_eq!(
+        published
+            .matches("/** @license MIT additional terms */")
+            .count(),
+        1,
+        "{published}"
+    );
+}
+
+#[test]
+fn minifies_legal_notice_even_when_its_text_occurs_in_a_string() {
+    let index = format!(
+        "{}\nimport {{ noticeText }} from './settings.js'; console.log(noticeText);",
+        VERBOSE[0].1
+    );
+    let settings = format!(
+        "function unused() {{ /** @license MIT */ return 42; }}\nexport const noticeText = '* \
+         @license MIT ';\n{}",
+        VERBOSE[1].1
+    );
+    let temp = bundle(&[("index.js", &index), ("settings.js", &settings)]);
+    let report = optimize(
+        temp.path(),
+        &["--minify", "--disable-pass", "residual-dependency-removal"],
+    );
+    same_behavior(temp.path());
+    assert!(
+        report["size"]["minified"].as_u64().unwrap() > 0,
+        "{report:#}"
+    );
+    let published = out(temp.path(), "settings.js");
+    assert!(!published.contains("unused"), "{published}");
+    assert_eq!(
+        published.matches("/** @license MIT */").count(),
+        1,
+        "{published}"
+    );
+    assert!(published.contains("* @license MIT "), "{published}");
+}
+
+#[test]
+fn minifies_legal_notice_control_with_composed_source_map() {
+    let index = format!(
+        "{}\nimport {{ noticeText }} from './settings.js'; console.log(noticeText);",
+        VERBOSE[0].1
+    );
+    let settings = format!(
+        "/** @license MIT */\nexport const noticeText = 'unrelated';\n{}//# \
+         sourceMappingURL=settings.js.map\n",
+        VERBOSE[1].1
+    );
+    let map = r#"{"version":3,"sources":["src/settings.ts"],"names":[],"mappings":"AAAA"}"#;
+    let temp = bundle(&[
+        ("index.js", &index),
+        ("settings.js", &settings),
+        ("settings.js.map", map),
+    ]);
+    let report = optimize(
+        temp.path(),
+        &["--minify", "--disable-pass", "residual-dependency-removal"],
+    );
+    same_behavior(temp.path());
+    assert!(
+        report["size"]["minified"].as_u64().unwrap() > 0,
+        "{report:#}"
+    );
+    let published = out(temp.path(), "settings.js");
+    assert_eq!(
+        published.matches("/** @license MIT */").count(),
+        1,
+        "{published}"
+    );
+    assert!(published.contains("noticeText"), "{published}");
+    assert!(
+        published
+            .trim_end()
+            .ends_with("//# sourceMappingURL=settings.js.map"),
+        "{published}"
+    );
+    let map =
+        sourcemap::SourceMap::from_slice(out(temp.path(), "settings.js.map").as_bytes()).unwrap();
+    assert_eq!(map.get_source(0), Some("src/settings.ts"));
+    assert!(map.tokens().count() > 0);
+}
+
+/// The published map leads from the minified code to the original sources.
+#[test]
+fn composes_maps_of_minified_chunks() {
+    let mut chunks: Vec<(&str, &str)> = VERBOSE.to_vec();
+    let settings = format!("{}//# sourceMappingURL=settings.js.map\n", VERBOSE[1].1);
+    chunks[1] = ("settings.js", &settings);
+    // One mapping per generated line, each to the same line of src/settings.ts.
+    let lines = VERBOSE[1].1.lines().count();
+    let mappings = std::iter::once("AAAA")
+        .chain(std::iter::repeat_n("AACA", lines - 1))
+        .collect::<Vec<_>>()
+        .join(";");
+    let map = format!(
+        r#"{{"version":3,"sources":["src/settings.ts"],"names":[],"mappings":"{mappings}"}}"#
+    );
+    chunks.push(("settings.js.map", &map));
+    let temp = bundle(&chunks);
+    let report = optimize(temp.path(), &["--minify"]);
+    assert!(
+        report["size"]["minified"].as_u64().unwrap() > 0,
+        "{report:#}"
+    );
+    same_behavior(temp.path());
+    let published = out(temp.path(), "settings.js");
+    assert!(
+        published
+            .trim_end()
+            .ends_with("//# sourceMappingURL=settings.js.map"),
+        "{published}"
+    );
+    let map: Value = serde_json::from_str(&out(temp.path(), "settings.js.map")).unwrap();
+    assert_eq!(
+        map["sources"],
+        serde_json::json!(["src/settings.ts"]),
+        "{map:#}"
+    );
+    // Function names stay (they are observable), so the minified
+    // declaration of `describeSettings` maps to its source line.
+    let decoded =
+        sourcemap::SourceMap::from_slice(out(temp.path(), "settings.js.map").as_bytes()).unwrap();
+    let column = published
+        .find("function describeSettings")
+        .map(|at| at + "function ".len())
+        .expect("function name kept") as u32;
+    let token = decoded.lookup_token(0, column).expect("mapped");
+    assert_eq!(token.get_source(), Some("src/settings.ts"));
+    assert_eq!(token.get_src_line(), 4, "{published}\n{map:#}");
+}
+
+/// Chunks that typeopt does not edit are never minified.
+#[test]
+fn leaves_unedited_chunks_unminified() {
+    let mut chunks: Vec<(&str, &str)> = VERBOSE.to_vec();
+    let untouched = "export function untouchedHelper(value) {\n  return value + 1;\n}\n";
+    chunks.push(("untouched.js", untouched));
+    chunks[0] = (
+        "index.js",
+        r#"import{describeSettings as describe,makeSettings as make}from"./settings.js";
+import{untouchedHelper as h}from"./untouched.js";
+const firstSettings = make(h(2));
+console.log(describe(firstSettings));
+"#,
+    );
+    let temp = bundle(&chunks);
+    optimize(
+        temp.path(),
+        &[
+            "--minify",
+            "--disable-pass",
+            "call-inlining",
+            "--disable-pass",
+            "signature-reduction",
+        ],
+    );
+    same_behavior(temp.path());
+    assert_eq!(out(temp.path(), "untouched.js"), untouched);
+}
+
+// ---------------------------------------------------------------------------
+// Closed classes
+// ---------------------------------------------------------------------------
+
+/// Fields, methods, accessors and `super` calls of closed classes are
+/// renamed together across chunks and the class hierarchy.
+#[test]
+fn renames_closed_class_members_across_chunks() {
+    let (temp, report) = run(&[
+        (
+            "index.js",
+            r#"import{Shape as S,Square as Q}from"./shapes.js";const g=new S(1,"green");console.log(g.describeShape());const q=new Q(5,"pink");console.log(q.describeShape(),q.areaOfShape(),q instanceof S,q.shapeLabel);q.shapeLabel="relabelled";console.log(q.describeShape());"#,
+        ),
+        (
+            "shapes.js",
+            r#"class Shape{#hiddenCount=0;constructor(s,c){this.sizeOfShape=s;this.colourOfShape=c}areaOfShape(){this.#hiddenCount++;return this.sizeOfShape*this.sizeOfShape}describeShape(){return this.colourOfShape+":"+this.areaOfShape()+":"+this.#hiddenCount}}class Square extends Shape{storedLabel={labelText:"sq"};constructor(n,c){super(n,c)}get shapeLabel(){return this.storedLabel.labelText}set shapeLabel(v){this.storedLabel={labelText:v}}describeShape(){return this.shapeLabel+super.describeShape()}}export{Shape,Square};"#,
+        ),
+    ]);
+    assert!(saved(&report) > 0, "{report:#}");
+    let shapes = out(temp.path(), "shapes.js");
+    for name in [
+        "sizeOfShape",
+        "colourOfShape",
+        "areaOfShape",
+        "describeShape",
+        "storedLabel",
+        "shapeLabel",
+        "labelText",
+    ] {
+        assert!(!shapes.contains(name), "{name} kept:\n{shapes}");
+    }
+    assert!(shapes.contains("#hiddenCount"), "{shapes}");
+}
+
+/// Named class expressions construct through their inner name, and static
+/// factories that are only called directly return tracked instances.
+#[test]
+fn renames_instances_of_static_factories() {
+    let (temp, _) = run(&[(
+        "index.js",
+        r#"const Store=class e{static create(t){return new e(t,{parentValue:1})}storeOptions;rootValue;constructor(t,n){this.storeOptions=t,this.rootValue=n}describeStore(){return this.storeOptions.optionLabel+this.rootValue.parentValue}};const s=Store.create({optionLabel:"x"});console.log(s.describeStore(),s instanceof Store);export{};"#,
+    )]);
+    let index = out(temp.path(), "index.js");
+    for name in ["storeOptions", "rootValue", "describeStore", "optionLabel"] {
+        assert!(!index.contains(name), "{name} kept:\n{index}");
+    }
+}
+
+/// A dynamic import exposes the module namespace, so the classes it exports
+/// are reachable without an indexed reference.
+#[test]
+fn keeps_classes_exported_through_dynamic_namespaces() {
+    let (temp, _) = run(&[
+        (
+            "index.js",
+            r#"import{localValue as v}from"./models.js";console.log(v);const ns=await import("./models.js");const key=["Mo","del"].join("");const m=new ns[key];console.log(m.longProperty,m.readLongProperty());"#,
+        ),
+        (
+            "models.js",
+            r#"class Model{constructor(){this.longProperty=1}readLongProperty(){return this.longProperty}}const local=new Model;const localValue=local.readLongProperty();export{Model,localValue};"#,
+        ),
+    ]);
+    let models = out(temp.path(), "models.js");
+    assert!(models.contains("longProperty"), "{models}");
+    assert!(models.contains("readLongProperty"), "{models}");
+}
+
+/// Every fixture gives code that the analysis does not own a way to observe
+/// an instance member by name, so the names stay.
+#[test]
+fn keeps_class_members_that_unknown_code_can_observe() {
+    let cases: [(&str, &[&str]); 14] = [
+        // A method loaded without a call runs with another receiver.
+        (
+            r#"class W{constructor(){this.fieldName=1}methodName(){return this.fieldName}}const w=new W;const f=w.methodName;console.log(w.methodName(),f.call({fieldName:9}));"#,
+            &["fieldName", "methodName"],
+        ),
+        // Serialization reads every own property name.
+        (
+            r#"class P{constructor(v){this.payloadValue=v}}console.log(JSON.stringify(new P(1)));"#,
+            &["payloadValue"],
+        ),
+        // A function stored in a field runs with the instance as `this`.
+        (
+            r#"class Q{constructor(cb){this.callbackFn=cb;this.valueField=3}run(){return this.callbackFn()}}console.log(new Q(function(){return this.valueField}).run());"#,
+            &["valueField"],
+        ),
+        // An escaped instance's methods receive objects from unknown code.
+        (
+            r#"class R{readValue(o){return o.innerValue}}const r=new R;console.log(r.readValue({innerValue:1}));globalThis.hook=function(x){return x.readValue({innerValue:2})};console.log(globalThis.hook(r));"#,
+            &["innerValue", "readValue"],
+        ),
+        // A base class outside the program reads its own property names.
+        (
+            r#"class E extends Error{constructor(m){super(m);this.codeValue=2}}try{throw new E("x")}catch(e){console.log(e.codeValue,e.message)}"#,
+            &["codeValue"],
+        ),
+        // `arguments` reaches the arguments without parameters.
+        (
+            r#"class A{sum(){let t=0;for(const o of arguments)t+=o.partValue;return t}}console.log(new A().sum({partValue:1},{partValue:2}));"#,
+            &["partValue"],
+        ),
+        // A private method loaded without a call runs with another receiver.
+        (
+            r#"class Pm{#secretHelper(){return this.visibleValue}constructor(){this.visibleValue=4}leak(){return this.#secretHelper}}const p=new Pm;console.log(p.leak().call({visibleValue:5}),p.visibleValue);"#,
+            &["visibleValue"],
+        ),
+        // The prototype exposes method names.
+        (
+            r#"class Pr{greetPerson(){return 1}}console.log(new Pr().greetPerson(),Object.getOwnPropertyNames(Pr.prototype));"#,
+            &["greetPerson"],
+        ),
+        // A static factory loaded without a call returns instances to
+        // unknown callers.
+        (
+            r#"class L{static make(){return new L}longFieldName=1}const mk=L.make;console.log(mk().longFieldName);"#,
+            &["longFieldName"],
+        ),
+        // An escaped instance reaches the static methods of its class.
+        (
+            r#"class K{static create(o){return o.optionLabel}keyField=1}console.log(K.create({optionLabel:"a"}));const k=new K;globalThis.hook=function(x){return x.constructor.create({optionLabel:"b"})};console.log(globalThis.hook(k));"#,
+            &["optionLabel"],
+        ),
+        // `Symbol.hasInstance` receives the left operand of `instanceof`.
+        (
+            r#"class M{static[Symbol.hasInstance](v){return v.matchedValue===1}}const value={matchedValue:1};console.log(value instanceof M);"#,
+            &["matchedValue"],
+        ),
+        (
+            r#"globalThis.Matcher={[Symbol.hasInstance]:v=>v.matchedValue===1};const value={matchedValue:1};console.log(value instanceof globalThis.Matcher);"#,
+            &["matchedValue"],
+        ),
+        // `Symbol.name` is the string "Symbol", not a well-known symbol.
+        (
+            r#"class C{[Symbol.name]=1;otherField=2}const c=new C;console.log(c.Symbol,c.otherField);"#,
+            &["Symbol", "otherField"],
+        ),
+        // A function-valued field names its function.
+        (
+            r#"class H{handlerFn=()=>this.countValue;countValue=2}const h=new H;console.log(h.handlerFn(),h.handlerFn.name);"#,
+            &["handlerFn"],
+        ),
+    ];
+    for (code, names) in cases {
+        // An export makes the chunk a module rather than a classic script.
+        let code = format!("{code}export{{}};");
+        let (temp, _) = run(&[("index.js", &code)]);
+        let index = out(temp.path(), "index.js");
+        for name in names {
+            assert!(index.contains(name), "{name} renamed in {code}:\n{index}");
+        }
+    }
+}
+
+/// Edge cases of class semantics that renaming must not change; each runs
+/// in Node before and after optimization.
+#[test]
+fn keeps_behavior_of_class_member_edge_cases() {
+    let cases = [
+        // A method called through a string-literal element access.
+        r#"class C{make(){return{longProperty:1}}}const r=new C()["make"]();console.log(r.longProperty);"#,
+        // The iteration protocol looks up `next` on what
+        // `Symbol.iterator` returns.
+        r#"class It{constructor(){this.position=0}next(){return this.position<2?{value:this.position++,done:false}:{value:void 0,done:true}}}class Iterable{[Symbol.iterator](){return new It}}for(const v of new Iterable)console.log(v);"#,
+        // A later method replaces an accessor of the same name.
+        r#"class C{get make(){return()=>({longProperty:0})}make(){return{longProperty:1}}}const r=new C().make();console.log(r.longProperty);"#,
+        // A later static field replaces a static method of the same name.
+        r#"globalThis.ext=o=>o.longProperty;class C{static call(o){return 0}static call=globalThis.ext}console.log(C.call({longProperty:1}));"#,
+        // `Function.prototype` methods hand out the constructor.
+        r#"class C{constructor(){this.longProperty=1}}const B=C.bind(null);const v=new B;console.log(v.longProperty);"#,
+        // An extracted method returns to callers the analysis does not see.
+        r#"class C{make(){return{longProperty:1}}}const make=new C().make;const result=make();console.log(result.longProperty);"#,
+        // A base class field shadows a subclass method of the same name.
+        r#"globalThis.external=o=>o.longProperty;class Base{action=globalThis.external}class Sub extends Base{action(o){return 0}}console.log(new Sub().action({longProperty:1}));"#,
+        // Code can add names to `Object.prototype`.
+        r#"Object.prototype.longProperty=1;class C{}console.log(new C().longProperty);"#,
+    ];
+    for code in cases {
+        let code = format!("{code}export{{}};");
+        run(&[("index.js", &code)]);
     }
 }

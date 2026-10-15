@@ -11,7 +11,11 @@ mod docx;
 mod pdf;
 mod pptx;
 mod scene;
-pub use scene::{SceneAssetOperation, validate_scene_asset};
+pub use scene::{
+    NativeCompactedGeometry, SceneAssetOperation, SceneCompactionOperation,
+    SimplifySceneGeometryOperation, compact_scene_geometry, simplify_scene_geometry,
+    validate_scene_asset,
+};
 mod sfx;
 mod sprite;
 mod xlsx;
@@ -86,6 +90,8 @@ pub struct NativeOutput {
 enum OperationKind {
     Generate,
     Inspect,
+    Analyze,
+    AnalyzeQuality,
     Update,
 }
 
@@ -149,10 +155,14 @@ impl Task for Operation {
         let operation = match self.kind {
             OperationKind::Generate => "generate",
             OperationKind::Inspect => "inspect",
+            OperationKind::Analyze => "analyze",
+            OperationKind::AnalyzeQuality => "analyze_quality",
             OperationKind::Update => "update",
         };
-        let stage = if matches!(self.kind, OperationKind::Inspect)
-            && matches!(self.format, Format::Glb | Format::Fbx)
+        let stage = if matches!(
+            self.kind,
+            OperationKind::Inspect | OperationKind::Analyze | OperationKind::AnalyzeQuality
+        ) && matches!(self.format, Format::Glb | Format::Fbx)
         {
             "layout"
         } else if matches!(self.kind, OperationKind::Inspect) {
@@ -248,6 +258,10 @@ pub fn process_document(
     let kind = match operation.as_str() {
         "generate" => OperationKind::Generate,
         "inspect" => OperationKind::Inspect,
+        "analyze" if matches!(format, Format::Glb | Format::Fbx) => OperationKind::Analyze,
+        "analyze_quality" if matches!(format, Format::Glb | Format::Fbx) => {
+            OperationKind::AnalyzeQuality
+        }
         "update" => OperationKind::Update,
         _ => {
             return Err(native_error(Diagnostic::new(

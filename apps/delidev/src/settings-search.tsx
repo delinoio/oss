@@ -33,6 +33,8 @@ export enum SettingsSearchTarget {
   AppearanceDisplay = "display",
   AppearanceImages = "images",
   Language = "language",
+  BrowserGeneral = "browser-general",
+  BrowserLocal = "browser-local",
   DateFormat = "date-format",
   AccountRouting = "account-routing",
   DefaultRouting = "default-routing",
@@ -63,8 +65,10 @@ export enum SettingsSearchTarget {
   LocalWorker = "local-worker",
   Ssh = "ssh",
   RunnerInventory = "runner-inventory",
+  TailscaleComputer = "tailscale-computer",
+  TailscaleDevices = "tailscale-devices",
+  TailscaleRequests = "tailscale-requests",
   GitProfiles = "git-profiles",
-  CurrentConnection = "current-connection",
   AppInformation = "app-information",
   AppUpdates = "app-updates",
   AppRecovery = "app-recovery",
@@ -195,6 +199,18 @@ export const settingsSearchTargets: Partial<
       "date-format.scope",
     ),
   ],
+  [Category.Browser]: [
+    target(
+      SettingsSearchTarget.BrowserGeneral,
+      "browser-settings.generalLabel",
+      "browser-settings.generalHelp",
+    ),
+    target(
+      SettingsSearchTarget.BrowserLocal,
+      "browser-settings.localLabel",
+      "browser-settings.localHelp",
+    ),
+  ],
   [Category.ServerPreferences]: [
     target(
       SettingsSearchTarget.Network,
@@ -311,16 +327,27 @@ export const settingsSearchTargets: Partial<
       "settings.savedRunnerDevices_9e6092",
     ),
   ],
+  [Category.Tailscale]: [
+    target(
+      SettingsSearchTarget.TailscaleComputer,
+      "tailscale.thisComputer",
+      "tailscale.computerHelp",
+    ),
+    target(
+      SettingsSearchTarget.TailscaleDevices,
+      "tailscale.tailnetDevices",
+      "tailscale.help",
+    ),
+    target(
+      SettingsSearchTarget.TailscaleRequests,
+      "tailscale.requests",
+      "tailscale.requestsHelp",
+    ),
+  ],
   [Category.Integrations]: [
     target(
       SettingsSearchTarget.GitProfiles,
       "integrations.githubProfiles_e47e4e",
-    ),
-  ],
-  [Category.Diagnostics]: [
-    target(
-      SettingsSearchTarget.CurrentConnection,
-      "settings.connections.current",
     ),
   ],
 };

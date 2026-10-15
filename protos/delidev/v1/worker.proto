@@ -132,6 +132,8 @@ message AttachWorkerRequest {
 
 enum WorkerCapability {
   WORKER_CAPABILITY_UNSPECIFIED = 0;
+  // Executes server-owned Claude setup-token accounts from a protected lease.
+  WORKER_CAPABILITY_MANAGED_CLAUDE_EXECUTION_V1 = 41;
   WORKER_CAPABILITY_NATIVE_CODEX_REVIEW_V1 = 58;
   WORKER_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1 = 54;
   WORKER_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1 = 63;
@@ -144,6 +146,7 @@ enum WorkerCapability {
   WORKER_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1 = 51;
 
   WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1 = 29;
+  WORKER_CAPABILITY_MANAGED_CODEX_TITLES_V1 = 32;
   WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1 = 30;
 
   WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1 = 28;
@@ -151,13 +154,39 @@ enum WorkerCapability {
   WORKER_CAPABILITY_SIDECHAT_QUESTION_RETRY_V1 = 31;
 
   WORKER_CAPABILITY_CODEX_SESSION_REVERT_V1 = 36;
+  // Original Worker resolves the retained skill proof of an earlier Revert target.
+  WORKER_CAPABILITY_CODEX_SESSION_REVERT_TARGET_PROOF_V1 = 64;
   WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1 = 27;
   WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1 = 38;
+  // Worker accepts retained branch prefix selection version 2 (exact JSON-style quoting).
+  WORKER_CAPABILITY_BRANCH_PREFIX_EXACT_QUOTE_V1 = 65;
+  // Worker runs independent session preparation and execution jobs concurrently
+  // on one stream. The server echoes it in AttachWorkerResponse and the Worker
+  // advertises it only after observing that echo.
+  WORKER_CAPABILITY_PARALLEL_SESSIONS_V1 = 66;
+  // Reserved: the Worker holds one account-owner lease per managed Codex account
+  // and runs independent sessions as execution members of that owner. Allocated
+  // without active behavior until the owner/member change activates it.
+  WORKER_CAPABILITY_SHARED_SUBSCRIPTION_OWNER_V1 = 67;
+  // Reserved: the Worker runs managed Claude device-owned members with
+  // session-private history and one canonical native secure-storage owner.
+  // Allocated without active behavior until the Claude member change activates it.
+  WORKER_CAPABILITY_CLAUDE_DEVICE_OWNED_MEMBERS_V1 = 68;
+  // Independently negotiated OpenCode General Chat Fork profile v2: the Worker
+  // clones completed plain timed reasoning parts. Requires capability 15.
+  WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_REASONING_V1 = 69;
+  // Independently negotiated OpenCode image attachments: the Worker resolves
+  // validated private image files into native file parts and verifies the closed
+  // native expansion. Requires capability 25.
+  WORKER_CAPABILITY_OPENCODE_IMAGE_INPUTS_V1 = 70;
   WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1 = 26;
   WORKER_CAPABILITY_NATIVE_SKILLS_V1 = 24;
   WORKER_CAPABILITY_IMAGE_INPUTS_V1 = 25;
   WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1 = 35;
   WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1 = 20;
+  // Declared managed Grok Build subscription identifier. It grants no authority
+  // and is neither advertised nor accepted until the owning feature activates it.
+  WORKER_CAPABILITY_MANAGED_GROK_SUBSCRIPTIONS_V1 = 21;
   WORKER_CAPABILITY_EXECUTION_STARTUP_V1 = 23;
   WORKER_CAPABILITY_REPOSITORY_CLONE_V1 = 18;
   WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1 = 19;
@@ -540,4 +569,9 @@ message NativeCodeReviewResponseUsage {
   bool unspecified_native_cost = 9;
   uint64 sequence = 10;
   string native_version = 11;
+  // Worker clock instant (Unix milliseconds) at which the original response was
+  // observed. The server prices the receipt with the version eligible at this
+  // instant, so a delayed first publication cannot reprice it. Zero means an
+  // older Worker did not report it and the first-commit time applies.
+  int64 observed_at_unix_ms = 12;
 }

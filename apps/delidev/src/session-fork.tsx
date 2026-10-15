@@ -41,7 +41,10 @@ import {
   SessionTabKind,
   sessionTabKey,
 } from "./session-tabs";
-import { useOpenCodeForkProfile } from "./opencode-fork-profile";
+import {
+  useOpenCodeForkProfile,
+  useOpenCodeForkReasoningSupport,
+} from "./opencode-fork-profile";
 
 const Context = createContext<
   ((source: Resource, purpose?: ForkPurpose) => void) | undefined
@@ -143,6 +146,10 @@ export function SessionForkAction({
     : status.data?.capabilities.includes(
         SystemCapability.CODEX_SESSION_FORK_V1,
       );
+  const reasoning = useOpenCodeForkReasoningSupport(
+    source,
+    active && Boolean(show) && openCode && Boolean(forkSupported),
+  );
   const profile = useOpenCodeForkProfile(
     source,
     active &&
@@ -151,6 +158,7 @@ export function SessionForkAction({
       openCode &&
       Boolean(settled(source)) &&
       Boolean(forkSupported),
+    reasoning,
   );
   const managed =
     sourceHarness(source) === "codex" &&
@@ -288,11 +296,13 @@ export function SessionForkProvider({
   openSession,
   openSidechat,
   readLocalWorker,
+  sessionNavigationGeneration,
 }: {
   children: ReactNode;
   openSession: (id: string) => void;
   openSidechat?: (parent: string, child: Resource) => void;
   readLocalWorker?: ReadLocalWorkerProof;
+  sessionNavigationGeneration?: Readonly<{ current: number }>;
 }) {
   const productLabel = useProductLabels();
   useLocale();
@@ -376,9 +386,14 @@ export function SessionForkProvider({
       },
     },
   );
+  const reasoning = useOpenCodeForkReasoningSupport(
+    source,
+    visible && Boolean(source) && sourceHarness(source!) === "opencode" && !job,
+  );
   const profile = useOpenCodeForkProfile(
     source,
     visible && Boolean(source) && sourceHarness(source!) === "opencode" && !job,
+    reasoning,
   );
   const stale = Boolean(
     source &&
@@ -399,8 +414,9 @@ export function SessionForkProvider({
     setChecking(false);
   };
   // Reopening routes to the original parent first, then selects the original
-  // pending descriptor. Focus is deferred and fenced by a token so a later
-  // navigation or another reopen gesture cannot be overtaken by a stale callback.
+  // pending descriptor. The reopen token fences newer gestures and disposal;
+  // the App and per-session tab navigation generations also fence a departure
+  // followed by return, including when the same tab is selected again.
   const reopenToken = useRef(0);
   useEffect(
     () => () => {
@@ -420,13 +436,17 @@ export function SessionForkProvider({
       phase: "reopen",
     });
     openSession(retained.parent);
+    const navigationGeneration = sessionNavigationGeneration?.current;
     tabs.open(retained.parent, {
       kind: SessionTabKind.PendingSidechat,
       requestId: retained.requestId,
       name: retained.name,
     });
+    const tabNavigationGeneration = tabs.navigation(retained.parent);
     requestAnimationFrame(() => {
       if (reopenToken.current !== token) return;
+      if (sessionNavigationGeneration?.current !== navigationGeneration) return;
+      if (tabs.navigation(retained.parent) !== tabNavigationGeneration) return;
       if (tabs.snapshot(retained.parent).selected !== key) return;
       const input = globalThis.document.getElementById(
         `pending-sidechat-${retained.requestId}`,
@@ -553,15 +573,10 @@ export function SessionForkProvider({
   const resultJob = verifiedJob ?? job;
   const state = text(document(resultJob).state);
   const problem = object(document(resultJob).problem);
-  // A published child must be a distinct, nonempty Session; an empty or
-  // source-equal readback id would corrupt tab ownership of the original parent.
+  // A published child must be a distinct, nonempty Session with the original
+  // source and Sidechat overlay.
   const returnedId = text(fork.data?.session?.id);
   const returnedIdValid = Boolean(returnedId) && returnedId !== source?.id;
-  const malformedChild =
-    Boolean(verifiedJob) &&
-    state === JobState.Succeeded &&
-    fork.data?.session?.kind === EntityKind.SESSION &&
-    !returnedIdValid;
   const child =
     Boolean(verifiedJob) &&
     state === JobState.Succeeded &&
@@ -575,6 +590,8 @@ export function SessionForkProvider({
       ))
       ? fork.data.session
       : undefined;
+  const malformedChild =
+    Boolean(verifiedJob) && state === JobState.Succeeded && !child;
   const reset = () => {
     const original = directOwner.current;
     if (original)

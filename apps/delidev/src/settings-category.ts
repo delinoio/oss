@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 export enum SettingsCategory {
   Appearance = "appearance",
+  Browser = "browser",
   KeyboardShortcuts = "keyboard-shortcuts",
   SubscriptionAccounts = "subscription-accounts",
   ApiAccounts = "api-accounts",
@@ -12,6 +13,7 @@ export enum SettingsCategory {
   Repositories = "repositories",
   ExecutionWorkers = "execution-workers",
   PairedDevices = "paired-devices",
+  Tailscale = "tailscale",
   ServerPreferences = "server-preferences",
   GitWorkflow = "git-workflow",
   Integrations = "integrations",

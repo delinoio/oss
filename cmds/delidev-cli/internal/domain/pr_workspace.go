@@ -63,7 +63,7 @@ type PRWorkspace struct {
 }
 
 func (w PRWorkspace) Validate() bool {
-	if !w.PRReadScope.Validate() || len(w.Seeds) > 20 || len(w.Seeds) == 0 || len(w.Nodes) > 100 || w.Nodes == nil || w.Edges == nil || w.Reasons == nil || (w.State != PRWorkspaceComplete && w.State != PRWorkspaceIncomplete && w.State != PRWorkspaceAmbiguous) {
+	if !w.PRReadScope.Validate() || len(w.Seeds) > MaxPullRequestPageSize || len(w.Seeds) == 0 || len(w.Nodes) > 100 || w.Nodes == nil || w.Edges == nil || w.Reasons == nil || (w.State != PRWorkspaceComplete && w.State != PRWorkspaceIncomplete && w.State != PRWorkspaceAmbiguous) {
 		return false
 	}
 	seen := map[string]RepositoryItem{}
@@ -78,7 +78,7 @@ func (w PRWorkspace) Validate() bool {
 	}
 	for _, n := range w.Nodes {
 		q := RepositoryQuery{Kind: RepositoryPullRequest, Operation: RepositoryDetail, Number: n.Item.Number}
-		if n.Item.Validate(w.Repository, q) != nil || (n.Counts != nil && !n.Counts.Validate()) || (n.AvatarReference != "" && ID(n.AvatarReference).Validate() != nil) || n.Seed != seeds[n.Item.Number] {
+		if n.Item.ValidateWorkspaceNode(w.Repository, q) != nil || (n.Counts != nil && !n.Counts.Validate()) || (n.AvatarReference != "" && ID(n.AvatarReference).Validate() != nil) || n.Seed != seeds[n.Item.Number] {
 			return false
 		}
 		if _, ok := seen[n.Item.Number]; ok {

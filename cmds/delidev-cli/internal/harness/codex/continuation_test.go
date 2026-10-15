@@ -41,6 +41,14 @@ func (f *threadFixture) handleContinuation(id json.RawMessage, method string, ra
 			Turns []struct {
 				ID      domain.ID `json:"id"`
 				Outputs [][]int   `json:"outputs"`
+				// ImagesOnly makes every output part an input_image instead of
+				// alternating image and ciphertext parts.
+				ImagesOnly bool `json:"imagesOnly,omitempty"`
+				// ClientID and Prompt bind the original user input when set.
+				ClientID domain.ID `json:"clientId,omitempty"`
+				Prompt   string    `json:"prompt,omitempty"`
+				// ContextItemID adds one original contextCompaction item.
+				ContextItemID string `json:"contextItemId,omitempty"`
 			} `json:"turns"`
 			// CursorPad grows the page envelope without adding turn bytes.
 			CursorPad int `json:"cursorPad"`
@@ -50,12 +58,25 @@ func (f *threadFixture) handleContinuation(id json.RawMessage, method string, ra
 		}
 		turns := []any{}
 		for _, spec := range params.Turns {
-			items := []any{map[string]any{"type": "userMessage", "id": string(domain.NewID()), "clientId": string(domain.NewID()), "content": []any{map[string]any{"type": "text", "text": "Original input", "text_elements": []any{}}}}, map[string]any{"type": "agentMessage", "id": string(domain.NewID()), "text": "fixture-private-history"}}
+			clientID, prompt := string(spec.ClientID), spec.Prompt
+			if clientID == "" {
+				clientID = string(domain.NewID())
+			}
+			if prompt == "" {
+				prompt = "Original input"
+			}
+			items := []any{map[string]any{"type": "userMessage", "id": string(domain.NewID()), "clientId": clientID, "content": []any{map[string]any{"type": "text", "text": prompt, "text_elements": []any{}}}}, map[string]any{"type": "agentMessage", "id": string(domain.NewID()), "text": "fixture-private-history"}}
+			if spec.ContextItemID != "" {
+				items = append(items, map[string]any{"type": "contextCompaction", "id": spec.ContextItemID})
+			}
 			for _, fields := range spec.Outputs {
 				content := []any{}
 				for index, size := range fields {
 					fill := strings.Repeat(string(rune('a'+index%2)), size)
-					if index%2 == 0 {
+					if spec.ImagesOnly {
+						fill = strings.Repeat("a", size)
+					}
+					if index%2 == 0 || spec.ImagesOnly {
 						content = append(content, map[string]any{"type": "input_image", "image_url": fill})
 					} else {
 						content = append(content, map[string]any{"type": "encrypted_content", "encrypted_content": fill})

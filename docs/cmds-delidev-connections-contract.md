@@ -109,6 +109,37 @@ Check refreshes the original visible peer identity and sends a single bounded
 normal-TLS request to its canonical HTTPS hostname on port 8443. No redirects,
 ambient proxies, alternate ports, scans, certificate bypass or automatic setup
 is allowed. Unsupported or offline peers retain manual pairing and SSH paths.
+The desktop may issue this Check automatically, once per visit of the Tailscale
+devices presentation, for each visible peer that is online and not shared to,
+strictly one at a time because every Check performs a fresh locked status read.
+It uses the same RPC and peer ID with no schema or storage change, and a failed
+automatic Check is an ordinary per-peer failure that the user retries manually.
+
+Check-only failures may carry one closed safe cause in the existing
+`ErrorDetail.cause` (no proto change). Every Check-only cause value is namespaced with the
+`tailscale_` prefix so a generic emitter (for example the Codex app-server handshake,
+which emits `unavailable` with `timeout`) can never collide with it; the cause-aware
+probe and `invalid_identity` rejection are reachable only from `CheckTailscale`, and a
+Go test rejects any other emitter of these values. `CheckTailscale` uses a cause-aware probe
+while the shared `Probe` used by access enable keeps its current generic errors.
+`BeginTailscaleConnection` also revalidates the peer identity before it creates a journal, but it
+uses the generic probe and the generic unsupported identity failure: a Begin mutation error
+never carries any `tailscale_*` cause, so no handler other than `CheckTailscale` can surface a
+Check-only outcome. The shared server revalidation takes an explicit with-cause flag that only
+`CheckTailscale` sets, and Go tests cover every cause for both handlers.
+Normal TLS, one request, no redirect and no proxy are unchanged. A cause is set
+only when proven: `tailscale_connection_refused` from `syscall.ECONNREFUSED` (and the Windows
+`WSAECONNREFUSED` code) through `errors.Is/As`; `tailscale_timeout` from the request's own
+deadline or a `net.Error` timeout while the caller context is still live, whether
+it surfaces from the request or from reading the identity body after a peer has sent
+headers and stalled (never parent cancellation, and never a DNS lookup); `tailscale_certificate_invalid` from x509 or
+`tls.CertificateVerificationError`; `tailscale_unexpected_http` from any non-200 status
+including an un-followed redirect (code `unavailable` for these four); and
+`tailscale_invalid_identity` from an undecodable or incompatible identity document (code
+`unsupported`). Oversized bodies, body-read failures that are not a proven timeout, DNS, other socket or TLS errors,
+peer refresh and local access failures keep the generic error without a cause.
+Hostnames, URLs, status bodies, certificates and native error text never enter
+`ErrorDetail`, logs or UI; the Check log records only the phase, code and cause.
 
 Access defaults to Off. Enable requires Running, exact Self FQDN certificate
 eligibility in CertDomains and Self.CapMap membership for `https`. Refuse existing
@@ -123,6 +154,19 @@ The separate ephemeral loopback ingress mounts connection identity, bounded
 approval and existing authenticated Connect business transports. It excludes
 private generation challenges, native relays, locators and UI paths. Authenticated
 status exposes the public ingress origin instead of the private listener.
+When Enable observes `NeedsLogin` (State `logged-out`), `Manager.enable` fails
+before the generic Running/HTTPS/Self guard with code `unavailable`, message
+exactly `Tailscale login is required.` and guidance exactly `Open Tailscale on
+this computer and sign in. Then refresh Tailscale devices and inspect the
+original access request.` (`tailscale.LoginRequired`). The enabled receipt and
+request ID are retained, access is `setup-required`, and no ingress listener or
+Serve child starts. Only `NeedsLogin` is relabelled: NeedsMachineAuth, Stopped,
+Starting, NoState, missing client, unsupported status, HTTPS ineligibility and
+cleanup failures keep the generic unavailable message and guidance. The text
+crosses `rpc.Error` and `rpc.ClientError` unchanged with no proto schema
+change. The log line records only the phase and `login_required` reason, never
+native output or the identity inventory.
+
 Disable, native child exit, server Stop and Quit fence ingress before joining
 only the retained child. Never call global reset or port-wide off. Reconcile a
 retained owner even when Enabled is false. Unknown native cleanup stays required.
@@ -148,6 +192,52 @@ data. Exact receipt recovery preserves original pairing material after expiry;
 expiry never authorizes a fresh grant. Pending cancellation proves the requesting
 private key through the encrypted original transcript and creates no device.
 
+The approval recovery window is 24 hours after a request's five-minute `ExpiresAt`.
+An Approved receipt proves the target decided before expiry, so an Approved Worker
+setup is still reconciled through its original request inside that window: the
+requester's first resume after expiry creates the original Worker grant (original
+grant request UUID, one random verifier) and the target accepts its first
+delivery. Retries replay the retained grant bytes and the prepared pairing journal
+exactly once; a lost delivery response is reconciled from the target's Completed
+receipt without another grant. A first creation or first delivery after the window
+fails with Conflict and creates nothing. The requester rechecks the deadline on
+every retry until the encrypted delivery is durably journaled, so a retained but
+undelivered grant never creates its pairing after the window. Approving a request after `ExpiresAt`
+stays impossible, and a mismatched request ID, requester key, target or actor stays
+rejected.
+
+Admission of a new approval request first reclaims eligible records, then enforces
+the 256-record directory bound and a per-host cap of 8 live unapproved Pending
+requests. The ingress listens only on loopback behind `tailscale serve`, so the
+connection address is the shared local Serve proxy. The originating peer is the
+single well-formed address in the `X-Forwarded-For` header that Serve overwrites
+on every proxied request, honored only on a loopback connection; a missing,
+repeated, chained, zoned or unspecified value falls back to the connection
+address, which only makes the shared bucket stricter. The ingress stores a
+SHA-256 digest of that peer address with each request and keys the per-host
+approval throttle by the same peer; the digest is never exposed in public
+approval documents, the address grants no trust and the public identity endpoint
+is unchanged. Excess requests receive a
+bounded ResourceExhausted. Reclamation runs under the approval lock and derives
+only from durable records, so it is identical after restart. After the recovery
+window it removes only unapproved Pending, Denied/canceled/Expired and Approved
+Worker records that never accepted a delivery. Records inside the window,
+Completed receipts, Approved client receipts that froze an original grant, and any
+Worker record holding a delivered grant are never reclaimed, so exact retry and
+replay stay available. Reclamation touches only well-formed approval files in the
+approvals directory; foreign or malformed entries still count toward capacity and
+are left in place, and outgoing journals and Worker scopes are never visited.
+Reclamation deletes the only evidence that a request ID was used, so creating a
+record also requires the canonical UUID v7 request ID's embedded creation time to
+be no more than a five-minute clock skew ahead of the target's clock and no older
+than the five-minute lifetime plus the recovery window minus that skew. The skew
+allowance keeps an ID with a future-dated timestamp from outliving reclamation of
+its record. A retry of an
+original journal whose request was reclaimed (for example after a lost first
+response) is refused with Conflict and creates no record, key or expiry under the
+reused ID. Retained records are matched by ID first, so exact replays inside the
+window are unaffected; the check is stateless and identical after restart.
+
 Outgoing client completion uses the existing saved-profile pairing journal and
 immutable canonical origin. Approved Worker setup encrypts the selected server's
 original Worker grant to the target approval key, reauthenticates the original
@@ -157,7 +247,7 @@ then retry only that journal. Startup uses the existing detached Worker controll
 registration. Client/Worker completion does not create an Agent Worker or infer
 harness/account readiness.
 
-The desktop Tailscale device view retains resume and cancel requests through
+The desktop Tailscale access, device and connection-request views appear in the dedicated Settings Tailscale category in the original local desktop window (not Runner Devices or Connections), presented by the original desktop-owned controller through typed slots, and retain resume and cancel requests through
 connection-owned retained mutations. While either retains input or is uncertain,
 its row action stays disabled, and a separately labelled retry control replays
 only the original request ID and bytes; it never creates a second request.

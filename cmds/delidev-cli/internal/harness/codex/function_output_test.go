@@ -248,7 +248,7 @@ func functionOutputPreservesProtectedHistory(t *testing.T, raw string) {
 	for _, item := range nativeTurn.Items {
 		entries = append(entries, revertHistoryItem{TurnID: nativeTurn.ID, Item: item})
 	}
-	joined, err := joinRevertHistory(history, entries)
+	joined, err := joinRevertHistory(history, entries, baseHistoryAggregateBytes)
 	if err != nil || len(joined) != len(history) || historyDigest(joined) != historyDigest(history) {
 		t.Fatal("Revert changed protected function output history", err)
 	}

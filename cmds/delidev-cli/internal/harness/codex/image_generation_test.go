@@ -11,6 +11,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -33,6 +34,34 @@ func generationPNG(t *testing.T) []byte {
 func generationItem(status string, result string) map[string]any {
 	return map[string]any{"type": "imageGeneration", "id": "native-original-call", "status": status, "revisedPrompt": nil, "result": result, "failure": nil}
 }
+func TestImageGenerationSavedPathMustBeAbsolute(t *testing.T) {
+	dir, err := filepath.Abs(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, savedPath string
+		valid           bool
+	}{
+		{"absolute", filepath.Join(dir, "private.png"), true},
+		{"relative", filepath.Join("relative", "private.png"), false},
+		{"dot relative", "." + string(filepath.Separator) + "private.png", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			item := historyGenerationItem(t, 1)
+			item["savedPath"] = tc.savedPath
+			item["transparentBackground"] = true
+			raw, err := json.Marshal(item)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := decodeImageGeneration(raw, true); (err == nil) != tc.valid {
+				t.Fatalf("savedPath %q validity mismatch: %v", tc.savedPath, err)
+			}
+		})
+	}
+}
+
 func TestNativeImageGenerationShapesAndOriginalProvider(t *testing.T) {
 	png := generationPNG(t)
 	if len(png) < 1<<20 {

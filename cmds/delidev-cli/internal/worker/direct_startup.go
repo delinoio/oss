@@ -110,9 +110,7 @@ func (a *executionStartupAttempt) report(ctx context.Context, name string, o dom
 	if err := security.PrivateDir(directory); err != nil {
 		return publicationUncertain()
 	}
-	if err := writeJSON(filepath.Join(directory, "startup-"+name+".json"), struct {
-		Request []byte `json:"request"`
-	}{raw}); err != nil {
+	if err := writeJSON(startupReportPath(a.config.Root, a.job, name), startupReportJournal{Request: raw}); err != nil {
 		return publicationUncertain()
 	}
 	bounded, cancel := context.WithTimeout(ctx, 15*time.Second)
@@ -123,6 +121,11 @@ func (a *executionStartupAttempt) report(ctx context.Context, name string, o dom
 	}
 	if response == nil || response.Msg == nil || !proto.Equal(response.Msg.Observation, request.Observation) {
 		return publicationUncertain()
+	}
+	// Persist acceptance apart from the exact request. A missing acknowledgement
+	// only repeats an idempotent receipt replay; it never authorizes input.
+	if err := security.WriteAtomic(startupReportAckPath(a.config.Root, a.job, name), startupReportDigest(raw)); err != nil && a.config.Logger != nil {
+		a.config.Logger.Warn("execution_startup_report_ack_not_persisted", "job_id", a.job, "name", name, "code", domain.SafeError(err).Code)
 	}
 	return nil
 }
@@ -219,15 +222,24 @@ func resolveOriginalStartup(ctx context.Context, config Config, source domain.ID
 	return harness.ResolveExecution(ctx, domain.ExecutionStartupSelection{Harness: original.Harness, ExplicitPath: original.ResolvedPath, ExecutableSHA256: original.ExecutableSHA256})
 }
 
+// An unconfirmed managed Finish stays the reported outcome when a later cleanup
+// fails: only that wrapper keeps the job journal unfinished until the Finish is
+// reconciled, so the cleanup failure is recorded but never replaces it.
 func (a *executionStartupAttempt) cleanupFailure(original, cleanup error) error {
+	var uncertain *managedExecutionUncertain
+	keepOriginal := errors.As(original, &uncertain)
 	if a == nil {
+		if keepOriginal {
+			return original
+		}
 		return errors.Join(cleanup, original)
 	}
-	if a != nil {
-		if a.firstFailure == nil && original != nil {
-			a.firstFailure = original
-		}
-		a.cleanupUncertain = true
+	if a.firstFailure == nil && original != nil {
+		a.firstFailure = original
+	}
+	a.cleanupUncertain = true
+	if keepOriginal {
+		return original
 	}
 	return domain.Fail(domain.RecoveryRequired, "Original execution cleanup could not be confirmed.", "Recover the original attempt before another send.")
 }

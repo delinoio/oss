@@ -11,6 +11,8 @@ import (
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -125,5 +127,65 @@ func TestManagedExecutionCannotUseLifecycleTakeRefusal(t *testing.T) {
 	case <-f.finished:
 		t.Fatal("Execute refusal invented Finish")
 	default:
+	}
+}
+
+// A released, undelivered managed title lease is a definite no-delivery result:
+// the Worker retires its local claim without inventing a Finish and reports an
+// ordinary problem instead of an uncertain execution. Any other EXECUTE
+// RecoveryRequired refusal stays uncertain.
+func TestManagedTitleNotDeliveredIsDefiniteNotUncertain(t *testing.T) {
+	for _, code := range []domain.Code{domain.Canceled, domain.Unavailable} {
+		root, f, credential := managedLaneFixture(t, nil)
+		f.takes = make(chan *pb.TakeSubscriptionRequest, 2)
+		problem := domain.Fail(code, "The managed automatic title received no credentials.", "")
+		problem.Cause = "subscription_title_not_delivered"
+		f.firstTakeError = rpc.Error(problem, "")
+		client, closeHTTP, err := subscriptionRPC(context.Background(), Config{Root: root}, credential)
+		if err != nil {
+			t.Fatal(err)
+		}
+		operation := domain.NewID()
+		lease, err := takeManagedSubscription(context.Background(), Config{Root: root}, client, credential, domain.NewID(), domain.ID(f.account.Id), operation, 2, pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE)
+		closeHTTP()
+		var delivered *managedTakeNotDelivered
+		var uncertain *managedExecutionUncertain
+		if lease != nil || !errors.As(err, &delivered) || errors.As(err, &uncertain) {
+			t.Fatalf("%s: released title was not a definite no-delivery result: %v", code, err)
+		}
+		if reported := domain.SafeError(err); reported.Code != code || reported.Cause != "subscription_title_not_delivered" {
+			t.Fatalf("%s: no-delivery classification was lost: %+v", code, reported)
+		}
+		if len(f.takes) != 1 {
+			t.Fatalf("%s: no-delivery refusal retried", code)
+		}
+		select {
+		case <-f.finished:
+			t.Fatalf("%s: no-delivery refusal invented Finish", code)
+		default:
+		}
+		entries, err := os.ReadDir(filepath.Join(root, "managed-auth"))
+		if err != nil || len(entries) != 1 {
+			t.Fatalf("%s: expected exactly one retained claim journal: %v", code, err)
+		}
+		raw, err := os.ReadFile(filepath.Join(root, "managed-auth", entries[0].Name()))
+		var journal managedSubscriptionJournal
+		if err != nil || json.Unmarshal(raw, &journal) != nil || journal.State != managedNotDelivered || journal.Operation != operation {
+			t.Fatalf("%s: claim journal was not retired as not-delivered: %v %+v", code, err, journal)
+		}
+	}
+
+	root, f, credential := managedLaneFixture(t, nil)
+	f.takes = make(chan *pb.TakeSubscriptionRequest, 2)
+	f.firstTakeError = rpc.Error(domain.Fail(domain.RecoveryRequired, "The managed account cannot grant authentication authority.", ""), "")
+	client, closeHTTP, err := subscriptionRPC(context.Background(), Config{Root: root}, credential)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeHTTP()
+	_, err = takeManagedSubscription(context.Background(), Config{Root: root}, client, credential, domain.NewID(), domain.ID(f.account.Id), domain.NewID(), 2, pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE)
+	var uncertain *managedExecutionUncertain
+	if !errors.As(err, &uncertain) {
+		t.Fatal("an unproven EXECUTE RecoveryRequired refusal stopped being uncertain", err)
 	}
 }

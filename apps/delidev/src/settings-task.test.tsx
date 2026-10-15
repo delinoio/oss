@@ -335,6 +335,87 @@ it("uses one native dialog for a confirmation step and restores its original bod
   expect(mounts).toBe(1);
 });
 
+it("keeps the enclosing wide size for a nested step that omits its size and still honors explicit step sizes", () => {
+  // CSS maximum widths are viewport-limited, so assert above the 960px mark.
+  vi.stubGlobal("innerWidth", 1280);
+  try {
+    function Body() {
+      const [step, setStep] = useState<"none" | "inherit" | "confirm">("none");
+      return (
+        <>
+          <button onClick={() => setStep("inherit")}>
+            Open inheriting step
+          </button>
+          <button onClick={() => setStep("confirm")}>Open confirmation</button>
+          {step === "inherit" ? (
+            <SettingsTaskDialog
+              title="Inheriting step"
+              focus={SettingsDialogFocus.Heading}
+              close={() => setStep("none")}
+            >
+              <button type="button" onClick={() => setStep("none")}>
+                Back to wide
+              </button>
+            </SettingsTaskDialog>
+          ) : null}
+          {step === "confirm" ? (
+            <SettingsTaskDialog
+              title="Explicit step"
+              size={SettingsDialogSize.Confirmation}
+              focus={SettingsDialogFocus.Cancel}
+              close={() => setStep("none")}
+            >
+              <button type="button" onClick={() => setStep("none")}>
+                Back to wide
+              </button>
+            </SettingsTaskDialog>
+          ) : null}
+        </>
+      );
+    }
+    renderTask(
+      <SettingsTasks>
+        <SettingsTaskDialog
+          title="Manage profile"
+          size={SettingsDialogSize.Wide}
+          close={() => {}}
+        >
+          <Body />
+        </SettingsTaskDialog>
+      </SettingsTasks>,
+    );
+    const size = () => screen.getByRole("dialog").getAttribute("data-size");
+    expect(size()).toBe("wide");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open inheriting step" }),
+    );
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    expect(size()).toBe("wide");
+    expect(
+      screen.getByRole("heading", { name: "Inheriting step" }),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Back to wide" }));
+    expect(size()).toBe("wide");
+    fireEvent.click(screen.getByRole("button", { name: "Open confirmation" }));
+    expect(size()).toBe("confirmation");
+    fireEvent.click(screen.getByRole("button", { name: "Back to wide" }));
+    expect(size()).toBe("wide");
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+it("keeps a standalone task without a size at the form size", () => {
+  renderTask(
+    <SettingsTasks>
+      <SettingsTaskDialog title="Standalone form" close={() => {}}>
+        <p>Body</p>
+      </SettingsTaskDialog>
+    </SettingsTasks>,
+  );
+  expect(screen.getByRole("dialog").getAttribute("data-size")).toBe("form");
+});
+
 it("focuses Keep before a destructive action and permits local cancellation during a request", async () => {
   const canceled = vi.fn();
   function Harness() {
