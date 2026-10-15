@@ -1942,9 +1942,12 @@ fn html_scripts(dir: &std::path::Path) -> Result<HtmlScripts> {
                             page = %path.display(),
                             attribute = %attribute,
                             "an HTML executable attribute has an undecodable character reference; \
-                             every chunk is a public entry"
+                             every chunk is a public entry and bundle minification is skipped"
                         );
+                        // The undecoded code may read callable source, so the
+                        // minification gate must treat it as source reflection.
                         found.all_public = true;
+                        found.source_reflection = true;
                         continue;
                     }
                     let code = if attribute.starts_with("on") {

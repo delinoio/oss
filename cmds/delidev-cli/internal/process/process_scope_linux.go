@@ -15,7 +15,7 @@ func bootIdentity() (string, error) {
 	b, err := os.ReadFile("/proc/sys/kernel/random/boot_id")
 	return strings.TrimSpace(string(b)), err
 }
-func prepareScope(_ *processScope, _ string) error { return nil }
+func prepareScope(_ *processScope, _ string, _ SessionContext) error { return nil }
 func launchScope(_ processScope, dir, socket string) (func() error, error) {
 	executable, err := os.Executable()
 	if err != nil {
