@@ -653,8 +653,8 @@ func (s *Service) runExecutionDispatchTicks(parent context.Context, ticks <-chan
 // Worker rejects the frozen declaration even for a text-only input, so the
 // server refuses it before dispatch instead of leaving the job to fail there.
 func requireOpenCodeImageWorker(c domain.ExecutionConfiguration, capabilities []domain.WorkerCapability) error {
-	if c.Harness == domain.OpenCode && c.ImageInputDeclared && !slices.Contains(capabilities, domain.OpenCodeImageInputsV1) {
-		return domain.Fail(domain.Unsupported, "The original Runner Device lacks OpenCode image support.", "Update and reconnect that Runner Device; the saved input stays queued and no image is dropped.")
+	if (c.Harness == domain.OpenCode || c.Harness == domain.ClaudeCode) && c.ImageInputDeclared && !domain.ImageInputWorkerSupported(c.Harness, capabilities) {
+		return domain.Fail(domain.Unsupported, "The original Runner Device lacks the selected native image profile.", "Update and reconnect that Runner Device; the saved input stays queued and no image is dropped.")
 	}
 	return nil
 }

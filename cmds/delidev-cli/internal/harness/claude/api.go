@@ -47,6 +47,7 @@ type APIConfig struct {
 // must durably accept the session and register the token before opening it. It
 // does not grant public execution or authorize resume without a history binding.
 type APIStreamConfig struct {
+	ImageInputs   bool                  `json:"-"`
 	OrdinaryTools executionenv.Ordinary `json:"-"`
 
 	Process        process.Config             `json:"-"`
@@ -203,6 +204,16 @@ func prepareAPIStreamMode(config APIStreamConfig, resumed bool) (process.Config,
 		// The secure-store namespace also remains bound to this private home.
 		env = append(env, "ANTHROPIC_API_KEY="+config.API.Token, "ANTHROPIC_AUTH_TOKEN="+config.API.Token, "CLAUDE_SECURESTORAGE_CONFIG_DIR="+config.Home, "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST=1")
 	}
+	if config.ImageInputs {
+		// Claude persists original pasted images in its own temporary cache. Scope
+		// that cache to the original retained native profile so ordinary session
+		// deletion owns these bytes, rather than the user's shared system temp area.
+		temporary := filepath.Join(historyHome(config), "image-tmp")
+		if err := security.PrivateDir(temporary); err != nil {
+			return process.Config{}, err
+		}
+		env = append(env, "CLAUDE_CODE_TMPDIR="+temporary)
+	}
 	env = append(env, "CLAUDE_CODE_RESUME_INTERRUPTED_TURN=0", "CLAUDE_CODE_PROJECT_DIR_NAME=delidev", "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS=1")
 	// The pinned CLI otherwise omits its authoritative post-continuation idle
 	// event. Keep this explicit opt-in until a verified profile emits it by default.
@@ -280,7 +291,7 @@ func openAPIStreamMode(ctx context.Context, config APIStreamConfig, resumed bool
 		return nil, err
 	}
 	phase = launchPhase
-	s, err := StartStream(ctx, prepared)
+	s, err := startStream(ctx, prepared, config.ImageInputs)
 	if err != nil {
 		return nil, err
 	}

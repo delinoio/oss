@@ -119,6 +119,10 @@ func (s *APISession) status() error {
 }
 
 func (s *APISession) SendInput(ctx context.Context, input domain.ID, text string, intent InputIntent) (AppliedSettings, error) {
+	return s.sendInput(ctx, input, text, intent, nil, sha256.Sum256([]byte(text)))
+}
+
+func (s *APISession) sendInput(ctx context.Context, input domain.ID, text string, intent InputIntent, content json.RawMessage, digest [sha256.Size]byte, imageContexts ...[]imageContext) (AppliedSettings, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.status(); err != nil {
@@ -139,9 +143,31 @@ func (s *APISession) SendInput(ctx context.Context, input domain.ID, text string
 	if len(s.inputs) >= maxStreamIdentities {
 		return AppliedSettings{}, domain.Fail(domain.ResourceExhausted, "The live Claude Code session reached its input identity bound.", "Retain the native history for explicit process recovery.")
 	}
-	next, err := BindExecution(s.config, input, text)
+	next, err := bindExecution(s.config, input, text, len(content) != 0)
 	if err != nil {
 		return AppliedSettings{}, err
+	}
+	if len(content) != 0 {
+		if !s.config.ImageInputs {
+			return AppliedSettings{}, domain.UnsupportedImageInput()
+		}
+		next.digest = digest
+		next.imageInput = true
+		next.imagePrompt = text
+		var blocks []json.RawMessage
+		_ = json.Unmarshal(content, &blocks)
+		for _, raw := range blocks {
+			var block struct {
+				Type   string `json:"type"`
+				Source struct {
+					Media domain.ImageMediaType `json:"media_type"`
+				} `json:"source"`
+			}
+			_ = json.Unmarshal(raw, &block)
+			if block.Type == "image" {
+				next.imageRefs = append(next.imageRefs, domain.ImageAttachment{MediaType: block.Source.Media})
+			}
+		}
 	}
 	if previous := s.current; previous != nil {
 		work := previous.knownWork()
@@ -181,7 +207,24 @@ func (s *APISession) SendInput(ctx context.Context, input domain.ID, text string
 	// Retain the input attempt before pipe delivery. Any uncertain send blocks
 	// all new inputs; neither a later terminal nor a retry clears that latch.
 	s.inputs[input], s.current, s.compaction = true, next, nil
-	if err := s.stream.SendInput(ctx, input, s.config.SessionID, text); err != nil {
+	if len(imageContexts) > 0 {
+		if s.history.images == nil {
+			s.history.images = map[domain.ID][]imageContext{}
+		}
+		s.history.images[input] = imageContexts[0]
+	}
+	if len(content) != 0 {
+		sender, ok := s.stream.(interface {
+			sendImageInput(context.Context, domain.ID, domain.ID, json.RawMessage) error
+		})
+		if !ok {
+			return AppliedSettings{}, s.latch(sessionInputPhase, lifecycleUncertain())
+		}
+		err = sender.sendImageInput(ctx, input, s.config.SessionID, content)
+	} else {
+		err = s.stream.SendInput(ctx, input, s.config.SessionID, text)
+	}
+	if err != nil {
 		return AppliedSettings{}, s.latch(sessionInputPhase, lifecycleUncertain())
 	}
 	if s.config.Process.Logger != nil {

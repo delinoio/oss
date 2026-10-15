@@ -90,7 +90,8 @@ func retainClaudeCompletion(ctx context.Context, root string, jobID domain.ID, j
 		return "", executionCheckpointUncertain()
 	}
 	ref := ExecutionCheckpointRef{JobID: jobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: input.ExecutionID, AssignmentInputDigest: executionInputDigest(job.Input), ConfigurationDigest: input.ConfigurationDigest, AccountID: input.AccountID, ConnectionID: input.ConnectionID, Completion: completion, InputMode: input.Input.Mode, WorkspaceRoots: nativeWorkspaceRoots(manifest)}
-	digest := executionInputDigest([]byte(input.Input.Prompt))
+	inputDigest := input.Input.InputDigest()
+	digest := hex.EncodeToString(inputDigest[:])
 	decoded, _ := hex.DecodeString(digest)
 	copy(ref.PromptDigest[:], decoded)
 	if input.Continuation != nil {

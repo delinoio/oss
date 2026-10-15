@@ -193,7 +193,7 @@ func (t *Tx) PreviewInitialExecution(session domain.Session) (InitialExecutionPr
 	// assignment that declares image input, even a text-only one. Freeze the
 	// declaration only for a Runner Device that negotiated the OpenCode pair, so
 	// other devices keep the text-only snapshot they already understand.
-	if configuration.Harness == domain.OpenCode && configuration.ImageInputDeclared && !slices.Contains(machine.WorkerCapabilities, domain.OpenCodeImageInputsV1) {
+	if configuration.ImageInputDeclared && !domain.ImageInputWorkerSupported(configuration.Harness, machine.WorkerCapabilities) {
 		configuration.ImageInputDeclared = false
 	}
 	settingsRecord, settings, err := t.SessionDefaultSettings()

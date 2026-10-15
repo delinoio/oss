@@ -433,16 +433,17 @@ export function useImageDraft(scope: string) {
   );
   return { ...state, controller: draft };
 }
-/** Native image routes: Codex always, OpenCode only with a declared image model. */
+/** Native image routes require their independently negotiated profiles. */
 enum ImageHarness {
   Codex = "codex",
   OpenCode = "opencode",
+  Claude = "claude-code",
 }
 const imageModality = "image";
 function declaresImageInput(model: unknown): boolean {
   return items(object(model).input_modalities).includes(imageModality);
 }
-/** An OpenCode Agent qualifies only when every source route model declares images. */
+/** An image Agent qualifies only when every source route model declares images. */
 function agentDeclaresImageInput(agent: Record<string, unknown>): boolean {
   const routes = items(agent.routes);
   return routes.length > 0
@@ -504,11 +505,26 @@ export function useImageRoute(
         value === WorkerCapability.OPENCODE_IMAGE_INPUTS_V1 ||
         value === "opencode-image-inputs-v1",
     );
+  const claudePairSupported =
+    Boolean(
+      status.data?.capabilities.includes(
+        SystemCapability.CLAUDE_IMAGE_INPUTS_V1,
+      ),
+    ) &&
+    row?.id === machineId &&
+    items(document(row).worker_capabilities).some(
+      (value) =>
+        value === WorkerCapability.CLAUDE_IMAGE_INPUTS_V1 ||
+        value === "claude-image-inputs-v1",
+    );
   const openCodePairSupported =
     openCodeSystemSupported && openCodeMachineSupported;
   const agentDocument = document(agentRow);
   const harnessSupported = originalHarness
     ? originalHarness === ImageHarness.Codex ||
+      (originalHarness === ImageHarness.Claude &&
+        originalImageDeclared &&
+        claudePairSupported) ||
       (originalHarness === ImageHarness.OpenCode &&
         originalImageDeclared &&
         openCodePairSupported)
@@ -517,6 +533,9 @@ export function useImageRoute(
       agentRow.revision > 0n &&
       supportsResourceSchema(agentRow) &&
       (text(agentDocument.harness) === ImageHarness.Codex ||
+        (text(agentDocument.harness) === ImageHarness.Claude &&
+          agentDeclaresImageInput(agentDocument) &&
+          claudePairSupported) ||
         (text(agentDocument.harness) === ImageHarness.OpenCode &&
           agentDeclaresImageInput(agentDocument) &&
           openCodePairSupported));
