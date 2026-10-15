@@ -337,11 +337,11 @@ func nativeFixtureProviderText(raw json.RawMessage, initial bool) string {
 func nativeFixtureTextResponse(w http.ResponseWriter, n int64) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	for _, event := range []map[string]any{
-		{"type": "message_start", "message": map[string]any{"id": fmt.Sprintf("msg_fixture_%d", n), "type": "message", "role": "assistant", "content": []any{}, "model": "fixture-model", "stop_reason": nil, "stop_sequence": nil, "usage": map[string]any{"input_tokens": 1, "output_tokens": 0}}},
+		{"type": "message_start", "message": map[string]any{"id": fmt.Sprintf("msg_fixture_%d", n), "type": "message", "role": "assistant", "content": []any{}, "model": "fixture-model", "stop_reason": nil, "stop_sequence": nil, "input_transformations": []any{}, "usage": map[string]any{"input_tokens": 1, "output_tokens": 0}}},
 		{"type": "content_block_start", "index": 0, "content_block": map[string]any{"type": "text", "text": ""}},
 		{"type": "content_block_delta", "index": 0, "delta": map[string]any{"type": "text_delta", "text": fmt.Sprintf("Fixture response %d.", n)}},
 		{"type": "content_block_stop", "index": 0},
-		{"type": "message_delta", "delta": map[string]any{"stop_reason": "end_turn", "stop_sequence": nil}, "usage": map[string]any{"output_tokens": 2}},
+		{"type": "message_delta", "input_transformations": []any{}, "delta": map[string]any{"stop_reason": "end_turn", "stop_sequence": nil}, "usage": map[string]any{"output_tokens": 2}},
 		{"type": "message_stop"},
 	} {
 		raw, _ := json.Marshal(event)

@@ -415,6 +415,11 @@ Ordinary tests use a private executable fixture only. Opt-in installed macOS tes
 
 ### Claude Code applied settings evidence
 
+Provider message snapshots and message deltas may declare
+`input_transformations` as null or an empty array. These shapes transform no
+input and grant no history authority. Nonempty transformation inventories remain
+unsupported until their original history effects have an owning adapter.
+
 Result `subagent_stats` accepts only its complete bounded native counter shape;
 these aggregates are discarded and cannot publish task lifecycle or cleanup.
 Native cumulative model usage preserves optional nonnegative `thinkingTokens`

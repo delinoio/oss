@@ -400,3 +400,26 @@ func TestNativeReplyStampsPreserveOriginalInputAuthority(t *testing.T) {
 		})
 	}
 }
+
+func TestNativeEmptyInputTransformationsDoNotChangeHistory(t *testing.T) {
+	for _, name := range []string{"empty", "null", "nonempty", "object"} {
+		t.Run(name, func(t *testing.T) {
+			message := contentMessage("msg_transformations")
+			switch name {
+			case "empty":
+				message["input_transformations"] = []any{}
+			case "null":
+				message["input_transformations"] = nil
+			case "nonempty":
+				message["input_transformations"] = []any{map[string]any{"type": "thinking_dropped", "path": "messages.0.content.0", "reason": "model_binding_mismatch"}}
+			case "object":
+				message["input_transformations"] = map[string]any{}
+			}
+			raw, _ := json.Marshal(message)
+			_, err := decodeProviderMessage(raw)
+			if (err == nil) != (name == "empty" || name == "null") {
+				t.Fatalf("unexpected transformation acceptance: %v", err)
+			}
+		})
+	}
+}

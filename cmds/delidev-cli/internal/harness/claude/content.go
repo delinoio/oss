@@ -585,9 +585,11 @@ func (b *ExecutionBinding) observePartial(raw []byte) (observed []ContentEvent, 
 		base.Kind, base.Index = ContentStopped, stop.Index
 	case "message_delta":
 		var update struct {
-			Type  string          `json:"type"`
-			Delta json.RawMessage `json:"delta"`
-			Usage *ProviderUsage  `json:"usage"`
+			Type                 string          `json:"type"`
+			Delta                json.RawMessage `json:"delta"`
+			Usage                *ProviderUsage  `json:"usage"`
+			Context              json.RawMessage `json:"context_management,omitempty"`
+			InputTransformations json.RawMessage `json:"input_transformations,omitempty"`
 		}
 		var delta struct {
 			Stop        *NativeStopReason `json:"stop_reason"`
@@ -595,7 +597,7 @@ func (b *ExecutionBinding) observePartial(raw []byte) (observed []ContentEvent, 
 			Container   json.RawMessage   `json:"container"`
 			StopDetails json.RawMessage   `json:"stop_details"`
 		}
-		if decodeNativeObject(envelope.Event, &update) != nil || update.Usage == nil || decodeNativeObject(update.Delta, &delta) != nil || (delta.Sequence != nil && domain.Text(*delta.Sequence, "native stop sequence", domain.MaxMessageText, false) != nil) {
+		if decodeNativeObject(envelope.Event, &update) != nil || update.Usage == nil || !emptyNativeInputTransformations(update.InputTransformations) || decodeNativeObject(update.Delta, &delta) != nil || (delta.Sequence != nil && domain.Text(*delta.Sequence, "native stop sequence", domain.MaxMessageText, false) != nil) {
 			return nil, lifecycleUncertain()
 		}
 		// Preserve this native usage update as reported. It is not an additive
@@ -634,23 +636,34 @@ func (b *ExecutionBinding) observePartial(raw []byte) (observed []ContentEvent, 
 }
 
 type providerMessage struct {
-	ID          string            `json:"id"`
-	Type        string            `json:"type"`
-	Role        string            `json:"role"`
-	Model       string            `json:"model"`
-	Content     []json.RawMessage `json:"content"`
-	Stop        *NativeStopReason `json:"stop_reason"`
-	Sequence    *string           `json:"stop_sequence"`
-	Usage       *ProviderUsage    `json:"usage"`
-	Context     json.RawMessage   `json:"context_management"`
-	Container   json.RawMessage   `json:"container"`
-	Diagnostics json.RawMessage   `json:"diagnostics"`
-	StopDetails json.RawMessage   `json:"stop_details"`
+	ID                   string            `json:"id"`
+	Type                 string            `json:"type"`
+	Role                 string            `json:"role"`
+	Model                string            `json:"model"`
+	Content              []json.RawMessage `json:"content"`
+	Stop                 *NativeStopReason `json:"stop_reason"`
+	Sequence             *string           `json:"stop_sequence"`
+	Usage                *ProviderUsage    `json:"usage"`
+	Context              json.RawMessage   `json:"context_management"`
+	Container            json.RawMessage   `json:"container"`
+	Diagnostics          json.RawMessage   `json:"diagnostics"`
+	StopDetails          json.RawMessage   `json:"stop_details"`
+	InputTransformations json.RawMessage   `json:"input_transformations,omitempty"`
+}
+
+// An empty transformation inventory changes no native history or input proof.
+// Nonempty transformations need their own history adapter before acceptance.
+func emptyNativeInputTransformations(raw json.RawMessage) bool {
+	if len(raw) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return true
+	}
+	var transformations []json.RawMessage
+	return json.Unmarshal(raw, &transformations) == nil && transformations != nil && len(transformations) == 0
 }
 
 func decodeProviderMessage(raw []byte) (providerMessage, error) {
 	var message providerMessage
-	if decodeNativeObject(raw, &message) != nil || message.Type != "message" || message.Role != "assistant" || domain.Text(message.ID, "native message identity", 1024, true) != nil || domain.Text(message.Model, "native message model", 256, true) != nil || message.Content == nil || len(message.Content) > 1024 || (message.Sequence != nil && domain.Text(*message.Sequence, "native stop sequence", domain.MaxMessageText, false) != nil) {
+	if decodeNativeObject(raw, &message) != nil || !emptyNativeInputTransformations(message.InputTransformations) || message.Type != "message" || message.Role != "assistant" || domain.Text(message.ID, "native message identity", 1024, true) != nil || domain.Text(message.Model, "native message model", 256, true) != nil || message.Content == nil || len(message.Content) > 1024 || (message.Sequence != nil && domain.Text(*message.Sequence, "native stop sequence", domain.MaxMessageText, false) != nil) {
 		return providerMessage{}, lifecycleUncertain()
 	}
 	return message, nil
