@@ -179,7 +179,16 @@ func validateInitializeExtensions(result initializeResult) error {
 	if len(result.AnalyticsDisabled) != 0 && !bytes.Equal(bytes.TrimSpace(result.AnalyticsDisabled), []byte("true")) {
 		return incompatible()
 	}
-	for _, gate := range []json.RawMessage{result.RemoteControlAvailable, result.RemoteControlAutoConnectDefault} {
+	// A managed token can advertise availability while every activation gate
+	// remains disabled. Availability is metadata, never permission to connect.
+	if len(result.RemoteControlAvailable) != 0 {
+		available := bytes.TrimSpace(result.RemoteControlAvailable)
+		managed := result.Account != nil && result.Account.TokenSource == managedTokenSource
+		if !bytes.Equal(available, []byte("false")) && !(managed && bytes.Equal(available, []byte("true"))) {
+			return incompatible()
+		}
+	}
+	for _, gate := range []json.RawMessage{result.RemoteControlAutoConnectDefault} {
 		if len(gate) != 0 && !bytes.Equal(bytes.TrimSpace(gate), []byte("false")) {
 			return incompatible()
 		}

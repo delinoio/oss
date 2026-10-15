@@ -822,7 +822,8 @@ func TestManagedTokenInitializeSharesClaude287Validation(t *testing.T) {
 	build := func() map[string]any {
 		result := fixtureResult287()
 		result["account"] = map[string]any{"tokenSource": managedTokenSource, "apiProvider": "firstParty"}
-		result["commands"] = []any{map[string]any{"name": "compact", "description": "Compact", "argumentHint": ""}}
+		result["commands"] = []any{map[string]any{"name": "compact", "description": "Compact", "argumentHint": "", "builtin": true}}
+		result["remote_control_available"] = true
 		return result
 	}
 	raw, _ := json.Marshal(build())
@@ -834,5 +835,21 @@ func TestManagedTokenInitializeSharesClaude287Validation(t *testing.T) {
 	raw, _ = json.Marshal(result)
 	if err := validateInitializeManagedToken(raw, "dontAsk"); err == nil {
 		t.Fatal("non-idle managed session accepted")
+	}
+	for _, field := range []string{"remote_control_auto_enable", "remote_control_auto_connect_default", "remote_control_auto_on_by_default", "ide_rc_auto_enable_gate"} {
+		result := build()
+		result[field] = true
+		raw, _ := json.Marshal(result)
+		if validateInitializeManagedToken(raw, "dontAsk") == nil {
+			t.Fatalf("enabled activation gate accepted: %s", field)
+		}
+	}
+	for _, value := range []any{nil, "true", 1} {
+		result := build()
+		result["commands"].([]any)[0].(map[string]any)["builtin"] = value
+		raw, _ := json.Marshal(result)
+		if validateInitializeManagedToken(raw, "dontAsk") == nil {
+			t.Fatal("invalid builtin metadata accepted")
+		}
 	}
 }
