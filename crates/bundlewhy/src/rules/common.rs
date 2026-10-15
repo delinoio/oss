@@ -664,6 +664,35 @@ fn scope_prefix<'a>(code: &'a str, index: usize, ignored: &[(usize, usize)]) -> 
     }
 }
 
+/// True for a character that can continue a JavaScript identifier, including
+/// non-ASCII letters and digits, `_`, `$` and the zero-width joiners.
+fn is_identifier_char(character: char) -> bool {
+    character.is_alphanumeric() || matches!(character, '_' | '$' | '\u{200c}' | '\u{200d}')
+}
+
+/// True when `prefix` (the code before an opening parenthesis, as returned by
+/// [`scope_prefix`]) ends with `keyword` used as a control keyword.
+///
+/// Rejected: an identifier that merely ends in the keyword (`notif`, `$if`,
+/// `éif`), and a property, method or private name written after a member
+/// access, even when whitespace or comments separate the dot from the name
+/// (`obj.if`, `obj?.while`, `obj. /* c */ for`, `this.#if`).
+fn ends_with_control_keyword(
+    code: &str,
+    prefix: &str,
+    keyword: &str,
+    ignored: &[(usize, usize)],
+) -> bool {
+    if !prefix.ends_with(keyword) {
+        return false;
+    }
+    let start = prefix.len() - keyword.len();
+    match code[..start].chars().next_back() {
+        Some(character) if is_identifier_char(character) || character == '#' => false,
+        _ => !scope_prefix(code, start, ignored).ends_with('.'),
+    }
+}
+
 fn scope_context(
     code: &str,
     index: usize,
@@ -672,16 +701,14 @@ fn scope_context(
     ignored: &[(usize, usize)],
 ) -> ScopeContext {
     let prefix = scope_prefix(code, index, ignored);
+    let last = prefix.chars().next_back();
     if opener == b'[' {
         // A bracket after an expression is a computed member access and keeps
         // the surrounding condition. A bracket after an operator starts an
         // array literal, whose contents do not form a guard by themselves.
-        if prefix.as_bytes().last().is_some_and(|byte| {
-            byte.is_ascii_alphanumeric()
-                || matches!(
-                    *byte,
-                    b'_' | b'$' | b']' | b')' | b'}' | b'\'' | b'"' | b'`' | b'.'
-                )
+        if last.is_some_and(|character| {
+            is_identifier_char(character)
+                || matches!(character, ']' | ')' | '}' | '\'' | '"' | '`' | '.')
         }) {
             return parent;
         }
@@ -690,15 +717,7 @@ fn scope_context(
     if opener != b'(' {
         return ScopeContext::Invalid;
     }
-    if prefix.ends_with("for")
-        && prefix
-            .as_bytes()
-            .get(..prefix.len() - "for".len())
-            .and_then(|prefix| prefix.last())
-            .is_none_or(|byte| {
-                !byte.is_ascii_alphanumeric() && *byte != b'_' && *byte != b'$' && *byte != b'.'
-            })
-    {
+    if ends_with_control_keyword(code, prefix, "for", ignored) {
         return ScopeContext::For(ForClause::Initializer);
     }
     for (keyword, guard) in [
@@ -706,20 +725,12 @@ fn scope_context(
         ("while", EnvGuard::While),
         ("switch", EnvGuard::Switch),
     ] {
-        if prefix.ends_with(keyword)
-            && prefix
-                .as_bytes()
-                .get(..prefix.len() - keyword.len())
-                .and_then(|prefix| prefix.last())
-                .is_none_or(|byte| {
-                    !byte.is_ascii_alphanumeric() && *byte != b'_' && *byte != b'$' && *byte != b'.'
-                })
-        {
+        if ends_with_control_keyword(code, prefix, keyword, ignored) {
             return ScopeContext::Guard(guard);
         }
     }
-    if prefix.as_bytes().last().is_some_and(|byte| {
-        byte.is_ascii_alphanumeric() || matches!(*byte, b'_' | b'$' | b']' | b')' | b'.')
+    if last.is_some_and(|character| {
+        is_identifier_char(character) || matches!(character, ']' | ')' | '.')
     }) {
         ScopeContext::Invalid
     } else {
@@ -2422,6 +2433,132 @@ y=/process.env.F/.test(z),process.env.G"#;
                 format!("x = 1 // c{terminator}({read})"),
             ] {
                 assert_eq!(guard(&code, read), None, "{code:?}");
+            }
+        }
+    }
+
+    fn keyword_guard(code: &str, read: &str) -> Option<&'static str> {
+        let start = code.find(read).unwrap();
+        env_guard(code, start, start + read.len(), &non_code_ranges(code)).map(EnvGuard::evidence)
+    }
+
+    const CONTROL_KEYWORDS: [(&str, &str); 4] = [
+        ("if", "the retained read is in an if condition"),
+        ("while", "the retained read is in a while condition"),
+        ("switch", "the retained read is in a switch condition"),
+        ("for", "the retained read is in a for condition"),
+    ];
+
+    /// The argument list that follows a keyword, with the read in a position
+    /// that is a guard for that keyword (`for` guards its test clause).
+    fn keyword_arguments(keyword: &str, read: &str) -> String {
+        if keyword == "for" {
+            format!(";{read};) work()")
+        } else {
+            format!("{read}) work()")
+        }
+    }
+
+    #[test]
+    fn keyword_named_members_are_never_guards() {
+        let read = "process.env.FLAG";
+        for (keyword, _) in CONTROL_KEYWORDS {
+            let arguments = keyword_arguments(keyword, read);
+            let mut members = vec![
+                format!("obj.{keyword}("),
+                format!("obj?.{keyword}("),
+                format!("obj. {keyword}("),
+                format!("obj .{keyword}("),
+                format!("obj./* c */{keyword}("),
+                format!("obj. /* c */ {keyword} /* d */ ("),
+                format!("obj.{keyword} // c\n("),
+                format!("obj.{keyword} /* c */ ("),
+                format!("obj?. /* c */ // d\n {keyword}("),
+                format!("this.#{keyword}("),
+                format!("this.#{keyword} /* c */ ("),
+                format!("a.b.c.{keyword}("),
+                format!("a[0].{keyword}("),
+                format!("a().{keyword}("),
+                format!("a.\n{keyword}("),
+            ];
+            for terminator in LINE_TERMINATORS {
+                members.push(format!("obj.{terminator}{keyword}("));
+                members.push(format!("obj. // c{terminator}{keyword}("));
+                members.push(format!("obj. /* a{terminator}b */ {keyword}("));
+                members.push(format!("obj.{keyword} // c{terminator}("));
+                members.push(format!(
+                    "obj?.// c{terminator}/* d */{terminator}{keyword}("
+                ));
+            }
+            for member in members {
+                let code = format!("{member}{arguments}");
+                assert_eq!(keyword_guard(&code, read), None, "{code:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn identifiers_ending_in_a_keyword_are_never_guards() {
+        let read = "process.env.FLAG";
+        for (keyword, _) in CONTROL_KEYWORDS {
+            let arguments = keyword_arguments(keyword, read);
+            for name in [
+                "not",
+                "_",
+                "$",
+                "x1",
+                "\u{e9}",
+                "\u{4e2d}",
+                "a\u{200d}",
+                "\u{3b1}\u{3b2}",
+            ] {
+                for gap in ["", " ", " /* c */ ", " // c\n"] {
+                    let code = format!("{name}{keyword}{gap}({arguments}");
+                    assert_eq!(keyword_guard(&code, read), None, "{code:?}");
+                }
+            }
+            // A keyword inside a longer identifier is not the identifier's end.
+            let code = format!("{keyword}Value({arguments}");
+            assert_eq!(keyword_guard(&code, read), None, "{code:?}");
+        }
+    }
+
+    #[test]
+    fn keywords_after_statement_boundaries_and_comments_stay_guards() {
+        let read = "process.env.FLAG";
+        for (keyword, evidence) in CONTROL_KEYWORDS {
+            let arguments = keyword_arguments(keyword, read);
+            let mut prefixes = vec![
+                String::new(),
+                "run();".to_string(),
+                "{".to_string(),
+                "{}".to_string(),
+                "run()\n".to_string(),
+                "x = 1; ".to_string(),
+                "else ".to_string(),
+                "do ".to_string(),
+                // Dots that belong to comments or numbers never make a member.
+                "a; /* end. */ ".to_string(),
+                "a; // end.\n".to_string(),
+                "a; // end.\n/* more. */\n".to_string(),
+                "x = 1.5;".to_string(),
+                "x = a.b;".to_string(),
+                "x = '.';".to_string(),
+                "x = \".\";".to_string(),
+                "x = `.`;".to_string(),
+                "x = /./;".to_string(),
+                "run() // see obj.\n".to_string(),
+            ];
+            for terminator in LINE_TERMINATORS {
+                prefixes.push(format!("a; // end.{terminator}"));
+                prefixes.push(format!("a; // end.{terminator}// more.{terminator}"));
+                prefixes.push(format!("a.b; /* end. */{terminator}"));
+            }
+            for prefix in prefixes {
+                for gap in ["", " ", " /* c */ ", " // c\n"] {
+                    let code = format!("{prefix}{keyword}{gap}({arguments}");
+                    assert_eq!(keyword_guard(&code, read), Some(evidence), "{code:?}");
+                }
             }
         }
     }
