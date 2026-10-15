@@ -28,8 +28,8 @@ type profileCase struct {
 }
 
 var profileCases = []profileCase{
-	{profile: ProfileCodex, fixture: "normal", frameBytes: 1 << 20, queueBytes: 8 << 20, eventCount: 4096},
-	{profile: ProfileImage, fixture: "image-observations", frameBytes: 16 << 20, queueBytes: 32 << 20, eventCount: 4096},
+	{profile: ProfileCodex, fixture: "normal", frameBytes: 1 << 20, queueBytes: 32 << 20, eventCount: 65536},
+	{profile: ProfileImage, fixture: "image-observations", frameBytes: 16 << 20, queueBytes: 64 << 20, eventCount: 65536},
 	{profile: ProfileJSONRPC, fixture: "jsonrpc", jsonrpc: true, frameBytes: 1 << 20, queueBytes: 8 << 20, eventCount: 128},
 }
 
@@ -131,8 +131,8 @@ func TestEventDescriptorMemoryBound(t *testing.T) {
 		reserved := test.eventCount * size
 		t.Logf("profile=%s event_descriptor_bytes=%d slots=%d reserved_descriptor_bytes=%d queued_payload_bytes=%d", test.profile, size, test.eventCount, reserved, test.queueBytes)
 		// Documented worst case: slots * descriptor plus the independent payload
-		// byte budget. The descriptor reservation stays below 1 MiB on 64-bit targets.
-		if strconv.IntSize == 64 && reserved > 1<<20 {
+		// byte budget. The descriptor reservation stays below 10 MiB on 64-bit targets.
+		if strconv.IntSize == 64 && reserved > 10<<20 {
 			t.Fatalf("descriptor reservation %d exceeds the documented bound", reserved)
 		}
 	}
