@@ -108,7 +108,7 @@ Statement and function rules:
 The scan is a lenient expression parser, not a full JavaScript parser. When a construct cannot be decided without runtime knowledge or a complete grammar, the read is not treated as guarded, so the finding is not produced and no branch is claimed. These cases are pinned by `read_propagation_known_limits_are_not_guarded` and `expression_tree_known_limits_are_not_guarded`:
 
 - An object literal at the start of a statement is read as a block with a label (`{a: read}.a && run()`); the same literal after an operator, `(`, `=` or `return` is an object literal.
-- An array element selected by a negative, string or non-literal index (`.at(-1)`, `["0"]`, `[index]`), or through a method such as `find`.
+- An array element selected by a negative, string or non-literal index (`.at(-1)`, `["0"]`, `[index]`), or through a method such as `find`. `.at(N)` selects only from an array literal; an object with an own `at` method, or one returned where an array is expected, is not selected from.
 - An object property with a computed key, a getter, an escaped key, or a property replaced by a later spread or computed key.
 - A numeric key or selector whose property name is not known without evaluating it: a legacy octal literal (`010`), an integer beyond 2^53 and a value that JavaScript prints in exponent form (`1e21`, `1e-7`). Such a property may replace any earlier property, and such a selector selects nothing.
 - A value that is stored in a variable and read later (`var o = [read]; o[0] && run()`), a function value invoked through `call`, `apply` or a variable, a function returned by an invoked function, and a value that passes through a promise.

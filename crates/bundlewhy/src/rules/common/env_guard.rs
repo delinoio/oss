@@ -386,13 +386,17 @@ enum Selector<'a> {
     Literal { text: &'a str, index: Option<usize> },
     /// `[expression]`.
     Computed(Expr),
+    /// `.at(N)`: element `N` of an array. Unlike `[N]` it names no property,
+    /// so only a proven array literal can answer it; an object with its own
+    /// `at` method is not selected from.
+    At(usize),
 }
 
 impl<'a> Selector<'a> {
     fn static_key(self) -> Option<&'a str> {
         match self {
             Self::Name(text) | Self::Literal { text, .. } => Some(text),
-            Self::Computed(_) => None,
+            Self::Computed(_) | Self::At(_) => None,
         }
     }
 }
@@ -1865,7 +1869,8 @@ impl<'a> Parser<'a> {
                     let Pending { selector, rest } = paths[next];
                     if let Selector::Literal {
                         index: Some(index), ..
-                    } = selector
+                    }
+                    | Selector::At(index) = selector
                     {
                         array_element(elements, index, (rest, equal), &mut work);
                     }
@@ -1932,16 +1937,14 @@ impl<'a> Parser<'a> {
                 work.extend(returns.iter().map(|id| (Some(*id), path, equal)));
             }
             // `.at(N)` selects element N of whatever array its object
-            // produces, like `[N]` would, before the pending selectors.
+            // produces, like `[N]` would, before the pending selectors. An
+            // object that is not an array never answers it.
             Node::Member {
                 object: Some(object),
                 selector: Selector::Name("at"),
-            } if element.is_some() => {
+            } if let Some(index) = element => {
                 paths.push(Pending {
-                    selector: Selector::Literal {
-                        text: "",
-                        index: element,
-                    },
+                    selector: Selector::At(index),
                     rest: path,
                 });
                 work.push((Some(*object), Some(paths.len() - 1), equal));
@@ -2433,6 +2436,31 @@ mod tests {
             (
                 "at on an invoked function result",
                 "(function(){return [process.env.FLAG]})().at(0)&&run()",
+                Some("and"),
+            ),
+            (
+                "at on an object with its own at method",
+                "({0:process.env.FLAG,at(){return 1}}).at(0)&&run()",
+                None,
+            ),
+            (
+                "at on an invoked function result that is an object",
+                "(function(){return {0:process.env.FLAG}})().at(0)&&run()",
+                None,
+            ),
+            (
+                "at on a constructed object",
+                "new function(){return {0:process.env.FLAG}}().at(0)&&run()",
+                None,
+            ),
+            (
+                "at on a conditional of objects",
+                "(a?{0:process.env.FLAG}:{0:1}).at(0)&&run()",
+                None,
+            ),
+            (
+                "at on an array inside an object property",
+                "({a:[process.env.FLAG]}).a.at(0)&&run()",
                 Some("and"),
             ),
             (
