@@ -37,14 +37,13 @@ Shared Worker/server batch validation requires a nonempty report of at most 64 K
 
 ## Codex child configuration
 
-Codex can emit child thread status between its original `thread/started`
-notification and the completed spawn tool. Retain at most 4,096 private start
-bindings rooted in the original thread or an already observed descendant.
-Validate these early status notifications and consume them as passive metadata;
-they cannot allocate product child ownership, settle a child, or change the root
-turn. Unannounced foreign threads and malformed statuses retain the existing
-extension or validation failure. Canonical spawn or descendant history still
-owns published child identity and lifecycle.
+Codex can emit child thread status before its original `thread/started`
+notification and completed spawn tool. Validate these early notifications and
+retain at most 4,096 unresolved native thread identities as passive metadata.
+They cannot allocate product child ownership, settle a child, or change the root
+turn. Independent descendant inventory must prove every retained identity before
+completion; unknown ancestry or malformed statuses fail validation. Canonical
+spawn or descendant history still owns published child identity and lifecycle.
 
 Each child has its own valid native session identity. It need not equal the
 root's native session identity. Original parent ancestry, provider and executable

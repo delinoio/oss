@@ -138,6 +138,36 @@ func TestSubagentDescendantInspectionReadsHistoryWithoutChildControls(t *testing
 	}
 }
 
+func TestSubagentEarlyStatusRequiresIndependentDescendantProof(t *testing.T) {
+	c, _ := openSubagentFixture(t, "thread-subagent-read")
+	if _, err := c.StartThread(context.Background(), domain.NewID(), threadSettings(t)); err != nil {
+		t.Fatal(err)
+	}
+	turn := domain.NewID()
+	c.execution.active = turn
+	c.execution.turns[turn] = trackedTurn{Turn: Turn{ID: turn, Status: TurnRunning}}
+	inventory, err := c.InspectDescendants(context.Background())
+	if err != nil || len(inventory.Subagents) != 2 {
+		t.Fatal("fixture inventory failed", err)
+	}
+	child := domain.ID(inventory.Subagents[0].NativeID)
+	c.subagents = nil
+	event, err := observeFixture(c, "thread/status/changed", map[string]any{"threadId": child, "status": ThreadStatus{Type: ThreadIdle}})
+	if err != nil || event.Kind != MetadataEvent || len(c.subagents) != 0 || len(c.pendingChildStatuses) != 1 {
+		t.Fatal("status before child start invented ownership", err)
+	}
+	if _, err := c.InspectDescendants(context.Background()); err != nil || len(c.pendingChildStatuses) != 0 {
+		t.Fatal("independent inventory did not resolve early status", err)
+	}
+	foreign := domain.NewID()
+	if _, err := observeFixture(c, "thread/status/changed", map[string]any{"threadId": foreign, "status": ThreadStatus{Type: ThreadIdle}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.InspectDescendants(context.Background()); err == nil || len(c.pendingChildStatuses) != 1 {
+		t.Fatal("unknown ancestry lost its completion fence")
+	}
+}
+
 func TestSubagentCanonicalCollaborationKeepsRequestedModelAndChildScope(t *testing.T) {
 	c, turn := observationClient()
 	child := domain.NewID()
@@ -204,8 +234,8 @@ func TestSubagentThreadStartedRequiresPriorOwnershipEvidence(t *testing.T) {
 		}
 	}
 	foreign, err := observeFixture(c, "thread/status/changed", map[string]any{"threadId": domain.NewID(), "status": ThreadStatus{Type: ThreadIdle}})
-	if err != nil || foreign.Kind != NativeExtensionEvent {
-		t.Fatal("unannounced foreign thread status was silently consumed", err)
+	if err != nil || foreign.Kind != MetadataEvent || len(c.pendingChildStatuses) != 2 || len(c.subagents) != 0 {
+		t.Fatal("unannounced status lost its unresolved ancestry fence", err)
 	}
 	if _, err := observeFixture(c, "thread/status/changed", map[string]any{"threadId": child, "status": map[string]any{"type": "unknown"}}); err == nil {
 		t.Fatal("malformed early child status was accepted")

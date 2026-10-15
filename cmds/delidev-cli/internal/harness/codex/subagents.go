@@ -266,9 +266,22 @@ func (c *Client) InspectDescendants(ctx context.Context) (Event, error) {
 		cursor = *result.Next
 	}
 	if len(batch) == 0 {
+		if len(c.pendingChildStatuses) != 0 {
+			return Event{}, incompatible()
+		}
 		return Event{Kind: MetadataEvent, ThreadID: c.thread, Correlated: true, Metadata: RawSupplementDiscarded}, nil
 	}
-	return c.childEvent(batch)
+	for id := range c.pendingChildStatuses {
+		if _, known := c.subagents[string(id)]; !known && !seen[string(id)] {
+			return Event{}, incompatible()
+		}
+	}
+	event, err := c.childEvent(batch)
+	if err != nil {
+		return Event{}, err
+	}
+	clear(c.pendingChildStatuses)
+	return event, nil
 }
 
 func (c *Client) observeChildNative(native nativewire.Event) (Event, bool, error) {
@@ -286,20 +299,6 @@ func (c *Client) observeChildNative(native nativewire.Event) (Event, bool, error
 				// A start notification may precede the original spawn evidence.
 				// It cannot allocate product ownership; wait for the canonical
 				// sender/receiver spawn or the validated descendant inventory.
-				_, knownParent := c.subagents[string(*t.ParentThreadID)]
-				if *t.ParentThreadID != c.thread && !knownParent && c.pendingChildStarts[*t.ParentThreadID] == "" {
-					return c.childMetadata(), true, nil
-				}
-				if c.pendingChildStarts == nil {
-					c.pendingChildStarts = make(map[domain.ID]domain.ID)
-				}
-				if prior, exists := c.pendingChildStarts[t.ID]; exists && prior != *t.ParentThreadID {
-					return Event{}, true, incompatible()
-				}
-				if len(c.pendingChildStarts) >= 4096 && c.pendingChildStarts[t.ID] == "" {
-					return Event{}, true, incompatible()
-				}
-				c.pendingChildStarts[t.ID] = *t.ParentThreadID
 				return c.childMetadata(), true, nil
 			}
 			if o.ParentID != string(*t.ParentThreadID) {
@@ -319,14 +318,21 @@ func (c *Client) observeChildNative(native nativewire.Event) (Event, bool, error
 	_ = json.Unmarshal(fields["threadId"], &thread)
 	o, known := c.subagents[thread]
 	if !known {
-		// Native child status can arrive before the spawn tool completes. The
-		// original start proves only passive routing, never product ownership or
-		// child settlement; canonical spawn/history evidence still owns both.
-		if native.Method == "thread/status/changed" && c.pendingChildStarts[domain.ID(thread)] != "" {
+		// Status may even precede thread/started. Retain an unresolved identity
+		// until independent descendant inventory proves ancestry. This grants no
+		// child ownership or settlement; unresolved identities block completion.
+		if native.Method == "thread/status/changed" && domain.ID(thread).Validate() == nil && domain.ID(thread) != c.thread {
 			var status ThreadStatus
 			if domain.Decode(fields["status"], &status) != nil || validateThreadStatus(status) != nil {
 				return Event{}, true, incompatible()
 			}
+			if c.pendingChildStatuses == nil {
+				c.pendingChildStatuses = make(map[domain.ID]struct{})
+			}
+			if _, exists := c.pendingChildStatuses[domain.ID(thread)]; !exists && len(c.pendingChildStatuses) >= 4096 {
+				return Event{}, true, incompatible()
+			}
+			c.pendingChildStatuses[domain.ID(thread)] = struct{}{}
 			if c.logger != nil {
 				c.logger.Info("Codex child status preceded spawn evidence", "owner_id", c.ownerID, "status", status.Type)
 			}
