@@ -461,8 +461,12 @@ fn is_direct_optional_chain_base(
         // so the read is an argument rather than the chain base.
         if let Some(before) = skip_backward(open) {
             let byte = bytes[before];
+            // `}` ends a function, class or object expression that can be
+            // called directly. A block-ending brace followed by a statement
+            // that starts with `(` is indistinguishable without a parser, so
+            // it is read as a call too (see Known limits in the docs).
             let call_like = is_identifier_byte(byte)
-                || matches!(byte, b')' | b']' | b'.' | b'\'' | b'"' | b'`');
+                || matches!(byte, b')' | b']' | b'}' | b'.' | b'\'' | b'"' | b'`');
             if call_like {
                 let mut word_start = before + 1;
                 while word_start > 0 && is_identifier_byte(bytes[word_start - 1]) {
@@ -2372,6 +2376,10 @@ y=/process.env.F/.test(z),process.env.G"#;
             "console.log(process.env.FLAG);obj?.method();",
             "run(process.env.FLAG)?.value;",
             "obj.run(process.env.FLAG)?.value;",
+            "const x = function(){}(process.env.FLAG)?.value;",
+            "const x = class{}(process.env.FLAG)?.value;",
+            "const x = {}(process.env.FLAG)?.value;",
+            "if (a) {}\n(process.env.FLAG)?.value;",
             "process.env.FLAG.length?.toString();",
             "const a=process.env.FLAG;b?.c();",
             "const a=process.env.FLAG\nb?.c();",
