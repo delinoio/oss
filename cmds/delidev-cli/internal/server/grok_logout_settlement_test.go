@@ -177,8 +177,10 @@ func TestGrokRestartedLogoutWaitingForALeaseIsReleasedWithoutTouchingTheLease(t 
 	}
 	_, a = g.record()
 	st := a.Subscription
-	if st.RecoveryRequired || st.Pending != nil || st.Lease == nil || st.Lease.ID != lease.ID || st.ServerOperation.State != domain.SubscriptionFailed || a.Health != domain.AccountRevoked || g.idp.RevokeRequests() != 0 || st.Generation != before.Subscription.Generation {
-		t.Fatal("the restarted logout was not released with its Worker lease and credential intact")
+	// The lease predates the restart, so it is stale and fenced: the logout settles
+	// but the fence stays for the lease's own recovery by the original Worker.
+	if !st.RecoveryRequired || st.Pending != nil || st.Lease == nil || st.Lease.ID != lease.ID || st.ServerOperation.State != domain.SubscriptionFailed || a.Health != domain.AccountFailed || g.idp.RevokeRequests() != 0 || st.Generation != before.Subscription.Generation {
+		t.Fatal("the restarted logout was not settled with its stale Worker lease fenced and its credential intact")
 	}
 	// A confirmed revocation still waits for the lease to go: the cleanup deletes
 	// the bundle the lease holds.

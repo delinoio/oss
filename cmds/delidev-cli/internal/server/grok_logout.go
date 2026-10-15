@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
@@ -187,12 +186,9 @@ func (s *Service) grokLogoutSteps(ctx context.Context, id domain.ID, original do
 	uncertain := func(step grokLoginStep) grokLogoutOutcome {
 		return grokLogoutOutcome{state: domain.SubscriptionRecovery, code: domain.RecoveryRequired, step: step, claimed: true}
 	}
-	vault, err := s.secrets()
-	if err != nil {
-		s.logGrok(ctx, slog.LevelWarn, "grok_logout_vault_unavailable", original, grokStepVault, "code", domain.SafeError(err).Code)
-		return fail(domain.Unavailable, grokStepVault)
-	}
-	stored, err := vault.Get(ctx, credentials.Ref{Owner: id, ID: original.Generation, Purpose: credentials.AccountLogin})
+	// The vault is opened and read under the account gate, like every other
+	// credential path, and the gate is released before any network work.
+	stored, err := s.readGrokGeneration(ctx, id, original.Generation)
 	if err != nil {
 		s.logGrok(ctx, slog.LevelWarn, "grok_logout_vault_read_failed", original, grokStepVault, "code", domain.SafeError(err).Code)
 		return fail(domain.Unavailable, grokStepVault)
@@ -507,11 +503,16 @@ func (s *Service) recoverGrokLogout(ctx context.Context, id, operation domain.ID
 		o.NativeStarted = false
 		o.GrokDiagnostic = &domain.GrokDiagnostic{Phase: domain.GrokDiagnosticLogout, Code: domain.Unavailable, CorrelationID: o.ID}
 		st.Pending = nil
-		st.RecoveryRequired = false
 		// The restart fenced the account before anything was sent. The credential
 		// is intact and the accepted logout keeps readiness revoked until a new
 		// logout settles.
-		a.Health = domain.AccountRevoked
+		st.RecoveryRequired, a.Health = false, domain.AccountRevoked
+		if st.Lease != nil && st.Lease.Epoch != s.subscriptionServerEpoch() {
+			// A lease granted before the restart is fenced too and stale: only its
+			// original Worker's recovery can release it, and that recovery needs the
+			// fence to stand. The logout settles, the fence stays for the lease.
+			st.RecoveryRequired, a.Health = true, domain.AccountFailed
+		}
 		if _, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
 			return nil, err
 		}
