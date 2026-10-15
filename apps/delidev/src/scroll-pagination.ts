@@ -323,7 +323,9 @@ export class PaginationChain<Row extends PaginationRow, Payload = never> {
             ? previous.payloadPages.map((page) => page.token)
             : this.retainedPayloadTokens.length
               ? this.retainedPayloadTokens
-              : previous.pages.slice(-this.residentPages).map((page) => page.token)),
+              : previous.pages
+                  .slice(-this.residentPages)
+                  .map((page) => page.token)),
       );
       if (stage === ReadStage.Reload || stage === ReadStage.Initial)
         payloads.clear();

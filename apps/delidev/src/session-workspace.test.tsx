@@ -4098,7 +4098,9 @@ it("retains loaded transcript bodies across a workspace tab switch without backg
   await screen.findByText("Retained page 0");
   for (let index = 1; index < pages.length; index++) {
     fireEvent.click(
-      await screen.findByRole("button", { name: "Load more Conversation pages" }),
+      await screen.findByRole("button", {
+        name: "Load more Conversation pages",
+      }),
     );
     await screen.findByText(`Retained page ${index}`);
   }
