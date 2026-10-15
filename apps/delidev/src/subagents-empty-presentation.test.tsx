@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { expect, test } from "vitest";
 import { useState } from "react";
 import {
@@ -198,7 +204,11 @@ test("keeps a failed refresh visible while an explicit Reload-class recovery is 
   await waitFor(() => expect(t.state.held).toHaveLength(1));
   expect(t.published.at(-1)).toBe(false);
   expect(t.hidden()).toBe(false);
-  t.state.held.splice(0).forEach((h) => h.settle({ error: new ConnectError("Again", Code.Unavailable) }));
+  t.state.held
+    .splice(0)
+    .forEach((h) =>
+      h.settle({ error: new ConnectError("Again", Code.Unavailable) }),
+    );
   await screen.findByRole("button", { name: "Retry read" });
   expect(t.hidden()).toBe(false);
   t.client.clear();
