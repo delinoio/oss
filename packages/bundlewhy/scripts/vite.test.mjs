@@ -77,10 +77,18 @@ function runDiagnostic(work, projectRoot, configFile, expectedStatus = 0) {
       protocolToken: "vite-root-test",
     }),
   );
-  const result = spawnSync(process.execPath, [adapterPath, requestPath], {
-    cwd: projectRoot,
-    encoding: "utf8",
-  });
+  const result = spawnSync(
+    process.execPath,
+    [
+      path.join(packageRoot, "test/adapter-supervisor.mjs"),
+      adapterPath,
+      requestPath,
+    ],
+    {
+      cwd: projectRoot,
+      encoding: "utf8",
+    },
+  );
   assert.equal(
     result.status,
     expectedStatus,
@@ -210,6 +218,38 @@ export default {
     ),
     { name: "after-hook" },
   );
+});
+
+test("Vite diagnostic rejects a root selected during a mutating config hook", (t) => {
+  const { work, projectRoot } = makeProject(t);
+  const externalRoot = path.join(work, "external");
+  writeEntry(externalRoot, "external-entry");
+  const manifest = path.join(externalRoot, "package.json");
+  fs.writeFileSync(manifest, JSON.stringify({ name: "before-hook" }));
+  const configFile = path.join(projectRoot, "vite.config.js");
+  fs.writeFileSync(
+    configFile,
+    `import fs from "node:fs";
+export default {
+  plugins: [{
+    name: "select-and-mutate-root",
+    config() {
+      fs.writeFileSync(${JSON.stringify(manifest)}, JSON.stringify({ name: "after-hook" }));
+      return { root: ${JSON.stringify(externalRoot)} };
+    },
+  }],
+};
+`,
+  );
+
+  const { events } = runDiagnostic(work, projectRoot, configFile, 1);
+  assert.equal(
+    events.find((event) => event.event === "error")?.code,
+    "BW_UNSUPPORTED_BUILD",
+  );
+  assert.deepEqual(JSON.parse(fs.readFileSync(manifest, "utf8")), {
+    name: "after-hook",
+  });
 });
 
 test("Vite diagnostic falls back to the selected project root", (t) => {

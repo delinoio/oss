@@ -252,5 +252,10 @@ export async function runAdapter(
       recovery,
     });
     process.exitCode = 1;
+  } finally {
+    // The supervisor keeps the acknowledgement pipe open while the adapter
+    // runs. Close our reader after the final frame so it cannot keep Node
+    // alive once the build is complete.
+    process.stdin.destroy();
   }
 }

@@ -95,10 +95,22 @@ function collectorPlugin(state) {
     enforce: "post",
     apply: "build",
     async configResolved(config) {
-      state.root = normalizeCollectionRoot(
+      const resolvedRoot = normalizeCollectionRoot(
         config.root,
         config.resolve?.preserveSymlinks === true,
       );
+      // A config hook can choose an arbitrary external root and modify its
+      // files before configResolved runs. No earlier protection snapshot can
+      // cover an unknown path, so reject that run instead of reporting a
+      // clean project from a post-mutation baseline.
+      if (resolvedRoot !== state.root) {
+        throw new AdapterError(
+          AdapterErrorCode.UnsupportedBuild,
+          "A Vite config hook changed the project root after the protection snapshot",
+          "Select the final root in the Vite configuration before plugin config hooks run, then start a new diagnostic run.",
+        );
+      }
+      state.root = resolvedRoot;
       const treeshakeOption =
         config.build.rolldownOptions?.treeshake ??
         config.build.rollupOptions?.treeshake;
@@ -120,11 +132,6 @@ function collectorPlugin(state) {
         defineKeys: Object.keys(config.define ?? {}).sort(),
         plugins: config.plugins.map((plugin) => plugin.name).filter(Boolean),
       };
-      // Config hooks can replace the root. Publish the final resolver root
-      // after those hooks so the Rust side can add its protected files while
-      // retaining the pre-adapter snapshot for paths it already knows.
-      emit({ event: "protection", root: state.root });
-      await waitForProtectionAck();
     },
     onLog(level, log) {
       // Rolldown reports optimization-relevant warnings (for example EVAL and
@@ -333,6 +340,7 @@ await runAdapter(async (request) => {
       }),
     );
   } catch (error) {
+    if (error instanceof AdapterError) throw error;
     throw new AdapterError(
       AdapterErrorCode.BuildFailed,
       `vite build failed: ${error?.message ?? error}`,
