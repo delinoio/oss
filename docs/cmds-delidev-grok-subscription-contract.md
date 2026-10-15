@@ -581,7 +581,8 @@ settlement and recovery).
   pending operation, with no Worker lease. That is the account's exclusive lease:
   Take, another operation and the login/refresh/logout gates all observe it, and
   a Worker Take of the server operation is refused.
-- **Claim before send.** The stored generation is opened against this server and
+- **Claim before send.** The stored generation is read with the vault opened under the account gate
+  (concurrent runners never race to open the shared vault), opened against this server and
   account, discovery supplies the JWKS and userinfo endpoints, and only then
   `refresh_claimed` is written in its own transaction that rechecks the actor,
   epoch, window, generation and the stored identity commitment. After the claim
