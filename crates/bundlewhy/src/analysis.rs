@@ -2951,6 +2951,22 @@ mod tests {
     }
 
     #[test]
+    fn look_alike_virtual_chunk_keeps_the_map_requirement() {
+        let custom = vec![ExtraChunk {
+            file: "assets/custom-AAAA.js",
+            code: HELPER_CODE,
+            modules: vec!["\u{0}vite/custom-runtime.js"],
+            map: ExtraMap::Absent,
+        }];
+        let fixture = vite_with_extra_chunks(&custom, |_| {});
+        let analysis = &fixture.output.analysis;
+        assert_eq!(analysis.status, RunStatus::Partial);
+        let problems = missing_map_problems(analysis);
+        assert_eq!(problems.len(), 1);
+        assert!(problems[0].message.contains("assets/custom-AAAA.js"));
+    }
+
+    #[test]
     fn mixed_virtual_and_source_chunk_keeps_the_map_requirement() {
         let mixed = vec![ExtraChunk {
             file: "assets/mixed-AAAA.js",
@@ -3145,6 +3161,30 @@ mod tests {
                     vec![helper, runtime],
                 ),
                 true,
+            ),
+            (
+                (
+                    "look-alike vite namespace id",
+                    vec!["\u{0}vite/custom-runtime.js"],
+                    vec![("\u{0}vite/custom-runtime.js", true, None)],
+                ),
+                false,
+            ),
+            (
+                (
+                    "look-alike rolldown namespace id",
+                    vec!["\u{0}rolldown/plugin-helper.js"],
+                    vec![("\u{0}rolldown/plugin-helper.js", true, None)],
+                ),
+                false,
+            ),
+            (
+                (
+                    "built-in helper plus look-alike",
+                    vec![PRELOAD_HELPER, "\u{0}vite/custom-runtime.js"],
+                    vec![helper, ("\u{0}vite/custom-runtime.js", true, None)],
+                ),
+                false,
             ),
             (("no listed modules", vec![], vec![helper]), false),
             (("id not collected", vec![PRELOAD_HELPER], vec![]), false),
