@@ -318,7 +318,7 @@ func grokRefreshDiagnosticFor(o domain.ServerSubscriptionOperation, state domain
 	if state != domain.SubscriptionFailed && state != domain.SubscriptionRecovery {
 		return nil
 	}
-	return &domain.GrokDiagnostic{Phase: domain.GrokDiagnosticRefresh, Code: code, CorrelationID: o.ID}
+	return grokOperationDiagnostic(o.ID, domain.GrokRefresh, code)
 }
 
 // finishGrokRefresh writes the settled outcome. A success seals and stages the
@@ -461,11 +461,11 @@ func (s *Service) finishGrokRefresh(ctx context.Context, id domain.ID, o domain.
 
 // grokDiagnosticPhaseOf maps a Grok server operation action to the phase of its
 // durable diagnostic.
-func grokDiagnosticPhaseOf(action domain.SubscriptionAction) domain.GrokDiagnosticPhase {
+func grokDiagnosticPhaseOf(action domain.SubscriptionAction) domain.GrokPhase {
 	if action == domain.SubscriptionRefresh {
-		return domain.GrokDiagnosticRefresh
+		return domain.GrokRefresh
 	}
-	return domain.GrokDiagnosticLogin
+	return domain.GrokLogin
 }
 
 // fenceUnsettledGrokOperation runs after a finish returned an error. The error
@@ -518,7 +518,7 @@ func (s *Service) markGrokRecovery(id, operation domain.ID) (bool, error) {
 		fenced = true
 		o.State = domain.SubscriptionRecovery
 		if o.GrokDiagnostic == nil {
-			o.GrokDiagnostic = &domain.GrokDiagnostic{Phase: grokDiagnosticPhaseOf(o.Action), Code: domain.RecoveryRequired, CorrelationID: o.ID}
+			o.GrokDiagnostic = grokOperationDiagnostic(o.ID, grokDiagnosticPhaseOf(o.Action), domain.RecoveryRequired)
 		}
 		st.RecoveryRequired = true
 		a.Health = domain.AccountFailed
@@ -568,7 +568,7 @@ func (s *Service) recoverGrokRefresh(ctx context.Context, id, operation domain.I
 		o := st.ServerOperation
 		o.State = domain.SubscriptionFailed
 		o.NativeStarted = false
-		o.GrokDiagnostic = &domain.GrokDiagnostic{Phase: domain.GrokDiagnosticRefresh, Code: domain.Unavailable, CorrelationID: o.ID}
+		o.GrokDiagnostic = grokOperationDiagnostic(o.ID, domain.GrokRefresh, domain.Unavailable)
 		st.Pending = nil
 		st.RecoveryRequired = false
 		// The restart fenced the account as failed whatever its health was; the

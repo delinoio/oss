@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -244,5 +245,42 @@ func TestOpenCodeSnapshotKeyClassesAreIndependentlyBounded(t *testing.T) {
 	markOpenCodeKey(events, &lazy, openCodeSnapshotKeyPrefix+"lazy", true)
 	if !lazy[openCodeSnapshotKeyPrefix+"lazy"] || !isOpenCodeSnapshotKey(openCodeSnapshotKeyPrefix+"lazy") || isOpenCodeSnapshotKey("evt_new") {
 		t.Fatal("lazy snapshot map or key classification failed")
+	}
+}
+
+func TestOpenCodeEventsRequireTheCompleteImageExpansionInHistory(t *testing.T) {
+	withOpenCodeAttachments(t, []domain.ImageAttachment{openCodeImageAttachment(t, 1)})
+	f, c := newOpenCodeEventsFixture(t)
+	synthetic := true
+	syntheticID, fileID := "prt_01960dcbf000"+strings.Repeat("z", 14), "prt_01960dcbe1fb1234567890ABCD"
+	expansion := []opencode.NativePart{
+		{ID: syntheticID, SessionID: f.input.SessionID, MessageID: f.input.MessageID, Kind: opencode.TextPartKind, Text: &opencode.NativeTextPart{Text: "Called the Read tool with the following input: {}", Synthetic: &synthetic}},
+		{ID: fileID, SessionID: f.input.SessionID, MessageID: f.input.MessageID, Kind: opencode.FilePartKind, File: &opencode.NativeFilePart{MIME: "image/png", URL: "data:image/png;base64,AA=="}},
+	}
+	for i := range expansion {
+		publishOpenCodeFixtureEvent(t, f, c, opencode.Observation{Kind: opencode.MessagePartUpdatedEvent, Part: &expansion[i]})
+	}
+	publishOpenCodeFixtureEvent(t, f, c, f.assistant(false))
+	publishOpenCodeFixtureEvent(t, f, c, usageStep(f, false))
+	publishOpenCodeFixtureEvent(t, f, c, f.part(textPartOneID, "original final text", true))
+	finish := usageStep(f, true)
+	publishOpenCodeFixtureEvent(t, f, c, finish)
+	final := f.assistant(true)
+	final.Message.Assistant.Cost = *finish.Part.Step.Cost
+	final.Message.Assistant.Usage = *finish.Part.Step.Usage
+	publishOpenCodeFixtureEvent(t, f, c, final)
+	history := func(userParts ...opencode.HistoryPart) opencode.HistoryObservation {
+		return opencode.HistoryObservation{Messages: []opencode.HistoryMessage{
+			{ID: f.input.MessageID, Role: opencode.UserMessageRole, Parts: userParts},
+			{ID: textAssistantID, Role: opencode.AssistantMessageRole, Parts: []opencode.HistoryPart{{ID: usageStartID, Kind: opencode.StepStartPartKind}, {ID: textPartOneID, Kind: opencode.TextPartKind}, {ID: usageFinishID, Kind: opencode.StepFinishPartKind}}},
+		}}
+	}
+	original := opencode.HistoryPart{ID: f.input.PartID, Kind: opencode.TextPartKind}
+	text, file := opencode.HistoryPart{ID: syntheticID, Kind: opencode.TextPartKind}, opencode.HistoryPart{ID: fileID, Kind: opencode.FilePartKind}
+	if !c.completeHistory(history(original, text, file)) {
+		t.Fatal("complete image expansion did not match history")
+	}
+	if c.completeHistory(history(original, text)) || c.completeHistory(history(original, file)) || c.completeHistory(history(original)) {
+		t.Fatal("history missing part of the observed expansion acquired complete-history proof")
 	}
 }

@@ -3363,6 +3363,115 @@ fn minifies_edited_chunks() {
     assert!(settings.contains("makeSettings") && settings.contains("describeSettings"));
 }
 
+#[test]
+fn minifies_legal_notices_with_overlapping_comment_text() {
+    let settings = format!(
+        "function unused() {{ /** @license MIT */ return 42; }}\n/** @license MIT additional \
+         terms */\n{}",
+        VERBOSE[1].1
+    );
+    let temp = bundle(&[("index.js", VERBOSE[0].1), ("settings.js", &settings)]);
+    let report = optimize(
+        temp.path(),
+        &["--minify", "--disable-pass", "residual-dependency-removal"],
+    );
+    same_behavior(temp.path());
+    assert!(
+        report["size"]["minified"].as_u64().unwrap() > 0,
+        "{report:#}"
+    );
+    let published = out(temp.path(), "settings.js");
+    assert!(!published.contains("unused"), "{published}");
+    assert_eq!(
+        published.matches("/** @license MIT */").count(),
+        1,
+        "{published}"
+    );
+    assert_eq!(
+        published
+            .matches("/** @license MIT additional terms */")
+            .count(),
+        1,
+        "{published}"
+    );
+}
+
+#[test]
+fn minifies_legal_notice_even_when_its_text_occurs_in_a_string() {
+    let index = format!(
+        "{}\nimport {{ noticeText }} from './settings.js'; console.log(noticeText);",
+        VERBOSE[0].1
+    );
+    let settings = format!(
+        "function unused() {{ /** @license MIT */ return 42; }}\nexport const noticeText = '* \
+         @license MIT ';\n{}",
+        VERBOSE[1].1
+    );
+    let temp = bundle(&[("index.js", &index), ("settings.js", &settings)]);
+    let report = optimize(
+        temp.path(),
+        &["--minify", "--disable-pass", "residual-dependency-removal"],
+    );
+    same_behavior(temp.path());
+    assert!(
+        report["size"]["minified"].as_u64().unwrap() > 0,
+        "{report:#}"
+    );
+    let published = out(temp.path(), "settings.js");
+    assert!(!published.contains("unused"), "{published}");
+    assert_eq!(
+        published.matches("/** @license MIT */").count(),
+        1,
+        "{published}"
+    );
+    assert!(published.contains("* @license MIT "), "{published}");
+}
+
+#[test]
+fn minifies_legal_notice_control_with_composed_source_map() {
+    let index = format!(
+        "{}\nimport {{ noticeText }} from './settings.js'; console.log(noticeText);",
+        VERBOSE[0].1
+    );
+    let settings = format!(
+        "/** @license MIT */\nexport const noticeText = 'unrelated';\n{}//# \
+         sourceMappingURL=settings.js.map\n",
+        VERBOSE[1].1
+    );
+    let map = r#"{"version":3,"sources":["src/settings.ts"],"names":[],"mappings":"AAAA"}"#;
+    let temp = bundle(&[
+        ("index.js", &index),
+        ("settings.js", &settings),
+        ("settings.js.map", map),
+    ]);
+    let report = optimize(
+        temp.path(),
+        &["--minify", "--disable-pass", "residual-dependency-removal"],
+    );
+    same_behavior(temp.path());
+    assert!(
+        report["size"]["minified"].as_u64().unwrap() > 0,
+        "{report:#}"
+    );
+    let published = out(temp.path(), "settings.js");
+    assert_eq!(
+        published.matches("/** @license MIT */").count(),
+        1,
+        "{published}"
+    );
+    assert!(published.contains("noticeText"), "{published}");
+    assert!(
+        published
+            .trim_end()
+            .ends_with("//# sourceMappingURL=settings.js.map"),
+        "{published}"
+    );
+    let map =
+        sourcemap::SourceMap::from_slice(out(temp.path(), "settings.js.map").as_bytes()).unwrap();
+    assert_eq!(map.get_source(0), Some("src/settings.ts"));
+    assert!(map.tokens().count() > 0);
+}
+
 /// The published map leads from the minified code to the original sources.
 #[test]
 fn composes_maps_of_minified_chunks() {
@@ -3439,4 +3548,187 @@ console.log(describe(firstSettings));
     );
     same_behavior(temp.path());
     assert_eq!(out(temp.path(), "untouched.js"), untouched);
+}
+
+// ---------------------------------------------------------------------------
+// Closed classes
+// ---------------------------------------------------------------------------
+
+/// Fields, methods, accessors and `super` calls of closed classes are
+/// renamed together across chunks and the class hierarchy.
+#[test]
+fn renames_closed_class_members_across_chunks() {
+    let (temp, report) = run(&[
+        (
+            "index.js",
+            r#"import{Shape as S,Square as Q}from"./shapes.js";const g=new S(1,"green");console.log(g.describeShape());const q=new Q(5,"pink");console.log(q.describeShape(),q.areaOfShape(),q instanceof S,q.shapeLabel);q.shapeLabel="relabelled";console.log(q.describeShape());"#,
+        ),
+        (
+            "shapes.js",
+            r#"class Shape{#hiddenCount=0;constructor(s,c){this.sizeOfShape=s;this.colourOfShape=c}areaOfShape(){this.#hiddenCount++;return this.sizeOfShape*this.sizeOfShape}describeShape(){return this.colourOfShape+":"+this.areaOfShape()+":"+this.#hiddenCount}}class Square extends Shape{storedLabel={labelText:"sq"};constructor(n,c){super(n,c)}get shapeLabel(){return this.storedLabel.labelText}set shapeLabel(v){this.storedLabel={labelText:v}}describeShape(){return this.shapeLabel+super.describeShape()}}export{Shape,Square};"#,
+        ),
+    ]);
+    assert!(saved(&report) > 0, "{report:#}");
+    let shapes = out(temp.path(), "shapes.js");
+    for name in [
+        "sizeOfShape",
+        "colourOfShape",
+        "areaOfShape",
+        "describeShape",
+        "storedLabel",
+        "shapeLabel",
+        "labelText",
+    ] {
+        assert!(!shapes.contains(name), "{name} kept:\n{shapes}");
+    }
+    assert!(shapes.contains("#hiddenCount"), "{shapes}");
+}
+
+/// Named class expressions construct through their inner name, and static
+/// factories that are only called directly return tracked instances.
+#[test]
+fn renames_instances_of_static_factories() {
+    let (temp, _) = run(&[(
+        "index.js",
+        r#"const Store=class e{static create(t){return new e(t,{parentValue:1})}storeOptions;rootValue;constructor(t,n){this.storeOptions=t,this.rootValue=n}describeStore(){return this.storeOptions.optionLabel+this.rootValue.parentValue}};const s=Store.create({optionLabel:"x"});console.log(s.describeStore(),s instanceof Store);export{};"#,
+    )]);
+    let index = out(temp.path(), "index.js");
+    for name in ["storeOptions", "rootValue", "describeStore", "optionLabel"] {
+        assert!(!index.contains(name), "{name} kept:\n{index}");
+    }
+}
+
+/// A dynamic import exposes the module namespace, so the classes it exports
+/// are reachable without an indexed reference.
+#[test]
+fn keeps_classes_exported_through_dynamic_namespaces() {
+    let (temp, _) = run(&[
+        (
+            "index.js",
+            r#"import{localValue as v}from"./models.js";console.log(v);const ns=await import("./models.js");const key=["Mo","del"].join("");const m=new ns[key];console.log(m.longProperty,m.readLongProperty());"#,
+        ),
+        (
+            "models.js",
+            r#"class Model{constructor(){this.longProperty=1}readLongProperty(){return this.longProperty}}const local=new Model;const localValue=local.readLongProperty();export{Model,localValue};"#,
+        ),
+    ]);
+    let models = out(temp.path(), "models.js");
+    assert!(models.contains("longProperty"), "{models}");
+    assert!(models.contains("readLongProperty"), "{models}");
+}
+
+/// Every fixture gives code that the analysis does not own a way to observe
+/// an instance member by name, so the names stay.
+#[test]
+fn keeps_class_members_that_unknown_code_can_observe() {
+    let cases: [(&str, &[&str]); 14] = [
+        // A method loaded without a call runs with another receiver.
+        (
+            r#"class W{constructor(){this.fieldName=1}methodName(){return this.fieldName}}const w=new W;const f=w.methodName;console.log(w.methodName(),f.call({fieldName:9}));"#,
+            &["fieldName", "methodName"],
+        ),
+        // Serialization reads every own property name.
+        (
+            r#"class P{constructor(v){this.payloadValue=v}}console.log(JSON.stringify(new P(1)));"#,
+            &["payloadValue"],
+        ),
+        // A function stored in a field runs with the instance as `this`.
+        (
+            r#"class Q{constructor(cb){this.callbackFn=cb;this.valueField=3}run(){return this.callbackFn()}}console.log(new Q(function(){return this.valueField}).run());"#,
+            &["valueField"],
+        ),
+        // An escaped instance's methods receive objects from unknown code.
+        (
+            r#"class R{readValue(o){return o.innerValue}}const r=new R;console.log(r.readValue({innerValue:1}));globalThis.hook=function(x){return x.readValue({innerValue:2})};console.log(globalThis.hook(r));"#,
+            &["innerValue", "readValue"],
+        ),
+        // A base class outside the program reads its own property names.
+        (
+            r#"class E extends Error{constructor(m){super(m);this.codeValue=2}}try{throw new E("x")}catch(e){console.log(e.codeValue,e.message)}"#,
+            &["codeValue"],
+        ),
+        // `arguments` reaches the arguments without parameters.
+        (
+            r#"class A{sum(){let t=0;for(const o of arguments)t+=o.partValue;return t}}console.log(new A().sum({partValue:1},{partValue:2}));"#,
+            &["partValue"],
+        ),
+        // A private method loaded without a call runs with another receiver.
+        (
+            r#"class Pm{#secretHelper(){return this.visibleValue}constructor(){this.visibleValue=4}leak(){return this.#secretHelper}}const p=new Pm;console.log(p.leak().call({visibleValue:5}),p.visibleValue);"#,
+            &["visibleValue"],
+        ),
+        // The prototype exposes method names.
+        (
+            r#"class Pr{greetPerson(){return 1}}console.log(new Pr().greetPerson(),Object.getOwnPropertyNames(Pr.prototype));"#,
+            &["greetPerson"],
+        ),
+        // A static factory loaded without a call returns instances to
+        // unknown callers.
+        (
+            r#"class L{static make(){return new L}longFieldName=1}const mk=L.make;console.log(mk().longFieldName);"#,
+            &["longFieldName"],
+        ),
+        // An escaped instance reaches the static methods of its class.
+        (
+            r#"class K{static create(o){return o.optionLabel}keyField=1}console.log(K.create({optionLabel:"a"}));const k=new K;globalThis.hook=function(x){return x.constructor.create({optionLabel:"b"})};console.log(globalThis.hook(k));"#,
+            &["optionLabel"],
+        ),
+        // `Symbol.hasInstance` receives the left operand of `instanceof`.
+        (
+            r#"class M{static[Symbol.hasInstance](v){return v.matchedValue===1}}const value={matchedValue:1};console.log(value instanceof M);"#,
+            &["matchedValue"],
+        ),
+        (
+            r#"globalThis.Matcher={[Symbol.hasInstance]:v=>v.matchedValue===1};const value={matchedValue:1};console.log(value instanceof globalThis.Matcher);"#,
+            &["matchedValue"],
+        ),
+        // `Symbol.name` is the string "Symbol", not a well-known symbol.
+        (
+            r#"class C{[Symbol.name]=1;otherField=2}const c=new C;console.log(c.Symbol,c.otherField);"#,
+            &["Symbol", "otherField"],
+        ),
+        // A function-valued field names its function.
+        (
+            r#"class H{handlerFn=()=>this.countValue;countValue=2}const h=new H;console.log(h.handlerFn(),h.handlerFn.name);"#,
+            &["handlerFn"],
+        ),
+    ];
+    for (code, names) in cases {
+        // An export makes the chunk a module rather than a classic script.
+        let code = format!("{code}export{{}};");
+        let (temp, _) = run(&[("index.js", &code)]);
+        let index = out(temp.path(), "index.js");
+        for name in names {
+            assert!(index.contains(name), "{name} renamed in {code}:\n{index}");
+        }
+    }
+}
+
+/// Edge cases of class semantics that renaming must not change; each runs
+/// in Node before and after optimization.
+#[test]
+fn keeps_behavior_of_class_member_edge_cases() {
+    let cases = [
+        // A method called through a string-literal element access.
+        r#"class C{make(){return{longProperty:1}}}const r=new C()["make"]();console.log(r.longProperty);"#,
+        // The iteration protocol looks up `next` on what
+        // `Symbol.iterator` returns.
+        r#"class It{constructor(){this.position=0}next(){return this.position<2?{value:this.position++,done:false}:{value:void 0,done:true}}}class Iterable{[Symbol.iterator](){return new It}}for(const v of new Iterable)console.log(v);"#,
+        // A later method replaces an accessor of the same name.
+        r#"class C{get make(){return()=>({longProperty:0})}make(){return{longProperty:1}}}const r=new C().make();console.log(r.longProperty);"#,
+        // A later static field replaces a static method of the same name.
+        r#"globalThis.ext=o=>o.longProperty;class C{static call(o){return 0}static call=globalThis.ext}console.log(C.call({longProperty:1}));"#,
+        // `Function.prototype` methods hand out the constructor.
+        r#"class C{constructor(){this.longProperty=1}}const B=C.bind(null);const v=new B;console.log(v.longProperty);"#,
+        // An extracted method returns to callers the analysis does not see.
+        r#"class C{make(){return{longProperty:1}}}const make=new C().make;const result=make();console.log(result.longProperty);"#,
+        // A base class field shadows a subclass method of the same name.
+        r#"globalThis.external=o=>o.longProperty;class Base{action=globalThis.external}class Sub extends Base{action(o){return 0}}console.log(new Sub().action({longProperty:1}));"#,
+        // Code can add names to `Object.prototype`.
+        r#"Object.prototype.longProperty=1;class C{}console.log(new C().longProperty);"#,
+    ];
+    for code in cases {
+        let code = format!("{code}export{{}};");
+        run(&[("index.js", &code)]);
+    }
 }
