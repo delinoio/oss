@@ -3039,6 +3039,20 @@ A probe that took the lock proves the held lease released it, so a probe lease
 whose own close failed replaces the held lease as the kept one. A holder met by
 the call that follows is a handoff only when that retried close succeeded.
 
+A retried close is real: a profile lease is final only after its lock close
+succeeded. A failed close leaves the lease open, and every later close runs the
+lock close again and reports its result, so a later `nil` is never inferred from
+an earlier failure. A lock handle that already failed or was closed reports an
+error again, which leaves the release unverified until a probe takes the lock.
+
+| Lease state       | Close call                      | Result  | Lease afterwards |
+| ----------------- | ------------------------------- | ------- | ---------------- |
+| open              | lock close succeeds             | success | closed           |
+| open              | lock close fails                | failure | open             |
+| open after a fail | lock close runs again, fails    | failure | open             |
+| open after a fail | lock close runs again, succeeds | success | closed           |
+| closed            | any                             | success | closed           |
+
 | Close of the held or kept lease | Probe                   | Probe close | Release                                    | Kept lease for the next call |
 | ------------------------------- | ----------------------- | ----------- | ------------------------------------------ | ---------------------------- |
 | clean                           | takes the lock          | clean       | verified                                   | none                         |

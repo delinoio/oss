@@ -337,13 +337,26 @@ type Lease struct {
 	Info
 	lock   *security.Lock
 	logger *slog.Logger
-	once   sync.Once
+	mu     sync.Mutex
+	closed bool
 }
 
-// Close releases the profile lock.
+// Close releases the profile lock. A close that succeeded is final and every
+// later call returns nil without touching the lock. A close that failed is not
+// final: the lease stays open, so a later call closes the lock handle again and
+// reports that result instead of a success the lock never confirmed. A caller
+// that needs proof of release must therefore not read a later nil as a clean
+// release of an earlier failed close.
 func (l *Lease) Close() error {
-	var err error
-	l.once.Do(func() { err = l.lock.Close() })
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.closed {
+		return nil
+	}
+	err := l.lock.Close()
+	if err == nil {
+		l.closed = true
+	}
 	return err
 }
 

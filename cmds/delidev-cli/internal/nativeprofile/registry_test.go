@@ -1129,6 +1129,53 @@ func TestRegisterLegacyRejectsHistoriesForRegisteredOnlyPurpose(t *testing.T) {
 	}
 }
 
+// Closing a lease is final only once the lock close succeeded. A failed close
+// leaves the lease open, so a later call closes the handle again and reports
+// that result: it never turns a close the lock did not confirm into a success.
+// Each cell is the state of the lease against one Close call.
+func TestLeaseCloseIsFinalOnlyAfterASuccessfulLockClose(t *testing.T) {
+	ctx := context.Background()
+	key := Key{Harness: domain.Codex, Purpose: PurposeAuth, Account: domain.NewID()}
+	t.Run("open then closed twice", func(t *testing.T) {
+		r, _ := workerRegistry(t, testRoot(t), nil)
+		lease, err := r.Acquire(ctx, key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := lease.Close(); err != nil {
+			t.Fatalf("first close: %v", err)
+		}
+		if err := lease.Close(); err != nil {
+			t.Fatalf("a close after a successful close must stay nil: %v", err)
+		}
+		again, err := r.Acquire(ctx, key)
+		if err != nil {
+			t.Fatalf("a closed lease still held the lock: %v", err)
+		}
+		_ = again.Close()
+	})
+	t.Run("failed close stays failed and open", func(t *testing.T) {
+		r, _ := workerRegistry(t, testRoot(t), nil)
+		lease, err := r.Acquire(ctx, key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Closing the lock handle behind the lease makes every lease close fail
+		// the way an unconfirmed release does.
+		if err := lease.lock.Close(); err != nil {
+			t.Fatal(err)
+		}
+		for call := 1; call <= 3; call++ {
+			if err := lease.Close(); err == nil {
+				t.Fatalf("close %d reported success for a lock close that never succeeded", call)
+			}
+		}
+		if lease.closed {
+			t.Fatal("a failed close marked the lease closed")
+		}
+	})
+}
+
 // Peek is the read-only lookup: it answers from the registry on disk and never
 // creates the registry directories, their lock file or any profile, so it works
 // on a read-only root. Every cell below is one state of the registry.
