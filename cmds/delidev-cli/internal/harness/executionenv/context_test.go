@@ -7,7 +7,26 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 )
+
+func TestOrdinaryProcessSessionRetainsPlatformAndUserSelection(t *testing.T) {
+	root := t.TempDir()
+	for _, platform := range []string{"darwin", "linux", "windows"} {
+		c := Resolve(platform, []string{"HOME=" + root, "USERPROFILE=" + root}, root)
+		want := process.BackgroundSession
+		if platform == "darwin" {
+			want = process.CurrentUserGUI
+		}
+		if c.ProcessSession() != want {
+			t.Fatal("ordinary session selected a foreign platform context")
+		}
+	}
+	if (Ordinary{}).ProcessSession() != process.BackgroundSession || Resolve("darwin", nil, root).ProcessSession() != process.BackgroundSession {
+		t.Fatal("excluded context acquired GUI login authority")
+	}
+}
 
 func TestOrdinaryGhPrecedenceAndOriginalDirectory(t *testing.T) {
 	cwd := t.TempDir()

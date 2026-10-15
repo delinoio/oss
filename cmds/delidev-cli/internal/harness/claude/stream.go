@@ -16,7 +16,10 @@ import (
 
 const maxStreamFrame = 1 << 20
 const maxStreamPending = 128
-const maxStreamEvents = 128
+
+// Durable publication can lag a burst of small native streaming deltas. Keep
+// their descriptor bound separate from the unchanged aggregate payload limit.
+const maxStreamEvents = 4096
 const maxStreamBytes = 8 << 20
 const maxStreamIdentities = 4096
 
@@ -294,6 +297,11 @@ func (s *Stream) queueLocked(event StreamEvent) error {
 		limit = 2 * maxImageInputFrame
 	}
 	if len(s.events) >= maxStreamEvents || s.eventBytes+event.size > limit {
+		if s.logger != nil {
+			s.logger.Warn("claude_event_queue_exhausted", "owner_id", s.owner,
+				"event_count", len(s.events) >= maxStreamEvents,
+				"event_bytes", s.eventBytes+event.size > limit)
+		}
 		return domain.Fail(domain.ResourceExhausted, "Claude Code event buffering reached its bound.", "Reconcile the interrupted native stream before explicit continuation.")
 	}
 	s.events = append(s.events, event)

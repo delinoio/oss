@@ -566,6 +566,21 @@ func TestStreamEnforcesAggregateBoundsAndIdentityCapacity(t *testing.T) {
 	}
 }
 
+func TestStreamRetainsFragmentedBurstWithinPayloadBound(t *testing.T) {
+	s := &Stream{notify: make(chan struct{}, 1)}
+	for range maxStreamEvents {
+		if err := s.queueLocked(StreamEvent{size: 64}); err != nil {
+			t.Fatal("bounded fragmented burst was rejected", err)
+		}
+	}
+	if len(s.events) != maxStreamEvents || s.eventBytes != maxStreamEvents*64 {
+		t.Fatal("native events were lost or accounted incorrectly")
+	}
+	if err := s.queueLocked(StreamEvent{size: 1}); domain.SafeError(err).Code != domain.ResourceExhausted {
+		t.Fatal("event descriptor bound was ignored")
+	}
+}
+
 func TestStreamAssistantProviderRequestIdentityCannotAcknowledgeControl(t *testing.T) {
 	id := domain.NewID()
 	pending := &streamPending{result: make(chan StreamResponse, 1)}
