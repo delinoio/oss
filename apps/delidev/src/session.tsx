@@ -890,6 +890,20 @@ export const TranscriptItem = memo(function TranscriptItem({
   );
 });
 
+/**
+ * Retained delivery states in which a verified sequence-one input is
+ * reconstructed as the sent first message. Exceptional states (uncertain,
+ * rejected-before-start) keep their notice through SubmissionStatus; removed
+ * inputs retain no content and are never reconstructed.
+ */
+const originalDeliveryStates: readonly string[] = [
+  "queued",
+  "claimed",
+  "accepted",
+  "uncertain",
+  "rejected-before-start",
+];
+
 const submissionLabels = {
   [SubmissionPhase.Preparing]: "session.submissionPreparing",
   [SubmissionPhase.Sending]: "session.submissionSending",
@@ -1807,9 +1821,7 @@ export function SessionView({
   const initialInputId = text(object(data.initial_execution).input_id);
   const projectableOriginal = (input: Resource) =>
     readDocument(input).sequence === 1 &&
-    ["queued", "claimed", "accepted"].includes(
-      text(readDocument(input).delivery),
-    ) &&
+    originalDeliveryStates.includes(text(readDocument(input).delivery)) &&
     submissionQueueReadable(input) &&
     // A startup image rejection keeps its retained retry presentation.
     !isImageStartupRejectedInput(input, session);

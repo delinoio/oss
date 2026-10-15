@@ -5126,7 +5126,10 @@ Rejected or unconfirmed-read state keeps its existing notice. Register it only
 from the creation response's input when its session ID, sequence one and the
 session's `initial_execution.input_id` agree; foreign or malformed evidence is
 rejected. After reload or navigation, reconstruct it solely from the verified
-sequence-one queue row. Startup progress renders below the bubble from the
+sequence-one queue row in the queued, claimed, accepted, uncertain or
+rejected-before-start delivery state, so the exceptional states keep their
+existing notice instead of dropping the first prompt; a removed input retains no
+content. Startup progress renders below the bubble from the
 existing original-operation evidence; the original projection is never counted
 as a later follow-up and neither suppresses nor fabricates startup feedback.
 Exclude the original input from the legacy queue rows, the negotiated

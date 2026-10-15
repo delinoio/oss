@@ -588,7 +588,9 @@ it.each([
       } else {
         await screen.findByRole("textbox", { name: "Message" });
         expect(screen.queryByText(label)).toBeNull();
-        expect(screen.queryByText("Original rejected prompt")).toBeNull();
+        // The verified sequence-one row is still the sent first message; only
+        // the image-rejection count and retry presentation require the proof.
+        expect(screen.getAllByText("Original rejected prompt")).toHaveLength(1);
       }
       if (waiting)
         expect(

@@ -35,6 +35,7 @@ function queueRow(
   sequence: number,
   prompt: string,
   revision = 1n,
+  delivery = "queued",
 ) {
   return create(ResourceSchema, {
     id,
@@ -45,13 +46,13 @@ function queueRow(
     documentJson: encode({
       prompt,
       mode: "execute",
-      delivery: "queued",
+      delivery,
       sequence,
     }),
   });
 }
 
-function fixture() {
+function fixture(firstDelivery = "queued") {
   const sessionId = newRequestId(),
     firstId = newRequestId(),
     laterId = newRequestId();
@@ -73,7 +74,7 @@ function fixture() {
   });
   const resources = new Map<string, Resource>([[sessionId, session]]);
   let queue = [
-    queueRow(sessionId, firstId, 1, FIRST_PROMPT),
+    queueRow(sessionId, firstId, 1, FIRST_PROMPT, 1n, firstDelivery),
     queueRow(sessionId, laterId, 2, LATER_PROMPT),
   ];
   const channels = new Set<{
@@ -199,3 +200,21 @@ it("reconstructs the original input as one unlabelled sent bubble and keeps late
   );
   expect(screen.getAllByText(FIRST_PROMPT)).toHaveLength(1);
 });
+
+it.each(["uncertain", "rejected-before-start"])(
+  "reconstructs a %s original input from the verified sequence-one row",
+  async (delivery) => {
+    const f = fixture(delivery);
+    render(<App transport={f.transport} />);
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: /General Chat Original input session/,
+      }),
+    );
+    const bubble = await screen.findByRole("article", {
+      name: "Submitted user message",
+    });
+    expect(bubble.textContent).toContain(FIRST_PROMPT);
+    expect(screen.getAllByText(FIRST_PROMPT)).toHaveLength(1);
+  },
+);
