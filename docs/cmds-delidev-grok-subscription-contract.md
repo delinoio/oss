@@ -58,7 +58,14 @@ private runtime. Separate accounts can run independently.
 
 These allocations are declared in the protos and generated bindings. GetStatus
 advertises System 39 (browser and device login together) only when
-`server.Config.GrokSubscriptionLogin` is set; it never lists System
+`server.Config.GrokSubscriptionLogin` is set. Advertising it promises a usable
+server-owned request path for a Grok account: `RequestSubscription` with the
+machine omitted accepts a browser login (`device_code=false`) and a device login
+(`device_code=true`) for a Grok service account, `GetSubscriptionProgress` presents
+each (transient URL and user code, diagnostic, generation) and `CancelSubscription`
+cancels it, pinned by `TestGrokLoginCapabilityGuaranteesTheServerOwnedRequestPathForBothMethods`;
+the switch stays off by default until a product entry point sets it. The server
+never lists System
 40, and AttachWorker never lists Worker 21, unless the server enabled Grok
 subscription execution. The Worker does not report 21 unless it was enabled and
 the server echoed it, and a server that did not enable execution rejects 21 as

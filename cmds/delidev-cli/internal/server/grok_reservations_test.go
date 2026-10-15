@@ -123,3 +123,40 @@ func TestGrokCapabilitySwitchesAreIndependent(t *testing.T) {
 		}
 	}
 }
+
+// Capability 39 promises a usable server-owned request path for a Grok account:
+// whenever the switch advertises it, the same server accepts a browser login and
+// a device login through RequestSubscription (machine omitted), presents each
+// through GetSubscriptionProgress and lets the original actor cancel it, with
+// the account's service deciding the flow. A client that gates the Grok entry
+// point on the capability therefore never reaches a refusal of the Grok service.
+func TestGrokLoginCapabilityGuaranteesTheServerOwnedRequestPathForBothMethods(t *testing.T) {
+	g := newGrokDeviceFixture(t)
+	g.service.grokLogin = true
+	status, err := g.service.GetStatus(context.Background(), connect.NewRequest(&pb.GetStatusRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(status.Msg.Capabilities, grokSystemLoginReservation) {
+		t.Fatal("the enabled switch did not advertise capability 39")
+	}
+	g.holdFirstWait()
+	browser := g.begin(t)
+	if browser.url == "" || g.progress(browser).State != pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_WAITING {
+		t.Fatal("the browser login is not presented through progress")
+	}
+	g.cancelLogin(t)
+	g.awaitDone(t, browser)
+	if p := g.progress(browser); p.State != stateCanceled {
+		t.Fatalf("the browser login was not canceled: %v", p.State)
+	}
+	device := g.beginDevice(t)
+	if device.url == "" || g.progress(device).UserCode != deviceUserCode {
+		t.Fatal("the device login is not presented through progress")
+	}
+	g.cancelLogin(t)
+	g.awaitDone(t, device)
+	if p := g.progress(device); p.State != stateCanceled {
+		t.Fatalf("the device login was not canceled: %v", p.State)
+	}
+}
