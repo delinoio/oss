@@ -201,20 +201,32 @@ func (s *Service) initializeServerSubscriptions(ctx context.Context) error {
 			if err != nil {
 				return nil, err
 			}
-			if a.Subscription == nil || a.Subscription.ServerOperation == nil {
+			if a.Subscription == nil {
 				continue
 			}
-			o := a.Subscription.ServerOperation
-			if !o.Active() || o.Epoch == s.subscriptionServerEpoch() || o.State == domain.SubscriptionRecovery && a.Subscription.RecoveryRequired && a.Health == domain.AccountFailed {
-				continue
+			changed := false
+			// A Grok lease granted by an earlier epoch is fenced by the restart even
+			// when no server operation exists: the restart cannot vouch for what its
+			// Worker still holds, and the fence stands until that Worker's Finish
+			// releases the lease (grokStaleLease). Every other lease keeps its own rules.
+			if a.SubscriptionService == domain.SubscriptionGrok && a.ProviderID == "" && s.grokStaleLease(a.Subscription.Lease) && !a.Subscription.RecoveryRequired {
+				a.Subscription.RecoveryRequired = true
+				a.Health = domain.AccountFailed
+				changed = true
 			}
-			o.State = domain.SubscriptionRecovery
-			a.Subscription.RecoveryRequired = true
-			a.Health = domain.AccountFailed
-			if a.SubscriptionService == domain.SubscriptionGrok && a.ProviderID == "" && o.GrokDiagnostic == nil && (o.CodeConsumed || o.RefreshClaimed || o.GrokRevocation != "") {
-				// A claimed operation fenced by the restart is never recovered
-				// automatically, so its recovery diagnostic is recorded here or nowhere.
-				o.GrokDiagnostic = grokOperationDiagnostic(o.ID, grokDiagnosticPhaseOf(o.Action), domain.RecoveryRequired)
+			if o := a.Subscription.ServerOperation; o != nil && o.Active() && o.Epoch != s.subscriptionServerEpoch() && !(o.State == domain.SubscriptionRecovery && a.Subscription.RecoveryRequired && a.Health == domain.AccountFailed && !changed) {
+				o.State = domain.SubscriptionRecovery
+				a.Subscription.RecoveryRequired = true
+				a.Health = domain.AccountFailed
+				changed = true
+				if a.SubscriptionService == domain.SubscriptionGrok && a.ProviderID == "" && o.GrokDiagnostic == nil && (o.CodeConsumed || o.RefreshClaimed || o.GrokRevocation != "") {
+					// A claimed operation fenced by the restart is never recovered
+					// automatically, so its recovery diagnostic is recorded here or nowhere.
+					o.GrokDiagnostic = grokOperationDiagnostic(o.ID, grokDiagnosticPhaseOf(o.Action), domain.RecoveryRequired)
+				}
+			}
+			if !changed {
+				continue
 			}
 			if _, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
 				return nil, err
