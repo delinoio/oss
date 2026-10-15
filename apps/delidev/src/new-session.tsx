@@ -38,6 +38,7 @@ import {
   SystemQuery,
   SystemCapability,
   newRequestId,
+  isEntityId,
   type Resource,
   WorkerCapability,
   supportsResourceSchema,
@@ -70,6 +71,7 @@ import { SettingsEntryDestination } from "./settings";
 import { StartingBranches } from "./starting-branches";
 import { StartingReferences } from "./schedules";
 import { useRetainedMutation } from "./mutation";
+import { useSessionSubmissions } from "./session-submissions";
 import { useLocalWorkerProof, type ReadLocalWorkerProof } from "./local-worker";
 import { Problem } from "./ui";
 import { Surface } from "./surface";
@@ -283,9 +285,10 @@ export function NewSession({
     { kind: EntityKind.PROJECT, id: generalChat ? "" : project },
     { enabled: active && !generalChat && Boolean(project) },
   );
+  const submissionStore = useSessionSubmissions().store;
   const accepted = useCallback(
     (
-      result: { change?: { session?: Resource } },
+      result: { change?: { session?: Resource; input?: Resource } },
       request: {
         documentJson: Uint8Array;
         requestId: string;
@@ -313,6 +316,23 @@ export function NewSession({
         request.requestId,
         request.attachments.map((image) => image.id),
       );
+      // The first input is created atomically with the session. Register only
+      // the verified original input so the transcript can show its sent bubble
+      // while the session is still preparing.
+      const initialInputId = text(
+        object(document(session).initial_execution).input_id,
+      );
+      if (
+        !submissionStore.registerOriginal(
+          session.id,
+          result.change?.input,
+          initialInputId,
+        )
+      )
+        console.warn("delidev.session_create.original_input_unverified", {
+          registered: false,
+          initialInputIdValid: isEntityId(initialInputId),
+        });
       endHistoryCycle.current();
       setPrompt("");
       setManualMode(false);
@@ -329,7 +349,7 @@ export function NewSession({
         setCreatedElsewhere(session);
       }
     },
-    [created, open, preferences.remember],
+    [created, open, preferences.remember, submissionStore],
   );
   const submittedActivation = useRef(-1);
   const mutation = useRetainedMutation(
