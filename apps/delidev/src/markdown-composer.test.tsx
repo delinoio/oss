@@ -1001,7 +1001,8 @@ for (let seed = 1; seed <= 60; seed++) {
       const before = probe.canonical;
       if (operation === "type") {
         const char = pick(WALK_CHARS);
-        const text = input.value.slice(0, start) + char + input.value.slice(end);
+        const text =
+          input.value.slice(0, start) + char + input.value.slice(end);
         nativeEdit(input, text, start + char.length);
       } else if (operation === "delete") {
         const from = start === end ? Math.max(0, start - 1) : start;

@@ -426,6 +426,15 @@ function overlapsProtected(
   return hit !== undefined && hit.start < end;
 }
 
+// A URL glued to word characters, an escape or an image marker, or placed where
+// link text or a link destination begins, is not a standalone bare URL.
+function urlStartsStandalone(text: string, start: number): boolean {
+  if (start === 0) return true;
+  const previous = text[start - 1]!;
+  if (/[A-Za-z0-9\\![]/u.test(previous)) return false;
+  return !(previous === "(" && text[start - 2] === "]");
+}
+
 export interface UrlConversion {
   text: string;
   /** Number of UTF-16 units added by conversion (zero when unchanged). */
@@ -462,7 +471,7 @@ export function convertBareUrls(
       (token) =>
         token.start >= from &&
         token.end <= to &&
-        (token.start === 0 || !/[A-Za-z0-9\\!]/u.test(text[token.start - 1]!)),
+        urlStartsStandalone(text, token.start),
     );
   if (!candidates.length) return unchanged;
   const scan = knownScan ?? scanMarkdown(text);

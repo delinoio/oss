@@ -46,6 +46,9 @@ describe("bare URL conversion", () => {
       "https://user:pass@a.test/x",
       `https://a.test/${"x".repeat(2100)}`,
       "abchttps://a.test/x",
+      "[https://a.test/x",
+      "[Docs](https://a.test/x ok)",
+      "!https://a.test/x",
     ])
       expect(convert(text)).toBe(text);
   });
