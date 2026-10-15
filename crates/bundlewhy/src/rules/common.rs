@@ -1240,7 +1240,9 @@ fn collect_binding_names(pattern: &str, names: &mut Vec<String>) {
 /// Source ranges in which a binding named `eval` is visible. Lexical
 /// declarations use their block, while `var` uses its containing function.
 /// A named function expression binds its name only inside its own body.
-fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, usize)> {
+/// Replaces string, template, comment and regular expression text with spaces
+/// while keeping newlines, so byte offsets stay aligned with `source`.
+fn mask_ignored(source: &str, ignored: &[(usize, usize)]) -> String {
     let mut masked = source.as_bytes().to_vec();
     for (start, end) in ignored {
         for byte in &mut masked[*start..(*end).min(source.len())] {
@@ -1249,7 +1251,11 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
             }
         }
     }
-    let code = String::from_utf8_lossy(&masked).into_owned();
+    String::from_utf8_lossy(&masked).into_owned()
+}
+
+fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, usize)> {
+    let code = mask_ignored(source, ignored);
     let bytes = code.as_bytes();
     let mut blocks = Vec::new();
     let mut stack = Vec::new();
@@ -1642,6 +1648,63 @@ fn is_case_label(prefix: &str) -> bool {
             .is_some_and(|rest| rest.chars().next().is_some_and(char::is_whitespace))
 }
 
+/// Reports whether the `eval` token at `start` declares a method such as
+/// `class C { eval(value) { ... } }` or `{ async *eval(value): T { ... } }`.
+/// `code` is the source with non-code text masked. The token is a declaration
+/// only when it sits in a member-declaration position and its parameter list
+/// is followed by a function body, which a call never has.
+fn is_eval_method_declaration(code: &str, start: usize) -> bool {
+    let bytes = code.as_bytes();
+    if !is_member_declaration_position(code, start) {
+        return false;
+    }
+    let mut open = start + "eval".len();
+    while bytes.get(open).is_some_and(u8::is_ascii_whitespace) {
+        open += 1;
+    }
+    if bytes.get(open) != Some(&b'(') {
+        return false;
+    }
+    let Some(close) = matching_delimiter(bytes, open, b'(', b')') else {
+        return false;
+    };
+    // `arrow_or_function_body` also accepts arrows, which a method does not
+    // have, and skips TypeScript return annotations before the body brace.
+    matches!(arrow_or_function_body(bytes, close), Some((_, false)))
+}
+
+/// Reports whether the token at `start` follows a boundary or modifier that
+/// can precede a class or object member name.
+fn is_member_declaration_position(code: &str, start: usize) -> bool {
+    let prefix = code[..start].trim_end();
+    let Some(last) = prefix.bytes().last() else {
+        return true;
+    };
+    if matches!(last, b'{' | b'}' | b';' | b',' | b'*') {
+        return true;
+    }
+    let word_start = prefix
+        .rfind(|character: char| {
+            !(character.is_alphanumeric() || character == '_' || character == '$')
+        })
+        .map_or(0, |index| index + 1);
+    let word = &prefix[word_start..];
+    let is_member_keyword = matches!(
+        word,
+        "async"
+            | "static"
+            | "get"
+            | "set"
+            | "public"
+            | "private"
+            | "protected"
+            | "override"
+            | "readonly"
+    );
+    // `obj.get eval(` is not valid, so a preceding `.` means a member access.
+    is_member_keyword && !prefix[..word_start].ends_with('.')
+}
+
 fn direct_eval_line(source: &str) -> Option<(u32, u32)> {
     let pattern = Regex::new(r"(^|[^.\w$])eval\s*\(").expect("static regex");
     // `eval(` inside strings, templates, comments or regular expressions is
@@ -1650,12 +1713,16 @@ fn direct_eval_line(source: &str) -> Option<(u32, u32)> {
     // A binding named `eval` makes calls inside its scope ordinary calls that
     // cannot observe the surrounding scope; shadowing is decided per call.
     let shadows = eval_shadow_scopes(source, &ignored);
+    let code = mask_ignored(source, &ignored);
     let start = pattern.find_iter(source).find_map(|found| {
         let start = found.start() + found.as_str().find("eval")?;
         let shadowed = shadows
             .iter()
             .any(|(begin, end)| (*begin..*end).contains(&start));
-        (!in_ranges(&ignored, start) && !shadowed).then_some(start)
+        // A method declaration named `eval` is lexically a call prefix, but it
+        // defines a member instead of invoking the global function.
+        (!in_ranges(&ignored, start) && !shadowed && !is_eval_method_declaration(&code, start))
+            .then_some(start)
     })?;
     let line = source[..start].matches('\n').count();
     let column = start - source[..start].rfind('\n').map_or(0, |index| index + 1);
@@ -2246,6 +2313,77 @@ y=/process.env.F/.test(z),process.env.G"#;
         assert_eq!(drafts[0].rule, RuleId::DirectEvalBlocksMangling);
         assert_eq!(drafts[0].status, EvidenceStatus::Inferred);
         assert_eq!(drafts[0].located.location.as_ref().unwrap().line, 3);
+    }
+
+    #[test]
+    fn eval_method_declarations_are_not_direct_eval() {
+        // Class, object-literal and modifier forms declare a member.
+        for source in [
+            "class C { eval(value) { return value; } }",
+            "class C {\n  eval(value) {\n    return value;\n  }\n}",
+            "class C { run() {} eval(value) { return value; } }",
+            "const o = { eval(value) { return value; } };",
+            "const o = { a: 1, eval(value) { return value; } };",
+            "class C { async eval(value) { return value; } }",
+            "class C { static eval(value) { return value; } }",
+            "class C { static async eval(value) { return value; } }",
+            "class C { get eval() { return 1; } }",
+            "class C { set eval(value) { this.value = value; } }",
+            "class C { *eval(value) { yield value; } }",
+            "class C { async *eval(value) { yield value; } }",
+            "const o = { *eval(value) { yield value; } };",
+            "class C { public eval(o: object): boolean { return true; } }",
+            "class C { eval(o): boolean { return true; } }",
+            "class C { eval(o): Promise<{ ok: boolean }> { return null; } }",
+            "class C { eval(o) { return 1; } } const c = new C(); c.eval(1);",
+            "eval(value) { return value; }",
+        ] {
+            assert_eq!(direct_eval_line(source), None, "{source}");
+        }
+        // Member calls and ordinary uses of a different token stay ignored.
+        assert_eq!(
+            direct_eval_line("instance.eval(value); other?.eval(value);"),
+            None
+        );
+    }
+
+    #[test]
+    fn eval_calls_next_to_method_declarations_are_still_found() {
+        let source = "class C {\n  eval(value) { return value; }\n}\nconst c = new \
+                      C();\nc.eval(1);\neval(code);\n";
+        assert_eq!(direct_eval_line(source), Some((5, 0)));
+        // A call that is followed by a block or sits in expression position is
+        // not a declaration.
+        assert_eq!(
+            direct_eval_line("run();\nif (ready) eval(code);"),
+            Some((1, 11))
+        );
+        assert_eq!(
+            direct_eval_line("const x = ok ? eval(a) : { b: 1 };"),
+            Some((0, 15))
+        );
+        assert_eq!(direct_eval_line("return eval(this.code);"), Some((0, 7)));
+        assert_eq!(direct_eval_line("const v = [a, eval(b)];"), Some((0, 14)));
+        assert_eq!(
+            direct_eval_line("class C { run() { return eval(this.code); } }"),
+            Some((0, 25))
+        );
+    }
+
+    #[test]
+    fn eval_rule_ignores_method_declarations_but_reports_real_calls() {
+        let method = "const longLocalName = 1;\nexport class Pattern {\n  eval(value) {\n    \
+                      return value;\n  }\n}\nnew Pattern().eval(1);\n";
+        assert!(eval_rule_drafts(method, false).is_empty());
+        let call = "const longLocalName = 1;\nexport class Program {\n  eval(value) {\n    return \
+                    value;\n  }\n  run() {\n    return eval(this.code);\n  }\n}\n";
+        let drafts = eval_rule_drafts(call, false);
+        assert_eq!(drafts.len(), 1);
+        assert_eq!(drafts[0].rule, RuleId::DirectEvalBlocksMangling);
+        assert_eq!(drafts[0].status, EvidenceStatus::Inferred);
+        // The finding points at the call on line 7, not at the declaration.
+        assert_eq!(drafts[0].located.location.as_ref().unwrap().line, 7);
+        assert_eq!(drafts[0].located.location.as_ref().unwrap().column, 12);
     }
 
     #[test]
