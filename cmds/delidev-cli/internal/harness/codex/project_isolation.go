@@ -301,7 +301,49 @@ func linkedWorktreeMain(root string) string {
 	return filepath.Dir(common)
 }
 
-var projectConfigLocks sync.Map
+// homeConfigLocks serializes in-process writers per private home. An entry
+// exists only while a caller holds or waits for the lock, so a long-lived
+// Worker that creates a fresh private CODEX_HOME per execution retains no
+// state once isolation completes.
+var homeConfigLocks = struct {
+	sync.Mutex
+	entries map[string]*homeConfigLock
+}{entries: map[string]*homeConfigLock{}}
+
+type homeConfigLock struct {
+	sync.Mutex
+	holders int
+}
+
+// lockHomeConfig acquires the lock of one home and returns its release.
+func lockHomeConfig(home string) (release func()) {
+	key := filepath.Clean(home)
+	homeConfigLocks.Lock()
+	entry := homeConfigLocks.entries[key]
+	if entry == nil {
+		entry = &homeConfigLock{}
+		homeConfigLocks.entries[key] = entry
+	}
+	entry.holders++
+	homeConfigLocks.Unlock()
+	entry.Lock()
+	return func() {
+		entry.Unlock()
+		homeConfigLocks.Lock()
+		entry.holders--
+		if entry.holders == 0 {
+			delete(homeConfigLocks.entries, key)
+		}
+		homeConfigLocks.Unlock()
+	}
+}
+
+// homeConfigLockCount reports the retained lock entries.
+func homeConfigLockCount() int {
+	homeConfigLocks.Lock()
+	defer homeConfigLocks.Unlock()
+	return len(homeConfigLocks.entries)
+}
 
 const pluginsFeature = "plugins"
 
@@ -427,10 +469,7 @@ func isolateHomeConfig(home string, keys []string) error {
 	if len(keys) == 0 || !filepath.IsAbs(home) {
 		return fmt.Errorf("invalid project isolation request")
 	}
-	lock, _ := projectConfigLocks.LoadOrStore(filepath.Clean(home), &sync.Mutex{})
-	mutex := lock.(*sync.Mutex)
-	mutex.Lock()
-	defer mutex.Unlock()
+	defer lockHomeConfig(home)()
 	path := filepath.Join(home, "config.toml")
 	document := map[string]any{}
 	if _, err := os.Lstat(path); err == nil {

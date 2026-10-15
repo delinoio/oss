@@ -1255,10 +1255,12 @@ independent Fork `thread/fork`).
    registered profile home, including a legacy home registered in place and a
    shared owner home, and the adapter creates no lock file or registry state of
    its own; the per-home lock only serializes concurrent shared-owner members in
-   this process. An unreadable, invalid or unwritable file, or a table of an
-   unexpected shape (see the state table), fails before any thread exists with
-   `unsupported` in the profile phase and a structured warning naming only
-   `stage=project-trust-isolation` and `reason=trust-unwritable`; the file is
+   this process. A lock entry exists only while a caller holds or awaits it and
+   the last release removes it, so a long-lived Worker retains no entry for a
+   finished job-scoped home. An unreadable, invalid or unwritable file, or a
+   table of an unexpected shape (see the state table), fails before any thread
+   exists with `unsupported` in the profile phase and a structured warning naming
+   only `stage=project-trust-isolation` and `reason=trust-unwritable`; the file is
    left unchanged.
 2. **Pinned defaults.** An untrusted project changes two native defaults when the
    selection is empty: approval becomes `untrusted` and the sandbox becomes
@@ -1334,12 +1336,18 @@ unchanged and fails with `reason=trust-unwritable`.
 | Path spelling            | Existing key that differs only by case, Windows                        | The same directory; set to `untrusted`                                               |
 | Path spelling            | Non-Git directory                                                      | The directory key alone isolates it                                                  |
 | Path spelling            | Existing project entry (equivalent or not) is not a table              | Rejected; file unchanged                                                             |
+| Lock lifecycle           | First acquisition of a home                                            | Creates one entry                                                                    |
+| Lock lifecycle           | A second caller awaits the same home (any spelling of its path)        | Shares the entry and waits; the entry outlives the first release                     |
+| Lock lifecycle           | Last release                                                           | Removes the entry                                                                    |
+| Lock lifecycle           | Distinct homes                                                         | Distinct entries, never shared                                                       |
+| Lock lifecycle           | Success, unchanged file, invalid file, rejected request                | The lock is released on every path; no entry is retained                             |
 
 Tests: `project_isolation_test.go` (table, profile derivation, pinned defaults,
 trust keys including linked worktrees, atomic idempotent replacement, invalid
 files, concurrent members, start and resume rows, inventory rejection rows and
 logs), `project_isolation_cells_test.go` (the state table above),
 `project_isolation_path_test.go` (path normalization),
+`project_isolation_lock_test.go` (lock lifecycle),
 the shared-owner binding test, and the explicit installed-native
 `TestManualNativeOrdinaryExecutionNeverLaunchesUnselectedMCP` and
 `TestManualNativeForkNeverLaunchesUnselectedMCP` suites, which run the
