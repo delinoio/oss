@@ -192,7 +192,8 @@ function ordinalLabel({ row, labels }: ChildView) {
 
 function parentLabel({ row, labels }: ChildView) {
   const { record, child } = row;
-  if (child.parent_id === record.root_id) return copy("subagents.rootSession_6cdfaa");
+  if (child.parent_id === record.root_id)
+    return copy("subagents.rootSession_6cdfaa");
   const key = `${record.execution_id}:${child.parent_id}`;
   return labels?.has(key)
     ? copy("session-name.subagent", { number: labels.get(key)! })

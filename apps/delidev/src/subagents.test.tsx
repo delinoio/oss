@@ -410,9 +410,7 @@ test("keeps child conversation presentation in Info and portals only source meta
   );
   // Info idles as names only; conversation content appears in the opened card.
   await screen.findByText("Subagent 1");
-  expect(
-    screen.queryByText("Original child conversation content"),
-  ).toBeNull();
+  expect(screen.queryByText("Original child conversation content")).toBeNull();
   const card = await openSubagentCard("Subagent 1");
   expect(
     within(card).getByText("Original child conversation content"),

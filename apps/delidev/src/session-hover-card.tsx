@@ -273,7 +273,8 @@ export function SessionHoverCard({
         gap = 8;
       const maximumLeft = Math.max(edge, window.innerWidth - box.width - edge);
       const maximumTop = Math.max(edge, window.innerHeight - box.height - edge);
-      const fitsRight = source.right + gap + box.width <= window.innerWidth - edge;
+      const fitsRight =
+        source.right + gap + box.width <= window.innerWidth - edge;
       const fitsLeft = source.left - gap - box.width >= edge;
       const beside =
         placement === SessionHoverPlacement.Start

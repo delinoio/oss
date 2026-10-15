@@ -166,18 +166,15 @@ test("keyboard focus opens immediately, Escape dismisses until re-entry and outs
   expect(screen.queryByRole("tooltip")).toBeNull();
 });
 
-test.each(["scroll", "resize"])(
-  "external %s dismisses the card",
-  (kind) => {
-    const session = newRequestId();
-    const view = mount(session, named(session, ["Atlas"]));
-    act(() => within(view.container).getByText("Atlas").focus());
-    expect(screen.getByRole("tooltip")).toBeTruthy();
-    if (kind === "scroll") fireEvent.scroll(globalThis.document.body);
-    else fireEvent(window, new Event("resize"));
-    expect(screen.queryByRole("tooltip")).toBeNull();
-  },
-);
+test.each(["scroll", "resize"])("external %s dismisses the card", (kind) => {
+  const session = newRequestId();
+  const view = mount(session, named(session, ["Atlas"]));
+  act(() => within(view.container).getByText("Atlas").focus());
+  expect(screen.getByRole("tooltip")).toBeTruthy();
+  if (kind === "scroll") fireEvent.scroll(globalThis.document.body);
+  else fireEvent(window, new Event("resize"));
+  expect(screen.queryByRole("tooltip")).toBeNull();
+});
 
 test("source removal and page eviction dismiss and dispose the card payload", () => {
   const session = newRequestId();
@@ -345,7 +342,10 @@ test("cards prefer the left of the rail, flip and clamp inside an 8px viewport i
 test("long unbroken names and card content wrap at the 360px rail", () => {
   const css = readFileSync(join(process.cwd(), "src/session.css"), "utf8");
   const rule = (selector: string) =>
-    css.slice(css.indexOf(`${selector} {`), css.indexOf("}", css.indexOf(`${selector} {`)));
+    css.slice(
+      css.indexOf(`${selector} {`),
+      css.indexOf("}", css.indexOf(`${selector} {`)),
+    );
   expect(rule(".subagent-name")).toContain("overflow-wrap: anywhere");
   expect(rule(".subagent-name")).toContain("min-height: 32px");
   expect(rule(".subagent-name")).toContain("font-size: 14px");
