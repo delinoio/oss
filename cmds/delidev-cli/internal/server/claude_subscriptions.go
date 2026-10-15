@@ -894,7 +894,13 @@ func (s *Service) settleClaudeOwner(ctx context.Context, tx *store.Tx, input cla
 	profile, identity := input.Profile, input.Identity
 	r, a, err := claudeSubscriptionAccount(tx, input.Account, 0)
 	recoveryCleanup := false
-	if err == nil && a.Subscription != nil && a.Subscription.RecoveryRequired && input.Cleanup && !input.Success && input.Profile == "" {
+	// A recovery finish that is both cleanup-confirmed and succeeded carries no
+	// identity and no native cleanup: the original Worker proved it never opened
+	// the account profile. It keeps the account, unlike the cleanup-only signal
+	// that confirms a logout. Only a lost singleton EXECUTE may claim it.
+	recoveryUntouched := err == nil && a.Subscription != nil && a.Subscription.RecoveryRequired && input.Cleanup && input.Success && input.Profile == "" &&
+		a.Subscription.Lease != nil && a.Subscription.Lease.Action == domain.SubscriptionExecute && !a.Subscription.SharedOwner() && input.Scope != domain.SubscriptionFinishOwner
+	if err == nil && a.Subscription != nil && a.Subscription.RecoveryRequired && input.Cleanup && (!input.Success && input.Profile == "" || recoveryUntouched) {
 		st := a.Subscription
 		l := st.Lease
 		actor, _ := domain.PrincipalFrom(ctx)
@@ -944,10 +950,18 @@ func (s *Service) settleClaudeOwner(ctx context.Context, tx *store.Tx, input cla
 	if profile != "" && !authenticated {
 		return nil, subscriptionDenied()
 	}
-	if input.Success && l.Action != domain.SubscriptionLogout && !authenticated || l.Action == domain.SubscriptionLogout && profile != "" {
+	if input.Success && l.Action != domain.SubscriptionLogout && !authenticated && !(recoveryCleanup && recoveryUntouched) || l.Action == domain.SubscriptionLogout && profile != "" {
 		return nil, subscriptionDenied()
 	}
-	if authenticated {
+	if recoveryCleanup && recoveryUntouched {
+		// Keep generation, identity, native profile and connection exactly as they
+		// were before the interrupted execution.
+		if st.Pending == nil || st.Pending.ID == operation {
+			if a.Health != domain.AccountRevoked {
+				a.Health = domain.AccountReady
+			}
+		}
+	} else if authenticated {
 		if err := uniqueSubscriptionIdentity(tx, input.Account, identity); err != nil {
 			return nil, err
 		}
@@ -1000,7 +1014,7 @@ func (s *Service) settleClaudeOwner(ctx context.Context, tx *store.Tx, input cla
 		if o := st.NativeOperation; o != nil {
 			if canceled {
 				o.State = domain.SubscriptionCanceled
-			} else if input.Success {
+			} else if input.Success && !recoveryUntouched {
 				o.State = domain.SubscriptionSucceeded
 			} else if !o.ExpiresAt.After(time.Now().UTC()) {
 				o.State = domain.SubscriptionExpired

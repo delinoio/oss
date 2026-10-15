@@ -47,6 +47,8 @@ export interface SessionSubmission {
   readonly queueId?: string;
   readonly queueRevision: bigint;
   readonly native: boolean;
+  /** The session's first input, created atomically with the session. */
+  readonly original?: boolean;
   readonly observationUnavailable?: boolean;
 }
 interface QueueEvidence {
@@ -189,6 +191,12 @@ export class SessionSubmissions {
     this.value = [...this.records.values()];
     for (const listener of this.listeners) listener();
   }
+  /** Retires one settled native mapping when the retained-record bound is full. */
+  private evictSettled() {
+    if (this.records.size < maximumCount) return;
+    const settled = [...this.records.values()].find((row) => row.native);
+    if (settled) this.records.delete(settled.requestId);
+  }
   freeze(
     requestId: string,
     sessionId: string,
@@ -204,10 +212,8 @@ export class SessionSubmissions {
     );
     // Settled native projections retain no content; retire their mappings only
     // when the existing retained-input bound needs room for a fresh submission.
-    if (!previous && this.records.size >= maximumCount) {
-      const settled = [...this.records.values()].find((row) => row.native);
-      if (settled) this.records.delete(settled.requestId);
-    }
+    // registerOriginal applies the same eviction before its count bound.
+    if (!previous) this.evictSettled();
     if (
       bytes(prompt) > 256 << 10 ||
       used + bytes(prompt) > maximumBytes ||
@@ -230,6 +236,64 @@ export class SessionSubmissions {
         : SubmissionPhase.Sending,
       queueRevision: 0n,
       native: false,
+    });
+    this.publish();
+    return true;
+  }
+  /**
+   * Registers the verified first input of a session (creation response or a
+   * reloaded sequence-one queue row). It is keyed by input identity, so it is
+   * idempotent, and newer queue revisions (edit, removal) always win over
+   * stale receipts. Foreign, malformed or non-first inputs are rejected.
+   */
+  registerOriginal(
+    sessionId: string,
+    resource: Resource | undefined,
+    expectedInputId: string,
+  ) {
+    // The session's initial input identity is mandatory evidence; a missing or
+    // malformed one never degrades to accepting any sequence-one input.
+    if (!this.alive || !resource || !isEntityId(expectedInputId)) return false;
+    const queue = queueEvidence(resource);
+    if (
+      !queue ||
+      queue.sessionId !== sessionId ||
+      document(resource).sequence !== 1 ||
+      queue.id !== expectedInputId
+    )
+      return false;
+    const requestId = `original:${queue.id}`,
+      previous = this.records.get(requestId);
+    if (previous) {
+      if (previous.sessionId !== sessionId || previous.native) return false;
+      if (queue.revision <= previous.queueRevision) return false;
+      this.records.set(requestId, this.withQueue(previous, queue));
+      this.publish();
+      return true;
+    }
+    if (this.nativeInputs.get(queue.id) === sessionId) return false;
+    this.evictSettled();
+    const used = [...this.records.values()].reduce(
+      (sum, row) => sum + bytes(row.prompt),
+      0,
+    );
+    if (
+      this.records.size >= maximumCount ||
+      used + bytes(queue.prompt) > maximumBytes
+    )
+      return false;
+    this.records.set(requestId, {
+      requestId,
+      sessionId,
+      prompt: queue.prompt,
+      mode: document(resource).mode as Mode,
+      attachments: queue.attachments,
+      attachmentCount: queue.attachments.length,
+      phase: queue.phase,
+      queueId: queue.id,
+      queueRevision: queue.revision,
+      native: false,
+      original: true,
     });
     this.publish();
     return true;
@@ -328,17 +392,19 @@ export class SessionSubmissions {
     row: SessionSubmission,
     queue: QueueEvidence,
   ): SessionSubmission {
-    return row.native
-      ? { ...row, queueRevision: queue.revision }
-      : {
-          ...row,
-          prompt: queue.prompt,
-          attachments: queue.attachments,
-          attachmentCount: queue.attachments.length,
-          phase: queue.phase,
-          queueRevision: queue.revision,
-          observationUnavailable: false,
-        };
+    if (row.native) return { ...row, queueRevision: queue.revision };
+    // A removed original input keeps no content, so no later stale receipt can
+    // resurrect it.
+    const removed = row.original && queue.phase === SubmissionPhase.Removed;
+    return {
+      ...row,
+      prompt: removed ? "" : queue.prompt,
+      attachments: removed ? [] : queue.attachments,
+      attachmentCount: removed ? 0 : queue.attachments.length,
+      phase: queue.phase,
+      queueRevision: queue.revision,
+      observationUnavailable: false,
+    };
   }
   private withNative(row: SessionSubmission): SessionSubmission {
     return {

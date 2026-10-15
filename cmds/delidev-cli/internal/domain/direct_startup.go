@@ -64,6 +64,10 @@ type ExecutionStartupObservation struct {
 	Cleanup          ExecutionStartupCleanup       `json:"cleanup,omitempty"`
 }
 
+// ValidExecutableSHA256 reports whether value is a lowercase hexadecimal
+// SHA-256 digest of a native executable.
+func ValidExecutableSHA256(value string) bool { return lowerDigest(value) }
+
 // Metadata accepts bounded identifiers only, never diagnostic text, URLs,
 // paths, whitespace or credentials. An absent version stays absent.
 func ValidNativeVersionMetadata(v string) bool {

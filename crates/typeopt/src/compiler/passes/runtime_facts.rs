@@ -1397,6 +1397,56 @@ pub(super) fn contains(outer: Node, inner: Node) -> bool {
     false
 }
 
+/// Neither the built-in global `owner` nor its member `member` may be
+/// replaced by application code or an external runtime import, according to
+/// the shared intrinsic patch scan. Runs the whole scan, so callers cache it.
+pub(in crate::compiler) fn builtin_intact(ctx: &mut Ctx, owner: &str, member: &str) -> bool {
+    let mut facts = Facts::new();
+    !facts.patched(ctx, None, owner) && !facts.patched(ctx, Some(owner), member)
+}
+
+/// The calls through a local alias `const d = Object.defineProperty` when
+/// `access` is exactly that initializer and the alias has one declaration, no
+/// write and no use other than being called. Every other use lets the member
+/// reach unknown code, so the caller falls back to the conservative record.
+fn reflection_alias_calls(ctx: &mut Ctx, access: Node) -> Option<Vec<Node>> {
+    if access.name().text() != "defineProperty" {
+        return None;
+    }
+    let declaration = walk_up_outer(access).parent();
+    if declaration.kind() != SyntaxKind::VariableDeclaration
+        || declaration.name().kind() != SyntaxKind::Identifier
+        || skip_outer(declaration.initializer()) != access
+    {
+        return None;
+    }
+    let symbol = ctx.resolve(declaration.name());
+    if symbol.is_nil() {
+        return None;
+    }
+    if ctx.checker.sym(symbol).declarations.len() != 1 {
+        return None;
+    }
+    let mut calls = Vec::new();
+    for reference in ctx.refs(symbol) {
+        match reference.kind {
+            RefKind::Declaration | RefKind::Type => {}
+            RefKind::Call => {
+                let call = walk_up_outer(reference.node).parent();
+                if call.kind() != SyntaxKind::CallExpression
+                    || skip_outer(call.expression()) != reference.node
+                    || call.question_dot_token().is_some()
+                {
+                    return None;
+                }
+                calls.push(call);
+            }
+            _ => return None,
+        }
+    }
+    Some(calls)
+}
+
 /// Scans application code for writes to built-ins.
 fn scan_patches(ctx: &mut Ctx) -> Patches {
     let mut patches = Patches::default();
@@ -1454,7 +1504,29 @@ fn scan_patches(ctx: &mut Ctx) -> Patches {
                             let call = walk_up_outer(parent).parent();
                             let direct = call.kind() == SyntaxKind::CallExpression
                                 && skip_outer(call.expression()) == parent;
-                            if !direct {
+                            let aliased = if direct {
+                                None
+                            } else {
+                                reflection_alias_calls(ctx, parent)
+                            };
+                            if let Some(calls) = aliased {
+                                // An unwritten local alias that is only
+                                // called is analysed like the direct calls.
+                                for call in calls {
+                                    if let Some(target) = call.arguments().first() {
+                                        let member = if parent.name().text() == "defineProperty" {
+                                            call.arguments()
+                                                .to_vec()
+                                                .get(1)
+                                                .map(|&k| literal_member(ctx, k))
+                                                .unwrap_or(Member::Any)
+                                        } else {
+                                            Member::Any
+                                        };
+                                        writes.push((node, target, member));
+                                    }
+                                }
+                            } else if !direct {
                                 patches.add(Owner::Any, Member::Any);
                             } else if let Some(target) = call.arguments().first() {
                                 let member = if matches!(
