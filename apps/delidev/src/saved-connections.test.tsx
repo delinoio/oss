@@ -799,3 +799,30 @@ it("marks the saved connection removal opener, confirmation and retry Danger whi
     neutral,
   );
 });
+
+it("marks the Removing-state retry opener Danger because it retries the retained deletion", async () => {
+  const value = fixture();
+  value.list.mockResolvedValue([
+    {
+      ...value.profile,
+      state: SavedConnectionState.Removing,
+      revision: 2,
+      removal: { request_id: newRequestId(), expected_revision: 1 },
+    },
+  ]);
+  render(<SavedConnections visible close={() => {}} actions={value.actions} />);
+  const opener = await screen.findByRole("button", {
+    name: "Retry removal of Saved server",
+  });
+  expectTone(opener, danger);
+  expect(value.remove).not.toHaveBeenCalled();
+  fireEvent.click(opener);
+  expectTone(
+    screen.getByRole("button", { name: "Retry original connection removal" }),
+    danger,
+  );
+  expectTone(
+    screen.getByRole("button", { name: "Inspect removal state later" }),
+    neutral,
+  );
+});

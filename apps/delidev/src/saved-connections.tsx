@@ -631,6 +631,7 @@ export function SavedConnections({
                     </>
                   ) : (
                     <SettingsActionButton
+                      tone={SettingsActionTone.Danger}
                       icon={SettingsActionIcon.Retry}
                       disabled={busy || Boolean(attempt || edit || removal)}
                       onClick={(event) => {

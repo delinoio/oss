@@ -27,7 +27,7 @@ const expected: Record<string, number> = {
   "provider-model-settings.tsx": 1,
   "queue.tsx": 4,
   "repository-list.tsx": 1,
-  "saved-connections.tsx": 2,
+  "saved-connections.tsx": 3,
   "schedules.tsx": 3,
   "session-storage.tsx": 5,
   "settings.tsx": 1,
