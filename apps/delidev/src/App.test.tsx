@@ -5184,7 +5184,8 @@ it("discards a pending Search read after another target is opened", async () => 
   info.mockRestore();
 });
 
-describe("destination windows", () => {  const enable = () => {
+describe("destination windows", () => {
+  const enable = () => {
     destinationWindow.available = true;
     destinationWindow.open.mockReset();
     destinationWindow.open.mockResolvedValue(undefined);
@@ -5238,12 +5239,16 @@ describe("destination windows", () => {  const enable = () => {
       await screen.findByRole("button", { name: "Ordinary hit" }),
       primaryClick,
     );
-    await waitFor(() => expect(destinationWindow.open).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(destinationWindow.open).toHaveBeenCalledTimes(1),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Fork hit" }), {
       ...primaryClick,
       shiftKey: true,
     });
-    await waitFor(() => expect(destinationWindow.open).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(destinationWindow.open).toHaveBeenCalledTimes(2),
+    );
     expect(destinationWindow.open.mock.calls).toEqual([
       [{ surface: Surface.Sessions, session: value.other.id }],
       [{ surface: Surface.Sessions, session: fork.id }],
@@ -5301,9 +5306,7 @@ describe("destination windows", () => {  const enable = () => {
     expect(
       screen.getByRole("textbox", { name: "Search conversations" }),
     ).toBeTruthy();
-    expect(
-      screen.queryByRole("heading", { name: "Other session" }),
-    ).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Other session" })).toBeNull();
     warn.mockRestore();
   });
 
@@ -5322,12 +5325,12 @@ describe("destination windows", () => {  const enable = () => {
     await searchRetained(value);
     const hit = await screen.findByRole("button", { name: "Ordinary hit" });
     fireEvent.click(hit, primaryClick);
-    await waitFor(() => expect(destinationWindow.open).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(destinationWindow.open).toHaveBeenCalledTimes(1),
+    );
     fireEvent.click(hit, primaryClick);
     expect(destinationWindow.open).toHaveBeenCalledTimes(1);
-    expect(
-      screen.queryByRole("heading", { name: "Other session" }),
-    ).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Other session" })).toBeNull();
     await act(async () => finish());
   });
 
@@ -5338,9 +5341,12 @@ describe("destination windows", () => {  const enable = () => {
     value.searchHits.push(searchHit(value.other, "Ordinary hit"));
     render(<App transport={value.transport} />);
     await searchRetained(value);
-    fireEvent.click(await screen.findByRole("button", { name: "Ordinary hit" }), {
-      detail: 1,
-    });
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Ordinary hit" }),
+      {
+        detail: 1,
+      },
+    );
     expect(
       await screen.findByRole("heading", { name: "Other session" }),
     ).toBeTruthy();

@@ -103,9 +103,9 @@ const matrix: {
 describe("navigation disposition", () => {
   for (const row of matrix) {
     it(`${row.name}: macOS ${row.mac}, Windows/Linux ${row.other}`, () => {
-      expect(navigationDisposition(click(row.event), ShortcutPlatform.Mac)).toBe(
-        row.mac,
-      );
+      expect(
+        navigationDisposition(click(row.event), ShortcutPlatform.Mac),
+      ).toBe(row.mac);
       expect(
         navigationDisposition(click(row.event), ShortcutPlatform.Other),
       ).toBe(row.other);
@@ -142,7 +142,11 @@ describe("destination request", () => {
       screen: Surface.Sessions,
     });
     expect(
-      destinationRequest({ surface: Surface.Sessions, session, sidechat: other }),
+      destinationRequest({
+        surface: Surface.Sessions,
+        session,
+        sidechat: other,
+      }),
     ).toEqual({ screen: Surface.Sessions, session, sidechat: other });
     expect(
       destinationRequest({ surface: Surface.Inbox, item: session }),
@@ -182,10 +186,17 @@ describe("destination request", () => {
       destinationRequest({ surface: Surface.Sessions, session: "not-an-id" }),
     ).toEqual({ screen: Surface.Sessions });
     expect(
-      destinationRequest({ surface: Surface.Sessions, session, sidechat: session }),
+      destinationRequest({
+        surface: Surface.Sessions,
+        session,
+        sidechat: session,
+      }),
     ).toEqual({ screen: Surface.Sessions, session });
     expect(
-      destinationRequest({ surface: Surface.Inbox, item: "https://x.invalid/" }),
+      destinationRequest({
+        surface: Surface.Inbox,
+        item: "https://x.invalid/",
+      }),
     ).toEqual({ screen: Surface.Inbox });
   });
 

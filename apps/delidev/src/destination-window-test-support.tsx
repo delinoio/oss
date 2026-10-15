@@ -4,7 +4,10 @@ import {
   DestinationWindowProvider,
   type DestinationWindowController,
 } from "./destination-window";
-import { NavigationDisposition, navigationDisposition } from "./navigation-disposition";
+import {
+  NavigationDisposition,
+  navigationDisposition,
+} from "./navigation-disposition";
 import type { ProductRoute } from "./product-route";
 
 /**

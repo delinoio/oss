@@ -34,7 +34,10 @@ import { Surface } from "./views";
 import { Sidebar } from "./sidebar";
 import type { ComponentProps } from "react";
 import { i18n, SupportedLanguage } from "./localization";
-import { fakeDestinationWindow, primaryClick } from "./destination-window-test-support";
+import {
+  fakeDestinationWindow,
+  primaryClick,
+} from "./destination-window-test-support";
 import {
   NavigationProvider,
   memoryNavigationBridge,
@@ -2748,9 +2751,10 @@ it("opens each rail and header destination in a new window on a primary modified
   // Plain clicks keep the existing current-window navigation.
   for (const [name, surface] of cases) {
     fireEvent.click(screen.getByRole("button", { name }), { detail: 1 });
-    const handler = surface === Surface.Inbox || surface === Surface.Search
-      ? header
-      : value.navigate;
+    const handler =
+      surface === Surface.Inbox || surface === Surface.Search
+        ? header
+        : value.navigate;
     expect(handler).toHaveBeenLastCalledWith(surface);
   }
   expect(destination.opened).toHaveBeenCalledTimes(cases.length);
@@ -2815,7 +2819,9 @@ it("opens Session and Sidechat rows at their typed destination without selecting
     props: { setDrawerOpen },
   });
   fireEvent.click(
-    await screen.findByRole("button", { name: /Local computer Parent session/ }),
+    await screen.findByRole("button", {
+      name: /Local computer Parent session/,
+    }),
     primaryClick,
   );
   expect(destination.opened).toHaveBeenLastCalledWith({
@@ -2846,7 +2852,10 @@ it("opens Usage in a new window from More and leaves the menu open", async () =>
   await screen.findByRole("button", { name: "Sessions" });
   fireEvent.click(screen.getByRole("button", { name: "More" }));
   const popover = screen.getByRole("dialog", { name: "More" });
-  fireEvent.click(within(popover).getByRole("button", { name: "Usage" }), primaryClick);
+  fireEvent.click(
+    within(popover).getByRole("button", { name: "Usage" }),
+    primaryClick,
+  );
   expect(destination.opened).toHaveBeenCalledExactlyOnceWith({
     surface: Surface.Usage,
   });
@@ -2864,8 +2873,14 @@ it("never opens a destination window from action controls", async () => {
   const destination = fakeDestinationWindow();
   const value = mountSidebar({ ...emptyLists, destination });
   await screen.findByRole("button", { name: "Sessions" });
-  fireEvent.click(screen.getByRole("button", { name: "New session" }), primaryClick);
-  fireEvent.click(screen.getByRole("button", { name: "New project" }), primaryClick);
+  fireEvent.click(
+    screen.getByRole("button", { name: "New session" }),
+    primaryClick,
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "New project" }),
+    primaryClick,
+  );
   expect(destination.opened).not.toHaveBeenCalled();
   expect(value.newSession).toHaveBeenCalledOnce();
   expect(value.newProject).toHaveBeenCalledOnce();

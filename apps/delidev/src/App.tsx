@@ -1087,258 +1087,234 @@ function Shell({
   return (
     <NavigationIntentProvider value={userNavigated}>
       <DestinationWindowProvider value={destinationWindow}>
-      <LocalConnectionPresentationProvider
-        target={connectionTarget}
-        inline={!connectionReady}
-        pageOpen={connectionPageOpen}
-        onRequest={onConnectionHelp}
-      >
-        <RunnerRemediationProvider
-          active
-          connectionReady={connectionReady}
-          authority={pairingAuthority}
+        <LocalConnectionPresentationProvider
+          target={connectionTarget}
+          inline={!connectionReady}
+          pageOpen={connectionPageOpen}
+          onRequest={onConnectionHelp}
         >
-          <RunnerPreferenceProvider
-            readLocalWorker={readLocalWorker}
-            scope={
-              pairingAuthority && currentDeviceId
-                ? {
-                    server_id: pairingAuthority.serverId,
-                    device_id: currentDeviceId,
-                  }
-                : undefined
-            }
+          <RunnerRemediationProvider
+            active
+            connectionReady={connectionReady}
+            authority={pairingAuthority}
           >
-            <SessionControlProvider>
-              <SessionForkProvider
-                openSession={open}
-                sessionNavigationGeneration={sessionNavigationGeneration}
-                readLocalWorker={readLocalWorker}
-              >
-                <SessionStorageProvider>
-                  <SidebarOutletProvider
-                    target={sidebarTarget}
-                    closeDrawer={() => setDrawerOpen(false)}
-                    drawerOpen={drawerOpen}
-                    paneVisible={sidebarPaneVisible}
-                    paneSettled={
-                      !wideSidebar ||
-                      (sidebarPresentation.settled &&
-                        sidebarPresentation.collapsed === sidebarCollapsed)
+            <RunnerPreferenceProvider
+              readLocalWorker={readLocalWorker}
+              scope={
+                pairingAuthority && currentDeviceId
+                  ? {
+                      server_id: pairingAuthority.serverId,
+                      device_id: currentDeviceId,
                     }
-                    paneGeneration={sidebarPresentation.generation}
-                    paneFocusAllowed={sidebarPresentation.focusAllowed}
-                    paneProblem={Boolean(sidebarPreference.snapshot.problem)}
-                    openDrawer={openSidebar}
-                  >
-                    <div
-                      className={`app${wideSidebar && sidebarCollapsed ? " sidebar-collapsed" : ""}`}
+                  : undefined
+              }
+            >
+              <SessionControlProvider>
+                <SessionForkProvider
+                  openSession={open}
+                  sessionNavigationGeneration={sessionNavigationGeneration}
+                  readLocalWorker={readLocalWorker}
+                >
+                  <SessionStorageProvider>
+                    <SidebarOutletProvider
+                      target={sidebarTarget}
+                      closeDrawer={() => setDrawerOpen(false)}
+                      drawerOpen={drawerOpen}
+                      paneVisible={sidebarPaneVisible}
+                      paneSettled={
+                        !wideSidebar ||
+                        (sidebarPresentation.settled &&
+                          sidebarPresentation.collapsed === sidebarCollapsed)
+                      }
+                      paneGeneration={sidebarPresentation.generation}
+                      paneFocusAllowed={sidebarPresentation.focusAllowed}
+                      paneProblem={Boolean(sidebarPreference.snapshot.problem)}
+                      openDrawer={openSidebar}
                     >
-                      <a className="skip" href="#main">
-                        {copy("App.skipToContent_ac576a")}
-                      </a>
-                      <Sidebar
-                        collapsed={sidebarCollapsed}
-                        motionReady={
-                          sidebarPreference.snapshot.revision > 0 &&
-                          !sidebarPreference.snapshot.problem
-                        }
-                        motionScope={transport}
-                        presentationChanged={setSidebarPresentation}
-                        compactFocusRef={contextOpener}
-                        focusHandoffPending={
-                          pendingFocusDestination.current !== undefined
-                        }
-                        openCommandMenu={toggleCommandMenu}
-                        connectionReady={connectionReady}
-                        surface={surface}
-                        selectedSessionId={sidebarSession}
-                        selectedSessionActivation={sessionNavigationActivation}
-                        navigate={navigate}
-                        navigateHeader={navigateHeader}
-                        openSession={open}
-                        newSession={startNewSession}
-                        newGeneralChat={startNewGeneralChat}
-                        newProject={openNewProject}
-                        projectSelectionBlocked={newSessionProjectBlocked}
-                        openSettings={openSettings}
-                        setContextTarget={setSidebarTarget}
-                        drawerOpen={drawerOpen}
-                        setDrawerOpen={setDrawerOpen}
-                      />
-                      {commandMenuOpen ? (
-                        <CommandMenu
-                          openSession={open}
-                          close={() => setCommandMenuOpen(false)}
-                          commands={applicationCommands(
-                            {
-                              navigate,
-                              navigateHeader,
-                              openSettings,
-                              newSession: startNewSession,
-                              newGeneralChat: startNewGeneralChat,
-                              newProject: openNewProject,
-                              help: openHelp,
-                            },
-                            { tailscale: runnerTailscale !== undefined },
-                          )}
-                        />
-                      ) : null}
-                      <main
-                        ref={main}
-                        id="main"
-                        tabIndex={-1}
-                        aria-keyshortcuts={
-                          wideSidebar && sidebarShortcutEnabled
-                            ? shortcutDeclarations.aria(
-                                ShortcutId.ToggleSidebar,
-                              )
-                            : undefined
-                        }
+                      <div
+                        className={`app${wideSidebar && sidebarCollapsed ? " sidebar-collapsed" : ""}`}
                       >
-                        <SidebarPreferenceNotice />
-                        <DestinationWindowNotice />
-                        <button
-                          ref={contextOpener}
-                          type="button"
-                          className="sidebar-context-trigger"
-                          aria-haspopup="dialog"
-                          aria-expanded={drawerOpen}
-                          onClick={() => setDrawerOpen(true)}
-                        >
-                          <LocalizedText
-                            id="App.open_a007d6"
-                            components={{ s0: <>{surfaceName}</> }}
-                          />
-                        </button>
-                        <TrayPresentation navigate={navigateTray} />
-                        <NotificationPresentation />
-                        <InboxBadgePresentation
-                          ready={connectionReady}
-                          supported={
-                            Boolean(
-                              status.data?.capabilities.includes(
-                                SystemCapability.UNREAD_INBOX_COUNT_V1,
-                              ),
-                            ) && !status.isError
+                        <a className="skip" href="#main">
+                          {copy("App.skipToContent_ac576a")}
+                        </a>
+                        <Sidebar
+                          collapsed={sidebarCollapsed}
+                          motionReady={
+                            sidebarPreference.snapshot.revision > 0 &&
+                            !sidebarPreference.snapshot.problem
                           }
+                          motionScope={transport}
+                          presentationChanged={setSidebarPresentation}
+                          compactFocusRef={contextOpener}
+                          focusHandoffPending={
+                            pendingFocusDestination.current !== undefined
+                          }
+                          openCommandMenu={toggleCommandMenu}
+                          connectionReady={connectionReady}
+                          surface={surface}
+                          selectedSessionId={sidebarSession}
+                          selectedSessionActivation={
+                            sessionNavigationActivation
+                          }
+                          navigate={navigate}
+                          navigateHeader={navigateHeader}
+                          openSession={open}
+                          newSession={startNewSession}
+                          newGeneralChat={startNewGeneralChat}
+                          newProject={openNewProject}
+                          projectSelectionBlocked={newSessionProjectBlocked}
+                          openSettings={openSettings}
+                          setContextTarget={setSidebarTarget}
+                          drawerOpen={drawerOpen}
+                          setDrawerOpen={setDrawerOpen}
                         />
-                        {draftState.error ? (
-                          <p role="alert">{draftState.error}</p>
-                        ) : null}
-                        {[...drafts.keys()].map((id) => (
-                          <SessionDraftSettlement
-                            key={id}
-                            id={id}
-                            clear={() => {
-                              saveDraft(id, "", []);
-                            }}
-                          />
-                        ))}
-                        {projectCreation ? (
-                          <ProjectCreationDialog
-                            registrationAdapters={{
-                              readLocalWorker,
-                              controlLocalWorker,
-                              chooseFolder: chooseRepositoryFolder,
-                            }}
-                            key={projectCreation.id}
-                            activation={projectCreation.activation}
-                            close={closeProjectCreation}
-                            fallbackFocus={projectFallbackFocus}
+                        {commandMenuOpen ? (
+                          <CommandMenu
+                            openSession={open}
+                            close={() => setCommandMenuOpen(false)}
+                            commands={applicationCommands(
+                              {
+                                navigate,
+                                navigateHeader,
+                                openSettings,
+                                newSession: startNewSession,
+                                newGeneralChat: startNewGeneralChat,
+                                newProject: openNewProject,
+                                help: openHelp,
+                              },
+                              { tailscale: runnerTailscale !== undefined },
+                            )}
                           />
                         ) : null}
-                        <div
-                          hidden={surface !== Surface.Sessions}
-                          className="session-container"
-                        >
-                          {visited.map((id) => (
-                            <div
-                              key={id}
-                              hidden={id !== selected}
-                              inert={id !== selected}
-                            >
-                              <SessionView
-                                active={
-                                  surface === Surface.Sessions &&
-                                  id === selected
-                                }
-                                connectionReady={connectionReady}
-                                id={id}
-                                draft={drafts.get(id)?.prompt ?? ""}
-                                initialSkills={drafts.get(id)?.bindings}
-                                draftGeneration={() => draftEdits.read(id)}
-                                setDraft={(value, bindings, userEdit) =>
-                                  saveDraft(id, value, bindings, userEdit)
-                                }
-                                changeSkills={(bindings) => {
-                                  saveDraft(id, undefined, bindings);
-                                }}
-                                openRunnerSettings={() =>
-                                  openSettings(
-                                    SettingsEntryDestination.RunnerDevices,
-                                  )
-                                }
-                                verifyRestored={
-                                  id === unverifiedRestoreId
-                                    ? verifyRestoredSession
-                                    : undefined
-                                }
-                              />
-                            </div>
-                          ))}
-                          {!selected &&
-                          pendingSelection?.surface !== Surface.Sessions ? (
-                            <section
-                              className="page welcome"
-                              {...welcomeEntrance}
-                            >
-                              <h2>
-                                {copy("App.yourSessionsInOnePlace_5dad94")}
-                              </h2>
-                              <Problem
-                                error={status.error}
-                                actions={
-                                  <button
-                                    type="button"
-                                    disabled={
-                                      status.isFetching || !connectionReady
-                                    }
-                                    onClick={() => void status.refetch()}
-                                  >
-                                    {copy("ui.retryCurrentRead")}
-                                  </button>
-                                }
-                              />
-                            </section>
-                          ) : null}
-                        </div>
-                        <NewSession
-                          preferenceScope={
-                            pairingAuthority && currentDeviceId
-                              ? {
-                                  server_id: pairingAuthority.serverId,
-                                  device_id: currentDeviceId,
-                                }
+                        <main
+                          ref={main}
+                          id="main"
+                          tabIndex={-1}
+                          aria-keyshortcuts={
+                            wideSidebar && sidebarShortcutEnabled
+                              ? shortcutDeclarations.aria(
+                                  ShortcutId.ToggleSidebar,
+                                )
                               : undefined
                           }
-                          active={surface === Surface.NewSession}
-                          ownsActivation={surface === Surface.NewSession}
-                          activation={newSessionEntry.activation}
-                          entryProjectId={newSessionEntry.projectId}
-                          projectSelectionBlockedChanged={
-                            setNewSessionProjectBlocked
-                          }
-                          readLocalWorker={readLocalWorker}
-                          back={() => {
-                            navigate(Surface.Sessions);
-                            void sessions.refetch();
-                          }}
-                          openSettings={openSettings}
-                          open={open}
-                          created={sessionCreated}
-                        />
-                        {newGeneralChatActivation > 0 ? (
+                        >
+                          <SidebarPreferenceNotice />
+                          <DestinationWindowNotice />
+                          <button
+                            ref={contextOpener}
+                            type="button"
+                            className="sidebar-context-trigger"
+                            aria-haspopup="dialog"
+                            aria-expanded={drawerOpen}
+                            onClick={() => setDrawerOpen(true)}
+                          >
+                            <LocalizedText
+                              id="App.open_a007d6"
+                              components={{ s0: <>{surfaceName}</> }}
+                            />
+                          </button>
+                          <TrayPresentation navigate={navigateTray} />
+                          <NotificationPresentation />
+                          <InboxBadgePresentation
+                            ready={connectionReady}
+                            supported={
+                              Boolean(
+                                status.data?.capabilities.includes(
+                                  SystemCapability.UNREAD_INBOX_COUNT_V1,
+                                ),
+                              ) && !status.isError
+                            }
+                          />
+                          {draftState.error ? (
+                            <p role="alert">{draftState.error}</p>
+                          ) : null}
+                          {[...drafts.keys()].map((id) => (
+                            <SessionDraftSettlement
+                              key={id}
+                              id={id}
+                              clear={() => {
+                                saveDraft(id, "", []);
+                              }}
+                            />
+                          ))}
+                          {projectCreation ? (
+                            <ProjectCreationDialog
+                              registrationAdapters={{
+                                readLocalWorker,
+                                controlLocalWorker,
+                                chooseFolder: chooseRepositoryFolder,
+                              }}
+                              key={projectCreation.id}
+                              activation={projectCreation.activation}
+                              close={closeProjectCreation}
+                              fallbackFocus={projectFallbackFocus}
+                            />
+                          ) : null}
+                          <div
+                            hidden={surface !== Surface.Sessions}
+                            className="session-container"
+                          >
+                            {visited.map((id) => (
+                              <div
+                                key={id}
+                                hidden={id !== selected}
+                                inert={id !== selected}
+                              >
+                                <SessionView
+                                  active={
+                                    surface === Surface.Sessions &&
+                                    id === selected
+                                  }
+                                  connectionReady={connectionReady}
+                                  id={id}
+                                  draft={drafts.get(id)?.prompt ?? ""}
+                                  initialSkills={drafts.get(id)?.bindings}
+                                  draftGeneration={() => draftEdits.read(id)}
+                                  setDraft={(value, bindings, userEdit) =>
+                                    saveDraft(id, value, bindings, userEdit)
+                                  }
+                                  changeSkills={(bindings) => {
+                                    saveDraft(id, undefined, bindings);
+                                  }}
+                                  openRunnerSettings={() =>
+                                    openSettings(
+                                      SettingsEntryDestination.RunnerDevices,
+                                    )
+                                  }
+                                  verifyRestored={
+                                    id === unverifiedRestoreId
+                                      ? verifyRestoredSession
+                                      : undefined
+                                  }
+                                />
+                              </div>
+                            ))}
+                            {!selected &&
+                            pendingSelection?.surface !== Surface.Sessions ? (
+                              <section
+                                className="page welcome"
+                                {...welcomeEntrance}
+                              >
+                                <h2>
+                                  {copy("App.yourSessionsInOnePlace_5dad94")}
+                                </h2>
+                                <Problem
+                                  error={status.error}
+                                  actions={
+                                    <button
+                                      type="button"
+                                      disabled={
+                                        status.isFetching || !connectionReady
+                                      }
+                                      onClick={() => void status.refetch()}
+                                    >
+                                      {copy("ui.retryCurrentRead")}
+                                    </button>
+                                  }
+                                />
+                              </section>
+                            ) : null}
+                          </div>
                           <NewSession
                             preferenceScope={
                               pairingAuthority && currentDeviceId
@@ -1348,10 +1324,14 @@ function Shell({
                                   }
                                 : undefined
                             }
-                            kind={NewSessionKind.GeneralChat}
-                            active={surface === Surface.NewGeneralChat}
-                            ownsActivation={surface === Surface.NewGeneralChat}
-                            activation={newGeneralChatActivation}
+                            active={surface === Surface.NewSession}
+                            ownsActivation={surface === Surface.NewSession}
+                            activation={newSessionEntry.activation}
+                            entryProjectId={newSessionEntry.projectId}
+                            projectSelectionBlockedChanged={
+                              setNewSessionProjectBlocked
+                            }
+                            readLocalWorker={readLocalWorker}
                             back={() => {
                               navigate(Surface.Sessions);
                               void sessions.refetch();
@@ -1360,78 +1340,102 @@ function Shell({
                             open={open}
                             created={sessionCreated}
                           />
-                        ) : null}
-                        <Search
-                          active={surface === Surface.Search}
-                          open={openSearchResult}
-                          opening={searchOpening}
-                          submitted={resetSearchOpening}
-                        />
-                        <div
-                          className="inbox-container"
-                          hidden={surface !== Surface.Inbox}
-                        >
-                          <Inbox
-                            active={surface === Surface.Inbox}
-                            open={open}
-                            notificationId={selectedInbox}
-                            notificationActivation={inboxActivation}
-                            openOperational={openOperationalNotification}
-                            restoreId={inboxRestore?.id}
-                            restoreActivation={inboxRestore?.activation}
-                            selectionChanged={inboxSelected}
+                          {newGeneralChatActivation > 0 ? (
+                            <NewSession
+                              preferenceScope={
+                                pairingAuthority && currentDeviceId
+                                  ? {
+                                      server_id: pairingAuthority.serverId,
+                                      device_id: currentDeviceId,
+                                    }
+                                  : undefined
+                              }
+                              kind={NewSessionKind.GeneralChat}
+                              active={surface === Surface.NewGeneralChat}
+                              ownsActivation={
+                                surface === Surface.NewGeneralChat
+                              }
+                              activation={newGeneralChatActivation}
+                              back={() => {
+                                navigate(Surface.Sessions);
+                                void sessions.refetch();
+                              }}
+                              openSettings={openSettings}
+                              open={open}
+                              created={sessionCreated}
+                            />
+                          ) : null}
+                          <Search
+                            active={surface === Surface.Search}
+                            open={openSearchResult}
+                            opening={searchOpening}
+                            submitted={resetSearchOpening}
                           />
-                        </div>
-                        <Usage
-                          active={surface === Surface.Usage}
-                          open={open}
-                          entry={usageEntry}
-                          initialTab={initialRoute?.tab}
-                          tabChanged={usageTabSelected}
-                        />
-                        <Schedules
-                          readLocalWorker={readLocalWorker}
-                          active={surface === Surface.Schedules}
-                          open={open}
-                          notificationOccurrence={notificationOccurrence}
-                          clearNotificationOccurrence={() =>
-                            setNotificationOccurrence(undefined)
-                          }
-                          restore={scheduleRestore}
-                          selectionChanged={scheduleSelected}
-                        />
-                        <PullRequests
-                          active={surface === Surface.PullRequests}
-                          openSettings={openSettings}
-                          restore={repositoryRestore}
-                          selectionChanged={repositorySelected}
-                        />
-                        <Settings
-                          openUsage={openAccountUsage}
-                          readLocalWorker={readLocalWorker}
-                          connectionSettings={connectionSettings}
-                          appInformationSettings={appInformationSettings}
-                          runnerTailscale={runnerTailscale}
-                          pairingAuthority={pairingAuthority}
-                          currentDeviceId={currentDeviceId}
-                          controlLocalWorker={controlLocalWorker}
-                          chooseRepositoryFolder={chooseRepositoryFolder}
-                          visible={surface === Surface.Settings}
-                          entryDestination={settingsEntry}
-                          destinationConsumed={consumeSettingsEntry}
-                          initialCategory={restoreCategory}
-                          categoryChanged={categorySelected}
-                        />
-                        {localServer}
-                      </main>
-                    </div>
-                  </SidebarOutletProvider>
-                </SessionStorageProvider>
-              </SessionForkProvider>
-            </SessionControlProvider>
-          </RunnerPreferenceProvider>
-        </RunnerRemediationProvider>
-      </LocalConnectionPresentationProvider>
+                          <div
+                            className="inbox-container"
+                            hidden={surface !== Surface.Inbox}
+                          >
+                            <Inbox
+                              active={surface === Surface.Inbox}
+                              open={open}
+                              notificationId={selectedInbox}
+                              notificationActivation={inboxActivation}
+                              openOperational={openOperationalNotification}
+                              restoreId={inboxRestore?.id}
+                              restoreActivation={inboxRestore?.activation}
+                              selectionChanged={inboxSelected}
+                            />
+                          </div>
+                          <Usage
+                            active={surface === Surface.Usage}
+                            open={open}
+                            entry={usageEntry}
+                            initialTab={initialRoute?.tab}
+                            tabChanged={usageTabSelected}
+                          />
+                          <Schedules
+                            readLocalWorker={readLocalWorker}
+                            active={surface === Surface.Schedules}
+                            open={open}
+                            notificationOccurrence={notificationOccurrence}
+                            clearNotificationOccurrence={() =>
+                              setNotificationOccurrence(undefined)
+                            }
+                            restore={scheduleRestore}
+                            selectionChanged={scheduleSelected}
+                          />
+                          <PullRequests
+                            active={surface === Surface.PullRequests}
+                            openSettings={openSettings}
+                            restore={repositoryRestore}
+                            selectionChanged={repositorySelected}
+                          />
+                          <Settings
+                            openUsage={openAccountUsage}
+                            readLocalWorker={readLocalWorker}
+                            connectionSettings={connectionSettings}
+                            appInformationSettings={appInformationSettings}
+                            runnerTailscale={runnerTailscale}
+                            pairingAuthority={pairingAuthority}
+                            currentDeviceId={currentDeviceId}
+                            controlLocalWorker={controlLocalWorker}
+                            chooseRepositoryFolder={chooseRepositoryFolder}
+                            visible={surface === Surface.Settings}
+                            entryDestination={settingsEntry}
+                            destinationConsumed={consumeSettingsEntry}
+                            initialCategory={restoreCategory}
+                            categoryChanged={categorySelected}
+                          />
+                          {localServer}
+                        </main>
+                      </div>
+                    </SidebarOutletProvider>
+                  </SessionStorageProvider>
+                </SessionForkProvider>
+              </SessionControlProvider>
+            </RunnerPreferenceProvider>
+          </RunnerRemediationProvider>
+        </LocalConnectionPresentationProvider>
       </DestinationWindowProvider>
     </NavigationIntentProvider>
   );

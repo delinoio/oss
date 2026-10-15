@@ -202,7 +202,10 @@ describe("destination window initial route", () => {
       `?screen=sessions&session=${session}&sidechat=${sidechat}`,
       { surface: Surface.Sessions, session, sidechat },
     ],
-    [`?screen=inbox&item=${session}`, { surface: Surface.Inbox, item: session }],
+    [
+      `?screen=inbox&item=${session}`,
+      { surface: Surface.Inbox, item: session },
+    ],
     [
       `?screen=schedules&item=${session}`,
       { surface: Surface.Schedules, item: session },
@@ -215,7 +218,10 @@ describe("destination window initial route", () => {
       "?screen=settings&category=app-information",
       { surface: Surface.Settings, category: SettingsCategory.AppInformation },
     ],
-    ["?screen=usage&tab=prices", { surface: Surface.Usage, tab: UsageTab.Prices }],
+    [
+      "?screen=usage&tab=prices",
+      { surface: Surface.Usage, tab: UsageTab.Prices },
+    ],
     ["?screen=search", { surface: Surface.Search }],
   ];
 

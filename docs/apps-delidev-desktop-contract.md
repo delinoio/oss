@@ -1582,22 +1582,22 @@ An internal destination control opens its target in one additional product windo
 
 `navigation-disposition.ts` owns the closed `NavigationDisposition` enum (`CurrentWindow`, `NewWindow`) and one pure classifier. A click selects `NewWindow` only when every condition holds: the primary mouse button, a pointer activation (`detail` above zero, so keyboard and assistive activation never qualify), exactly the platform primary modifier, no Alt. Shift is allowed. The platform comes from the shared shortcut platform probe (`ShortcutPlatform.Mac` when `navigator.platform` matches `mac`).
 
-| Modifiers held (pointer click, primary button) | macOS            | Windows/Linux    |
-| ---------------------------------------------- | ---------------- | ---------------- |
-| none                                           | CurrentWindow    | CurrentWindow    |
-| Shift                                          | CurrentWindow    | CurrentWindow    |
-| Command (Meta)                                 | NewWindow        | CurrentWindow    |
-| Command + Shift                                | NewWindow        | CurrentWindow    |
-| Control                                        | CurrentWindow    | NewWindow        |
-| Control + Shift                                | CurrentWindow    | NewWindow        |
-| Control + Meta (with or without Shift)         | CurrentWindow    | CurrentWindow    |
-| any primary modifier + Alt                     | CurrentWindow    | CurrentWindow    |
-| Alt only                                       | CurrentWindow    | CurrentWindow    |
+| Modifiers held (pointer click, primary button) | macOS         | Windows/Linux |
+| ---------------------------------------------- | ------------- | ------------- |
+| none                                           | CurrentWindow | CurrentWindow |
+| Shift                                          | CurrentWindow | CurrentWindow |
+| Command (Meta)                                 | NewWindow     | CurrentWindow |
+| Command + Shift                                | NewWindow     | CurrentWindow |
+| Control                                        | CurrentWindow | NewWindow     |
+| Control + Shift                                | CurrentWindow | NewWindow     |
+| Control + Meta (with or without Shift)         | CurrentWindow | CurrentWindow |
+| any primary modifier + Alt                     | CurrentWindow | CurrentWindow |
+| Alt only                                       | CurrentWindow | CurrentWindow |
 
-| Activation                                      | Disposition   |
-| ----------------------------------------------- | ------------- |
-| Middle or right button, any modifiers           | CurrentWindow |
-| Keyboard or assistive activation (`detail` 0)   | CurrentWindow |
+| Activation                                                       | Disposition                      |
+| ---------------------------------------------------------------- | -------------------------------- |
+| Middle or right button, any modifiers                            | CurrentWindow                    |
+| Keyboard or assistive activation (`detail` 0)                    | CurrentWindow                    |
 | Primary modifier click while the host is a web preview or mobile | CurrentWindow, no native attempt |
 
 A handled `NewWindow` click calls `preventDefault` and `stopPropagation` so no duplicate DOM, default or ancestor navigation runs, and it never runs the control's current-window handler.
@@ -1606,18 +1606,18 @@ A handled `NewWindow` click calls `preventDefault` and `stopPropagation` so no d
 
 Only controls whose single purpose is to show a typed destination use the shared dispatcher (`useDestinationDispatch`); each passes a `ProductRoute` and its existing handler.
 
-| Control                                                                    | Typed destination                         | Disposition source |
-| -------------------------------------------------------------------------- | ----------------------------------------- | ------------------ |
-| Sidebar rail Sessions, Pull requests, Schedules, pinned Usage, More > Usage | screen                                    | click              |
-| Sidebar header Inbox and Search                                            | screen                                    | click              |
-| Sidebar Session and Sidechat rows                                          | Session, or parent Session plus Sidechat  | click              |
-| Search result (Sidechat results resolve their original parent first)       | Session, or parent Session plus Sidechat  | click              |
-| Inbox entry row, Inbox Open session                                        | Inbox entry, Session                      | click              |
-| Schedule row                                                               | Schedule                                  | click              |
-| Pull requests repository row                                               | repository                                | click              |
-| Settings category list                                                     | category                                  | click              |
-| Usage tab                                                                  | tab                                       | click              |
-| Fork dialog Open forked session                                            | Session, or parent Session plus Sidechat  | click              |
+| Control                                                                     | Typed destination                        | Disposition source |
+| --------------------------------------------------------------------------- | ---------------------------------------- | ------------------ |
+| Sidebar rail Sessions, Pull requests, Schedules, pinned Usage, More > Usage | screen                                   | click              |
+| Sidebar header Inbox and Search                                             | screen                                   | click              |
+| Sidebar Session and Sidechat rows                                           | Session, or parent Session plus Sidechat | click              |
+| Search result (Sidechat results resolve their original parent first)        | Session, or parent Session plus Sidechat | click              |
+| Inbox entry row, Inbox Open session                                         | Inbox entry, Session                     | click              |
+| Schedule row                                                                | Schedule                                 | click              |
+| Pull requests repository row                                                | repository                               | click              |
+| Settings category list                                                      | category                                 | click              |
+| Usage tab                                                                   | tab                                      | click              |
+| Fork dialog Open forked session                                             | Session, or parent Session plus Sidechat | click              |
 
 Excluded, never receiving the new-window disposition: New session, New general chat and New project, creation and mutation controls, disclosures, filters, sorting, pagination, menus and their triggers, the command palette, Session workspace tab selection, Settings search field targets, retry/refresh/dismiss controls and Pin Usage.
 
@@ -1625,12 +1625,12 @@ Excluded, never receiving the new-window disposition: New session, New general c
 
 The Shell owns one controller (`useDestinationWindowController`). Descendants read it through `DestinationWindowProvider`; outside a Shell the inert default makes every control keep its current-window behavior.
 
-| State    | Entered by                                   | New-window click                                  | Exits to                         |
-| -------- | -------------------------------------------- | ------------------------------------------------- | -------------------------------- |
-| Idle     | start, completed or failed operation         | admits one operation, clears a shown failure      | Pending                          |
-| Pending  | an admitted operation                        | suppressed (default and bubbling), dropped, not queued, no navigation | Idle on success, Failed on rejection |
-| Failed   | native rejection or unknown error            | admits a new operation (the notice is cleared)    | Pending, or Idle on dismiss      |
-| Unavailable | host is not Tauri (web preview, mobile)   | not claimed: the control's handler runs           | n/a                              |
+| State       | Entered by                              | New-window click                                                      | Exits to                             |
+| ----------- | --------------------------------------- | --------------------------------------------------------------------- | ------------------------------------ |
+| Idle        | start, completed or failed operation    | admits one operation, clears a shown failure                          | Pending                              |
+| Pending     | an admitted operation                   | suppressed (default and bubbling), dropped, not queued, no navigation | Idle on success, Failed on rejection |
+| Failed      | native rejection or unknown error       | admits a new operation (the notice is cleared)                        | Pending, or Idle on dismiss          |
+| Unavailable | host is not Tauri (web preview, mobile) | not claimed: the control's handler runs                               | n/a                                  |
 
 Failure shows one localized `role="alert"` notice with a dismiss button through the existing notice treatment. It never navigates the current window, retries automatically, changes the selection, scroll, draft or drawer, or creates a resource. Renderer logs (`delidev.destination_window`) carry only the phase (`requested`, `dropped`, `settled`, `failed`) and a closed failure code, never the route, IDs or titles. A Search result opening shares the existing pending/unavailable Search status: the original parent is resolved first, an unreadable result shows the existing alert, and no window opens.
 
@@ -1638,26 +1638,26 @@ Failure shows one localized `role="alert"` notice with a dismiss button through 
 
 `open_destination_window` (`window_host.rs`) takes only a `DestinationRoute` (`destination_route.rs`): a closed screen enum (Sessions, Pull requests, Usage, Schedules, Inbox, Search, Settings), optional canonical UUIDv7 `session`, `sidechat`, `item` and closed `category` / `tab` enums. Unknown fields, unknown enum values, creation screens, URLs and slots that the screen does not own are rejected as invalid input before any window work. The serialized initial route query is the only destination carrier; the new window is created with `WebviewUrl::App("index.html?...")` and does not use `window.open`, relax the popup policy or transfer state.
 
-| Caller                                                       | Result                                         |
-| ------------------------------------------------------------ | ---------------------------------------------- |
-| Registered Local `main` / `local-*` document                 | admitted; creates a Local window               |
-| Registered Saved `server-*` document with an unchanged paired profile | admitted; creates a window for the same profile |
-| Saved profile revoked, replaced or removal-pending           | `permission-denied` / `invalid-evidence`; no window |
-| Source window closed, replaced or no longer registered       | `permission-denied` / `invalid-evidence`; no window |
-| Tray panel, widget, browser, external or other auxiliary webview | denied by the ACL; no command access      |
-| Remote origin                                                | denied by the ACL                              |
-| Most recently focused window                                 | never consulted; the IPC window is the caller  |
+| Caller                                                                | Result                                              |
+| --------------------------------------------------------------------- | --------------------------------------------------- |
+| Registered Local `main` / `local-*` document                          | admitted; creates a Local window                    |
+| Registered Saved `server-*` document with an unchanged paired profile | admitted; creates a window for the same profile     |
+| Saved profile revoked, replaced or removal-pending                    | `permission-denied` / `invalid-evidence`; no window |
+| Source window closed, replaced or no longer registered                | `permission-denied` / `invalid-evidence`; no window |
+| Tray panel, widget, browser, external or other auxiliary webview      | denied by the ACL; no command access                |
+| Remote origin                                                         | denied by the ACL                                   |
+| Most recently focused window                                          | never consulted; the IPC window is the caller       |
 
 The ACL grants `destination-window` to the `main` / `local-*` and `server-*` capabilities only; `build.rs`, `permissions/destination-window.toml` and `permission_tests.rs` stay synchronized.
 
-| Phase / fence                                  | Rule                                                                                           |
-| ---------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Requested                                      | validate the route; refuse when native shutdown has begun (`stopped`) or shortcut capture fences windows (`busy`) |
-| Source admission                               | capture the invoking window's authority off the UI loop; one pending operation per source window instance (`busy`) |
-| Authorized                                     | Saved callers re-inspect the profile and compare every authority field; recheck the source window after asynchronous work |
-| Creation                                       | the task joins the shutdown fence; the main-thread step rechecks the registered source, then reuses the existing admission, label, cleanup and cancellation guards |
-| Created                                        | the window is registered ready and focused; cleanup on any late failure destroys the partial window |
-| Failed                                         | the renderer receives the closed failure code; no fallback window, retry or partial window     |
+| Phase / fence    | Rule                                                                                                                                                               |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Requested        | validate the route; refuse when native shutdown has begun (`stopped`) or shortcut capture fences windows (`busy`)                                                  |
+| Source admission | capture the invoking window's authority off the UI loop; one pending operation per source window instance (`busy`)                                                 |
+| Authorized       | Saved callers re-inspect the profile and compare every authority field; recheck the source window after asynchronous work                                          |
+| Creation         | the task joins the shutdown fence; the main-thread step rechecks the registered source, then reuses the existing admission, label, cleanup and cancellation guards |
+| Created          | the window is registered ready and focused; cleanup on any late failure destroys the partial window                                                                |
+| Failed           | the renderer receives the closed failure code; no fallback window, retry or partial window                                                                         |
 
 Native logs (`destination_window`) record only the phase and a failure code, never routes, IDs, titles, URLs or connection data. No RPC, storage, schema or capability number is added.
 

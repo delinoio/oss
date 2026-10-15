@@ -1651,10 +1651,10 @@ function SidebarContent({
                 icon="usage"
                 current={surface === Surface.Usage}
                 onClick={(event) =>
-                dispatch(event, { surface: Surface.Usage }, () =>
-                  navigate(Surface.Usage),
-                )
-              }
+                  dispatch(event, { surface: Surface.Usage }, () =>
+                    navigate(Surface.Usage),
+                  )
+                }
               />
             ) : null}
             <SidebarButton

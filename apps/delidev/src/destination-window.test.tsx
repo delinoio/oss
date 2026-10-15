@@ -39,7 +39,9 @@ function Control({ typed = true }: { typed?: boolean }) {
     <div onClick={() => parentClick()}>
       <button
         type="button"
-        onClick={(event) => dispatch(event, typed ? route : undefined, () => current())}
+        onClick={(event) =>
+          dispatch(event, typed ? route : undefined, () => current())
+        }
       >
         Destination
       </button>
@@ -227,7 +229,9 @@ it("shows a localized operation-scoped failure without fallback, retry or loggin
   expect(logged).not.toContain(session);
   expect(logged).not.toContain("sessions");
   // Dismissing clears the notice; a later activation is a new operation.
-  fireEvent.click(screen.getByRole("button", { name: "Dismiss new window error" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Dismiss new window error" }),
+  );
   expect(screen.queryByRole("alert")).toBeNull();
   await act(async () => {
     fireEvent.click(button(), modified);

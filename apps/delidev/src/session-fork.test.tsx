@@ -624,19 +624,19 @@ it("retains exact fork retry and accepted job while navigation changes, publishi
   const destination = fakeDestinationWindow();
   const view = (active: boolean) =>
     destination.wrap(
-    <TransportProvider transport={transport}>
-      <QueryClientProvider client={client}>
-        <MutationIntents>
-          <SessionForkProvider openSession={open}>
-            {active ? (
-              <SessionForkAction source={source} />
-            ) : (
-              <p>Other conversation</p>
-            )}
-          </SessionForkProvider>
-        </MutationIntents>
-      </QueryClientProvider>
-    </TransportProvider>,
+      <TransportProvider transport={transport}>
+        <QueryClientProvider client={client}>
+          <MutationIntents>
+            <SessionForkProvider openSession={open}>
+              {active ? (
+                <SessionForkAction source={source} />
+              ) : (
+                <p>Other conversation</p>
+              )}
+            </SessionForkProvider>
+          </MutationIntents>
+        </QueryClientProvider>
+      </TransportProvider>,
     );
   const rendered = render(view(true));
   fireEvent.click(await screen.findByRole("button", { name: "Fork session" }));
