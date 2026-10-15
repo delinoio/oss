@@ -351,26 +351,26 @@ Each frame/request/response is capped at 1 MiB, except for the image-observation
 
 Every `nativewire` connection selects one fixed profile when it starts. The profile alone decides the frame, queued-byte and queued-event-count bounds; callers cannot override them and no public RPC, protocol or proto field exposes them. Codex fragments one response into many small notifications while the Worker publishes each event durably before it reads the next, so the Codex profiles queue up to 4,096 undelivered events. The explicit JSON-RPC profile used by Grok keeps 128.
 
-| Profile | Starter | Max frame | Max queued bytes | Max queued events |
-| --- | --- | --- | --- | --- |
-| `codex` | `Start` | 1 MiB | 8 MiB | 4,096 |
-| `image` | `StartImageObservations` | 16 MiB | 32 MiB | 4,096 |
-| `jsonrpc` | `StartJSONRPC` | 1 MiB | 8 MiB | 128 |
+| Profile   | Starter                  | Max frame | Max queued bytes | Max queued events |
+| --------- | ------------------------ | --------- | ---------------- | ----------------- |
+| `codex`   | `Start`                  | 1 MiB     | 8 MiB            | 4,096             |
+| `image`   | `StartImageObservations` | 16 MiB    | 32 MiB           | 4,096             |
+| `jsonrpc` | `StartJSONRPC`           | 1 MiB     | 8 MiB            | 128               |
 
 The channel capacity is the event-count bound, so allocation and admission cannot disagree. The pending-request bound (128), the incoming-interaction bound (128) and the remembered-request-identity bound (4,096) are not profile specific and are unchanged. The stdout reader is the only sender and never blocks: a full queue fails the connection instead of waiting, so native replies share that reader without stalling behind a slow consumer.
 
 Admission is evaluated per frame, in this order, and each row is covered by a test for every profile. `N`, `B` and `F` below are the profile's event, queued-byte and frame bounds.
 
-| Condition when the frame arrives | Result | Limit classification logged |
-| --- | --- | --- |
-| Frame is at most `F` bytes | Parsed; admission continues below | none |
-| Frame accumulates `F + 1` bytes (including across fragmented writes) | Connection fails with `ResourceExhausted` ("A native protocol frame exceeds its bound."); frame is not parsed | `frame_bytes`, observed `F + 1`, maximum `F` |
-| Queue holds at most `N - 1` events | Count check passes | none |
-| Queue holds `N` events (the `N + 1`th undelivered event) | Connection fails with `ResourceExhausted` ("Native event buffering reached its bound."); no event is dropped, truncated or coalesced | `event_count`, observed `N + 1`, maximum `N` |
-| Queued bytes plus this frame are at most `B` (including exactly `B`) | Event is admitted | none |
-| Queued bytes plus this frame are `B + 1` or more while the queue holds fewer than `N` events | Connection fails with the same `ResourceExhausted` error | `event_bytes`, observed queued bytes plus frame size, maximum `B` |
-| Both the count and byte bounds would be exceeded | Connection fails with the same `ResourceExhausted` error | `event_count` (the count check runs first) |
-| Consumer takes one event | One slot and the event's bytes are released and admission resumes | none |
+| Condition when the frame arrives                                                             | Result                                                                                                                               | Limit classification logged                                       |
+| -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
+| Frame is at most `F` bytes                                                                   | Parsed; admission continues below                                                                                                    | none                                                              |
+| Frame accumulates `F + 1` bytes (including across fragmented writes)                         | Connection fails with `ResourceExhausted` ("A native protocol frame exceeds its bound."); frame is not parsed                        | `frame_bytes`, observed `F + 1` (the first byte past the bound, whatever the read chunking), maximum `F` |
+| Queue holds at most `N - 1` events                                                           | Count check passes                                                                                                                   | none                                                              |
+| Queue holds `N` events (the `N + 1`th undelivered event)                                     | Connection fails with `ResourceExhausted` ("Native event buffering reached its bound."); no event is dropped, truncated or coalesced | `event_count`, observed `N + 1`, maximum `N`                      |
+| Queued bytes plus this frame are at most `B` (including exactly `B`)                         | Event is admitted                                                                                                                    | none                                                              |
+| Queued bytes plus this frame are `B + 1` or more while the queue holds fewer than `N` events | Connection fails with the same `ResourceExhausted` error                                                                             | `event_bytes`, observed queued bytes plus frame size, maximum `B` |
+| Both the count and byte bounds would be exceeded                                             | Connection fails with the same `ResourceExhausted` error                                                                             | `event_count` (the count check runs first)                        |
+| Consumer takes one event                                                                     | One slot and the event's bytes are released and admission resumes                                                                    | none                                                              |
 
 Server requests and late responses use the same queue and the same rows, so near capacity they keep their original request identity, arrival token and late-response payload, and bounded cancellation of an unanswered request still works after exhaustion. Exhaustion calls the connection failure path, which cancels, terminates and joins the owned process scope; an acknowledged input is never replayed automatically, and the public error code, message and recovery guidance are unchanged for all three classifications.
 

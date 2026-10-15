@@ -748,7 +748,8 @@ func (w *frameWriter) Write(data []byte) (int, error) {
 		}
 		if len(w.buffer)+size > w.connection.frameLimit() {
 			w.stopped = true
-			w.connection.logLimit(LimitFrameBytes, len(w.buffer)+size, w.connection.frameLimit())
+			// Report the first byte past the bound, independent of how the pipe chunked the data.
+			w.connection.logLimit(LimitFrameBytes, w.connection.frameLimit()+1, w.connection.frameLimit())
 			w.buffer = nil
 			w.connection.fail(domain.Fail(domain.ResourceExhausted, "A native protocol frame exceeds its bound.", "Use a supported harness output size and reconcile the interrupted session."))
 			break

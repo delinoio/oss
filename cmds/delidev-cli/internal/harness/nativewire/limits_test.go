@@ -269,7 +269,8 @@ func TestFrameBoundaryAtAndPastTheProfileBound(t *testing.T) {
 			// Row: a frame one byte over the bound fails before parsing.
 			c, log = newUnit(t, test)
 			writer = &frameWriter{connection: c}
-			over := append(bytes.Repeat([]byte("x"), test.frameBytes+1), '\n')
+			// A chunk far past the bound still reports the first byte past it.
+			over := append(bytes.Repeat([]byte("x"), test.frameBytes+4096), '\n')
 			if _, err := writer.Write(over); err != nil {
 				t.Fatal(err)
 			}
