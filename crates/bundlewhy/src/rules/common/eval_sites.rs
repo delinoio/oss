@@ -677,9 +677,10 @@ impl<'a> Scanner<'a> {
     }
 
     /// Reports whether the token before `index` needs an operand after it, so
-    /// a line break does not end the member or statement. Two tokens look
+    /// a line break does not end the member or statement. Three tokens look
     /// like operators but end an operand here: a `>` that closes a type
-    /// argument list in a type and a `>` that ends a JSX element.
+    /// argument list in a type, a `>` that ends a JSX element, and a `!` after
+    /// an operand (a TypeScript non-null assertion).
     fn continues_after_previous(&self, index: usize, in_type: bool) -> bool {
         let previous = self.tokens[index - 1];
         if self.closed_operand == Some(index - 1) {
@@ -687,6 +688,16 @@ impl<'a> Scanner<'a> {
         }
         if in_type && previous.is_punct(">") {
             return false;
+        }
+        if previous.is_punct("!") {
+            // `a!!` is a postfix assertion twice; `= !!` is a prefix negation.
+            let operand = self.tokens[..index]
+                .iter()
+                .rev()
+                .find(|token| !token.is_punct("!"));
+            if operand.is_some_and(|token| ends_operand(token, in_type)) {
+                return false;
+            }
         }
         continues_after(&previous, in_type)
     }
@@ -1915,7 +1926,7 @@ mod tests {
     }
 
     #[test]
-    fn closing_angles_end_a_member() {
+    fn closing_angles_and_non_null_assertions_end_a_member() {
         assert_table(&[
             // A `>` that closes type arguments in a type ends the member.
             (
@@ -1953,12 +1964,26 @@ mod tests {
                 "class C { view = <a b={<i />}>x</a>\n eval(x) {} }",
                 &[DECLARATION],
             ),
-            // A comparison `>` still needs an operand.
+            // A postfix `!` after an operand ends the field.
+            (
+                "class C { value = getValue()!\n eval(input) {} }",
+                &[DECLARATION],
+            ),
+            ("class C { value = a.b!\n eval(input) {} }", &[DECLARATION]),
+            (
+                "class C { value = items[0]!\n eval(input) {} }",
+                &[DECLARATION],
+            ),
+            ("class C { value = a!!\n eval(input) {} }", &[DECLARATION]),
+            // A prefix `!` and a comparison `>` still need an operand.
+            ("class C { value = !\n eval(code) }", &[CALL]),
+            ("class C { value = a && !\n eval(code) }", &[CALL]),
             ("class C { value = a >\n eval(code) }", &[CALL]),
             ("class C { value = a <\n eval(code) }", &[CALL]),
             ("class C { value = a !=\n eval(code) }", &[CALL]),
             ("class C { value = a >=\n eval(code) }", &[CALL]),
             // Other statements keep their reading.
+            ("run(a)!\neval(code)", &[CALL]),
             ("const v = <a />\neval(code)", &[CALL]),
         ]);
     }
