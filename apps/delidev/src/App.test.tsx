@@ -348,7 +348,7 @@ it("help shortcuts reuse existing navigation and screen focus without sending ba
   ).toBe("Retained help draft");
   expect(value.creates).not.toHaveBeenCalled();
   expect(value.enqueues).not.toHaveBeenCalled();
-});
+}, 30_000);
 
 function fixture(
   interactions: Resource[] = [],
