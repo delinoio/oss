@@ -7,12 +7,14 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { createRsbuild } from "@rsbuild/core";
+import { createRsbuild, loadConfig } from "@rsbuild/core";
 import { pluginReact } from "@rsbuild/plugin-react";
 const app = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const { chromium } = await import(
   pathToFileURL(resolve(process.env.DELIDEV_LAYOUT_PLAYWRIGHT_MODULE)).href
 );
+// Use the production asset policy so the fixture cannot mask CSS URL regressions.
+const productionConfig = (await loadConfig({ cwd: app })).content;
 const directory = await mkdtemp(join(tmpdir(), "delidev-worker-rows-"));
 const assetHashes = Object.fromEntries(
   await Promise.all(
@@ -45,7 +47,7 @@ try {
       html: { template: join(app, "index.html") },
       output: {
         distPath: { root: directory },
-        assetPrefix: "/",
+        assetPrefix: productionConfig.output.assetPrefix,
         sourceMap: false,
         cleanDistPath: true,
       },

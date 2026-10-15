@@ -25,5 +25,5 @@ export default defineConfig({
   },
   html: { template: "./index.html" },
   server: { host: "127.0.0.1", port: 46311, strictPort: true },
-  output: { assetPrefix: "./", sourceMap: false, cleanDistPath: true },
+  output: { assetPrefix: "auto", sourceMap: false, cleanDistPath: true },
 });
