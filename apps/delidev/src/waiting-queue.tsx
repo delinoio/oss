@@ -221,8 +221,7 @@ export function WaitingQueue({
       disabled: locked,
       up: previous ? () => send(row.id, previous.id) : undefined,
       down:
-        index >= 0 &&
-        index + 1 < (visibleRows[index]?.count ?? 0) - hiddenCount
+        index >= 0 && index + 1 < (visibleRows[index]?.count ?? 0) - hiddenCount
           ? () => {
               if (next && (after || !query.nextPageToken))
                 send(row.id, after?.id ?? "");
@@ -314,62 +313,62 @@ export function WaitingQueue({
             payload
               .filter((row) => !hidden(row.id))
               .map((row) => (
-              <div
-                key={row.id}
-                className={[
-                  "queue-drop-row",
-                  insertion === row.id && "queue-insertion",
-                  row.id === lastDisplayedRowId && "queue-drop-row-last",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-                onDragOver={(event) => {
-                  if (dragged && !locked && dragged !== row.id) {
-                    event.preventDefault();
-                    setInsertion(row.id);
-                  }
-                }}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  drop(row.id);
-                }}
-              >
-                <QueuedInput
-                  compact
-                  resource={row}
-                  session={session}
-                  active={active}
-                  refresh={() => {
-                    query.reload();
-                    refreshHistory();
+                <div
+                  key={row.id}
+                  className={[
+                    "queue-drop-row",
+                    insertion === row.id && "queue-insertion",
+                    row.id === lastDisplayedRowId && "queue-drop-row-last",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                  onDragOver={(event) => {
+                    if (dragged && !locked && dragged !== row.id) {
+                      event.preventDefault();
+                      setInsertion(row.id);
+                    }
                   }}
-                  draft={drafts.get(row.id)}
-                  changeDraft={(value) => saveDraft(row.id, value)}
-                  readOnly={locked}
-                  movement={movement(row)}
-                />
-                {dragged &&
-                !locked &&
-                !query.nextPageToken &&
-                row.id === lastDisplayedRowId ? (
-                  <div
-                    className={`queue-drop-end${insertion === "end" ? " queue-insertion" : ""}`}
-                    onDragOver={(event) => {
-                      // The final row owns this target; do not turn an end drop
-                      // into the containing row's move-before operation.
-                      event.stopPropagation();
-                      event.preventDefault();
-                      setInsertion("end");
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    drop(row.id);
+                  }}
+                >
+                  <QueuedInput
+                    compact
+                    resource={row}
+                    session={session}
+                    active={active}
+                    refresh={() => {
+                      query.reload();
+                      refreshHistory();
                     }}
-                    onDrop={(event) => {
-                      event.stopPropagation();
-                      event.preventDefault();
-                      drop("");
-                    }}
+                    draft={drafts.get(row.id)}
+                    changeDraft={(value) => saveDraft(row.id, value)}
+                    readOnly={locked}
+                    movement={movement(row)}
                   />
-                ) : null}
-              </div>
-            ))
+                  {dragged &&
+                  !locked &&
+                  !query.nextPageToken &&
+                  row.id === lastDisplayedRowId ? (
+                    <div
+                      className={`queue-drop-end${insertion === "end" ? " queue-insertion" : ""}`}
+                      onDragOver={(event) => {
+                        // The final row owns this target; do not turn an end drop
+                        // into the containing row's move-before operation.
+                        event.stopPropagation();
+                        event.preventDefault();
+                        setInsertion("end");
+                      }}
+                      onDrop={(event) => {
+                        event.stopPropagation();
+                        event.preventDefault();
+                        drop("");
+                      }}
+                    />
+                  ) : null}
+                </div>
+              ))
           }
         </ScrollPayloadWindow>
         <ScrollContinuation

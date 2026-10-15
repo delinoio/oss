@@ -1827,7 +1827,11 @@ export function SessionView({
   );
   useEffect(() => {
     for (const input of originalQueueRows)
-      submissions.store.registerOriginal(id, input, initialInputId || undefined);
+      submissions.store.registerOriginal(
+        id,
+        input,
+        initialInputId || undefined,
+      );
     submissions.store.observe(id, [
       ...(messages.data?.resources ?? []),
       ...pending,
@@ -2332,7 +2336,9 @@ export function SessionView({
   // Accepted receipt of a later follow-up (published by the retained enqueue
   // before its queue refresh or stream arrival) is such evidence even while the
   // retained queue snapshot still lists only the original input.
-  const originalSubmissions = projectedSubmissions.filter((row) => row.original);
+  const originalSubmissions = projectedSubmissions.filter(
+    (row) => row.original,
+  );
   const followUpSubmissions = projectedSubmissions.filter(
     (row) => !row.original,
   );

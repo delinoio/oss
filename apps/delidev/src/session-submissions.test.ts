@@ -268,9 +268,9 @@ it("rejects foreign, malformed and non-first original evidence", () => {
       f.input(1n, "queued", "x", 1, newRequestId()),
     ),
   ).toBe(false);
-  expect(f.store.registerOriginal(f.sessionId, f.input(1n), newRequestId())).toBe(
-    false,
-  );
+  expect(
+    f.store.registerOriginal(f.sessionId, f.input(1n), newRequestId()),
+  ).toBe(false);
   expect(f.store.registerOriginal(f.sessionId, f.native)).toBe(false);
   expect(f.store.registerOriginal(f.sessionId, undefined)).toBe(false);
   expect(f.store.snapshot()).toHaveLength(0);

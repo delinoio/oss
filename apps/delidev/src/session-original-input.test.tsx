@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 import { create } from "@bufbuild/protobuf";
 import { createRouterTransport } from "@connectrpc/connect";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { expect, it } from "vitest";
 import {
   EntityKind,
@@ -36,7 +42,12 @@ function queueRow(
     kind: EntityKind.QUEUE,
     schemaVersion: 1,
     revision,
-    documentJson: encode({ prompt, mode: "execute", delivery: "queued", sequence }),
+    documentJson: encode({
+      prompt,
+      mode: "execute",
+      delivery: "queued",
+      sequence,
+    }),
   });
 }
 
@@ -77,12 +88,17 @@ function fixture() {
     });
     router.service(ResourceService, {
       getResource: (request) => ({
-        resource: resources.get(request.id) ?? queue.find((row) => row.id === request.id),
+        resource:
+          resources.get(request.id) ??
+          queue.find((row) => row.id === request.id),
       }),
       getSnapshot: () => ({ resources: [session], cursor: "original-input" }),
       listResources: () => ({ resources: [] as Resource[] }),
       async *watchEvents(_request, context) {
-        const channel = { events: [] as WatchEventsResponse[], notify: () => {} };
+        const channel = {
+          events: [] as WatchEventsResponse[],
+          notify: () => {},
+        };
         channels.add(channel);
         const aborted = () => channel.notify();
         context.signal.addEventListener("abort", aborted);

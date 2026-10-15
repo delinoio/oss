@@ -59,7 +59,13 @@ function resource(kind: EntityKind, name: string, extra = {}): Resource {
 }
 function Probe() {
   const { rows } = useSessionSubmissions();
-  return <output data-testid="rows">{JSON.stringify(rows.map((row) => ({ original: row.original, prompt: row.prompt })))}</output>;
+  return (
+    <output data-testid="rows">
+      {JSON.stringify(
+        rows.map((row) => ({ original: row.original, prompt: row.prompt })),
+      )}
+    </output>
+  );
 }
 function fixture(kind: NewSessionKind) {
   const agent = resource(EntityKind.AGENT, "Remembered agent"),
@@ -148,19 +154,19 @@ function fixture(kind: NewSessionKind) {
       <QueryClientProvider client={client}>
         <MutationIntents>
           <SessionSubmissionsProvider>
-          <Probe />
-          <NewSession
-            kind={kind}
-            active
-            ownsActivation
-            activation={1}
-            back={() => {}}
-            openSettings={() => {}}
-            open={() => {}}
-            created={() => {}}
-            preferenceBridge={bridge}
-            preferenceScope={scope}
-          />
+            <Probe />
+            <NewSession
+              kind={kind}
+              active
+              ownsActivation
+              activation={1}
+              back={() => {}}
+              openSettings={() => {}}
+              open={() => {}}
+              created={() => {}}
+              preferenceBridge={bridge}
+              preferenceScope={scope}
+            />
           </SessionSubmissionsProvider>
         </MutationIntents>
       </QueryClientProvider>
@@ -169,29 +175,33 @@ function fixture(kind: NewSessionKind) {
   return { agent, machine, selection, createSession, view };
 }
 
-
 it.each([
   [NewSessionKind.Session, "Create session"],
   [NewSessionKind.GeneralChat, "Start general chat"],
-])("registers the verified original input after accepted %s creation", async (kind, label) => {
-  const f = fixture(kind);
-  render(f.view);
-  await waitFor(() =>
-    expect(
-      scrollChoiceValue(screen.getByRole("combobox", { name: "Agent Worker" })),
-    ).toBe(f.agent.id),
-  );
-  fireEvent.change(screen.getByRole("textbox", { name: "First message" }), {
-    target: { value: "Created first prompt" },
-  });
-  fireEvent.click(screen.getByRole("button", { name: label }));
-  await waitFor(() =>
-    expect(screen.getByTestId("rows").textContent).toContain(
-      "Created first prompt",
-    ),
-  );
-  expect(JSON.parse(screen.getByTestId("rows").textContent!)).toEqual([
-    { original: true, prompt: "Created first prompt" },
-  ]);
-  expect(f.createSession).toHaveBeenCalledOnce();
-});
+])(
+  "registers the verified original input after accepted %s creation",
+  async (kind, label) => {
+    const f = fixture(kind);
+    render(f.view);
+    await waitFor(() =>
+      expect(
+        scrollChoiceValue(
+          screen.getByRole("combobox", { name: "Agent Worker" }),
+        ),
+      ).toBe(f.agent.id),
+    );
+    fireEvent.change(screen.getByRole("textbox", { name: "First message" }), {
+      target: { value: "Created first prompt" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: label }));
+    await waitFor(() =>
+      expect(screen.getByTestId("rows").textContent).toContain(
+        "Created first prompt",
+      ),
+    );
+    expect(JSON.parse(screen.getByTestId("rows").textContent!)).toEqual([
+      { original: true, prompt: "Created first prompt" },
+    ]);
+    expect(f.createSession).toHaveBeenCalledOnce();
+  },
+);
