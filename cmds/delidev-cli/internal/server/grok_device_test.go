@@ -168,11 +168,22 @@ func (g *grokDeviceFixture) beginDevice(t *testing.T) *grokRun {
 		t.Fatal(err)
 	}
 	run := g.launch(t, op)
+	// The virtual clock lets a login that is not held settle within milliseconds,
+	// and a settled login no longer returns its URL, so a settled login also ends
+	// the wait. Tests that need the published URL hold the first wait with
+	// holdFirstWait.
 	waitUntil(t, "the device verification URL", func() bool {
-		run.url = g.progressFor(run.op.OperationId).Url
-		return run.url != ""
+		p := g.progressFor(run.op.OperationId)
+		run.url = p.Url
+		return p.Url != "" || p.State != pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_PREPARING && p.State != pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_WAITING
 	})
 	return run
+}
+
+// holdFirstWait keeps a device login waiting before its first poll, so its
+// published URL stays observable until the test ends or cancels it.
+func (g *grokDeviceFixture) holdFirstWait() {
+	g.clock.blockAt(1, make(chan struct{}), make(chan struct{}))
 }
 
 // startDevice requests and launches a device login without waiting for the URL.
@@ -605,6 +616,7 @@ func TestGrokDeviceRequestReplayReturnsTheOriginalOperationAndNeverSwitchesMetho
 	if _, err := g.requestDevice(t, string(domain.NewID())); err == nil {
 		t.Fatal("a second login started while one was pending")
 	}
+	g.holdFirstWait()
 	run := g.launch(t, first)
 	waitUntil(t, "the device URL", func() bool { return g.progress(run).Url != "" })
 	g.cancelLogin(t)
@@ -613,6 +625,7 @@ func TestGrokDeviceRequestReplayReturnsTheOriginalOperationAndNeverSwitchesMetho
 
 func TestGrokDeviceLoginNeverUsesTheBrowserSurface(t *testing.T) {
 	g := newGrokDeviceFixture(t)
+	g.holdFirstWait()
 	run := g.beginDevice(t)
 	p := g.progress(run)
 	if !strings.HasPrefix(p.Url, "https://accounts.x.ai/") || strings.Contains(p.Url, "oauth2/authorize") {
@@ -782,5 +795,49 @@ func TestGrokVerificationInterruptedAfterTheTokensAreIssuedStaysInRecovery(t *te
 	g.idp.UserInfoStatus = http.StatusInternalServerError
 	if outcome := g.service.grokBundleOutcome(context.Background(), client, endpoints, tokens, "", true, original); outcome.state != domain.SubscriptionFailed || !outcome.claimed {
 		t.Fatalf("a userinfo failure settled as %v", outcome.state)
+	}
+}
+
+// A cancellation that lands after the claimed exchange succeeded is too late: the
+// tokens are issued, so the login publishes instead of settling as canceled with
+// its credentials discarded and the redeemed grant forgotten.
+func TestGrokCancelRacingTheSettlementOfASuccessfulClaimedLoginIsTooLate(t *testing.T) {
+	g := newGrokDeviceFixture(t)
+	g.service.grokFaultHook = func(p grokFaultPoint) error {
+		if p == grokFaultBeforeLoginFinish {
+			g.cancelLogin(t)
+		}
+		return nil
+	}
+	run := g.startDevice(t)
+	g.awaitDone(t, run)
+	g.service.grokFaultHook = nil
+	_, a := g.record()
+	if a.Connection == nil || a.Subscription.Generation == "" || a.Subscription.RecoveryRequired || a.Subscription.Pending != nil || a.Subscription.ServerOperation.State != domain.SubscriptionSucceeded {
+		t.Fatal("a cancellation after the successful exchange discarded the issued credentials")
+	}
+	if g.idp.DevicePolls() != 1 {
+		t.Fatalf("the device code was polled %d times", g.idp.DevicePolls())
+	}
+}
+
+func TestGrokLateCancelOutcomeTable(t *testing.T) {
+	for name, c := range map[string]struct {
+		claimed, success, canceled, gone bool
+		result, want                     domain.SubscriptionLoginState
+	}{
+		"unclaimed cancel":              {false, false, true, false, domain.SubscriptionFailed, domain.SubscriptionCanceled},
+		"claimed failure cancel":        {true, false, true, false, domain.SubscriptionFailed, domain.SubscriptionCanceled},
+		"claimed success cancel":        {true, true, true, false, domain.SubscriptionSucceeded, domain.SubscriptionSucceeded},
+		"claimed success vanished":      {true, true, false, true, domain.SubscriptionSucceeded, domain.SubscriptionRecovery},
+		"claimed success cancel vanish": {true, true, true, true, domain.SubscriptionSucceeded, domain.SubscriptionRecovery},
+		"uncertain cancel":              {true, false, true, false, domain.SubscriptionRecovery, domain.SubscriptionRecovery},
+		"no cancel":                     {true, true, false, false, domain.SubscriptionSucceeded, domain.SubscriptionSucceeded},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, got, _ := grokLateCancelOutcome(c.claimed, c.success, c.result, domain.Canceled, c.canceled, c.gone); got != c.want {
+				t.Fatalf("settled as %v, want %v", got, c.want)
+			}
+		})
 	}
 }

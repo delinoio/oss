@@ -695,6 +695,7 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 		// the generation stay the durable cleanup owner until the removal is
 		// confirmed, so a removal that fails leaves the exact Worker able to retry
 		// instead of stranding a revoked bundle behind a disconnected account.
+		logoutCleaned := false
 		if usable && lease.Action == domain.SubscriptionLogout && input.Cleanup {
 			cleanupCtx, cancelCleanup := grokBookkeepingContext(ctx, grokCleanupTimeout)
 			err := cleanupSubscriptionReferences(cleanupCtx, vault, input.Account, "", protectedGenerations(original.Subscription)...)
@@ -702,6 +703,7 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 			if err != nil {
 				return nil, rpc.Error(err, c)
 			}
+			logoutCleaned = true
 		}
 		// The superseded generation stays referenced and readable until the
 		// account document durably publishes its replacement (or the logout), so a
@@ -816,7 +818,10 @@ func (s *Service) finishGrokSubscription(ctx context.Context, req *connect.Reque
 		// completed logout. A logout fenced for recovery still references its
 		// generation, so that generation is kept. A failed removal is fenced for
 		// recovery by the owned-error guard.
-		if input.Cleanup {
+		// A confirmed logout already removed every generation before its commit; a
+		// second enumeration here could only fail after the commit and refence an
+		// account that is already disconnected.
+		if input.Cleanup && !logoutCleaned {
 			cleanupCtx, cancelCleanup := grokBookkeepingContext(ctx, grokCleanupTimeout)
 			err := cleanupSubscriptionReferences(cleanupCtx, vault, input.Account, committed, protectedGenerations(original.Subscription)...)
 			cancelCleanup()

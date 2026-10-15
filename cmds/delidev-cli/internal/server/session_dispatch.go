@@ -203,6 +203,11 @@ func checkedExecutionConfiguration(tx *store.Tx, session domain.Session, machine
 		if input.Fork != nil && !slices.Contains(machine.WorkerCapabilities, domain.OpenCodeGeneralChatForkV1) {
 			return empty, domain.Fail(domain.Unsupported, "The original Runner Device lacks OpenCode Fork support.", "Update and reconnect the original Unix Runner Device; the child stays paused.")
 		}
+		// The retained session profile, not only the one-shot fork input, binds
+		// every continuation of a profile v2 child to both capability pairs.
+		if domain.OpenCodeForkReasoningRequired(session, input) && !domain.OpenCodeForkReasoningSupported(machine.WorkerCapabilities) {
+			return empty, domain.Fail(domain.Unsupported, "The original Runner Device lacks OpenCode Fork reasoning support.", "Update and reconnect the original Unix Runner Device; the child stays paused.")
+		}
 		if !slices.Contains(machine.WorkerCapabilities, domain.OpenCodeForegroundSubagentsV1) {
 			return empty, domain.Fail(domain.Unsupported, "The original Runner Device lacks foreground child observation support.", "Update and reconnect that Runner Device before OpenCode execution.")
 		}

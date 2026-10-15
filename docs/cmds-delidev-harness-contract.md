@@ -2442,7 +2442,11 @@ checkpoint roots and version-1 compatibility. Opt-in installed Windows tests use
 loopback providers for Build/Plan, FIFO, Stop/Resume and first/resumed lost-report
 recovery. A separately supplied canonical writable
 `DELIDEV_NATIVE_OPENCODE_WINDOWS_WORKSPACE_PARENT` on another local drive enables
-the native cross-drive Plan fixture. Neither deterministic tests nor
+the native cross-drive Plan fixture. All native OpenCode tests obtain the binary
+and its observed version through `nativetest.NativeOpenCodeExecutable`, which
+skips below `domain.OpenCodeProtocolVersion`; see the
+[native OpenCode testing runbook](cmds-delidev-opencode-native-testing.md).
+Neither deterministic tests nor
 cross-compilation establish installed Windows/account acceptance. See the
 independent issue evidence at the historical path `evidence/delidev/issue-1205/windows-root-validation.md` (the file is absent from this checkout).
 

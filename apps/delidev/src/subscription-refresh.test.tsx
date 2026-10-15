@@ -39,6 +39,10 @@ type Options = {
   data?: Record<string, unknown>;
   subscription?: Record<string, unknown>;
   list?: boolean;
+  // Legacy Runner-bound Claude capability 38; advertised unless disabled.
+  claudeLegacy?: boolean;
+  // Server-owned Claude sign-in capability 67; absent unless enabled.
+  claudeServer?: boolean;
 };
 function fixture(options: Options = {}) {
   const connection = newRequestId(),
@@ -103,7 +107,12 @@ function fixture(options: Options = {}) {
         capabilities: [
           SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,
           SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1,
-          SystemCapability.CLAUDE_SUBSCRIPTIONS_V1,
+          ...(options.claudeLegacy === false
+            ? []
+            : [SystemCapability.CLAUDE_SUBSCRIPTIONS_V1]),
+          ...(options.claudeServer === true
+            ? [SystemCapability.CLAUDE_SERVER_LOGIN_V1]
+            : []),
           ...(options.supported === false
             ? []
             : [SystemCapability.SERVER_SUBSCRIPTION_QUOTA_V2]),
@@ -341,21 +350,46 @@ it.each([
   {
     name: "disconnected sign-in",
     data: { connection: {}, health: "disconnected" },
+    options: {},
     label: "Sign in to ChatGPT",
     key: "subscription-accounts.signInTo_fa4edf",
   },
   {
-    name: "Claude reauthentication",
-    data: { subscription_service: "claude" },
-    label: "Sign in again",
-    key: "Sign in again",
+    name: "Claude sign-in",
+    data: {
+      subscription_service: "claude",
+      connection: {},
+      health: "disconnected",
+    },
+    options: {
+      claudeLegacy: false,
+      claudeServer: true,
+      subscription: { generation: "" },
+    },
+    label: "Sign in to Claude",
+    key: "subscription-accounts.signInTo_fa4edf",
+  },
+  {
+    name: "Claude connect new account",
+    data: {
+      subscription_service: "claude",
+      connection: {},
+      health: "disconnected",
+    },
+    options: {
+      claudeLegacy: false,
+      claudeServer: true,
+      subscription: { native_profile_id: "device-owned-profile" },
+    },
+    label: "Connect new account",
+    key: "Connect new account",
   },
 ])(
   "blocks $name through the explicit read owner, including direct callbacks",
-  async ({ data, label, key }) => {
+  async ({ data, options, label, key }) => {
     const begin = stubLogin();
     const action = captureActions();
-    const f = fixture({ supported: false, data });
+    const f = fixture({ supported: false, data, ...options });
     render(<f.Harness />);
     const button = await screen.findByRole("button", { name: label });
     await waitFor(() =>
@@ -736,6 +770,28 @@ it("uses one original server batch for unloaded account pages and one row quota 
     generationId: f.generation,
     mutation: { id: f.initial.id, expectedRevision: f.initial.revision },
   });
+});
+
+it("keeps the Claude server-update notice off unavailable ChatGPT row and Refresh all actions", async () => {
+  const f = fixture({ list: true, supported: false });
+  render(<f.Harness />);
+  await screen.findByRole("article", { name: "Original account" });
+  const claudeUpdate = /Claude sign-in needs a server update/;
+  // The Claude guidance stays in the Add-account notice and the Claude card.
+  expect((await screen.findAllByText(claudeUpdate)).length).toBe(1);
+  const refreshRow = screen.getByRole("button", {
+    name: /^Refresh Original account/,
+  });
+  const refreshAll = screen.getByRole("button", { name: "Refresh all" });
+  for (const button of [refreshRow, refreshAll]) {
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    expect(button.getAttribute("title")).toMatch(/does not support/);
+    expect(button.getAttribute("title")).not.toMatch(claudeUpdate);
+  }
+  const disconnect = screen.getByRole("button", {
+    name: /^Disconnect Original account/,
+  });
+  expect(disconnect.getAttribute("title") ?? "").not.toMatch(claudeUpdate);
 });
 
 it("rereads accepted account pages every thirty seconds in app use without unseen-page discovery", async () => {

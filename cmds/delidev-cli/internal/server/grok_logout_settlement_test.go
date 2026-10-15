@@ -227,3 +227,32 @@ func TestGrokWorkerLogoutKeepsCleanupOwnershipUntilTheVaultRemovalIsConfirmed(t 
 		t.Fatal("the retried Worker logout left protected generations")
 	}
 }
+
+// The Worker-lease logout removes the revoked bundle before its commit. A second
+// vault enumeration after the commit could only fail on an account that is already
+// disconnected and refence it with nothing left to recover, so it does not run.
+func TestGrokWorkerLogoutDoesNotRefenceADisconnectedAccountAfterTheCommit(t *testing.T) {
+	f := newGrokFixture(t)
+	f.login("synthetic-principal-1")
+	f.markRevoked(t)
+	lease, err := f.take(f.queue(logoutAction), logoutAction)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.secrets.mu.Lock()
+	before := f.secrets.enumerations
+	f.secrets.mu.Unlock()
+	if _, err := f.finishWith(lease, domain.NewID(), nil, true, false, true); err != nil {
+		t.Fatal(err)
+	}
+	f.secrets.mu.Lock()
+	enumerations := f.secrets.enumerations - before
+	f.secrets.mu.Unlock()
+	if enumerations != 1 {
+		t.Fatalf("the vault was enumerated %d times; only the pre-commit cleanup may enumerate", enumerations)
+	}
+	_, a := f.record()
+	if a.Connection != nil || a.Subscription.RecoveryRequired || a.Health != domain.AccountDisconnected {
+		t.Fatal("the completed Worker logout was not left disconnected and unfenced")
+	}
+}

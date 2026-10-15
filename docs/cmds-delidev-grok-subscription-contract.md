@@ -906,36 +906,36 @@ the diagnostic always carries the phase of the operation (`LOGIN`, `REFRESH` or 
 and the operation as correlation id. The scanner settles only a fenced operation
 whose exchange was never claimed; a claim is never released automatically.
 
-| Stage reached                                         | Event                                                                             | Outcome                                                                                                                                                                                                             | Recovery kind                    | Diagnostic                            |
-| ----------------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- | ------------------------------------- |
-| queued, not leased                                    | restart                                                                           | fenced by the startup fence, then settled `FAILED` by the scanner (`recoverGrokLogin` or `recoverGrokRefresh`); a refresh restores the health it was admitted under (`health_before`)                               | automatic                        | `unavailable`                         |
-| queued, not leased                                    | cancel (login only)                                                               | `CANCELED`, pending cleared                                                                                                                                                                                         | none                             | none                                  |
-| leased, no claim                                      | shutdown or cancel                                                                | `CANCELED`                                                                                                                                                                                                          | none                             | none                                  |
-| leased, no claim                                      | window expiry                                                                     | `EXPIRED`                                                                                                                                                                                                           | none                             | none                                  |
-| leased, no claim                                      | restart                                                                           | fenced, then settled `FAILED` by the scanner                                                                                                                                                                        | automatic                        | `unavailable`                         |
-| leased, no claim                                      | failure before the claim (vault, discovery, listener)                             | `FAILED`, credential untouched                                                                                                                                                                                      | none                             | the failure code                      |
-| claimed device login, between polls                   | server shutdown                                                                   | fenced, the claim is retained                                                                                                                                                                                       | manual, never resent             | `recovery_required`                   |
-| claimed device login, between polls                   | user cancel                                                                       | `CANCELED`, the claim stays recorded and no further poll is sent                                                                                                                                                    | none                             | none                                  |
-| claimed, request not sent                             | restart or crash                                                                  | fenced, the claim is retained                                                                                                                                                                                       | manual, never resent             | `recovery_required`                   |
-| claimed, request sent                                 | transport failure, timeout, shutdown, cancel, unparsed or unexpected response     | fenced                                                                                                                                                                                                              | manual, never resent             | `recovery_required`                   |
-| claimed, request sent                                 | definitive refusal (see the [response table](#token-endpoint-response-table))     | `FAILED` (refresh also sets health `expired`)                                                                                                                                                                       | none                             | `unauthenticated` or the refusal code |
-| claimed refresh, response received                    | identity, ID token, userinfo or mapping not verified                              | fenced                                                                                                                                                                                                              | manual                           | `recovery_required`                   |
-| claimed login, response received                      | ID token, userinfo or mapping not verified                                        | `FAILED`, nothing stored (there is no credential to protect)                                                                                                                                                        | none                             | the failure code                      |
-| claimed login, response received                      | cancel, shutdown or window expiry interrupts the verification                     | fenced: the tokens are issued, so the interruption never becomes a canceled login that clears the claim                                                                                                             | manual                           | `recovery_required`                   |
-| claimed, response verified                            | settlement committed                                                              | `SUCCEEDED`, next generation published                                                                                                                                                                              | none                             | none                                  |
-| claimed, response verified                            | settlement write failed before the commit                                         | fenced, staged generation retired                                                                                                                                                                                   | manual                           | `recovery_required`                   |
-| logout accepted, not leased                           | restart                                                                           | health `revoked`, fenced, then settled `FAILED` by the scanner with the credential intact                                                                                                                           | automatic                        | `unavailable`                         |
-| logout accepted, waiting for an existing Worker lease | restart                                                                           | fenced, then settled `FAILED` by the scanner without touching the lease (its own Finish is refused while the fence stands, so the fence clears first) and the account stays `revoked`; a new logout request follows | automatic                        | `unavailable`                         |
-| logout leased, no revocation claim                    | vault read, bundle validation or claim preconditions fail                         | `FAILED`, account stays connected and `revoked`; only another logout may be requested, a refresh is refused (`Conflict`)                                                                                            | none                             | the failure code                      |
-| logout claimed                                        | request refused (any 4xx), unknown (5xx, transport, timeout, shutdown) or restart | fenced, the bundle is kept, the token is never resent                                                                                                                                                               | manual                           | `recovery_required`                   |
-| logout claimed                                        | HTTP 200                                                                          | revocation recorded, the vault is cleaned and the account is disconnected                                                                                                                                           | none                             | none                                  |
-| logout revoked, cleanup pending                       | vault removal or disconnect fails, or restart                                     | fenced; the scanner repeats only the cleanup                                                                                                                                                                        | automatic                        | `unavailable`                         |
-| execute lease held                                    | server restart, lost Worker instance or replayed Take                             | fenced; the record is delivered only to the owning Runner Device credential, whose Worker retires the credential and Finishes with confirmed cleanup                                                                | automatic on the original Worker | none                                  |
-| execute lease held, logout accepted during the lease  | the lease is fenced and then cleaned up by its original Worker                    | the lease is released and the account stays `revoked` while the logout is pending (never `ready`); the scanner then settles the unclaimed logout                                                                    | automatic                        | none                                  |
-| execute lease held                                    | the Worker's Finish response is lost                                              | the Worker reports execution uncertainty (the primary lane closes and ownership is reconciled); the server keeps the lease fenced for the same recovery                                                             | automatic on the original Worker | none                                  |
-| execute Take                                          | discovery replaced the installation after dispatch                                | the lease launches the installation the Take returned; an unusable one releases the lease with confirmed cleanup before any credential is written                                                                   | none                             | none                                  |
-| any stage                                             | settlement commit acknowledgement lost after the commit                           | the committed outcome stands, nothing is rewritten                                                                                                                                                                  | none                             | as committed                          |
-| any stage                                             | cancel after a claim                                                              | ignored: a claimed operation never settles as canceled                                                                                                                                                              | manual                           | `recovery_required`                   |
+| Stage reached                                         | Event                                                                             | Outcome                                                                                                                                                                                                                                                                                  | Recovery kind                    | Diagnostic                            |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- | ------------------------------------- |
+| queued, not leased                                    | restart                                                                           | fenced by the startup fence, then settled `FAILED` by the scanner (`recoverGrokLogin` or `recoverGrokRefresh`); a refresh restores the health it was admitted under (`health_before`)                                                                                                    | automatic                        | `unavailable`                         |
+| queued, not leased                                    | cancel (login only)                                                               | `CANCELED`, pending cleared                                                                                                                                                                                                                                                              | none                             | none                                  |
+| leased, no claim                                      | shutdown or cancel                                                                | `CANCELED`                                                                                                                                                                                                                                                                               | none                             | none                                  |
+| leased, no claim                                      | window expiry                                                                     | `EXPIRED`                                                                                                                                                                                                                                                                                | none                             | none                                  |
+| leased, no claim                                      | restart                                                                           | fenced, then settled `FAILED` by the scanner                                                                                                                                                                                                                                             | automatic                        | `unavailable`                         |
+| leased, no claim                                      | failure before the claim (vault, discovery, listener)                             | `FAILED`, credential untouched                                                                                                                                                                                                                                                           | none                             | the failure code                      |
+| claimed device login, between polls                   | server shutdown                                                                   | fenced, the claim is retained                                                                                                                                                                                                                                                            | manual, never resent             | `recovery_required`                   |
+| claimed device login, between polls                   | user cancel                                                                       | `CANCELED`, the claim stays recorded and no further poll is sent                                                                                                                                                                                                                         | none                             | none                                  |
+| claimed, request not sent                             | restart or crash                                                                  | fenced, the claim is retained                                                                                                                                                                                                                                                            | manual, never resent             | `recovery_required`                   |
+| claimed, request sent                                 | transport failure, timeout, shutdown, cancel, unparsed or unexpected response     | fenced                                                                                                                                                                                                                                                                                   | manual, never resent             | `recovery_required`                   |
+| claimed, request sent                                 | definitive refusal (see the [response table](#token-endpoint-response-table))     | `FAILED` (refresh also sets health `expired`)                                                                                                                                                                                                                                            | none                             | `unauthenticated` or the refusal code |
+| claimed refresh, response received                    | identity, ID token, userinfo or mapping not verified                              | fenced                                                                                                                                                                                                                                                                                   | manual                           | `recovery_required`                   |
+| claimed login, response received                      | ID token, userinfo or mapping not verified                                        | `FAILED`, nothing stored (there is no credential to protect)                                                                                                                                                                                                                             | none                             | the failure code                      |
+| claimed login, response received                      | cancel, shutdown or window expiry interrupts the verification                     | fenced: the tokens are issued, so the interruption never becomes a canceled login that clears the claim                                                                                                                                                                                  | manual                           | `recovery_required`                   |
+| claimed, response verified                            | settlement committed                                                              | `SUCCEEDED`, next generation published                                                                                                                                                                                                                                                   | none                             | none                                  |
+| claimed, response verified                            | settlement write failed before the commit                                         | fenced, staged generation retired                                                                                                                                                                                                                                                        | manual                           | `recovery_required`                   |
+| logout accepted, not leased                           | restart                                                                           | health `revoked`, fenced, then settled `FAILED` by the scanner with the credential intact                                                                                                                                                                                                | automatic                        | `unavailable`                         |
+| logout accepted, waiting for an existing Worker lease | restart                                                                           | fenced, then settled `FAILED` by the scanner without touching the lease (its own Finish is refused while the fence stands, so the fence clears first) and the account stays `revoked`; a new logout request follows                                                                      | automatic                        | `unavailable`                         |
+| logout leased, no revocation claim                    | vault read, bundle validation or claim preconditions fail                         | `FAILED`, account stays connected and `revoked`; only another logout may be requested, a refresh is refused (`Conflict`)                                                                                                                                                                 | none                             | the failure code                      |
+| logout claimed                                        | request refused (any 4xx), unknown (5xx, transport, timeout, shutdown) or restart | fenced, the bundle is kept, the token is never resent                                                                                                                                                                                                                                    | manual                           | `recovery_required`                   |
+| logout claimed                                        | HTTP 200                                                                          | revocation recorded, the vault is cleaned and the account is disconnected                                                                                                                                                                                                                | none                             | none                                  |
+| logout revoked, cleanup pending                       | vault removal or disconnect fails, or restart                                     | fenced; the scanner repeats only the cleanup                                                                                                                                                                                                                                             | automatic                        | `unavailable`                         |
+| execute lease held                                    | server restart, lost Worker instance or replayed Take                             | fenced; the record is delivered only to the owning Runner Device credential, whose Worker retires the credential and Finishes with confirmed cleanup                                                                                                                                     | automatic on the original Worker | none                                  |
+| execute lease held, logout accepted during the lease  | the lease is fenced and then cleaned up by its original Worker                    | the lease is released and the account stays `revoked` while the logout is pending (never `ready`); the scanner then settles the unclaimed logout                                                                                                                                         | automatic                        | none                                  |
+| execute lease held                                    | the Worker's Finish response is lost                                              | the Worker reports execution uncertainty (the primary lane closes and ownership is reconciled); the server keeps the lease fenced for the same recovery                                                                                                                                  | automatic on the original Worker | none                                  |
+| execute Take                                          | discovery replaced the installation after dispatch                                | the lease launches the installation the Take returned; an unusable one releases the lease with confirmed cleanup before any credential is written                                                                                                                                        | none                             | none                                  |
+| any stage                                             | settlement commit acknowledgement lost after the commit                           | the committed outcome stands, nothing is rewritten                                                                                                                                                                                                                                       | none                             | as committed                          |
+| any stage                                             | cancel after a claim (login)                                                      | an uncertain claimed outcome stays fenced; a successful claimed exchange publishes, because the tokens are issued and the cancellation is too late; a failed one stays failed; a vanished actor fences a success (`TestGrokCancelRacingTheSettlementOfASuccessfulClaimedLoginIsTooLate`) | manual only when uncertain       | `recovery_required` when fenced       |
 
 ### Commit acknowledgement ambiguity
 
@@ -946,17 +946,17 @@ paths of login and refresh reconcile through `fenceUnsettledGrokOperation`: it
 re-reads the durable operation and fences it only while it is still the account's
 pending native-started operation.
 
-| Transaction                                                        | Ambiguous error                                                   | Reconcile rule                                                                                                                                                                                                                                                                     |
-| ------------------------------------------------------------------ | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| lease (`grok.server.refresh-lease`, `grok.server.claim`)           | the lease may be durable with no owner running                    | the runner re-reads the operation: a durable lease (native-started, pending) is fenced with the phase diagnostic so the scanner settles it as `FAILED`; an operation that is still queued is left for the next scan (`TestGrokLeaseWithALostAcknowledgementIsFencedForTheScanner`) |
-| exchange claim (`claimGrokExchange`, `claimGrokRefresh`)           | the claim flag may be durable although the request was never sent | the request is not sent after any claim error, so the operation settles `FAILED` with the stored credential untouched and the flag is inert on a settled operation; a claim whose commit succeeded is the only way a request is sent                                               |
-| stage (vault write of the next generation)                         | the generation may exist                                          | an unpublished generation is retired only after proving the account does not reference it                                                                                                                                                                                          |
-| publish (`grok.server.finish`, `grok.server.refresh-finish`)       | the settlement may be committed                                   | re-read: a settled operation is the outcome; a still-pending one is fenced with the phase diagnostic; superseded generations are removed by the next cleanup                                                                                                                       |
-| Worker-lease logout Finish (`grok.subscription.finish`)            | the vault removal may be partial or the commit unknown            | the revoked bundle is deleted from the vault before the commit that drops the lease and generation; a failed removal fences the account with the lease and generation kept, and the exact Worker repeats the Finish                                                                |
-| revocation claim (`grok.server.logout-claim`)                      | the claim may be durable although no request was sent             | settlement re-reads the claim: a durable `grok_revocation` makes the failure uncertain and fenced (the claim is retained, no later logout can overwrite it and resend the token); an absent claim is a plain failed logout with the credential intact                              |
-| revocation record (`grok.server.logout-revoked`)                   | the confirmation may be durable                                   | the operation is fenced as recovery; a durable confirmation is a revoked kind and only repeats the cleanup, an absent one stays claimed and manual                                                                                                                                 |
-| disconnect (`grok.server.logout-disconnect`)                       | the account may already be disconnected                           | re-read: a settled operation (no pending operation, generation cleared) is the committed logout and is never rewritten to recovery; a still-pending one is fenced and the scanner repeats the cleanup                                                                              |
-| execute Take and Finish (`TakeSubscription`, `FinishSubscription`) | the Worker may not know whether the lease exists or was released  | the Worker journals the claim before the Take; a lost Take response fences the replayed Take; a lost Finish response is execution uncertainty and the original Worker repeats the recovery Finish across the fence                                                                 |
+| Transaction                                                        | Ambiguous error                                                   | Reconcile rule                                                                                                                                                                                                                                                                                                           |
+| ------------------------------------------------------------------ | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| lease (`grok.server.refresh-lease`, `grok.server.claim`)           | the lease may be durable with no owner running                    | the runner re-reads the operation: a durable lease (native-started, pending) is fenced with the phase diagnostic so the scanner settles it as `FAILED`; an operation that is still queued is left for the next scan (`TestGrokLeaseWithALostAcknowledgementIsFencedForTheScanner`)                                       |
+| exchange claim (`claimGrokExchange`, `claimGrokRefresh`)           | the claim flag may be durable although the request was never sent | the request is not sent after any claim error, so the operation settles `FAILED` with the stored credential untouched and the flag is inert on a settled operation; a claim whose commit succeeded is the only way a request is sent                                                                                     |
+| stage (vault write of the next generation)                         | the generation may exist                                          | an unpublished generation is retired only after proving the account does not reference it                                                                                                                                                                                                                                |
+| publish (`grok.server.finish`, `grok.server.refresh-finish`)       | the settlement may be committed                                   | re-read: a settled operation is the outcome; a still-pending one is fenced with the phase diagnostic; superseded generations are removed by the next cleanup                                                                                                                                                             |
+| Worker-lease logout Finish (`grok.subscription.finish`)            | the vault removal may be partial or the commit unknown            | the revoked bundle is deleted from the vault before the commit that drops the lease and generation; a failed removal fences the account with the lease and generation kept, and the exact Worker repeats the Finish; no second enumeration runs after the commit, so nothing can refence an already disconnected account |
+| revocation claim (`grok.server.logout-claim`)                      | the claim may be durable although no request was sent             | settlement re-reads the claim: a durable `grok_revocation` makes the failure uncertain and fenced (the claim is retained, no later logout can overwrite it and resend the token); an absent claim is a plain failed logout with the credential intact                                                                    |
+| revocation record (`grok.server.logout-revoked`)                   | the confirmation may be durable                                   | the operation is fenced as recovery; a durable confirmation is a revoked kind and only repeats the cleanup, an absent one stays claimed and manual                                                                                                                                                                       |
+| disconnect (`grok.server.logout-disconnect`)                       | the account may already be disconnected                           | re-read: a settled operation (no pending operation, generation cleared) is the committed logout and is never rewritten to recovery; a still-pending one is fenced and the scanner repeats the cleanup                                                                                                                    |
+| execute Take and Finish (`TakeSubscription`, `FinishSubscription`) | the Worker may not know whether the lease exists or was released  | the Worker journals the claim before the Take; a lost Take response fences the replayed Take; a lost Finish response is execution uncertainty and the original Worker repeats the recovery Finish across the fence                                                                                                       |
 
 ### Token endpoint response table
 
@@ -1091,6 +1091,33 @@ Finish; a Finish whose response is lost leaves the fenced lease for recovery
 rather than resending a credential. Owner recovery, cancellation and removal of a
 fenced Grok account are separate lifecycle work and are not activated here.
 
+### Grok backup and restore
+
+A managed database backup is a SQLite image of server metadata. The protected
+vault is outside the image, so a Grok bundle, its `key` and `refresh_token`, and
+the native auth file never enter a backup; only the generation reference and
+keyed identity commitment do. Restore treats a Grok account like every other
+managed subscription (the quarantine is service-agnostic):
+
+- The account is disconnected: no connection and health `disconnected`.
+- An account that owned a generation, identity commitment, pending operation,
+  lease or recovery fence becomes recovery-required and keeps only the keyed
+  identity commitment and the historical generation reference as evidence. An
+  allocated state with none of those is cleared.
+- A pending operation and lease in the image (for example an unsettled logout
+  cleanup) are retained unchanged as quarantined evidence, including owner
+  machine, device, instance and epoch. Restore grants no authority to any
+  Worker, and Take, Finish and execution admission are refused until a new login.
+- Deleting the account never starts a native logout on a Worker that lacks the
+  original home. Deletion stays refused by the recovery fence and, once that is
+  cleared, by `protectedAccountDeletion` while the vault holds unremoved
+  references.
+- Finishing an unsettled Grok cleanup on the original Worker needs the Grok
+  owner-recovery path, which is not activated. Until then restore retains the
+  ownership evidence and never completes or reassigns the cleanup.
+
+Restore also keeps copied Worker device records readable after revoking them.
+
 ## Security
 
 Login, refresh, execution and logout share one exclusive account lease. Logout
@@ -1185,6 +1212,153 @@ Verify actual OAuth/native profiles at or above `domain.GrokSubscriptionBaseline
 before activation. A failed profile keeps support disabled until resolved.
 Fixture/build/package results do not establish actual account or OS acceptance;
 record supported-platform native and packaging evidence separately.
+
+### Real-account acceptance runbook
+
+`TestAccountAcceptance` in `cmds/delidev-cli/internal/harness/grok/account_native_test.go`
+makes the actual-profile verification above repeatable. It is interactive by
+design (the account owner approves each device-code login in their own browser),
+never runs in CI and is skipped unless both gates are set:
+
+| Variable                               | Meaning                                                                              |
+| -------------------------------------- | ------------------------------------------------------------------------------------ |
+| `DELIDEV_NATIVE_GROK_ACCOUNT=1`        | Opt in to the real-account test.                                                     |
+| `DELIDEV_NATIVE_GROK_EXECUTABLE`       | Absolute path of the Grok Build CLI under test (for example `$HOME/.grok/bin/grok`). |
+| `DELIDEV_NATIVE_GROK_APPROVAL_TIMEOUT` | Optional Go duration, `10s` to `30m`. Default: 5 minutes for the owner to approve.   |
+
+Run it from an interactive terminal (the approval details are written only to
+the controlling terminal, `/dev/tty` or `CONOUT$`; the run fails without one):
+
+```sh
+cd cmds/delidev-cli
+DELIDEV_NATIVE_GROK_ACCOUNT=1 DELIDEV_NATIVE_GROK_EXECUTABLE="$HOME/.grok/bin/grok" \
+  go test ./internal/harness/grok/ -run 'TestAccountAcceptance' -count=1 -v -timeout 45m
+```
+
+`-count=1` is mandatory. Go caches a passing result and would replay a cached
+PASS without launching the CLI even after the Grok binary, its release or the
+account changed; the test environment does not include the binary's contents.
+Never record a run whose output ends in `(cached)`.
+
+`-timeout` must cover the longest approval wait plus the other steps. The owner
+may take up to 30 minutes (`DELIDEV_NATIVE_GROK_APPROVAL_TIMEOUT=30m`) and the
+remaining steps need up to 7 minutes (6 minutes of step budgets plus a minute of
+process-start slack), so the runbook uses `45m`. The test checks
+`go test -timeout` first and fails before any login when the remaining time is
+shorter than the approval wait plus 7 minutes; raise `-timeout` for such a run
+instead of lowering the approval wait below what the owner needs.
+
+Every native command and the scratch `git init` run under a context created for
+that step alone, from `context.Background()`; no step inherits what an earlier
+step left over. The budgets are:
+
+| Step               | Command or context                                                                                      | Budget                                     |
+| ------------------ | ------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| Setup              | `git init` of the scratch repository                                                                    | 30s (`Setup`)                              |
+| Version            | `grok --version`                                                                                        | 30s (`Version`)                            |
+| Login              | `grok login --device-auth`                                                                              | approval wait (5m default, 10s-30m)        |
+| Models             | `grok models` while logged in                                                                           | 30s (`Models`)                             |
+| ACP prompt turn    | `grok agent stdio` start, `initialize`, `authenticate`, `session/new`, `session/prompt`, reply settling | 3m (`Prompt`, one shared budget by design) |
+| Logout             | `grok logout`                                                                                           | 30s (`Logout`)                             |
+| Post-logout models | `grok models` after the logout                                                                          | 30s (`PostLogoutModels`)                   |
+| Cleanup            | the cleanup `grok logout`                                                                               | 30s (`Cleanup`)                            |
+
+The non-login budgets sum to 6 minutes, which `accountFixedBudget` (7 minutes)
+must cover; `TestNativeAccountHarnessFixedBudgetCoversEveryStep` and
+`TestNativeAccountHarnessEveryStepOwnsItsBudget` pin the sum and that each
+command starts with its own deadline.
+
+The test uses a fresh scratch tree (`HOME`, `GROK_HOME`, XDG and temp variables
+all inside it, a scratch git repository as working directory) and the CLI with
+`--no-auto-update` and `GROK_DISABLE_AUTOUPDATER=1`. Each native command runs
+through `internal/process`. It then checks, in order:
+
+1. `grok --version` prints `grok <semver> ...` at or above
+   `domain.GrokSubscriptionBaselineVersion`; the version line is logged for the PR.
+2. `grok login --device-auth` exits 0 after the owner approves. Expected output
+   shape: an `https://` verification URL on an `x.ai` host and a user code
+   `[A-Z0-9]{4}-[A-Z0-9]{4}`. The real CLI prints this prompt on stderr, so
+   stdout and stderr both pass through one filter; every other line of either
+   stream, including the identity line, is dropped. Only the URL and code lines
+   are shown, and only on the terminal; the login fails if they cannot be
+   written there. Test output carries just the fixed notice
+   `waiting for account owner approval`. The scratch `auth.json` must exist.
+   Short native commands (`--version`, `models`, `logout`) check stdout and
+   stderr together without logging either. The ACP agent's stderr is discarded
+   by design because it can carry account details.
+3. `grok models` prints `You are logged in with ...`, a `Default model: <id>`
+   line and at least one `grok-*` model entry.
+4. Raw ACP over `grok agent stdio`: `initialize` advertises the `cached_token`
+   authentication method, `authenticate` with `cached_token` succeeds,
+   `session/new` returns a `sessionId`, and one `session/prompt` in the scratch
+   repository finishes with `stopReason: "end_turn"`. The assistant text is
+   collected from that session's `session/update` `agent_message_chunk` text
+   updates and must be the single word `ok` (case and surrounding punctuation
+   ignored). An empty turn, a reply for another session, non-message updates
+   only, or any other text such as an authentication notice fails the step. The
+   reply text is never logged, only its length on a mismatch. The agent may send
+   the `session/prompt` response before its final `session/update` text frames,
+   so the client keeps reading after the response (refusing any late agent
+   request with `-32601`, as it does while waiting) and validates only once the
+   target session's accumulated text has stopped changing for 2 seconds. With no
+   text yet, it waits up to 20 seconds for the first frame; text that is still
+   changing after 20 seconds fails with `ACP assistant reply did not stabilize`.
+   Both bounds sit inside the 3-minute `Prompt` budget, and an agent exit ends
+   the wait early. This mirrors the official xAI headless client example, which
+   waits for the accumulated text length to stabilize after the prompt result.
+   `TestNativeAccountHarnessPromptTurnValidation` (fake `grok`: update before the
+   response, update after it, several late chunks, a late agent request, no
+   update, a never-stabilizing stream) and `TestNativeAccountHarnessFrameOrderings`
+   (in-process agent: a notification and an agent request before and after the
+   response of each of `initialize`, `authenticate`, `session/new` and
+   `session/prompt`, plus text, no-text, foreign-session, wrong-text and
+   agent-exit rows) pin every ordering. The suite sends no `session/cancel`, and
+   `logout` is a plain CLI command rather than a JSON-RPC pair.
+5. `grok logout` exits 0, removes the scratch `auth.json`, and `grok models` then
+   reports `not authenticated`.
+6. The invoking user's real `auth.json` (`$GROK_HOME` or `~/.grok`) has the same
+   SHA-256 before and after. The test only hashes it, never reads it for
+   content, copies it, links it or prints the hash.
+
+Cleanup always runs `grok logout` and removes the scratch directory, including
+after a canceled or timed-out login, but only when every native process it
+started is confirmed gone. If ownership cannot be confirmed for any native
+process (including the ACP agent and the cleanup `grok logout`), the scratch tree
+is retained, the run fails and the error names the retained path (never its
+content); remove it manually after confirming no `grok` process still uses it.
+A native process is confirmed gone when `internal/process` reports a clean stop
+or, after it reports `recovery_required`, the immediately following owner
+reconciliation (`ReconcileOwner`) succeeds: reconciliation is the proof, so a
+recovery error that reconciliation resolves still fails that command's own
+result but no longer retains the tree. The test records a suspicion per native
+owner and retires it only through that owner's successful reconciliation:
+
+| Site                  | Records a suspicion on                 | Retired by                                                 |
+| --------------------- | -------------------------------------- | ---------------------------------------------------------- |
+| Short command (`run`) | `Run` returns `recovery_required`      | the reconciliation `run` does next                         |
+| Short command (`run`) | its reconciliation fails               | stands                                                     |
+| ACP start             | `Start` returns `recovery_required`    | the reconciliation `startACP` does next (no handle exists) |
+| ACP resume            | `Resume` returns `recovery_required`   | the stop path's reconciliation                             |
+| ACP stop              | `Close` returns `recovery_required`    | the stop path's reconciliation                             |
+| ACP stop              | `Wait` fails other than by exit status | the stop path's reconciliation                             |
+| ACP stop              | its reconciliation fails               | stands                                                     |
+
+`TestNativeAccountHarnessRunUncertaintyMatrix` and
+`TestNativeAccountHarnessACPUncertaintyMatrix` script every row against both
+reconciliation outcomes, and
+`TestNativeAccountHarnessCleanupLogoutRecoveryIsReconciled` covers the cleanup
+logout.
+The cleanup logout fails the run only when the scratch credential file survives
+or its ownership is uncertain; step 5 checks the explicit logout strictly. A failed check fails the test with a
+message that names the check and never echoes native output, URLs, codes,
+identity or key material. A failure on the current stable release keeps support
+disabled until resolved.
+
+Record the result in the pull request, not in repository evidence files: the
+logged CLI version line (for example `grok 1.0.52 (...) [stable]`), the
+operating system, and pass or fail for each step above. Fixture-only harness
+tests (`TestNativeAccountHarness*`) use a fake `grok` script, need no account and
+run in ordinary `go test`; they do not replace the real-account run.
 
 ## Dependencies and Integrations
 

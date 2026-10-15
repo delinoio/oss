@@ -5,7 +5,6 @@
   "session-name.discard": "초안 버리고 다시 읽기",
   "session-name.retryRead": "읽기 재시도",
   "session-name.retry": "원래 이름 변경 재시도",
-  "session-name.contextSnapshot": "네이티브 보고 한도에 대한 컨텍스트 스냅샷",
   "session-name.capacityUnavailable": "보고된 용량을 사용할 수 없음",
   "session-name.sessionDetails": "세션 상세 정보",
   "session-name.executionReferences": "실행 참조",

@@ -114,6 +114,11 @@ func (a *executionAuthority) checkedScope(tx *store.Tx, grant store.ExecutionGra
 	if input.Configuration.Subscription && !input.Configuration.IsOpenCodeGo() && session.Fork != nil && !session.IsSidechat() && !domain.ManagedForkSupported(machine.WorkerCapabilities) {
 		return empty, executionDenied()
 	}
+	// A profile v2 child keeps this requirement for every continuation, after
+	// the one-shot fork input is gone.
+	if domain.OpenCodeForkReasoningRequired(session, input) && !domain.OpenCodeForkReasoningSupported(machine.WorkerCapabilities) {
+		return empty, executionDenied()
+	}
 	if requireSidechatParent(tx, session) != nil || input.Configuration.SidechatPolicy != "" && (!slices.Contains(machine.WorkerCapabilities, domain.CodexReadOnlySidechatWorkerV1) || input.Configuration.Subscription && !domain.ManagedSidechatSupported(machine.WorkerCapabilities)) {
 		return empty, executionDenied()
 	}

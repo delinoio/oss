@@ -22,6 +22,9 @@ type ForkRequests struct {
 	Move         domain.ID `json:"move"`
 	Mark         domain.ID `json:"mark"`
 	DeleteSource domain.ID `json:"delete_source"`
+	// Reasoning selects OpenCode General Chat Fork profile v2, which also
+	// clones completed plain timed reasoning parts. The zero value is profile v1.
+	Reasoning bool `json:"reasoning,omitempty"`
 }
 
 func (r ForkRequests) Validate() error {
@@ -38,25 +41,25 @@ type nativeForkAttempt struct {
 
 // InspectForkSourceCheckpoint supplies only read-only private eligibility. The
 // Worker must independently prove its accepted report, lease and current account.
-func InspectForkSourceCheckpoint(ctx context.Context, home string, raw []byte, ref CheckpointReference) error {
+func InspectForkSourceCheckpoint(ctx context.Context, home string, raw []byte, ref CheckpointReference, reasoning bool) error {
 	source, err := decodeCheckpoint(raw, ref, home)
 	if err != nil {
 		return err
 	}
-	if runtime.GOOS == "windows" || forkSourceProfile(source) != nil {
+	if runtime.GOOS == "windows" || forkSourceProfile(source, reasoning) != nil {
 		return incompatible()
 	}
 	if err := InspectCheckpoint(ctx, home, raw, ref); err != nil {
 		return err
 	}
-	return checkForkCheckpointCapacity(source)
+	return checkForkCheckpointCapacity(source, reasoning)
 }
 
 // InspectForkSourceInventory returns the complete content-free source identity
 // inventory only after the same independent private checkpoint/profile checks.
 // It grants no native mutation or inference authority.
-func InspectForkSourceInventory(ctx context.Context, home string, raw []byte, ref CheckpointReference) ([]HistoryMessage, error) {
-	if err := InspectForkSourceCheckpoint(ctx, home, raw, ref); err != nil {
+func InspectForkSourceInventory(ctx context.Context, home string, raw []byte, ref CheckpointReference, reasoning bool) ([]HistoryMessage, error) {
+	if err := InspectForkSourceCheckpoint(ctx, home, raw, ref, reasoning); err != nil {
 		return nil, err
 	}
 	source, err := decodeCheckpoint(raw, ref, home)
@@ -74,7 +77,7 @@ func PrepareForkAPI(ctx context.Context, config APIExecutionConfig, sourceHome s
 	if requests.Validate() != nil || config.Settings.Agent != BuildAgent || config.Settings.Permission == nil || len(config.Settings.Permission) != 0 || len(config.References) != 0 || !forkWorkspacesDisjoint(config.Workspace, target) || !canonicalDirectory(target) {
 		return nil, ref, incompatible()
 	}
-	if err := InspectForkSourceCheckpoint(ctx, sourceHome, sourceRaw, sourceRef); err != nil {
+	if err := InspectForkSourceCheckpoint(ctx, sourceHome, sourceRaw, sourceRef, requests.Reasoning); err != nil {
 		return nil, ref, err
 	}
 	if _, err := GlobalWorkspaceRoot(target); err != nil {
@@ -132,6 +135,11 @@ func prepareOwnedForkAPI(ctx context.Context, config APIExecutionConfig, api *Ow
 	if err != nil {
 		return nil, ref, err
 	}
+	// Native part fields are checked before the first mutation, so an untimed,
+	// synthetic or metadata-bearing reasoning part never creates a child session.
+	if err := checkForkSourceParts(original, requests.Reasoning); err != nil {
+		return nil, ref, err
+	}
 	list, err := s.forkSessions(ctx)
 	if err != nil || len(list) != 1 {
 		return nil, ref, sessionUncertain()
@@ -179,7 +187,7 @@ func prepareOwnedForkAPI(ctx context.Context, config APIExecutionConfig, api *Ow
 	if err != nil {
 		return nil, ref, err
 	}
-	identities, messages, err := compareForkHistory(original, childHistory, sourceRef.SessionID, identity.id)
+	identities, messages, err := compareForkHistory(original, childHistory, sourceRef.SessionID, identity.id, requests.Reasoning)
 	if err != nil {
 		return nil, ref, err
 	}
@@ -288,7 +296,7 @@ func prepareOwnedForkAPI(ctx context.Context, config APIExecutionConfig, api *Ow
 	if !validForkRuntimeInventory(files) {
 		return nil, ref, sessionUncertain()
 	}
-	proof := &nativeCheckpointFork{Version: 1, RequestID: requests.Fork, SourceReference: sourceRef, SourceWorkspace: source.Workspace, SourceHistories: checkpointHistories(source), ClonedHistories: histories, Identities: identities, SelectionPending: true}
+	proof := &nativeCheckpointFork{Version: 1, RequestID: requests.Fork, SourceReference: sourceRef, SourceWorkspace: source.Workspace, SourceHistories: checkpointHistories(source), ClonedHistories: histories, Identities: identities, SelectionPending: true, Reasoning: requests.Reasoning}
 	ref = CheckpointReference{OwnerID: s.owner, CreationRequestID: requests.Fork, InputRequestID: last.RequestID, SessionID: identity.id, InputID: last.InputID, PartID: last.Messages[0].Parts[0].ID, InputSHA256: sourceRef.InputSHA256, HistorySHA256: last.Digest}
 	value := nativeCheckpoint{Version: 1, NativeVersion: s.nativeVersion, Reference: ref, RuntimeHome: s.runtimeHome, Workspace: target, NativeRoot: "/", Project: "global", Slug: identity.slug, Created: identity.created, SettingsSHA256: settings, CredentialSHA256: mutationDigest([]byte(config.Token)), History: last, Files: files, Fork: proof}
 	if len(histories) > 1 {
@@ -533,7 +541,7 @@ func InspectForkCheckpoint(ctx context.Context, home string, raw []byte, ref Che
 // It neither restores a session nor exposes native history or a credential.
 func InspectForkClaims(raw []byte, ref CheckpointReference, home string, requests ForkRequests, claims []SessionClaim) error {
 	c, err := decodeCheckpoint(raw, ref, home)
-	if err != nil || c.Fork == nil || !c.Fork.SelectionPending || requests.Validate() != nil || len(claims) != 5 || requests.Fork != c.Reference.CreationRequestID {
+	if err != nil || c.Fork == nil || !c.Fork.SelectionPending || requests.Validate() != nil || len(claims) != 5 || requests.Fork != c.Reference.CreationRequestID || requests.Reasoning != c.Fork.Reasoning {
 		return sessionUncertain()
 	}
 	source := c.Fork.SourceReference
