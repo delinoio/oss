@@ -785,6 +785,216 @@ describe("pending Close ownership across product windows", () => {
     });
   });
 
+  describe("restoring holds after the back/forward cache", () => {
+    // Several registries share one jsdom window, so lifecycle events are
+    // delivered to the owner alone by calling its handlers directly.
+    const lifecycle = (registry: PendingCloseRegistry) => {
+      const handlers = registry as unknown as {
+        onPageHide: () => void;
+        onPageShow: (event: Event) => void;
+      };
+      return {
+        hide: () => handlers.onPageHide(),
+        show: (persisted: boolean) => {
+          const event = new Event("pageshow");
+          Object.defineProperty(event, "persisted", { value: persisted });
+          handlers.onPageShow(event);
+        },
+      };
+    };
+    const setup = () => {
+      const bus = new Bus();
+      const owner = new PendingCloseRegistry({
+        channel: bus.endpoint(),
+        window: "owner",
+        locks: null,
+      });
+      const siblingRegistry = new PendingCloseRegistry({
+        channel: bus.endpoint(),
+        window: "sibling",
+        locks: null,
+      });
+      // A raw endpoint records what the owner announces.
+      const spy = bus.endpoint();
+      const seen: { kind: string; key?: string; ack?: boolean; window: string }[] =
+        [];
+      spy.onmessage = (event) => seen.push(event.data as (typeof seen)[number]);
+      return { bus, owner, siblingRegistry, seen };
+    };
+    const dispatched = async (registry: PendingCloseRegistry, key: string) => {
+      const token = {};
+      void registry.hold(key, token);
+      // The barrier finishes once the sibling acknowledged and discovery ended.
+      await vi.advanceTimersByTimeAsync(200);
+      return token;
+    };
+
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    it("re-announces a dispatched Close so the sibling keeps the descriptor", async () => {
+      const { owner, siblingRegistry, seen } = setup();
+      const sibling = new SessionTabsStore(siblingRegistry);
+      sibling.open("retained", page("p1", "x"));
+      const key = JSON.stringify(["x", "p1"]);
+      const token = await dispatched(owner, key);
+      const { hide, show } = lifecycle(owner);
+      hide();
+      expect(owner.holds(key, token)).toBe(false);
+      expect(siblingRegistry.has(key)).toBe(false);
+      seen.length = 0;
+      show(true);
+      // The restored hold is acknowledged, so the sibling already records it.
+      expect(seen.some((m) => m.kind === "hold" && m.key === key && m.ack)).toBe(
+        true,
+      );
+      expect(owner.holds(key, token)).toBe(true);
+      expect(owner.has(key)).toBe(true);
+      expect(siblingRegistry.has(key)).toBe(true);
+      sibling.reconcilePages("retained", "x", []);
+      expect(sibling.snapshot("retained").tabs.map(sessionTabKey)).toContain(
+        sessionTabKey(page("p1", "x")),
+      );
+      owner.dispose();
+      siblingRegistry.dispose();
+    });
+
+    it("removes a restored hold everywhere once the original Close settles", async () => {
+      const { owner, siblingRegistry } = setup();
+      const key = "k";
+      const token = await dispatched(owner, key);
+      const { hide, show } = lifecycle(owner);
+      hide();
+      show(true);
+      owner.settle(key);
+      expect(owner.has(key)).toBe(false);
+      expect(siblingRegistry.has(key)).toBe(false);
+      // Settlement also ends the restored heartbeat.
+      expect(owner.holds(key, token)).toBe(false);
+      owner.dispose();
+      siblingRegistry.dispose();
+    });
+
+    it("keeps a restored hold until its owner releases it", async () => {
+      const { owner, siblingRegistry } = setup();
+      const token = await dispatched(owner, "k");
+      const { hide, show } = lifecycle(owner);
+      hide();
+      show(true);
+      owner.release("k", token);
+      expect(owner.has("k")).toBe(false);
+      expect(siblingRegistry.has("k")).toBe(false);
+      owner.dispose();
+      siblingRegistry.dispose();
+    });
+
+    it("refreshes a restored hold with the heartbeat", async () => {
+      const { owner, siblingRegistry } = setup();
+      await dispatched(owner, "k");
+      const { hide, show } = lifecycle(owner);
+      hide();
+      show(true);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(siblingRegistry.has("k")).toBe(true);
+      owner.dispose();
+      siblingRegistry.dispose();
+    });
+
+    it("never revives a Close withdrawn during its pre-send barrier", async () => {
+      const { bus, owner, siblingRegistry, seen } = setup();
+      // A silent window keeps the barrier open.
+      const ghost = bus.endpoint();
+      ghost.postMessage({
+        scope: "delidev.browser.pending-close",
+        kind: "presence",
+        window: "ghost",
+      });
+      const token = {};
+      void owner.hold("pending", token);
+      await vi.advanceTimersByTimeAsync(200);
+      const { hide, show } = lifecycle(owner);
+      hide();
+      seen.length = 0;
+      show(true);
+      expect(owner.holds("pending", token)).toBe(false);
+      expect(owner.has("pending")).toBe(false);
+      expect(siblingRegistry.has("pending")).toBe(false);
+      expect(seen.filter((m) => m.kind === "hold")).toEqual([]);
+      owner.dispose();
+      siblingRegistry.dispose();
+    });
+
+    it("restores only the dispatched operations of several keys", async () => {
+      const { bus, owner, siblingRegistry } = setup();
+      const sent = await dispatched(owner, "sent");
+      const ghost = bus.endpoint();
+      ghost.postMessage({
+        scope: "delidev.browser.pending-close",
+        kind: "presence",
+        window: "ghost",
+      });
+      const waiting = {};
+      void owner.hold("waiting", waiting);
+      await vi.advanceTimersByTimeAsync(200);
+      const { hide, show } = lifecycle(owner);
+      hide();
+      show(true);
+      expect(owner.holds("sent", sent)).toBe(true);
+      expect(siblingRegistry.has("sent")).toBe(true);
+      expect(owner.holds("waiting", waiting)).toBe(false);
+      expect(siblingRegistry.has("waiting")).toBe(false);
+      owner.dispose();
+      siblingRegistry.dispose();
+    });
+
+    it("does not resurrect holds that settled, were released or belong to a replaced owner", async () => {
+      const { owner, siblingRegistry } = setup();
+      const settled = await dispatched(owner, "settled");
+      const released = await dispatched(owner, "released");
+      const { hide, show } = lifecycle(owner);
+      hide();
+      owner.settle("settled");
+      owner.release("released", released);
+      show(true);
+      expect(owner.holds("settled", settled)).toBe(false);
+      expect(owner.has("settled")).toBe(false);
+      expect(owner.has("released")).toBe(false);
+      expect(siblingRegistry.has("settled")).toBe(false);
+      expect(siblingRegistry.has("released")).toBe(false);
+      owner.dispose();
+      siblingRegistry.dispose();
+    });
+
+    it("drops a suspended hold another window proved settled", async () => {
+      const { owner, siblingRegistry } = setup();
+      const token = await dispatched(owner, "k");
+      const { hide, show } = lifecycle(owner);
+      hide();
+      siblingRegistry.settle("k");
+      show(true);
+      expect(owner.holds("k", token)).toBe(false);
+      expect(siblingRegistry.has("k")).toBe(false);
+      owner.dispose();
+      siblingRegistry.dispose();
+    });
+
+    it("restores nothing after disposal or a non-persisted pageshow", async () => {
+      const { owner, siblingRegistry } = setup();
+      const token = await dispatched(owner, "k");
+      const { hide, show } = lifecycle(owner);
+      hide();
+      show(false);
+      expect(owner.holds("k", token)).toBe(false);
+      expect(siblingRegistry.has("k")).toBe(false);
+      owner.dispose();
+      // A permanently disposed registry forgets its suspended holds.
+      show(true);
+      expect(owner.holds("k", token)).toBe(false);
+      expect(siblingRegistry.has("k")).toBe(false);
+      siblingRegistry.dispose();
+    });
+  });
+
   describe("settled Close propagation", () => {
     it("removes the page from a sibling's retained sessions once", () => {
       const { make } = windows();

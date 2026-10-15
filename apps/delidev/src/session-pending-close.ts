@@ -187,11 +187,22 @@ export class PendingCloseRegistry {
    * Bye can never resurrect this window on a sibling.
    */
   private active = false;
-  private onPageHide = () => this.deactivate();
+  /**
+   * Owners of already-dispatched Closes captured at pagehide, so a page
+   * restored from the back/forward cache can take its holds back. Pre-send
+   * barriers are never captured, and release, settlement and disposal drop
+   * the entry.
+   */
+  private suspended = new Map<string, Set<object>>();
+  private onPageHide = () => {
+    this.suspend();
+    this.deactivate();
+  };
   private onPageShow = (event: Event) => {
     // A page restored from the back/forward cache is alive again.
-    if ((event as PageTransitionEvent).persisted && !this.active)
-      this.activate();
+    if (!(event as PageTransitionEvent).persisted || this.active) return;
+    this.activate();
+    this.restore();
   };
   private locks: PendingCloseLocks | null = null;
   private unlock: (() => void) | undefined;
@@ -245,6 +256,41 @@ export class PendingCloseRegistry {
     this.releaseAll();
     this.send({ kind: PendingCloseMessageKind.Bye });
     this.releaseLivenessLock();
+  }
+
+  /**
+   * Remembers the owners whose barrier already finished, so the Close was (or
+   * is about to be) dispatched natively. A key whose barrier is still gathering
+   * acknowledgements is left out: pagehide cancels that Close before it is
+   * sent, and restoration must never revive it.
+   */
+  private suspend() {
+    if (!this.active) return;
+    this.suspended.clear();
+    for (const [key, owners] of this.local)
+      if (!this.waiters.has(key)) this.suspended.set(key, new Set(owners));
+  }
+
+  /**
+   * Takes back the holds captured at pagehide after a persisted pageshow and
+   * announces each with an acknowledgement, so a sibling's reconciliation
+   * cannot observe the restored page as unowned. No native Close is sent: the
+   * owner keeps observing its original operation.
+   */
+  private restore() {
+    const suspended = [...this.suspended];
+    this.suspended.clear();
+    for (const [key, owners] of suspended) {
+      const current = this.local.get(key) ?? new Set<object>();
+      for (const owner of owners) current.add(owner);
+      this.local.set(key, current);
+      const synced = this.announce(key);
+      this.syncing.set(key, synced);
+      void synced.finally(() => {
+        if (this.syncing.get(key) === synced) this.syncing.delete(key);
+      });
+    }
+    this.startHeartbeat();
   }
 
   private releaseLivenessLock() {
@@ -335,6 +381,7 @@ export class PendingCloseRegistry {
       // Closing is best-effort; the handler is already detached.
     }
     this.channel = null;
+    this.suspended.clear();
     this.remote.clear();
     this.probing.clear();
     this.peers.clear();
@@ -361,6 +408,8 @@ export class PendingCloseRegistry {
     if (data.kind === PendingCloseMessageKind.Settled) {
       this.peers.add(data.window);
       if (data.key === undefined) return;
+      // The original Close is proven complete: nothing is left to restore.
+      this.suspended.delete(data.key);
       this.remote.delete(data.key);
       for (const listener of [...this.settledListeners]) listener(data.key);
       return;
@@ -586,6 +635,7 @@ export class PendingCloseRegistry {
 
   /** Releases one holder once its Close settled, was rejected or abandoned. */
   release(key: string, owner: object) {
+    this.forgetSuspended(key, owner);
     const owners = this.local.get(key);
     if (!owners) return;
     owners.delete(owner);
@@ -602,11 +652,19 @@ export class PendingCloseRegistry {
    * the page from its retained Sessions.
    */
   settle(key: string) {
+    this.suspended.delete(key);
     this.local.delete(key);
     this.syncing.delete(key);
     this.waiters.get(key)?.done();
     this.send({ kind: PendingCloseMessageKind.Settled, key });
     this.stopHeartbeat();
+  }
+
+  private forgetSuspended(key: string, owner: object) {
+    const owners = this.suspended.get(key);
+    if (!owners) return;
+    owners.delete(owner);
+    if (!owners.size) this.suspended.delete(key);
   }
 
   private releaseAll() {

@@ -1051,6 +1051,65 @@ it("cancels the Close without a native call when pagehide withdrew its hold duri
   expect(pageCalls("close")).toHaveLength(1);
 });
 
+it("re-announces an unsettled sent Close after a page restored from the back/forward cache without replaying it", async () => {
+  expect(typeof BroadcastChannel).toBe("function");
+  const f = fixture({ pages: 1 });
+  const captured = mountWithRetainedSession(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(2));
+  const [first] = f.model.pages;
+  const store = captured.store;
+  store.open(retained, pageTab(f.profileId, first.id));
+  // A listener standing in for a sibling product window.
+  const sibling = new BroadcastChannel("delidev.browser.pending-close");
+  const seen: { kind: string; ack?: boolean }[] = [];
+  sibling.onmessage = (event) => seen.push(event.data);
+  try {
+    f.model.outcome = "cleanup-pending";
+    f.model.settleOnObserve = false;
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close fixture.test/1 tab" }),
+    );
+    const pending = await screen.findByRole("alert");
+    expect(pending.textContent).toContain(
+      "native view cleanup is not confirmed",
+    );
+    expect(pageCalls("close")).toHaveLength(1);
+    const original = pageCalls("close")[0].operation_id;
+    // The page enters the back/forward cache and comes back.
+    await act(async () => {
+      window.dispatchEvent(new Event("pagehide"));
+      const restored = new Event("pageshow");
+      Object.defineProperty(restored, "persisted", { value: true });
+      window.dispatchEvent(restored);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(seen.map((message) => message.kind)).toContain("release");
+    expect(
+      seen.some((message) => message.kind === "hold" && message.ack),
+    ).toBe(true);
+    // The restored Hold keeps the descriptor through a reconciliation.
+    store.reconcilePages(retained, f.profileId, []);
+    expect(retainedKeys(store)).toContain(
+      sessionTabKey(pageTab(f.profileId, first.id)),
+    );
+    // The original operation is observed, never replayed.
+    f.model.settleOnObserve = true;
+    fireEvent.click(
+      within(screen.getByRole("alert")).getByRole("button", {
+        name: "Check status",
+      }),
+    );
+    await waitFor(() => expect(tabNames()).toEqual(["Conversation"]));
+    expect(retainedKeys(store)).toEqual([SessionTabKind.Conversation]);
+    expect(pageCalls("close")).toHaveLength(1);
+    expect(
+      pageCalls("observe").every((request) => request.operation_id === original),
+    ).toBe(true);
+  } finally {
+    sibling.close();
+  }
+});
+
 it("retains the descriptor in every session while a close fails or stays unconfirmed", async () => {
   const f = fixture({ pages: 1 });
   const captured = mountWithRetainedSession(f);
