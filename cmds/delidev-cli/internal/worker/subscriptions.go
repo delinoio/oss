@@ -94,6 +94,10 @@ type managedSubscriptionJournal struct {
 	// without Installation proves the native profile was never opened, while a
 	// journal without this marker predates retention and proves nothing.
 	InstallationRetention bool `json:"installation_retention,omitempty"`
+	// AccountPreserved records that recovery proved the native profile was never
+	// opened, so the final settlement keeps the account connected instead of
+	// confirming a logout cleanup. It survives an interrupted recovery.
+	AccountPreserved bool `json:"account_preserved,omitempty"`
 }
 
 func subscriptionRPC(ctx context.Context, config Config, credential Credential) (delidevv1connect.SubscriptionServiceClient, func(), error) {

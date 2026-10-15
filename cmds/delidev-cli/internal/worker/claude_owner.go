@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/claude"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
@@ -244,7 +243,7 @@ func beginClaudeSharedExecution(ctx context.Context, config Config, jobOwner dom
 	if lease.response.OwnerLeaseId == "" {
 		profile, _, finish, err = gate.found(ctx, config, input, member, version)
 	} else {
-		profile, _, finish, err = gate.join(config, member, version)
+		profile, _, finish, err = gate.join(config, member, input.Installation, version)
 	}
 	if err != nil {
 		releaseHistory()
@@ -330,10 +329,7 @@ func (g *claudeAccountGate) found(ctx context.Context, config Config, input doma
 		}
 	}
 	if err == nil {
-		err = claude.VerifyAuthVersion(ctx, profile.config)
-	}
-	if err == nil {
-		_, err = profile.identity(ctx, config)
+		err = profile.verifyExecutionStartup(ctx, config)
 	}
 	if err != nil {
 		if profile != nil {
@@ -353,7 +349,21 @@ func (g *claudeAccountGate) found(ctx context.Context, config Config, input doma
 
 // join registers one more member on the live owner. The member holds no profile
 // lock and opens no authentication: it only receives the owner's directories.
-func (g *claudeAccountGate) join(config Config, member *claudeSharedMember, version claudeProfileVersion) (*nativeClaudeProfile, *managedClaudeToken, func(bool) error, error) {
+func (g *claudeAccountGate) join(config Config, member *claudeSharedMember, installation domain.Installation, version claudeProfileVersion) (*nativeClaudeProfile, *managedClaudeToken, func(bool) error, error) {
+	// The founding session rechecked only its own executable when it opened the
+	// profile. This member's process receives the same profile directories, so
+	// its own retained digest must still match right now. A mismatch releases the
+	// unstarted member alone and never lets the replaced binary see the profile.
+	if err := verifyClaudeLaunchExecutable(config, installation); err != nil {
+		g.mu.Lock()
+		owner := g.owner
+		sameOwner := owner != nil && owner.lease.response.LeaseId == member.lease.response.OwnerLeaseId
+		g.mu.Unlock()
+		if released := g.releaseUnstartedMember(owner, sameOwner, member); released != nil {
+			return nil, nil, nil, &managedExecutionUncertain{released}
+		}
+		return nil, nil, nil, &managedTakeNotDelivered{err}
+	}
 	g.mu.Lock()
 	owner := g.owner
 	if owner != nil && owner.lease.response.LeaseId == member.lease.response.OwnerLeaseId && owner.resume != nil {
@@ -380,13 +390,7 @@ func (g *claudeAccountGate) join(config Config, member *claudeSharedMember, vers
 		// Finish cannot be refused later by a member the server still counts.
 		sameOwner := owner != nil && owner.lease.response.LeaseId == member.lease.response.OwnerLeaseId
 		g.mu.Unlock()
-		if err := member.lease.finishClaudeScopedRetry(nil, true, false, pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_MEMBER, member.lease.response.LeaseRevision); claudeFinishOutcomeUnknown(err) && sameOwner {
-			member.state, member.pendingFinish, member.pendingJoined = claudeMemberReleased, true, true
-			g.mu.Lock()
-			owner.members[member.lease.leaseID()] = member
-			g.mu.Unlock()
-		}
-		member.close()
+		g.releaseUnstartedMember(owner, sameOwner, member)
 		return nil, nil, nil, &managedExecutionUncertain{subscription.Invalid()}
 	}
 	owner.members[member.lease.leaseID()] = member
@@ -396,6 +400,22 @@ func (g *claudeAccountGate) join(config Config, member *claudeSharedMember, vers
 		config.Logger.InfoContext(context.Background(), "claude_shared_member_joined", "account_id", member.lease.account, "owner_lease_id", owner.lease.response.LeaseId, "lease_id", member.lease.response.LeaseId, "operation_id", member.job)
 	}
 	return owner.memberProfile(member, version), nil, g.finisher(owner, member), nil
+}
+
+// releaseUnstartedMember releases a member that started nothing. A release whose
+// outcome is unknown stays pending on a tracked owner so the owner Finish cannot
+// be refused later by a member the server still counts. It returns the release
+// error.
+func (g *claudeAccountGate) releaseUnstartedMember(owner *claudeSharedOwner, sameOwner bool, member *claudeSharedMember) error {
+	err := member.lease.finishClaudeScopedRetry(nil, true, false, pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_MEMBER, member.lease.response.LeaseRevision)
+	if claudeFinishOutcomeUnknown(err) && sameOwner {
+		member.state, member.pendingFinish, member.pendingJoined = claudeMemberReleased, true, true
+		g.mu.Lock()
+		owner.members[member.lease.leaseID()] = member
+		g.mu.Unlock()
+	}
+	member.close()
+	return err
 }
 
 func (l *managedSubscriptionLease) leaseID() domain.ID { return domain.ID(l.response.LeaseId) }

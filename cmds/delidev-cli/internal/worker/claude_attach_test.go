@@ -18,6 +18,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/claude"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
@@ -379,5 +380,151 @@ func TestOpenClaudeProfileRechecksRetainedDigestBeforeProfileAccess(t *testing.T
 				t.Fatal("profile directories were touched before the digest check", statErr)
 			}
 		})
+	}
+}
+
+func TestClassifyClaudeRecoveryCoversEveryEvidenceCell(t *testing.T) {
+	exec, login, logout, refresh := pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE, pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN, pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT, pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH
+	profile := domain.NewID()
+	installed := &domain.Installation{Harness: domain.ClaudeCode, ResolvedPath: "/claude"}
+	for _, tc := range []struct {
+		name     string
+		action   domain.SubscriptionAction
+		wire     pb.SubscriptionAction
+		shared   bool
+		started  bool
+		marked   bool
+		retained *domain.Installation
+		missing  bool
+		other    bool // the journal names a different profile than the account state
+		want     claudeRecoveryDisposition
+	}{
+		{name: "marked execute before retention keeps the account", action: domain.SubscriptionExecute, wire: exec, marked: true, want: claudeRecoveryPreserveAccount},
+		{name: "marked execute before retention without a directory", action: domain.SubscriptionExecute, wire: exec, marked: true, missing: true, want: claudeRecoveryPreserveAccount},
+		{name: "marked execute with retained evidence cleans natively", action: domain.SubscriptionExecute, wire: exec, marked: true, retained: installed, want: claudeRecoveryNativeCleanup},
+		{name: "marked execute after native start cleans natively", action: domain.SubscriptionExecute, wire: exec, marked: true, started: true, want: claudeRecoveryNativeCleanup},
+		{name: "legacy execute stays ambiguous", action: domain.SubscriptionExecute, wire: exec, want: claudeRecoveryNativeCleanup},
+		{name: "shared execute cleans natively", action: domain.SubscriptionExecute, wire: exec, shared: true, marked: true, want: claudeRecoveryNativeCleanup},
+		{name: "shared execute removed by the owner", action: domain.SubscriptionExecute, wire: exec, shared: true, started: true, missing: true, want: claudeRecoveryProfileRemoved},
+		{name: "marked login without a directory never created it", action: domain.SubscriptionLogin, wire: login, marked: true, missing: true, want: claudeRecoveryNeverCreated},
+		{name: "legacy login without a directory never created it", action: domain.SubscriptionLogin, wire: login, missing: true, want: claudeRecoveryNeverCreated},
+		{name: "marked login with a directory needs cleanup", action: domain.SubscriptionLogin, wire: login, marked: true, want: claudeRecoveryNativeCleanup},
+		{name: "marked refresh before retention needs cleanup", action: domain.SubscriptionRefresh, wire: refresh, marked: true, want: claudeRecoveryNativeCleanup},
+		{name: "marked logout before retention needs cleanup", action: domain.SubscriptionLogout, wire: logout, marked: true, want: claudeRecoveryNativeCleanup},
+		{name: "logout already removed the profile", action: domain.SubscriptionLogout, wire: logout, started: true, marked: true, retained: installed, missing: true, want: claudeRecoveryProfileRemoved},
+		{name: "logout of a different profile is not reconciled as removed", action: domain.SubscriptionLogout, wire: logout, started: true, marked: true, retained: installed, missing: true, other: true, want: claudeRecoveryNativeCleanup},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			journal := managedSubscriptionJournal{Action: tc.wire, NativeStarted: tc.started, InstallationRetention: tc.marked, Installation: tc.retained, NativeProfileID: profile}
+			if tc.other {
+				journal.NativeProfileID = domain.NewID()
+			}
+			var statErr error
+			if tc.missing {
+				statErr = os.ErrNotExist
+			}
+			original := &domain.SubscriptionLease{Action: tc.action, Shared: tc.shared}
+			if got := classifyClaudeRecovery(original, journal, profile, statErr); got != tc.want {
+				t.Fatalf("disposition = %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestClaudeRetainedInstallationNeverSubstitutesInventoryForMarkedJournals(t *testing.T) {
+	raw, err := json.Marshal(domain.Machine{Name: "fixture", OS: "darwin", Architecture: "arm64", Version: "1", Installations: []domain.Installation{{Harness: domain.ClaudeCode, State: domain.InstallationDetected, ResolvedPath: "/current/claude", Version: domain.ClaudeProtocolVersion, ProtocolVerified: true, Protocol: &domain.ProtocolObservation{State: domain.ProtocolVerified}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := Config{attachedMachine: &pb.Resource{DocumentJson: raw}}
+	for _, tc := range []struct {
+		name    string
+		journal managedSubscriptionJournal
+		want    string
+		failed  bool
+	}{
+		{"marked journal without evidence", managedSubscriptionJournal{InstallationRetention: true}, "", true},
+		{"unmarked legacy journal uses the single entry", managedSubscriptionJournal{}, "/current/claude", false},
+		{"marked journal with evidence", managedSubscriptionJournal{InstallationRetention: true, Installation: &domain.Installation{Harness: domain.ClaudeCode, ResolvedPath: "/original/claude"}}, "/original/claude", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := claudeRetainedInstallation(config, tc.journal)
+			if tc.failed {
+				if err == nil || domain.SafeError(err).Code != domain.RecoveryRequired {
+					t.Fatal("marked journal without evidence was not fenced", err)
+				}
+				return
+			}
+			if err != nil || got.ResolvedPath != tc.want {
+				t.Fatal("wrong installation", got.ResolvedPath, err)
+			}
+		})
+	}
+}
+
+func TestDirectStartupExecutionProfileRunsNoStandaloneChild(t *testing.T) {
+	root := t.TempDir()
+	marker := filepath.Join(root, "launched")
+	executable := filepath.Join(root, "claude")
+	if err := os.WriteFile(executable, []byte("#!/bin/sh\necho launched > '"+marker+"'\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	profile := &nativeClaudeProfile{config: claude.AuthConfig{DirectStartup: true}}
+	profile.config.Process.Executable = executable
+	if err := profile.verifyExecutionStartup(context.Background(), Config{}); err != nil {
+		t.Fatal("direct startup was probed", err)
+	}
+	if _, err := os.Lstat(marker); !os.IsNotExist(err) {
+		t.Fatal("direct startup launched a standalone child before the original process", err)
+	}
+}
+
+func TestClaudeSharedMemberRechecksItsOwnExecutableBeforeJoining(t *testing.T) {
+	f := newSharedClaudeFixture(t, true)
+	members := f.start(t, 1)
+	digest, err := harness.InspectExecutable(context.Background(), f.installaton.ResolvedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	for _, tc := range []struct {
+		name   string
+		digest string
+		joined bool
+	}{
+		{"matching digest joins", digest, true},
+		{"replaced executable never receives the profile", strings.Repeat("0", 64), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := f.input()
+			input.Installation.ExecutableSHA256 = tc.digest
+			f.mu.Lock()
+			before := len(f.finishes)
+			f.mu.Unlock()
+			profile, _, finish, err := beginClaudeSubscriptionExecution(ctx, f.config, domain.NewID(), input)
+			if tc.joined {
+				if err != nil || profile == nil {
+					t.Fatal("unchanged member was rejected", err)
+				}
+				if err := finish(true); err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			var delivered *managedTakeNotDelivered
+			if profile != nil || err == nil || !asManagedNotDelivered(err, &delivered) || domain.SafeError(err).Code != domain.RecoveryRequired {
+				t.Fatal("replaced member executable reached the shared profile", err)
+			}
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			added := f.finishes[before:]
+			if len(added) != 1 || added[0].FinishScope != pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_MEMBER || !added[0].CleanupConfirmed || added[0].NativeIdentity != nil {
+				t.Fatal("the unstarted member was not released alone", len(added))
+			}
+		})
+	}
+	if err := members[0].finish(true); err != nil {
+		t.Fatal(err)
 	}
 }

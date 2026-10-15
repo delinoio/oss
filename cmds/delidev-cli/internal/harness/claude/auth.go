@@ -214,16 +214,10 @@ func VerifyAuthVersion(ctx context.Context, config AuthConfig) error {
 	if err != nil {
 		return domain.SafeError(err)
 	}
-	reported := string(bytes.TrimSpace(raw))
-	if config.DirectStartup && config.Version == "" {
-		// The reported version is bounded metadata, never a numeric admission gate.
-		version, ok := strings.CutSuffix(reported, " (Claude Code)")
-		if !ok || !domain.ValidNativeVersionMetadata(version) {
-			return incompatible()
-		}
-		return nil
-	}
-	if reported != config.Version+" (Claude Code)" {
+	// A versionless direct-startup identity is never probed by a standalone
+	// child: the original execution process proves its own protocol. Without a
+	// pinned version nothing can match, so this check fails closed.
+	if string(bytes.TrimSpace(raw)) != config.Version+" (Claude Code)" || config.Version == "" {
 		return incompatible()
 	}
 	return nil

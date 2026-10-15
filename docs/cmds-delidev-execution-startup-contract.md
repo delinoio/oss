@@ -91,26 +91,43 @@ original execution process before input delivery. A version-4 device-owned
 Claude execution opens its native profile with the direct-startup identity
 (resolved path and executable digest, no version): one admission rule accepts
 either an inspected installation at or above the baseline or that digest-pinned
-identity, and the original process's `--version` output only has to be bounded
+identity, and any version the original process reports is only bounded
 metadata, never a numeric gate. Login keeps requiring an inspected version.
+A direct-startup execution profile runs no standalone `--version` or
+auth-status child before the original execution process: that process is the
+only validation. An inspected installation keeps both pre-execution probes.
 Every device-owned Claude operation durably records the exact installation in its
 private journal before the native profile is created or touched, so only
 journals written before that field existed lack it. Historical device-owned
-cleanup reuses that retained installation; only such legacy journals fall back
-to the single fully verified entry of the current attach inventory, and
-ambiguous or missing evidence fails closed as invalid. The claim is written with
-an installation-retention marker before the lease is taken, so a marked journal
-that still lacks the installation proves the Worker crashed before any profile
-open: recovery of such a non-logout, device-owned lease settles it without native
-cleanup and never logs out an account profile the attempt did not open. Unmarked
-journals stay ambiguous legacy evidence, and a logout always completes its
-removal. The single profile open
-that every profile-bearing launch passes through (execution, login, logout and
-cleanup) re-inspects the executable and compares any retained digest before
-creating or touching a profile directory or launching a process with the profile
-environment; a mismatch or an unreadable file fails closed as recovery-required.
-A binary replaced between that inspection and the exec is a residual race that
-the later startup-ready digest check still catches.
+cleanup reuses that retained installation. Only unmarked legacy journals fall
+back to the single fully verified entry of the final attachment's inventory, the
+one returned after capability negotiation; ambiguous or missing evidence fails
+closed as invalid. A journal carrying the installation-retention marker never
+falls back to inventory: a missing installation fails closed as
+recovery-required, because the current inventory may describe a different binary.
+Recovery classifies every lost device-owned lease through one rule with four
+outcomes, each pinned by a table test: native cleanup with the retained
+installation, reconciliation of an already removed profile, a login that never
+created its profile, and an execution that never opened the profile. The claim is
+written with the installation-retention marker before the lease is taken, so a
+marked EXECUTE journal that still lacks the installation proves the Worker
+crashed before any profile open. Its recovery settles with cleanup confirmed
+and success reported, without identity and without native work. The server
+accepts that pair only for a lost singleton EXECUTE lease and keeps the
+account's generation, identity, native profile and connection. Cleanup alone
+remains the logout confirmation that disconnects the account, and every other
+action refuses the no-native pair. The settlement choice is journaled so an
+interrupted recovery repeats it. Marked LOGOUT, REFRESH and LOGIN journals with
+an existing profile still need native cleanup and therefore fail closed without
+evidence. The single profile open that every profile-bearing launch passes
+through (execution, login, logout and cleanup) re-inspects the executable and
+compares any retained digest before creating or touching a profile directory or
+launching a process with the profile environment. A session that joins a shared
+owner opens no profile itself, so it performs the same recheck against its own
+installation before it receives the owner's profile; a mismatch releases that
+unstarted member alone. A mismatch or an unreadable file fails closed as
+recovery-required. A binary replaced between that inspection and the exec is a
+residual race that the later startup-ready digest check still catches.
 Workers lacking the new capability receive no new execution assignment; clients receive an
 update requirement rather than an instruction to run manual inspection.
 

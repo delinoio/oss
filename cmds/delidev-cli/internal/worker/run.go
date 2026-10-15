@@ -407,10 +407,6 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			// executable and protocol in the original execution process, before input.
 			claudeCapabilityExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1)
 			managedClaudeExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CLAUDE_EXECUTION_V1)
-			// Legacy device-owned cleanup resolves its original installation from the
-			// current inventory only when the retained journal lacks it. Keep the
-			// attached resource, without inspecting or launching anything here.
-			config.attachedMachine = attached.Msg.Machine
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1) {
 				profile += "\x00signed-worker-updates-v1"
 			}
@@ -696,6 +692,11 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if titleCapabilityExpected && !auxiliary {
 				config.Logger.InfoContext(ctx, "worker auxiliary title capability not negotiated", "machine_id", credential.MachineID)
 			}
+			// Legacy device-owned cleanup resolves its original installation from the
+			// final attachment's inventory only when the retained journal lacks it and
+			// never from a response that was replaced by capability negotiation. Keep
+			// the resource without inspecting or launching anything here.
+			config.attachedMachine = attached.Msg.Machine
 			config.updatesEnabled = machineCapability(attached.Msg.Machine, domain.SignedWorkerUpdatesV1)
 			config.claudeMembers = claudeCapabilityExpected && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CLAUDE_DEVICE_OWNED_MEMBERS_V1) && machineCapability(attached.Msg.Machine, domain.ClaudeDeviceOwnedMembersV1)
 			config.openCodeForkReasoning = runtime.GOOS != "windows" && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1) && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_REASONING_V1) && machineCapability(attached.Msg.Machine, domain.OpenCodeGeneralChatForkV1) && machineCapability(attached.Msg.Machine, domain.OpenCodeGeneralChatForkReasoningV1)

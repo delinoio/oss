@@ -619,15 +619,20 @@ func TestClaudeRecoverySettlesUnstartedCurrentSchemaJournalsWithoutNativeCleanup
 		profileOn  bool
 		retained   bool
 		wantSettle bool
+		// wantPreserved is the server-visible no-native settlement that keeps the
+		// account; every other settlement is the cleanup confirmation that
+		// disconnects it.
+		wantPreserved bool
 	}{
-		{"current execute before retention", domain.SubscriptionExecute, exec, true, false, true, false, true},
-		{"current login before retention with a profile", domain.SubscriptionLogin, login, true, false, true, false, true},
-		{"current login before retention without a profile", domain.SubscriptionLogin, login, true, false, false, false, true},
-		{"legacy login without a profile", domain.SubscriptionLogin, login, false, false, false, false, true},
-		{"legacy execute is ambiguous", domain.SubscriptionExecute, exec, false, false, true, false, false},
-		{"legacy login with a profile is ambiguous", domain.SubscriptionLogin, login, false, false, true, false, false},
-		{"current logout still removes the profile", domain.SubscriptionLogout, logout, true, false, true, false, false},
-		{"current execute after native start", domain.SubscriptionExecute, exec, true, true, true, false, false},
+		{"current execute before retention keeps the account", domain.SubscriptionExecute, exec, true, false, true, false, true, true},
+		{"current execute before retention without a profile keeps the account", domain.SubscriptionExecute, exec, true, false, false, false, true, true},
+		{"current login before retention without a profile", domain.SubscriptionLogin, login, true, false, false, false, true, false},
+		{"legacy login without a profile", domain.SubscriptionLogin, login, false, false, false, false, true, false},
+		{"current login before retention with a profile fails closed", domain.SubscriptionLogin, login, true, false, true, false, false, false},
+		{"legacy execute is ambiguous", domain.SubscriptionExecute, exec, false, false, true, false, false, false},
+		{"legacy login with a profile is ambiguous", domain.SubscriptionLogin, login, false, false, true, false, false, false},
+		{"current logout before retention fails closed without inventory", domain.SubscriptionLogout, logout, true, false, true, false, false, false},
+		{"current execute after native start", domain.SubscriptionExecute, exec, true, true, true, false, false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root, err := filepath.EvalSymlinks(t.TempDir())
@@ -698,8 +703,8 @@ func TestClaudeRecoverySettlesUnstartedCurrentSchemaJournalsWithoutNativeCleanup
 			if err != nil {
 				t.Fatal("unstarted journal needed native cleanup", err)
 			}
-			if len(f.finishes) != 1 || !f.finishes[0].CleanupConfirmed {
-				t.Fatal("recovery did not settle the lease")
+			if len(f.finishes) != 1 || !f.finishes[0].CleanupConfirmed || f.finishes[0].Succeeded != tc.wantPreserved || f.finishes[0].NativeIdentity != nil {
+				t.Fatal("recovery did not settle the lease with the expected account outcome", tc.wantPreserved)
 			}
 			if tc.profileOn {
 				if _, statErr := os.Lstat(profileRoot); statErr != nil {

@@ -404,7 +404,7 @@ func TestNativeClaudeLoggedOutStatusRejectsDeclaredNullMetadata(t *testing.T) {
 	}
 }
 
-func TestVerifyAuthVersionDirectStartupHasNoNumericGate(t *testing.T) {
+func TestVerifyAuthVersionFailsClosedForVersionlessIdentity(t *testing.T) {
 	newer, _ := fixtureConfig(t, "auth-native-newer")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -413,7 +413,7 @@ func TestVerifyAuthVersionDirectStartupHasNoNumericGate(t *testing.T) {
 		config AuthConfig
 		want   bool
 	}{
-		{"direct startup reports any bounded version", AuthConfig{Process: newer.Process, Home: newer.Home, DirectStartup: true}, true},
+		{"direct startup is never admitted by a standalone version probe", AuthConfig{Process: newer.Process, Home: newer.Home, DirectStartup: true}, false},
 		{"versionless identity without the direct-startup marker", AuthConfig{Process: newer.Process, Home: newer.Home}, false},
 		{"direct startup with a stale pinned version", AuthConfig{Process: newer.Process, Home: newer.Home, Version: SupportedVersion, DirectStartup: true}, false},
 		{"direct startup with a matching pinned version", AuthConfig{Process: newer.Process, Home: newer.Home, Version: newerFixtureVersion, DirectStartup: true}, true},
