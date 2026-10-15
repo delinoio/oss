@@ -1801,29 +1801,39 @@ export function SessionView({
     id,
     !!queue.data && !queue.data.nextPageToken,
   );
-  // The first input is identified by the session's initial execution and its
-  // sequence-one queue row. Only verified, readable rows are excluded from the
-  // queue presenters and reconstructed as a sent message after reload.
+  // The first input is identified by the session's initial execution. Only a
+  // verified, readable sequence-one queue row with that exact identity is
+  // reconstructed as a sent message and excluded from the queue presenters.
   const initialInputId = text(object(data.initial_execution).input_id);
-  const originalQueueRows = pending.filter(
-    (input) =>
-      readDocument(input).sequence === 1 &&
-      (!initialInputId || input.id === initialInputId) &&
-      submissionQueueReadable(input),
-  );
+  const projectableOriginal = (input: Resource) =>
+    readDocument(input).sequence === 1 &&
+    ["queued", "claimed", "accepted"].includes(
+      text(readDocument(input).delivery),
+    ) &&
+    submissionQueueReadable(input) &&
+    // A startup image rejection keeps its retained retry presentation.
+    !isImageStartupRejectedInput(input, session);
+  const originalQueueRows = initialInputId
+    ? pending.filter(
+        (input) => input.id === initialInputId && projectableOriginal(input),
+      )
+    : [];
   const originalInputIds = new Set<string>(
+    initialInputId &&
+      pending.every(
+        (input) => input.id !== initialInputId || projectableOriginal(input),
+      )
+      ? [initialInputId]
+      : [],
+  );
+  // Startup evidence also recognizes legacy sequence-one rows as the original.
+  const startupOriginalInputIds = new Set<string>(
     [
       initialInputId,
       ...pending
         .filter((input) => readDocument(input).sequence === 1)
         .map((input) => input.id),
-    ].filter(
-      (inputId) =>
-        Boolean(inputId) &&
-        pending.every(
-          (input) => input.id !== inputId || submissionQueueReadable(input),
-        ),
-    ),
+    ].filter(Boolean),
   );
   useEffect(() => {
     for (const input of originalQueueRows)
@@ -2392,7 +2402,7 @@ export function SessionView({
         SubmissionPhase.Uncertain,
       ].includes(row.phase) ||
         !row.queueId ||
-        !originalInputIds.has(row.queueId)),
+        !startupOriginalInputIds.has(row.queueId)),
   );
   // Sidechat children keep their own Info in every initial execution phase.
   const sidechatChild =

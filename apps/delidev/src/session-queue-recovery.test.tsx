@@ -407,13 +407,15 @@ it("shows one retained retry for an image-rejected live arrival outside queue pa
         channel.notify();
       }
   });
-  fireEvent.click(await screen.findByRole("button", { name: "Remove input" }));
-  await screen.findByRole("button", { name: "Retry the same removal" });
+  // The original first input is a sent message, so it has no queue controls.
+  await screen.findByRole("article", { name: "Submitted user message" });
+  expect(screen.queryByRole("button", { name: "Remove input" })).toBeNull();
   await waitFor(() =>
     expect(
       [...channels].some((channel) => channel.sessionId === original.id),
     ).toBe(true),
   );
+  resources.set(input.id, tombstone);
   await act(async () => {
     for (const channel of channels)
       if (channel.sessionId === original.id) {
@@ -444,8 +446,8 @@ it("shows one retained retry for an image-rejected live arrival outside queue pa
     screen.queryByRole("region", { name: "Pending input actions" }),
   ).toBeNull();
   expect(
-    screen.getAllByRole("button", { name: "Retry the same removal" }),
-  ).toHaveLength(1);
+    screen.queryByRole("button", { name: "Retry the same removal" }),
+  ).toBeNull();
 }, 15000);
 
 it.each([
