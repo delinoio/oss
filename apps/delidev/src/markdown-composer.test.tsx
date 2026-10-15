@@ -384,6 +384,28 @@ it("R04 paste: a conversion over the limit leaves the URL unconverted atomically
   expect(probe.canonical).toBe("");
 });
 
+it("R21 image with links: the whole image stays protected source, never collapsed or converted", () => {
+  const image = "![see https://plain.test [x](https://x.test)](image.png)";
+  const { input } = mount("");
+  paste(input, image);
+  expect(probe.canonical).toBe(image);
+  expect(input.value).toBe(image);
+  paste(input, " and https://b.test/y ");
+  expect(probe.canonical).toBe(
+    `${image} and [https://b.test/y](https://b.test/y) `,
+  );
+  expect(scanMarkdown(image).links).toEqual([]);
+  // A delimiter typed after a URL inside the description converts nothing.
+  const draft = "![see https://plain.test[x](https://x.test)](image.png)";
+  cleanup();
+  const again = mount(draft);
+  select(again.input, 24);
+  nativeEdit(again.input, `${draft.slice(0, 24)} ${draft.slice(24)}`, 25);
+  expect(probe.canonical).toBe(
+    "![see https://plain.test [x](https://x.test)](image.png)",
+  );
+});
+
 it("R05 paste with files: image ownership stays with the form handler", () => {
   const attach = vi.fn();
   render(fixture()("", { attach }));

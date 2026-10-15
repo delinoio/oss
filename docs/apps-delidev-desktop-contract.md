@@ -6028,7 +6028,8 @@ that resolves (backslash escapes removed) to an HTTP(S) URL accepted by
 angle destinations, titles, images, `www.` text, incomplete or edited syntax)
 stays ordinary visible source. Fenced code, inline code, images, other inline
 links, autolinks and reference definitions are protected: bare URLs inside them
-are never converted. At most 256 links collapse; the scan has a linear work
+are never converted. An image is protected as a whole, including links and bare
+URLs in its description; only a link label rejects a nested link. At most 256 links collapse; the scan has a linear work
 budget, and when it is exhausted nothing converts. No title is ever fetched.
 
 **Conversion.** Conversion reuses `findUrlTokens` and `validHttpUrl`, so
@@ -6115,6 +6116,7 @@ is the textarea text. Offsets in the Bindings column are canonical.
 | R18 | Prompt-history recall                                      | Replaced, never converted                                                                                                                           | Re-projected                                                                                  | Canonical caret requested by the recall                          | Cleared                                          | Cleared                                                        |
 | R19 | Limit rejection                                            | Unchanged                                                                                                                                           | Restored to the last projection                                                               | Unchanged                                                        | Unchanged                                        | Unchanged                                                      |
 | R20 | Owner replacement (submit, restoration)                    | Replaced                                                                                                                                            | Re-projected                                                                                  | Collapsed at the end                                             | Cleared                                          | Owner-defined                                                  |
+| R21 | Image whose description holds a link or a bare URL         | Unchanged: the whole image is protected source, so no nested link collapses and no URL inside it converts                                           | Same as canonical (nothing collapses inside an image)                                         | Unchanged                                                        | Unchanged                                        | Unchanged                                                      |
 
 **Validation boundary.** jsdom fixtures prove the maps, the state table and event
 wiring. They do not establish real caret, drag-selection, IME, native undo menu,

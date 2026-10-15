@@ -374,7 +374,10 @@ export function scanMarkdown(text: string): MarkdownScan {
     if (!parsed) continue;
     const image = open > 0 && text[open - 1] === "!" && !escapedAt(text, open),
       start = image ? open - 1 : open;
-    if (labelHasNestedLink(text, open + 1, close)) continue;
+    // An image description is flattened text, so it may hold links; the whole
+    // image is protected before any nested-label rejection applies. Only a
+    // link label may not hold another link.
+    if (!image && labelHasNestedLink(text, open + 1, close)) continue;
     protectedRanges.push({ start, end: parsed.end });
     consumed = parsed.end;
     if (image || !parsed.simple) continue;

@@ -67,6 +67,26 @@ describe("bare URL conversion", () => {
     ])
       expect(convert(text)).toBe(text);
   });
+  it("protects an image whose description holds links or URLs", () => {
+    for (const text of [
+      "![see https://plain.test [x](https://x.test)](image.png)",
+      "![a [b](https://b.test) c https://c.test](i.png)",
+      "![[x](https://x.test)](https://img.test/a.png)",
+      '![a [b](https://b.test) [c](https://c.test)](i.png "t")',
+      "![outer ![inner [l](https://l.test)](in.png) https://o.test](out.png)",
+    ]) {
+      expect(convert(text)).toBe(text);
+      expect(scanMarkdown(text).links).toHaveLength(0);
+      expect(convert(`pre https://p.test ${text}`)).toBe(
+        `pre [https://p.test](https://p.test) ${text}`,
+      );
+    }
+    // A following ordinary link is still found after the image.
+    const links = scanMarkdown(
+      "![a [b](https://b.test)](i.png) [c](https://c.test)",
+    ).links;
+    expect(links.map((link) => link.url)).toEqual(["https://c.test"]);
+  });
   it("is idempotent and never nests", () => {
     const once = convert("a https://example.com/x b https://example.org/y");
     expect(convert(once)).toBe(once);
