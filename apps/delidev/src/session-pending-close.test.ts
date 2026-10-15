@@ -816,8 +816,12 @@ describe("pending Close ownership across product windows", () => {
       });
       // A raw endpoint records what the owner announces.
       const spy = bus.endpoint();
-      const seen: { kind: string; key?: string; ack?: boolean; window: string }[] =
-        [];
+      const seen: {
+        kind: string;
+        key?: string;
+        ack?: boolean;
+        window: string;
+      }[] = [];
       spy.onmessage = (event) => seen.push(event.data as (typeof seen)[number]);
       return { bus, owner, siblingRegistry, seen };
     };
@@ -845,9 +849,9 @@ describe("pending Close ownership across product windows", () => {
       seen.length = 0;
       show(true);
       // The restored hold is acknowledged, so the sibling already records it.
-      expect(seen.some((m) => m.kind === "hold" && m.key === key && m.ack)).toBe(
-        true,
-      );
+      expect(
+        seen.some((m) => m.kind === "hold" && m.key === key && m.ack),
+      ).toBe(true);
       expect(owner.holds(key, token)).toBe(true);
       expect(owner.has(key)).toBe(true);
       expect(siblingRegistry.has(key)).toBe(true);

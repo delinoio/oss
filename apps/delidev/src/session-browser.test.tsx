@@ -1084,9 +1084,9 @@ it("re-announces an unsettled sent Close after a page restored from the back/for
       await new Promise((resolve) => setTimeout(resolve, 50));
     });
     expect(seen.map((message) => message.kind)).toContain("release");
-    expect(
-      seen.some((message) => message.kind === "hold" && message.ack),
-    ).toBe(true);
+    expect(seen.some((message) => message.kind === "hold" && message.ack)).toBe(
+      true,
+    );
     // The restored Hold keeps the descriptor through a reconciliation.
     store.reconcilePages(retained, f.profileId, []);
     expect(retainedKeys(store)).toContain(
@@ -1103,7 +1103,9 @@ it("re-announces an unsettled sent Close after a page restored from the back/for
     expect(retainedKeys(store)).toEqual([SessionTabKind.Conversation]);
     expect(pageCalls("close")).toHaveLength(1);
     expect(
-      pageCalls("observe").every((request) => request.operation_id === original),
+      pageCalls("observe").every(
+        (request) => request.operation_id === original,
+      ),
     ).toBe(true);
   } finally {
     sibling.close();
