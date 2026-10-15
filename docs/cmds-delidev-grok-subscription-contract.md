@@ -107,6 +107,34 @@ Quota/reset credit/pricing, enterprise SSO, external identity providers, importe
 user login, account switching, cross-Worker resume, Fork, Sidechat and manual
 compaction are excluded.
 
+### Desktop and server activation order
+
+The desktop controller is a client of the server-owned Grok browser flow and
+owns no OAuth authority itself. It creates a Grok service account, then calls
+`RequestSubscription` with an omitted machine ID (the server-owned path),
+polls `GetSubscriptionProgress` for the original authorization link and cancels
+through `CancelSubscription`. It never sends a machine ID and never selects the
+Worker-owned path for Grok. The server layers own the flow itself (the Grok
+branch of the server-owned request, progress and cancellation) and the single
+switch that advertises System capability 39; the desktop layers add no server
+code and grant no capability.
+
+The desktop layers therefore merge after the server layers. Merged alone, a
+desktop revision sees a server without capability 39 and keeps every Grok
+control in its disabled state, so no request that the server cannot serve is
+ever sent.
+
+| Server revision                         | Desktop revision            | Grok row                                                    |
+| --------------------------------------- | --------------------------- | ----------------------------------------------------------- |
+| Without the server-owned Grok flow      | with the Grok controller    | Coming soon (capability 39 not advertised)                  |
+| With the flow, capability 39 switch off | with the Grok controller    | Coming soon (capability 39 not advertised)                  |
+| With the flow, capability 39 switch on  | with the Grok controller    | Add account, Refresh login and Log out follow capability 39 |
+| With the flow, capability 39 switch on  | without the Grok controller | Coming soon (the desktop never offers the row)              |
+
+Turning the capability 39 switch on is a server-layer decision made after the
+desktop controller exists; the desktop never infers it and never retries
+against a server that does not advertise it.
+
 ### Desktop browser sign-in state machine
 
 `apps/delidev/src/grok-login-machine.ts` is the single source of truth for the browser sign-in controller in `grok-subscription-login.tsx`. The controller never decides on its own what to show: every status read, native step and mutation outcome is one event applied to a transition table, and the resulting phase fixes the stage, the visible actions, the problem notice, the retained original request and the native binding. The tables below are generated from that table by `src/grok-login-machine.test.ts`, which also tests every phase and event pair and fails when this section is stale (regenerate with `UPDATE_GROK_LOGIN_DOCS=1 pnpm exec vitest run src/grok-login-machine.test.ts` from `apps/delidev`).
