@@ -3787,6 +3787,97 @@ through existing APIs, but need an account before wizard resaving. Retired model
 remain inert; affected Workers require explicit current account and model
 reconfiguration without rewriting historical executions.
 
+#### Worker wizard step indicator
+
+The four-item step indicator (Harness, Accounts, Model, Configure) is also
+navigation among steps the user has already reached. The wizard keeps one
+`visited` limit, the highest step reached in the current opened wizard session.
+It starts at Harness (an edit also starts there and reaches later steps through
+Next), only grows when a step is selected, and is never persisted or saved.
+
+- A visited or current item is one `button type=button` holding the number and
+  label together, with a 36px minimum hit area, a pale selected-surface hover and
+  a visible `focus-visible` ring. The current item's button carries
+  `aria-current="step"`. Items after the visited limit are plain non-focusable
+  content with no hover or focus affordance.
+- Selection never saves, submits the form or starts login, connection
+  verification, endpoint model discovery or inference work. It starts only the
+  read-only reads that reaching the target step with footer Back or Next starts
+  (see the read table below), and nothing for a step it jumps over.
+  Back/Next, harness confirmation, the final Save and Settings dismissal are
+  unchanged.
+- English and Korean labels, the four-item layout and wrapping on narrow widths
+  are unchanged. The styles are scoped to `.worker-steps`; other wizards keep
+  the shared `wizard-progress` presentation.
+
+Step strip hit areas. The strip never lets two adjacent step hit areas overlap,
+so the visible edge of a step always activates that step. Step spacing is owned
+by the shared `wizard-progress` rule (24px between steps at every width) and the
+worker stylesheet declares no gap, because the shared rule's higher specificity
+would silently override one. Each button reaches 8px past its item on both
+sides horizontally and 4px vertically, and keeps a 36px minimum height. Overlap
+is the facing reaches minus the gap; a negative value is the clearance left
+between the hit areas.
+
+| Viewport width  | Placement              | Gap  | Reach of each facing pair | Overlap | Minimum hit height |
+| --------------- | ---------------------- | ---- | ------------------------- | ------- | ------------------ |
+| 761px and wider | Same row               | 24px | 8px + 8px                 | -8px    | 36px               |
+| 761px and wider | Wrapped onto a new row | 24px | 4px + 4px                 | -16px   | 36px               |
+| 641px to 760px  | Same row               | 24px | 8px + 8px                 | -8px    | 36px               |
+| 641px to 760px  | Wrapped onto a new row | 24px | 4px + 4px                 | -16px   | 36px               |
+| 640px and below | Same row               | 24px | 8px + 8px                 | -8px    | 36px               |
+| 640px and below | Wrapped onto a new row | 24px | 4px + 4px                 | -16px   | 36px               |
+
+`step-hit-area-css.test.ts` evaluates the committed stylesheets (media
+conditions, specificity and load order) at every width threshold and fails when
+any row's overlap is zero or positive, when the worker sheet declares a gap on
+the strip, or when a rule the evaluator skips targets the strip. Other control
+strips keep adjacent targets non-overlapping the same way: the shared tab strip
+has no gap and no negative margins, and the only other negative inline margin
+in the desktop stylesheets is the sole dismiss button of an inline error row,
+which has no neighbouring control. The same test fails on any new negative
+inline margin or pseudo-element offset until it is documented there.
+
+| Target item                                     | Wizard state                                                              | Result                                                                                                                                                |
+| ----------------------------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| After the visited limit                         | any                                                                       | Not a button, not focusable, click does nothing.                                                                                                      |
+| Any item                                        | pending save, uncertain save, pending account evidence or inactive wizard | Button is disabled; no step change, no second write.                                                                                                  |
+| Current step                                    | idle                                                                      | Enabled. Focuses the step heading; no entrance motion; drafts and any shown error stay.                                                               |
+| Before the current step                         | idle                                                                      | Enabled. Selects it with the entrance motion, focuses the heading, clears the error and retains compatible drafts.                                    |
+| After the current step, up to the visited limit | idle, preceding stages valid                                              | Enabled. Selects it with the entrance motion and focuses the heading.                                                                                 |
+| After the current step, up to the visited limit | idle, a preceding stage invalid                                           | Enabled. Does not select the target: it shows the first invalid stage without entrance motion, shows its error and focuses the first invalid control. |
+
+Read table. A step's reads belong to arriving at that step, whichever control
+caused the arrival, so selecting an item and pressing footer Back or Next start
+the same requests. Leaving Accounts discards its pages and inventory can change
+while another step is shown, so Accounts is read again on every arrival instead
+of reusing retained rows. A step the selection jumps over starts no read.
+
+| Target item                             | Earlier state of the target's data                                                              | Requests started by the selection                                                                                          |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Harness                                 | any                                                                                             | None.                                                                                                                      |
+| Current step or an item after the limit | any                                                                                             | None.                                                                                                                      |
+| Accounts, from Model or Configure       | pages loaded, or the last read failed                                                           | One provider inventory read per source group and one account read per source group that has a source, as Back starts them. |
+| Model, API source                       | any                                                                                             | None. Endpoint models are read only by the explicit Refresh models from endpoint action.                                   |
+| Model, subscription source              | known catalog loaded and fresh in the shared query cache                                        | None.                                                                                                                      |
+| Model, subscription source              | known catalog not loaded, stale (older than the cache freshness window) or its last read failed | One known catalog read for that source, as Next starts it.                                                                 |
+| Configure                               | any                                                                                             | The one Configure field read that Next starts. No Accounts or Model read and no save.                                      |
+| Any item blocked by forward validation  | any                                                                                             | Those of the first invalid stage it routes to, from the rows above.                                                        |
+| Any item while disabled                 | pending save, uncertain save, pending evidence, inactive wizard                                 | None.                                                                                                                      |
+
+`agent-worker-wizard.test.tsx` records every request through the transport and
+covers each row, including a multi-source draft, a failed earlier read and equality
+with the Back/Next arrival.
+
+Clamping: choosing a different harness clamps the limit to Harness (confirming
+then reopens Accounts). Committing a different source for a group, or adding a
+source group, clamps it to Accounts, so Model and Configure become inactive until
+reached again with Next. Reselecting the same harness or source, reordering,
+removing a group and editing accounts, the model or the name keep the limit;
+the forward validation above covers those drafts. `agent-worker-wizard.test.tsx`
+covers every row and clamp, and `agent-worker-wizard-steps-css.test.ts` covers the
+markup-dependent geometry, hover and focus rules.
+
 The Model step uses source-scoped server catalog autocomplete and permits exact
 native ID input after loading, empty, failed or unsupported discovery results.
 Both wizard generations reserve an always-mounted 280 CSS-pixel result area
@@ -3835,7 +3926,7 @@ Use the shared 1040px left column and 960px workflow task shell with fixed heade
 
 Selected account rows lead eligible choices and remain visible outside current pages. Failed-read display retention keeps only selected identity/name/status metadata; current independent reads remain the only account proof, and complete visited Resource documents are never retained for labels. The source picker is always visible; only a committed different source resets that group's accounts/model/cursors. Account choices are directly available without Choose accounts. Required selected-provider failures and their exact read-only retry remain visible in the detail panel beside the source picker. Retry reads that provider without changing the source, account selection or draft, and admits no mutation. Remove Change source, Refresh accounts and source Move up/down buttons. Preserve exact explicit failed-read retry/reload, complete server filtering, invalid/stale/empty states and selected-account counts. Routing stays visible with an empty helper and all original account weight/order controls. Only a complete valid exhausted empty inventory shows Add account in AI API Keys for its selected provider, or Add account in AI Subscription for its selected service. These links use ordinary Settings navigation, dispose the wizard draft and start no login, discovery, save or native operation. Partial, failed, incompatible, malformed or hidden-only nonempty pages never establish empty inventory. Pagination follows the shared continuation contract and never changes account authority. Validation selects the affected panel and reveals/focuses its invalid control. Hidden panels expose no keyboard/accessibility controls. Language changes and reflow never remount controllers or steal focus.
 
-Both wizard generations place Back/Next/final Save in the Settings task footer, associated with the original form. The header owns the create/edit title and top-level dismissal; omit duplicate title and Cancel in a task, retaining standalone page cancellation. Harness has no Next action. X/Escape and original opener restoration retain their existing ownership. The Accounts step shows the selected harness name as plain text without a change control; footer Back is the only route back to Harness. It focuses the step heading, confirming the same harness returns to Accounts with the draft kept, and choosing a different harness applies the harness-change reset above.
+Both wizard generations place Back/Next/final Save in the Settings task footer, associated with the original form. The header owns the create/edit title and top-level dismissal; omit duplicate title and Cancel in a task, retaining standalone page cancellation. Harness has no Next action. X/Escape and original opener restoration retain their existing ownership. The Accounts step shows the selected harness name as plain text without a change control; footer Back and the visited Harness stepper item are the routes back to Harness. Either focuses the step heading, confirming the same harness returns to Accounts with the draft kept, and choosing a different harness applies the harness-change reset above.
 
 The Harness step replaces its select with
 four equal selectable cards in Codex, Claude Code, OpenCode, Grok Build order.
@@ -4119,7 +4210,7 @@ Desktop only. `entranceCategories` in `settings.tsx` maps each opted-in `Setting
 - `Surface` moves the category content column, which holds the heading and body. `SettingsTaskWindow` also plays one entrance for every Settings task opened inside any opted-in category, through `SettingsTaskEntranceContext` provided by `SettingsWorkspace`. The task entrance moves only the task `header`, never the native task `<dialog>` host or its body: a transform would make the dialog the containing block of fixed descendants (for example portaled tooltips) and the contract above excludes native positioning hosts. Tasks outside an opted-in category never animate. Opening, editing, saving, cancelling, refresh, polling, pagination, async progress, errors, permission changes and job or history updates never restart it, dismissal is immediate with no exit animation, and focus return, dismissal, disposal and request ownership never wait for it.
 - `Heading` moves only the static `.settings-category-heading`; tasks always move only their own task heading. Runner Devices, Tailscale, Connections and App information contain persistent portal hosts, native controllers and update or connection callbacks (Tailscale hosts the This computer, Devices on your tailnet and Connection requests portals); no ancestor of those hosts receives a transform, and their controllers, original version evidence, pending update checks, connect, re-pair and retry requests keep their identity. `Modal` takes `headingEntrance` for desktop-owned Connections and Runner Devices tasks (Saved server add, rename and removal presentation, Tailscale enable and device selection, and local re-registration). It plays one entrance on the dialog `header` and never on the dialog. The owner supplies `presentationRequest` for retained tasks: a Modal that mounts visible is one presentation, and afterwards only a changed request that becomes visible (a user action that opens the task, Continue after a dismissal, or a new Add generation) adds one. Visibility changes without a new request, such as a Connections host slot appearing or the page becoming active again, stay immediate. Incoming Tailscale approval prompts and slot-driven Saved servers presentation never animate.
 - Import / Export (`configuration-transfer.tsx`) additionally animates the Map fieldset and the Review preview section once when the user explicitly requests that stage (Load configuration document, Preview configuration changes). `requestedStage` records only that request and is cleared by edits, invalidation and stage arrival. The Map activation is an explicit Load request counter, not the `loaded` visibility: loading again while a document is already mapped replaces it in one event batch and still plays one entrance (the shared hook restarts a running animation for the new key). Stage changes that are derived from asynchronous results (apply progress, uncertain-request recovery, import result) stay immediate. Exact transfer bytes, mappings, original request IDs and protected state are untouched.
-- Agent Workers animates the category and both owned task windows (Worker wizard create and edit, and Preview routing), each once per opened window through the `Surface` rules above. Inside the Worker wizard (`agent-worker-source-wizard.tsx`) the static step `h3` heading additionally plays one entrance per user-selected step change: harness confirmation, Next and Back. `stepRequests` counts only those handlers and is the activation key through `selectStep`; the first step shown when the task opens and automatic routing through `fail()` (validation failures that return the user to Harness, Accounts, Model or Configure) never animate. The entrance moves only the heading, never the form, fieldset, step sections, model combobox popup or scroll-picker popovers. Model refresh, endpoint or subscription discovery, account inspection, typing, polling, refetch and pagination never replay it and never advance a step. Chosen sources, permission settings, exact model IDs, request counts and the original uncertain save request are untouched. `agent-worker-wizard.test.tsx` and `settings.test.tsx` cover this with synthetic fixtures.
+- Agent Workers animates the category and both owned task windows (Worker wizard create and edit, and Preview routing), each once per opened window through the `Surface` rules above. Inside the Worker wizard (`agent-worker-source-wizard.tsx`) the static step `h3` heading additionally plays one entrance per user-selected step change: harness confirmation, Next, Back and selecting a different step in the step indicator. `stepRequests` counts only those handlers and is the activation key through `selectStep`; the first step shown when the task opens and automatic routing through `fail()` (validation failures that return the user to Harness, Accounts, Model or Configure) never animate. The entrance moves only the heading, never the form, fieldset, step sections, model combobox popup or scroll-picker popovers. Model refresh, endpoint or subscription discovery, account inspection, typing, polling, refetch and pagination never replay it and never advance a step. Chosen sources, permission settings, exact model IDs, request counts and the original uncertain save request are untouched. `agent-worker-wizard.test.tsx` and `settings.test.tsx` cover this with synthetic fixtures.
 - Keyboard shortcuts animates the category only. Key capture, shortcut dispatch, typing and validation never restart it. The category has no separate task dialog at present, and any future owned task must opt in with its own contract text.
 - Paired devices animates the category, the pairing task and the revocation confirmation. Disclosures such as Details stay instantaneous. Pairing codes, device credentials and confirmed-revocation state are not read or logged by the motion.
 - AI API Keys (`SettingsCategory.ApiAccounts`) animates the category and every owned task window: Add account, Manage connection (format and details) and Edit preferences. `AccountSettings` renders its own heading, so `Surface` moves the content column that holds it. Each opened task window plays one entrance on its task header only; stage advance inside the wizard (provider choice, key entry), typing, format selection, validation requests and replies, retries, status or health changes, inventory refetches and pagination never restart it. The key, format and source drafts, the original save and connection requests and their request identities, and the clear-on-dismiss credential lifecycle are untouched, and the secret input, its mask and its value are never inside an animated element or read, logged or stored by the motion. A new Add account window opens with an empty key and plays a fresh entrance. `settings-credential-motion.test.tsx` covers this with a synthetic credential and a held connection reply; it grants no account or native acceptance.
