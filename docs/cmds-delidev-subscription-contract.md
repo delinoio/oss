@@ -524,6 +524,13 @@ Settings Add account is an explicit event that creates a default service-named a
 
 - Server subscription maintenance initializes the shared vault and reads the exact original `AccountLogin` generation under `accountGate`, sharing API account synchronization and cancellation. Release the gate before native work; retain retryable open failures and the original operation/cleanup owner. Follow the credential contract. When the gate wait or vault read fails because the operation context was canceled or reached its deadline while the parent server context is live, the pre-native absence proof (no auth home, no process owner, probe index cleanup) runs under a fresh bounded 30-second owner context instead of the ended operation context. A verified proof confirms cleanup so the original operation settles as Canceled or Expired without recovery; a failed proof or retained native evidence keeps recovery required. No opener or login retry runs, and finish still joins cleanup to the original operation and generation.
 
+Worker subscription RPCs allow up to one minute for response headers so a first
+protected credential read can finish native code validation or OS authentication.
+The original caller context still cancels the request earlier. This bounded wait
+does not retry uncertain credential delivery or replace the original lease.
+Managed Claude delivery logs read start, completion, duration and success without
+credential contents.
+
 A fresh subscription lifecycle Take may return Canceled with exact cause `subscription_take_not_admitted` only inside its rolled-back admission transaction after original account/Worker/instance/installation/update fences when the queued original is absent, replaced or canceled. Replay, claimed/recovery state, wrong action/machine and post-commit errors never carry this proof. No lease, bundle or native authority is granted. Claude rejects a stale queued replacement claim after original current-Worker/update/revision and recovery fences, before lease contention and replacement-owned action/phase/profile/machine checks. Keep matching-operation profile/machine validation and the original canceled retired-profile proof; never adopt or cancel the replacement.
 
 - Automatic reset credits use actor/connection/generation-bound typed consent and atomic durable episode admission under System 77. Require the original failed Execute job/native thread/turn and active Worker 52 credential lease; reject idle adoption, free-text authority and restart replay. Logout/generation replacement clear consent. Preserve original same-key explicit reconciliation and cleanup; follow the subscription contract.
