@@ -41,6 +41,7 @@ import {
   type RunProgress,
   type SourceLocation,
 } from "./gen/bundlewhy/v1/bundlewhy_pb";
+import { ExportUsageSection } from "./ExportUsageSection";
 import {
   ALL_CATEGORIES,
   ALL_EVIDENCE_STATUSES,
@@ -1108,6 +1109,12 @@ export function DiagnosticDetails({ diagnostic }: { diagnostic: Diagnostic }) {
           ))
         )}
       </DetailSection>
+
+      {diagnostic.exportUsage ? (
+        <DetailSection title="Export usage paths">
+          <ExportUsageSection usage={diagnostic.exportUsage} />
+        </DetailSection>
+      ) : null}
 
       <DetailSection title="Corrective direction">
         {diagnostic.correctiveAction ? (

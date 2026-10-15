@@ -1667,5 +1667,8 @@ storage deletion. Session deletion removes the session's conversation, fork,
 sidechat, title and review profiles together with its `runtimes/<id>` and
 `title-runtimes/<job>` journals and proves their absence on replay; a referenced
 or active profile keeps the deletion pending. Backup and restore treat the tree
-as owner-local state that is never imported across owners. See the
+as owner-local state that is never imported across owners. The account-wide
+shared Codex history home (`runtimes/accounts/<account-id>/codex`) is registered
+in place under the `shared_owner` purpose and is not removed by session
+deletion. See the
 [harness contract](cmds-delidev-harness-contract.md#persistent-native-profiles).

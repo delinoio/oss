@@ -117,6 +117,54 @@ enum SourceOrigin {
   SOURCE_ORIGIN_GENERATED = 4;
 }
 
+// Whether export usage evidence exists for a diagnostic.
+enum ExportUsageState {
+  EXPORT_USAGE_STATE_UNSPECIFIED = 0;
+  EXPORT_USAGE_STATE_AVAILABLE = 1;
+  // The engine API, hook or graph was unavailable, or it reported no edge for
+  // the diagnostic's module. Never read as "no consumer exists".
+  EXPORT_USAGE_STATE_UNAVAILABLE = 2;
+}
+
+// Whether an export reference names an export.
+enum ExportScope {
+  EXPORT_SCOPE_UNSPECIFIED = 0;
+  // A named export (or a nested export path).
+  EXPORT_SCOPE_NAMED = 1;
+  // Module or namespace scope: the engine did not name one export. This is not
+  // evidence of a function call.
+  EXPORT_SCOPE_MODULE = 2;
+}
+
+// Why a derived export usage chain stops.
+enum ExportUsagePathEnd {
+  EXPORT_USAGE_PATH_END_UNSPECIFIED = 0;
+  // The engine reported no edge into the first export in the chain, and no
+  // edge that could be one was dropped.
+  EXPORT_USAGE_PATH_END_ROOT = 1;
+  // The first edge returns to an export already in the chain.
+  EXPORT_USAGE_PATH_END_CYCLE = 2;
+  // A display or work limit stopped the chain before a root was reached.
+  EXPORT_USAGE_PATH_END_TRUNCATED = 3;
+  // The engine reported edges that bundlewhy could not use (an endpoint is not
+  // an identifiable module or an export reference is unreadable), and one of
+  // them may be an earlier edge into the first export. The chain may continue
+  // beyond this point, so it is not a confirmed start.
+  EXPORT_USAGE_PATH_END_INCOMPLETE = 4;
+}
+
+// The first display or work limit that shortened the shown chains.
+enum ExportUsageTruncation {
+  EXPORT_USAGE_TRUNCATION_UNSPECIFIED = 0;
+  EXPORT_USAGE_TRUNCATION_NONE = 1;
+  // More chains exist than the display cap.
+  EXPORT_USAGE_TRUNCATION_PATH_COUNT = 2;
+  // A chain is longer than the display cap.
+  EXPORT_USAGE_TRUNCATION_DEPTH = 3;
+  // The traversal work budget was exhausted.
+  EXPORT_USAGE_TRUNCATION_EXPANSION_BUDGET = 4;
+}
+
 enum AttributionState {
   ATTRIBUTION_STATE_UNSPECIFIED = 0;
   ATTRIBUTION_STATE_SUPPORTED = 1;
@@ -197,6 +245,44 @@ message DependencyPath {
   repeated string modules = 1;
 }
 
+// A module plus an export inside it, as reported by the engine.
+message ExportReference {
+  // Display path of the module.
+  string module = 1;
+  // Export path segments; empty when scope is module scope.
+  repeated string export_path = 2;
+  ExportScope scope = 3;
+}
+
+// One export dependency the engine reported: consumer uses provider. This is
+// an engine observation, not a runtime call.
+message ExportUsageEdge {
+  ExportReference consumer = 1;
+  ExportReference provider = 2;
+  // Engine dependency ID; empty when the engine did not provide one.
+  string dependency_id = 3;
+  // Location of the dependency in the consumer module, such as "6:13-16";
+  // empty when unknown.
+  string location = 4;
+}
+
+// A chain of engine edges ordered from the outermost consumer to the
+// diagnostic module. bundlewhy derives the chain and its order by following
+// engine edges; the chain does not show execution, removable code or savings.
+message ExportUsagePath {
+  repeated ExportUsageEdge edges = 1;
+  ExportUsagePathEnd end = 2;
+}
+
+message ExportUsage {
+  ExportUsageState state = 1;
+  // Why the evidence is unavailable, or a disclosure such as engine edges
+  // that could not be mapped to modules.
+  string note = 2;
+  repeated ExportUsagePath paths = 3;
+  ExportUsageTruncation truncation = 4;
+}
+
 message CorrectiveAction {
   string direction = 1;
   // Conditions that must hold before applying the direction safely.
@@ -223,6 +309,9 @@ message Diagnostic {
   // Engine identity summary, for example "rspack 2.2.9 + SwcJsMinimizerRspackPlugin".
   string engine = 15;
   bool dependency = 16;
+  // Optional export-level usage evidence. Absent for Vite diagnostics, rules
+  // without module scope and results saved before it existed.
+  ExportUsage export_usage = 17;
 }
 
 message CategoryCoverage {

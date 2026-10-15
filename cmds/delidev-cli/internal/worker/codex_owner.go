@@ -36,11 +36,71 @@ func (r *codexOwnerRegistry) gate(account domain.ID) *codexAccountGate {
 	return gate
 }
 
+// parkUnverifiedRelease retains a shared account home hold whose release could
+// not be verified after its Finish was published. The local owner or
+// continuation is gone by then, so without this the next holder of the account
+// would meet profile_busy with nothing left that could retry the release.
+func (r *codexOwnerRegistry) parkUnverifiedRelease(account domain.ID, hold *sharedHomeHold) {
+	if r == nil || hold == nil {
+		return
+	}
+	gate := r.gate(account)
+	gate.mu.Lock()
+	gate.unverified = hold
+	gate.mu.Unlock()
+}
+
+// settleUnverifiedRelease verifies a parked release again and forgets it once
+// the lock is proven free. It reports the failure while the lock stays
+// unverified, which blocks the next holder instead of letting it fail on a lock
+// whose owner is gone.
+func (r *codexOwnerRegistry) settleUnverifiedRelease(account domain.ID) error {
+	if r == nil {
+		return nil
+	}
+	r.mu.Lock()
+	gate := r.accounts[account]
+	r.mu.Unlock()
+	if gate == nil {
+		return nil
+	}
+	gate.mu.Lock()
+	hold := gate.unverified
+	gate.mu.Unlock()
+	if hold == nil {
+		return nil
+	}
+	if err := hold.release(); err != nil {
+		return &sharedHomeReleaseError{err}
+	}
+	gate.mu.Lock()
+	if gate.unverified == hold {
+		gate.unverified = nil
+	}
+	gate.mu.Unlock()
+	return nil
+}
+
+// sharedHomeReleaseError reports that the shared account home lock could not be
+// released and verified. When a member Finish returns it, the Finish itself was
+// published and the unverified release is retained for the next holder. The
+// closed profile cause wins when the release error carries one; otherwise the
+// failure is a generic recovery-required one.
+type sharedHomeReleaseError struct{ err error }
+
+var errSharedHomeUnverified = domain.Fail(domain.RecoveryRequired, "The shared Codex account home release could not be verified.", "Inspect the account history home without deleting retained history, then retry.")
+
+func (e *sharedHomeReleaseError) Error() string   { return errSharedHomeUnverified.Error() }
+func (e *sharedHomeReleaseError) Unwrap() []error { return []error{e.err, errSharedHomeUnverified} }
+
 type codexAccountGate struct {
 	slot      chan struct{}
 	mu        sync.Mutex
 	owner     *codexSharedOwner
 	uncertain bool
+	// unverified is a shared account home hold whose release failed after its
+	// Finish was published; see parkUnverifiedRelease.
+	unverified *sharedHomeHold
 }
 
 func (g *codexAccountGate) acquire(ctx context.Context) error {
@@ -92,11 +152,15 @@ func (g *codexAccountGate) fence() {
 }
 
 type codexSharedOwner struct {
-	gate                   *codexAccountGate
-	config                 Config
-	lease                  *managedSubscriptionLease
-	runtime                *codex.SharedRuntime
-	home                   string
+	gate    *codexAccountGate
+	config  Config
+	lease   *managedSubscriptionLease
+	runtime *codex.SharedRuntime
+	home    string
+	// profile is the registry lock of the shared account history home. The
+	// founding owner holds it until the owner retires and releases it, verified,
+	// before the owner Finish is published.
+	profile                *sharedHomeHold
 	initial                []byte
 	latest                 []byte
 	unregisterObservations func()
@@ -333,9 +397,33 @@ func (o *codexSharedOwner) reportOwner(last *codexSharedMember) error {
 	if o.runtime == nil && o.clean {
 		bundle = o.initial
 	}
-	err := withFreshClient(o.config, last.lease, func() error {
-		return last.lease.finishCodexScopedRetry(bundle, o.clean, success, pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_OWNER, o.lease.response.LeaseRevision)
-	})
+	return o.finishOwner(func() error {
+		return withFreshClient(o.config, last.lease, func() error {
+			return last.lease.finishCodexScopedRetry(bundle, o.clean, success, pb.SubscriptionFinishScope_SUBSCRIPTION_FINISH_SCOPE_OWNER, o.lease.response.LeaseRevision)
+		})
+	}, last)
+}
+
+// finishOwner releases the shared account home lock, publishes the owner Finish
+// and settles the local owner. The server frees the account lease when it
+// commits the owner Finish, which admits an exclusive continuation that is
+// already retrying its Take, so the lock is released and verified first and the
+// continuation never meets profile_busy. A retry of an uncertain or failed
+// Finish finds the lock free, or verifies a failed release again. Outcomes:
+//
+//   - Finish failed or uncertain: the Finish error is returned and the owner stays
+//     tracked, so the same request and the release are retried; an unverified
+//     release is retried with it.
+//   - Finish published and release verified: the local owner is cleared.
+//   - Finish published and release unverified: the local owner is still cleared,
+//     because nothing remains to publish, but the unverified hold moves to the
+//     account gate and the failure is returned through the member outcome.
+//     The next holder verifies the release again before it locks the home.
+func (o *codexSharedOwner) finishOwner(publish func() error, last *codexSharedMember) error {
+	releaseErr, err := publishAfterRelease(o.profile, publish)
+	if releaseErr != nil && o.config.Logger != nil {
+		o.config.Logger.Warn("codex_shared_owner_profile_release_failed", "account_id", o.lease.account, "owner_lease_id", o.lease.leaseID(), "finish_published", err == nil)
+	}
 	if err != nil {
 		if codexFinishOutcomeUnknown(err) {
 			o.gate.mu.Lock()
@@ -351,9 +439,15 @@ func (o *codexSharedOwner) reportOwner(last *codexSharedMember) error {
 		o.gate.owner = nil
 	}
 	o.pendingOwner = nil
+	if releaseErr != nil {
+		o.gate.unverified = o.profile
+	}
 	o.gate.mu.Unlock()
 	if o.config.Logger != nil {
-		o.config.Logger.Info("codex_shared_owner_retired", "account_id", o.lease.account, "owner_lease_id", o.lease.leaseID(), "cleanup_confirmed", o.clean)
+		o.config.Logger.Info("codex_shared_owner_retired", "account_id", o.lease.account, "owner_lease_id", o.lease.leaseID(), "cleanup_confirmed", o.clean, "profile_release_verified", releaseErr == nil)
+	}
+	if releaseErr != nil {
+		return &sharedHomeReleaseError{releaseErr}
 	}
 	return nil
 }

@@ -990,6 +990,11 @@ an idempotent migration receipt that leaves the directory and helper links
 untouched, retires only the eligible obsolete credential reference and never
 replays the request (see the
 [harness contract](cmds-delidev-harness-contract.md#legacy-access-only-quota-migration)).
+The managed shared Codex owner's account-wide history home
+(`runtimes/accounts/<account-id>/codex`) is registered in place as a
+`shared_owner` profile whose lock the founding owner holds until the owner
+retires (see the
+[harness contract](cmds-delidev-harness-contract.md#shared-codex-owner-account-home)).
 The Claude device-profile directory is registered in place and removed only by
 its logout.
 If native removal completes before the registry deletion is durable, original

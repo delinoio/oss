@@ -25,7 +25,8 @@ Explain why a bundler or its default JavaScript minifier could not apply an opti
 
 ## Cross-Domain Invariants
 
-- Stable enums (`OptimizationCategory`, `EvidenceStatus`, `ConditionOutcome`, `RunStatus`, `RunStage`, `Bundler`, `EngineSupport`, `CoverageState`, `LocationKind`, `SourceOrigin`, `AttributionState`, `ProblemSeverity`, `ReportMode`) are owned by the protocol contract. Rust, the UI and the adapters use the same values; additions are additive and never renumbered.
+- Stable enums (`OptimizationCategory`, `EvidenceStatus`, `ConditionOutcome`, `RunStatus`, `RunStage`, `Bundler`, `EngineSupport`, `CoverageState`, `LocationKind`, `SourceOrigin`, `AttributionState`, `ProblemSeverity`, `ReportMode`, `ExportUsageState`, `ExportScope`, `ExportUsagePathEnd`, `ExportUsageTruncation`) are owned by the protocol contract. Rust, the UI and the adapters use the same values; additions are additive and never renumbered.
+- Rspack export usage evidence distinguishes what Rspack reported (edges) from what bundlewhy derived (chains and their order). It never states that code ran, can be removed or saves bytes, and an unavailable graph is shown as unavailable for the diagnostic instead of an invented chain.
 - Error codes are stable `BW_*` identifiers owned by the Rust contract. Adapters, the server and the UI display the same codes with recovery instructions.
 - Evidence statuses mean the same everywhere. `Confirmed` is confirmed for the engine used in this analysis. `Inferred` is bundlewhy's own analysis and must state its supporting evidence. `Unavailable` marks evidence that could not be collected. No surface presents an inferred cause as an observed engine decision, and no surface presents missing coverage as a clean result.
 - A retained environment read is a dead-code elimination diagnostic only when the generated code shows that it guards a branch. Value-only reads do not establish an optimization blocker.

@@ -1548,20 +1548,7 @@ export function AgentWorkerSourceWizard({
           />
         </section>
         <div hidden={step !== Step.Accounts}>
-          <p>
-            {harnessNames[data.harness as Harness]}{" "}
-            <SettingsActionButton
-              icon={SettingsActionIcon.Inspect}
-              type="button"
-              disabled={blocked}
-              onClick={() => {
-                selectStep(Step.Harness);
-                focus();
-              }}
-            >
-              {copy("agent-worker-wizard.changeHarness")}
-            </SettingsActionButton>
-          </p>
+          <p>{harnessNames[data.harness as Harness]}</p>
         </div>
         <div
           className={

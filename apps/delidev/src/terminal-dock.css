@@ -105,6 +105,12 @@
   padding: 0;
   margin: 0;
 }
+/* A measured placeholder keeps the previous page height as min-height; its
+   single wrapped line must stay at content height. */
+.terminal-tabs [data-payload-page][data-payload-state="placeholder"] {
+  align-content: flex-start;
+  align-items: flex-start;
+}
 .terminal-view {
   display: flex;
   flex: 1;

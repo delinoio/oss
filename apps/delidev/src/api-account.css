@@ -208,19 +208,6 @@
   font-size: 18px;
   font-weight: 600;
 }
-.account-wizard.api-keys-view .account-provider-choices {
-  max-width: 720px;
-  gap: 10px;
-}
-.account-wizard.api-keys-view .account-provider-action {
-  min-height: 64px;
-  padding: 12px;
-  border-radius: 8px;
-}
-.account-wizard.api-keys-view .account-provider-method {
-  margin-top: 4px;
-  font-size: 12px;
-}
 .api-keys-view summary,
 .api-entry-workflow summary {
   min-height: 40px;

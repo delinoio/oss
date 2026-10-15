@@ -14,7 +14,7 @@ Each diagnostic connects:
 - The **conditions** the rule checks, each with a Met, Unmet or Unknown outcome.
 - The relevant **code location** in your source, or in the generated chunk when no source map is available.
 - The **evidence** that supports the finding, labeled Confirmed, Inferred or Unavailable.
-- The **dependency paths** that bring the module into the build.
+- The **dependency paths** that bring the module into the build. For Rspack, bundlewhy also derives export usage paths from the export dependencies that Rspack reports.
 - A **corrective direction**, with the conditions under which it is safe to apply.
 
 bundlewhy explains; it never changes your code or configuration. You decide what to change.
