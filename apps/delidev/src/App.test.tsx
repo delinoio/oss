@@ -3982,7 +3982,7 @@ it("keeps the welcome status failure and its retry action without a subtitle", a
   const retry = await screen.findByRole("button", {
     name: "Retry current read",
   });
-  const welcome = retry.closest("section.welcome")!;
+  const welcome = retry.closest<HTMLElement>("section.welcome")!;
   expect(
     within(welcome).getByRole("heading", {
       name: "Your sessions, in one place",
