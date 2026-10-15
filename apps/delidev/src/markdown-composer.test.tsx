@@ -1049,7 +1049,7 @@ it("R16 modifier click: a pointer outside every link, a missing opener and nativ
   expect(screen.queryByRole("alert")).toBeNull();
 });
 
-it("R17 blur and focus: change nothing about text, selection, history or bindings", () => {
+it("R17 blur and focus: change nothing about text, selection or bindings and only seal the current entry", () => {
   const { input } = mount(DRAFT);
   nativeEdit(input, `${DISPLAY}x`, DISPLAY.length + 1);
   select(input, 3);
@@ -1419,6 +1419,193 @@ it("R29 reference forms: a URL inside a reference, collapsed or shortcut link or
   expect(probe.canonical).toBe("[logo]: image.png\n\n![see ");
 });
 
+// --- History boundaries (R30, R31) ------------------------------------------
+
+// A native input transaction: `beforeinput` names its type, then the field
+// changes, exactly as a browser delivers a paste, a drop or a drag removal.
+function nativeTransaction(
+  input: HTMLTextAreaElement,
+  inputType: string,
+  text: string,
+  caret: number,
+) {
+  fireEvent(
+    input,
+    new InputEvent("beforeinput", {
+      inputType,
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
+  nativeEdit(input, text, caret);
+}
+
+it("R30 selection move: returning to the same caret starts a new typing entry", () => {
+  const { input } = mount("");
+  nativeEdit(input, "a", 1);
+  select(input, 0);
+  select(input, 1);
+  nativeEdit(input, "ab", 2);
+  expect(probe.canonical).toBe("ab");
+  undo(input);
+  expect(probe.canonical).toBe("a");
+  undo(input);
+  expect(probe.canonical).toBe("");
+  redo(input);
+  redo(input);
+  expect(probe.canonical).toBe("ab");
+});
+
+it("R30 selection move: every kind of genuine move seals, an unmoved caret does not", () => {
+  const { input } = mount("");
+  nativeEdit(input, "a", 1);
+  // Reporting the same selection again (no move) keeps the run open.
+  select(input, 1);
+  select(input, 1);
+  nativeEdit(input, "ab", 2);
+  // A range selection and its collapse are moves.
+  select(input, 0, 2);
+  select(input, 2);
+  nativeEdit(input, "abc", 3);
+  // Programmatic selection by the owner is a move as well.
+  act(() => {
+    probe.api.select(0, 0);
+  });
+  act(() => {
+    probe.api.select(3, 3);
+  });
+  nativeEdit(input, "abcd", 4);
+  expect(probe.canonical).toBe("abcd");
+  undo(input);
+  expect(probe.canonical).toBe("abc");
+  undo(input);
+  expect(probe.canonical).toBe("ab");
+  undo(input);
+  expect(probe.canonical).toBe("");
+});
+
+it("R30 selection move: a deletion run is sealed by a move too", () => {
+  const { input } = mount("abcd");
+  select(input, 4);
+  nativeEdit(input, "abc", 3);
+  nativeEdit(input, "ab", 2);
+  select(input, 0);
+  select(input, 2);
+  nativeEdit(input, "a", 1);
+  expect(probe.canonical).toBe("a");
+  undo(input);
+  expect(probe.canonical).toBe("ab");
+  undo(input);
+  expect(probe.canonical).toBe("abcd");
+});
+
+it("R30 selection move: reveal and collapse rewrites never seal a typing run", () => {
+  const { input } = mount(DRAFT);
+  // A caret inside a collapsed label reveals the link, which rewrites the
+  // field and moves the native caret programmatically; typing still extends.
+  select(input, 6);
+  expect(input.value).toBe(DRAFT);
+  const at = input.selectionStart;
+  nativeEdit(input, `${DRAFT.slice(0, at)}x${DRAFT.slice(at)}`, at + 1);
+  const next = probe.canonical;
+  nativeEdit(input, `${next.slice(0, at + 1)}y${next.slice(at + 1)}`, at + 2);
+  expect(probe.canonical).toBe("see [Doxycs](https://e.com/d) ok");
+  undo(input);
+  expect(probe.canonical).toBe(DRAFT);
+  expect(input.value).toBe(DRAFT);
+});
+
+it("R31 other boundaries: blur, drag events and undo or redo end the run", () => {
+  // Focus leaving the field.
+  const first = mount("");
+  nativeEdit(first.input, "a", 1);
+  fireEvent.blur(first.input);
+  fireEvent.focus(first.input);
+  nativeEdit(first.input, "ab", 2);
+  undo(first.input);
+  expect(probe.canonical).toBe("a");
+  first.view.unmount();
+  // Drag start, end and drop.
+  for (const type of ["dragStart", "dragEnd", "drop"] as const) {
+    const { input, view } = mount("");
+    nativeEdit(input, "a", 1);
+    fireEvent[type](input, { dataTransfer: { files: [], types: [] } });
+    nativeEdit(input, "ab", 2);
+    undo(input);
+    expect(probe.canonical).toBe("a");
+    view.unmount();
+  }
+  // An entry exposed by undo does not absorb the next edit.
+  const stepped = mount("");
+  nativeEdit(stepped.input, "a", 1);
+  paste(stepped.input, "X");
+  expect(probe.canonical).toBe("aX");
+  undo(stepped.input);
+  expect(probe.canonical).toBe("a");
+  nativeEdit(stepped.input, "ab", 2);
+  undo(stepped.input);
+  expect(probe.canonical).toBe("a");
+  undo(stepped.input);
+  expect(probe.canonical).toBe("");
+  redo(stepped.input);
+  nativeEdit(stepped.input, "ac", 2);
+  undo(stepped.input);
+  expect(probe.canonical).toBe("a");
+  stepped.view.unmount();
+});
+
+it("R31 other boundaries: native paste, drop, drag removal and replacement are their own entries", () => {
+  for (const [inputType, edited] of [
+    ["insertFromPaste", "aXY"],
+    ["insertFromDrop", "aXY"],
+    ["insertReplacementText", "aXY"],
+  ] as const) {
+    const { input, view } = mount("");
+    nativeEdit(input, "a", 1);
+    nativeTransaction(input, inputType, edited, 3);
+    expect(probe.canonical).toBe(edited);
+    // Typing after it does not extend it, and it does not extend the run.
+    nativeEdit(input, `${edited}z`, 4);
+    expect(probe.canonical).toBe(`${edited}z`);
+    undo(input);
+    expect(probe.canonical).toBe(edited);
+    undo(input);
+    expect(probe.canonical).toBe("a");
+    undo(input);
+    expect(probe.canonical).toBe("");
+    view.unmount();
+  }
+  // Removing dragged-out text is one deletion entry, apart from the typing.
+  const { input } = mount("");
+  nativeEdit(input, "a", 1);
+  nativeEdit(input, "ab", 2);
+  nativeTransaction(input, "deleteByDrag", "a", 1);
+  nativeEdit(input, "", 0);
+  expect(probe.canonical).toBe("");
+  undo(input);
+  expect(probe.canonical).toBe("a");
+  undo(input);
+  expect(probe.canonical).toBe("ab");
+  undo(input);
+  expect(probe.canonical).toBe("");
+});
+
+it("R31 other boundaries: IME composition is separate from the typing around it", () => {
+  const { input } = mount("");
+  nativeEdit(input, "a", 1);
+  fireEvent.compositionStart(input);
+  nativeEdit(input, "a한", 2);
+  fireEvent.compositionEnd(input);
+  nativeEdit(input, "a한b", 3);
+  expect(probe.canonical).toBe("a한b");
+  undo(input);
+  expect(probe.canonical).toBe("a한");
+  undo(input);
+  expect(probe.canonical).toBe("a");
+  undo(input);
+  expect(probe.canonical).toBe("");
+});
+
 // Seeded random walk over the whole state machine. After every operation the
 // field must show exactly the projection of the canonical text for the
 // canonical selection, selection maps must agree, and undoing every edit must
@@ -1488,6 +1675,7 @@ for (let seed = 1; seed <= 60; seed++) {
         "select",
         "select",
         "compose",
+        "blur",
       ]);
       const before = probe.canonical;
       if (operation === "type") {
@@ -1501,6 +1689,9 @@ for (let seed = 1; seed <= 60; seed++) {
         nativeEdit(input, text, from);
       } else if (operation === "paste") {
         paste(input, pick(WALK_PASTES));
+      } else if (operation === "blur") {
+        fireEvent.blur(input);
+        fireEvent.focus(input);
       } else if (operation === "compose") {
         // A composition is one edit; its text commits when it ends.
         fireEvent.compositionStart(input);

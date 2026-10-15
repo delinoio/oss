@@ -321,6 +321,21 @@ function platformModifierOnly(event: ModifierState): boolean {
     ? event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey
     : event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey;
 }
+// `beforeinput` types that are not one more step of ordinary typing or deletion.
+// Each starts its own history entry and seals it, because the browser applied a
+// whole transaction (a paste, a drop, a drag removal, a replacement suggestion).
+const SEPARATE_INPUT_TYPES: ReadonlySet<string> = new Set([
+  "insertFromPaste",
+  "insertFromPasteAsQuotation",
+  "insertFromDrop",
+  "insertFromYank",
+  "insertReplacementText",
+  "insertTranspose",
+  "deleteByCut",
+  "deleteByDrag",
+  "deleteContent",
+  "insertLink",
+]);
 export function useSkillCompletion({
   value,
   change,
@@ -426,6 +441,8 @@ export function useSkillCompletion({
       undefined,
     ),
     appliedDisplay = useRef<string>(undefined);
+  // Last `beforeinput` type, consumed by the `change` that follows it.
+  const inputType = useRef<string>(undefined);
   const [linkFailure, setLinkFailure] = useState<ExternalLinkFailure>();
   const openingLink = useRef(false),
     pendingOpen = useRef<string>(undefined),
@@ -471,6 +488,21 @@ export function useSkillCompletion({
       (next.direction !== "none" && field.selectionDirection !== next.direction)
     )
       field.setSelectionRange(start, end, next.direction);
+  };
+  // True when the native selection is not where the adapter last put it, which
+  // means the user moved it (pointer, arrows, select-all, a drag). A selection
+  // the adapter wrote through `applySelection` always matches its canonical
+  // state, so programmatic updates and the echoes of typing never qualify.
+  const userMovedSelection = (): boolean => {
+    const field = textarea.current,
+      map = projectionRef.current,
+      length = valueRef.current.length,
+      known = selectionRef.current;
+    if (!field || field.value !== map.text) return false;
+    return (
+      field.selectionStart !== map.toDisplay(Math.min(known.start, length)) ||
+      field.selectionEnd !== map.toDisplay(Math.min(known.end, length))
+    );
   };
   // Runs after every commit: detects owner replacements (submit, restoration,
   // recall), then restores the native selection whenever the displayed text
@@ -833,12 +865,24 @@ export function useSkillCompletion({
         edit.inserted + value.slice(edit.end),
       ),
       caretAfter = edit.caret(position),
-      composingNow = composing.current;
+      composingNow = composing.current,
+      nativeType = inputType.current;
+    inputType.current = undefined;
     if (plain === value) {
-      // Nothing changed in the draft (for example a caret-only update).
+      // Nothing changed in the draft (for example a caret-only update); a
+      // caret that really moved ends the current typing run.
+      if (!composingNow && userMovedSelection()) history.seal();
       updateSelection(collapsedAt(caretAfter));
       return;
     }
+    // A browser transaction that is not ordinary typing or deletion (a native
+    // paste, a drop, a drag removal, a replacement suggestion) starts its own
+    // entry and seals it: it must neither absorb into nor be absorbed by a run.
+    const separate =
+      !composingNow &&
+      nativeType !== undefined &&
+      SEPARATE_INPUT_TYPES.has(nativeType);
+    if (separate) history.seal();
     // A typed space or newline completes the URL before it. Text committed by
     // an IME is processed once composition has ended, never during it.
     let converted: string | undefined;
@@ -869,7 +913,8 @@ export function useSkillCompletion({
       // removed, so a run of Backspace/Delete splits at each removed space.
       seal:
         !composingNow &&
-        (converted !== undefined ||
+        (separate ||
+          converted !== undefined ||
           /\s/u.test(edit.inserted) ||
           /\s/u.test(value.slice(edit.start, edit.end))),
       session: composingNow ? compositionSession.current : undefined,
@@ -1091,12 +1136,25 @@ export function useSkillCompletion({
     if (!field) return;
     const listener = (event: Event) => {
       const type = (event as InputEvent).inputType;
+      inputType.current = type;
       if (type !== "historyUndo" && type !== "historyRedo") return;
       event.preventDefault();
       stepHistory(type === "historyRedo");
     };
+    // Losing focus and starting, ending or completing a drag are boundaries: a
+    // run of typing never continues across them even when the caret returns to
+    // the same place.
+    const boundary = () => {
+      if (!composing.current) history.seal();
+    };
     field.addEventListener("beforeinput", listener);
-    return () => field.removeEventListener("beforeinput", listener);
+    for (const type of ["blur", "dragstart", "dragend", "drop"])
+      field.addEventListener(type, boundary);
+    return () => {
+      field.removeEventListener("beforeinput", listener);
+      for (const type of ["blur", "dragstart", "dragend", "drop"])
+        field.removeEventListener(type, boundary);
+    };
   });
   const list = visible ? (
     <div
@@ -1213,6 +1271,9 @@ export function useSkillCompletion({
     select: (start: number, end: number) => {
       if (!canEdit()) return;
       const at: HistorySelection = { start, end, direction: "none" };
+      const prior = selectionRef.current;
+      if (!composing.current && (prior.start !== start || prior.end !== end))
+        history.seal();
       updateSelection(at);
       pending.current = { selection: at, focus: false };
       applySelection(at);
@@ -1222,6 +1283,9 @@ export function useSkillCompletion({
     onKeyDown,
     onSelect: () => {
       if (!canEdit()) return;
+      // A genuine selection move ends the current typing or deletion run, so
+      // returning to the same place and typing again is a new undo step.
+      if (!composing.current && userMovedSelection()) history.seal();
       updateSelection(readSelection());
     },
     onCompositionStart: () => {

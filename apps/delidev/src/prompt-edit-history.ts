@@ -124,6 +124,9 @@ export class EditHistory<Binding> {
     if (!entry) return;
     entry.sealed = true;
     this.redoStack.push(entry);
+    // Undo is a boundary: the entry now on top must not absorb the next edit,
+    // even though the restored selection equals the end of its result.
+    this.seal();
   }
   peekRedo(): HistorySnapshot<Binding> | undefined {
     return this.redoStack[this.redoStack.length - 1]?.after;

@@ -57,3 +57,25 @@ it("clears redo on a new edit and bounds retained entries", () => {
   history.reset();
   expect(history.size).toBe(0);
 });
+
+it("does not let the entry exposed by undo absorb the next typing", () => {
+  const history = new EditHistory<string>();
+  history.record(EditKind.Typing, snap(""), snap("a"));
+  history.record(EditKind.Paste, snap("a"), snap("aX"), { seal: true });
+  history.commitUndo();
+  // The restored caret equals the end of the exposed typing entry.
+  history.record(EditKind.Typing, snap("a"), snap("ab"));
+  expect(history.size).toBe(2);
+  expect(history.peekUndo()?.text).toBe("a");
+  history.commitUndo();
+  expect(history.peekUndo()?.text).toBe("");
+});
+
+it("seals the newest entry and ignores an empty history", () => {
+  const history = new EditHistory<string>();
+  history.seal();
+  history.record(EditKind.Typing, snap(""), snap("a"));
+  history.seal();
+  history.record(EditKind.Typing, snap("a"), snap("ab"));
+  expect(history.size).toBe(2);
+});
