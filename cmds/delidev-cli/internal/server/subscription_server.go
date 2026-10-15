@@ -221,8 +221,10 @@ func (s *Service) initializeServerSubscriptions(ctx context.Context) error {
 				changed = true
 				if a.SubscriptionService == domain.SubscriptionGrok && a.ProviderID == "" && o.GrokDiagnostic == nil && (o.CodeConsumed || o.RefreshClaimed || o.GrokRevocation != "") {
 					// A claimed operation fenced by the restart is never recovered
-					// automatically, so its recovery diagnostic is recorded here or nowhere.
-					o.GrokDiagnostic = grokOperationDiagnostic(o.ID, grokDiagnosticPhaseOf(o.Action), domain.RecoveryRequired)
+					// automatically, so its recovery diagnostic is recorded here or nowhere. A
+					// confirmed revocation is the exception that is retried (cleanup only), so
+					// it reads as cleanup pending like every other fence writer.
+					o.GrokDiagnostic = grokOperationDiagnostic(o.ID, grokDiagnosticPhaseOf(o.Action), grokFenceCode(*o))
 				}
 			}
 			if !changed {

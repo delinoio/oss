@@ -64,6 +64,21 @@ const (
 	grokLogoutRevoked
 )
 
+// grokFenceCode is the diagnostic code of a Grok operation that a fence (a
+// restart, an unowned lease or a failed settlement) leaves in recovery. Every
+// fence writer uses it, so the same durable state reads the same way whichever
+// path fenced it:
+//
+//	durable revocation phase          | code               | automatic follow-up
+//	none or claimed                   | recovery_required  | none (the outcome is uncertain)
+//	confirmed (cleanup still pending) | unavailable        | the scanner retries only the cleanup
+func grokFenceCode(o domain.ServerSubscriptionOperation) domain.Code {
+	if o.GrokRevocation == domain.GrokRevocationConfirmed {
+		return domain.Unavailable
+	}
+	return domain.RecoveryRequired
+}
+
 func grokLogoutRecoveryKind(a domain.Account) grokLogoutKind {
 	st := a.Subscription
 	if a.Type != domain.SubscriptionAccount || a.SubscriptionService != domain.SubscriptionGrok || a.Removal != nil || a.Connection == nil || st == nil || st.Generation == "" || !st.RecoveryRequired {

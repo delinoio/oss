@@ -252,6 +252,15 @@ func TestGrokLogoutCrashPointsNeverResendOrDeleteWithoutRecoveryState(t *testing
 			if scenario.point != grokFaultAfterLogoutCleanup {
 				g.requireRetained(t, before, scenario.phase)
 			}
+			// The restart fence reads the revocation phase: a confirmed revocation is
+			// cleanup pending (unavailable), anything earlier is uncertain.
+			wantCode := string(domain.RecoveryRequired)
+			if scenario.phase == domain.GrokRevocationConfirmed {
+				wantCode = string(domain.Unavailable)
+			}
+			if p := g.progressFor(op.OperationId); p.GrokDiagnostic == nil || p.GrokDiagnostic.Code != wantCode || p.GrokDiagnostic.Phase != pb.GrokDiagnosticPhase_GROK_DIAGNOSTIC_PHASE_LOGOUT {
+				t.Fatalf("the restart fence recorded the wrong diagnostic for the %s phase: %+v", scenario.phase, p.GrokDiagnostic)
+			}
 			recoverable := grokLogoutRecoveryKind(a) == grokLogoutRevoked
 			if recoverable != scenario.resolves {
 				t.Fatalf("recoverable = %v", recoverable)

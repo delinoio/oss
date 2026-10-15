@@ -564,13 +564,9 @@ func (s *Service) markGrokRecovery(id, operation domain.ID) (bool, error) {
 		fenced = true
 		o.State = domain.SubscriptionRecovery
 		if o.GrokDiagnostic == nil {
-			code := domain.RecoveryRequired
-			if o.GrokRevocation == domain.GrokRevocationConfirmed {
-				// The provider revoked the token; only the protected cleanup is
-				// pending, so the outcome is known and the cleanup is retried.
-				code = domain.Unavailable
-			}
-			o.GrokDiagnostic = grokOperationDiagnostic(o.ID, grokDiagnosticPhaseOf(o.Action), code)
+			// A confirmed revocation leaves only the protected cleanup pending, so the
+			// outcome is known and the cleanup is retried (grokFenceCode).
+			o.GrokDiagnostic = grokOperationDiagnostic(o.ID, grokDiagnosticPhaseOf(o.Action), grokFenceCode(*o))
 		}
 		st.RecoveryRequired = true
 		a.Health = domain.AccountFailed
