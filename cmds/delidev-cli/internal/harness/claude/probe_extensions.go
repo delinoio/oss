@@ -133,6 +133,94 @@ func exactNativeShape(raw []byte, shape reflect.Type) bool {
 	return true
 }
 
+// initializeDescriptorLists names the only initialize-result members whose
+// elements are descriptive handshake metadata. Their element objects are the
+// sole extension points of the initialization profile; every other object keeps
+// the closed exact-key rule.
+var initializeDescriptorLists = map[string]reflect.Type{
+	"commands": reflect.TypeOf(nativeCommand{}),
+	"agents":   reflect.TypeOf(probeAgent{}),
+	"models":   reflect.TypeOf(probeModel{}),
+}
+
+// projectInitializeDescriptors is the one shared policy for the unauthenticated
+// probe, API/subscription and managed-token initializers. It first validates the
+// whole result with the global strict decoder (UTF-8, frame bound, one document,
+// unique keys and at most 64 nesting levels at every depth, including inside
+// members that are later discarded). It then drops every undeclared member of
+// each commands, agents and models element object and returns the projected
+// bytes, which the unchanged exact-key check and typed decode consume. An
+// undeclared key that differs from a declared key only by case is refused, so a
+// discarded alias can never shadow a declared field. Nothing outside those
+// element objects is relaxed, and dropped names and values are never logged or
+// retained.
+func projectInitializeDescriptors(raw []byte) ([]byte, error) {
+	var document json.RawMessage
+	if domain.Decode(raw, &document) != nil {
+		return nil, incompatible()
+	}
+	var result map[string]json.RawMessage
+	if json.Unmarshal(raw, &result) != nil || result == nil {
+		// Not an object: the typed decode rejects the shape.
+		return raw, nil
+	}
+	for name, shape := range initializeDescriptorLists {
+		list, declared := result[name]
+		if !declared {
+			continue
+		}
+		var items []json.RawMessage
+		if json.Unmarshal(list, &items) != nil || items == nil {
+			continue
+		}
+		for i, item := range items {
+			projected, err := projectDescriptor(item, shape)
+			if err != nil {
+				return nil, err
+			}
+			items[i] = projected
+		}
+		encoded, err := json.Marshal(items)
+		if err != nil {
+			return nil, incompatible()
+		}
+		result[name] = encoded
+	}
+	projected, err := json.Marshal(result)
+	if err != nil {
+		return nil, incompatible()
+	}
+	return projected, nil
+}
+
+func projectDescriptor(raw json.RawMessage, shape reflect.Type) (json.RawMessage, error) {
+	var members map[string]json.RawMessage
+	if json.Unmarshal(raw, &members) != nil || members == nil {
+		return raw, nil
+	}
+	declared := make(map[string]bool, shape.NumField())
+	for i := 0; i < shape.NumField(); i++ {
+		name, _, _ := strings.Cut(shape.Field(i).Tag.Get("json"), ",")
+		declared[name] = true
+	}
+	for name := range members {
+		if declared[name] {
+			continue
+		}
+		for known := range declared {
+			if strings.EqualFold(name, known) {
+				return nil, incompatible()
+			}
+		}
+		delete(members, name)
+	}
+	projected, err := json.Marshal(members)
+	if err != nil {
+		return nil, incompatible()
+	}
+	return projected, nil
+}
+
 // probeFrameIsPrelude reports whether a frame claims the startup event
 // envelope through its exact lowercase type key. Any other frame is validated as
 // the initialize response, which rejects differently cased aliases.

@@ -637,7 +637,7 @@ func TestProbeRejectsInvalidProfileOrRuntimeBeforeLaunch(t *testing.T) {
 
 func TestInitializeRejectsChangedOrAmbiguousNativeScope(t *testing.T) {
 	id := domain.NewID()
-	for _, change := range []string{"missing-remote", "remote", "permission", "style", "missing-account", "credential", "empty-api-source", "null-api-source", "provider", "commands", "empty-models", "duplicate-model", "unknown-feature", "unknown-level", "pid", "unknown-field", "duplicate-json", "invalid-utf8", "null-body", "missing-body", "mixed-error", "null-error", "null-envelope"} {
+	for _, change := range []string{"missing-remote", "remote", "permission", "style", "missing-account", "credential", "empty-api-source", "null-api-source", "provider", "commands", "empty-models", "duplicate-model", "unknown-level", "pid", "unknown-field", "duplicate-json", "invalid-utf8", "null-body", "missing-body", "mixed-error", "null-error", "null-envelope"} {
 		t.Run(change, func(t *testing.T) {
 			result := fixtureResult()
 			switch change {
@@ -665,8 +665,6 @@ func TestInitializeRejectsChangedOrAmbiguousNativeScope(t *testing.T) {
 				result["models"] = []any{}
 			case "duplicate-model":
 				result["models"] = append(result["models"].([]any), result["models"].([]any)[0])
-			case "unknown-feature":
-				result["models"].([]any)[0].(map[string]any)["unknownFeature"] = true
 			case "unknown-level":
 				result["models"].([]any)[0].(map[string]any)["supportedEffortLevels"] = []string{"unknown"}
 			case "pid":
@@ -844,13 +842,175 @@ func TestManagedTokenInitializeSharesClaude287Validation(t *testing.T) {
 			t.Fatalf("enabled activation gate accepted: %s", field)
 		}
 	}
-	for _, value := range []any{nil, "true", 1} {
-		result := build()
-		result["commands"].([]any)[0].(map[string]any)["builtin"] = value
-		raw, _ := json.Marshal(result)
-		if validateInitializeManagedToken(raw, "dontAsk") == nil {
-			t.Fatal("invalid builtin metadata accepted")
+}
+
+// descriptorAdditions returns unused members of every JSON type.
+func descriptorAdditions() map[string]any {
+	return map[string]any{
+		"builtin": true, "futureString": "text", "futureBool": false, "futureNumber": 12, "futureNull": nil,
+		"futureArray": []any{1, "two", nil, map[string]any{"deep": []any{}}}, "futureObject": map[string]any{"a": map[string]any{"b": nil}},
+	}
+}
+
+func withDescriptorAdditions(result map[string]any) map[string]any {
+	for _, list := range []string{"commands", "agents", "models"} {
+		for _, item := range result[list].([]any) {
+			for key, value := range descriptorAdditions() {
+				item.(map[string]any)[key] = value
+			}
 		}
+	}
+	return result
+}
+
+// TestInitializeDiscardsUnusedDescriptorMembers proves the one shared policy
+// serves the probe, API/subscription and managed-token validators and that the
+// accepted projection is identical with and without additions.
+func TestInitializeDiscardsUnusedDescriptorMembers(t *testing.T) {
+	id := domain.NewID()
+	build := func() map[string]any {
+		result := fixtureResult287()
+		result["account"] = map[string]any{"tokenSource": "ANTHROPIC_AUTH_TOKEN", "apiProvider": "firstParty", "apiKeySource": "ANTHROPIC_API_KEY"}
+		result["commands"] = []any{map[string]any{"name": "compact", "description": "Compact", "argumentHint": ""}}
+		return result
+	}
+	bare := fixtureResult287()
+	for _, list := range []string{"agents", "models"} {
+		for _, item := range bare[list].([]any) {
+			for key, value := range descriptorAdditions() {
+				item.(map[string]any)[key] = value
+			}
+		}
+	}
+	if err := validateInitialize(fixtureResponseWith(id, bare, fixtureEnvelope287()), id); err != nil {
+		t.Fatalf("probe rejected descriptor additions: %v", err)
+	}
+	plain, _ := json.Marshal(build())
+	extended, _ := json.Marshal(withDescriptorAdditions(build()))
+	if err := validateInitializeMode(plain, "dontAsk", "ANTHROPIC_API_KEY", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateInitializeMode(extended, "dontAsk", "ANTHROPIC_API_KEY", false); err != nil {
+		t.Fatalf("API initialization rejected descriptor additions: %v", err)
+	}
+	projectedPlain, err := projectInitializeDescriptors(plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectedExtended, err := projectInitializeDescriptors(extended)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var left, right map[string]any
+	if json.Unmarshal(projectedPlain, &left) != nil || json.Unmarshal(projectedExtended, &right) != nil || !reflect.DeepEqual(left, right) {
+		t.Fatal("descriptor additions changed the accepted projection")
+	}
+
+	subscription := withDescriptorAdditions(build())
+	subscription["account"] = map[string]any{"apiProvider": "firstParty", "email": "fixture@example.invalid", "subscriptionType": "pro"}
+	raw, _ := json.Marshal(subscription)
+	if err := validateInitializeMode(raw, "dontAsk", "ANTHROPIC_API_KEY", true); err != nil {
+		t.Fatalf("subscription initialization rejected descriptor additions: %v", err)
+	}
+	managed := withDescriptorAdditions(build())
+	managed["account"] = map[string]any{"tokenSource": managedTokenSource, "apiProvider": "firstParty"}
+	raw, _ = json.Marshal(managed)
+	if err := validateInitializeManagedToken(raw, "dontAsk"); err != nil {
+		t.Fatalf("managed-token initialization rejected descriptor additions: %v", err)
+	}
+}
+
+// TestInitializeDescriptorProjectionStaysFailClosed covers the boundaries the
+// projection must not relax.
+func TestInitializeDescriptorProjectionStaysFailClosed(t *testing.T) {
+	build := func() map[string]any {
+		result := fixtureResult287()
+		result["account"] = map[string]any{"tokenSource": managedTokenSource, "apiProvider": "firstParty"}
+		result["commands"] = []any{map[string]any{"name": "compact", "description": "Compact", "argumentHint": ""}}
+		return withDescriptorAdditions(result)
+	}
+	marshal := func(result map[string]any) []byte {
+		raw, err := json.Marshal(result)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return raw
+	}
+	first := func(result map[string]any, list string) map[string]any {
+		return result[list].([]any)[0].(map[string]any)
+	}
+	nested := func(depth int) any {
+		var value any = "leaf"
+		for i := 0; i < depth; i++ {
+			value = []any{value}
+		}
+		return value
+	}
+	cases := []struct {
+		name string
+		edit func(map[string]any) []byte
+	}{
+		{"command-required-deleted", func(r map[string]any) []byte { delete(first(r, "commands"), "name"); return marshal(r) }},
+		{"agent-required-deleted", func(r map[string]any) []byte { delete(first(r, "agents"), "description"); return marshal(r) }},
+		{"model-required-deleted", func(r map[string]any) []byte { delete(first(r, "models"), "resolvedModel"); return marshal(r) }},
+		{"command-type-changed", func(r map[string]any) []byte { first(r, "commands")["description"] = 7; return marshal(r) }},
+		{"model-type-changed", func(r map[string]any) []byte { first(r, "models")["supportsEffort"] = "yes"; return marshal(r) }},
+		{"command-alias-case", func(r map[string]any) []byte { first(r, "commands")["ArgumentHint"] = "x"; return marshal(r) }},
+		{"agent-alias-case", func(r map[string]any) []byte { first(r, "agents")["NAME"] = "x"; return marshal(r) }},
+		{"model-alias-case", func(r map[string]any) []byte { first(r, "models")["Value"] = "x"; return marshal(r) }},
+		{"known-duplicate", func(r map[string]any) []byte {
+			return bytes.Replace(marshal(r), []byte(`"name":"compact"`), []byte(`"name":"compact","name":"compact"`), 1)
+		}},
+		{"unknown-duplicate", func(r map[string]any) []byte {
+			return bytes.Replace(marshal(r), []byte(`"futureBool":false`), []byte(`"futureBool":false,"futureBool":true`), 1)
+		}},
+		{"duplicate-inside-discarded", func(r map[string]any) []byte {
+			return bytes.Replace(marshal(r), []byte(`"b":null`), []byte(`"b":null,"b":1`), 1)
+		}},
+		{"invalid-json-inside-discarded", func(r map[string]any) []byte {
+			first(r, "commands")["futureString"] = "@@"
+			return bytes.Replace(marshal(r), []byte(`"@@"`), []byte(`{"broken":`), 1)
+		}},
+		{"nesting-beyond-64", func(r map[string]any) []byte { first(r, "agents")["futureArray"] = nested(70); return marshal(r) }},
+		{"string-limit", func(r map[string]any) []byte {
+			first(r, "commands")["description"] = strings.Repeat("x", (16<<10)+1)
+			return marshal(r)
+		}},
+		{"list-limit", func(r map[string]any) []byte { r["commands"] = make([]any, 257); return marshal(r) }},
+		{"top-level-unknown", func(r map[string]any) []byte { r["futureTopLevel"] = true; return marshal(r) }},
+		{"account-unknown", func(r map[string]any) []byte {
+			r["account"].(map[string]any)["futureAccount"] = true
+			return marshal(r)
+		}},
+		{"pending-in-result", func(r map[string]any) []byte { r["pending_permission_requests"] = []any{}; return marshal(r) }},
+		{"top-level-alias", func(r map[string]any) []byte { r["Commands"] = []any{}; return marshal(r) }},
+		{"token-source", func(r map[string]any) []byte {
+			r["account"].(map[string]any)["tokenSource"] = "none"
+			return marshal(r)
+		}},
+		{"permission", func(r map[string]any) []byte { r["current_permission_mode"] = "default"; return marshal(r) }},
+		{"session-state", func(r map[string]any) []byte { r["session_state"] = "running"; return marshal(r) }},
+		{"feedback", func(r map[string]any) []byte { r["feedback_mode"] = "enabled"; return marshal(r) }},
+		{"remote-control", func(r map[string]any) []byte { r["remote_control_auto_enable"] = true; return marshal(r) }},
+	}
+	if err := validateInitializeManagedToken(marshal(build()), "dontAsk"); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateInitializeManagedToken(tc.edit(build()), "dontAsk")
+			if err == nil || domain.SafeError(err).Code != domain.Unsupported {
+				t.Fatalf("outcome %v, want typed incompatible refusal", err)
+			}
+		})
+	}
+	// The same decoder refuses the control-response envelope's unknown members.
+	id := domain.NewID()
+	envelope := fixtureEnvelope287()
+	envelope["futureEnvelope"] = true
+	probe := fixtureResult287()
+	if err := validateInitialize(fixtureResponseWith(id, probe, envelope), id); err == nil {
+		t.Fatal("unknown envelope member accepted")
 	}
 }
 
