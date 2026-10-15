@@ -16,7 +16,7 @@ use crate::{
         SourceFile,
     },
     rules::{self, Context},
-    sources::{AssetExemption, SourceStore, classify},
+    sources::{AssetExemption, SourceStore, classify, freshness_unverified_problem},
 };
 
 pub struct AnalysisInput<'a> {
@@ -470,6 +470,12 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
              the current code.",
         ));
     }
+    // Freshness-unverified sources keep a usable build snapshot, so this
+    // warning is informational and never makes the run partial.
+    problems.extend(freshness_unverified_problem(
+        context.sources.freshness_unverified.len(),
+        context.sources.existence_unverified.len(),
+    ));
     if !context.sources.unreadable.is_empty() {
         problems.push(problem(
             ErrorCode::SourceUnreadable,
@@ -1195,6 +1201,84 @@ mod tests {
                 .diagnostics
                 .iter()
                 .all(|diagnostic| diagnostic.export_usage.is_none())
+        );
+    }
+
+    /// A snapshot-backed source whose live read fails with an error other than
+    /// "not found" must not be reported as changed: the run keeps the snapshot
+    /// text, stays complete and carries the freshness-unverified warning.
+    #[cfg(unix)]
+    #[test]
+    fn vite_snapshot_source_with_a_failed_live_read_is_unverified_not_stale() {
+        // A path below a regular file fails with a not-a-directory error.
+        const BLOCKED_SOURCE: &str = "package.json/blocked.ts";
+        let snapshot = "export const blocked = 1;";
+        let fixture = run_fixture_patched(
+            BundlerChoice::Vite,
+            true,
+            |value| {
+                let modules = value["modules"].as_array_mut().unwrap();
+                let mut blocked = modules
+                    .iter()
+                    .find(|module| {
+                        module["path"]
+                            .as_str()
+                            .is_some_and(|path| path.contains("/src/effects/"))
+                    })
+                    .unwrap()
+                    .clone();
+                let project = blocked["packageDir"].as_str().unwrap().to_owned();
+                let path = format!("{project}/{BLOCKED_SOURCE}");
+                blocked["id"] = path.clone().into();
+                blocked["path"] = path.into();
+                blocked["isEntry"] = false.into();
+                modules.push(blocked);
+            },
+            |build, project| {
+                let map_path = build.join("assets/index-BHjrzQLH.js.map");
+                let mut map: serde_json::Value =
+                    serde_json::from_str(&std::fs::read_to_string(&map_path).unwrap()).unwrap();
+                map["sources"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(format!("{project}/{BLOCKED_SOURCE}").into());
+                map["sourcesContent"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(snapshot.into());
+                std::fs::write(&map_path, serde_json::to_string(&map).unwrap()).unwrap();
+            },
+        );
+        let analysis = &fixture.output.analysis;
+        let codes: Vec<&str> = analysis
+            .problems
+            .iter()
+            .map(|entry| entry.code.as_str())
+            .collect();
+        assert!(!codes.contains(&"BW_SOURCE_STALE"), "{codes:?}");
+        assert!(!codes.contains(&"BW_SOURCE_UNREADABLE"), "{codes:?}");
+        assert_eq!(
+            codes
+                .iter()
+                .filter(|code| **code == "BW_SOURCE_FRESHNESS_UNVERIFIED")
+                .count(),
+            1,
+            "{codes:?}"
+        );
+        // The warning is informational: it never makes the run partial.
+        assert_eq!(analysis.status, RunStatus::Complete, "{codes:?}");
+        let blocked = fixture
+            .output
+            .sources
+            .iter()
+            .find(|source| source.path.ends_with(BLOCKED_SOURCE))
+            .unwrap();
+        assert!(!blocked.stale);
+        assert!(blocked.content_included);
+        assert_eq!(blocked.content, snapshot);
+        assert_eq!(
+            blocked.revision_evidence,
+            SourceRevisionEvidence::BuildSnapshot
         );
     }
 
