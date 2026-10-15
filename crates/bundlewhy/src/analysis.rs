@@ -2806,6 +2806,64 @@ mod tests {
     }
 
     #[test]
+    fn rspack_parenthesized_keyword_operands_keep_the_env_diagnostic() {
+        for tail in [
+            "if (typeof(process.env.BUNDLEWHY_FIXTURE_FLAG) === \"undefined\") { use(); }",
+            "if (typeof (process.env.BUNDLEWHY_FIXTURE_FLAG) === \"undefined\") { use(); }",
+            "while (typeof(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); }",
+            "switch (typeof(process.env.BUNDLEWHY_FIXTURE_FLAG)) { default: use(); }",
+            "async function gate() { if (await(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); } }",
+        ] {
+            let fixture = run_fixture_patched(
+                BundlerChoice::Rspack,
+                true,
+                |_| {},
+                |build, _| {
+                    replace_flag_guard_with_tail(build, "main.js", RSPACK_FLAG_GUARD, tail);
+                },
+            );
+            let diagnostics = env_diagnostics(&fixture.output);
+            assert_eq!(diagnostics.len(), 1, "{tail}");
+            let env = diagnostics[0];
+            assert_eq!(env.status, EvidenceStatus::Inferred);
+            assert!(env.title.contains("BUNDLEWHY_FIXTURE_FLAG"), "{tail}");
+            assert!(
+                env.conditions
+                    .iter()
+                    .any(|condition| condition.outcome == ConditionOutcome::Met),
+                "{tail}"
+            );
+        }
+    }
+
+    #[test]
+    fn rspack_keyword_lookalike_calls_are_not_branch_guards() {
+        for tail in [
+            "const value = typeof(process.env.BUNDLEWHY_FIXTURE_FLAG);",
+            "const value = typeof (process.env.BUNDLEWHY_FIXTURE_FLAG);",
+            "check(process.env.BUNDLEWHY_FIXTURE_FLAG);",
+            "obj.typeof(process.env.BUNDLEWHY_FIXTURE_FLAG);",
+            "mytypeof(process.env.BUNDLEWHY_FIXTURE_FLAG);",
+            "if (check(typeof(process.env.BUNDLEWHY_FIXTURE_FLAG))) { use(); }",
+            "if (obj.typeof(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); }",
+            "if (mytypeof(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); }",
+        ] {
+            let fixture = run_fixture_patched(
+                BundlerChoice::Rspack,
+                true,
+                |_| {},
+                |build, _| {
+                    replace_flag_guard_with_tail(build, "main.js", RSPACK_FLAG_GUARD, tail);
+                },
+            );
+            assert!(
+                env_diagnostics(&fixture.output).is_empty(),
+                "reported a branch for {tail:?}"
+            );
+        }
+    }
+
+    #[test]
     fn rspack_comment_separated_calls_are_not_branch_guards() {
         for tail in [
             "run // preserved\n(process.env.BUNDLEWHY_FIXTURE_FLAG)",

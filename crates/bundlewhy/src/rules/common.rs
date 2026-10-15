@@ -908,6 +908,9 @@ fn strip_comments_for_prefix<'a>(
     }
 }
 
+/// Keyword unary operators whose operand may be parenthesized.
+const UNARY_KEYWORDS: [&str; 4] = ["typeof", "await", "void", "delete"];
+
 /// True for a character that can continue a JavaScript identifier
 /// (`IdentifierPart`): any Unicode `ID_Continue` character (letters, digits,
 /// combining marks, connector punctuation such as `_`), `$`, and the
@@ -1088,6 +1091,16 @@ fn scope_context(
         if ends_with_control_keyword(code, prefix, token, keyword, members, ignored) {
             return ScopeContext::Guard(guard);
         }
+    }
+    // A keyword unary operator followed by `(` (`typeof(x)`, `await(x)`)
+    // wraps its operand instead of calling it, so the parenthesis keeps the
+    // surrounding context. A property or longer identifier ending in the same
+    // letters (`obj.typeof(x)`, `mytypeof(x)`) is an ordinary call.
+    if UNARY_KEYWORDS
+        .iter()
+        .any(|keyword| ends_with_control_keyword(code, prefix, keyword, members, ignored))
+    {
+        return parent;
     }
     if last.is_some_and(|character| {
         is_identifier_part(character) || matches!(character, ']' | ')' | '.')
@@ -3688,6 +3701,113 @@ y=/process.env.F/.test(z),process.env.G"#;
                 }
             }
         }
+    }
+
+    #[test]
+    fn keyword_unary_parentheses_keep_the_enclosing_guard() {
+        let guard = |code: &str, read: &str| {
+            let start = code.find(read).unwrap();
+            env_guard(code, start, start + read.len(), &non_code_ranges(code))
+                .map(EnvGuard::evidence)
+        };
+        let read = "process.env.FLAG";
+        let vite_read = "({}).FLAG";
+        for read in [read, vite_read] {
+            for operator in ["typeof", "await", "void", "delete"] {
+                for (statement, evidence) in [
+                    (
+                        "if ({operator}({read}) === \"undefined\") run()",
+                        "the retained read is in an if condition",
+                    ),
+                    (
+                        "if ({operator} ({read})) run()",
+                        "the retained read is in an if condition",
+                    ),
+                    (
+                        "if (!{operator}({read})) run()",
+                        "the retained read is in an if condition",
+                    ),
+                    (
+                        "if (({operator}({read}))) run()",
+                        "the retained read is in an if condition",
+                    ),
+                    (
+                        "if ({operator}/* c */({read})) run()",
+                        "the retained read is in an if condition",
+                    ),
+                    (
+                        "if ({operator} // c\n({read})) run()",
+                        "the retained read is in an if condition",
+                    ),
+                    (
+                        "while ({operator}({read})) run()",
+                        "the retained read is in a while condition",
+                    ),
+                    (
+                        "switch ({operator}({read})) {default: run()}",
+                        "the retained read is in a switch condition",
+                    ),
+                ] {
+                    let code = statement
+                        .replace("{operator}", operator)
+                        .replace("{read}", read);
+                    assert_eq!(guard(&code, read), Some(evidence), "{code:?}");
+                }
+                for code in [
+                    "const value = {operator}({read});",
+                    "const value = {operator} ({read});",
+                    "run({operator}({read}))",
+                    "if (check({operator}({read}))) run()",
+                    "for ({operator}({read}); ; ) run()",
+                    "for (; ; {operator}({read})) run()",
+                ] {
+                    let code = code.replace("{operator}", operator).replace("{read}", read);
+                    assert_eq!(guard(&code, read), None, "{code:?}");
+                }
+            }
+            // The test of a `for` loop keeps its for-condition evidence.
+            let code = format!("for (; typeof({read}) === 'undefined'; ) run()");
+            assert_eq!(
+                guard(&code, read),
+                Some("the retained read is in a for condition")
+            );
+            // Ordinary calls and property or identifier lookalikes are not
+            // keyword operators.
+            for call in [
+                "check",
+                "obj.typeof",
+                "mytypeof",
+                "$typeof",
+                "_typeof",
+                "obj.await",
+                "myawait",
+                "obj.void",
+                "obj.delete",
+                "undelete",
+            ] {
+                let code = format!("if ({call}({read})) run()");
+                assert_eq!(guard(&code, read), None, "{code:?}");
+                let code = format!("const value = {call}({read});");
+                assert_eq!(guard(&code, read), None, "{code:?}");
+            }
+        }
+        // Existing behavior: operands without parentheses and symbolic unary
+        // operators are unchanged.
+        assert_eq!(
+            guard(
+                "if (typeof process.env.FLAG === 'undefined') run()",
+                "process.env.FLAG"
+            ),
+            Some("the retained read is in an if condition")
+        );
+        assert_eq!(
+            guard("if (!(process.env.FLAG)) run()", "process.env.FLAG"),
+            Some("the retained read is in an if condition")
+        );
+        assert_eq!(
+            guard("const value = typeof process.env.FLAG;", "process.env.FLAG"),
+            None
+        );
     }
 
     #[test]
