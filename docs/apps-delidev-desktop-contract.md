@@ -5912,18 +5912,18 @@ empty and that existing whitespace serves as the boundary. Offsets are UTF-16
 code units, matching the textarea selection API. With `end = token.start +
 length("$name")`:
 
-| Draft before (caret `\|`) | Draft after | Binding range | Caret after |
-| --- | --- | --- | --- |
-| `$add-iss\|` | `$add-issue ` | `[0, 10)` | `11` |
-| `한글\n$add-iss\|` | `한글\n$add-issue ` | `[3, 13)` | `14` |
-| `$add-iss\| tail` | `$add-issue tail` | `[0, 10)` | `11` |
-| `$add-iss\|  tail` (two spaces) | `$add-issue  tail` | `[0, 10)` | `11` |
-| `$add-iss\|<TAB>tail` | `$add-issue<TAB>tail` | `[0, 10)` | `11` |
-| `$add-iss\|<LF>tail` | `$add-issue<LF>tail` | `[0, 10)` | `11` |
-| `$add-iss\|$other` | `$add-issue $other` | `[0, 10)` | `11` |
-| `x $add-\|zzz tail` | `x $add-issue tail` | `[2, 12)` | `13` |
-| `before $add-z\|zz` | `before $add-issue ` | `[7, 17)` | `18` |
-| Another selected token after the edited range | text as above; that binding keeps its identity | shifted by the length change of the edit | unchanged |
+| Draft before (caret `\|`)                     | Draft after                                    | Binding range                            | Caret after |
+| --------------------------------------------- | ---------------------------------------------- | ---------------------------------------- | ----------- |
+| `$add-iss\|`                                  | `$add-issue `                                  | `[0, 10)`                                | `11`        |
+| `한글\n$add-iss\|`                            | `한글\n$add-issue `                            | `[3, 13)`                                | `14`        |
+| `$add-iss\| tail`                             | `$add-issue tail`                              | `[0, 10)`                                | `11`        |
+| `$add-iss\|  tail` (two spaces)               | `$add-issue  tail`                             | `[0, 10)`                                | `11`        |
+| `$add-iss\|<TAB>tail`                         | `$add-issue<TAB>tail`                          | `[0, 10)`                                | `11`        |
+| `$add-iss\|<LF>tail`                          | `$add-issue<LF>tail`                           | `[0, 10)`                                | `11`        |
+| `$add-iss\|$other`                            | `$add-issue $other`                            | `[0, 10)`                                | `11`        |
+| `x $add-\|zzz tail`                           | `x $add-issue tail`                            | `[2, 12)`                                | `13`        |
+| `before $add-z\|zz`                           | `before $add-issue `                           | `[7, 17)`                                | `18`        |
+| Another selected token after the edited range | text as above; that binding keeps its identity | shifted by the length change of the edit | unchanged   |
 
 The caret is always `end + 1`: just after the inserted space, or just past
 only the first character of existing whitespace (never past a second whitespace

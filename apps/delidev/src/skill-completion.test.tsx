@@ -72,7 +72,10 @@ function Composer({
 }) {
   const [value, setValue] = useState("");
   const change = (next: string) => {
-    if (limit !== undefined && new TextEncoder().encode(next).byteLength > limit)
+    if (
+      limit !== undefined &&
+      new TextEncoder().encode(next).byteLength > limit
+    )
       return false;
     setValue(next);
   };
@@ -2182,14 +2185,6 @@ const acceptRows = [
     bound: [3, 13],
   },
   {
-    name: "suffix without whitespace is never an end boundary",
-    before: "$add-iss",
-    caret: 8,
-    after: "$add-issue ",
-    next: 11,
-    bound: [0, 10],
-  },
-  {
     name: "single-space suffix",
     before: "$add-iss tail",
     caret: 8,
@@ -2267,7 +2262,8 @@ it("builds every completion edit as an exact text, caret and binding transaction
   expect(skillCompletionSeparator("")).toBe(" ");
   for (const suffix of [" x", "  x", "\tx", "\nx", "\r\nx", "　x"])
     expect(skillCompletionSeparator(suffix)).toBe("");
-  for (const suffix of ["$x", "x"]) expect(skillCompletionSeparator(suffix)).toBe(" ");
+  for (const suffix of ["$x", "x"])
+    expect(skillCompletionSeparator(suffix)).toBe(" ");
 });
 it.each(acceptCases)(
   "accepts $trigger for $name with exact text, caret, focus, dismissal and binding",
@@ -2276,7 +2272,9 @@ it.each(acceptCases)(
       view = render(f.view());
     const input = screen.getByRole("textbox") as HTMLTextAreaElement;
     input.focus();
-    fireEvent.change(input, { target: { value: before, selectionStart: caret } });
+    fireEvent.change(input, {
+      target: { value: before, selectionStart: caret },
+    });
     const option = await screen.findByRole("option", { name: /add-issue/ });
     accept(trigger, input, option);
     expect(input.value).toBe(after);
@@ -2354,7 +2352,9 @@ it.each(triggers)(
       view = render(f.view(machine, false, 10));
     const input = screen.getByRole("textbox") as HTMLTextAreaElement;
     input.focus();
-    fireEvent.change(input, { target: { value: "$add-iss", selectionStart: 8 } });
+    fireEvent.change(input, {
+      target: { value: "$add-iss", selectionStart: 8 },
+    });
     const option = await screen.findByRole("option", { name: /add-issue/ });
     input.setSelectionRange(3, 5);
     accept(trigger, input, option);

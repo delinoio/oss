@@ -242,8 +242,8 @@ export function skillCompletionSeparator(suffix: string): string {
 }
 // Pure text transaction for one accepted completion. It replaces the full
 // token range (caret-inside partial tokens included), preserves the prefix and
-// suffix exactly, and leaves the caret one UTF-16 unit past the token: on the
-// inserted space, or on the first character after the existing whitespace.
+// suffix exactly, and leaves the caret one UTF-16 unit past the token: just
+// after the inserted space, or just after the first existing whitespace unit.
 export function skillCompletionEdit(
   value: string,
   token: SkillToken,
@@ -557,11 +557,12 @@ export function useSkillCompletion({
       !inventory.some((current) => current.selection === entry.selection)
     )
       return;
-    const { next, replacement, end, caret: nextCaret } = skillCompletionEdit(
-      value,
-      token,
-      entry.name,
-    );
+    const {
+      next,
+      replacement,
+      end,
+      caret: nextCaret,
+    } = skillCompletionEdit(value, token, entry.name);
     const nextBindings = [
       ...editedBindings(value, next, bindings).filter(
         (binding) => binding.start !== token.start,
