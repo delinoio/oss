@@ -29,9 +29,11 @@ type accountTestSecrets struct {
 	values                                map[credentials.Ref][]byte
 	removed                               map[credentials.Ref]bool
 	putError, deleteError, referenceError error
-	enumerations                          int
-	afterPut                              func()
-	puts, deletes                         int
+	// deleteErrorsFor fails the deletion of exactly the references with these identifiers.
+	deleteErrorsFor map[domain.ID]error
+	enumerations    int
+	afterPut        func()
+	puts, deletes   int
 	// enumerationFailsAfterDeletes, when positive, fails reference enumeration
 	// once that many deletions happened (a crash after the deletions).
 	enumerationFailsAfterDeletes int
@@ -62,6 +64,9 @@ func (v *accountTestSecrets) Delete(ctx context.Context, ref credentials.Ref) er
 	v.deletes++
 	if v.deleteError != nil {
 		return v.deleteError
+	}
+	if err := v.deleteErrorsFor[ref.ID]; err != nil {
+		return err
 	}
 	delete(v.values, ref)
 	v.removed[ref] = true

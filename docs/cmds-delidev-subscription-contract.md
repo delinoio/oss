@@ -229,7 +229,12 @@ bytes never enter SQLite, journals, jobs, ordinary RPCs or logs. If the capture
 cannot be confirmed the Worker keeps `auth.json`, reports cleanup unconfirmed
 and the lease is fenced with the file as the surviving proof. A server that does
 not support the lane (`Unimplemented`/`unsupported`) keeps the historical
-cleanup. A successful ordinary Finish releases the lease and retires the capture.
+cleanup. A successful ordinary Finish releases the lease and retires the capture; a failed
+capture deletion is reported as a failed Finish (the committed release stays and
+records the capture identifier as `subscription.recovery_capture_retirement`), and
+the Worker's repeat of the same Finish request replays and retries exactly that
+deletion before clearing the record. A replay without an outstanding record never
+touches the vault.
 
 **Reconciliation.** For each fenced lease the Worker (one in-flight reconciliation
 per account inside the existing four-account lane bound, serialized with the
@@ -291,7 +296,8 @@ of any offered record. The acknowledged repeat journals `recovered`, settles the
 member journals and clears the local account fence; a definite server refusal
 drops the repeat.
 
-**Blocked diagnostics.** Missing, foreign or insufficient proof is published as the
+**Blocked diagnostics.** A `BLOCKED` report persists only the non-secret reason and
+never opens the credential store; only `SETTLED` does. Missing, foreign or insufficient proof is published as the
 closed `subscription.recovery_reason` through the existing account observation
 (`BLOCKED` outcome): `credential-proof-unavailable` (a legacy journal with no
 recorded home, or no surviving capture or file: no receipt is fabricated),

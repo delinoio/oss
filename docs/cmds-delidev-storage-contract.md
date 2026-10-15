@@ -27,7 +27,7 @@ written before the lane omit them and are never guessed from the filesystem. The
 account document gains optional `subscription.recovery_capture` (capture
 identity, lease, generation, identity commitment, `usable`, sync time) the
 closed `subscription.recovery_reason` and the boolean `subscription.recovery_retiring` (the
-durable retirement checkpoint committed before protected references are deleted); no SQLite migration is needed. The capture
+durable retirement checkpoint committed before protected references are deleted) and `subscription.recovery_capture_retirement` (the non-secret identifier of a released lease's capture whose vault deletion is unconfirmed, committed with the release and cleared once the deletion is proven); no SQLite migration is needed. The capture
 bytes live only in the server credential vault under an `AccountLogin` reference
 whose identity is the capture request. See the
 [subscription contract](cmds-delidev-subscription-contract.md#chatgpt-execution-authentication-recovery).

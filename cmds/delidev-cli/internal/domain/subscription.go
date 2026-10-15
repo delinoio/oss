@@ -63,6 +63,11 @@ type SubscriptionState struct {
 	// deleted, so a retry resumes the retirement instead of re-reading evidence
 	// that may already be gone.
 	RecoveryRetiring bool `json:"recovery_retiring,omitempty"`
+	// RecoveryCaptureRetirement is the identifier (never the bytes) of a recovery
+	// capture whose lease was released but whose vault deletion is unconfirmed.
+	// It is committed with the release and cleared once the deletion is proven, so
+	// a repeated Finish can retire the captured authentication.
+	RecoveryCaptureRetirement ID `json:"recovery_capture_retirement,omitempty"`
 }
 
 // SubscriptionRecoveryCapture binds a protected capture to the original lease,
@@ -219,6 +224,9 @@ func (s SubscriptionState) Validate(account Account) error {
 		return invalid()
 	}
 	if s.RecoveryReason != "" && (!s.RecoveryReason.Valid() || !s.RecoveryRequired || s.Lease == nil || s.Lease.Action != SubscriptionExecute || account.SubscriptionService != SubscriptionChatGPT) {
+		return invalid()
+	}
+	if s.RecoveryCaptureRetirement != "" && (s.RecoveryCaptureRetirement.Validate() != nil || account.SubscriptionService != SubscriptionChatGPT) {
 		return invalid()
 	}
 	if s.RecoveryRetiring && (!s.RecoveryRequired || s.RecoveryCapture == nil || s.Lease == nil || s.Lease.Action != SubscriptionExecute || account.SubscriptionService != SubscriptionChatGPT) {

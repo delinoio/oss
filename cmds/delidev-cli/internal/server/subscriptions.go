@@ -1342,6 +1342,8 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 				// The lease's protected recovery capture is retired with its release.
 				if state.RecoveryCapture != nil {
 					releasedCapture = state.RecoveryCapture.ID
+					// The identifier stays committed until the vault deletion is proven.
+					state.RecoveryCaptureRetirement = releasedCapture
 				}
 				state.RecoveryCapture, state.RecoveryReason, state.RecoveryRetiring = nil, "", false
 				if state.Pending != nil && state.Pending.ID == lease.OperationID {
@@ -1453,10 +1455,13 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 			delete(s.subscriptionProgress, original.Subscription.Pending.ID)
 		}
 		if releasedCapture != "" {
-			// Best effort: an unretired capture is no longer protected by state and
-			// the next reference cleanup of this account retires it.
-			if deleteErr := vault.Delete(ctx, credentials.Ref{Owner: input.Account, ID: releasedCapture, Purpose: credentials.AccountLogin}); deleteErr != nil {
-				s.logger.WarnContext(ctx, "subscription_recovery_capture_retire_unconfirmed", "account_id", input.Account, "capture_id", releasedCapture, "code", domain.SafeError(deleteErr).Code)
+			// The release is committed together with the unconfirmed retirement. A
+			// failed deletion is not reported as complete: the Worker repeats the
+			// same Finish and the replay retries the recorded retirement. It is not
+			// an ownership loss.
+			if err := s.retireReleasedCapture(ctx, vault, input.Account, releasedCapture); err != nil {
+				owned = false
+				return nil, rpc.Error(err, c)
 			}
 		}
 		// Cancellation can win during vault staging. Take remains blocked by the
@@ -1470,6 +1475,14 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 				// The owned-error defer records recovery after releasing accountGate.
 				return nil, rpc.Error(err, c)
 			}
+		}
+	}
+	if replayed {
+		// A replayed Finish retries a recorded capture retirement whose deletion
+		// was unconfirmed. The check reads the account only; it opens the vault
+		// solely when a retirement is outstanding.
+		if err := s.retryReleasedCaptureRetirement(ctx, input.Account); err != nil {
+			return nil, rpc.Error(err, c)
 		}
 	}
 	// Ownership mutation and the last vault cleanup are settled. A canceled
@@ -1501,6 +1514,56 @@ func uniqueSubscriptionIdentity(tx *store.Tx, owner domain.ID, identity string) 
 		}
 	}
 	return nil
+}
+
+// retireReleasedCapture deletes the protected capture of a released lease and
+// then clears the recorded retirement. A deletion failure keeps the record so a
+// repeated Finish retries; a failure to clear it is harmless because a deletion
+// of an already removed reference is repeatable.
+func (s *Service) retireReleasedCapture(ctx context.Context, vault accountSecrets, account, capture domain.ID) error {
+	if err := vault.Delete(ctx, credentials.Ref{Owner: account, ID: capture, Purpose: credentials.AccountLogin}); err != nil {
+		s.logger.WarnContext(ctx, "subscription_recovery_capture_retire_unconfirmed", "account_id", account, "capture_id", capture, "code", domain.SafeError(err).Code)
+		return err
+	}
+	_, err := s.Store.Mutate(ctx, domain.NewID(), "subscription.recovery-capture-retired", struct{ Account, Capture domain.ID }{account, capture}, func(tx *store.Tx) (any, error) {
+		r, a, err := subscriptionAccount(tx, account, 0)
+		if err != nil {
+			return nil, err
+		}
+		if a.Subscription == nil || a.Subscription.RecoveryCaptureRetirement != capture {
+			return accountReceipt{ID: r.ID}, nil
+		}
+		a.Subscription.RecoveryCaptureRetirement = ""
+		if _, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
+			return nil, err
+		}
+		return accountReceipt{ID: r.ID}, nil
+	})
+	if err != nil {
+		s.logger.WarnContext(ctx, "subscription_recovery_capture_retirement_unrecorded", "account_id", account, "capture_id", capture, "code", domain.SafeError(err).Code)
+	}
+	return nil
+}
+
+// retryReleasedCaptureRetirement repeats the retirement recorded by a committed
+// Finish. An account without an outstanding retirement never touches the vault.
+func (s *Service) retryReleasedCaptureRetirement(ctx context.Context, account domain.ID) error {
+	var capture domain.ID
+	err := s.Store.Read(ctx, func(tx *store.Tx) error {
+		_, a, err := subscriptionAccount(tx, account, 0)
+		if err == nil && a.Subscription != nil {
+			capture = a.Subscription.RecoveryCaptureRetirement
+		}
+		return err
+	})
+	if err != nil || capture == "" {
+		return err
+	}
+	vault, err := s.secrets()
+	if err != nil {
+		return err
+	}
+	return s.retireReleasedCapture(ctx, vault, account, capture)
 }
 
 func cleanupSubscriptionReferences(ctx context.Context, vault accountSecrets, owner, keep domain.ID, protected ...domain.ID) error {

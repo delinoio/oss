@@ -653,3 +653,50 @@ func TestSubscriptionRecoveryBlockedReportNeverOpensTheVault(t *testing.T) {
 		t.Fatal("a settlement succeeded without the credential store")
 	}
 }
+
+func TestSubscriptionFinishReplayRetiresCaptureWhoseDeletionFailed(t *testing.T) {
+	f := newSubscriptionFixture(t)
+	f.enableRecovery()
+	original := f.login()
+	defer clear(original)
+	lease := takeSubscriptionExecutionFixture(t, f)
+	clear(lease.Bundle)
+	latest := subscriptionTestBundle("fixture-account", "second", time.Now().UTC())
+	defer clear(latest)
+	synced, err := f.syncCapture(lease, latest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	capture := domain.ID(synced.CaptureId)
+	request := func() *pb.FinishSubscriptionRequest {
+		return &pb.FinishSubscriptionRequest{Mutation: &pb.Mutation{RequestId: finishRequest, Id: string(f.input.AccountID), ExpectedRevision: lease.LeaseRevision}, LeaseId: lease.LeaseId, GenerationId: lease.GenerationId, MachineId: string(f.input.MachineID), InstanceId: string(f.instance), Bundle: bytes.Clone(latest), Succeeded: true, CleanupConfirmed: true}
+	}
+	f.secrets.mu.Lock()
+	f.secrets.deleteErrorsFor = map[domain.ID]error{capture: domain.Fail(domain.Unavailable, "Injected vault failure.", "")}
+	f.secrets.mu.Unlock()
+	if _, err := f.client.FinishSubscription(context.Background(), subscriptionRequest(f.workerToken, request())); err == nil {
+		t.Fatal("an unconfirmed capture retirement was reported as complete")
+	}
+	_, mid := f.record()
+	if mid.Subscription.Lease != nil || mid.Subscription.RecoveryRequired || mid.Subscription.RecoveryCapture != nil || mid.Health == domain.AccountFailed {
+		t.Fatal("a failed capture deletion changed the committed release", mid.Subscription)
+	}
+	if !f.liveReferences()[capture] || mid.Subscription.RecoveryCaptureRetirement != capture {
+		t.Fatal("the unconfirmed capture retirement was not recorded", mid.Subscription.RecoveryCaptureRetirement)
+	}
+	f.secrets.mu.Lock()
+	f.secrets.deleteErrorsFor = nil
+	f.secrets.mu.Unlock()
+	replay, err := f.client.FinishSubscription(context.Background(), subscriptionRequest(f.workerToken, request()))
+	if err != nil || !replay.Msg.Replayed {
+		t.Fatal("the repeated Finish did not replay", err)
+	}
+	if f.liveReferences()[capture] {
+		t.Fatal("the replayed Finish left the captured authentication in the vault")
+	}
+	if _, done := f.record(); done.Subscription.RecoveryCaptureRetirement != "" {
+		t.Fatal("the proven retirement was not cleared")
+	}
+}
+
+const finishRequest = "0198f0aa-0000-7000-8000-00000000f1f1"
