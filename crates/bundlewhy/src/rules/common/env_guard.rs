@@ -1109,17 +1109,34 @@ impl<'a> Parser<'a> {
                 break;
             }
             self.bump();
+            if op == BinaryOp::Power {
+                left = self.parse_power(left);
+                continue;
+            }
             if let BinaryOp::Logical(guard) = op {
                 self.site(guard, left);
             }
-            let right = self.parse_binary(if op == BinaryOp::Power {
-                precedence
-            } else {
-                precedence + 1
-            });
+            let right = self.parse_binary(precedence + 1);
             left = self.combine(op, left, right);
         }
         left
+    }
+
+    /// The rest of a right-associative `**` chain after its first operator.
+    /// `**` binds tighter than every other binary operator, so each operand
+    /// is a unary expression; the chain is read without recursion so that an
+    /// arbitrarily long one cannot exhaust the stack.
+    fn parse_power(&mut self, base: Expr) -> Expr {
+        let mut operands = vec![base, self.parse_unary()];
+        while self.is_punct("**") {
+            self.bump();
+            operands.push(self.parse_unary());
+        }
+        let mut value = operands.pop().flatten();
+        while let Some(left) = operands.pop() {
+            value = self.combine(BinaryOp::Power, left, value);
+        }
+        value
     }
 
     fn combine(&mut self, op: BinaryOp, left: Expr, right: Expr) -> Expr {
@@ -2128,6 +2145,53 @@ mod tests {
             "[process.env.FLAG,1][1]&&run()",
         ] {
             assert_eq!(guard(code), None, "{code}");
+        }
+    }
+
+    /// A right-associative `**` chain is read without recursion.
+    #[test]
+    fn exponent_chains_are_read_iteratively() {
+        let rows: &[(&str, &str, Option<&str>)] = &[
+            ("exponent base", "process.env.FLAG**2&&run()", Some("and")),
+            ("exponent power", "2**process.env.FLAG&&run()", Some("and")),
+            (
+                "chained exponent",
+                "2**3**process.env.FLAG||run()",
+                Some("or"),
+            ),
+            (
+                "unary exponent operand",
+                "2**-process.env.FLAG&&run()",
+                Some("and"),
+            ),
+            (
+                "multiplied exponent",
+                "a*process.env.FLAG**2&&run()",
+                Some("and"),
+            ),
+            (
+                "exponent in a conditional",
+                "process.env.FLAG**2**3?a:b",
+                Some("conditional"),
+            ),
+            ("exponent without a read", "2**3**4&&process.env.FLAG", None),
+        ];
+        for &(kind, code, expected) in rows {
+            assert_eq!(flag_guard(code), expected, "{kind}: {code}");
+        }
+        for operators in [300_000, 1_000_000] {
+            let code = format!("{}process.env.FLAG&&run()", "1**".repeat(operators));
+            assert_eq!(
+                flag_guard(&code),
+                Some("and"),
+                "{operators} exponent operators"
+            );
+            let code = format!("process.env.FLAG{}||run()", "**1".repeat(operators));
+            assert_eq!(
+                flag_guard(&code),
+                Some("or"),
+                "{operators} exponent operators after the read"
+            );
         }
     }
 

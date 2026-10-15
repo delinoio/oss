@@ -98,6 +98,7 @@ Statement and function rules:
 - `{` starts a block where a statement starts and an object literal where an operand starts. A function body collects its `return` expressions; a `return` followed by a line terminator, including one inside a comment, returns `undefined`.
 - A `return` in a `finally` block replaces the values returned by the `try` and `catch` blocks, so those values are dropped.
 - A parameter list is parsed as expressions so that default values keep their branches. The initializer of a `for` head does not treat `in` as an operator; `for (x in y)` and `for (x of y)` are loops without a condition.
+- A right-associative `**` chain is read iteratively, so a chain of any length is parsed without recursion.
 - A construct that cannot be parsed is skipped token by token. Input nested deeper than the parser limit is skipped as opaque, so the scan never overflows its stack.
 
 ### Known limits
