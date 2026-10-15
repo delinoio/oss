@@ -11,7 +11,15 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"slices"
+	"strconv"
+	"strings"
 	"testing"
+
+	"github.com/google/uuid"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
@@ -131,4 +139,91 @@ func TestClaudeImageScaleMatchesNativeJavaScriptRounding(t *testing.T) {
 			t.Fatalf("native scale %d/%d = %s, want %s", test.width, test.displayed, actual, test.scale)
 		}
 	}
+}
+
+// imageRetentionFixture builds a settled session whose first input carries one
+// expected image and whose native JSONL optionally contains the hidden
+// image-context record for that input.
+func imageRetentionFixture(t *testing.T, hidden bool) (*APISession, string) {
+	t.Helper()
+	s, _ := continuationFixture(t)
+	path := filepath.Join(s.config.Home, "projects", "delidev", string(s.config.SessionID)+".jsonl")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var contextID string
+	if hidden {
+		contextID = uuid.NewString()
+		lines := bytes.Split(bytes.TrimSuffix(raw, []byte{'\n'}), []byte{'\n'})
+		records := make([]map[string]any, 0, len(lines)+1)
+		for _, line := range lines {
+			var record map[string]any
+			if json.Unmarshal(line, &record) != nil {
+				t.Fatal("invalid fixture history")
+			}
+			records = append(records, record)
+		}
+		records = slices.Insert(records, 2, imageContextRecord(s, contextID, string(s.current.input), 1))
+		records[3]["parentUuid"] = contextID
+		if err := os.WriteFile(path, historyJSONL(t, records), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.history.images = map[domain.ID][]imageContext{s.current.input: {{width: 2, height: 2, displayedWidth: 2, displayedHeight: 2, media: domain.ImagePNG}}}
+	return s, contextID
+}
+
+func imageContextRecord(s *APISession, id, parent string, ordinal int) map[string]any {
+	location := filepath.Join(s.config.Home, "image-tmp", string(s.config.SessionID), "images", strconv.Itoa(ordinal)+".png")
+	body := map[string]any{"role": "user", "content": []any{map[string]any{"type": "text", "text": "[Image: source: " + location + "]"}}}
+	return map[string]any{"type": "user", "uuid": id, "parentUuid": parent, "sessionId": s.config.SessionID, "cwd": s.config.Workspace, "version": SupportedVersion, "isSidechain": false, "isMeta": true, "message": body}
+}
+
+func TestClaudeImageRetentionRequiresEveryExpectedContextRecord(t *testing.T) {
+	t.Run("complete", func(t *testing.T) {
+		s, id := imageRetentionFixture(t, true)
+		if err := s.retainImageContexts(context.Background()); err != nil {
+			t.Fatal("complete image history rejected", err)
+		}
+		if len(s.history.images) != 0 || !slices.ContainsFunc(s.history.messages, func(m HistoryMessageProof) bool { return m.NativeID == id }) {
+			t.Fatal("valid context record was not consumed and retained")
+		}
+		if observed, err := s.readRetainedTranscript(context.Background()); err != nil || observed.MatchedMessages != 3 || observed.AdditionalMessages != 0 {
+			t.Fatal("complete image history lost retained-history authority", err)
+		}
+	})
+	t.Run("missing", func(t *testing.T) {
+		s, _ := imageRetentionFixture(t, false)
+		var logs bytes.Buffer
+		s.config.Process.Logger = slog.New(slog.NewTextHandler(&logs, nil))
+		if err := s.retainImageContexts(context.Background()); err == nil {
+			t.Fatal("missing image-context record accepted")
+		}
+		if len(s.history.images) != 1 || !strings.Contains(logs.String(), "claude_image_context_invalid") || !strings.Contains(logs.String(), "stage=7") || strings.Contains(logs.String(), s.config.Home) {
+			t.Fatal("missing record was not logged as a numeric stage only", logs.String())
+		}
+		if _, err := s.readRetainedTranscript(context.Background()); err == nil {
+			t.Fatal("missing image-context record acquired retained-history authority")
+		}
+		if _, err := s.CloseForContinuation(context.Background()); err == nil {
+			t.Fatal("missing image-context record acquired continuation authority")
+		}
+	})
+	t.Run("partial", func(t *testing.T) {
+		s, _ := imageRetentionFixture(t, true)
+		s.history.images[domain.NewID()] = []imageContext{{width: 2, height: 2, displayedWidth: 2, displayedHeight: 2, media: domain.ImagePNG}}
+		if err := s.retainImageContexts(context.Background()); err == nil {
+			t.Fatal("partial image-context history accepted")
+		}
+		if len(s.history.images) != 1 {
+			t.Fatal("unmatched expected image input was consumed")
+		}
+	})
+	t.Run("text only", func(t *testing.T) {
+		s, _ := continuationFixture(t)
+		if err := s.retainImageContexts(context.Background()); err != nil {
+			t.Fatal("text-only history changed", err)
+		}
+	})
 }

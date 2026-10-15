@@ -337,8 +337,18 @@ func (s *APISession) retainImageContexts(ctx context.Context) error {
 		delete(h.images, source)
 		known[id] = true
 	}
+	// Every expected image input must have produced its hidden native context
+	// record. A missing record adds no unexpected message, so the later
+	// additional-message comparison cannot detect it.
+	if len(h.images) != 0 {
+		return imageContextFailure(s, imageContextStageMissing)
+	}
 	return nil
 }
+
+// imageContextStageMissing is the numeric claude_image_context_invalid stage
+// for an expected image input that has no hidden native context record.
+const imageContextStageMissing = 7
 
 func imageContextFailure(s *APISession, stage int) error {
 	if s.config.Process.Logger != nil {
