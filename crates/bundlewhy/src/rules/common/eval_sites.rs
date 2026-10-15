@@ -278,6 +278,13 @@ const OBJECT_LITERAL_KEYWORDS: &[&str] = &[
     "satisfies",
 ];
 
+/// Keywords with a restricted production: a line break before the next token
+/// ends the statement or expression, so that token never continues the keyword
+/// (`yield\n{ ... }` is a `yield` followed by a block). `throw` is included
+/// because a line break after it is an error, and the block reading is the one
+/// that keeps a possible direct `eval` visible.
+const RESTRICTED_KEYWORDS: &[&str] = &["return", "yield", "throw", "break", "continue"];
+
 /// Modifiers that can precede a class, object or type member name.
 const MEMBER_MODIFIERS: &[&str] = &[
     "async",
@@ -363,6 +370,14 @@ fn continues_before(token: &Token<'_>) -> bool {
         TokenKind::Value => token.text.starts_with('`'),
         TokenKind::Private => false,
     }
+}
+
+/// Reports whether `next` is cut off from the restricted keyword `previous` by
+/// a line break, so automatic semicolon insertion ends the keyword's operand.
+fn ends_at_line_break(previous: &Token<'_>, next: &Token<'_>) -> bool {
+    next.line_break_before
+        && previous.kind == TokenKind::Word
+        && RESTRICTED_KEYWORDS.contains(&previous.text)
 }
 
 /// Reports whether `{` after `previous` starts the body that belongs to a
@@ -862,6 +877,7 @@ impl<'a> Scanner<'a> {
     }
 
     fn open_brace(&mut self, index: usize) {
+        let brace = self.token(index);
         let previous = self.previous(index);
         let top = self.top();
         let header = top.header;
@@ -883,7 +899,7 @@ impl<'a> Scanner<'a> {
                         FrameKind::TypeBody
                     }
                 }
-                TypeMode::None => expression_brace(top, index, previous.as_ref()),
+                TypeMode::None => expression_brace(top, &brace, index, previous.as_ref()),
             }
         };
         let top = self.top_mut();
@@ -1019,10 +1035,18 @@ fn starts_member_name(next: &Token<'_>, modifier: &str) -> bool {
 }
 
 /// Classifies a `{` in expression position from the token before it.
-fn expression_brace(top: &Frame<'_>, index: usize, previous: Option<&Token<'_>>) -> FrameKind {
+fn expression_brace(
+    top: &Frame<'_>,
+    brace: &Token<'_>,
+    index: usize,
+    previous: Option<&Token<'_>>,
+) -> FrameKind {
     let Some(previous) = previous else {
         return FrameKind::Block;
     };
+    if ends_at_line_break(previous, brace) {
+        return FrameKind::Block;
+    }
     match previous.kind {
         TokenKind::Punct => match previous.text {
             ")" | "=>" | ";" | "{" | "}" | "]" | ">" => FrameKind::Block,
@@ -1133,6 +1157,38 @@ mod tests {
             ("class C { class = 1\n eval(v) {} }", &[DECLARATION]),
             ("const o = { class: 1, eval(v) {} };", &[DECLARATION]),
             ("x.class\neval(code)", &[CALL]),
+        ]);
+    }
+
+    #[test]
+    fn restricted_keywords_end_before_a_brace_on_the_next_line() {
+        assert_table(&[
+            // A line break after the keyword ends it; the brace is a block.
+            ("function* f() { yield\n{ eval(code) } }", &[CALL]),
+            ("function f() { return\n{ eval(code) } }", &[CALL]),
+            ("function f() { throw\n{ eval(code) } }", &[CALL]),
+            ("function* f() { yield /*\n*/ { eval(code) } }", &[CALL]),
+            ("function* f() { yield // note\n{ eval(code) } }", &[CALL]),
+            ("function f() { return\n{ eval(code); } }", &[CALL]),
+            ("function f() { return\n{ eval(v) {} } }", &[DECLARATION]),
+            // On the same line the brace is an object literal.
+            ("function* f() { yield { eval(v) {} } }", &[DECLARATION]),
+            ("function f() { return { eval(v) {} } }", &[DECLARATION]),
+            ("function f() { throw { eval(v) {} } }", &[DECLARATION]),
+            (
+                "function f() { return /*\n*/ { eval(v) {} } }",
+                &[DECLARATION],
+            ),
+            // Other keywords continue across the line break.
+            (
+                "function* f() { x = typeof\n{ eval(v) {} } }",
+                &[DECLARATION],
+            ),
+            (
+                "async function f() { await\n{ eval(v) {} } }",
+                &[DECLARATION],
+            ),
+            ("const x = a in\n{ eval(v) {} };", &[DECLARATION]),
         ]);
     }
 
